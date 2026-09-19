@@ -20,4 +20,13 @@ describe("importSpecifierNamesReceiver", () => {
     expect(importSpecifierNamesReceiver("./types.d.mts", "types")).toBe(true);
     expect(importSpecifierNamesReceiver("./types.d.cts", "Types")).toBe(true);
   });
+
+  it("names the directory of a specifier written with a trailing slash (bd tea-rags-mcp-unt4v)", () => {
+    // `import utils from "./utils/"` — the last `/`-segment is "", which no
+    // receiver normalises to, so the directory module was never matched.
+    expect(importSpecifierNamesReceiver("./utils/", "utils")).toBe(true);
+    expect(importSpecifierNamesReceiver("../rank-module/", "RankModule")).toBe(true);
+    expect(importSpecifierNamesReceiver("./utils/", "other")).toBe(false);
+    expect(importSpecifierNamesReceiver("./", "utils")).toBe(false);
+  });
 });

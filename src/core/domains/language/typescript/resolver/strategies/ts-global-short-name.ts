@@ -70,8 +70,9 @@ import type { ResolverConfig } from "./shared.js";
  * {@link interfaceReceiverExcludesCandidate} for the rule and for why a
  * structural implementer with no `implements` clause is not accepted on name.
  *
- * Any OTHER receiver the walker did not type needs the checker's agreement,
- * not just a unique name (bd tea-rags-mcp-t5cji): see
+ * Any OTHER receiver the walker did not type needs the checker's agreement —
+ * with no Program, an import binding's — not just a unique name (bd
+ * tea-rags-mcp-t5cji): see
  * {@link memberCandidateLacksReceiverEvidence}. Once the family filter stopped
  * Ruby namesakes from making `title` / `filter` / `request` ambiguous, this
  * pass committed `COPY.title(...)` on an object literal to the project's lone
@@ -102,7 +103,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     if (!hit) return CONTINUE;
     // After the pick, so the checker is asked only when a match would commit.
     if (interfaceReceiverExcludesCandidate(call, ctx, this.programCache, hit)) return CONTINUE;
-    if (memberCandidateLacksReceiverEvidence(call, ctx, this.programCache, hit)) return CONTINUE;
+    if (memberCandidateLacksReceiverEvidence(call, ctx, this.cfg, this.programCache, hit)) return CONTINUE;
     if (this.importContradictsCandidate(call, ctx, hit.relPath)) return CONTINUE;
     return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
   }

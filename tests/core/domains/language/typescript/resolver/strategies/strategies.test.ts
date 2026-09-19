@@ -434,9 +434,12 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
       ["src/handler.ts", [sym("Handler", "Handler", "src/handler.ts", [])]],
     );
-    // `impl: Handler` — the receiver the walker typed by a project interface,
-    // which this pass recovers; an untyped one is no longer narrowed by name (bd
-    // tea-rags-mcp-t5cji).
+    // `impl: Handler` — the receiver the walker typed by a project ABSTRACT
+    // CLASS, which this pass recovers; an untyped one is no longer narrowed by
+    // name (bd tea-rags-mcp-t5cji). A class, because only a type the table holds
+    // counts as the walker's evidence, and an `interface` never enters the table
+    // (`tsNameOf` does not name `interface_declaration`): an interface-typed
+    // parameter is dispatched through the cone before the chain runs.
     const outcome = strat.attempt(
       call,
       ctx({

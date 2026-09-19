@@ -471,6 +471,38 @@ function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, pro
 }
 
 /**
+ * Case 9 (bd tea-rags-mcp-t5cji): a `super(...)` / `super.m()` whose base class
+ * the checker declares entirely outside the project — the default lib's
+ * `Error`, a dependency's `Component` or `EventEmitter`.
+ *
+ * The `super` pass is terminal: it walks `classExtends` and DROPs when no
+ * ancestor the project declares owns the member, which is exactly right for
+ * the edge and wrong for the denominator — the call is not a miss the resolver
+ * could fix, it leaves the project. On taxdome the 16 `extends Error`
+ * constructors used to hide behind a fabricated edge onto a Ruby `Error`
+ * model; once the family filter dropped it they were charged as misses.
+ *
+ * The evidence is the `super` keyword's own type, read with the same
+ * declaration-site test the out-of-project receiver arm uses
+ * ({@link typeDeclaredOutsideProject}): in a constructor it is the base's
+ * static side, in a method its instance side, and either way its declarations
+ * say where the class lives. No Program, no `super` on the recorded line, or a
+ * type with no declarations is no evidence — the call stays an internal miss.
+ */
+function superBaseDeclaredOutsideProject(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): boolean {
+  if (programCache === null) return false;
+  const handle = programCache.acquire(ctx.callerFile);
+  if (handle === null) return false;
+  const keyword = findSuperKeyword(handle.sourceFile, call.startLine);
+  if (keyword === null) return false;
+  return typeDeclaredOutsideProject(handle.checker, handle.checker.getTypeAtLocation(keyword), programCache);
+}
+
+/**
  * Is EVERY constituent of `type` declared entirely outside the project's own
  * sources?
  *
@@ -504,38 +536,6 @@ function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, pro
  * project that declares its own `class Map` still keeps its edges: the checker
  * resolves that receiver to the project declaration and this returns `false`.
  */
-/**
- * Case 9 (bd tea-rags-mcp-t5cji): a `super(...)` / `super.m()` whose base class
- * the checker declares entirely outside the project — the default lib's
- * `Error`, a dependency's `Component` or `EventEmitter`.
- *
- * The `super` pass is terminal: it walks `classExtends` and DROPs when no
- * ancestor the project declares owns the member, which is exactly right for
- * the edge and wrong for the denominator — the call is not a miss the resolver
- * could fix, it leaves the project. On taxdome the 16 `extends Error`
- * constructors used to hide behind a fabricated edge onto a Ruby `Error`
- * model; once the family filter dropped it they were charged as misses.
- *
- * The evidence is the `super` keyword's own type, read with the same
- * declaration-site test the out-of-project receiver arm uses
- * ({@link typeDeclaredOutsideProject}): in a constructor it is the base's
- * static side, in a method its instance side, and either way its declarations
- * say where the class lives. No Program, no `super` on the recorded line, or a
- * type with no declarations is no evidence — the call stays an internal miss.
- */
-function superBaseDeclaredOutsideProject(
-  call: CallRef,
-  ctx: CallContext,
-  programCache: TSProgramCache | null,
-): boolean {
-  if (programCache === null) return false;
-  const handle = programCache.acquire(ctx.callerFile);
-  if (handle === null) return false;
-  const keyword = findSuperKeyword(handle.sourceFile, call.startLine);
-  if (keyword === null) return false;
-  return typeDeclaredOutsideProject(handle.checker, handle.checker.getTypeAtLocation(keyword), programCache);
-}
-
 function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
   for (const constituent of typeConstituents(checker, type)) {
     const symbol = constituent.getSymbol();

@@ -214,6 +214,21 @@ describe("JavascriptCallResolver", () => {
     }
   });
 
+  it("matches a directory specifier written with a trailing slash to its receiver (bd tea-rags-mcp-unt4v)", () => {
+    // `import utils from "./utils/"` — the last `/`-segment is "", so receiver
+    // `utils` never matched and the call on the directory's index module was lost.
+    const r = new JavascriptCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("pkg/utils/index.js", [
+      { symbolId: "slugify", fqName: "slugify", shortName: "slugify", relPath: "pkg/utils/index.js", scope: [] },
+    ]);
+    const target = r.resolve(
+      { callText: "utils.slugify(s)", receiver: "utils", member: "slugify", startLine: 3 },
+      ctx("pkg/main.js", [{ importText: "./utils/", startLine: 1 }], t),
+    );
+    expect(target).toEqual({ targetRelPath: "pkg/utils/index.js", targetSymbolId: "slugify" });
+  });
+
   it("falls back to global short-name when no receiver", () => {
     const r = new JavascriptCallResolver();
     const t = new InMemoryGlobalSymbolTable();

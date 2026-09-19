@@ -91,10 +91,11 @@ describe("TSCallResolver", () => {
         symbolTable,
       },
     );
-    // No class scope -> intra-class branch skipped -> short-name
-    // fallback finds 1 match -> resolves there. Not the bug case;
-    // documents the non-class behaviour.
-    expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "Store.read" });
+    // No class scope -> intra-class branch skipped. The short-name fallback
+    // finds 1 match, but a `this` member is no longer committed by its name
+    // alone — nothing (no checker, no class) says `this` is a `Store` (bd
+    // tea-rags-mcp-t5cji), so the call stays unresolved rather than misrouted.
+    expect(result).toBeNull();
   });
 
   it("resolves Foo.bar() via the imports list", () => {
@@ -522,6 +523,12 @@ describe("TSCallResolver", () => {
           scope: ["PythonCallResolver"],
         },
       ]);
+      // `CallResolver` is an ABSTRACT CLASS here: the table holds class symbols,
+      // which is what makes the walker's `CallResolver` binding a project type
+      // this narrowing may act on (bd tea-rags-mcp-t5cji). A TypeScript
+      // `interface` never enters the table (`tsNameOf` does not name
+      // `interface_declaration`); an interface-typed parameter is dispatched to
+      // its implementers through the cone before the chain runs.
       symbolTable.upsertFile("src/contracts/call-resolver.ts", [
         {
           symbolId: "CallResolver",
@@ -694,10 +701,11 @@ describe("TSCallResolver", () => {
       expect(result).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "Factory.create" });
     });
 
-    it("falls through to existing fallbacks when the bound type has no matching member (interface with no indexed impl)", () => {
+    it("falls through to existing fallbacks when the bound type has no matching member (abstract base with no indexed member)", () => {
       const symbolTable = new InMemoryGlobalSymbolTable();
-      // `CallResolver` is an INTERFACE — no `CallResolver#resolve` symbol
-      // exists (interfaces declare no method bodies). The single concrete
+      // `CallResolver` is an ABSTRACT CLASS whose `resolve` is abstract — no
+      // `CallResolver#resolve` symbol exists (an abstract member has no body,
+      // and the walker names none). The single concrete
       // `resolve` short-name match is reachable via imports, so the
       // import-narrowed fallback recovers it. localBindings must NOT
       // fabricate a `CallResolver#resolve` edge — it returns nothing and
@@ -720,9 +728,12 @@ describe("TSCallResolver", () => {
           scope: ["PythonCallResolver"],
         },
       ]);
-      // The interface itself IS a project symbol (an `interface_declaration`
-      // chunk), which is what makes the walker's binding evidence the
-      // import-narrowed recovery may act on (bd tea-rags-mcp-t5cji).
+      // The abstract class itself IS a project symbol (a class declaration the
+      // walker names), which is what makes the walker's binding evidence the
+      // import-narrowed recovery may act on (bd tea-rags-mcp-t5cji). A TypeScript
+      // `interface` would not be: `tsNameOf` does not name
+      // `interface_declaration`, so an interface-typed parameter takes the cone
+      // instead (ts-member-call-short-name-evidence.test.ts).
       symbolTable.upsertFile("src/contracts/call-resolver.ts", [
         {
           symbolId: "CallResolver",

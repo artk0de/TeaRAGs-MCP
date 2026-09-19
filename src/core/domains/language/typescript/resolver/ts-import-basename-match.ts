@@ -26,7 +26,10 @@
  * only catches the cheap mirror cases.
  */
 export function importSpecifierNamesReceiver(importText: string, receiver: string): boolean {
+  // A trailing slash names the directory (`"./utils/"`), and its empty last
+  // segment matched no receiver (bd tea-rags-mcp-unt4v).
   const segments = importText.split("/");
+  if (segments.length > 1 && segments[segments.length - 1] === "") segments.pop();
   const last = segments[segments.length - 1] ?? "";
   return normalizeIdentifier(last) === normalizeIdentifier(receiver);
 }

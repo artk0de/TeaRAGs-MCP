@@ -134,6 +134,15 @@ describe("describeTSProgramTypecheckerDowngrade (bd tea-rags-mcp-6aytq)", () => 
     expect(message).toContain("CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT");
     expect(message).toContain("CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES");
   });
+
+  // bd tea-rags-mcp-t5cji: without a Program a member call is no longer matched
+  // by name — the operator has to know which calls the run gives up.
+  it("says member calls on untyped receivers resolve only through import evidence", () => {
+    const message = describeTSProgramTypecheckerDowngrade(assessTaxdome(2240));
+
+    expect(message).toContain("resolves only through import evidence");
+    expect(message).not.toContain("resolve without type information");
+  });
 });
 
 describe("readHeapSizeLimitMb (bd tea-rags-mcp-6aytq)", () => {

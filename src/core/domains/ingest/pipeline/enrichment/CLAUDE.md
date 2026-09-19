@@ -190,10 +190,12 @@
   TypeScript legitimately resolves into JavaScript files another partition owns,
   and `ancestors` / `classExtends` are keyed by bare class name — so a partition
   that absorbed only its own language resolves DIFFERENT edges
-  (`provider-language-partition.test.ts` pins it). Resolvers filter the table to
-  their own language family (bd tea-rags-mcp-t5cji); the maps they read are not
-  filtered. Why last and alone: defence in depth, plus the closing timing line.
-  The recompute drains the edge tables through `DuckDbGraphSession#streamRows`,
+  (`provider-language-partition.test.ts` pins it). The TypeScript / JavaScript,
+  Python, Ruby and Go resolvers filter their table lookups to their own language
+  family; Java, Rust and Bash still read it unfiltered — see
+  `.claude/rules/resolver-architecture.md`. The maps they read are not filtered.
+  Why last and alone: defence in depth, plus the closing timing line. The
+  recompute drains the edge tables through `DuckDbGraphSession#streamRows`,
   which runs on a connection of its own inside a read snapshot and fails loudly
   (`DuckDbStreamIncompleteError`) if the drain comes up short, and
   `CodegraphDaemonServer#admitWrite` runs a collection's writes one at a time
