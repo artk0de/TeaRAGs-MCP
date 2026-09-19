@@ -74,5 +74,11 @@ export const capability: LanguageCapability = {
   // `thisMember` reads a class-body chunk's `callerSymbolId` so an ambiguous
   // member on `this` in a field initializer resolves to the class's own
   // method.
-  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // walker 9: bd tea-rags-mcp-pv7ul. The evidence guard gains a POSITIVE
+  // structural arm for receivers that construct or produce their type —
+  // `new ImportedClass().m()` and a `createX()` factory call whose name embeds
+  // the type. Checker-off (no Program) those sites were all declines; the
+  // candidate is accepted only when the type's own file-anchored definer walk
+  // owns it, so the nj8i6 owner-rule corrections hold.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
 };

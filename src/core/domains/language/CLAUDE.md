@@ -405,15 +405,19 @@
   descends from (`memberCandidateLacksReceiverEvidence`, bd tea-rags-mcp-t5cji).
   No Program — `CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff` —
   leaves only structure: the receiver is an import binding whose module, through
-  its barrel, declares the candidate; or it is `this` and the candidate is its
-  nearest definer — the enclosing class, else the first `extends` ancestor
-  declaring the member, every hop anchored to a file (declared there, or
-  imported by the caller from there), so a namesake class is never reached. The
-  `this` arm also answers where the checker names no symbol. Every other
-  receiver declines, the way JavaScript's tail declines every receiver-bearing
-  call (bd tea-rags-mcp-hwwtw). Why: once Ruby namesakes stopped making `title`
-  / `filter` / `request` ambiguous, taxdome committed ~89 object-literal, `any`
-  and generated-class calls to the lone TS symbol of that name.
+  its barrel, declares the candidate; or it constructs or produces its type —
+  `new ImportedClass().m()`, or a `createX()` factory call whose name embeds the
+  type and whose callee anchors as a project callable — and the candidate is
+  owned by the type's own file-anchored definer walk (bd tea-rags-mcp-pv7ul); or
+  it is `this` and the candidate is its nearest definer — the enclosing class,
+  else the first `extends` ancestor declaring the member, every hop anchored to
+  a file (declared there, or imported by the caller from there), so a namesake
+  class is never reached. The `this` arm also answers where the checker names no
+  symbol. Every other receiver declines, the way JavaScript's tail declines
+  every receiver-bearing call (bd tea-rags-mcp-hwwtw). Why: once Ruby namesakes
+  stopped making `title` / `filter` / `request` ambiguous, taxdome committed ~89
+  object-literal, `any` and generated-class calls to the lone TS symbol of that
+  name.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

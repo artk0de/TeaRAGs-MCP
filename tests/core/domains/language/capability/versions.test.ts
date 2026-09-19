@@ -155,13 +155,19 @@ describe("seeded support versions", () => {
       // `classFieldTypesByClassKey` and resolves promoted methods through
       // embedding, so an index built by walker 1 holds none of the
       // `engine.GET` → `RouterGroup#GET` edges this one emits.
+      // typescript walker 9: bd tea-rags-mcp-pv7ul adds a POSITIVE structural
+      // arm to the evidence guard for receivers that construct or produce
+      // their type (`new ImportedClass().m()`, a `createX()` factory call), so
+      // an index built by walker 8 misses the checker-off member edges those
+      // sites gain when the constructed type's definer walk owns the
+      // candidate.
       // go walker 3: bd tea-rags-mcp-7h6j0 keys the run-global return-type
       // channel by the declaring package, so an index built by walker 2 holds
       // bare-keyed entries its resolver cannot read — namesake `New()`s
       // resolve to nothing until the recompute rewrites them.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 8],
+        ["typescript", 9],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 3],
