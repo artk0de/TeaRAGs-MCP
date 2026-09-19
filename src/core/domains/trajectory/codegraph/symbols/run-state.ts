@@ -475,7 +475,9 @@ export class CodegraphRunState {
    * Per-run `FileExtraction.buildConstraint`, keyed by the relPath that declared
    * it (bd tea-rags-mcp-e6xx) — Go's tie-breaker between build-tag twins. A
    * re-walk REPLACES the file's entry, and a walk that finds no constraint
-   * deletes it: the file no longer carries one.
+   * deletes it: the file no longer carries one. Hydrated at `seal` for every
+   * file the run did not walk (`pass1Hydrators`), so an incremental run tells
+   * the twins apart exactly as a full one does.
    */
   buildConstraintsByFile: Record<string, string> = {};
 
@@ -740,6 +742,15 @@ export class CodegraphRunState {
       for (const [fqClass, table] of Object.entries(slice.classSchemaTables ?? {})) {
         if (fqClass in this.schemaTables) continue;
         this.schemaTables[fqClass] = table;
+      }
+    },
+    // Go build constraints (bd tea-rags-mcp-e6xx). Batch-wins on the DECLARING
+    // relPath, the grain `absorb` replaces this channel at — the same guard as
+    // `moduleReexports`, and unreachable for the same reason. No
+    // `markContributed`: the runner hands the map to pass-2 unconditionally.
+    buildConstraintsByFile: (slice) => {
+      if (slice.buildConstraint !== undefined && !(slice.relPath in this.buildConstraintsByFile)) {
+        this.buildConstraintsByFile[slice.relPath] = slice.buildConstraint;
       }
     },
   };

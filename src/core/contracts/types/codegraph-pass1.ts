@@ -202,4 +202,22 @@ export interface CodegraphPass1FileAggregates {
    * earns. Persisted LAST, so rows without an override keep their bytes.
    */
   classSchemaTables?: Record<string, string>;
+  /**
+   * The file's own `//go:build` expression, verbatim (`FileExtraction.buildConstraint`,
+   * bd tea-rags-mcp-e6xx) — Go's tie-breaker between build-tag twins, read
+   * run-global as `CallContext.buildConstraintsByFile`.
+   *
+   * Persisted because the twins and their callers are different files. Editing
+   * gin's `binding/json.go` walks the caller alone; the twins `binding.go` /
+   * `binding_nomsgpack.go` are not re-read, so without their row both read as
+   * "unknown", `validate(obj)` stays ambiguous and the edge disappears until the
+   * next full run — 13 edges on gin (11 bare `validate`, 2 `binding.Default`)
+   * that a full run has and an incremental one did not. It is the file's WHOLE
+   * truth about one line, so it is a string, not a map: a re-walk replaces it.
+   *
+   * Cost: one short string on the rows of Go files that carry a constraint; a
+   * JSON key on the existing `aggregates_json` column, so no schema change.
+   * Persisted LAST, so every other row keeps its bytes.
+   */
+  buildConstraint?: string;
 }

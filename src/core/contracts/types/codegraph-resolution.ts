@@ -284,8 +284,9 @@ export interface CallContext {
    * tea-rags-mcp-e6xx). Go's resolver reads it only to break a tie between
    * same-package declarations of one name that ALL carry a build constraint,
    * preferring the one file the default build compiles. A file the run did not
-   * walk has no entry, which reads as "unknown" and keeps its twins ambiguous —
-   * the pre-channel answer.
+   * walk answers from its persisted pass-1 slice; one with no entry (a row
+   * written before the channel was persisted) reads as "unknown" and keeps its
+   * twins ambiguous — the pre-channel answer.
    */
   buildConstraintsByFile?: Readonly<Record<string, string>>;
   /**

@@ -63,7 +63,7 @@ const EXPECTED_POLICY = {
   instantiatedTypes: "batchOnly",
   ivarTypes: "batchOnly",
   classFieldCallResults: "batchOnly",
-  buildConstraintsByFile: "batchOnly",
+  buildConstraintsByFile: "hydrate",
   dispatchTables: "batchOnly",
   callbackParams: "batchOnly",
   knownTargetCallArgs: "batchOnly",
@@ -93,6 +93,9 @@ const PERSISTED_KEY_ORDER = [
   // Appended LAST (bd tea-rags-mcp-39xca.9): a row written before it keeps its
   // bytes, so only rows that carry an override are rewritten.
   "classSchemaTables",
+  // Appended LAST (bd tea-rags-mcp-e6xx): only Go files with a `//go:build`
+  // line carry it, and every other row keeps its bytes.
+  "buildConstraint",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -115,6 +118,7 @@ function everyChannelExtraction(): FileExtraction {
     classFieldTypesByClassKey: { [`${RELPATH}::Account`]: { firm: "Firm" } },
     moduleReexports: [{ exportedName: "Account", sourceModule: ".", sourceName: "Account" }],
     classSchemaTables: { Account: "billing_accounts" },
+    buildConstraint: "!nomsgpack",
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     instantiatedTypes: ["Account"],

@@ -97,12 +97,15 @@ export function selectHydratablePass1Aggregates(
 
 /**
  * Does one slice field carry a fact? Emptiness goes by shape — a list with no
- * entries and a map with no keys both say nothing — which is what keeps
- * `moduleReexports` (a LIST any Python file with a `from` import has, bd
- * tea-rags-mcp-4yvms) from adding an empty key to most rows of a Python project.
+ * entries, a map with no keys and an empty string all say nothing — which is
+ * what keeps `moduleReexports` (a LIST any Python file with a `from` import
+ * has, bd tea-rags-mcp-4yvms) from adding an empty key to most rows of a Python
+ * project. A string field is a per-file scalar (Go's `buildConstraint`, bd
+ * tea-rags-mcp-e6xx).
  */
 function carriesFacts(value: unknown): boolean {
   if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.length > 0;
   if (Array.isArray(value)) return value.length > 0;
   return typeof value === "object" && Object.keys(value).length > 0;
 }
