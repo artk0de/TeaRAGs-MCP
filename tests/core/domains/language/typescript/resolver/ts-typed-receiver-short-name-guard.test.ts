@@ -12,6 +12,7 @@ import {
   TSImportNarrowedFallbackSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { receiverBoundToProjectType } from "../../../../../../src/core/domains/language/typescript/resolver/ts-local-receiver.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -96,18 +97,20 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — typed-receiver guard (bd
     expect(strategy().attempt(FETCHER_CALL, ctx({ localBindings: bind("PostFetcher", 4) })).kind).toBe("continue");
   });
 
-  it("STILL resolves when the walker bound NO type — an untypable receiver is not this guard's case", () => {
-    expect(strategy().attempt(FETCHER_CALL, ctx())).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/lib/apiClient.ts", targetSymbolId: "request" },
-    });
+  // bd tea-rags-mcp-t5cji: a receiver the walker did NOT type is no longer
+  // committed by short-name uniqueness at all — with no checker here, the pass
+  // continues. Still not THIS guard's case, which is what each asserts first.
+  it("stays silent when the walker bound NO type — an untypable receiver is not this guard's case", () => {
+    expect(receiverBoundToProjectType(FETCHER_CALL, ctx())).toBe(false);
+    expect(strategy().attempt(FETCHER_CALL, ctx()).kind).toBe("continue");
   });
 
-  it("STILL resolves when the bound type is NOT a project symbol — no evidence about what it declares", () => {
-    expect(strategy().attempt(FETCHER_CALL, ctx({ localBindings: bind("AxiosInstance", 4) }))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/lib/apiClient.ts", targetSymbolId: "request" },
-    });
+  it("stays silent when the bound type is NOT a project symbol — no evidence about what it declares", () => {
+    const context = ctx({ localBindings: bind("AxiosInstance", 4) });
+    expect(receiverBoundToProjectType(FETCHER_CALL, context)).toBe(false);
+    // …and that absence of evidence no longer lets the unique `request` commit
+    // either (bd tea-rags-mcp-t5cji): the taxdome generated-fetcher shape.
+    expect(strategy().attempt(FETCHER_CALL, context).kind).toBe("continue");
   });
 
   it("STILL resolves a BARE call — a free call has no receiver whose type could contradict the match", () => {
@@ -118,11 +121,10 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — typed-receiver guard (bd
     });
   });
 
-  it("STILL resolves when the binding is established AFTER the call line — position-aware, not name-keyed", () => {
-    expect(strategy().attempt(FETCHER_CALL, ctx({ localBindings: bind("PostFetcher", 9) }))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/lib/apiClient.ts", targetSymbolId: "request" },
-    });
+  it("stays silent when the binding is established AFTER the call line — position-aware, not name-keyed", () => {
+    const context = ctx({ localBindings: bind("PostFetcher", 9) });
+    expect(receiverBoundToProjectType(FETCHER_CALL, context)).toBe(false);
+    expect(strategy().attempt(FETCHER_CALL, context).kind).toBe("continue");
   });
 });
 

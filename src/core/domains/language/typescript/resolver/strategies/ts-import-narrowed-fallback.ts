@@ -6,6 +6,7 @@ import { targetsExternalImport } from "../ts-external-call.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
+import { memberCandidateLacksReceiverEvidence } from "../ts-receiver-member-evidence.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 
 /**
@@ -59,7 +60,11 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
 
     const narrowed = fallback.filter((def) => importedFiles.has(def.relPath));
     const narrowedHit = pickSingleCandidate(narrowed, this.cfg.mode);
-    if (narrowedHit) return resolved({ targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId });
-    return CONTINUE;
+    if (!narrowedHit) return CONTINUE;
+    // Narrowing by imports is still a decision by NAME for a receiver the walker
+    // did not type — the checker must agree (bd tea-rags-mcp-t5cji). The
+    // walker-typed interface receiver this pass exists to recover is exempt.
+    if (memberCandidateLacksReceiverEvidence(call, ctx, this.programCache, narrowedHit)) return CONTINUE;
+    return resolved({ targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId });
   }
 }

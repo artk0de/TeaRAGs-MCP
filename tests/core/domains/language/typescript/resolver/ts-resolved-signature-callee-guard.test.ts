@@ -203,12 +203,19 @@ describe("resolved-signature callee guard (bd tea-rags-mcp-6o7bi)", () => {
     expect(resolver.targetsExternalImport(RE_EXPORTED_SANITIZE, reExportCtx())).toBe(true);
   });
 
-  it("STILL resolves for a project class extending a package base class (the otm6n recall guard)", () => {
+  it("leaves a project class extending a package base class to the receiver-typed passes (the otm6n recall guard)", () => {
     writeExtendsPackageBaseFixture(repoRoot);
-    expect(strategy().attempt(PROJECT_SUBCLASS_EMIT, subclassCtx())).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/bus.ts", targetSymbolId: "Bus#emit" },
-    });
+    // This guard stays silent (the next case); the name pass declines on its own
+    // because the checker declares `emit` in the package, not in bus.ts (bd
+    // tea-rags-mcp-t5cji). The whole chain still emits the edge through the
+    // receiver's inferred type.
+    expect(strategy().attempt(PROJECT_SUBCLASS_EMIT, subclassCtx()).kind).toBe("continue");
+    expect(
+      new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot).resolve(
+        PROJECT_SUBCLASS_EMIT,
+        subclassCtx(),
+      ),
+    ).toEqual({ targetRelPath: "src/bus.ts", targetSymbolId: "Bus#emit" });
   });
 
   it("keeps that inherited call OUT of the external bucket — its receiver is the project's", () => {

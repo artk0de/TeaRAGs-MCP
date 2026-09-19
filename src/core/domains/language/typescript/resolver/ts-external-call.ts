@@ -537,8 +537,11 @@ function receiverNamesTypeLevelOperator(typeName: string, ctx: CallContext): boo
  *     `this.a.b.x()` is out of scope (one level only).
  *   - bare `<name>.x()` → walker-bound local type via `resolveLocalBindingType`
  *     (mirrors `TSLocalBindingSymbolResolutionStrategy`).
+ *
+ * Exported for `memberCandidateLacksReceiverEvidence`, which exempts exactly
+ * these receivers: a walker-typed receiver belongs to the typed passes.
  */
-function receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {
+export function receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {
   const receiver = call.receiver ?? "";
   if (receiver.startsWith("this.")) {
     const fieldSegment = receiver.slice("this.".length);

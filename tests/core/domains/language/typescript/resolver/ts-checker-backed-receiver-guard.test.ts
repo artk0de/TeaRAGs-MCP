@@ -15,6 +15,7 @@ import {
   TSImportNarrowedFallbackSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -290,12 +291,17 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — checker-backed receiver 
     });
   });
 
-  it("STILL resolves when no Program can be built for the caller file (nothing on disk)", () => {
-    const outcome = strategy().attempt(CALL_RESULT_MAP_SET, ctx("src/collection-registry.ts"));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/memo.ts", targetSymbolId: "CommitDiffMemo#set" },
-    });
+  // bd tea-rags-mcp-t5cji changed what these "no evidence" cases END in: a member
+  // call on a receiver nothing typed is no longer committed by short-name
+  // uniqueness, so the pass continues. What this guard owes them is unchanged —
+  // no evidence, no EXTERNAL verdict — and that is what each still asserts.
+  it("does not call it external when no Program can be built for the caller file (nothing on disk)", () => {
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    const context = ctx("src/collection-registry.ts");
+    expect(targetsExternalImport(CALL_RESULT_MAP_SET, context, tsOptions, cache)).toBe(false);
+    expect(new TSGlobalShortNameSymbolResolutionStrategy(cfg, cache).attempt(CALL_RESULT_MAP_SET, context).kind).toBe(
+      "continue",
+    );
   });
 
   it("continues for a union whose every constituent is a builtin (Map | Set)", () => {
@@ -351,7 +357,7 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — checker-backed receiver 
     ).toEqual({ kind: "resolved", target: { targetRelPath: "src/memo.ts", targetSymbolId: "CommitDiffMemo#set" } });
   });
 
-  it("STILL resolves when the PROJECT declares its own `class Map` — the name alone never decides", () => {
+  it("does not call it external when the PROJECT declares its own `class Map` — the name alone never decides", () => {
     writeSource(
       repoRoot,
       "src/own-map.ts",
@@ -370,31 +376,33 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — checker-backed receiver 
       ].join("\n"),
     );
     const call: CallRef = { callText: 'm.set("a", 1)', receiver: "m", member: "set", startLine: 9 };
-    expect(strategy().attempt(call, ctx("src/own-map.ts"))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/memo.ts", targetSymbolId: "CommitDiffMemo#set" },
-    });
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(call, ctx("src/own-map.ts"), tsOptions, cache)).toBe(false);
+    // The checker places `set` on the project's own `Map` in own-map.ts, not on
+    // the name-picked CommitDiffMemo, so the pass declines it (t5cji).
+    expect(new TSGlobalShortNameSymbolResolutionStrategy(cfg, cache).attempt(call, ctx("src/own-map.ts")).kind).toBe(
+      "continue",
+    );
   });
 
-  it("STILL resolves when the recorded line holds no such call — a node it cannot locate decides nothing", () => {
+  it("does not call it external when the recorded line holds no such call — a node it cannot locate decides nothing", () => {
     writeCallResultMapFixture(repoRoot);
     const call: CallRef = { ...CALL_RESULT_MAP_SET, startLine: 8 };
-    expect(strategy().attempt(call, ctx("src/collection-registry.ts"))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/memo.ts", targetSymbolId: "CommitDiffMemo#set" },
-    });
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(call, ctx("src/collection-registry.ts"), tsOptions, cache)).toBe(false);
+    expect(
+      new TSGlobalShortNameSymbolResolutionStrategy(cfg, cache).attempt(call, ctx("src/collection-registry.ts")).kind,
+    ).toBe("continue");
   });
 
-  it("behaves exactly as before when no Program cache is injected (the disabled state)", () => {
+  it("does not call it external when no Program cache is injected (the disabled state)", () => {
     writeCallResultMapFixture(repoRoot);
+    expect(targetsExternalImport(CALL_RESULT_MAP_SET, ctx("src/collection-registry.ts"), tsOptions, null)).toBe(false);
     const outcome = new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(
       CALL_RESULT_MAP_SET,
       ctx("src/collection-registry.ts"),
     );
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/memo.ts", targetSymbolId: "CommitDiffMemo#set" },
-    });
+    expect(outcome.kind).toBe("continue");
   });
 });
 
@@ -490,10 +498,8 @@ describe("TSCallResolver — checker-backed receiver guard end to end (bd tea-ra
     try {
       const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
       expect(resolver.programCache).toBeNull();
-      expect(resolver.resolve(CALL_RESULT_MAP_SET, ctx("src/collection-registry.ts"))).toEqual({
-        targetRelPath: "src/memo.ts",
-        targetSymbolId: "CommitDiffMemo#set",
-      });
+      // No checker, no evidence for a member call by name (t5cji): no edge.
+      expect(resolver.resolve(CALL_RESULT_MAP_SET, ctx("src/collection-registry.ts"))).toBeNull();
       expect(resolver.targetsExternalImport(CALL_RESULT_MAP_SET, ctx("src/collection-registry.ts"))).toBe(false);
     } finally {
       if (previous === undefined) delete process.env.CODEGRAPH_TS_TYPECHECKER;

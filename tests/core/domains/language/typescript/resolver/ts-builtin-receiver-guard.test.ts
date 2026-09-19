@@ -11,6 +11,7 @@ import {
   TSImportNarrowedFallbackSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -130,14 +131,15 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — builtin-receiver guard (
     });
   });
 
-  it("STILL resolves `get`/`set` on an untyped receiver — deliberately outside the vocabulary (cfg.set(k, v))", () => {
+  // bd tea-rags-mcp-t5cji: an untyped receiver's member is no longer committed
+  // by short-name uniqueness at all, so these END in `continue` now. What the
+  // vocabulary owes them is unchanged — it does not claim them — and that is
+  // what each asserts first.
+  it("does not claim `get`/`set` on an untyped receiver — deliberately outside the vocabulary (cfg.set(k, v))", () => {
     const call: CallRef = { callText: "cfg.set(k, v)", receiver: "cfg", member: "set", startLine: 9 };
     const symbolTable = tableWith(["src/config.ts", [sym("Config#set", "set", "src/config.ts", ["Config"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/config.ts", targetSymbolId: "Config#set" },
-    });
+    expect(targetsExternalImport(call, ctx({ symbolTable }), cfg.tsOptions, null)).toBe(false);
+    expect(strat.attempt(call, ctx({ symbolTable })).kind).toBe("continue");
   });
 
   it("continues for a receiver bound to an external package import (fs.readFile(p) via node:fs)", () => {
@@ -160,14 +162,11 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — builtin-receiver guard (
     });
   });
 
-  it("STILL resolves an untyped receiver whose member is NOT builtin vocabulary (svc.handle(req))", () => {
+  it("does not claim an untyped receiver whose member is NOT builtin vocabulary (svc.handle(req))", () => {
     const call: CallRef = { callText: "svc.handle(req)", receiver: "svc", member: "handle", startLine: 9 };
     const symbolTable = tableWith(["src/svc.ts", [sym("Service#handle", "handle", "src/svc.ts", ["Service"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/svc.ts", targetSymbolId: "Service#handle" },
-    });
+    expect(targetsExternalImport(call, ctx({ symbolTable }), cfg.tsOptions, null)).toBe(false);
+    expect(strat.attempt(call, ctx({ symbolTable })).kind).toBe("continue");
   });
 
   it("STILL resolves a free call sharing a builtin member name (push(x) with no receiver)", () => {
@@ -226,8 +225,19 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — builtin-receiver 
     const symbolTable = tableWith(
       ["src/impl-a.ts", [sym("ImplA#handle", "handle", "src/impl-a.ts", ["ImplA"])]],
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
+      ["src/handler.ts", [sym("Handler", "Handler", "src/handler.ts", [])]],
     );
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./impl-a.js" }] }));
+    // `impl: Handler` — the receiver typed by a project interface that this pass
+    // recovers. The binding is what makes it one: an UNTYPED receiver is no
+    // longer narrowed by name (bd tea-rags-mcp-t5cji).
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable,
+        imports: [{ importText: "./impl-a.js" }],
+        localBindings: { impl: [{ line: 2, type: "Handler" }] },
+      }),
+    );
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/impl-a.ts", targetSymbolId: "ImplA#handle" },

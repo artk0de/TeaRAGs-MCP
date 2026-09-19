@@ -14,6 +14,7 @@ import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { importBoundProjectFile } from "../../../../../../src/core/domains/language/typescript/resolver/ts-import-bound-callee.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -104,7 +105,11 @@ function writeBarrelReexportFixture(repoRoot: string): void {
     UNRELATED_HELPERS,
     [`export function getRenderableContent(column: string): string {`, `  return column;`, `}`, ``].join("\n"),
   );
-  writeSource(repoRoot, BARREL, [`export { getRenderableContent } from "./helpers/getRenderableContent.js";`, ``].join("\n"));
+  writeSource(
+    repoRoot,
+    BARREL,
+    [`export { getRenderableContent } from "./helpers/getRenderableContent.js";`, ``].join("\n"),
+  );
   writeSource(
     repoRoot,
     CALLER,
@@ -174,7 +179,10 @@ describe("globalShortName — the caller's import binds the bare callee (bd tea-
     writeSameNameCoincidenceFixture(repoRoot);
     expect(
       strategy().attempt(CALL, ctx("./styles.css", { imports: [{ importText: "./styles.css", startLine: 1 }] })),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: UNRELATED_HELPERS, targetSymbolId: "getRenderableContent" } });
+    ).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: UNRELATED_HELPERS, targetSymbolId: "getRenderableContent" },
+    });
   });
 
   it("STILL resolves when the checker cannot answer — the disagreement alone is not evidence", () => {
@@ -190,14 +198,13 @@ describe("globalShortName — the caller's import binds the bare callee (bd tea-
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile(UNRELATED_HELPERS, [sym("Helpers#render", "render", UNRELATED_HELPERS)]);
     const memberCall: CallRef = { callText: "helpers.render(c)", receiver: "helpers", member: "render", startLine: 4 };
-    expect(
-      strategy().attempt(
-        memberCall,
-        ctx("../shared/tableHelpers.js", {
-          symbolTable: table,
-          imports: [{ importText: "../shared/tableHelpers.js", startLine: 1, importedNames: ["render"] }],
-        }),
-      ),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: UNRELATED_HELPERS, targetSymbolId: "Helpers#render" } });
+    const context = ctx("../shared/tableHelpers.js", {
+      symbolTable: table,
+      imports: [{ importText: "../shared/tableHelpers.js", startLine: 1, importedNames: ["render"] }],
+    });
+    expect(importBoundProjectFile(memberCall, context, tsOptions)).toBeNull();
+    // The member call itself is no longer committed by name: nothing typed
+    // `helpers`, so the pass continues (bd tea-rags-mcp-t5cji).
+    expect(strategy().attempt(memberCall, context).kind).toBe("continue");
   });
 });

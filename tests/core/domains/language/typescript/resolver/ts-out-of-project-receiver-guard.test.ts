@@ -14,6 +14,7 @@ import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -340,29 +341,42 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — out-of-project receiver 
     expect(strategy().attempt(RESPONSE_TEXT, ctx("src/http.ts")).kind).toBe("continue");
   });
 
-  it("STILL resolves for a project class extending a package base class (bus.emit)", () => {
+  // bd tea-rags-mcp-t5cji: `globalShortName` commits a member call on a receiver
+  // the walker did not type only when the checker places the member in the
+  // candidate's file. What THIS guard owes each recall case below is unchanged —
+  // no EXTERNAL verdict for a call that reaches (or may reach) project code —
+  // and that is what each asserts first.
+  it("does not call a project class extending a package base class external (bus.emit)", () => {
     writeExtendsPackageBaseFixture(repoRoot);
+    const context = ctx("src/bus-caller.ts", {
+      imports: [{ importText: "./bus.js", startLine: 1, importedNames: ["makeBus"] }],
+    });
     expect(
-      strategy().attempt(
-        PROJECT_SUBCLASS_EMIT,
-        ctx("src/bus-caller.ts", { imports: [{ importText: "./bus.js", startLine: 1, importedNames: ["makeBus"] }] }),
-      ),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: "src/bus.ts", targetSymbolId: "Bus#emit" } });
+      targetsExternalImport(PROJECT_SUBCLASS_EMIT, context, tsOptions, new TSProgramCache({ repoRoot, tsOptions })),
+    ).toBe(false);
+    // `emit` is DECLARED in the package, so the name pass declines; the edge is
+    // the receiver-typed pass's to emit (the end-to-end case below).
+    expect(strategy().attempt(PROJECT_SUBCLASS_EMIT, context).kind).toBe("continue");
   });
 
   it("STILL resolves for a project type re-exported through a barrel (store.put)", () => {
     writeBarrelReExportFixture(repoRoot);
+    // The table names the file `put` is really declared in, which is what the
+    // checker's answer is compared against.
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/inner/store.ts", [sym("Store#put", "put", "src/inner/store.ts", ["Store"])]);
     expect(
       strategy().attempt(
         BARREL_STORE_PUT,
         ctx("src/store-caller.ts", {
+          symbolTable,
           imports: [{ importText: "./inner/index.js", startLine: 1, importedNames: ["makeStore"] }],
         }),
       ),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: "src/store.ts", targetSymbolId: "Store#put" } });
+    ).toEqual({ kind: "resolved", target: { targetRelPath: "src/inner/store.ts", targetSymbolId: "Store#put" } });
   });
 
-  it("STILL resolves when the receiver is untyped `any` — no symbol is no evidence", () => {
+  it("does not call an untyped `any` receiver external — no symbol is no evidence", () => {
     writeSource(
       repoRoot,
       "src/untyped.ts",
@@ -370,17 +384,18 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — out-of-project receiver 
         "\n",
       ),
     );
-    expect(strategy().attempt(BARREL_STORE_PUT, ctx("src/untyped.ts"))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/store.ts", targetSymbolId: "Store#put" },
-    });
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(BARREL_STORE_PUT, ctx("src/untyped.ts"), tsOptions, cache)).toBe(false);
+    // …and no evidence for the unique `put` either: the name pass declines.
+    expect(strategy().attempt(BARREL_STORE_PUT, ctx("src/untyped.ts")).kind).toBe("continue");
   });
 
-  it("behaves exactly as before when no Program cache is injected (the disabled state)", () => {
+  it("does not call it external when no Program cache is injected (the disabled state)", () => {
     writeExpressFixture(repoRoot);
+    expect(targetsExternalImport(EXPRESS_APP_SET, ctx("src/server.ts"), tsOptions, null)).toBe(false);
     expect(
-      new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(EXPRESS_APP_SET, ctx("src/server.ts")),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: "src/memo.ts", targetSymbolId: "CommitDiffMemo#set" } });
+      new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(EXPRESS_APP_SET, ctx("src/server.ts")).kind,
+    ).toBe("continue");
   });
 });
 
@@ -431,10 +446,8 @@ describe("TSCallResolver — out-of-project receiver guard end to end (bd tea-ra
     try {
       const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
       expect(resolver.programCache).toBeNull();
-      expect(resolver.resolve(EXPRESS_APP_SET, ctx("src/server.ts"))).toEqual({
-        targetRelPath: "src/memo.ts",
-        targetSymbolId: "CommitDiffMemo#set",
-      });
+      // No checker, no evidence for a member call by name (t5cji): no edge.
+      expect(resolver.resolve(EXPRESS_APP_SET, ctx("src/server.ts"))).toBeNull();
       expect(resolver.targetsExternalImport(EXPRESS_APP_SET, ctx("src/server.ts"))).toBe(false);
     } finally {
       if (previous === undefined) delete process.env.CODEGRAPH_TS_TYPECHECKER;

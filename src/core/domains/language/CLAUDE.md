@@ -372,6 +372,17 @@
   their own walker bump. Why: a chain-only filter turns every former
   cross-language edge into a charged miss, which reads as a recall regression
   the resolver cannot fix.
+- **A TypeScript member call is never committed by a unique short name alone.**
+  `globalShortName` and `importNarrowedFallback` accept a candidate for a
+  receiver the walker did not type only when the checker resolves the member to
+  the candidate's file, or to a supertype member its owner descends from
+  (`memberCandidateLacksReceiverEvidence`, bd tea-rags-mcp-t5cji). No Program —
+  `CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff` — means no
+  evidence, so those calls decline, the way JavaScript's tail declines every
+  receiver-bearing call (bd tea-rags-mcp-hwwtw). Why: once Ruby namesakes
+  stopped making `title` / `filter` / `request` ambiguous, taxdome committed ~89
+  object-literal, `any` and generated-class calls to the lone TS symbol of that
+  name.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

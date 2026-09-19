@@ -15,6 +15,7 @@ import {
   TSImportNarrowedFallbackSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { receiverIsUnpinnableLocalValueBinding } from "../../../../../../src/core/domains/language/typescript/resolver/ts-local-receiver.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -301,33 +302,37 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — local-receiver guard (bd
     });
   });
 
-  it("STILL resolves when no Program can be built for the caller file (nothing on disk)", () => {
-    expect(strategy().attempt(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/attributor.ts", targetSymbolId: "FontFamilyParchmentStyleAttributor#remove" },
-    });
+  // bd tea-rags-mcp-t5cji changed what these "no evidence" cases END in: a member
+  // call on a receiver nothing typed is no longer committed by short-name
+  // uniqueness, so the pass continues. What THIS guard owes them is unchanged —
+  // no evidence, no verdict — and that is what each still asserts.
+  it("stays silent when no Program can be built for the caller file (nothing on disk)", () => {
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(receiverIsUnpinnableLocalValueBinding(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"), cache)).toBe(
+      false,
+    );
+    expect(strategy().attempt(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts")).kind).toBe("continue");
   });
 
-  it("STILL resolves when the recorded line holds no such call — a node it cannot locate decides nothing", () => {
+  it("stays silent when the recorded line holds no such call — a node it cannot locate decides nothing", () => {
     writeUntypedParameterReceiverFixture(repoRoot);
     const call: CallRef = { ...UNTYPED_PARAMETER_RECEIVER_CALL, startLine: 1 };
-    expect(strategy().attempt(call, ctx("src/stage-row.ts"))).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/attributor.ts", targetSymbolId: "FontFamilyParchmentStyleAttributor#remove" },
-    });
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(receiverIsUnpinnableLocalValueBinding(call, ctx("src/stage-row.ts"), cache)).toBe(false);
+    expect(strategy().attempt(call, ctx("src/stage-row.ts")).kind).toBe("continue");
   });
 
-  it("behaves exactly as before when no Program cache is injected (the disabled state)", () => {
+  it("stays silent when no Program cache is injected (the disabled state)", () => {
     writeUntypedParameterReceiverFixture(repoRoot);
+    expect(receiverIsUnpinnableLocalValueBinding(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"), null)).toBe(
+      false,
+    );
     expect(
       new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(
         UNTYPED_PARAMETER_RECEIVER_CALL,
         ctx("src/stage-row.ts"),
-      ),
-    ).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/attributor.ts", targetSymbolId: "FontFamilyParchmentStyleAttributor#remove" },
-    });
+      ).kind,
+    ).toBe("continue");
   });
 });
 
@@ -435,10 +440,11 @@ describe("TSCallResolver — local-receiver guard end to end (bd tea-rags-mcp-z0
     try {
       const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
       expect(resolver.programCache).toBeNull();
-      expect(resolver.resolve(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"))).toEqual({
-        targetRelPath: "src/attributor.ts",
-        targetSymbolId: "FontFamilyParchmentStyleAttributor#remove",
-      });
+      expect(
+        receiverIsUnpinnableLocalValueBinding(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"), null),
+      ).toBe(false);
+      // No checker, no evidence for a member call by name (t5cji): no edge.
+      expect(resolver.resolve(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"))).toBeNull();
     } finally {
       if (previous === undefined) delete process.env.CODEGRAPH_TS_TYPECHECKER;
       else process.env.CODEGRAPH_TS_TYPECHECKER = previous;

@@ -14,6 +14,7 @@ import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -371,11 +372,16 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
     ).toBe("continue");
   });
 
-  it("resolves an UNBOUND annotation with no Program cache — only the checker could have placed it", () => {
+  it("does not call an UNBOUND annotation external with no Program cache — only the checker could have placed it", () => {
     writeAnnotatedResponseFixture(repoRoot);
+    expect(targetsExternalImport(ANNOTATED_RESPONSE_TEXT, annotatedResponseCtx(), tsOptions, null)).toBe(false);
+    // With no checker there is no evidence for the unique `text` either, and
+    // `Response` is no type the project declares: the name pass declines (bd
+    // tea-rags-mcp-t5cji).
     expect(
-      new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(ANNOTATED_RESPONSE_TEXT, annotatedResponseCtx()),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: "src/render.ts", targetSymbolId: "Renderer#text" } });
+      new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(ANNOTATED_RESPONSE_TEXT, annotatedResponseCtx())
+        .kind,
+    ).toBe("continue");
   });
 });
 
@@ -429,11 +435,9 @@ describe("TSCallResolver — annotated out-of-project receiver end to end (bd te
       expect(resolver.resolve(ANNOTATED_NODE_CHILD, annotatedNodeCtx())).toBeNull();
       expect(resolver.targetsExternalImport(ANNOTATED_NODE_CHILD, annotatedNodeCtx())).toBe(true);
       // Unbound annotation: nothing but the checker could place it, so the
-      // disabled state resolves exactly as it always did.
-      expect(resolver.resolve(ANNOTATED_RESPONSE_TEXT, annotatedResponseCtx())).toEqual({
-        targetRelPath: "src/render.ts",
-        targetSymbolId: "Renderer#text",
-      });
+      // disabled state does not call it external — and, with no checker to
+      // vouch for the unique `text`, emits no edge either (bd tea-rags-mcp-t5cji).
+      expect(resolver.resolve(ANNOTATED_RESPONSE_TEXT, annotatedResponseCtx())).toBeNull();
       expect(resolver.targetsExternalImport(ANNOTATED_RESPONSE_TEXT, annotatedResponseCtx())).toBe(false);
     } finally {
       if (previous === undefined) delete process.env.CODEGRAPH_TS_TYPECHECKER;

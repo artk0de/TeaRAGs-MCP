@@ -8,6 +8,7 @@ import { interfaceReceiverExcludesCandidate } from "../ts-interface-receiver.js"
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import { receiverBoundToProjectType, receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
+import { memberCandidateLacksReceiverEvidence } from "../ts-receiver-member-evidence.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -69,6 +70,13 @@ import type { ResolverConfig } from "./shared.js";
  * {@link interfaceReceiverExcludesCandidate} for the rule and for why a
  * structural implementer with no `implements` clause is not accepted on name.
  *
+ * Any OTHER receiver the walker did not type needs the checker's agreement,
+ * not just a unique name (bd tea-rags-mcp-t5cji): see
+ * {@link memberCandidateLacksReceiverEvidence}. Once the family filter stopped
+ * Ruby namesakes from making `title` / `filter` / `request` ambiguous, this
+ * pass committed `COPY.title(...)` on an object literal to the project's lone
+ * `Message#title`. A bare call is exempt — its name IS the callee.
+ *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
@@ -94,6 +102,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     if (!hit) return CONTINUE;
     // After the pick, so the checker is asked only when a match would commit.
     if (interfaceReceiverExcludesCandidate(call, ctx, this.programCache, hit)) return CONTINUE;
+    if (memberCandidateLacksReceiverEvidence(call, ctx, this.programCache, hit)) return CONTINUE;
     if (this.importContradictsCandidate(call, ctx, hit.relPath)) return CONTINUE;
     return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
   }

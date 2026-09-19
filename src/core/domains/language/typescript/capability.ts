@@ -40,6 +40,9 @@ export const capability: LanguageCapability = {
   // restricted to TypeScript / JavaScript files, so no edge lands on a Ruby or
   // Python namesake, a foreign namesake no longer suppresses a TS answer (super,
   // cone, barrel hop, cardinality gates), and a bare call whose only namesake is
-  // foreign counts as `noInProjectDef`.
+  // foreign counts as `noInProjectDef`. And (same bump) a member call on a
+  // receiver the walker did not type is committed by `globalShortName` /
+  // `importNarrowedFallback` only when the checker resolves the member to the
+  // candidate — never by a unique short name alone.
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };
