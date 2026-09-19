@@ -253,11 +253,20 @@ export class QdrantManager {
     return this.points.countPoints(collectionName, filter);
   }
 
+  /** One point, or `null` for absent OR unreadable — only a lost connection throws. */
   async getPoint(
     collectionName: string,
     id: string | number,
   ): Promise<{ id: string | number; payload?: Record<string, unknown> } | null> {
     return this.points.getPoint(collectionName, id);
+  }
+
+  /** {@link getPoint} where `null` means only "absent": every failed read throws an `InfraError`. */
+  async getPointOrThrow(
+    collectionName: string,
+    id: string | number,
+  ): Promise<{ id: string | number; payload?: Record<string, unknown> } | null> {
+    return this.points.getPointOrThrow(collectionName, id);
   }
 
   async addPoints(

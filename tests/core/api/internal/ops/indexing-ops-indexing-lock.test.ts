@@ -72,14 +72,15 @@ describe("IndexingOps — claims the collection with an exclusive indexing lock"
   }
 
   function makeDeps(lock: CollectionIndexingLock, markers: MarkerPayloads = {}): IndexingOpsDeps {
+    const readPoint = async (collection: string) =>
+      Promise.resolve(markers[collection] ? { payload: markers[collection] } : null);
     return {
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(true),
         aliases: { listAliases: vi.fn().mockResolvedValue([]) },
         listCollections: vi.fn().mockResolvedValue([]),
-        getPoint: vi.fn(async (collection: string) =>
-          Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
-        ),
+        getPoint: vi.fn(readPoint),
+        getPointOrThrow: vi.fn(readPoint),
       } as never,
       embeddings: {
         embed: vi.fn().mockResolvedValue([0]),

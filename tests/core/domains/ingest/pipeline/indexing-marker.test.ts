@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import { WorktreeSeedMarkerUnreadableError } from "../../../../../src/core/domains/ingest/errors.js";
 import {
@@ -222,31 +223,59 @@ describe("storeIndexingMarker", () => {
 });
 
 describe("pending worktree seed on the marker (bd k8gac)", () => {
+  /**
+   * A real `QdrantManager` whose REST client answers the marker read with
+   * `retrieve` — so the read goes through the adapter's own failure handling,
+   * which is where a failed read used to turn into "no marker" (F3-1).
+   */
+  function qdrantRetrieving(retrieve: () => Promise<unknown>): QdrantManager {
+    const manager = new QdrantManager("http://127.0.0.1:6333");
+    (manager as unknown as { client: unknown }).client = { retrieve: vi.fn(retrieve) };
+    return manager;
+  }
+
+  const markerWith = (payload: Record<string, unknown>) => async () => [{ id: INDEXING_METADATA_ID, payload }];
+
   it("answers undefined when the marker cannot be read — the next run resumes instead", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const qdrant = { getPoint: vi.fn().mockRejectedValue(new Error("qdrant down")) };
-    await expect(readWorktreeSeedPending(qdrant as never, "col")).resolves.toBeUndefined();
+    const qdrant = qdrantRetrieving(async () => Promise.reject(new Error("qdrant down")));
+    await expect(readWorktreeSeedPending(qdrant, "col")).resolves.toBeUndefined();
   });
 
-  it("the strict read throws a typed error on a failed read — unknown is not the same answer as none", async () => {
-    const cause = new Error("qdrant down");
-    const qdrant = { getPoint: vi.fn().mockRejectedValue(cause) };
+  const failedReads: { label: string; make: () => Error }[] = [
+    { label: "an HTTP 500", make: () => Object.assign(new Error("Internal Server Error"), { status: 500 }) },
+    { label: "an HTTP 503", make: () => Object.assign(new Error("Service Unavailable"), { status: 503 }) },
+    {
+      label: "a request timeout",
+      make: () => Object.assign(new Error("The operation was aborted"), { name: "AbortError" }),
+    },
+    { label: "a client error with no status", make: () => new Error("qdrant down") },
+  ];
 
-    const read = readWorktreeSeedPendingOrThrow(qdrant as never, "col");
+  for (const { label, make } of failedReads) {
+    it(`the strict read throws a typed error on ${label} — unknown is not the same answer as none`, async () => {
+      const raw = make();
+      const qdrant = qdrantRetrieving(async () => Promise.reject(raw));
 
-    await expect(read).rejects.toBeInstanceOf(WorktreeSeedMarkerUnreadableError);
-    await expect(read).rejects.toMatchObject({ code: "INGEST_SEED_MARKER_UNREADABLE", cause });
-  });
+      const read = readWorktreeSeedPendingOrThrow(qdrant, "col");
+
+      await expect(read).rejects.toBeInstanceOf(WorktreeSeedMarkerUnreadableError);
+      await expect(read).rejects.toMatchObject({
+        code: "INGEST_SEED_MARKER_UNREADABLE",
+        cause: expect.objectContaining({ cause: raw }),
+      });
+    });
+  }
 
   it("the strict read answers the pending seed, or undefined when the marker records none", async () => {
     const pending = { seededAt: "2026-09-01T00:00:00Z", languageVersions: { typescript: { walker: 2 } } };
-    const withSeed = { getPoint: vi.fn().mockResolvedValue({ id: 1, payload: { worktreeSeedPending: pending } }) };
-    const withoutSeed = { getPoint: vi.fn().mockResolvedValue({ id: 1, payload: { indexingComplete: true } }) };
-    const noMarker = { getPoint: vi.fn().mockResolvedValue(null) };
+    const withSeed = qdrantRetrieving(markerWith({ worktreeSeedPending: pending }));
+    const withoutSeed = qdrantRetrieving(markerWith({ indexingComplete: true }));
+    const noMarker = qdrantRetrieving(async () => []);
 
-    await expect(readWorktreeSeedPendingOrThrow(withSeed as never, "col")).resolves.toEqual(pending);
-    await expect(readWorktreeSeedPendingOrThrow(withoutSeed as never, "col")).resolves.toBeUndefined();
-    await expect(readWorktreeSeedPendingOrThrow(noMarker as never, "col")).resolves.toBeUndefined();
+    await expect(readWorktreeSeedPendingOrThrow(withSeed, "col")).resolves.toEqual(pending);
+    await expect(readWorktreeSeedPendingOrThrow(withoutSeed, "col")).resolves.toBeUndefined();
+    await expect(readWorktreeSeedPendingOrThrow(noMarker, "col")).resolves.toBeUndefined();
   });
 
   it("clears only the pending key on the marker point, and never throws when that fails", async () => {

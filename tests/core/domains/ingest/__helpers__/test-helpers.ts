@@ -261,6 +261,14 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return point ? { id: point.id, payload: point.payload } : null;
   }
 
+  /** An in-memory read never fails, so the strict read answers exactly what {@link getPoint} does. */
+  async getPointOrThrow(
+    collectionName: string,
+    id: string | number,
+  ): Promise<{ id: string | number; payload?: Record<string, any> } | null> {
+    return this.getPoint(collectionName, id);
+  }
+
   async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
     const resolved = this.resolve(collectionName);
     const points = this.points.get(resolved) || [];

@@ -18,6 +18,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { QdrantOperationError } from "../../../../../src/core/adapters/qdrant/errors.js";
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
 import type {
   WorktreeSeedAttempt,
@@ -76,6 +77,11 @@ function sharedStores() {
     for (const [language, versions] of Object.entries(stamp)) merged[language] = { ...merged[language], ...versions };
     registry.set(name, merged);
   });
+  /** Both point reads answer from the same store, as the adapter's do; they differ only in how they fail. */
+  const readPoint = async (name: string, id: string | number) => {
+    const payload = id === INDEXING_METADATA_ID ? markers.get(name) : undefined;
+    return Promise.resolve(payload ? { id, payload } : null);
+  };
   const qdrant = {
     isEmbedded: true,
     url: "http://127.0.0.1:6333",
@@ -84,10 +90,8 @@ function sharedStores() {
       listAliases: vi.fn(async () => [...collections].map((a) => ({ aliasName: a, collectionName: `${a}_v1` }))),
     },
     listCollections: vi.fn(async () => []),
-    getPoint: vi.fn(async (name: string, id: string | number) => {
-      const payload = id === INDEXING_METADATA_ID ? markers.get(name) : undefined;
-      return payload ? { id, payload } : null;
-    }),
+    getPoint: vi.fn(readPoint),
+    getPointOrThrow: vi.fn(readPoint),
     setPayload: vi.fn(async (name: string, payload: Record<string, unknown>, options: { points?: unknown[] }) => {
       if (!options.points?.includes(INDEXING_METADATA_ID)) return;
       markers.set(name, { ...markers.get(name), ...payload });
@@ -381,19 +385,26 @@ describe("IndexingOps — a --force-enrichments recompute over a pending seed", 
   /**
    * The marker read fails once the sync leg is done — the read a pending seed is
    * found by. Anything read before it (the claim's in-flight check) still works.
+   * Each read fails the way the adapter's does on a Qdrant timeout: the lenient
+   * `getPoint` answers `null`, the strict `getPointOrThrow` throws a typed error.
    */
   function failMarkerReadsAfterSync(stores: Stores): {
     restore: () => void;
     reindexChanges: () => Promise<ChangeStats>;
   } {
-    const read = stores.qdrant.getPoint.getMockImplementation();
+    const lenient = stores.qdrant.getPoint.getMockImplementation();
+    const strict = stores.qdrant.getPointOrThrow.getMockImplementation();
     return {
       reindexChanges: async () => {
-        stores.qdrant.getPoint.mockImplementation(async () => Promise.reject(new Error("qdrant timeout")));
+        stores.qdrant.getPoint.mockImplementation(async () => Promise.resolve(null));
+        stores.qdrant.getPointOrThrow.mockImplementation(async () =>
+          Promise.reject(new QdrantOperationError("getPoint", 'collection "code_wt": qdrant timeout')),
+        );
         return Promise.resolve(changeStats);
       },
       restore: () => {
-        if (read) stores.qdrant.getPoint.mockImplementation(read);
+        if (lenient) stores.qdrant.getPoint.mockImplementation(lenient);
+        if (strict) stores.qdrant.getPointOrThrow.mockImplementation(strict);
       },
     };
   }

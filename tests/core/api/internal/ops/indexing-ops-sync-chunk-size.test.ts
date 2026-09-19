@@ -38,6 +38,7 @@ function makeDeps(): IndexingOpsDeps {
       collectionExists: vi.fn().mockResolvedValue(true),
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
       getPoint: vi.fn().mockResolvedValue(null),
+      getPointOrThrow: vi.fn().mockResolvedValue(null),
       setPayload: vi.fn().mockResolvedValue(undefined),
     } as never,
     embeddings: {

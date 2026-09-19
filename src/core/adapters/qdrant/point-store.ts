@@ -24,6 +24,7 @@
 
 import { createHash } from "node:crypto";
 
+import { InfraError } from "../errors.js";
 import type { QdrantConnection } from "./connection.js";
 import {
   isVectorDimensionRejection,
@@ -91,30 +92,52 @@ export class QdrantPointStore {
     }
   }
 
+  /**
+   * One point by ID, or `null` — which here means absent OR unreadable: every
+   * failure but a lost connection answers `null`, the daemon's starting and
+   * recovering windows included. Right for a caller whose "no point" and "could
+   * not look" lead to the same move; a caller that writes differently for the
+   * two needs {@link getPointOrThrow}.
+   */
   async getPoint(
     collectionName: string,
     id: string | number,
   ): Promise<{ id: string | number; payload?: Record<string, unknown> } | null> {
     try {
-      const normalizedId = this.normalizeId(id);
-      const points = await this.connection.call(async () =>
-        this.connection.client.retrieve(collectionName, {
-          ids: [normalizedId],
-        }),
-      );
-
-      if (points.length === 0) {
-        return null;
-      }
-
-      return {
-        id: points[0].id,
-        payload: points[0].payload || undefined,
-      };
+      return await this.getPointOrThrow(collectionName, id);
     } catch (error: unknown) {
       if (error instanceof QdrantUnavailableError) throw error;
       return null;
     }
+  }
+
+  /**
+   * One point by ID, where `null` means only that Qdrant answered and the point
+   * is not there. Every failure throws an `InfraError`: the connection's typed
+   * ones (unavailable / starting / recovering) as they are, anything the client
+   * raised — an HTTP 5xx, a request timeout — as a {@link QdrantOperationError}.
+   */
+  async getPointOrThrow(
+    collectionName: string,
+    id: string | number,
+  ): Promise<{ id: string | number; payload?: Record<string, unknown> } | null> {
+    const normalizedId = this.normalizeId(id);
+    const points = await this.connection
+      .call(async () =>
+        this.connection.client.retrieve(collectionName, {
+          ids: [normalizedId],
+        }),
+      )
+      .catch((error: unknown) => failPointRead("getPoint", collectionName, error));
+
+    if (points.length === 0) {
+      return null;
+    }
+
+    return {
+      id: points[0].id,
+      payload: points[0].payload || undefined,
+    };
   }
 
   async addPoints(
@@ -626,6 +649,22 @@ export class QdrantPointStore {
       }),
     );
   }
+}
+
+/**
+ * Fail a point-read that must not pass for absence: a typed infra failure the
+ * connection already classified is kept as it is, and anything the client raised
+ * becomes a {@link QdrantOperationError} carrying it as `cause`.
+ */
+function failPointRead(operation: string, collectionName: string, error: unknown): never {
+  if (error instanceof InfraError) throw error;
+  const errorData = error as { data?: { status?: { error?: string } }; message?: string } | undefined;
+  const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
+  throw new QdrantOperationError(
+    operation,
+    `collection "${collectionName}": ${errorMessage}`,
+    error instanceof Error ? error : undefined,
+  );
 }
 
 /**
