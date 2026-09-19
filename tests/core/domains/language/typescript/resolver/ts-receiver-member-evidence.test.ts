@@ -98,4 +98,62 @@ describe("memberCandidateLacksReceiverEvidence — the checker's declaration mus
       expect(lacks(CALL, callerCtx(), FOO_HELPER)).toBe(false);
     });
   });
+
+  describe("a declaration file beside the JavaScript it types", () => {
+    // The checker reads `legacy.d.ts`, the codegraph walks `legacy.js`: the
+    // member is declared in the one and implemented, as a symbol, in the other.
+    const PING = def("Legacy#pingLegacy", "pingLegacy", "src/legacy.js", ["Legacy"], [2, 4]);
+
+    function writeLegacyFixture(): void {
+      writeSource(repoRoot, "src/legacy.js", [
+        "export class Legacy {",
+        "  pingLegacy() {",
+        "    return 1;",
+        "  }",
+        "}",
+        "export function makeLegacy() {",
+        "  return new Legacy();",
+        "}",
+      ]);
+      writeSource(repoRoot, "src/legacy.d.ts", [
+        "export declare class Legacy {",
+        "  pingLegacy(): number;",
+        "}",
+        "export declare function makeLegacy(): Legacy;",
+      ]);
+      writeSource(repoRoot, "src/legacy-caller.ts", [
+        'import { makeLegacy } from "./legacy.js";',
+        "export function cFive(): number {",
+        "  const l = makeLegacy();",
+        "  return l.pingLegacy();",
+        "}",
+      ]);
+    }
+
+    const CALL: CallRef = { callText: "l.pingLegacy()", receiver: "l", member: "pingLegacy", startLine: 4 };
+    const callerCtx = (candidate: SymbolDefinition): CallContext => ({
+      callerFile: "src/legacy-caller.ts",
+      callerScope: ["cFive"],
+      imports: [
+        {
+          importText: "./legacy.js",
+          startLine: 1,
+          importedNames: ["makeLegacy"],
+          importedBindings: { makeLegacy: "makeLegacy" },
+        },
+      ],
+      symbolTable: tableOf(candidate),
+    });
+
+    it("lets `<stem>.d.ts` account for the member its sibling `<stem>.js` implements", () => {
+      writeLegacyFixture();
+      expect(lacks(CALL, callerCtx(PING), PING)).toBe(false);
+    });
+
+    it("does not let it account for a JavaScript file of another stem", () => {
+      writeLegacyFixture();
+      const elsewhere = def("Legacy#pingLegacy", "pingLegacy", "src/other.js", ["Legacy"], [2, 4]);
+      expect(lacks(CALL, callerCtx(elsewhere), elsewhere)).toBe(true);
+    });
+  });
 });

@@ -21,9 +21,10 @@
  * The evidence is the checker's own resolution of the property NAME at the call
  * site (`getSymbolAtLocation`), which follows unions and inheritance the way the
  * compiler does; a re-export alias it stops at is followed on to the symbol it
- * stands for ({@link calledMemberSymbol}). The candidate is accounted for when one of that
- * symbol's declarations sits in the candidate's own file, or when the member is
- * declared on a supertype — an interface, an abstract base — that the
+ * stands for ({@link calledMemberSymbol}). The candidate is accounted for when
+ * one of that symbol's declarations sits in the candidate's own file — or in the
+ * `.d.ts` beside the candidate's JavaScript ({@link declarationFileTypes}) — or
+ * when the member is declared on a supertype — an interface, an abstract base — that the
  * candidate's owner descends from in the run hierarchy (the hwwtw rule for an
  * interface receiver's implementer, kept). Anything else declines: no Program
  * (`CODEGRAPH_TS_TYPECHECKER=0`), no locatable property access, an `any` /
@@ -105,7 +106,8 @@ function calledMemberSymbol(checker: ts.TypeChecker, name: ts.MemberName): ts.Sy
 
 /**
  * The checker's declaration of the called member is the candidate's — same
- * file — or a supertype member the candidate's owner overrides or implements.
+ * file, or its sibling declaration file — or a supertype member the candidate's
+ * owner overrides or implements.
  */
 function declarationAccountsFor(
   declaration: ts.Declaration,
@@ -113,7 +115,8 @@ function declarationAccountsFor(
   ctx: CallContext,
   programCache: TSProgramCache,
 ): boolean {
-  if (programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName) === candidate.relPath) return true;
+  const declaringFile = programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
+  if (declaringFile !== null && declarationFileTypes(declaringFile, candidate.relPath)) return true;
   const declaringOwner = declarationOwnerName(declaration);
   const candidateOwner = candidate.scope.at(-1);
   if (declaringOwner === null || candidateOwner === undefined) return false;
@@ -122,4 +125,23 @@ function declarationAccountsFor(
       ?.getDescendants(declaringOwner, { transitive: true })
       .some((edge) => edge.sourceFqName === candidateOwner) ?? false
   );
+}
+
+/** `<stem>.d.ts` / `.d.mts` / `.d.cts` — a declaration file, captured by stem. */
+const DECLARATION_FILE = /^(.*)\.d\.(?:ts|mts|cts)$/u;
+
+/** The JavaScript sources a declaration file can stand beside. */
+const TYPED_JAVASCRIPT_SUFFIXES: readonly string[] = [".js", ".jsx", ".mjs", ".cjs"];
+
+/**
+ * Does a declaration in `declaringFile` speak for a symbol in `candidateFile`?
+ * The same file does, and so does a declaration file for the JavaScript beside
+ * it: with `legacy.d.ts` next to `legacy.js` the checker reads the `.d.ts` and
+ * never the `.js`, while the codegraph walks the `.js` — the only file with a
+ * body to name — so the member is declared in the one and a symbol in the other.
+ */
+function declarationFileTypes(declaringFile: string, candidateFile: string): boolean {
+  if (declaringFile === candidateFile) return true;
+  const stem = DECLARATION_FILE.exec(declaringFile)?.[1];
+  return stem !== undefined && TYPED_JAVASCRIPT_SUFFIXES.some((suffix) => candidateFile === `${stem}${suffix}`);
 }
