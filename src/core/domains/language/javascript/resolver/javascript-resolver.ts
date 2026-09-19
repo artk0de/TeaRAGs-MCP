@@ -273,7 +273,10 @@ export function mapJavascriptImportToFile(importText: string, callerFile: string
 const MODULE_SUFFIX = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
 
 function importMatchesReceiver(importText: string, receiver: string): boolean {
+  // A trailing slash names the directory (`"./utils/"` → `utils/index.js`), and
+  // its empty last segment matched no receiver (bd tea-rags-mcp-unt4v).
   const segments = importText.split("/");
+  if (segments.length > 1 && segments[segments.length - 1] === "") segments.pop();
   const last = segments[segments.length - 1] ?? "";
   // Strip extension if any so `./foo.js` matches receiver `foo`.
   const cleaned = last.replace(MODULE_SUFFIX, "");
