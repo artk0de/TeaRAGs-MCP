@@ -105,7 +105,7 @@ From current plan Task identify:
 | --------------------------- | ---------------------------------------------------------------------------------- |
 | Task explicitly names files | "Task 3: update `a.ts`, `b.ts`"                                                    |
 | Task refers to symbols      | "refactor `Class.method()`" → resolve via `mcp__tea-rags__find_symbol` to get file |
-| Task refers to a small dir  | "update all files in `chunker/hooks/ruby/`" → `Glob`                               |
+| Task refers to a small dir  | "update all files in `language/ruby/chunking/`" → `Glob`                           |
 
 Output:
 
