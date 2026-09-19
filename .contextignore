@@ -50,3 +50,13 @@ website/README/md
 website/sidebars.ts
 website/tsconfig.json
 website/docs/api/prompts.md
+
+# Plans + specs feed the doc-TOC read path (find_symbol relativePath heading TOC)
+# — re-include after docs/** catch-all. Directory re-includes must precede the
+# contents re-include (gitignore: cannot re-include under an excluded parent).
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/plans/
+!docs/superpowers/specs/
+!docs/superpowers/plans/**
+!docs/superpowers/specs/**

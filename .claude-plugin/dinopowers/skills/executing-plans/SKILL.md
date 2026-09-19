@@ -97,6 +97,15 @@ Full lifecycle (create → reindex → teardown) and cleanup-hook backstop:
 `tea-rags/rules/index-freshness.md`. Teardown runs in
 `dinopowers:finishing-a-development-branch`.
 
+## Reading the plan — doc-TOC, not wholesale Read
+
+Plan/spec/brief = doc-chunk source. Per-Task re-consult →
+`find_symbol(relativePath: "<plan>.md")` heading TOC → drill active Task section
+via `doc:<hash>`. NEVER wholesale re-Read plan mid-execution. Edited plan file →
+section hashes moved → incremental reindex (`mcp__tea-rags__index_codebase`)
+BEFORE next TOC read — files-edited-this-session staleness rule, stated for
+plans.
+
 ## Step 1 — Extract Task's file list
 
 From current plan Task identify:

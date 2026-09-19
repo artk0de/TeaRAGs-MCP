@@ -201,6 +201,13 @@ block as context. Phrase handoff as:
 Let `superpowers:writing-plans` run its standard RED-GREEN-REFACTOR plan
 authoring cycle — wrapper doesn't replace it, only grounds it.
 
+## Reading back the plan
+
+Plan/spec/brief = doc-chunk source. Re-consult draft via
+`find_symbol(relativePath: "<plan>.md")` heading TOC → drill section via
+`doc:<hash>`. NEVER wholesale re-Read. Edited plan file → hashes moved →
+incremental reindex (`mcp__tea-rags__index_codebase`) before next TOC read.
+
 ## Red Flags — STOP and restart from Step 2
 
 - "I already know which files are risky in this plan" → run Step 2 anyway;
