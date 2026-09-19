@@ -44,6 +44,9 @@ import { declarationOwnerName, findReceiverExpression } from "./strategies/ts-ty
 import { receiverTypeName } from "./ts-external-call.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
+/** What the guard reads off a short-name candidate: where it lives, whose it is, which lines it spans. */
+type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;
+
 /**
  * `true` when `call` has a receiver the walker did not type and the type
  * checker does not resolve its member to `candidate` — so committing the
@@ -61,7 +64,7 @@ export function memberCandidateLacksReceiverEvidence(
   call: CallRef,
   ctx: CallContext,
   programCache: TSProgramCache | null,
-  candidate: Pick<SymbolDefinition, "relPath" | "scope">,
+  candidate: EvidenceCandidate,
 ): boolean {
   const { receiver } = call;
   if (!receiver || receiver === "this" || receiver === "super") return false;
@@ -105,26 +108,63 @@ function calledMemberSymbol(checker: ts.TypeChecker, name: ts.MemberName): ts.Sy
 }
 
 /**
- * The checker's declaration of the called member is the candidate's — same
- * file, or its sibling declaration file — or a supertype member the candidate's
- * owner overrides or implements.
+ * The checker's declaration of the called member is the candidate's, or a
+ * supertype member the candidate's owner overrides or implements.
+ *
+ * The FILE is not enough, because a file declares more than one owner: a
+ * receiver typed by `type Ev = { stopItNow(): void }` accepted the unrelated
+ * `Panel#stopItNow` declared further down the same file. So:
+ *
+ *   - a declaration with a NAMED owner (a class, an interface) accounts for a
+ *     candidate owned by that same name in the same file — or its sibling
+ *     declaration file ({@link declarationFileTypes}) — and for one whose owner
+ *     the run hierarchy records descending from it (the hwwtw implementer rule);
+ *   - a declaration with NO named owner (a type literal, an object literal, an
+ *     anonymous class, a top-level function) accounts only for the candidate
+ *     whose own line range contains it ({@link candidateEnclosesDeclaration}).
  */
 function declarationAccountsFor(
   declaration: ts.Declaration,
-  candidate: Pick<SymbolDefinition, "relPath" | "scope">,
+  candidate: EvidenceCandidate,
   ctx: CallContext,
   programCache: TSProgramCache,
 ): boolean {
   const declaringFile = programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
-  if (declaringFile !== null && declarationFileTypes(declaringFile, candidate.relPath)) return true;
+  const sameSite = declaringFile !== null && declarationFileTypes(declaringFile, candidate.relPath);
   const declaringOwner = declarationOwnerName(declaration);
+  if (declaringOwner === null) {
+    return sameSite && candidateEnclosesDeclaration(declaration, candidate, declaringFile === candidate.relPath);
+  }
   const candidateOwner = candidate.scope.at(-1);
-  if (declaringOwner === null || candidateOwner === undefined) return false;
+  if (candidateOwner === undefined) return false;
+  if (sameSite && candidateOwner === declaringOwner) return true;
   return (
     ctx.hierarchy
       ?.getDescendants(declaringOwner, { transitive: true })
       .some((edge) => edge.sourceFqName === candidateOwner) ?? false
   );
+}
+
+/**
+ * Is an ownerless declaration the candidate's own? In the candidate's file, its
+ * line range must contain the declaration's name — the object literal it is a
+ * member of, the function it is. A candidate with no recorded range cannot show
+ * that and is declined. Across a `.d.ts` / `.js` pair lines mean nothing, so
+ * there only a top-level declaration answers, and only for a top-level
+ * candidate — `export declare function f()` for the `.js` file's `f`.
+ */
+function candidateEnclosesDeclaration(
+  declaration: ts.Declaration,
+  candidate: EvidenceCandidate,
+  sameFile: boolean,
+): boolean {
+  if (!sameFile) return ts.isSourceFile(declaration.parent) && candidate.scope.length === 0;
+  const { startLine, endLine } = candidate;
+  if (startLine === undefined || endLine === undefined) return false;
+  const sourceFile = declaration.getSourceFile();
+  const anchor = ts.getNameOfDeclaration(declaration) ?? declaration;
+  const line = sourceFile.getLineAndCharacterOfPosition(anchor.getStart(sourceFile)).line + 1;
+  return startLine <= line && line <= endLine;
 }
 
 /** `<stem>.d.ts` / `.d.mts` / `.d.cts` — a declaration file, captured by stem. */
