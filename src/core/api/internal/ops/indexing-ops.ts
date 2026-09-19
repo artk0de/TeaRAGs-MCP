@@ -14,6 +14,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
@@ -874,8 +875,9 @@ export class IndexingOps {
 
   /**
    * The two things a seed owes after its incremental run: the language-version
-   * stamp it carries (the seeding build's — see `WorktreeSeedPending`) and the
-   * git rebuild. The pending marker is cleared only once both are done.
+   * stamp it carries (the seeding build's — see `WorktreeSeedPending`; empty
+   * when a `--force-enrichments` run already paid it) and the git rebuild. The
+   * pending marker is cleared only once both are done.
    */
   private settleWorktreeSeed(
     path: string,
@@ -883,11 +885,59 @@ export class IndexingOps {
     collectionName: string,
     pending: WorktreeSeedPending,
   ): "background" | "not-applicable" {
+    this.stampWorktreeSeed(collectionName, pending);
+    this.driftReporter?.reset(collectionName);
+    return this.startSeedGitRefresh(path, absolutePath, collectionName);
+  }
+
+  /** Write the stamp a pending seed carries — nothing when it carries none (already paid, or a build without versions). */
+  private stampWorktreeSeed(collectionName: string, pending: WorktreeSeedPending): void {
     if (this.collectionRegistry && Object.keys(pending.languageVersions).length > 0) {
       this.collectionRegistry.stampLanguageVersions(collectionName, pending.languageVersions);
     }
-    this.driftReporter?.reset(collectionName);
-    return this.startSeedGitRefresh(path, absolutePath, collectionName);
+  }
+
+  /**
+   * Pay the stamp of a seed a dead process left pending, from a
+   * `--force-enrichments` run whose sync leg just completed over the clone
+   * (bd tea-rags-mcp-k8gac) — the same point in the run the incremental resume
+   * pays it at. Returns the pending seed, or `undefined` when there is none.
+   *
+   * Paid HERE, before the recompute stamps its own axes, because this is the
+   * one writer that knows both facts: a seed debt is outstanding, and a newer
+   * stamp is about to land. Left to the resume, the seed's stamp — the seeding
+   * build's versions, every axis — would be written AFTER the recompute's and
+   * roll its fresh edge axes back, so drift would demand the codegraph re-walk
+   * that was just done. The resume cannot tell which axes are newer: the
+   * registry records no per-axis provenance, and a resume that stamped only
+   * what it rebuilt (git) would never stamp at all, which is the unstamped
+   * clone the marker exists to prevent.
+   *
+   * The marker is rewritten with the stamp removed before anything newer is
+   * stamped, so a death at any later point leaves only the git debt behind.
+   */
+  private async payPendingSeedStamp(collectionName: string): Promise<WorktreeSeedPending | undefined> {
+    const pending = await readWorktreeSeedPending(this.qdrant, collectionName);
+    if (!pending) return undefined;
+    if (Object.keys(pending.languageVersions).length === 0) return pending;
+    this.stampWorktreeSeed(collectionName, pending);
+    const paid: WorktreeSeedPending = { ...pending, languageVersions: {} };
+    await markWorktreeSeedPending(this.qdrant, collectionName, paid);
+    return paid;
+  }
+
+  /**
+   * Whether a recompute rebuilt everything the seed's git debt covers: the git
+   * layer of EVERY point. A run narrowed by `languages` leaves the other
+   * languages' points on the sibling's git signals. A composition without the
+   * git provider owes no rebuild at all — the seed then settles once its stamp
+   * is paid, exactly as `startSeedGitRefresh` settles it.
+   */
+  private dischargesSeedGitDebt(selectors: readonly string[], languages: readonly string[] | undefined): boolean {
+    if (languages && languages.length > 0) return false;
+    const providers = this.enrichment.providerKeys;
+    if (!providers.includes("git")) return true;
+    return selectProviderKeys(providers, selectors).matched.includes("git");
   }
 
   /** What this run would stamp onto a collection it indexed from scratch — the seed gate's reference. */
@@ -1022,6 +1072,9 @@ export class IndexingOps {
       progressCallback,
       await this.syncChunkingOverrides(aliasName),
     );
+    // A seed a dead process left pending (bd tea-rags-mcp-k8gac): its stamp is
+    // paid now, ahead of the recompute's own — see `payPendingSeedStamp`.
+    const pendingSeed = await this.payPendingSeedStamp(aliasName);
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
       collectionName,
@@ -1037,6 +1090,11 @@ export class IndexingOps {
     // is still true. A git-only recompute touches no language layer at all.
     if (selectors.some(isCodegraphSelector)) {
       this.stampLanguageVersions(aliasName, languages, "codegraph");
+    }
+    // A git rebuild of every point is the rest of what the seed owed, so the
+    // next incremental must not redo it. Anything narrower leaves it pending.
+    if (pendingSeed && this.dischargesSeedGitDebt(selectors, languages)) {
+      await clearWorktreeSeedPending(this.qdrant, aliasName);
     }
     // Keyed by the LOGICAL name a search request resolves to, never the
     // physical target resolved above: the reporter's consumption set and the

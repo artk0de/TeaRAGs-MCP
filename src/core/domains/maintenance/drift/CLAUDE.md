@@ -5,9 +5,11 @@
 - **Who writes the stamps a monitor reads.** The registry record — `env` and
   `RegistryGitState` included — is written by `ingest/pipeline/base.ts`;
   `languageVersions` by `IndexingOps#stampLanguageVersions`
-  (`api/internal/ops/indexing-ops.ts`); `payloadFieldKeys` by
-  `infra/stats-cache.ts`. A monitor that needs a value none of them writes has
-  found a missing stamp, not a place to compute one.
+  (`api/internal/ops/indexing-ops.ts`) — and, for a collection seeded from a
+  sibling worktree, the seeding build's stamp by `IndexingOps#stampWorktreeSeed`
+  (`../worktree/CLAUDE.md`); `payloadFieldKeys` by `infra/stats-cache.ts`. A
+  monitor that needs a value none of them writes has found a missing stamp, not
+  a place to compute one.
 - **`IndexDriftReporter` owns consumption.** The two consuming checks —
   `checkAndConsume` (by path) and `checkAndConsumeByCollectionName`, both of
   them search — show a collection once per REPORT SIGNATURE per process, so a

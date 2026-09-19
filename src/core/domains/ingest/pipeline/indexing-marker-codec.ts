@@ -22,7 +22,10 @@ export interface WorktreeSeedPending {
   /**
    * The stamp the seed owes the registry: the SEEDING build's versions. A
    * later process may run another build, and stamping its versions would claim
-   * the cloned data as its own.
+   * the cloned data as its own. Empty once paid while the git rebuild is still
+   * owed — a `--force-enrichments` run pays it ahead of its own, newer stamp,
+   * so the later settlement cannot roll that stamp back — and empty from the
+   * start for a build that declares no versions.
    */
   languageVersions: Record<string, Partial<LanguageCodeVersions>>;
 }

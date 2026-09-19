@@ -55,11 +55,23 @@ const SEEDED: WorktreeSeedAttempt = {
 
 const never = async (): Promise<never> => new Promise<never>(() => undefined);
 
+/** An upgraded build: same chunk set, a newer walker — what a codegraph recompute stamps. */
+const UPGRADED_BUILD = new Map<string, LanguageCodeVersions>([
+  ["typescript", { grammar: "0.23.2", chunking: 1, walker: 3, codegraphSchema: 1 }],
+]);
+const UPGRADED_STAMP = { typescript: { grammar: "0.23.2", chunking: 1, walker: 3, codegraphSchema: 1 } };
+
 /** What outlives a process: Qdrant (collections + the marker point) and the registry. */
 function sharedStores() {
   const collections = new Set<string>();
   const markers = new Map<string, Record<string, unknown>>();
-  const stampLanguageVersions = vi.fn();
+  /** The registry's stamp per collection, merged per language AND per axis like `CollectionRegistry#stampLanguageVersions`. */
+  const registry = new Map<string, Record<string, Partial<LanguageCodeVersions>>>();
+  const stampLanguageVersions = vi.fn((name: string, stamp: Record<string, Partial<LanguageCodeVersions>>) => {
+    const merged = { ...registry.get(name) };
+    for (const [language, versions] of Object.entries(stamp)) merged[language] = { ...merged[language], ...versions };
+    registry.set(name, merged);
+  });
   const qdrant = {
     isEmbedded: true,
     url: "http://127.0.0.1:6333",
@@ -91,7 +103,7 @@ function sharedStores() {
     markers.set("code_wt", { indexingComplete: true, completedAt: "2026-09-01T00:00:00Z" });
     return Promise.resolve(SEEDED);
   });
-  return { collections, markers, stampLanguageVersions, qdrant, seed };
+  return { collections, markers, registry, stampLanguageVersions, qdrant, seed };
 }
 
 type Stores = ReturnType<typeof sharedStores>;
@@ -231,5 +243,116 @@ describe("IndexingOps — a seed left pending by a dead process is resumed", () 
 
     expect(stores.stampLanguageVersions).not.toHaveBeenCalled();
     expect(next.deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The seeding process died, and the user followed the drift hint with a
+ * `--force-enrichments` run instead of a plain incremental. The recompute is a
+ * completed sync over the clone followed by a rebuild — so it can pay what the
+ * seed owes, and must not leave behind a debt whose later settlement undoes it.
+ */
+describe("IndexingOps — a --force-enrichments recompute over a pending seed", () => {
+  /** A seeding process killed during its seeded incremental: clone + pending marker, nothing settled. */
+  async function killDuringSeededIncremental(stores: Stores): Promise<void> {
+    const killed = processOver(stores, { reindexChanges: never });
+    void killed.ops.run(TARGET);
+    await vi.waitFor(() => {
+      expect(killed.deps.reindex.reindexChanges).toHaveBeenCalledTimes(1);
+    });
+    expect(stores.markers.get("code_wt")?.worktreeSeedPending).toBeDefined();
+  }
+
+  it.each([[["git"]], [["all"]], [["git", "codegraph"]]])(
+    "recomputing git for every language (%j) settles the seed — the next incremental rebuilds nothing",
+    async (forceEnrichments) => {
+      const stores = sharedStores();
+      await killDuringSeededIncremental(stores);
+
+      const recompute = processOver(stores);
+      await recompute.ops.run(TARGET, { forceEnrichments });
+      await recompute.ops.whenEnrichmentComplete();
+
+      expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
+      expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+
+      const next = processOver(stores);
+      await next.ops.run(TARGET);
+      await next.ops.whenEnrichmentComplete();
+      expect(next.deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
+      expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
+    },
+  );
+
+  it("a git recompute narrowed to some languages pays the stamp but leaves the git rebuild owed", async () => {
+    const stores = sharedStores();
+    await killDuringSeededIncremental(stores);
+
+    const recompute = processOver(stores);
+    await recompute.ops.run(TARGET, { forceEnrichments: ["git"], languages: ["typescript"] });
+    await recompute.ops.whenEnrichmentComplete();
+
+    // Points of every other language still carry the sibling's git signals.
+    expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
+    expect(stores.markers.get("code_wt")?.worktreeSeedPending).toBeDefined();
+
+    const next = processOver(stores);
+    await next.ops.run(TARGET);
+    await next.ops.whenEnrichmentComplete();
+    expect(next.deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith("code_wt_v1", TARGET, ["git"]);
+    expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+  });
+
+  it("a codegraph recompute keeps the git debt, and settling it later never rolls the newer stamp back", async () => {
+    const stores = sharedStores();
+    await killDuringSeededIncremental(stores);
+
+    // The build moved on between the seed and the recompute: the recompute's
+    // edge axes are newer than the seed's, and the seed's chunk-set axes are
+    // still the only truthful claim about the cloned chunk set.
+    const recompute = processOver(stores, { languageCodeVersions: UPGRADED_BUILD });
+    await recompute.ops.run(TARGET, { forceEnrichments: ["codegraph"] });
+    await recompute.ops.whenEnrichmentComplete();
+
+    expect(stores.registry.get("code_wt")).toEqual(UPGRADED_STAMP);
+    expect(stores.markers.get("code_wt")?.worktreeSeedPending).toBeDefined();
+
+    const next = processOver(stores, { languageCodeVersions: UPGRADED_BUILD });
+    await next.ops.run(TARGET);
+    await next.ops.whenEnrichmentComplete();
+
+    expect(next.deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith("code_wt_v1", TARGET, ["git"]);
+    expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+    expect(stores.registry.get("code_wt")).toEqual(UPGRADED_STAMP);
+  });
+
+  it("with no recompute in between, the kill-before-settle resume still stamps the seed and rebuilds git", async () => {
+    const stores = sharedStores();
+    await killDuringSeededIncremental(stores);
+
+    const next = processOver(stores, { languageCodeVersions: UPGRADED_BUILD });
+    await next.ops.run(TARGET);
+    await next.ops.whenEnrichmentComplete();
+
+    expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
+    expect(next.deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith("code_wt_v1", TARGET, ["git"]);
+    expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+  });
+
+  it("a recompute over a collection with no pending seed stamps only its own axes", async () => {
+    const stores = sharedStores();
+    const first = processOver(stores);
+    await first.ops.run(TARGET);
+    await first.ops.whenEnrichmentComplete();
+    stores.stampLanguageVersions.mockClear();
+
+    const recompute = processOver(stores, { languageCodeVersions: UPGRADED_BUILD });
+    await recompute.ops.run(TARGET, { forceEnrichments: ["codegraph"] });
+    await recompute.ops.whenEnrichmentComplete();
+
+    expect(stores.stampLanguageVersions).toHaveBeenCalledTimes(1);
+    expect(stores.stampLanguageVersions).toHaveBeenCalledWith("code_wt", {
+      typescript: { walker: 3, codegraphSchema: 1 },
+    });
   });
 });

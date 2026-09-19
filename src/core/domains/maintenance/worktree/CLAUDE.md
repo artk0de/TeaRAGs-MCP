@@ -64,6 +64,18 @@
   collection has no entry until its first incremental records one, which is
   exactly the window a kill must survive — the marker is cloned and dropped with
   the collection itself.
+- **A `--force-enrichments` run that finds a pending seed pays its stamp
+  FIRST.** After its sync leg, `IndexingOps#recomputeEnrichments` stamps the
+  seed's versions and rewrites the marker with `languageVersions` emptied
+  (`IndexingOps#payPendingSeedStamp`) before it stamps its own edge axes; it
+  clears the marker only when it rebuilt git for every point
+  (`IndexingOps#dischargesSeedGitDebt` — no `languages` narrowing, git
+  selected). An empty `languageVersions` therefore means "stamp paid, git
+  rebuild still owed", and the incremental resume stamps nothing for it. Why:
+  the registry keeps no per-axis provenance, so the resume cannot tell a newer
+  stamp from the seed's — settling the seed's full-axis stamp after a codegraph
+  recompute rolled the fresh `walker` / `codegraphSchema` back to the seeding
+  build's, and drift demanded the re-walk that had just been done.
 
 ## Boundaries
 
