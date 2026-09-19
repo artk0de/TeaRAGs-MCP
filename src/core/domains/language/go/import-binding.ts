@@ -17,6 +17,14 @@
  * was read as a method call on a value (bd tea-rags-mcp-e6xx, G2-1). A dot
  * import (`.`) puts the package's names in the file's own scope and a blank
  * import (`_`) binds nothing, so neither binds a qualifier.
+ *
+ * A DERIVED name is a guess, and one import's guess can collide with another
+ * import's certain name: `"k8s.io/api/core/v1"` is assumed to bind `core` while
+ * its clause says `v1`, and `"example.com/proj/core"` binds `core` for certain.
+ * So a name an import may bind is a CLAIM with the evidence behind it
+ * (`GoImportNameClaim`), and the import a name binds is the one with the most
+ * certain claim to it (`goImportsByClaimedName`) — never the one listed first
+ * (bd tea-rags-mcp-e6xx, F3-3).
  */
 
 import type { ImportRef } from "../../../contracts/types/codegraph.js";
@@ -30,6 +38,33 @@ const GO_MAJOR_VERSION_ELEMENT = /^v[0-9]+$/;
 const GO_NON_IDENTIFIER_CHARACTER = /[^\p{L}\p{Nd}_]/u;
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{Nd}_]*$/u;
+
+/**
+ * What a claim that an import binds a name rests on, most certain first — a
+ * smaller rank outranks a larger one:
+ *   - `alias`: the source spells the name;
+ *   - `packageClause`: the imported package's own `package` clause, which only
+ *     a reader with the package on disk has (the resolver, for a project
+ *     package — never the walker);
+ *   - `pathElement`: the path's last element, taken verbatim (`core` of
+ *     `example.com/proj/core`, `v1` of `k8s.io/api/core/v1`);
+ *   - `assumedName`: a name DERIVED from the path that is not its last element
+ *     (`goAssumedPackageName` — `core` of `k8s.io/api/core/v1`).
+ */
+export const GO_IMPORT_NAME_EVIDENCE = {
+  alias: 0,
+  packageClause: 1,
+  pathElement: 2,
+  assumedName: 3,
+} as const;
+
+export type GoImportNameEvidence = (typeof GO_IMPORT_NAME_EVIDENCE)[keyof typeof GO_IMPORT_NAME_EVIDENCE];
+
+/** A name an import may bind, and how certain that is. */
+export interface GoImportNameClaim {
+  readonly name: string;
+  readonly evidence: GoImportNameEvidence;
+}
 
 /** The qualifier `imp` binds — its alias, else its assumed name — `undefined` for a dot or blank import. */
 export function goImportBoundName(imp: ImportRef): string | undefined {
@@ -53,21 +88,48 @@ export function goAssumedPackageName(importPath: string): string {
 }
 
 /**
- * The OTHER name an unaliased import may bind: its last path element when that
- * spells an identifier the assumed name is not — only ever a major-version
- * element (`v1` of `k8s.io/api/core/v1`, whose package clause says `v1`).
- * `undefined` for an aliased, dot or blank import, and whenever the last
- * element is the assumed name or no identifier at all.
- *
- * The assumed name is an assumption, and only the package clause settles it. A
- * reader that cannot see the clause and must not miss the binding — the
- * walker's shadowed names and recorded result types, a resolver without the
- * package on disk — holds this as a second candidate, below every import's
- * bound name.
+ * The names `imp` may bind as its own spelling tells them — no package clause:
+ * its alias; else its path's last element when that is an identifier
+ * (`pathElement`), and the assumed name when that is a different one
+ * (`assumedName`). A dot or blank import claims nothing.
  */
-export function goImportPathElementName(imp: ImportRef): string | undefined {
-  if (imp.importedNames?.[0] !== undefined) return undefined;
+export function goImportNameClaims(imp: ImportRef): GoImportNameClaim[] {
+  const explicit = imp.importedNames?.[0];
+  if (explicit !== undefined) {
+    return GO_NON_QUALIFIER_IMPORT_NAMES.has(explicit)
+      ? []
+      : [{ name: explicit, evidence: GO_IMPORT_NAME_EVIDENCE.alias }];
+  }
   const elements = imp.importText.split("/");
   const last = elements[elements.length - 1] ?? "";
-  return GO_IDENTIFIER.test(last) && last !== goAssumedPackageName(imp.importText) ? last : undefined;
+  const assumed = goAssumedPackageName(imp.importText);
+  const claims: GoImportNameClaim[] = [];
+  if (GO_IDENTIFIER.test(last)) claims.push({ name: last, evidence: GO_IMPORT_NAME_EVIDENCE.pathElement });
+  if (claims[0]?.name !== assumed) claims.push({ name: assumed, evidence: GO_IMPORT_NAME_EVIDENCE.assumedName });
+  return claims;
+}
+
+/**
+ * The import each name binds: the one whose claim to it (`claimsOf`) is the
+ * most certain. A name two imports claim at that best rank binds neither —
+ * import order is no evidence, and a guess tied with a guess is no binding.
+ */
+export function goImportsByClaimedName(
+  imports: readonly ImportRef[],
+  claimsOf: (imp: ImportRef) => readonly GoImportNameClaim[],
+): ReadonlyMap<string, ImportRef> {
+  const best = new Map<string, { imp: ImportRef | undefined; evidence: GoImportNameEvidence }>();
+  for (const imp of imports) {
+    for (const claim of claimsOf(imp)) {
+      const held = best.get(claim.name);
+      if (held === undefined || claim.evidence < held.evidence) {
+        best.set(claim.name, { imp, evidence: claim.evidence });
+      } else if (claim.evidence === held.evidence) {
+        held.imp = undefined;
+      }
+    }
+  }
+  const bound = new Map<string, ImportRef>();
+  for (const [name, { imp }] of best) if (imp !== undefined) bound.set(name, imp);
+  return bound;
 }

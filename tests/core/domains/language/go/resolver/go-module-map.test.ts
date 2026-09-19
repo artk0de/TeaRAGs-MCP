@@ -143,6 +143,41 @@ describe("GoModuleMapCache", () => {
     expect(map?.packageNameOf("missing")).toBeUndefined();
   });
 
+  /**
+   * F3-4 — a file whose build constraint excludes it from the default build
+   * (`//go:build ignore`, a generator or a tool) may declare any package; one
+   * sorted ahead of the package's real files named the package for the whole
+   * directory (f3c `lib/a_tools.go` `package tools` beside `lib/lib.go`).
+   */
+  it("prefers the clause of files without a build constraint", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("lib", "a_tools.go"), "//go:build ignore\n\npackage tools\n\nfunc Gen() {}\n");
+    write(join("lib", "lib.go"), "package lib\n");
+    write(join("legacy", "a_gen.go"), "// Copyright\n\n// +build ignore\n\npackage gen\n");
+    write(join("legacy", "legacy.go"), "package legacy\n");
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageNameOf("lib")).toBe("lib");
+    expect(map?.packageNameOf("legacy")).toBe("legacy");
+  });
+
+  it("reads a package whose every file is constrained off those files", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("osx", "open_linux.go"), "//go:build linux\n\npackage osx\n");
+    write(join("osx", "open_windows.go"), "//go:build windows\n\npackage osx\n");
+    expect(new GoModuleMapCache().forRoot(root)?.packageNameOf("osx")).toBe("osx");
+  });
+
+  it("NEGATIVE: files that still disagree on the clause leave it unread", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("mixed", "a.go"), "package alpha\n");
+    write(join("mixed", "b.go"), "package beta\n");
+    write(join("gated", "a.go"), "//go:build tools\n\npackage tools\n");
+    write(join("gated", "b.go"), "//go:build !tools\n\npackage gated\n");
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageNameOf("mixed")).toBeUndefined();
+    expect(map?.packageNameOf("gated")).toBeUndefined();
+  });
+
   it("knows no package name without a root to read from", () => {
     expect(GoModuleMap.fromManifests([{ relDir: "", content: "module example.com/app\n" }]).packageNameOf("")).toBe(
       undefined,
