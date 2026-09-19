@@ -81,6 +81,11 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // `lexical_declaration` underneath and chunks it exactly as its unexported
   // twin. TypeScript — same export syntax — has always omitted it for this
   // reason.
+  //
+  // `call_expression` mirrors TypeScript (bd tea-rags-mcp-ll0u9 recorded the
+  // earlier absence, when JavaScript had neither the hook nor the chunkable
+  // type): it is listed only so test-DSL calls reach `jsTestDslFilterHook`,
+  // which rejects every non-DSL call and every DSL call outside a test file.
   chunkableTypes: [
     "function_declaration",
     "method_definition",
@@ -88,6 +93,7 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
     "expression_statement",
     "lexical_declaration",
     "variable_declaration",
+    "call_expression", // Filtered by jsTestDslFilterHook to DSL calls in test files
   ],
   // `method_definition` is a chunkable type above, but `findChunkableNodes`
   // stops descending the moment it claims a node — so a method nested in a
@@ -97,11 +103,9 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // `find_symbol("register.handle")` empty while `get_callers` resolved it.
   // TypeScript never had the gap because it declares this pair; JavaScript
   // shares the `method_definition` shape, so it needs the same descent.
-  // `call_expression` is deliberately absent — TypeScript lists it only to
-  // reach test-DSL calls through `testDslFilterHook`, and JavaScript has
-  // neither that hook nor `call_expression` among its chunkable types.
-  // bd tea-rags-mcp-ll0u9.
-  childChunkTypes: ["method_definition"],
+  // `call_expression` reaches DSL containers nested inside an already-claimed
+  // container (mirrors TypeScript). bd tea-rags-mcp-ll0u9.
+  childChunkTypes: ["method_definition", "call_expression"],
   alwaysExtractChildren: true,
   // `export_statement` is chunkable above, so the engine claims the export
   // rather than the `class_declaration` it wraps — and an export carries no
