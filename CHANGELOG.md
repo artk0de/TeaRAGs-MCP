@@ -1,39 +1,624 @@
+## [1.43.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.42.0...v1.43.0) (2026-09-19)
+
+### Features
+
+- **cli:** doctor --sweep-workers stops index workers a killed CLI left behind
+  (f924y)
+  ([1cf1c90](https://github.com/artk0de/TeaRAGs-MCP/commit/1cf1c90264df7a50df7a4f07f4390b26f899c945))
+- **codegraph:** detect Stable Dependencies Principle violations (thc7s)
+  ([0b5c80c](https://github.com/artk0de/TeaRAGs-MCP/commit/0b5c80cf3a596066b2b19e5e215161bd7e9708fd)),
+  closes
+  [DuckDbGraphClient#readFileDependencyGraph](https://github.com/artk0de/DuckDbGraphClient/issues/readFileDependencyGraph)
+- **ingest:** seed a worktree's first index from an indexed sibling working tree
+  (k8gac)
+  ([9a1b73c](https://github.com/artk0de/TeaRAGs-MCP/commit/9a1b73c784fcafe1560f61f83f0eb645fa8a4859)),
+  closes
+  [IndexingOps#claimCollectionForIndexing](https://github.com/artk0de/IndexingOps/issues/claimCollectionForIndexing)
+- **mcp:** report the worktree seed of a first index and let a run opt out
+  (k8gac)
+  ([f732eb6](https://github.com/artk0de/TeaRAGs-MCP/commit/f732eb6f33358c49b1ad7d6f8b7635cd5eee21ce))
+- **prime:** report collection RAM, page cache and disk breakdown in the digest
+  (h4iy)
+  ([912b498](https://github.com/artk0de/TeaRAGs-MCP/commit/912b49877fae1254653fa00734bcf5fe93a37a85)),
+  closes [#8606](https://github.com/artk0de/TeaRAGs-MCP/issues/8606)
+  [QdrantConnection#probeRestJson](https://github.com/artk0de/QdrantConnection/issues/probeRestJson)
+  [CollectionOps#getMemory](https://github.com/artk0de/CollectionOps/issues/getMemory)
+- **scripts:** add stable-dependencies report for SDP premise validation (thc7s)
+  ([9d5574a](https://github.com/artk0de/TeaRAGs-MCP/commit/9d5574a63fbb5228b2a0778b40a2512f16d0b5b0))
+
+### Improvements
+
+- **language:** resolve Go build-tag twins to the file the default build
+  compiles (e6xx)
+  ([cfba670](https://github.com/artk0de/TeaRAGs-MCP/commit/cfba670d0cfd4782eedfcb41da97251d1786ac05))
+- **trajectory:** let a codegraph provider serve one language partition (sgo8v)
+  ([d29ccbf](https://github.com/artk0de/TeaRAGs-MCP/commit/d29ccbf328b1672d4407e490a064df9c44bce917)),
+  closes
+  [CodegraphExtractionSink#mirror](https://github.com/artk0de/CodegraphExtractionSink/issues/mirror)
+  [RunState#absorb](https://github.com/artk0de/RunState/issues/absorb)
+
+### Bug Fixes
+
+- **adapters:** a stale client proceeds against the newer daemon read-only
+  (1wr7p)
+  ([6ad9581](https://github.com/artk0de/TeaRAGs-MCP/commit/6ad95814ed7f78f727f84b7ccdf3e232cc9ff4ef)),
+  closes
+  [GraphDbClientPool#settleWithStaleClient](https://github.com/artk0de/GraphDbClientPool/issues/settleWithStaleClient)
+  [DaemonGraphDbClient#restrictToReads](https://github.com/artk0de/DaemonGraphDbClient/issues/restrictToReads)
+- **adapters:** bound a pending codegraph daemon call by the daemon's liveness
+  (f924y)
+  ([0c1fb00](https://github.com/artk0de/TeaRAGs-MCP/commit/0c1fb0005098dee36b6fe613b3bd4593f541458a)),
+  closes
+  [DaemonGraphDbClient#call](https://github.com/artk0de/DaemonGraphDbClient/issues/call)
+- **adapters:** capture the codegraph build fingerprint at module load (1wr7p)
+  ([2305db1](https://github.com/artk0de/TeaRAGs-MCP/commit/2305db1b9eff94ad6dfd1138ae5517b4c716e0dd))
+- **adapters:** complete InfraErrorCode and hold it to the declared codes
+  ([4489c2f](https://github.com/artk0de/TeaRAGs-MCP/commit/4489c2fc26a1daa8e15348cb53b63a8e09d904e5))
+- **adapters:** handshake a replacement codegraph daemon before replaying onto
+  it (f924y)
+  ([e92fbd1](https://github.com/artk0de/TeaRAGs-MCP/commit/e92fbd11803b72f4c74191779687faa2c26b3efe))
+- **adapters:** name the real causes of a persistently stale codegraph daemon
+  (1wr7p)
+  ([74420fd](https://github.com/artk0de/TeaRAGs-MCP/commit/74420fdba2d6d6265cf42c922db43e7b8f995440)),
+  closes
+  [CodegraphDaemonServer#handle](https://github.com/artk0de/CodegraphDaemonServer/issues/handle)
+  [GraphDbClientPool#settleWithStaleClient](https://github.com/artk0de/GraphDbClientPool/issues/settleWithStaleClient)
+- **adapters:** name the stale client when a replay refuses the on-disk daemon
+  (1wr7p)
+  ([815ba8d](https://github.com/artk0de/TeaRAGs-MCP/commit/815ba8dc49aeaddbcfea44ee3a419d82d0cad990)),
+  closes
+  [DaemonGraphDbClient#describeRefusal](https://github.com/artk0de/DaemonGraphDbClient/issues/describeRefusal)
+- **adapters:** never drain the up-to-date codegraph daemon for a stale client
+  (1wr7p)
+  ([3823d69](https://github.com/artk0de/TeaRAGs-MCP/commit/3823d69cffe485b9c452c97a30fddfbbf9f5c0e7))
+- **adapters:** queue the edge-index rebuild behind open transactions (sgo8v)
+  ([86e3b79](https://github.com/artk0de/TeaRAGs-MCP/commit/86e3b792e641b6872f42454c19dc0898ced943e2))
+- **adapters:** release the socket when a replay refuses the replacement daemon
+  (f924y)
+  ([09dd1a0](https://github.com/artk0de/TeaRAGs-MCP/commit/09dd1a0f7c85cd18fb7a65a06220a393047494a0)),
+  closes
+  [GraphDbClientPool#acquireDaemonClient](https://github.com/artk0de/GraphDbClientPool/issues/acquireDaemonClient)
+- **adapters:** stop codegraph daemon work for a client whose connection closed
+  (f924y)
+  ([3b859e7](https://github.com/artk0de/TeaRAGs-MCP/commit/3b859e7d7df1c1feb8a047aa1d03cf9ad0c3f6c9))
+- **adapters:** stream graph adjacency whole or not at all (sgo8v)
+  ([a34d66a](https://github.com/artk0de/TeaRAGs-MCP/commit/a34d66ab7eaa8c847bfdb2d064aba26bc5bca412))
+- **bootstrap:** bound the run keep-alive and respawn a dead codegraph daemon
+  per acquire (f924y)
+  ([c161bfe](https://github.com/artk0de/TeaRAGs-MCP/commit/c161bfe62c65dea2057dc2aa44eb2bd2e1995eff))
+- **cli:** read index-worker start times in any locale, keep unreadable ones
+  (f924y)
+  ([ae88316](https://github.com/artk0de/TeaRAGs-MCP/commit/ae88316ee0687a33aa8af720ebbf032ce6917339))
+- **cli:** reap an index worker orphaned before its guard, and register workers
+  for a sweep (f924y)
+  ([b3bfb36](https://github.com/artk0de/TeaRAGs-MCP/commit/b3bfb364c9bdc93e70e5d933e775f33c8957e54a))
+- **drift:** outrank the MCP server spawn env with a project's registry stamp
+  (o0qsw)
+  ([43b6393](https://github.com/artk0de/TeaRAGs-MCP/commit/43b6393a5777e18a33eecd946cf0c81933c055cc))
+- **dx:** bug-hunt keeps fresh never-fixed code — fresh probe + call-path triage
+  (mopt7)
+  ([838553e](https://github.com/artk0de/TeaRAGs-MCP/commit/838553e4f3a3f75a7ede03fad7b74945ecdbdd11))
+- **dx:** bug-hunt lists every file of a new untracked directory for the
+  uncommitted probe (9mwny)
+  ([13719bf](https://github.com/artk0de/TeaRAGs-MCP/commit/13719bfb95eb18bab82a0d5921264381c627a889))
+- **dx:** bug-hunt probes uncommitted edits by git status paths (mopt7)
+  ([bb553f3](https://github.com/artk0de/TeaRAGs-MCP/commit/bb553f379f460b15eff1933f8883f9149fcfa6f1))
+- **dx:** bug-hunt reindexes before the uncommitted probe whenever git status
+  lists paths (9mwny)
+  ([f237040](https://github.com/artk0de/TeaRAGs-MCP/commit/f237040236f60eb6135208f6395b758aad30a65a))
+- **dx:** filter-building description routes "Alice's recent code" to
+  recentAuthor (9mwny)
+  ([5eaa793](https://github.com/artk0de/TeaRAGs-MCP/commit/5eaa7938480a1b83cdeda595d8bb2301b8627a2b))
+- **dx:** filter-building routes file-level age to modifiedBefore/After, not raw
+  ageDays (9mwny)
+  ([d0f2756](https://github.com/artk0de/TeaRAGs-MCP/commit/d0f27562482e9f54fb7bfa9bd913ce5c509b595f))
+- **dx:** make index-freshness own the uncommitted-edits reindex trigger
+  bug-hunt cites (9mwny)
+  ([b0749ab](https://github.com/artk0de/TeaRAGs-MCP/commit/b0749ab5ff711d297e38c049bced2cd4b12785c6))
+- **explore:** honour limits below 5 instead of flooring the returned page
+  (9mwny)
+  ([5fd0aec](https://github.com/artk0de/TeaRAGs-MCP/commit/5fd0aec7e9c42178fe28b38f8071ae32081badd3)),
+  closes
+  [BaseExploreStrategy#postProcess](https://github.com/artk0de/BaseExploreStrategy/issues/postProcess)
+- **explore:** index only declared rank_chunks order_by fields, typed by
+  declaration (q34ic)
+  ([2b102f6](https://github.com/artk0de/TeaRAGs-MCP/commit/2b102f613e39e4f4bcb09a4e7d804c5cd594bd90)),
+  closes
+  [ScrollRankStrategy#executeExplore](https://github.com/artk0de/ScrollRankStrategy/issues/executeExplore)
+- **filters:** drop a preset default filter that excludes the caller's test /
+  docs scope (9mwny)
+  ([00fd247](https://github.com/artk0de/TeaRAGs-MCP/commit/00fd247fdcae4063301171a69dbf700316464ed8)),
+  closes
+  [ExploreOps#buildFilter](https://github.com/artk0de/ExploreOps/issues/buildFilter)
+- **filters:** explicit include / doc language drops the preset default that
+  excludes it (9mwny)
+  ([efc7b7d](https://github.com/artk0de/TeaRAGs-MCP/commit/efc7b7daa6bc3a668a374db8c38b05602738080b))
+- **filters:** keep ageDays 0 in age filters, it is the freshest code, not
+  no-data (9mwny)
+  ([0a1a2ec](https://github.com/artk0de/TeaRAGs-MCP/commit/0a1a2ec4eb32dec31bcb44464b7782961967ad67)),
+  closes
+  [FileChurnDiscovery#computeFileChurn](https://github.com/artk0de/FileChurnDiscovery/issues/computeFileChurn)
+  [EnrichmentApplier#unmatchedFileEntries](https://github.com/artk0de/EnrichmentApplier/issues/unmatchedFileEntries)
+- **filters:** let each typed filter's own level default apply when level is
+  unset (9mwny)
+  ([f8db1f7](https://github.com/artk0de/TeaRAGs-MCP/commit/f8db1f759df7e8bb37cc27c28e64299042713689)),
+  closes
+  [TrajectoryRegistry#buildFilter](https://github.com/artk0de/TrajectoryRegistry/issues/buildFilter)
+  [#buildMergedFilter](https://github.com/artk0de/TeaRAGs-MCP/issues/buildMergedFilter)
+  [GitEnrichmentProvider#constructor](https://github.com/artk0de/GitEnrichmentProvider/issues/constructor)
+- **filters:** make minAgeDays / maxAgeDays drift-free via query-time
+  lastModifiedAt (9mwny)
+  ([71db820](https://github.com/artk0de/TeaRAGs-MCP/commit/71db8202fe4cb13f6869310c530a4cd050f7d382))
+- **filters:** wire the MCP author param to the blame-owner filter (9mwny)
+  ([9b113b9](https://github.com/artk0de/TeaRAGs-MCP/commit/9b113b9a5da024c3642aa035bae58c81acce4c8a))
+- **ingest:** chunk the --force-enrichments sync leg with the model-derived size
+  (k8gac)
+  ([8b2e14e](https://github.com/artk0de/TeaRAGs-MCP/commit/8b2e14e7c6bd85d84683d8f9c61863c3d679d251)),
+  closes
+  [IndexingOps#reindexChanges](https://github.com/artk0de/IndexingOps/issues/reindexChanges)
+  [IndexingOps#syncChunkingOverrides](https://github.com/artk0de/IndexingOps/issues/syncChunkingOverrides)
+  [BaseIndexingPipeline#createChunkerPool](https://github.com/artk0de/BaseIndexingPipeline/issues/createChunkerPool)
+- **ingest:** classify .mts / .cts test files as tests and match TS-suffixed JS
+  imports (1y13c)
+  ([7fd6d53](https://github.com/artk0de/TeaRAGs-MCP/commit/7fd6d53437959c197fee05a9dd120afc89759539))
+- **ingest:** fail a recompute on an unreadable seed marker instead of stamping
+  over it (k8gac)
+  ([9a4fe40](https://github.com/artk0de/TeaRAGs-MCP/commit/9a4fe40c94f60e1c03410c89c772f92a88a44343)),
+  closes
+  [IndexingOps#payPendingSeedStamp](https://github.com/artk0de/IndexingOps/issues/payPendingSeedStamp)
+- **ingest:** index .mts / .cts as TypeScript in both ingest and the codegraph
+  (1y13c)
+  ([9d2afcd](https://github.com/artk0de/TeaRAGs-MCP/commit/9d2afcdeb36a2b2205cc2ceaee3c20a36ab6a981))
+- **ingest:** let --force-enrichments settle a pending worktree seed in stamp
+  order (k8gac)
+  ([44139cc](https://github.com/artk0de/TeaRAGs-MCP/commit/44139ccf7e00f3cfa089a5b772a8a54f503dc99c)),
+  closes
+  [IndexingOps#recomputeEnrichments](https://github.com/artk0de/IndexingOps/issues/recomputeEnrichments)
+  [CollectionRegistry#stampLanguageVersions](https://github.com/artk0de/CollectionRegistry/issues/stampLanguageVersions)
+- **ingest:** read the seed marker strictly so a Qdrant 5xx or timeout fails the
+  recompute (k8gac)
+  ([adaed5a](https://github.com/artk0de/TeaRAGs-MCP/commit/adaed5a10738159e6c2aa4060c38fb455c7519da)),
+  closes
+  [QdrantManager#getPoint](https://github.com/artk0de/QdrantManager/issues/getPoint)
+  [QdrantPointStore#getPoint](https://github.com/artk0de/QdrantPointStore/issues/getPoint)
+  [QdrantPointStore#getPointOrThrow](https://github.com/artk0de/QdrantPointStore/issues/getPointOrThrow)
+  [QdrantManager#getPointOrThrow](https://github.com/artk0de/QdrantManager/issues/getPointOrThrow)
+  [QdrantPayloadIndexManager#callTyped](https://github.com/artk0de/QdrantPayloadIndexManager/issues/callTyped)
+  [QdrantManager#getPoint](https://github.com/artk0de/QdrantManager/issues/getPoint)
+- **ingest:** record a worktree seed's pending debt inside the clone, before its
+  alias (k8gac)
+  ([bd0daff](https://github.com/artk0de/TeaRAGs-MCP/commit/bd0daff08fe60e4311df725e0a6af0972d29566f)),
+  closes
+  [QdrantArtifact#clone](https://github.com/artk0de/QdrantArtifact/issues/clone)
+  [QdrantArtifact#clone](https://github.com/artk0de/QdrantArtifact/issues/clone)
+  [IndexingOps#trySeedFromWorktree](https://github.com/artk0de/IndexingOps/issues/trySeedFromWorktree)
+- **ingest:** refuse a worktree seed sibling that records no env stamp (k8gac)
+  ([cc13f5f](https://github.com/artk0de/TeaRAGs-MCP/commit/cc13f5f5e3a0a34c391f4c39cd30b6b3646b29e3))
+- **ingest:** resume a worktree seed whose process died before its stamp or git
+  rebuild (k8gac)
+  ([5ba0301](https://github.com/artk0de/TeaRAGs-MCP/commit/5ba0301c91d2fb1d8f2a1d5b9f9cae02b049a81d)),
+  closes
+  [IndexingOps#trySeedFromWorktree](https://github.com/artk0de/IndexingOps/issues/trySeedFromWorktree)
+  [IndexingOps#refreshSeededGitLayer](https://github.com/artk0de/IndexingOps/issues/refreshSeededGitLayer)
+  [IndexingOps#resumePendingWorktreeSeed](https://github.com/artk0de/IndexingOps/issues/resumePendingWorktreeSeed)
+- **language:** accept structural import evidence in the TS guard when no
+  Program exists (t5cji)
+  ([22fab3a](https://github.com/artk0de/TeaRAGs-MCP/commit/22fab3ab592f6f0c0a1276f29aae813c410de408))
+- **language:** answer a TS `this` member from its file-anchored class hierarchy
+  (t5cji)
+  ([037fdc9](https://github.com/artk0de/TeaRAGs-MCP/commit/037fdc9b5e43f93bf47a322f7b8e5f0b3ba22728))
+- **language:** answer an asset import with no project file instead of
+  <asset>.ts (unt4v)
+  ([e46ff81](https://github.com/artk0de/TeaRAGs-MCP/commit/e46ff8182817365020d106a4552393d3340881dc))
+- **language:** bind a Go qualifier two imports claim by certainty, not order
+  (e6xx)
+  ([7489e5f](https://github.com/artk0de/TeaRAGs-MCP/commit/7489e5f91bb3d46e69ed1f68e3b2353e58f28d95)),
+  closes [Engine#Run](https://github.com/artk0de/Engine/issues/Run)
+- **language:** bind Go function-literal parameters for the literal's own lines
+  (e6xx)
+  ([96a4353](https://github.com/artk0de/TeaRAGs-MCP/commit/96a435359c432b32de4a2891e39e2bf6975bde64))
+- **language:** bind Go imports by the assumed-name rule; fail closed on unknown
+  qualifiers (e6xx)
+  ([a97cb43](https://github.com/artk0de/TeaRAGs-MCP/commit/a97cb43d98dbfa252df02621afef1108d93f59fc))
+- **language:** bind Go named result parameters as locals of the body (e6xx)
+  ([a56cc63](https://github.com/artk0de/TeaRAGs-MCP/commit/a56cc6313d7b8192e4878f32c48400b8dae1f3dc)),
+  closes
+  [Engine#allocateContext](https://github.com/artk0de/Engine/issues/allocateContext)
+  [Context#reset](https://github.com/artk0de/Context/issues/reset)
+  [responseWriter#reset](https://github.com/artk0de/responseWriter/issues/reset)
+- **language:** build JavaScript file edges from the import mapper, not the call
+  path (x9qsh)
+  ([cf5eb6c](https://github.com/artk0de/TeaRAGs-MCP/commit/cf5eb6ccb396e1ab0aff7e15af79f2d9904cd30f)),
+  closes
+  [JavascriptCallResolver#resolveFileEdges](https://github.com/artk0de/JavascriptCallResolver/issues/resolveFileEdges)
+  [TSCallResolver#resolveFileEdges](https://github.com/artk0de/TSCallResolver/issues/resolveFileEdges)
+- **language:** collect Go generic calls with a single value argument (e6xx)
+  ([6a35527](https://github.com/artk0de/TeaRAGs-MCP/commit/6a35527b6a5142f19b8f83d9aef0d68937cc7148))
+- **language:** count a Go bare call through a func value as unresolvable (e6xx)
+  ([7cfe6c6](https://github.com/artk0de/TeaRAGs-MCP/commit/7cfe6c619ec883828b37a0fbea86ba3c3490f3b9))
+- **language:** count a TS `this` member declared outside the project as
+  external (t5cji)
+  ([1db2b82](https://github.com/artk0de/TeaRAGs-MCP/commit/1db2b82811aefcceab466aec7ea594cd73e0f877))
+- **language:** count a TS super call into an out-of-project base as external
+  (t5cji)
+  ([63a346c](https://github.com/artk0de/TeaRAGs-MCP/commit/63a346cc42311cc7815e633578cc62330b341fcf))
+- **language:** describe the Go codegraph as built and skip vendored go.mod
+  files (e6xx)
+  ([45dff3d](https://github.com/artk0de/TeaRAGs-MCP/commit/45dff3d219443afc9c9d605dccec66ca0ce10946))
+- **language:** drop a Go namesake the default build excludes from a mixed
+  candidate list (e6xx)
+  ([e127096](https://github.com/artk0de/TeaRAGs-MCP/commit/e1270967bf592eccb466e52b0532646bd8c78f04))
+- **language:** fall back to the JavaScript file a TypeScript import names under
+  allowJs (x9qsh)
+  ([b0fe7c7](https://github.com/artk0de/TeaRAGs-MCP/commit/b0fe7c7a119e8445e511c2661ec9daa09064b91d))
+- **language:** follow a re-export alias in the TS member-call evidence guard
+  (t5cji)
+  ([10d1c7b](https://github.com/artk0de/TeaRAGs-MCP/commit/10d1c7b06d9bdf70c0877e4311bef261235add7c))
+- **language:** hold a TS `this` member to the same evidence as any receiver
+  (t5cji)
+  ([cd9f7fc](https://github.com/artk0de/TeaRAGs-MCP/commit/cd9f7fc00c495f1f2dfa9cc3dd7b4d8b700e676e))
+- **language:** keep Go if/switch/for header init locals visible on their own
+  line (e6xx)
+  ([ab7d71d](https://github.com/artk0de/TeaRAGs-MCP/commit/ab7d71d3b21e8bbcecbf724f7f40262bb7dd4f1f)),
+  closes [Engine#Ready](https://github.com/artk0de/Engine/issues/Ready)
+  [Iterator#Valid](https://github.com/artk0de/Iterator/issues/Valid)
+  [#Next](https://github.com/artk0de/TeaRAGs-MCP/issues/Next)
+  [Config#Validate](https://github.com/artk0de/Config/issues/Validate)
+- **language:** keep the package of a Go qualified return type and callee (e6xx)
+  ([85e8c76](https://github.com/artk0de/TeaRAGs-MCP/commit/85e8c765e516f68fa5fdf3ff20ba792e8b475e8f)),
+  closes [RouterGroup#GET](https://github.com/artk0de/RouterGroup/issues/GET)
+- **language:** keep TS / JS resolution inside the ECMAScript family (t5cji)
+  ([a6d08db](https://github.com/artk0de/TeaRAGs-MCP/commit/a6d08db452faca6f74142a8b67d53361bebe2cd4))
+- **language:** let a sibling .d.ts account for its JS in the TS evidence guard
+  (t5cji)
+  ([49d1eb1](https://github.com/artk0de/TeaRAGs-MCP/commit/49d1eb1a060dc34a0f6a3497f72ae439ca0ebdf5))
+- **language:** look a placed Go return type's members up in its own package
+  (e6xx)
+  ([de18af4](https://github.com/artk0de/TeaRAGs-MCP/commit/de18af4a9955bb008eb959281aee860677b104c3)),
+  closes [Widget#Paint](https://github.com/artk0de/Widget/issues/Paint)
+  [Widget#Size](https://github.com/artk0de/Widget/issues/Size)
+  [Client#Do](https://github.com/artk0de/Client/issues/Do)
+- **language:** make a Go promoted-method hit on a namesake type ambiguous
+  (e6xx)
+  ([cb0eed1](https://github.com/artk0de/TeaRAGs-MCP/commit/cb0eed108111891bc8b40f0fd47aca8f43cc4e7e)),
+  closes [Base#Reset](https://github.com/artk0de/Base/issues/Reset)
+- **language:** make the Go vendor/ skip Go's own, not the shared manifest
+  walk's (e6xx)
+  ([b2caf14](https://github.com/artk0de/TeaRAGs-MCP/commit/b2caf1463c1ca6dd0d119488f13e98fd5b7738ba)),
+  closes
+  [GoModuleMapCache#reload](https://github.com/artk0de/GoModuleMapCache/issues/reload)
+- **language:** map `.`, `..` and trailing-slash specifiers to the directory
+  index (unt4v)
+  ([91e9439](https://github.com/artk0de/TeaRAGs-MCP/commit/91e943953736ebe36e833bf561e7002fc6a3a0d3)),
+  closes
+  [ts-path-mapper#resolveTsSourcePath](https://github.com/artk0de/ts-path-mapper/issues/resolveTsSourcePath)
+- **language:** map a JSON module import to the JSON file as written (x9qsh)
+  ([70f5930](https://github.com/artk0de/TeaRAGs-MCP/commit/70f593018eea89bde7cb7bbf2236be8ced477fe1)),
+  closes
+  [TSCallResolver#resolveFileEdges](https://github.com/artk0de/TSCallResolver/issues/resolveFileEdges)
+- **language:** map a specifier that already names a TypeScript file to that
+  file (x9qsh)
+  ([bd988b4](https://github.com/artk0de/TeaRAGs-MCP/commit/bd988b4c395affca78e5ec24661e20bf64066fd7))
+- **language:** map an extensionless TypeScript import to the JavaScript module
+  it names (x9qsh)
+  ([c31d9fb](https://github.com/artk0de/TeaRAGs-MCP/commit/c31d9fba5ff6dfe9f29758038067515f830438e0))
+- **language:** map Go module-path imports to project packages via go.mod (e6xx)
+  ([f963436](https://github.com/artk0de/TeaRAGs-MCP/commit/f96343603d85bc0a1c40af9bd4332fa6155fa937)),
+  closes
+  [CallEdgeResolutionRunner#buildCallContext](https://github.com/artk0de/CallEdgeResolutionRunner/issues/buildCallContext)
+- **language:** match a trailing-slash directory import to its receiver (unt4v)
+  ([325f615](https://github.com/artk0de/TeaRAGs-MCP/commit/325f615170502d8cc3925e98fc62b99d532f75d7))
+- **language:** never commit a TS member call on an untyped receiver by name
+  uniqueness (t5cji)
+  ([8f3fd21](https://github.com/artk0de/TeaRAGs-MCP/commit/8f3fd21d582d2a4c34d6dbcbe4bff957f91b071b)),
+  closes
+  [ProjectRegistryOps#list](https://github.com/artk0de/ProjectRegistryOps/issues/list)
+- **language:** never resolve a Go bare call through a local to a package func
+  (e6xx)
+  ([27a1223](https://github.com/artk0de/TeaRAGs-MCP/commit/27a1223896da5774adce2641d14deb6e11c88df6))
+- **language:** read a Go package clause as the file's first token past its
+  comments (e6xx)
+  ([1dc6c3c](https://github.com/artk0de/TeaRAGs-MCP/commit/1dc6c3c9b1940a460169f16e9a9191057ea633e5)),
+  closes [Engine#Run](https://github.com/artk0de/Engine/issues/Run)
+- **language:** read a Go package clause off the files the build compiles (e6xx)
+  ([d34c0c4](https://github.com/artk0de/TeaRAGs-MCP/commit/d34c0c4d539c68125fa8e58b3d29c0726adcbcb0)),
+  closes [Engine#Run](https://github.com/artk0de/Engine/issues/Run)
+- **language:** require the declaring owner, not just file, in the TS evidence
+  guard (t5cji)
+  ([095aaac](https://github.com/artk0de/TeaRAGs-MCP/commit/095aaac0e1378ed4ee76c9e631f289974aadfbea))
+- **language:** resolve explicitly instantiated Go generic calls (e6xx)
+  ([d7766df](https://github.com/artk0de/TeaRAGs-MCP/commit/d7766dfb1a7c3fcd3fdcf5e7ac1deb92c22cc2c4))
+- **language:** resolve Go bare calls in the caller's package only (e6xx)
+  ([01f1162](https://github.com/artk0de/TeaRAGs-MCP/commit/01f1162b9258f04a27e738cbfde86d33f02250da)),
+  closes
+  [responseWriter#WriteString](https://github.com/artk0de/responseWriter/issues/WriteString)
+  [RouterGroup#handle](https://github.com/artk0de/RouterGroup/issues/handle)
+  [RouterGroup#handle](https://github.com/artk0de/RouterGroup/issues/handle)
+- **language:** resolve Go methods promoted through struct embedding (e6xx)
+  ([1f6f4cc](https://github.com/artk0de/TeaRAGs-MCP/commit/1f6f4cce5a403dbe5371f9ce5c73d52e6137f925)),
+  closes [RouterGroup#GET](https://github.com/artk0de/RouterGroup/issues/GET)
+  [Engine#GET](https://github.com/artk0de/Engine/issues/GET)
+- **language:** resolve package-qualified Go generic calls through importMatch
+  (e6xx)
+  ([3acac35](https://github.com/artk0de/TeaRAGs-MCP/commit/3acac35f35cd0f62c3f9481cc881ddf3262e01dd))
+- **language:** restrict every Go symbol lookup to Go declarations (e6xx)
+  ([d549c15](https://github.com/artk0de/TeaRAGs-MCP/commit/d549c15a6be5a14d09a2177935e43cf28012a2fb)),
+  closes [Client#fetch](https://github.com/artk0de/Client/issues/fetch)
+  [Transport#send](https://github.com/artk0de/Transport/issues/send)
+- **language:** route JavaScript file edges through the provider, to indexed
+  files only (x9qsh)
+  ([e58e3ec](https://github.com/artk0de/TeaRAGs-MCP/commit/e58e3ec2ebbdb5725defa8b6e08ff620068c7684)),
+  closes
+  [JavascriptCallResolver#resolveFileEdges](https://github.com/artk0de/JavascriptCallResolver/issues/resolveFileEdges)
+  [JavascriptCallResolver#resolveFileEdges](https://github.com/artk0de/JavascriptCallResolver/issues/resolveFileEdges)
+- **language:** scope a Go call binding to after its statement and its block
+  (e6xx)
+  ([2913743](https://github.com/artk0de/TeaRAGs-MCP/commit/2913743ee0e16cd3f009c2d387541a110c02803c))
+- **language:** scope Go func-literal parameters so they shadow call bindings
+  (e6xx)
+  ([ddfe6b3](https://github.com/artk0de/TeaRAGs-MCP/commit/ddfe6b37c1ad18fce9b51807904e156e86b28ef1))
+- **language:** strip .mts / .cts when matching an import basename to a receiver
+  (x9qsh)
+  ([ac9d681](https://github.com/artk0de/TeaRAGs-MCP/commit/ac9d681727fc65bd8df9d28970211f096adc07dc))
+- **language:** treat Go locals named like an import as values, not packages
+  (e6xx)
+  ([cbfa601](https://github.com/artk0de/TeaRAGs-MCP/commit/cbfa601b055bd0f8087b97230243d565654cb961))
+- **language:** treat only ./ and ../ specifiers as relative in the TS and JS
+  mappers (unt4v)
+  ([39bedd4](https://github.com/artk0de/TeaRAGs-MCP/commit/39bedd41fde8178b5aac6f8dc7cbad5c2e6f0dfe))
+- **language:** type a Go bare result type only in its callee's package under a
+  dot import (e6xx)
+  ([3953d8f](https://github.com/artk0de/TeaRAGs-MCP/commit/3953d8f80990d7887c0584f86c33dfd8e871eb2d))
+- **language:** type a Go call-result receiver head through its return type
+  (e6xx)
+  ([8780ef6](https://github.com/artk0de/TeaRAGs-MCP/commit/8780ef6ce6feda2c3aaf94b7484607a9b75f7bcc))
+- **language:** type a Go function's bare result only in its callee's package
+  (e6xx)
+  ([63e3808](https://github.com/artk0de/TeaRAGs-MCP/commit/63e3808ae526ecc2b8fa93d51cc5c5ed677a77ad))
+- **language:** type dotted Go receivers through struct fields (e6xx)
+  ([67376f0](https://github.com/artk0de/TeaRAGs-MCP/commit/67376f07b81ce1d8818330261ba760370168be7d))
+- **mcp:** route "what did X work on" to recentAuthor, list author as
+  level-aware (9mwny)
+  ([c3db861](https://github.com/artk0de/TeaRAGs-MCP/commit/c3db8612b0dd1c2fe220ce741e872f994b307380))
+- **mcp:** stop advertising the blameOwner filter that no search tool schema
+  accepts (9mwny)
+  ([e4aa01b](https://github.com/artk0de/TeaRAGs-MCP/commit/e4aa01b81dab897a8930ba4a40898169c20e94de))
+- **migration:** drop Qdrant payload indexes no source declares (q34ic)
+  ([6c958bd](https://github.com/artk0de/TeaRAGs-MCP/commit/6c958bd01baf1255a9790b9b815ea64243d795f8)),
+  closes
+  [RankModule#resolvePayloadField](https://github.com/artk0de/RankModule/issues/resolvePayloadField)
+  [QdrantPayloadIndexManager#listPayloadIndexes](https://github.com/artk0de/QdrantPayloadIndexManager/issues/listPayloadIndexes)
+  [#deletePayloadIndex](https://github.com/artk0de/TeaRAGs-MCP/issues/deletePayloadIndex)
+- **pipeline:** delete the optional overlay keys a re-enrichment omits (9mwny)
+  ([47340be](https://github.com/artk0de/TeaRAGs-MCP/commit/47340be74f5a18666d81b9c12a02d07f804625f4))
+- **pipeline:** hold a failing fan-out unit's slot until all its dispatches
+  settled (sgo8v)
+  ([e3d01b6](https://github.com/artk0de/TeaRAGs-MCP/commit/e3d01b6851c3744d114f99c7b4ad0aab45e45ecd)),
+  closes
+  [ExtractionFanoutDispatcher#runPartitionedUnit](https://github.com/artk0de/ExtractionFanoutDispatcher/issues/runPartitionedUnit)
+- **presets:** keep the coreLogic default on the codegraph decomposition
+  composite (9mwny)
+  ([768ee2f](https://github.com/artk0de/TeaRAGs-MCP/commit/768ee2f95983b92d2d6601a4faa04c13add45f7a))
+- **scripts:** check staged blobs for raw NUL bytes on every commit; guard all
+  text files (k8gac)
+  ([8cadb56](https://github.com/artk0de/TeaRAGs-MCP/commit/8cadb56c040ba7a82789dcb0210d1a023a0c742b))
+- **scripts:** clear the type errors outside pass1-fanout-profile (xuywm)
+  ([f1f0359](https://github.com/artk0de/TeaRAGs-MCP/commit/f1f035989ff6950feac5020016bbdbc5a9dc9b31))
+- **scripts:** escape raw NUL key separators git read as binary; guard tracked
+  TS (k8gac)
+  ([c65d854](https://github.com/artk0de/TeaRAGs-MCP/commit/c65d85440e4fbb63263343ee529b11862a481f5e)),
+  closes
+  [OmittedOverlayKeyCollector#add](https://github.com/artk0de/OmittedOverlayKeyCollector/issues/add)
+- **scripts:** format pending sources as lint-staged would before pinning
+  language versions (e6xx)
+  ([21bf796](https://github.com/artk0de/TeaRAGs-MCP/commit/21bf796a1490fce4a8e53a084765ea33f94edfed)),
+  closes
+  [package.json#lint-staged](https://github.com/artk0de/package.json/issues/lint-staged)
+- **scripts:** mint the profile's scratch collections instead of passing strings
+  (sgo8v)
+  ([8f1ad42](https://github.com/artk0de/TeaRAGs-MCP/commit/8f1ad422cd8702ff526581bb5e69729ced7e5ad7))
+- **scripts:** pre-commit tests only the staged files, and says why it failed
+  (f924y)
+  ([d3ce399](https://github.com/artk0de/TeaRAGs-MCP/commit/d3ce3998322a65519cf06cd2e403f2ff423a5798))
+- **scripts:** repair a stale import and add a scripts type-check (xuywm)
+  ([b75d9c3](https://github.com/artk0de/TeaRAGs-MCP/commit/b75d9c38cd7d2f3da317afe8fac00a2a81968e73)),
+  closes
+  [TSCallResolver#targetsCoreAmbiguousMember](https://github.com/artk0de/TSCallResolver/issues/targetsCoreAmbiguousMember)
+  [WorkerPoolEnrichmentExecutor#releaseCollection](https://github.com/artk0de/WorkerPoolEnrichmentExecutor/issues/releaseCollection)
+- **scripts:** thread per-chunk localCallBindings through the chain tally for
+  every language (e6xx)
+  ([44672ff](https://github.com/artk0de/TeaRAGs-MCP/commit/44672ff2e5f0eba6897877cce4271273328894c5)),
+  closes
+  [CallEdgeResolutionRunner#buildCallContext](https://github.com/artk0de/CallEdgeResolutionRunner/issues/buildCallContext)
+- **trajectory:** degrade a daemon-side metrics failure to stale metrics (sgo8v)
+  ([e166085](https://github.com/artk0de/TeaRAGs-MCP/commit/e166085aca9fea377b92f3e3742032267c007077)),
+  closes
+  [GraphBuildFinalizer#runMetricsRecompute](https://github.com/artk0de/GraphBuildFinalizer/issues/runMetricsRecompute)
+- **trajectory:** guard the legacy run-stats write per language (sgo8v)
+  ([e5586f1](https://github.com/artk0de/TeaRAGs-MCP/commit/e5586f1b43448e78caf771b24842937a16bf2e2f))
+- **trajectory:** keep the completion owner's resolver block in its timing line
+  (sgo8v)
+  ([8b36cf9](https://github.com/artk0de/TeaRAGs-MCP/commit/8b36cf99f5e74c4973105af83bd871565d8a07dd))
+- **trajectory:** leave file lastModifiedAt / ageDays absent when a file has no
+  commits (9mwny)
+  ([654afa5](https://github.com/artk0de/TeaRAGs-MCP/commit/654afa5c5d6e8544511a630e08ed038e0acf1f8d))
+- **trajectory:** name what the SDP no-symbol exclusion catches and list its
+  files (thc7s)
+  ([ac2060a](https://github.com/artk0de/TeaRAGs-MCP/commit/ac2060ae599259e00f3f12dfc3aabe1a9e0bf7e8))
+- **trajectory:** persist Go build constraints an incremental run resolves
+  against (e6xx)
+  ([40b0d71](https://github.com/artk0de/TeaRAGs-MCP/commit/40b0d7199ee66d6609fe558b20c31c82d60ae9d3))
+
+### Performance Improvements
+
+- **migration:** index git.{file,chunk}.lastModifiedAt for the query-time age
+  filters (9mwny)
+  ([4e63506](https://github.com/artk0de/TeaRAGs-MCP/commit/4e635066c4a2eb453b6094b1ba57bd0390fcbcc5))
+- **pipeline:** one codegraph absorb worker per (collection, language) (sgo8v)
+  ([a9fe6d8](https://github.com/artk0de/TeaRAGs-MCP/commit/a9fe6d81937d3ee903a1326f8262e1f8c55d578d)),
+  closes
+  [ExtractionFanoutDispatcher#runPartitionedFileBatch](https://github.com/artk0de/ExtractionFanoutDispatcher/issues/runPartitionedFileBatch)
+
+### Documentation
+
+- **benchmarks:** move filter-building eval expectations to the corrected level
+  guidance (9mwny)
+  ([2f5812b](https://github.com/artk0de/TeaRAGs-MCP/commit/2f5812b0c3fb1cce5e60312ce3ad05cb4b742860))
+- **drift:** a new drift axis must also join the worktree seed gate (k8gac)
+  ([1ad677f](https://github.com/artk0de/TeaRAGs-MCP/commit/1ad677f541f88cf33462d61518ef2cc730d6358f))
+- **dx:** replace retired search params in docs and the filter-building E1 eval
+  (9mwny)
+  ([5c4fc9e](https://github.com/artk0de/TeaRAGs-MCP/commit/5c4fc9ec363ab86050884e19daa0095aa7414604))
+- **dx:** scope the entry-point minFanOut recipe to chunk level (9mwny)
+  ([f0990f1](https://github.com/artk0de/TeaRAGs-MCP/commit/f0990f14309cc16dccd2f45b3d5fb9267f9a1f71))
+- **ingest:** warn that a fresh worktree alias is seeded from its sibling's
+  index (k8gac)
+  ([99313ff](https://github.com/artk0de/TeaRAGs-MCP/commit/99313ff66affcd4de3227360508ca7c5f512eccc))
+- **language:** bring codegraph-walkers.md to the domains/language layout
+  (xuywm)
+  ([774cdb0](https://github.com/artk0de/TeaRAGs-MCP/commit/774cdb0623d484ccff7cfbe4663527dfba2f445b)),
+  closes
+  [LanguageFactory#build](https://github.com/artk0de/LanguageFactory/issues/build)
+- **language:** correct four stale statements the t5cji review found (t5cji)
+  ([e3274e8](https://github.com/artk0de/TeaRAGs-MCP/commit/e3274e88c521ba4b6ac4de199a764bae1de30035))
+- **language:** state the real walker/ layout for every language (xuywm)
+  ([066e073](https://github.com/artk0de/TeaRAGs-MCP/commit/066e0737d649b1a2104322c1ab584f807d33b3b3))
+- **language:** state which languages own file edges and what the JS/TS mappers
+  now do (x9qsh)
+  ([fc43878](https://github.com/artk0de/TeaRAGs-MCP/commit/fc438788e2032572f20743073b1b386f2b7f14c5))
+- **mcp:** clear the preset default filter in test-pattern recipes so they stop
+  returning 0 (9mwny)
+  ([a6bad45](https://github.com/artk0de/TeaRAGs-MCP/commit/a6bad45268b00eb64c3e55a1220eb393a3b5a154))
+- **mcp:** split filter level from result granularity; adaptive bugFixRate clamp
+  (9mwny)
+  ([cc2145b](https://github.com/artk0de/TeaRAGs-MCP/commit/cc2145b30ee1bf4c29bf31013fac2d1bd80740ef)),
+  closes
+  [TrajectoryRegistry#buildMergedFilter](https://github.com/artk0de/TrajectoryRegistry/issues/buildMergedFilter)
+  [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+- **pipeline:** name the healer as the overlay writer that bypasses the
+  omitted-key delete (k8gac)
+  ([dbe0e12](https://github.com/artk0de/TeaRAGs-MCP/commit/dbe0e1242cc24a37645bd90300682842626936a4))
+- **pipeline:** the completion owner reads back alone as defence in depth
+  (sgo8v)
+  ([5ad3d17](https://github.com/artk0de/TeaRAGs-MCP/commit/5ad3d17d35856ec0385488eaa54cd64cf0303a07)),
+  closes
+  [LanguageAffinityDispatcher#runFinalize](https://github.com/artk0de/LanguageAffinityDispatcher/issues/runFinalize)
+  [DuckDbGraphSession#streamRows](https://github.com/artk0de/DuckDbGraphSession/issues/streamRows)
+  [CodegraphDaemonServer#admitWrite](https://github.com/artk0de/CodegraphDaemonServer/issues/admitWrite)
+- **website:** document first-index worktree seeding and its opt-out (k8gac)
+  ([da19b77](https://github.com/artk0de/TeaRAGs-MCP/commit/da19b7752b6b1d24e660e3a25da072627d8515c1))
+- **website:** list INGEST_SEED_MARKER_UNREADABLE and INGEST_WORKER_TIMEOUT
+  error codes (k8gac)
+  ([209c90d](https://github.com/artk0de/TeaRAGs-MCP/commit/209c90df8d590fec37c67f926ce01d8d7c1b1a17))
+- **website:** show a single fileExtension value in the search_code example
+  (9mwny)
+  ([0dcd755](https://github.com/artk0de/TeaRAGs-MCP/commit/0dcd755e90941c424dc7cabda518f378894f3b24))
+
+### Code Refactoring
+
+- **adapters:** one daemon refusal rule for pool, stale-client settle and replay
+  (1wr7p, f924y)
+  ([c0679cc](https://github.com/artk0de/TeaRAGs-MCP/commit/c0679cc40451c02165dfa3d4c839e0b15807faa1))
+- **ingest:** extract the footprint clone saga from WorktreeProvisioner (k8gac)
+  ([7f6f4b2](https://github.com/artk0de/TeaRAGs-MCP/commit/7f6f4b214edfc8c1c24c6497d5f53489e9719ea5)),
+  closes
+  [WorktreeProvisioner#create](https://github.com/artk0de/WorktreeProvisioner/issues/create)
+- **language:** move SUPER_RECEIVER_SENTINEL to a Ruby leaf module (xuywm)
+  ([9fc4045](https://github.com/artk0de/TeaRAGs-MCP/commit/9fc4045e41a5421d9002d2117a770485d7f4862a))
+- **language:** move ZEITWERK_PREFIX to a Ruby leaf module (xuywm)
+  ([19b4dcb](https://github.com/artk0de/TeaRAGs-MCP/commit/19b4dcb146913df14205e3f8abbbf7e00413d1e5))
+- **language:** pin the TS 5 option semantics TSProgramCache type-checks under
+  (noc7)
+  ([6f4e263](https://github.com/artk0de/TeaRAGs-MCP/commit/6f4e2633136eac157c4fe18dd227d2fdb49414de))
+- **scripts:** move the shared oracle core out of the TS oracle script (xuywm)
+  ([870020b](https://github.com/artk0de/TeaRAGs-MCP/commit/870020bf88e6a3a65599457a9b8d2591bc72e45c))
+
 ## [1.42.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.41.0...v1.42.0) (2026-09-16)
 
 ### 🧠 Code intelligence
 
-* The call-graph background service now checks compatibility with the service it's talking to, and either upgrades automatically or fails with a clear error — instead of silently returning incomplete call-graph results when versions mismatched
+- The call-graph background service now checks compatibility with the service
+  it's talking to, and either upgrades automatically or fails with a clear error
+  — instead of silently returning incomplete call-graph results when versions
+  mismatched
 
 ### 🩹 Fixes
 
-* Call-graph lookups like get_callers and get_callees no longer silently return stale or empty results after clearing and reindexing a project, or after any operation that replaces the underlying call-graph database
-* The call-graph background service now keeps the memory limit you configured across automatic restarts, instead of silently reverting to the default
-* Enabling debug logging (DEBUG=1) for the call-graph background service now actually produces log output, instead of staying empty
-* Clearing an index now removes all of its call-graph data, so a later reindex can no longer reuse call-graph information left over from a previous index generation
-* Indexing a project is now protected by an exclusive lock, so two indexing runs — from different sessions, machines, or an auto-update kicking in mid-run — can no longer corrupt each other's progress
-* File-path filtering (pathPattern) across all search and ranking tools now matches exactly what the glob pattern names, fixing cases that previously returned extra files, wrong ordering, or no results at all
-* Incremental reindexing of Ruby codebases no longer loses call-graph accuracy for ActiveRecord models with custom table names, even when only some files are re-walked
-* Index status and metrics now report the exact number of searchable code chunks, instead of a count inflated by two internal bookkeeping entries
-* Call-graph navigation now correctly follows calls made through interface-typed variables in TypeScript and JavaScript, instead of guessing a target based on method-name uniqueness
-* When background code-intelligence indexing hits an internal error, the index status now correctly shows as failed instead of hanging as "in progress" indefinitely
-* find_symbol keeps working with a warning instead of failing outright when the call-graph service is temporarily unavailable, such as right after a rebuild
-* Documentation table-of-contents entries now link each heading to its own section, instead of sometimes jumping to an unrelated one
-* Searching for an exact symbol name now reliably surfaces that symbol's own code and tests at the top of hybrid search results, instead of unrelated look-alikes
-* Looking up a documentation section or a class outline now returns clean, complete content — without duplicated text, without every test's full body attached, and without an empty table of contents in place of the actual content
-* Ranking signals attached to code chunks, used by presets like hotspot and tech-debt detection, are now computed reliably instead of silently defaulting to empty for some chunks
-* Indexing background workers no longer crash when an indexing run gets superseded by a newer one, such as from rapid consecutive indexing requests
-* Python call-graph resolution no longer leaks cached results between separate indexing runs, which could otherwise produce inconsistent call-graph edges depending on run history
-* Starting a new index run on a project that's already being indexed, by this session or another, is now rejected with a clear error instead of silently corrupting the in-progress run
-* Index status and metrics for a project now reflect that project's own configuration instead of the server's overall settings, so a project with a signal type disabled no longer shows data for it
-* Fixes a bug where internal index version-tracking metadata could be silently overwritten and lost when multiple maintenance operations ran back to back
-* Running a signal recompute while a regular indexing sync is still finishing in the background no longer causes lost or corrupted code-intelligence data
-* Ranking signals for code chunks, like fan-in/fan-out and related hotspot scores, are now attributed to the correct function or method instead of sometimes being written onto its enclosing function
-* The prime command's per-language call-graph resolution stats no longer get reset to a single file's numbers after a partial reindex — they keep reflecting the whole codebase until the next full recompute
-* The CLI's "update available" check now correctly reflects the version you actually have installed after an upgrade or relink, instead of showing stale information for up to a day
-* Fixes indexing runs getting stuck reporting "degraded" forever for projects containing files the call-graph analyzer doesn't parse, like JSON, Markdown, SQL, or TOML
-* Fixes recovery before an automatic reindex silently marking large numbers of code chunks as fully analyzed when their call-graph data was actually empty
-* Fixes background indexing (enrichment) silently dying partway through on large projects, which could leave its status stuck reporting "failed" after a long timeout
-* The prime command now shows code-quality signal guidance for every major language in a codebase, not just the largest one
+- Call-graph lookups like get_callers and get_callees no longer silently return
+  stale or empty results after clearing and reindexing a project, or after any
+  operation that replaces the underlying call-graph database
+- The call-graph background service now keeps the memory limit you configured
+  across automatic restarts, instead of silently reverting to the default
+- Enabling debug logging (DEBUG=1) for the call-graph background service now
+  actually produces log output, instead of staying empty
+- Clearing an index now removes all of its call-graph data, so a later reindex
+  can no longer reuse call-graph information left over from a previous index
+  generation
+- Indexing a project is now protected by an exclusive lock, so two indexing runs
+  — from different sessions, machines, or an auto-update kicking in mid-run —
+  can no longer corrupt each other's progress
+- File-path filtering (pathPattern) across all search and ranking tools now
+  matches exactly what the glob pattern names, fixing cases that previously
+  returned extra files, wrong ordering, or no results at all
+- Incremental reindexing of Ruby codebases no longer loses call-graph accuracy
+  for ActiveRecord models with custom table names, even when only some files are
+  re-walked
+- Index status and metrics now report the exact number of searchable code
+  chunks, instead of a count inflated by two internal bookkeeping entries
+- Call-graph navigation now correctly follows calls made through interface-typed
+  variables in TypeScript and JavaScript, instead of guessing a target based on
+  method-name uniqueness
+- When background code-intelligence indexing hits an internal error, the index
+  status now correctly shows as failed instead of hanging as "in progress"
+  indefinitely
+- find_symbol keeps working with a warning instead of failing outright when the
+  call-graph service is temporarily unavailable, such as right after a rebuild
+- Documentation table-of-contents entries now link each heading to its own
+  section, instead of sometimes jumping to an unrelated one
+- Searching for an exact symbol name now reliably surfaces that symbol's own
+  code and tests at the top of hybrid search results, instead of unrelated
+  look-alikes
+- Looking up a documentation section or a class outline now returns clean,
+  complete content — without duplicated text, without every test's full body
+  attached, and without an empty table of contents in place of the actual
+  content
+- Ranking signals attached to code chunks, used by presets like hotspot and
+  tech-debt detection, are now computed reliably instead of silently defaulting
+  to empty for some chunks
+- Indexing background workers no longer crash when an indexing run gets
+  superseded by a newer one, such as from rapid consecutive indexing requests
+- Python call-graph resolution no longer leaks cached results between separate
+  indexing runs, which could otherwise produce inconsistent call-graph edges
+  depending on run history
+- Starting a new index run on a project that's already being indexed, by this
+  session or another, is now rejected with a clear error instead of silently
+  corrupting the in-progress run
+- Index status and metrics for a project now reflect that project's own
+  configuration instead of the server's overall settings, so a project with a
+  signal type disabled no longer shows data for it
+- Fixes a bug where internal index version-tracking metadata could be silently
+  overwritten and lost when multiple maintenance operations ran back to back
+- Running a signal recompute while a regular indexing sync is still finishing in
+  the background no longer causes lost or corrupted code-intelligence data
+- Ranking signals for code chunks, like fan-in/fan-out and related hotspot
+  scores, are now attributed to the correct function or method instead of
+  sometimes being written onto its enclosing function
+- The prime command's per-language call-graph resolution stats no longer get
+  reset to a single file's numbers after a partial reindex — they keep
+  reflecting the whole codebase until the next full recompute
+- The CLI's "update available" check now correctly reflects the version you
+  actually have installed after an upgrade or relink, instead of showing stale
+  information for up to a day
+- Fixes indexing runs getting stuck reporting "degraded" forever for projects
+  containing files the call-graph analyzer doesn't parse, like JSON, Markdown,
+  SQL, or TOML
+- Fixes recovery before an automatic reindex silently marking large numbers of
+  code chunks as fully analyzed when their call-graph data was actually empty
+- Fixes background indexing (enrichment) silently dying partway through on large
+  projects, which could leave its status stuck reporting "failed" after a long
+  timeout
+- The prime command now shows code-quality signal guidance for every major
+  language in a codebase, not just the largest one
 
 ## [1.41.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0) (2026-09-13)
 
