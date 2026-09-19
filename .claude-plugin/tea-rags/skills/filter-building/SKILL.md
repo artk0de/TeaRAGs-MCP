@@ -15,10 +15,10 @@ description:
   negation in `pathPattern` (`!**/test/**`), or raw `filter` escape hatch
   (Qdrant `must`/`should`/`must_not`) for payload keys without typed sugar.
   Cases: "tests of AuthService" → implicit `testFile: "only"`; "Alice's recent
-  code" → `author + modifiedAfter`; "old payments code" → `modifiedBefore`;
-  "what's new this week" → `modifiedAfter`; "production code, not tests" →
-  `testFile: "exclude"`; "code linked to JIRA-1234" → `taskId`;
-  "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
+  code" → `recentAuthor + modifiedAfter`; "old payments code" →
+  `modifiedBefore`; "what's new this week" → `modifiedAfter`; "production
+  code, not tests" → `testFile: "exclude"`; "code linked to JIRA-1234" →
+  `taskId`; "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
   rerank preset — use `tea-rags:analytics-rerank`. NOT for general project
   exploration — use `tea-rags:explore`.
 user-invocable: false

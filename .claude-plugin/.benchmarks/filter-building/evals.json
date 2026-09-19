@@ -282,6 +282,18 @@
         "without_rule": "FAIL",
         "without_rule_note": "testFile: false — boolean again."
       }
+    },
+    {
+      "id": "T11",
+      "audit_finding": "description case 'Alice's recent code' — the phrase routing reads — maps to the commit-side author",
+      "prompt": "Show me Alice's recent code in the billing module.",
+      "expected": "recentAuthor: '<Alice's full name or email>' + modifiedAfter: <recent-window ISO> + pathPattern: '**/billing/**' (no level needed)",
+      "expected_NOT": "author (exact blame owner of the live lines — what she recently committed is recentAuthor); level: 'file' added for modifiedAfter",
+      "failure_mode": "The skill description said author + modifiedAfter for this exact phrase, contradicting the body row and T1, so routing picked the blame owner",
+      "result": {
+        "with_rule": "NOT RUN",
+        "note": "Added with the 9mwny description fix; not yet executed."
+      }
     }
   ]
 }
