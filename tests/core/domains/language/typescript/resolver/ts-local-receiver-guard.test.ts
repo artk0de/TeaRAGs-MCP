@@ -276,13 +276,24 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — local-receiver guard (bd
     expect(strategy().attempt(DEPENDENCY_RECEIVER_CALL, ctx("src/client-stage.ts")).kind).toBe("continue");
   });
 
+  // This guard's own verdict is asserted beside the `continue` in these two:
+  // the member-evidence guard declines the same untyped receivers, so the pass
+  // result alone no longer shows which guard spoke (bd tea-rags-mcp-t5cji).
   it("continues for an unannotated destructured parameter (StageRow handlers.remove(index))", () => {
     writeUntypedParameterReceiverFixture(repoRoot);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(receiverIsUnpinnableLocalValueBinding(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"), cache)).toBe(
+      true,
+    );
     expect(strategy().attempt(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts")).kind).toBe("continue");
   });
 
   it("continues for a receiver destructured out of an `any`-returning project hook", () => {
     writeUntypedHookReceiverFixture(repoRoot);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(receiverIsUnpinnableLocalValueBinding(UNTYPED_HOOK_RECEIVER_CALL, ctx("src/legacy-stage.ts"), cache)).toBe(
+      true,
+    );
     expect(strategy().attempt(UNTYPED_HOOK_RECEIVER_CALL, ctx("src/legacy-stage.ts")).kind).toBe("continue");
   });
 
@@ -368,17 +379,17 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — local-receiver gu
     writeUntypedParameterReceiverFixture(repoRoot);
     writeSource(repoRoot, "src/attributor.ts", [`export class FontFamilyParchmentStyleAttributor {}`, ``].join("\n"));
 
-    const outcome = new TSImportNarrowedFallbackSymbolResolutionStrategy(
-      cfg,
-      new TSProgramCache({ repoRoot, tsOptions }),
-    ).attempt(
+    const context = ctx("src/stage-row.ts", {
+      symbolTable: ambiguousTable(),
+      imports: [{ importText: "./attributor.js", startLine: 1, importedNames: ["FontFamilyParchmentStyleAttributor"] }],
+    });
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    // The guard's own verdict (bd tea-rags-mcp-t5cji: the member-evidence guard
+    // declines the same narrowed candidate, so `continue` alone is not proof).
+    expect(receiverIsUnpinnableLocalValueBinding(UNTYPED_PARAMETER_RECEIVER_CALL, context, cache)).toBe(true);
+    const outcome = new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg, cache).attempt(
       UNTYPED_PARAMETER_RECEIVER_CALL,
-      ctx("src/stage-row.ts", {
-        symbolTable: ambiguousTable(),
-        imports: [
-          { importText: "./attributor.js", startLine: 1, importedNames: ["FontFamilyParchmentStyleAttributor"] },
-        ],
-      }),
+      context,
     );
 
     expect(outcome.kind).toBe("continue");
@@ -415,6 +426,15 @@ describe("TSCallResolver — local-receiver guard end to end (bd tea-rags-mcp-z0
   it("emits no edge for an unannotated destructured parameter (handlers.remove(index))", () => {
     writeUntypedParameterReceiverFixture(repoRoot);
     const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+    // The guard's verdict on the resolver's own cache (bd tea-rags-mcp-t5cji:
+    // the member-evidence guard declines the same call downstream).
+    expect(
+      receiverIsUnpinnableLocalValueBinding(
+        UNTYPED_PARAMETER_RECEIVER_CALL,
+        ctx("src/stage-row.ts"),
+        resolver.programCache,
+      ),
+    ).toBe(true);
     expect(resolver.resolve(UNTYPED_PARAMETER_RECEIVER_CALL, ctx("src/stage-row.ts"))).toBeNull();
   });
 

@@ -17,6 +17,7 @@ import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { interfaceReceiverExcludesCandidate } from "../../../../../../src/core/domains/language/typescript/resolver/ts-interface-receiver.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
@@ -318,15 +319,27 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — interface-typed receiver
     return walkCtx(table, { callerFile: "src/lonely.ts", callerScope: ["lonely"], hierarchy: hierarchyOf([]) });
   };
 
+  /**
+   * The hwwtw guard's own verdict, asserted beside each outcome (bd
+   * tea-rags-mcp-t5cji): the member-evidence guard declines the same candidate
+   * after this one, so the outcome alone no longer shows this guard spoke.
+   */
+  const RUN_MEMO_SET = RUN_MEMO_SYMBOLS.find((s) => s.symbolId === "RunMemo#set") as NamedSymbol;
+
   it("continues instead of matching the project's only set on an unrelated class", () => {
     writeLonelyPortFixture();
-    const strategy = new TSGlobalShortNameSymbolResolutionStrategy(cfg, new TSProgramCache({ repoRoot, tsOptions }));
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(interfaceReceiverExcludesCandidate(LONELY_CALL, lonelyCtx(), cache, RUN_MEMO_SET)).toBe(true);
+    const strategy = new TSGlobalShortNameSymbolResolutionStrategy(cfg, cache);
     expect(strategy.attempt(LONELY_CALL, lonelyCtx()).kind).toBe("continue");
   });
 
   it("emits no method edge end to end — the member is only known to be declared on the interface", () => {
     writeLonelyPortFixture();
     const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+    expect(interfaceReceiverExcludesCandidate(LONELY_CALL, lonelyCtx(), resolver.programCache, RUN_MEMO_SET)).toBe(
+      true,
+    );
     const ctx = lonelyCtx();
     expect(edgesOf(resolver.resolveDispatch(LONELY_CALL, ctx))).toEqual([]);
     expect(resolver.resolve(LONELY_CALL, ctx)).toEqual({ targetRelPath: "src/memo-port.ts", targetSymbolId: null });

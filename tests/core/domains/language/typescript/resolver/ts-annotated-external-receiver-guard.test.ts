@@ -15,6 +15,7 @@ import {
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
 import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
+import { interfaceReceiverExcludesCandidate } from "../../../../../../src/core/domains/language/typescript/resolver/ts-interface-receiver.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -267,6 +268,11 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
 
   it("continues for a this.<field> whose field is annotated with a package type (progress.ts multibar.stop)", () => {
     writeAnnotatedFieldFixture(repoRoot);
+    // The guard's own verdict first: the member-evidence guard declines the
+    // same call, so the `continue` alone does not show this guard spoke (bd
+    // tea-rags-mcp-t5cji).
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(ANNOTATED_FIELD_STOP, annotatedFieldCtx(), tsOptions, cache)).toBe(true);
     expect(strategy().attempt(ANNOTATED_FIELD_STOP, annotatedFieldCtx()).kind).toBe("continue");
   });
 
@@ -319,6 +325,12 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
       });
     const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
     expect(resolver.targetsExternalImport(call, putterCtx())).toBe(false);
+    // The hwwtw guard's own verdict: `Store#put` is not `Putter`'s and no
+    // `implements` connects them. Asserted directly because the member-evidence
+    // guard declines the same candidate (bd tea-rags-mcp-t5cji).
+    const storePut = sym("Store#put", "put", "src/store.ts", ["Store"]);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(interfaceReceiverExcludesCandidate(call, putterCtx(), cache, storePut)).toBe(true);
     expect(strategy().attempt(call, putterCtx()).kind).toBe("continue");
   });
 
@@ -367,6 +379,7 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
 
   it("still declines a package-bound annotation with no Program cache — the import list needs no checker", () => {
     writeAnnotatedTreeSitterFixture(repoRoot);
+    expect(targetsExternalImport(ANNOTATED_NODE_CHILD, annotatedNodeCtx(), tsOptions, null)).toBe(true);
     expect(
       new TSGlobalShortNameSymbolResolutionStrategy(cfg, null).attempt(ANNOTATED_NODE_CHILD, annotatedNodeCtx()).kind,
     ).toBe("continue");

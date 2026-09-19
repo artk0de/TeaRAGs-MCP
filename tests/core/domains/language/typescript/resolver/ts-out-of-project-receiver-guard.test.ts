@@ -333,6 +333,11 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — out-of-project receiver 
 
   it("continues for a MapIterator the builtin vocabulary never enumerated (registry.ts values().next())", () => {
     writeMapIteratorFixture(repoRoot);
+    // The out-of-project arm's own verdict: the member-evidence guard declines
+    // the same call, so the `continue` alone no longer shows it (bd
+    // tea-rags-mcp-t5cji).
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(MAP_ITERATOR_NEXT, ctx("src/registry.ts"), tsOptions, cache)).toBe(true);
     expect(strategy().attempt(MAP_ITERATOR_NEXT, ctx("src/registry.ts")).kind).toBe("continue");
   });
 

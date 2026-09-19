@@ -72,28 +72,34 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — TS utility-type receiver
       member: "push",
       startLine: 9,
     };
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable: collidingTable(), localBindings: { survivorEmbeddings: [{ line: 2, type: "Awaited" }] } }),
-    );
+    // The guard's own verdict first, in this and the next two: the
+    // member-evidence guard declines the same calls, so a `continue` alone no
+    // longer shows this guard spoke (bd tea-rags-mcp-t5cji).
+    const context = ctx({
+      symbolTable: collidingTable(),
+      localBindings: { survivorEmbeddings: [{ line: 2, type: "Awaited" }] },
+    });
+    expect(targetsExternalImport(call, context, cfg.tsOptions, null)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a `ReturnType`-annotated receiver whose member is builtin vocabulary (out.push(x))", () => {
     const call: CallRef = { callText: "out.push(x)", receiver: "out", member: "push", startLine: 9 };
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable: collidingTable(), localBindings: { out: [{ line: 2, type: "ReturnType" }] } }),
-    );
+    const context = ctx({ symbolTable: collidingTable(), localBindings: { out: [{ line: 2, type: "ReturnType" }] } });
+    expect(targetsExternalImport(call, context, cfg.tsOptions, null)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a `NonNullable`-annotated receiver whose member is builtin vocabulary (fanouts.push(f))", () => {
     const call: CallRef = { callText: "fanouts.push(f)", receiver: "fanouts", member: "push", startLine: 9 };
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable: collidingTable(), localBindings: { fanouts: [{ line: 2, type: "NonNullable" }] } }),
-    );
+    const context = ctx({
+      symbolTable: collidingTable(),
+      localBindings: { fanouts: [{ line: 2, type: "NonNullable" }] },
+    });
+    expect(targetsExternalImport(call, context, cfg.tsOptions, null)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
@@ -149,6 +155,7 @@ describe("TSCallResolver.resolve — no phantom edge for a utility-type receiver
       symbolTable: collidingTable(),
       localBindings: { survivorEmbeddings: [{ line: 2, type: "Awaited" }] },
     });
+    expect(resolver.targetsExternalImport(call, context)).toBe(true);
     expect(resolver.resolve(call, context)).toBeNull();
   });
 

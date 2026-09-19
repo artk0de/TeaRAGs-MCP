@@ -38,6 +38,15 @@ const ctx = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): Cal
   ...over,
 });
 
+/**
+ * The builtin guard's OWN verdict, asserted beside each pass-level `continue`
+ * (bd tea-rags-mcp-t5cji). The member-evidence guard declines the same untyped
+ * receivers after this one, so a `continue` alone no longer shows which guard
+ * spoke — with this guard disabled those cases passed unchanged.
+ */
+const claimedExternal = (call: CallRef, context: CallContext): boolean =>
+  targetsExternalImport(call, context, cfg.tsOptions, null);
+
 /** The project defines exactly one symbol per builtin-colliding short name. */
 const collidingTable = (): InMemoryGlobalSymbolTable =>
   tableWith(
@@ -64,60 +73,65 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — builtin-receiver guard (
 
   it("continues instead of matching a project `error` for an ambient global receiver (console.error(msg))", () => {
     const call: CallRef = { callText: "console.error(msg)", receiver: "console", member: "error", startLine: 4 };
-    const outcome = strat.attempt(call, ctx({ symbolTable: collidingTable() }));
+    const context = ctx({ symbolTable: collidingTable() });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a receiver whose bound type is a builtin (const m = new Map(); m.set(k, v))", () => {
     const call: CallRef = { callText: "m.set(k, v)", receiver: "m", member: "set", startLine: 9 };
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable: collidingTable(), localBindings: { m: [{ line: 2, type: "Map" }] } }),
-    );
+    const context = ctx({ symbolTable: collidingTable(), localBindings: { m: [{ line: 2, type: "Map" }] } });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a `this.field` whose declared type is a builtin (this.pending.set(k, v))", () => {
     const call: CallRef = { callText: "this.pending.set(k, v)", receiver: "this.pending", member: "set", startLine: 9 };
-    const outcome = strat.attempt(
-      call,
-      ctx({
-        symbolTable: collidingTable(),
-        callerScope: ["Service"],
-        classFieldTypes: { Service: { pending: "Map" } },
-      }),
-    );
+    const context = ctx({
+      symbolTable: collidingTable(),
+      callerScope: ["Service"],
+      classFieldTypes: { Service: { pending: "Map" } },
+    });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a `ReadonlySet`-annotated receiver — a Set instance under a read-only view (KEYWORDS.has(w))", () => {
     const call: CallRef = { callText: "KEYWORDS.has(w)", receiver: "KEYWORDS", member: "has", startLine: 9 };
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable: collidingTable(), localBindings: { KEYWORDS: [{ line: 2, type: "ReadonlySet" }] } }),
-    );
+    const context = ctx({
+      symbolTable: collidingTable(),
+      localBindings: { KEYWORDS: [{ line: 2, type: "ReadonlySet" }] },
+    });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a `ReadonlyMap`-annotated receiver (index.get(k))", () => {
     const call: CallRef = { callText: "index.get(k)", receiver: "index", member: "get", startLine: 9 };
     const symbolTable = tableWith(["src/store.ts", [sym("Store#get", "get", "src/store.ts", ["Store"])]]);
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable, localBindings: { index: [{ line: 2, type: "ReadonlyMap" }] } }),
-    );
+    const context = ctx({ symbolTable, localBindings: { index: [{ line: 2, type: "ReadonlyMap" }] } });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for an UNTYPED receiver whose member is builtin-only vocabulary (const out = []; out.push(x))", () => {
     const call: CallRef = { callText: "out.push(x)", receiver: "out", member: "push", startLine: 9 };
-    const outcome = strat.attempt(call, ctx({ symbolTable: collidingTable() }));
+    const context = ctx({ symbolTable: collidingTable() });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for an UNTYPED module-level constant asked for membership (KEYWORDS.has(w))", () => {
     const call: CallRef = { callText: "KEYWORDS.has(w)", receiver: "KEYWORDS", member: "has", startLine: 9 };
-    const outcome = strat.attempt(call, ctx({ symbolTable: collidingTable() }));
+    const context = ctx({ symbolTable: collidingTable() });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
@@ -145,10 +159,9 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — builtin-receiver guard (
   it("continues for a receiver bound to an external package import (fs.readFile(p) via node:fs)", () => {
     const call: CallRef = { callText: "fs.readFile(p)", receiver: "fs", member: "readFile", startLine: 9 };
     const symbolTable = tableWith(["src/io.ts", [sym("readFile", "readFile", "src/io.ts", [])]]);
-    const outcome = strat.attempt(
-      call,
-      ctx({ symbolTable, imports: [{ importText: "node:fs", startLine: 1, importedNames: ["fs"] }] }),
-    );
+    const context = ctx({ symbolTable, imports: [{ importText: "node:fs", startLine: 1, importedNames: ["fs"] }] });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
@@ -209,20 +222,21 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — builtin-receiver 
 
   it("continues for an untyped builtin-vocabulary member even when one candidate is imported (out.push(x))", () => {
     const call: CallRef = { callText: "out.push(x)", receiver: "out", member: "push", startLine: 9 };
-    const outcome = strat.attempt(call, ctx({ symbolTable: ambiguous(), imports: [{ importText: "./impl-a.js" }] }));
+    const context = ctx({ symbolTable: ambiguous(), imports: [{ importText: "./impl-a.js" }] });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a builtin-typed receiver even when one candidate is imported (const m = new Map(); m.push(x))", () => {
     const call: CallRef = { callText: "m.push(x)", receiver: "m", member: "push", startLine: 9 };
-    const outcome = strat.attempt(
-      call,
-      ctx({
-        symbolTable: ambiguous(),
-        imports: [{ importText: "./impl-a.js" }],
-        localBindings: { m: [{ line: 2, type: "Map" }] },
-      }),
-    );
+    const context = ctx({
+      symbolTable: ambiguous(),
+      imports: [{ importText: "./impl-a.js" }],
+      localBindings: { m: [{ line: 2, type: "Map" }] },
+    });
+    expect(claimedExternal(call, context)).toBe(true);
+    const outcome = strat.attempt(call, context);
     expect(outcome.kind).toBe("continue");
   });
 
@@ -263,12 +277,16 @@ describe("TSCallResolver.resolve — no phantom edge for a builtin receiver (bd 
 
   it("declines console.error(msg) rather than emitting an edge to the project's own `error`", () => {
     const call: CallRef = { callText: "console.error(msg)", receiver: "console", member: "error", startLine: 4 };
-    expect(resolver.resolve(call, ctx({ symbolTable: collidingTable() }))).toBeNull();
+    const context = ctx({ symbolTable: collidingTable() });
+    expect(resolver.targetsExternalImport(call, context)).toBe(true);
+    expect(resolver.resolve(call, context)).toBeNull();
   });
 
   it("declines out.push(x) rather than emitting an edge to the project's own `push`", () => {
     const call: CallRef = { callText: "out.push(x)", receiver: "out", member: "push", startLine: 9 };
-    expect(resolver.resolve(call, ctx({ symbolTable: collidingTable() }))).toBeNull();
+    const context = ctx({ symbolTable: collidingTable() });
+    expect(resolver.targetsExternalImport(call, context)).toBe(true);
+    expect(resolver.resolve(call, context)).toBeNull();
   });
 
   it("declines this.pending.set(k, v) rather than emitting an edge to the project's own `set`", () => {
@@ -278,6 +296,7 @@ describe("TSCallResolver.resolve — no phantom edge for a builtin receiver (bd 
       callerScope: ["Service"],
       classFieldTypes: { Service: { pending: "Map" } },
     });
+    expect(resolver.targetsExternalImport(call, context)).toBe(true);
     expect(resolver.resolve(call, context)).toBeNull();
   });
 

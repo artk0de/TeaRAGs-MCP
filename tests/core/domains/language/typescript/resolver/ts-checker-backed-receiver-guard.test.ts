@@ -261,14 +261,23 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — checker-backed receiver 
     expect(outcome.kind).toBe("continue");
   });
 
+  // These two assert the checker-backed arm's own verdict first: the
+  // member-evidence guard declines the same calls, so a `continue` alone no
+  // longer shows this guard spoke (bd tea-rags-mcp-t5cji).
   it("continues for a module-level `new Map()` constant (worker.ts providerCache.set(key, pending))", () => {
     writeModuleConstMapFixture(repoRoot);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(MODULE_CONST_MAP_SET, ctx("src/worker.ts"), tsOptions, cache)).toBe(true);
     const outcome = strategy().attempt(MODULE_CONST_MAP_SET, ctx("src/worker.ts"));
     expect(outcome.kind).toBe("continue");
   });
 
   it("continues for a `Map | null` field the union annotation hid (parallel-synchronizer.ts:216)", () => {
     writeUnionFieldMapFixture(repoRoot);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(targetsExternalImport(UNION_FIELD_MAP_SET, ctx("src/parallel-synchronizer.ts"), tsOptions, cache)).toBe(
+      true,
+    );
     const outcome = strategy().attempt(UNION_FIELD_MAP_SET, ctx("src/parallel-synchronizer.ts"));
     expect(outcome.kind).toBe("continue");
   });
