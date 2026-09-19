@@ -136,11 +136,15 @@ describe("describeTSProgramTypecheckerDowngrade (bd tea-rags-mcp-6aytq)", () => 
   });
 
   // bd tea-rags-mcp-t5cji: without a Program a member call is no longer matched
-  // by name — the operator has to know which calls the run gives up.
-  it("says member calls on untyped receivers resolve only through import evidence", () => {
+  // by name — the operator has to know which calls the run gives up. An
+  // inherited `this` member is no longer among them: the class hierarchy answers it.
+  it("says member calls on untyped receivers resolve only through structural evidence", () => {
     const message = describeTSProgramTypecheckerDowngrade(assessTaxdome(2240));
 
-    expect(message).toContain("resolves only through import evidence");
+    expect(message).toContain("resolves only through structural evidence");
+    expect(message).toContain("for `this`, the enclosing class and the bases its file declares or imports");
+    expect(message).toContain("one on an untyped local or a parameter stays unresolved");
+    expect(message).not.toContain("inherited `this` member");
     expect(message).not.toContain("resolve without type information");
   });
 });

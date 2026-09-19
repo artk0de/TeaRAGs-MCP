@@ -32,7 +32,10 @@
  * property access, an `any` / `unknown` / error receiver whose property has no
  * symbol, or a declaration the candidate does not own. With no Program at all
  * (`CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff`) only
- * structural import evidence remains ({@link importBindingAccountsFor}).
+ * STRUCTURE remains: an import binding for a named receiver
+ * ({@link importBindingAccountsFor}), the class hierarchy for `this`
+ * ({@link thisHierarchyAccountsFor}) — which also answers a `this` member the
+ * checker names no symbol for.
  *
  * Declining is not deciding: the call falls through to the checker passes,
  * which pin what the compiler resolved — a file-only edge to `copy.ts` where the
@@ -42,7 +45,7 @@
 import ts from "typescript";
 
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
 import { declarationOwnerName, findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { receiverTypeName } from "./ts-external-call.js";
@@ -71,7 +74,8 @@ type EvidenceConfig = Pick<ResolverConfig, "tsOptions" | "mode" | "fileExists">;
  * `this` is NOT exempt. `thisMember` answers every member the enclosing class
  * declares in its own file, so a `this` call arriving here is one it could not
  * pin — inherited, or not the class's at all — and needs the same evidence: an
- * inherited project member is accepted through the checker's declaration, while
+ * inherited project member is accepted through the checker's declaration (or,
+ * where the checker is absent or silent, through the class hierarchy), while
  * taxdome's `this.state` (React declares it; the walker records the argument as
  * a call) used to land on the project's lone `state`, a nested function in a
  * `.mjs` artifact.
@@ -97,15 +101,131 @@ export function memberCandidateLacksReceiverEvidence(
   }
   const handle = programCache?.acquire(ctx.callerFile) ?? null;
   if (programCache === null || handle === null) {
+    if (receiver === "this") return !thisHierarchyAccountsFor(call.member, ctx, cfg, candidate);
     return !importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate);
   }
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
   const access = node?.parent;
-  if (node === null || access === undefined || !ts.isPropertyAccessExpression(access) || access.expression !== node) {
-    return true;
+  const declarations =
+    node !== null && access !== undefined && ts.isPropertyAccessExpression(access) && access.expression === node
+      ? (calledMemberSymbol(handle.checker, access.name)?.getDeclarations() ?? [])
+      : [];
+  if (declarations.length > 0) {
+    return !declarations.some((declaration) => declarationAccountsFor(declaration, candidate, ctx, programCache));
   }
-  const declarations = calledMemberSymbol(handle.checker, access.name)?.getDeclarations() ?? [];
-  return !declarations.some((declaration) => declarationAccountsFor(declaration, candidate, ctx, programCache));
+  // The checker is silent — no locatable member access, or a receiver whose
+  // property it names no symbol for. Only `this` still has structure to ask.
+  return receiver !== "this" || !thisHierarchyAccountsFor(call.member, ctx, cfg, candidate);
+}
+
+/** A class as the caller's structure pins it: its declared name and the file declaring it. */
+interface AnchoredClass {
+  readonly name: string;
+  readonly file: string;
+}
+
+/**
+ * The evidence `this` has when the checker gives none (bd tea-rags-mcp-t5cji):
+ * the CLASS it sits in. The candidate must be the member `this`'s nearest
+ * definer declares — the enclosing class in the caller's file, else the first
+ * ancestor up the `extends` chain of the run hierarchy that declares it
+ * ({@link nearestMemberDefiners}). Structural, so it holds with or without a
+ * Program; a Program's own declaration, where it names one, is asked first and
+ * never overruled.
+ *
+ * The hierarchy is keyed by class NAME, so a name is never the evidence: each
+ * hop is anchored to a file ({@link anchorBaseClass}), and a class that merely
+ * shares the enclosing class's or a base's name elsewhere — a project
+ * `Component` beside React's, a second `BaseJob` in another package — declares
+ * nothing this `this` can reach. Without it the checker-off mode lost every
+ * inherited `this.initProcessing()` (`BaseIndexingPipeline`) and every
+ * class-body `this.markContributed()`, where `thisMember` has no scope to read.
+ *
+ * The enclosing class is the caller's innermost scope; a CLASS-BODY chunk (a
+ * field initializer) has none, and there the chunk's own id, which carries no
+ * member separator, is the class.
+ */
+function thisHierarchyAccountsFor(
+  member: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  candidate: EvidenceCandidate,
+): boolean {
+  const owner = candidate.scope.at(-1);
+  const enclosing = ctx.callerScope.at(-1) ?? classBodyChunkClass(ctx.callerSymbolId);
+  if (owner === undefined || enclosing === undefined) return false;
+  return nearestMemberDefiners(member, { name: enclosing, file: ctx.callerFile }, ctx, cfg, new Set()).some(
+    (definer) => definer.name === owner && definer.file === candidate.relPath,
+  );
+}
+
+/** A class-body chunk's id is the bare class name; a method's or function's carries `#` / `.`. */
+function classBodyChunkClass(callerSymbolId: string | undefined): string | undefined {
+  return callerSymbolId === undefined || /[#.]/u.test(callerSymbolId) ? undefined : callerSymbolId;
+}
+
+/**
+ * The classes whose `member` a `this` inside `cls` reaches: `cls` itself when it
+ * declares the member in its file, else — walking every `extends` edge the run
+ * hierarchy records for the name — the nearest definers above it. A base no hop
+ * can anchor ends its path, which is what keeps a namesake off it. `implements`
+ * edges are not followed: an implemented type contributes no member body.
+ */
+function nearestMemberDefiners(
+  member: string,
+  cls: AnchoredClass,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  seen: Set<string>,
+): AnchoredClass[] {
+  const key = `${cls.file}::${cls.name}`;
+  if (seen.has(key)) return [];
+  seen.add(key);
+  const declares = [`${cls.name}#${member}`, `${cls.name}.${member}`].some((fqName) =>
+    lookupEcmascriptSymbols(ctx, fqName).some((def) => def.relPath === cls.file),
+  );
+  if (declares) return [cls];
+  return (ctx.hierarchy?.getAncestors(cls.name, { kinds: ["super"] }) ?? []).flatMap((edge) => {
+    const base = anchorBaseClass(edge.ancestorFqName, cls.file, ctx, cfg);
+    return base === null ? [] : nearestMemberDefiners(member, base, ctx, cfg, seen);
+  });
+}
+
+/**
+ * Pin the base class `written` in an `extends` clause of a class in `fromFile`
+ * to the file that declares it, or `null` when nothing structural does.
+ *
+ *   - `fromFile` declares a top-level `written` itself: that class.
+ *   - `fromFile` is the caller's file, and an import there binds the name: the
+ *     file it maps to, through a barrel to the file that declares the EXPORTED
+ *     name (`{ Base as B }` extends `B` and means `Base`) — the same hop
+ *     `namedImport` makes. A specifier that maps to no project file is a
+ *     package's class, and none of the project's namesakes is it.
+ *   - anything else — a base another file imports — is `null`. The resolver
+ *     sees the CALLER's import list only, and guessing the file by the name
+ *     would be the coincidence this exists to refuse.
+ */
+function anchorBaseClass(
+  written: string,
+  fromFile: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+): AnchoredClass | null {
+  const segments = written.split(".");
+  const root = segments[0];
+  if (
+    segments.length === 1 &&
+    lookupEcmascriptSymbols(ctx, written).some((def) => def.relPath === fromFile && def.scope.length === 0)
+  ) {
+    return { name: written, file: fromFile };
+  }
+  if (fromFile !== ctx.callerFile) return null;
+  const binding = ctx.imports.find((imp) => imp.importedNames?.includes(root));
+  if (binding === undefined) return null;
+  const mappedFile = mapImportToFile(binding.importText, ctx.callerFile, cfg.tsOptions, cfg.fileExists);
+  if (mappedFile === null) return null;
+  const name = segments.length > 1 ? (segments.at(-1) ?? root) : (binding.importedBindings?.[root] ?? root);
+  return { name, file: reexportOriginFile(name, mappedFile, ctx, cfg.mode) ?? mappedFile };
 }
 
 /**
@@ -113,7 +233,9 @@ export function memberCandidateLacksReceiverEvidence(
  * heap admission's `typecheckerOff`, a file no Program serves): the receiver is
  * an IMPORT BINDING, and the file that declares what it binds declares the
  * candidate. Structural, never a name coincidence — a local value, a
- * parameter, an `any`, an object literal and `this` bind no import and decline.
+ * parameter, an `any` and an object literal bind no import and decline; `this`
+ * binds none either, and is asked about its class instead
+ * ({@link thisHierarchyAccountsFor}).
  *
  *   - `import * as H`, a default import, `const H = require(…)`: the binding is
  *     the MODULE, so the candidate is a top-level declaration of the mapped

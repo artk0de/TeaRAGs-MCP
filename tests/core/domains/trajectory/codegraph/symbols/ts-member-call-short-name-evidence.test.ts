@@ -163,10 +163,12 @@ describe("TS member calls need the checker's agreement, not a unique short name 
  * With NO Program (`CODEGRAPH_TS_TYPECHECKER=0`, or heap admission's
  * `typecheckerOff`) the checker's agreement cannot be had, and the only evidence
  * left is structural: the receiver is an import binding whose module — through
- * its barrel — declares the candidate (bd tea-rags-mcp-t5cji). A value no import
- * binds stays declined, as it does with the checker on.
+ * its barrel — declares the candidate, or it is `this` and the candidate is what
+ * its class or a file-anchored base declares (bd tea-rags-mcp-t5cji). A value no
+ * import binds stays declined, as it does with the checker on, and so does a
+ * `this` member only a namesake of the base declares.
  */
-describe("TS member calls with the checker OFF take import evidence only (bd tea-rags-mcp-t5cji)", () => {
+describe("TS member calls with the checker OFF take structural evidence only (bd tea-rags-mcp-t5cji)", () => {
   const NO_CHECKER_CORPUS: Readonly<Record<string, string>> = {
     "web/helpers/foo-helper.ts": ["export function fooHelperFn(): number {", "  return 1;", "}", ""].join("\n"),
     "web/helpers/index.ts": ['export { fooHelperFn } from "./foo-helper";', ""].join("\n"),
@@ -177,6 +179,41 @@ describe("TS member calls with the checker OFF take import evidence only (bd tea
       "}",
       "export function viaValue(box: any): number {",
       "  return box.fooHelperFn();",
+      "}",
+      "",
+    ].join("\n"),
+    "web/jobs/base-job.ts": [
+      "export class BaseJob {",
+      "  retryLater(): number {",
+      "    return 1;",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+    // A namesake of the base in another package, declaring what the real base does not.
+    "web/other/base-job.ts": [
+      "export class BaseJob {",
+      "  archiveNow(): number {",
+      "    return 3;",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+    "web/jobs/export-job.ts": [
+      'import { BaseJob } from "./base-job";',
+      "export class ExportJob extends BaseJob {",
+      // With an explicit constructor a field initializer stays in the CLASS-BODY
+      // chunk: empty scope, the class itself as the chunk's id.
+      "  private readonly hooks = { done: (): number => this.cleanupNow() };",
+      "  constructor() {",
+      "    super();",
+      "  }",
+      "  run(): number {",
+      "    return this.retryLater() + this.archiveNow() + this.hooks.done();",
+      "  }",
+      "  cleanupNow(): number {",
+      "    return 2;",
+      "  }",
       "}",
       "",
     ].join("\n"),
@@ -235,6 +272,18 @@ describe("TS member calls with the checker OFF take import evidence only (bd tea
 
   it("still declines the same member on a value no import binds", async () => {
     expect(await targetsOf("box.fooHelperFn()")).toEqual([]);
+  });
+
+  it("resolves a `this` member inherited from the base the caller's file imports", async () => {
+    expect(await targetsOf("this.retryLater()")).toEqual(["web/jobs/base-job.ts::BaseJob#retryLater"]);
+  });
+
+  it("resolves a class-body `this` member to the enclosing class's own method", async () => {
+    expect(await targetsOf("this.cleanupNow()")).toEqual(["web/jobs/export-job.ts::ExportJob#cleanupNow"]);
+  });
+
+  it("declines a `this` member only a namesake of the base declares", async () => {
+    expect(await targetsOf("this.archiveNow()")).toEqual([]);
   });
 });
 

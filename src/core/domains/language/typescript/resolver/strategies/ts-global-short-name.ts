@@ -71,8 +71,8 @@ import type { ResolverConfig } from "./shared.js";
  * structural implementer with no `implements` clause is not accepted on name.
  *
  * Any OTHER receiver the walker did not type needs the checker's agreement —
- * with no Program, an import binding's — not just a unique name (bd
- * tea-rags-mcp-t5cji): see
+ * with no Program, an import binding's, or for `this` its class hierarchy's —
+ * not just a unique name (bd tea-rags-mcp-t5cji): see
  * {@link memberCandidateLacksReceiverEvidence}. Once the family filter stopped
  * Ruby namesakes from making `title` / `filter` / `request` ambiguous, this
  * pass committed `COPY.title(...)` on an object literal to the project's lone
