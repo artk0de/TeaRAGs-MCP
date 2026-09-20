@@ -74,7 +74,7 @@ describe("runDaemon — adopts the spawner's debug flag at startup (gnig6)", () 
   async function startDaemon(debug: boolean | undefined): Promise<void> {
     root = mkdtempSync(join(tmpdir(), "cg-gnig6-"));
     const paths = getDaemonPaths(join(root, "d"));
-    mkdirSync(paths.storageDir, { recursive: true });
+    mkdirSync(paths.buildDir, { recursive: true });
     const daemon = await runDaemon({
       rootDir: join(root, "data"),
       paths,

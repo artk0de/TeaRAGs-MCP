@@ -13,16 +13,25 @@ export { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpContext } from "
 export { CodegraphDaemonServer } from "./server.js";
 export {
   type CodegraphDaemonPaths,
+  type DaemonKeyDirStatus,
   DAEMON_LOG_MAX_BYTES,
   IDLE_SHUTDOWN_MS,
+  daemonPathsForKeyDir,
   decrementRefs,
+  getBuildKey,
   getDaemonLogPath,
   getDaemonPaths,
+  getLegacyDaemonPaths,
   getStorageDir,
   incrementRefs,
+  isDaemonPidAlive,
+  listDaemonKeyDirs,
   openDaemonLogFd,
   readRefs,
   scheduleIdleWatcher,
+  sweepOrphanedDaemonKeyDirs,
+  unlinkDaemonFiles,
+  waitForDaemonExit,
 } from "./lifecycle.js";
 export { createConnectionHandler, createIdleShutdown, runDaemon, type DaemonRuntimeOptions } from "./entry.js";
 export {

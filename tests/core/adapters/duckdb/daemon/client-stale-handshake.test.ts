@@ -62,7 +62,7 @@ afterEach(async () => {
 function makePaths(): CodegraphDaemonPaths {
   root = mkdtempSync(join(tmpdir(), "cg-cstale-"));
   const paths = getDaemonPaths(join(root, "d"));
-  mkdirSync(paths.storageDir, { recursive: true });
+  mkdirSync(paths.buildDir, { recursive: true });
   return paths;
 }
 

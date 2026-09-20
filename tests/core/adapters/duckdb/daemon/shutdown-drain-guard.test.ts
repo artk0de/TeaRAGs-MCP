@@ -78,7 +78,7 @@ async function startDrainHarness(): Promise<{
 }> {
   root = mkdtempSync(join(tmpdir(), "cg-drain-"));
   const paths: CodegraphDaemonPaths = getDaemonPaths(join(root, "d"));
-  mkdirSync(paths.storageDir, { recursive: true });
+  mkdirSync(paths.buildDir, { recursive: true });
 
   const writeGate = new Promise<void>((resolve) => {
     releaseWrite = resolve;
@@ -229,9 +229,9 @@ describe("in-flight-write detection — existing write bookkeeping read as a gua
 
 describe("draining pool settles a refused drain with the typed error", () => {
   function makePaths(): CodegraphDaemonPaths {
-    root = mkdtempSync(join(tmpdir(), "cg-drain-pool-"));
+    root = mkdtempSync(join(tmpdir(), "cg-drnp-"));
     const paths = getDaemonPaths(join(root, "d"));
-    mkdirSync(paths.storageDir, { recursive: true });
+    mkdirSync(paths.buildDir, { recursive: true });
     return paths;
   }
 

@@ -1,6 +1,6 @@
 // src/bootstrap/factory.ts
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +10,7 @@ import {
   getDaemonPaths,
   getStorageDir,
   openDaemonLogFd,
+  sweepOrphanedDaemonKeyDirs,
   type CodegraphDaemonPaths,
 } from "../core/adapters/duckdb/daemon/index.js";
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
@@ -429,10 +430,19 @@ export function buildCodegraphDaemonSpawnEnv(
  */
 function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphDaemonSpawnSettings): void {
   if (isCodegraphDaemonAlive(paths)) return;
+  // The per-build key directory may not exist on a cold build — and the spawn
+  // lock lives INSIDE it (bd tea-rags-mcp-42hno).
+  mkdirSync(paths.buildDir, { recursive: true });
   const lock = codegraphDaemonLock.acquire(paths.lockFile);
   if (!lock) return; // another process is spawning; it will own the daemon
   try {
     if (isCodegraphDaemonAlive(paths)) return;
+    // Build-keyed spawn hygiene (bd tea-rags-mcp-42hno): key directories of
+    // builds whose daemon pid is dead are removed before a fresh spawn, so
+    // builds that come and go (npm link flips, rebuilds) do not litter the
+    // storage dir with stale sockets and pid files. A dir whose spawn lock is
+    // held by a concurrent spawner is skipped by the sweep itself.
+    sweepOrphanedDaemonKeyDirs(paths.storageDir);
     const entryUrl = new URL("../core/adapters/duckdb/daemon/entry.js", import.meta.url);
     const entryPath = fileURLToPath(entryUrl);
     // The daemon is detached, so its output has nowhere to go unless it is
@@ -661,6 +671,10 @@ export function wireCodegraph(
     // `DaemonGraphDbClient` over this socket; reads (`acquireRead`) always stay
     // in-process READ_ONLY and ignore it.
     daemonSocketPath: daemonPaths.socketPath,
+    // Base lifecycle dir (bd tea-rags-mcp-42hno): the pool's one-time legacy
+    // migration looks for a pre-keying daemon layout here before its first
+    // keyed connect.
+    daemonStorageDir: daemonPaths.storageDir,
     // Build-version handshake restart (bd tea-rags-mcp-ji56r): when the pool's
     // handshake finds a daemon from a DIFFERENT build (stale after `npm run
     // build && npm link`), it drains that daemon gracefully and cold-spawns a
