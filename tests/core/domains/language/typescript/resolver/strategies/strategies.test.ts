@@ -546,6 +546,98 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
   });
 });
 
+describe("TSImportNarrowedFallbackSymbolResolutionStrategy barrel hop (bd tea-rags-mcp-4pa9o)", () => {
+  const strat = new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg);
+  // The receiver text is what the walker records for a constructed receiver —
+  // the pv7ul evidence class, the shape the four recovered self-index sites
+  // (QuarantineStore#load, CollectionRegistry#list, QuarantineStore#clearAll,
+  // QuarantineStore#count) all take.
+  const call: CallRef = { callText: "new Store().load()", receiver: "new Store()", member: "load", startLine: 1 };
+  const barrelImport = [{ importText: "./stores/index.js", importedNames: ["Store"] }];
+
+  it("recovers a barrel-mediated import: narrowing follows the binding's re-export origin", () => {
+    // The import maps to the barrel, which declares no `load`, so without the
+    // hop the narrowing set is empty and the site sits in
+    // `dynamic:missWithInProjectDef`. With it, the binding's own re-export
+    // origin joins the set and picks the file the caller's import names.
+    const symbolTable = tableWith(
+      ["src/stores/index.ts", []],
+      [
+        "src/stores/impl.ts",
+        [sym("Store", "Store", "src/stores/impl.ts", []), sym("Store#load", "load", "src/stores/impl.ts", ["Store"])],
+      ],
+      ["src/other.ts", [sym("Other#load", "load", "src/other.ts", ["Other"])]],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/stores/impl.ts", targetSymbolId: "Store#load" },
+    });
+  });
+
+  it("leaves the no-barrel case unchanged: a direct import narrows without any hop", () => {
+    // The mapped file already declares the receiver, so the kernel hop
+    // declines (`reexportOriginFile` returns null) and the set is exactly
+    // what the pre-hop mapper produced.
+    const symbolTable = tableWith(
+      [
+        "src/stores/impl.ts",
+        [sym("Store", "Store", "src/stores/impl.ts", []), sym("Store#load", "load", "src/stores/impl.ts", ["Store"])],
+      ],
+      ["src/other.ts", [sym("Other#load", "load", "src/other.ts", ["Other"])]],
+    );
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./stores/impl.js", importedNames: ["Store"] }] }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/stores/impl.ts", targetSymbolId: "Store#load" },
+    });
+  });
+
+  it("declines the hop when the bound name is itself a project-wide namesake", () => {
+    // The bound is the mapper's own: `reexportOriginFile` refuses to pick
+    // between unrelated declaring packages, no file joins the set, and the
+    // ambiguous `load` fan stays unresolved rather than guessed.
+    const symbolTable = tableWith(
+      ["src/stores/index.ts", []],
+      [
+        "src/north/store.ts",
+        [
+          sym("Store", "Store", "src/north/store.ts", []),
+          sym("NorthStore#load", "load", "src/north/store.ts", ["NorthStore"]),
+        ],
+      ],
+      [
+        "src/south/store.ts",
+        [
+          sym("Store", "Store", "src/south/store.ts", []),
+          sym("SouthStore#load", "load", "src/south/store.ts", ["SouthStore"]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("does not hop for a receiver no import binds", () => {
+    const symbolTable = tableWith(
+      ["src/stores/index.ts", []],
+      [
+        "src/stores/impl.ts",
+        [sym("Store", "Store", "src/stores/impl.ts", []), sym("Store#load", "load", "src/stores/impl.ts", ["Store"])],
+      ],
+      ["src/other.ts", [sym("Other#load", "load", "src/other.ts", ["Other"])]],
+    );
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./unrelated.js", importedNames: ["Widget"] }] }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+});
+
 describe("TSSameFileSymbolResolutionStrategy", () => {
   const strat = new TSSameFileSymbolResolutionStrategy(cfg);
 

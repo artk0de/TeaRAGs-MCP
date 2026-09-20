@@ -80,5 +80,13 @@ export const capability: LanguageCapability = {
   // the type. Checker-off (no Program) those sites were all declines; the
   // candidate is accepted only when the type's own file-anchored definer walk
   // owns it, so the nj8i6 owner-rule corrections hold.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // walker 10: bd tea-rags-mcp-4pa9o. `importNarrowedFallback` narrows through
+  // a barrel: when the call's receiver head is a name an import binds, the
+  // binding's re-export origin joins the candidate-file set, so constructed
+  // receivers imported via `sync/index.js`-style barrels no longer sit in
+  // `dynamic:missWithInProjectDef`. The hop is the shared
+  // `reexportOriginFile` with its own ambiguity bounds; receivers no import
+  // binds are unchanged, as are `selectTableDef`, `resolveCandidateName`,
+  // `receiverSymbol` and the cone locator's import narrowing.
+  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
 };
