@@ -14,7 +14,7 @@
  */
 
 import type * as ChildProcessModule from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { wireCodegraph } from "../../src/bootstrap/factory.js";
+import { daemonPathsForKeyDir, getDaemonPaths } from "../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import { GraphDbClientPool } from "../../src/core/adapters/duckdb/index.js";
 import type { CollectionGraphHandle } from "../../src/core/adapters/duckdb/pool.js";
 import type { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
@@ -91,13 +92,36 @@ describe("wireCodegraph — lazy daemon spawn (f924y)", () => {
   it("spawns nothing while a live daemon owns the pid file", async () => {
     vi.spyOn(GraphDbClientPool.prototype, "acquireReader").mockResolvedValue({} as CollectionGraphHandle);
     const { pool } = wire();
-    mkdirSync(storageDir, { recursive: true });
+    // Keyed layout (bd tea-rags-mcp-42hno): the spawner alive-checks THIS
+    // build's pid file inside the per-build key directory.
+    const paths = getDaemonPaths(storageDir);
+    mkdirSync(paths.buildDir, { recursive: true });
     // This test process stands in for the running daemon: its pid answers signal 0.
-    writeFileSync(join(storageDir, "codegraph-daemon.pid"), String(process.pid));
+    writeFileSync(paths.pidFile, String(process.pid));
 
     await pool.acquireReader(fixturePhysicalCollectionName("code_lazy_live_v1"));
     await pool.acquireReader(fixturePhysicalCollectionName("code_lazy_live_v1"));
 
     expect(spawned.count).toBe(0);
+  });
+
+  it("a spawn sweeps key directories whose pid is dead and keeps live siblings", async () => {
+    vi.spyOn(GraphDbClientPool.prototype, "acquireWrite").mockResolvedValue({} as CollectionGraphHandle);
+    // Above every real pid_max (macOS 99998, Linux 4194304) — reads as ESRCH.
+    const deadPid = 99999999;
+    mkdirSync(storageDir, { recursive: true });
+
+    const dead = daemonPathsForKeyDir(join(storageDir, "b-deadbeef"));
+    mkdirSync(dead.buildDir, { recursive: true });
+    writeFileSync(dead.pidFile, String(deadPid));
+    const live = daemonPathsForKeyDir(join(storageDir, "b-liveface"));
+    mkdirSync(live.buildDir, { recursive: true });
+    writeFileSync(live.pidFile, String(process.pid));
+
+    const { pool } = wire();
+    await pool.acquireWrite(fixturePhysicalCollectionName("code_lazy_sweep_v1"));
+
+    expect(existsSync(dead.buildDir)).toBe(false);
+    expect(existsSync(live.buildDir)).toBe(true);
   });
 });

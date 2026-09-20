@@ -1,4 +1,4 @@
-import { closeSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,12 +33,15 @@ describe("codegraph daemon lifecycle refcount", () => {
   it("paths include the log the spawned daemon writes its output to", () => {
     dir = mkdtempSync(join(tmpdir(), "cgl-"));
     const p = getDaemonPaths(dir);
-    expect(p.logFile).toBe(join(dir, "codegraph-daemon.log"));
+    // Keyed layout (bd tea-rags-mcp-42hno): the log lives in the per-build key
+    // dir, next to the socket it belongs to.
+    expect(p.logFile).toBe(join(p.buildDir, "codegraph-daemon.log"));
   });
 
   it("openDaemonLogFd appends, so an earlier spawn's crash survives the next one", () => {
     dir = mkdtempSync(join(tmpdir(), "cgl-"));
     const p = getDaemonPaths(dir);
+    mkdirSync(p.buildDir, { recursive: true });
     writeFileSync(p.logFile, "first spawn died\n", "utf-8");
 
     const fd = openDaemonLogFd(p);
@@ -50,6 +53,7 @@ describe("codegraph daemon lifecycle refcount", () => {
   it("openDaemonLogFd truncates a log that grew past the size cap", () => {
     dir = mkdtempSync(join(tmpdir(), "cgl-"));
     const p = getDaemonPaths(dir);
+    mkdirSync(p.buildDir, { recursive: true });
     writeFileSync(p.logFile, "x".repeat(DAEMON_LOG_MAX_BYTES + 1), "utf-8");
 
     const fd = openDaemonLogFd(p);

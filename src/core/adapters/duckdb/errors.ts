@@ -158,6 +158,35 @@ export class CodegraphDaemonDrainRefusedError extends InfraError {
 }
 
 /**
+ * No codegraph daemon is running for THIS process's build (bd
+ * tea-rags-mcp-42hno): the build-keyed socket has no listener, and this pool
+ * cannot spawn one. Worker-thread pools rebuild from serializable config and
+ * have no respawn hook — provisioning a daemon is a main-thread-pool
+ * responsibility, ordered before the first worker fork. Distinct from
+ * `CodegraphDaemonUnreachableError` (which names a socket that exists but
+ * never accepted): this names the OWN-KEY MISS, so a worker surfaces
+ * "provisioning did not reach me" instead of silently sharing whatever other
+ * build happens to be running. 503: retryable once the main thread spawns.
+ */
+export class CodegraphDaemonBuildUnavailableError extends InfraError {
+  constructor(target: { socketPath: string; buildKey: string }, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_BUILD_UNAVAILABLE",
+      message:
+        `No codegraph daemon is running for this process's build ` +
+        `(key ${target.buildKey}, socket ${target.socketPath}) and this pool cannot spawn one`,
+      hint:
+        "Provisioning a daemon is a main-thread responsibility: run one index step on the main " +
+        "thread (its pool cold-spawns the daemon on first acquire) or reconnect the tea-rags MCP " +
+        "server (`/mcp reconnect`), then retry. Worker-thread pools deliberately do NOT share " +
+        "another build's daemon — an own-build daemon is what guarantees op compatibility.",
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
  * The wire carries only `{ name, message }` (see `DaemonResponse`), so a
  * refusal cannot survive the socket as a class instance — the pool recognizes
  * it by the error name the daemon put on the response.
@@ -386,6 +415,7 @@ export type CodegraphUnavailableError =
   | CodegraphDaemonUnreachableError
   | CodegraphDaemonUnresponsiveError
   | CodegraphDaemonDrainRefusedError
+  | CodegraphDaemonBuildUnavailableError
   | DuckDbOpenFailedError;
 
 export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
@@ -397,6 +427,7 @@ export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnava
     err instanceof CodegraphDaemonUnreachableError ||
     err instanceof CodegraphDaemonUnresponsiveError ||
     err instanceof CodegraphDaemonDrainRefusedError ||
+    err instanceof CodegraphDaemonBuildUnavailableError ||
     err instanceof DuckDbOpenFailedError
   );
 }

@@ -12,7 +12,7 @@
  * file it opened — see `acquire` (bd tea-rags-mcp-amh78).
  */
 
-import { mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
@@ -23,13 +23,24 @@ import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
-import { DEFAULT_EXIT_TIMEOUT_MS, getDaemonPaths, readDaemonPid, waitForDaemonExit } from "./daemon/lifecycle.js";
+import {
+  daemonPathsForKeyDir,
+  DEFAULT_EXIT_TIMEOUT_MS,
+  getBuildKey,
+  getLegacyDaemonPaths,
+  isDaemonPidAlive,
+  readDaemonPid,
+  unlinkDaemonFiles,
+  waitForDaemonExit,
+} from "./daemon/lifecycle.js";
 import {
   CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
+  CodegraphDaemonBuildUnavailableError,
   CodegraphDaemonDrainRefusedError,
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
+  CodegraphDaemonUnreachableError,
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
   isDaemonDrainRefusal,
@@ -45,6 +56,9 @@ const DEFAULT_MAX_RESTART_ATTEMPTS = 3;
 
 /** Base delay between restart attempts; jittered per attempt. */
 const DEFAULT_RESTART_DELAY_MS = 250;
+
+/** Delay between `openRetry` attempts when the option leaves it unset. */
+const DEFAULT_OPEN_RETRY_INTERVAL_MS = 1_000;
 
 /**
  * A respawn-capable pool replaces a daemon from another build, or one that does
@@ -125,6 +139,32 @@ export interface GraphDbClientPoolOptions {
    * (direct/test mode): in-process handles.
    */
   daemonSocketPath?: string;
+  /**
+   * Base daemon lifecycle storage dir (bd tea-rags-mcp-42hno). When set, the
+   * pool checks — once per connect, a couple of `existsSync` in steady state —
+   * for a LEGACY (pre-keying) daemon layout in that dir and migrates it out of
+   * the way: a live legacy daemon is drained through the existing flow (the
+   * zgcmo guard protects its in-flight writers), a dead one is unlinked
+   * directly. The bootstrap factory wires the same dir it passes the spawner;
+   * worker-thread pools omit it (provisioning ran on the main thread before
+   * they forked) and so never touch a legacy layout.
+   */
+  daemonStorageDir?: string;
+  /**
+   * Bounded retry for the collection OPEN (bd tea-rags-mcp-42hno). When set,
+   * a `DuckDbOpenFailedError` from the open is retried every `intervalMs`
+   * until `maxMs` elapses, then the last error rethrown. The DAEMON wires it
+   * (its pool is the only one that opens files in daemon mode): with two
+   * build-keyed daemons on one machine, both serve the same on-disk
+   * collections, so a loser's open waits out the winner's idle eviction
+   * (nlls) instead of failing the op. Without it the open fails immediately.
+   */
+  openRetry?: {
+    /** Give up (rethrowing the last `DuckDbOpenFailedError`) after this long. */
+    maxMs: number;
+    /** Delay between open attempts (default 1s). */
+    intervalMs?: number;
+  };
   /**
    * Build + capability handshake restart wiring, daemon mode only (bd
    * tea-rags-mcp-ji56r, 39xca.4). A daemon from another build, or one missing a
@@ -460,6 +500,11 @@ export class GraphDbClientPool {
     if (!socketPath) throw new Error("acquireDaemonClient called without daemonSocketPath");
 
     const promise = (async (): Promise<DaemonClientEntry> => {
+      // One-time legacy migration (bd tea-rags-mcp-42hno): a keyed client
+      // meeting a legacy-layout daemon drains it, then clears the layout. Runs
+      // inside the shared inflight pass, so concurrent first-callers race it
+      // once.
+      if (this.options.daemonStorageDir) await this.migrateLegacyDaemon(collectionName);
       const client = await this.connectWithBuildHandshake(socketPath, collectionName);
       const wrapped = wrapNoopClose(client);
       // Hydrate like `openCollection`, so resolution sees symbols from files not
@@ -483,6 +528,48 @@ export class GraphDbClientPool {
     });
     this.daemonInflight.set(collectionName, promise);
     return promise;
+  }
+
+  /**
+   * Migrate a LEGACY (pre-keying, 42hno) daemon layout out of the base
+   * storage dir. The five lifecycle files sitting DIRECTLY in
+   * `daemonStorageDir` belong to the one shared daemon the pre-keying builds
+   * all ran; a keyed client must get them out of the way so no later spawn
+   * ever considers them. A live legacy daemon is drained through the EXISTING
+   * flow (`drainStaleDaemon`) — the zgcmo drain-refusal guard protects any
+   * in-flight writer, and a refusal propagates as the typed retryable error.
+   * A dead (or unreadable) legacy pid's files are unlinked directly. Idempotent
+   * and effectively free once the layout is gone: two `existsSync` calls.
+   */
+  private async migrateLegacyDaemon(collectionName: PhysicalCollectionName): Promise<void> {
+    const dir = this.options.daemonStorageDir;
+    /* v8 ignore next 2 -- the only caller checks the option first */
+    if (!dir) return;
+    const legacy = getLegacyDaemonPaths(dir);
+    if (!existsSync(legacy.pidFile) && !existsSync(legacy.socketPath)) return;
+    const pid = readDaemonPid(legacy);
+    if (pid !== undefined && isDaemonPidAlive(pid)) {
+      if (isDebug()) {
+        process.stderr.write(
+          `[tea-rags] codegraph: legacy (un-keyed) daemon layout found in ${dir} — draining it before ` +
+            "connecting to this build's keyed daemon (bd tea-rags-mcp-42hno)\n",
+        );
+      }
+      // A short connect bound: this daemon predates keying, and if it stopped
+      // accepting between the pid probe and now, waiting out the full spawn
+      // window buys nothing — the caller treats an unreachable socket as a
+      // failure, which is the honest answer.
+      const { DaemonGraphDbClient } = await import("./daemon/client.js");
+      const client = new DaemonGraphDbClient(legacy.socketPath, collectionName, { connectTimeoutMs: 1_500 });
+      await client.init();
+      await this.drainStaleDaemon(client, legacy.socketPath);
+    }
+    // A drained daemon unlinks its own files in cleanup; the direct unlink
+    // covers the dead-pid arm and is idempotent belt-and-braces otherwise.
+    unlinkDaemonFiles(legacy);
+    if (isDebug()) {
+      process.stderr.write(`[tea-rags] codegraph: legacy daemon layout in ${dir} removed\n`);
+    }
   }
 
   /**
@@ -519,7 +606,21 @@ export class GraphDbClientPool {
     // the way this handshake does (bd tea-rags-mcp-1wr7p).
     const clientOptions = { onConnectionLost: restart?.respawn, readOnDiskBuildFingerprint: readOnDisk };
     const first = new DaemonGraphDbClient(socketPath, collectionName, clientOptions);
-    await first.init();
+    try {
+      await first.init();
+    } catch (err) {
+      // Build-keyed sockets (bd tea-rags-mcp-42hno): the connect window still
+      // absorbs the spawn→listen race (a worker's first connect races the
+      // fire-and-forget `beginRun` spawn), so only a socket that NEVER
+      // appeared within it is an OWN-KEY MISS. In a pool that cannot spawn
+      // that is the provisioning contract failing, not a wedged daemon —
+      // surface the retryable typed error instead of the pre-keying behavior,
+      // where a hookless pool silently shared whatever build was running.
+      if (!restart?.respawn && !existsSync(socketPath) && err instanceof CodegraphDaemonUnreachableError) {
+        throw new CodegraphDaemonBuildUnavailableError({ socketPath, buildKey: getBuildKey() }, err);
+      }
+      throw err;
+    }
     const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
     // Same build serving every required op, or a legacy pre-fingerprint peer.
     if (!needsDaemonReplacement(verdict)) return first;
@@ -672,8 +773,11 @@ export class GraphDbClientPool {
    * on top of a daemon that still holds the socket + RW lock.
    */
   private async drainStaleDaemon(client: DaemonGraphDbClient, socketPath: string): Promise<void> {
-    // The lifecycle files live next to the socket (getDaemonPaths layout).
-    const paths = getDaemonPaths(dirname(socketPath));
+    // The lifecycle files live in the directory owning the socket — the key
+    // dir for a keyed daemon, the base dir for the legacy layout the one-time
+    // migration drains. NEVER re-keyed: `getDaemonPaths` would nest this
+    // build's key UNDER it (bd tea-rags-mcp-42hno).
+    const paths = daemonPathsForKeyDir(dirname(socketPath));
     const stalePid = readDaemonPid(paths);
     let refusal: Error | undefined;
     try {
@@ -737,6 +841,34 @@ export class GraphDbClientPool {
   }
 
   private async openCollection(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    // Bounded open retry (bd tea-rags-mcp-42hno): two build-keyed daemons
+    // serve the same on-disk collections, so a loser's first open loses the
+    // DuckDB RW lock to the winner's still-cached client. The wait is bounded
+    // BY DESIGN — nlls evicts the idle holder — so retrying until then turns
+    // a shared-collection collision from a failed op into a delay.
+    const retry = this.options.openRetry;
+    const deadline = retry ? Date.now() + retry.maxMs : 0;
+    for (;;) {
+      try {
+        return await this.openCollectionOnce(collectionName);
+      } catch (err) {
+        const intervalMs = retry?.intervalMs ?? DEFAULT_OPEN_RETRY_INTERVAL_MS;
+        if (!retry || !(err instanceof DuckDbOpenFailedError) || Date.now() + intervalMs > deadline) {
+          throw err;
+        }
+        if (isDebug()) {
+          process.stderr.write(
+            `[tea-rags] codegraph pool: open of ${this.pathFor(collectionName)} failed (lock held) — ` +
+              `retrying until ${new Date(deadline).toISOString()} (bd tea-rags-mcp-42hno)\n`,
+          );
+        }
+        await new Promise<void>((r) => setTimeout(r, intervalMs));
+      }
+    }
+  }
+
+  /** ONE open attempt for `openCollection` — no retry, no cache check. */
+  private async openCollectionOnce(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     // The one read-write open in the codebase — the daemon's pool reaches it too —
     // so this is where a shadow `<alias>.duckdb` would be created. Refused there.
     const dbPath = this.dbFiles.writablePathFor(collectionName);

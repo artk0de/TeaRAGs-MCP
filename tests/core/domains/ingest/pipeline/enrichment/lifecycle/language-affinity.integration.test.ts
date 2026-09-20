@@ -103,7 +103,9 @@ async function recompute(mode: "collection" | "language"): Promise<RecomputeOutc
   if (mode === "collection") process.env.CODEGRAPH_LANGUAGE_AFFINITY = "0";
   else delete process.env.CODEGRAPH_LANGUAGE_AFFINITY;
 
-  const root = mkdtempSync(join(tmpdir(), `lang-affinity-${mode}-`));
+  // Short prefix: the keyed daemon socket (bd tea-rags-mcp-42hno) must stay
+  // inside the macOS 104-byte unix-socket path limit.
+  const root = mkdtempSync(join(tmpdir(), `la-${mode}-`));
   const repoRoot = join(root, "repo");
   mkdirSync(repoRoot, { recursive: true });
   const corpus = writeMixedLanguageCorpus(repoRoot);
