@@ -23,5 +23,8 @@ export const capability: LanguageCapability = {
   // constructors (`New()` in two packages) stop crossing return types and an
   // incremental run resolves identically to a full one; indexed Go projects
   // need `--force-enrichments codegraph`.
-  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
+  // walker 4: bd tea-rags-mcp-fov8f — every spec of a grouped `type ( ... )`
+  // declaration emits (the walk kept only the first spec's symbol); indexed Go
+  // projects need `--force-enrichments codegraph`.
+  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
 };
