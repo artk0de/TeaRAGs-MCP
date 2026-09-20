@@ -28,6 +28,7 @@ here. Per-project realized numbers live in **prime**, never in this file.
 | **Rust**               | **full** · tree-sitter                            | **medium** · generic AST (#[test] attrs not preserved) | **moderate**                                             |
 | **Ruby**               | **full** · tree-sitter                            | **high** · RSpec scope chunker (parent setup injected) | untyped **high** · YARD **maximum** · RBS/Sorbet **TBD** |
 | **Bash**               | **full** · tree-sitter                            | **low** · generic AST (bats/shunit not recognized)     | **minimal**                                              |
+| **Swift**              | **full** · tree-sitter                            | **medium** · generic AST (XCTest not recognized)       | **none**                                                 |
 | **Markdown**           | **full** · MarkdownChunker (ToC + smart chunking) | **N/A** · doc-only                                     | **none**                                                 |
 | **sql / jsonc / json** | **none** · CharacterChunker                       | **none**                                               | **none**                                                 |
 
@@ -193,4 +194,6 @@ conclude absence from a graph the index says is incomplete.
   accessors + naming-convention receiver typing for bare and @ivar receivers
   (subtype-gated)
 - **Bash** — function-call extraction only, no dispatch
+- **Swift** — tier 1 — chunks only; call-graph walker + resolver chain land in
+  tier 2
 - **Markdown** — no call graph

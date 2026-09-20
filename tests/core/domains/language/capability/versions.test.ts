@@ -92,8 +92,9 @@ describe("seeded support versions", () => {
     // tea-rags-mcp-ex28m widened the edge primary key with source_rel_path, and
     // the rows the old key discarded can only come back by re-extraction.
     // markdown is doc-only — no call graph, so nothing of its was collapsed and
-    // its axes stay put.
-    const NO_CALL_GRAPH = new Set(["markdown"]);
+    // its axes stay put. swift is TIER 1 — chunks only, its call graph is
+    // deferred to tier 2, so its edge vocabulary has not shipped either.
+    const NO_CALL_GRAPH = new Set(["markdown", "swift"]);
 
     for (const [language, v] of versions) {
       // `*` is not a language vertical. Its axes stand for sources that run

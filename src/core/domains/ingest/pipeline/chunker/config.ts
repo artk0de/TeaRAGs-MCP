@@ -353,6 +353,37 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // provider's `chunkerHooks` mirrors `chunkableTypes` here 1:1, kernel
     // carries scopeSeparator. Two extensions (.sh / .bash), one grammar.
   },
+  swift: {
+    loadModule: async () => import("tree-sitter-swift"),
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
+    // Tier 1 Swift (chunks only — the call graph is tier 2). `class_declaration`
+    // covers class AND struct AND enum AND extension AND actor (the keyword is
+    // an anonymous child), so one container type serves every nominal-type
+    // shape. Methods (`function_declaration`) + inits (`init_declaration`) are
+    // the leaf chunks; `protocol_function_declaration` is the signature-only
+    // requirement form, kept under the 50-char child floor via
+    // `keepShortChildChunkTypes` (Java 52e8 precedent). Extension methods
+    // attribute to the extended type because the extension IS a
+    // `class_declaration` carrying the extended type's name.
+    chunkableTypes: [
+      "function_declaration",
+      "init_declaration",
+      "class_declaration",
+      "protocol_declaration",
+      "protocol_function_declaration",
+    ],
+    childChunkTypes: ["function_declaration", "init_declaration", "protocol_function_declaration"],
+    alwaysExtractChildren: true,
+    keepShortChildChunkTypes: ["protocol_function_declaration", "init_declaration"],
+    // NOTE: Swift is a NATIVE `domains/language/swift` provider (tier 1) — the
+    // factory builds `swift`, so the chunker hooks come from `SwiftLanguage`,
+    // not this entry. This `LANGUAGE_DEFINITIONS.swift` row is retained only so
+    // `CODE_LANGUAGES` / `LANGUAGE_MAP` still report swift as a code language.
+    // Swift has no `hooks` chain (generic chunking) — the native provider's
+    // `chunkerHooks` mirrors the chunkableTypes / childChunkTypes /
+    // alwaysExtractChildren / keepShortChildChunkTypes here 1:1, kernel carries
+    // scopeContainerTypes (`.` separator) + disambiguateOverloads.
+  },
   ruby: {
     loadModule: async () => import("tree-sitter-ruby"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,

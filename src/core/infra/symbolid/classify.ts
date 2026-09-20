@@ -89,6 +89,22 @@ export function classifyMethod(node: AstNode): MethodClassification | null {
   if (node.type === "function_item") return rustHasSelfParam(node) ? "instance" : "static";
   // Go — `method_declaration` always has a receiver, always instance.
   if (node.type === "method_declaration_go") return "instance";
+  // Swift — `function_declaration` is the METHOD shape inside a type body.
+  // The node type collides with the TypeScript / JavaScript TOP-LEVEL
+  // function (which must keep returning null), so the branch is gated on
+  // the Swift `func` keyword child the other grammars never emit — their
+  // keyword node is `function`, Swift's is `func`.
+  if (node.type === "function_declaration" && swiftHasFuncKeyword(node)) {
+    return swiftHasClassLevelModifier(node) ? "static" : "instance";
+  }
+  // Swift — signature-only protocol requirement (`func draw()` inside a
+  // protocol body). Same two kinds as a concrete method.
+  if (node.type === "protocol_function_declaration") {
+    return swiftHasClassLevelModifier(node) ? "static" : "instance";
+  }
+  // Swift initializer — instance-bound (constructs an instance), like the
+  // Java constructor above. `init_declaration` never carries static/class.
+  if (node.type === "init_declaration") return "instance";
   return null;
 }
 
@@ -167,6 +183,43 @@ function rustHasSelfParam(node: AstNode): boolean {
       const pattern = child.childForFieldName("pattern");
       if (pattern?.text === "self") return true;
     }
+  }
+  return false;
+}
+
+/**
+ * The Swift `func` keyword — the discriminator that keeps the Swift
+ * `function_declaration` branch away from the TypeScript / JavaScript
+ * top-level function of the same node type. Their keyword node is `function`;
+ * Swift's is `func`, and in both grammars the keyword is an anonymous child.
+ */
+function swiftHasFuncKeyword(node: AstNode): boolean {
+  for (const child of node.children) {
+    if (!child.isNamed && child.type === "func") return true;
+  }
+  return false;
+}
+
+/**
+ * The Swift class-level modifiers, told apart from a member merely named so:
+ *   - `static func build()` / `public class func make()` — the keyword lands
+ *     inside the `modifiers` wrapper as a `property_modifier` node (or a bare
+ *     modifier child) whose text IS the keyword.
+ *   - `class func make()` — tree-sitter-swift ALSO parses the `class` keyword
+ *     directly on the declaration as an anonymous `class` node (the same
+ *     token a type declaration starts with — unambiguous here because this
+ *     helper is only consulted for method shapes).
+ * `mutating` / access modifiers are ignored — a `mutating func` is an
+ * instance method.
+ */
+function swiftHasClassLevelModifier(node: AstNode): boolean {
+  for (const child of node.children) {
+    if (child.type === "modifiers") {
+      for (const m of child.children) {
+        if (m.text === "static" || m.text === "class") return true;
+      }
+    }
+    if (!child.isNamed && (child.type === "class" || child.type === "static")) return true;
   }
   return false;
 }
