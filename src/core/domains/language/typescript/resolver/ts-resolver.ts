@@ -647,7 +647,7 @@ export class TSCallResolver implements CallResolver {
     const defs = ctx.dispatchTables?.[name];
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
-    const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.fileExists);
+    const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.mode, this.fileExists);
     const imported = defs.filter((d) => importedFiles.has(d.relPath));
     if (imported.length === 1) return imported[0];
     const inFile = defs.filter((d) => d.relPath === ctx.callerFile);
@@ -665,7 +665,7 @@ export class TSCallResolver implements CallResolver {
     const sole = pickSingleCandidate(candidates, this.mode);
     if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
     if (candidates.length > 1) {
-      const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.fileExists);
+      const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.mode, this.fileExists);
       const narrowed = candidates.filter((def) => importedFiles.has(def.relPath));
       const narrowedHit = pickSingleCandidate(narrowed, this.mode);
       if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };

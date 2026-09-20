@@ -87,5 +87,13 @@ export const capability: LanguageCapability = {
   // candidate-lines-only containment downgraded to file-only (33 taxdome + 5
   // self-index sites), while the C12 correction holds — evidence under a
   // different named declaration still declines.
-  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
+  // walker 11: bd tea-rags-mcp-4pa9o. `importNarrowedFallback` narrows through
+  // a barrel: when the call's receiver head is a name an import binds, the
+  // binding's re-export origin joins the candidate-file set, so constructed
+  // receivers imported via `sync/index.js`-style barrels no longer sit in
+  // `dynamic:missWithInProjectDef`. The hop is the shared
+  // `reexportOriginFile` with its own ambiguity bounds; receivers no import
+  // binds are unchanged, as are `selectTableDef`, `resolveCandidateName`,
+  // `receiverSymbol` and the cone locator's import narrowing.
+  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
 };

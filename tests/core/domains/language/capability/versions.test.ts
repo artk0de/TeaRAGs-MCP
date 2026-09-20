@@ -175,9 +175,14 @@ describe("seeded support versions", () => {
       // `type ( ... )` declaration, so an index built by walker 3 holds only
       // the group's FIRST type — every later spec resolves to nothing until
       // the recompute rewrites it.
+      // typescript walker 11: bd tea-rags-mcp-4pa9o narrows
+      // `importNarrowedFallback` through a barrel — the binding's re-export
+      // origin joins the candidate-file set when the receiver head names it —
+      // so an index built by walker 10 misses the checker-off constructed
+      // receiver edges behind `sync/index.js`-style barrels.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 10],
+        ["typescript", 11],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 3],
