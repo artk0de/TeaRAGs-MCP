@@ -33,7 +33,9 @@
  * symbol, or a declaration the candidate does not own. With no Program at all
  * (`CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff`) only
  * STRUCTURE remains: an import binding for a named receiver
- * ({@link importBindingAccountsFor}), the class hierarchy for `this`
+ * ({@link importBindingAccountsFor}), a receiver that CONSTRUCTS or produces
+ * its type — `new ImportedClass().m()`, `createX().m()`
+ * ({@link constructedReceiverAccountsFor}) — and the class hierarchy for `this`
  * ({@link thisHierarchyAccountsFor}) — which also answers a `this` member the
  * checker names no symbol for.
  *
@@ -108,7 +110,10 @@ export function memberCandidateLacksReceiverEvidence(
   const handle = programCache?.acquire(ctx.callerFile) ?? null;
   if (programCache === null || handle === null) {
     if (receiver === "this") return !thisHierarchyAccountsFor(call.member, ctx, cfg, candidate);
-    return !importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate);
+    return !(
+      importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate) ||
+      constructedReceiverAccountsFor(receiver, call.member, ctx, cfg, candidate)
+    );
   }
   const declarations = calledMemberDeclarations(handle.sourceFile, handle.checker, call.startLine, call.member);
   if (declarations.length > 0) {
@@ -286,6 +291,87 @@ function importBindingAccountsFor(
   }
   if (candidate.scope.length === 0) return declaringFileOf(member) === candidate.relPath;
   return candidate.scope.at(-1) === receiver && declaringFileOf(receiver) === candidate.relPath;
+}
+
+/** `new X(` — the receiver text the walker emits for a call on a fresh instance. */
+const CONSTRUCTED_RECEIVER = /^new\s+([A-Za-z_$][\w$]*)\s*\(/u;
+
+/** A bare-callee receiver — `createX(…).m()` — whose head is a plain identifier. */
+const FACTORY_RECEIVER = /^([A-Za-z_$][\w$]*)\s*\(/u;
+
+/**
+ * The verb a factory callee must carry for its tail to name a constructed type:
+ * `createGadget` names `Gadget`; `resetStore`, `onSubmit` and `updateFirm` name
+ * nothing — most factory-shaped receivers are event handlers and mutation
+ * verbs, and letting any project callee speak for its result is the fabrication
+ * the measurement refused.
+ */
+const FACTORY_TYPE_NAME = /^create([A-Z][\w$]*)$/u;
+
+/**
+ * The evidence a receiver that CONSTRUCTS or produces its type carries
+ * (bd tea-rags-mcp-pv7ul): `new ImportedClass().m()` on an import binding to a
+ * project class is as good as a typed receiver — the expression IS an instance
+ * of the class — and the same ownership holds through the type a `createX()`
+ * factory's name embeds, where the factory anchors as a project callable
+ * first. The candidate must be owned by the type itself or by an ancestor the
+ * `extends` chain anchors to a file ({@link nearestMemberDefiners}); a bare
+ * same-file namesake of the member, and the free function beside it, account
+ * for nothing — the hwwtw misattribution this guard exists to refuse.
+ *
+ * Structure, never a name: the type is anchored the way {@link anchorBaseClass}
+ * anchors an extends clause — declared top-level in the asking file, or bound
+ * by an import there (barrel hop included) — and a `new` / `create` receiver
+ * that names no anchorable type declines. A dotted `new ns.Sub()` receiver
+ * declines too: the import arm above answers the namespace receiver, and
+ * guessing the tail's file by its name would be the coincidence refused
+ * everywhere else here.
+ */
+function constructedReceiverAccountsFor(
+  receiver: string,
+  member: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  candidate: EvidenceCandidate,
+): boolean {
+  const constructed = CONSTRUCTED_RECEIVER.exec(receiver);
+  if (constructed !== null) {
+    return constructedTypeAccountsFor(constructed[1] ?? "", ctx.callerFile, member, ctx, cfg, candidate);
+  }
+  const factory = FACTORY_RECEIVER.exec(receiver);
+  if (factory === null) return false;
+  const typeName = FACTORY_TYPE_NAME.exec(factory[1] ?? "");
+  if (typeName === null) return false;
+  const callee = factory[1] ?? "";
+  const factoryAnchor = anchorBaseClass(callee, ctx.callerFile, ctx, cfg);
+  if (factoryAnchor === null) return false;
+  return (
+    constructedTypeAccountsFor(typeName[1] ?? "", factoryAnchor.file, member, ctx, cfg, candidate) ||
+    constructedTypeAccountsFor(typeName[1] ?? "", ctx.callerFile, member, ctx, cfg, candidate)
+  );
+}
+
+/**
+ * Does the candidate belong to the type `written` names as of `fromFile`? The
+ * anchor is {@link anchorBaseClass}'s — a top-level declaration in `fromFile`,
+ * else, when `fromFile` is the caller's, the file an import there binds — and
+ * the answer is {@link nearestMemberDefiners}': the type itself, else the first
+ * file-anchored `extends` ancestor, declaring the member. Ownership with a
+ * file on every hop, which is what keeps a namesake class out.
+ */
+function constructedTypeAccountsFor(
+  written: string,
+  fromFile: string,
+  member: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  candidate: EvidenceCandidate,
+): boolean {
+  const anchor = anchorBaseClass(written, fromFile, ctx, cfg);
+  if (anchor === null) return false;
+  return nearestMemberDefiners(member, anchor, ctx, cfg, new Set()).some(
+    (definer) => definer.name === candidate.scope.at(-1) && definer.file === candidate.relPath,
+  );
 }
 
 /**
