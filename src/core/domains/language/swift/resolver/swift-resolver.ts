@@ -21,15 +21,20 @@
  *                             `field.X()`, through the property's declared
  *                             type. After 1 so a local wins; after 2 so an
  *                             explicit `self.X()` is never read as a property.
- *   4. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
+ *   4. scopedTypeReceiver   — `Nested.X()` → a type nested in the caller's own
+ *                             scope, by its SHORT name. Last of the receiver
+ *                             passes, so a local (1) and a property (3) both
+ *                             shadow it; the passes below answer no
+ *                             receiver-bearing call at all.
+ *   5. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
  *                             terminal pass so a common name cannot misroute a
  *                             call that never left its type.
- *   5. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
+ *   6. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
  *                             file. The pass Swift needs and the others do not:
  *                             a type is routinely split across extensions in
  *                             several files, so both same-file passes miss by
  *                             construction on a conformance extension.
- *   6. globalShortName      — terminal, BARE CALLS ONLY.
+ *   7. globalShortName      — terminal, BARE CALLS ONLY.
  *
  * ## There is deliberately no import-receiver pass
  *
@@ -55,21 +60,31 @@
  * kernel's `receiver-type-propagation` fold and recording protocol / superclass
  * conformances for an MRO. Both are increments on top of this, not gaps in it.
  *
- * ## Two known limitations the tests PIN rather than work around
+ * ## Where a TYPE NAME still does not resolve
  *
- * 1. **A type re-opened by an extension is two symbols.** `extension Invoice`
- *    is a second `class_declaration` carrying the same name, so `collectSymbols`
- *    composes `Invoice` and `Invoice~2`, `lastSegment` strips the `~N`, and both
- *    answer the short name — so a construction expression `Invoice()` drops on
- *    the cardinality gate. Collapsing them here is not available: nothing in
- *    `SymbolDefinition` distinguishes a re-opened type from a genuine method
- *    overload, where collapsing to the first would be a wrong guess. It needs a
- *    walker channel marking container symbols. Same-file conformance extensions
- *    are idiomatic Swift, so this costs real construction edges.
- * 2. **A nested type's receiver is its SHORT name.** `Account.opening(name)`
- *    inside `Ledger` names a type whose symbol composes as
- *    `Ledger.Account.opening`, and no pass re-qualifies a bare type name
- *    against the enclosing scope.
+ * Two type-name gaps were closed by bd tea-rags-mcp-sg35c — a type re-opened by
+ * a same-file `extension` now counts as ONE candidate
+ * (`collapseReopenedTypeDeclarations` in `./swift-symbol-lookup.ts`), and a
+ * nested type's short-name receiver is re-qualified against the caller's scope
+ * (`scopedTypeReceiver`). Both leaned on reading a composed symbolId as a type
+ * declaration (`./swift-type-name.ts`); neither needed a contract change. Two
+ * relatives of theirs are still open, and both need evidence this chain does
+ * not have:
+ *
+ * 1. **A type re-opened across FILES.** `struct Invoice` in `Invoice.swift` and
+ *    `extension Invoice` in `Invoice+Codable.swift` compose the IDENTICAL id
+ *    `Invoice` in two files, and nothing in a `SymbolDefinition` says which one
+ *    carries the type's own body. The same-file fold deliberately declines it,
+ *    so a construction of such a type stays ambiguous and emits no edge.
+ *    Closing it needs the container/leaf fact `NamedSymbol.descendsInto`
+ *    already holds and `collectSymbols` drops — a kernel and contract change
+ *    across all nine languages, not a Swift patch.
+ * 2. **A TOP-LEVEL type as an explicit receiver from outside it.**
+ *    `Invoice.empty()` written in another type resolves to nothing:
+ *    `scopedTypeReceiver` qualifies against the caller's scope only, and the
+ *    terminal pass answers bare calls by design. An unqualified global probe is
+ *    a precision decision of its own and belongs with a measurement, not a
+ *    docblock.
  */
 
 import {
@@ -87,6 +102,7 @@ import {
   SwiftExtensionScopeMemberSymbolResolutionStrategy,
   SwiftGlobalShortNameSymbolResolutionStrategy,
   SwiftLocalBindingSymbolResolutionStrategy,
+  SwiftScopedTypeReceiverSymbolResolutionStrategy,
   SwiftSelfMemberSymbolResolutionStrategy,
   SwiftStoredPropertyTypeSymbolResolutionStrategy,
   type SwiftResolverConfig,
@@ -103,6 +119,7 @@ export class SwiftCallResolver implements CallResolver {
       new SwiftLocalBindingSymbolResolutionStrategy(cfg),
       new SwiftSelfMemberSymbolResolutionStrategy(cfg),
       new SwiftStoredPropertyTypeSymbolResolutionStrategy(cfg),
+      new SwiftScopedTypeReceiverSymbolResolutionStrategy(cfg),
       new SwiftEnclosingBareCallSymbolResolutionStrategy(cfg),
       new SwiftExtensionScopeMemberSymbolResolutionStrategy(cfg),
       new SwiftGlobalShortNameSymbolResolutionStrategy(cfg),

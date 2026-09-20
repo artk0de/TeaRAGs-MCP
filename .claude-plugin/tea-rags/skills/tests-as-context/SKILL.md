@@ -82,7 +82,7 @@ If absent — return verdict, stop:
 SKIP — no test chunks indexed for <project>. Possible reasons:
  (a) primary language has no AST test chunking
      (currently supported: TypeScript + JavaScript Vitest/Jest/Mocha,
-      Ruby RSpec, Swift XCTest/swift-testing —
+      Ruby RSpec, Swift XCTest/swift-testing/Quick —
       see src/core/domains/language/<lang>/chunking/)
  (b) .contextignore excludes test directories
  (c) project has no tests

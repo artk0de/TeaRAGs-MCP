@@ -26,9 +26,14 @@
  * Claiming the container to re-emit those chunks would move symbolId
  * composition into the hook (against `.claude/rules/symbolid-convention.md`)
  * and forfeit overload disambiguation, intermediate-scope collection and the
- * oversized-child split the engine performs. Quick/Nimble IS a trailing-closure
- * DSL and does need the canonical scope chunker — it is deliberately out of
- * scope here and gets its own vertical.
+ * oversized-child split the engine performs.
+ *
+ * Quick/Nimble IS a trailing-closure DSL and does need the canonical scope
+ * chunker, which lives in `./quick-filter.ts` + `./quick-scope-chunker.ts`.
+ * What stays HERE is only the recognition half: `isQuickSuite` answers "is this
+ * declaration a Quick suite", so the body chunker labels its fixtures
+ * `test_setup` and the DSL filter has a structural gate. Recognition is one
+ * module's job for all three frameworks; chunk SHAPE is per-framework.
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
@@ -36,7 +41,7 @@ import type { ChunkingHook, ChunkType, HookContext } from "../../../../contracts
 import { classifyMethod } from "../../../../infra/symbolid/index.js";
 
 /** Which test framework a Swift type belongs to. */
-export type SwiftSuiteKind = "xctest" | "swift-testing";
+export type SwiftSuiteKind = "xctest" | "swift-testing" | "quick";
 
 /** `FooTests.swift` / `FooTest.swift` — the conventional XCTest file suffixes. */
 const TEST_FILE_SUFFIX = /Tests?\.swift$/;
@@ -53,6 +58,12 @@ const SWIFT_TESTING_SUITE_ATTRIBUTE = "Suite";
 
 /** XCTest discovers cases by selector prefix. */
 const XCTEST_CASE_PREFIX = "test";
+
+/** Quick's two spec base classes — the synchronous one and Quick 7's async one. */
+const QUICK_BASE_CLASSES: ReadonlySet<string> = new Set(["QuickSpec", "AsyncSpec"]);
+
+/** The single method a Quick suite overrides to declare its whole DSL tree. */
+const QUICK_SPEC_METHOD = "spec";
 
 /**
  * Conventional test-file layout for Swift: the `*Tests.swift` / `*Test.swift`
@@ -110,6 +121,56 @@ function inheritsXCTestCase(node: AstNode): boolean {
   return inheritanceNames(node).some((name) => name.split(".").pop() === XCTEST_BASE_CLASS);
 }
 
+function inheritsQuickSpec(node: AstNode): boolean {
+  return inheritanceNames(node).some((name) => QUICK_BASE_CLASSES.has(name.split(".").pop() ?? ""));
+}
+
+/**
+ * True when `node` carries the declaration keyword `keyword` in its `modifiers`
+ * wrapper. The keyword parses as an ANONYMOUS child of a modifier wrapper
+ * (`modifiers > member_modifier > override`), so it cannot be read off a field.
+ */
+function hasDeclarationModifier(node: AstNode, keyword: string): boolean {
+  const modifiers = namedChildOfType(node, "modifiers");
+  if (!modifiers) return false;
+  return modifiers.namedChildren.some((modifier) => modifier.children.some((k) => !k.isNamed && k.type === keyword));
+}
+
+/**
+ * Quick's own declaration shape: `override class func spec()` (Quick 7) or
+ * `override func spec()` (earlier). Structural enough to stand alone — a
+ * production type overriding a method named `spec` is not a shape that occurs.
+ */
+export function isQuickSpecMethod(node: AstNode): boolean {
+  if (node.type !== "function_declaration") return false;
+  if (declaredName(node) !== QUICK_SPEC_METHOD) return false;
+  return hasDeclarationModifier(node, "override");
+}
+
+/**
+ * Whether `containerNode` is a Quick suite.
+ *
+ * Path-free on purpose, unlike the XCTest arm below: both signals here are
+ * unambiguous on their own. A class inheriting `QuickSpec` / `AsyncSpec` IS a
+ * spec wherever it lives, and the `override … func spec()` arm catches the one
+ * shape inheritance cannot see — a project-local base spec
+ * (`final class InvoiceSpec: BaseSpec`), which is common in large Quick suites.
+ */
+export function isQuickSuite(containerNode: AstNode): boolean {
+  if (containerNode.type !== "class_declaration") return false;
+  if (inheritsQuickSpec(containerNode)) return true;
+  return memberDeclarations(containerNode).some(isQuickSpecMethod);
+}
+
+/**
+ * The `spec()` declarations of a suite, in source order — normally exactly one.
+ * Empty for a Quick base class that declares none, which is what keeps the
+ * scope chunker from claiming a container it has nothing to say about.
+ */
+export function quickSpecMethods(containerNode: AstNode): AstNode[] {
+  return memberDeclarations(containerNode).filter(isQuickSpecMethod);
+}
+
 /** Declared member functions / initializers of a type body, in source order. */
 function memberDeclarations(node: AstNode): AstNode[] {
   const body = namedChildOfType(node, "class_body");
@@ -150,6 +211,7 @@ export function detectSwiftSuiteKind(containerNode: AstNode, filePath: string): 
   if (containerNode.type !== "class_declaration") return null;
 
   if (hasAttribute(containerNode, SWIFT_TESTING_SUITE_ATTRIBUTE)) return "swift-testing";
+  if (isQuickSuite(containerNode)) return "quick";
   if (inheritsXCTestCase(containerNode)) return "xctest";
 
   const members = memberDeclarations(containerNode);
@@ -176,6 +238,12 @@ export function detectSwiftSuiteKind(containerNode: AstNode, filePath: string): 
 export function classifySwiftSuiteMember(memberNode: AstNode, suiteKind: SwiftSuiteKind): ChunkType {
   if (suiteKind === "swift-testing") {
     return hasAttribute(memberNode, SWIFT_TESTING_CASE_ATTRIBUTE) ? "test" : "test_setup";
+  }
+  // Quick: `spec()` carries every example the suite declares, so it is the
+  // `test` member even when the scope chunker does not claim it (a spec whose
+  // scopes all fall under the engine's child floor). Helpers stay `test_setup`.
+  if (suiteKind === "quick") {
+    return isQuickSpecMethod(memberNode) ? "test" : "test_setup";
   }
   return isXCTestCase(memberNode) ? "test" : "test_setup";
 }

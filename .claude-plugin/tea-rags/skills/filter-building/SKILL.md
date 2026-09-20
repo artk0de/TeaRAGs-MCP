@@ -107,10 +107,13 @@ Currently supported:
 | JavaScript | Vitest, Jest, Mocha   | scope       | `src/core/domains/language/javascript/chunking/test-scope-chunker.ts` |
 | Ruby       | RSpec                 | scope       | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
 | Swift      | XCTest, swift-testing | test case   | `src/core/domains/language/swift/chunking/suite-recognition.ts`       |
+| Swift      | Quick / Nimble        | scope       | `src/core/domains/language/swift/chunking/quick-scope-chunker.ts`     |
 
 Granularity `scope` = one chunk per describe/context with ancestor setup spliced
-in. `test case` = one chunk per method (Swift declares cases as methods, not DSL
-calls); its fixtures / `setUp` / helpers → `test_setup`.
+in. `test case` = one chunk per method (XCTest and swift-testing declare cases
+as methods, not DSL calls); their fixtures / `setUp` / helpers → `test_setup`.
+Swift is BOTH rows: which one a file gets follows its framework, and a Quick
+suite's non-DSL members land in one `test_setup` chunk named after the class.
 
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full
 per-language support: `.claude-plugin/tea-rags/rules/language-compatibility.md`

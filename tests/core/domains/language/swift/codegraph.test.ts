@@ -166,28 +166,42 @@ describe("swift tier 2 — resolution through the provider's own resolver", () =
     });
   });
 
-  it("leaves a construction of a type RE-OPENED by a same-file extension unresolved", () => {
+  it("resolves a construction of a type RE-OPENED by a same-file extension", () => {
     // `Invoice()` inside `Invoice.empty`. `extension Invoice` is a second
     // `class_declaration` carrying the same name, so `collectSymbols` composes
     // `Invoice` and `Invoice~2` — and `lastSegment` strips `~N`, so BOTH answer
-    // the short name `Invoice` and the strict cardinality gate drops the call.
+    // the short name `Invoice`.
     //
-    // A KNOWN limitation, pinned rather than worked around: the two ids are one
-    // logical type, but nothing in `SymbolDefinition` says "container", so the
-    // resolver cannot tell a re-opened type from a genuine method overload —
-    // where collapsing to the first WOULD be a wrong guess. Closing it needs a
-    // new walker channel, which is a design decision, not a chain reorder.
-    // Same-file conformance extensions are idiomatic Swift, so this costs real
-    // construction edges.
-    expect(resolveCallFrom("Invoice.empty", "Invoice")).toBeNull();
+    // INVARIANT CHANGED (bd tea-rags-mcp-sg35c, `.claude/rules/test-invariants.md`
+    // §4): this used to pin `toBeNull()` — the strict cardinality gate saw two
+    // candidates and emitted no edge. It was pinned on the belief that telling a
+    // re-opened type from a genuine method overload needs a container marker on
+    // `SymbolDefinition`, i.e. a cross-language shape change. It does not: the
+    // COMPOSED ID already says it. `Invoice#init` / `Invoice#init~2` are
+    // `#`-form members and stay two symbols; `Invoice` / `Invoice~2` are two
+    // declarations of ONE top-level UpperCamelCase type, which the Swift-scoped
+    // short-name lookup now folds back to the base declaration. Same-file
+    // conformance extensions are idiomatic Swift, so this buys real construction
+    // edges.
+    expect(resolveCallFrom("Invoice.empty", "Invoice")).toEqual({
+      targetRelPath: INVOICE,
+      targetSymbolId: "Invoice",
+    });
   });
 
-  it("leaves a NESTED type's qualified receiver unresolved", () => {
+  it("resolves a NESTED type's short-name receiver against the enclosing scope", () => {
     // `Ledger#open` calls `Account.opening(name)`. The receiver is the nested
-    // type's SHORT name while its symbol composes as `Ledger.Account.opening`,
-    // and nothing in this chain re-qualifies a bare type name against the
-    // enclosing scope. Pinned as a KNOWN limitation, not a passing case:
-    // closing it is a scope-qualified type-name pass, not a chain reorder.
-    expect(resolveCallFrom("Ledger#open", "opening")).toBeNull();
+    // type's SHORT name while its symbol composes as `Ledger.Account.opening`.
+    //
+    // INVARIANT CHANGED (bd tea-rags-mcp-sg35c, `.claude/rules/test-invariants.md`
+    // §4): this used to pin `toBeNull()` because no pass re-qualified a bare
+    // type name against the caller's scope. `scopedTypeReceiver` now does, by
+    // probing `<enclosing scope>.<receiver>` outward-in and requiring the probe
+    // to land on a DECLARED symbol — so it answers only where the nested type
+    // demonstrably exists, and stays silent otherwise.
+    expect(resolveCallFrom("Ledger#open", "opening")).toEqual({
+      targetRelPath: LEDGER,
+      targetSymbolId: "Ledger.Account.opening",
+    });
   });
 });

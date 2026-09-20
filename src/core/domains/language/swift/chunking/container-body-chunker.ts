@@ -98,8 +98,12 @@ export function extractSwiftContainerBody(ctx: HookContext): BodyChunkResult[] {
   ];
 }
 
-/** Collapse sorted 0-based rows into contiguous 1-based ranges. */
-function toLineRanges(rows: number[]): { start: number; end: number }[] {
+/**
+ * Collapse sorted 0-based rows into contiguous 1-based ranges. Exported for
+ * `quick-scope-chunker.ts`, whose suite-residue chunk is non-contiguous for the
+ * same reason this one is — a claimed row sits in the middle of the body.
+ */
+export function toLineRanges(rows: number[]): { start: number; end: number }[] {
   const sorted = [...rows].sort((a, b) => a - b);
   const ranges: { start: number; end: number }[] = [];
   for (const row of sorted) {

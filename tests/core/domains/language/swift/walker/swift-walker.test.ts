@@ -20,10 +20,12 @@ import Parser from "tree-sitter";
 import SwiftLang from "tree-sitter-swift";
 import { describe, expect, it } from "vitest";
 
+import { resolveLocalBindingType } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { swiftNameOf } from "../../../../../../src/core/domains/language/swift/walker/name-of.js";
 import { extractFromSwiftFile } from "../../../../../../src/core/domains/language/swift/walker/walker.js";
+import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 function parse(src: string) {
   const p = new Parser();
@@ -39,6 +41,28 @@ function wholeFileChunk(src: string, symbolId = "f", scope: string[] = []) {
 function extract(src: string, chunks = wholeFileChunk(src)) {
   return extractFromSwiftFile({
     tree: parse(src),
+    code: src,
+    relPath: "Sources/Sample.swift",
+    language: "swift",
+    chunks,
+  });
+}
+
+/**
+ * The type a receiver would resolve to at `line`, read the way the resolver
+ * reads it — through the kernel's position-aware lookup, never by indexing
+ * `localBindings[name]`. Scope extent is only observable through this call, so
+ * the `guard let` / `if let` cases assert against it rather than against the
+ * raw `scopeEndLine` field alone.
+ */
+function typeAt(src: string, name: string, line: number): string | undefined {
+  return resolveLocalBindingType(extract(src).chunks[0].localBindings, name, line);
+}
+
+/** The same extraction off the MATERIALIZED tree — the one the pipeline actually walks. */
+function extractMaterialized(src: string, chunks = wholeFileChunk(src)) {
+  return extractFromSwiftFile({
+    tree: { rootNode: materializeTree(parse(src).rootNode, src) },
     code: src,
     relPath: "Sources/Sample.swift",
     language: "swift",
@@ -234,6 +258,400 @@ describe("extractFromSwiftFile — localBindings", () => {
   });
 });
 
+describe("extractFromSwiftFile — optional binding (`guard let` / `if let`)", () => {
+  it("types a `guard let` local from the stored property it unwraps", () => {
+    const src = [
+      "class Store {",
+      "  let account: Account",
+      "  func go() {",
+      "    guard let acct = self.account else { return }",
+      "    acct.close()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.acct?.[0].type).toBe("Account");
+  });
+
+  it("types a `guard let` local from an IMPLICIT-self property", () => {
+    const src = [
+      "class Store {",
+      "  let account: Account",
+      "  func go() {",
+      "    guard let acct = account else { return }",
+      "    acct.close()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.acct?.[0].type).toBe("Account");
+  });
+
+  it("types a `guard let` local from a CapWords initializer", () => {
+    const src = ["func go() {", "  guard let h = Helper() else { return }", "  h.run()", "}", ""].join("\n");
+    expect(extract(src).chunks[0].localBindings?.h?.[0].type).toBe("Helper");
+  });
+
+  it("types a `guard let` local from its own annotation, whatever the right-hand side is", () => {
+    const src = ["func go() {", "  guard let x: Foo = lookup() else { return }", "  x.doIt()", "}", ""].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Foo");
+  });
+
+  it("types a `guard let` local from an already-typed parameter", () => {
+    const src = ["func go(p: Foo?) {", "  guard let q = p else { return }", "  q.doIt()", "}", ""].join("\n");
+    expect(extract(src).chunks[0].localBindings?.q?.[0].type).toBe("Foo");
+  });
+
+  it("keeps a `guard let` binding in scope for the REST of its enclosing block", () => {
+    const src = [
+      "class Store {",
+      "  let backup: Backup",
+      "  func go() {",
+      "    guard let a = self.backup else { return }",
+      "    a.one()",
+      "    a.two()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "a", 5)).toBe("Backup");
+    expect(typeAt(src, "a", 6)).toBe("Backup");
+  });
+
+  it("ends a `guard let` binding with the NESTED block that declares it", () => {
+    // A guard unwraps for the rest of its own block — not for the block that
+    // contains it. Past the closing brace the name denotes the property again.
+    const src = [
+      "class Store {",
+      "  let backup: Backup",
+      "  func go() {",
+      "    if flag {",
+      "      guard let a = self.backup else { return }",
+      "      a.one()",
+      "    }",
+      "    a.two()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "a", 6)).toBe("Backup");
+    expect(typeAt(src, "a", 8)).toBeUndefined();
+  });
+
+  it("ends an `if let` binding with its own block", () => {
+    const src = [
+      "class Store {",
+      "  let account: Account",
+      "  func go() {",
+      "    if let acct = self.account {",
+      "      acct.close()",
+      "    }",
+      "    acct.gone()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "acct", 5)).toBe("Account");
+    expect(typeAt(src, "acct", 7)).toBeUndefined();
+  });
+
+  it("does NOT carry an `if let` binding into the else branch", () => {
+    const src = [
+      "class Store {",
+      "  let account: Account",
+      "  func go() {",
+      "    if let acct = self.account {",
+      "      acct.close()",
+      "    } else {",
+      "      acct.gone()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "acct", 5)).toBe("Account");
+    expect(typeAt(src, "acct", 7)).toBeUndefined();
+  });
+
+  it("types the `if let x { }` shorthand from the name it re-binds", () => {
+    const src = [
+      "class Store {",
+      "  let account: Account",
+      "  func go() {",
+      "    if let account {",
+      "      account.close()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "account", 5)).toBe("Account");
+  });
+
+  it("scopes a `while let` binding to its own block", () => {
+    const src = ["func go() {", "  while let n = Node() {", "    n.use()", "  }", "  n.gone()", "}", ""].join("\n");
+    expect(typeAt(src, "n", 3)).toBe("Node");
+    expect(typeAt(src, "n", 5)).toBeUndefined();
+  });
+
+  it("types every binding of a multi-clause `guard`", () => {
+    const src = [
+      "class Store {",
+      "  let account: Account",
+      "  func go() {",
+      "    guard let a = self.account, let h = Helper() else { return }",
+      "    a.close()",
+      "    h.run()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].localBindings;
+    expect(bindings?.a?.[0].type).toBe("Account");
+    expect(bindings?.h?.[0].type).toBe("Helper");
+  });
+
+  it("declines `if case let` — a pattern match binds no single name to a known type", () => {
+    const src = ["func go(opt: Wrapper) {", "  if case let .some(v) = opt {", "    v.use()", "  }", "}", ""].join("\n");
+    expect(extract(src).chunks[0].localBindings?.v).toBeUndefined();
+  });
+
+  it("declines a `guard let` whose right-hand side names no provable type", () => {
+    const src = ["func go() {", "  guard let x = lookup() else { return }", "  x.doIt()", "}", ""].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x).toBeUndefined();
+  });
+
+  it("binds nothing for `guard let self = self`", () => {
+    // `self` is a pseudo receiver the chain claims with its own pass; a local
+    // binding under that name would make the local-binding pass answer first
+    // and DROP what `selfMember` resolves.
+    const src = [
+      "class Store {",
+      "  func go() {",
+      "    guard let self = self else { return }",
+      "    self.helper()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.self).toBeUndefined();
+  });
+});
+
+describe("extractFromSwiftFile — call-result locals typed by a same-file declared return", () => {
+  it("types a local from a top-level function's declared return type", () => {
+    const src = [
+      "func make() -> Invoice { Invoice() }",
+      "func go() {",
+      "  let x = make()",
+      "  x.total()",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Invoice");
+  });
+
+  it("types a local from `self.method()`'s declared return type", () => {
+    const src = [
+      "class Store {",
+      "  func build() -> Widget { Widget() }",
+      "  func go() {",
+      "    let w = self.build()",
+      "    w.render()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.w?.[0].type).toBe("Widget");
+  });
+
+  it("types a local through a receiver the walker already typed", () => {
+    const src = [
+      "class Repository {",
+      "  func load() -> Invoice { Invoice() }",
+      "}",
+      "class Store {",
+      "  func go(repo: Repository) {",
+      "    let x = repo.load()",
+      "    x.total()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Invoice");
+  });
+
+  it("lets a member declaration beat a top-level namesake, as Swift lookup does", () => {
+    const src = [
+      "func make() -> Invoice { Invoice() }",
+      "class Store {",
+      "  func make() -> Widget { Widget() }",
+      "  func go() {",
+      "    let x = make()",
+      "    x.render()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Widget");
+  });
+
+  it("declines when two same-file overloads declare DIFFERENT return types", () => {
+    const src = [
+      "func make(a: Int) -> Invoice { Invoice() }",
+      "func make(a: String) -> Widget { Widget() }",
+      "func go() {",
+      "  let x = make(a: 1)",
+      "  x.total()",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x).toBeUndefined();
+  });
+
+  it("declines a generic return — the type parameter names no type", () => {
+    const src = [
+      "func decode<T>() -> T { fatalError() }",
+      "func go() {",
+      "  let x = decode()",
+      "  x.use()",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x).toBeUndefined();
+  });
+
+  it("declines `-> Self` and `-> Void`", () => {
+    const src = [
+      "class Store {",
+      "  func me() -> Self { self }",
+      "  func nothing() -> Void {}",
+      "  func go() {",
+      "    let a = self.me()",
+      "    let b = self.nothing()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].localBindings;
+    expect(bindings?.a).toBeUndefined();
+    expect(bindings?.b).toBeUndefined();
+  });
+
+  it("unwraps an optional declared return, and feeds the `guard let` that unwraps it", () => {
+    const src = [
+      "func find() -> Invoice? { nil }",
+      "func go() {",
+      "  guard let x = find() else { return }",
+      "  x.total()",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Invoice");
+  });
+
+  it("sees through `try` / `await` on the initializer", () => {
+    const src = [
+      "func load() throws -> Invoice { Invoice() }",
+      "func go() async throws {",
+      "  let x = try load()",
+      "  x.total()",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Invoice");
+  });
+
+  it("binds NOTHING for an array-returning function", () => {
+    // Same invariant as an array annotation: the local is an Array, not a
+    // Thing, and `LocalBinding.type` has no container slot to say so.
+    const src = ["func all() -> [Thing] { [] }", "func go() {", "  let xs = all()", "  xs.append(y)", "}", ""].join(
+      "\n",
+    );
+    expect(extract(src).chunks[0].localBindings?.xs).toBeUndefined();
+  });
+});
+
+describe("extractFromSwiftFile — `for x in` element typing", () => {
+  it("types the loop variable from an array-annotated parameter, and still binds NOTHING for the array", () => {
+    const src = ["func go(xs: [Thing]) {", "  for x in xs {", "    x.touch()", "  }", "}", ""].join("\n");
+    const bindings = extract(src).chunks[0].localBindings;
+    expect(bindings?.x?.[0].type).toBe("Thing");
+    expect(bindings?.xs).toBeUndefined();
+  });
+
+  it("types the loop variable from an array-typed stored property", () => {
+    const src = [
+      "class Store {",
+      "  var items: [Thing] = []",
+      "  func go() {",
+      "    for item in items {",
+      "      item.touch()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extract(src);
+    expect(r.chunks[0].localBindings?.item?.[0].type).toBe("Thing");
+    expect(r.classFieldTypes?.Store?.items).toBeUndefined();
+  });
+
+  it("types the loop variable from an array-returning same-file function", () => {
+    const src = [
+      "func all() -> [Thing] { [] }",
+      "func go() {",
+      "  for x in all() {",
+      "    x.touch()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Thing");
+  });
+
+  it("types the loop variable through a `guard let` that unwraps an optional array", () => {
+    // Unwrapping `[Thing]?` yields `[Thing]`, so the unwrapped name carries the
+    // ELEMENT and still no nominal of its own — the loop reads one, the
+    // container rule keeps the other empty.
+    const src = [
+      "class Store {",
+      "  var items: [Thing]?",
+      "  func go() {",
+      "    guard let list = self.items else { return }",
+      "    for x in list {",
+      "      x.touch()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].localBindings;
+    expect(bindings?.x?.[0].type).toBe("Thing");
+    expect(bindings?.list).toBeUndefined();
+  });
+
+  it("declines a Set, a dictionary and a tuple pattern", () => {
+    const src = [
+      "func go(s: Set<Thing>, d: [String: Foo]) {",
+      "  for x in s { x.touch() }",
+      "  for (k, v) in d { v.use() }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].localBindings;
+    expect(bindings?.x).toBeUndefined();
+    expect(bindings?.k).toBeUndefined();
+    expect(bindings?.v).toBeUndefined();
+  });
+
+  it("scopes the loop variable to the loop body", () => {
+    const src = ["func go(xs: [Thing]) {", "  for x in xs {", "    x.touch()", "  }", "  x.gone()", "}", ""].join("\n");
+    expect(typeAt(src, "x", 3)).toBe("Thing");
+    expect(typeAt(src, "x", 5)).toBeUndefined();
+  });
+});
+
 describe("extractFromSwiftFile — classFieldTypes", () => {
   it("records an annotated stored property under its type name", () => {
     const src = ["class Store {", "  let db: Database", "  func go() { self.db.write() }", "}", ""].join("\n");
@@ -295,6 +713,56 @@ describe("extractFromSwiftFile — edge cases", () => {
     expect(r.imports).toHaveLength(2);
     expect(r.chunks[0].calls).toEqual([]);
     expect(r.classFieldTypes).toBeUndefined();
+  });
+});
+
+describe("extractFromSwiftFile — the MATERIALIZED tree the pipeline walks", () => {
+  /**
+   * `CodegraphFileExtractor` materializes before it calls a walker, and
+   * `materializeTree` rebuilds the field map from `fieldNameForChild`, which
+   * reports ONE field name per child. tree-sitter-swift registers every type
+   * position under `name` as WELL as under `type` / `return_type`, so those two
+   * fields exist on a native node and vanish on a materialized one. A walker
+   * that asks for them by name therefore reads every annotation in its unit
+   * tests and none of them in production — silently, since the extraction is
+   * still well-formed, just empty.
+   *
+   * These cases are the only place that difference is observable, so they are
+   * the guard for reading a type POSITIONALLY (the child after `:` / `->`).
+   */
+  const src = [
+    "import Foundation",
+    "protocol Renderer {",
+    "  func render() -> Widget",
+    "}",
+    "final class Ledger {",
+    "  let repo: Repository",
+    "  var items: [Entry] = []",
+    "  var cache = Cache()",
+    "  func post(_ id: String, entry: Entry?) -> Invoice? {",
+    "    guard let invoice = self.repo.load() else { return nil }",
+    "    invoice.settle()",
+    "    for item in items { item.apply() }",
+    "    let widget = render()",
+    "    widget.draw()",
+    "    return invoice",
+    "  }",
+    "  func render() -> Widget { Widget() }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("extracts byte-identically from a materialized tree", () => {
+    expect(extractMaterialized(src)).toEqual(extract(src));
+  });
+
+  it("still reads parameter, property and return annotations once materialized", () => {
+    const r = extractMaterialized(src);
+    expect(r.chunks[0].localBindings?.id?.[0].type).toBe("String");
+    expect(r.chunks[0].localBindings?.entry?.[0].type).toBe("Entry");
+    expect(r.chunks[0].localBindings?.item?.[0].type).toBe("Entry");
+    expect(r.chunks[0].localBindings?.widget?.[0].type).toBe("Widget");
+    expect(r.classFieldTypes?.Ledger?.repo).toBe("Repository");
   });
 });
 

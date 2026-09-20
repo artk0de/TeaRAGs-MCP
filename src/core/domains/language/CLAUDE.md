@@ -418,6 +418,25 @@
   stopped making `title` / `filter` / `request` ambiguous, taxdome committed ~89
   object-literal, `any` and generated-class calls to the lone TS symbol of that
   name.
+- **A grammar may register ONE child under TWO field names, and materialization
+  keeps only one — so a walker can read types fine in tests and extract nothing
+  in production.** `materializeTree` (`infra/materialize.ts`) rebuilds each
+  node's field map from `fieldNameForChild(i)`, which answers a single name per
+  child; the NATIVE `childForFieldName` answers from tree-sitter's own table,
+  where a child may carry several. `tree-sitter-swift` does exactly this: a
+  `parameter`'s type child reports `name`, so on a materialized tree
+  `childForFieldName("type")` is `null` while the native tree answers correctly.
+  The pipeline walks ONLY materialized trees (the codegraph file extractor
+  materializes before extraction) and unit tests parse NATIVELY, so Swift's
+  annotated parameters, annotated locals and the whole stored-property channel
+  evaluated to nothing on a real index while every spec stayed green. Fix is to
+  read the type POSITIONALLY (the child after `:` in a parameter / annotation,
+  after `->` in a signature) and pin it with a materialized-vs-native parity
+  test — no other test shape can observe the difference. Measured clean for go,
+  java, rust and python, so this is a per-grammar hazard, not a global one. Why:
+  a walker that reads any field by name is one grammar quirk away from silently
+  extracting nothing, and the failure surfaces as "that language just resolves
+  poorly", never as a red test.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

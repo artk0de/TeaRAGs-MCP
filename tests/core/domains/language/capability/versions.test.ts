@@ -182,9 +182,11 @@ describe("seeded support versions", () => {
       // origin joins the candidate-file set when the receiver head names it —
       // so an index built by walker 10 misses the checker-off constructed
       // receiver edges behind `sync/index.js`-style barrels.
-      // swift walker 2: the vertical shipped its walker + `SwiftCallResolver`,
-      // so an index built by walker 1 holds NO swift edges whatsoever — the
-      // language emitted no call graph at all until the recompute runs.
+      // swift walker 3: walker 2 shipped the call graph itself (an index built
+      // by walker 1 holds no swift edges whatsoever); walker 3 added the
+      // scope-qualified type receiver, stopped double-counting a type re-opened
+      // by a same-file extension, and fixed the materialization field loss that
+      // made every annotated-type read evaluate to nothing in production.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
@@ -194,7 +196,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 2],
+        ["swift", 3],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
@@ -208,7 +210,7 @@ describe("seeded support versions", () => {
       // from path-based to chunkType-based test accounting once they appear.
       const CHUNKING_BUMPED = new Map([
         ["javascript", 2],
-        ["swift", 2],
+        ["swift", 3],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

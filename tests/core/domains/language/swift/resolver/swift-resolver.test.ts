@@ -31,7 +31,11 @@ function table(rows: Record<string, { symbolId: string; scope: string[] }[]>): I
       defs.map((d) => ({
         symbolId: d.symbolId,
         fqName: d.symbolId,
-        shortName: d.symbolId.split(/[#.]/).pop() ?? d.symbolId,
+        // Production keys the table with `lastSegment`, which strips the `~N`
+        // overload suffix — so every declaration of one re-opened type answers
+        // the same short name. Mirrored here, or the collision this file pins
+        // could not be built at all.
+        shortName: (d.symbolId.split(/[#.]/).pop() ?? d.symbolId).replace(/~\d+$/, ""),
         relPath,
         scope: d.scope,
       })),
@@ -216,6 +220,185 @@ describe("SwiftCallResolver — storedPropertyType", () => {
         symbolTable: t,
         classFieldTypes: { Store: { db: "Database" } },
       }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — scopedTypeReceiver", () => {
+  it("resolves a nested type named by its SHORT name inside the enclosing type", () => {
+    // `Account.opening(…)` inside `Ledger` — the only place that spelling is
+    // legal, and the symbol composes as `Ledger.Account.opening`.
+    const t = table({
+      "Sources/Ledger.swift": [
+        { symbolId: "Ledger.Account", scope: ["Ledger"] },
+        { symbolId: "Ledger.Account.opening", scope: ["Ledger", "Account"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("Account", "opening"),
+      ctx({ callerFile: "Sources/Ledger.swift", callerScope: ["Ledger"], symbolTable: t }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Ledger.swift", targetSymbolId: "Ledger.Account.opening" });
+  });
+
+  it("lets the INNERMOST scope's namesake type shadow an outer one", () => {
+    const t = table({
+      "Sources/Outer.swift": [
+        { symbolId: "Outer.Inner.Item", scope: ["Outer", "Inner"] },
+        { symbolId: "Outer.Inner.Item#use", scope: ["Outer", "Inner", "Item"] },
+        { symbolId: "Outer.Item", scope: ["Outer"] },
+        { symbolId: "Outer.Item#use", scope: ["Outer", "Item"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("Item", "use"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner.Item#use");
+  });
+
+  it("DROPS when the innermost namesake type declares no such member", () => {
+    // The receiver's type is known once the probe lands. Walking further out to
+    // an outer namesake would resolve a name Swift's own lookup already shadowed.
+    const t = table({
+      "Sources/Outer.swift": [
+        { symbolId: "Outer.Inner.Item", scope: ["Outer", "Inner"] },
+        { symbolId: "Outer.Item", scope: ["Outer"] },
+        { symbolId: "Outer.Item#use", scope: ["Outer", "Item"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("Item", "use"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("declines a lowerCamelCase receiver — a nested type is UpperCamelCase", () => {
+    // `account.opening()` is a value, not a type. Probing it would attribute
+    // the call to `Ledger.account`, a member that means something else.
+    const t = table({
+      "Sources/Ledger.swift": [
+        { symbolId: "Ledger.account", scope: ["Ledger"] },
+        { symbolId: "Ledger.account.opening", scope: ["Ledger", "account"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("account", "opening"),
+      ctx({ callerFile: "Sources/Ledger.swift", callerScope: ["Ledger"], symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("is shadowed by a local binding of the same name", () => {
+    // Swift scoping: a local declaration shadows a type name. `localBinding`
+    // runs three passes earlier, and that ordering is the assertion here.
+    const t = table({
+      "Sources/Ledger.swift": [
+        { symbolId: "Ledger.Account", scope: ["Ledger"] },
+        { symbolId: "Ledger.Account#post", scope: ["Ledger", "Account"] },
+      ],
+      "Sources/Other.swift": [{ symbolId: "Other#post", scope: ["Other"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("Account", "post"),
+      ctx({
+        callerFile: "Sources/Ledger.swift",
+        callerScope: ["Ledger"],
+        symbolTable: t,
+        localBindings: { Account: [{ line: 5, type: "Other" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Other#post");
+  });
+
+  it("stays silent at file scope, where there is nothing to qualify against", () => {
+    const t = table({ "Sources/Ledger.swift": [{ symbolId: "Ledger.Account#post", scope: ["Ledger", "Account"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("Account", "post"),
+      ctx({ callerFile: "Sources/Ledger.swift", symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a type re-opened by a same-file extension", () => {
+  it("counts the extension's second declaration as the SAME type", () => {
+    // `extension Invoice` parses as a second `class_declaration` named
+    // `Invoice`, so the file composes `Invoice` and `Invoice~2` and both answer
+    // the short name. Construction resolves to the base declaration.
+    const t = table({
+      "Sources/Invoice.swift": [
+        { symbolId: "Invoice", scope: [] },
+        { symbolId: "Invoice~2", scope: [] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "Invoice"),
+      ctx({ callerFile: "Sources/Invoice.swift", symbolTable: t }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Invoice.swift", targetSymbolId: "Invoice" });
+  });
+
+  it("keeps a type declared in TWO files ambiguous", () => {
+    // A type and its extension in separate files compose the identical id, and
+    // nothing here says which file carries the type's own body. Still no edge.
+    const t = table({
+      "Sources/Invoice.swift": [{ symbolId: "Invoice", scope: [] }],
+      "Sources/Invoice+Codable.swift": [{ symbolId: "Invoice", scope: [] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "Invoice"),
+      ctx({ callerFile: "Sources/Store.swift", symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("does NOT fold same-file METHOD overloads", () => {
+    // `Invoice#init` / `Invoice#init~2` carry distinct bodies. A `#`-form id is
+    // a method whatever it is named, so the fold must not reach it.
+    const t = table({
+      "Sources/Invoice.swift": [
+        { symbolId: "Invoice#init", scope: ["Invoice"] },
+        { symbolId: "Invoice#init~2", scope: ["Invoice"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "init"),
+      ctx({ callerFile: "Sources/Store.swift", symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("does NOT fold same-file FREE FUNCTION overloads", () => {
+    // Two top-level `render(_:)` overloads are the shape a naive fold would get
+    // wrong: same file, same base id, no separator. lowerCamelCase is what
+    // tells them from a re-opened type.
+    const t = table({
+      "Sources/Render.swift": [
+        { symbolId: "render", scope: [] },
+        { symbolId: "render~2", scope: [] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "render"),
+      ctx({ callerFile: "Sources/Store.swift", symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("does NOT fold same-file STATIC member overloads", () => {
+    // `.`-joined like a nested type, but the member is lowerCamelCase.
+    const t = table({
+      "Sources/Invoice.swift": [
+        { symbolId: "Invoice.empty", scope: ["Invoice"] },
+        { symbolId: "Invoice.empty~2", scope: ["Invoice"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "empty"),
+      ctx({ callerFile: "Sources/Store.swift", symbolTable: t }),
     );
     expect(target).toBeNull();
   });
