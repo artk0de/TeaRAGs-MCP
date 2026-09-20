@@ -132,8 +132,8 @@ describe("the walker's recorded result types rank an import's names by certainty
         "func mkE() *core.Engine { return nil }",
         "func mkPod() *v1.Pod { return nil }",
       ]);
-      expect(types?.mkE).toBe("example.com/proj/core.Engine");
-      expect(types?.mkPod).toBe("k8s.io/api/core/v1.Pod");
+      expect(types?.["app::mkE"]).toBe("example.com/proj/core.Engine");
+      expect(types?.["app::mkPod"]).toBe("k8s.io/api/core/v1.Pod");
     }
   });
 
@@ -143,7 +143,7 @@ describe("the walker's recorded result types rank an import's names by certainty
       'import (\n\t"example.com/proj/core"\n\tcore "example.com/other/engine"\n)',
       "func mkE() *core.Engine { return nil }",
     ]);
-    expect(types?.mkE).toBe("example.com/other/engine.Engine");
+    expect(types?.["app::mkE"]).toBe("example.com/other/engine.Engine");
   });
 
   it("NEGATIVE: two imports tied at the best rank record nothing for that name", () => {

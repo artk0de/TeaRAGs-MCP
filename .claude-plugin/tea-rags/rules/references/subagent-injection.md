@@ -114,6 +114,8 @@ for raw `filter`:**
 - Author dominance: `author: "Alice Smith"` (blame-based, exact name)
 - Recent committer ("what did Alice work on"): `recentAuthor` (name or email) +
   `modifiedAfter`
+- Everything a person touched (not just where dominant): `contributor: "Alice
+  Smith"` (exact name, any recent-window committer)
 
 Raw `filter: { must: [...] }` only when typed fields cannot express it. For
 syntax and payload keys, fetch on demand:

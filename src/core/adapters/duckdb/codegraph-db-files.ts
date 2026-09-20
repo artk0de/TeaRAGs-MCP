@@ -17,7 +17,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { copyFile, unlink } from "node:fs/promises";
+import { copyFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
@@ -42,6 +42,14 @@ export function sanitiseCollectionName(name: string): string {
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * Marks the staging copy of a clone in progress. Deliberately outside the
+ * `<base>(_v<N>)?.duckdb` pattern `listCollectionDbNames` matches, so a
+ * half-written staging file is invisible to the orphan sweep — and the
+ * published paths are never touched until the copies are whole.
+ */
+const CLONE_TMP_SUFFIX = ".clone-tmp";
 
 export class CodegraphDbFiles {
   constructor(private readonly rootDir: string) {}
@@ -146,6 +154,17 @@ export class CodegraphDbFiles {
    * left: collection names get reused, and replaying a previous tenant's write
    * log over a freshly copied database is worse than the truncation this copy
    * avoids.
+   *
+   * Publishing is atomic (bd tea-rags-mcp-i5kiu). Both files are first staged
+   * beside the target as `<target>.duckdb.clone-tmp`(+`.wal`), clearing any
+   * staging leftovers of an interrupted earlier clone; only completed copies
+   * are then renamed into place — WAL first, database last, each rename whole.
+   * A SIGKILL at any instant therefore leaves the target either absent ("not
+   * cloned"; the next run re-clones) or complete — never a truncated file, and
+   * never a checkpoint-only database that merely looks current. The one
+   * mid-publish state is an orphaned WAL beside a missing database, which
+   * `discardOrphanedWal` already reclaims; publishing the database last is
+   * what keeps that state honest.
    */
   async cloneDatabase(
     sourceCollection: PhysicalCollectionName,
@@ -155,9 +174,22 @@ export class CodegraphDbFiles {
     if (!existsSync(from)) return;
     const to = this.writablePathFor(targetCollection);
     mkdirSync(dirname(to), { recursive: true });
-    await copyFile(from, to);
-    if (existsSync(`${from}.wal`)) await copyFile(`${from}.wal`, `${to}.wal`);
-    else await unlink(`${to}.wal`).catch(() => undefined);
+    const staging = `${to}${CLONE_TMP_SUFFIX}`;
+    const stagingWal = `${staging}.wal`;
+    const sourceHasWal = existsSync(`${from}.wal`);
+    // Clear staging leftovers of an interrupted earlier clone onto this target
+    // before restaging (ENOENT is the normal first-run case).
+    await unlink(staging).catch(() => undefined);
+    await unlink(stagingWal).catch(() => undefined);
+    await copyFile(from, staging);
+    if (sourceHasWal) await copyFile(`${from}.wal`, stagingWal);
+    // Publish. The old pair goes first so no intermediate state pairs a new
+    // file with a stale one; the renames are atomic within the directory, WAL
+    // first and the database last.
+    await unlink(to).catch(() => undefined);
+    await unlink(`${to}.wal`).catch(() => undefined);
+    if (sourceHasWal) await rename(stagingWal, `${to}.wal`);
+    await rename(staging, to);
   }
 
   /**

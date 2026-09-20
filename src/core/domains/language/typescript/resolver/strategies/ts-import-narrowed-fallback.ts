@@ -63,7 +63,8 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
     if (!narrowedHit) return CONTINUE;
     // Narrowing by imports is still a decision by NAME for a receiver the walker
     // did not type — the checker must agree, or with no Program the structure
-    // must: an import binding, or `this`'s class hierarchy (bd tea-rags-mcp-t5cji). The
+    // must: an import binding, a receiver that constructs or produces its type
+    // (bd tea-rags-mcp-pv7ul), or `this`'s class hierarchy (bd tea-rags-mcp-t5cji). The
     // walker-typed interface receiver this pass exists to recover is exempt.
     if (memberCandidateLacksReceiverEvidence(call, ctx, this.cfg, this.programCache, narrowedHit)) return CONTINUE;
     return resolved({ targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId });

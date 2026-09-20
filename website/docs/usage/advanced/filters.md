@@ -69,7 +69,7 @@ Numeric comparison. Use for metrics — commit counts, age in days, churn ratios
 bug-fix percentages.
 
 ```json
-{ "key": "git.commitCount", "range": { "gte": 5, "lte": 50 } }
+{ "key": "git.file.commitCount", "range": { "gte": 5, "lte": 50 } }
 ```
 
 Available operators: `gt` (greater than), `gte` (greater or equal), `lt` (less
@@ -139,16 +139,21 @@ JavaScript, excluding docs:
 
 ```json
 {
-  "must": [
-    { "key": "chunkType", "match": { "value": "function" } },
-    { "key": "git.ageDays", "range": { "lte": 14 } }
-  ],
+  "must": [{ "key": "chunkType", "match": { "value": "function" } }],
   "should": [
     { "key": "language", "match": { "value": "typescript" } },
     { "key": "language", "match": { "value": "javascript" } }
   ],
   "must_not": [{ "key": "isDocumentation", "match": { "value": true } }]
 }
+```
+
+The recency clause is the typed `maxAgeDays` parameter — it compiles to a
+`git.file.lastModifiedAt` range at query time and composes with the filter
+above as another AND:
+
+```yaml
+maxAgeDays: 14
 ```
 
 ## Path Pattern Filtering
@@ -190,7 +195,7 @@ High commit count signals frequently modified code — potential hotspots or are
 under active development.
 
 ```json
-{ "key": "git.commitCount", "range": { "gte": 10 } }
+{ "key": "git.file.commitCount", "range": { "gte": 10 } }
 ```
 
 **Use case:** identifying areas that change too often, candidates for
@@ -202,7 +207,7 @@ Relative churn normalizes commit count by file size — a 50-line file with 20
 commits is more concerning than a 2000-line file with the same count.
 
 ```json
-{ "key": "git.relativeChurn", "range": { "gte": 2.0 } }
+{ "key": "git.file.relativeChurn", "range": { "gte": 2.0 } }
 ```
 
 **Use case:** a stronger signal for defect-prone code than raw commit count
@@ -211,10 +216,11 @@ alone.
 ### Finding recent changes
 
 Filter by age to find code modified within a specific window — useful during
-incidents, code reviews, or sprint retrospectives.
+incidents, code reviews, or sprint retrospectives. Use the typed `maxAgeDays`
+parameter — it compiles to a `git.file.lastModifiedAt` range at query time:
 
-```json
-{ "key": "git.ageDays", "range": { "lte": 7 } }
+```yaml
+maxAgeDays: 7
 ```
 
 <AiQuery>Show me code changed in the last week</AiQuery>
@@ -227,8 +233,8 @@ code review preparation.
 Old code that hasn't been touched in months may need review, especially if it's
 in a critical path.
 
-```json
-{ "key": "git.ageDays", "range": { "gte": 90 } }
+```yaml
+minAgeDays: 90
 ```
 
 **Use case:** tech debt discovery, security audit of stale code.
@@ -239,7 +245,7 @@ High bug-fix rate means a large percentage of commits to this file were fixes �
 a quality signal.
 
 ```json
-{ "key": "git.bugFixRate", "range": { "gte": 30 } }
+{ "key": "git.file.bugFixRate", "range": { "gte": 30 } }
 ```
 
 **Use case:** quality assessment, identifying areas that need redesign rather
@@ -296,10 +302,10 @@ one hot function.
 
 ```json
 // Hot functions (high function-level churn)
-{ "key": "git.chunkCommitCount", "range": { "gte": 5 } }
+{ "key": "git.chunk.commitCount", "range": { "gte": 5 } }
 
 // Functions that are mostly bug fixes
-{ "key": "git.chunkBugFixRate", "range": { "gte": 50 } }
+{ "key": "git.chunk.bugFixRate", "range": { "gte": 50 } }
 ```
 
 **Use case:** pinpointing the exact function that causes problems, not just the
@@ -315,22 +321,27 @@ the file changes a lot:
 ```json
 {
   "must": [
-    { "key": "git.commitCount", "range": { "gte": 20 } },
-    { "key": "git.chunkCommitCount", "range": { "lte": 3 } }
+    { "key": "git.file.commitCount", "range": { "gte": 20 } },
+    { "key": "git.chunk.commitCount", "range": { "lte": 3 } }
   ]
 }
 ```
 
-**Old high-churn TypeScript code** — tech debt candidates:
+**Old high-churn TypeScript code** — tech debt candidates. The age clause is
+the typed `minAgeDays: 90` parameter; the churn and language clauses stay in
+the raw filter:
 
 ```json
 {
   "must": [
-    { "key": "git.ageDays", "range": { "gte": 90 } },
-    { "key": "git.commitCount", "range": { "gte": 5 } },
+    { "key": "git.file.commitCount", "range": { "gte": 5 } },
     { "key": "language", "match": { "value": "typescript" } }
   ]
 }
+```
+
+```yaml
+minAgeDays: 90
 ```
 
 <AiQuery>Show me high-churn code in the auth directory</AiQuery>
@@ -364,28 +375,28 @@ the file changes a lot:
 
 Requires `TRAJECTORY_GIT_ENABLED=true` during indexing.
 
-| Field                   | Type      | Description                                 | Example use                   |
-| ----------------------- | --------- | ------------------------------------------- | ----------------------------- |
-| `git.commitCount`       | integer   | Commits touching this file                  | High-churn detection          |
-| `git.ageDays`           | integer   | Days since last modification                | Recent changes or legacy code |
-| `git.relativeChurn`     | number    | Churn normalized by file size               | Stronger defect signal        |
-| `git.bugFixRate`        | number    | Bug-fix percentage (0-100)                  | Quality assessment            |
-| `git.file.recentDominantAuthor`    | string    | Author with most commits in the recent window     | Filter by recent committer    |
-| `git.file.recentDominantAuthorPct` | number    | Recent-commit concentration (0-100)               | Recent activity concentration |
-| `git.file.recentAuthors`           | string[]  | All recent-window contributors                    | Multi-author recent queries   |
-| `git.file.recentContributorCount`  | integer   | Unique recent-author count                        | Recent activity diversity     |
-| `git.file.blameDominantAuthor`     | string    | Live-line owner (most lines per `git blame HEAD`) | Filter by current owner       |
-| `git.file.blameDominantAuthorPct`  | number    | Live-line ownership concentration (0-100)         | Knowledge silo detection      |
-| `git.file.blameAuthors`            | string[]  | All authors with currently-live lines             | Multi-owner queries           |
-| `git.file.blameContributorCount`   | integer   | Unique live-line author count                     | Bus factor analysis           |
-| `git.taskIds`           | string[]  | Ticket IDs (JIRA, GitHub, etc.)             | Trace code to tickets         |
-| `git.lastModifiedAt`    | timestamp | Unix timestamp of last change               | Precise date filtering        |
-| `git.firstCreatedAt`    | timestamp | Unix timestamp of first commit              | Find when code was introduced |
-| `git.chunkCommitCount`  | integer   | Commits touching this chunk                 | Function-level churn          |
-| `git.chunkChurnRatio`   | number    | Chunk's share of file churn (0-1)           | Hotspot within a file         |
-| `git.chunkBugFixRate`   | number    | Chunk bug-fix rate (0-100)                  | Function-level quality        |
-| `git.chunkAgeDays`      | integer   | Days since chunk was last modified          | Function-level age            |
-| `git.chunkTaskIds`      | string[]  | Ticket IDs from commits touching this chunk | Function-level ticket tracing |
+| Field                              | Type      | Description                                        | Example use                          |
+| ---------------------------------- | --------- | -------------------------------------------------- | ------------------------------------ |
+| `git.file.commitCount`             | integer   | Commits touching this file                         | High-churn detection                 |
+| `git.file.ageDays`                 | integer   | Days since last modification                       | Prefer typed `minAgeDays`/`maxAgeDays` |
+| `git.file.relativeChurn`           | number    | Churn normalized by file size                      | Stronger defect signal               |
+| `git.file.bugFixRate`              | number    | Bug-fix percentage (0-100)                         | Quality assessment                   |
+| `git.file.recentDominantAuthor`    | string    | Author with most commits in the recent window      | Filter by recent committer           |
+| `git.file.recentDominantAuthorPct` | number    | Recent-commit concentration (0-100)                | Recent activity concentration        |
+| `git.file.recentAuthors`           | string[]  | All recent-window contributors                     | Multi-author recent queries          |
+| `git.file.recentContributorCount`  | integer   | Unique recent-author count                         | Recent activity diversity            |
+| `git.file.blameDominantAuthor`     | string    | Live-line owner (most lines per `git blame HEAD`)  | Filter by current owner              |
+| `git.file.blameDominantAuthorPct`  | number    | Live-line ownership concentration (0-100)          | Knowledge silo detection             |
+| `git.file.blameAuthors`            | string[]  | All authors with currently-live lines              | Multi-owner queries                  |
+| `git.file.blameContributorCount`   | integer   | Unique live-line author count                      | Bus factor analysis                  |
+| `git.file.taskIds`                 | string[]  | Ticket IDs (JIRA, GitHub, etc.)                    | Trace code to tickets                |
+| `git.file.lastModifiedAt`          | timestamp | Unix timestamp of last change                      | Precise date filtering               |
+| `git.file.firstCreatedAt`          | timestamp | Unix timestamp of first commit                     | Find when code was introduced        |
+| `git.chunk.commitCount`            | integer   | Commits touching this chunk                        | Function-level churn                 |
+| `git.chunk.churnRatio`             | number    | Chunk's share of file churn (0-1)                  | Hotspot within a file                |
+| `git.chunk.bugFixRate`             | number    | Chunk bug-fix rate (0-100)                         | Function-level quality               |
+| `git.chunk.ageDays`                | integer   | Days since chunk was last modified                 | Prefer typed `minAgeDays`/`maxAgeDays` |
+| `git.chunk.taskIds`                | string[]  | Ticket IDs from commits touching this chunk        | Function-level ticket tracing        |
 
 ## Filter + Rerank Combinations
 
@@ -396,12 +407,12 @@ relevance within it.
 
 | Goal                       | Filter                                          | Rerank          | Why this combination                                    |
 | -------------------------- | ----------------------------------------------- | --------------- | ------------------------------------------------------- |
-| Recent bugs in auth        | `git.ageDays <= 14` + `pathPattern: **/auth/**` | `hotspots`      | Narrow to recent auth code, then rank by bug signals    |
-| Old single-owner code      | `git.ageDays >= 90` + `git.commitCount >= 5`    | `ownership`     | Find stale churny code, rank by live-line concentration (`blame*`) |
-| Recently-active sole committer | `git.ageDays <= 30` + `git.file.recentContributorCount == 1` | `recentActivityConcentration` | Detect feature-in-progress with one driver |
-| Recently active TypeScript | `language: typescript` + `git.ageDays <= 30`    | `codeReview`    | Scope to TS, rank by recent activity intensity          |
-| Large stable functions     | `chunkType: function` + `git.commitCount <= 3`  | `onboarding`    | Find reliable entry points for new team members         |
-| High-churn security code   | `git.commitCount >= 10` + security path pattern | `securityAudit` | Target volatile security-sensitive areas                |
+| Recent bugs in auth        | `maxAgeDays: 14` + `pathPattern: **/auth/**` | `hotspots`      | Narrow to recent auth code, then rank by bug signals    |
+| Old single-owner code      | `minAgeDays: 90` + `git.file.commitCount >= 5`  | `ownership`     | Find stale churny code, rank by live-line concentration (`blame*`) |
+| Recently-active sole committer | `maxAgeDays: 30` + `git.file.recentContributorCount == 1` | `recentActivityConcentration` | Detect feature-in-progress with one driver |
+| Recently active TypeScript | `language: typescript` + `maxAgeDays: 30`       | `codeReview`    | Scope to TS, rank by recent activity intensity          |
+| Large stable functions     | `chunkType: function` + `git.chunk.commitCount <= 3` | `onboarding` | Find reliable entry points for new team members         |
+| High-churn security code   | `git.file.commitCount >= 10` + security path pattern | `securityAudit` | Target volatile security-sensitive areas           |
 
 ## Best Practices
 
@@ -412,11 +423,11 @@ relevance within it.
 3. **Combine filters with semantic search** — filters narrow scope, vectors rank
    relevance. Neither alone is as powerful as both together.
 4. **Use consistent types** — don't pass a string where a number is expected.
-   `git.commitCount` is an integer, not `"5"`.
+   `git.file.commitCount` is an integer, not `"5"`.
 5. **Test filters incrementally** — validate a simple filter works before
    building complex boolean logic.
-6. **Prefer chunk-level git filters** — `git.chunkCommitCount` is more precise
-   than `git.commitCount` for identifying problem spots.
+6. **Prefer chunk-level git filters** — `git.chunk.commitCount` is more precise
+   than `git.file.commitCount` for identifying problem spots.
 
 ## Next Steps
 

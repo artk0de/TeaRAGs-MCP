@@ -79,6 +79,16 @@ export class CodegraphDaemonServer {
   private readonly writeTails = new Map<PhysicalCollectionName, Promise<void>>();
 
   /**
+   * Whether at least one write is admitted but not yet settled — queued behind
+   * an earlier write to its collection or running. THE in-flight-write state:
+   * `admitWrite` owns the entries and this only reads them, so the shutdown
+   * drain guard (bd tea-rags-mcp-zgcmo) adds no tracking of its own.
+   */
+  hasWritesInFlight(): boolean {
+    return this.writeTails.size > 0;
+  }
+
+  /**
    * Run a write once every earlier write to the collection has settled — and
    * drop it instead, with `CodegraphDaemonRequestAbortedError`, when its
    * connection closed while it waited (bd tea-rags-mcp-f924y). A killed CLI

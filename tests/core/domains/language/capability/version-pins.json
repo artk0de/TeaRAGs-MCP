@@ -2,7 +2,7 @@
   "*": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:3573ca040c0c323e9a262d2eda2941d479f8f7ecda62da565ea63edac15ae68d"
+      "digest": "sha256:5751ac87d49a35e30c1817ed6c09c1c0bbef7050a2f96e7ff9e53aa2920814ea"
     },
     "walker": {
       "version": 2,
@@ -21,8 +21,8 @@
       "digest": "sha256:b27a367c9390c6a73806fe5a23e8cd45552c0de52ffe9755ed71bd5ec86965b9"
     },
     "walker": {
-      "version": 2,
-      "digest": "sha256:f0d12db43b688f6769badc8700271f8e0b4a96dcc01a4a7b0279dc9f04a0db0a"
+      "version": 4,
+      "digest": "sha256:1494d36da03ccde16cc01c16d094cc73fa4c451e480a71ec25d505502b512ae7"
     }
   },
   "java": {
@@ -33,12 +33,12 @@
   },
   "javascript": {
     "chunking": {
-      "version": 1,
-      "digest": "sha256:a298f46eff45b5d389c066d8046ae9461ef32c0f93e08ae709262ac0d3bf5380"
+      "version": 2,
+      "digest": "sha256:93a865e0486d9bb62f627c1fc9393818759c634f5773487521ae28198ee66540"
     },
     "walker": {
       "version": 3,
-      "digest": "sha256:3fdcc99858356dd1a80c540480ef2c309b1f30f4ba8d174029e247c8e0a25b5c"
+      "digest": "sha256:6dfe72da095b5a9590ac4c11b56376afc025185a0b5aaaab9495ea4f8f909feb"
     }
   },
   "markdown": {
@@ -75,8 +75,8 @@
       "digest": "sha256:57d21b8afefe46d8216e1343bacb65f1055e2d7bf37987cc24ff3f2df1718718"
     },
     "walker": {
-      "version": 6,
-      "digest": "sha256:fe4f39d4ad58285cb6526095357708c328b647808f5a60cebc8dda0c929bab52"
+      "version": 9,
+      "digest": "sha256:e198a3ef940a991bab1a087d1f3d62ffe4691a2e9389a462ea7af2fd55da6b38"
     }
   }
 }

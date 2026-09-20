@@ -9,6 +9,11 @@ import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintena
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const MIGRATION = "020-cg-method-edges-source-path-pk.sql";
+// bd tea-rags-mcp-rtp6v — migration 026 re-keys the table again (without
+// target_symbol_id in the PK). The two tests below pin the 020-era schema
+// specifically, so they run against the pre-026 set, the same way this file's
+// NON-VACUITY test runs against the pre-020 set.
+const PRE_026 = DATABASE_MIGRATIONS.filter((m) => m.filename !== "026-cg-method-edges-nullable-target.sql");
 
 /**
  * bd tea-rags-mcp-ex28m — `cg_symbols_edges_method` was keyed
@@ -61,13 +66,22 @@ describe("020 extends the method-edge primary key with source_rel_path", () => {
     ["BaseTable", "admin/BaseTable.tsx", "renderRow", "shared/row.tsx", "renderRow"],
   ];
 
-  async function insertNamesakeRows(): Promise<void> {
+  async function insertNamesakeRows(withTargetSymbolKey = true): Promise<void> {
     for (const [source, sourcePath, target, targetPath, call] of NAMESAKE_ROWS) {
+      // target_symbol_key rides along for the runs against the post-026 key;
+      // the pre-026 schema has no such column, so those callers pass false.
+      const sql = withTargetSymbolKey
+        ? `INSERT OR IGNORE INTO cg_symbols_edges_method
+             (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, target_symbol_key, edge_kind, confidence)
+           VALUES (?, ?, ?, ?, ?, ?, 'exact', 1.0)`
+        : `INSERT OR IGNORE INTO cg_symbols_edges_method
+             (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence)
+           VALUES (?, ?, ?, ?, ?, 'exact', 1.0)`;
       await db.run(
-        `INSERT OR IGNORE INTO cg_symbols_edges_method
-           (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence)
-         VALUES (?, ?, ?, ?, ?, 'exact', 1.0)`,
-        [source, sourcePath, target, targetPath, call],
+        sql,
+        withTargetSymbolKey
+          ? [source, sourcePath, target, targetPath, call, target]
+          : [source, sourcePath, target, targetPath, call],
       );
     }
   }
@@ -80,7 +94,7 @@ describe("020 extends the method-edge primary key with source_rel_path", () => {
   }
 
   it("leads the key with source_symbol_id so getCalleeEdges-shape lookups keep their PK prefix", async () => {
-    await runMigrations(db, DATABASE_MIGRATIONS);
+    await runMigrations(db, PRE_026);
 
     // Order is load-bearing, not cosmetic: `WHERE source_symbol_id IN (...)` is
     // the frontier-expansion predicate, and it can only use the key as a prefix.
@@ -101,17 +115,23 @@ describe("020 extends the method-edge primary key with source_rel_path", () => {
   });
 
   it("NON-VACUITY: the same two rows collapse to one under the pre-020 key", async () => {
-    const legacy = DATABASE_MIGRATIONS.filter((m) => m.filename !== MIGRATION);
+    // legacy = everything before 020 — also WITHOUT 026, which re-keys the
+    // table again and must never be applied ahead of (or instead of) 020.
+    const legacy = DATABASE_MIGRATIONS.filter(
+      (m) => m.filename !== MIGRATION && m.filename !== "026-cg-method-edges-nullable-target.sql",
+    );
     await runMigrations(db, legacy);
 
-    await insertNamesakeRows();
+    await insertNamesakeRows(false);
 
     // This is the defect, reproduced: the admin namesake's edge is gone.
     expect(await edgeCount()).toBe(1);
   });
 
   it("carries an existing database's rows and every column across the rebuild", async () => {
-    const legacy = DATABASE_MIGRATIONS.filter((m) => m.filename !== MIGRATION);
+    const legacy = DATABASE_MIGRATIONS.filter(
+      (m) => m.filename !== MIGRATION && m.filename !== "026-cg-method-edges-nullable-target.sql",
+    );
     await runMigrations(db, legacy);
     await db.run(
       `INSERT INTO cg_symbols_edges_method
@@ -194,10 +214,12 @@ describe("020 extends the method-edge primary key with source_rel_path", () => {
       }
     };
 
-    const legacy = DATABASE_MIGRATIONS.filter((m) => m.filename !== MIGRATION);
+    const legacy = DATABASE_MIGRATIONS.filter(
+      (m) => m.filename !== MIGRATION && m.filename !== "026-cg-method-edges-nullable-target.sql",
+    );
     await runMigrations(db, legacy);
     const before = await insertNullTarget();
-    await runMigrations(db, DATABASE_MIGRATIONS);
+    await runMigrations(db, PRE_026);
     const after = await insertNullTarget();
 
     expect(before).toContain("NOT NULL constraint failed");

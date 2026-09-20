@@ -32,7 +32,7 @@ import type {
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { goImportBoundName, goImportNameClaims, goImportsByClaimedName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
-import { goQualifiedTypeName } from "../type-name.js";
+import { goFunctionReturnTypesKey, goPackageDirOf, goQualifiedTypeName } from "../type-name.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -46,7 +46,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const imports = collectGoImports(input.tree.rootNode);
   const importNames = goImportBoundNames(imports);
   const { calls, bareCalleeHeads } = collectGoCalls(input.tree.rootNode);
-  const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode, imports);
+  const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode, imports, goPackageDirOf(input.relPath));
   // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
   // containing range, ties broken by deeper scope. The pure-containment filter
   // this replaces gave a call to EVERY chunk spanning its line, so any enclosing
@@ -128,11 +128,23 @@ function readGoBuildConstraint(root: AstNode): string | undefined {
  *                             guess which return value feeds the variable.
  *   - `func f()`            → no `result` field → SKIP.
  *
- * Methods are keyed by the method name (`Build`), matching how the resolver
- * reads a call binding's bare callee name. Last-write-wins on duplicate names;
- * resolver-side ambiguity is gated by the symbol-table existence check.
+ * Package-level FUNCTIONS and func-valued VARS are keyed by the DECLARING
+ * PACKAGE (`goFunctionReturnTypesKey`), not the bare name: the channel is
+ * absorbed run-global, and a bare key let packages a and b, each declaring
+ * `New()`, cross return types — and made the winner depend on which files a
+ * run walked (bd tea-rags-mcp-7h6j0). Last-write-wins on duplicate keys, which
+ * within one package is a build-tag twin, the only legal Go namesake.
+ *
+ * METHODS stay keyed by the method name alone: their one reader resolves
+ * `x := v.Method()` on an UNTYPED local, where no package is known at the read
+ * site — the namesake risk there predates this channel and is gated resolver-
+ * side (`goProjectTypeName`'s known-type check).
  */
-function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef[]): Record<string, string> {
+function collectGoFunctionReturnTypes(
+  root: AstNode,
+  imports: readonly ImportRef[],
+  packageDir: string,
+): Record<string, string> {
   const out: Record<string, string> = {};
   const qualifiers = goImportPathsByBoundName(imports);
   walk(root, (node) => {
@@ -141,9 +153,11 @@ function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef
     const result = node.childForFieldName("result");
     if (!name || !result) return;
     const typeName = readReturnTypeNode(result, qualifiers);
-    if (typeName) out[name.text] = typeName;
+    if (!typeName) return;
+    // A method_declaration is a method; a function_declaration is package-level.
+    out[node.type === "method_declaration" ? name.text : goFunctionReturnTypesKey(packageDir, name.text)] = typeName;
   });
-  collectGoFuncValueVarReturnTypes(root, imports, qualifiers, out);
+  collectGoFuncValueVarReturnTypes(root, imports, qualifiers, packageDir, out);
   return out;
 }
 
@@ -185,6 +199,7 @@ function collectGoFuncValueVarReturnTypes(
   root: AstNode,
   imports: readonly ImportRef[],
   qualifiers: ReadonlyMap<string, string>,
+  packageDir: string,
   out: Record<string, string>,
 ): void {
   const onceValueQualifier = imports.find((imp) => imp.importText === GO_ONCE_VALUE_IMPORT_PATH);
@@ -196,9 +211,10 @@ function collectGoFuncValueVarReturnTypes(
     );
     for (const spec of specs) {
       const names = spec.children.filter((c) => c.type === "identifier");
-      if (names.length !== 1 || out[names[0].text] !== undefined) continue;
+      const key = names.length === 1 ? goFunctionReturnTypesKey(packageDir, names[0].text) : undefined;
+      if (key === undefined || out[key] !== undefined) continue;
       const typeName = readFuncValueVarResultType(spec, syncName, qualifiers);
-      if (typeName) out[names[0].text] = typeName;
+      if (typeName) out[key] = typeName;
     }
   }
 }
@@ -860,10 +876,11 @@ function goNamedResultList(fn: AstNode): AstNode | null {
  *   - `New()`      → `function` field is an `identifier` → "New"
  *   - `pkg.New()`  → `function` field is a `selector_expression` whose
  *                    operand is a plain `identifier` (a package qualifier or
- *                    a value) → "pkg.New"; the resolver keys
- *                    `functionReturnTypes` by the bare last segment, once
- *                    `pkg` is known to be a local in scope or an imported
- *                    project package declaring `New` (`goCallResultType`).
+ *                    a value) → "pkg.New"; the resolver reads
+ *                    `functionReturnTypes` under the callee package's key
+ *                    (`goFunctionReturnTypesKey`), once `pkg` is known to be
+ *                    a local in scope or an imported project package
+ *                    declaring `New` (`goCallResultType`).
  * Returns null for chained calls (`New().Configure()` — selector operand is
  * itself a `call_expression`) and any other shape; the var↔return pairing is
  * only sound when the RHS is a direct call to a named function.

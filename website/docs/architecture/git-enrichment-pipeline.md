@@ -127,7 +127,7 @@ commit discovery (VCS adapter, last N months)
         -> hunks with line numbers -> overlaps(hunk, chunk)
           -> per-chunk accumulators -> ChunkChurnOverlay
             -> batchSetPayload with dot-notation merge
-               (git.chunkCommitCount, etc.)
+               (git.chunk.commitCount, etc.)
 ```
 
 **Output:** `ChunkChurnOverlay` containing chunkCommitCount, chunkChurnRatio, `git.chunk.recentContributorCount`, `git.chunk.blameContributorCount`, chunkBugFixRate, chunkLastModifiedAt, chunkAgeDays. Merged into existing `git.*` payload using dot-notation to avoid overwriting file-level data.

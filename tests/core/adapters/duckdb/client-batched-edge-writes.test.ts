@@ -15,7 +15,7 @@ import { runMigrations } from "../../../../src/core/domains/maintenance/migratio
 // multi-row `INSERT OR IGNORE ... VALUES (?,...),(?,...)` statements inside
 // the SAME per-file transaction. These tests pin:
 //   (a) exact behaviour identity with the old per-row path (defaults,
-//       null-target skip, in-batch dedupe, cross-file dedupe),
+//       null-target persistence since rtp6v, in-batch dedupe, cross-file dedupe),
 //   (b) the batching mechanism itself (prepared-statement count),
 //   (c) chunk-boundary completeness (batch > one statement),
 //   (d) a generous perf smoke as a ~100 rows/sec regression canary.
@@ -35,7 +35,7 @@ describe("DuckDbGraphClient — batched edge writes in upsertFile (f2jsb)", () =
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("lands the same rows as the per-row path for a mixed batch (defaults, null-target skip, in-batch dedupe)", async () => {
+  it("lands the same rows as the per-row path for a mixed batch (defaults, null-target persistence, in-batch dedupe)", async () => {
     await db.upsertFile(
       { relPath: "app/a.rb", language: "ruby" },
       {
@@ -50,8 +50,10 @@ describe("DuckDbGraphClient — batched edge writes in upsertFile (f2jsb)", () =
         methodEdges: [
           // Omitted edgeKind/confidence must persist as exact/1.0.
           { sourceSymbolId: "A#x", targetSymbolId: "B#y", targetRelPath: "app/b.rb", callExpression: "y()" },
-          // Null target — resolver couldn't pin the call; must be skipped
-          // BEFORE batching (the PK includes target_symbol_id, NOT NULL).
+          // Null target — resolver couldn't pin the call. Persisted since
+          // bd tea-rags-mcp-rtp6v (migration 026): target_symbol_id left the
+          // PK and is a plain nullable column now; the file-only edge stores
+          // its resolved target_rel_path.
           { sourceSymbolId: "A#x", targetSymbolId: null, targetRelPath: "app/b.rb", callExpression: "gone()" },
           {
             sourceSymbolId: "A#x",
@@ -116,9 +118,15 @@ describe("DuckDbGraphClient — batched edge writes in upsertFile (f2jsb)", () =
     }>(
       "SELECT target_symbol_id, edge_kind, confidence FROM cg_symbols_edges_method WHERE source_rel_path = 'app/a.rb' ORDER BY target_symbol_id",
     );
+    // INVARIANT CHANGED by bd tea-rags-mcp-rtp6v. This used to expect the
+    // null-target edge to be ABSENT — the PK included target_symbol_id, DuckDB
+    // forced it NOT NULL, and the writer skipped the row before batching.
+    // Migration 026 re-keyed the table without target_symbol_id, so the
+    // file-only edge persists (DuckDB orders NULL last under ASC).
     expect(methodRows.map((r) => ({ ...r, confidence: Number(r.confidence) }))).toEqual([
       { target_symbol_id: "B#y", edge_kind: "exact", confidence: 1 },
       { target_symbol_id: "C#w", edge_kind: "dynamic", confidence: 0.5 },
+      { target_symbol_id: null, edge_kind: "exact", confidence: 1 },
     ]);
 
     const inhRows = await db.queryAll<{ ordinal: number | bigint }>(

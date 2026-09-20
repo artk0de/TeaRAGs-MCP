@@ -64,8 +64,14 @@ const BULK_WRITE_GROUP_FILES = 32;
 /** Columns of each per-source-file table, split into PRIMARY KEY and the rest. */
 const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
 const FILE_EDGE_VALUES = ["import_text"] as const;
-const METHOD_EDGE_KEYS = ["source_symbol_id", "source_rel_path", "call_expression", "target_symbol_id"] as const;
-const METHOD_EDGE_VALUES = ["target_rel_path", "edge_kind", "confidence"] as const;
+const METHOD_EDGE_KEYS = [
+  "source_symbol_id",
+  "source_rel_path",
+  "call_expression",
+  "target_rel_path",
+  "target_symbol_key",
+] as const;
+const METHOD_EDGE_VALUES = ["target_symbol_id", "edge_kind", "confidence"] as const;
 const INHERITANCE_KEYS = ["source_fq_name", "source_rel_path", "ancestor_fq_name", "kind"] as const;
 const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"] as const;
 const FANOUT_KEYS = ["source_symbol_id", "call_expression"] as const;
@@ -135,11 +141,20 @@ export class DuckDbFileGraphStore {
       for (const e of edges.fileEdges) fileEdgeRows.push([node.relPath, e.targetRelPath, e.importText]);
       // GraphEdges.methodEdges allows targetSymbolId=null (the resolver case
       // where an import resolves to a file but the called member isn't in that
-      // file's exported symbol table). The cg_symbols_edges_method PK includes
-      // target_symbol_id and DuckDB enforces NOT NULL on PK columns, so
-      // null-target edges are skipped at the boundary, BEFORE batching.
-      // File-level reach is already captured by fileEdges; the method graph
-      // only carries edges with a known target symbol.
+      // file's exported symbol table). bd tea-rags-mcp-rtp6v / migration 026
+      // re-keyed cg_symbols_edges_method on
+      // (source_symbol_id, source_rel_path, call_expression, target_rel_path,
+      // target_symbol_key), so those file-only edges PERSIST: target_symbol_id
+      // is a plain nullable column, and the resolved target_rel_path is stored
+      // with the row. The readers decide what it means — getCallees surfaces
+      // it; graph analytics adjacency and the trace_path frontier keep
+      // filtering it out.
+      //
+      // target_symbol_key is the PK-safe sentinel of target_symbol_id
+      // (COALESCE(id, '')): DuckDB forbids NULL PK columns, and WITHOUT the
+      // sentinel a 4-column key would collapse every same-file dispatch /
+      // interface fan-out (bd tea-rags-mcp-n0zj / t5cji) to its first
+      // candidate — the silent-drop class this re-key exists to remove.
       //
       // The same call shape may repeat — `this.cache.get(x)` invoked from two
       // branches of one method body. collectCalls emits one CallRef per
@@ -148,13 +163,13 @@ export class DuckDbFileGraphStore {
       // defaulting to exact/1.0 when the resolver did not mark the edge as CHA
       // fan-out) is the one persisted.
       for (const e of edges.methodEdges) {
-        if (e.targetSymbolId === null) continue;
         methodEdgeRows.push([
           e.sourceSymbolId,
           node.relPath,
           e.callExpression,
-          e.targetSymbolId,
           e.targetRelPath,
+          e.targetSymbolId ?? "",
+          e.targetSymbolId,
           e.edgeKind ?? "exact",
           e.confidence ?? 1.0,
         ]);

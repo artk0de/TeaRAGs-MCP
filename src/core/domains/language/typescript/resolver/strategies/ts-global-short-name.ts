@@ -71,12 +71,14 @@ import type { ResolverConfig } from "./shared.js";
  * structural implementer with no `implements` clause is not accepted on name.
  *
  * Any OTHER receiver the walker did not type needs the checker's agreement —
- * with no Program, an import binding's, or for `this` its class hierarchy's —
- * not just a unique name (bd tea-rags-mcp-t5cji): see
- * {@link memberCandidateLacksReceiverEvidence}. Once the family filter stopped
- * Ruby namesakes from making `title` / `filter` / `request` ambiguous, this
- * pass committed `COPY.title(...)` on an object literal to the project's lone
- * `Message#title`. A bare call is exempt — its name IS the callee.
+ * with no Program, an import binding's, a receiver that constructs or produces
+ * its type (`new ImportedClass().m()`, a `createX()` factory call; bd
+ * tea-rags-mcp-pv7ul), or for `this` its class hierarchy's — not just a unique
+ * name (bd tea-rags-mcp-t5cji): see {@link memberCandidateLacksReceiverEvidence}.
+ * Once the family filter stopped Ruby namesakes from making `title` / `filter` /
+ * `request` ambiguous, this pass committed `COPY.title(...)` on an object
+ * literal to the project's lone `Message#title`. A bare call is exempt — its
+ * name IS the callee.
  *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker

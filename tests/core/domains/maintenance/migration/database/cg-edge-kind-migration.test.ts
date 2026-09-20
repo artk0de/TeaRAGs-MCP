@@ -64,7 +64,7 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
   it("defaults edge_kind='exact' and confidence=1.0 for inserted method edges", async () => {
     await runMigrations(db, DATABASE_MIGRATIONS);
     await db.run(
-      "INSERT INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) VALUES ('A#m', 'a.rb', 'B#n', 'b.rb', 'x.n')",
+      "INSERT INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, target_symbol_key) VALUES ('A#m', 'a.rb', 'B#n', 'b.rb', 'x.n', 'B#n')",
     );
     const rows = await db.queryAll<{ edge_kind: string; confidence: number }>(
       "SELECT edge_kind, confidence FROM cg_symbols_edges_method WHERE source_symbol_id = 'A#m'",

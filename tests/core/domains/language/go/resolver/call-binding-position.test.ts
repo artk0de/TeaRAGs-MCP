@@ -81,13 +81,15 @@ function resolveAll(body: string[]): Map<string, string | null> {
     localBindings: chunk.localBindings,
     localCallBindings: chunk.localCallBindings,
     callResultBindings: chunk.callResultBindings,
-    // Run-global in production: declared in other files.
+    // Run-global in production: declared in other files, keyed by the declaring
+    // package (bd tea-rags-mcp-7h6j0) — `config.Load()` reads app/config's
+    // entry, a bare `New()` reads app's own.
     functionReturnTypes: {
-      Load: "Config",
-      Merge: "Config",
-      New: "Engine",
-      NewEngine: "Engine",
-      NewIterator: "Iterator",
+      "app/config::Load": "Config",
+      "app/config::Merge": "Config",
+      "app::New": "Engine",
+      "app::NewEngine": "Engine",
+      "app::NewIterator": "Iterator",
     },
   };
   const out = new Map<string, string | null>();

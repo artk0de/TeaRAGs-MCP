@@ -308,12 +308,17 @@ consult `references/signal-interpretation.md`.
 ## Filters → /tea-rags:filter-building
 
 Beyond `query` + `pathPattern`, tea-rags accepts typed sugar fields (`language`,
-`testFile`, `documentation`, `author`, `taskId`, `minAgeDays`/`maxAgeDays`,
-`minCommitCount`, `modifiedAfter`/`modifiedBefore`, `fileExtension`,
-`chunkType`, `symbolId`) and a raw `filter:` escape hatch. For full guidance on
-field selection, `level: "file" | "chunk"` (filter scope AND result granularity
-— `modifiedAfter`/`modifiedBefore` never need it), pathPattern picomatch
-negation, and raw filter syntax — invoke `/tea-rags:filter-building`.
+`testFile`, `documentation`, `author`, `recentAuthor`, `contributor`, `taskId`,
+`minAgeDays`/`maxAgeDays`, `minCommitCount`, `modifiedAfter`/`modifiedBefore`,
+`fileExtension`, `chunkType`, `symbolId`) and a raw `filter:` escape hatch.
+Person scope splits three ways — `author` = blame owner of the live lines
+("whose code is this" / bus factor; pair `rerank: "ownership"`), `recentAuthor`
+= dominant recent committer ("what did X work on lately" → + `modifiedAfter`),
+`contributor` = anyone who committed to the file ("everything X touched"). For
+full guidance on field selection, `level: "file" | "chunk"` (filter scope AND
+result granularity — `modifiedAfter`/`modifiedBefore` never need it),
+pathPattern picomatch negation, and raw filter syntax — invoke
+`/tea-rags:filter-building`.
 
 For filter syntax and the full payload-key list, read the resource on demand:
 

@@ -175,11 +175,11 @@ Filters (Qdrant conditions) **narrow** the candidate set. Reranking
 
 | Goal                       | Filter                                          | Rerank       |
 | -------------------------- | ----------------------------------------------- | ------------ |
-| Recent bugs in auth        | `git.ageDays <= 14` + `pathPattern: **/auth/**` | `hotspots`   |
-| Old single-owner code      | `git.ageDays >= 90` + `git.commitCount >= 5`    | `ownership` (live-line) |
-| Sole recent driver         | `git.ageDays <= 30` + `git.file.recentContributorCount == 1` | `recentActivityConcentration` |
-| Recently active TypeScript | `language: typescript` + `git.ageDays <= 30`    | `codeReview` |
-| Large stable functions     | `chunkType: function` + `git.commitCount <= 3`  | `onboarding` |
+| Recent bugs in auth        | `maxAgeDays: 14` + `pathPattern: **/auth/**` | `hotspots`   |
+| Old single-owner code      | `minAgeDays: 90` + `git.file.commitCount >= 5`  | `ownership` (live-line) |
+| Sole recent driver         | `maxAgeDays: 30` + `git.file.recentContributorCount == 1` | `recentActivityConcentration` |
+| Recently active TypeScript | `language: typescript` + `maxAgeDays: 30`       | `codeReview` |
+| Large stable functions     | `chunkType: function` + `git.chunk.commitCount <= 3` | `onboarding` |
 
 👉 **[Full agentic reranking workflows](/agent-integration/search-strategies)**
 — how agents chain presets for bug investigation, code review, refactoring, and

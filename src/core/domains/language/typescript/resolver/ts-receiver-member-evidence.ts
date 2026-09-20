@@ -33,13 +33,21 @@
  * symbol, or a declaration the candidate does not own. With no Program at all
  * (`CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff`) only
  * STRUCTURE remains: an import binding for a named receiver
- * ({@link importBindingAccountsFor}), the class hierarchy for `this`
+ * ({@link importBindingAccountsFor}), a receiver that CONSTRUCTS or produces
+ * its type — `new ImportedClass().m()`, `createX().m()`
+ * ({@link constructedReceiverAccountsFor}) — and the class hierarchy for `this`
  * ({@link thisHierarchyAccountsFor}) — which also answers a `this` member the
  * checker names no symbol for.
  *
  * Declining is not deciding: the call falls through to the checker passes,
  * which pin what the compiler resolved — a file-only edge to `copy.ts` where the
  * member is an object-literal arrow the table carries no symbol for.
+ *
+ * The two owner-rule arms are EXPORTED for the passes that own their own
+ * short-name narrowing, so the rule lives here once (bd tea-rags-mcp-nj8i6):
+ * {@link declarationAccountsFor} is what `typeCheckerReturnType`'s same-file
+ * fallback filters its candidates through, and {@link thisHierarchyAccountsFor}
+ * is what `thisMember`'s same-file fallback applies to its own.
  */
 
 import ts from "typescript";
@@ -53,7 +61,7 @@ import { mapImportToFile } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
 /** What the guard reads off a short-name candidate: where it lives, whose it is, which lines it spans. */
-type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;
+export type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;
 
 /** The resolver config the import-evidence arm maps specifiers and barrels with. */
 type EvidenceConfig = Pick<ResolverConfig, "tsOptions" | "mode" | "fileExists">;
@@ -102,7 +110,10 @@ export function memberCandidateLacksReceiverEvidence(
   const handle = programCache?.acquire(ctx.callerFile) ?? null;
   if (programCache === null || handle === null) {
     if (receiver === "this") return !thisHierarchyAccountsFor(call.member, ctx, cfg, candidate);
-    return !importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate);
+    return !(
+      importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate) ||
+      constructedReceiverAccountsFor(receiver, call.member, ctx, cfg, candidate)
+    );
   }
   const declarations = calledMemberDeclarations(handle.sourceFile, handle.checker, call.startLine, call.member);
   if (declarations.length > 0) {
@@ -139,8 +150,13 @@ interface AnchoredClass {
  * The enclosing class is the caller's innermost scope; a CLASS-BODY chunk (a
  * field initializer) has none, and there the chunk's own id, which carries no
  * member separator, is the class.
+ *
+ * Exported for `TSThisMemberSymbolResolutionStrategy`, whose same-file
+ * short-name fallback applies this same rule to its own candidates — without it
+ * `Form`'s `this.setState` landed on `Panel#setState` when both classes sat in
+ * one file (bd tea-rags-mcp-nj8i6).
  */
-function thisHierarchyAccountsFor(
+export function thisHierarchyAccountsFor(
   member: string,
   ctx: CallContext,
   cfg: EvidenceConfig,
@@ -155,7 +171,7 @@ function thisHierarchyAccountsFor(
 }
 
 /** A class-body chunk's id is the bare class name; a method's or function's carries `#` / `.`. */
-function classBodyChunkClass(callerSymbolId: string | undefined): string | undefined {
+export function classBodyChunkClass(callerSymbolId: string | undefined): string | undefined {
   return callerSymbolId === undefined || /[#.]/u.test(callerSymbolId) ? undefined : callerSymbolId;
 }
 
@@ -277,6 +293,87 @@ function importBindingAccountsFor(
   return candidate.scope.at(-1) === receiver && declaringFileOf(receiver) === candidate.relPath;
 }
 
+/** `new X(` — the receiver text the walker emits for a call on a fresh instance. */
+const CONSTRUCTED_RECEIVER = /^new\s+([A-Za-z_$][\w$]*)\s*\(/u;
+
+/** A bare-callee receiver — `createX(…).m()` — whose head is a plain identifier. */
+const FACTORY_RECEIVER = /^([A-Za-z_$][\w$]*)\s*\(/u;
+
+/**
+ * The verb a factory callee must carry for its tail to name a constructed type:
+ * `createGadget` names `Gadget`; `resetStore`, `onSubmit` and `updateFirm` name
+ * nothing — most factory-shaped receivers are event handlers and mutation
+ * verbs, and letting any project callee speak for its result is the fabrication
+ * the measurement refused.
+ */
+const FACTORY_TYPE_NAME = /^create([A-Z][\w$]*)$/u;
+
+/**
+ * The evidence a receiver that CONSTRUCTS or produces its type carries
+ * (bd tea-rags-mcp-pv7ul): `new ImportedClass().m()` on an import binding to a
+ * project class is as good as a typed receiver — the expression IS an instance
+ * of the class — and the same ownership holds through the type a `createX()`
+ * factory's name embeds, where the factory anchors as a project callable
+ * first. The candidate must be owned by the type itself or by an ancestor the
+ * `extends` chain anchors to a file ({@link nearestMemberDefiners}); a bare
+ * same-file namesake of the member, and the free function beside it, account
+ * for nothing — the hwwtw misattribution this guard exists to refuse.
+ *
+ * Structure, never a name: the type is anchored the way {@link anchorBaseClass}
+ * anchors an extends clause — declared top-level in the asking file, or bound
+ * by an import there (barrel hop included) — and a `new` / `create` receiver
+ * that names no anchorable type declines. A dotted `new ns.Sub()` receiver
+ * declines too: the import arm above answers the namespace receiver, and
+ * guessing the tail's file by its name would be the coincidence refused
+ * everywhere else here.
+ */
+function constructedReceiverAccountsFor(
+  receiver: string,
+  member: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  candidate: EvidenceCandidate,
+): boolean {
+  const constructed = CONSTRUCTED_RECEIVER.exec(receiver);
+  if (constructed !== null) {
+    return constructedTypeAccountsFor(constructed[1] ?? "", ctx.callerFile, member, ctx, cfg, candidate);
+  }
+  const factory = FACTORY_RECEIVER.exec(receiver);
+  if (factory === null) return false;
+  const typeName = FACTORY_TYPE_NAME.exec(factory[1] ?? "");
+  if (typeName === null) return false;
+  const callee = factory[1] ?? "";
+  const factoryAnchor = anchorBaseClass(callee, ctx.callerFile, ctx, cfg);
+  if (factoryAnchor === null) return false;
+  return (
+    constructedTypeAccountsFor(typeName[1] ?? "", factoryAnchor.file, member, ctx, cfg, candidate) ||
+    constructedTypeAccountsFor(typeName[1] ?? "", ctx.callerFile, member, ctx, cfg, candidate)
+  );
+}
+
+/**
+ * Does the candidate belong to the type `written` names as of `fromFile`? The
+ * anchor is {@link anchorBaseClass}'s — a top-level declaration in `fromFile`,
+ * else, when `fromFile` is the caller's, the file an import there binds — and
+ * the answer is {@link nearestMemberDefiners}': the type itself, else the first
+ * file-anchored `extends` ancestor, declaring the member. Ownership with a
+ * file on every hop, which is what keeps a namesake class out.
+ */
+function constructedTypeAccountsFor(
+  written: string,
+  fromFile: string,
+  member: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  candidate: EvidenceCandidate,
+): boolean {
+  const anchor = anchorBaseClass(written, fromFile, ctx, cfg);
+  if (anchor === null) return false;
+  return nearestMemberDefiners(member, anchor, ctx, cfg, new Set()).some(
+    (definer) => definer.name === candidate.scope.at(-1) && definer.file === candidate.relPath,
+  );
+}
+
 /**
  * The checker's declaration of the called member is the candidate's, or a
  * supertype member the candidate's owner overrides or implements.
@@ -292,8 +389,14 @@ function importBindingAccountsFor(
  *   - a declaration with NO named owner (a type literal, an object literal, an
  *     anonymous class, a top-level function) accounts only for the candidate
  *     whose own line range contains it ({@link candidateEnclosesDeclaration}).
+ *
+ * Exported for `TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy`'s
+ * `pinSymbol`, whose same-file short-name fallback filtered by FILE alone and so
+ * handed a type-literal receiver's member to the unrelated `Panel#stopItNow`
+ * declared further down the same file (bd tea-rags-mcp-nj8i6). The same rule
+ * filters its candidates before the cardinality pick.
  */
-function declarationAccountsFor(
+export function declarationAccountsFor(
   declaration: ts.Declaration,
   candidate: EvidenceCandidate,
   ctx: CallContext,

@@ -60,8 +60,8 @@ Skip-vocabulary (infra/layer prefixes): `app`, `src`, `lib`, `core`, `packages`,
   `[crm, accounts]` → L2 = `**/app/services/crm/**` (NOT `**/app/services/**` —
   layer-wide L2 = degenerate L3).
 - L1 = `**/app/services/billing/**` → semantic `[billing]`, 1 segment → skip L2.
-- L1 = `**/chunker/hooks/**` → no prefix, semantic `[chunker, hooks]` → L2 =
-  `**/chunker/**`.
+- L1 = `**/language/ruby/chunking/**` → no prefix, semantic
+  `[language, ruby, chunking]` → L2 = `**/language/**`.
 
 **For each level in [L1, L2, L3]:**
 
