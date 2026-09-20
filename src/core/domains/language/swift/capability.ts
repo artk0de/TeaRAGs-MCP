@@ -10,8 +10,12 @@ export const capability: LanguageCapability = {
   },
   codegraph: {
     tier: "moderate",
-    tech: "7-strategy chain + implicit-self field typing + extension-scope and nested-type receivers + file-local typing; no import narrowing (imports name modules)",
+    tech: "8-strategy chain + super over the superclass chain + implicit-self field typing + extension-scope and nested-type receivers; no import narrowing",
   },
+  // walker 4: the walker publishes `classExtends` for the first time and the
+  // chain gained a terminal `super` pass reading it, so edges exist that walker
+  // 3 could not emit — measured 0.000 -> 0.688 (Alamofire) and 0.000 -> 0.167
+  // (Quick) on that receiver kind, with every other kind unmoved.
   // walker 3: two independent movements, either of which would earn the bump.
   // The chain gained `scopedTypeReceiver` and stopped double-counting a type
   // re-opened by a same-file extension, so edges exist that walker 2 never
@@ -29,7 +33,7 @@ export const capability: LanguageCapability = {
   // adds the Quick scope chunker, which MOVES THE CHUNK SET — one giant `spec`
   // chunk becomes N scenario chunks with new ids and ranges — so the drift hint
   // must route `--force`, not `--force-enrichments`.
-  versions: { chunking: 3, walker: 3, codegraphSchema: 2 },
+  versions: { chunking: 3, walker: 4, codegraphSchema: 2 },
   notes:
-    "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
+    "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

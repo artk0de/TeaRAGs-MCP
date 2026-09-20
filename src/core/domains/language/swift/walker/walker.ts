@@ -167,7 +167,73 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   };
   const classFieldTypes = swiftClassFieldTypes(evidence);
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  const classExtends = collectSwiftClassExtends(root);
+  if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   return out;
+}
+
+/**
+ * The declaration keywords `class_declaration` covers. tree-sitter-swift gives
+ * all four the same node type, so the keyword token is the only evidence of
+ * which one a node is — and only `class` can have a superclass: a `struct` and
+ * an `enum` conform to protocols, and Swift forbids an `actor` from inheriting
+ * at all.
+ */
+const SWIFT_TYPE_DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(["class", "struct", "enum", "actor"]);
+
+/**
+ * `className → superclass`, for the `super` pass alone.
+ *
+ * Two narrowings make this sound, and dropping either one fabricates a
+ * hierarchy. Only a `class` is recorded, because the other three keywords share
+ * its node type while having no superclass — `enum Status: Int` names a RAW
+ * VALUE type, and reading it as a base would send `super` into `Int`. And only
+ * the FIRST `inheritance_specifier` is taken: the clause lists a superclass and
+ * protocols identically, marking neither, and Swift's requirement that the
+ * superclass come first is the whole of what distinguishes them.
+ *
+ * The known limit is a class that conforms to protocols WITHOUT subclassing
+ * (`class Handler: Codable`): its first specifier is a protocol and is recorded
+ * as if it were a base. That costs nothing today, because `super` is not
+ * expressible in such a class — there is no superclass to call — so the entry
+ * is unreachable rather than wrong-in-use. A future consumer that reads this
+ * channel for anything but `super` must revisit it.
+ */
+function collectSwiftClassExtends(root: AstNode): Record<string, string> {
+  const out: Record<string, string> = {};
+  walk(root, (node) => {
+    if (node.type !== "class_declaration") return;
+    if (swiftDeclarationKeyword(node) !== "class") return;
+    const name = node.childForFieldName("name")?.text;
+    if (!name) return;
+    const base = swiftFirstInheritedTypeName(node);
+    if (base !== null && base !== name) out[name] = base;
+  });
+  return out;
+}
+
+/**
+ * Which keyword a `class_declaration` was spelled with, read off the ANONYMOUS
+ * children — modifiers (`public final`) arrive as a named node, so the keyword
+ * is not at a fixed index and is matched by value rather than by position.
+ */
+function swiftDeclarationKeyword(node: AstNode): string | null {
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child !== null && !child.isNamed && SWIFT_TYPE_DECLARATION_KEYWORDS.has(child.type)) return child.type;
+  }
+  return null;
+}
+
+/** The first inherited type's NAME, with any generic argument list dropped (`Base<T>` → `Base`). */
+function swiftFirstInheritedTypeName(node: AstNode): string | null {
+  for (const child of node.namedChildren) {
+    if (child.type !== "inheritance_specifier") continue;
+    const text = child.text.trim();
+    const name = (text.split("<")[0] ?? text).trim();
+    return name.length > 0 ? name : null;
+  }
+  return null;
 }
 
 /**

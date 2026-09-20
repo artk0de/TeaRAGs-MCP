@@ -1,3 +1,4 @@
+export { SwiftSuperSymbolResolutionStrategy } from "./swift-super.js";
 export { SwiftLocalBindingSymbolResolutionStrategy } from "./swift-local-binding.js";
 export { SwiftSelfMemberSymbolResolutionStrategy } from "./swift-self-member.js";
 export { SwiftStoredPropertyTypeSymbolResolutionStrategy } from "./swift-stored-property-type.js";

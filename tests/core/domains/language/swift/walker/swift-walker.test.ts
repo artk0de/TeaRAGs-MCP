@@ -818,3 +818,69 @@ describe("swiftNameOf — symbolId convergence with the chunker", () => {
     expect(swiftNameOf(property)).toBeNull();
   });
 });
+
+/**
+ * `classExtends` — the single base `super` dispatches on.
+ *
+ * Two grammar facts shape every case here, and neither is guessable from the
+ * node type. tree-sitter-swift spells `class`, `struct`, `enum` and `actor` all
+ * as `class_declaration`, so the KEYWORD is the only thing separating a type
+ * that can have a superclass from three that cannot. And an inheritance clause
+ * lists a superclass and protocols identically as `inheritance_specifier`,
+ * marking neither — Swift's rule that the superclass comes FIRST is what makes
+ * the first entry readable as a base at all.
+ *
+ * So the channel is deliberately narrow: a `class` only, its first specifier
+ * only. A `struct` conforming to protocols records nothing, because recording
+ * `Codable` as its "superclass" would let a future reader walk a hierarchy the
+ * language does not have.
+ *
+ * Every assertion runs on the MATERIALIZED tree. That is not incidental: the
+ * Swift vertical has already shipped one channel that worked natively and
+ * evaluated to nothing in production, because `materializeTree` keeps one field
+ * name per child and this grammar assigns two. A test that parses natively
+ * cannot see that failure.
+ */
+describe("swift walker — classExtends", () => {
+  it("records the superclass of a class", () => {
+    const extraction = extractMaterialized("class Derived: Base {\n  func run() {}\n}\n");
+    expect(extraction.classExtends).toEqual({ Derived: "Base" });
+  });
+
+  it("takes the FIRST specifier, which is where Swift requires the superclass", () => {
+    const extraction = extractMaterialized("class Derived: Base, Equatable, Codable {\n  func run() {}\n}\n");
+    expect(extraction.classExtends).toEqual({ Derived: "Base" });
+  });
+
+  it("reads through modifiers to the keyword", () => {
+    const extraction = extractMaterialized("public final class Derived: Base {\n  func run() {}\n}\n");
+    expect(extraction.classExtends).toEqual({ Derived: "Base" });
+  });
+
+  it("records nothing for a struct, which has no superclass to dispatch on", () => {
+    const extraction = extractMaterialized("struct Point: Equatable {\n  func run() {}\n}\n");
+    expect(extraction.classExtends?.Point).toBeUndefined();
+  });
+
+  it("records nothing for an enum, whose specifier is a raw type", () => {
+    // `enum Status: Int` names a RAW VALUE type, not a base — reading it as one
+    // would send `super` into `Int`.
+    const extraction = extractMaterialized("enum Status: Int {\n  case ok\n}\n");
+    expect(extraction.classExtends?.Status).toBeUndefined();
+  });
+
+  it("records nothing for an actor, which Swift forbids from inheriting", () => {
+    const extraction = extractMaterialized("actor Worker: Sendable {\n  func run() {}\n}\n");
+    expect(extraction.classExtends?.Worker).toBeUndefined();
+  });
+
+  it("records nothing for a class with no inheritance clause", () => {
+    const extraction = extractMaterialized("class Plain {\n  func run() {}\n}\n");
+    expect(extraction.classExtends?.Plain).toBeUndefined();
+  });
+
+  it("records each class of a file that declares several", () => {
+    const src = ["class A: Root {", "  func a() {}", "}", "class B: A {", "  func b() {}", "}", ""].join("\n");
+    expect(extractMaterialized(src).classExtends).toEqual({ A: "Root", B: "A" });
+  });
+});

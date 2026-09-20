@@ -105,6 +105,7 @@ import {
   SwiftScopedTypeReceiverSymbolResolutionStrategy,
   SwiftSelfMemberSymbolResolutionStrategy,
   SwiftStoredPropertyTypeSymbolResolutionStrategy,
+  SwiftSuperSymbolResolutionStrategy,
   type SwiftResolverConfig,
 } from "./strategies/index.js";
 import { lookupSwiftSymbolsByShortName } from "./swift-symbol-lookup.js";
@@ -116,6 +117,10 @@ export class SwiftCallResolver implements CallResolver {
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: SwiftResolverConfig = { mode };
     this.strategies = [
+      // Index 0, ahead of every typed pass: `super` is the one receiver whose
+      // meaning the LANGUAGE fixes, so no pass that infers a type can have a
+      // better answer for it, and several would produce a worse one.
+      new SwiftSuperSymbolResolutionStrategy(cfg),
       new SwiftLocalBindingSymbolResolutionStrategy(cfg),
       new SwiftSelfMemberSymbolResolutionStrategy(cfg),
       new SwiftStoredPropertyTypeSymbolResolutionStrategy(cfg),

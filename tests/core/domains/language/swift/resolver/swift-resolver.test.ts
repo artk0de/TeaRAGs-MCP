@@ -532,3 +532,134 @@ describe("SwiftCallResolver — contract", () => {
     expect(target).toBeNull();
   });
 });
+
+/**
+ * `super.X()` — chain index 0, and a GUARD: it resolves or it drops, never
+ * falls through.
+ *
+ * Swift's grammar is what keeps the walk linear. An inheritance clause mixes a
+ * superclass with protocols and marks neither, but the language requires the
+ * superclass to come FIRST, so the first specifier is the only one `super` can
+ * mean — which makes `classExtends`, a single-base channel, the right shape
+ * rather than a compromise. A class key is the type's SHORT name, safe here in
+ * a way it is not in Python: Swift forbids two types of one name in a module,
+ * so the short name already identifies the type.
+ *
+ * Terminality is the other half. A `super` miss that fell through would reach
+ * the bare-call and short-name passes, which know nothing about `super` and
+ * would pin the call to an unrelated namesake — the false-edge family recorded
+ * as bd tea-rags-mcp-4rgg for TypeScript and bd tea-rags-mcp-pic4 for Python.
+ */
+describe("SwiftCallResolver — super", () => {
+  it("resolves `super.X()` to the superclass member", () => {
+    const t = table({
+      "Sources/Base.swift": [{ symbolId: "Base#reset", scope: ["Base"] }],
+      "Sources/Derived.swift": [{ symbolId: "Derived#reset", scope: ["Derived"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "reset"),
+      ctx({
+        callerFile: "Sources/Derived.swift",
+        callerScope: ["Derived"],
+        symbolTable: t,
+        classExtends: { Derived: "Base" },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Base.swift", targetSymbolId: "Base#reset" });
+  });
+
+  it("starts the walk AFTER the enclosing class, so the caller's own override never answers", () => {
+    // `Derived#reset` calling `super.reset()` is the canonical override shape.
+    // Answering with the caller's own member would make the edge a self-loop
+    // and hide the call the developer actually made.
+    const t = table({
+      "Sources/Base.swift": [{ symbolId: "Base#reset", scope: ["Base"] }],
+      "Sources/Derived.swift": [{ symbolId: "Derived#reset", scope: ["Derived"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "reset"),
+      ctx({
+        callerFile: "Sources/Derived.swift",
+        callerScope: ["Derived"],
+        symbolTable: t,
+        classExtends: { Derived: "Base" },
+      }),
+    );
+    expect(target?.targetSymbolId).not.toBe("Derived#reset");
+  });
+
+  it("keeps walking past a superclass that does not declare the member", () => {
+    const t = table({
+      "Sources/Root.swift": [{ symbolId: "Root#describe", scope: ["Root"] }],
+      "Sources/Middle.swift": [{ symbolId: "Middle#other", scope: ["Middle"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "describe"),
+      ctx({
+        callerFile: "Sources/Leaf.swift",
+        callerScope: ["Leaf"],
+        symbolTable: t,
+        classExtends: { Leaf: "Middle", Middle: "Root" },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Root#describe");
+  });
+
+  it("resolves a static member on the superclass when only the `.` form exists", () => {
+    const t = table({ "Sources/Base.swift": [{ symbolId: "Base.make", scope: ["Base"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "make"),
+      ctx({
+        callerFile: "Sources/Derived.swift",
+        callerScope: ["Derived"],
+        symbolTable: t,
+        classExtends: { Derived: "Base" },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Base.make");
+  });
+
+  it("DROPS rather than falling through to a same-named member of an unrelated type", () => {
+    // Nothing on the hierarchy declares `render`, but another type does. The
+    // terminal passes would pin it; `super` must not let them.
+    const t = table({
+      "Sources/Base.swift": [{ symbolId: "Base#other", scope: ["Base"] }],
+      "Sources/Unrelated.swift": [{ symbolId: "Unrelated#render", scope: ["Unrelated"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "render"),
+      ctx({
+        callerFile: "Sources/Derived.swift",
+        callerScope: ["Derived"],
+        symbolTable: t,
+        classExtends: { Derived: "Base" },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("DROPS when the index carries no inheritance at all, rather than guessing", () => {
+    const t = table({ "Sources/Unrelated.swift": [{ symbolId: "Unrelated#render", scope: ["Unrelated"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "render"),
+      ctx({ callerFile: "Sources/Derived.swift", callerScope: ["Derived"], symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("terminates on a cyclic inheritance record instead of looping", () => {
+    // A cycle cannot occur in compilable Swift, but an index can carry one from
+    // a partially-rewritten tree. The walk must end.
+    const t = table({ "Sources/Unrelated.swift": [{ symbolId: "Unrelated#render", scope: ["Unrelated"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("super", "render"),
+      ctx({
+        callerFile: "Sources/A.swift",
+        callerScope: ["A"],
+        symbolTable: t,
+        classExtends: { A: "B", B: "A" },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
