@@ -30,7 +30,10 @@ export const DAEMON_OPS = [
   // Graceful drain+exit requested by a client whose build fingerprint differs
   // from the daemon's (bd tea-rags-mcp-ji56r). Handled by the TRANSPORT layer
   // (daemon/entry.ts) — acked first, then the daemon reuses the idle-watcher
-  // drain/exit path — so it never reaches the request dispatcher.
+  // drain/exit path — so it never reaches the request dispatcher. A drain that
+  // would cut another connection's in-flight write is REFUSED instead with a
+  // typed `CodegraphDaemonDrainRefusedError` response (bd tea-rags-mcp-zgcmo);
+  // retrying belongs to the draining side.
   "shutdown",
   // Liveness probe (bd tea-rags-mcp-f924y): a client with calls pending sends it
   // when the daemon has gone quiet. Any answer proves the daemon alive — even the

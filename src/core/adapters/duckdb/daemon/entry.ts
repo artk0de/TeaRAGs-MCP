@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../infra/runtime.js";
+import { CodegraphDaemonDrainRefusedError } from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
@@ -225,6 +226,21 @@ export function createConnectionHandler(
       for (const frame of frames.push(chunk)) {
         const req = JSON.parse(frame) as DaemonRequest;
         if (req.op === "shutdown") {
+          // bd tea-rags-mcp-zgcmo: a drain while ANOTHER connection has writes
+          // in flight used to cut them mid-run (the 42hno EPIPE class — a
+          // foreign build draining a daemon other sessions are writing
+          // through). The daemon refuses instead: the draining side gets the
+          // typed refusal and owns the retry, the writers finish untouched.
+          // With no admitted writes the drain proceeds exactly as before.
+          if (server.hasWritesInFlight()) {
+            if (!sock.destroyed) {
+              const refusal = new CodegraphDaemonDrainRefusedError({ socketPath: paths.socketPath });
+              sock.write(
+                encodeFrame({ id: req.id, ok: false, error: { name: refusal.name, message: refusal.message } }),
+              );
+            }
+            continue;
+          }
           if (!sock.destroyed) sock.write(encodeFrame({ id: req.id, ok: true, result: null }));
           onShutdownRequest?.();
           continue;
