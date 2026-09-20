@@ -27,10 +27,12 @@ import { DEFAULT_EXIT_TIMEOUT_MS, getDaemonPaths, readDaemonPid, waitForDaemonEx
 import {
   CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
+  CodegraphDaemonDrainRefusedError,
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
+  isDaemonDrainRefusal,
 } from "./errors.js";
 import { purgeStaleSpills } from "./spill-files.js";
 
@@ -633,8 +635,22 @@ export class GraphDbClientPool {
     // The lifecycle files live next to the socket (getDaemonPaths layout).
     const paths = getDaemonPaths(dirname(socketPath));
     const stalePid = readDaemonPid(paths);
-    await client.requestShutdown().catch(() => undefined);
+    let refusal: Error | undefined;
+    try {
+      await client.requestShutdown();
+    } catch (err) {
+      // The daemon refused because another connection's writes are in flight
+      // (bd tea-rags-mcp-zgcmo): settle the drain with the typed refusal
+      // instead of waiting out an exit that will never start — the daemon
+      // stays up on purpose. Any OTHER shutdown failure (an old daemon that
+      // answers the op as unknown, a lost socket) keeps the historical
+      // swallow-and-poll path, whose timeout names the wedge.
+      if (isDaemonDrainRefusal(err)) refusal = err;
+    }
     await client.close();
+    if (refusal) {
+      throw new CodegraphDaemonDrainRefusedError({ socketPath }, refusal);
+    }
     const restart = this.options.daemonRestart;
     const exited = await waitForDaemonExit(paths, stalePid, {
       timeoutMs: restart?.exitTimeoutMs,
