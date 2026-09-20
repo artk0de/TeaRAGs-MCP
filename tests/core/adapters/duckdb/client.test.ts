@@ -108,11 +108,13 @@ describe("DuckDbGraphClient", () => {
   // Slice 2 — polyglot resolvers can return targetSymbolId=null when an
   // import resolves to a file but the called member isn't in that
   // file's exported symbol table. GraphEdges.methodEdges allows null
-  // by contract, but the DuckDB schema's PK on cg_symbols_edges_method
-  // includes target_symbol_id (implicitly NOT NULL in DuckDB). The
-  // adapter must skip those edges at the boundary instead of throwing.
-  // File-level reach is captured separately via fileEdges.
-  it("upsertFile skips methodEdges with targetSymbolId=null without throwing", async () => {
+  // by contract. The write path must accept such edges without throwing;
+  // file-level reach is captured separately via fileEdges.
+  //
+  // INVARIANT CHANGED by bd tea-rags-mcp-rtp6v: migration 026 re-keyed the
+  // table without target_symbol_id, so the null-target edge PERSISTS instead
+  // of being skipped (still without throwing).
+  it("upsertFile persists methodEdges with targetSymbolId=null without throwing", async () => {
     await client.upsertFile({ relPath: "lib/foo.js", language: "javascript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertFile(
       { relPath: "src/main.js", language: "javascript" },
@@ -136,8 +138,8 @@ describe("DuckDbGraphClient", () => {
     );
     // File edge is recorded.
     expect(await client.getFanOut("src/main.js")).toBe(1);
-    // Only the known-target call edge survived.
-    expect(await client.getCallSiteCount("main")).toBe(1);
+    // Both call edges survive — the pinned one AND the file-only one.
+    expect(await client.getCallSiteCount("main")).toBe(2);
     expect(await client.getCalledByCount("foo.bar")).toBe(1);
   });
 
@@ -865,8 +867,8 @@ describe("DuckDbGraphClient", () => {
     // old COUNT semantics: one edge = one call site.
     await client.exec(
       "INSERT INTO cg_symbols_edges_method " +
-        "(source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence) " +
-        "VALUES ('legacy', 'a.ts', 'L#t', 'b.ts', 'l.t()', 'exact', NULL)",
+        "(source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, target_symbol_key, edge_kind, confidence) " +
+        "VALUES ('legacy', 'a.ts', 'L#t', 'b.ts', 'l.t()', 'L#t', 'exact', NULL)",
     );
     expect(await client.getCalledByCount("L#t")).toBe(1);
     expect(await client.getCallSiteCount("legacy")).toBe(1);

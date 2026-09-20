@@ -108,18 +108,18 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
    * that one file cannot reach a namesake in another package, because the file
    * is settled before this runs; it only recovers the id INSIDE it.
    *
-   * Emitting a file-only edge here instead — which is what this did — reads as
-   * harmless because the contract types `targetSymbolId` as nullable. It is
-   * not: `DuckDbFileGraphStore` skips every method edge whose target symbol is
-   * null, since `target_symbol_id` is a PRIMARY KEY column and DuckDB forces PK
-   * columns NOT NULL. A file-only edge is therefore not a weaker edge, it is NO
-   * edge — dropped at write time with no error at any layer. On taxdome that
-   * silently cost five of `ConfirmationModal.tsx`'s six JSX edges, and ~40% of
-   * the corpus's TS edges with them.
+   * Emitting a file-only edge here used to read as harmless and land as dead:
+   * the contract types `targetSymbolId` as nullable, but `target_symbol_id`
+   * was a PRIMARY KEY column and DuckDB forces PK columns NOT NULL, so
+   * `DuckDbFileGraphStore` silently dropped every null-target edge at write —
+   * no error at any layer. On taxdome that cost five of `ConfirmationModal
+   * .tsx`'s six JSX edges, and ~40% of the corpus's TS edges with them. bd
+   * tea-rags-mcp-rtp6v (migration 026) re-keyed `cg_symbols_edges_method`
+   * without `target_symbol_id`, so the file-only edge now persists: `getCallees`
+   * returns it with its resolved file, while graph analytics keeps filtering it.
    *
    * Returning null remains possible (an `export default () => …` names nothing
-   * the table can hold) and still yields a file-only edge that the write path
-   * will drop; closing THAT needs a schema change, not a resolver change.
+   * the table can hold) and yields a file-only edge that is stored as data.
    */
   private pinSymbol(
     declaration: ts.Declaration,

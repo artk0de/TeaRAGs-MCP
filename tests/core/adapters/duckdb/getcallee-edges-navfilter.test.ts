@@ -85,9 +85,9 @@ describe("DuckDbGraphClient — getCalleeEdges navigation-visibility filter (xln
     await db.run(
       `INSERT INTO cg_symbols_edges_method
          (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path,
-          call_expression, edge_kind, confidence)
-       VALUES (?, ?, ?, ?, ?, NULL, NULL)`,
-      ["Source#call", "app/src.rb", "TargetLegacy#method", "app/legacy.rb", "legacy.call"],
+          call_expression, target_symbol_key, edge_kind, confidence)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
+      ["Source#call", "app/src.rb", "TargetLegacy#method", "app/legacy.rb", "legacy.call", "TargetLegacy#method"],
     );
 
     // ── Non-vacuity proof ────────────────────────────────────────────────────

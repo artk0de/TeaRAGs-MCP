@@ -101,6 +101,11 @@ describe("CodegraphEnrichmentProvider — self.table_name overrides on an increm
     )
       .filter((e) => e.source_symbol_id === "Report#run" && e.call_expression === callExpression)
       .map((e) => e.target_symbol_id)
+      // Only PINNED targets speak for contamination. Since bd
+      // tea-rags-mcp-rtp6v a file-only edge (target_symbol_id=null — the file
+      // is proven, the member isn't) persists too; that is provenance data,
+      // not a model receiving another's table.
+      .filter((t) => t !== null)
       .sort();
 
   const expectColumnsOnTheirOwnModels = async (): Promise<void> => {

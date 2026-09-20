@@ -10,6 +10,13 @@
  * edge must include the overriding subtypes. Second, fan-out edges carry a
  * confidence below 1, so counts are `SUM(confidence)` rather than `COUNT(*)`:
  * an m-way dispatch weighs one call site in total, not m.
+ *
+ * File-only edges (bd tea-rags-mcp-rtp6v — `target_symbol_id` NULL since
+ * migration 026) flow through `getCallees` only. Every adjacency shape the
+ * graph algorithms consume — `getCalleeEdges`, `getCalleeEdgesScoped`, the
+ * analytics store's streaming/materialised adjacency — keeps its
+ * `target_symbol_id IS NOT NULL` filter, and fan-in can never see one (no
+ * target symbol to group under).
  */
 
 import {
@@ -323,7 +330,11 @@ export class DuckDbMethodEdgeReader {
       return e;
     };
     const fanInRows = await this.session.queryAll<{ id: string; n: number | null }>(
-      "SELECT target_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method GROUP BY target_symbol_id",
+      // target_symbol_id IS NOT NULL mirrors the drift store's fan_in CTE: a
+      // file-only edge (bd tea-rags-mcp-rtp6v) has no target symbol, so it
+      // must pollute no symbol's fan-in — and without the filter its NULL
+      // group would surface here as a junk map entry keyed null.
+      "SELECT target_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL GROUP BY target_symbol_id",
     );
     for (const r of fanInRows) entryFor(r.id).fanIn = roundEdgeWeightSum(Number(r.n ?? 0));
     const fanOutRows = await this.session.queryAll<{ id: string; n: number | null }>(

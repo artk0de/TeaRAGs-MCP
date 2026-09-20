@@ -175,8 +175,8 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
     await runMigrations(client, MIG_DIR);
     const N = 5000; // spans ~3 DuckDB chunks (2048 rows each)
     await client.exec(
-      "INSERT INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) " +
-        `SELECT 'S' || i, 'a.ts', 'T' || i, 'b.ts', 'c()' FROM range(${N}) AS t(i)`,
+      "INSERT INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, target_symbol_key) " +
+        `SELECT 'S' || i, 'a.ts', 'T' || i, 'b.ts', 'c()', 'T' || i FROM range(${N}) AS t(i)`,
     );
     const seen = new Set<string>();
     for await (const [source, target] of client.streamAdjacency("method")) {
@@ -281,10 +281,17 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
       { relPath: "src/a.ts", language: "typescript" },
       {
         fileEdges: [],
-        // null target — resolver couldn't pin the call; upsertFile
-        // skips these at insert time. streamAdjacency still filters
-        // defensively (matches listAdjacency contract).
+        // null target — resolver couldn't pin the call. Persisted since
+        // bd tea-rags-mcp-rtp6v (migration 026): target_symbol_id left the
+        // PK. streamAdjacency still filters it (matches listAdjacency
+        // contract) — the Tarjan/PageRank feed sees pinned edges only.
         methodEdges: [
+          {
+            sourceSymbolId: "A.x",
+            targetSymbolId: null,
+            targetRelPath: "src/only-file.ts",
+            callExpression: "fetcher.request()",
+          },
           {
             sourceSymbolId: "A.x",
             targetSymbolId: "B.y",

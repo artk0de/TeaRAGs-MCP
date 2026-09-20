@@ -19,9 +19,12 @@
  * FILE and then pins nothing, because the checker follows the export alias to
  * `refForwarded` and the tag name `Card` is in the table nowhere — the inner
  * component is `CardInner`. `TSJsxComponentSymbolResolutionStrategy#pinSymbol`
- * degrades to a file-only edge, and `DuckDbFileGraphStore#writeFileRowsGroup`
- * drops every edge with a null `target_symbol_id` because that column is part of
- * the primary key. A file-only edge here is not a weaker edge; it is no edge.
+ * degrades to a file-only edge — which at the time was still dropped at write:
+ * `target_symbol_id` was part of the `cg_symbols_edges_method` primary key and
+ * DuckDB forces PK columns NOT NULL, so a file-only edge was no edge. bd
+ * tea-rags-mcp-rtp6v (migration 026) re-keyed the table without
+ * `target_symbol_id`, and the file-only edge now persists through
+ * `DuckDbFileGraphStore#writeFileRowsGroup` with the resolved target file.
  *
  * ## The name is the EXPORTED one, and only a component's
  *
