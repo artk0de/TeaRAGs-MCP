@@ -212,6 +212,74 @@ describe("FileScanner", () => {
       expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
     });
 
+    // Swift/Xcode ship their build output as DIRECTORIES full of real `.swift`
+    // sources, not as opaque binaries: SwiftPM's `.build/checkouts` holds a full
+    // copy of every dependency's source, and CocoaPods' `Pods/` does the same.
+    // Indexing them duplicates every dependency symbol into the graph and makes
+    // a small app look like a monorepo. `Sources/`, `Tests/` and `Package.swift`
+    // are the project's own code and MUST survive — `Tests/` especially, since
+    // Swift test chunking reads it.
+    it("excludes Swift and Xcode build artefacts while keeping Sources, Tests and Package.swift", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-swift-"));
+
+      // The project's own code — must be KEPT.
+      writeFileSync(join(tmpDir, "Package.swift"), "// swift-tools-version:5.9");
+      mkdirSync(join(tmpDir, "Sources", "App"), { recursive: true });
+      writeFileSync(join(tmpDir, "Sources", "App", "main.swift"), "func main() {}");
+      mkdirSync(join(tmpDir, "Tests", "AppTests"), { recursive: true });
+      writeFileSync(join(tmpDir, "Tests", "AppTests", "AppTests.swift"), "final class AppTests {}");
+
+      // SwiftPM build output — `.build/checkouts` carries dependency SOURCE.
+      mkdirSync(join(tmpDir, ".build", "checkouts", "swift-nio", "Sources"), { recursive: true });
+      writeFileSync(join(tmpDir, ".build", "checkouts", "swift-nio", "Sources", "NIO.swift"), "struct NIO {}");
+      mkdirSync(join(tmpDir, ".build", "debug"), { recursive: true });
+      writeFileSync(join(tmpDir, ".build", "debug", "Generated.swift"), "struct Generated {}");
+
+      // SwiftPM / Xcode local metadata.
+      mkdirSync(join(tmpDir, ".swiftpm", "xcode"), { recursive: true });
+      writeFileSync(join(tmpDir, ".swiftpm", "xcode", "Local.swift"), "struct Local {}");
+
+      // Xcode build output and project packages.
+      mkdirSync(join(tmpDir, "DerivedData", "Build"), { recursive: true });
+      writeFileSync(join(tmpDir, "DerivedData", "Build", "Derived.swift"), "struct Derived {}");
+      mkdirSync(join(tmpDir, "MyApp.xcodeproj", "xcuserdata"), { recursive: true });
+      writeFileSync(join(tmpDir, "MyApp.xcodeproj", "xcuserdata", "Stale.swift"), "struct Stale {}");
+      mkdirSync(join(tmpDir, "MyApp.xcworkspace"), { recursive: true });
+      writeFileSync(join(tmpDir, "MyApp.xcworkspace", "Workspace.swift"), "struct Workspace {}");
+
+      // Vendored dependency managers — full third-party source trees.
+      mkdirSync(join(tmpDir, "Pods", "Alamofire", "Source"), { recursive: true });
+      writeFileSync(join(tmpDir, "Pods", "Alamofire", "Source", "Alamofire.swift"), "struct Alamofire {}");
+      mkdirSync(join(tmpDir, "Carthage", "Build", "iOS"), { recursive: true });
+      writeFileSync(join(tmpDir, "Carthage", "Build", "iOS", "Built.swift"), "struct Built {}");
+
+      // Compiled binary bundles that happen to sit in the tree.
+      mkdirSync(join(tmpDir, "Vendor", "Foo.xcframework"), { recursive: true });
+      writeFileSync(join(tmpDir, "Vendor", "Foo.xcframework", "Shim.swift"), "struct Shim {}");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".swift"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      // Project code survives.
+      expect(files.some((f) => f.endsWith("Package.swift"))).toBe(true);
+      expect(files.some((f) => f.endsWith(join("Sources", "App", "main.swift")))).toBe(true);
+      expect(files.some((f) => f.endsWith(join("Tests", "AppTests", "AppTests.swift")))).toBe(true);
+
+      // Build output and vendored trees are dropped.
+      expect(files.some((f) => f.includes("/.build/"))).toBe(false);
+      expect(files.some((f) => f.includes("/.swiftpm/"))).toBe(false);
+      expect(files.some((f) => f.includes("/DerivedData/"))).toBe(false);
+      expect(files.some((f) => f.includes(".xcodeproj/"))).toBe(false);
+      expect(files.some((f) => f.includes(".xcworkspace/"))).toBe(false);
+      expect(files.some((f) => f.includes("/Pods/"))).toBe(false);
+      expect(files.some((f) => f.includes("/Carthage/Build/"))).toBe(false);
+      expect(files.some((f) => f.includes(".xcframework/"))).toBe(false);
+    });
+
     // Data formats (json/yaml) are not code — VCR cassettes / fixtures / config
     // blobs pollute a code index (octokit full-index: 714 json -> 2x chunks +
     // volume crash). Default-ignore them, but keep signal-bearing JSON manifests.

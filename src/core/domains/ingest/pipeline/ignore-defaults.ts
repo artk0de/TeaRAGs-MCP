@@ -48,6 +48,29 @@ export const BUILTIN_IGNORE_PATTERNS: string[] = [
   "target/",
   ".gradle/",
 
+  // Swift / Xcode. Unlike most build output these are DIRECTORIES OF REAL
+  // `.swift` SOURCE, not opaque binaries: SwiftPM materializes every
+  // dependency into `.build/checkouts/`, and CocoaPods does the same under
+  // `Pods/`. Indexing them copies every dependency's symbols into the graph,
+  // so a small app reads as a monorepo and its own code loses rank. The
+  // project's `Sources/`, `Tests/` and `Package.swift` are deliberately NOT
+  // matched here — Swift test chunking reads `Tests/`.
+  // `*.xcodeproj` / `*.xcworkspace` are directory packages holding generated
+  // project state (`project.pbxproj`, per-user `xcuserdata`), never source.
+  ".build/",
+  ".swiftpm/",
+  "DerivedData/",
+  "*.xcodeproj/",
+  "*.xcworkspace/",
+  "xcuserdata/",
+  "Pods/",
+  "Carthage/Build/",
+  // Compiled bundles — directory packages with a binary payload.
+  "*.framework/",
+  "*.xcframework/",
+  "*.dSYM/",
+  "*.xcarchive/",
+
   // Generic VCS / IDE
   ".git/",
   ".svn/",
