@@ -98,20 +98,25 @@ Two test-related filters address different granularity. They compose freely.
 | Strict DSL leaves in test files only (defense-in-depth)  | `testFile: "only"` + `chunkType: "test"` |
 | Production code, not tests                               | `testFile: "exclude"`                    |
 
-**`chunkType: "test"` and `chunkType: "test_setup"` require DSL test chunking.**
+**`chunkType: "test"` and `chunkType: "test_setup"` require AST test chunking.**
 Currently supported:
 
-| Language   | Frameworks          | Chunker                                                               |
-| ---------- | ------------------- | --------------------------------------------------------------------- |
-| TypeScript | Vitest, Jest, Mocha | `src/core/domains/language/typescript/chunking/test-scope-chunker.ts` |
-| JavaScript | Vitest, Jest, Mocha | `src/core/domains/language/javascript/chunking/test-scope-chunker.ts` |
-| Ruby       | RSpec               | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
+| Language   | Frameworks            | Granularity | Chunker                                                               |
+| ---------- | --------------------- | ----------- | --------------------------------------------------------------------- |
+| TypeScript | Vitest, Jest, Mocha   | scope       | `src/core/domains/language/typescript/chunking/test-scope-chunker.ts` |
+| JavaScript | Vitest, Jest, Mocha   | scope       | `src/core/domains/language/javascript/chunking/test-scope-chunker.ts` |
+| Ruby       | RSpec                 | scope       | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
+| Swift      | XCTest, swift-testing | test case   | `src/core/domains/language/swift/chunking/suite-recognition.ts`       |
+
+Granularity `scope` = one chunk per describe/context with ancestor setup spliced
+in. `test case` = one chunk per method (Swift declares cases as methods, not DSL
+calls); its fixtures / `setUp` / helpers → `test_setup`.
 
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full
 per-language support: `.claude-plugin/tea-rags/rules/language-compatibility.md`
-(GENERATED — never restate it here). Detect availability via prime digest: DSL
+(GENERATED — never restate it here). Detect availability via prime digest: test
 chunks absent if no `git.chunk.*` signal shows a `test:` threshold row. Recipes
-depending on DSL chunks, see `tea-rags:tests-as-context` (Step 0 preflight
+depending on test chunks, see `tea-rags:tests-as-context` (Step 0 preflight
 handles this automatically). New language added → update this table in lock-step
 with the matching block in `tea-rags:tests-as-context` and
 `dinopowers:test-driven-development` — see
@@ -155,13 +160,12 @@ default 6); `0` / absent on every doc chunk + chunks untouched in window → chu
 age filters drop them. Chunk-level `minAgeDays` never finds code older than
 window → old code: `modifiedBefore` or `level: "file"`.
 
-**Reading overlay `ageDays`.** Query-time: overlay value, `age` / `recency`
-rerank and `ageDays` filter presets (`freshLegacyEdits`, `battleTested`,
-`abandonedHotspots`) all derive from `git.{file,chunk}.lastModifiedAt` vs now —
-labels too (bands inverted off stamp percentiles) — no lag, no drift. ONLY
-remaining lag: raw `filter` on `git.*.ageDays` (enrichment-time stamp, frozen at
-enrichment; `0` = < 1 day then, not "no data" — absent key = no data). NEVER
-filter raw on `ageDays` — typed age filters / presets instead.
+**Reading overlay `ageDays`.** Payload stamp: whole days, floored, at ENRICHMENT
+time. `0` = last commit < 1 day before enrichment = freshest, not "no data" (no
+data = key absent). Point not re-enriched keeps old stamp → overlay value, `age`
+/ `recency` rerank and `ageDays` filter presets (`freshLegacyEdits`,
+`battleTested`, `abandonedHotspots`) can lag; typed age filters and
+`modifiedAfter` / `modifiedBefore` do not.
 
 ## Sugar filter pairing examples
 

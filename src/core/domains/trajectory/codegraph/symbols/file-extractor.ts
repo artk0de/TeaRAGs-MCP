@@ -20,6 +20,7 @@ import JsLang from "tree-sitter-javascript";
 import PyLang from "tree-sitter-python";
 import RbLang from "tree-sitter-ruby";
 import RustLang from "tree-sitter-rust";
+import SwiftLang from "tree-sitter-swift";
 import TsLang from "tree-sitter-typescript";
 
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
@@ -141,6 +142,18 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
     language: "rust",
     loadParser: () => RustLang,
     scopeSeparator: "::",
+  },
+  // Swift — one grammar, one extension. `.` joins nested types
+  // (`Ledger.Account#post`), matching Java and the `swiftKernel`'s
+  // `scopeSeparator`. `disambiguateOverloads` for the same reason Java needs
+  // it: Swift methods and initializers overload freely on their parameter
+  // lists, each overload carries its own body, and the chunker already
+  // suffixes duplicates `~N` — the two halves must agree per AST node.
+  ".swift": {
+    language: "swift",
+    loadParser: () => SwiftLang,
+    scopeSeparator: ".",
+    disambiguateOverloads: true,
   },
   // Bash — two extensions, one grammar (`.sh` and `.bash` share the single
   // BashLang).

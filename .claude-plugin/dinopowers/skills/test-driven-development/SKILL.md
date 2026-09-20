@@ -33,17 +33,23 @@ ordering (search BEFORE draft) = core value. No `filter` needed: the server
 skips `proven`'s production default when `chunkType` / `testFile` select tests
 (tea-rags server predating that → 0 results → add `filter: {}`).
 
-If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
-chunks absent — primary language has no DSL test chunker; **currently supported:
-TypeScript and JavaScript (Vitest/Jest/Mocha), Ruby (RSpec)** — see
-`src/core/domains/language/<lang>/chunking/` (`test-scope-chunker.ts`,
-`rspec-scope-chunker.ts`); canonical per-language list:
+If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (no
+`chunkType: "test"` chunks — language has no AST test chunking; **currently
+supported: TypeScript + JavaScript (Vitest/Jest/Mocha), Ruby (RSpec), Swift
+(XCTest / swift-testing)** — see `src/core/domains/language/<lang>/chunking/`
+(`test-scope-chunker.ts`, `rspec-scope-chunker.ts`, `suite-recognition.ts`);
+canonical per-language list:
 `.claude-plugin/tea-rags/rules/language-compatibility.md` (GENERATED)), fall
 back to single `mcp__tea-rags__semantic_search` with `testFile: "only"` +
-`rerank: "proven"` and state "file-level fallback — DSL test chunks unavailable
-for this language".
+`rerank: "proven"` and state "file-level fallback — test chunks unavailable for
+this language".
 
-> **Maintainers:** when new language gains DSL test chunker, update the
+Swift chunks per test CASE, not per scope — XCTest / swift-testing declare cases
+as methods, so a `chunkType: "test"` hit is one `func testX()` /
+`@Test func x()`, no ancestor setup spliced in. Fixtures + helpers →
+`chunkType: "test_setup"`.
+
+> **Maintainers:** new language gains AST test chunking → update the
 > supported-languages list above AND the same lists in
 > `tea-rags:tests-as-context` (Step 0 SKIP block) and `tea-rags:filter-building`
 > (chunkType section). Canonical checklist:

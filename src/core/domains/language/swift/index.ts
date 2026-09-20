@@ -1,10 +1,27 @@
 /**
- * `SwiftLanguage` — the native per-language facade for Swift, tier 1 of the
- * Swift vertical: grammar + generic-AST chunking that emits symbolId-carrying
- * chunks, so `find_symbol` resolves Swift outlines and bodies and
- * `hybrid_search`'s BM25 leg hits Swift tokens. NO walker, NO resolver — the
- * call graph is tier 2 (see `capability.ts`), which is also why the ctor takes
- * no ambiguous-resolve `mode`: there is no resolver to thread it into.
+ * `SwiftLanguage` — the native per-language facade for Swift, composing the
+ * four capability sub-modules:
+ *
+ *   kernel        ← ./kernel.ts       (parser load, scopeSeparator ".",
+ *                                      scopeContainerTypes, disambiguateOverloads)
+ *   chunkerHooks  ← (inline below)    (generic chunking — no hooks chain)
+ *   walker        ← ./walker/         (extractFromSwiftFile + swiftNameOf)
+ *   resolver      ← ./resolver/       (SwiftCallResolver — 6-pass chain)
+ *
+ * Tier 1 shipped grammar + chunking, so `find_symbol` resolves Swift outlines
+ * and bodies and `hybrid_search`'s BM25 leg hits Swift tokens. Tier 2 adds the
+ * call graph, which is why the ctor now takes an ambiguous-resolve `mode`:
+ * there is finally a resolver to thread it into. Like python / java / rust (and
+ * unlike go), `SwiftCallResolver`'s ctor takes ONLY `mode` — it needs no
+ * `SymbolIdComposer`, building the `Type#member` / `Type.member` candidate ids
+ * inline — so the `LanguageFactoryDescriptor` signature is unchanged.
+ *
+ * symbolId coverage convergence: the chunker emits `Type#method` /
+ * `Type.method` / `Outer.Inner#method` / overload-`~N` via the generic chunker
+ * engine, the codegraph emits them via `walker.nameOf` (`swiftNameOf`), and
+ * both route instance/static classification through `classifyMethod` (the
+ * kernel's `methodKindFromClassify` / `isInstanceMethod`) so they stay in
+ * lockstep per `.claude/rules/symbolid-convention.md`.
  *
  * Chunking shape mirrors Java (methods + inits are leaf chunks, types are
  * scope containers) because tree-sitter-swift's shape maps onto it directly:
@@ -33,8 +50,30 @@
  * `associatedtype_declaration`, `enum_entry`.
  */
 
-import type { LanguageChunkerHooks, LanguageProvider } from "../../../contracts/types/language.js";
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  emptyDispatchFanout,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type DispatchFanoutOutcome,
+  type FileExtraction,
+  type SymbolResolutionTarget,
+} from "../../../contracts/types/codegraph.js";
+import type {
+  LanguageChunkerHooks,
+  LanguageProvider,
+  LanguageSymbolResolver,
+  LanguageWalker,
+} from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { swiftHooks } from "./chunking/index.js";
 import { swiftKernel } from "./kernel.js";
+import { SwiftCallResolver } from "./resolver/index.js";
+import { swiftNameOf } from "./walker/name-of.js";
+import { SWIFT_EXTRACTION_PASSES } from "./walker/passes.js";
+import { extractFromSwiftFile, type SwiftExtractInput } from "./walker/walker.js";
 
 /**
  * Chunk-boundary config for Swift — mirrors the chunker slice of
@@ -62,16 +101,52 @@ const swiftChunkerHooks: LanguageChunkerHooks = {
   childChunkTypes: ["function_declaration", "init_declaration", "protocol_function_declaration"],
   alwaysExtractChildren: true,
   keepShortChildChunkTypes: ["protocol_function_declaration", "init_declaration"],
+  // Registering ANY hook flips two engine branches keyed on "does this language
+  // have hooks at all": `chunkWithChildExtraction` stops emitting the narrow
+  // parent type chunk (it switches to `ctx.bodyChunks`), and
+  // `canRecurseAsContainer` starts recursing into every child. So the chain
+  // carries a body chunker and a nested-function filter to hold both behaviours
+  // in place — see `./chunking/index.ts`. `hook-chain-parity.test.ts` pins that
+  // the chain changes nothing but `chunkType` and captured doc comments.
+  hooks: swiftHooks,
 };
 
 /**
- * Native Swift `LanguageProvider`. Construction is trivial — no resolver (tier
- * 1), no walker, and the kernel is a shared module-level const — so the only
- * per-instance cost is the Parser the chunker engine builds.
+ * Native Swift `LanguageProvider`. Construction is cheap — the resolver is a
+ * pure object (no codegraph / tsconfig deps, unlike TypeScript; no composer,
+ * unlike Go) and the kernel is a shared module-level const — so the only
+ * per-instance cost is the Parser the chunker / codegraph engines build.
+ *
+ * `hasInProjectDefinition` is forwarded EXPLICITLY. The resolution runner reads
+ * the facade, never the `CallResolver` behind it, so a method the facade drops
+ * silently reverts to the runner's default — the JavaScript `resolveFileEdges`
+ * trap (bd tea-rags-mcp-x9qsh), where a unit test on the bare resolver passed
+ * while production never called it.
  */
 export class SwiftLanguage implements LanguageProvider {
   readonly kernel = swiftKernel;
   readonly chunkerHooks: LanguageChunkerHooks = swiftChunkerHooks;
+  readonly walker: LanguageWalker = composeExtractionWalker({
+    walk: (input) => extractFromSwiftFile(input),
+    nameOf: (node) => swiftNameOf(node),
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: SWIFT_EXTRACTION_PASSES,
+  });
+  readonly resolver: LanguageSymbolResolver;
+
+  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
+    const callResolver: CallResolver = new SwiftCallResolver(mode);
+    this.resolver = {
+      resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
+      resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
+        callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
+    };
+  }
 }
 
 export { swiftKernel } from "./kernel.js";
+export { extractFromSwiftFile, swiftNameOf } from "./walker/index.js";
+export { SwiftCallResolver } from "./resolver/index.js";
+export type { FileExtraction, SwiftExtractInput };

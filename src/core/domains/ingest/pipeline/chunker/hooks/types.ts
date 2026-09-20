@@ -26,6 +26,7 @@ export function createHookContext(
     excludedRows: new Set(),
     methodPrefixes: new Map(),
     methodStartLines: new Map(),
+    methodChunkTypes: new Map(),
     bodyChunks: [],
     skipChildren: false,
   };

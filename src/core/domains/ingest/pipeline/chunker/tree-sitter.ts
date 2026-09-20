@@ -946,7 +946,7 @@ export class TreeSitterChunker implements CodeChunker {
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
       if (childContent.length > this.config.maxChunkSize) {
-        await this.emitOversizedChild(childNode, childContent, pass);
+        await this.emitOversizedChild(childNode, ci, childContent, pass);
         continue;
       }
 
@@ -1002,6 +1002,7 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private async emitOversizedChild(
     childNode: AstNode,
+    ci: number,
     childContent: string,
     pass: ChildChunkEmissionPass,
   ): Promise<void> {
@@ -1020,7 +1021,10 @@ export class TreeSitterChunker implements CodeChunker {
     const methodSymbolId = pass.overloads.disambiguate(
       this.buildSymbolId(childName, effectiveParent, methodKind, langConfig.scopeSeparator),
     );
-    const methodChunkType = this.getChunkType(semanticNode.type);
+    // A hook-supplied label survives the split, exactly as the composed
+    // symbolId does — otherwise a long XCTest case's parts would carry
+    // `chunkType: "function"` while its short siblings carry `"test"`.
+    const methodChunkType = pass.ctx.methodChunkTypes.get(ci) ?? this.getChunkType(semanticNode.type);
     const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
     for (const subChunk of subChunks) {
       chunks.push({
@@ -1197,7 +1201,11 @@ export class TreeSitterChunker implements CodeChunker {
         filePath,
         language,
         chunkIndex: chunks.length,
-        chunkType: this.getChunkType(semanticNode.type),
+        // A hook may relabel a child whose SHAPE the engine already got right —
+        // Swift's XCTest cases and swift-testing `@Test` functions are ordinary
+        // methods that must land on `test` / `test_setup`. The engine keeps
+        // composing the symbolId; only the label is delegated.
+        chunkType: ctx.methodChunkTypes.get(ci) ?? this.getChunkType(semanticNode.type),
         name: childName,
         parentSymbolId: effectiveParent,
         parentType,

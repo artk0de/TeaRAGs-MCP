@@ -126,11 +126,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
     if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
-    // Swift is TIER 1 — chunks only, no resolver, so no `mode` is threaded
-    // (the same shape as markdown's no-mode construction for a different
-    // reason: markdown has no code symbols at all, Swift's call graph is
-    // deferred to tier 2).
-    if (lang === "swift") return new SwiftLanguage();
+    if (lang === "swift") return new SwiftLanguage(this.ambiguousResolveMode);
     // Markdown is DOC-ONLY — no resolver, so no `mode` is threaded.
     if (lang === "markdown") return new MarkdownLanguage();
     throw new UnsupportedLanguageError(lang);

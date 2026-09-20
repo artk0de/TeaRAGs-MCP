@@ -79,9 +79,10 @@ Probe bounded (limit=1, metaOnly=true), runs only when prime digest missing.
 If absent — return verdict, stop:
 
 ```
-SKIP — no DSL test chunks indexed for <project>. Possible reasons:
- (a) primary language has no DSL test chunker
-     (currently supported: TypeScript and JavaScript Vitest/Jest/Mocha, Ruby RSpec —
+SKIP — no test chunks indexed for <project>. Possible reasons:
+ (a) primary language has no AST test chunking
+     (currently supported: TypeScript + JavaScript Vitest/Jest/Mocha,
+      Ruby RSpec, Swift XCTest/swift-testing —
       see src/core/domains/language/<lang>/chunking/)
  (b) .contextignore excludes test directories
  (c) project has no tests
@@ -209,8 +210,7 @@ mcp__tea-rags__semantic_search:
 ```
 
 Custom rerank, heavy age weight, surfaces oldest semantic matches. Caller sorts
-results by `git.chunk.lastModifiedAt` DESCENDING for introduction order (oldest
-first — same order the ageDays sort gave, derived at query time, no stamp lag).
+results ascending by `git.chunk.ageDays` for introduction order.
 
 **Output:**
 

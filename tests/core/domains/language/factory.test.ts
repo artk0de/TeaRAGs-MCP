@@ -72,11 +72,17 @@ describe("LanguageFactory", () => {
     expect(new LanguageFactory().create("swift")).toBeInstanceOf(SwiftLanguage);
   });
 
-  it("the native swift provider is tier 1 — chunkerHooks but no walker/resolver", () => {
+  // Swift shipped as tier 1 (chunks only) and this case pinned the absent
+  // walker/resolver. Tier 2 added both, so the INVARIANT moved: swift is now a
+  // full vertical like java/rust, and the facade must forward
+  // `hasInProjectDefinition` — the runner reads the facade, never the
+  // `CallResolver` behind it (bd tea-rags-mcp-x9qsh).
+  it("the native swift provider is a full vertical — chunkerHooks, walker and resolver", () => {
     const swift = new LanguageFactory().create("swift");
     expect(swift.chunkerHooks).toBeDefined();
-    expect(swift.walker).toBeUndefined();
-    expect(swift.resolver).toBeUndefined();
+    expect(swift.walker).toBeDefined();
+    expect(swift.resolver).toBeDefined();
+    expect(swift.resolver?.hasInProjectDefinition).toBeDefined();
   });
 
   it("create() builds the native markdown provider itself", () => {

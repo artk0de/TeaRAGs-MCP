@@ -92,9 +92,10 @@ describe("seeded support versions", () => {
     // tea-rags-mcp-ex28m widened the edge primary key with source_rel_path, and
     // the rows the old key discarded can only come back by re-extraction.
     // markdown is doc-only — no call graph, so nothing of its was collapsed and
-    // its axes stay put. swift is TIER 1 — chunks only, its call graph is
-    // deferred to tier 2, so its edge vocabulary has not shipped either.
-    const NO_CALL_GRAPH = new Set(["markdown", "swift"]);
+    // its axes stay put. swift LEFT this set when its walker + resolver landed:
+    // it now emits method edges, so the widened key applies to it like every
+    // other edge-emitting language.
+    const NO_CALL_GRAPH = new Set(["markdown"]);
 
     for (const [language, v] of versions) {
       // `*` is not a language vertical. Its axes stand for sources that run
@@ -181,6 +182,9 @@ describe("seeded support versions", () => {
       // origin joins the candidate-file set when the receiver head names it —
       // so an index built by walker 10 misses the checker-off constructed
       // receiver edges behind `sync/index.js`-style barrels.
+      // swift walker 2: the vertical shipped its walker + `SwiftCallResolver`,
+      // so an index built by walker 1 holds NO swift edges whatsoever — the
+      // language emitted no call graph at all until the recompute runs.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
@@ -190,6 +194,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
+        ["swift", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
@@ -197,7 +202,14 @@ describe("seeded support versions", () => {
       // chunkable/child chunk types, so `.js` / `.jsx` test files now emit
       // `chunkType: "test"` / `"test_setup"` chunks an index built by
       // chunking 1 never held — the advertised tests-high tier is implemented.
-      const CHUNKING_BUMPED = new Map([["javascript", 2]]);
+      // swift chunking 2: the same step for Swift — the hook chain recognizes
+      // XCTest and swift-testing members, so `.swift` test files now emit
+      // `test` / `test_setup` chunks, and `detectScope` switches the project
+      // from path-based to chunkType-based test accounting once they appear.
+      const CHUNKING_BUMPED = new Map([
+        ["javascript", 2],
+        ["swift", 2],
+      ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
       expect(v.chunking, `chunking version for ${language}`).toBe(CHUNKING_BUMPED.get(language) ?? 1);

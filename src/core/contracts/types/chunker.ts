@@ -63,6 +63,21 @@ export interface HookContext {
   excludedRows: Set<number>;
   methodPrefixes: Map<number, string>;
   methodStartLines: Map<number, number>;
+  /**
+   * Per-child chunkType override, keyed by the child's index in
+   * `validChildren` — the same addressing `methodPrefixes` uses. The engine
+   * falls back to its node-type mapping when a child has no entry.
+   *
+   * The lever a language needs when a member's chunk SHAPE is already right and
+   * only its LABEL is wrong: Swift's XCTest cases and swift-testing `@Test`
+   * functions are ordinary methods whose symbolId the engine composes
+   * correctly, so labelling them `test` / `test_setup` must not cost the
+   * container-claiming re-emission a scope chunker does — that would move
+   * symbolId composition into the hook, against
+   * `.claude/rules/symbolid-convention.md`, and forfeit overload
+   * disambiguation, intermediate-scope collection and the oversized-child split.
+   */
+  methodChunkTypes: Map<number, ChunkType>;
   bodyChunks: BodyChunkResult[];
   /** When true, processChildren() skips child chunk emission. */
   skipChildren?: boolean;
