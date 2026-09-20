@@ -432,11 +432,19 @@
   evaluated to nothing on a real index while every spec stayed green. Fix is to
   read the type POSITIONALLY (the child after `:` in a parameter / annotation,
   after `->` in a signature) and pin it with a materialized-vs-native parity
-  test — no other test shape can observe the difference. Measured clean for go,
-  java, rust and python, so this is a per-grammar hazard, not a global one. Why:
-  a walker that reads any field by name is one grammar quirk away from silently
-  extracting nothing, and the failure surfaces as "that language just resolves
-  poorly", never as a red test.
+  test — no other test shape can observe the difference. Measured clean over
+  ~2.5M real-corpus nodes for go, java, rust, python, ruby, javascript and bash;
+  typescript loses three pairs, all in type-position nodes no walker queries. So
+  this is a per-grammar hazard, not a global one — and swift is the outlier, at
+  15 lossy shapes. Both halves are now guarded for EVERY grammar in
+  `tests/core/domains/language/materialization/`: `extraction-parity.test.ts`
+  runs the production extraction path over both trees and requires identical
+  output, and `field-loss-inventory.test.ts` pins the `(nodeType, fieldName)`
+  pairs each grammar loses — including the ones no walker reads yet, so a
+  `tree-sitter-*` bump that introduces a collision fails on the bump commit.
+  Why: a walker that reads any field by name is one grammar quirk away from
+  silently extracting nothing, and the failure surfaces as "that language just
+  resolves poorly", never as a red test.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it
