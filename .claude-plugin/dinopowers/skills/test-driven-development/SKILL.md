@@ -35,7 +35,7 @@ skips `proven`'s production default when `chunkType` / `testFile` select tests
 
 If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
 chunks absent — primary language has no DSL test chunker; **currently supported:
-TypeScript (Vitest/Jest/Mocha) and Ruby (RSpec)** — see
+TypeScript and JavaScript (Vitest/Jest/Mocha), Ruby (RSpec)** — see
 `src/core/domains/language/<lang>/chunking/` (`test-scope-chunker.ts`,
 `rspec-scope-chunker.ts`); canonical per-language list:
 `.claude-plugin/tea-rags/rules/language-compatibility.md` (GENERATED)), fall

@@ -104,6 +104,7 @@ Currently supported:
 | Language   | Frameworks          | Chunker                                                               |
 | ---------- | ------------------- | --------------------------------------------------------------------- |
 | TypeScript | Vitest, Jest, Mocha | `src/core/domains/language/typescript/chunking/test-scope-chunker.ts` |
+| JavaScript | Vitest, Jest, Mocha | `src/core/domains/language/javascript/chunking/test-scope-chunker.ts` |
 | Ruby       | RSpec               | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
 
 For Python / Go / others, file-level `testFile: "only"` is the only option. Full

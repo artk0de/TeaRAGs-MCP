@@ -81,7 +81,7 @@ If absent — return verdict, stop:
 ```
 SKIP — no DSL test chunks indexed for <project>. Possible reasons:
  (a) primary language has no DSL test chunker
-     (currently supported: TypeScript Vitest/Jest/Mocha, Ruby RSpec —
+     (currently supported: TypeScript and JavaScript Vitest/Jest/Mocha, Ruby RSpec —
       see src/core/domains/language/<lang>/chunking/)
  (b) .contextignore excludes test directories
  (c) project has no tests
