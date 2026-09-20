@@ -41,24 +41,26 @@ const SWIFT_SCOPE_SEPARATOR = ".";
  * — the receiver's type is now known, and a namesake further out is not what
  * the source named.
  *
- * ## Why index 4
+ * ## Why index 5
  *
- * It is a RECEIVER-typing pass, so it belongs with the other three and after
+ * It is a RECEIVER-typing pass, so it belongs with the other four and after
  * all of them:
  *
  *   - after `localBinding` (1): a local `let Account = …` shadows the nested
  *     type, which is Swift scoping, not a preference;
  *   - after `selfMember` (2): that pass owns `self` / `Self`, which this one
  *     declines anyway;
- *   - after `storedPropertyType` (3): a stored property whose name collides
+ *   - after `chainedReceiverType` (3): that pass answers DOTTED receivers,
+ *     which this one declines anyway;
+ *   - after `storedPropertyType` (4): a stored property whose name collides
  *     with a nested type is still a property access, and that pass's explicit-
  *     `self` DROP must not be reopened here.
  *
- * It steals nothing from the passes below it: `enclosingBareCall` (5) and
- * `globalShortName` (7) answer `call.receiver === null` only, and
- * `extensionScopeMember` (6) answers only `null` / `self` / `Self`. Every one
+ * It steals nothing from the passes below it: `enclosingBareCall` (6) and
+ * `globalShortName` (8) answer `call.receiver === null` only, and
+ * `extensionScopeMember` (7) answers only `null` / `self` / `Self`. Every one
  * of those declines a receiver-bearing call, so this pass could sit anywhere
- * from 4 to 7 with identical behaviour today — index 4 is the one whose
+ * from 5 to 8 with identical behaviour today — index 5 is the one whose
  * ARGUMENT is stable, since it keeps "receiver passes first, in falling order
  * of evidence; bare-call passes after" true, and it stays correct if a pass
  * below ever grows a receiver arm.

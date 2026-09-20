@@ -1,5 +1,5 @@
 /**
- * `SwiftCallResolver` — the six-pass chain, one describe per pass plus the
+ * `SwiftCallResolver` — the nine-pass chain, one describe per pass plus the
  * guards that keep Swift's precision honest.
  *
  * Two Swift facts drive the chain and are asserted here rather than left to a
@@ -222,6 +222,331 @@ describe("SwiftCallResolver — storedPropertyType", () => {
       }),
     );
     expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — chainedReceiverType", () => {
+  it("threads a field-of-a-field receiver hop by hop", () => {
+    // `self.session.adapter.adapt()` — two links, each one a stored property
+    // whose declared type the walker recorded. No single pass can type this:
+    // `storedPropertyType` reads ONE property and declines anything with a
+    // second dot in it.
+    const t = table({ "Sources/Adapter.swift": [{ symbolId: "Adapter#adapt", scope: ["Adapter"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.session.adapter", "adapt"),
+      ctx({
+        callerFile: "Sources/Manager.swift",
+        callerScope: ["Manager"],
+        symbolTable: t,
+        classFieldTypes: { Manager: { session: "Session" }, Session: { adapter: "Adapter" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Adapter.swift", targetSymbolId: "Adapter#adapt" });
+  });
+
+  it("seeds the head from a LOCAL binding", () => {
+    const t = table({ "Sources/Hooks.swift": [{ symbolId: "HooksPhase#appendBefore", scope: ["HooksPhase"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("world.hooks", "appendBefore"),
+      ctx({
+        callerFile: "Sources/DSL.swift",
+        symbolTable: t,
+        localBindings: { world: [{ line: 4, type: "World" }] },
+        classFieldTypes: { World: { hooks: "HooksPhase" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Hooks.swift", targetSymbolId: "HooksPhase#appendBefore" });
+  });
+
+  it("seeds the head from a STORED PROPERTY — Swift's implicit self, one hop up the chain", () => {
+    // `currentGroup.hooks.appendBefore()` inside `World`: the head names no
+    // local, so it is `self.currentGroup`, exactly as the single-hop pass reads
+    // a bare receiver.
+    const t = table({ "Sources/Hooks.swift": [{ symbolId: "HooksPhase#appendBefore", scope: ["HooksPhase"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("currentGroup.hooks", "appendBefore"),
+      ctx({
+        callerFile: "Sources/World.swift",
+        callerScope: ["World"],
+        symbolTable: t,
+        classFieldTypes: { World: { currentGroup: "ExampleGroup" }, ExampleGroup: { hooks: "HooksPhase" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("HooksPhase#appendBefore");
+  });
+
+  it("seeds the head from a TYPE NAME the project declares — the shared-singleton spelling", () => {
+    // `World.sharedWorld.beforeEach()`: `sharedWorld` is a static stored
+    // property, and `classFieldTypes` records it beside the instance ones.
+    const t = table({
+      "Sources/World.swift": [
+        { symbolId: "World", scope: [] },
+        { symbolId: "World#beforeEach", scope: ["World"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("World.sharedWorld", "beforeEach"),
+      ctx({
+        callerFile: "Sources/DSL.swift",
+        symbolTable: t,
+        classFieldTypes: { World: { sharedWorld: "World" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/World.swift", targetSymbolId: "World#beforeEach" });
+  });
+
+  it("seeds the head from `Self`, which in a type body IS the enclosing type", () => {
+    const t = table({ "Sources/Spec.swift": [{ symbolId: "QuickSpec#recordFailure", scope: ["QuickSpec"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("Self.current", "recordFailure"),
+      ctx({
+        callerFile: "Sources/Spec.swift",
+        callerScope: ["QuickSpec"],
+        symbolTable: t,
+        classFieldTypes: { QuickSpec: { current: "QuickSpec" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("QuickSpec#recordFailure");
+  });
+
+  it("reads a field declared by the SUPERCLASS, through the same chain `super` walks", () => {
+    // `self.eventMonitor.request()` inside `DataRequest`: `eventMonitor` is
+    // declared on `Request`, so the own-type map answers nothing and the
+    // single-property pass DROPS. The ancestor walk is what makes the field
+    // reachable at all.
+    const t = table({ "Sources/EventMonitor.swift": [{ symbolId: "EventMonitor#request", scope: ["EventMonitor"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.eventMonitor", "request"),
+      ctx({
+        callerFile: "Sources/DataRequest.swift",
+        callerScope: ["DataRequest"],
+        symbolTable: t,
+        classExtends: { DataRequest: "Request" },
+        classFieldTypes: { Request: { eventMonitor: "EventMonitor" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/EventMonitor.swift", targetSymbolId: "EventMonitor#request" });
+  });
+
+  it("lets a LOCAL shadow the stored property at the head, which is Swift's own scoping", () => {
+    const t = table({
+      "Sources/Real.swift": [{ symbolId: "RealInner#go", scope: ["RealInner"] }],
+      "Sources/Mock.swift": [{ symbolId: "MockInner#go", scope: ["MockInner"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("db.inner", "go"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: {
+          Store: { db: "Database" },
+          Database: { inner: "RealInner" },
+          MockDatabase: { inner: "MockInner" },
+        },
+        localBindings: { db: [{ line: 5, type: "MockDatabase" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("MockInner#go");
+  });
+
+  it("reads the head binding in force AT the call line, not the first one recorded", () => {
+    const t = table({
+      "Sources/A.swift": [{ symbolId: "AlphaInner#go", scope: ["AlphaInner"] }],
+      "Sources/B.swift": [{ symbolId: "BetaInner#go", scope: ["BetaInner"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("v.inner", "go", 20),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        symbolTable: t,
+        classFieldTypes: { Alpha: { inner: "AlphaInner" }, Beta: { inner: "BetaInner" } },
+        localBindings: {
+          v: [
+            { line: 2, type: "Alpha" },
+            { line: 15, type: "Beta" },
+          ],
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("BetaInner#go");
+  });
+
+  it("STOPS at the first unknown hop instead of walking past it", () => {
+    // `self.db.unknown.write()`: `db` types, `unknown` does not. Emitting an
+    // edge here would mean guessing what the second link holds, and the decoy
+    // is what such a guess would land on.
+    const t = table({ "Sources/Other.swift": [{ symbolId: "Other#write", scope: ["Other"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.db.unknown", "write"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { db: "Database" } },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("DROPS a fully-typed receiver whose type declares no such member", () => {
+    // `self.body` is a `Data` — a standard-library type. `append` is declared
+    // in the project on something else entirely, and the folded type is
+    // authoritative: no edge, rather than the namesake.
+    const t = table({ "Sources/Buffer.swift": [{ symbolId: "Buffer#append", scope: ["Buffer"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.body", "append"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { body: "Data" } },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("emits nothing for a head the project knows nothing about", () => {
+    // `NotificationCenter.default.post()` — the head is a Foundation type, so
+    // no channel types it and the fold never starts.
+    const t = table({ "Sources/Bus.swift": [{ symbolId: "Bus#post", scope: ["Bus"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("NotificationCenter.default", "post"),
+      ctx({ callerFile: "Sources/Store.swift", callerScope: ["Store"], symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("refuses a chain longer than the hop cap rather than half-walking it", () => {
+    // Every link below is typed, so only the cap can decline this receiver.
+    const t = table({ "Sources/E.swift": [{ symbolId: "E#go", scope: ["E"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.a.b.c.d", "go"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: {
+          Store: { a: "A" },
+          A: { b: "B" },
+          B: { c: "C" },
+          C: { d: "E" },
+        },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("reads a hop's field type from ANOTHER file, through the run-global address", () => {
+    // The shape the whole pass exists for. `classFieldTypes` is threaded
+    // per-FILE, so `Database`'s own fields are invisible to a caller in
+    // `Store.swift`; `classFieldTypesByClassKey` is where they survive the
+    // pass-1 barrier, and without this read the chain dies at hop 2.
+    const t = table({ "Sources/Inner.swift": [{ symbolId: "Inner#go", scope: ["Inner"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.db.inner", "go"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { db: "Database" } },
+        classFieldTypesByClassKey: { "Sources/Database.swift::Database": { inner: "Inner" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Inner.swift", targetSymbolId: "Inner#go" });
+  });
+
+  it("makes a type SPLIT across files whole again", () => {
+    // `struct World` in one file, `extension World` in another. Swift types are
+    // routinely re-opened, so one type's fields live under several keys and the
+    // reader has to union them or half its properties vanish.
+    const t = table({
+      "Sources/World.swift": [{ symbolId: "World", scope: [] }],
+      "Sources/Hooks.swift": [{ symbolId: "HooksPhase#appendBefore", scope: ["HooksPhase"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("World.sharedWorld.hooks", "appendBefore"),
+      ctx({
+        callerFile: "Sources/DSL.swift",
+        symbolTable: t,
+        classFieldTypesByClassKey: {
+          "Sources/World.swift::World": { sharedWorld: "World" },
+          "Sources/World+Hooks.swift::World": { hooks: "HooksPhase" },
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("HooksPhase#appendBefore");
+  });
+
+  it("lets the caller's OWN file outrank the run-global union", () => {
+    // The per-file map is the caller's own source text, not an inference across
+    // the run. It is read first, so nothing that resolves today can move.
+    const t = table({
+      "Sources/Local.swift": [{ symbolId: "LocalInner#go", scope: ["LocalInner"] }],
+      "Sources/Global.swift": [{ symbolId: "GlobalInner#go", scope: ["GlobalInner"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("self.db.inner", "go"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { db: "Database" }, Database: { inner: "LocalInner" } },
+        classFieldTypesByClassKey: { "Sources/Database.swift::Database": { inner: "GlobalInner" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("LocalInner#go");
+  });
+
+  it("refuses a namesake type from ANOTHER LANGUAGE's entry in the shared channel", () => {
+    // The channel is run-global across every language: Go keys
+    // `<relPath>::<Type>` exactly as Swift does, and Go's `Context` must never
+    // type a Swift receiver. Same guard `lookupSwiftSymbols` applies to the
+    // symbol table, applied to the field channel.
+    const t = table({ "Sources/Inner.swift": [{ symbolId: "Inner#go", scope: ["Inner"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.db.inner", "go"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { db: "Database" } },
+        classFieldTypesByClassKey: { "internal/db/database.go::Database": { inner: "Inner" } },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("reads a SUPERCLASS's field out of the run-global union too", () => {
+    // The ancestor walk and the cross-file read compose: `eventMonitor` is
+    // declared on `Request`, in `Request.swift`, and called from
+    // `DataRequest.swift`.
+    const t = table({ "Sources/EventMonitor.swift": [{ symbolId: "EventMonitor#request", scope: ["EventMonitor"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.eventMonitor", "request"),
+      ctx({
+        callerFile: "Sources/DataRequest.swift",
+        callerScope: ["DataRequest"],
+        symbolTable: t,
+        classExtends: { DataRequest: "Request" },
+        classFieldTypesByClassKey: { "Sources/Request.swift::Request": { eventMonitor: "EventMonitor" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("EventMonitor#request");
+  });
+
+  it("still resolves at exactly the hop cap", () => {
+    const t = table({ "Sources/D.swift": [{ symbolId: "D#go", scope: ["D"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self.a.b.c", "go"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { a: "A" }, A: { b: "B" }, B: { c: "D" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("D#go");
   });
 });
 

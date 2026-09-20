@@ -189,7 +189,11 @@ describe("seeded support versions", () => {
       // made every annotated-type read evaluate to nothing in production;
       // walker 4 publishes `classExtends` and resolves `super` over it, so an
       // index built by walker 3 carries no inheritance for swift at all and
-      // every `super.X()` in it is unresolved.
+      // every `super.X()` in it is unresolved; walker 5 publishes the
+      // run-global `classFieldTypesByClassKey` address AND adds
+      // `chainedReceiverType` reading it, so an index built by walker 4 carries
+      // neither the address nor any edge for a dotted receiver beyond the
+      // single-property `self.<x>` form.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
@@ -199,7 +203,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 4],
+        ["swift", 5],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

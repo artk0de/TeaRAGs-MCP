@@ -1,6 +1,7 @@
 export { SwiftSuperSymbolResolutionStrategy } from "./swift-super.js";
 export { SwiftLocalBindingSymbolResolutionStrategy } from "./swift-local-binding.js";
 export { SwiftSelfMemberSymbolResolutionStrategy } from "./swift-self-member.js";
+export { SwiftChainedReceiverTypeSymbolResolutionStrategy } from "./swift-chained-receiver-type.js";
 export { SwiftStoredPropertyTypeSymbolResolutionStrategy } from "./swift-stored-property-type.js";
 export { SwiftScopedTypeReceiverSymbolResolutionStrategy } from "./swift-scoped-type-receiver.js";
 export { SwiftEnclosingBareCallSymbolResolutionStrategy } from "./swift-enclosing-bare-call.js";

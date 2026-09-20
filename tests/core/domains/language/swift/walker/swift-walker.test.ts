@@ -685,6 +685,33 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
   });
 });
 
+describe("extractFromSwiftFile — classFieldTypesByClassKey", () => {
+  it("publishes the SAME facts under a file-qualified key", () => {
+    // The run-global address. `classFieldTypes` is threaded per-FILE, so a
+    // resolver in another file cannot see it; this key is what survives the
+    // pass-1 → pass-2 barrier.
+    const src = ["class Store {", "  let db: Database", "}", ""].join("\n");
+    const r = extract(src);
+    expect(r.classFieldTypesByClassKey).toEqual({ "Sources/Sample.swift::Store": { db: "Database" } });
+  });
+
+  it("keys every type the file declares, not just the first", () => {
+    const src = ["struct Invoice {", "  let payer: Party", "}", "actor Worker {", "  let queue: Queue", "}", ""].join(
+      "\n",
+    );
+    const r = extract(src);
+    expect(Object.keys(r.classFieldTypesByClassKey ?? {}).sort()).toEqual([
+      "Sources/Sample.swift::Invoice",
+      "Sources/Sample.swift::Worker",
+    ]);
+  });
+
+  it("stays absent when the file publishes no field types at all", () => {
+    const src = ["class Store {", "  func go() {}", "}", ""].join("\n");
+    expect(extract(src).classFieldTypesByClassKey).toBeUndefined();
+  });
+});
+
 describe("extractFromSwiftFile — edge cases", () => {
   it("returns an empty extraction for an empty file", () => {
     const r = extract("", []);

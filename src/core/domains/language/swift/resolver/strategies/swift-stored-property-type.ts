@@ -23,10 +23,12 @@ import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolver
  *   - a BARE receiver that is not a known property could be anything — a local
  *     the walker could not type, a global, a module: CONTINUE.
  *
- * A chained receiver (`self.a.b.method()`) carries no single type and is left
- * to later passes, which decline it too. Recursive receiver typing is the
- * kernel's `receiver-type-propagation` fold; wiring Swift into it is a separate
- * increment, not something to approximate here.
+ * A chained receiver (`self.a.b.method()`) carries no single type and is
+ * declined here. `chainedReceiverType`, one slot EARLIER, is what threads it —
+ * and because that pass reads this same `classFieldTypes` entry for the own
+ * type before walking up the superclass chain, it answers the `self.<x>` shape
+ * identically where this one can and CONTINUEs where it cannot, which is what
+ * leaves the DROP above intact.
  */
 export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "storedPropertyType";

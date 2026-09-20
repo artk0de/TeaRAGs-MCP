@@ -17,24 +17,32 @@
  *   2. selfMember           — `self.X()` / `Self.X()` in the caller's own file.
  *                             A file-local declaration outranks anything the
  *                             project-wide passes could offer.
- *   3. storedPropertyType   — `self.field.X()` AND the implicit-self
+ *   3. chainedReceiverType  — a DOTTED receiver (`a.b.X()`, `self.a.b.X()`,
+ *                             `World.sharedWorld.X()`) threaded through the
+ *                             kernel's receiver fold, hop by hop over
+ *                             `classFieldTypes` and up the superclass chain.
+ *                             Ahead of 4 because that pass DROPs a `self.<x>`
+ *                             it cannot type; this one reads the same channel
+ *                             for the own type and CONTINUEs when it types
+ *                             nothing, so 4 keeps its guard.
+ *   4. storedPropertyType   — `self.field.X()` AND the implicit-self
  *                             `field.X()`, through the property's declared
  *                             type. After 1 so a local wins; after 2 so an
  *                             explicit `self.X()` is never read as a property.
- *   4. scopedTypeReceiver   — `Nested.X()` → a type nested in the caller's own
+ *   5. scopedTypeReceiver   — `Nested.X()` → a type nested in the caller's own
  *                             scope, by its SHORT name. Last of the receiver
- *                             passes, so a local (1) and a property (3) both
+ *                             passes, so a local (1) and a property (4) both
  *                             shadow it; the passes below answer no
  *                             receiver-bearing call at all.
- *   5. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
+ *   6. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
  *                             terminal pass so a common name cannot misroute a
  *                             call that never left its type.
- *   6. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
+ *   7. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
  *                             file. The pass Swift needs and the others do not:
  *                             a type is routinely split across extensions in
  *                             several files, so both same-file passes miss by
  *                             construction on a conformance extension.
- *   7. globalShortName      — terminal, BARE CALLS ONLY.
+ *   8. globalShortName      — terminal, BARE CALLS ONLY.
  *
  * ## There is deliberately no import-receiver pass
  *
@@ -49,16 +57,19 @@
  *
  * The consequence of the paragraph above is that Swift resolves a
  * receiver-bearing call only where the WALKER proved a type: an annotation, a
- * CapWords initializer, a stored property, or `self`. Everything else — an
- * un-annotated `let` inferred from a function's return type, a closure
- * parameter typed by context, a protocol-typed value's dynamic dispatch,
- * `super.X()` whose supertype this vertical does not track, a chained
- * `a.b.c()` — emits NO edge. Recall is therefore capped below Java's, where the
- * import table answers a large share of receivers outright.
+ * CapWords initializer, a stored property, or `self`. `chainedReceiverType`
+ * threads those facts along a dotted receiver, but it cannot manufacture the
+ * ones the walker never wrote — an un-annotated `let` inferred from a
+ * function's return type, a closure parameter typed by context, a
+ * protocol-typed value's dynamic dispatch, any link that is a METHOD call
+ * rather than a property (`a.makeThing().run()`) — and each of those still
+ * emits NO edge. Recall is therefore capped below Java's, where the import
+ * table answers a large share of receivers outright.
  *
- * Raising it is a typing problem, not a chain problem: wiring Swift into the
- * kernel's `receiver-type-propagation` fold and recording protocol / superclass
- * conformances for an MRO. Both are increments on top of this, not gaps in it.
+ * Raising it further is a typing problem, not a chain problem: publishing the
+ * walker's declared return types as a channel the fold can read, and recording
+ * protocol conformances for an MRO. Both are increments on top of this, not
+ * gaps in it.
  *
  * ## Where a TYPE NAME still does not resolve
  *
@@ -98,6 +109,7 @@ import {
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import {
+  SwiftChainedReceiverTypeSymbolResolutionStrategy,
   SwiftEnclosingBareCallSymbolResolutionStrategy,
   SwiftExtensionScopeMemberSymbolResolutionStrategy,
   SwiftGlobalShortNameSymbolResolutionStrategy,
@@ -123,6 +135,12 @@ export class SwiftCallResolver implements CallResolver {
       new SwiftSuperSymbolResolutionStrategy(cfg),
       new SwiftLocalBindingSymbolResolutionStrategy(cfg),
       new SwiftSelfMemberSymbolResolutionStrategy(cfg),
+      // Index 3, AHEAD of `storedPropertyType` and not behind it: that pass
+      // DROPs a `self.<x>` it cannot type, so anything placed after it never
+      // sees the shape. Safe because this one reads the same field channel for
+      // the own type, resolves through the same lookup, and CONTINUEs when the
+      // fold yields nothing — see the pass docblock for the full argument.
+      new SwiftChainedReceiverTypeSymbolResolutionStrategy(cfg),
       new SwiftStoredPropertyTypeSymbolResolutionStrategy(cfg),
       new SwiftScopedTypeReceiverSymbolResolutionStrategy(cfg),
       new SwiftEnclosingBareCallSymbolResolutionStrategy(cfg),

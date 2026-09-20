@@ -2,7 +2,9 @@
  * Swift extraction walker — tier 2 of the Swift vertical (the tier-1 vertical
  * shipped grammar + chunking only). Produces the four channels the resolver
  * chain reads: `imports`, per-chunk `calls`, per-chunk `localBindings`, and the
- * file-level `classFieldTypes`.
+ * field types published under BOTH addresses — the per-file `classFieldTypes`
+ * and the run-global `classFieldTypesByClassKey` a chained receiver folds
+ * across files (`../type-field-address.ts`).
  *
  * Shaped after the Java walker (`java/walker/walker.ts`): innermost-chunk
  * attribution for BOTH calls (via the kernel's `assignCallsToInnermostChunks`)
@@ -130,6 +132,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { swiftTypeFieldKey } from "../type-field-address.js";
 
 export interface SwiftExtractInput {
   tree: MaterializedTree;
@@ -166,7 +169,14 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
     fileScope: [],
   };
   const classFieldTypes = swiftClassFieldTypes(evidence);
-  if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (Object.keys(classFieldTypes).length > 0) {
+    out.classFieldTypes = classFieldTypes;
+    // The SAME facts under the run-global address. `classFieldTypes` reaches a
+    // resolver per-FILE, so it can only ever answer about the caller's own
+    // file; this key is the one that survives the pass-1 barrier and lets a
+    // chained receiver read a field of a type declared somewhere else.
+    out.classFieldTypesByClassKey = swiftClassFieldTypesByClassKey(classFieldTypes, input.relPath);
+  }
   const classExtends = collectSwiftClassExtends(root);
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   return out;
@@ -463,6 +473,26 @@ function swiftClassFieldTypes(evidence: SwiftFileTypeEvidence): Record<string, R
     for (const [fieldName, fact] of fields) if (fact.nominal) published[fieldName] = fact.nominal;
     if (Object.keys(published).length > 0) out[typeName] = published;
   }
+  return out;
+}
+
+/**
+ * The same published view, re-keyed to the run-global address
+ * (`../type-field-address.ts`).
+ *
+ * A projection and not a second collection pass: both addresses state exactly
+ * the facts `swiftClassFieldTypes` already published, so the two can never
+ * disagree about a type's fields. The file-qualified key is what
+ * `CodegraphRunState` merges per-key across the run, which is what keeps a type
+ * re-opened by an `extension` in another file from overwriting the entry
+ * carrying its own body.
+ */
+function swiftClassFieldTypesByClassKey(
+  published: Record<string, Record<string, string>>,
+  relPath: string,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const [typeName, fields] of Object.entries(published)) out[swiftTypeFieldKey(relPath, typeName)] = fields;
   return out;
 }
 
