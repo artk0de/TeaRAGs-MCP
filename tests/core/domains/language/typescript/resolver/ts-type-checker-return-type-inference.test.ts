@@ -557,6 +557,65 @@ describe("TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy types a recei
 
     expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/caller.ts", targetSymbolId: null } });
   });
+
+  // bd tea-rags-mcp-wr3n4: the factory/hook idiom — the checker's declaration of
+  // the called member is a shorthand property in the object literal the factory
+  // RETURNS, outside the candidate's own line range but inside the enclosing
+  // named declaration the candidate is scoped under. The owner rule's
+  // containment arm must extend to the owner, or the structurally-correct pin
+  // degrades to the file-only edge.
+  it("pins a factory's shorthand member whose declaration lies inside the owner but outside the candidate's lines", () => {
+    writeSource(
+      repoRoot,
+      "src/store.ts",
+      [
+        `export function createStore() {`,
+        `  function readEvents(): string {`,
+        `    return "e";`,
+        `  }`,
+        `  return { readEvents };`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      [
+        `import { createStore } from "./store.js";`,
+        ``,
+        `export function run(): string {`,
+        `  const store = createStore();`,
+        `  return store.readEvents();`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/store.ts", [
+      {
+        symbolId: "createStore.readEvents",
+        fqName: "createStore.readEvents",
+        shortName: "readEvents",
+        relPath: "src/store.ts",
+        scope: ["createStore"],
+        startLine: 2,
+        endLine: 4,
+      },
+    ]);
+
+    const outcome = buildStrategy().attempt(
+      { callText: "store.readEvents()", receiver: "store", member: "readEvents", startLine: 5 },
+      callerContext(symbolTable, {
+        imports: [{ importText: "./store.js", startLine: 1, importedNames: ["createStore"] }],
+      }),
+    );
+
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/store.ts", targetSymbolId: "createStore.readEvents" },
+    });
+  });
 });
 
 describe("TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy declines everything it cannot type honestly (bd tea-rags-mcp-l3uob)", () => {

@@ -161,6 +161,12 @@ describe("seeded support versions", () => {
       // an index built by walker 8 misses the checker-off member edges those
       // sites gain when the constructed type's definer walk owns the
       // candidate.
+      // typescript walker 10: bd tea-rags-mcp-wr3n4 extends the owner rule's
+      // containment arm to the candidate's OWNER, so an index built by walker 9
+      // holds file-only edges where the factory/hook idiom's shorthand member
+      // (declared in the object literal the enclosing function returns) has a
+      // structurally-correct symbol pin the candidate-lines-only containment
+      // declined.
       // go walker 3: bd tea-rags-mcp-7h6j0 keys the run-global return-type
       // channel by the declaring package, so an index built by walker 2 holds
       // bare-keyed entries its resolver cannot read — namesake `New()`s
@@ -171,7 +177,7 @@ describe("seeded support versions", () => {
       // the recompute rewrites it.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 9],
+        ["typescript", 10],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 3],
