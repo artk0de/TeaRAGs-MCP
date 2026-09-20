@@ -155,12 +155,13 @@ default 6); `0` / absent on every doc chunk + chunks untouched in window → chu
 age filters drop them. Chunk-level `minAgeDays` never finds code older than
 window → old code: `modifiedBefore` or `level: "file"`.
 
-**Reading overlay `ageDays`.** Payload stamp: whole days, floored, at ENRICHMENT
-time. `0` = last commit < 1 day before enrichment = freshest, not "no data" (no
-data = key absent). Point not re-enriched keeps old stamp → overlay value, `age`
-/ `recency` rerank and `ageDays` filter presets (`freshLegacyEdits`,
-`battleTested`, `abandonedHotspots`) can lag; typed age filters and
-`modifiedAfter` / `modifiedBefore` do not.
+**Reading overlay `ageDays`.** Query-time: overlay value, `age` / `recency`
+rerank and `ageDays` filter presets (`freshLegacyEdits`, `battleTested`,
+`abandonedHotspots`) all derive from `git.{file,chunk}.lastModifiedAt` vs now —
+labels too (bands inverted off stamp percentiles) — no lag, no drift. ONLY
+remaining lag: raw `filter` on `git.*.ageDays` (enrichment-time stamp, frozen at
+enrichment; `0` = < 1 day then, not "no data" — absent key = no data). NEVER
+filter raw on `ageDays` — typed age filters / presets instead.
 
 ## Sugar filter pairing examples
 

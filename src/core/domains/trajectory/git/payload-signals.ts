@@ -29,9 +29,21 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   {
     key: "git.file.ageDays",
     type: "number",
-    description: "Days since last modification",
+    description:
+      "Days since last modification (stored stamp, frozen at enrichment — age reads derive from lastModifiedAt at query time)",
     stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" } },
     essential: true,
+  },
+  {
+    key: "git.file.lastModifiedAt",
+    type: "timestamp",
+    description:
+      "Unix seconds of the file's last commit; the source age/recency/overlay ageDays derive from at query time (percentiles feed the now-relative floor and label bands)",
+    stats: {
+      // p5 → adaptive-bounds age floor; p25/p50 → inverted ageDays label bands
+      // and filter-preset thresholds (bd tea-rags-mcp-9ot33).
+      percentilesToCompute: [5, 25, 50],
+    },
   },
   {
     key: "git.file.recentDominantAuthor",
@@ -166,9 +178,20 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   {
     key: "git.chunk.ageDays",
     type: "number",
-    description: "Days since last modification to this chunk",
+    description:
+      "Days since last modification to this chunk (stored stamp, frozen at enrichment — age reads derive from lastModifiedAt at query time)",
     stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" } },
     essential: true,
+  },
+  {
+    key: "git.chunk.lastModifiedAt",
+    type: "timestamp",
+    description:
+      "Unix seconds of the last commit touching this chunk; the source age/recency/overlay ageDays derive from at query time (percentiles feed the now-relative floor and label bands)",
+    stats: {
+      // Mirrors the file-level declaration — see git.file.lastModifiedAt.
+      percentilesToCompute: [5, 25, 50],
+    },
   },
   {
     key: "git.chunk.recentContributorCount",

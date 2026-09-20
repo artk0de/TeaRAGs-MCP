@@ -247,11 +247,14 @@ describe("level-aware filters", () => {
   });
 
   it("maxAgeDays agrees with the freshLegacyEdits preset on a freshly enriched point", () => {
-    // Both admit a chunk committed two hours ago whose stamp is still current
-    // (ageDays 0); the preset reads the stamp, the typed filter the timestamp.
+    // Both admit a chunk committed two hours ago: the preset compiles the age
+    // condition to the same query-time lastModifiedAt range the typed filter
+    // reads, so stamp staleness can no longer split the two.
     const fresh = committed("chunk", 2 / 24, 0);
     const presetFilter = compileFilterPreset(freshLegacyEditsFilterPreset, undefined, "chunk");
-    const presetChunkAge = { must: presetFilter.must!.filter((c) => "key" in c && c.key === "git.chunk.ageDays") };
+    const presetChunkAge = {
+      must: presetFilter.must!.filter((c) => "key" in c && c.key === "git.chunk.lastModifiedAt"),
+    };
     expect(matchesQdrantFilter(fresh, presetChunkAge)).toBe(true);
     expect(matchesQdrantFilter(fresh, findFilter("maxAgeDays").toCondition(7))).toBe(true);
   });

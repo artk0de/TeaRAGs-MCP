@@ -208,15 +208,18 @@ Git enrichment runs in background after indexing. Check \`get_index_status\` for
 /**
  * Git payload keys the filters resource names that the trajectory WRITES to the
  * payload but does NOT declare as payload signal descriptors — verified at the
- * writers (`domains/trajectory/git/infra/metrics/file-assembler.ts`); both are
- * read back by the git filters (`filters.ts`: modifiedAfter/Before, age ranges)
- * and the git stats accumulators. The git field enumeration in buildFiltersDoc
- * is GENERATED from the descriptors, so a key appears there either because a
- * descriptor declares it or because it is listed here explicitly. Anything else
- * is a stale name (the schema-v13 contributorCount/authors drift) and the
- * key-existence test in tests/mcp/resources/resources.test.ts fails on it.
+ * writer (`domains/trajectory/git/infra/metrics/file-assembler.ts`). Since
+ * bd tea-rags-mcp-9ot33 declared `git.{file,chunk}.lastModifiedAt` as payload
+ * signal descriptors (their percentiles feed the now-relative age floor and
+ * label bands), `git.file.firstCreatedAt` is the only remaining
+ * written-but-undeclared key; it is read back by the git stats accumulators.
+ * The git field enumeration in buildFiltersDoc is GENERATED from the
+ * descriptors, so a key appears there either because a descriptor declares it
+ * or because it is listed here explicitly. Anything else is a stale name (the
+ * schema-v13 contributorCount/authors drift) and the key-existence test in
+ * tests/mcp/resources/resources.test.ts fails on it.
  */
-export const FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS = ["git.file.lastModifiedAt", "git.file.firstCreatedAt"] as const;
+export const FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS = ["git.file.firstCreatedAt"] as const;
 
 /** Render the field enumeration line for one git payload level from the descriptors. */
 function gitFilterFields(payloadSignals: PayloadSignalDescriptor[], prefix: string): string {
@@ -264,8 +267,10 @@ export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): stri
   md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
   md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
   md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
-  md += "Payload `ageDays` = enrichment-time stamp (`0` = < 1 day then, not no-data); stale on points ";
-  md += "not re-enriched — raw `ageDays` ranges and ageDays filter presets inherit that lag.\n\n";
+  md += "Age reads are query-time: overlay `ageDays`, `age`/`recency` rerank and the ageDays filter ";
+  md += "presets derive from `git.<level>.lastModifiedAt`, never the stamp. Payload `ageDays` stays an ";
+  md += "enrichment-time stamp (`0` = < 1 day then, not no-data) — only a RAW `ageDays` range inherits ";
+  md += "that lag.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
   md += "File-level (default level): `minFanIn`, `minFanOut`, `minInstability`, `minTransitiveImpact`, ";

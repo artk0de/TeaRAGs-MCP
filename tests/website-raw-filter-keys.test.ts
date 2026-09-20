@@ -8,10 +8,10 @@
  * an unfiltered or empty search with no error pointing at the cause. Every
  * `"key": "git.…"` in `website/docs/**` must name a real payload key.
  *
- * Real payload keys are the git trajectory's payload signal descriptors plus the
- * last-commit timestamps — indexed by schema-manager and written by the git
- * assembler, but deliberately not descriptor-declared:
- * `git.file.lastModifiedAt` / `git.chunk.lastModifiedAt`.
+ * Real payload keys are the git trajectory's payload signal descriptors. The
+ * last-commit timestamps are declared too since bd tea-rags-mcp-9ot33 (their
+ * percentiles feed the now-relative age floor and label bands), so no
+ * written-but-undeclared exemption remains here.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,7 +23,7 @@ import { gitPayloadSignalDescriptors } from "../src/core/domains/trajectory/git/
 const ROOT = join(import.meta.dirname, "..");
 
 /** Payload keys the git trajectory really writes but does not declare as descriptors. */
-const UNDECLARED_BUT_REAL = new Set(["git.file.lastModifiedAt", "git.chunk.lastModifiedAt"]);
+const UNDECLARED_BUT_REAL = new Set<string>();
 
 const REAL_KEYS = new Set([...gitPayloadSignalDescriptors.map((descriptor) => descriptor.key), ...UNDECLARED_BUT_REAL]);
 

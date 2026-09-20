@@ -316,6 +316,14 @@ export interface ExtractContext {
   signalLevel?: SignalLevel;
   /** Search query text for query-dependent signals (e.g. heading relevance). */
   query?: string;
+  /**
+   * Query-time reference clock, unix SECONDS — the unit of
+   * `git.{file,chunk}.lastModifiedAt`. Injected by the Reranker once per rerank
+   * so age-family signals (`age`, `recency`, overlay ageDays) derive their
+   * value from lastModifiedAt at READ time (bd tea-rags-mcp-9ot33) and tests
+   * stay deterministic. Consumers default to the current time when absent.
+   */
+  now?: number;
 }
 
 /**

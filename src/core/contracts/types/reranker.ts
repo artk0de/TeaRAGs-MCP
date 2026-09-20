@@ -31,6 +31,50 @@ export interface DerivedSignalDescriptor {
   /** Whether this signal inverts the raw value (1 - normalize pattern).
    *  Used by rank_chunks to determine scroll direction: inverted=true → asc. */
   inverted?: boolean;
+  /**
+   * Query-time age capability (bd tea-rags-mcp-9ot33). Present ONLY on
+   * descriptors that derive age from lastModifiedAt timestamps at read time
+   * instead of consuming the enrichment-time ageDays stamp. When set, every
+   * entry in `sources` is a level-qualified `lastModifiedAt` key. The Reranker
+   * routes the adaptive-bounds age branch and the overlay ageDays resolution
+   * through this hook — a DIP seam, like `extract` itself: the math lives in
+   * the owning trajectory (git's age-derivation unit), explore never imports
+   * trajectory code.
+   */
+  readonly ageDerivation?: AgeDerivationCapability;
+}
+
+/**
+ * The query-time age surface the Reranker consumes. Implemented by the git
+ * trajectory's derivation unit (single owner of "ageDays means
+ * now − lastModifiedAt"); exposed on the derived descriptor so explore can
+ * consult it without a cross-domain dependency.
+ */
+export interface AgeDerivationCapability {
+  /** Raw payload field carrying the enrichment-time stamp this capability supersedes. */
+  readonly stampField: "ageDays";
+  /** Raw payload field carrying the timestamp the age is derived from. */
+  readonly timestampField: "lastModifiedAt";
+  /**
+   * Age in whole days at `nowSec` (unix seconds) read from one payload level's
+   * timestamp. Undefined when the level carries no stamp — key absent (file
+   * with no history) or the chunk 0 sentinel (no commit touched the chunk).
+   */
+  ageDaysFrom: (payload: Record<string, unknown>, level: "file" | "chunk", nowSec: number) => number | undefined;
+  /**
+   * Collection floor for the adaptive bounds of an age source, in days:
+   * `nowSec − stampSeconds`, where the stamp is a lastModifiedAt percentile
+   * threshold (p5 for the batch-p95 floor). Drift-free by construction — both
+   * sides move with now.
+   */
+  ageFloorDaysFromStamp: (stampSeconds: number, nowSec: number) => number;
+  /**
+   * Now-relative label thresholds for the ageDays overlay: the ageDays band
+   * `pN` gets the threshold `ageDays(stamp p(100−N))`. Stamp percentiles that
+   * were never computed produce no band (resolveLabel treats a missing
+   * threshold as "never reached").
+   */
+  labelThresholdsFromStamps: (stampPercentiles: Record<number, number>, nowSec: number) => Record<number, number>;
 }
 
 export interface RerankableResult {

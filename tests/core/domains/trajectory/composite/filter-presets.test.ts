@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { buildCompositeFilterPresets } from "../../../../../src/core/domains/trajectory/composite/filter-presets/index.js";
 import { compileFilterPreset } from "../../../../../src/core/domains/trajectory/filter-presets/compiler.js";
 
+const NOW = 1_800_000_000;
+const DAY = 86_400;
+
 describe("composite filter presets gating", () => {
   it("includes battleTested + abandonedHotspots when git registered", () => {
     const names = buildCompositeFilterPresets(new Set(["git", "codegraph.symbols", "static"])).map((p) => p.name);
@@ -13,18 +16,18 @@ describe("composite filter presets gating", () => {
     expect(buildCompositeFilterPresets(new Set(["static"]))).toEqual([]);
   });
 
-  it("battleTested: old (p50 fb30) + low-bug (p25 fb10) + multi-author (>=2)", () => {
+  it("battleTested: old (age p50 fb30 → stamp lte now−30d) + low-bug (p25 fb10) + multi-author (>=2)", () => {
     const bt = buildCompositeFilterPresets(new Set(["git"])).find((p) => p.name === "battleTested")!;
-    const f = compileFilterPreset(bt, undefined, "file");
-    expect(f.must).toContainEqual({ key: "git.file.ageDays", range: { gte: 30 } });
+    const f = compileFilterPreset(bt, undefined, "file", NOW);
+    expect(f.must).toContainEqual({ key: "git.file.lastModifiedAt", range: { gt: 0, lte: NOW - 30 * DAY } });
     expect(f.must).toContainEqual({ key: "git.file.bugFixRate", range: { lte: 10 } });
     expect(f.must).toContainEqual({ key: "git.file.blameContributorCount", range: { gte: 2 } });
   });
 
-  it("abandonedHotspots: high-churn (p75 fb9) + old (p75 fb42)", () => {
+  it("abandonedHotspots: high-churn (p75 fb9) + old (age p75 fb42 → stamp lte now−42d)", () => {
     const ah = buildCompositeFilterPresets(new Set(["git"])).find((p) => p.name === "abandonedHotspots")!;
-    const f = compileFilterPreset(ah, undefined, "file");
+    const f = compileFilterPreset(ah, undefined, "file", NOW);
     expect(f.must).toContainEqual({ key: "git.file.commitCount", range: { gte: 9 } });
-    expect(f.must).toContainEqual({ key: "git.file.ageDays", range: { gte: 42 } });
+    expect(f.must).toContainEqual({ key: "git.file.lastModifiedAt", range: { gt: 0, lte: NOW - 42 * DAY } });
   });
 });
