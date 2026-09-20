@@ -108,6 +108,17 @@ export interface GraphDbClientPoolOptions {
    */
   onCollectionClientClosed?: (collectionName: PhysicalCollectionName) => void;
   /**
+   * Per-collection idle eviction (bd tea-rags-mcp-nlls). When wired, a cached
+   * read-write client whose collection has had no op for `idleMs` — and none
+   * in flight — is closed (releasing the per-process RW lock on its database
+   * file) and dropped from the cache; the next acquire lazily re-opens. The
+   * daemon wires this because its process-level idle timer watches SOCKET
+   * clients, so without it every connection the daemon ever opened holds its
+   * file lock until the daemon dies. Pools without the option keep the
+   * close-on-process-exit behaviour unchanged.
+   */
+  idleEviction?: GraphDbClientPoolIdleEviction;
+  /**
    * Unix socket of the running codegraph daemon. When set, `acquireWrite` and
    * `acquireReader` route through a `DaemonGraphDbClient` — the daemon holds the
    * RW DuckDB lock, so concurrent MCP processes never contend on it. Absent
@@ -147,6 +158,17 @@ export interface GraphDbClientPoolOptions {
     /** Base delay between restart attempts; jittered (default 250ms). */
     restartDelayMs?: number;
   };
+}
+
+/**
+ * Per-collection idle-eviction tuning (bd tea-rags-mcp-nlls). `pollMs` mirrors
+ * the daemon idle watcher's 5s cadence by default.
+ */
+export interface GraphDbClientPoolIdleEviction {
+  /** Evict a collection's cached client after this long with no op. */
+  idleMs: number;
+  /** How often the eviction pass runs. */
+  pollMs?: number;
 }
 
 /**
@@ -211,6 +233,19 @@ export class GraphDbClientPool {
   private readonly daemonClients = new Map<string, DaemonClientEntry>();
   /** In-flight daemon-client init so concurrent first-callers share one socket. */
   private readonly daemonInflight = new Map<string, Promise<DaemonClientEntry>>();
+  /**
+   * Idle-eviction clock: the last time an op for the collection started or
+   * completed (bd tea-rags-mcp-nlls). Only maintained when `idleEviction` is
+   * wired.
+   */
+  private readonly lastUsedByCollection = new Map<PhysicalCollectionName, number>();
+  /**
+   * Ops currently running against a cached client, so eviction NEVER closes a
+   * connection mid-op. `runCollectionOp` owns the refcount; `acquire` alone
+   * (the daemon handshake's open-and-drop) is not an in-flight op.
+   */
+  private readonly opsInFlightByCollection = new Map<PhysicalCollectionName, number>();
+  private idleEvictionTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
@@ -220,6 +255,7 @@ export class GraphDbClientPool {
     // workers, the daemon and concurrent CLI runs, and `purgeStaleSpills` keeps
     // whatever a live pid owns. Also recreates the dir for `SET temp_directory`.
     purgeStaleSpills(this.spillDir);
+    if (options.idleEviction) this.scheduleIdleEviction(options.idleEviction);
   }
 
   private get codegraphDir(): string {
@@ -319,6 +355,10 @@ export class GraphDbClientPool {
    * tea-rags-mcp-amh78).
    */
   async acquire(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    // The idle-eviction clock starts here even for acquires that bypass
+    // `runCollectionOp` (the daemon handshake's open-and-drop), so an opened
+    // collection nobody ever ops against still becomes evictable.
+    if (this.options.idleEviction) this.lastUsedByCollection.set(collectionName, Date.now());
     const cached = this.clients.get(collectionName);
     if (cached && this.holdsOpenedDatabaseFile(collectionName, cached)) return cached;
     const inflight = this.inflight.get(collectionName);
@@ -746,6 +786,67 @@ export class GraphDbClientPool {
   }
 
   /**
+   * Run ONE collection op under the pool's idle-eviction tracking (bd
+   * tea-rags-mcp-nlls): the in-flight refcount is raised for the duration — an
+   * eviction pass inside the op is short-circuited — and the idle clock is
+   * stamped at start AND completion, so a collection becomes evictable a full
+   * `idleMs` after its last op finished, not after it started. The daemon
+   * server routes every per-collection op through here; eviction never fires
+   * on a client whose connection is executing.
+   */
+  async runCollectionOp<T>(
+    collectionName: PhysicalCollectionName,
+    op: (handle: CollectionGraphHandle) => Promise<T>,
+  ): Promise<T> {
+    if (this.options.idleEviction) {
+      this.lastUsedByCollection.set(collectionName, Date.now());
+      this.opsInFlightByCollection.set(collectionName, (this.opsInFlightByCollection.get(collectionName) ?? 0) + 1);
+    }
+    try {
+      return await op(await this.acquire(collectionName));
+    } finally {
+      if (this.options.idleEviction) {
+        this.lastUsedByCollection.set(collectionName, Date.now());
+        const remaining = (this.opsInFlightByCollection.get(collectionName) ?? 1) - 1;
+        if (remaining <= 0) this.opsInFlightByCollection.delete(collectionName);
+        else this.opsInFlightByCollection.set(collectionName, remaining);
+      }
+    }
+  }
+
+  /** Start the eviction poller (`unref()`'d — never keeps the process alive). */
+  private scheduleIdleEviction(eviction: GraphDbClientPoolIdleEviction): void {
+    this.idleEvictionTimer = setInterval(() => {
+      void this.evictIdleCollectionClients().catch(() => undefined);
+    }, eviction.pollMs ?? 5_000);
+    this.idleEvictionTimer.unref();
+  }
+
+  /**
+   * Close and drop every cached client whose collection has been idle past
+   * `idleMs` with no op in flight. Eviction goes through `release`, so the
+   * `onCollectionClientClosed` parity hook fires (the daemon's memory governor
+   * takes the entry with it) and the next acquire lazily re-opens.
+   */
+  private async evictIdleCollectionClients(): Promise<void> {
+    const eviction = this.options.idleEviction;
+    if (!eviction) return;
+    const now = Date.now();
+    for (const collectionName of [...this.clients.keys()]) {
+      if ((this.opsInFlightByCollection.get(collectionName) ?? 0) > 0) continue;
+      const lastUsed = this.lastUsedByCollection.get(collectionName);
+      if (lastUsed === undefined || now - lastUsed < eviction.idleMs) continue;
+      const idleSeconds = Math.round((now - lastUsed) / 1000);
+      const evicted = await this.release(collectionName);
+      if (evicted) {
+        process.stderr.write(
+          `[tea-rags] codegraph pool: evicted idle pool entry for ${collectionName} after ${idleSeconds}s idle\n`,
+        );
+      }
+    }
+  }
+
+  /**
    * Drop the cached client for a collection (close + forget), e.g. to release the
    * file lock between test scenarios. Returns true when an entry was evicted.
    */
@@ -753,6 +854,7 @@ export class GraphDbClientPool {
     const entry = this.clients.get(collectionName);
     if (!entry) return false;
     this.clients.delete(collectionName);
+    this.lastUsedByCollection.delete(collectionName);
     await entry.graphDb.close().catch(() => undefined);
     this.options.onCollectionClientClosed?.(collectionName);
     return true;
@@ -821,6 +923,8 @@ export class GraphDbClientPool {
   async closeAll(): Promise<void> {
     const all = [...this.clients.entries()];
     this.clients.clear();
+    this.lastUsedByCollection.clear();
+    this.opsInFlightByCollection.clear();
     const daemons = [...this.daemonClients.values()];
     this.daemonClients.clear();
     await Promise.all([

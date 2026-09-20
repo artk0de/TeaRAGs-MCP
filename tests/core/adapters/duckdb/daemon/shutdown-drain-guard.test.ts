@@ -85,7 +85,12 @@ async function startDrainHarness(): Promise<{
   });
   const fakeGraphDb = { checkpoint: async () => writeGate };
   const fakePool = {
-    acquire: async () => ({ graphDb: fakeGraphDb, symbolTable: new InMemoryGlobalSymbolTable() }),
+    // Dispatch routes every per-collection op through `runCollectionOp` (bd
+    // tea-rags-mcp-nlls) — the fake mirrors that seam, not the raw acquire.
+    runCollectionOp: async <T>(
+      _collection: unknown,
+      op: (handle: { graphDb: { checkpoint: () => Promise<void> }; symbolTable: unknown }) => Promise<T>,
+    ) => op({ graphDb: fakeGraphDb, symbolTable: new InMemoryGlobalSymbolTable() }),
   };
   const server = new CodegraphDaemonServer(fakePool as never, "TEST-BUILD");
   const onShutdownRequest = vi.fn();
@@ -203,10 +208,10 @@ describe("in-flight-write detection — existing write bookkeeping read as a gua
       releaseWrite = resolve;
     });
     const fakePool = {
-      acquire: async () => ({
-        graphDb: { checkpoint: async () => writeGate },
-        symbolTable: new InMemoryGlobalSymbolTable(),
-      }),
+      runCollectionOp: async <T>(
+        _collection: unknown,
+        op: (handle: { graphDb: { checkpoint: () => Promise<void> }; symbolTable: unknown }) => Promise<T>,
+      ) => op({ graphDb: { checkpoint: async () => writeGate }, symbolTable: new InMemoryGlobalSymbolTable() }),
     };
     const server = new CodegraphDaemonServer(fakePool as never, "TEST-BUILD");
     expect(server.hasWritesInFlight()).toBe(false);
