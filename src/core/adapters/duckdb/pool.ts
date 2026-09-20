@@ -40,6 +40,7 @@ import {
   CodegraphDaemonDrainRefusedError,
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
+  CodegraphDaemonUnreachableError,
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
   isDaemonDrainRefusal,
@@ -598,15 +599,6 @@ export class GraphDbClientPool {
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
     const readOnDisk = restart?.readOnDiskBuildFingerprint ?? readOnDiskBuildFingerprint;
 
-    // Build-keyed sockets (bd tea-rags-mcp-42hno): an own-key MISS in a pool
-    // that cannot spawn is the provisioning contract failing, not a slow
-    // daemon. Fail fast with the retryable typed error instead of a full
-    // connect-retry window — and instead of the pre-keying behavior, where a
-    // hookless pool silently shared whatever build happened to be running.
-    if (!restart?.respawn && !existsSync(socketPath)) {
-      throw new CodegraphDaemonBuildUnavailableError({ socketPath, buildKey: getBuildKey() });
-    }
-
     // The respawn hook doubles as crash recovery (bd tea-rags-mcp-8l8d3): a
     // daemon killed by a native abort cannot report it, so the client respawns
     // and replays in-flight requests. Pools without the hook reject them instead.
@@ -614,7 +606,21 @@ export class GraphDbClientPool {
     // the way this handshake does (bd tea-rags-mcp-1wr7p).
     const clientOptions = { onConnectionLost: restart?.respawn, readOnDiskBuildFingerprint: readOnDisk };
     const first = new DaemonGraphDbClient(socketPath, collectionName, clientOptions);
-    await first.init();
+    try {
+      await first.init();
+    } catch (err) {
+      // Build-keyed sockets (bd tea-rags-mcp-42hno): the connect window still
+      // absorbs the spawn→listen race (a worker's first connect races the
+      // fire-and-forget `beginRun` spawn), so only a socket that NEVER
+      // appeared within it is an OWN-KEY MISS. In a pool that cannot spawn
+      // that is the provisioning contract failing, not a wedged daemon —
+      // surface the retryable typed error instead of the pre-keying behavior,
+      // where a hookless pool silently shared whatever build was running.
+      if (!restart?.respawn && !existsSync(socketPath) && err instanceof CodegraphDaemonUnreachableError) {
+        throw new CodegraphDaemonBuildUnavailableError({ socketPath, buildKey: getBuildKey() }, err);
+      }
+      throw err;
+    }
     const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
     // Same build serving every required op, or a legacy pre-fingerprint peer.
     if (!needsDaemonReplacement(verdict)) return first;

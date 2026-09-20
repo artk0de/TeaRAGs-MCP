@@ -133,6 +133,22 @@ describe("build-keyed connect flow (42hno)", () => {
     expect((err as Error).message).toContain(paths.socketPath);
   });
 
+  it("a hookless pool absorbs the daemon BOOT race — the socket appearing mid-connect still connects", async () => {
+    const paths = makePaths();
+    const pool = makePool(paths);
+    // beginRun fires the daemon spawn fire-and-forget (EnrichmentCoordinator),
+    // so a worker's first connect may start BEFORE the socket exists. The
+    // connect-retry window is what absorbs that; the typed miss error must
+    // fire only when the socket never appears within it.
+    setTimeout(() => {
+      void startKeyedDaemon(paths);
+    }, 1_500);
+
+    const handle = await pool.acquireWrite(COLLECTION);
+    await handle.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    expect(await handle.graphDb.hasData()).toBe(true);
+  }, 15_000);
+
   it("the first keyed client drains a live LEGACY daemon, unlinks its files, and lands on the keyed daemon", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cg-keyed-l-"));
     root = dir;
