@@ -306,10 +306,126 @@ describe("memberCandidateLacksReceiverEvidence — the checker's declaration mus
       expect(lacks(RUN, callerCtx(), SVC_RUN)).toBe(false);
     });
 
-    it("declines an unnamed declaration when the candidate carries no line range to contain it", () => {
+    // INVARIANT CHANGE (bd tea-rags-mcp-wr3n4, rule-4 rewrite, red-first): the
+    // owner rule's containment arm extends to the candidate's OWNER, whose
+    // declaration is structural and needs no candidate line range — an unlined
+    // `svc.runJobNow` is still the owner's own member. What still declines
+    // without a line range is an owner the evidence's enclosing declaration
+    // does not name, so that side keeps the original coverage.
+    it("accepts an unlined candidate whose owner's declaration encloses the evidence", () => {
       writeUiFixture();
       const { startLine: _start, endLine: _end, ...unlined } = SVC_RUN;
+      expect(lacks(RUN, callerCtx(), unlined)).toBe(false);
+    });
+
+    it("declines an unlined candidate whose owner does not enclose the evidence", () => {
+      writeUiFixture();
+      const { startLine: _start, endLine: _end, ...unlined } = TIMER_START;
       expect(lacks(RUN, callerCtx(), unlined)).toBe(true);
+    });
+  });
+
+  describe("an ownerless declaration the candidate's OWNER encloses (bd tea-rags-mcp-wr3n4)", () => {
+    // The factory/hook idiom: the checker's declaration of the called member is
+    // a shorthand property in the object literal the owner RETURNS — outside the
+    // candidate's own line range (the inner function it aliases), but inside the
+    // enclosing named declaration the candidate is scoped under. Declining it
+    // downgraded 33 taxdome + 5 self-index pins to file-only edges.
+    function writeStoreFixture(): void {
+      writeSource(repoRoot, "src/store.ts", [
+        "export function createStore() {",
+        "  function readEvents(): number {",
+        "    return 1;",
+        "  }",
+        "  return { readEvents };",
+        "}",
+      ]);
+      writeSource(repoRoot, "src/store-caller.ts", [
+        'import { createStore } from "./store.js";',
+        "export function caller(): number {",
+        "  const store = createStore();",
+        "  return store.readEvents();",
+        "}",
+      ]);
+    }
+
+    const READ_EVENTS = def("createStore.readEvents", "readEvents", "src/store.ts", ["createStore"], [2, 4]);
+
+    const callerCtx = (): CallContext => ({
+      callerFile: "src/store-caller.ts",
+      callerScope: ["caller"],
+      imports: [{ importText: "./store.js", startLine: 1, importedNames: ["createStore"] }],
+      symbolTable: tableOf(READ_EVENTS),
+    });
+
+    const CALL: CallRef = { callText: "store.readEvents()", receiver: "store", member: "readEvents", startLine: 4 };
+
+    it("accepts a factory's shorthand member declared outside the candidate's lines but inside its owner's", () => {
+      writeStoreFixture();
+      expect(lacks(CALL, callerCtx(), READ_EVENTS)).toBe(false);
+    });
+
+    it("accepts the same idiom under a const-bound arrow owner (the VariableDeclaration hop)", () => {
+      writeSource(repoRoot, "src/hooks.ts", [
+        "export const useGuard = () => {",
+        "  function reset(): void {",
+        "    return;",
+        "  }",
+        "  return { reset };",
+        "};",
+      ]);
+      writeSource(repoRoot, "src/hooks-caller.ts", [
+        'import { useGuard } from "./hooks.js";',
+        "export function caller(): void {",
+        "  const guard = useGuard();",
+        "  guard.reset();",
+        "}",
+      ]);
+      const RESET = def("useGuard.reset", "reset", "src/hooks.ts", ["useGuard"], [2, 4]);
+      const ctx: CallContext = {
+        callerFile: "src/hooks-caller.ts",
+        callerScope: ["caller"],
+        imports: [{ importText: "./hooks.js", startLine: 1, importedNames: ["useGuard"] }],
+        symbolTable: tableOf(RESET),
+      };
+      expect(lacks({ callText: "guard.reset()", receiver: "guard", member: "reset", startLine: 4 }, ctx, RESET)).toBe(
+        false,
+      );
+    });
+
+    it("declines when the declaration's enclosing named declaration is not the candidate's owner", () => {
+      // Both factories span the evidence's line, but the shorthand the checker
+      // names belongs to `makeSendFlow` — a same-file owner whose lines contain
+      // the declaration do not make it `makeConnectFlow`'s member.
+      writeSource(repoRoot, "src/flows.ts", [
+        "export function makeConnectFlow() {",
+        "  return { openPartner(): number { return 1; } };",
+        "}",
+        "export function makeSendFlow() {",
+        "  return { openPartner(): number { return 2; } };",
+        "}",
+      ]);
+      writeSource(repoRoot, "src/flows-caller.ts", [
+        'import { makeSendFlow } from "./flows.js";',
+        "export function caller(): number {",
+        "  const sendFlow = makeSendFlow();",
+        "  return sendFlow.openPartner();",
+        "}",
+      ]);
+      const CONNECT = def("makeConnectFlow.openPartner", "openPartner", "src/flows.ts", ["makeConnectFlow"], [2, 2]);
+      const ctx: CallContext = {
+        callerFile: "src/flows-caller.ts",
+        callerScope: ["caller"],
+        imports: [{ importText: "./flows.js", startLine: 1, importedNames: ["makeSendFlow"] }],
+        symbolTable: tableOf(CONNECT),
+      };
+      expect(
+        lacks(
+          { callText: "sendFlow.openPartner()", receiver: "sendFlow", member: "openPartner", startLine: 4 },
+          ctx,
+          CONNECT,
+        ),
+      ).toBe(true);
     });
   });
 

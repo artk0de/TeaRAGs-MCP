@@ -25,7 +25,9 @@
  * one of that symbol's declarations is the candidate's own — declared by the
  * candidate's owner in the candidate's file or in the `.d.ts` beside its
  * JavaScript ({@link declarationFileTypes}), or, having no named owner, lying
- * inside the candidate's lines — or when the member is declared on a supertype
+ * inside the candidate's lines or inside the candidate's owner's declaration
+ * ({@link candidateOwnerEnclosesDeclaration}, the factory/hook idiom's shorthand
+ * member; bd tea-rags-mcp-wr3n4) — or when the member is declared on a supertype
  * (an interface, an abstract base) the candidate's owner descends from in the
  * run hierarchy (the hwwtw rule for an interface receiver's implementer, kept);
  * see {@link declarationAccountsFor}. Anything else declines: no locatable
@@ -387,8 +389,12 @@ function constructedTypeAccountsFor(
  *     declaration file ({@link declarationFileTypes}) — and for one whose owner
  *     the run hierarchy records descending from it (the hwwtw implementer rule);
  *   - a declaration with NO named owner (a type literal, an object literal, an
- *     anonymous class, a top-level function) accounts only for the candidate
- *     whose own line range contains it ({@link candidateEnclosesDeclaration}).
+ *     anonymous class, a top-level function) accounts for the candidate whose
+ *     own line range contains it ({@link candidateEnclosesDeclaration}), or —
+ *     same file only — one whose OWNER's declaration encloses it
+ *     ({@link candidateOwnerEnclosesDeclaration}): the factory/hook idiom's
+ *     shorthand member is declared in the object literal the enclosing function
+ *     RETURNS, outside the aliased function's own lines (bd tea-rags-mcp-wr3n4).
  *
  * Exported for `TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy`'s
  * `pinSymbol`, whose same-file short-name fallback filtered by FILE alone and so
@@ -406,7 +412,15 @@ export function declarationAccountsFor(
   const sameSite = declaringFile !== null && declarationFileTypes(declaringFile, candidate.relPath);
   const declaringOwner = declarationOwnerName(declaration);
   if (declaringOwner === null) {
-    return sameSite && candidateEnclosesDeclaration(declaration, candidate, declaringFile === candidate.relPath);
+    if (sameSite && candidateEnclosesDeclaration(declaration, candidate, declaringFile === candidate.relPath)) {
+      return true;
+    }
+    const candidateOwner = candidate.scope.at(-1);
+    return (
+      declaringFile === candidate.relPath &&
+      candidateOwner !== undefined &&
+      candidateOwnerEnclosesDeclaration(declaration, candidateOwner)
+    );
   }
   const candidateOwner = candidate.scope.at(-1);
   if (candidateOwner === undefined) return false;
@@ -438,6 +452,29 @@ function candidateEnclosesDeclaration(
   const anchor = ts.getNameOfDeclaration(declaration) ?? declaration;
   const line = sourceFile.getLineAndCharacterOfPosition(anchor.getStart(sourceFile)).line + 1;
   return startLine <= line && line <= endLine;
+}
+
+/**
+ * Is an ownerless declaration the candidate's OWNER's own evidence (bd
+ * tea-rags-mcp-wr3n4)? The walk climbs from the declaration to the FIRST named
+ * enclosing declaration — the factory function whose returned object literal
+ * carries the shorthand member, the const the arrow is bound to — and that name
+ * must be the candidate's owner. First-named-wins is what keeps the answer
+ * honest: evidence nested under a different named declaration (a sibling
+ * factory's literal, a property's inline type) belongs to THAT declaration, and
+ * matching a farther-out name would be the Panel/Ev coincidence the owner rule
+ * refuses. The caller has already pinned the file to the candidate's.
+ */
+function candidateOwnerEnclosesDeclaration(declaration: ts.Declaration, candidateOwner: string): boolean {
+  let node: ts.Node | undefined = declaration.parent;
+  while (node !== undefined) {
+    const name = ts.getNameOfDeclaration(node as ts.Declaration);
+    if (name !== undefined) {
+      return (ts.isIdentifier(name) || ts.isStringLiteral(name)) && name.text === candidateOwner;
+    }
+    node = node.parent;
+  }
+  return false;
 }
 
 /** `<stem>.d.ts` / `.d.mts` / `.d.cts` — a declaration file, captured by stem. */

@@ -80,5 +80,12 @@ export const capability: LanguageCapability = {
   // the type. Checker-off (no Program) those sites were all declines; the
   // candidate is accepted only when the type's own file-anchored definer walk
   // owns it, so the nj8i6 owner-rule corrections hold.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // walker 10: bd tea-rags-mcp-wr3n4. The owner rule's containment arm extends
+  // to the candidate's OWNER: an ownerless declaration (a factory's returned
+  // object literal) accounts for a same-file candidate whose enclosing named
+  // declaration encloses it, recovering the factory/hook-idiom pins the
+  // candidate-lines-only containment downgraded to file-only (33 taxdome + 5
+  // self-index sites), while the C12 correction holds — evidence under a
+  // different named declaration still declines.
+  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
 };
