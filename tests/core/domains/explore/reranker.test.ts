@@ -22,6 +22,33 @@ const testPresets = resolvePresets([...STATIC_PRESETS, ...GIT_PRESETS], []);
 const allDescriptors = [...gitDerivedSignals, ...staticDerivedSignals];
 const testPayloadSignals: PayloadSignalDescriptor[] = gitPayloadSignalDescriptors;
 
+/** Fixture clock — lastModifiedAt stamps derive from it so derived ages match the ageDays arg. */
+const NOW_SEC = Math.floor(Date.now() / 1000);
+const DAY_SECONDS = 86_400;
+
+/**
+ * Backfill lastModifiedAt stamps from the legacy ageDays fixture args, so the
+ * query-time derivation (bd tea-rags-mcp-9ot33) computes the age the fixture
+ * author wrote. Handles the flat, file and chunk levels independently.
+ */
+function withStamps(git?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!git) return git;
+  const stamp = (days: unknown): number | undefined =>
+    typeof days === "number" ? NOW_SEC - days * DAY_SECONDS : undefined;
+  const out = { ...git };
+  if (out["lastModifiedAt"] === undefined && out["ageDays"] !== undefined)
+    out["lastModifiedAt"] = stamp(out["ageDays"]);
+  for (const level of ["file", "chunk"] as const) {
+    const scoped = out[level];
+    if (typeof scoped !== "object" || scoped === null) continue;
+    const copy = { ...(scoped as Record<string, unknown>) };
+    if (copy["lastModifiedAt"] === undefined && copy["ageDays"] !== undefined)
+      copy["lastModifiedAt"] = stamp(copy["ageDays"]);
+    out[level] = copy;
+  }
+  return out;
+}
+
 describe("reranker", () => {
   const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
@@ -44,6 +71,7 @@ describe("reranker", () => {
       isDocumentation: isDoc,
       git: {
         ageDays,
+        lastModifiedAt: NOW_SEC - ageDays * DAY_SECONDS,
         commitCount,
         recentDominantAuthor: "alice",
         recentAuthors: ["alice"],
@@ -276,6 +304,7 @@ describe("reranker", () => {
         chunkType,
         git: {
           ageDays: 10,
+          lastModifiedAt: NOW_SEC - 10 * DAY_SECONDS,
           commitCount: 20,
           recentDominantAuthor: "alice",
           recentAuthors: ["alice"],
@@ -545,7 +574,7 @@ describe("reranker", () => {
             relativePath: "src/newer.ts",
             startLine: 1,
             endLine: 50,
-            git: { file: { commitCount: 10, ageDays: 400 } },
+            git: { file: { commitCount: 10, ageDays: 400, lastModifiedAt: NOW_SEC - 400 * DAY_SECONDS } },
           },
         },
         {
@@ -554,7 +583,7 @@ describe("reranker", () => {
             relativePath: "src/ancient.ts",
             startLine: 1,
             endLine: 50,
-            git: { file: { commitCount: 10, ageDays: 2000 } },
+            git: { file: { commitCount: 10, ageDays: 2000, lastModifiedAt: NOW_SEC - 2000 * DAY_SECONDS } },
           },
         },
       ];
@@ -717,6 +746,7 @@ describe("reranker", () => {
         chunkType,
         git: {
           ageDays: 10,
+          lastModifiedAt: NOW_SEC - 10 * DAY_SECONDS,
           commitCount: 20,
           recentDominantAuthor: "alice",
           recentAuthors: ["alice"],
@@ -1058,7 +1088,7 @@ describe("Reranker (v2 class)", () => {
     extra?: Partial<RerankableResult["payload"]>,
   ): RerankableResult => ({
     score,
-    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git },
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git: withStamps(git) },
   });
 
   it("returns results for relevance preset (no overlay)", async () => {
@@ -1354,11 +1384,21 @@ describe("Reranker with resolvedPresets", () => {
     const results: RerankableResult[] = [
       {
         score: 0.9,
-        payload: { relativePath: "old.ts", startLine: 1, endLine: 50, git: { file: { ageDays: 300, commitCount: 5 } } },
+        payload: {
+          relativePath: "old.ts",
+          startLine: 1,
+          endLine: 50,
+          git: { file: { ageDays: 300, lastModifiedAt: NOW_SEC - 300 * DAY_SECONDS, commitCount: 5 } },
+        },
       },
       {
         score: 0.5,
-        payload: { relativePath: "new.ts", startLine: 1, endLine: 50, git: { file: { ageDays: 5, commitCount: 5 } } },
+        payload: {
+          relativePath: "new.ts",
+          startLine: 1,
+          endLine: 50,
+          git: { file: { ageDays: 5, lastModifiedAt: NOW_SEC - 5 * DAY_SECONDS, commitCount: 5 } },
+        },
       },
     ];
     const ranked = await reranker.rerank(results, "heavyRecency", "semantic_search");
@@ -1394,7 +1434,7 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
     extra?: Partial<RerankableResult["payload"]>,
   ): RerankableResult => ({
     score,
-    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git },
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git: withStamps(git) },
   });
 
   it("reads file-level raw signals via signalKeyMap for adaptive bounds", async () => {
@@ -1535,7 +1575,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
 
   const makeResult = (score: number, git: Record<string, unknown>): RerankableResult => ({
     score,
-    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git: withStamps(git) },
   });
 
   it("unified path: VolatilitySignal resolves adaptive threshold via confidence.support (commitCount p25)", async () => {
@@ -1743,6 +1783,9 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
   const payloadSignals: PayloadSignalDescriptor[] = [
     { key: "git.file.ageDays", type: "number", description: "Age", stats: { percentiles: [95] } },
     { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+    // The age floor reads the timestamp's p5 — the descriptor must be declared
+    // for the signalKeyMap to resolve it (bd tea-rags-mcp-9ot33).
+    { key: "git.file.lastModifiedAt", type: "timestamp", description: "Stamp" },
   ];
 
   // Minimal descriptor: only age signal, no dampening complexity
@@ -1757,15 +1800,17 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
 
   const makeResult = (score: number, git: Record<string, unknown>): RerankableResult => ({
     score,
-    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git: withStamps(git) },
   });
 
-  it("uses collection-level p95 as floor instead of static defaultBound", async () => {
+  it("uses the now-relative collection floor (now − p5 stamp) instead of static defaultBound", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
 
-    // Collection p95=2000 (much larger than defaultBound=365)
+    // Collection p5 stamp = 2000 days old (much larger than defaultBound=365)
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.ageDays", { count: 1000, percentiles: { 95: 2000 } }]]),
+      perSignal: new Map([
+        ["git.file.lastModifiedAt", { count: 1000, percentiles: { 5: NOW_SEC - 2000 * DAY_SECONDS } }],
+      ]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -1780,22 +1825,22 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     };
     reranker.setCollectionStats(collectionStats);
 
-    // Batch: ageDays=[100, 200] → batchP95≈200
+    // Batch: age=[100, 200] (from stamps) → batchP95≈200
     // Without collection stats: bound = max(200, 365) = 365 → age=200/365 ≈ 0.548
     // With collection stats:    bound = max(200, 2000) = 2000 → age=200/2000 = 0.10
     const results = [makeResult(0.9, { file: { ageDays: 200 } })];
     const ranked = await reranker.rerank(results, "ageOnly", "semantic_search");
 
-    // Score should be ~0.10 (collection p95=2000 as bound), not ~0.55 (defaultBound=365)
+    // Score should be ~0.10 (now-relative floor 2000 as bound), not ~0.55 (defaultBound=365)
     expect(ranked[0].score).toBeLessThan(0.2);
   });
 
-  it("does NOT use defaultBound as floor when collectionStats loaded (collP95 < defaultBound)", async () => {
+  it("does NOT use defaultBound as floor when collectionStats loaded (stamp p5 < defaultBound)", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
 
-    // Collection p95=15 (young codebase, much less than defaultBound=365)
+    // Collection p5 stamp = 15 days old (young codebase, much less than defaultBound=365)
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.ageDays", { count: 100, percentiles: { 95: 15 } }]]),
+      perSignal: new Map([["git.file.lastModifiedAt", { count: 100, percentiles: { 5: NOW_SEC - 15 * DAY_SECONDS } }]]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -1810,7 +1855,7 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     };
     reranker.setCollectionStats(collectionStats);
 
-    // Batch: ageDays=10 → batchP95=10
+    // Batch: age=10 → batchP95=10
     // Current (defaultBound as floor): bound = max(10, 365) = 365 → age=10/365 = 0.027
     // Expected (adaptive):             bound = max(10, 15)  = 15  → age=10/15  = 0.667
     const results = [makeResult(0.9, { file: { ageDays: 10 } })];
@@ -1834,12 +1879,12 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     expect(ranked[0].score).toBeLessThan(0.7);
   });
 
-  it("uses max(batchP95, collectionP95) — batch wins when larger", async () => {
+  it("uses max(batchP95, collection floor) — batch wins when larger", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
 
-    // Collection p95=50 (small codebase)
+    // Collection p5 stamp = 50 days old (small codebase)
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.ageDays", { count: 100, percentiles: { 95: 50 } }]]),
+      perSignal: new Map([["git.file.lastModifiedAt", { count: 100, percentiles: { 5: NOW_SEC - 50 * DAY_SECONDS } }]]),
       perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
@@ -1854,8 +1899,8 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     };
     reranker.setCollectionStats(collectionStats);
 
-    // Batch: ageDays=[100, 800] → batchP95≈800
-    // bound = max(800, 50) = 800 (batch wins over collection p95=50)
+    // Batch: age=[100, 800] (from stamps) → batchP95≈800
+    // bound = max(800, 50) = 800 (batch wins over the now-relative floor 50)
     // But also max(800, defaultBound=365) = 800 anyway
     // age=800/800 = 1.0
     const results = [makeResult(0.9, { file: { ageDays: 800 } })];
@@ -1944,7 +1989,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
   const makeResult = (git: Record<string, unknown>): RerankableResult => ({
     score: 0.8,
-    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, language: "typescript", git },
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, language: "typescript", git: withStamps(git) },
   });
 
   it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", async () => {
@@ -1990,17 +2035,45 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     // contributorCount has stats.labels: { p95: "extreme" }
     // But we add a signal WITHOUT labels to verify it stays plain.
     // Use the techDebt preset + collectionStats that only has commitCount entry.
+    // ageDays labels resolve NOW-RELATIVELY off the lastModifiedAt stamp stats
+    // (bd tea-rags-mcp-9ot33), so the fixture carries those instead of ageDays.
     const tsSignals = new Map([
       [
         "git.file.commitCount",
         { source: { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } } },
       ],
-      ["git.file.ageDays", { source: { count: 100, min: 0, max: 500, percentiles: { 95: 400 } } }],
+      [
+        "git.file.lastModifiedAt",
+        {
+          source: {
+            count: 100,
+            min: 0,
+            max: NOW_SEC,
+            percentiles: {
+              5: NOW_SEC - 400 * DAY_SECONDS,
+              25: NOW_SEC - 90 * DAY_SECONDS,
+              50: NOW_SEC - 30 * DAY_SECONDS,
+            },
+          },
+        },
+      ],
     ]);
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([
         ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
-        ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
+        [
+          "git.file.lastModifiedAt",
+          {
+            count: 100,
+            min: 0,
+            max: NOW_SEC,
+            percentiles: {
+              5: NOW_SEC - 400 * DAY_SECONDS,
+              25: NOW_SEC - 90 * DAY_SECONDS,
+              50: NOW_SEC - 30 * DAY_SECONDS,
+            },
+          },
+        ],
       ]),
       perLanguage: new Map([["typescript", tsSignals]]),
       distributions: {

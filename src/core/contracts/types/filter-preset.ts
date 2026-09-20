@@ -1,5 +1,10 @@
-/** Percentile keys resolvable from collection Stats. */
-export type FilterPercentile = "p10" | "p25" | "p50" | "p75" | "p90" | "p95";
+/**
+ * Percentile keys resolvable from collection Stats. `p5` exists so the
+ * filter-preset compiler can express the INVERTED percentile of an ageDays
+ * `p95` condition (age p95 ⇔ lastModifiedAt p5, bd tea-rags-mcp-9ot33);
+ * descriptors declare p5 via `stats.percentilesToCompute`.
+ */
+export type FilterPercentile = "p5" | "p10" | "p25" | "p50" | "p75" | "p90" | "p95";
 
 /** A range threshold: a literal number, or an adaptive collection percentile with a mandatory cold-start fallback. */
 export type FilterThreshold = number | { percentile: FilterPercentile; fallback: number };

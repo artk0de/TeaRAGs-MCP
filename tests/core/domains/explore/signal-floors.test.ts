@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { applySignalFloors } from "../../../../src/core/domains/explore/signal-floors.js";
+import { ageSourceBoundDays, applySignalFloors } from "../../../../src/core/domains/explore/signal-floors.js";
 
 const LABELS = { p50: "small", p75: "large", p95: "god-module" };
 
@@ -67,5 +67,29 @@ describe("applySignalFloors", () => {
     applySignalFloors(percentiles, LABELS, { large: 300 });
 
     expect(percentiles[75]).toBe(26);
+  });
+});
+
+describe("ageSourceBoundDays — now-relative collection floor for age sources", () => {
+  const NOW = 1_800_000_000;
+  const DAY = 86_400;
+  // The git derivation unit's stamp→days conversion, passed in so explore stays
+  // free of the math (mirrors how the Reranker wires the capability through).
+  const floorFromStamp = (stampSec: number, nowSec: number) => (nowSec - stampSec) / DAY;
+
+  it("floors the batch p95 of derived ages with now − p5(lastModifiedAt)", () => {
+    // batch ages p95 = 20 days; collection stamp p5 is 90 days old → floor 90
+    const bound = ageSourceBoundDays([1, 2, 3, 5, 20], NOW - 90 * DAY, NOW, floorFromStamp);
+    expect(bound).toBeCloseTo(90, 6);
+  });
+
+  it("keeps the batch p95 when the collection floor is lower", () => {
+    const bound = ageSourceBoundDays([1, 2, 3, 5, 200], NOW - 30 * DAY, NOW, floorFromStamp);
+    expect(bound).toBeCloseTo(200, 6);
+  });
+
+  it("falls back to the batch p95 alone when the collection has no stamp stats", () => {
+    const bound = ageSourceBoundDays([1, 2, 3, 5, 20], undefined, NOW, floorFromStamp);
+    expect(bound).toBe(20);
   });
 });

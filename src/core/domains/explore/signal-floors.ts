@@ -23,6 +23,7 @@
  * test scope, which is the identity case below.
  */
 
+import { p95 } from "../../contracts/signal-utils.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
 
 /**
@@ -67,4 +68,35 @@ export function floorsForSignal(
 ): Readonly<Record<string, number>> | undefined {
   if (!floorsByLanguage || !language) return undefined;
   return floorsByLanguage.get(language)?.[signalKey];
+}
+
+/**
+ * Adaptive bound for a query-time age source (bd tea-rags-mcp-9ot33).
+ *
+ * The generic per-source bound takes the batch p95 of RAW source values and
+ * floors it with the collection p95 — meaningless for a timestamp source,
+ * whose raw values are unix seconds. The age branch instead takes the batch
+ * p95 of the DERIVED AGES and floors it with the now-relative collection
+ * floor `now − p5(lastModifiedAt)` (the inverted percentile of the batch's
+ * p95): both sides move with now, so the floor is drift-free by construction
+ * — the index-time p95 of the stamped ageDays it replaces froze at enrichment.
+ *
+ * Pure glue: the batch ages are already computed (through the descriptor's
+ * `ageDerivation` capability) and the stamp→days conversion is injected, so
+ * the age math stays in the git trajectory's derivation unit.
+ *
+ * @param agesDays derived whole-day ages of the batch (missing stamps dropped)
+ * @param stampPercentileSeconds collection p5 of lastModifiedAt, or undefined when stats are unloaded
+ * @param nowSec the query clock
+ * @param floorDaysFromStamp the capability's `ageFloorDaysFromStamp` conversion
+ */
+export function ageSourceBoundDays(
+  agesDays: number[],
+  stampPercentileSeconds: number | undefined,
+  nowSec: number,
+  floorDaysFromStamp: (stampSeconds: number, nowSec: number) => number,
+): number {
+  const batchP95 = p95(agesDays);
+  if (stampPercentileSeconds === undefined) return batchP95;
+  return Math.max(batchP95, floorDaysFromStamp(stampPercentileSeconds, nowSec));
 }
