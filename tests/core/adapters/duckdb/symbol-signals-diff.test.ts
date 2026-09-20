@@ -74,9 +74,9 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
   async function addMethodEdge(source: string, sourcePath: string, target: string, targetPath: string): Promise<void> {
     await db.run(
       `INSERT INTO cg_symbols_edges_method
-         (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, edge_kind, confidence)
-       VALUES (?, ?, ?, ?, ?, 'exact', 1.0)`,
-      [source, sourcePath, target, targetPath, `${target}()`],
+         (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression, target_symbol_key, edge_kind, confidence)
+       VALUES (?, ?, ?, ?, ?, ?, 'exact', 1.0)`,
+      [source, sourcePath, target, targetPath, `${target}()`, target],
     );
   }
 

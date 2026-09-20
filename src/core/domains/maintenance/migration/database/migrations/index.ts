@@ -28,6 +28,7 @@ import { SQL_022_CG_RUN_STATS_UNNARROWED_TEMPLATE } from "./022-cg-run-stats-unn
 import { SQL_023_CG_SIGNALS_PREV } from "./023-cg-signals-prev.js";
 import { SQL_024_CG_SYMBOLS_LINE_RANGE } from "./024-cg-symbols-line-range.js";
 import { SQL_025_CG_FILE_RESOLVE_STATS } from "./025-cg-file-resolve-stats.js";
+import { SQL_026_CG_METHOD_EDGES_NULLABLE_TARGET } from "./026-cg-method-edges-nullable-target.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -60,4 +61,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "023-cg-signals-prev.sql", sql: SQL_023_CG_SIGNALS_PREV },
   { filename: "024-cg-symbols-line-range.sql", sql: SQL_024_CG_SYMBOLS_LINE_RANGE },
   { filename: "025-cg-file-resolve-stats.sql", sql: SQL_025_CG_FILE_RESOLVE_STATS },
+  { filename: "026-cg-method-edges-nullable-target.sql", sql: SQL_026_CG_METHOD_EDGES_NULLABLE_TARGET },
 ];
