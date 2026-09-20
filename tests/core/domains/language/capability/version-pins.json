@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:5751ac87d49a35e30c1817ed6c09c1c0bbef7050a2f96e7ff9e53aa2920814ea"
+      "digest": "sha256:4c3f70c3fdb24361c1dbc47157e3aaf253df8aea539fb96990a764b038b341d6"
     },
     "walker": {
       "version": 2,
-      "digest": "sha256:8d61d46d213bbd5f311377aa0e808d8fa5ce05ec9539180000f4041c14982423"
+      "digest": "sha256:62442a714578fada82e4a6e0b6c1f5011b1b1359e5eb9d5b95d99154e34509b9"
     }
   },
   "bash": {
@@ -67,6 +67,16 @@
     "walker": {
       "version": 2,
       "digest": "sha256:1a85317d14b01d88a83d4c73d06fa93ee23778ab0b8bfd7ddc64d1adcf270c48"
+    }
+  },
+  "swift": {
+    "chunking": {
+      "version": 3,
+      "digest": "sha256:2d801131eaa3bebb86fb6b3481840872199418de5e26eb01dc2935e22ddf67bb"
+    },
+    "walker": {
+      "version": 3,
+      "digest": "sha256:43938a2a1c3cf62b2d213f7ce2a66ce7f69264d4c2ca3368b40cb9b5f321ad62"
     }
   },
   "typescript": {
