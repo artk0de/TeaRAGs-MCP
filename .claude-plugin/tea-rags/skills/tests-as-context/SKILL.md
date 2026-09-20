@@ -209,7 +209,8 @@ mcp__tea-rags__semantic_search:
 ```
 
 Custom rerank, heavy age weight, surfaces oldest semantic matches. Caller sorts
-results ascending by `git.chunk.ageDays` for introduction order.
+results by `git.chunk.lastModifiedAt` DESCENDING for introduction order (oldest
+first — same order the ageDays sort gave, derived at query time, no stamp lag).
 
 **Output:**
 
