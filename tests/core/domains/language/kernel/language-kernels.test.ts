@@ -28,6 +28,7 @@ import { markdownKernel } from "../../../../../src/core/domains/language/markdow
 import { pythonKernel } from "../../../../../src/core/domains/language/python/index.js";
 import { rubyKernel } from "../../../../../src/core/domains/language/ruby/index.js";
 import { rustKernel } from "../../../../../src/core/domains/language/rust/index.js";
+import { swiftKernel } from "../../../../../src/core/domains/language/swift/index.js";
 import { typescriptKernel } from "../../../../../src/core/domains/language/typescript/index.js";
 
 function findFirst(tree: Parser.Tree, type: string): Parser.SyntaxNode {
@@ -49,6 +50,7 @@ const sourceKernels = {
   java: javaKernel,
   rust: rustKernel,
   bash: bashKernel,
+  swift: swiftKernel,
 } as const;
 
 describe("LanguageKernel.isInstanceMethod", () => {

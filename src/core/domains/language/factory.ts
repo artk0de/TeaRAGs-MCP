@@ -30,6 +30,9 @@ import { signalFloors as rubySignalFloors } from "./ruby/signal-floors.js";
 import { capability as rustCapability } from "./rust/capability.js";
 import { RustLanguage } from "./rust/index.js";
 import { signalFloors as rustSignalFloors } from "./rust/signal-floors.js";
+import { capability as swiftCapability } from "./swift/capability.js";
+import { SwiftLanguage } from "./swift/index.js";
+import { signalFloors as swiftSignalFloors } from "./swift/signal-floors.js";
 import { capability as typescriptCapability } from "./typescript/capability.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 import { signalFloors as typescriptSignalFloors } from "./typescript/signal-floors.js";
@@ -52,6 +55,7 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "java",
   "rust",
   "bash",
+  "swift",
   "markdown",
 ]);
 
@@ -122,6 +126,11 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
     if (lang === "java") return new JavaLanguage(this.ambiguousResolveMode);
     if (lang === "rust") return new RustLanguage(this.ambiguousResolveMode);
     if (lang === "bash") return new BashLanguage(this.ambiguousResolveMode);
+    // Swift is TIER 1 — chunks only, no resolver, so no `mode` is threaded
+    // (the same shape as markdown's no-mode construction for a different
+    // reason: markdown has no code symbols at all, Swift's call graph is
+    // deferred to tier 2).
+    if (lang === "swift") return new SwiftLanguage();
     // Markdown is DOC-ONLY — no resolver, so no `mode` is threaded.
     if (lang === "markdown") return new MarkdownLanguage();
     throw new UnsupportedLanguageError(lang);
@@ -148,6 +157,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       ["java", javaCapability],
       ["rust", rustCapability],
       ["bash", bashCapability],
+      ["swift", swiftCapability],
       ["markdown", markdownCapability],
     ]);
   }
@@ -169,6 +179,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
       ["java", javaSignalFloors],
       ["rust", rustSignalFloors],
       ["bash", bashSignalFloors],
+      ["swift", swiftSignalFloors],
       ["markdown", markdownSignalFloors],
     ]);
   }

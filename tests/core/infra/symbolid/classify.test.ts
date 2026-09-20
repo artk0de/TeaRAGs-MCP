@@ -309,6 +309,69 @@ describe("classifyMethod — Go and unknown nodes", () => {
  * walker composing `F#request` vs `F.request`, and the chunker's class-body
  * grouper bucketing the field as a static member vs a plain property.
  */
+/**
+ * Swift — `function_declaration` is the method shape, and it collides with the
+ * TypeScript / JavaScript TOP-LEVEL function of the same node type. The branch
+ * is gated on the Swift `func` keyword child, which the other grammars never
+ * emit (their keyword node is `function`).
+ */
+describe("classifyMethod — Swift `function_declaration` / `protocol_function_declaration`", () => {
+  const swiftFuncKeyword = (): MockNode => node({ type: "func", text: "func", isNamed: false });
+
+  it("treats a plain func as an instance method", () => {
+    const n = node({ type: "function_declaration", children: [swiftFuncKeyword()] });
+    expect(classifyMethod(n as never)).toBe("instance");
+  });
+
+  it("treats a func with a `static` property_modifier inside modifiers as static", () => {
+    const modifiers = node({
+      type: "modifiers",
+      children: [node({ type: "property_modifier", text: "static" })],
+    });
+    const n = node({ type: "function_declaration", children: [modifiers, swiftFuncKeyword()] });
+    expect(classifyMethod(n as never)).toBe("static");
+  });
+
+  it("treats the bare `class` keyword child of `class func` as static", () => {
+    const n = node({
+      type: "function_declaration",
+      children: [node({ type: "class", text: "class", isNamed: false }), swiftFuncKeyword()],
+    });
+    expect(classifyMethod(n as never)).toBe("static");
+    expect(isStaticMethodNode(n as never)).toBe(true);
+  });
+
+  it("keeps `mutating` an instance method", () => {
+    const modifiers = node({
+      type: "modifiers",
+      children: [node({ type: "mutation_modifier", text: "mutating" })],
+    });
+    const n = node({ type: "function_declaration", children: [modifiers, swiftFuncKeyword()] });
+    expect(classifyMethod(n as never)).toBe("instance");
+  });
+
+  it("keeps a TypeScript / JavaScript top-level function_declaration null", () => {
+    // No `func` keyword child — the Swift branch must not claim it.
+    expect(classifyMethod(node({ type: "function_declaration" }) as never)).toBeNull();
+  });
+
+  it("treats a signature-only protocol requirement by the same rule", () => {
+    const plain = node({ type: "protocol_function_declaration" });
+    expect(classifyMethod(plain as never)).toBe("instance");
+
+    const modifiers = node({
+      type: "modifiers",
+      children: [node({ type: "property_modifier", text: "static" })],
+    });
+    const staticReq = node({ type: "protocol_function_declaration", children: [modifiers] });
+    expect(classifyMethod(staticReq as never)).toBe("static");
+  });
+
+  it("treats init_declaration as instance-bound (constructs an instance)", () => {
+    expect(classifyMethod(node({ type: "init_declaration" }) as never)).toBe("instance");
+  });
+});
+
 describe("classifyMethod — TypeScript `public_field_definition`", () => {
   it("treats a field without the `static` keyword as instance-bound", () => {
     const n = node({

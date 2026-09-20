@@ -38,24 +38,29 @@ Same detection logic powers BOTH chunker
 (`codegraph/symbols/provider.ts:<lang>NameOf` returning `instanceMethod`). Keep
 lockstep when adding language.
 
-| Language       | Instance method                                       | Class / static method                                               |
-| -------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
-| **TypeScript** | `method_definition` without `static` keyword          | `method_definition` with `static` keyword                           |
-| **JavaScript** | Same as TypeScript (shared `method_definition` shape) | Same as TypeScript                                                  |
+| Language       | Instance method                                       | Class / static method                     |
+| -------------- | ----------------------------------------------------- | ----------------------------------------- |
+| **TypeScript** | `method_definition` without `static` keyword          | `method_definition` with `static` keyword |
+| **JavaScript** | Same as TypeScript (shared `method_definition` shape) | Same as TypeScript                        |
 
 A TypeScript class member can also be declared as a FIELD bound to a function
 (`class F { request = async () => {} }`) — a `public_field_definition`, not a
 `method_definition`. It takes the same two forms by the same rule: `F#request`
 without the `static` keyword, `F.request` with it. Only the codegraph side names
-it (bd tea-rags-mcp-5ldqu); the chunker carries the field inside the class chunk,
-which is the codegraph-only-id direction the invariant permits — see "Where the
-convention is implemented" below.
-| **Python**     | `function_definition` inside class, no decorator      | `function_definition` decorated with `@classmethod`/`@staticmethod` |
-| **Ruby**       | `method` (`def foo`)                                  | `singleton_method` (`def self.foo`)                                 |
-| **Go**         | `method_declaration` (has a receiver)                 | `function_declaration` (top-level — gets `name` form, no parent)    |
-| **Java**       | `method_declaration` without `static` in modifiers    | `method_declaration` with `static` in modifiers                     |
-| **Rust**       | `function_item` with a `self` / `&self` parameter     | `function_item` without `self` (associated function)                |
-| **Bash**       | n/a (no class concept — only top-level functions)     | n/a                                                                 |
+it (bd tea-rags-mcp-5ldqu); the chunker carries the field inside the class
+chunk, which is the codegraph-only-id direction the invariant permits — see
+"Where the convention is implemented" below. | **Python** |
+`function_definition` inside class, no decorator | `function_definition`
+decorated with `@classmethod`/`@staticmethod` | | **Ruby** | `method`
+(`def foo`) | `singleton_method` (`def self.foo`) | | **Go** |
+`method_declaration` (has a receiver) | `function_declaration` (top-level — gets
+`name` form, no parent) | | **Java** | `method_declaration` without `static` in
+modifiers | `method_declaration` with `static` in modifiers | | **Rust** |
+`function_item` with a `self` / `&self` parameter | `function_item` without
+`self` (associated function) | | **Swift** | `function_declaration` without
+`static`/`class` modifier; `init_declaration` | `function_declaration` with a
+`static`/`class` modifier | | **Bash** | n/a (no class concept — only top-level
+functions) | n/a |
 
 Constructors instance-bound (`Class#constructor`) per convention — initialize an
 instance even though invoked via `new Class()`.

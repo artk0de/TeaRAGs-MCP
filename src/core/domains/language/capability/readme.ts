@@ -12,6 +12,7 @@ const DISPLAY: readonly (readonly [string, string])[] = [
   ["rust", "Rust"],
   ["ruby", "Ruby"],
   ["bash", "Bash"],
+  ["swift", "Swift"],
   ["markdown", "Markdown"],
 ];
 

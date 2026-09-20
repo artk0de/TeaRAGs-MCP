@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:3573ca040c0c323e9a262d2eda2941d479f8f7ecda62da565ea63edac15ae68d"
+      "digest": "sha256:ef954716e38aca5b4117777dfcf061543a1898cd499d682a4d2762663abe272a"
     },
     "walker": {
       "version": 2,
-      "digest": "sha256:8d61d46d213bbd5f311377aa0e808d8fa5ce05ec9539180000f4041c14982423"
+      "digest": "sha256:f54445e556e2e9feaeac23df26ef23604c36e4d764cea5be68b3dda5e283d91a"
     }
   },
   "bash": {
@@ -67,6 +67,12 @@
     "walker": {
       "version": 2,
       "digest": "sha256:1a85317d14b01d88a83d4c73d06fa93ee23778ab0b8bfd7ddc64d1adcf270c48"
+    }
+  },
+  "swift": {
+    "walker": {
+      "version": 1,
+      "digest": "sha256:a14fdcdafaa9e322f27bbb72ca6a1a73abddcf959a24f19a2f21a0e87f8b678c"
     }
   },
   "typescript": {
