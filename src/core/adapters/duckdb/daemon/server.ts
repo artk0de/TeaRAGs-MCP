@@ -1,7 +1,7 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import { CodegraphDaemonRequestAbortedError } from "../errors.js";
-import type { CollectionGraphHandle, GraphDbClientPool } from "../pool.js";
+import type { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import type { DaemonMemoryGovernor } from "./memory-governor.js";
 import { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpCommandTable } from "./op-commands.js";
@@ -53,18 +53,6 @@ export class CodegraphDaemonServer {
     private readonly commands: DaemonOpCommandTable = DAEMON_OP_COMMANDS,
   ) {
     this.supportedOps = Object.keys(commands) as DaemonOp[];
-  }
-
-  /**
-   * Acquire the pooled handle for a WRITE op and notify the memory governor
-   * (`onWrite` is a no-op for already-raised collections — one live SET per
-   * burst). `finalizeReindex` does NOT route through here: it only unlinks the
-   * superseded DB file, so there is no open handle to govern.
-   */
-  private async acquireForWrite(collection: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const handle = await this.pool.acquire(collection);
-    await this.governor?.onWrite(collection, handle.graphDb);
-    return handle;
   }
 
   /**
@@ -141,12 +129,18 @@ export class CodegraphDaemonServer {
     // The client held a PhysicalCollectionName; the wire erased the brand.
     const collection = physicalCollectionNameFromDaemonRequest(p.collection);
     if (command.access === "write") {
-      return this.admitWrite(collection, req.op, signal, async () => {
-        const { graphDb } = await this.acquireForWrite(collection);
-        return command.run(graphDb, p, signal);
-      });
+      return this.admitWrite(collection, req.op, signal, async () =>
+        this.pool.runCollectionOp(collection, async ({ graphDb }) => {
+          // The FIRST write of a burst raises memory_limit to the governor
+          // ceiling (`onWrite` is a no-op for already-raised collections — one
+          // live SET per burst). `finalizeReindex` does NOT route through here:
+          // it only unlinks the superseded DB file, so there is no open handle
+          // to govern.
+          await this.governor?.onWrite(collection, graphDb);
+          return command.run(graphDb, p, signal);
+        }),
+      );
     }
-    const { graphDb } = await this.pool.acquire(collection);
-    return command.run(graphDb, p, signal);
+    return this.pool.runCollectionOp(collection, async ({ graphDb }) => command.run(graphDb, p, signal));
   }
 }

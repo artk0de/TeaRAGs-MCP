@@ -103,6 +103,16 @@ export interface DaemonRuntimeOptions {
    * drain path cannot kill the test runner.
    */
   exit?: (code: number) => void;
+  /**
+   * Per-collection idle-eviction window in ms (bd tea-rags-mcp-nlls), from
+   * `CODEGRAPH_DB_IDLE_EVICT_MS` (default 60_000 — twice the daemon-process
+   * idle). A collection's DuckDB connection is closed once its last op has
+   * been idle this long, releasing the file's RW lock while the daemon stays
+   * up; the next op lazily re-opens. Parsed permissively (see
+   * `parseIdleEvictMs`): absent, non-numeric, zero or negative all mean the
+   * default.
+   */
+  idleEvictMs?: number;
 }
 
 /** Hard ceiling on graceful teardown before the daemon force-exits anyway. */
@@ -287,6 +297,11 @@ export async function runDaemon(
     onCollectionClientClosed: (collectionName) => {
       governor.forgetCollection(collectionName);
     },
+    // Per-collection idle eviction (bd tea-rags-mcp-nlls): the process-level
+    // idle timer watches SOCKET clients, so with any MCP server connected it
+    // never fires — without this, every connection the daemon ever opened held
+    // its file's RW lock until the daemon died.
+    idleEviction: { idleMs: options.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS },
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
   });
@@ -398,6 +413,7 @@ export function daemonRuntimeOptionsFromEnv(env: NodeJS.ProcessEnv = process.env
       preserveInsertionOrder: false,
     },
     debug: parseDaemonDebugEnv(env.TEA_RAGS_CODEGRAPH_DAEMON_DEBUG),
+    idleEvictMs: parseIdleEvictMs(env.CODEGRAPH_DB_IDLE_EVICT_MS),
   };
 }
 
@@ -410,6 +426,19 @@ function parseDaemonDebugEnv(raw: string | undefined): boolean | undefined {
   if (raw === "1") return true;
   if (raw === "0") return false;
   return undefined;
+}
+
+/**
+ * Default per-collection idle-eviction window (bd tea-rags-mcp-nlls): twice
+ * the daemon-process idle (30s), so a stale connection is released well before
+ * the whole daemon would be.
+ */
+export const DEFAULT_IDLE_EVICT_MS = 60_000;
+
+/** Absent / non-numeric / zero / negative all mean the default. */
+function parseIdleEvictMs(raw: string | undefined): number {
+  const parsed = raw === undefined ? NaN : Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_IDLE_EVICT_MS;
 }
 
 /* v8 ignore start -- process-main bootstrap; exercised only when run as a real daemon process */
