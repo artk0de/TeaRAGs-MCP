@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type {
@@ -47,6 +47,26 @@ const CURRENT_VERSION = 6;
 
 export class StatsCache {
   constructor(private readonly snapshotsDir: string) {}
+
+  /**
+   * When this collection's stats file was last written, as an opaque revision
+   * marker; undefined when there is no file. A `stat` only — cheap enough for a
+   * consumer to probe on every request before deciding to re-read.
+   *
+   * Exists because a stats file is written by whichever PROCESS ran the index,
+   * while a long-running server holds its copy in memory. Without a marker to
+   * compare, that server cannot tell a fresh recompute from the state it
+   * already has, and keeps serving percentiles the CLI replaced (bd
+   * tea-rags-mcp-yntsd). `computedAt` inside the file cannot serve: reading it
+   * is the very work the marker exists to avoid.
+   */
+  lastWrittenAt(collectionName: string): number | undefined {
+    try {
+      return statSync(this.filePath(collectionName)).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
 
   /** Load cached stats from JSON file. Returns null if missing/corrupt. */
   load(collectionName: string): (CollectionSignalStats & { payloadFieldKeys?: string[] }) | null {

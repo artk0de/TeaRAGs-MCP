@@ -64,6 +64,7 @@ function makeMockEmbeddings() {
 function makeMockReranker(overrides: Record<string, any> = {}) {
   return {
     hasCollectionStats: false,
+    hasCollectionStatsFor: vi.fn().mockReturnValue(false),
     setCollectionStats: vi.fn(),
     getPreset: vi.fn().mockReturnValue({ similarity: 1 }),
     getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
@@ -173,7 +174,7 @@ describe("ExploreOps.getIndexMetrics", () => {
     // and `ensureStats` hands it the resolved collection — so the cache load is
     // the resolution, observed through constructor-time DI rather than by
     // swapping a private field.
-    const statsCache = { load: vi.fn().mockReturnValue(null), save: vi.fn() };
+    const statsCache = { load: vi.fn().mockReturnValue(null), save: vi.fn(), lastWrittenAt: vi.fn() };
 
     const ops = new ExploreOps({
       qdrant: makeMockQdrant(),

@@ -17,6 +17,7 @@ describe("getIndexMetrics", () => {
 
     const reranker = {
       hasCollectionStats: false,
+      hasCollectionStatsFor: vi.fn().mockReturnValue(false),
       setCollectionStats: vi.fn(),
       getDescriptors: vi.fn().mockReturnValue([]),
       getPreset: vi.fn().mockReturnValue(null),
@@ -80,6 +81,7 @@ describe("getIndexMetrics", () => {
         distributions,
         computedAt: Date.now(),
       }),
+      lastWrittenAt: vi.fn().mockReturnValue(1),
     } as any;
 
     const payloadSignals = [

@@ -127,6 +127,7 @@ describe("enrichment health frame — status and metrics agree per project", () 
       embeddings,
       reranker: {
         hasCollectionStats: true,
+        hasCollectionStatsFor: vi.fn().mockReturnValue(true),
         setCollectionStats: vi.fn(),
         getDescriptors: vi.fn().mockReturnValue([]),
         getPreset: vi.fn().mockReturnValue(null),
@@ -134,6 +135,7 @@ describe("enrichment health frame — status and metrics agree per project", () 
       registry: { getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]) } as never,
       collectionRegistry: undefined as never,
       statsCache: {
+        lastWrittenAt: () => 1,
         load: () => ({
           perSignal: new Map(),
           perLanguage: new Map(),

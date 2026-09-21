@@ -81,6 +81,8 @@ export class Reranker {
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private collectionStats?: CollectionSignalStats;
   private collectionName?: string;
+  /** Opaque marker of the stats revision held, supplied by whoever loaded it. */
+  private collectionStatsRevision?: number;
   private payloadFieldKeys?: string[];
   private recomputeService?: StatsRecomputeService;
   private resolvedFilterPresetNames: string[] = [];
@@ -110,6 +112,22 @@ export class Reranker {
   }
 
   /**
+   * Whether the stats currently held are the ones this collection wants, at the
+   * revision the caller has observed on disk.
+   *
+   * This — not `hasCollectionStats` — is what a loader must ask. The bare
+   * predicate answers "is anything loaded", which was true the moment the first
+   * collection of the process was searched, so every later collection inherited
+   * that project's distribution and a recompute by another process was never
+   * picked up (bd tea-rags-mcp-yntsd). The revision stays opaque here: the
+   * reranker must not know that stats live in a file.
+   */
+  hasCollectionStatsFor(collectionName: string, revision?: number): boolean {
+    if (this.collectionStats === undefined) return false;
+    return this.collectionName === collectionName && this.collectionStatsRevision === revision;
+  }
+
+  /**
    * Read the loaded collection stats (undefined when none loaded).
    * Consumed at search-stage filter resolution so the filter-preset compiler
    * can resolve adaptive percentile thresholds with the same stats the
@@ -122,10 +140,11 @@ export class Reranker {
   /** Set collection-wide signal stats (computed after indexing). */
   setCollectionStats(
     stats: CollectionSignalStats,
-    opts?: { collectionName?: string; payloadFieldKeys?: string[] },
+    opts?: { collectionName?: string; payloadFieldKeys?: string[]; revision?: number },
   ): void {
     this.collectionStats = stats;
     this.collectionName = opts?.collectionName;
+    this.collectionStatsRevision = opts?.revision;
     this.payloadFieldKeys = opts?.payloadFieldKeys;
   }
 
@@ -143,6 +162,7 @@ export class Reranker {
   invalidateStats(): void {
     this.collectionStats = undefined;
     this.collectionName = undefined;
+    this.collectionStatsRevision = undefined;
     this.payloadFieldKeys = undefined;
   }
 

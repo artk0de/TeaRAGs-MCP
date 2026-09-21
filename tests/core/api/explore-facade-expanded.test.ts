@@ -66,6 +66,7 @@ function makeMockEmbeddings() {
 function makeMockReranker(overrides: Record<string, any> = {}) {
   return {
     hasCollectionStats: false,
+    hasCollectionStatsFor: vi.fn().mockReturnValue(false),
     setCollectionStats: vi.fn(),
     getCollectionStats: vi.fn().mockReturnValue(undefined),
     setRecomputeService: vi.fn(),
@@ -257,7 +258,10 @@ describe("ExploreFacade — expanded methods", () => {
     });
 
     it("loads stats from cache on cold start", async () => {
-      const statsCache = { load: vi.fn().mockReturnValue({ perSignal: new Map(), computedAt: Date.now() }) };
+      const statsCache = {
+        load: vi.fn().mockReturnValue({ perSignal: new Map(), computedAt: Date.now() }),
+        lastWrittenAt: vi.fn().mockReturnValue(1),
+      };
       const reranker = makeMockReranker({ hasCollectionStats: false });
       const { facade } = makeFacade({ reranker, statsCache });
 

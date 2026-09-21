@@ -412,7 +412,13 @@ export class ExploreOps {
   }
 
   private async ensureStats(collectionName: string): Promise<void> {
-    if (!this.statsCache || this.reranker.hasCollectionStats) return;
+    if (!this.statsCache) return;
+    // Ask for THIS collection at the revision on disk right now. A guard that
+    // only asked "are any stats loaded" pinned the process to the first
+    // collection it served and could not see a recompute another process wrote
+    // (bd tea-rags-mcp-yntsd). The probe is a stat, not a read.
+    const revision = this.statsCache.lastWrittenAt(collectionName);
+    if (this.reranker.hasCollectionStatsFor(collectionName, revision)) return;
     try {
       const stats = this.statsCache.load(collectionName);
       if (!stats) return;
@@ -427,6 +433,7 @@ export class ExploreOps {
       this.reranker.setCollectionStats(stats, {
         collectionName,
         payloadFieldKeys: stats.payloadFieldKeys,
+        revision,
       });
     } catch {
       // Stats loading failure must not prevent search.

@@ -34,6 +34,7 @@ function makeExploreFacade(
 
   const reranker = {
     hasCollectionStats: opts.rerankerHasStats ?? false,
+    hasCollectionStatsFor: vi.fn().mockReturnValue(opts.rerankerHasStats ?? false),
     setCollectionStats: vi.fn(),
     getCollectionStats: vi.fn().mockReturnValue(undefined),
     setRecomputeService: vi.fn(),
@@ -46,6 +47,7 @@ function makeExploreFacade(
   const statsCache = opts.hasStats
     ? {
         load: vi.fn().mockReturnValue(opts.hasCachedStats ? { perSignal: new Map(), computedAt: Date.now() } : null),
+        lastWrittenAt: vi.fn().mockReturnValue(opts.hasCachedStats ? 1 : undefined),
       }
     : undefined;
 
