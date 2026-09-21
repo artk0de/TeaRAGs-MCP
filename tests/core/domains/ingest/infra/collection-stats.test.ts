@@ -1349,3 +1349,84 @@ describe("zero observations in the percentile sample", () => {
     expect(s.min).toBe(0);
   });
 });
+
+describe("chunkTypeFilter admitting more than one chunk type", () => {
+  /**
+   * A chunk-scoped history signal describes a unit of code that gets CHANGED,
+   * so its reference population is callables — a method compared against barrel
+   * re-exports and top-level constant blocks is a category error. Both scopes
+   * need it from one declaration: the source bucket holds `function`, the test
+   * bucket holds `test`, and a single-valued filter can only ever serve one,
+   * silently deleting the other bucket's distribution.
+   */
+  const callableScoped: PayloadSignalDescriptor[] = [
+    {
+      key: "git.chunk.commitCount",
+      type: "number",
+      description: "commits touching this chunk",
+      stats: { labels: { p50: "typical", p95: "extreme" }, chunkTypeFilter: ["function", "test"] },
+    },
+  ];
+
+  /** Single string keeps working — five shipped descriptors declare it. */
+  const functionOnly: PayloadSignalDescriptor[] = [
+    {
+      key: "methodLines",
+      type: "number",
+      description: "method line count",
+      stats: { labels: { p50: "small", p95: "large" }, chunkTypeFilter: "function" },
+    },
+  ];
+
+  function chunkOfType(chunkType: string, value: number, index: number) {
+    return {
+      payload: {
+        git: { chunk: { commitCount: value } },
+        methodLines: value,
+        language: "typescript",
+        chunkType,
+        isDocumentation: false,
+        // A `test` chunk must live in a test file, or scope detection puts it
+        // in the source bucket and the per-scope split stops being observable.
+        relativePath: chunkType === "test" ? `tests/spec${index}.test.ts` : `src/file${index}.ts`,
+      },
+    };
+  }
+
+  it("admits every declared chunk type and nothing else", () => {
+    const points = [
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("function", 5, i)),
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("block", 99, i + 100)),
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("interface", 99, i + 200)),
+    ];
+    const stats = computeCollectionStats(points, callableScoped, ALL_ACCS);
+    const s = stats.perSignal.get("git.chunk.commitCount")!;
+
+    expect(s.count).toBe(10);
+    expect(s.max).toBe(5);
+  });
+
+  it("keeps the test-scope distribution instead of deleting it", () => {
+    const points = [
+      ...Array.from({ length: 12 }, (_, i) => chunkOfType("function", 5, i)),
+      ...Array.from({ length: 12 }, (_, i) => chunkOfType("test", 3, i)),
+    ];
+    const scoped = computeCollectionStats(points, callableScoped, ALL_ACCS)
+      .perLanguage.get("typescript")
+      ?.get("git.chunk.commitCount");
+
+    expect(scoped?.source.count).toBe(12);
+    expect(scoped?.test?.count).toBe(12);
+  });
+
+  it("still honours a single-valued filter", () => {
+    const points = [
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("function", 7, i)),
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("block", 99, i + 100)),
+    ];
+    const stats = computeCollectionStats(points, functionOnly, ALL_ACCS);
+
+    expect(stats.perSignal.get("methodLines")!.count).toBe(10);
+    expect(stats.perSignal.get("methodLines")!.max).toBe(7);
+  });
+});

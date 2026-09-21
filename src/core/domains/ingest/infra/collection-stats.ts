@@ -53,6 +53,12 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
   return resolvePayloadValue(payload, path);
 }
 
+/** Whether a declared `chunkTypeFilter` — one value or several — admits this point. */
+function admitsChunkType(filter: string | readonly string[], pointChunkType: unknown): boolean {
+  if (typeof pointChunkType !== "string") return false;
+  return typeof filter === "string" ? pointChunkType === filter : filter.includes(pointChunkType);
+}
+
 /**
  * Push a signal value to target array if the point passes chunkType filter
  * and the value qualifies as an observation of that signal.
@@ -76,7 +82,7 @@ function tryPushSignalValue(
   dedupe?: { seen: Set<string>; token: string },
 ): void {
   const filter = signal.stats?.chunkTypeFilter;
-  if (filter && pointChunkType !== filter) return;
+  if (filter !== undefined && !admitsChunkType(filter, pointChunkType)) return;
   const val = readPayloadPath(point.payload, signal.key);
   if (typeof val === "number" && (signal.stats?.zeroIsValidObservation ? val >= 0 : val > 0)) {
     if (dedupe) {

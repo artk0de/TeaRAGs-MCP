@@ -97,6 +97,22 @@ export interface ChunkSymbol {
 export type ChunkType = "function" | "class" | "interface" | "block" | "test" | "test_setup";
 
 /**
+ * The chunk types that hold a callable BODY — the population a chunk-scoped
+ * history signal is meaningfully compared within.
+ *
+ * Both entries are needed together because scope detection splits them: a
+ * `function` chunk lands in the source bucket and a `test` chunk in the test
+ * one, so a filter naming only one leaves the other scope with no distribution
+ * at all. `test_setup` is excluded by `detectScope` before sampling either way.
+ *
+ * The excluded types are declaration surfaces rather than units of work —
+ * `block` covers barrel re-exports, import lists and top-level constants, and
+ * outnumbers `function` on a typical index. Ranking a method's churn against
+ * theirs compares different things.
+ */
+export const CALLABLE_CHUNK_TYPES: readonly ChunkType[] = ["function", "test"];
+
+/**
  * One chunk a language classifier asks the engine to emit verbatim for a node.
  *
  * The engine flags each emitted chunk `claimed` so it is exempt from the

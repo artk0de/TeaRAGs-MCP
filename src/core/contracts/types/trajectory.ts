@@ -65,8 +65,15 @@ export interface SignalStatsRequest {
   mean?: boolean;
   /** Compute standard deviation */
   stddev?: boolean;
-  /** Only include points where payload.chunkType matches this value. */
-  chunkTypeFilter?: string;
+  /**
+   * Only sample points whose `payload.chunkType` is this value, or one of these
+   * values. A list is what a per-SCOPE signal needs: scope detection routes
+   * `function` chunks to the source bucket and `test` chunks to the test one, so
+   * a single value can only ever populate one of the two and the other bucket's
+   * distribution silently disappears — visible today as the missing `test` entry
+   * on `methodLines` / `methodDensity` / every `codegraph.chunk.*`.
+   */
+  chunkTypeFilter?: string | readonly string[];
   /**
    * Treat the signal as file-scoped: contribute at most one value per distinct
    * `relativePath` to each stats bucket (global, per-language, per-scope).

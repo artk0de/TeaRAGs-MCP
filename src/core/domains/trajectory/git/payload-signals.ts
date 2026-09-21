@@ -7,8 +7,15 @@
  *
  * Numeric signals declare `stats.labels` for percentile caching
  * and human-readable label resolution in ranking overlays.
+ *
+ * Every chunk-scoped signal here samples `CALLABLE_CHUNK_TYPES` only. These
+ * signals describe a unit of code that gets CHANGED, and `block` chunks — barrel
+ * re-exports, import lists, top-level constants — outnumber callables on a
+ * typical index, so without the filter a method's history is ranked against a
+ * population that is mostly declaration surface.
  */
 
+import { CALLABLE_CHUNK_TYPES } from "../../../contracts/types/chunker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 
 export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
@@ -153,7 +160,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.churnRatio",
     type: "number",
     description: "Chunk's share of file churn (0-1)",
-    stats: { labels: { p75: "normal", p95: "concentrated" } },
+    stats: { labels: { p75: "normal", p95: "concentrated" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.commitCount",
@@ -161,6 +168,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Commits touching this specific chunk",
     stats: {
       labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
+      chunkTypeFilter: CALLABLE_CHUNK_TYPES,
       // Mirrors git.file.commitCount — bugFixRate confidence references "p10"
       // of chunk-scope commitCount too.
       percentilesToCompute: [10],
@@ -171,14 +179,17 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.ageDays",
     type: "number",
     description: "Days since last modification to this chunk",
-    stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" } },
+    stats: {
+      labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" },
+      chunkTypeFilter: CALLABLE_CHUNK_TYPES,
+    },
     essential: true,
   },
   {
     key: "git.chunk.recentContributorCount",
     type: "number",
     description: "Distinct contributors to this chunk",
-    stats: { labels: { p50: "solo", p95: "crowd" } },
+    stats: { labels: { p50: "solo", p95: "crowd" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.bugFixRate",
@@ -186,6 +197,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Bug-fix rate for this chunk (0-100)",
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      chunkTypeFilter: CALLABLE_CHUNK_TYPES,
       // Same reading as the file scope, and the chunk sample needs it more: the
       // survivors are dominated by single-commit chunks whose one commit was a
       // fix, so dropping the zeros collapses p50/p75/p95 onto 100 and every
@@ -209,25 +221,25 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.relativeChurn",
     type: "number",
     description: "Churn relative to chunk size",
-    stats: { labels: { p75: "normal", p95: "high" } },
+    stats: { labels: { p75: "normal", p95: "high" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.recencyWeightedFreq",
     type: "number",
     description: "Chunk-level recency-weighted commit frequency",
-    stats: { labels: { p75: "normal", p95: "burst" } },
+    stats: { labels: { p75: "normal", p95: "burst" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.changeDensity",
     type: "number",
     description: "Chunk-level change density (commits per month)",
-    stats: { labels: { p75: "active", p95: "intense" } },
+    stats: { labels: { p75: "active", p95: "intense" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.churnVolatility",
     type: "number",
     description: "Standard deviation of commit intervals for this chunk (days)",
-    stats: { labels: { p75: "stable", p95: "erratic" } },
+    stats: { labels: { p75: "stable", p95: "erratic" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
   },
   {
     key: "git.chunk.taskIds",
@@ -247,7 +259,10 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.blameDominantAuthorPct",
     type: "number",
     description: "Percentage of chunk's live lines owned by blameDominantAuthor (0-100)",
-    stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" } },
+    stats: {
+      labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" },
+      chunkTypeFilter: CALLABLE_CHUNK_TYPES,
+    },
     essential: true,
   },
   {
@@ -259,7 +274,10 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.blameContributorCount",
     type: "number",
     description: "Distinct authors of the chunk's live lines",
-    stats: { labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" } },
+    stats: {
+      labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" },
+      chunkTypeFilter: CALLABLE_CHUNK_TYPES,
+    },
     essential: true,
   },
 ];

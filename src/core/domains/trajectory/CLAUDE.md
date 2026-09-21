@@ -14,17 +14,27 @@ carry their own navigators.
   name useful, takes the server down at composition time — which is why
   codegraph coined `chunkFanIn` / `fanOutPerLine`.
 - **File-scoped signals declare `stats.dedupeByFile`; callable-only signals
-  declare `stats.chunkTypeFilter: "function"`.** Percentiles run over POINTS,
-  i.e. chunks (`tryPushSignalValue` filter,
-  `SignalValuesAccumulator#fileScopedDedupe` keyed
+  declare `stats.chunkTypeFilter`.** Percentiles run over POINTS, i.e. chunks
+  (`admitsChunkType`, `SignalValuesAccumulator#fileScopedDedupe` keyed
   `` `${bucket}|${signal.key}|${relPath}` ``, both in
   `ingest/infra/collection-stats.ts`). `moduleLines` / `moduleMethodCount` carry
-  the dedupe flag; `methodLines` / `methodDensity` and the codegraph chunk
-  signals carry the type filter; `memberCount` deliberately declares neither
+  the dedupe flag; every `git.chunk.*` signal with stats carries
+  `CALLABLE_CHUNK_TYPES` (`contracts/types/chunker.ts`), while `methodLines` /
+  `methodDensity` and the codegraph chunk signals still name the bare
+  `"function"`; `memberCount` deliberately declares neither
   (`static/payload-signals.ts`). Why: without dedupe a 51-chunk file casts 51
   votes in its own distribution; without the type filter block/doc/class chunks
-  dilute it. Both surface as a shifted threshold and a plausible wrong label,
-  never as an error.
+  dilute it — `block` alone outnumbers `function` on a typical index, so a
+  method's churn gets ranked against barrel re-exports and constant blocks. Both
+  surface as a shifted threshold and a plausible wrong label, never as an error.
+- **A single-valued `chunkTypeFilter` DELETES the test-scope distribution.**
+  Scope detection routes `function` to the source bucket and `test` to the test
+  one, so naming one value leaves the other bucket empty, `perLanguage` carries
+  no `test` entry, and every test chunk falls back to a bare number with no
+  label. Live tell: `methodLines`, `methodDensity` and all three
+  `codegraph.chunk.*` report `test: —` in `get_index_metrics` for exactly this
+  reason. A signal that wants both scopes declares both types — that is what
+  `CALLABLE_CHUNK_TYPES` is.
 - **A ZERO is discarded from the sample unless the signal declares
   `stats.zeroIsValidObservation`.** The same `tryPushSignalValue` drops it,
   because for most signals 0 means the producer never reached the file — a file
