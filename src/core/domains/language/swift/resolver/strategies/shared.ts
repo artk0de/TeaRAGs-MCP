@@ -22,10 +22,21 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
+import type { SwiftMemberTypeLookup } from "../swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "../swift-symbol-lookup.js";
 
 export interface SwiftResolverConfig {
   mode: AmbiguousResolveMode;
+  /**
+   * The resolver's ONE member-type lookup
+   * (`../swift-member-type-lookup.ts`), shared by every pass that types a
+   * receiver. Injected rather than constructed per strategy because its memos
+   * are per-RUN state: a second instance would rebuild the run's field union
+   * and its ancestor linearizers, and `chainedReceiverType` and
+   * `storedPropertyType` would answer the same `self.<x>` off two different
+   * folds.
+   */
+  memberTypes: SwiftMemberTypeLookup;
 }
 
 /**

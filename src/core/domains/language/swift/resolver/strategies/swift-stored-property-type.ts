@@ -23,12 +23,21 @@ import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolver
  *   - a BARE receiver that is not a known property could be anything — a local
  *     the walker could not type, a global, a module: CONTINUE.
  *
+ * The property's type comes from the resolver's shared
+ * {@link SwiftMemberTypeLookup}: the caller's own file first, then the run-wide
+ * union of every file that re-opens the type, then up the superclass chain.
+ * Reading only the caller's own `classFieldTypes` — as this pass did before —
+ * missed exactly the shapes Swift is built out of: a property declared by an
+ * `extension` in another file, and one declared on a base class. The wider read
+ * cannot steal an edge from the passes below, because every one of them either
+ * answers BARE calls only or matches a receiver that is a TYPE NAME, and a
+ * stored property is neither.
+ *
  * A chained receiver (`self.a.b.method()`) carries no single type and is
  * declined here. `chainedReceiverType`, one slot EARLIER, is what threads it —
- * and because that pass reads this same `classFieldTypes` entry for the own
- * type before walking up the superclass chain, it answers the `self.<x>` shape
- * identically where this one can and CONTINUEs where it cannot, which is what
- * leaves the DROP above intact.
+ * and because that pass folds its hops through the SAME lookup, it answers the
+ * `self.<x>` shape identically where this one can and CONTINUEs where it
+ * cannot, which is what leaves the DROP above intact.
  */
 export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "storedPropertyType";
@@ -43,7 +52,7 @@ export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolRe
     if (!explicitSelf && SWIFT_PSEUDO_RECEIVERS.has(property)) return CONTINUE;
 
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const typeName = ctx.classFieldTypes?.[enclosing]?.[property];
+    const typeName = this.cfg.memberTypes.typeOfProperty(enclosing, property, ctx);
     if (!typeName) return explicitSelf ? DROP : CONTINUE;
     return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg.mode);
   }

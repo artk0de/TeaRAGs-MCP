@@ -193,7 +193,12 @@ describe("seeded support versions", () => {
       // run-global `classFieldTypesByClassKey` address AND adds
       // `chainedReceiverType` reading it, so an index built by walker 4 carries
       // neither the address nor any edge for a dotted receiver beyond the
-      // single-property `self.<x>` form.
+      // single-property `self.<x>` form; walker 6 reduces an EXISTENTIAL
+      // annotation (`any Proto`, and the parenthesized `(any Proto)?`), which
+      // is how Swift 5.7+ spells protocol-typed storage and which walker 5
+      // typed to nothing, and widens `storedPropertyType` to the cross-file
+      // field union plus the superclass chain — so an index built by walker 5
+      // holds no fact about any `any`-annotated parameter, local or property.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
@@ -203,7 +208,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 5],
+        ["swift", 6],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

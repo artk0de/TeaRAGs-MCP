@@ -23,12 +23,12 @@ import { resolveSwiftBoundTypeMember, type SwiftResolverConfig } from "./shared.
  * ## Scope: FIELD chains, because that is what the walker publishes
  *
  * The fold's ports (`../swift-receiver-type-ports.ts`) read two channels and no
- * others: `localBindings` for the head, `classFieldTypes` for every link. A
+ * others: `localBindings` for the head, the field channels for every link. A
  * link that is a METHOD call is untyped — the Swift walker keeps its declared
  * return types file-locally and publishes neither `functionReturnTypes` nor
  * `structuredReturnTypes` — so `a.makeThing().run()` still emits nothing.
- * Raising that is a walker increment; it is not something this pass can
- * approximate.
+ * Publishing them was built and measured and bought zero edges on Alamofire and
+ * Quick; the ports docblock records why.
  *
  * ## Only DOTTED receivers, so nothing single-hop moves
  *
@@ -81,9 +81,11 @@ export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolR
   readonly name = "chainedReceiverType";
 
   /** ONE ports object for the life of the resolver — the fold allocates nothing per call site. */
-  private readonly ports: ReceiverTypePorts = createSwiftReceiverTypePorts();
+  private readonly ports: ReceiverTypePorts;
 
-  constructor(private readonly cfg: SwiftResolverConfig) {}
+  constructor(private readonly cfg: SwiftResolverConfig) {
+    this.ports = createSwiftReceiverTypePorts(cfg.memberTypes);
+  }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const { receiver } = call;

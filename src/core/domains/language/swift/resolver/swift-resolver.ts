@@ -120,6 +120,7 @@ import {
   SwiftSuperSymbolResolutionStrategy,
   type SwiftResolverConfig,
 } from "./strategies/index.js";
+import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { lookupSwiftSymbolsByShortName } from "./swift-symbol-lookup.js";
 
 export class SwiftCallResolver implements CallResolver {
@@ -127,7 +128,10 @@ export class SwiftCallResolver implements CallResolver {
   private readonly strategies: SymbolResolutionStrategy[];
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: SwiftResolverConfig = { mode };
+    // ONE lookup for the whole chain: its field union and ancestor linearizers
+    // are per-RUN state, and the passes that type a receiver must answer off
+    // the same fold.
+    const cfg: SwiftResolverConfig = { mode, memberTypes: new SwiftMemberTypeLookup() };
     this.strategies = [
       // Index 0, ahead of every typed pass: `super` is the one receiver whose
       // meaning the LANGUAGE fixes, so no pass that infers a type can have a

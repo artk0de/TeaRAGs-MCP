@@ -911,3 +911,48 @@ describe("swift walker — classExtends", () => {
     expect(extractMaterialized(src).classExtends).toEqual({ A: "Root", B: "A" });
   });
 });
+
+/**
+ * EXISTENTIAL annotations — `any Protocol`, and the `(any Protocol)?` spelling
+ * an optional one requires.
+ *
+ * Swift 5.7 made `any` mandatory for an existential, so protocol-typed storage
+ * in modern code is written this way and almost never as a bare protocol name:
+ * Alamofire alone spells 200+ of its annotations `any P` or `(any P)?`. The
+ * grammar wraps the type twice for the optional form — `optional_type` over a
+ * `tuple_type` holding one `tuple_type_item` — because `(…)` is parsed as a
+ * one-element tuple, which Swift's own type system does not have: a
+ * parenthesized type IS the type it parenthesises.
+ *
+ * Both assertions run on the MATERIALIZED tree, and `tuple_type_item.type` is
+ * one of the fields this grammar loses there, so the unwrap is positional like
+ * every other type read here.
+ */
+describe("swift walker — existential and parenthesized annotations", () => {
+  it("records a stored property annotated with a bare existential", () => {
+    const src = ["class Session {", "  let monitor: any EventMonitor", "}", ""].join("\n");
+    expect(extractMaterialized(src).classFieldTypes?.Session?.monitor).toBe("EventMonitor");
+  });
+
+  it("records a stored property annotated with a PARENTHESIZED optional existential", () => {
+    const src = ["class Session {", "  weak var provider: (any StateProvider)?", "}", ""].join("\n");
+    expect(extractMaterialized(src).classFieldTypes?.Session?.provider).toBe("StateProvider");
+  });
+
+  it("records a parenthesized NON-existential annotation identically", () => {
+    // `(Thing)` is `Thing`; the parentheses carry no type of their own.
+    const src = ["class Session {", "  let thing: (Thing)", "}", ""].join("\n");
+    expect(extractMaterialized(src).classFieldTypes?.Session?.thing).toBe("Thing");
+  });
+
+  it("types a PARAMETER annotated with an existential", () => {
+    const src = ["func go(monitor: any EventMonitor) {", "  monitor.request()", "}", ""].join("\n");
+    const bindings = extractMaterialized(src).chunks[0].localBindings;
+    expect(resolveLocalBindingType(bindings, "monitor", 2)).toBe("EventMonitor");
+  });
+
+  it("records NOTHING for a real tuple, which is not a type any member dispatches on", () => {
+    const src = ["class Session {", "  let pair: (Thing, Other)", "}", ""].join("\n");
+    expect(extractMaterialized(src).classFieldTypes?.Session).toBeUndefined();
+  });
+});

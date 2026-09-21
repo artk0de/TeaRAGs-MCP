@@ -772,10 +772,20 @@ function swiftTypeNodeAfter(node: AstNode, separator: string): AstNode | null {
  *     the nested type's own composed id spells it).
  *   - `optional_type` — `Foo?` → whatever `Foo` proves. The receiver of
  *     `x?.m()` is the wrapped value, so the Optional is transparent here.
+ *   - `existential_type` — `any Proto` → whatever `Proto` proves. Swift 5.7
+ *     made the keyword mandatory, so this is how protocol-typed storage is
+ *     SPELLED in modern code rather than an exotic corner: a call on such a
+ *     value dispatches on the protocol's own requirement, which is a project
+ *     symbol whenever the protocol is.
+ *   - `tuple_type` holding exactly one unlabelled item — `(any Proto)`, `(Foo)`
+ *     → whatever the item proves. Swift has no one-element tuple; that shape is
+ *     a PARENTHESIZED type, and the parentheses are required around an
+ *     existential before `?`. A tuple with two or more items proves nothing,
+ *     because no member dispatches on a tuple.
  *   - `array_type` — `[Foo]` → ELEMENT `Foo` and no nominal. An Array is not a
  *     Foo; see the container note in the file docblock.
- *   - anything else, notably `dictionary_type` / `tuple_type` / `function_type`
- *     / `opaque_type` — nothing.
+ *   - anything else, notably `dictionary_type` / `function_type` /
+ *     `opaque_type`, and a `tuple_type` that is a real tuple — nothing.
  */
 function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   if (!typeNode) return NO_TYPE;
@@ -784,11 +794,34 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
     const element = swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal;
     return element ? { nominal: null, element } : NO_TYPE;
   }
+  if (typeNode.type === "existential_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
+  if (typeNode.type === "tuple_type") return swiftTypeFactOf(parenthesizedSwiftTypeNode(typeNode));
   if (typeNode.type !== "user_type") return NO_TYPE;
   const raw = typeNode.text;
   const generics = raw.indexOf("<");
   const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim();
   return bare.length > 0 ? { nominal: bare, element: null } : NO_TYPE;
+}
+
+/**
+ * The type a `tuple_type` merely PARENTHESISES, or null when it is a real
+ * tuple.
+ *
+ * `(any EventMonitor)` and `(Thing)` parse as one-element tuples, a shape
+ * Swift's type system does not have — `(T)` IS `T` — and the parentheses are
+ * not optional in the one place this matters most, since `any P?` is ambiguous
+ * and must be written `(any P)?`. Anything with a second item, or with a label
+ * on its only item, is left alone: a member call dispatches on no tuple.
+ *
+ * Read positionally. `tuple_type_item.type` is one of the fields
+ * tree-sitter-swift registers twice and `materializeTree` therefore drops, so a
+ * field read here would work in a native-parsing spec and return nothing in
+ * production — the hazard {@link swiftTypeNodeAfter} exists for.
+ */
+function parenthesizedSwiftTypeNode(tupleType: AstNode): AstNode | null {
+  if (tupleType.namedChildCount !== 1) return null;
+  const item = tupleType.namedChildren[0];
+  return item.type === "tuple_type_item" && item.namedChildCount === 1 ? item.namedChildren[0] : null;
 }
 
 /**

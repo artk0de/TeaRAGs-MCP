@@ -223,6 +223,73 @@ describe("SwiftCallResolver — storedPropertyType", () => {
     );
     expect(target).toBeNull();
   });
+
+  it("types an implicit-self property an EXTENSION declares in another file", () => {
+    // Swift re-opens a type routinely, and `classFieldTypes` reaches a resolver
+    // PER FILE — so a property declared in `Store+DSL.swift` is invisible to a
+    // caller in `Store.swift` unless the run-global union is read as well.
+    const t = table({ "Sources/Database.swift": [{ symbolId: "Database#write", scope: ["Database"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("db", "write"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypesByClassKey: { "Sources/Store+DSL.swift::Store": { db: "Database" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Database#write");
+  });
+
+  it("types an implicit-self property declared on a SUPERCLASS", () => {
+    const t = table({ "Sources/EventMonitor.swift": [{ symbolId: "EventMonitor#request", scope: ["EventMonitor"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("eventMonitor", "request"),
+      ctx({
+        callerFile: "Sources/DataRequest.swift",
+        callerScope: ["DataRequest"],
+        symbolTable: t,
+        classExtends: { DataRequest: "Request" },
+        classFieldTypesByClassKey: { "Sources/Request.swift::Request": { eventMonitor: "EventMonitor" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("EventMonitor#request");
+  });
+
+  it("lets the caller's OWN file outrank the run-global union", () => {
+    const t = table({
+      "Sources/Local.swift": [{ symbolId: "LocalDatabase#write", scope: ["LocalDatabase"] }],
+      "Sources/Global.swift": [{ symbolId: "GlobalDatabase#write", scope: ["GlobalDatabase"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("db", "write"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypes: { Store: { db: "LocalDatabase" } },
+        classFieldTypesByClassKey: { "Sources/Store+DSL.swift::Store": { db: "GlobalDatabase" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("LocalDatabase#write");
+  });
+
+  it("refuses a namesake type from ANOTHER LANGUAGE's entry in the shared channel", () => {
+    // Go composes the identical `<relPath>::<Type>` key, so a Go `Store` must
+    // never type a Swift receiver — the guard `lookupSwiftSymbols` applies to
+    // the symbol table, applied to the field channel.
+    const t = table({ "Sources/Database.swift": [{ symbolId: "Database#write", scope: ["Database"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("db", "write"),
+      ctx({
+        callerFile: "Sources/Store.swift",
+        callerScope: ["Store"],
+        symbolTable: t,
+        classFieldTypesByClassKey: { "internal/db/store.go::Store": { db: "Database" } },
+      }),
+    );
+    expect(target).toBeNull();
+  });
 });
 
 describe("SwiftCallResolver — chainedReceiverType", () => {
