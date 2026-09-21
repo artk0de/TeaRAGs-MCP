@@ -1255,3 +1255,97 @@ describe("computeCollectionStats distributions", () => {
     });
   });
 });
+
+describe("zero observations in the percentile sample", () => {
+  /**
+   * `bugFixRate` is a ratio over commits: a file with eight commits and no fix
+   * among them measured 0, it did not fail to measure. Dropping those zeros
+   * computes percentiles over P(x | x > 0) — the conditional distribution of
+   * "files that had at least one fix" — and every bucket boundary moves up.
+   */
+  const ratioSignal: PayloadSignalDescriptor[] = [
+    {
+      key: "git.file.bugFixRate",
+      type: "number",
+      description: "Percentage of bug-fix commits (0-100)",
+      stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" }, zeroIsValidObservation: true },
+    },
+  ];
+
+  /** Same shape without the opt-in — the default stays "0 means no measurement". */
+  const unflaggedSignal: PayloadSignalDescriptor[] = [
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      description: "commits",
+      stats: { labels: { p50: "typical", p95: "extreme" } },
+    },
+  ];
+
+  function ratePoints(values: number[]) {
+    return values.map((value, i) => ({
+      payload: {
+        git: { file: { bugFixRate: value } },
+        language: "typescript",
+        chunkType: "function",
+        isDocumentation: false,
+        relativePath: `src/file${i}.ts`,
+      },
+    }));
+  }
+
+  it("counts a measured zero as an observation when the signal declares it", () => {
+    // Nine files never fixed, one fixed on every commit.
+    const stats = computeCollectionStats(ratePoints([0, 0, 0, 0, 0, 0, 0, 0, 0, 100]), ratioSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.bugFixRate")!;
+
+    expect(s.count).toBe(10);
+    expect(s.min).toBe(0);
+  });
+
+  it("puts the median where the population is, not where the survivors are", () => {
+    const stats = computeCollectionStats(ratePoints([0, 0, 0, 0, 0, 0, 0, 0, 0, 100]), ratioSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.bugFixRate")!;
+
+    // Nine tenths of the files never had a fix, so "healthy" belongs at 0.
+    // Sampling only the survivors leaves a single value and collapses
+    // p50/p75/p95 onto 100 — the degenerate labelMap where 100% reads healthy.
+    expect(s.percentiles[50]).toBe(0);
+    expect(s.percentiles[95]).toBeGreaterThan(0);
+  });
+
+  it("keeps the per-language scoped sample whole too", () => {
+    const stats = computeCollectionStats(ratePoints([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100]), ratioSignal, ALL_ACCS);
+    const scoped = stats.perLanguage.get("typescript")?.get("git.file.bugFixRate");
+
+    expect(scoped?.source.count).toBe(12);
+    expect(scoped?.source.min).toBe(0);
+  });
+
+  it("still drops zeros for a signal that does not declare them valid", () => {
+    // commitCount 0 means the walk never reached the file (the all-zero chunk
+    // block past chunkMaxFileLines), not "this file has no commits".
+    const points = [1, 0, 3, 0, 5].map((value, i) => ({
+      payload: {
+        git: { file: { commitCount: value } },
+        language: "typescript",
+        chunkType: "function",
+        isDocumentation: false,
+        relativePath: `src/file${i}.ts`,
+      },
+    }));
+    const stats = computeCollectionStats(points, unflaggedSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.commitCount")!;
+
+    expect(s.count).toBe(3);
+    expect(s.min).toBe(1);
+  });
+
+  it("rejects a negative value even when zero is declared valid", () => {
+    const stats = computeCollectionStats(ratePoints([-1, 0, 50]), ratioSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.bugFixRate")!;
+
+    expect(s.count).toBe(2);
+    expect(s.min).toBe(0);
+  });
+});

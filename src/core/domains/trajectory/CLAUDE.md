@@ -25,6 +25,20 @@ carry their own navigators.
   votes in its own distribution; without the type filter block/doc/class chunks
   dilute it. Both surface as a shifted threshold and a plausible wrong label,
   never as an error.
+- **A ZERO is discarded from the sample unless the signal declares
+  `stats.zeroIsValidObservation`.** The same `tryPushSignalValue` drops it,
+  because for most signals 0 means the producer never reached the file — a file
+  past `chunkMaxFileLines` publishes `git.chunk.commitCount: 0` on every chunk,
+  and `run-finalize.ts` falls back to `ZERO_FILE_METRICS` for a path its metrics
+  map has no row for. A ratio inverts that: `git.*.bugFixRate` is 0 because the
+  commits held no fix, which is a reading, and both bugFixRate descriptors carry
+  the flag. Why: leave a real zero out and the percentiles describe P(x | x > 0)
+  — every boundary sits above the population, and where the survivors are mostly
+  one-commit chunks the labelMap collapses onto a single value and inverts.
+  Decide it per signal; whether 0 means "measured none" or "never measured" is a
+  fact about that signal's producer, so a sweep over the remaining zero-capable
+  signals (`fanIn`, `fanOut`, `instability`, `churnVolatility`) would be a
+  guess.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys

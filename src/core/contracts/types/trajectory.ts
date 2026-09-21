@@ -77,6 +77,24 @@ export interface SignalStatsRequest {
    */
   dedupeByFile?: boolean;
   /**
+   * Declare that 0 is a real measurement of this signal, not the absence of
+   * one, so a zero-valued point joins the percentile sample.
+   *
+   * The sampler drops zeros by default because for most signals a 0 means the
+   * producer never reached the file — `git.*.commitCount` publishes 0 for every
+   * chunk of a file past `chunkMaxFileLines`, which the churn walk skips
+   * wholesale. Ratios are the opposite case: a file with eight commits and no
+   * fix among them MEASURED `bugFixRate: 0`. Leave those out and the
+   * percentiles describe P(x | x > 0) — "files that had at least one fix" —
+   * so every bucket boundary sits above where the population actually is, and
+   * on a corpus whose survivors are mostly one-commit chunks the whole labelMap
+   * collapses onto a single value.
+   *
+   * Set it per signal, never as a sweep: whether 0 means "measured none" or
+   * "never measured" is a fact about that signal's producer.
+   */
+  zeroIsValidObservation?: boolean;
+  /**
    * Display hint for consumers rendering this signal's thresholds (prime digest,
    * get_index_metrics labelMap). The stored labelMap / threshold value always
    * stays RAW — this is a render-time hint only, never a value transform.

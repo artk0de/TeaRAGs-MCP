@@ -55,7 +55,13 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
 
 /**
  * Push a signal value to target array if the point passes chunkType filter
- * and the value is a positive number.
+ * and the value qualifies as an observation of that signal.
+ *
+ * A missing key is already rejected by the `typeof` test, so the numeric floor
+ * only decides what a ZERO means. It defaults to "no measurement" — the common
+ * case, since most producers publish 0 for a file they never walked — and a
+ * signal whose 0 is a real reading opts in via `stats.zeroIsValidObservation`.
+ * Negative values are rejected either way: no signal here has a meaningful one.
  *
  * `dedupe` is supplied for signals declaring `stats.dedupeByFile`: the token
  * identifies (bucket, signal, file), so each distinct file contributes at most
@@ -72,7 +78,7 @@ function tryPushSignalValue(
   const filter = signal.stats?.chunkTypeFilter;
   if (filter && pointChunkType !== filter) return;
   const val = readPayloadPath(point.payload, signal.key);
-  if (typeof val === "number" && val > 0) {
+  if (typeof val === "number" && (signal.stats?.zeroIsValidObservation ? val >= 0 : val > 0)) {
     if (dedupe) {
       if (dedupe.seen.has(dedupe.token)) return;
       dedupe.seen.add(dedupe.token);
@@ -543,7 +549,8 @@ function buildDistributions(
  *
  * - Filters to signals WITH `stats` request (not just numeric type)
  * - Resolves dot-notation paths against each point's payload
- * - Skips missing/non-numeric/zero-or-negative values
+ * - Skips missing/non-numeric/negative values, and zeros unless the signal
+ *   declares `stats.zeroIsValidObservation`
  * - Computes only what's declared: percentiles, mean, stddev
  * - Returns empty perSignal map for signals with no valid values
  */

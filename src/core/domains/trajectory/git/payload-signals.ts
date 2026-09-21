@@ -87,6 +87,10 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Percentage of bug-fix commits (0-100)",
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      // A file whose commits held no fix measured 0 — it belongs in the
+      // distribution. Sampling only the non-zero values describes "files that
+      // had at least one fix" and pushes every bucket boundary up.
+      zeroIsValidObservation: true,
       // Already a 0–100 percentage — render with "%" suffix, no ×100 scaling.
       format: "percent100",
       // Filter preset references p25 of file-scope bugFixRate; labels declare
@@ -182,6 +186,11 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Bug-fix rate for this chunk (0-100)",
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      // Same reading as the file scope, and the chunk sample needs it more: the
+      // survivors are dominated by single-commit chunks whose one commit was a
+      // fix, so dropping the zeros collapses p50/p75/p95 onto 100 and every
+      // value — 100% included — resolves to "healthy".
+      zeroIsValidObservation: true,
       // Already a 0–100 percentage — render with "%" suffix, no ×100 scaling.
       format: "percent100",
       confidence: {
