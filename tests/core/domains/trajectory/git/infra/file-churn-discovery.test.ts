@@ -46,7 +46,7 @@ function legacySinceMs(maxAgeMonths: number): number {
 }
 
 function persisted(head: string, sinceIso: string, entries: CommitFileNumstat[]): PersistedFileChurnDiscovery {
-  return { version: 1, repoRoot: "/repo", head, sinceIso, entries };
+  return { version: 2, repoRoot: "/repo", head, sinceIso, entries };
 }
 
 /** Fake in-memory persistence — every method is a vi.fn for call assertions. */

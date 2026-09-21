@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
-import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
+import type { CommitWithChangedFiles } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import type {
   ChunkChurnWalkStats,
@@ -19,7 +19,7 @@ import { CommitDiffMemo } from "../../../../../../src/core/infra/commit-diff-mem
 const COMMIT_SHA = "a".repeat(40);
 const PARENT_SHA = "p".repeat(40);
 
-function commitTouching(changedFiles: string[]): { commit: CommitInfo; changedFiles: string[] } {
+function commitTouching(paths: string[]): CommitWithChangedFiles {
   return {
     commit: {
       sha: COMMIT_SHA,
@@ -29,7 +29,7 @@ function commitTouching(changedFiles: string[]): { commit: CommitInfo; changedFi
       body: "feat: change",
       parents: [PARENT_SHA],
     },
-    changedFiles,
+    changedFiles: paths.map((path) => ({ path })),
   };
 }
 
@@ -40,7 +40,7 @@ function fakeBlobReader(): { read: ReturnType<typeof vi.fn>; close: ReturnType<t
   };
 }
 
-function fakeDiscovery(entries: { commit: CommitInfo; changedFiles: string[] }[]): WalkCommitDiscovery {
+function fakeDiscovery(entries: CommitWithChangedFiles[]): WalkCommitDiscovery {
   return {
     commitsForFiles: vi.fn().mockResolvedValue(entries),
     getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),

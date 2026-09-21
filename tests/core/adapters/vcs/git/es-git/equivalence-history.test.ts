@@ -9,7 +9,10 @@
  *   file rows → the parsers drop them, so merges never surface in any output;
  * - rename detection is ON by default (`diff.renames` unset ⇒ true since
  *   git 2.9): a pure rename is ONE row `0 0 pfx{old => new}sfx`, not
- *   delete+add — the `diff.renames=false` block covers the opposite branch;
+ *   delete+add — the `diff.renames=false` block covers the opposite branch.
+ *   Since bd tea-rags-mcp-0dwsn the parsers split that column, so the row
+ *   surfaces under the POST-rename path with `previousPath` alongside; the
+ *   mangled string itself must never reach a churn map or a changed-file list;
  * - binary files emit `- -` numstat columns → skipped from churn maps AND
  *   changedFiles.
  */
@@ -65,9 +68,10 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     for (const churn of oracle.values()) {
       for (const commit of churn.commits) expect(commit.sha).not.toBe(fixture.mergeSha);
     }
-    // Rename detection ON by default → ONE combined-path row for the pure rename.
-    expect([...oracle.keys()]).toContain("src/{util.ts => helper.ts}");
-    expect(oracle.get("src/{util.ts => helper.ts}")?.commits.map((c) => c.sha)).toEqual([fixture.renameSha]);
+    // Rename detection ON by default → ONE combined-path row for the pure
+    // rename, keyed under the POST-rename path once the parser splits it.
+    expect([...oracle.keys()]).not.toContain("src/{util.ts => helper.ts}");
+    expect(oracle.get("src/helper.ts")?.commits.map((c) => c.sha)).toEqual([fixture.renameSha]);
     // The rename source still has its c2 creation row under the plain path.
     expect(oracle.get("src/util.ts")?.commits.map((c) => c.sha)).toEqual([fixture.utilSha]);
     // Binary files ("-\t-" numstat) never enter the churn map.
@@ -98,7 +102,7 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     const paths = ["src/util.ts", "src/helper.ts"];
     const oracle = await cli.readNumstatLogForPaths(paths);
     expect(await esGit.readNumstatLogForPaths(paths)).toEqual(oracle);
-    expect([...oracle.keys()].sort()).toEqual(["src/util.ts", "src/{util.ts => helper.ts}"]);
+    expect([...oracle.keys()].sort()).toEqual(["src/helper.ts", "src/util.ts"]);
   });
 
   it("readNumstatLogForPaths: pathspec covering ONE rename side degrades to add/delete on both adapters", async () => {
@@ -130,8 +134,11 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
       fixture.initialSha,
     ]);
     const util = oracle.find((e) => e.commit.sha === fixture.utilSha);
-    expect(util?.changedFiles).not.toContain("assets/logo.bin");
-    expect(util?.changedFiles).toContain("src/util.ts");
+    expect(util?.changedFiles.map((f) => f.path)).not.toContain("assets/logo.bin");
+    expect(util?.changedFiles.map((f) => f.path)).toContain("src/util.ts");
+    // The rename commit names the file as it left it, plus where it came from.
+    const rename = oracle.find((e) => e.commit.sha === fixture.renameSha);
+    expect(rename?.changedFiles).toContainEqual({ path: "src/helper.ts", previousPath: "src/util.ts" });
   });
 
   it("getCommitsSince: --since bounded arrays deep-equal", async () => {
@@ -285,7 +292,9 @@ describe.skipIf(!esGitAvailable)(
       const oracle = await cli.getCommitsByPathspec(EARLY_SINCE, paths);
       expect(await esGit.getCommitsByPathspec(EARLY_SINCE, paths)).toEqual(oracle);
       const rename = oracle.find((e) => e.commit.sha === fixture.renameSha);
-      expect(rename?.changedFiles.sort()).toEqual(["src/helper.ts", "src/util.ts"]);
+      // No rename detection → two independent rows, neither carrying a previousPath.
+      expect(rename?.changedFiles.map((f) => f.path).sort()).toEqual(["src/helper.ts", "src/util.ts"]);
+      expect(rename?.changedFiles.every((f) => f.previousPath === undefined)).toBe(true);
     });
   },
 );

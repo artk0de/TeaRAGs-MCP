@@ -12,7 +12,14 @@ import { execFile, execFileSync, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 import { isDebug } from "../../../../infra/runtime.js";
-import type { BlameLine, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
+import type {
+  BlameLine,
+  CommitChangedPath,
+  CommitFileNumstat,
+  CommitInfo,
+  CommitWithChangedFiles,
+  FileChurnData,
+} from "../../types.js";
 import { parseBlameOutput, parseCommitFileNumstat, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 
@@ -451,7 +458,7 @@ export async function getCommitsSince(
   repoRoot: string,
   sinceDate: Date,
   timeoutMs?: number,
-): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+): Promise<CommitWithChangedFiles[]> {
   const effectiveTimeoutMs = timeoutMs ?? 30000;
   const args = ["log", `--since=${sinceDate.toISOString()}`, NUMSTAT_LOG_FORMAT, "--numstat"];
   const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
@@ -469,7 +476,7 @@ export async function getCommitsInRange(
   toSha: string,
   sinceDate: Date,
   timeoutMs?: number,
-): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+): Promise<CommitWithChangedFiles[]> {
   const effectiveTimeoutMs = timeoutMs ?? 30000;
   const args = ["log", `--since=${sinceDate.toISOString()}`, `${fromSha}..${toSha}`, NUMSTAT_LOG_FORMAT, "--numstat"];
   const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
@@ -520,7 +527,7 @@ export async function getCommitsByPathspecSingle(
   sinceDate: Date,
   filePaths: string[],
   timeoutMs?: number,
-): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+): Promise<CommitWithChangedFiles[]> {
   const effectiveTimeoutMs = timeoutMs ?? 30000;
   const args = [
     "log",
@@ -544,7 +551,7 @@ export async function getCommitsByPathspecBatched(
   sinceDate: Date,
   filePaths: string[],
   timeoutMs?: number,
-): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+): Promise<CommitWithChangedFiles[]> {
   const batchSize = PATHSPEC_BATCH_SIZE;
   const batches: string[][] = [];
   for (let i = 0; i < filePaths.length; i += batchSize) {
@@ -557,21 +564,21 @@ export async function getCommitsByPathspecBatched(
     );
   }
 
-  const merged = new Map<string, { commit: CommitInfo; changedFiles: Set<string> }>();
+  // Deduped by CURRENT path: the same file can surface in several batches, and
+  // its rename pair is identical every time it does (the pair is a property of
+  // the commit, not of the batch) — so first writer wins.
+  const merged = new Map<string, { commit: CommitInfo; changedFiles: Map<string, CommitChangedPath> }>();
 
   for (const batch of batches) {
     try {
       const batchResult = await getCommitsByPathspecSingle(repoRoot, sinceDate, batch, timeoutMs);
       for (const entry of batchResult) {
         const existing = merged.get(entry.commit.sha);
-        if (existing) {
-          for (const f of entry.changedFiles) existing.changedFiles.add(f);
-        } else {
-          merged.set(entry.commit.sha, {
-            commit: entry.commit,
-            changedFiles: new Set(entry.changedFiles),
-          });
+        const target = existing?.changedFiles ?? new Map<string, CommitChangedPath>();
+        for (const changed of entry.changedFiles) {
+          if (!target.has(changed.path)) target.set(changed.path, changed);
         }
+        if (!existing) merged.set(entry.commit.sha, { commit: entry.commit, changedFiles: target });
       }
     } catch (error) {
       if (isDebug()) {
@@ -585,7 +592,7 @@ export async function getCommitsByPathspecBatched(
 
   return Array.from(merged.values()).map(({ commit, changedFiles }) => ({
     commit,
-    changedFiles: Array.from(changedFiles),
+    changedFiles: Array.from(changedFiles.values()),
   }));
 }
 
@@ -598,7 +605,7 @@ export async function getCommitsByPathspec(
   sinceDate: Date,
   filePaths: string[],
   timeoutMs?: number,
-): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+): Promise<CommitWithChangedFiles[]> {
   if (filePaths.length === 0) return [];
 
   if (filePaths.length > PATHSPEC_BATCH_SIZE) {

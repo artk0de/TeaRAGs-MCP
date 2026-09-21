@@ -23,9 +23,15 @@ import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 
-/** On-disk snapshot shape of a file-churn window (see FileChurnDiscoveryStore). */
+/**
+ * On-disk snapshot shape of a file-churn window (see FileChurnDiscoveryStore).
+ *
+ * v2 carries `files[].previousPath` and un-mangled `files[].path`, so a rename
+ * aggregates into the file as the commit left it instead of into git's
+ * `{old => new}` column (bd tea-rags-mcp-0dwsn). v1 files are upgraded on load.
+ */
 export interface PersistedFileChurnDiscovery {
-  version: 1;
+  version: 2;
   repoRoot: string;
   head: string;
   sinceIso: string;

@@ -39,7 +39,7 @@ function mockOneCommitTouching(file: string): void {
         body: "feat: change",
         parents: [PARENT_SHA],
       },
-      changedFiles: [file],
+      changedFiles: [{ path: file }],
     },
   ]);
 }

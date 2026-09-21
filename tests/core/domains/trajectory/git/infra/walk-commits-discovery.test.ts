@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
 import * as gitClient from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
-import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
+import type { CommitWithChangedFiles } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import type { WalkCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
 
@@ -21,7 +21,7 @@ vi.mock("../../../../../../src/core/adapters/vcs/git/git-cli/client.js", async (
 const COMMIT_SHA = "a".repeat(40);
 const PARENT_SHA = "p".repeat(40);
 
-function commitTouching(changedFiles: string[], body = "feat: change"): { commit: CommitInfo; changedFiles: string[] } {
+function commitTouching(paths: string[], body = "feat: change"): CommitWithChangedFiles {
   return {
     commit: {
       sha: COMMIT_SHA,
@@ -31,7 +31,7 @@ function commitTouching(changedFiles: string[], body = "feat: change"): { commit
       body,
       parents: [PARENT_SHA],
     },
-    changedFiles,
+    changedFiles: paths.map((path) => ({ path })),
   };
 }
 
@@ -44,7 +44,7 @@ function fakeBlobReader(): { read: ReturnType<typeof vi.fn>; close: ReturnType<t
 }
 
 function fakeDiscovery(
-  entries: { commit: CommitInfo; changedFiles: string[] }[],
+  entries: CommitWithChangedFiles[],
   bugFixShas = new Set<string>(),
 ): { commitsForFiles: ReturnType<typeof vi.fn>; getBugFixShas: ReturnType<typeof vi.fn> } {
   return {

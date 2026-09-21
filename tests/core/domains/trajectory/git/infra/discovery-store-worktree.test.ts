@@ -36,7 +36,9 @@ function commit(sha: string): CommitInfo {
   return { sha, author: "Alice", authorEmail: "alice@ex.com", timestamp: 1000, body: "feat: x", parents: [] };
 }
 
-const commitEntries = (): GitCommitDiscoveryEntry[] => [{ commit: commit(head("c")), changedFiles: ["a.ts", "b.ts"] }];
+const commitEntries = (): GitCommitDiscoveryEntry[] => [
+  { commit: commit(head("c")), changedFiles: [{ path: "a.ts" }, { path: "b.ts" }] },
+];
 
 const churnEntries = (): CommitFileNumstat[] => [
   { commit: commit(head("c")), committerTimestamp: 1000, files: [{ path: "a.ts", added: 3, deleted: 1 }] },

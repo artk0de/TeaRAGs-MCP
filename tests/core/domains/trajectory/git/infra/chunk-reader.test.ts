@@ -48,7 +48,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           body: "feat: add big file",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["big-file.ts"],
+        changedFiles: [{ path: "big-file.ts" }],
       },
     ]);
 
@@ -94,7 +94,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           timestamp: Math.floor(Date.now() / 1000),
           body: "fix: something",
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
     ]);
 
@@ -135,7 +135,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           body: "initial commit",
           parents: [],
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
     ]);
 
@@ -174,7 +174,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           body: "fix: something",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
     ]);
 
@@ -214,7 +214,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
           body: "feat: stuff",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
     ]);
 
@@ -263,7 +263,7 @@ describe("processCommitEntry — no relevant files", () => {
           timestamp: Math.floor(Date.now() / 1000),
           body: "feat: unrelated change",
         },
-        changedFiles: ["other-file.ts"], // not in chunkMap
+        changedFiles: [{ path: "other-file.ts" }], // not in chunkMap
       },
     ]);
 
@@ -312,7 +312,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
           body: "fix: resolve critical auth bug",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["auth.ts"],
+        changedFiles: [{ path: "auth.ts" }],
       },
     ]);
 
@@ -379,7 +379,7 @@ describe("buildChunkChurnMapUncached — single-chunk files", () => {
           body: "feat: tiny header file",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["small.ts"],
+        changedFiles: [{ path: "small.ts" }],
       },
     ]);
 
@@ -444,7 +444,7 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
           body: "fix: something",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
     ]);
 
@@ -531,7 +531,7 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
           body: "fix: something",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["src/a.ts"],
+        changedFiles: [{ path: "src/a.ts" }],
       },
     ]);
 
@@ -596,7 +596,7 @@ describe("buildChunkChurnMapUncached — external semaphore", () => {
           body: "fix: something",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["src/a.ts"],
+        changedFiles: [{ path: "src/a.ts" }],
       },
     ]);
 
@@ -641,7 +641,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
           body: "fix: something",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["src/a.ts"],
+        changedFiles: [{ path: "src/a.ts" }],
       },
     ]);
     // Spy createCatFileBatch to assert the walk does NOT spawn its own reader
@@ -695,7 +695,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
           body: "fix: something",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["src/a.ts"],
+        changedFiles: [{ path: "src/a.ts" }],
       },
     ]);
     const read = vi.fn().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
@@ -738,7 +738,7 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
           body: "feat: first change",
           parents: ["p".repeat(40)],
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
       {
         commit: {
@@ -749,7 +749,7 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
           body: "fix: second change",
           parents: ["q".repeat(40)],
         },
-        changedFiles: ["test.ts"],
+        changedFiles: [{ path: "test.ts" }],
       },
     ]);
 

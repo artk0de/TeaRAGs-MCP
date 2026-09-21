@@ -61,7 +61,7 @@ describe("FileChurnDiscoveryStore", () => {
     const loaded = store.load(REPO_ROOT, HEAD_A);
 
     expect(loaded).not.toBeNull();
-    expect(loaded?.version).toBe(1);
+    expect(loaded?.version).toBe(2);
     expect(loaded?.repoRoot).toBe(REPO_ROOT);
     expect(loaded?.head).toBe(HEAD_A);
     expect(loaded?.sinceIso).toBe(SINCE_ISO);
@@ -88,7 +88,7 @@ describe("FileChurnDiscoveryStore", () => {
     mkdirSync(repoDir(baseDir), { recursive: true });
     writeFileSync(
       join(repoDir(baseDir), `${HEAD_A}.json`),
-      JSON.stringify({ version: 2, repoRoot: REPO_ROOT, head: HEAD_A, sinceIso: SINCE_ISO, entries: entries() }),
+      JSON.stringify({ version: 99, repoRoot: REPO_ROOT, head: HEAD_A, sinceIso: SINCE_ISO, entries: entries() }),
     );
 
     expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();
