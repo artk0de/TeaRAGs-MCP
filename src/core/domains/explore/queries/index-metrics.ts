@@ -17,6 +17,7 @@ import { NotIndexedError } from "../../ingest/errors.js";
 import { mapMarkerToHealth } from "../../ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentMarkerMap } from "../../ingest/pipeline/enrichment/types.js";
 import { CollectionNotFoundError } from "../errors.js";
+import { resolvableLabelBands } from "../label-resolver.js";
 import { applySignalFloors, floorsForSignal } from "../signal-floors.js";
 
 export class IndexMetricsQuery {
@@ -95,13 +96,21 @@ export class IndexMetricsQuery {
               floorsForSignal(this.signalFloors, language, key),
             );
 
+      // Ordered by percentile — the order `resolveLabel` walks — then narrowed
+      // to the bands it can actually return. An atomic distribution ties
+      // neighbouring percentiles, and a tied band is unreachable: publishing it
+      // would advertise a label no result can ever carry.
+      const bands = Object.entries(descriptor.stats.labels)
+        .map(([pKey, label]) => ({ p: Number(pKey.slice(1)), label }))
+        .sort((a, b) => a.p - b.p)
+        .flatMap(({ p, label }) => {
+          const threshold = percentiles[p];
+          return threshold === undefined ? [] : [{ label, threshold }];
+        });
+
       const labelMap: Record<string, number> = {};
-      for (const [pKey, labelName] of Object.entries(descriptor.stats.labels)) {
-        const p = Number(pKey.slice(1));
-        const threshold = percentiles[p];
-        if (threshold !== undefined) {
-          labelMap[labelName] = threshold;
-        }
+      for (const { label, threshold } of resolvableLabelBands(bands)) {
+        labelMap[label] = threshold;
       }
 
       result[key] = {

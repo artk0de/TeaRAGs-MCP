@@ -378,4 +378,89 @@ describe("IndexMetricsQuery", () => {
     // labelMap stays raw — format is a render-time hint, not a value transform.
     expect(metrics.labelMap).toEqual({ peripheral: 0.00028, important: 0.00041, critical: 0.0012 });
   });
+
+  /**
+   * `resolveLabel` walks the bands in ascending percentile order, keeps the LAST
+   * whose threshold the value reaches, and seeds the result with the first
+   * label. So a band is only reachable when the NEXT band starts strictly
+   * higher: two labels sharing a threshold means the earlier one can never be
+   * returned. Publishing it anyway makes `labelMap` describe a vocabulary the
+   * resolver does not use — live on this index for
+   * `git.file.blameDominantAuthorPct` (four bands, all at 100).
+   */
+  describe("labelMap publishes only the bands the resolver can return", () => {
+    const withPercentiles = (
+      percentiles: Record<number, number>,
+      labels: Record<string, string>,
+      key = "git.chunk.probe",
+    ) => {
+      const qdrant = {
+        collectionExists: vi.fn().mockResolvedValue(true),
+        countPoints: vi.fn().mockResolvedValue(100),
+        getPoint: vi.fn().mockResolvedValue(null),
+      } as any;
+      const statsCache = {
+        load: vi.fn().mockReturnValue({
+          perSignal: new Map(),
+          perLanguage: new Map([
+            ["typescript", new Map([[key, { source: { count: 80, min: 0, max: 100, percentiles } }]])],
+          ]),
+          distributions: {
+            totalFiles: 50,
+            language: { typescript: 80 },
+            chunkType: {},
+            documentation: { docs: 0, code: 80 },
+            topAuthors: [],
+            othersCount: 0,
+          },
+          computedAt: Date.now(),
+        }),
+      } as any;
+      const payloadSignals = [{ key, type: "number", description: "probe", stats: { labels } }] as any;
+      return new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+    };
+
+    it("drops a band whose successor starts at the same threshold", async () => {
+      // solo/pair/team all at 1: only `team` can win the run, because `crowd`
+      // starts strictly higher. `solo` survives as the below-everything default.
+      const query = withPercentiles(
+        { 25: 1, 50: 1, 75: 1, 95: 2 },
+        { p25: "solo", p50: "pair", p75: "team", p95: "crowd" },
+      );
+
+      const result = await query.run("col", "/project");
+
+      expect(result.signals["typescript"]["git.chunk.probe"]["source"].labelMap).toEqual({
+        solo: 1,
+        team: 1,
+        crowd: 2,
+      });
+    });
+
+    it("collapses an all-identical ladder to the default band and the top band", async () => {
+      const query = withPercentiles(
+        { 25: 100, 50: 100, 75: 100, 95: 100 },
+        { p25: "shared", p50: "concentrated", p75: "silo", p95: "deep-silo" },
+      );
+
+      const result = await query.run("col", "/project");
+
+      expect(result.signals["typescript"]["git.chunk.probe"]["source"].labelMap).toEqual({
+        shared: 100,
+        "deep-silo": 100,
+      });
+    });
+
+    it("leaves a strictly increasing ladder untouched", async () => {
+      const query = withPercentiles({ 50: 0, 75: 50, 95: 100 }, { p50: "healthy", p75: "concerning", p95: "critical" });
+
+      const result = await query.run("col", "/project");
+
+      expect(result.signals["typescript"]["git.chunk.probe"]["source"].labelMap).toEqual({
+        healthy: 0,
+        concerning: 50,
+        critical: 100,
+      });
+    });
+  });
 });

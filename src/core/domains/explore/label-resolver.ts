@@ -53,6 +53,34 @@ export function resolveLabel(
   return applyConfidenceClamp(resolved, entries, ctx);
 }
 
+/**
+ * The subset of bands `resolveLabel` can actually return, given their
+ * thresholds. Input MUST already be ordered ascending by percentile — the same
+ * order the resolver walks.
+ *
+ * The resolver seeds the result with the first band and then keeps the LAST
+ * band whose threshold the value has reached. A band is therefore reachable
+ * only when the NEXT band starts strictly higher: two bands sharing a threshold
+ * make the earlier one unreturnable, because any value reaching it reaches its
+ * successor too. The first band survives regardless (it owns everything below
+ * the second) and so does the last (it owns everything from its threshold up).
+ *
+ * Percentiles are non-decreasing by construction, so a tie is the only way a
+ * band gets shadowed — and ties are common on atomic distributions. Live case
+ * on this index: `git.file.blameDominantAuthorPct` declares four bands and the
+ * percentiles put all four at 100, so the vocabulary the resolver can emit is
+ * `shared` and `deep-silo` — `concentrated` and `silo` are dead names.
+ *
+ * Callers publishing a label vocabulary (`SignalMetrics.labelMap`) must filter
+ * through this, or they advertise bands no result can ever carry.
+ */
+export function resolvableLabelBands<T extends { threshold: number }>(ascendingBands: readonly T[]): T[] {
+  return ascendingBands.filter(
+    (band, index) =>
+      index === 0 || index === ascendingBands.length - 1 || ascendingBands[index + 1].threshold > band.threshold,
+  );
+}
+
 function applyConfidenceClamp(baseLabel: string, entries: { p: number; label: string }[], ctx?: LabelContext): string {
   const confidence = ctx?.confidence;
   const clamp = confidence?.label;

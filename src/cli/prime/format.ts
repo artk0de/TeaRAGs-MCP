@@ -244,11 +244,24 @@ function formatThresholdsSection(
   return lines;
 }
 
+// A threshold is the LOWEST value that reaches its band, not the highest the
+// band admits: the resolver keeps the last band the value has reached. Rendering
+// `label ≤threshold` inverted every band in the digest — `healthy ≤0%` read as
+// "healthy only at exactly 0%" when it meant "healthy below the next band", and
+// that misreading cost a full debugging session. Bands arrive ascending and
+// already stripped of unreachable ones (`resolvableLabelBands`), so each carries
+// its own lower bound; only the first band has an upper bound to show, because
+// it is the default for everything below the second.
 function formatLabelMap(labelMap: Record<string, number>, format?: "percent" | "percent100"): string {
-  return Object.entries(labelMap)
-    .map(([label, threshold]) => `${label} ≤${formatThreshold(threshold, format)}`)
-    .join(" / ")
-    .replace(/extreme ≤(\d+)/, "extreme >$1");
+  const bands = Object.entries(labelMap);
+  const [, secondThreshold] = bands[1] ?? [];
+  return bands
+    .map(([label, threshold], index) => {
+      if (index > 0) return `${label} ≥${formatThreshold(threshold, format)}`;
+      // A lone band catches every value — no bound to state.
+      return secondThreshold === undefined ? label : `${label} <${formatThreshold(secondThreshold, format)}`;
+    })
+    .join(" / ");
 }
 
 // Percent display hints (value stays raw upstream):
