@@ -53,6 +53,30 @@
   ran last (bd tea-rags-mcp-9i2ow), and "no ranges" degraded silently into bare
   stamps over 52k taxdome chunks (fxio5) and persisted anchor owners (71n0p). A
   producer that calls the rule without the settlement reintroduces both.
+- **A chunk signal is addressed by `(relPath, symbolId)`; the bare symbolId
+  names every namesake at once.** `DuckDbMethodEdgeReader#getChunkSignalsBulk`
+  groups the method edge table by `target_rel_path, target_symbol_id` /
+  `source_rel_path, source_symbol_id` and keys its map with
+  `fileScopedSymbolKey`, and `settleCodegraphChunkSignals` takes the `relPath`
+  as its first argument for the sole purpose of composing that key — the same
+  scoping `getCalleeEdgesScoped` carries for `trace_path` (bd
+  tea-rags-mcp-oxnvl). `DuckDbSignalDriftStore`'s `CURRENT_SYMBOL_SIGNALS` CTE
+  groups the same way, because the diff has to compare the expression the
+  PAYLOAD is built from; grouping there on the bare id while the payload carries
+  the per-file number leaves every namesake permanently "moved". Why: a
+  `SymbolId` is unique per FILE, so the bare grouping merged every top-level
+  declaration sharing a name into ONE node and wrote the UNION of their edges
+  onto each — measured on this index, `src/index.ts#main`,
+  `src/cli/index-progress/worker.ts#main` and `daemon/entry.ts#main` all carried
+  `codegraph.chunk.fanOut = 543` against a `god-method` threshold of 67, and the
+  `decomposition` preset spent result slots on it (bd tea-rags-mcp-xtdkq).
+  **`pageRank` is NOT yet fixed**: `cg_symbols_metrics` is keyed by `symbol_id`
+  alone and the rank is computed over `streamAdjacency("method")`, which yields
+  bare ids, so every namesake shares one node in the PageRank graph and the bulk
+  read hands each declaring file that same value. Un-merging it is a schema
+  change to `cg_symbols_metrics` + `cg_symbols_cycles` (whose method-scope
+  members are bare ids that `find_cycles` renders), not an edit to this pass.
+
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** Every `GraphDbClientPool` and
   `CodegraphDbFiles` method that derives a DuckDB path takes a

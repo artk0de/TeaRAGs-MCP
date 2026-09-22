@@ -230,16 +230,25 @@ export interface GraphDbClient {
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
   /**
    * Bulk read-back of `{ fanIn, fanOut, pageRank }` for EVERY symbol in the
-   * graph — the set-based replacement for the per-chunk
-   * `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop in
-   * `buildChunkSignals` (the deferred-chunk tail). Three GROUP-BY / scan queries
-   * instead of `3 × chunkCount` point queries. Values are byte-identical to the
-   * per-symbol getters — same confidence-weighted `SUM(COALESCE(confidence,1.0))`
-   * with 2-decimal `roundEdgeWeightSum`, same `Number()`/0 pageRank default — and
-   * a symbol absent from the map reads as `{ 0, 0, 0 }` (matching the getters,
-   * which each return 0 on no rows).
+   * graph, keyed by {@link fileScopedSymbolKey} — the set-based replacement for
+   * the per-chunk `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop
+   * in `buildChunkSignals` (the deferred-chunk tail). Three GROUP-BY / scan
+   * queries instead of `3 × chunkCount` point queries. A symbol absent from the
+   * map reads as `{ 0, 0, 0 }` (matching the getters, which each return 0 on no
+   * rows).
+   *
+   * The key is `(relPath, symbolId)` and NOT the bare symbolId, because a
+   * symbolId is unique per file: the bare form merged every top-level namesake
+   * into one node and stamped the union of their edges on each (bd
+   * tea-rags-mcp-xtdkq, same defect class as the migration-020 primary key).
+   * The per-symbol getters above still answer the merged number and have no
+   * production caller left; do not reintroduce one.
+   *
+   * `pageRank` is the residual: it is stored per bare symbol_id and computed
+   * over an adjacency of bare ids, so every namesake shares one rank and the
+   * bulk read hands each declaration that same value.
    */
-  getChunkSignalsBulk: () => Promise<Map<SymbolId, ChunkGraphSignals>>;
+  getChunkSignalsBulk: () => Promise<Map<FileScopedSymbolId, ChunkGraphSignals>>;
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
   /** Direct ancestors of a type (forward), ordered by declaration ordinal. */
