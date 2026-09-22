@@ -327,6 +327,16 @@ export interface CollectionSignalStats {
    * guessed when it is missing, and a reindex fills it in.
    */
   scoreBackground?: ScoreBackground;
+  /**
+   * The sampling procedure these numbers were produced under, one entry per
+   * signal (`describeStatsSamplingContract`). Emitted by the computation rather
+   * than supplied by its caller, so the stamp cannot describe a different
+   * sample than the one beside it.
+   *
+   * Absent on every stats file written before the stamp existed. That absence
+   * is not "no drift" — it is "unstamped", and the drift monitor says so.
+   */
+  samplingContract?: Record<string, string>;
 }
 
 /** Context passed to DerivedSignalDescriptor.extract() for adaptive normalization. */

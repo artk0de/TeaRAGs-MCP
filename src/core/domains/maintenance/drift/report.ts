@@ -22,6 +22,7 @@ export interface IndexDriftReport {
 
 const AXIS_TITLE: Record<IndexDriftAxis, string> = {
   payloadKeys: "Payload keys",
+  statsContract: "Signal sampling",
   languageVersions: "Language versions",
   env: "Indexing env",
   commit: "Working tree",

@@ -7,7 +7,7 @@
  */
 
 import { isServicePointPayload } from "../../../adapters/qdrant/service-points.js";
-import { resolvePayloadValue } from "../../../contracts/signal-utils.js";
+import { describeStatsSamplingContract, resolvePayloadValue } from "../../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../../contracts/types/filter-preset.js";
 import {
   STATS_ACCUMULATOR_KEYS,
@@ -618,5 +618,8 @@ export function computeCollectionStats(
     perLanguage,
     distributions,
     computedAt: Date.now(),
+    // Stamped here rather than by the caller: the contract describes the sample
+    // this call just took, and the two must not be able to disagree.
+    samplingContract: describeStatsSamplingContract(statsSignals),
   };
 }

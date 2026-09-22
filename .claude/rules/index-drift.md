@@ -10,9 +10,10 @@ paths:
 the current build or environment would produce now. Everything here is a pure
 comparison. The line that decides what belongs:
 
-- **Compare → here.** Reads a stamp (stats cache `payloadFieldKeys`, registry
-  `languageVersions` / `env` / `indexedCommit`), reads the current value,
-  returns `IndexDriftFinding[]`. No I/O beyond those reads.
+- **Compare → here.** Reads a stamp (stats cache `payloadFieldKeys` and
+  `samplingContract`, registry `languageVersions` / `env` / `indexedCommit`),
+  reads the current value, returns `IndexDriftFinding[]`. No I/O beyond those
+  reads.
 - **Side effect → elsewhere.** Throws on mismatch (`EmbeddingModelGuard`,
   `adapters/qdrant/`), decides to spawn (`maintenance/freshness/`), upgrades a
   store (`maintenance/migration/`), rewrites payload
@@ -62,7 +63,12 @@ and unset it prints nothing, because the default is true.
    (`maintenance/worktree/worktree-seed-source.ts`). A first index seeded from a
    sibling worktree inherits the sibling's data, so an axis the seed gate does
    not compare is drift the seed silently copies — why and how:
-   `src/core/domains/maintenance/worktree/CLAUDE.md`.
+   `src/core/domains/maintenance/worktree/CLAUDE.md`. Skip this ONLY when the
+   seeded run itself repairs the axis: a seed continues as an ordinary
+   incremental, so an axis a MIGRATION fixes is already fixed by the time the
+   run ends, and gating on it would reject a good sibling and re-embed the whole
+   repository. `statsContract` is the one such axis today, recorded as a
+   deliberate departure in `drift/CLAUDE.md`.
 
 ## Why not `teaRagsVersion`
 

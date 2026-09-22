@@ -283,6 +283,17 @@ export class IngestFacade {
     const providers: EnrichmentProvider[] = deps.enrichmentProviders ?? [];
     const enrichmentProviderKey = providers.length > 0 ? providers[0].key : undefined;
 
+    const gitTimePeriods = trajectoryConfig.trajectoryGit
+      ? {
+          fileMonths: trajectoryConfig.trajectoryGit.logMaxAgeMonths,
+          chunkMonths: trajectoryConfig.trajectoryGit.chunkMaxAgeMonths,
+        }
+      : undefined;
+
+    // Resolved above the pipeline because the stats migration recomputes a
+    // collection's stats outside any indexing run, and `configTimePeriodMonths`
+    // is carried by the walk configuration rather than by the payload — omit it
+    // and a migrated stats file loses the window its git signals were read over.
     const ingestDeps = createIngestDependencies(
       qdrant,
       snapshotDir,
@@ -290,14 +301,8 @@ export class IngestFacade {
       syncTuning,
       config.enableHybridSearch,
       enrichmentProviderKey,
+      gitTimePeriods,
     );
-
-    const gitTimePeriods = trajectoryConfig.trajectoryGit
-      ? {
-          fileMonths: trajectoryConfig.trajectoryGit.logMaxAgeMonths,
-          chunkMonths: trajectoryConfig.trajectoryGit.chunkMaxAgeMonths,
-        }
-      : undefined;
 
     // Single shared executor — Coordinator and Recovery dispatch through the
     // same seam. Phase-2 of the worker-pool spec wires WorkerPoolEnrichment-

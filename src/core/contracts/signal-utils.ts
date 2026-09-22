@@ -5,6 +5,8 @@
  * Provider-specific payload accessors live in trajectory/<provider>/rerank/derived-signals/helpers.ts.
  */
 
+import type { SignalStatsRequest } from "./types/trajectory.js";
+
 // ---------------------------------------------------------------------------
 // Normalization & percentiles
 // ---------------------------------------------------------------------------
@@ -155,4 +157,63 @@ export function resolvePayloadValue(payload: Record<string, unknown>, path: stri
     current = (current as Record<string, unknown>)[part];
   }
   return current;
+}
+
+// ---------------------------------------------------------------------------
+// Stats sampling contract
+// ---------------------------------------------------------------------------
+
+/**
+ * What a signal's `stats` declaration asks of the SAMPLE, as one comparable
+ * string per signal.
+ *
+ * A stats file is a measurement, and a measurement is only interpretable
+ * against the procedure that produced it. Change the procedure — start counting
+ * a file once instead of once per chunk, start admitting a measured zero,
+ * restrict which chunk types are sampled, ask for another percentile — and the
+ * numbers already on disk answer a question nobody is asking any more. Nothing
+ * about them looks wrong; they are simply about a different population, and
+ * they keep feeding labels, filter-preset thresholds and adaptive bounds until
+ * something recomputes them.
+ *
+ * So the contract is stamped alongside the numbers and compared later. Only the
+ * properties that change WHICH values are sampled or WHICH aggregates are
+ * persisted belong in it: `bandTieBreak` decides how a stored percentile is
+ * READ and leaves the file identical, so including it would demand a recompute
+ * that could not change a single digit.
+ */
+export function describeStatsSamplingContract(
+  signals: readonly { key: string; stats?: SignalStatsRequest }[],
+): Record<string, string> {
+  const contract: Record<string, string> = {};
+  for (const signal of signals) {
+    if (!signal.stats) continue;
+    contract[signal.key] = describeOneSamplingContract(signal.stats);
+  }
+  return contract;
+}
+
+function describeOneSamplingContract(stats: SignalStatsRequest): string {
+  const percentiles = new Set<number>(stats.percentilesToCompute ?? []);
+  for (const label of Object.keys(stats.labels ?? {})) {
+    const parsed = parseInt(label.slice(1), 10);
+    if (!isNaN(parsed)) percentiles.add(parsed);
+  }
+  const chunkTypes =
+    stats.chunkTypeFilter === undefined
+      ? "*"
+      : [...(typeof stats.chunkTypeFilter === "string" ? [stats.chunkTypeFilter] : stats.chunkTypeFilter)]
+          .sort()
+          .join("+");
+
+  // Sorted and fully spelled out: the string is compared, so a reordering of
+  // the declaration must not read as a change, and an added property must.
+  return [
+    `p=${[...percentiles].sort((a, b) => a - b).join(".")}`,
+    `chunkTypes=${chunkTypes}`,
+    `perFile=${stats.dedupeByFile === true}`,
+    `zeroCounts=${stats.zeroIsValidObservation === true}`,
+    `mean=${stats.mean === true}`,
+    `stddev=${stats.stddev === true}`,
+  ].join(" ");
 }

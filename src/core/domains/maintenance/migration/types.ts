@@ -109,6 +109,22 @@ export interface StatsStore {
    * measure — no reindex is involved either way.
    */
   backfillScoreBackground: (collection: string) => Promise<boolean>;
+  /**
+   * Whether the persisted percentiles were sampled the way this build's signal
+   * descriptors ask for — the same judgement `StatsContractDriftMonitor`
+   * reports, so the drift a reader is shown is exactly the drift a reindex
+   * clears.
+   *
+   * `none` — no stats file, nothing to judge.
+   */
+  getStatsContractState: (collection: string) => Promise<"none" | "stale" | "current">;
+  /**
+   * Recompute the whole stats file from payload ALREADY STORED, through the
+   * same formula indexing uses, and persist it. The score background is carried
+   * over untouched — it is measured from vectors, not payload. Returns false
+   * when there is no stats file to rebuild. No reindex, no re-embedding.
+   */
+  rebuildStatsFromPayload: (collection: string) => Promise<boolean>;
 }
 
 /** DIP: enrichedAt backfill operations for enrichment recovery migration. */

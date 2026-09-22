@@ -51,6 +51,7 @@ import { EnvDriftMonitor } from "../core/domains/maintenance/drift/env-drift-mon
 import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
+import { StatsContractDriftMonitor } from "../core/domains/maintenance/drift/stats-contract-drift-monitor.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
 import {
   createDatabaseMigrationApplier,
@@ -987,6 +988,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     payloadKeyOwners.map((o) => o.key),
     payloadKeyOwners,
   );
+  // A payload key can be present and still be measured wrong: this axis asks
+  // whether the stats file's SAMPLE still answers the question the descriptors
+  // ask — same stats cache, different question — and it is the only axis whose
+  // remedy is a plain incremental, because the repair is a migration over
+  // payload already on disk.
+  const statsContractDriftMonitor = new StatsContractDriftMonitor(statsCache, composition.allPayloadSignalDescriptors);
   // Complements the payload-key monitor above, never merges into it: a grammar
   // or resolver bump leaves every payload key identical while relocating chunk
   // boundaries or retargeting edges (bd tea-rags-mcp-frwka).
@@ -1027,7 +1034,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // domain module and may not reach the api layer for it, and deriving the hash
   // itself sent a relocated project's report to a collection nobody queries.
   const driftReporter = new IndexDriftReporter(
-    [schemaDriftMonitor, languageVersionDriftMonitor, envDriftMonitor, commitDriftMonitor],
+    [schemaDriftMonitor, statsContractDriftMonitor, languageVersionDriftMonitor, envDriftMonitor, commitDriftMonitor],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
     createPathCollectionResolver(collectionRegistry),
   );
