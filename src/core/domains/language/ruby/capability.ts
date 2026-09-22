@@ -31,7 +31,7 @@ export const capability: LanguageCapability = {
   // file's pass-1 slice and hydrated at the barrier. Rows written earlier do not carry them,
   // and only a re-walk can backfill them, so the recompute is what makes incremental runs see
   // the overrides.
-  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };
