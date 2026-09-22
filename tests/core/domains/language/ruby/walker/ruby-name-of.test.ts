@@ -134,6 +134,69 @@ describe("rbNameOf — `extend self` module promotion (bd tea-rags-mcp-08v2)", (
   });
 });
 
+describe("rbNameOf — `module_function` module promotion", () => {
+  /** nth `method` node in source order — the toggle tests need a specific def. */
+  function nthMethod(tree: Parser.Tree, n: number): Parser.SyntaxNode {
+    const found: Parser.SyntaxNode[] = [];
+    const walk = (node: Parser.SyntaxNode): void => {
+      if (node.type === "method") found.push(node);
+      for (const c of node.namedChildren) walk(c);
+    };
+    walk(tree.rootNode);
+    return found[n];
+  }
+
+  it("emits BOTH forms for a method below a bare `module_function`", () => {
+    const tree = parse("module M\n  module_function\n\n  def helper\n  end\nend\n");
+    expect(rbNameOf(findFirst(tree, "method"))).toEqual([
+      { name: "helper", descendsInto: false, methodKind: "instance" },
+      { name: "helper", descendsInto: false, methodKind: "static" },
+    ]);
+  });
+
+  it("emits only the instance form for a method ABOVE a bare `module_function`", () => {
+    const tree = parse("module M\n  def before\n  end\n\n  module_function\n\n  def after\n  end\nend\n");
+    expect(rbNameOf(nthMethod(tree, 0))).toEqual({ name: "before", descendsInto: false, methodKind: "instance" });
+    expect(rbNameOf(nthMethod(tree, 1))).toEqual([
+      { name: "after", descendsInto: false, methodKind: "instance" },
+      { name: "after", descendsInto: false, methodKind: "static" },
+    ]);
+  });
+
+  it("emits BOTH forms for a method named in `module_function :sym`, regardless of position", () => {
+    const tree = parse("module M\n  def a\n  end\n  module_function :a\n  def b\n  end\nend\n");
+    expect(rbNameOf(nthMethod(tree, 0))).toEqual([
+      { name: "a", descendsInto: false, methodKind: "instance" },
+      { name: "a", descendsInto: false, methodKind: "static" },
+    ]);
+    expect(rbNameOf(nthMethod(tree, 1))).toEqual({ name: "b", descendsInto: false, methodKind: "instance" });
+  });
+
+  it("emits only the instance form for a module WITHOUT module_function", () => {
+    const tree = parse("module M\n  def helper\n  end\nend\n");
+    expect(rbNameOf(findFirst(tree, "method"))).toEqual({
+      name: "helper",
+      descendsInto: false,
+      methodKind: "instance",
+    });
+  });
+
+  it("does not promote a method in a CLASS body that calls module_function", () => {
+    const tree = parse("class C\n  module_function\n  def helper\n  end\nend\n");
+    expect(rbNameOf(findFirst(tree, "method"))).toEqual({
+      name: "helper",
+      descendsInto: false,
+      methodKind: "instance",
+    });
+  });
+
+  it("leaves `def self.` static-only — no duplicate instance form", () => {
+    const tree = parse("module M\n  module_function\n  def self.helper\n  end\nend\n");
+    const node = findFirst(tree, "singleton_method");
+    expect(rbNameOf(node)).toEqual({ name: "helper", descendsInto: false, methodKind: "static" });
+  });
+});
+
 describe("rbNameOf — class/module containers", () => {
   it("rbNameOf emits a simple class name with descendsInto", () => {
     const tree = parse("class Widget\nend\n");

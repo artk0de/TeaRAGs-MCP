@@ -144,12 +144,15 @@ describe("seeded support versions", () => {
       // `classFieldTypesByClassKey` and resolves promoted methods through
       // embedding, so an index built by walker 1 holds none of the
       // `engine.GET` → `RouterGroup#GET` edges this one emits.
+      // ruby walker 4: `module_function` now emits the static symbolId form
+      // alongside the instance one, so an index built by walker 3 holds none of
+      // the `M.foo` → `M#foo` edges this one emits for module functions.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 6],
         ["javascript", 3],
         ["python", 8],
-        ["ruby", 3],
+        ["ruby", 4],
         ["java", 2],
         ["rust", 2],
         ["go", 2],
