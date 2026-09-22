@@ -1056,14 +1056,22 @@ export class IndexingOps {
     // forced re-extraction on this path, and forcing both meant paying for it
     // twice (bd tea-rags-mcp-6aytq).
     //
-    // The recompute is the only leg that can finish the job. It reads the chunk
-    // set back out of the index, so it is the only one holding the chunk ids a
-    // file overlay is applied through, and the only one that runs the deferred
-    // chunk pass — while its own file phase re-extracts every stored file
-    // unconditionally, no hash gate (EnrichmentCoordinator#recomputeEnrichments
-    // → FilePhase#onBatch → the provider's streamFileBatch). Forcing the repair
-    // pass as well therefore added a whole pass-1 + pass-2 over the same corpus
-    // whose result the recompute immediately rebuilt from scratch.
+    // The recompute is the only leg that can finish the PAYLOAD job. It reads
+    // the chunk set back out of the index, so it is the only one holding the
+    // chunk ids a file overlay is applied through, and the only one that runs
+    // the deferred chunk pass — and its own file phase re-extracts every
+    // stored file with no hash gate (EnrichmentCoordinator#recomputeEnrichments
+    // → FilePhase#onBatch → the provider's streamFileBatch). For the Qdrant
+    // payload that re-extraction is a rebuild. For the providers' PERSISTED
+    // STORE rows (codegraph's DuckDB edges) it is NOT: the recompute's store
+    // writes are additive, so a stale row written by older resolver code
+    // survives every recompute on an unchanged file (bd tea-rags-mcp-cneu7,
+    // live on taxdome 2026-09-21 — phantom method edges outlived two
+    // `--force-enrichments codegraph` runs). The coordinator therefore runs a
+    // FORCED provider repair — the diffing write path — for the selected store
+    // providers before its own scroll and heal, which reinstates the duplicate
+    // pass-1 the 6aytq measurement objected to: that cost is the price of
+    // actually retiring stale edges.
     //
     // Measured on taxdome 2026-08-14 17:30, `--force-enrichments codegraph
     // --languages typescript`: the forced repair ran pass-1 over 10,621 files
