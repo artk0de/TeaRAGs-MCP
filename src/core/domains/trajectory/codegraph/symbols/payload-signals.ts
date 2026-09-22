@@ -52,6 +52,25 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
       // so declare p90 here for index-time computation.
       percentilesToCompute: [90],
       dedupeByFile: true,
+      // A one-edge file can only read 0 or 1, so the bottom of the
+      // connectionCount distribution manufactures both tails of the ratio.
+      // Measured on this index (typescript source), observed variance of the
+      // raw ratio against the pure-binomial floor `mean_i[p(1-p)/n_i]` — at or
+      // below 1 the spread is indistinguishable from sampling noise around one
+      // corpus-wide ratio: 0.79 over all 738 files, 1.20 from p50 (n>=3), 2.36
+      // from connectionCount's own p75 (n>=5). The floor is a corpus statistic,
+      // so the declaration names the percentile and the sampler resolves the
+      // number; p75 is already published as connectionCount's `busy` tier.
+      //
+      // Unlike `git.*.bugFixRate`, this does NOT clear the degenerate top band:
+      // instability reads exactly 1 whenever `fanIn` is 0, which is a
+      // structural fact about an entry point rather than a small-denominator
+      // artifact, so the 1.0 atom survives every floor (17 of the 306 admitted
+      // files still read it, one of them on 33 edges). p95 comes off the atom
+      // only around n>=8, by thinning the sample to 146 — a corpus-fitted
+      // number that would regress on an entry-point-heavy repo. The atom is the
+      // `fanIn == 0` class and wants its own treatment (bd tea-rags-mcp-z33bl).
+      minSupportPercentile: 75,
       confidence: {
         support: "connectionCount",
         score: { threshold: 5, adaptivePercentile: 25 },
