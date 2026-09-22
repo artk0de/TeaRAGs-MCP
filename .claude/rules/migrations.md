@@ -51,32 +51,41 @@ would have been the wrong price.
 
 **Drift detection is not a substitute either, and often cannot even see the
 change.** The monitors in `src/core/domains/maintenance/drift/` compare stamps —
-payload keys, language versions, the indexing env, the indexed commit. A field
-that lives in the stats cache, the snapshot, or the DuckDB file has no stamp, so
-"the user will be warned" is false by construction outside those axes
-(`.claude/rules/index-drift.md`).
+payload keys, the stats cache's sampling contract, language versions, the
+indexing env, the indexed commit. A field that lives in the snapshot or the
+DuckDB file still has no stamp, so "the user will be warned" is false by
+construction outside those axes (`.claude/rules/index-drift.md`).
+
+The stats axis is the worked example of the two working TOGETHER rather than one
+standing in for the other: `StatsContractDriftMonitor` reports that a
+collection's percentiles were sampled under a procedure the build has since
+changed, and `StatsV7SamplingContract` is what actually repairs it — which is
+why that finding's remedy is a plain incremental and not `--force`. Ship a
+monitor without the migration and the report never clears; ship the migration
+without the monitor and nobody knows to run anything.
 
 ## When to Add a Migration
 
 Add migration when change affects **persisted state** existing
 collections/snapshots/caches already contain:
 
-| Change type                                           | Pipeline   | Example                                                    |
-| ----------------------------------------------------- | ---------- | ---------------------------------------------------------- |
-| New Qdrant payload index                              | `schema`   | Add keyword index on `symbolId`                            |
-| Change index type (keyword → text)                    | `schema`   | Enable full-text on `relativePath`                         |
-| Enable/configure sparse vectors                       | `schema`   | Activate BM25 for hybrid search                            |
-| Backfill payload fields                               | `schema`   | Set `enrichedAt` on old points                             |
-| Qdrant collection config change                       | `schema`   | Modify vector params                                       |
-| Index added to `initializeSchema` for NEW collections | `schema`   | The parity test fails until the same index has a migration |
-| Payload signal removed or renamed                     | `schema`   | Drop its index — v16's undeclared-index drop is one-shot   |
-| Sparse vector rebuild after BM25 change               | `sparse`   | Regenerate BM25 vectors                                    |
-| BM25 tokenizer / vocabulary change in `sparse.ts`     | `sparse`   | Bump `sparseVersion`; rebuild sparse vectors               |
-| Snapshot format change                                | `snapshot` | Add new fields to snapshot entries                         |
-| Snapshot store gains/renames a field                  | `snapshot` | mtime+size added alongside the hash                        |
-| Stats-cache gains a computed field                    | `stats`    | Backfill `scoreBackground` (v6)                            |
-| Percentile / stats formula change                     | `stats`    | Derived-version check must see the new field               |
-| Codegraph table/column change                         | `database` | New `cg_symbols` column or index                           |
+| Change type                                            | Pipeline   | Example                                                                                                                                                                                                                |
+| ------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New Qdrant payload index                               | `schema`   | Add keyword index on `symbolId`                                                                                                                                                                                        |
+| Change index type (keyword → text)                     | `schema`   | Enable full-text on `relativePath`                                                                                                                                                                                     |
+| Enable/configure sparse vectors                        | `schema`   | Activate BM25 for hybrid search                                                                                                                                                                                        |
+| Backfill payload fields                                | `schema`   | Set `enrichedAt` on old points                                                                                                                                                                                         |
+| Qdrant collection config change                        | `schema`   | Modify vector params                                                                                                                                                                                                   |
+| Index added to `initializeSchema` for NEW collections  | `schema`   | The parity test fails until the same index has a migration                                                                                                                                                             |
+| Payload signal removed or renamed                      | `schema`   | Drop its index — v16's undeclared-index drop is one-shot                                                                                                                                                               |
+| Sparse vector rebuild after BM25 change                | `sparse`   | Regenerate BM25 vectors                                                                                                                                                                                                |
+| BM25 tokenizer / vocabulary change in `sparse.ts`      | `sparse`   | Bump `sparseVersion`; rebuild sparse vectors                                                                                                                                                                           |
+| Snapshot format change                                 | `snapshot` | Add new fields to snapshot entries                                                                                                                                                                                     |
+| Snapshot store gains/renames a field                   | `snapshot` | mtime+size added alongside the hash                                                                                                                                                                                    |
+| Stats-cache gains a computed field                     | `stats`    | Backfill `scoreBackground` (v6)                                                                                                                                                                                        |
+| Percentile / stats formula change                      | `stats`    | Derived-version check must see the new field                                                                                                                                                                           |
+| A signal's `stats` declaration changes what it SAMPLES | `stats`    | `dedupeByFile`, `zeroIsValidObservation`, `chunkTypeFilter`, a new percentile — already covered by v7, which rebuilds from payload; no new migration, just make sure `describeStatsSamplingContract` sees the property |
+| Codegraph table/column change                          | `database` | New `cg_symbols` column or index                                                                                                                                                                                       |
 
 **Do NOT add a migration when:**
 

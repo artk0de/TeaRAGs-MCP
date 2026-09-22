@@ -14,17 +14,101 @@ carry their own navigators.
   name useful, takes the server down at composition time — which is why
   codegraph coined `chunkFanIn` / `fanOutPerLine`.
 - **File-scoped signals declare `stats.dedupeByFile`; callable-only signals
-  declare `stats.chunkTypeFilter: "function"`.** Percentiles run over POINTS,
-  i.e. chunks (`tryPushSignalValue` filter,
-  `SignalValuesAccumulator#fileScopedDedupe` keyed
+  declare `stats.chunkTypeFilter`.** Percentiles run over POINTS, i.e. chunks
+  (`admitsChunkType`, `SignalValuesAccumulator#fileScopedDedupe` keyed
   `` `${bucket}|${signal.key}|${relPath}` ``, both in
-  `ingest/infra/collection-stats.ts`). `moduleLines` / `moduleMethodCount` carry
-  the dedupe flag; `methodLines` / `methodDensity` and the codegraph chunk
-  signals carry the type filter; `memberCount` deliberately declares neither
+  `ingest/infra/collection-stats.ts`). EVERY `git.file.*` and `codegraph.file.*`
+  signal with stats carries the dedupe flag, as do `moduleLines` /
+  `moduleMethodCount`, and `file-scope-stats-dedupe.test.ts` fails on a new
+  file-scope signal that forgets it. Every `git.chunk.*` signal with stats
+  carries `CALLABLE_CHUNK_TYPES` (`contracts/types/chunker.ts`), while
+  `methodLines` / `methodDensity` and the codegraph chunk signals still name the
+  bare `"function"`; `memberCount` deliberately declares neither
   (`static/payload-signals.ts`). Why: without dedupe a 51-chunk file casts 51
   votes in its own distribution; without the type filter block/doc/class chunks
-  dilute it. Both surface as a shifted threshold and a plausible wrong label,
-  never as an error.
+  dilute it — `block` alone outnumbers `function` on a typical index, so a
+  method's churn gets ranked against barrel re-exports and constant blocks. Both
+  surface as a shifted threshold and a plausible wrong label, never as an error.
+
+  **This invariant was ASSERTED here while seventeen signals violated it**, from
+  the flag's introduction until 2026-09-22 — it was applied to the two static
+  module-mass signals that motivated it and never swept across the enrichment
+  trajectories. Measured cost on the live tea-rags index, per-chunk against
+  per-file: `git.file.ageDays` p50 7 → 31, `git.file.fileChurnCount` p50/p95
+  369/3766 → 128/994, `codegraph.file.fanOut` p95 33 → 10. The damage is not
+  confined to labels: the same raw percentiles are what filter presets compare
+  against and what floors the reranker's adaptive bounds, so a p95 inflated
+  threefold compresses every normalized file signal and changes RANKING. A
+  navigator asserting an invariant nothing enforces is worse than silence —
+  hence the test.
+
+- **When several bands share a threshold, `stats.bandTieBreak` says which name
+  wins.** An atomic distribution ties neighbouring percentiles and the bands
+  between them vanish; `resolvableLabelBands` (`../explore/label-resolver.ts`)
+  drops the unreachable names so `resolveLabel` and the published `labelMap`
+  cannot disagree. Default `"upper"` keeps the walk-and-take-the-last rule.
+  `"lower"` is declared only where a MEASURED tie produced a name that is wrong
+  about the code: both `bugFixRate` scopes, both `commitCount` scopes, and the
+  contributor counts. Why: the right end is a property of the signal and no
+  algorithm recovers it — `blameDominantAuthorPct` ties at 100 and 100%
+  ownership IS a deep silo, `blameContributorCount` ties at 1 and one author is
+  `solo`, `codegraph.chunk.fanIn` ties at 1 on the same shape yet one caller is
+  `typical`, not `unused`. Before this existed, ripgrep and gin — every file
+  stamped `bugFixRate: 25` — reported 100% of their chunks `critical`.
+- **A single-valued `chunkTypeFilter` DELETES the test-scope distribution.**
+  Scope detection routes `function` to the source bucket and `test` to the test
+  one, so naming one value leaves the other bucket empty, `perLanguage` carries
+  no `test` entry, and every test chunk falls back to a bare number with no
+  label. Live tell: `methodLines`, `methodDensity` and all three
+  `codegraph.chunk.*` report `test: —` in `get_index_metrics` for exactly this
+  reason. A signal that wants both scopes declares both types — that is what
+  `CALLABLE_CHUNK_TYPES` is.
+- **A ZERO is discarded from the sample unless the signal declares
+  `stats.zeroIsValidObservation`.** The same `tryPushSignalValue` drops it,
+  because for most signals 0 means the producer never reached the file — a file
+  past `chunkMaxFileLines` publishes `git.chunk.commitCount: 0` on every chunk,
+  and `run-finalize.ts` falls back to `ZERO_FILE_METRICS` for a path its metrics
+  map has no row for. A ratio inverts that: `git.*.bugFixRate` is 0 because the
+  commits held no fix, which is a reading, and both bugFixRate descriptors carry
+  the flag. Why: leave a real zero out and the percentiles describe P(x | x > 0)
+  — every boundary sits above the population, and where the survivors are mostly
+  one-commit chunks the labelMap collapses onto a single value and inverts.
+  Decide it per signal; whether 0 means "measured none" or "never measured" is a
+  fact about that signal's producer, so a sweep over the remaining zero-capable
+  signals (`fanIn`, `fanOut`, `instability`, `churnVolatility`) would be a
+  guess.
+- **A ratio's bands mean nothing over units the corpus barely observed, and
+  `stats.minSupportPercentile` is how a signal says so.** Declaring it samples a
+  unit only when the sibling `stats.confidence.support` names clears that
+  percentile of the SUPPORT's own distribution in the same bucket; the resolved
+  number is persisted as `SignalStats.supportFloor` so the read half
+  (`Reranker#meetsSupportFloor`, `../explore/CLAUDE.md`) excludes exactly the
+  units the bands were computed without. The floor is a corpus statistic, never
+  a constant — on this index it resolves to `commitCount`'s own p75, 3 at chunk
+  scope and 4 at file scope. Why, measured on `code_8b243ffe` typescript source:
+  compare the observed variance of the raw rate against the pure-binomial floor
+  `mean_i[p(1-p)/n_i]`, and the ratio over the WHOLE population is 0.94 (chunk)
+  and 0.82 (file) — at or below 1, so the entire spread is indistinguishable
+  from sampling noise around one corpus rate of ~31%, and that was the
+  population the bands were cut from. The ratio climbs monotonically with the
+  floor (chunk 1.44 at n≥3, 1.99 at n≥10; file 2.11 at n≥4, 3.00 at n≥10) and
+  the degenerate `critical ≥100%` band — one attainable value, manufactured
+  entirely by one-and-two-commit units that can only read 0 or 100 — disappears
+  at the same point: chunk p95 goes 100 → 80, file → 76.8. **Do not reach for
+  empirical-Bayes shrinkage here; it is measured and refused.** Method of
+  moments fits α at the grid ceiling and collapses the distribution to a point
+  mass at p (p50 30.84, p75 30.84, p95 30.86) — the honest estimate, and useless
+  as a ladder. The lever is the SAMPLE, not the estimator. Cost, so nobody reads
+  it as a regression: the sample drops 9051 → 2450 chunk values and 2003 → 589
+  file ones, and every excluded unit keeps a bare number. **The gate narrows the
+  GLOBAL bucket too, so it moves filter-preset thresholds, not just labels** —
+  those resolve from `perSignal` (next bullet), so declaring it on
+  `git.file.bugFixRate` moved `panicZone`'s `p75` leg from 50 to 44 and
+  `battleTested`'s `p25` leg from 0 to 10, turning "low bug-fix rate" from
+  exactly zero into up to 10%. Both old values were the degenerate ones, so the
+  direction is right, but it changes which points a preset PRE-filters. Read the
+  referencing presets before and after; a support floor is never a labels-only
+  change.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys
@@ -68,6 +152,24 @@ carry their own navigators.
   dampening `k` is a source-code number while the filter still matches test
   chunks; and editing `CODE_TEST_PATHS` for a language whose chunker already
   emits test chunks changes nothing.
+
+  **Two aggregates ship in every stats file, and reading one for the other is
+  the standing trap.** `perSignal` is GLOBAL — one distribution per signal,
+  pooled across every code language, source scope only — and it is what filter
+  presets and the reranker's dampening `k` read. `perLanguage` is split by
+  (language, scope) and is what LABEL resolution and the `prime` digest read
+  (the resolution half is `../explore/CLAUDE.md`). Their numbers diverge
+  whenever a language sits below `MIN_LANGUAGE_SHARE`, because such a language
+  still enters the global pool but never earns a `perLanguage` entry. Measured
+  on this index: `git.file.bugFixRate` p75 is 43 globally and 50 in typescript
+  source, off 2158 pooled files against 2003 typescript ones. Quote the wrong
+  one and you will explain a threshold with a number no consumer of it ever saw
+  — which is exactly what happened here, twice, before this paragraph existed.
+  `prime` compounds it by rendering neither: it prints the `labelMap`, i.e. the
+  band thresholds left after `resolvableLabelBands` drops the unreachable ones,
+  so a percentile that ties away is absent from the digest while still sitting
+  in the stats file.
+
 - **`RerankPreset.filter` is a default a user filter REPLACES, and `relevance`
   must never declare one.** `resolveFilterSpec`
   (`api/internal/ops/explore-ops.ts`): `effective = spec ?? presetDefault`, and

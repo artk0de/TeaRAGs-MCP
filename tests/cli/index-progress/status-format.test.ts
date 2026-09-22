@@ -259,3 +259,49 @@ describe("formatIndexStatusJson", () => {
     expect(o.phases).toEqual({ embedding: 1200, enrichment: 2300 });
   });
 });
+
+describe("formatIndexStatusJson — enrichment outcome reporting (3h0wx)", () => {
+  it("emits the outcome key with measured:false when no outcome was ever observed", () => {
+    const o = formatIndexStatusJson(baseStatus, { path: "/p" }) as Record<string, unknown>;
+    // The key must be PRESENT — its absence is the defect: a consumer reading
+    // `outcome?.failed` on a detached run gets undefined, indistinguishable
+    // from "nothing failed" on a run that actually waited.
+    expect(Object.keys(o)).toContain("outcome");
+    expect(o.outcome).toEqual({ measured: false });
+  });
+
+  it("reports measured:true with empty arrays when enrichment completed cleanly", () => {
+    const o = formatIndexStatusJson(baseStatus, {
+      path: "/p",
+      outcome: { failed: [], degraded: [] },
+    }) as Record<string, unknown>;
+    expect(o.outcome).toEqual({ measured: true, failed: [], degraded: [] });
+  });
+
+  it("distinguishes a measured-and-clean run from a run that measured nothing", () => {
+    const clean = formatIndexStatusJson(baseStatus, {
+      path: "/p",
+      outcome: { failed: [], degraded: [] },
+    }) as Record<string, unknown>;
+    const unmeasured = formatIndexStatusJson(baseStatus, { path: "/p" }) as Record<string, unknown>;
+    expect(clean.outcome).not.toEqual(unmeasured.outcome);
+  });
+
+  it("carries real failures and degradations through under measured:true", () => {
+    const o = formatIndexStatusJson(baseStatus, {
+      path: "/p",
+      outcome: { failed: ["git"], degraded: ["codegraph.symbols"] },
+    }) as Record<string, unknown>;
+    expect(o.outcome).toEqual({
+      measured: true,
+      failed: ["git"],
+      degraded: ["codegraph.symbols"],
+    });
+  });
+
+  it("leaves the human render free of any outcome wording", () => {
+    const out = formatIndexStatus(baseStatus, plain, { projectName: "tea-rags" });
+    expect(out).not.toContain("measured");
+    expect(out).not.toContain("outcome");
+  });
+});

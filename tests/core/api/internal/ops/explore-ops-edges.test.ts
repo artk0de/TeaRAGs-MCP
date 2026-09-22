@@ -72,6 +72,7 @@ function makeMockEmbeddings() {
 function makeMockReranker(overrides: Record<string, any> = {}) {
   return {
     hasCollectionStats: false,
+    hasCollectionStatsFor: vi.fn().mockReturnValue(false),
     setCollectionStats: vi.fn(),
     getCollectionStats: vi.fn().mockReturnValue(undefined),
     getPreset: vi.fn().mockReturnValue({ similarity: 1 }),
@@ -292,15 +293,23 @@ describe("ExploreOps stats-before-filter ordering", () => {
     const fakeStats = { payloadFieldKeys: ["git.chunk.commitCount"] };
     let storedStats: unknown;
 
+    let storedFor: { collectionName?: string; revision?: number } = {};
+
     const reranker = makeMockReranker({
-      // Mirrors the real Reranker: once stats are set, hasCollectionStats
-      // flips true so the guarded ensureStats inside executeExplore is a
-      // cheap no-op (idempotent — load + setCollectionStats fire exactly once).
+      // Mirrors the real Reranker: once stats are set for a collection at a
+      // revision, hasCollectionStatsFor answers true for that pair, so the
+      // guarded ensureStats inside executeExplore is a cheap no-op (idempotent
+      // — load + setCollectionStats fire exactly once).
       setRecomputeService: vi.fn(),
-      setCollectionStats: vi.fn((stats: unknown) => {
+      setCollectionStats: vi.fn((stats: unknown, opts?: any) => {
         storedStats = stats;
+        storedFor = { collectionName: opts?.collectionName, revision: opts?.revision };
       }),
       getCollectionStats: vi.fn(() => storedStats),
+      hasCollectionStatsFor: vi.fn(
+        (collectionName: string, revision?: number) =>
+          storedStats !== undefined && storedFor.collectionName === collectionName && storedFor.revision === revision,
+      ),
     });
     Object.defineProperty(reranker, "hasCollectionStats", {
       get: () => storedStats !== undefined,
@@ -317,6 +326,7 @@ describe("ExploreOps stats-before-filter ordering", () => {
 
     const statsCache = {
       load: vi.fn().mockReturnValue(fakeStats),
+      lastWrittenAt: vi.fn().mockReturnValue(1),
     } as any;
 
     const facade = new ExploreFacade({

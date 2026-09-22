@@ -10,11 +10,11 @@
 
 import type { IndexDriftRemedy } from "./remedy.js";
 
-export type IndexDriftAxis = "payloadKeys" | "languageVersions" | "env" | "commit";
+export type IndexDriftAxis = "payloadKeys" | "statsContract" | "languageVersions" | "env" | "commit";
 
 export interface IndexDriftFinding {
   axis: IndexDriftAxis;
-  /** payload key | `<language>.<axis>` | env key | branch */
+  /** payload key | signal key | `<language>.<axis>` | env key | branch */
   subject: string;
   indexed: string;
   current: string;

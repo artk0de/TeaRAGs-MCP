@@ -1,7 +1,7 @@
-import { StatsV6ScoreBackground } from "./stats_migrations/index.js";
+import { StatsV6ScoreBackground, StatsV7SamplingContract } from "./stats_migrations/index.js";
 import type { Migration, MigrationRunner, StatsStore } from "./types.js";
 
-const LATEST = 6;
+const LATEST = 7;
 
 /**
  * MigrationRunner for stats-cache backfills.
@@ -27,13 +27,27 @@ export class StatsMigrator implements MigrationRunner {
     private readonly collection: string,
     private readonly store: StatsStore,
   ) {
-    this.migrations = [new StatsV6ScoreBackground(collection, store)];
+    this.migrations = [new StatsV6ScoreBackground(collection, store), new StatsV7SamplingContract(collection, store)];
     this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }
 
+  /**
+   * Both states are read from the DATA, and the OLDEST unmet one wins: the
+   * runner applies every migration above the reported version, so reporting the
+   * newer gap would skip the older one. Order matters beyond bookkeeping — v7
+   * rebuilds the stats file from payload and carries the background across, so
+   * a background that is still missing has to be measured by v6 first.
+   *
+   * v7 has no terminal version: the contract can move again, and each time it
+   * does the same rebuild repairs it. That is why the state is read from the
+   * data here too rather than from a number the file declares.
+   */
   async getVersion(): Promise<number> {
-    const state = await this.store.getBackgroundState(this.collection);
-    return state === "missing-background" ? LATEST - 1 : LATEST;
+    const background = await this.store.getBackgroundState(this.collection);
+    if (background === "missing-background") return 5;
+
+    const contract = await this.store.getStatsContractState(this.collection);
+    return contract === "stale" ? LATEST - 1 : LATEST;
   }
 
   async setVersion(_version: number): Promise<void> {

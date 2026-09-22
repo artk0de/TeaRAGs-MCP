@@ -42,6 +42,26 @@ export interface SignalStatsRequest {
    */
   labels?: Record<string, string>;
   /**
+   * Which end of a run of bands sharing one threshold a value belongs to.
+   *
+   * Percentiles are non-decreasing, so an atomic distribution puts several
+   * labels on the same number and the bands between them vanish. Which of the
+   * surviving names is right is a property of the SIGNAL, not of the data, and
+   * nothing about the numbers reveals it:
+   *
+   *   • `blameDominantAuthorPct` ties at 100 because most files have one
+   *     author. 100% dominance IS a deep silo, so the tie reads `"upper"`.
+   *   • `blameContributorCount` ties at 1 because most chunks have one author.
+   *     One contributor is `solo` and never `team`, so it reads `"lower"`.
+   *   • `codegraph.chunk.fanIn` ties at 1 the same way, but one caller is
+   *     `typical`, not `unused` — `"upper"` again, on an identical shape.
+   *
+   * Defaults to `"upper"`, which is what the resolver does anyway (it keeps the
+   * last band the value reaches). Declare `"lower"` only where a measured tie
+   * produces a name that is wrong about the code.
+   */
+  bandTieBreak?: "lower" | "upper";
+  /**
    * Extra percentiles to compute at index time beyond those declared via
    * `labels` keys. Required when OTHER descriptors reference this signal via
    * `confidence.support` and need percentiles not part of this signal's own
@@ -65,8 +85,33 @@ export interface SignalStatsRequest {
   mean?: boolean;
   /** Compute standard deviation */
   stddev?: boolean;
-  /** Only include points where payload.chunkType matches this value. */
-  chunkTypeFilter?: string;
+  /**
+   * Only sample points whose `payload.chunkType` is this value, or one of these
+   * values. A list is what a per-SCOPE signal needs: scope detection routes
+   * `function` chunks to the source bucket and `test` chunks to the test one, so
+   * a single value can only ever populate one of the two and the other bucket's
+   * distribution silently disappears — visible today as the missing `test` entry
+   * on `methodLines` / `methodDensity` / every `codegraph.chunk.*`.
+   */
+  chunkTypeFilter?: string | readonly string[];
+  /**
+   * The signal's distribution is only meaningful over source code, so the test
+   * bucket is neither sampled nor published — a test-scope point keeps the bare
+   * number instead of a label.
+   *
+   * Distinct from `chunkTypeFilter`, which narrows WHICH chunks are sampled and
+   * empties the test bucket only as a side effect of the chunk types it happens
+   * to name. This says the emptiness is the POINT: `git.*.bugFixRate` measures
+   * how much of a file's history was spent fixing it, and a test file's fix rate
+   * tracks the code under test, not the test. Grading a spec against other specs
+   * on that axis answers a question nobody asked.
+   *
+   * Declaring it changes what the stats file SAMPLES, so it is part of
+   * `describeStatsSamplingContract` — an index built before the flip keeps its
+   * stale test-scope percentiles until the stats-contract drift axis reports
+   * them.
+   */
+  sourceScopeOnly?: boolean;
   /**
    * Treat the signal as file-scoped: contribute at most one value per distinct
    * `relativePath` to each stats bucket (global, per-language, per-scope).
@@ -76,6 +121,60 @@ export interface SignalStatsRequest {
    * files, and a many-chunk file dominates its own percentiles.
    */
   dedupeByFile?: boolean;
+  /**
+   * Sample this signal only from units the collection observed WELL ENOUGH: a
+   * unit contributes its value to a stats bucket only when its support value is
+   * at or above this percentile of the SUPPORT signal's own distribution in the
+   * same bucket. The support is whichever sibling `stats.confidence.support`
+   * already names — there is no second way to declare it.
+   *
+   * The floor is a percentile and never a constant, because what counts as
+   * "observed well enough" is a property of the corpus. Measured on this
+   * project's own index, typescript source, comparing the raw rate's observed
+   * variance against the pure-binomial floor `mean_i[p(1-p)/n_i]` — a ratio at
+   * or below 1 means the spread is indistinguishable from sampling noise:
+   *
+   *   git.chunk.bugFixRate   n>=1 → 0.94   n>=3 → 1.44   n>=10 → 1.99
+   *   git.file.bugFixRate    n>=1 → 0.82   n>=3 → 1.75   n>=10 → 3.00
+   *
+   * At the bottom of the support distribution the only attainable rates are 0
+   * and 100, so the whole population manufactures both tails: p95 sits ON the
+   * 100 atom and the `critical` band grades nothing. Excluding that
+   * subpopulation both restores real dispersion and moves p95 off the atom. The
+   * support's OWN p75 is where it happens — 3 commits per chunk and 4 per file
+   * on this index — which is a corpus-relative quantity, so the declaration
+   * names the percentile and lets the sampler resolve the number.
+   *
+   * Distinct from `sourceScopeOnly` and `chunkTypeFilter`, which select a
+   * population by KIND — what a unit IS (a test, a callable). This one selects
+   * by how well each unit was OBSERVED, which is a property of the measurement
+   * rather than of the unit, and is therefore not knowable until the support's
+   * own distribution exists. The sampler consequently resolves it at finalize
+   * time and persists the resolved number as `SignalStats.supportFloor`, so the
+   * label path excludes exactly the units the bands were computed without.
+   *
+   * Declaring it changes what the stats file SAMPLES, so it is part of
+   * `describeStatsSamplingContract`.
+   */
+  minSupportPercentile?: number;
+  /**
+   * Declare that 0 is a real measurement of this signal, not the absence of
+   * one, so a zero-valued point joins the percentile sample.
+   *
+   * The sampler drops zeros by default because for most signals a 0 means the
+   * producer never reached the file — `git.*.commitCount` publishes 0 for every
+   * chunk of a file past `chunkMaxFileLines`, which the churn walk skips
+   * wholesale. Ratios are the opposite case: a file with eight commits and no
+   * fix among them MEASURED `bugFixRate: 0`. Leave those out and the
+   * percentiles describe P(x | x > 0) — "files that had at least one fix" —
+   * so every bucket boundary sits above where the population actually is, and
+   * on a corpus whose survivors are mostly one-commit chunks the whole labelMap
+   * collapses onto a single value.
+   *
+   * Set it per signal, never as a sweep: whether 0 means "measured none" or
+   * "never measured" is a fact about that signal's producer.
+   */
+  zeroIsValidObservation?: boolean;
   /**
    * Display hint for consumers rendering this signal's thresholds (prime digest,
    * get_index_metrics labelMap). The stored labelMap / threshold value always
@@ -92,24 +191,32 @@ export interface SignalStatsRequest {
 }
 
 /**
- * One label-clamp rule: when the support sibling's value is below
- * `whenSupportBelow`, the signal's overlay label is capped at `ceiling`.
+ * One label-clamp rule: when the support sibling's value is at or below
+ * `whenSupportAtOrBelow`, the signal's overlay label is capped at `ceiling`.
  * `ceiling` MUST be one of the values in the descriptor's `labels` map;
  * runtime resolver enforces this and throws on misconfiguration.
  *
- * `whenSupportBelow` accepts two forms:
+ * The comparison INCLUDES the threshold, and the field is named for it. A `pN`
+ * threshold resolves to `percentiles[N]` — the value AT the Nth percentile —
+ * and supports are typically discrete counts, so the entire bottom-N% mass can
+ * sit ON that one value. A strict `<` then excludes exactly the population the
+ * rule exists to catch: `git.file.commitCount` has p10 = p25 = 1 and a minimum
+ * of 1 on this project's own index, which made both `bugFixRate` rules
+ * unsatisfiable and the clamp dead for every point.
+ *
+ * `whenSupportAtOrBelow` accepts two forms:
  *   • `number` — static threshold, used as-is.
  *   • `"pN"` — adaptive percentile of the SUPPORT signal (e.g. "p25" reads
  *     p25 of `git.{scope}.{confidence.support}` from collection stats).
  *     Reranker pre-resolves the string to a number before applying.
  *
- * `fallback` is the static threshold used when `whenSupportBelow` is a
+ * `fallback` is the static threshold used when `whenSupportAtOrBelow` is a
  * percentile string AND collection stats are unavailable (or the support
- * signal has no recorded percentile). Required when `whenSupportBelow` is
+ * signal has no recorded percentile). Required when `whenSupportAtOrBelow` is
  * a string; ignored when it's a number.
  */
 export interface ConfidenceClampRule {
-  whenSupportBelow: number | `p${number}`;
+  whenSupportAtOrBelow: number | `p${number}`;
   fallback?: number;
   ceiling: string;
 }
@@ -133,15 +240,23 @@ export interface SignalConfidence {
   /** Bare sibling name (e.g. "commitCount"). Same-scope resolution only. */
   support: string;
   /**
-   * Optional continuous dampening parameters for score path.
-   *   • `threshold` — STATIC floor used when collection stats are unavailable
-   *     OR when `adaptivePercentile` is not declared.
+   * Optional continuous dampening parameters for score path. The reranker
+   * resolves `k = max(adaptive, threshold)` — a genuine floor, not a fallback.
+   *   • `threshold` — STATIC floor. It applies whenever the adaptive value
+   *     comes out below it, and stands alone when collection stats are
+   *     unavailable or `adaptivePercentile` resolves to nothing.
    *   • `adaptivePercentile` — percentile of the support sibling read from
-   *     collection stats as the adaptive `k` for `confidenceDampening`. When
-   *     declared, reranker passes the resolved adaptive value via
-   *     `ExtractContext.dampeningThreshold`. Default behavior in the reranker
-   *     (when this field is absent) is to look up p25 for backwards
-   *     compatibility with the legacy `GIT_FILE_DAMPENING` convention.
+   *     collection stats as the adaptive `k` for `confidenceDampening`. The
+   *     reranker passes the resolved value via
+   *     `ExtractContext.dampeningThreshold`; absent, it looks up p25 for
+   *     backwards compatibility with the legacy `GIT_FILE_DAMPENING`
+   *     convention.
+   *
+   * Taking the max is what keeps the mechanism alive on an atomic support
+   * distribution: `confidenceDampening` returns 1 for every `n >= k`, so an
+   * adaptive percentile that collapses onto the support's minimum disables
+   * dampening for the whole corpus. Measured on this index — `commitCount`
+   * p25 = 1 — which is the bug `tea-rags-mcp-1lyui` records.
    */
   score?: { threshold: number; adaptivePercentile?: number };
   /** Optional categorical clamp rules for label path. */
@@ -213,6 +328,17 @@ export interface SignalStats {
   percentiles: Record<number, number>;
   mean?: number;
   stddev?: number;
+  /**
+   * Support value a unit had to reach to enter this sample, for a signal
+   * declaring `stats.minSupportPercentile`. The sampler resolves it from the
+   * support signal's distribution in THIS bucket and persists it here so the
+   * label path uses the identical number instead of re-deriving one; absent for
+   * an ungated signal, and absent on any file sampled before the declaration —
+   * where the bands were computed over everything, so grading everything
+   * against them stays the consistent reading until the `statsContract` drift
+   * axis repairs the file.
+   */
+  supportFloor?: number;
 }
 
 /** Signal stats split by scope (source code vs test code). */
@@ -282,6 +408,16 @@ export interface CollectionSignalStats {
    * guessed when it is missing, and a reindex fills it in.
    */
   scoreBackground?: ScoreBackground;
+  /**
+   * The sampling procedure these numbers were produced under, one entry per
+   * signal (`describeStatsSamplingContract`). Emitted by the computation rather
+   * than supplied by its caller, so the stamp cannot describe a different
+   * sample than the one beside it.
+   *
+   * Absent on every stats file written before the stamp existed. That absence
+   * is not "no drift" — it is "unstamped", and the drift monitor says so.
+   */
+  samplingContract?: Record<string, string>;
 }
 
 /** Context passed to DerivedSignalDescriptor.extract() for adaptive normalization. */

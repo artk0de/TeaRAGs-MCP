@@ -94,6 +94,22 @@ gets the trigger, but its freshness check answers `disabled` and nothing spawns,
 so it needs neither. Re-enable whatever you disabled when the measurement is
 done — it is a registry field, so it survives the session.
 
+**A no-op watcher run still rewrites the stats file.** `tryIncrementalIndex`
+calls `refreshStats` straight after `reindexChanges` with nothing branching in
+between, and change detection lives INSIDE that call — so the refresh happens
+however many files it found, and a run reporting `no-op — 0 files` recomputes
+and persists `<snapshots>/<collection>.stats.json` anyway. Measured 2026-09-22
+on `code_8b243ffe`: the file's mtime matched the log's
+`no-op — 0 files in 9477ms` line to the second. Two consequences when you are
+measuring anything percentile-shaped — labels, filter-preset thresholds,
+dampening `k`, adaptive bounds. First, a "nothing changed, so the numbers are
+stable" assumption is wrong; the numbers are rewritten on a timer. Second, the
+sampling procedure behind those percentiles is whichever build the global
+`npm link` points at, NOT what is on `main` — so relinking another checkout
+mid-measurement silently reverts the stats file to that build's sampling, with
+no error and no drift report, because the axis that would notice is itself part
+of the build that just got unlinked.
+
 ### `--force-enrichments` is the default validation tool (MANDATORY)
 
 Validating a new enrichment mechanism, a new payload field, or a new codegraph

@@ -127,8 +127,8 @@ describe("CODEGRAPH_SYMBOLS_FILE_SIGNALS — instability confidence", () => {
   it("declares label clamp rules that match descriptor labels", () => {
     const d = find(CODEGRAPH_SYMBOLS_FILE_SIGNALS, "codegraph.file.instability");
     expect(d.stats?.confidence?.label?.rules).toEqual([
-      { whenSupportBelow: "p10", fallback: 2, ceiling: "stable" },
-      { whenSupportBelow: "p25", fallback: 5, ceiling: "mixed" },
+      { whenSupportAtOrBelow: "p10", fallback: 2, ceiling: "stable" },
+      { whenSupportAtOrBelow: "p25", fallback: 5, ceiling: "mixed" },
     ]);
   });
 });

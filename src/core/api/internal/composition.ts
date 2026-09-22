@@ -30,9 +30,11 @@ import { GIT_FILTER_PRESETS } from "../../domains/trajectory/git/filter-presets/
 import { gitPayloadSignalDescriptors } from "../../domains/trajectory/git/index.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
+import { gitStatsAccumulators } from "../../domains/trajectory/git/stats/index.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS } from "../../domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
+import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/index.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;
@@ -136,6 +138,24 @@ export function fullRegistryPayloadSignalDescriptors(): PayloadSignalDescriptor[
     ...CODEGRAPH_SYMBOLS_FILE_SIGNALS,
     ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
   ];
+}
+
+/**
+ * Every stats accumulator any trajectory of THIS BUILD declares — the companion
+ * of `fullRegistryPayloadSignalDescriptors`, for the same reason.
+ *
+ * Accumulators are what fill `distributions`: language and chunk-type counts,
+ * the distinct-path set behind `totalFiles`, author tallies, the git time
+ * range. Recomputing stats without them does not fail — it silently yields a
+ * stats file whose `perLanguage` map is EMPTY, because the per-language share
+ * gate divides by a language count that nothing produced.
+ *
+ * A trajectory added to `createComposition` must be added here too —
+ * `tests/core/api/composition-full-registry-stats-accumulators.test.ts` fails
+ * until it is.
+ */
+export function fullRegistryStatsAccumulators(): StatsAccumulatorDescriptor[] {
+  return [...staticStatsAccumulators, ...gitStatsAccumulators];
 }
 
 export function createComposition(options: CompositionOptions = {}): CompositionResult {

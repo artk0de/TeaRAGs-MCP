@@ -26,6 +26,7 @@ import type {
   PayloadSignalDescriptor,
   SignalConfidence,
   SignalFloors,
+  SignalStats,
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
 import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
@@ -90,6 +91,8 @@ export class Reranker {
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private collectionStats?: CollectionSignalStats;
   private collectionName?: string;
+  /** Opaque marker of the stats revision held, supplied by whoever loaded it. */
+  private collectionStatsRevision?: number;
   private payloadFieldKeys?: string[];
   private recomputeService?: StatsRecomputeService;
   private resolvedFilterPresetNames: string[] = [];
@@ -120,6 +123,22 @@ export class Reranker {
   }
 
   /**
+   * Whether the stats currently held are the ones this collection wants, at the
+   * revision the caller has observed on disk.
+   *
+   * This — not `hasCollectionStats` — is what a loader must ask. The bare
+   * predicate answers "is anything loaded", which was true the moment the first
+   * collection of the process was searched, so every later collection inherited
+   * that project's distribution and a recompute by another process was never
+   * picked up (bd tea-rags-mcp-yntsd). The revision stays opaque here: the
+   * reranker must not know that stats live in a file.
+   */
+  hasCollectionStatsFor(collectionName: string, revision?: number): boolean {
+    if (this.collectionStats === undefined) return false;
+    return this.collectionName === collectionName && this.collectionStatsRevision === revision;
+  }
+
+  /**
    * Read the loaded collection stats (undefined when none loaded).
    * Consumed at search-stage filter resolution so the filter-preset compiler
    * can resolve adaptive percentile thresholds with the same stats the
@@ -132,10 +151,11 @@ export class Reranker {
   /** Set collection-wide signal stats (computed after indexing). */
   setCollectionStats(
     stats: CollectionSignalStats,
-    opts?: { collectionName?: string; payloadFieldKeys?: string[] },
+    opts?: { collectionName?: string; payloadFieldKeys?: string[]; revision?: number },
   ): void {
     this.collectionStats = stats;
     this.collectionName = opts?.collectionName;
+    this.collectionStatsRevision = opts?.revision;
     this.payloadFieldKeys = opts?.payloadFieldKeys;
   }
 
@@ -153,6 +173,7 @@ export class Reranker {
   invalidateStats(): void {
     this.collectionStats = undefined;
     this.collectionName = undefined;
+    this.collectionStatsRevision = undefined;
     this.payloadFieldKeys = undefined;
   }
 
@@ -160,7 +181,7 @@ export class Reranker {
    * Rerank results with ranking overlay.
    *
    * Lazy-at-rerank: BEFORE scoring, walks every confidence reference declared
-   * by payload signals (score `adaptivePercentile`, label rule `whenSupportBelow: "pN"`)
+   * by payload signals (score `adaptivePercentile`, label rule `whenSupportAtOrBelow: "pN"`)
    * and awaits a single-percentile scroll for each one missing from current
    * collection stats. Idempotent across reranks — `requestRecompute` checks
    * in-memory stats first, so a percentile populated by an earlier rerank
@@ -476,29 +497,39 @@ export class Reranker {
   }
 
   /**
-   * Resolve ADAPTIVE dampening threshold for a derived signal from collection stats.
+   * Resolve the FILE-scope dampening threshold (k_f) for a derived signal.
    *
    * Reads `stats.confidence.support` (the support sibling name) from the raw
-   * payload descriptor and looks up its `adaptivePercentile` (default 25) in
-   * `git.file.{support}` collection stats. Returns undefined when collection
-   * stats are absent OR no confidence block is declared — derived signals then
-   * fall back to `confidence.score.threshold` (descriptor floor) or their own
-   * defensive constant.
+   * payload descriptor, looks up its `adaptivePercentile` (default 25) in
+   * `{trajectory}.file.{support}` collection stats, and returns the LARGER of
+   * that adaptive value and the descriptor's declared `confidence.score.threshold`.
+   * Returns undefined when neither is available (no collection stats, no
+   * confidence block, unresolvable support) — the derived signal then runs its
+   * own fallback chain down to its defensive `FALLBACK_K`.
    *
-   * The static floor is intentionally a last resort — adaptive takes priority
-   * so the dampening threshold scales with the actual codebase's commit
-   * distribution.
+   * Why max() and not adaptive-first (bd tea-rags-mcp-1lyui): support
+   * distributions are atomic counts, so on a young or wide codebase a low
+   * percentile collapses onto the distribution's minimum. `git.file.commitCount`
+   * p25 measured 1 on the tea-rags self-index, and `confidenceDampening(n, k)`
+   * returns 1 whenever `n >= k`, so k=1 disabled the score path for every point
+   * with at least one commit — corpus-wide, and hardest exactly where small-N
+   * suppression matters. The descriptor's declared threshold is the floor that
+   * guards against that; the adaptive value still wins whenever it is larger,
+   * so the curve keeps scaling with a codebase whose support distribution is
+   * genuinely rich.
    */
   private resolveDampeningThreshold(descriptor: DerivedSignalDescriptor): number | undefined {
     return this.resolveDampeningThresholdForScope(descriptor, "file");
   }
 
   /**
-   * Resolve the CHUNK-scope adaptive dampening threshold (k_c) — the chunk
-   * support signal's `adaptivePercentile`. Mirrors {@link resolveDampeningThreshold}
-   * but reads `chunk.{support}` collection stats, so blended signals can dampen
-   * their chunk component by its own sample size. Returns undefined when the
-   * chunk support percentile isn't available (e.g. file-only support).
+   * Resolve the CHUNK-scope dampening threshold (k_c) — same
+   * `max(adaptive percentile, declared floor)` rule as
+   * {@link resolveDampeningThreshold}, but reading `chunk.{support}` collection
+   * stats, so blended signals dampen their chunk component by its own sample
+   * size. Chunk supports are even smaller than file supports, so the declared
+   * floor carries more of the work here than at file scope. Returns undefined
+   * when neither side resolves (e.g. file-only support with no declared floor).
    */
   private resolveDampeningThresholdChunk(descriptor: DerivedSignalDescriptor): number | undefined {
     return this.resolveDampeningThresholdForScope(descriptor, "chunk");
@@ -515,7 +546,11 @@ export class Reranker {
     if (!supportFullKey) return undefined;
     const stats = this.collectionStats.perSignal.get(supportFullKey);
     const percentile = confidence.score?.adaptivePercentile ?? 25;
-    return stats?.percentiles?.[percentile];
+    const adaptive = stats?.percentiles?.[percentile];
+    const floor = confidence.score?.threshold;
+    if (adaptive === undefined) return floor;
+    if (floor === undefined) return adaptive;
+    return Math.max(adaptive, floor);
   }
 
   /**
@@ -523,8 +558,10 @@ export class Reranker {
    * signal. Walks the derived's `sources` (e.g. "file.bugFixRate", "chunk.bugFixRate"),
    * resolves each to a full payload key, finds the matching PayloadSignalDescriptor,
    * and returns the first non-empty `stats.confidence`. Returns undefined when no
-   * source descriptor declares confidence — derived signal then falls back to
-   * legacy `dampeningSource`/`FALLBACK_THRESHOLD` path during migration.
+   * source descriptor declares confidence — the derived signal then dampens
+   * against its own class `FALLBACK_K`, which is the live situation for six of
+   * the eight dampening-aware signals (only `bugFix` and `instability` are
+   * declared). The legacy `dampeningSource` path this once fell back to is gone.
    */
   private resolveDerivedConfidence(descriptor: DerivedSignalDescriptor): SignalConfidence | undefined {
     for (const source of descriptor.sources) {
@@ -706,6 +743,13 @@ export class Reranker {
       const signalStats = this.scopedStatsFor(fullKey, language, chunkType, relativePath);
       if (!signalStats?.percentiles) continue;
 
+      // The support gate, the read half of `stats.minSupportPercentile`. The
+      // bands above were computed over the QUALIFIED subpopulation only, so a
+      // unit the sampler excluded is not in the population they describe and
+      // gets the bare number — the same refusal `scopedStatsFor` makes for a
+      // scope whose bucket was never sampled.
+      if (!this.meetsSupportFloor(descriptor, signalStats, siblingValues)) continue;
+
       // Industry floors raise source-scope thresholds that sit below a
       // published limit; test scope stays purely percentile-derived, since
       // test files are systematically longer and a shared floor would collapse
@@ -725,6 +769,7 @@ export class Reranker {
       const label = resolveLabel(value, descriptor.stats.labels, percentiles, {
         siblingValues,
         confidence: resolvedConfidence,
+        bandTieBreak: descriptor.stats.bandTieBreak,
       });
       overlay[field] = { value, label };
     }
@@ -734,13 +779,27 @@ export class Reranker {
    * Per-language, scope-split stats for one signal key, with the source/test
    * pick and the no-global-fallback rule applied. Shared by the generic label
    * path and the age branch so both read stats identically.
+   *
+   * The pick is STRICT: a test-scope point reads test-scope stats or nothing.
+   * A signal whose test bucket was never sampled — every descriptor with a
+   * single-valued `chunkTypeFilter`, and anything declaring `sourceScopeOnly` —
+   * leaves the point with a bare number, exactly as a language absent from
+   * `perLanguage` does. Substituting the source distribution would grade the
+   * point against a population it is not in, and `IndexMetricsQuery` publishes
+   * a `test` labelMap only when that bucket exists, so the label would name a
+   * band the advertised vocabulary does not contain. It is also the collapse
+   * `applyLabelResolution` already refuses to cause: it skips
+   * `applySignalFloors` for test scope precisely because test files are
+   * systematically longer and a shared ladder pushes most of them into the top
+   * label — reading source percentiles here re-creates that, floors or no
+   * floors.
    */
   private scopedStatsFor(
     fullKey: string | undefined,
     language: string | undefined,
     chunkType: string | undefined,
     relativePath?: string,
-  ): { percentiles: Record<number, number> } | undefined {
+  ): SignalStats | undefined {
     if (!this.collectionStats || !language) return undefined;
     const langStats = this.collectionStats.perLanguage?.get(language);
     if (!langStats) return undefined;
@@ -750,8 +809,42 @@ export class Reranker {
     const scope = detectScope(chunkType, relativePath ?? "", language, {
       languageTestChunkCounts: new Map(),
     });
-    const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
+    const signalStats = scope === "test" ? scopedStats.test : scopedStats.source;
     return signalStats?.percentiles ? signalStats : undefined;
+  }
+
+  /**
+   * Whether this point was observed well enough to be graded on a gated
+   * signal's bands — the read half of `stats.minSupportPercentile`.
+   *
+   * The support value is read at the SAME level as the signal, out of the
+   * level-scoped sibling map (`git.chunk.commitCount` for a chunk-level signal,
+   * `git.file.commitCount` for a file-level one), and compared against the floor
+   * the SAMPLER resolved and persisted for this bucket. Recomputing a floor here
+   * is precisely what must not happen: the two sides would then describe
+   * different populations the first time a percentile moved.
+   *
+   * Three ways to answer yes without a comparison, and each is the honest one:
+   * the signal declares no gate; the stats file carries no floor, meaning it was
+   * sampled before the declaration and its bands cover everything; or the
+   * descriptor names no support, in which case there is nothing to read. A
+   * MISSING support value on a gated signal answers no — a unit whose support
+   * was never measured cannot be shown to belong to the graded population, and
+   * the sampler left it out for the same reason.
+   */
+  private meetsSupportFloor(
+    descriptor: PayloadSignalDescriptor,
+    signalStats: SignalStats,
+    siblingValues: Record<string, number>,
+  ): boolean {
+    if (descriptor.stats?.minSupportPercentile === undefined) return true;
+    const floor = signalStats.supportFloor;
+    if (floor === undefined) return true;
+    const support = descriptor.stats.confidence?.support;
+    if (!support) return true;
+    const supportValue = siblingValues[support];
+    if (typeof supportValue !== "number") return false;
+    return supportValue >= floor;
   }
 
   /**
@@ -843,9 +936,9 @@ export class Reranker {
   }
 
   /**
-   * Pre-resolve adaptive `whenSupportBelow` percentile strings to concrete numbers.
+   * Pre-resolve adaptive `whenSupportAtOrBelow` percentile strings to concrete numbers.
    *
-   * When a clamp rule has `whenSupportBelow: "pN"`, looks up the Nth percentile of
+   * When a clamp rule has `whenSupportAtOrBelow: "pN"`, looks up the Nth percentile of
    * `git.{scope}.{confidence.support}` in collection stats. Falls back to
    * `rule.fallback` if collection stats absent OR the support signal has no
    * recorded percentile. Returns the descriptor's confidence with rules normalized
@@ -860,16 +953,20 @@ export class Reranker {
     const supportFullKey = this.signalKeyMap.get(`${scope}.${confidence.support}`);
     const supportStats = supportFullKey ? this.collectionStats?.perSignal.get(supportFullKey) : undefined;
     const resolvedRules = confidence.label.rules.map((rule) => {
-      if (typeof rule.whenSupportBelow === "number") return rule;
-      const pct = Number(rule.whenSupportBelow.slice(1));
+      if (typeof rule.whenSupportAtOrBelow === "number") return rule;
+      const pct = Number(rule.whenSupportAtOrBelow.slice(1));
       const adaptive = supportStats?.percentiles?.[pct];
       const threshold = adaptive ?? rule.fallback;
       if (threshold === undefined) {
-        // No adaptive and no fallback — rule cannot fire safely. Use 0 as a
-        // never-matches sentinel (support < 0 is structurally impossible).
-        return { ...rule, whenSupportBelow: 0 };
+        // No adaptive and no fallback — rule cannot fire safely. 0 is the
+        // narrowest sentinel available: the comparison is inclusive, so this
+        // still matches a support of exactly 0 (a real value —
+        // `git.*.commitCount` publishes 0 for chunks past chunkMaxFileLines),
+        // and nothing above it. Descriptors are required to carry `fallback`
+        // precisely so this path stays unreachable.
+        return { ...rule, whenSupportAtOrBelow: 0 };
       }
-      return { ...rule, whenSupportBelow: threshold };
+      return { ...rule, whenSupportAtOrBelow: threshold };
     });
     return {
       ...confidence,

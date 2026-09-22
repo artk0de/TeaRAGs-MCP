@@ -526,3 +526,91 @@ describe("superviseIndexing — qdrant-state (2nfdm: recovery wait surfaced befo
     expect(renderer.handle).toHaveBeenCalledWith({ type: "qdrant-state", state: "ready", elapsedMs: 9000 });
   });
 });
+
+describe("superviseIndexing — detached run reports an unmeasured outcome (3h0wx)", () => {
+  it("emits outcome:{measured:false} in json mode when enrichment was never awaited", async () => {
+    // Without --wait-enrichments the supervisor detaches on the first status
+    // message, so no `done` ever arrives and the renderer's outcome stays
+    // undefined. The JSON must SAY that, not drop the key.
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child, {
+      renderer,
+      waitEnrichments: false,
+      colors: plain,
+      out: (s) => out.push(s),
+      projectName: "tea-rags",
+      path: "/repo",
+    });
+
+    child.emit("message", statusMsg);
+    const code = await p;
+
+    expect(code).toBe(0);
+    const parsed = JSON.parse(out[0] ?? "") as Record<string, unknown>;
+    expect(Object.keys(parsed)).toContain("outcome");
+    expect(parsed.outcome).toEqual({ measured: false });
+  });
+
+  it("emits outcome:{measured:true,...} in json mode once the worker reported done", async () => {
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+      path: "/repo",
+    });
+
+    child.emit("message", statusMsg);
+    child.emit("message", { type: "done", result: { failed: [], degraded: [] } });
+    await p;
+
+    const parsed = JSON.parse(out[0] ?? "") as Record<string, unknown>;
+    expect(parsed.outcome).toEqual({ measured: true, failed: [], degraded: [] });
+  });
+
+  it("leaves the human render untouched — failures still print as alert lines, no measured wording", async () => {
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("message", statusMsg);
+    child.emit("message", { type: "done", result: { failed: ["git"], degraded: ["codegraph"] } });
+    const code = await p;
+
+    const joined = out.join("\n");
+    expect(code).toBe(1);
+    expect(joined).toContain("✗ git: enrichment failed");
+    expect(joined).toContain("⚠ codegraph: enrichment degraded");
+    expect(joined).not.toContain("measured");
+  });
+
+  it("leaves the human detached render untouched — no outcome block at all", async () => {
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child, {
+      renderer,
+      waitEnrichments: false,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("message", statusMsg);
+    await p;
+
+    const joined = out.join("\n");
+    expect(joined).not.toContain("measured");
+    expect(joined).not.toContain("outcome");
+  });
+});

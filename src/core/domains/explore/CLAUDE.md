@@ -31,6 +31,22 @@
   Why: absent means "index predates the background, a reindex fills it", not
   "low" — branch on presence; a default fabricates a verdict.
 
+- **A band's threshold is its LOWER bound, and the published vocabulary is
+  filtered to the bands that can be returned.** `resolveLabel`
+  (`label-resolver.ts`) seeds the result with the first band and keeps the LAST
+  whose threshold the value reached, so the first band's own threshold is inert
+  — it is the default for everything below the second. Both the overlay and
+  `IndexMetricsQuery#buildSignalMetrics` narrow through `resolvableLabelBands`
+  before use, so a name the resolver cannot emit never reaches `labelMap`; the
+  tie direction itself is declared per signal (`../trajectory/CLAUDE.md`). Why:
+  `formatLabelMap` (`../../../cli/prime/format.ts`) rendered this as
+  `label ≤threshold`, inverting every band in the digest — `healthy ≤0%` was
+  read as "healthy only at exactly 0%" when it meant "healthy below 50%", i.e.
+  76% of the population, and that misreading drove a full day of hunting a
+  defect in the estimator that did not exist. Bands render `<next` for the first
+  and `≥own` for the rest; there is exactly one renderer, and a second one would
+  reintroduce the inversion.
+
 ## Mechanics
 
 - **`"relevance"` never reaches the reranker; similarity-only weights skip the
@@ -92,6 +108,33 @@
   `collectionStats.perLanguage` entry, or no stats for the signal. Why: doc
   chunks, low-volume and new languages show a bare number instead of
   `{ value, label }` — stats coverage, not an `overlayMask` bug.
+- **The scope pick is strict too — a test-scope point reads test-scope stats or
+  nothing.** `Reranker#scopedStatsFor` picks by `detectScope` and does NOT fall
+  back to `source` when the test bucket is absent; the point keeps its bare
+  number, exactly as an unmeasured language does. Two populations have no test
+  bucket by construction: every descriptor with a single-valued
+  `chunkTypeFilter` (`methodLines`, `methodDensity`, all `codegraph.chunk.*`)
+  and every descriptor declaring `stats.sourceScopeOnly` (both
+  `git.*.bugFixRate`). Why: `IndexMetricsQuery#buildLanguageSignals` publishes a
+  `test` labelMap ONLY when that bucket exists, so a source-derived label on a
+  test point names a band the advertised vocabulary does not contain — and a
+  `prime` line reading `test: —` then contradicts a live overlay saying `large`.
+  It is also the collapse this file's floors bullet already refuses to cause:
+  test files are systematically longer, so grading them on the source ladder
+  pushes most of them into the top label whether floors are applied or not. A
+  cross-scope fallback lived here until 2026-09-22 and was asserted by a test
+  named for it.
+- **The support axis refuses the same way.** `Reranker#meetsSupportFloor` gates
+  a signal declaring `stats.minSupportPercentile`: the unit's support sibling is
+  read at the signal's OWN level out of `collectScopeSiblings`, compared against
+  the `SignalStats.supportFloor` the SAMPLER resolved, and a unit below it — or
+  one carrying no support value at all — keeps the bare number. Never recompute
+  that floor here; the sampler persists it precisely so both halves describe one
+  population, and a locally-derived number would diverge the first time a
+  percentile moved. Three yes-without-comparing answers are deliberate: no gate
+  declared, no floor in the stats file (sampled before the declaration, so its
+  bands cover everything), or no support named. Why the gate exists at all is a
+  measurement, and it lives once, in `../trajectory/CLAUDE.md`.
 - **Mass-signal thresholds are floored per language:
   `threshold = max(percentile, floor)`, source scope only.** `moduleLines` /
   `moduleMethodCount` / `memberCount` pass through `applySignalFloors`

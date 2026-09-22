@@ -167,7 +167,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     // Collapsed: one line per signal, source + test on the same line, exact
     // label names preserved (overlay labels must match the threshold keys).
     expect(out).toContain(
-      "- **git.file.commitCount** — source: low ≤2 / normal ≤5 / high ≤9 / extreme >9 · test: low ≤1 / normal ≤3 / high ≤6 / extreme >6",
+      "- **git.file.commitCount** — source: low <5 / normal ≥5 / high ≥9 / extreme ≥9 · test: low <3 / normal ≥3 / high ≥6 / extreme ≥6",
     );
     expect(out).not.toContain("  - source:");
     expect(out).not.toContain("  - test:");
@@ -199,7 +199,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     const typescriptAt = out.indexOf("## Signal thresholds — typescript");
     expect(rubyAt).toBeGreaterThan(-1);
     expect(typescriptAt).toBeGreaterThan(rubyAt);
-    expect(out).toContain("- **git.file.commitCount** — source: low ≤1 / normal ≤2 / high ≤7 / extreme >7 · test: —");
+    expect(out).toContain("- **git.file.commitCount** — source: low <2 / normal ≥2 / high ≥7 / extreme ≥7 · test: —");
     expect(out).not.toContain("## Signal thresholds — global");
     expect(out).not.toContain("## Signal thresholds — javascript");
   });
@@ -218,12 +218,12 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
     // ageDays has identical source/test labelMaps in the fixture → back-ref, no repeat.
-    expect(out).toContain("- **git.file.ageDays** — source: recent ≤14 / typical ≤45 / legacy ≤45 · test: =src");
+    expect(out).toContain("- **git.file.ageDays** — source: recent <45 / typical ≥45 / legacy ≥45 · test: =src");
   });
 
   it("renders percent-format signal bands as percentages (×100 with % suffix)", () => {
     const metrics = monolingualMetricsFixture();
-    // pageRank-like normalized [0,1] signal: raw percentiles round to ≤0 on the
+    // pageRank-like normalized [0,1] signal: raw percentiles round to 0 on the
     // raw scale; with format:"percent" they render as readable percentages.
     metrics.signals["typescript"]["codegraph.chunk.pageRank"] = {
       source: {
@@ -242,10 +242,10 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
     expect(out).toContain(
-      "- **codegraph.chunk.pageRank** — source: peripheral ≤0.03% / important ≤0.04% / critical ≤0.12% · test: —",
+      "- **codegraph.chunk.pageRank** — source: peripheral <0.04% / important ≥0.04% / critical ≥0.12% · test: —",
     );
-    // raw-scale rounding to ≤0 must NOT appear for this signal.
-    expect(out).not.toContain("peripheral ≤0 /");
+    // raw-scale rounding to 0 must NOT appear for this signal.
+    expect(out).not.toContain("peripheral <0 /");
   });
 
   it("renders percent100-format signal bands with a % suffix and NO scaling", () => {
@@ -268,10 +268,60 @@ describe("formatPrime — polyglot + thresholds", () => {
       update: null,
     });
     expect(out).toContain(
-      "- **git.file.bugFixRate** — source: healthy ≤25% / concerning ≤30% / critical ≤50% · test: —",
+      "- **git.file.bugFixRate** — source: healthy <30% / concerning ≥30% / critical ≥50% · test: —",
     );
-    // must NOT double-scale (×100 would yield ≤2500%).
-    expect(out).not.toContain("≤2500%");
+    // must NOT double-scale (×100 would yield 2500%).
+    expect(out).not.toContain("2500%");
+  });
+
+  /**
+   * A band's threshold is the LOWEST value that reaches it, not the highest it
+   * admits: `resolveLabel` keeps the last band whose threshold the value has
+   * reached. Rendering `label ≤threshold` inverted every band in the digest —
+   * `healthy ≤0%` read as "healthy only at exactly 0%" when it actually meant
+   * "healthy below the next band". The first band is the below-everything
+   * default, so it is the only one with an upper bound to show.
+   */
+  it("renders a band by the values it actually owns, not by its own lower bound", () => {
+    const metrics = monolingualMetricsFixture();
+    metrics.signals["typescript"]["git.chunk.bugFixRate"] = {
+      source: {
+        min: 0,
+        max: 100,
+        count: 9051,
+        labelMap: { healthy: 0, concerning: 50, critical: 100 },
+        format: "percent100",
+      },
+    };
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
+      metrics,
+      drift: null,
+      update: null,
+    });
+
+    expect(out).toContain(
+      "- **git.chunk.bugFixRate** — source: healthy <50% / concerning ≥50% / critical ≥100% · test: —",
+    );
+    // The inverted form must be gone: it claimed `healthy` admitted only 0%.
+    expect(out).not.toContain("healthy ≤0%");
+  });
+
+  it("renders a lone band without a bound — it catches every value", () => {
+    const metrics = monolingualMetricsFixture();
+    metrics.signals["typescript"] = {
+      "git.file.commitCount": { source: { min: 1, max: 41, count: 250, labelMap: { low: 3 } } },
+    };
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 4218 }),
+      metrics,
+      drift: null,
+      update: null,
+    });
+
+    expect(out).toContain("- **git.file.commitCount** — source: low · test: —");
   });
 
   it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
@@ -745,16 +795,19 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
               min: 0,
               max: 100,
               count: 100,
-              labelMap: { stable: 7.879999999999999, erratic: 14.010000000000002 },
+              // Three bands, so the rounded 7.88 lands on a band that carries
+              // its own lower bound — the FIRST band renders its successor's
+              // threshold, never its own.
+              labelMap: { calm: 1.5, stable: 7.879999999999999, erratic: 14.010000000000002 },
             },
           },
         },
       },
     };
     const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: noisyMetrics, drift: null, update: null });
-    expect(out).toContain("critical ≤53.25");
-    expect(out).toContain("stable ≤7.88");
-    expect(out).toContain("erratic ≤14.01");
+    expect(out).toContain("critical ≥53.25");
+    expect(out).toContain("stable ≥7.88");
+    expect(out).toContain("erratic ≥14.01");
     expect(out).not.toMatch(/\.\d{4,}/); // no four-or-more-decimal artifacts
   });
 });

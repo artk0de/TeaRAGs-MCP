@@ -41,6 +41,14 @@
 - **`*` is a language to the version monitor.** `sharedVersions`
   (`language/kernel/capability.ts`) is compared unconditionally; its findings
   render with no `--languages`.
+- **`StatsContractDriftMonitor` shares its judgement with the stats migration.**
+  Both call `judgeStatsContract` (`stats-contract-drift.ts`) — the monitor to
+  report, `StatsStoreAdapter#getStatsContractState` to decide whether
+  `StatsV7SamplingContract` has work. Two implementations would eventually
+  disagree, and then prime reports a drift no reindex clears, or clears one it
+  never reported. It is also the only axis whose remedy is `incremental`: the
+  values are on the payload already, so the migration repairs it inside a plain
+  run.
 
 ## Gotchas
 
@@ -52,6 +60,14 @@
   "clean". Genuine silence on this axis is a collection with no registry entry.
 - A removed payload key folds to `none`; a report can therefore be non-empty and
   still say "No action required."
+- **`statsContract` is deliberately NOT a worktree-seed axis**, against step 6
+  of `.claude/rules/index-drift.md`. The rule's premise — an uncompared axis is
+  drift the seed silently copies — does not hold here: the seeded run continues
+  as an ordinary incremental through `prepareReindexContext`, so `runMigrations`
+  judges the cloned stats file and `StatsV7SamplingContract` rebuilds it inside
+  that same run. Gating the seed on it would reject an otherwise perfect sibling
+  — re-embedding the whole repository, ~92% of a first index's wall clock — to
+  avoid a file the run repairs for free.
 
 ## See also
 

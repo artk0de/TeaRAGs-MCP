@@ -719,6 +719,63 @@ describe("computeCollectionStats distributions", () => {
       expect(result.distributions.enrichmentTimeRange).toBeUndefined();
     });
 
+    // A ratio whose distribution only means something over source code has no
+    // business publishing a test-scope ladder: the test bucket would grade test
+    // chunks against a population nobody reasons about. Declaring the signal
+    // source-scope-only stops it being sampled there at all.
+    describe("sourceScopeOnly", () => {
+      const sourceScopeOnlySignals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.bugFixRate",
+          type: "number",
+          description: "bug-fix share",
+          stats: { labels: { p50: "healthy", p95: "critical" }, sourceScopeOnly: true },
+        },
+        {
+          key: "git.file.commitCount",
+          type: "number",
+          description: "commit count",
+          stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+        },
+      ];
+
+      function scopedPoints() {
+        const source = Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            language: "ruby",
+            chunkType: "function",
+            relativePath: `app/models/m${i}.rb`,
+            git: { file: { bugFixRate: 5 + i, commitCount: 2 + i } },
+          },
+        }));
+        const test = Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            language: "ruby",
+            chunkType: "test",
+            relativePath: `spec/models/m${i}_spec.rb`,
+            git: { file: { bugFixRate: 60 + i, commitCount: 20 + i } },
+          },
+        }));
+        return [...source, ...test];
+      }
+
+      it("leaves the test bucket unsampled while the source bucket still fills", () => {
+        const result = computeCollectionStats(scopedPoints(), sourceScopeOnlySignals, ALL_ACCS);
+
+        const bugFixRate = result.perLanguage.get("ruby")!.get("git.file.bugFixRate")!;
+        expect(bugFixRate.source.count).toBe(10);
+        expect(bugFixRate.test).toBeUndefined();
+      });
+
+      it("leaves a signal that does not declare it sampling both scopes", () => {
+        const result = computeCollectionStats(scopedPoints(), sourceScopeOnlySignals, ALL_ACCS);
+
+        const commitCount = result.perLanguage.get("ruby")!.get("git.file.commitCount")!;
+        expect(commitCount.source.count).toBe(10);
+        expect(commitCount.test!.count).toBe(10);
+      });
+    });
+
     it("global perSignal excludes test chunks", () => {
       const sourcePoints = Array.from({ length: 10 }, (_, i) =>
         makePoint({ methodLines: 20 + i, relativePath: `app/m${i}.rb` }),
@@ -896,8 +953,8 @@ describe("computeCollectionStats distributions", () => {
           support: "commitCount",
           label: {
             rules: [
-              { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
-              { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+              { whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" },
+              { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
             ],
           },
         },
@@ -980,7 +1037,7 @@ describe("computeCollectionStats distributions", () => {
         stats: {
           confidence: {
             support: "commitCount",
-            label: { rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "low" }] },
+            label: { rules: [{ whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "low" }] },
           },
           labels: { p50: "low" },
         },
@@ -1014,7 +1071,7 @@ describe("computeCollectionStats distributions", () => {
           labels: { p50: "small" },
           confidence: {
             support: "commitCount",
-            label: { rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "small" }] },
+            label: { rules: [{ whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "small" }] },
           },
         },
       };
@@ -1041,8 +1098,8 @@ describe("computeCollectionStats distributions", () => {
             score: { threshold: 5, adaptivePercentile: 25 },
             label: {
               rules: [
-                { whenSupportBelow: "p10", fallback: 2, ceiling: "stable" },
-                { whenSupportBelow: "p25", fallback: 5, ceiling: "mixed" },
+                { whenSupportAtOrBelow: "p10", fallback: 2, ceiling: "stable" },
+                { whenSupportAtOrBelow: "p25", fallback: 5, ceiling: "mixed" },
               ],
             },
           },
@@ -1072,7 +1129,7 @@ describe("computeCollectionStats distributions", () => {
           confidence: {
             support: "connectionCount",
             label: {
-              rules: [{ whenSupportBelow: "p10", fallback: 2, ceiling: "stable" }],
+              rules: [{ whenSupportAtOrBelow: "p10", fallback: 2, ceiling: "stable" }],
             },
           },
         },
@@ -1253,5 +1310,330 @@ describe("computeCollectionStats distributions", () => {
       const python = result.perLanguage.get("python")?.get("moduleMethodCount");
       expect(python?.source.count).toBe(13);
     });
+  });
+});
+
+describe("zero observations in the percentile sample", () => {
+  /**
+   * `bugFixRate` is a ratio over commits: a file with eight commits and no fix
+   * among them measured 0, it did not fail to measure. Dropping those zeros
+   * computes percentiles over P(x | x > 0) — the conditional distribution of
+   * "files that had at least one fix" — and every bucket boundary moves up.
+   */
+  const ratioSignal: PayloadSignalDescriptor[] = [
+    {
+      key: "git.file.bugFixRate",
+      type: "number",
+      description: "Percentage of bug-fix commits (0-100)",
+      stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" }, zeroIsValidObservation: true },
+    },
+  ];
+
+  /** Same shape without the opt-in — the default stays "0 means no measurement". */
+  const unflaggedSignal: PayloadSignalDescriptor[] = [
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      description: "commits",
+      stats: { labels: { p50: "typical", p95: "extreme" } },
+    },
+  ];
+
+  function ratePoints(values: number[]) {
+    return values.map((value, i) => ({
+      payload: {
+        git: { file: { bugFixRate: value } },
+        language: "typescript",
+        chunkType: "function",
+        isDocumentation: false,
+        relativePath: `src/file${i}.ts`,
+      },
+    }));
+  }
+
+  it("counts a measured zero as an observation when the signal declares it", () => {
+    // Nine files never fixed, one fixed on every commit.
+    const stats = computeCollectionStats(ratePoints([0, 0, 0, 0, 0, 0, 0, 0, 0, 100]), ratioSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.bugFixRate")!;
+
+    expect(s.count).toBe(10);
+    expect(s.min).toBe(0);
+  });
+
+  it("puts the median where the population is, not where the survivors are", () => {
+    const stats = computeCollectionStats(ratePoints([0, 0, 0, 0, 0, 0, 0, 0, 0, 100]), ratioSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.bugFixRate")!;
+
+    // Nine tenths of the files never had a fix, so "healthy" belongs at 0.
+    // Sampling only the survivors leaves a single value and collapses
+    // p50/p75/p95 onto 100 — the degenerate labelMap where 100% reads healthy.
+    expect(s.percentiles[50]).toBe(0);
+    expect(s.percentiles[95]).toBeGreaterThan(0);
+  });
+
+  it("keeps the per-language scoped sample whole too", () => {
+    const stats = computeCollectionStats(ratePoints([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100]), ratioSignal, ALL_ACCS);
+    const scoped = stats.perLanguage.get("typescript")?.get("git.file.bugFixRate");
+
+    expect(scoped?.source.count).toBe(12);
+    expect(scoped?.source.min).toBe(0);
+  });
+
+  it("still drops zeros for a signal that does not declare them valid", () => {
+    // commitCount 0 means the walk never reached the file (the all-zero chunk
+    // block past chunkMaxFileLines), not "this file has no commits".
+    const points = [1, 0, 3, 0, 5].map((value, i) => ({
+      payload: {
+        git: { file: { commitCount: value } },
+        language: "typescript",
+        chunkType: "function",
+        isDocumentation: false,
+        relativePath: `src/file${i}.ts`,
+      },
+    }));
+    const stats = computeCollectionStats(points, unflaggedSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.commitCount")!;
+
+    expect(s.count).toBe(3);
+    expect(s.min).toBe(1);
+  });
+
+  it("rejects a negative value even when zero is declared valid", () => {
+    const stats = computeCollectionStats(ratePoints([-1, 0, 50]), ratioSignal, ALL_ACCS);
+    const s = stats.perSignal.get("git.file.bugFixRate")!;
+
+    expect(s.count).toBe(2);
+    expect(s.min).toBe(0);
+  });
+});
+
+describe("chunkTypeFilter admitting more than one chunk type", () => {
+  /**
+   * A chunk-scoped history signal describes a unit of code that gets CHANGED,
+   * so its reference population is callables — a method compared against barrel
+   * re-exports and top-level constant blocks is a category error. Both scopes
+   * need it from one declaration: the source bucket holds `function`, the test
+   * bucket holds `test`, and a single-valued filter can only ever serve one,
+   * silently deleting the other bucket's distribution.
+   */
+  const callableScoped: PayloadSignalDescriptor[] = [
+    {
+      key: "git.chunk.commitCount",
+      type: "number",
+      description: "commits touching this chunk",
+      stats: { labels: { p50: "typical", p95: "extreme" }, chunkTypeFilter: ["function", "test"] },
+    },
+  ];
+
+  /** Single string keeps working — five shipped descriptors declare it. */
+  const functionOnly: PayloadSignalDescriptor[] = [
+    {
+      key: "methodLines",
+      type: "number",
+      description: "method line count",
+      stats: { labels: { p50: "small", p95: "large" }, chunkTypeFilter: "function" },
+    },
+  ];
+
+  function chunkOfType(chunkType: string, value: number, index: number) {
+    return {
+      payload: {
+        git: { chunk: { commitCount: value } },
+        methodLines: value,
+        language: "typescript",
+        chunkType,
+        isDocumentation: false,
+        // A `test` chunk must live in a test file, or scope detection puts it
+        // in the source bucket and the per-scope split stops being observable.
+        relativePath: chunkType === "test" ? `tests/spec${index}.test.ts` : `src/file${index}.ts`,
+      },
+    };
+  }
+
+  it("admits every declared chunk type and nothing else", () => {
+    const points = [
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("function", 5, i)),
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("block", 99, i + 100)),
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("interface", 99, i + 200)),
+    ];
+    const stats = computeCollectionStats(points, callableScoped, ALL_ACCS);
+    const s = stats.perSignal.get("git.chunk.commitCount")!;
+
+    expect(s.count).toBe(10);
+    expect(s.max).toBe(5);
+  });
+
+  it("keeps the test-scope distribution instead of deleting it", () => {
+    const points = [
+      ...Array.from({ length: 12 }, (_, i) => chunkOfType("function", 5, i)),
+      ...Array.from({ length: 12 }, (_, i) => chunkOfType("test", 3, i)),
+    ];
+    const scoped = computeCollectionStats(points, callableScoped, ALL_ACCS)
+      .perLanguage.get("typescript")
+      ?.get("git.chunk.commitCount");
+
+    expect(scoped?.source.count).toBe(12);
+    expect(scoped?.test?.count).toBe(12);
+  });
+
+  it("still honours a single-valued filter", () => {
+    const points = [
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("function", 7, i)),
+      ...Array.from({ length: 10 }, (_, i) => chunkOfType("block", 99, i + 100)),
+    ];
+    const stats = computeCollectionStats(points, functionOnly, ALL_ACCS);
+
+    expect(stats.perSignal.get("methodLines")!.count).toBe(10);
+    expect(stats.perSignal.get("methodLines")!.max).toBe(7);
+  });
+});
+
+describe("support-gated percentile sampling (minSupportPercentile)", () => {
+  /**
+   * `bugFixRate` over a one-commit file can only ever be 0 or 100, so the bottom
+   * of the support distribution manufactures both tails of the rate and the
+   * spread stops carrying between-unit information. Measured on this project's
+   * own index, typescript source: at commitCount >= 1 the observed variance sits
+   * AT the pure-binomial floor (ratio 0.94 chunk / 0.82 file) and p95 is the 100
+   * atom; from the support's own p75 upwards the ratio climbs to 1.44 / 1.75 and
+   * p95 comes off the atom. The floor has to BE that percentile rather than a
+   * constant, or it stops describing the corpus it is applied to.
+   */
+  const gatedWithControl: PayloadSignalDescriptor[] = [
+    {
+      key: "git.file.bugFixRate",
+      type: "number",
+      description: "Percentage of bug-fix commits (0-100)",
+      stats: {
+        labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+        zeroIsValidObservation: true,
+        dedupeByFile: true,
+        minSupportPercentile: 75,
+        confidence: { support: "commitCount" },
+      },
+    },
+    {
+      // Identical values on the identical points, no gate — the control.
+      key: "git.file.churnVolatility",
+      type: "number",
+      description: "ungated control carrying the identical values",
+      stats: { labels: { p50: "stable", p95: "erratic" }, dedupeByFile: true },
+    },
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      description: "Total commits modifying this file",
+      stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, dedupeByFile: true },
+    },
+  ];
+
+  /** The extremes sit on the barely-observed units; the well-observed ones are moderate. */
+  const LOW_SUPPORT = [1, 1, 1, 1, 1, 1, 1, 1];
+  const LOW_SUPPORT_RATES = [100, 100, 100, 100, 100, 100, 100, 100];
+  const HIGH_SUPPORT = [10, 12, 14, 16];
+  const HIGH_SUPPORT_RATES = [20, 25, 30, 35];
+
+  function filePoints(language: string, tag: string, supports: number[], rates: number[], scale = 1) {
+    return supports.map((support, i) => ({
+      payload: {
+        language,
+        chunkType: "function",
+        isDocumentation: false,
+        relativePath: `src/${language}/${tag}${i}.x`,
+        git: { file: { commitCount: support * scale, bugFixRate: rates[i], churnVolatility: rates[i] } },
+      },
+    }));
+  }
+
+  function oneLanguage() {
+    return [
+      ...filePoints("typescript", "low", LOW_SUPPORT, LOW_SUPPORT_RATES),
+      ...filePoints("typescript", "high", HIGH_SUPPORT, HIGH_SUPPORT_RATES),
+    ];
+  }
+
+  /** Support p75 over [1×8, 10, 12, 14, 16] interpolates to 10.5 — only 12/14/16 qualify. */
+  const EXPECTED_FLOOR = 10.5;
+
+  it("samples only the units at or above the support floor, while the control samples everything", () => {
+    const stats = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const gated = stats.perLanguage.get("typescript")!.get("git.file.bugFixRate")!.source;
+    const control = stats.perLanguage.get("typescript")!.get("git.file.churnVolatility")!.source;
+
+    expect(gated.count).toBe(3);
+    expect(gated.min).toBe(25);
+    expect(control.count).toBe(12);
+    expect(control.min).toBe(20);
+  });
+
+  it("persists the resolved floor, equal to the support signal's percentile for that bucket", () => {
+    const stats = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const gated = stats.perLanguage.get("typescript")!.get("git.file.bugFixRate")!.source;
+    const support = stats.perLanguage.get("typescript")!.get("git.file.commitCount")!.source;
+
+    expect(gated.supportFloor).toBe(support.percentiles[75]);
+    expect(gated.supportFloor).toBe(EXPECTED_FLOOR);
+  });
+
+  it("resolves the floor per bucket, at the granularity the percentiles use", () => {
+    // Same shape in two languages, the second an order of magnitude better
+    // observed. One floor for the pooled global bucket, one per language.
+    const points = [
+      ...oneLanguage(),
+      ...filePoints("ruby", "low", LOW_SUPPORT, LOW_SUPPORT_RATES, 50),
+      ...filePoints("ruby", "high", HIGH_SUPPORT, HIGH_SUPPORT_RATES, 10),
+    ];
+    const stats = computeCollectionStats(points, gatedWithControl, ALL_ACCS);
+
+    const globalRate = stats.perSignal.get("git.file.bugFixRate")!;
+    const ts = stats.perLanguage.get("typescript")!;
+    const ruby = stats.perLanguage.get("ruby")!;
+
+    expect(globalRate.supportFloor).toBe(stats.perSignal.get("git.file.commitCount")!.percentiles[75]);
+    expect(ts.get("git.file.bugFixRate")!.source.supportFloor).toBe(
+      ts.get("git.file.commitCount")!.source.percentiles[75],
+    );
+    expect(ruby.get("git.file.bugFixRate")!.source.supportFloor).toBe(
+      ruby.get("git.file.commitCount")!.source.percentiles[75],
+    );
+    const floors = [
+      globalRate.supportFloor,
+      ts.get("git.file.bugFixRate")!.source.supportFloor,
+      ruby.get("git.file.bugFixRate")!.source.supportFloor,
+    ];
+    expect(new Set(floors).size).toBe(3);
+  });
+
+  it("leaves a signal that does not declare the gate untouched", () => {
+    const ungated: PayloadSignalDescriptor[] = gatedWithControl.map((s) =>
+      s.key === "git.file.bugFixRate" ? { ...s, stats: { ...s.stats, minSupportPercentile: undefined } } : s,
+    );
+    const withGate = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const withoutGate = computeCollectionStats(oneLanguage(), ungated, ALL_ACCS);
+
+    const control = (stats: ReturnType<typeof computeCollectionStats>) =>
+      stats.perLanguage.get("typescript")!.get("git.file.churnVolatility")!.source;
+
+    expect(control(withGate)).toEqual(control(withoutGate));
+    expect(control(withGate).supportFloor).toBeUndefined();
+    expect(withGate.perSignal.get("git.file.churnVolatility")).toEqual(
+      withoutGate.perSignal.get("git.file.churnVolatility"),
+    );
+  });
+
+  // The regression the whole change exists for: excluding the barely-observed
+  // units moves the bands, because those units are the ones holding the atom.
+  it("moves the percentiles when the low-support units hold the extremes", () => {
+    const stats = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const gated = stats.perLanguage.get("typescript")!.get("git.file.bugFixRate")!.source;
+    const control = stats.perLanguage.get("typescript")!.get("git.file.churnVolatility")!.source;
+
+    // Ungated: 8 of 12 files read 100, so p50 and p95 both land on the atom.
+    expect(control.percentiles[50]).toBe(100);
+    expect(control.percentiles[95]).toBe(100);
+    // Gated: the surviving spread is real, and p95 comes off the atom.
+    expect(gated.percentiles[50]).toBe(30);
+    expect(gated.percentiles[95]).toBeLessThan(100);
+    expect(gated.percentiles[50]).not.toBe(control.percentiles[50]);
   });
 });

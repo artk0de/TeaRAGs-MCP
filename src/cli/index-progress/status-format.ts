@@ -110,6 +110,19 @@ export interface FormatIndexStatusJsonExtra {
 }
 
 /**
+ * Wire shape of the enrichment outcome in `--json` output. Distinct from the
+ * supervisor-internal {@link EnrichmentOutcome}: it carries the extra bit a
+ * consumer needs, namely whether the outcome was observed at all.
+ *
+ * A run without `--wait-enrichments` detaches before any provider reports, so
+ * there is nothing to say about failures. Emitting nothing made that state
+ * indistinguishable from "measured, and clean" — `outcome?.failed` reads
+ * `undefined` either way. `measured` makes the difference explicit, and the
+ * key is always present so absence is never a third state.
+ */
+export type EnrichmentOutcomeReport = { measured: false } | { measured: true; failed: string[]; degraded: string[] };
+
+/**
  * Produce a stable, ANSI-free plain object for agent-facing `--json` output.
  * Shape is intentionally flat and versioned by field presence — callers MUST
  * NOT depend on field order.
@@ -136,9 +149,12 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
     base.phases = extra.phases;
   }
 
-  if (extra.outcome) {
-    base.outcome = { failed: extra.outcome.failed, degraded: extra.outcome.degraded };
-  }
+  // Always emitted — see EnrichmentOutcomeReport. A detached run says
+  // `measured: false` rather than dropping the key.
+  const outcomeReport: EnrichmentOutcomeReport = extra.outcome
+    ? { measured: true, failed: extra.outcome.failed, degraded: extra.outcome.degraded }
+    : { measured: false };
+  base.outcome = outcomeReport;
 
   if (status.infraHealth) {
     const q = status.infraHealth.qdrant;

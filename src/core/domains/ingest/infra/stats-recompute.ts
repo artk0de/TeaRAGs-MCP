@@ -167,7 +167,7 @@ export class StatsRecomputeService {
  * Axes:
  *   - score-side: `confidence.score.adaptivePercentile` (default 25),
  *     always file-scope support (mirrors `Reranker.resolveDampeningThreshold`).
- *   - label-side: every `confidence.label.rules[].whenSupportBelow: "pN"`,
+ *   - label-side: every `confidence.label.rules[].whenSupportAtOrBelow: "pN"`,
  *     same scope as the descriptor's raw key (file/chunk).
  */
 function collectMissingPercentilesGrouped(
@@ -203,8 +203,8 @@ function collectMissingPercentilesGrouped(
       const supportKey = resolveSiblingFullKey(raw.key, confidence.support, scope);
       if (!supportKey) continue;
       for (const rule of confidence.label.rules) {
-        if (typeof rule.whenSupportBelow !== "string") continue;
-        const pct = Number(rule.whenSupportBelow.slice(1));
+        if (typeof rule.whenSupportAtOrBelow !== "string") continue;
+        const pct = Number(rule.whenSupportAtOrBelow.slice(1));
         enqueue(supportKey, pct);
       }
     }

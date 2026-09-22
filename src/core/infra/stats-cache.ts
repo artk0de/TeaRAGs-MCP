@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type {
@@ -8,6 +8,24 @@ import type {
   ScoreBackground,
   SignalStats,
 } from "../contracts/types/trajectory.js";
+
+interface StatsFileContentV7 {
+  version: 7;
+  collectionName: string;
+  computedAt: number;
+  perSignal: Record<string, SignalStats>;
+  perLanguage: Record<string, Record<string, { source: SignalStats; test?: SignalStats }>>;
+  distributions: Distributions;
+  payloadFieldKeys?: string[];
+  /** Collection similarity scale — absent in files written before v6. */
+  scoreBackground?: ScoreBackground;
+  /**
+   * The sampling procedure the numbers above were produced under. Absent in
+   * files written before v7, which is what makes those files unstamped rather
+   * than up to date — see `StatsContractDriftMonitor`.
+   */
+  samplingContract?: Record<string, string>;
+}
 
 interface StatsFileContentV6 {
   version: 6;
@@ -41,12 +59,33 @@ interface StatsFileContentV4 {
   payloadFieldKeys?: string[];
 }
 
-type StatsFileContent = StatsFileContentV6 | StatsFileContentV5 | StatsFileContentV4;
+type StatsFileContent = StatsFileContentV7 | StatsFileContentV6 | StatsFileContentV5 | StatsFileContentV4;
 
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 7;
+const READABLE_VERSIONS = new Set([4, 5, 6, 7]);
 
 export class StatsCache {
   constructor(private readonly snapshotsDir: string) {}
+
+  /**
+   * When this collection's stats file was last written, as an opaque revision
+   * marker; undefined when there is no file. A `stat` only — cheap enough for a
+   * consumer to probe on every request before deciding to re-read.
+   *
+   * Exists because a stats file is written by whichever PROCESS ran the index,
+   * while a long-running server holds its copy in memory. Without a marker to
+   * compare, that server cannot tell a fresh recompute from the state it
+   * already has, and keeps serving percentiles the CLI replaced (bd
+   * tea-rags-mcp-yntsd). `computedAt` inside the file cannot serve: reading it
+   * is the very work the marker exists to avoid.
+   */
+  lastWrittenAt(collectionName: string): number | undefined {
+    try {
+      return statSync(this.filePath(collectionName)).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
 
   /** Load cached stats from JSON file. Returns null if missing/corrupt. */
   load(collectionName: string): (CollectionSignalStats & { payloadFieldKeys?: string[] }) | null {
@@ -55,7 +94,7 @@ export class StatsCache {
     try {
       const raw = readFileSync(filePath, "utf-8");
       const data = JSON.parse(raw) as StatsFileContent;
-      if (data.version !== 4 && data.version !== 5 && data.version !== 6) return null;
+      if (!READABLE_VERSIONS.has(data.version)) return null;
 
       const perLanguage = new Map<string, Map<string, ScopedSignalStats>>();
       if (data.version === 4) {
@@ -82,7 +121,10 @@ export class StatsCache {
         distributions: data.distributions,
         computedAt: data.computedAt,
         payloadFieldKeys: data.payloadFieldKeys,
-        ...(data.version === 6 && data.scoreBackground ? { scoreBackground: data.scoreBackground } : {}),
+        ...((data.version === 6 || data.version === 7) && data.scoreBackground
+          ? { scoreBackground: data.scoreBackground }
+          : {}),
+        ...(data.version === 7 && data.samplingContract ? { samplingContract: data.samplingContract } : {}),
       };
     } catch {
       return null;
@@ -100,7 +142,7 @@ export class StatsCache {
       }
       perLanguageObj[lang] = signalObj;
     }
-    const content: StatsFileContentV6 = {
+    const content: StatsFileContentV7 = {
       version: CURRENT_VERSION,
       collectionName,
       computedAt: stats.computedAt,
@@ -109,6 +151,7 @@ export class StatsCache {
       distributions: stats.distributions,
       payloadFieldKeys,
       ...(stats.scoreBackground ? { scoreBackground: stats.scoreBackground } : {}),
+      ...(stats.samplingContract ? { samplingContract: stats.samplingContract } : {}),
     };
     writeFileSync(this.filePath(collectionName), JSON.stringify(content, null, 2), "utf-8");
   }

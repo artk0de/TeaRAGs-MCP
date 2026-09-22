@@ -36,14 +36,16 @@ function withStamps(git?: Record<string, unknown>): Record<string, unknown> | un
   const stamp = (days: unknown): number | undefined =>
     typeof days === "number" ? NOW_SEC - days * DAY_SECONDS : undefined;
   const out = { ...git };
-  if (out["lastModifiedAt"] === undefined && out["ageDays"] !== undefined)
+  if (out["lastModifiedAt"] === undefined && out["ageDays"] !== undefined) {
     out["lastModifiedAt"] = stamp(out["ageDays"]);
+  }
   for (const level of ["file", "chunk"] as const) {
     const scoped = out[level];
     if (typeof scoped !== "object" || scoped === null) continue;
     const copy = { ...(scoped as Record<string, unknown>) };
-    if (copy["lastModifiedAt"] === undefined && copy["ageDays"] !== undefined)
+    if (copy["lastModifiedAt"] === undefined && copy["ageDays"] !== undefined) {
       copy["lastModifiedAt"] = stamp(copy["ageDays"]);
+    }
     out[level] = copy;
   }
   return out;
@@ -1719,8 +1721,8 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
             support: "commitCount",
             label: {
               rules: [
-                { whenSupportBelow: 5, ceiling: "healthy" },
-                { whenSupportBelow: 10, ceiling: "concerning" },
+                { whenSupportAtOrBelow: 5, ceiling: "healthy" },
+                { whenSupportAtOrBelow: 10, ceiling: "concerning" },
               ],
             },
           },
@@ -1776,6 +1778,110 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     // Without the fix: { value: 38, label: "critical" } (clamp didn't fire — commitCount missing from siblings).
     // With the fix: { value: 38, label: "healthy" } (clamp fires from raw payload).
     expect(overlay).toEqual({ value: 38, label: "healthy" });
+  });
+});
+
+describe("Reranker — score dampening k is max(adaptive percentile, declared floor)", () => {
+  // bd tea-rags-mcp-1lyui. The adaptive percentile of a support distribution
+  // made of small integers collapses to that distribution's minimum: on the
+  // tea-rags self-index `git.file.commitCount` p25 measured 1, so k=1 and
+  // `confidenceDampening(n, 1)` returned 1 for every point with a single
+  // commit — the score path was inert corpus-wide. The descriptor's declared
+  // `score.threshold` is the floor that prevents it, so k is the LARGER of the
+  // two, not the first one that resolves.
+  const volatilityDescriptor = allDescriptors.filter((d) => d.name === "volatility");
+  const volatilityPreset: RerankPreset = {
+    name: "volatilityOnly",
+    description: "test",
+    tools: ["semantic_search"],
+    weights: { volatility: 1.0 },
+    overlayMask: {},
+  };
+
+  /** churnVolatility descriptor whose confidence block declares (or omits) a score floor. */
+  const payloadSignalsWith = (score?: {
+    threshold: number;
+    adaptivePercentile?: number;
+  }): PayloadSignalDescriptor[] => [
+    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+    {
+      key: "git.file.churnVolatility",
+      type: "number",
+      description: "Volatility",
+      stats: {
+        percentiles: [95],
+        confidence: { support: "commitCount", ...(score ? { score } : {}) },
+      },
+    },
+  ];
+
+  const statsWithCommitCountP25 = (p25: number): CollectionSignalStats => ({
+    perSignal: new Map([["git.file.commitCount", { count: 500, percentiles: { 25: p25, 95: 100 } }]]),
+    perLanguage: new Map(),
+    distributions: {
+      totalFiles: 0,
+      language: {},
+      chunkType: {},
+      documentation: { docs: 0, code: 0 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
+    },
+    computedAt: Date.now(),
+  });
+
+  // churnVolatility=100 is the batch p95, so the normalized value is exactly 1
+  // and the preset's single weight makes the final score equal the dampening
+  // factor (4 / k)^2 — k is read straight off the assertion.
+  const results = (): RerankableResult[] => [
+    {
+      score: 0.9,
+      payload: {
+        relativePath: "src/a.ts",
+        startLine: 1,
+        endLine: 50,
+        git: withStamps({ file: { churnVolatility: 100, commitCount: 4 } }),
+      },
+    },
+  ];
+
+  const scoreWith = async (
+    score: { threshold: number; adaptivePercentile?: number } | undefined,
+    p25: number | undefined,
+  ): Promise<number> => {
+    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], payloadSignalsWith(score));
+    if (p25 !== undefined) reranker.setCollectionStats(statsWithCommitCountP25(p25));
+    const ranked = await reranker.rerank(results(), "volatilityOnly", "semantic_search");
+    return ranked[0].score;
+  };
+
+  it("adaptive percentile BELOW the declared floor → floor wins", async () => {
+    // p25=1 (the measured tea-rags value) vs threshold=10 → k=10 → (4/10)^2=0.16.
+    // Before the fix k=1, confidenceDampening short-circuits at n>=k and the
+    // score was the undampened 1.0.
+    expect(await scoreWith({ threshold: 10, adaptivePercentile: 25 }, 1)).toBeCloseTo(0.16, 4);
+  });
+
+  it("adaptive percentile ABOVE the declared floor → adaptive wins", async () => {
+    // p25=20 vs threshold=8 → k=20 → (4/20)^2=0.04.
+    expect(await scoreWith({ threshold: 8, adaptivePercentile: 25 }, 20)).toBeCloseTo(0.04, 4);
+  });
+
+  it("adaptive percentile EQUAL to the declared floor → that shared value", async () => {
+    // p25=8 == threshold=8 → k=8 → (4/8)^2=0.25.
+    expect(await scoreWith({ threshold: 8, adaptivePercentile: 25 }, 8)).toBeCloseTo(0.25, 4);
+  });
+
+  it("no collection stats → no adaptive value, derived signal's own fallback chain runs", async () => {
+    // Reranker returns undefined; VolatilitySignal falls back to
+    // confidence.score.threshold=8 → (4/8)^2=0.25.
+    expect(await scoreWith({ threshold: 8, adaptivePercentile: 25 }, undefined)).toBeCloseTo(0.25, 4);
+  });
+
+  it("no declared floor but stats present → the adaptive value alone", async () => {
+    // No score block at all. Adaptive percentile defaults to 25 → k=20, which
+    // must not be confused with VolatilitySignal.FALLBACK_K=8 (would give 0.25).
+    expect(await scoreWith(undefined, 20)).toBeCloseTo(0.04, 4);
   });
 });
 
@@ -2321,7 +2427,11 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("falls back to source thresholds when test stats undefined", async () => {
+  // A test-scope point graded on the source ladder is graded against a
+  // population it is not in. The same signal's `labelMap` publishes no test
+  // bands at all, so the label and the advertised vocabulary disagree — the
+  // one thing per-scope stats exist to prevent.
+  it("emits no label when the test scope has no stats of its own", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map(),
       perLanguage: new Map([
@@ -2351,7 +2461,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     };
     rerankerWithLabels.setCollectionStats(collectionStats);
 
-    // Test chunk — no test stats, should fall back to source thresholds
+    // Test chunk — no test stats, so no label at all
     const testResult = await rerankerWithLabels.rerank(
       [
         {
@@ -2370,8 +2480,9 @@ describe("Reranker — label resolution in buildOverlay()", () => {
       "semantic_search",
     );
     const overlay = testResult[0].rankingOverlay!;
-    // Falls back to source: p75=10, 10>=10 → "high"
-    expect(overlay.file!.commitCount).toEqual({ value: 10, label: "high" });
+    // Source ladder would say p75=10, 10>=10 → "high". The bare number is the
+    // honest answer: this point's population was never measured.
+    expect(overlay.file!.commitCount).toBe(10);
 
     rerankerWithLabels.invalidateStats();
   });
@@ -2752,5 +2863,121 @@ describe("reranker — batch min-max similarity normalization (cross-scale weigh
     expect(reranked[0].score).toBe(0.66);
     expect(reranked[1].score).toBe(0.09);
     expect(reranked[0].rankingOverlay).toBeUndefined();
+  });
+});
+
+/**
+ * A gated signal's bands were computed over the QUALIFIED subpopulation, so a
+ * unit the gate excluded is not in the population the ladder describes. Grading
+ * it anyway is the same cross-population defect the scope pick refuses: a
+ * one-commit chunk reading 100 would take `critical` off a ladder built without
+ * it.
+ */
+describe("Reranker — support-gated labels (minSupportPercentile)", () => {
+  const gatedReranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  /** What the sampler resolved and persisted for the typescript source bucket. */
+  const SUPPORT_FLOOR = 4;
+
+  const statsWithFloor = (floor: number | undefined): CollectionSignalStats => ({
+    perSignal: new Map([
+      ["git.file.commitCount", { count: 100, min: 1, max: 40, percentiles: { 10: 1, 25: 2, 50: 2, 75: 4, 95: 13 } }],
+    ]),
+    perLanguage: new Map([
+      [
+        "typescript",
+        new Map([
+          [
+            "git.file.bugFixRate",
+            {
+              source: {
+                count: 40,
+                min: 0,
+                max: 100,
+                // Bands over the qualified units only.
+                percentiles: { 50: 25, 75: 43, 95: 78 },
+                ...(floor === undefined ? {} : { supportFloor: floor }),
+              },
+            },
+          ],
+        ]),
+      ],
+    ]),
+    distributions: {
+      totalFiles: 100,
+      language: {},
+      chunkType: {},
+      documentation: { docs: 0, code: 100 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
+    },
+    computedAt: Date.now(),
+  });
+
+  const sourcePoint = (commitCount: number): RerankableResult => ({
+    score: 0.8,
+    payload: {
+      relativePath: "src/a.ts",
+      startLine: 1,
+      endLine: 50,
+      language: "typescript",
+      chunkType: "function",
+      git: withStamps({ file: { commitCount, bugFixRate: 100, ageDays: 30 } }),
+    },
+  });
+
+  it("emits a bare number for a point whose support is below the floor", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
+
+    const ranked = await gatedReranker.rerank([sourcePoint(2)], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toBe(100);
+
+    gatedReranker.invalidateStats();
+  });
+
+  it("labels a point whose support is at or above the floor from the gated bands", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
+
+    const ranked = await gatedReranker.rerank([sourcePoint(10)], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toEqual({ value: 100, label: "critical" });
+
+    gatedReranker.invalidateStats();
+  });
+
+  it("emits a bare number when the point carries no support value at all", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
+
+    const noSupport: RerankableResult = {
+      score: 0.8,
+      payload: {
+        relativePath: "src/a.ts",
+        startLine: 1,
+        endLine: 50,
+        language: "typescript",
+        chunkType: "function",
+        git: withStamps({ file: { bugFixRate: 100, ageDays: 30 } }),
+      },
+    };
+    const ranked = await gatedReranker.rerank([noSupport], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toBe(100);
+
+    gatedReranker.invalidateStats();
+  });
+
+  // An index sampled before the declaration has no floor on disk, and its bands
+  // were computed over everything — so grading everything against them is the
+  // consistent reading until the stats-contract drift axis repairs the file.
+  it("labels normally when the stats file carries no resolved floor", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(undefined));
+
+    const ranked = await gatedReranker.rerank([sourcePoint(2)], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toEqual({ value: 100, label: "concerning" });
+
+    gatedReranker.invalidateStats();
   });
 });
