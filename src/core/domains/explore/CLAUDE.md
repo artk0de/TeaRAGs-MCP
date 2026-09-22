@@ -124,6 +124,17 @@
   pushes most of them into the top label whether floors are applied or not. A
   cross-scope fallback lived here until 2026-09-22 and was asserted by a test
   named for it.
+- **The support axis refuses the same way.** `Reranker#meetsSupportFloor` gates
+  a signal declaring `stats.minSupportPercentile`: the unit's support sibling is
+  read at the signal's OWN level out of `collectScopeSiblings`, compared against
+  the `SignalStats.supportFloor` the SAMPLER resolved, and a unit below it — or
+  one carrying no support value at all — keeps the bare number. Never recompute
+  that floor here; the sampler persists it precisely so both halves describe one
+  population, and a locally-derived number would diverge the first time a
+  percentile moved. Three yes-without-comparing answers are deliberate: no gate
+  declared, no floor in the stats file (sampled before the declaration, so its
+  bands cover everything), or no support named. Why the gate exists at all is a
+  measurement, and it lives once, in `../trajectory/CLAUDE.md`.
 - **Mass-signal thresholds are floored per language:
   `threshold = max(percentile, floor)`, source scope only.** `moduleLines` /
   `moduleMethodCount` / `memberCount` pass through `applySignalFloors`

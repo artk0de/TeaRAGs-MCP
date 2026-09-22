@@ -77,6 +77,30 @@ carry their own navigators.
   fact about that signal's producer, so a sweep over the remaining zero-capable
   signals (`fanIn`, `fanOut`, `instability`, `churnVolatility`) would be a
   guess.
+- **A ratio's bands mean nothing over units the corpus barely observed, and
+  `stats.minSupportPercentile` is how a signal says so.** Declaring it samples a
+  unit only when the sibling `stats.confidence.support` names clears that
+  percentile of the SUPPORT's own distribution in the same bucket; the resolved
+  number is persisted as `SignalStats.supportFloor` so the read half
+  (`Reranker#meetsSupportFloor`, `../explore/CLAUDE.md`) excludes exactly the
+  units the bands were computed without. The floor is a corpus statistic, never
+  a constant — on this index it resolves to `commitCount`'s own p75, 3 at chunk
+  scope and 4 at file scope. Why, measured on `code_8b243ffe` typescript source:
+  compare the observed variance of the raw rate against the pure-binomial floor
+  `mean_i[p(1-p)/n_i]`, and the ratio over the WHOLE population is 0.94 (chunk)
+  and 0.82 (file) — at or below 1, so the entire spread is indistinguishable
+  from sampling noise around one corpus rate of ~31%, and that was the
+  population the bands were cut from. The ratio climbs monotonically with the
+  floor (chunk 1.44 at n≥3, 1.99 at n≥10; file 2.11 at n≥4, 3.00 at n≥10) and
+  the degenerate `critical ≥100%` band — one attainable value, manufactured
+  entirely by one-and-two-commit units that can only read 0 or 100 — disappears
+  at the same point: chunk p95 goes 100 → 80, file → 76.8. **Do not reach for
+  empirical-Bayes shrinkage here; it is measured and refused.** Method of
+  moments fits α at the grid ceiling and collapses the distribution to a point
+  mass at p (p50 30.84, p75 30.84, p95 30.86) — the honest estimate, and useless
+  as a ladder. The lever is the SAMPLE, not the estimator. Cost, so nobody reads
+  it as a regression: the sample drops 9051 → 2450 chunk values and 2003 → 589
+  file ones, and every excluded unit keeps a bare number.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys
