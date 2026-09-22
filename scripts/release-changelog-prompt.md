@@ -132,5 +132,11 @@ the user-facing benefit.
    `{ "name": ENV_NAME, "description": "<what it does>", "default": "<value>", "change": "new" | "changed" }`.
    Omit the field entirely if no env changed.
 
+10. **No markdown emphasis in any `description`.** Write plain prose — never a
+    `*` or `**` marker. The renderer owns emphasis: it bolds project terms and
+    bold-italicises languages and frameworks itself
+    (`scripts/lib/changelog-emphasis.js`). Anything you mark up is left exactly
+    as you wrote it and reads inconsistently beside what the renderer produced.
+
 Do not emit anything to stdout. The only output is the `release-notes.json`
 file.
