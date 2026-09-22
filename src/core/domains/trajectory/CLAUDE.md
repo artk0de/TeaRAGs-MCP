@@ -100,7 +100,15 @@ carry their own navigators.
   mass at p (p50 30.84, p75 30.84, p95 30.86) — the honest estimate, and useless
   as a ladder. The lever is the SAMPLE, not the estimator. Cost, so nobody reads
   it as a regression: the sample drops 9051 → 2450 chunk values and 2003 → 589
-  file ones, and every excluded unit keeps a bare number.
+  file ones, and every excluded unit keeps a bare number. **The gate narrows the
+  GLOBAL bucket too, so it moves filter-preset thresholds, not just labels** —
+  those resolve from `perSignal` (next bullet), so declaring it on
+  `git.file.bugFixRate` moved `panicZone`'s `p75` leg from 50 to 44 and
+  `battleTested`'s `p25` leg from 0 to 10, turning "low bug-fix rate" from
+  exactly zero into up to 10%. Both old values were the degenerate ones, so the
+  direction is right, but it changes which points a preset PRE-filters. Read the
+  referencing presets before and after; a support floor is never a labels-only
+  change.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys
