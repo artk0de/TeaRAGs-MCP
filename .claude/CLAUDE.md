@@ -407,9 +407,14 @@ DEBUG=1 tea-rags index-codebase --project <alias> --wait-enrichments --force-enr
   relocate every id and nothing short of a full rebuild is coherent. Drop both
   flags for a plain incremental.
 - `--json` emits the final result machine-readable — file counts, phase
-  durations, `outcome.failed` / `outcome.degraded`, `infraHealth`,
-  `enrichmentHealth` — instead of human bars. Parse directly. Always pass when
-  an agent consumes the result.
+  durations, `outcome`, `infraHealth`, `enrichmentHealth` — instead of human
+  bars. Parse directly. Always pass when an agent consumes the result. The
+  `outcome` key is ALWAYS present and says whether enrichment was observed: a
+  detached run (no `--wait-enrichments`) reports `{"measured": false}` and
+  nothing else, a run that waited reports
+  `{"measured": true, "failed": [...], "degraded": [...]}`. So check
+  `outcome.measured` before reading `outcome.failed` — an empty `failed` on a
+  detached run would mean "nobody looked", not "nothing broke".
 - **`--json` does NOT carry the codegraph resolve breakdown**, and neither does
   the MCP `get_index_status` formatter or the pipeline debug log.
   `resolveSuccessRate` per receiver kind is rendered by **`prime`**, under
@@ -426,9 +431,11 @@ DEBUG=1 tea-rags index-codebase --project <alias> --wait-enrichments --force-enr
   Measuring a RESOLVER change needs no index run at all — the offline harnesses
   and their preconditions are owned by `src/core/domains/language/CLAUDE.md`.
 
-- Do not pipe a `--json` run through `head`/`tail` when you also want the
-  diagnostics: they share the stream, and the truncation silently drops the half
-  you were not looking at.
+- A `--json` run emits the JSON object and nothing else on stdout+stderr, even
+  under `DEBUG=1` — the diagnostics go to
+  `~/.tea-rags/logs/pipeline-<timestamp>.log`. Chasing a migration line or a
+  phase failure means reading that file; piping the run through `head`/`tail`
+  neither helps nor hides anything.
 - MCP `mcp__tea-rags__index_codebase` returns once embeddings stored,
   **detaches** enrichment to background — MCP-side testing forces polling
   `get_index_status` + guessing when enrichment settled. CLI's synchronous wait
