@@ -108,7 +108,14 @@ carry their own navigators.
   exactly zero into up to 10%. Both old values were the degenerate ones, so the
   direction is right, but it changes which points a preset PRE-filters. Read the
   referencing presets before and after; a support floor is never a labels-only
-  change.
+  change. **Clearing a degenerate top band is not what the gate DOES**, though —
+  it is what happened here, because `bugFixRate`'s 100 atom is manufactured
+  entirely by thin support and nothing else reaches it. Where an atom has a
+  structural source the gate leaves it standing: `codegraph.file.instability`
+  declares the same p75 and its `unstable ≥1` band survives, because every
+  `fanIn == 0` file reads exactly 1 however many edges it has
+  (`codegraph/CLAUDE.md`). Declare the gate on the variance argument, and check
+  the top band as a separate question.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys
