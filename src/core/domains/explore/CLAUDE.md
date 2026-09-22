@@ -31,6 +31,22 @@
   Why: absent means "index predates the background, a reindex fills it", not
   "low" — branch on presence; a default fabricates a verdict.
 
+- **A band's threshold is its LOWER bound, and the published vocabulary is
+  filtered to the bands that can be returned.** `resolveLabel`
+  (`label-resolver.ts`) seeds the result with the first band and keeps the LAST
+  whose threshold the value reached, so the first band's own threshold is inert
+  — it is the default for everything below the second. Both the overlay and
+  `IndexMetricsQuery#buildSignalMetrics` narrow through `resolvableLabelBands`
+  before use, so a name the resolver cannot emit never reaches `labelMap`; the
+  tie direction itself is declared per signal (`../trajectory/CLAUDE.md`). Why:
+  `formatLabelMap` (`../../../cli/prime/format.ts`) rendered this as
+  `label ≤threshold`, inverting every band in the digest — `healthy ≤0%` was
+  read as "healthy only at exactly 0%" when it meant "healthy below 50%", i.e.
+  76% of the population, and that misreading drove a full day of hunting a
+  defect in the estimator that did not exist. Bands render `<next` for the first
+  and `≥own` for the rest; there is exactly one renderer, and a second one would
+  reintroduce the inversion.
+
 ## Mechanics
 
 - **`"relevance"` never reaches the reranker; similarity-only weights skip the

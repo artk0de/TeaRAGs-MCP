@@ -17,16 +17,44 @@ carry their own navigators.
   declare `stats.chunkTypeFilter`.** Percentiles run over POINTS, i.e. chunks
   (`admitsChunkType`, `SignalValuesAccumulator#fileScopedDedupe` keyed
   `` `${bucket}|${signal.key}|${relPath}` ``, both in
-  `ingest/infra/collection-stats.ts`). `moduleLines` / `moduleMethodCount` carry
-  the dedupe flag; every `git.chunk.*` signal with stats carries
-  `CALLABLE_CHUNK_TYPES` (`contracts/types/chunker.ts`), while `methodLines` /
-  `methodDensity` and the codegraph chunk signals still name the bare
-  `"function"`; `memberCount` deliberately declares neither
+  `ingest/infra/collection-stats.ts`). EVERY `git.file.*` and `codegraph.file.*`
+  signal with stats carries the dedupe flag, as do `moduleLines` /
+  `moduleMethodCount`, and `file-scope-stats-dedupe.test.ts` fails on a new
+  file-scope signal that forgets it. Every `git.chunk.*` signal with stats
+  carries `CALLABLE_CHUNK_TYPES` (`contracts/types/chunker.ts`), while
+  `methodLines` / `methodDensity` and the codegraph chunk signals still name the
+  bare `"function"`; `memberCount` deliberately declares neither
   (`static/payload-signals.ts`). Why: without dedupe a 51-chunk file casts 51
   votes in its own distribution; without the type filter block/doc/class chunks
   dilute it — `block` alone outnumbers `function` on a typical index, so a
   method's churn gets ranked against barrel re-exports and constant blocks. Both
   surface as a shifted threshold and a plausible wrong label, never as an error.
+
+  **This invariant was ASSERTED here while seventeen signals violated it**, from
+  the flag's introduction until 2026-09-22 — it was applied to the two static
+  module-mass signals that motivated it and never swept across the enrichment
+  trajectories. Measured cost on the live tea-rags index, per-chunk against
+  per-file: `git.file.ageDays` p50 7 → 31, `git.file.fileChurnCount` p50/p95
+  369/3766 → 128/994, `codegraph.file.fanOut` p95 33 → 10. The damage is not
+  confined to labels: the same raw percentiles are what filter presets compare
+  against and what floors the reranker's adaptive bounds, so a p95 inflated
+  threefold compresses every normalized file signal and changes RANKING. A
+  navigator asserting an invariant nothing enforces is worse than silence —
+  hence the test.
+
+- **When several bands share a threshold, `stats.bandTieBreak` says which name
+  wins.** An atomic distribution ties neighbouring percentiles and the bands
+  between them vanish; `resolvableLabelBands` (`../explore/label-resolver.ts`)
+  drops the unreachable names so `resolveLabel` and the published `labelMap`
+  cannot disagree. Default `"upper"` keeps the walk-and-take-the-last rule.
+  `"lower"` is declared only where a MEASURED tie produced a name that is wrong
+  about the code: both `bugFixRate` scopes, both `commitCount` scopes, and the
+  contributor counts. Why: the right end is a property of the signal and no
+  algorithm recovers it — `blameDominantAuthorPct` ties at 100 and 100%
+  ownership IS a deep silo, `blameContributorCount` ties at 1 and one author is
+  `solo`, `codegraph.chunk.fanIn` ties at 1 on the same shape yet one caller is
+  `typical`, not `unused`. Before this existed, ripgrep and gin — every file
+  stamped `bugFixRate: 25` — reported 100% of their chunks `critical`.
 - **A single-valued `chunkTypeFilter` DELETES the test-scope distribution.**
   Scope detection routes `function` to the source bucket and `test` to the test
   one, so naming one value leaves the other bucket empty, `perLanguage` carries

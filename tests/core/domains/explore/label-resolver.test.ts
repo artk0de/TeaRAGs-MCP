@@ -187,4 +187,55 @@ describe("resolveLabel", () => {
       ).toBe("c");
     });
   });
+
+  /**
+   * An atomic distribution ties neighbouring percentiles, and a value sitting on
+   * the tie could honestly be read as any band in the run. Which end is right is
+   * a property of the SIGNAL, not of the data: 100% dominant-author is a
+   * deep-silo whatever else the corpus looks like, while one contributor is
+   * `solo` and never `team`. So the descriptor declares it.
+   */
+  describe("tied bands resolve to the end the descriptor declares", () => {
+    const ladder = { p50: "healthy", p75: "concerning", p95: "critical" };
+    const allTied = { 50: 25, 75: 25, 95: 25 };
+
+    it("defaults to the upper end, preserving the walk-and-keep-the-last rule", () => {
+      expect(resolveLabel(25, ladder, allTied)).toBe("critical");
+    });
+
+    it("reports the lower end when the descriptor asks for it", () => {
+      expect(resolveLabel(25, ladder, allTied, { bandTieBreak: "lower" })).toBe("healthy");
+    });
+
+    it("leaves a value below the whole ladder on the default band either way", () => {
+      expect(resolveLabel(3, ladder, allTied, { bandTieBreak: "lower" })).toBe("healthy");
+      expect(resolveLabel(3, ladder, allTied, { bandTieBreak: "upper" })).toBe("healthy");
+    });
+
+    it("keeps the below-everything default reachable when the tie is at the top of the scale", () => {
+      // blameDominantAuthorPct on a single-author repository: four bands, all at
+      // 100. 100 IS a deep silo; 99 is not, and must still find a band.
+      const silo = { p25: "shared", p50: "concentrated", p75: "silo", p95: "deep-silo" };
+      const pinned = { 25: 100, 50: 100, 75: 100, 95: 100 };
+      expect(resolveLabel(100, silo, pinned, { bandTieBreak: "upper" })).toBe("deep-silo");
+      expect(resolveLabel(99, silo, pinned, { bandTieBreak: "upper" })).toBe("shared");
+    });
+
+    it("resolves a count tied at the bottom of its scale to the least-severe name", () => {
+      // blameContributorCount: one contributor is `solo`, never `team`.
+      const crowding = { p25: "solo", p50: "pair", p75: "team", p95: "crowd" };
+      const pinned = { 25: 1, 50: 1, 75: 1, 95: 2 };
+      expect(resolveLabel(1, crowding, pinned, { bandTieBreak: "lower" })).toBe("solo");
+      expect(resolveLabel(2, crowding, pinned, { bandTieBreak: "lower" })).toBe("crowd");
+    });
+
+    it("does not disturb a strictly increasing ladder", () => {
+      const percentiles = { 50: 0, 75: 50, 95: 100 };
+      for (const tie of ["lower", "upper"] as const) {
+        expect(resolveLabel(0, ladder, percentiles, { bandTieBreak: tie })).toBe("healthy");
+        expect(resolveLabel(60, ladder, percentiles, { bandTieBreak: tie })).toBe("concerning");
+        expect(resolveLabel(100, ladder, percentiles, { bandTieBreak: tie })).toBe("critical");
+      }
+    });
+  });
 });

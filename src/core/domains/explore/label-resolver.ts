@@ -11,7 +11,11 @@ import type { SignalConfidence } from "../../contracts/types/trajectory.js";
 export interface LabelContext {
   siblingValues?: Record<string, number>;
   confidence?: SignalConfidence;
+  /** Descriptor's `stats.bandTieBreak` — which end of a tied run owns a value. */
+  bandTieBreak?: BandTieBreak;
 }
+
+export type BandTieBreak = "lower" | "upper";
 
 /**
  * Resolves a human-readable label for a numeric value based on
@@ -36,21 +40,30 @@ export function resolveLabel(
   percentiles: Record<number, number>,
   ctx?: LabelContext,
 ): string {
-  const entries = Object.entries(labels)
+  const declared = Object.entries(labels)
     .map(([pKey, label]) => ({ p: Number(pKey.slice(1)), label }))
     .sort((a, b) => a.p - b.p);
 
-  if (entries.length === 0) return "";
+  if (declared.length === 0) return "";
 
-  let resolved = entries[0].label;
-  for (const { p, label } of entries) {
-    const threshold = percentiles[p];
-    if (threshold !== undefined && value >= threshold) {
-      resolved = label;
-    }
+  // Resolve against the bands that can actually be returned, so the label a
+  // result carries and the vocabulary `labelMap` advertises can never disagree.
+  const bands = resolvableLabelBands(
+    declared.flatMap(({ p, label }) => {
+      const threshold = percentiles[p];
+      return threshold === undefined ? [] : [{ p, label, threshold }];
+    }),
+    ctx?.bandTieBreak,
+  );
+
+  let resolved = bands[0]?.label ?? declared[0].label;
+  for (const { label, threshold } of bands) {
+    if (value >= threshold) resolved = label;
   }
 
-  return applyConfidenceClamp(resolved, entries, ctx);
+  // The clamp ceiling is ordered against the DECLARED ladder: a ceiling naming
+  // a band that ties away is still a legitimate severity reference.
+  return applyConfidenceClamp(resolved, declared, ctx);
 }
 
 /**
@@ -74,10 +87,21 @@ export function resolveLabel(
  * Callers publishing a label vocabulary (`SignalMetrics.labelMap`) must filter
  * through this, or they advertise bands no result can ever carry.
  */
-export function resolvableLabelBands<T extends { threshold: number }>(ascendingBands: readonly T[]): T[] {
+export function resolvableLabelBands<T extends { threshold: number }>(
+  ascendingBands: readonly T[],
+  tieBreak: BandTieBreak = "upper",
+): T[] {
+  if (tieBreak === "lower") {
+    // First name of each tied run wins. The run's later names are unreachable,
+    // and dropping them can leave a single band — the honest shape for a corpus
+    // that stamps one value everywhere: the signal grades nothing there.
+    return ascendingBands.filter((band, i) => i === 0 || ascendingBands[i - 1].threshold < band.threshold);
+  }
+  // Last name of each tied run wins, and band 0 is kept regardless: it is the
+  // default for everything below the second threshold, so it stays reachable
+  // even when its own threshold ties away.
   return ascendingBands.filter(
-    (band, index) =>
-      index === 0 || index === ascendingBands.length - 1 || ascendingBands[index + 1].threshold > band.threshold,
+    (band, i) => i === 0 || i === ascendingBands.length - 1 || ascendingBands[i + 1].threshold > band.threshold,
   );
 }
 

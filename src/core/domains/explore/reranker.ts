@@ -678,6 +678,7 @@ export class Reranker {
       const label = resolveLabel(value, descriptor.stats.labels, percentiles, {
         siblingValues,
         confidence: resolvedConfidence,
+        bandTieBreak: descriptor.stats.bandTieBreak,
       });
       overlay[field] = { value, label };
     }

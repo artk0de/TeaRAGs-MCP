@@ -29,13 +29,13 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     key: "codegraph.file.fanIn",
     type: "number",
     description: "Number of files importing this file",
-    stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" } },
+    stats: { labels: { p25: "isolated", p50: "typical", p75: "popular", p95: "hub" }, dedupeByFile: true },
   },
   {
     key: "codegraph.file.fanOut",
     type: "number",
     description: "Number of files this file imports",
-    stats: { labels: { p25: "minimal", p50: "typical", p75: "heavy", p95: "exhaustive" } },
+    stats: { labels: { p25: "minimal", p50: "typical", p75: "heavy", p95: "exhaustive" }, dedupeByFile: true },
   },
   {
     // Ratio fanOut / (fanIn + fanOut). At connectionCount=1 it swings
@@ -51,6 +51,7 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
       // Filter preset references p90 of instability; labels declare p50/p75/p95,
       // so declare p90 here for index-time computation.
       percentilesToCompute: [90],
+      dedupeByFile: true,
       confidence: {
         support: "connectionCount",
         score: { threshold: 5, adaptivePercentile: 25 },
@@ -74,6 +75,7 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     stats: {
       labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "highly-connected" },
       percentilesToCompute: [10],
+      dedupeByFile: true,
     },
   },
   {
@@ -96,7 +98,7 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     key: "codegraph.file.transitiveImpact",
     type: "number",
     description: "Distinct files transitively importing this file (reverse BFS, depth-capped)",
-    stats: { labels: { p50: "local", p75: "regional", p95: "systemic" } },
+    stats: { labels: { p50: "local", p75: "regional", p95: "systemic" }, dedupeByFile: true },
   },
 ];
 

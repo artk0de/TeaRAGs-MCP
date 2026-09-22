@@ -109,7 +109,7 @@ export class IndexMetricsQuery {
         });
 
       const labelMap: Record<string, number> = {};
-      for (const { label, threshold } of resolvableLabelBands(bands)) {
+      for (const { label, threshold } of resolvableLabelBands(bands, descriptor.stats.bandTieBreak)) {
         labelMap[label] = threshold;
       }
 

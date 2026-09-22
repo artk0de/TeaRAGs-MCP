@@ -42,6 +42,26 @@ export interface SignalStatsRequest {
    */
   labels?: Record<string, string>;
   /**
+   * Which end of a run of bands sharing one threshold a value belongs to.
+   *
+   * Percentiles are non-decreasing, so an atomic distribution puts several
+   * labels on the same number and the bands between them vanish. Which of the
+   * surviving names is right is a property of the SIGNAL, not of the data, and
+   * nothing about the numbers reveals it:
+   *
+   *   • `blameDominantAuthorPct` ties at 100 because most files have one
+   *     author. 100% dominance IS a deep silo, so the tie reads `"upper"`.
+   *   • `blameContributorCount` ties at 1 because most chunks have one author.
+   *     One contributor is `solo` and never `team`, so it reads `"lower"`.
+   *   • `codegraph.chunk.fanIn` ties at 1 the same way, but one caller is
+   *     `typical`, not `unused` — `"upper"` again, on an identical shape.
+   *
+   * Defaults to `"upper"`, which is what the resolver does anyway (it keeps the
+   * last band the value reaches). Declare `"lower"` only where a measured tie
+   * produces a name that is wrong about the code.
+   */
+  bandTieBreak?: "lower" | "upper";
+  /**
    * Extra percentiles to compute at index time beyond those declared via
    * `labels` keys. Required when OTHER descriptors reference this signal via
    * `confidence.support` and need percentiles not part of this signal's own

@@ -30,6 +30,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       // as a label-clamp threshold (and "p25" via the labels declaration above).
       // Declare p10 here so collection-stats computes it at index time.
       percentilesToCompute: [10],
+      dedupeByFile: true,
+      // A tie at 1 means most files have a single commit; one commit is `low`.
+      bandTieBreak: "lower",
     },
     essential: true,
   },
@@ -37,7 +40,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.ageDays",
     type: "number",
     description: "Days since last modification",
-    stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" } },
+    stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" }, dedupeByFile: true },
     essential: true,
   },
   {
@@ -54,19 +57,20 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.recentDominantAuthorPct",
     type: "number",
     description: "Percentage of commits by dominant author",
-    stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" } },
+    // 100% dominance IS the top band, so a tie there keeps the upper name.
+    stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" }, dedupeByFile: true },
   },
   {
     key: "git.file.fileChurnCount",
     type: "number",
     description: "Total lines churned (added + deleted) — absolute change volume",
-    stats: { labels: { p25: "minimal", p50: "moderate", p75: "significant", p95: "massive" } },
+    stats: { labels: { p25: "minimal", p50: "moderate", p75: "significant", p95: "massive" }, dedupeByFile: true },
   },
   {
     key: "git.file.relativeChurn",
     type: "number",
     description: "Churn relative to file size (linesAdded + linesDeleted) / currentLines",
-    stats: { labels: { p75: "normal", p95: "high" } },
+    stats: { labels: { p75: "normal", p95: "high" }, dedupeByFile: true },
   },
   {
     key: "git.file.recencyWeightedFreq",
@@ -74,19 +78,19 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Recency-weighted commit frequency",
     // Filter preset references p50 of file-scope recencyWeightedFreq; labels
     // only declare p75/p95, so declare p50 here for index-time computation.
-    stats: { labels: { p75: "normal", p95: "burst" }, percentilesToCompute: [50] },
+    stats: { labels: { p75: "normal", p95: "burst" }, percentilesToCompute: [50], dedupeByFile: true },
   },
   {
     key: "git.file.changeDensity",
     type: "number",
     description: "Commits per month",
-    stats: { labels: { p50: "calm", p75: "active", p95: "intense" } },
+    stats: { labels: { p50: "calm", p75: "active", p95: "intense" }, dedupeByFile: true },
   },
   {
     key: "git.file.churnVolatility",
     type: "number",
     description: "Standard deviation of commit intervals in days",
-    stats: { labels: { p75: "stable", p95: "erratic" } },
+    stats: { labels: { p75: "stable", p95: "erratic" }, dedupeByFile: true },
   },
   {
     key: "git.file.bugFixRate",
@@ -103,6 +107,12 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       // Filter preset references p25 of file-scope bugFixRate; labels declare
       // p50/p75/p95, so declare p25 here for index-time computation.
       percentilesToCompute: [25],
+      dedupeByFile: true,
+      // A corpus that stamps one rate on every file (a shallow clone, a vendored
+      // tree) ties all three bands. The rate then grades nothing, so the honest
+      // reading is the least alarming one — `critical` for an entire repository
+      // is a false alarm, not a finding.
+      bandTieBreak: "lower",
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },
@@ -119,7 +129,8 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.recentContributorCount",
     type: "number",
     description: "Number of distinct contributors",
-    stats: { labels: { p50: "solo", p75: "team", p95: "crowd" } },
+    // One contributor is `solo`, never `team` — a tie at 1 takes the lower name.
+    stats: { labels: { p50: "solo", p75: "team", p95: "crowd" }, dedupeByFile: true, bandTieBreak: "lower" },
   },
   {
     key: "git.file.taskIds",
@@ -139,7 +150,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.blameDominantAuthorPct",
     type: "number",
     description: "Percentage of live lines owned by blameDominantAuthor (0-100)",
-    stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" } },
+    // Ties at 100 on any single-author repository, and 100% ownership IS a deep
+    // silo — the default upper tie-break is the correct reading here.
+    stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" }, dedupeByFile: true },
     essential: true,
   },
   {
@@ -151,7 +164,13 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.blameContributorCount",
     type: "number",
     description: "Distinct authors of live lines",
-    stats: { labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" } },
+    // One author is `solo`. Measured: ties at 1 on rust/go/swift sent it to
+    // `crowd`, and on tea-rags/python to `team`.
+    stats: {
+      labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" },
+      dedupeByFile: true,
+      bandTieBreak: "lower",
+    },
     essential: true,
   },
 
@@ -172,6 +191,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       // Mirrors git.file.commitCount — bugFixRate confidence references "p10"
       // of chunk-scope commitCount too.
       percentilesToCompute: [10],
+      // Ties at 1 wherever most chunks carry a single commit (taxdome: 57% of
+      // them). One commit is `low`, not `typical`.
+      bandTieBreak: "lower",
     },
     essential: true,
   },
@@ -189,7 +211,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.recentContributorCount",
     type: "number",
     description: "Distinct contributors to this chunk",
-    stats: { labels: { p50: "solo", p95: "crowd" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES },
+    stats: { labels: { p50: "solo", p95: "crowd" }, chunkTypeFilter: CALLABLE_CHUNK_TYPES, bandTieBreak: "lower" },
   },
   {
     key: "git.chunk.bugFixRate",
@@ -198,6 +220,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     stats: {
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
       chunkTypeFilter: CALLABLE_CHUNK_TYPES,
+      // Same reading as the file-scope twin: bands that tie grade nothing, so
+      // an indistinguishable rate reports as the least alarming name.
+      bandTieBreak: "lower",
       // Same reading as the file scope, and the chunk sample needs it more: the
       // survivors are dominated by single-commit chunks whose one commit was a
       // fix, so dropping the zeros collapses p50/p75/p95 onto 100 and every
@@ -277,6 +302,8 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     stats: {
       labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" },
       chunkTypeFilter: CALLABLE_CHUNK_TYPES,
+      // See the file-scope twin: a lone author must read `solo`.
+      bandTieBreak: "lower",
     },
     essential: true,
   },
