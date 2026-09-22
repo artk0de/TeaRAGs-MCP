@@ -896,8 +896,8 @@ describe("computeCollectionStats distributions", () => {
           support: "commitCount",
           label: {
             rules: [
-              { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
-              { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+              { whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" },
+              { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
             ],
           },
         },
@@ -980,7 +980,7 @@ describe("computeCollectionStats distributions", () => {
         stats: {
           confidence: {
             support: "commitCount",
-            label: { rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "low" }] },
+            label: { rules: [{ whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "low" }] },
           },
           labels: { p50: "low" },
         },
@@ -1014,7 +1014,7 @@ describe("computeCollectionStats distributions", () => {
           labels: { p50: "small" },
           confidence: {
             support: "commitCount",
-            label: { rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "small" }] },
+            label: { rules: [{ whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "small" }] },
           },
         },
       };
@@ -1041,8 +1041,8 @@ describe("computeCollectionStats distributions", () => {
             score: { threshold: 5, adaptivePercentile: 25 },
             label: {
               rules: [
-                { whenSupportBelow: "p10", fallback: 2, ceiling: "stable" },
-                { whenSupportBelow: "p25", fallback: 5, ceiling: "mixed" },
+                { whenSupportAtOrBelow: "p10", fallback: 2, ceiling: "stable" },
+                { whenSupportAtOrBelow: "p25", fallback: 5, ceiling: "mixed" },
               ],
             },
           },
@@ -1072,7 +1072,7 @@ describe("computeCollectionStats distributions", () => {
           confidence: {
             support: "connectionCount",
             label: {
-              rules: [{ whenSupportBelow: "p10", fallback: 2, ceiling: "stable" }],
+              rules: [{ whenSupportAtOrBelow: "p10", fallback: 2, ceiling: "stable" }],
             },
           },
         },

@@ -25,8 +25,8 @@ describe("BugFixSignal — confidence-driven dampening", () => {
     score: { threshold: 10 },
     label: {
       rules: [
-        { whenSupportBelow: 5, ceiling: "healthy" },
-        { whenSupportBelow: 10, ceiling: "concerning" },
+        { whenSupportAtOrBelow: 5, ceiling: "healthy" },
+        { whenSupportAtOrBelow: 10, ceiling: "concerning" },
       ],
     },
   };

@@ -61,8 +61,8 @@ const bugFixFileDescriptor: PayloadSignalDescriptor = {
       score: { threshold: 10, adaptivePercentile: 25 },
       label: {
         rules: [
-          { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
-          { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+          { whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" },
+          { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
         ],
       },
     },
@@ -79,7 +79,7 @@ const bugFixChunkDescriptor: PayloadSignalDescriptor = {
       support: "commitCount",
       score: { threshold: 10, adaptivePercentile: 25 },
       label: {
-        rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" }],
+        rules: [{ whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" }],
       },
     },
   },
@@ -382,8 +382,8 @@ describe("StatsRecomputeService.ensureCoverage", () => {
     warn.mockRestore();
   });
 
-  it("skips label-side percentiles when the rule's whenSupportBelow is numeric (not a 'pN' string)", async () => {
-    // Numeric whenSupportBelow rules don't reference a percentile of the support —
+  it("skips label-side percentiles when the rule's whenSupportAtOrBelow is numeric (not a 'pN' string)", async () => {
+    // Numeric whenSupportAtOrBelow rules don't reference a percentile of the support —
     // the recompute path must skip them silently.
     const numericRuleDescriptor: PayloadSignalDescriptor = {
       key: "git.file.bugFixRate",
@@ -396,8 +396,8 @@ describe("StatsRecomputeService.ensureCoverage", () => {
           // No score block, only label rules — and those rules are NUMERIC, not pN strings.
           label: {
             rules: [
-              { whenSupportBelow: 3, fallback: 5, ceiling: "healthy" },
-              { whenSupportBelow: 5, fallback: 10, ceiling: "concerning" },
+              { whenSupportAtOrBelow: 3, fallback: 5, ceiling: "healthy" },
+              { whenSupportAtOrBelow: 5, fallback: 10, ceiling: "concerning" },
             ],
           },
         },
@@ -467,7 +467,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
   });
 
   it("silently skips malformed 'pXX' rules whose numeric part parses as NaN", async () => {
-    // `whenSupportBelow: "pfoo"` → Number("foo") = NaN; the enqueue guard
+    // `whenSupportAtOrBelow: "pfoo"` → Number("foo") = NaN; the enqueue guard
     // (Number.isFinite check) must drop the rule rather than calling
     // perSignal.get(signal).percentiles[NaN] which would short-circuit weirdly.
     const malformedRule: PayloadSignalDescriptor = {
@@ -479,7 +479,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
         confidence: {
           support: "commitCount",
           label: {
-            rules: [{ whenSupportBelow: "pfoo", fallback: 5, ceiling: "healthy" }],
+            rules: [{ whenSupportAtOrBelow: "pfoo", fallback: 5, ceiling: "healthy" }],
           },
         },
       },
@@ -513,7 +513,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
           // No score block — only label. Forces the resolveSiblingFullKey for
           // the LABEL path (line 198) which is the guard that hits line 199.
           label: {
-            rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "ok" }],
+            rules: [{ whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "ok" }],
           },
         },
       },

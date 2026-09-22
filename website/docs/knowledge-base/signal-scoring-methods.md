@@ -181,11 +181,13 @@ A linear formula ($n/k$) would give 50% strength at 4 commits — too generous f
 
 ### Where Does the Threshold Come From?
 
-The threshold $k$ is determined from **collection-wide statistics**. After indexing a codebase, TeaRAGs computes the 25th percentile (p25) of commit counts across all indexed chunks. This becomes the dampening threshold.
+The threshold $k$ is the larger of two numbers: a **collection-wide statistic** and a **declared floor**. After indexing a codebase, TeaRAGs computes the 25th percentile (p25) of commit counts across all indexed chunks; each confidence-aware signal separately declares a static threshold in its descriptor. Whichever is larger becomes $k$.
 
 **Why p25?** It represents the boundary of "low data" — code below this threshold has fewer commits than 75% of the codebase, so its statistical signals are unreliable.
 
-If collection stats are not yet computed (e.g., first search after indexing), each signal has a **fallback threshold** — a hardcoded safe default.
+**Why a floor on top of it?** Commit counts are whole numbers, so on a young or very wide repository p25 lands on 1. Dampening is capped at 1 as soon as $n$ reaches $k$, which means a threshold of 1 leaves every file with a single commit completely undampened — the mechanism switches itself off exactly where small samples are most common. The declared floor keeps it working on those collections, and the percentile takes over as soon as the codebase's own distribution is richer.
+
+If collection stats are not yet computed (e.g., first search after indexing), the declared floor is used on its own; a signal that declares none falls back to a hardcoded safe default.
 
 ### Example
 

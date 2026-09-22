@@ -83,8 +83,13 @@ export class MySignal implements DerivedSignalDescriptor {
 
 - **`inverted`**: set `readonly inverted = true` if higher raw value = lower
   score (e.g., age: older code scores lower for recency)
-- **`dampeningSource`**: set to `GIT_FILE_DAMPENING` (from `../constants.js`) if
-  signal unreliable with few commits. Applies quadratic dampening `(n/k)^2`.
+- **Confidence dampening**: signal unreliable with few observations → declare
+  `stats.confidence` on the PAYLOAD descriptor your `sources` reach, and a
+  private `FALLBACK_K` on the class for when no block resolves. Applies
+  quadratic dampening `(n/k)^2`. There is no `dampeningSource` field — the
+  `dampeningSource` / `GIT_FILE_DAMPENING` / `FALLBACK_THRESHOLD` API is deleted
+  and declaring it will not compile. Rules: `.claude/rules/signal-confidence.md`
+  (declaration side), `.claude/rules/derived-signals.md` (consumer side).
 - **`defaultBound`**: reasonable upper bound for normalization. Adaptive bounds
   (p95) override this at query time.
 

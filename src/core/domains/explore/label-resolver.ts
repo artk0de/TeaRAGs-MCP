@@ -27,7 +27,8 @@ export type BandTieBreak = "lower" | "upper";
  *
  * When `ctx.confidence.label` is present and `ctx.siblingValues` contains the
  * support sibling, the resolved label is capped by the first matching clamp
- * rule (ascending by `whenSupportBelow`). The ceiling never RAISES severity —
+ * rule (ascending by `whenSupportAtOrBelow`, the match INCLUDING the threshold
+ * itself — see `applyConfidenceClamp`). The ceiling never RAISES severity —
  * if the base label is already less severe than the rule's ceiling, the base
  * stays. If the ceiling references a label not in `labels`, the resolver
  * throws — this is a misconfiguration in the descriptor.
@@ -121,17 +122,23 @@ function applyConfidenceClamp(baseLabel: string, entries: { p: number; label: st
   if (support === undefined) return baseLabel;
 
   // Rules pass through Reranker.preResolveConfidenceClamp before reaching here,
-  // so whenSupportBelow values should be numbers. Defensive filter drops any
+  // so whenSupportAtOrBelow values should be numbers. Defensive filter drops any
   // leftover strings (would indicate a bug in pre-resolution OR a caller that
   // bypassed the reranker — clamp would silently misfire if we let strings
   // through, so we treat them as unresolved/non-firing).
   const numericRules = clamp.rules.filter(
-    (r): r is { whenSupportBelow: number; ceiling: string; fallback?: number } =>
-      typeof r.whenSupportBelow === "number",
+    (r): r is { whenSupportAtOrBelow: number; ceiling: string; fallback?: number } =>
+      typeof r.whenSupportAtOrBelow === "number",
   );
-  const sortedRules = [...numericRules].sort((a, b) => a.whenSupportBelow - b.whenSupportBelow);
+  const sortedRules = [...numericRules].sort((a, b) => a.whenSupportAtOrBelow - b.whenSupportAtOrBelow);
   for (const rule of sortedRules) {
-    if (support < rule.whenSupportBelow) {
+    // Inclusive, and the field name says so. A threshold is `percentiles[N]` —
+    // the value AT the Nth percentile — so on a DISCRETE support the whole
+    // bottom-N% mass can sit ON it, and a strict `<` excludes precisely the
+    // population the rule exists to catch. Live proof: `git.file.commitCount`
+    // on this index has p10 = p25 = 1 and a minimum of 1, so both bugFixRate
+    // rules resolved to 1 and the clamp had never fired on any point of it.
+    if (support <= rule.whenSupportAtOrBelow) {
       const ceilingIndex = entries.findIndex((e) => e.label === rule.ceiling);
       if (ceilingIndex === -1) {
         throw new Error(

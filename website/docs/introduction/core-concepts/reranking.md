@@ -128,15 +128,20 @@ A confidence-aware signal declares ONE block that drives both:
 
 - **Score dampening** — derived-signal contribution is multiplied by
   `(supportValue / k)²` (capped at 1). Small samples score lower; large
-  samples pass through unchanged. `k` is read **adaptively** from the
-  support signal's percentile distribution at query time, so the
-  dampening curve scales with the codebase rather than a hardcoded
-  constant.
+  samples pass through unchanged. `k` is the larger of two numbers: the
+  support signal's percentile read from collection stats at query time,
+  and a static floor declared on the signal. The percentile lets the
+  dampening curve scale with the codebase; the floor keeps dampening
+  from switching itself off where the percentile collapses onto the
+  smallest possible support.
 - **Label clamp** — overlay label is capped (less-severe ceiling) when
-  support is below a per-rule threshold. Raw `value` in overlay is
+  support is at or below a per-rule threshold. Raw `value` in overlay is
   preserved; only the bin (label) shifts. Clamp thresholds support
-  adaptive forms (`whenSupportBelow: "pN"` reads percentile of support
-  from collection stats) with static `fallback` for stale-index cases.
+  adaptive forms (`whenSupportAtOrBelow: "pN"` reads percentile of support
+  from collection stats) with static `fallback` for stale-index cases. The
+  comparison includes the threshold itself: a `pN` threshold is the value
+  AT the Nth percentile, and on a discrete support the whole bottom-N% of
+  the population can sit exactly on it.
 
 The result: an agent reading `bugFixRate: { value: 67, label: "healthy" }`
 in overlay knows the sample size doesn't support a higher-severity bin,
@@ -144,19 +149,23 @@ without having to cross-reference `commitCount` manually.
 
 ### Current confidence-aware signals
 
-| Raw signal        | Support       | Score dampening | Label clamp                          |
-| ----------------- | ------------- | --------------- | ------------------------------------ |
-| `bugFixRate`      | `commitCount` | adaptive p25    | `<p10 → healthy`, `<p25 → concerning` (per-codebase percentiles) |
-| `churnVolatility` | `commitCount` | adaptive p25    | none                                 |
-| `relativeChurn`   | `commitCount` | adaptive p25    | none                                 |
-| `changeDensity`   | `commitCount` | adaptive p25    | none                                 |
-| `recentDominantAuthorPct` | `commitCount` | adaptive p25 | none                            |
-| `blameDominantAuthorPct`  | `commitCount` | adaptive p25 | none                            |
-| `blameContributorCount`   | `commitCount` | adaptive p25 | none                            |
+Confidence is opt-in per raw signal, and three declare it:
 
-Score dampening applies to all 7 confidence-aware signals; label clamp
-is currently only declared for `bugFixRate` (the signal most prone to
-agent misread on small-N).
+| Raw signal                   | Support           | Score dampening `k`  | Label clamp                             |
+| ---------------------------- | ----------------- | -------------------- | --------------------------------------- |
+| `git.file.bugFixRate`        | `commitCount`     | `max(p25, 10)`       | `≤p10 → healthy`, `≤p25 → concerning`   |
+| `git.chunk.bugFixRate`       | `commitCount`     | `max(p25, 10)`       | `≤p10 → healthy`, `≤p25 → concerning`   |
+| `codegraph.file.instability` | `connectionCount` | `max(p25, 5)`        | `≤p10 → stable`, `≤p25 → mixed`         |
+
+Percentiles are per-codebase, read from collection stats at query time.
+
+Every other derived signal that dampens — `volatility`, `density`,
+`relativeChurnNorm`, `knowledgeSilo`, `ownership`,
+`recentActivityConcentration` — has no declaration behind it and so
+dampens against a constant built into the signal class (8 for
+`volatility`, 5 for the rest) rather than against your codebase's
+distribution. Label clamp is narrower still: only the three rows above
+declare one, because a clamp needs a label ladder to cap against.
 
 ### Reading confidence-clamped overlays
 

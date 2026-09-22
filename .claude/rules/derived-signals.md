@@ -67,30 +67,49 @@ readonly sources = ["chunk.commitCount", "file.commitCount"];
 
 ### Dampening ≠ Sources
 
-Dampening (`(n/k)^2`) declared via `dampeningSource`, NOT `sources`:
-
-```typescript
-readonly dampeningSource = { key: "provider.file.commitCount", percentile: 25 };
-```
+Dampening (`(n/k)^2`) is NOT declared on the derived signal at all — it is
+declared on the PAYLOAD descriptor, as `stats.confidence`, and reaches the
+signal through `ExtractContext`. `sources` is what routes it: the reranker walks
+them to find a descriptor carrying a confidence block, so a signal whose
+`sources` reach no such descriptor gets no dampening context and falls back to
+its class constant. See "Confidence Dampening" below.
 
 ## Confidence Dampening
 
-Quadratic dampening for signals needing minimum sample size:
+Quadratic dampening for signals needing minimum sample size. The consumer
+pattern for a FILE-ONLY signal (`OwnershipSignal`, `InstabilitySignal` and
+`RecentActivityConcentrationSignal` are the live ones):
 
 ```typescript
-readonly dampeningSource = PROVIDER_DAMPENING_CONFIG;
-private static readonly FALLBACK_THRESHOLD = 5;
+private static readonly FALLBACK_K = 5;
 
 extract(rawSignals, ctx) {
   let value = /* compute signal */;
-  const k = ctx?.dampeningThreshold ?? FALLBACK_THRESHOLD;
-  value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
+  const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? MySignal.FALLBACK_K;
+  value *= confidenceDampening(fileNum(rawSignals, ctx?.confidence?.support ?? "commitCount"), k);
   return value;
 }
 ```
 
-- `dampeningThreshold` from collection stats cache (percentile 25)
-- `FALLBACK_THRESHOLD` when no collection stats available
+A signal that BLENDS file and chunk resolves the floor once and then two `k`s
+from it — `kf` from `ctx.dampeningThreshold`, `kc` from
+`ctx.dampeningThresholdChunk` — and dampens each component before the blend
+(`VolatilitySignal` is the reference). Copying the single-`k` form above into a
+blended signal silently gives the chunk component the file's confidence.
+
+- `ctx.dampeningThreshold` — resolved by the reranker as
+  `max(adaptive percentile, declared floor)`. Present only when a payload
+  descriptor the signal's `sources` reach declares `stats.confidence`.
+- `ctx.confidence.score.threshold` — that descriptor's floor, reached when
+  collection stats carry no percentile for the support.
+- `FALLBACK_K` — the class constant, and what a signal with NO declaration
+  behind it uses on every query.
+
+The declaration side, the scope-aware `k_f` / `k_c` split, and which descriptors
+actually opt in are owned by [`signal-confidence.md`](./signal-confidence.md) —
+do not restate them here. The legacy `dampeningSource` /
+`PROVIDER_DAMPENING_CONFIG` / `FALLBACK_THRESHOLD` API this section used to show
+is deleted; a new signal declaring it will not compile.
 
 ## JSDoc Documentation (MANDATORY)
 
@@ -118,7 +137,9 @@ Modifying signal behavior → update JSDoc to new semantics.
    `extract()`
 3. **Set correct `sources`** per rules above
 4. **Set `defaultBound`** if signal needs adaptive normalization (p95)
-5. **Set `dampeningSource`** if signal needs confidence dampening
+5. **Declare `stats.confidence`** on the payload descriptor the signal's
+   `sources` reach, if the signal needs confidence dampening — plus a
+   `FALLBACK_K` on the class for when no block resolves
 6. **Register** in `derived-signals/index.ts` barrel export
 7. **Add to preset(s)** that should use this signal
 8. **Ensure payload signals exist** — every source must have matching

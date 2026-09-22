@@ -337,8 +337,8 @@ function collectReferencedPercentiles(signals: PayloadSignalDescriptor[]): Map<s
     }
     if (typeof conf.score?.adaptivePercentile === "number") set.add(conf.score.adaptivePercentile);
     for (const rule of conf.label?.rules ?? []) {
-      if (typeof rule.whenSupportBelow === "string") {
-        const p = Number(rule.whenSupportBelow.slice(1));
+      if (typeof rule.whenSupportAtOrBelow === "string") {
+        const p = Number(rule.whenSupportAtOrBelow.slice(1));
         if (Number.isFinite(p)) set.add(p);
       }
     }
@@ -420,7 +420,7 @@ export function validateSignalDependencies(
       if (!declaresPercentile(supportSig, p)) {
         throw new Error(
           `Signal dependency error: a descriptor references "${supportKey}" percentile p${p} ` +
-            `(via confidence.score.adaptivePercentile or confidence.label.rules[].whenSupportBelow), ` +
+            `(via confidence.score.adaptivePercentile or confidence.label.rules[].whenSupportAtOrBelow), ` +
             `but ${supportKey} declares neither p${p} in stats.labels nor ${p} in stats.percentilesToCompute. ` +
             `Add ${p} to ${supportKey}.stats.percentilesToCompute (or p${p} to stats.labels if it should be a labeled tier).`,
         );

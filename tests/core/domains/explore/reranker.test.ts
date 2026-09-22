@@ -1721,8 +1721,8 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
             support: "commitCount",
             label: {
               rules: [
-                { whenSupportBelow: 5, ceiling: "healthy" },
-                { whenSupportBelow: 10, ceiling: "concerning" },
+                { whenSupportAtOrBelow: 5, ceiling: "healthy" },
+                { whenSupportAtOrBelow: 10, ceiling: "concerning" },
               ],
             },
           },
@@ -1778,6 +1778,110 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     // Without the fix: { value: 38, label: "critical" } (clamp didn't fire — commitCount missing from siblings).
     // With the fix: { value: 38, label: "healthy" } (clamp fires from raw payload).
     expect(overlay).toEqual({ value: 38, label: "healthy" });
+  });
+});
+
+describe("Reranker — score dampening k is max(adaptive percentile, declared floor)", () => {
+  // bd tea-rags-mcp-1lyui. The adaptive percentile of a support distribution
+  // made of small integers collapses to that distribution's minimum: on the
+  // tea-rags self-index `git.file.commitCount` p25 measured 1, so k=1 and
+  // `confidenceDampening(n, 1)` returned 1 for every point with a single
+  // commit — the score path was inert corpus-wide. The descriptor's declared
+  // `score.threshold` is the floor that prevents it, so k is the LARGER of the
+  // two, not the first one that resolves.
+  const volatilityDescriptor = allDescriptors.filter((d) => d.name === "volatility");
+  const volatilityPreset: RerankPreset = {
+    name: "volatilityOnly",
+    description: "test",
+    tools: ["semantic_search"],
+    weights: { volatility: 1.0 },
+    overlayMask: {},
+  };
+
+  /** churnVolatility descriptor whose confidence block declares (or omits) a score floor. */
+  const payloadSignalsWith = (score?: {
+    threshold: number;
+    adaptivePercentile?: number;
+  }): PayloadSignalDescriptor[] => [
+    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+    {
+      key: "git.file.churnVolatility",
+      type: "number",
+      description: "Volatility",
+      stats: {
+        percentiles: [95],
+        confidence: { support: "commitCount", ...(score ? { score } : {}) },
+      },
+    },
+  ];
+
+  const statsWithCommitCountP25 = (p25: number): CollectionSignalStats => ({
+    perSignal: new Map([["git.file.commitCount", { count: 500, percentiles: { 25: p25, 95: 100 } }]]),
+    perLanguage: new Map(),
+    distributions: {
+      totalFiles: 0,
+      language: {},
+      chunkType: {},
+      documentation: { docs: 0, code: 0 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
+    },
+    computedAt: Date.now(),
+  });
+
+  // churnVolatility=100 is the batch p95, so the normalized value is exactly 1
+  // and the preset's single weight makes the final score equal the dampening
+  // factor (4 / k)^2 — k is read straight off the assertion.
+  const results = (): RerankableResult[] => [
+    {
+      score: 0.9,
+      payload: {
+        relativePath: "src/a.ts",
+        startLine: 1,
+        endLine: 50,
+        git: withStamps({ file: { churnVolatility: 100, commitCount: 4 } }),
+      },
+    },
+  ];
+
+  const scoreWith = async (
+    score: { threshold: number; adaptivePercentile?: number } | undefined,
+    p25: number | undefined,
+  ): Promise<number> => {
+    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], payloadSignalsWith(score));
+    if (p25 !== undefined) reranker.setCollectionStats(statsWithCommitCountP25(p25));
+    const ranked = await reranker.rerank(results(), "volatilityOnly", "semantic_search");
+    return ranked[0].score;
+  };
+
+  it("adaptive percentile BELOW the declared floor → floor wins", async () => {
+    // p25=1 (the measured tea-rags value) vs threshold=10 → k=10 → (4/10)^2=0.16.
+    // Before the fix k=1, confidenceDampening short-circuits at n>=k and the
+    // score was the undampened 1.0.
+    expect(await scoreWith({ threshold: 10, adaptivePercentile: 25 }, 1)).toBeCloseTo(0.16, 4);
+  });
+
+  it("adaptive percentile ABOVE the declared floor → adaptive wins", async () => {
+    // p25=20 vs threshold=8 → k=20 → (4/20)^2=0.04.
+    expect(await scoreWith({ threshold: 8, adaptivePercentile: 25 }, 20)).toBeCloseTo(0.04, 4);
+  });
+
+  it("adaptive percentile EQUAL to the declared floor → that shared value", async () => {
+    // p25=8 == threshold=8 → k=8 → (4/8)^2=0.25.
+    expect(await scoreWith({ threshold: 8, adaptivePercentile: 25 }, 8)).toBeCloseTo(0.25, 4);
+  });
+
+  it("no collection stats → no adaptive value, derived signal's own fallback chain runs", async () => {
+    // Reranker returns undefined; VolatilitySignal falls back to
+    // confidence.score.threshold=8 → (4/8)^2=0.25.
+    expect(await scoreWith({ threshold: 8, adaptivePercentile: 25 }, undefined)).toBeCloseTo(0.25, 4);
+  });
+
+  it("no declared floor but stats present → the adaptive value alone", async () => {
+    // No score block at all. Adaptive percentile defaults to 25 → k=20, which
+    // must not be confused with VolatilitySignal.FALLBACK_K=8 (would give 0.25).
+    expect(await scoreWith(undefined, 20)).toBeCloseTo(0.04, 4);
   });
 });
 

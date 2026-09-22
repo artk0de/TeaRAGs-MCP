@@ -10,12 +10,25 @@ paths:
 
 # Signal Confidence (MANDATORY for new ratio/aggregate signals)
 
-> **Status:** Operative. All 7 derived signals (`BugFixSignal`,
-> `VolatilitySignal`, `RecentActivityConcentrationSignal`, `DensitySignal`,
-> `RelativeChurnNormSignal`, `KnowledgeSiloSignal`, `OwnershipSignal`) migrated
-> to unified `stats.confidence` mechanism. Legacy `dampeningSource` /
+> **Status:** Operative, and the two sides of it are at different coverage —
+> read both numbers, they are routinely confused.
+>
+> CONSUMERS: all 8 dampening-aware derived signals read the unified block —
+> `BugFixSignal`, `VolatilitySignal`, `RecentActivityConcentrationSignal`,
+> `DensitySignal`, `RelativeChurnNormSignal`, `KnowledgeSiloSignal`,
+> `OwnershipSignal`, `InstabilitySignal`. Legacy `dampeningSource` /
 > `FALLBACK_THRESHOLD` / `DampeningConfig` / `GIT_FILE_DAMPENING` types +
-> constants removed. New signals MUST use unified block.
+> constants removed.
+>
+> DECLARATIONS: `stats.confidence` is opt-in per payload descriptor, and 3
+> declare it — `git.file.bugFixRate`, `git.chunk.bugFixRate` (support
+> `commitCount`, floor 10) and `codegraph.file.instability` (support
+> `connectionCount`, floor 5). Only `bugFix` and `instability` therefore resolve
+> a block at all; the remaining 6 consumers run the class constant on every
+> query — `volatility` at 8, the rest at 5. An undeclared signal is not dampened
+> adaptively, so do not read "migrated" as "has adaptive `k`".
+>
+> New ratio/aggregate signals MUST use the unified block.
 
 ## What it is
 
@@ -33,8 +46,8 @@ read by BOTH reranker score path AND label overlay path.
       score: { threshold: 10, adaptivePercentile: 25 },        // floor (10) + adaptive percentile of support
       label: {
         rules: [
-          { whenSupportBelow: "p10", fallback: 5,  ceiling: "healthy"    },
-          { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+          { whenSupportAtOrBelow: "p10", fallback: 5,  ceiling: "healthy"    },
+          { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
         ],
       },
     },
@@ -52,42 +65,51 @@ Two consumers, one declaration:
   low-N chunk in high-commit file no longer gets file's confidence (and high-N
   chunk in low-commit file no longer over-dampened). Reranker resolves per-scope
   `k` (`k_f` from `file.{support}`, `k_c` from `chunk.{support}`, passed as
-  `ctx.dampeningThreshold` / `ctx.dampeningThresholdChunk`), priority order:
-  1. **Adaptive** — support signal's `adaptivePercentile` value at that scope,
-     read from collection stats.
-  2. **Floor** — `confidence.score.threshold` (descriptor-static).
-  3. **FALLBACK_K** — defensive constant on derived signal class.
+  `ctx.dampeningThreshold` / `ctx.dampeningThresholdChunk`) as the LARGER of two
+  candidates — `k = max(adaptive, floor)`:
+  - **Adaptive** — support signal's `adaptivePercentile` value at that scope,
+    read from collection stats.
+  - **Floor** — `confidence.score.threshold` (descriptor-static).
+
+  One side missing, the other stands alone: no collection stats → the floor; no
+  `score` block → the adaptive value. Neither resolves → the derived signal's
+  own **FALLBACK_K** defensive constant. Taking the first available instead of
+  the max is what bd tea-rags-mcp-1lyui fixed — see "Picking threshold values"
+  for the failure it caused.
 
   File-only signals (`ownership`, `recentActivityConcentration`) read only
   `dampeningThreshold`, unchanged. Pure-file payloads (alpha=0) numerically
   identical to pre-eab6 single-dampening path.
 
-- **Label path** — walks `label.rules` ascending by resolved `whenSupportBelow`;
-  first match caps overlay label at `ceiling`. Raw `value` in overlay preserved.
+- **Label path** — walks `label.rules` ascending by resolved
+  `whenSupportAtOrBelow`; first rule whose threshold the support is AT OR BELOW
+  caps the overlay label at `ceiling`. Raw `value` in overlay preserved.
 
 ## Adaptive thresholds
 
 Both `confidence.score.adaptivePercentile` AND
-`confidence.label.rules[].whenSupportBelow: "pN"` resolve dynamically from
+`confidence.label.rules[].whenSupportAtOrBelow: "pN"` resolve dynamically from
 collection stats at query time:
 
 - `score.adaptivePercentile: 25` → reranker reads
-  `git.file.{support}.percentiles[25]`, uses as dampening k. Defaults to 25 when
-  omitted (backwards compat with legacy `GIT_FILE_DAMPENING.percentile=25`).
-- `whenSupportBelow: "p10"` → label resolver reads
+  `git.file.{support}.percentiles[25]` and takes `max(that, score.threshold)` as
+  dampening k. Defaults to 25 when omitted (backwards compat with legacy
+  `GIT_FILE_DAMPENING.percentile=25`).
+- `whenSupportAtOrBelow: "p10"` → label resolver reads
   `git.{scope}.{support}.percentiles[10]`. Resolved BEFORE rules walked
   (`Reranker.preResolveConfidenceClamp`).
 - `fallback: <number>` on rule — REQUIRED with `pN` strings. Used when stats
   lack percentile (stale index — descriptor added `pN` ref after last full
-  reindex). Without fallback, unresolvable rule silenced (`whenSupportBelow: 0`,
-  never fires).
+  reindex). Without fallback, an unresolvable rule collapses to
+  `whenSupportAtOrBelow: 0` — see the anti-pattern below for what that does and
+  does not silence.
 
 ### Validation contract (`validateSignalDependencies`)
 
 For every `pN` referenced by any descriptor's
 `confidence.score.adaptivePercentile` or
-`confidence.label.rules[].whenSupportBelow`, the **support signal MUST declare
-N** — either `pN` key in `stats.labels` OR number in
+`confidence.label.rules[].whenSupportAtOrBelow`, the **support signal MUST
+declare N** — either `pN` key in `stats.labels` OR number in
 `stats.percentilesToCompute`.
 
 `validateSignalDependencies` (in
@@ -201,7 +223,12 @@ block when **any** holds:
 ## Choosing `support`
 
 `support` = **bare sibling name** — same-scope payload field acting as
-statistical denominator. Examples:
+statistical denominator. The table below is the support each signal DAMPENS
+against, not a roster of declarations — an undeclared signal reaches
+`commitCount` through the `?? "commitCount"` default in its own `extract()`, so
+the denominator is right while the `k` is still a class constant. Which three
+descriptors actually declare a block is in the Status block at the top.
+Examples:
 
 | Signal                    | Support         | Reason                                                                  |
 | ------------------------- | --------------- | ----------------------------------------------------------------------- |
@@ -241,9 +268,10 @@ Two sub-blocks independent. Mix + match per signal need:
 
 ### `score.threshold` (static floor)
 
-Used as `k` in `confidenceDampening(n, k) = min((n/k)^2, 1)` ONLY WHEN adaptive
-unavailable (no collection stats). Smaller `k` = less dampening; larger `k` =
-more aggressive small-N suppression.
+`k` in `confidenceDampening(n, k) = min((n/k)^2, 1)` is
+`max(adaptivePercentile value, threshold)`; this number is the floor half of
+that max, and it stands alone when collection stats are unavailable. Smaller `k`
+= less dampening; larger `k` = more aggressive small-N suppression.
 
 - **`k = 5`** — light dampening; pattern-following for signals where ≥3 data
   points meaningful (ownership signals).
@@ -252,15 +280,21 @@ more aggressive small-N suppression.
   stabilizes the ratio.
 - **`k = 20+`** — heavy dampening; reserved for very noisy aggregates.
 
-Adaptive (`adaptivePercentile`) usually wins over `threshold`; static value =
-floor only.
+The floor is what keeps the score path alive on an atomic support distribution.
+`git.file.commitCount` p25 measured 1 on this project's own index, and
+`confidenceDampening` short-circuits to 1 whenever `n >= k`, so an adaptive-only
+`k` left every file with a single commit entirely undampened — the mechanism was
+inert corpus-wide. Adaptive still wins whenever it is the larger of the two,
+which is what makes the curve scale with a codebase whose support distribution
+is genuinely rich.
 
 ### `score.adaptivePercentile` (which percentile to use as adaptive k)
 
-Percentile of support signal (file-scope) used as adaptive `k`. Default: 25
-(matches legacy `GIT_FILE_DAMPENING.percentile=25`).
+Percentile of support signal (file-scope) used as adaptive `k`, floored by
+`score.threshold`. Default: 25 (matches legacy
+`GIT_FILE_DAMPENING.percentile=25`).
 
-### `label.rules[].whenSupportBelow` (clamp thresholds)
+### `label.rules[].whenSupportAtOrBelow` (clamp thresholds)
 
 Two forms:
 
@@ -269,15 +303,27 @@ Two forms:
   `git.{scope}.{support}.percentiles[N]` via collection stats at query time.
   **Requires `fallback: number`** — used when stats unavailable.
 
-Rules walked ascending by RESOLVED numeric threshold. First match wins.
+Rules walked ascending by RESOLVED numeric threshold. First match wins, and the
+match is INCLUSIVE — `support <= threshold`, which is what the field name says.
+A `pN` threshold resolves to `percentiles[N]`, the value AT the Nth percentile,
+and supports are discrete counts, so the whole bottom-N% mass routinely sits ON
+that single value; a strict `<` there excludes exactly the population the rule
+exists to catch. That is not hypothetical: `git.file.commitCount` on this
+project's own index has p10 = p25 = 1 against a minimum of 1, so both
+`bugFixRate` rules resolved to 1, `support < 1` was unsatisfiable, and the clamp
+had never fired on a single point — one bug-fix commit on a one-commit file
+scored 100, the signal's p95, and rendered `critical`.
+
 Convention: at most 2-3 rules per signal. Example `bugFixRate`:
 
 ```ts
 rules: [
-  { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" }, // tightest clamp
-  { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" }, // moderate clamp
+  // tightest clamp
+  { whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" },
+  // moderate clamp
+  { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
 ];
-// commitCount >= resolved-p25 → no clamp, full label severity
+// commitCount > resolved-p25 → no clamp, full label severity
 ```
 
 `ceiling` MUST be a value present in same descriptor's `labels` map. Resolver
@@ -295,8 +341,11 @@ throws if not — caught at first use, not descriptor load (no Zod in
   `git.chunk.*` only. Need file-level support for chunk-level signal → write
   follow-up spec.
 - **Don't use `pN` string without `fallback`.** Unresolvable rules silence to
-  `whenSupportBelow: 0` (never fire) — equivalent to "no clamp" for that bin.
-  Always provide static floor.
+  `whenSupportAtOrBelow: 0`, which under the inclusive comparison still matches
+  a support of exactly 0 — and 0 is a real payload value (`git.*.commitCount`
+  publishes it for every chunk of a file past `chunkMaxFileLines`). So the
+  sentinel is "clamps only the no-data case", not "never fires". Always provide
+  the static floor rather than relying on either reading.
 - **Don't add `pN` reference without ensuring support declares N.** Either add
   `pN` to support's `stats.labels` keys (changes labelMap UX) OR add `N` to
   `stats.percentilesToCompute` (compute-only). `validateSignalDependencies`

@@ -57,8 +57,8 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
         score: { threshold: 5, adaptivePercentile: 25 },
         label: {
           rules: [
-            { whenSupportBelow: "p10", fallback: 2, ceiling: "stable" },
-            { whenSupportBelow: "p25", fallback: 5, ceiling: "mixed" },
+            { whenSupportAtOrBelow: "p10", fallback: 2, ceiling: "stable" },
+            { whenSupportAtOrBelow: "p25", fallback: 5, ceiling: "mixed" },
           ],
         },
       },

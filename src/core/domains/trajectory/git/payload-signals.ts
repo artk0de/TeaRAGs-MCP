@@ -134,8 +134,8 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
         score: { threshold: 10, adaptivePercentile: 25 },
         label: {
           rules: [
-            { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
-            { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+            { whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" },
+            { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
           ],
         },
       },
@@ -266,8 +266,8 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
         score: { threshold: 10, adaptivePercentile: 25 },
         label: {
           rules: [
-            { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
-            { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+            { whenSupportAtOrBelow: "p10", fallback: 5, ceiling: "healthy" },
+            { whenSupportAtOrBelow: "p25", fallback: 10, ceiling: "concerning" },
           ],
         },
       },

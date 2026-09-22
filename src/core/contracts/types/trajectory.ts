@@ -137,24 +137,32 @@ export interface SignalStatsRequest {
 }
 
 /**
- * One label-clamp rule: when the support sibling's value is below
- * `whenSupportBelow`, the signal's overlay label is capped at `ceiling`.
+ * One label-clamp rule: when the support sibling's value is at or below
+ * `whenSupportAtOrBelow`, the signal's overlay label is capped at `ceiling`.
  * `ceiling` MUST be one of the values in the descriptor's `labels` map;
  * runtime resolver enforces this and throws on misconfiguration.
  *
- * `whenSupportBelow` accepts two forms:
+ * The comparison INCLUDES the threshold, and the field is named for it. A `pN`
+ * threshold resolves to `percentiles[N]` — the value AT the Nth percentile —
+ * and supports are typically discrete counts, so the entire bottom-N% mass can
+ * sit ON that one value. A strict `<` then excludes exactly the population the
+ * rule exists to catch: `git.file.commitCount` has p10 = p25 = 1 and a minimum
+ * of 1 on this project's own index, which made both `bugFixRate` rules
+ * unsatisfiable and the clamp dead for every point.
+ *
+ * `whenSupportAtOrBelow` accepts two forms:
  *   • `number` — static threshold, used as-is.
  *   • `"pN"` — adaptive percentile of the SUPPORT signal (e.g. "p25" reads
  *     p25 of `git.{scope}.{confidence.support}` from collection stats).
  *     Reranker pre-resolves the string to a number before applying.
  *
- * `fallback` is the static threshold used when `whenSupportBelow` is a
+ * `fallback` is the static threshold used when `whenSupportAtOrBelow` is a
  * percentile string AND collection stats are unavailable (or the support
- * signal has no recorded percentile). Required when `whenSupportBelow` is
+ * signal has no recorded percentile). Required when `whenSupportAtOrBelow` is
  * a string; ignored when it's a number.
  */
 export interface ConfidenceClampRule {
-  whenSupportBelow: number | `p${number}`;
+  whenSupportAtOrBelow: number | `p${number}`;
   fallback?: number;
   ceiling: string;
 }
@@ -178,15 +186,23 @@ export interface SignalConfidence {
   /** Bare sibling name (e.g. "commitCount"). Same-scope resolution only. */
   support: string;
   /**
-   * Optional continuous dampening parameters for score path.
-   *   • `threshold` — STATIC floor used when collection stats are unavailable
-   *     OR when `adaptivePercentile` is not declared.
+   * Optional continuous dampening parameters for score path. The reranker
+   * resolves `k = max(adaptive, threshold)` — a genuine floor, not a fallback.
+   *   • `threshold` — STATIC floor. It applies whenever the adaptive value
+   *     comes out below it, and stands alone when collection stats are
+   *     unavailable or `adaptivePercentile` resolves to nothing.
    *   • `adaptivePercentile` — percentile of the support sibling read from
-   *     collection stats as the adaptive `k` for `confidenceDampening`. When
-   *     declared, reranker passes the resolved adaptive value via
-   *     `ExtractContext.dampeningThreshold`. Default behavior in the reranker
-   *     (when this field is absent) is to look up p25 for backwards
-   *     compatibility with the legacy `GIT_FILE_DAMPENING` convention.
+   *     collection stats as the adaptive `k` for `confidenceDampening`. The
+   *     reranker passes the resolved value via
+   *     `ExtractContext.dampeningThreshold`; absent, it looks up p25 for
+   *     backwards compatibility with the legacy `GIT_FILE_DAMPENING`
+   *     convention.
+   *
+   * Taking the max is what keeps the mechanism alive on an atomic support
+   * distribution: `confidenceDampening` returns 1 for every `n >= k`, so an
+   * adaptive percentile that collapses onto the support's minimum disables
+   * dampening for the whole corpus. Measured on this index — `commitCount`
+   * p25 = 1 — which is the bug `tea-rags-mcp-1lyui` records.
    */
   score?: { threshold: number; adaptivePercentile?: number };
   /** Optional categorical clamp rules for label path. */

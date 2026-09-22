@@ -59,8 +59,8 @@ describe("resolveLabel", () => {
       support: "commitCount",
       label: {
         rules: [
-          { whenSupportBelow: 5, ceiling: "healthy" },
-          { whenSupportBelow: 10, ceiling: "concerning" },
+          { whenSupportAtOrBelow: 5, ceiling: "healthy" },
+          { whenSupportAtOrBelow: 10, ceiling: "concerning" },
         ],
       },
     };
@@ -87,7 +87,7 @@ describe("resolveLabel", () => {
       ).toBe("critical");
     });
 
-    it("clamps to 'healthy' when support < 5 (user trigger case bugFixRate=63 commitCount=3)", () => {
+    it("clamps to 'healthy' when support <= 5 (user trigger case bugFixRate=63 commitCount=3)", () => {
       expect(
         resolveLabel(63, bugFixLabels, bugFixPercentiles, {
           siblingValues: { commitCount: 3 },
@@ -96,7 +96,7 @@ describe("resolveLabel", () => {
       ).toBe("healthy");
     });
 
-    it("clamps to 'concerning' when support is 5..9", () => {
+    it("clamps to 'concerning' when support is 6..10", () => {
       expect(
         resolveLabel(63, bugFixLabels, bugFixPercentiles, {
           siblingValues: { commitCount: 8 },
@@ -105,7 +105,7 @@ describe("resolveLabel", () => {
       ).toBe("concerning");
     });
 
-    it("no clamp when support >= 10 (label stays critical)", () => {
+    it("no clamp when support > 10 (label stays critical)", () => {
       expect(
         resolveLabel(63, bugFixLabels, bugFixPercentiles, {
           siblingValues: { commitCount: 50 },
@@ -122,7 +122,7 @@ describe("resolveLabel", () => {
       const fullPercentiles = { 25: 10, 50: 25, 75: 38, 95: 53 };
       const conf: SignalConfidence = {
         support: "commitCount",
-        label: { rules: [{ whenSupportBelow: 5, ceiling: "concerning" }] },
+        label: { rules: [{ whenSupportAtOrBelow: 5, ceiling: "concerning" }] },
       };
       expect(
         resolveLabel(8, fullLabels, fullPercentiles, {
@@ -133,13 +133,13 @@ describe("resolveLabel", () => {
     });
 
     it("first ascending rule wins (rules sorted internally)", () => {
-      // Provide rules in reverse order; resolver must sort by whenSupportBelow
+      // Provide rules in reverse order; resolver must sort by whenSupportAtOrBelow
       const conf: SignalConfidence = {
         support: "commitCount",
         label: {
           rules: [
-            { whenSupportBelow: 10, ceiling: "concerning" },
-            { whenSupportBelow: 5, ceiling: "healthy" },
+            { whenSupportAtOrBelow: 10, ceiling: "concerning" },
+            { whenSupportAtOrBelow: 5, ceiling: "healthy" },
           ],
         },
       };
@@ -154,7 +154,7 @@ describe("resolveLabel", () => {
     it("throws when ceiling references a label not in labels map", () => {
       const badConf: SignalConfidence = {
         support: "commitCount",
-        label: { rules: [{ whenSupportBelow: 5, ceiling: "nonexistent" }] },
+        label: { rules: [{ whenSupportAtOrBelow: 5, ceiling: "nonexistent" }] },
       };
       expect(() =>
         resolveLabel(63, bugFixLabels, bugFixPercentiles, {
@@ -169,9 +169,9 @@ describe("resolveLabel", () => {
       const synthPercentiles = { 25: 1, 50: 5, 75: 10 };
       const synthConf: SignalConfidence = {
         support: "fooCount",
-        label: { rules: [{ whenSupportBelow: 3, ceiling: "a" }] },
+        label: { rules: [{ whenSupportAtOrBelow: 3, ceiling: "a" }] },
       };
-      // value 12 → base "c"; fooCount=1 < 3 → ceiling "a" → less-severe "a"
+      // value 12 → base "c"; fooCount=1 <= 3 → ceiling "a" → less-severe "a"
       expect(
         resolveLabel(12, synthLabels, synthPercentiles, {
           siblingValues: { fooCount: 1 },
@@ -185,6 +185,103 @@ describe("resolveLabel", () => {
           confidence: synthConf,
         }),
       ).toBe("c");
+    });
+  });
+
+  /**
+   * `percentiles[N]` is the value AT the Nth percentile, so on a DISCRETE
+   * support the entire bottom-N% mass can sit ON that value — and a strict `<`
+   * then excludes exactly the population the rule exists to catch.
+   *
+   * Measured on the tea-rags self-index (`code_8b243ffe`):
+   * `git.file.commitCount` has percentiles `{10: 1, 25: 1, 50: 2, 75: 4,
+   * 95: 12.15}` and a minimum of 1 — its zeros are excluded from the sample by
+   * design. Both bugFixRate clamp rules therefore resolved to 1, `support < 1`
+   * was unsatisfiable, and the clamp had never fired on a single file or chunk
+   * of that index. Meanwhile bugFixRate is a percentage capped at 100 whose p95
+   * is exactly 100, so a file with ONE commit that happened to be a bug fix
+   * scored 100 and rendered `critical` — the most severe name in the
+   * vocabulary — on the strength of that one commit.
+   */
+  describe("confidence clamp fires at the resolved threshold, not only below it", () => {
+    const bugFixLabels = { p50: "healthy", p75: "concerning", p95: "critical" };
+    const bugFixPercentiles = { 50: 25, 75: 38, 95: 53 };
+
+    it("clamps a support sitting on its own minimum (live commitCount p10 = p25 = 1)", () => {
+      // The shape that was silently dead: both rules pre-resolve to 1, the
+      // support cannot go lower, and the base label is the top band.
+      const conf: SignalConfidence = {
+        support: "commitCount",
+        label: {
+          rules: [
+            { whenSupportAtOrBelow: 1, ceiling: "healthy" },
+            { whenSupportAtOrBelow: 1, ceiling: "concerning" },
+          ],
+        },
+      };
+      expect(
+        resolveLabel(100, bugFixLabels, bugFixPercentiles, {
+          siblingValues: { commitCount: 1 },
+          confidence: conf,
+        }),
+      ).toBe("healthy");
+    });
+
+    it("widens each rule by its endpoint without shifting the window", () => {
+      // The boundary moved from `< t` to `<= t`, so t belongs to the rule and
+      // t + 1 still belongs to nobody.
+      const conf: SignalConfidence = {
+        support: "commitCount",
+        label: {
+          rules: [
+            { whenSupportAtOrBelow: 5, ceiling: "healthy" },
+            { whenSupportAtOrBelow: 10, ceiling: "concerning" },
+          ],
+        },
+      };
+      const at = (commitCount: number) =>
+        resolveLabel(100, bugFixLabels, bugFixPercentiles, {
+          siblingValues: { commitCount },
+          confidence: conf,
+        });
+      expect(at(5)).toBe("healthy");
+      expect(at(6)).toBe("concerning");
+      expect(at(10)).toBe("concerning");
+      expect(at(11)).toBe("critical");
+    });
+
+    it("gives a tie between two rules to the one declared first", () => {
+      // Two rules resolving to the same threshold is the live case, not a
+      // corner: p10 and p25 of commitCount are both 1. Ascending sort is
+      // stable, so declaration order decides — descriptors declare the tightest
+      // clamp first and get it.
+      const rulesFor = (ceilings: [string, string]): SignalConfidence => ({
+        support: "commitCount",
+        label: { rules: ceilings.map((ceiling) => ({ whenSupportAtOrBelow: 2, ceiling })) },
+      });
+      const at = (conf: SignalConfidence) =>
+        resolveLabel(100, bugFixLabels, bugFixPercentiles, {
+          siblingValues: { commitCount: 2 },
+          confidence: conf,
+        });
+      expect(at(rulesFor(["healthy", "concerning"]))).toBe("healthy");
+      expect(at(rulesFor(["concerning", "healthy"]))).toBe("concerning");
+    });
+
+    it("still refuses to raise severity when the inclusive match fires", () => {
+      // bugFixRate 10 sits below p50, so the base is the mildest band. The rule
+      // now matches on support === 1, but its ceiling is MORE severe than the
+      // base — a clamp caps, it never promotes.
+      const conf: SignalConfidence = {
+        support: "commitCount",
+        label: { rules: [{ whenSupportAtOrBelow: 1, ceiling: "concerning" }] },
+      };
+      expect(
+        resolveLabel(10, bugFixLabels, bugFixPercentiles, {
+          siblingValues: { commitCount: 1 },
+          confidence: conf,
+        }),
+      ).toBe("healthy");
     });
   });
 
