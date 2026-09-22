@@ -15,6 +15,7 @@ import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   BlameLine,
   CommitInfo,
+  CommitWithChangedFiles,
   FileChurnData,
   GitAdapterKind,
   OidBatchResolver,
@@ -654,7 +655,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
     // Same failure semantics as walkCommits' discovery branch: a broken
     // discovery ⇒ no churn for this batch, never a thrown enrichment error.
-    let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
+    let commitEntries: CommitWithChangedFiles[];
     try {
       // The contract duck type's commit shape is structurally CommitInfo.
       commitEntries = await discovery.commitsForFiles([...relativeChunkMap.keys()]);

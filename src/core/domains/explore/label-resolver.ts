@@ -56,7 +56,15 @@ export function resolveLabel(
     ctx?.bandTieBreak,
   );
 
-  let resolved = bands[0]?.label ?? declared[0].label;
+  // Seeded from the first DECLARED band, not the first band that happens to
+  // carry a threshold. The floor band's own threshold is inert either way — it
+  // owns everything below the SECOND band — so a declared floor whose
+  // percentile was never computed is still the right default. Age is the live
+  // case: its bands are derived by inverting lastModifiedAt percentiles
+  // (`git/age-derivation.ts`), the stamp declares p5/p25/p50, and so age p25
+  // yields no band by construction. Seeding from the first computed band made
+  // `recent` unreachable and labelled a five-day-old chunk `typical`.
+  let resolved = declared[0].label;
   for (const { label, threshold } of bands) {
     if (value >= threshold) resolved = label;
   }

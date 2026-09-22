@@ -82,7 +82,7 @@ function makeRoot(): string {
 
 function makePaths(): CodegraphDaemonPaths {
   const paths = getDaemonPaths(join(makeRoot(), "d"));
-  mkdirSync(paths.storageDir, { recursive: true });
+  mkdirSync(paths.buildDir, { recursive: true });
   return paths;
 }
 

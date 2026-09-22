@@ -20,12 +20,14 @@
  * import `runDaemon` / `createConnectionHandler` and drive them explicitly.
  */
 
-import { unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
+import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../infra/runtime.js";
+import { CodegraphDaemonDrainRefusedError } from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
@@ -34,6 +36,7 @@ import {
   getStorageDir,
   incrementRefs,
   scheduleIdleWatcher,
+  unlinkDaemonFiles,
   type CodegraphDaemonPaths,
 } from "./lifecycle.js";
 import { DaemonMemoryGovernor, DEFAULT_MEMORY_LIMIT_BASE, DEFAULT_MEMORY_LIMIT_MAX } from "./memory-governor.js";
@@ -103,6 +106,16 @@ export interface DaemonRuntimeOptions {
    * drain path cannot kill the test runner.
    */
   exit?: (code: number) => void;
+  /**
+   * Per-collection idle-eviction window in ms (bd tea-rags-mcp-nlls), from
+   * `CODEGRAPH_DB_IDLE_EVICT_MS` (default 60_000 — twice the daemon-process
+   * idle). A collection's DuckDB connection is closed once its last op has
+   * been idle this long, releasing the file's RW lock while the daemon stays
+   * up; the next op lazily re-opens. Parsed permissively (see
+   * `parseIdleEvictMs`): absent, non-numeric, zero or negative all mean the
+   * default.
+   */
+  idleEvictMs?: number;
 }
 
 /** Hard ceiling on graceful teardown before the daemon force-exits anyway. */
@@ -225,6 +238,21 @@ export function createConnectionHandler(
       for (const frame of frames.push(chunk)) {
         const req = JSON.parse(frame) as DaemonRequest;
         if (req.op === "shutdown") {
+          // bd tea-rags-mcp-zgcmo: a drain while ANOTHER connection has writes
+          // in flight used to cut them mid-run (the 42hno EPIPE class — a
+          // foreign build draining a daemon other sessions are writing
+          // through). The daemon refuses instead: the draining side gets the
+          // typed refusal and owns the retry, the writers finish untouched.
+          // With no admitted writes the drain proceeds exactly as before.
+          if (server.hasWritesInFlight()) {
+            if (!sock.destroyed) {
+              const refusal = new CodegraphDaemonDrainRefusedError({ socketPath: paths.socketPath });
+              sock.write(
+                encodeFrame({ id: req.id, ok: false, error: { name: refusal.name, message: refusal.message } }),
+              );
+            }
+            continue;
+          }
           if (!sock.destroyed) sock.write(encodeFrame({ id: req.id, ok: true, result: null }));
           onShutdownRequest?.();
           continue;
@@ -287,6 +315,15 @@ export async function runDaemon(
     onCollectionClientClosed: (collectionName) => {
       governor.forgetCollection(collectionName);
     },
+    // Per-collection idle eviction (bd tea-rags-mcp-nlls): the process-level
+    // idle timer watches SOCKET clients, so with any MCP server connected it
+    // never fires — without this, every connection the daemon ever opened held
+    // its file's RW lock until the daemon died.
+    idleEviction: { idleMs: options.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS },
+    // Bounded open retry (bd tea-rags-mcp-42hno): a second build-keyed daemon
+    // opening the same collection waits out the first daemon's idle eviction
+    // instead of failing the op. Bounded BY the eviction window.
+    openRetry: daemonOpenRetry(options.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS),
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
   });
@@ -323,6 +360,11 @@ export async function runDaemon(
   };
   shutdownRef.current = shutdown;
 
+  // The build-key directory (bd tea-rags-mcp-42hno) may not exist yet — a
+  // cold spawn from a fresh build has never created it. The spawner creates it
+  // for the log fd, but a daemon started any other way (tests, manual run)
+  // must not fail `server.listen` on a missing parent.
+  mkdirSync(dirname(options.paths.socketPath), { recursive: true });
   // Clear any stale socket file left by a previously-crashed daemon. Without
   // this, `server.listen` fails with EADDRINUSE because the unix socket inode
   // still exists on disk even though no process is bound to it. Idempotent —
@@ -358,15 +400,14 @@ export async function runDaemon(
   return { server, shutdown };
 }
 
-/** Unlink the daemon's lifecycle files; idempotent (missing-file errors swallowed). */
+/**
+ * Unlink the daemon's lifecycle files at shutdown. Delegates to the lifecycle
+ * module's `unlinkDaemonFiles` — one layout, one cleanup — which unlinks THIS
+ * daemon's own key only (bd tea-rags-mcp-42hno): a sibling build's keyed files
+ * are never touched.
+ */
 function cleanupDaemonFiles(paths: CodegraphDaemonPaths): void {
-  for (const f of [paths.socketPath, paths.pidFile, paths.portFile, paths.refsFile, paths.lockFile]) {
-    try {
-      unlinkSync(f);
-    } catch {
-      /* ignore */
-    }
-  }
+  unlinkDaemonFiles(paths);
 }
 
 /**
@@ -398,6 +439,7 @@ export function daemonRuntimeOptionsFromEnv(env: NodeJS.ProcessEnv = process.env
       preserveInsertionOrder: false,
     },
     debug: parseDaemonDebugEnv(env.TEA_RAGS_CODEGRAPH_DAEMON_DEBUG),
+    idleEvictMs: parseIdleEvictMs(env.CODEGRAPH_DB_IDLE_EVICT_MS),
   };
 }
 
@@ -410,6 +452,33 @@ function parseDaemonDebugEnv(raw: string | undefined): boolean | undefined {
   if (raw === "1") return true;
   if (raw === "0") return false;
   return undefined;
+}
+
+/**
+ * Default per-collection idle-eviction window (bd tea-rags-mcp-nlls): twice
+ * the daemon-process idle (30s), so a stale connection is released well before
+ * the whole daemon would be.
+ */
+export const DEFAULT_IDLE_EVICT_MS = 60_000;
+
+/** The eviction poll cadence (5s) and a re-open, with headroom. */
+const DAEMON_OPEN_RETRY_MARGIN_MS = 15_000;
+const DAEMON_OPEN_RETRY_INTERVAL_MS = 1_000;
+
+/**
+ * The daemon pool's bounded open-retry window (bd tea-rags-mcp-42hno): a
+ * losing opener on a shared collection waits at most the holder's full idle
+ * window — the idle holder is evicted within it (nlls) — plus margin for the
+ * eviction poll and the re-open.
+ */
+export function daemonOpenRetry(idleEvictMs: number): { maxMs: number; intervalMs: number } {
+  return { maxMs: idleEvictMs + DAEMON_OPEN_RETRY_MARGIN_MS, intervalMs: DAEMON_OPEN_RETRY_INTERVAL_MS };
+}
+
+/** Absent / non-numeric / zero / negative all mean the default. */
+function parseIdleEvictMs(raw: string | undefined): number {
+  const parsed = raw === undefined ? NaN : Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_IDLE_EVICT_MS;
 }
 
 /* v8 ignore start -- process-main bootstrap; exercised only when run as a real daemon process */

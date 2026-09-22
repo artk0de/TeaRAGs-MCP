@@ -3,7 +3,141 @@
  * No I/O, no state — string → structured data.
  */
 
-import type { BlameLine, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
+import type { BlameLine, CommitChangedPath, CommitFileNumstat, CommitInfo, FileChurnData } from "../../types.js";
+
+/** The literal git puts between the two sides of a rename in `--numstat`. */
+const RENAME_SEPARATOR = " => ";
+
+/**
+ * `prefix{left => right}suffix`. The prefix capture is GREEDY so it stops at
+ * the LAST `{`, which is the rename brace whenever a directory name legitimately
+ * contains one; the two side captures are LAZY so a `}` inside the suffix does
+ * not get eaten. Either side may be EMPTY (`src/{ => bar}/baz.ts`).
+ */
+const BRACE_RENAME_RE = /^(.*)\{(.*?) => (.*?)\}(.*)$/;
+
+/** Single-character C escapes `quote_c_style` emits (git `quote.c`). */
+const C_ESCAPES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+  '"': 0x22,
+  "\\": 0x5c,
+};
+
+/**
+ * Reverse git's `quote_c_style`: with `core.quotePath` on (the default) a path
+ * holding non-ASCII or control bytes is printed double-quoted with `\NNN` octal
+ * byte escapes. Left as-is the quoted form matches nothing keyed on real paths,
+ * so the file silently loses its history exactly as a rename does. Bytes are
+ * rebuilt first and decoded as UTF-8 once, because one character spans several
+ * octal escapes.
+ */
+function unquoteCStylePath(field: string): string {
+  if (field.length < 2 || !field.startsWith('"') || !field.endsWith('"')) return field;
+
+  const body = field.slice(1, -1);
+  const bytes: number[] = [];
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== "\\") {
+      bytes.push(...Buffer.from(body[i], "utf8"));
+      continue;
+    }
+    const escape = body[++i];
+    if (escape === undefined) break;
+    const simple = C_ESCAPES[escape];
+    if (simple !== undefined) {
+      bytes.push(simple);
+    } else if (escape >= "0" && escape <= "7") {
+      bytes.push(parseInt(body.slice(i, i + 3), 8) & 0xff);
+      i += 2;
+    } else {
+      bytes.push(...Buffer.from(escape, "utf8"));
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+/** Index of the closing `"` of a leading C-quoted token, or -1. */
+function closingQuoteIndex(field: string): number {
+  for (let i = 1; i < field.length; i++) {
+    if (field[i] === "\\") {
+      i++;
+      continue;
+    }
+    if (field[i] === '"') return i;
+  }
+  return -1;
+}
+
+/**
+ * Split the brace-free rename form into its two sides, or null when the field
+ * is a plain path. Git quotes each side independently and suppresses the braces
+ * whenever EITHER side needs quoting, so a leading quote pins the boundary
+ * exactly; otherwise the FIRST separator wins — git emits exactly one, and a
+ * path that literally contains ` => ` is rendered ambiguously by git itself
+ * (`a => b.ts` renamed to `c => d.ts` prints `a => b.ts => c => d.ts`), so no
+ * reader of the textual form can recover it. Such a row simply fails to match
+ * the chunk map, which is the pre-fix behaviour — never a wrong attribution.
+ */
+function splitRenameSides(field: string): [string, string] | null {
+  if (field.startsWith('"')) {
+    const end = closingQuoteIndex(field);
+    if (end === -1 || !field.slice(end + 1).startsWith(RENAME_SEPARATOR)) return null;
+    return [field.slice(0, end + 1), field.slice(end + 1 + RENAME_SEPARATOR.length)];
+  }
+  const at = field.indexOf(RENAME_SEPARATOR);
+  return at === -1 ? null : [field.slice(0, at), field.slice(at + RENAME_SEPARATOR.length)];
+}
+
+/**
+ * Rejoin one side of a brace rename. An EMPTY side (`src/{ => bar}/baz.ts`)
+ * leaves the prefix's trailing slash adjacent to the suffix's leading one, and
+ * that is the only way git's own output can produce a doubled slash — so the
+ * collapse is scoped to it rather than applied to the whole path.
+ */
+function joinRenameSide(prefix: string, middle: string, suffix: string): string {
+  const joined = `${prefix}${middle}${suffix}`;
+  return middle === "" ? joined.replace("//", "/") : joined;
+}
+
+/**
+ * Turn one numstat path column into the file it names plus, for a rename, the
+ * path it had at the first parent (bd tea-rags-mcp-0dwsn).
+ *
+ * This is the ONLY place the mangled column is interpreted. The persisted
+ * discovery snapshots hold v1 rows written straight from `git log`, so their
+ * upgrade path calls this same function — two implementations would drift and
+ * upgraded rows would stop matching freshly parsed ones.
+ *
+ * Why not `git log -z`, which emits the two sides as separate NUL-terminated
+ * fields and skips C-quoting entirely: measured against this repo, `-z` makes
+ * NUL the row AND path separator, while `NUMSTAT_LOG_FORMAT` already uses
+ * `%x00` as its field separator. A rename then prints `39\t14\t\0old\0new\0`,
+ * so the numstat block stops being one addressable section between two header
+ * blocks and the framing every parser here relies on collapses. The v1
+ * snapshots would still need brace parsing regardless, so `-z` would buy a
+ * second code path rather than replace this one.
+ */
+export function parseNumstatChangedPath(field: string): CommitChangedPath {
+  const brace = BRACE_RENAME_RE.exec(field);
+  if (brace) {
+    const [, prefix, left, right, suffix] = brace;
+    return {
+      path: joinRenameSide(prefix, right, suffix),
+      previousPath: joinRenameSide(prefix, left, suffix),
+    };
+  }
+
+  const sides = splitRenameSides(field);
+  if (sides) return { path: unquoteCStylePath(sides[1]), previousPath: unquoteCStylePath(sides[0]) };
+
+  return { path: unquoteCStylePath(field) };
+}
 
 /**
  * Parse `git log --numstat --format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B` output
@@ -47,7 +181,9 @@ export function parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
 
       const added = parseInt(parts[0], 10);
       const deleted = parseInt(parts[1], 10);
-      const filePath = parts[2];
+      // Churn is keyed on the CURRENT path: a rename row belongs to the file as
+      // the commit left it, never to the `{old => new}` column git printed.
+      const { path: filePath } = parseNumstatChangedPath(parts[2]);
 
       if (isNaN(added) || isNaN(deleted)) continue;
 
@@ -69,8 +205,8 @@ export function parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
  * Parse `git log --numstat --format=%x00...` output with pathspec filtering.
  * Returns commit + changed files pairs.
  */
-export function parsePathspecOutput(stdout: string): { commit: CommitInfo; changedFiles: string[] }[] {
-  const result: { commit: CommitInfo; changedFiles: string[] }[] = [];
+export function parsePathspecOutput(stdout: string): { commit: CommitInfo; changedFiles: CommitChangedPath[] }[] {
+  const result: { commit: CommitInfo; changedFiles: CommitChangedPath[] }[] = [];
   const sections = stdout.split("\0");
   let i = 0;
 
@@ -95,7 +231,7 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
     i += 6;
 
     const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
-    const changedFiles: string[] = [];
+    const changedFiles: CommitChangedPath[] = [];
 
     // Parse numstat section
     const numstatSection = sections[i] || "";
@@ -107,7 +243,7 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
       if (parts.length < 3) continue;
       // Binary files show "-\t-" — skip them
       if (parts[0] === "-" && parts[1] === "-") continue;
-      changedFiles.push(parts[2]);
+      changedFiles.push(parseNumstatChangedPath(parts[2]));
     }
 
     if (changedFiles.length > 0) {
@@ -157,7 +293,7 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
     i += 7;
 
     const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
-    const files: { path: string; added: number; deleted: number }[] = [];
+    const files: CommitFileNumstat["files"] = [];
 
     // Parse numstat section
     const numstatSection = sections[i] || "";
@@ -175,7 +311,7 @@ export function parseCommitFileNumstat(stdout: string): CommitFileNumstat[] {
       const deleted = parseInt(parts[1], 10);
       if (Number.isNaN(added) || Number.isNaN(deleted)) continue;
 
-      files.push({ path: parts[2], added, deleted });
+      files.push({ ...parseNumstatChangedPath(parts[2]), added, deleted });
     }
 
     if (files.length > 0) {

@@ -52,7 +52,7 @@ function resolveAll(src: string, table: InMemoryGlobalSymbolTable): Map<number, 
     localCallBindings: chunk.localCallBindings,
     callResultBindings: chunk.callResultBindings,
     // Run-global in production: `New` is declared in another file of gin.
-    functionReturnTypes: { New: "Engine" },
+    functionReturnTypes: { "::New": "Engine" },
   };
   const out = new Map<number, string | null>();
   for (const call of chunk.calls) {

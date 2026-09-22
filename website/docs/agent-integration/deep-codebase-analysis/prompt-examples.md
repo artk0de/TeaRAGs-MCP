@@ -61,7 +61,7 @@ To find knowledge silos:
 
 To find legacy code that needs attention:
 1. `semantic_search` with `rerank: "techDebt"`, `metaOnly: true`, `limit: 30`
-2. Filter for confirmed debt: `git.ageDays >= 90` AND `git.commitCount >= 5`
+2. Filter for confirmed debt: `minAgeDays: 90` AND `git.file.commitCount >= 5`
 3. Cross with hotspots: `semantic_search` with `rerank: "hotspots"`, same pathPattern
 
 ### Severity Decision Table

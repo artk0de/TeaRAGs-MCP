@@ -30,8 +30,8 @@ function commit(sha: string, body = "feat: change", parents: string[] = []): Com
   return { sha, author: "Alice", authorEmail: "alice@ex.com", timestamp: 1000, body, parents };
 }
 
-function entry(sha: string, changedFiles: string[], body?: string, parents?: string[]): GitCommitDiscoveryEntry {
-  return { commit: commit(sha, body, parents), changedFiles };
+function entry(sha: string, paths: string[], body?: string, parents?: string[]): GitCommitDiscoveryEntry {
+  return { commit: commit(sha, body, parents), changedFiles: paths.map((path) => ({ path })) };
 }
 
 /** Fake in-memory persistence — every method is a vi.fn for call assertions. */
@@ -49,7 +49,7 @@ function fakeStore(overrides: Partial<GitCommitDiscoveryPersistence> = {}): {
 }
 
 function persisted(head: string, sinceIso: string, entries: GitCommitDiscoveryEntry[]): PersistedGitCommitDiscovery {
-  return { version: 1, repoRoot: "/repo", head, sinceIso, entries };
+  return { version: 2, repoRoot: "/repo", head, sinceIso, entries };
 }
 
 /** The exact legacy window formula (walk-commits.ts:105-106). */
@@ -73,7 +73,7 @@ describe("GitCommitDiscovery (bd tea-rags-mcp-82va1)", () => {
     const forA = await discovery.commitsForFiles(["a.ts"]);
     expect(forA.map((e) => e.commit.sha)).toEqual(["sha3", "sha2", "sha1"]);
     // Rows carry FULL changedFiles — the walk filters.
-    expect(forA[1].changedFiles).toEqual(["b.ts", "a.ts"]);
+    expect(forA[1].changedFiles).toEqual([{ path: "b.ts" }, { path: "a.ts" }]);
 
     const forB = await discovery.commitsForFiles(["b.ts"]);
     expect(forB.map((e) => e.commit.sha)).toEqual(["sha2"]);

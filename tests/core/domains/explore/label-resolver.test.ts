@@ -238,4 +238,27 @@ describe("resolveLabel", () => {
       }
     });
   });
+
+  /**
+   * A floor band's own threshold is inert — it owns everything below the SECOND
+   * band — so whether one was computed for it changes nothing about what it
+   * covers. Age is the live case (`git/age-derivation.ts`): its bands come from
+   * inverting lastModifiedAt percentiles, the stamp declares p5/p25/p50, and
+   * age p25 therefore yields no band at all.
+   */
+  describe("a declared floor band with no computed percentile", () => {
+    const age = { p25: "recent", p50: "typical", p75: "old", p95: "legacy" };
+    const inverted = { 50: 30, 75: 90, 95: 200 };
+
+    it("is still the default for everything below the next band", () => {
+      expect(resolveLabel(5, age, inverted)).toBe("recent");
+      expect(resolveLabel(29, age, inverted)).toBe("recent");
+    });
+
+    it("gives way as soon as a computed band is reached", () => {
+      expect(resolveLabel(30, age, inverted)).toBe("typical");
+      expect(resolveLabel(90, age, inverted)).toBe("old");
+      expect(resolveLabel(1000, age, inverted)).toBe("legacy");
+    });
+  });
 });

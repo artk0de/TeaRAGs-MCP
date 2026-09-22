@@ -15,9 +15,10 @@
  * It runs LAST and only on calls every earlier pass declined, so it never
  * overrides a cheaper decision, and it is gated twice more before spending
  * anything: {@link classifyTypeCheckerFallbackCase} rejects call shapes the
- * checker could not improve on (a plain unresolved call is usually dynamic, not
- * generic), and the Program itself is built lazily per file by
- * {@link TSProgramCache}.
+ * checker could not improve on — a bare unresolved call is usually dynamic, so
+ * only explicit type arguments or short-name ambiguity earn it a check, while
+ * every receiver-bearing declined call goes through (bd tea-rags-mcp-05uhs) —
+ * and the Program itself is built lazily per file by {@link TSProgramCache}.
  *
  * Precision over recall throughout. The checker's declaration is only turned
  * into an edge after the run's `GlobalSymbolTable` confirms it — the symbol
@@ -49,21 +50,31 @@ import { callSiteAt, memberSeparator, prefixWithNamespaces } from "./ts-type-che
  *   - `overload` — the member is declared on two or more project types, which
  *     is the ambiguity `strict` mode drops. The checker knows which one the
  *     receiver actually is.
+ *   - `receiver` — the call carries a receiver, which names a type the checker
+ *     can follow (bd tea-rags-mcp-05uhs). Every receiver-bearing call the
+ *     earlier passes declined reaches the checker regardless of how many
+ *     project definitions share the member name: the namesake-count pre-filter
+ *     cost 203 file-only checker edges plus 37 symbol-precise ones on taxdome,
+ *     because a single-definition member (or an object-literal member with
+ *     zero namesakes) got NO answer at all once the gate declined it.
  */
-export type TSTypeCheckerFallbackCase = "generic" | "overload";
+export type TSTypeCheckerFallbackCase = "generic" | "overload" | "receiver";
 
 /**
  * Decide whether a call the tree-sitter chain declined is worth a type check,
  * or is simply unresolvable. Pure and cheap — it reads the call text and the
  * symbol table's short-name cardinality, never the file system.
  *
- * `generic` outranks `overload` because it is the more specific signal: an
+ * `generic` outranks the rest because it is the more specific signal: an
  * explicitly-instantiated call names its types at the call site regardless of
- * how many definitions share the member name.
+ * how many definitions share the member name. A bare call still needs the
+ * ambiguity evidence — without a receiver nothing narrows the member, so a
+ * lone definition is read as dynamic rather than checker-worthy.
  */
 export function classifyTypeCheckerFallbackCase(call: CallRef, ctx: CallContext): TSTypeCheckerFallbackCase | null {
   if (hasExplicitTypeArguments(call.callText, call.member)) return "generic";
   if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length >= 2) return "overload";
+  if (call.receiver !== null) return "receiver";
   return null;
 }
 

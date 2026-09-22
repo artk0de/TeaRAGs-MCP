@@ -55,7 +55,15 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
     const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
     if (fallback.length <= 1 || ctx.imports.length === 0) return CONTINUE;
 
-    const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
+    // The receiver's head identifier is the hop name (bd tea-rags-mcp-4pa9o):
+    // a binding the caller imported through a barrel maps to a file that
+    // declares no members, so narrowing against the barrel alone declined.
+    // `new QuarantineStore(x).load()` and `Registry.list()` both name their
+    // binding at the head of the receiver. Only a receiver some import
+    // actually binds widens the set, and only by that binding's own
+    // re-export origin.
+    const hopName = call.receiver?.replace(/^new\s+/u, "").match(/^[A-Za-z_$][\w$]*/u)?.[0];
+    const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.mode, this.cfg.fileExists, hopName);
     if (importedFiles.size === 0) return CONTINUE;
 
     const narrowed = fallback.filter((def) => importedFiles.has(def.relPath));
@@ -63,7 +71,8 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
     if (!narrowedHit) return CONTINUE;
     // Narrowing by imports is still a decision by NAME for a receiver the walker
     // did not type — the checker must agree, or with no Program the structure
-    // must: an import binding, or `this`'s class hierarchy (bd tea-rags-mcp-t5cji). The
+    // must: an import binding, a receiver that constructs or produces its type
+    // (bd tea-rags-mcp-pv7ul), or `this`'s class hierarchy (bd tea-rags-mcp-t5cji). The
     // walker-typed interface receiver this pass exists to recover is exempt.
     if (memberCandidateLacksReceiverEvidence(call, ctx, this.cfg, this.programCache, narrowedHit)) return CONTINUE;
     return resolved({ targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId });

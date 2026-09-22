@@ -19,6 +19,22 @@ their own navigators.
   low-commit chunks, so tuning aimed at the ratio alone explains none of the
   observed values; on files older than six months the two effects compound.
 
+- **A changed-file row is a PAIR, and the two halves address different
+  commits.** `git log --numstat` runs with rename detection on, so the parsers
+  split git's `pre{old => new}post` column into
+  `CommitChangedPath { path, previousPath? }`. `collectHunks` matches `path`
+  against `relativeChunkMap` (keyed on HEAD paths); `collectOneFile` reads the
+  COMMIT side at `path` and the PARENT side at `previousPath ?? path` (both in
+  `infra/walk-commits.ts`). Why: read the parent at the post-rename path and it
+  comes back `""`, so `structuredPatch` returns one hunk spanning the file and
+  the rename lands on EVERY chunk — measured 6/6 chunks and 351 attributed lines
+  against the correct 2/6 and 178 on
+  `tests/core/domains/maintenance/drift/schema-drift-monitor.test.ts`. Keeping
+  the column raw is the opposite failure: nothing matches, the commit is dropped
+  before any blob read, and every chunk publishes `commitCount: 0`. Rename
+  FOLLOWING is deliberately NOT done — a commit that touched the file before the
+  rename still names it by its old path and still misses.
+
 ## Gotchas
 
 - **Two unrelated ownership families coexist: `recent*` (commit window) vs

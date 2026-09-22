@@ -112,7 +112,7 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
 
   if (data.status.enrichment) {
     lines.push("");
-    lines.push(...formatEnrichmentSection(data.status.enrichment));
+    lines.push(...formatEnrichmentSection(data.status.enrichment, data.registry ?? null));
   }
 
   // Languages are ordered by IndexMetrics.distributions.language chunk count.
@@ -187,7 +187,7 @@ function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
   if (entry.teaRagsVersion) {
     parts.push(`v${entry.teaRagsVersion}`);
   }
-  const envSnapshot = Object.entries(entry.env ?? entry.tuning ?? {})
+  const envSnapshot = Object.entries(registryEnv(entry))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join(" ");
@@ -195,6 +195,16 @@ function formatRegistryParamsLine(entry: PrimeRegistryEntry): string | null {
     parts.push(envSnapshot);
   }
   return parts.length > 0 ? `registry: ${parts.join(" · ")}` : null;
+}
+
+/**
+ * The effective env of the LAST INDEXING RUN, not the current process's.
+ * `tuning` is the pre-9vpnz legacy shape, read only when `env` is absent.
+ * Every consumer reads the snapshot through here so no digest line can drift
+ * onto `process.env` and report a window the stored data was never built with.
+ */
+function registryEnv(entry: PrimeRegistryEntry): Record<string, string> {
+  return entry.env ?? entry.tuning ?? {};
 }
 
 // Chunker artifacts that aren't real programming languages (markdown code blocks,
@@ -468,14 +478,44 @@ function formatInfraSection(infra: InfraHealth): string[] {
   return lines;
 }
 
-function formatEnrichmentSection(enrichment: EnrichmentMap): string[] {
+function formatEnrichmentSection(enrichment: EnrichmentMap, registry: PrimeRegistryEntry | null): string[] {
   const lines = ["## Enrichment"];
   for (const [provider, health] of Object.entries(enrichment)) {
     const inProgress = health.file.status === "in_progress" || health.chunk.status === "in_progress";
     const suffix = inProgress ? " (in progress)" : "";
-    lines.push(`${provider}: file ${health.file.status}, chunk ${health.chunk.status}${suffix}`);
+    const windows = provider === "git" ? formatGitWalkWindows(registry) : "";
+    lines.push(`${provider}: file ${health.file.status}, chunk ${health.chunk.status}${suffix}${windows}`);
   }
   return lines;
+}
+
+/** Env keys carrying each git walk's horizon, paired with the level it bounds. */
+const GIT_WALK_WINDOW_KEYS: readonly (readonly [level: string, envKey: string])[] = [
+  ["file", "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS"],
+  ["chunk", "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS"],
+];
+
+/**
+ * The two git walks read DIFFERENT horizons — 12 months of `git log` for file
+ * signals, 6 of the commit walk for chunk signals — and both windows SLIDE, so
+ * a chunk-level zero accrues on its own as the older half of a file's history
+ * leaves the window. Without the horizons in sight, an operator comparing two
+ * runs' aggregates reads that accrual as a regression; the digest already
+ * carries both numbers, buried in the registry env wall, so this only makes
+ * them legible on the row they govern.
+ *
+ * Read from the registry snapshot, never `process.env`: the question the reader
+ * has is what the INDEXED data was built with, and a session that exported a
+ * new value has not rebuilt anything. A key the snapshot omits renders nothing
+ * — a default printed here would be a claim about data nobody measured.
+ */
+function formatGitWalkWindows(registry: PrimeRegistryEntry | null): string {
+  if (!registry) return "";
+  const env = registryEnv(registry);
+  const declared = GIT_WALK_WINDOW_KEYS.filter(([, envKey]) => env[envKey] !== undefined).map(
+    ([level, envKey]) => `${level} ${env[envKey]}mo`,
+  );
+  return declared.length > 0 ? ` · window ${declared.join(" / ")}` : "";
 }
 
 /**

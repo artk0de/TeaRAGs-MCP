@@ -1351,14 +1351,14 @@ let symbolTableRef = new InMemoryGlobalSymbolTable();
  * from `TSCallResolver`, so scoring a `.js` file's calls would report the
  * TypeScript resolver's verdict on JavaScript — a different resolver's corpus.
  */
-const SCORED_EXTENSIONS = [".ts", ".tsx"] as const;
+const SCORED_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"] as const;
 
 /**
  * Extensions walked into the symbol table (bd tea-rags-mcp-2mvc2).
  *
  * Wider than {@link SCORED_EXTENSIONS} because production builds ONE
  * cross-language `GlobalSymbolTable` per run and `CODEGRAPH_LANGUAGES` maps all
- * four JavaScript extensions to a walker. Collecting `.ts` / `.tsx` alone gave
+ * eight TS/JS extensions to a walker. Collecting `.ts` / `.tsx` alone gave
  * the harness a symbol table production never has: a TypeScript call into a
  * `.js` declaration found no node to pin, so the oracle answered `missed` with
  * reason `unpinnedTarget` for a target the graph does contain. Measured at ~11%
@@ -1366,7 +1366,7 @@ const SCORED_EXTENSIONS = [".ts", ".tsx"] as const;
  * through `ctx.symbolTable` — so widening it is what makes the harness agree
  * with production, not a thumb on either scale.
  */
-const SYMBOL_TABLE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] as const;
+const SYMBOL_TABLE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"] as const;
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "website"]);
 
@@ -1463,7 +1463,7 @@ function buildLanguageOnlyExclusionFilter(factory: LanguageFactory): Ignore {
   const ig = ignore();
   for (const lang of factory.supported()) {
     const globs = factory.create(lang).codegraphExclusionGlobs;
-    if (globs && globs.length > 0) ig.add(globs as string[]);
+    if (globs && globs.length > 0) ig.add(globs);
   }
   return ig;
 }

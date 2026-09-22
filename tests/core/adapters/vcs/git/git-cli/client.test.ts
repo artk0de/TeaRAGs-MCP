@@ -107,12 +107,12 @@ describe("getCommitsByPathspecBatched", () => {
       callCount++;
       if (callCount === 1) {
         return [
-          { commit: commit1, changedFiles: ["src/file1.ts"] },
-          { commit: commit2, changedFiles: ["src/file2.ts"] },
+          { commit: commit1, changedFiles: [{ path: "src/file1.ts" }] },
+          { commit: commit2, changedFiles: [{ path: "src/file2.ts" }] },
         ];
       }
       // Second batch: commit1 appears again with different file
-      return [{ commit: commit1, changedFiles: ["src/file3.ts"] }];
+      return [{ commit: commit1, changedFiles: [{ path: "src/file3.ts" }] }];
     });
 
     // Generate >500 files to trigger batching
@@ -122,14 +122,14 @@ describe("getCommitsByPathspecBatched", () => {
     // commit1 should have merged changedFiles from both batches
     const commit1Result = result.find((r) => r.commit.sha === "a".repeat(40));
     expect(commit1Result).toBeDefined();
-    expect(commit1Result!.changedFiles).toContain("src/file1.ts");
-    expect(commit1Result!.changedFiles).toContain("src/file3.ts");
+    expect(commit1Result!.changedFiles.map((f) => f.path)).toContain("src/file1.ts");
+    expect(commit1Result!.changedFiles.map((f) => f.path)).toContain("src/file3.ts");
     expect(commit1Result!.changedFiles).toHaveLength(2);
 
     // commit2 should have only file2
     const commit2Result = result.find((r) => r.commit.sha === "b".repeat(40));
     expect(commit2Result).toBeDefined();
-    expect(commit2Result!.changedFiles).toEqual(["src/file2.ts"]);
+    expect(commit2Result!.changedFiles).toEqual([{ path: "src/file2.ts" }]);
 
     expect(result).toHaveLength(2);
   });
@@ -145,7 +145,7 @@ describe("getCommitsByPathspecBatched", () => {
       .mockRejectedValueOnce(new Error("git process killed"));
 
     // First batch parses OK
-    mockParsePathspecOutput.mockReturnValueOnce([{ commit: commit1, changedFiles: ["src/file1.ts"] }]);
+    mockParsePathspecOutput.mockReturnValueOnce([{ commit: commit1, changedFiles: [{ path: "src/file1.ts" }] }]);
 
     // The catch block in getCommitsByPathspecBatched catches errors from getCommitsByPathspecSingle.
 
@@ -234,7 +234,7 @@ describe("getCommitsByPathspec", () => {
     const commit = makeCommit("d".repeat(40));
     mockExecFileResolving("fake-stdout");
     mockParsePathspecOutput.mockReset();
-    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: ["src/a.ts"] }]);
+    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: [{ path: "src/a.ts" }] }]);
 
     const filePaths = Array.from({ length: 100 }, (_, i) => `src/file${i}.ts`);
     const result = await getCommitsByPathspec(repoRoot, sinceDate, filePaths);
@@ -247,7 +247,7 @@ describe("getCommitsByPathspec", () => {
   it("should delegate to batched for large file lists (>500)", async () => {
     mockExecFileResolving("fake-stdout");
     const commit = makeCommit("e".repeat(40));
-    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: ["src/a.ts"] }]);
+    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: [{ path: "src/a.ts" }] }]);
 
     const filePaths = Array.from({ length: 501 }, (_, i) => `src/file${i}.ts`);
     const result = await getCommitsByPathspec(repoRoot, sinceDate, filePaths);
@@ -342,11 +342,11 @@ describe("getCommitsInRange", () => {
     // the whole --since window on every incremental run.
     const commit = makeCommit("f".repeat(40));
     mockExecFileResolving("fake-stdout");
-    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: ["src/a.ts"] }]);
+    mockParsePathspecOutput.mockReturnValue([{ commit, changedFiles: [{ path: "src/a.ts" }] }]);
 
     const result = await getCommitsInRange(repoRoot, "abc123", "def456", sinceDate);
 
-    expect(result).toEqual([{ commit, changedFiles: ["src/a.ts"] }]);
+    expect(result).toEqual([{ commit, changedFiles: [{ path: "src/a.ts" }] }]);
     const callArgs = (execWithStallGuard as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callArgs[0]).toBe("git");
     expect(callArgs[1]).toEqual(expect.arrayContaining(["log", "abc123..def456", "--numstat"]));

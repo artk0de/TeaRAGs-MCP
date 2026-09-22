@@ -100,6 +100,7 @@ parameter examples per tool.
 
 - "Complex code not touched in 30+ days" → query="complex logic", modifiedBefore="<ISO date 30 days ago>"
 - "What did John work on last week?" → recentAuthor="<full name or email>", modifiedAfter="<ISO date 7 days ago>"
+- "Everything John touched (even files he doesn't dominate)" → contributor="<exact git name>"
 - "Payments code Alice owns" → query="payments", author="<exact blame name, e.g. Alice Smith>"
 - "High-churn authentication code" → query="authentication", minCommitCount=5
 - "Code related to ticket TD-1234" → taskId="TD-1234"
@@ -188,6 +189,7 @@ Set \`CODE_ENABLE_GIT_METADATA=true\` before indexing.
 Enables filters:
 - author — blame-dominant author (owner of most live lines, git blame HEAD); file-level default, level "chunk" → chunk's own lines. The live-line-owner filter — there is no separate blameOwner param
 - recentAuthor — filter by recent-activity dominant author (commit-count based, log window)
+- contributor — filter to files the person committed to in the log window (any recent-window committer; superset of recentAuthor)
 - modifiedAfter/modifiedBefore — date range (ISO 8601 format)
 - minAgeDays/maxAgeDays — code age
 - minCommitCount — churn frequency
@@ -203,7 +205,35 @@ Git enrichment runs in background after indexing. Check \`get_index_status\` for
 `;
 }
 
-export function buildFiltersDoc(): string {
+/**
+ * Git payload keys the filters resource names that the trajectory WRITES to the
+ * payload but does NOT declare as payload signal descriptors — verified at the
+ * writer (`domains/trajectory/git/infra/metrics/file-assembler.ts`). Since
+ * bd tea-rags-mcp-9ot33 declared `git.{file,chunk}.lastModifiedAt` as payload
+ * signal descriptors (their percentiles feed the now-relative age floor and
+ * label bands), `git.file.firstCreatedAt` is the only remaining
+ * written-but-undeclared key; it is read back by the git stats accumulators.
+ * The git field enumeration in buildFiltersDoc is GENERATED from the
+ * descriptors, so a key appears there either because a descriptor declares it
+ * or because it is listed here explicitly. Anything else is a stale name (the
+ * schema-v13 contributorCount/authors drift) and the key-existence test in
+ * tests/mcp/resources/resources.test.ts fails on it.
+ */
+export const FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS = ["git.file.firstCreatedAt"] as const;
+
+/** Render the field enumeration line for one git payload level from the descriptors. */
+function gitFilterFields(payloadSignals: PayloadSignalDescriptor[], prefix: string): string {
+  const field = (key: string) => {
+    const name = key.slice(prefix.length);
+    const isArray = payloadSignals.find((s) => s.key === key)?.type === "string[]";
+    return isArray ? `${name}[]` : name;
+  };
+  const declared = payloadSignals.filter((s) => s.key.startsWith(prefix)).map((s) => field(s.key));
+  const undeclared = FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS.filter((key) => key.startsWith(prefix)).map(field);
+  return [...declared, ...undeclared].join(", ");
+}
+
+export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): string {
   let md = "# Qdrant Filter Syntax\n\n";
   md += "## Operators\n\n";
   md += '- `match: {value: "exact"}` — exact string/number match\n';
@@ -219,13 +249,11 @@ export function buildFiltersDoc(): string {
   md += "chunkIndex, isDocumentation, name, chunkType, parentSymbolId ";
   md += "(class name for code, relative path for docs), parentType, symbolId, navigation, headingPath\n\n";
   md += "**Git metadata** (requires enrichment, two levels):\n\n";
-  md += "File-level (`git.file.*`): ageDays, commitCount, recentDominantAuthor, recentDominantAuthorPct, ";
-  md += "contributorCount, authors[], lastModifiedAt, firstCreatedAt, taskIds[], ";
-  md += "bugFixRate, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
-  md += "blameDominantAuthor, blameDominantAuthorPct, blameAuthors[], blameContributorCount\n\n";
-  md += "Chunk-level (`git.chunk.*`): ageDays, commitCount, bugFixRate, churnRatio, ";
-  md += "contributorCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
-  md += "blameDominantAuthor, blameDominantAuthorPct, blameAuthors[], blameContributorCount\n\n";
+  // Field lists GENERATED from the payload signal descriptors (single source of
+  // truth) — do not hand-edit; a renamed descriptor key updates this doc through
+  // the registry (bd tea-rags-mcp-yd6zp).
+  md += `File-level (\`git.file.*\`): ${gitFilterFields(payloadSignals, "git.file.")}\n\n`;
+  md += `Chunk-level (\`git.chunk.*\`): ${gitFilterFields(payloadSignals, "git.chunk.")}\n\n`;
   md += "**Ownership semantics:** `recentDominantAuthor*` = recent commit activity within the ";
   md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` = who owns ";
   md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
@@ -234,12 +262,15 @@ export function buildFiltersDoc(): string {
   md += "unset → each filter's default: `minAgeDays` / `maxAgeDays` / `minCommitCount` → `git.chunk.*`, ";
   md += "`taskId` / `author` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
   md += "`modifiedBefore` always read `git.file.lastModifiedAt`, `recentAuthor` always ";
-  md += "`git.file.recentDominantAuthor*`, any `level`. (2) Result granularity: ";
+  md += "`git.file.recentDominantAuthor*`, `contributor` always `git.file.recentAuthors`, any ";
+  md += "`level`. (2) Result granularity: ";
   md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
   md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
   md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
-  md += "Payload `ageDays` = enrichment-time stamp (`0` = < 1 day then, not no-data); stale on points ";
-  md += "not re-enriched — raw `ageDays` ranges and ageDays filter presets inherit that lag.\n\n";
+  md += "Age reads are query-time: overlay `ageDays`, `age`/`recency` rerank and the ageDays filter ";
+  md += "presets derive from `git.<level>.lastModifiedAt`, never the stamp. Payload `ageDays` stays an ";
+  md += "enrichment-time stamp (`0` = < 1 day then, not no-data) — only a RAW `ageDays` range inherits ";
+  md += "that lag.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
   md += "File-level (default level): `minFanIn`, `minFanOut`, `minInstability`, `minTransitiveImpact`, ";
@@ -503,7 +534,13 @@ export function registerAllResources(server: McpServer, app: App): void {
       mimeType: "text/markdown",
     },
     async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildFiltersDoc() }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "text/markdown",
+          text: buildFiltersDoc(app.getSchemaDescriptors().payloadSignals),
+        },
+      ],
     }),
   );
 

@@ -99,12 +99,12 @@ describe("a bare result type dot-imported in the CALLEE's file (f3a)", () => {
 });
 
 /**
- * The re-validator's corpus `g2j`: two packages each declare `New`, and the
- * run-global result-type channel is keyed by the bare name, so the last one
- * walked (`b.New() *B`) answers for `a.New()` as well. Placing the bare `B` in
- * the callee's package — `a`, which declares no `B` — now types nothing where
- * it used to fabricate `B#Run`. Precision only: getting `A#Run` back needs the
- * channel keyed by package, not this gate.
+ * The re-validator's corpus `g2j`: two packages each declare `New`. The e6xx
+ * gate placed the cross-absorbed bare record in the callee's package and so
+ * typed nothing — precision only, and it lost `A#Run` with it: getting that
+ * back needed the channel keyed by the declaring package, which is what bd
+ * tea-rags-mcp-7h6j0 did. Each call now reads its OWN package's `New` record,
+ * whoever was walked last.
  */
 const G2J = {
   "go.mod": "module example.com/nn\n\ngo 1.22\n",
@@ -157,10 +157,10 @@ const G2J = {
 };
 
 describe("a bare result type another package's namesake function recorded (g2j)", () => {
-  it("NEGATIVE: `a.New()` and `New()` in package a are not typed by `b.New`'s `B`", () => {
+  it("each package's `New` types its own calls, never the namesake's record", () => {
     const sites = resolveGoFiles(G2J);
-    expect(sites.get("a/a.go:11 x.Run")).toBeNull();
-    expect(sites.get("app/app.go:10 p.Run")).toBeNull();
+    expect(sites.get("a/a.go:11 x.Run")).toBe("A#Run @ a/a.go");
+    expect(sites.get("app/app.go:10 p.Run")).toBe("A#Run @ a/a.go");
   });
 
   it("control: the package that declares the recorded type keeps its edges", () => {

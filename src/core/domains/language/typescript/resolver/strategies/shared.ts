@@ -39,16 +39,32 @@ export const CONE_MAX_DEFAULT = 8;
  * The set of in-project files the caller imports, each mapped through the
  * tsconfig path mapper. Bare npm specifiers (mapped to `null`) are excluded.
  * Used to narrow ambiguous candidates to files the caller can actually reach.
+ *
+ * `hopName` widens the set past a barrel: when the receiver is a binding an
+ * import provides, that import also answers for the binding's re-export
+ * ORIGIN (bd tea-rags-mcp-4pa9o) — `import { QuarantineStore } from
+ * "./sync/index.js"` maps to a barrel that declares no methods, so narrowing
+ * against the barrel alone declined every constructed-receiver site behind
+ * it. The hop is the shared `reexportOriginFile`, so its own bounds apply
+ * unchanged: a name the mapped file declares itself adds nothing, and a
+ * project-wide namesake stays ambiguous and adds nothing either.
  */
 export function collectImportedFiles(
   ctx: CallContext,
   tsOptions: TsCompilerOptions,
+  mode: AmbiguousResolveMode,
   fileExists?: ProjectFileProbe,
+  hopName?: string | null,
 ): Set<string> {
   const files = new Set<string>();
   for (const imp of ctx.imports) {
     const file = mapImportToFile(imp.importText, ctx.callerFile, tsOptions, fileExists);
-    if (file) files.add(file);
+    if (!file) continue;
+    files.add(file);
+    if (hopName && imp.importedNames?.includes(hopName)) {
+      const origin = reexportOriginFile(hopName, file, ctx, mode);
+      if (origin) files.add(origin);
+    }
   }
   return files;
 }

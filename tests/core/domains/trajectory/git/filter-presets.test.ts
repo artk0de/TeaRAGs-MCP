@@ -5,6 +5,9 @@ import { GIT_FILTER_PRESETS } from "../../../../../src/core/domains/trajectory/g
 
 const byName = (n: string) => GIT_FILTER_PRESETS.find((p) => p.name === n)!;
 
+const NOW = 1_800_000_000;
+const DAY = 86_400;
+
 describe("git filter presets", () => {
   it("all require the git trajectory", () => {
     for (const p of GIT_FILTER_PRESETS) expect(p.requires).toContain("git");
@@ -24,10 +27,10 @@ describe("git filter presets", () => {
     expect(should).toContainEqual({ key: "git.file.churnVolatility", range: { gte: 25 } });
   });
 
-  it("freshLegacyEdits: old file (p75 fb60) + fresh chunk (<=7)", () => {
-    const f = compileFilterPreset(byName("freshLegacyEdits"), undefined, "file");
-    expect(f.must).toContainEqual({ key: "git.file.ageDays", range: { gte: 60 } });
-    expect(f.must).toContainEqual({ key: "git.chunk.ageDays", range: { lte: 7 } });
+  it("freshLegacyEdits: old file (age p75 fb60 → stamp lte now−60d) + fresh chunk (age ≤7 → stamp gte now−7d)", () => {
+    const f = compileFilterPreset(byName("freshLegacyEdits"), undefined, "file", NOW);
+    expect(f.must).toContainEqual({ key: "git.file.lastModifiedAt", range: { gt: 0, lte: NOW - 60 * DAY } });
+    expect(f.must).toContainEqual({ key: "git.chunk.lastModifiedAt", range: { gte: NOW - 7 * DAY } });
   });
 
   it("fragileSilo: solo owner + churning chunk", () => {

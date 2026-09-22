@@ -27,7 +27,7 @@ function commit(sha: string): CommitInfo {
 }
 
 function entries(): GitCommitDiscoveryEntry[] {
-  return [{ commit: commit("c".repeat(40)), changedFiles: ["a.ts", "b.ts"] }];
+  return [{ commit: commit("c".repeat(40)), changedFiles: [{ path: "a.ts" }, { path: "b.ts" }] }];
 }
 
 function repoDir(baseDir: string): string {
@@ -52,7 +52,7 @@ describe("GitCommitDiscoveryStore (bd tea-rags-mcp-82va1)", () => {
     const loaded = store.load(REPO_ROOT, HEAD_A);
 
     expect(loaded).not.toBeNull();
-    expect(loaded?.version).toBe(1);
+    expect(loaded?.version).toBe(2);
     expect(loaded?.repoRoot).toBe(REPO_ROOT);
     expect(loaded?.head).toBe(HEAD_A);
     expect(loaded?.sinceIso).toBe(SINCE_ISO);
@@ -79,7 +79,7 @@ describe("GitCommitDiscoveryStore (bd tea-rags-mcp-82va1)", () => {
     mkdirSync(repoDir(baseDir), { recursive: true });
     writeFileSync(
       join(repoDir(baseDir), `${HEAD_A}.json`),
-      JSON.stringify({ version: 2, repoRoot: REPO_ROOT, head: HEAD_A, sinceIso: SINCE_ISO, entries: entries() }),
+      JSON.stringify({ version: 99, repoRoot: REPO_ROOT, head: HEAD_A, sinceIso: SINCE_ISO, entries: entries() }),
     );
 
     expect(store.load(REPO_ROOT, HEAD_A)).toBeNull();

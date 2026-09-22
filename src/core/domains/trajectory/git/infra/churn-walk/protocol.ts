@@ -10,7 +10,12 @@
  * Map / Set / plain objects / numbers / strings / booleans.
  */
 
-import type { BlameLine, CommitInfo, FileChurnData, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
+import type {
+  BlameLine,
+  CommitWithChangedFiles,
+  FileChurnData,
+  GitAdapterKind,
+} from "../../../../../adapters/vcs/types.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import type { ChunkChurnOverlay } from "../../types.js";
 import type { SquashOptions } from "../metrics.js";
@@ -24,8 +29,12 @@ export interface ChunkChurnWalkJobInput {
   gitAdapter: GitAdapterKind;
   /** Repo-relative path → chunk entries (relativized on the main side). */
   relativeChunkMap: Map<string, ChunkLookupEntry[]>;
-  /** Pre-sliced discovery rows for this batch (main side queried the matrix). */
-  commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
+  /**
+   * Pre-sliced discovery rows for this batch (main side queried the matrix).
+   * `changedFiles` entries are plain `{ path, previousPath? }` objects, so the
+   * rename pair survives structured clone (bd tea-rags-mcp-0dwsn).
+   */
+  commitEntries: CommitWithChangedFiles[];
   bugFixShas: Set<string>;
   /** Blame slice for this batch's files (chunk-range ownership fields). */
   blameByPath: Map<string, BlameLine[]>;

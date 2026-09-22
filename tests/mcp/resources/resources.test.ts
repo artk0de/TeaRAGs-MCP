@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { SchemaBuilder } from "../../../src/core/api/index.js";
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
+import { gitPayloadSignalDescriptors } from "../../../src/core/domains/trajectory/git/payload-signals.js";
 import {
   buildFiltersDoc,
   buildIndexingGuide,
@@ -13,6 +14,7 @@ import {
   buildSignalLabelsGuide,
   buildSignalsDoc,
 } from "../../../src/mcp/resources/index.js";
+import { FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS } from "../../../src/mcp/resources/registry.js";
 import { createSearchSchemas } from "../../../src/mcp/tools/schemas.js";
 
 const mockPayloadSignals: PayloadSignalDescriptor[] = [
@@ -306,7 +308,7 @@ describe("Resource builders", () => {
 
   describe("buildFiltersDoc", () => {
     it("contains Qdrant operator syntax", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       expect(md).toContain("match");
       expect(md).toContain("range");
       expect(md).toContain("must");
@@ -315,13 +317,13 @@ describe("Resource builders", () => {
     });
 
     it("contains threshold guidance referencing get_index_metrics", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       expect(md).toContain("get_index_metrics");
       expect(md).toContain("signal-labels");
     });
 
     it("contains available fields with level prefix", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       expect(md).toContain("relativePath");
       expect(md).toContain("git.file.");
       expect(md).toContain("git.chunk.");
@@ -329,7 +331,7 @@ describe("Resource builders", () => {
     });
 
     it("warns about filter level for time-based filters", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       expect(md).toContain("level");
       // modifiedAfter/modifiedBefore are file-level whatever `level` says;
       // `level: "file"` also regroups results one per file.
@@ -341,14 +343,14 @@ describe("Resource builders", () => {
 
     // bd tea-rags-mcp-9mwny — author became level-aware (default file).
     it("lists author among the level-aware filters defaulting to file", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       const levelParagraph = md.slice(md.indexOf("**⚠ Filter level:**"));
       const defaults = levelParagraph.slice(0, levelParagraph.indexOf("\n\n"));
       expect(defaults).toMatch(/`author`[^;.]*→ `git\.file\.\*`/);
     });
 
     it("documents codegraph typed filter params (tea-rags-mcp-tr5k)", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       expect(md).toContain("Codegraph metadata");
       // File-level codegraph params (default level)
       expect(md).toContain("minFanIn");
@@ -363,6 +365,45 @@ describe("Resource builders", () => {
       // The doc must explain that raw Qdrant filter keys won't resolve
       // (the bug users hit before the typed-filter wiring).
       expect(md).toContain("codegraph.symbols");
+    });
+  });
+
+  // bd tea-rags-mcp-yd6zp — schema v13 renamed contributorCount →
+  // recentContributorCount and authors → recentAuthors, but this doc kept naming
+  // the pre-v13 keys, so a raw filter built from the resource matched nothing,
+  // silently. Every git payload key the doc names must be a declared payload
+  // signal descriptor key or an explicit written-but-undeclared allowlist entry.
+  describe("filters doc names only real payload keys", () => {
+    const declared = new Set(gitPayloadSignalDescriptors.map((s) => s.key));
+    const allowlist = new Set<string>(FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS);
+    // Keys the doc names = the bare field tokens of the two git enumeration
+    // lines ("File-level (`git.file.*`): a, b[], c") re-attached to their level
+    // prefix, plus every literally prefixed `git.file.X` / `git.chunk.X`
+    // mention elsewhere in the doc (prose, threshold examples).
+    const namedKeys = (md: string) => {
+      const keys: string[] = [];
+      for (const [, level, list] of md.matchAll(/`git\.(file|chunk)\.\*`\): ([^\n]*)/g)) {
+        for (const field of list.split(",")) {
+          const name = field.trim().replace(/\[\]$/, "");
+          if (name) keys.push(`git.${level}.${name}`);
+        }
+      }
+      keys.push(...[...md.matchAll(/git\.(?:file|chunk)\.[A-Za-z0-9_]+/g)].map((m) => m[0]));
+      return keys;
+    };
+
+    it("names no git payload key outside descriptors + the undeclared allowlist", () => {
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
+      const stale = namedKeys(md).filter((key) => !declared.has(key) && !allowlist.has(key));
+      expect(stale).toEqual([]);
+    });
+
+    it("carries the v13 descriptor names, not the pre-v13 ones", () => {
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
+      expect(md).toContain("recentContributorCount");
+      expect(md).toContain("recentAuthors[]");
+      expect(md).not.toContain("contributorCount");
+      expect(md).not.toContain("authors[]");
     });
   });
 
@@ -413,7 +454,7 @@ describe("Resource builders", () => {
     });
 
     it("every codegraph typed filter the filters doc lists is a param of each typed-filter search tool", () => {
-      const md = buildFiltersDoc();
+      const md = buildFiltersDoc(gitPayloadSignalDescriptors);
       const section = md.slice(md.indexOf("**Codegraph metadata**"));
       const paramLines = section
         .slice(0, section.indexOf("\nNote:"))

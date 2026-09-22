@@ -39,7 +39,7 @@ export class TSConeTypeLocator implements ConeTypeLocator {
     const matches = lookupEcmascriptSymbolsByShortName(ctx, typeName).filter((def) => def.scope.length === 0);
     if (matches.length === 1) return matches[0].relPath;
     if (matches.length > 1) {
-      const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
+      const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.mode, this.cfg.fileExists);
       const filtered = matches.filter((def) => importedFiles.has(def.relPath));
       if (filtered.length === 1) return filtered[0].relPath;
       return null;

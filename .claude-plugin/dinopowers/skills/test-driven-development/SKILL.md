@@ -33,15 +33,26 @@ ordering (search BEFORE draft) = core value. No `filter` needed: the server
 skips `proven`'s production default when `chunkType` / `testFile` select tests
 (tea-rags server predating that → 0 results → add `filter: {}`).
 
-If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
-chunks absent — primary language has no DSL test chunker; **currently supported:
-TypeScript (Vitest/Jest/Mocha) and Ruby (RSpec)** — see
-`src/core/domains/ingest/pipeline/chunker/hooks/<lang>/test-scope-chunker.ts`
-and `rspec-scope-chunker.ts` for canonical list), fall back to single
-`mcp__tea-rags__semantic_search` with `testFile: "only"` + `rerank: "proven"`
-and state "file-level fallback — DSL test chunks unavailable for this language".
+If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (no
+`chunkType: "test"` chunks — language has no AST test chunking; **currently
+supported: TypeScript + JavaScript (Vitest/Jest/Mocha), Ruby (RSpec), Swift
+(XCTest / swift-testing / Quick)** — see
+`src/core/domains/language/<lang>/chunking/` (`test-scope-chunker.ts`,
+`rspec-scope-chunker.ts`, `suite-recognition.ts`, `quick-scope-chunker.ts`);
+canonical per-language list:
+`.claude-plugin/tea-rags/rules/language-compatibility.md` (GENERATED)), fall
+back to single `mcp__tea-rags__semantic_search` with `testFile: "only"` +
+`rerank: "proven"` and state "file-level fallback — test chunks unavailable for
+this language".
 
-> **Maintainers:** when new language gains DSL test chunker, update the
+Swift's granularity depends on the framework. XCTest and swift-testing declare
+cases as methods, so a `chunkType: "test"` hit is one `func testX()` /
+`@Test func x()`, no ancestor setup spliced in. Quick is a describe/context DSL
+and chunks per SCOPE, like Ruby: a hit is one `context "when overdue"` with its
+ancestors' `beforeEach` spliced in. Fixtures + helpers →
+`chunkType: "test_setup"` in both.
+
+> **Maintainers:** new language gains AST test chunking → update the
 > supported-languages list above AND the same lists in
 > `tea-rags:tests-as-context` (Step 0 SKIP block) and `tea-rags:filter-building`
 > (chunkType section). Canonical checklist:
@@ -183,7 +194,7 @@ From top-K returned chunks, extract 4-6 concise bullets (NOT raw content):
 - **Setup/teardown** (`beforeEach` vs `beforeAll`, cleanup patterns)
 
 Cap bullets at 6. Cite proven test file each convention came from (e.g.
-`tests/core/domains/ingest/chunker/hooks-composition.test.ts`).
+`tests/core/domains/language/ruby/chunking/rspec-scope-chunker.test.ts`).
 
 If tea-rags returned fewer than 3 proven tests (thin corpus): note "small test
 corpus — conventions inferred from <N> files only, may not be representative".

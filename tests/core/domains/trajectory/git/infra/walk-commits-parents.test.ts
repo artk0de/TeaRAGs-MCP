@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitCliAdapter } from "../../../../../../src/core/adapters/vcs/git/git-cli/adapter.js";
-import type { CommitInfo } from "../../../../../../src/core/adapters/vcs/types.js";
+import type { CommitInfo, CommitWithChangedFiles } from "../../../../../../src/core/adapters/vcs/types.js";
 import { buildChunkChurnMapUncached } from "../../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import type { WalkCommitDiscovery } from "../../../../../../src/core/domains/trajectory/git/infra/walk-commits.js";
 
@@ -19,11 +19,7 @@ const COMMIT_SHA = "a".repeat(40);
 const PARENT_SHA = "p".repeat(40);
 const SECOND_PARENT_SHA = "q".repeat(40);
 
-function commitTouching(
-  changedFiles: string[],
-  parents: string[] | undefined,
-  body = "feat: change",
-): { commit: CommitInfo; changedFiles: string[] } {
+function commitTouching(paths: string[], parents: string[] | undefined, body = "feat: change"): CommitWithChangedFiles {
   const commit = {
     sha: COMMIT_SHA,
     author: "Alice",
@@ -34,7 +30,7 @@ function commitTouching(
   // `undefined` models a legacy fixture / loose-cast shape with NO parents
   // field at all — the walk must treat it as a root commit, never spawn.
   if (parents !== undefined) commit.parents = parents;
-  return { commit, changedFiles };
+  return { commit, changedFiles: paths.map((path) => ({ path })) };
 }
 
 function fakeBlobReader(): { read: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> } {
@@ -45,7 +41,7 @@ function fakeBlobReader(): { read: ReturnType<typeof vi.fn>; close: ReturnType<t
   };
 }
 
-function fakeDiscovery(entries: { commit: CommitInfo; changedFiles: string[] }[]): WalkCommitDiscovery {
+function fakeDiscovery(entries: CommitWithChangedFiles[]): WalkCommitDiscovery {
   return {
     commitsForFiles: vi.fn().mockResolvedValue(entries),
     getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),

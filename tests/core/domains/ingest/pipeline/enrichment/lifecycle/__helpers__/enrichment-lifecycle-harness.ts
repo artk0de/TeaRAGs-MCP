@@ -351,7 +351,9 @@ async function startCodegraphFixture(options: CodegraphFixtureOptions): Promise<
   if (!existsSync(WORKER_PATH)) {
     throw new Error(`enrichment lifecycle harness needs the compiled worker at ${WORKER_PATH} — run npm run build`);
   }
-  const root = mkdtempSync(join(tmpdir(), "p7-lifecycle-"));
+  // Short prefix: the keyed daemon socket (bd tea-rags-mcp-42hno) must stay
+  // inside the macOS 104-byte unix-socket path limit.
+  const root = mkdtempSync(join(tmpdir(), "p7-lc-"));
   const repoRoot = join(root, "repo");
   for (const [relPath, content] of Object.entries(FIXTURE_FILES)) {
     mkdirSync(dirname(join(repoRoot, relPath)), { recursive: true });

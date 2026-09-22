@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { ExtractContext } from "../../../../../src/core/contracts/types/trajectory.js";
 import { gitDerivedSignals } from "../../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 
+/** Fixed query clock — unix seconds, matching the lastModifiedAt stamp unit. */
+const NOW = 1_800_000_000;
+const DAY = 86_400;
+
 describe("gitDerivedSignals", () => {
   const fakePayload = (git?: Record<string, unknown>) =>
     ({ relativePath: "a.ts", startLine: 1, endLine: 50, git }) as Record<string, unknown>;
@@ -55,10 +59,10 @@ describe("gitDerivedSignals", () => {
   });
 
   describe("individual signals (file-only, no blending)", () => {
-    it("recency: 1 - ageDays/365", () => {
+    it("recency: 1 - age/365, age derived from lastModifiedAt at the injected now", () => {
       const d = gitDerivedSignals.find((s) => s.name === "recency")!;
-      expect(d.sources).toContain("file.ageDays");
-      const val = d.extract(fakePayload({ file: { ageDays: 182.5 } }));
+      expect(d.sources).toContain("file.lastModifiedAt");
+      const val = d.extract(fakePayload({ file: { lastModifiedAt: NOW - 182.5 * DAY } }), { now: NOW });
       expect(val).toBeCloseTo(0.5, 2);
     });
 
@@ -127,7 +131,7 @@ describe("gitDerivedSignals", () => {
     it("supports flat git format (backward compat)", () => {
       const d = gitDerivedSignals.find((s) => s.name === "recency")!;
       // flat format: git fields at root level, no file/chunk nesting
-      expect(d.extract(fakePayload({ ageDays: 182.5 }))).toBeCloseTo(0.5, 2);
+      expect(d.extract(fakePayload({ lastModifiedAt: NOW - 182.5 * DAY }), { now: NOW })).toBeCloseTo(0.5, 2);
     });
   });
 
@@ -135,18 +139,18 @@ describe("gitDerivedSignals", () => {
     const byName = (n: string) => gitDerivedSignals.find((s) => s.name === n)!;
 
     it("recency normalizes per-source then blends", () => {
-      // file: ageDays=200, commitCount=20
-      // chunk: ageDays=50, commitCount=10
+      // file: 200d old, commitCount=20
+      // chunk: 50d old, commitCount=10
       // alpha = min(1, (10/20) * min(1, 10/3)) = 0.5
       // normalizedFile = 200/365 = 0.5479
       // normalizedChunk = 50/365 = 0.1370
       // blended = 0.5 * 0.1370 + 0.5 * 0.5479 = 0.3425
       // recency = 1 - 0.3425 = 0.6575
       const payload = fakePayload({
-        file: { ageDays: 200, commitCount: 20 },
-        chunk: { ageDays: 50, commitCount: 10 },
+        file: { lastModifiedAt: NOW - 200 * DAY, commitCount: 20 },
+        chunk: { lastModifiedAt: NOW - 50 * DAY, commitCount: 10 },
       });
-      expect(byName("recency").extract(payload)).toBeCloseTo(0.6575, 2);
+      expect(byName("recency").extract(payload, { now: NOW })).toBeCloseTo(0.6575, 2);
     });
 
     it("stability normalizes per-source then blends", () => {
@@ -171,19 +175,19 @@ describe("gitDerivedSignals", () => {
       // blended = 0.0667 * 0.0274 + 0.9333 * 0.2740 = 0.2575
       // recency = 1 - 0.2575 = 0.7425
       const payload = fakePayload({
-        file: { ageDays: 100, commitCount: 20 },
-        chunk: { ageDays: 10, commitCount: 2 },
+        file: { lastModifiedAt: NOW - 100 * DAY, commitCount: 20 },
+        chunk: { lastModifiedAt: NOW - 10 * DAY, commitCount: 2 },
       });
-      expect(byName("recency").extract(payload)).toBeCloseTo(0.7425, 2);
+      expect(byName("recency").extract(payload, { now: NOW })).toBeCloseTo(0.7425, 2);
     });
 
     it("alpha=0 when chunk commitCount=0, falls back to file only", () => {
       const payload = fakePayload({
-        file: { ageDays: 200, commitCount: 20 },
-        chunk: { ageDays: 10, commitCount: 0 },
+        file: { lastModifiedAt: NOW - 200 * DAY, commitCount: 20 },
+        chunk: { lastModifiedAt: NOW - 10 * DAY, commitCount: 0 },
       });
       // alpha=0 → pure file: recency = 1 - 200/365 = 0.4521
-      expect(byName("recency").extract(payload)).toBeCloseTo(0.4521, 2);
+      expect(byName("recency").extract(payload, { now: NOW })).toBeCloseTo(0.4521, 2);
     });
 
     it("bugFix normalizes per-source then blends", () => {
@@ -254,19 +258,19 @@ describe("gitDerivedSignals", () => {
     const chunkOnly = (chunk: Record<string, unknown>) => fakePayload({ chunk });
 
     it("recency and stability produce DIFFERENT values for chunk-only payload", () => {
-      // chunk: ageDays=50 (young), commitCount=10 (moderate churn)
+      // chunk: 50d old (young), commitCount=10 (moderate churn)
       // recency should be HIGH (young code), stability should be LOW (many commits)
-      const payload = chunkOnly({ ageDays: 50, commitCount: 10 });
-      const recency = byName("recency").extract(payload);
+      const payload = chunkOnly({ lastModifiedAt: NOW - 50 * DAY, commitCount: 10 });
+      const recency = byName("recency").extract(payload, { now: NOW });
       const stability = byName("stability").extract(payload);
       expect(recency).not.toBeCloseTo(stability, 2);
     });
 
-    it("recency uses chunk ageDays when file data absent", () => {
-      // chunk: ageDays=100, commitCount=5
+    it("recency uses chunk lastModifiedAt when file data absent", () => {
+      // chunk: 100d old, commitCount=5
       // Should compute: 1 - normalize(100, 365) = 1 - 0.274 = 0.726
-      const payload = chunkOnly({ ageDays: 100, commitCount: 5 });
-      const val = byName("recency").extract(payload);
+      const payload = chunkOnly({ lastModifiedAt: NOW - 100 * DAY, commitCount: 5 });
+      const val = byName("recency").extract(payload, { now: NOW });
       expect(val).toBeCloseTo(0.726, 2);
     });
 
@@ -286,11 +290,11 @@ describe("gitDerivedSignals", () => {
       expect(val).toBeCloseTo(0.5, 2);
     });
 
-    it("age uses chunk ageDays when file data absent", () => {
-      // chunk: ageDays=182.5, commitCount=5
-      // Should compute: normalize(182.5, 365) = 0.5
-      const payload = chunkOnly({ ageDays: 182.5, commitCount: 5 });
-      const val = byName("age").extract(payload);
+    it("age uses chunk lastModifiedAt when file data absent", () => {
+      // chunk: 182 days old (floored from 182.5), commitCount=5
+      // Should compute: normalize(182, 365) = 0.5
+      const payload = chunkOnly({ lastModifiedAt: NOW - 182.5 * DAY, commitCount: 5 });
+      const val = byName("age").extract(payload, { now: NOW });
       expect(val).toBeCloseTo(0.5, 2);
     });
   });
@@ -320,7 +324,7 @@ describe("gitDerivedSignals", () => {
 
     it("does not accept collectionStats in ExtractContext", () => {
       // ExtractContext should have bounds (Record) not bound (number)
-      const ctx: ExtractContext = { bounds: { "file.ageDays": 365 } };
+      const ctx: ExtractContext = { bounds: { "file.commitCount": 50 } };
       expect(ctx).not.toHaveProperty("collectionStats");
       expect(ctx).not.toHaveProperty("bound");
     });
@@ -330,10 +334,13 @@ describe("gitDerivedSignals", () => {
     const byName = (n: string) => gitDerivedSignals.find((s) => s.name === n)!;
 
     it("recency uses custom per-source bounds when provided", () => {
-      // ageDays=200, file bound=1000 → 1 - 200/1000 = 0.8
-      const payload = fakePayload({ file: { ageDays: 200 } });
+      // age=200d (from lastModifiedAt), file bound=1000 → 1 - 200/1000 = 0.8
+      const payload = fakePayload({ file: { lastModifiedAt: NOW - 200 * DAY } });
       expect(
-        byName("recency").extract(payload, { bounds: { "file.ageDays": 1000, "chunk.ageDays": 1000 } }),
+        byName("recency").extract(payload, {
+          bounds: { "file.lastModifiedAt": 1000, "chunk.lastModifiedAt": 1000 },
+          now: NOW,
+        }),
       ).toBeCloseTo(0.8, 2);
     });
 
@@ -354,9 +361,9 @@ describe("gitDerivedSignals", () => {
     });
 
     it("falls back to defaultBound when bounds not provided", () => {
-      const payload = fakePayload({ file: { ageDays: 182.5 } });
-      // Without bounds: 1 - 182.5/365 = 0.5
-      expect(byName("recency").extract(payload)).toBeCloseTo(0.5, 2);
+      const payload = fakePayload({ file: { lastModifiedAt: NOW - 182.5 * DAY } });
+      // Without bounds: 1 - floor(182.5)/365 = 0.5
+      expect(byName("recency").extract(payload, { now: NOW })).toBeCloseTo(0.5, 2);
     });
   });
 });

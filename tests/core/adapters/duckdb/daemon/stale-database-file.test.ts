@@ -57,7 +57,7 @@ describe("codegraph daemon — a collection rebuilt under a name it still holds 
     root = mkdtempSync(join(tmpdir(), "cg-amh78-"));
     const dataRoot = join(root, "data");
     const paths = getDaemonPaths(join(root, "d"));
-    mkdirSync(paths.storageDir, { recursive: true });
+    mkdirSync(paths.buildDir, { recursive: true });
     const daemon = await runDaemon({
       rootDir: dataRoot,
       paths,

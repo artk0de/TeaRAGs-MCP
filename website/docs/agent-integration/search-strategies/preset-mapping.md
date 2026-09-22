@@ -99,7 +99,7 @@ semantic_search({
   "path": "/project",
   "query": "feature implementation",
   "rerank": "codeReview",
-  "filter": { "must": [{ "key": "git.ageDays", "range": { "lte": 7 } }] },
+  "maxAgeDays": 7,
   "limit": 20
 })
 ```
@@ -114,7 +114,7 @@ semantic_search({
   "path": "/project",
   "query": "authentication validation security",
   "rerank": "securityAudit",
-  "filter": { "must": [{ "key": "git.ageDays", "range": { "lte": 7 } }] }
+  "maxAgeDays": 7
 })
 ```
 
@@ -372,7 +372,7 @@ semantic_search({
   "path": "/project",
   "query": "error handling exception",
   "rerank": "hotspots",
-  "filter": { "must": [{ "key": "git.ageDays", "range": { "gte": 90 } }] },
+  "minAgeDays": 90,
   "metaOnly": true
 })
 ```
@@ -515,11 +515,11 @@ Filters (Qdrant conditions) **narrow** the candidate set. Reranking **re-orders*
 
 | Goal | Filter | Rerank |
 |------|--------|--------|
-| Recent bugs in auth | `git.ageDays <= 14` + `pathPattern: **/auth/**` | `hotspots` |
-| Old single-owner code | `git.ageDays >= 90` + `git.commitCount >= 5` | `ownership` |
-| Recently active TypeScript | `language: typescript` + `git.ageDays <= 30` | `codeReview` |
-| Large stable functions | `chunkType: function` + `git.commitCount <= 3` | `onboarding` |
-| High-churn security code | `git.commitCount >= 10` + security path pattern | `securityAudit` |
+| Recent bugs in auth | `maxAgeDays: 14` + `pathPattern: **/auth/**` | `hotspots` |
+| Old single-owner code | `minAgeDays: 90` + `git.file.commitCount >= 5` | `ownership` |
+| Recently active TypeScript | `language: typescript` + `maxAgeDays: 30` | `codeReview` |
+| Large stable functions | `chunkType: function` + `git.chunk.commitCount <= 3` | `onboarding` |
+| High-churn security code | `git.file.commitCount >= 10` + security path pattern | `securityAudit` |
 
 ## When to Use Which Tool
 

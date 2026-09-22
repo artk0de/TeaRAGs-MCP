@@ -195,7 +195,13 @@ export interface ChunkSignalOptions {
           body: string;
           parents: string[];
         };
-        changedFiles: string[];
+        /**
+         * Each file the commit touched, named by its path AS OF THAT COMMIT,
+         * plus `previousPath` when the commit renamed it (structural shape of
+         * `CommitChangedPath`, bd tea-rags-mcp-0dwsn). Declared by value here,
+         * not imported, because contracts is pure.
+         */
+        changedFiles: { path: string; previousPath?: string }[];
       }[]
     >;
     getBugFixShas: () => Promise<Set<string>>;

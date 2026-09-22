@@ -889,6 +889,10 @@ describe("isScoredSource", () => {
   it("scores the TypeScript extensions this harness's chain actually resolves", () => {
     expect(isScoredSource("app/javascript/Card.tsx")).toEqual(true);
     expect(isScoredSource("src/core/runner.ts")).toEqual(true);
+    // TypeScript's own ESM/CJS module formats (bd tea-rags-mcp-oxodb) — the
+    // same resolver owns them, so their call sites score in-corpus.
+    expect(isScoredSource("src/worker.mts")).toEqual(true);
+    expect(isScoredSource("src/legacy.cts")).toEqual(true);
   });
 
   it("keeps JavaScript out of the scored corpus, since a different resolver owns it", () => {

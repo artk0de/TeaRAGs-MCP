@@ -92,7 +92,9 @@ describe("seeded support versions", () => {
     // tea-rags-mcp-ex28m widened the edge primary key with source_rel_path, and
     // the rows the old key discarded can only come back by re-extraction.
     // markdown is doc-only — no call graph, so nothing of its was collapsed and
-    // its axes stay put.
+    // its axes stay put. swift LEFT this set when its walker + resolver landed:
+    // it now emits method edges, so the widened key applies to it like every
+    // other edge-emitting language.
     const NO_CALL_GRAPH = new Set(["markdown"]);
 
     for (const [language, v] of versions) {
@@ -140,24 +142,91 @@ describe("seeded support versions", () => {
       // walker 3: bd tea-rags-mcp-x9qsh maps a specifier that already names a
       // TypeScript file to that file, so an index built before it holds file
       // edges to `<file>.ts.js` / `<file>.mts.ts` paths no file row matches.
+      // typescript walker 7: bd tea-rags-mcp-05uhs lets every receiver-bearing
+      // call the chain declined reach the typeCheckerFallback regardless of
+      // namesake count, so an index built before it holds neither the 203
+      // file-only checker edges nor the 37 symbol-precise ones the taxdome A/B
+      // measured at the old gate.
+      // typescript walker 8: bd tea-rags-mcp-nj8i6 owner-rules the same-file
+      // fallbacks (typeCheckerReturnType's short-name narrowing, thisMember's
+      // same-file fallback) and reads a class-body chunk's callerSymbolId, so
+      // an index built before it holds the C12-class misattributed edges the
+      // owner rule declines and misses the class-body `this.m()` edges the
+      // read recovers.
       // go walker 2: bd tea-rags-mcp-e6xx publishes struct field facts on
       // `classFieldTypesByClassKey` and resolves promoted methods through
       // embedding, so an index built by walker 1 holds none of the
       // `engine.GET` → `RouterGroup#GET` edges this one emits.
+      // typescript walker 9: bd tea-rags-mcp-pv7ul adds a POSITIVE structural
+      // arm to the evidence guard for receivers that construct or produce
+      // their type (`new ImportedClass().m()`, a `createX()` factory call), so
+      // an index built by walker 8 misses the checker-off member edges those
+      // sites gain when the constructed type's definer walk owns the
+      // candidate.
+      // typescript walker 10: bd tea-rags-mcp-wr3n4 extends the owner rule's
+      // containment arm to the candidate's OWNER, so an index built by walker 9
+      // holds file-only edges where the factory/hook idiom's shorthand member
+      // (declared in the object literal the enclosing function returns) has a
+      // structurally-correct symbol pin the candidate-lines-only containment
+      // declined.
+      // go walker 3: bd tea-rags-mcp-7h6j0 keys the run-global return-type
+      // channel by the declaring package, so an index built by walker 2 holds
+      // bare-keyed entries its resolver cannot read — namesake `New()`s
+      // resolve to nothing until the recompute rewrites them.
+      // go walker 4: bd tea-rags-mcp-fov8f emits every spec of a grouped
+      // `type ( ... )` declaration, so an index built by walker 3 holds only
+      // the group's FIRST type — every later spec resolves to nothing until
+      // the recompute rewrites it.
+      // typescript walker 11: bd tea-rags-mcp-4pa9o narrows
+      // `importNarrowedFallback` through a barrel — the binding's re-export
+      // origin joins the candidate-file set when the receiver head names it —
+      // so an index built by walker 10 misses the checker-off constructed
+      // receiver edges behind `sync/index.js`-style barrels.
+      // swift walker 3: walker 2 shipped the call graph itself (an index built
+      // by walker 1 holds no swift edges whatsoever); walker 3 added the
+      // scope-qualified type receiver, stopped double-counting a type re-opened
+      // by a same-file extension, and fixed the materialization field loss that
+      // made every annotated-type read evaluate to nothing in production;
+      // walker 4 publishes `classExtends` and resolves `super` over it, so an
+      // index built by walker 3 carries no inheritance for swift at all and
+      // every `super.X()` in it is unresolved; walker 5 publishes the
+      // run-global `classFieldTypesByClassKey` address AND adds
+      // `chainedReceiverType` reading it, so an index built by walker 4 carries
+      // neither the address nor any edge for a dotted receiver beyond the
+      // single-property `self.<x>` form; walker 6 reduces an EXISTENTIAL
+      // annotation (`any Proto`, and the parenthesized `(any Proto)?`), which
+      // is how Swift 5.7+ spells protocol-typed storage and which walker 5
+      // typed to nothing, and widens `storedPropertyType` to the cross-file
+      // field union plus the superclass chain — so an index built by walker 5
+      // holds no fact about any `any`-annotated parameter, local or property.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 6],
+        ["typescript", 11],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 3],
         ["java", 2],
         ["rust", 2],
-        ["go", 2],
+        ["go", 4],
+        ["swift", 6],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
+      // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
+      // chunker into the JS hook chain and listed `call_expression` among the
+      // chunkable/child chunk types, so `.js` / `.jsx` test files now emit
+      // `chunkType: "test"` / `"test_setup"` chunks an index built by
+      // chunking 1 never held — the advertised tests-high tier is implemented.
+      // swift chunking 2: the same step for Swift — the hook chain recognizes
+      // XCTest and swift-testing members, so `.swift` test files now emit
+      // `test` / `test_setup` chunks, and `detectScope` switches the project
+      // from path-based to chunkType-based test accounting once they appear.
+      const CHUNKING_BUMPED = new Map([
+        ["javascript", 2],
+        ["swift", 3],
+      ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
-      expect(v.chunking, `chunking version for ${language}`).toBe(1);
+      expect(v.chunking, `chunking version for ${language}`).toBe(CHUNKING_BUMPED.get(language) ?? 1);
       expect(v.codegraphSchema, `codegraph schema version for ${language}`).toBe(expectedCodegraph);
     }
   });

@@ -52,8 +52,8 @@ function matchesQdrantFilter(payload: Record<string, any>, filter: FilterNode | 
 }
 
 describe("git filter descriptors", () => {
-  it("exports 11 filter descriptors", () => {
-    expect(gitFilters).toHaveLength(11);
+  it("exports 12 filter descriptors", () => {
+    expect(gitFilters).toHaveLength(12);
   });
 
   it("each filter has required fields", () => {
@@ -157,6 +157,24 @@ describe("git filter descriptors", () => {
   });
 });
 
+describe("contributor (tea-rags-mcp-y1870: any recent-window committer, not only the dominant one)", () => {
+  // recentAuthor matches only the TOP recent committer (recentDominantAuthor*),
+  // so "what did X work on" misses every file X committed to without dominating.
+  // contributor compiles to the complete answer: match.any over
+  // git.file.recentAuthors — the same shape the taskId filter uses for taskIds.
+  it("compiles to a match.any over git.file.recentAuthors, file level", () => {
+    expect(findFilter("contributor").toCondition("Alice")).toEqual({
+      must: [{ key: "git.file.recentAuthors", match: { any: ["Alice"] } }],
+    });
+  });
+
+  it("is file-only — the level param changes nothing", () => {
+    expect(findFilter("contributor").toCondition("Alice", "chunk")).toEqual(
+      findFilter("contributor").toCondition("Alice"),
+    );
+  });
+});
+
 describe("level-aware filters", () => {
   // Age filters are drift-free (tea-rags-mcp-9mwny): they compare the stored
   // last-commit timestamp against QUERY-time now, never the `ageDays` stamp,
@@ -229,11 +247,14 @@ describe("level-aware filters", () => {
   });
 
   it("maxAgeDays agrees with the freshLegacyEdits preset on a freshly enriched point", () => {
-    // Both admit a chunk committed two hours ago whose stamp is still current
-    // (ageDays 0); the preset reads the stamp, the typed filter the timestamp.
+    // Both admit a chunk committed two hours ago: the preset compiles the age
+    // condition to the same query-time lastModifiedAt range the typed filter
+    // reads, so stamp staleness can no longer split the two.
     const fresh = committed("chunk", 2 / 24, 0);
     const presetFilter = compileFilterPreset(freshLegacyEditsFilterPreset, undefined, "chunk");
-    const presetChunkAge = { must: presetFilter.must!.filter((c) => "key" in c && c.key === "git.chunk.ageDays") };
+    const presetChunkAge = {
+      must: presetFilter.must!.filter((c) => "key" in c && c.key === "git.chunk.lastModifiedAt"),
+    };
     expect(matchesQdrantFilter(fresh, presetChunkAge)).toBe(true);
     expect(matchesQdrantFilter(fresh, findFilter("maxAgeDays").toCondition(7))).toBe(true);
   });

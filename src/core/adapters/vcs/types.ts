@@ -48,10 +48,34 @@ export interface BlameLine {
   timestamp: number; // unix seconds
 }
 
+/**
+ * One file a commit touched, addressed by the path it has AS OF THAT COMMIT.
+ *
+ * `git log --numstat` runs with rename detection ON (`diff.renames` defaults to
+ * true since git 2.9), so a renamed file arrives as ONE mangled column —
+ * `pre{old => new}post` — rather than as a path. Keeping that string raw made
+ * the whole commit invisible to any consumer keyed on current paths
+ * (bd tea-rags-mcp-0dwsn): the chunk-churn walk dropped it before reading a
+ * blob, and every chunk of the renamed file published `commitCount: 0`.
+ *
+ * So the parsers split the column instead. `path` is what the file is called
+ * at this commit — the key every chunk map, churn map and byFile index uses.
+ * `previousPath` is what it was called at the FIRST PARENT, present only when
+ * this commit renamed it; reading the parent side of the diff there is what
+ * keeps the rename commit credited to the lines it really changed rather than
+ * to the whole file.
+ */
+export interface CommitChangedPath {
+  /** Path as of this commit. */
+  path: string;
+  /** Path at the first parent — set only when this commit renamed the file. */
+  previousPath?: string;
+}
+
 /** A commit paired with the files it changed (numstat/pathspec log entry). */
 export interface CommitWithChangedFiles {
   commit: CommitInfo;
-  changedFiles: string[];
+  changedFiles: CommitChangedPath[];
 }
 
 /**
@@ -73,7 +97,7 @@ export interface CommitFileNumstat {
    * date via `commit.timestamp`; this field is windowing/eviction/sort only.
    */
   committerTimestamp: number;
-  files: { path: string; added: number; deleted: number }[];
+  files: (CommitChangedPath & { added: number; deleted: number })[];
 }
 
 /** Closed enum of supported git adapters — the `GIT_ADAPTER` env value space. */

@@ -15,6 +15,7 @@ import { MarkdownLanguage } from "../../../../src/core/domains/language/markdown
 import { PythonLanguage } from "../../../../src/core/domains/language/python/index.js";
 import { RubyLanguage } from "../../../../src/core/domains/language/ruby/index.js";
 import { RustLanguage } from "../../../../src/core/domains/language/rust/index.js";
+import { SwiftLanguage } from "../../../../src/core/domains/language/swift/index.js";
 import { TypeScriptLanguage } from "../../../../src/core/domains/language/typescript/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -29,9 +30,9 @@ import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajecto
  * `UnsupportedLanguageError`.
  */
 describe("LanguageFactory", () => {
-  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, markdown)", () => {
+  it("supported() reflects the native languages (ruby, typescript, javascript, python, go, java, rust, bash, swift, markdown)", () => {
     expect(new Set(new LanguageFactory().supported())).toEqual(
-      new Set(["ruby", "typescript", "javascript", "python", "go", "java", "rust", "bash", "markdown"]),
+      new Set(["ruby", "typescript", "javascript", "python", "go", "java", "rust", "bash", "swift", "markdown"]),
     );
   });
 
@@ -65,6 +66,23 @@ describe("LanguageFactory", () => {
 
   it("create() builds the native bash provider itself", () => {
     expect(new LanguageFactory().create("bash")).toBeInstanceOf(BashLanguage);
+  });
+
+  it("create() builds the native swift provider itself", () => {
+    expect(new LanguageFactory().create("swift")).toBeInstanceOf(SwiftLanguage);
+  });
+
+  // Swift shipped as tier 1 (chunks only) and this case pinned the absent
+  // walker/resolver. Tier 2 added both, so the INVARIANT moved: swift is now a
+  // full vertical like java/rust, and the facade must forward
+  // `hasInProjectDefinition` — the runner reads the facade, never the
+  // `CallResolver` behind it (bd tea-rags-mcp-x9qsh).
+  it("the native swift provider is a full vertical — chunkerHooks, walker and resolver", () => {
+    const swift = new LanguageFactory().create("swift");
+    expect(swift.chunkerHooks).toBeDefined();
+    expect(swift.walker).toBeDefined();
+    expect(swift.resolver).toBeDefined();
+    expect(swift.resolver?.hasInProjectDefinition).toBeDefined();
   });
 
   it("create() builds the native markdown provider itself", () => {
@@ -112,6 +130,11 @@ describe("LanguageFactory", () => {
   it("caches the native bash provider across calls", () => {
     const factory = new LanguageFactory();
     expect(factory.create("bash")).toBe(factory.create("bash"));
+  });
+
+  it("caches the native swift provider across calls", () => {
+    const factory = new LanguageFactory();
+    expect(factory.create("swift")).toBe(factory.create("swift"));
   });
 
   it("caches the native markdown provider across calls", () => {

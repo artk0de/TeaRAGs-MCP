@@ -15,19 +15,26 @@
  */
 
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { CommitInfo } from "../../../../adapters/vcs/types.js";
+import type { CommitChangedPath, CommitInfo } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 
 /** One matrix row: a commit plus every file its numstat touched. */
 export interface GitCommitDiscoveryEntry {
   commit: CommitInfo;
-  changedFiles: string[];
+  changedFiles: CommitChangedPath[];
 }
 
-/** On-disk snapshot shape of a discovery matrix (see GitCommitDiscoveryStore). */
+/**
+ * On-disk snapshot shape of a discovery matrix (see GitCommitDiscoveryStore).
+ *
+ * v2 replaced `changedFiles: string[]` with the `CommitChangedPath` pair so a
+ * renamed file stops hiding behind git's `{old => new}` column
+ * (bd tea-rags-mcp-0dwsn). v1 files are upgraded on load, never discarded —
+ * the mangled string carries both paths, so the transform needs no git call.
+ */
 export interface PersistedGitCommitDiscovery {
-  version: 1;
+  version: 2;
   repoRoot: string;
   head: string;
   sinceIso: string;
@@ -131,11 +138,13 @@ export class GitCommitDiscovery {
     const entries = await this.resolveEntries(sinceDate);
 
     const byFile = new Map<string, number[]>();
+    // Indexed by CURRENT path only: the walk's chunk map is keyed on HEAD
+    // paths, so a row's `previousPath` is diff input, not an index key.
     entries.forEach((entry, index) => {
-      for (const filePath of entry.changedFiles) {
-        const rows = byFile.get(filePath);
+      for (const { path } of entry.changedFiles) {
+        const rows = byFile.get(path);
         if (rows) rows.push(index);
-        else byFile.set(filePath, [index]);
+        else byFile.set(path, [index]);
       }
     });
 

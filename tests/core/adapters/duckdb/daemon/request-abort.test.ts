@@ -30,7 +30,12 @@ import type { CycleScope, GraphDbClient } from "../../../../../src/core/contract
 
 /** A pool that hands out one inert handle — the ops under test never touch it. */
 const inertPool = {
-  acquire: async () => ({ graphDb: {} as GraphDbClient, symbolTable: {} }),
+  // The server routes every per-collection op through `runCollectionOp` (bd
+  // tea-rags-mcp-nlls) — the mock mirrors that seam, not the raw acquire.
+  runCollectionOp: async <T>(
+    _collection: unknown,
+    op: (handle: { graphDb: GraphDbClient; symbolTable: unknown }) => Promise<T>,
+  ) => op({ graphDb: {} as GraphDbClient, symbolTable: {} }),
 } as unknown as GraphDbClientPool;
 
 function request(id: number, op: string, params: Record<string, unknown>): DaemonRequest {

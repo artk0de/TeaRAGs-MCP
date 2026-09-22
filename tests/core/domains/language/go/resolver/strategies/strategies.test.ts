@@ -124,7 +124,7 @@ describe("GoReturnTypeBindingSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["other.go", [sym("Server#ServeHTTP", "ServeHTTP", "other.go")]]);
     const outcome = strat.attempt(
       { callText: "x.ServeHTTP()", receiver: "x", member: "ServeHTTP", startLine: 1 },
-      ctx({ symbolTable, localCallBindings: { x: "Unknown" }, functionReturnTypes: { Unknown: "Handler" } }),
+      ctx({ symbolTable, localCallBindings: { x: "Unknown" }, functionReturnTypes: { "::Unknown": "Handler" } }),
     );
     expect(outcome.kind).toBe("continue");
   });
@@ -133,7 +133,7 @@ describe("GoReturnTypeBindingSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["gin.go", [sym("Engine", "Engine", "gin.go"), sym("Engine#Use", "Use", "gin.go")]]);
     const outcome = strat.attempt(
       { callText: "engine.Use()", receiver: "engine", member: "Use", startLine: 1 },
-      ctx({ symbolTable, localCallBindings: { engine: "New" }, functionReturnTypes: { New: "Engine" } }),
+      ctx({ symbolTable, localCallBindings: { engine: "New" }, functionReturnTypes: { "::New": "Engine" } }),
     );
     expect(outcome.kind).toBe("resolved");
     if (outcome.kind === "resolved") expect(outcome.target.targetSymbolId).toBe("Engine#Use");
@@ -148,7 +148,7 @@ describe("GoReturnTypeBindingSymbolResolutionStrategy", () => {
     );
     const outcome = strat.attempt(
       { callText: "engine.Frobnicate()", receiver: "engine", member: "Frobnicate", startLine: 1 },
-      ctx({ symbolTable, localCallBindings: { engine: "New" }, functionReturnTypes: { New: "Engine" } }),
+      ctx({ symbolTable, localCallBindings: { engine: "New" }, functionReturnTypes: { "::New": "Engine" } }),
     );
     expect(outcome.kind).toBe("drop");
   });

@@ -1,7 +1,7 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import { CodegraphDaemonRequestAbortedError } from "../errors.js";
-import type { CollectionGraphHandle, GraphDbClientPool } from "../pool.js";
+import type { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import type { DaemonMemoryGovernor } from "./memory-governor.js";
 import { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpCommandTable } from "./op-commands.js";
@@ -56,18 +56,6 @@ export class CodegraphDaemonServer {
   }
 
   /**
-   * Acquire the pooled handle for a WRITE op and notify the memory governor
-   * (`onWrite` is a no-op for already-raised collections — one live SET per
-   * burst). `finalizeReindex` does NOT route through here: it only unlinks the
-   * superseded DB file, so there is no open handle to govern.
-   */
-  private async acquireForWrite(collection: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const handle = await this.pool.acquire(collection);
-    await this.governor?.onWrite(collection, handle.graphDb);
-    return handle;
-  }
-
-  /**
    * `signal` is the requesting connection's, aborted when its socket closes
    * (bd tea-rags-mcp-f924y). The transport always passes one; a caller that
    * does not is treated as a connection that never closes.
@@ -89,6 +77,16 @@ export class CodegraphDaemonServer {
    * and gives the daemon the one point where a write has not started yet.
    */
   private readonly writeTails = new Map<PhysicalCollectionName, Promise<void>>();
+
+  /**
+   * Whether at least one write is admitted but not yet settled — queued behind
+   * an earlier write to its collection or running. THE in-flight-write state:
+   * `admitWrite` owns the entries and this only reads them, so the shutdown
+   * drain guard (bd tea-rags-mcp-zgcmo) adds no tracking of its own.
+   */
+  hasWritesInFlight(): boolean {
+    return this.writeTails.size > 0;
+  }
 
   /**
    * Run a write once every earlier write to the collection has settled — and
@@ -141,12 +139,18 @@ export class CodegraphDaemonServer {
     // The client held a PhysicalCollectionName; the wire erased the brand.
     const collection = physicalCollectionNameFromDaemonRequest(p.collection);
     if (command.access === "write") {
-      return this.admitWrite(collection, req.op, signal, async () => {
-        const { graphDb } = await this.acquireForWrite(collection);
-        return command.run(graphDb, p, signal);
-      });
+      return this.admitWrite(collection, req.op, signal, async () =>
+        this.pool.runCollectionOp(collection, async ({ graphDb }) => {
+          // The FIRST write of a burst raises memory_limit to the governor
+          // ceiling (`onWrite` is a no-op for already-raised collections — one
+          // live SET per burst). `finalizeReindex` does NOT route through here:
+          // it only unlinks the superseded DB file, so there is no open handle
+          // to govern.
+          await this.governor?.onWrite(collection, graphDb);
+          return command.run(graphDb, p, signal);
+        }),
+      );
     }
-    const { graphDb } = await this.pool.acquire(collection);
-    return command.run(graphDb, p, signal);
+    return this.pool.runCollectionOp(collection, async ({ graphDb }) => command.run(graphDb, p, signal));
   }
 }

@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
+import type { CodegraphDaemonRestartOutcome } from "../../bootstrap/codegraph-daemon-restart.js";
 import {
   CollectionRegistry,
   ProjectRegistryOps,
@@ -28,6 +29,7 @@ interface DoctorArgs {
   "sweep-workers"?: boolean;
   "include-stalled"?: boolean;
   "dry-run"?: boolean;
+  restart?: boolean;
 }
 
 /**
@@ -158,6 +160,71 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
       `${statusPrefix(true, true)} Registry: ${orphanCount} orphan collection(s) — run 'tea-rags doctor --recover-registry' or 'tea-rags projects orphans' to inspect\n`,
     );
   }
+}
+
+/**
+ * `tea-rags doctor --restart` — stop ALL live build-keyed codegraph daemons
+ * (two or more live builds on one machine is the normal case the build-keyed
+ * daemon creates, bd tea-rags-mcp-42hno) and sweep the key directories of
+ * daemons already gone. Each session's next codegraph op cold-spawns its own
+ * build's daemon again — that is the restart. What may be stopped and how the
+ * exit is observed is `restartCodegraphDaemons` in bootstrap; here the
+ * outcome is rendered for the operator — or an agent reading `--json`.
+ */
+export interface DaemonRestartDoctorDeps {
+  storageDir: string;
+  outcomes: CodegraphDaemonRestartOutcome[];
+}
+
+export async function runDaemonRestartDoctor(args: { json?: boolean }, deps?: DaemonRestartDoctorDeps): Promise<void> {
+  let resolved: DaemonRestartDoctorDeps;
+  if (deps) {
+    resolved = deps;
+  } else {
+    const { codegraphDaemonStorageDir, restartCodegraphDaemons } =
+      await import("../../bootstrap/codegraph-daemon-restart.js");
+    const storageDir = codegraphDaemonStorageDir(resolveDataDir());
+    resolved = { storageDir, outcomes: await restartCodegraphDaemons({ storageDir }) };
+  }
+  const { storageDir, outcomes } = resolved;
+  const stopped = outcomes.filter((o) => o.action === "stopped");
+  const swept = outcomes.filter((o) => o.action === "swept");
+  const wedged = outcomes.filter((o) => o.action === "exit-timeout");
+  const failed = outcomes.filter((o) => o.action === "signal-failed");
+
+  if (args.json) {
+    process.stdout.write(`${JSON.stringify({ storageDir, daemons: outcomes }, null, 2)}\n`);
+    return;
+  }
+
+  if (outcomes.length === 0) {
+    process.stdout.write("No live build-keyed codegraph daemon.\n");
+    return;
+  }
+  for (const o of outcomes) {
+    const pid = o.pid !== undefined ? `pid ${o.pid} ` : "";
+    switch (o.action) {
+      case "stopped":
+        process.stdout.write(`[OK]   ${pid}stopped — ${o.keyDir}\n`);
+        break;
+      case "swept":
+        process.stdout.write(`[OK]   orphaned key directory swept — ${o.keyDir}\n`);
+        break;
+      case "exit-timeout":
+        process.stdout.write(
+          `[WARN] ${pid}did not exit after the restart signal — wedged, left for manual inspection: ${o.keyDir}\n`,
+        );
+        break;
+      case "signal-failed":
+        process.stdout.write(`[FAIL] ${pid}could not be signalled — ${o.keyDir}\n`);
+        break;
+    }
+  }
+  const parts = [`Restarted ${stopped.length} codegraph daemon(s)`];
+  if (swept.length > 0) parts.push(`swept ${swept.length} orphaned key director(ies)`);
+  if (wedged.length > 0) parts.push(`${wedged.length} wedged daemon(s) left for manual inspection`);
+  if (failed.length > 0) parts.push(`${failed.length} could not be signalled`);
+  process.stdout.write(`${parts.join("; ")}.\n`);
 }
 
 /**
@@ -381,8 +448,19 @@ export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
         type: "boolean",
         default: false,
         describe: "With --sweep-workers: report what would be stopped without stopping anything",
+      })
+      .option("restart", {
+        type: "boolean",
+        default: false,
+        describe:
+          "Stop ALL live build-keyed codegraph daemons and sweep orphaned key directories; " +
+          "every session's next codegraph op cold-spawns its build's daemon again",
       }),
   handler: async (argv) => {
+    if (argv.restart) {
+      await runDaemonRestartDoctor({ json: argv.json });
+      return;
+    }
     if (argv["sweep-workers"]) {
       await runWorkerSweepDoctor({
         json: argv.json,

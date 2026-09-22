@@ -22,10 +22,10 @@ describe("parsePathspecOutput (via private method)", () => {
     const result = gitParsers.parsePathspecOutput(stdout);
 
     expect(result).toHaveLength(1);
-    expect(result[0].changedFiles).toEqual(["readme.md"]);
+    expect(result[0].changedFiles.map((f) => f.path)).toEqual(["readme.md"]);
     // binary.png and photo.jpg should be skipped
-    expect(result[0].changedFiles).not.toContain("binary.png");
-    expect(result[0].changedFiles).not.toContain("photo.jpg");
+    expect(result[0].changedFiles.map((f) => f.path)).not.toContain("binary.png");
+    expect(result[0].changedFiles.map((f) => f.path)).not.toContain("photo.jpg");
   });
 
   it("should return empty when all files are binary", () => {
@@ -78,7 +78,7 @@ describe("parsePathspecOutput (via private method)", () => {
     ].join("\0");
     const result = gitParsers.parsePathspecOutput(stdout);
     expect(result).toHaveLength(1);
-    expect(result[0].changedFiles).toEqual(["good.ts"]);
+    expect(result[0].changedFiles).toEqual([{ path: "good.ts" }]);
   });
 });
 

@@ -405,15 +405,46 @@
   descends from (`memberCandidateLacksReceiverEvidence`, bd tea-rags-mcp-t5cji).
   No Program — `CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff` —
   leaves only structure: the receiver is an import binding whose module, through
-  its barrel, declares the candidate; or it is `this` and the candidate is its
-  nearest definer — the enclosing class, else the first `extends` ancestor
-  declaring the member, every hop anchored to a file (declared there, or
-  imported by the caller from there), so a namesake class is never reached. The
-  `this` arm also answers where the checker names no symbol. Every other
-  receiver declines, the way JavaScript's tail declines every receiver-bearing
-  call (bd tea-rags-mcp-hwwtw). Why: once Ruby namesakes stopped making `title`
-  / `filter` / `request` ambiguous, taxdome committed ~89 object-literal, `any`
-  and generated-class calls to the lone TS symbol of that name.
+  its barrel, declares the candidate; or it constructs or produces its type —
+  `new ImportedClass().m()`, or a `createX()` factory call whose name embeds the
+  type and whose callee anchors as a project callable — and the candidate is
+  owned by the type's own file-anchored definer walk (bd tea-rags-mcp-pv7ul); or
+  it is `this` and the candidate is its nearest definer — the enclosing class,
+  else the first `extends` ancestor declaring the member, every hop anchored to
+  a file (declared there, or imported by the caller from there), so a namesake
+  class is never reached. The `this` arm also answers where the checker names no
+  symbol. Every other receiver declines, the way JavaScript's tail declines
+  every receiver-bearing call (bd tea-rags-mcp-hwwtw). Why: once Ruby namesakes
+  stopped making `title` / `filter` / `request` ambiguous, taxdome committed ~89
+  object-literal, `any` and generated-class calls to the lone TS symbol of that
+  name.
+- **A grammar may register ONE child under TWO field names, and materialization
+  keeps only one — so a walker can read types fine in tests and extract nothing
+  in production.** `materializeTree` (`infra/materialize.ts`) rebuilds each
+  node's field map from `fieldNameForChild(i)`, which answers a single name per
+  child; the NATIVE `childForFieldName` answers from tree-sitter's own table,
+  where a child may carry several. `tree-sitter-swift` does exactly this: a
+  `parameter`'s type child reports `name`, so on a materialized tree
+  `childForFieldName("type")` is `null` while the native tree answers correctly.
+  The pipeline walks ONLY materialized trees (the codegraph file extractor
+  materializes before extraction) and unit tests parse NATIVELY, so Swift's
+  annotated parameters, annotated locals and the whole stored-property channel
+  evaluated to nothing on a real index while every spec stayed green. Fix is to
+  read the type POSITIONALLY (the child after `:` in a parameter / annotation,
+  after `->` in a signature) and pin it with a materialized-vs-native parity
+  test — no other test shape can observe the difference. Measured clean over
+  ~2.5M real-corpus nodes for go, java, rust, python, ruby, javascript and bash;
+  typescript loses three pairs, all in type-position nodes no walker queries. So
+  this is a per-grammar hazard, not a global one — and swift is the outlier, at
+  15 lossy shapes. Both halves are now guarded for EVERY grammar in
+  `tests/core/domains/language/materialization/`: `extraction-parity.test.ts`
+  runs the production extraction path over both trees and requires identical
+  output, and `field-loss-inventory.test.ts` pins the `(nodeType, fieldName)`
+  pairs each grammar loses — including the ones no walker reads yet, so a
+  `tree-sitter-*` bump that introduces a collision fails on the bump commit.
+  Why: a walker that reads any field by name is one grammar quirk away from
+  silently extracting nothing, and the failure surfaces as "that language just
+  resolves poorly", never as a red test.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

@@ -39,9 +39,25 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   {
     key: "git.file.ageDays",
     type: "number",
-    description: "Days since last modification",
+    description:
+      "Days since last modification (stored stamp, frozen at enrichment — age reads derive from lastModifiedAt at query time)",
     stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" }, dedupeByFile: true },
     essential: true,
+  },
+  {
+    key: "git.file.lastModifiedAt",
+    type: "timestamp",
+    description:
+      "Unix seconds of the file's last commit; the source age/recency/overlay ageDays derive from at query time (percentiles feed the now-relative floor and label bands)",
+    stats: {
+      // p5 → adaptive-bounds age floor; p25/p50 → inverted ageDays label bands
+      // and filter-preset thresholds (bd tea-rags-mcp-9ot33).
+      percentilesToCompute: [5, 25, 50],
+      // Same file value on every chunk of the file, so it samples per file —
+      // and it must sample the same population as the ageDays bands it now
+      // replaces, or the derived bands describe a different set of files.
+      dedupeByFile: true,
+    },
   },
   {
     key: "git.file.recentDominantAuthor",
@@ -200,12 +216,27 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   {
     key: "git.chunk.ageDays",
     type: "number",
-    description: "Days since last modification to this chunk",
+    description:
+      "Days since last modification to this chunk (stored stamp, frozen at enrichment — age reads derive from lastModifiedAt at query time)",
     stats: {
       labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" },
       chunkTypeFilter: CALLABLE_CHUNK_TYPES,
     },
     essential: true,
+  },
+  {
+    key: "git.chunk.lastModifiedAt",
+    type: "timestamp",
+    description:
+      "Unix seconds of the last commit touching this chunk; the source age/recency/overlay ageDays derive from at query time (percentiles feed the now-relative floor and label bands)",
+    stats: {
+      // Mirrors the file-level declaration — see git.file.lastModifiedAt.
+      percentilesToCompute: [5, 25, 50],
+      // Sampled over the same chunk types as the ageDays bands it replaces. A
+      // declaration file scope decides; here the population has to match, or
+      // the derived bands are read off a set the stored ones never described.
+      chunkTypeFilter: CALLABLE_CHUNK_TYPES,
+    },
   },
   {
     key: "git.chunk.recentContributorCount",

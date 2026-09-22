@@ -9,7 +9,13 @@
 import { structuredPatch } from "diff";
 
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
-import type { BlobBatchReader, CommitInfo, FileChurnData } from "../../../../adapters/vcs/types.js";
+import type {
+  BlobBatchReader,
+  CommitChangedPath,
+  CommitInfo,
+  CommitWithChangedFiles,
+  FileChurnData,
+} from "../../../../adapters/vcs/types.js";
 import type { CommitDiffHunk, CommitDiffMemoPort } from "../../../../contracts/types/commit-diff-memo.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -39,7 +45,7 @@ export type WalkCommitDiffMemo = CommitDiffMemoPort;
  * commit-discovery.ts GitCommitDiscovery (bd tea-rags-mcp-82va1).
  */
 export interface WalkCommitDiscovery {
-  commitsForFiles: (filePaths: string[]) => Promise<{ commit: CommitInfo; changedFiles: string[] }[]>;
+  commitsForFiles: (filePaths: string[]) => Promise<CommitWithChangedFiles[]>;
   getBugFixShas: () => Promise<Set<string>>;
 }
 
@@ -126,7 +132,7 @@ interface CommitHunkData {
 
 /** Commits to walk plus the bug-fix SHA set their classification needs. */
 interface CommitDiscoveryResult {
-  commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
+  commitEntries: CommitWithChangedFiles[];
   bugFixShas: Set<string>;
 }
 
@@ -159,7 +165,7 @@ async function discoverCommits(
   if (opts.commitDiscovery) {
     // The bugFixShaSet is the ONE shared set over ALL matrix commits.
     const discovery = opts.commitDiscovery;
-    let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
+    let commitEntries: CommitWithChangedFiles[];
     try {
       commitEntries = await discovery.commitsForFiles(filePaths);
     } catch (error) {
@@ -181,7 +187,7 @@ async function discoverCommits(
   }
 
   // Use CLI pathspec filtering — only fetches commits touching our files.
-  let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
+  let commitEntries: CommitWithChangedFiles[];
   try {
     commitEntries = await opts.adapter.getCommitsByPathspec(sinceDate, filePaths, opts.chunkTimeoutMs);
   } catch (error) {
@@ -267,12 +273,13 @@ async function collectHunksPerFile(
 
   /** One (commit, file) pair: memo lookup, else two blob reads + structuredPatch. */
   const collectOneFile = async (
-    filePath: string,
+    changed: CommitChangedPath,
     commit: CommitInfo,
     parentOid: string | null,
     isBugFix: boolean,
     commitTaskIds: string[],
   ): Promise<void> => {
+    const filePath = changed.path;
     const entries = relativeChunkMap.get(filePath);
     if (!entries) return;
 
@@ -291,8 +298,13 @@ async function collectHunksPerFile(
         return;
       }
 
+      // A rename commit's file exists at the parent under its OLD name only, so
+      // the parent side MUST be read there (bd tea-rags-mcp-0dwsn). Reading it
+      // at the post-rename path returns "" and structuredPatch then reports one
+      // hunk spanning the whole file, crediting the rename to EVERY chunk —
+      // the over-count that mirrors the under-count this fix removes.
       const [oldContent, newContent] = await Promise.all([
-        blobReader.read(parentOid, filePath),
+        blobReader.read(parentOid, changed.previousPath ?? filePath),
         blobReader.read(commit.sha, filePath),
       ]);
       out.blobReads += 2;
@@ -329,7 +341,7 @@ async function collectHunksPerFile(
     list.push({ commit, hunks, isBugFix, taskIds: commitTaskIds });
   };
 
-  const collectHunks = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
+  const collectHunks = async (entry: CommitWithChangedFiles): Promise<void> => {
     const acquireStart = Date.now();
     const release = await acquire();
     out.semWaitMs += Date.now() - acquireStart;
@@ -337,7 +349,10 @@ async function collectHunksPerFile(
     try {
       const { commit, changedFiles } = entry;
 
-      const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
+      // Match on the CURRENT path — the chunk map is keyed on HEAD paths, and
+      // a rename row now carries that path rather than git's `{old => new}`
+      // column (bd tea-rags-mcp-0dwsn).
+      const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f.path));
       if (relevantFiles.length === 0) return;
 
       const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, discovery.bugFixShas);
@@ -351,7 +366,7 @@ async function collectHunksPerFile(
       const parentOid = entry.commit.parents?.[0] ?? null;
 
       await Promise.all(
-        relevantFiles.map(async (filePath) => collectOneFile(filePath, commit, parentOid, isBugFix, commitTaskIds)),
+        relevantFiles.map(async (changed) => collectOneFile(changed, commit, parentOid, isBugFix, commitTaskIds)),
       );
     } finally {
       release();

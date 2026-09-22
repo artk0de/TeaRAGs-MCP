@@ -12,6 +12,7 @@
 import { isLevelQualifiedPayloadKey, p95, resolvePayloadValue } from "../../contracts/signal-utils.js";
 import type { ScoringWeights } from "../../contracts/types/provider.js";
 import type {
+  AgeDerivationCapability,
   DerivedSignalDescriptor,
   OverlayMask,
   RankingOverlay,
@@ -29,7 +30,7 @@ import type {
 import { detectScope } from "../../infra/scope-detection.js";
 import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
 import { resolveLabel } from "./label-resolver.js";
-import { applySignalFloors, floorsForSignal } from "./signal-floors.js";
+import { ageSourceBoundDays, applySignalFloors, floorsForSignal } from "./signal-floors.js";
 
 // Re-export types as part of search module's public API
 export type { ScoringWeights } from "../../contracts/types/provider.js";
@@ -49,6 +50,14 @@ export interface RerankOptions {
    * entry, not the highest-scored.
    */
   reorder?: boolean;
+  /**
+   * Query-time reference clock, unix SECONDS (the lastModifiedAt unit).
+   * Injected once per rerank into `ExtractContext.now`, the age-source
+   * adaptive bounds and the overlay ageDays resolution, so age derives from
+   * lastModifiedAt at read time (bd tea-rags-mcp-9ot33). Defaults to the
+   * current time; tests pin it for determinism.
+   */
+  now?: number;
 }
 
 /**
@@ -86,6 +95,7 @@ export class Reranker {
   private payloadFieldKeys?: string[];
   private recomputeService?: StatsRecomputeService;
   private resolvedFilterPresetNames: string[] = [];
+  private ageCapabilityMap?: Map<string, { cap: AgeDerivationCapability; level: "file" | "chunk" }>;
 
   constructor(
     private readonly descriptors: DerivedSignalDescriptor[],
@@ -191,8 +201,9 @@ export class Reranker {
       return results.map((r) => ({ ...r }));
     }
     await this.ensureNeededPercentiles();
-    const bounds = this.computeAdaptiveBounds(results);
-    const scored = this.scoreResults(results, bounds, resolved, options?.query);
+    const now = options?.now ?? Math.floor(Date.now() / 1000);
+    const bounds = this.computeAdaptiveBounds(results, now);
+    const scored = this.scoreResults(results, bounds, resolved, options?.query, now);
     const ordered = options?.reorder === false ? scored : scored.sort((a, b) => b.score - a.score);
     return resolved.groupBy ? groupByTop(ordered, resolved.groupBy) : ordered;
   }
@@ -256,6 +267,7 @@ export class Reranker {
     bounds: Map<string, number>,
     resolved: ResolvedMode,
     query: string | undefined,
+    nowSec: number,
   ): (T & { score: number; rankingOverlay?: RankingOverlay })[] {
     // Batch min-max range of the raw vector score. The similarity signal reads a
     // normalized score so preset weights mean the same thing whether the score
@@ -265,7 +277,7 @@ export class Reranker {
     const scoreRange = computeScoreRange(results);
     return results.map((result) => {
       const payload = this.buildExtractPayload(result, normalizeSimilarityScore(result.score, scoreRange));
-      const signals = this.extractAllDerived(payload, bounds, resolved.signalLevel, query);
+      const signals = this.extractAllDerived(payload, bounds, resolved.signalLevel, query, nowSec);
       const score = calculateScore(signals, resolved.weights);
       const overlay = this.buildOverlay(
         result,
@@ -274,6 +286,7 @@ export class Reranker {
         signals,
         resolved.mask,
         resolved.signalLevel,
+        nowSec,
       );
       return { ...result, score, rankingOverlay: overlay };
     });
@@ -379,14 +392,24 @@ export class Reranker {
    * Compute adaptive bounds from the result batch — per-source.
    * For each unique source across all descriptors, read raw values from every payload,
    * compute p95, and floor with collection-level p95.
-   * Returns Map<sourceKey, adaptiveBound>.
+   * Age sources (descriptors carrying an `ageDerivation` capability) branch:
+   * their raw values are lastModifiedAt timestamps, so the batch p95 is taken
+   * over the DERIVED whole-day ages and floored with the now-relative
+   * collection floor `now − p5(lastModifiedAt)` (bd tea-rags-mcp-9ot33).
+   * Returns Map<sourceKey, adaptiveBound> — age-days for age sources, raw
+   * value units for everything else.
    */
-  private computeAdaptiveBounds(results: RerankableResult[]): Map<string, number> {
+  private computeAdaptiveBounds(results: RerankableResult[], nowSec: number): Map<string, number> {
     const rawValues = new Map<string, number[]>();
 
     for (const result of results) {
       for (const d of this.descriptors) {
         if (d.defaultBound === undefined) continue;
+        if (d.ageDerivation) {
+          // Age branch: derive ages now; raw per-source collection happens in
+          // the loop below for every other descriptor family.
+          continue;
+        }
         for (const source of d.sources) {
           const raw = this.readRawSource(result, source);
           if (raw !== undefined && raw > 0) {
@@ -404,8 +427,26 @@ export class Reranker {
     const sourceBounds = new Map<string, number>();
     for (const [source, values] of rawValues) {
       const batchP95 = p95(values);
-      const collectionP95 = this.getCollectionP95(source);
+      const collectionP95 = this.getCollectionPercentile(source, 95);
       sourceBounds.set(source, Math.max(batchP95, collectionP95 ?? 0));
+    }
+
+    for (const d of this.descriptors) {
+      if (d.defaultBound === undefined || !d.ageDerivation) continue;
+      const cap = d.ageDerivation;
+      for (const source of d.sources) {
+        const level = source.startsWith("chunk.") ? "chunk" : "file";
+        const ages: number[] = [];
+        for (const result of results) {
+          const age = cap.ageDaysFrom(result.payload ?? {}, level, nowSec);
+          if (age !== undefined && age > 0) ages.push(age);
+        }
+        const stampP5 = this.getCollectionPercentile(source, 5);
+        sourceBounds.set(
+          source,
+          ageSourceBoundDays(ages, stampP5, nowSec, (stamp, now) => cap.ageFloorDaysFromStamp(stamp, now)),
+        );
+      }
     }
 
     return sourceBounds;
@@ -423,6 +464,7 @@ export class Reranker {
     sourceBounds: Map<string, number>,
     signalLevel?: SignalLevel,
     query?: string,
+    nowSec?: number,
   ): Record<string, number> {
     const signals: Record<string, number> = {};
 
@@ -446,6 +488,7 @@ export class Reranker {
         collectionStats: this.collectionStats,
         signalLevel,
         query,
+        now: nowSec,
       });
     }
 
@@ -514,13 +557,15 @@ export class Reranker {
   }
 
   /**
-   * Look up collection-level p95 for a source key.
+   * Look up a collection-level percentile for a source key.
    * Resolves short name → full path via signalKeyMap, then reads from collectionStats.
+   * Percentile 5 serves the age-source floor (now − p5(lastModifiedAt)), 95 the
+   * generic raw-value bound.
    */
-  private getCollectionP95(source: string): number | undefined {
+  private getCollectionPercentile(source: string, percentile: number): number | undefined {
     if (!this.collectionStats) return undefined;
     const fullPath = this.signalKeyMap.get(source) ?? source;
-    return this.collectionStats.perSignal.get(fullPath)?.percentiles?.[95];
+    return this.collectionStats.perSignal.get(fullPath)?.percentiles?.[percentile];
   }
 
   /**
@@ -548,6 +593,9 @@ export class Reranker {
    * Build ranking overlay for a single result.
    * When mask is present, only include raw signals listed in the mask.
    * When mask is absent (custom weights), include raw sources for all active weight keys.
+   * Mask entries naming a query-time age signal (`ageDays`) resolve through the
+   * descriptor's `ageDerivation` capability — value = computed age, not the
+   * stored stamp (bd tea-rags-mcp-9ot33).
    */
   private buildOverlay(
     result: RerankableResult,
@@ -556,6 +604,7 @@ export class Reranker {
     derivedValues: Record<string, number>,
     mask?: OverlayMask,
     signalLevel?: SignalLevel,
+    nowSec?: number,
   ): RankingOverlay {
     const rawFile: Record<string, unknown> = {};
     const rawChunk: Record<string, unknown> = {};
@@ -564,7 +613,7 @@ export class Reranker {
     if (mask) {
       if (mask.file) {
         for (const field of mask.file) {
-          this.extractRawSource(result, field, rawFile, rawChunk);
+          this.extractRawSource(result, field, rawFile, rawChunk, nowSec);
         }
       }
       if (mask.chunk && !skipChunk) {
@@ -577,7 +626,7 @@ export class Reranker {
           // entry and no payload path, so the signal drops out of the overlay
           // with no error to notice.
           const source = isLevelQualifiedPayloadKey(field) ? field : `chunk.${field}`;
-          this.extractRawSource(result, source, rawFile, rawChunk);
+          this.extractRawSource(result, source, rawFile, rawChunk, nowSec);
         }
       }
     } else {
@@ -589,7 +638,7 @@ export class Reranker {
         const descriptor = this.descriptorMap.get(key);
         if (descriptor) {
           for (const source of descriptor.sources) {
-            this.extractRawSource(result, source, rawFile, rawChunk);
+            this.extractRawSource(result, source, rawFile, rawChunk, nowSec);
           }
         }
       }
@@ -600,8 +649,8 @@ export class Reranker {
     const chunkType = typeof result.payload?.["chunkType"] === "string" ? result.payload["chunkType"] : undefined;
     const relativePath = typeof result.payload?.["relativePath"] === "string" ? result.payload["relativePath"] : "";
 
-    this.applyLabelResolution(rawFile, "file", result.payload, language, chunkType, relativePath);
-    this.applyLabelResolution(rawChunk, "chunk", result.payload, language, chunkType, relativePath);
+    this.applyLabelResolution(rawFile, "file", result.payload, language, chunkType, relativePath, nowSec);
+    this.applyLabelResolution(rawChunk, "chunk", result.payload, language, chunkType, relativePath, nowSec);
 
     return {
       preset: presetName,
@@ -616,6 +665,13 @@ export class Reranker {
    * find the signal descriptor via signalKeyMap, and if it has
    * stats.labels AND collectionStats has percentile data for that signal,
    * replace the plain number with { value, label }.
+   *
+   * Age entries (`ageDays`, placed by the `ageDerivation` capability) resolve
+   * their bands NOW-RELATIVELY: the thresholds come from the same level's
+   * lastModifiedAt stamp percentiles, inverted (age pN ⇔ stamp p(100−N)), so
+   * bands keep meaning on points that were never re-enriched
+   * (bd tea-rags-mcp-9ot33). Stamp percentiles missing (no backfill yet) →
+   * the bare computed number stays, like any signal without stats.
    */
   private applyLabelResolution(
     overlay: Record<string, unknown>,
@@ -624,6 +680,7 @@ export class Reranker {
     language?: string,
     chunkType?: string,
     relativePath?: string,
+    nowSec?: number,
   ): void {
     if (!this.collectionStats) return;
 
@@ -647,18 +704,26 @@ export class Reranker {
       const descriptor = this.payloadSignals.find((ps) => ps.key === fullKey);
       if (!descriptor?.stats?.labels) continue;
 
+      // Age branch: label bands derive from the timestamp stats, inverted at
+      // query time — not from the ageDays stamp's own (frozen) percentiles.
+      const age = this.ageCapabilities().get(`${level}.${field}`);
+      if (age && nowSec !== undefined) {
+        const stampKey = this.signalKeyMap.get(`${level}.${age.cap.timestampField}`);
+        const stampStats = this.scopedStatsFor(stampKey, language, chunkType, relativePath);
+        if (!stampStats) continue;
+        const bands = age.cap.labelThresholdsFromStamps(stampStats.percentiles, nowSec);
+        const resolvedConfidence = this.preResolveConfidenceClamp(descriptor.stats.confidence, level);
+        const label = resolveLabel(value, descriptor.stats.labels, bands, {
+          siblingValues,
+          confidence: resolvedConfidence,
+        });
+        overlay[field] = { value, label };
+        continue;
+      }
+
       // Labels only for code languages present in perLanguage — no global fallback.
       if (!language) continue;
-      const langStats = this.collectionStats.perLanguage?.get(language);
-      if (!langStats) continue;
-      const scopedStats = langStats.get(fullKey);
-      if (!scopedStats) continue;
-
-      // Scope-aware: use test thresholds for test chunks, source for everything else
-      const scope = detectScope(chunkType, relativePath ?? "", language, {
-        languageTestChunkCounts: new Map(),
-      });
-      const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
+      const signalStats = this.scopedStatsFor(fullKey, language, chunkType, relativePath);
       if (!signalStats?.percentiles) continue;
 
       // Industry floors raise source-scope thresholds that sit below a
@@ -666,7 +731,9 @@ export class Reranker {
       // test files are systematically longer and a shared floor would collapse
       // most of them into the top label.
       const percentiles =
-        scope === "test"
+        detectScope(chunkType, relativePath ?? "", language, {
+          languageTestChunkCounts: new Map(),
+        }) === "test"
           ? signalStats.percentiles
           : applySignalFloors(
               signalStats.percentiles,
@@ -682,6 +749,52 @@ export class Reranker {
       });
       overlay[field] = { value, label };
     }
+  }
+
+  /**
+   * Per-language, scope-split stats for one signal key, with the source/test
+   * pick and the no-global-fallback rule applied. Shared by the generic label
+   * path and the age branch so both read stats identically.
+   */
+  private scopedStatsFor(
+    fullKey: string | undefined,
+    language: string | undefined,
+    chunkType: string | undefined,
+    relativePath?: string,
+  ): { percentiles: Record<number, number> } | undefined {
+    if (!this.collectionStats || !language) return undefined;
+    const langStats = this.collectionStats.perLanguage?.get(language);
+    if (!langStats) return undefined;
+    if (!fullKey) return undefined;
+    const scopedStats = langStats.get(fullKey);
+    if (!scopedStats) return undefined;
+    const scope = detectScope(chunkType, relativePath ?? "", language, {
+      languageTestChunkCounts: new Map(),
+    });
+    const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
+    return signalStats?.percentiles ? signalStats : undefined;
+  }
+
+  /**
+   * Overlay stamp-field → age capability, keyed `<level>.<stampField>` and
+   * `<level>.<timestampField>`. Built lazily from the injected descriptors —
+   * only age-family signals carry the capability, so a mask entry (or a custom
+   * weight's source) naming one of these keys resolves its overlay value and
+   * label bands through the derivation unit instead of the stored stamp.
+   */
+  private ageCapabilities(): Map<string, { cap: AgeDerivationCapability; level: "file" | "chunk" }> {
+    if (!this.ageCapabilityMap) {
+      this.ageCapabilityMap = new Map();
+      for (const d of this.descriptors) {
+        const cap = d.ageDerivation;
+        if (!cap) continue;
+        for (const level of ["file", "chunk"] as const) {
+          this.ageCapabilityMap.set(`${level}.${cap.stampField}`, { cap, level });
+          this.ageCapabilityMap.set(`${level}.${cap.timestampField}`, { cap, level });
+        }
+      }
+    }
+    return this.ageCapabilityMap;
   }
 
   /**
@@ -790,17 +903,33 @@ export class Reranker {
    * Uses signalKeyMap to resolve short source names to full payload paths.
    * Determines file vs chunk level from the resolved path (paths containing
    * ".chunk." go to rawChunk, everything else to rawFile).
+   *
+   * Age paths (`<level>.ageDays` mask entries, `<level>.lastModifiedAt`
+   * custom-weight sources) resolve through the age capability: the overlay
+   * carries the QUERY-TIME computed age under the stamp key, and drops the
+   * field entirely when the point has no stamp — absence still means "no
+   * data", not 0 (bd tea-rags-mcp-9ot33).
    */
   private extractRawSource(
     result: RerankableResult,
     source: string,
     rawFile: Record<string, unknown>,
     rawChunk: Record<string, unknown>,
+    nowSec?: number,
   ): void {
     const payload = result.payload ?? {};
 
     // Resolve full path via signalKeyMap or use source as-is
     const fullPath = this.signalKeyMap.get(source) ?? source;
+    const age = this.ageCapabilities().get(ageCapabilityKeyFor(fullPath));
+    if (age && nowSec !== undefined) {
+      const value = age.cap.ageDaysFrom(payload, age.level, nowSec);
+      if (value === undefined) return;
+      const target = age.level === "chunk" ? rawChunk : rawFile;
+      target[age.cap.stampField] = value;
+      return;
+    }
+
     const val = readPayloadPath(payload, fullPath);
     if (val === undefined) return;
 
@@ -817,6 +946,17 @@ export class Reranker {
 // ---------------------------------------------------------------------------
 // Scoring
 // ---------------------------------------------------------------------------
+
+/**
+ * Map a resolved full payload path onto its age-capability lookup key —
+ * `git.file.ageDays` / `git.file.lastModifiedAt` → `file.ageDays` /
+ * `file.lastModifiedAt`. Anything the age family does not own comes back
+ * unchanged and misses the capability map.
+ */
+function ageCapabilityKeyFor(fullPath: string): string {
+  const m = /(?:^|\.)(file|chunk)\.(ageDays|lastModifiedAt)$/.exec(fullPath);
+  return m ? `${m[1]}.${m[2]}` : fullPath;
+}
 
 /**
  * Calculate final score based on weights and signals

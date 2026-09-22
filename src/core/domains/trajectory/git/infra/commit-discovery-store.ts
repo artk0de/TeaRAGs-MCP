@@ -14,6 +14,18 @@
  * Everything is best-effort: corrupt / mismatched / oversized payloads
  * degrade silently to null so the discovery rebuilds from git. Sync node:fs
  * APIs by precedent (infra/registry/registry-file.ts).
+ *
+ * SCHEMA VERSIONS. v1 persisted `changedFiles: string[]` straight out of
+ * `git log --numstat`, so every renamed file sat on disk as git's mangled
+ * `pre{old => new}post` column (bd tea-rags-mcp-0dwsn). v2 stores the
+ * `CommitChangedPath` pair instead. Per `.claude/rules/migrations.md` a shape
+ * change to a persisted store ships with its upgrade path, and since the v1
+ * string CONTAINS both paths the transform is computable from the file alone —
+ * so a v1 snapshot is upgraded on load and rewritten at v2, never discarded and
+ * never turned into "please reindex". This store is keyed by repo IDENTITY, not
+ * by collection, so it is deliberately NOT one of the five collection-scoped
+ * migration pipelines that rule tabulates; for a store outside them, "the store
+ * and its upgrade path land together" means the upgrade lives in this loader.
  */
 
 import { createHash } from "node:crypto";
@@ -21,6 +33,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { parseNumstatChangedPath } from "../../../../adapters/vcs/git/git-cli/parsers.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type {
   GitCommitDiscoveryEntry,
@@ -32,17 +45,17 @@ import { pruneSnapshots } from "./snapshot-retention.js";
 
 const DEFAULT_MAX_BYTES = 64 * 1024 * 1024;
 
+/** Schema version this store writes; v1 is accepted and upgraded on load. */
+const CURRENT_VERSION = 2;
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
-/** Cheap structural validation of one matrix row (<5ms at 50k entries). */
-function isValidEntry(value: unknown): value is GitCommitDiscoveryEntry {
+/** The commit half is version-independent — validated once for both shapes. */
+function isValidCommit(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
-  const entry = value as { commit?: unknown; changedFiles?: unknown };
-  if (!isStringArray(entry.changedFiles)) return false;
-  if (typeof entry.commit !== "object" || entry.commit === null) return false;
-  const commit = entry.commit as Record<string, unknown>;
+  const commit = value as Record<string, unknown>;
   return (
     typeof commit.sha === "string" &&
     typeof commit.author === "string" &&
@@ -51,6 +64,42 @@ function isValidEntry(value: unknown): value is GitCommitDiscoveryEntry {
     typeof commit.timestamp === "number" &&
     isStringArray(commit.parents)
   );
+}
+
+/** Cheap structural validation of one v2 matrix row (<5ms at 50k entries). */
+function isValidEntry(value: unknown): value is GitCommitDiscoveryEntry {
+  if (typeof value !== "object" || value === null) return false;
+  const entry = value as { commit?: unknown; changedFiles?: unknown };
+  if (!Array.isArray(entry.changedFiles)) return false;
+  for (const changed of entry.changedFiles) {
+    if (typeof changed !== "object" || changed === null) return false;
+    const { path, previousPath } = changed as Record<string, unknown>;
+    if (typeof path !== "string") return false;
+    if (previousPath !== undefined && typeof previousPath !== "string") return false;
+  }
+  return isValidCommit(entry.commit);
+}
+
+/**
+ * v1 → v2: each raw numstat string becomes a `CommitChangedPath`. Lossless —
+ * git's `pre{old => new}post` column carries both paths, so no git call is
+ * needed. Deliberately reuses the LIVE parser: a second implementation would
+ * drift and upgraded rows would stop matching freshly parsed ones.
+ * Returns null when a row is not a valid v1 row, which degrades to a rebuild.
+ */
+function upgradeCommitDiscoveryEntries(value: unknown): GitCommitDiscoveryEntry[] | null {
+  if (!Array.isArray(value)) return null;
+  const upgraded: GitCommitDiscoveryEntry[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const { commit, changedFiles } = entry as { commit?: unknown; changedFiles?: unknown };
+    if (!isStringArray(changedFiles) || !isValidCommit(commit)) return null;
+    upgraded.push({
+      commit: commit as GitCommitDiscoveryEntry["commit"],
+      changedFiles: changedFiles.map(parseNumstatChangedPath),
+    });
+  }
+  return upgraded;
 }
 
 export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
@@ -103,23 +152,33 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
   save(repoRoot: string, head: string, sinceIso: string, entries: GitCommitDiscoveryEntry[]): void {
     try {
       const identity = resolveRepoIdentity(repoRoot);
-      const payload: PersistedGitCommitDiscovery = { version: 1, repoRoot: identity, head, sinceIso, entries };
-      const data = JSON.stringify(payload);
-      // Oversized matrix → skip persistence; the run keeps its in-memory copy.
-      if (Buffer.byteLength(data) > this.maxBytes) return;
-
+      const payload: PersistedGitCommitDiscovery = {
+        version: CURRENT_VERSION,
+        repoRoot: identity,
+        head,
+        sinceIso,
+        entries,
+      };
       const dir = this.repoDir(identity);
       mkdirSync(dir, { recursive: true });
-      const target = join(dir, `${head}.json`);
-      const tmp = `${target}.tmp`;
-      writeFileSync(tmp, data);
-      renameSync(tmp, target); // atomic replace
+      if (!this.writeSnapshot(join(dir, `${head}.json`), payload)) return;
 
       pruneSnapshots(dir);
     } catch (error) {
       // Best-effort persistence: a failed save only costs the next run a log.
       this.debugLog("save", error);
     }
+  }
+
+  /** Atomic tmp+rename write; false when the payload exceeds the size cap. */
+  private writeSnapshot(target: string, payload: PersistedGitCommitDiscovery): boolean {
+    const data = JSON.stringify(payload);
+    // Oversized matrix → skip persistence; the run keeps its in-memory copy.
+    if (Buffer.byteLength(data) > this.maxBytes) return false;
+    const tmp = `${target}.tmp`;
+    writeFileSync(tmp, data);
+    renameSync(tmp, target); // atomic replace
+    return true;
   }
 
   private repoDir(repoRoot: string): string {
@@ -129,7 +188,19 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
   private read(filePath: string, repoRoot: string, head?: string): PersistedGitCommitDiscovery | null {
     try {
       const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
-      return this.validate(parsed, repoRoot, head);
+      const snapshot = this.validate(parsed, repoRoot, head);
+      if (!snapshot) return null;
+      // A v1 file was just migrated in memory — persist the v2 form over the
+      // same path so the transform runs once, not on every load. Best-effort:
+      // a read-only cache dir still yields a correct upgraded snapshot.
+      if ((parsed as { version?: unknown }).version !== CURRENT_VERSION) {
+        try {
+          this.writeSnapshot(filePath, snapshot);
+        } catch (error) {
+          this.debugLog("upgrade", error);
+        }
+      }
+      return snapshot;
     } catch (error) {
       this.debugLog("load", error);
       return null;
@@ -138,17 +209,33 @@ export class GitCommitDiscoveryStore implements GitCommitDiscoveryPersistence {
 
   /**
    * ANY validation failure → null (silent rebuild semantics). The repoRoot
-   * equality check guards against sha256-prefix collisions between repos.
+   * equality check guards against sha256-prefix collisions between repos. A v1
+   * payload is UPGRADED here rather than rejected — see the module docblock.
    */
   private validate(parsed: unknown, repoRoot: string, head?: string): PersistedGitCommitDiscovery | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const snapshot = parsed as Record<string, unknown>;
-    if (snapshot.version !== 1) return null;
+    const { version } = snapshot;
+    if (version !== 1 && version !== CURRENT_VERSION) return null;
     if (snapshot.repoRoot !== repoRoot) return null;
     if (typeof snapshot.head !== "string" || (head !== undefined && snapshot.head !== head)) return null;
     if (typeof snapshot.sinceIso !== "string") return null;
-    if (!Array.isArray(snapshot.entries) || !snapshot.entries.every(isValidEntry)) return null;
-    return snapshot as unknown as PersistedGitCommitDiscovery;
+
+    const entries =
+      version === 1
+        ? upgradeCommitDiscoveryEntries(snapshot.entries)
+        : Array.isArray(snapshot.entries) && snapshot.entries.every(isValidEntry)
+          ? snapshot.entries
+          : null;
+    if (!entries) return null;
+
+    return {
+      version: CURRENT_VERSION,
+      repoRoot,
+      head: snapshot.head,
+      sinceIso: snapshot.sinceIso,
+      entries,
+    };
   }
 
   private debugLog(op: string, error: unknown): void {

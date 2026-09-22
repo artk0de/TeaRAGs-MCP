@@ -4,6 +4,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type HierarchyView,
   type NamedSymbol,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -98,6 +99,81 @@ describe("TSThisMemberSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["src/other.ts", [sym("Other#read", "read", "src/other.ts", ["Other"])]]);
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/store.ts", callerScope: ["Store"] }));
     expect(outcome.kind).toBe("continue");
+  });
+
+  // bd tea-rags-mcp-nj8i6: the same-file short-name fallback discarded WHO the
+  // receiver is — `Form`'s `this.setState` landed on `Panel#setState` when both
+  // classes sat in one file. The fallback may only answer for the enclosing
+  // class or a file-anchored `extends` ancestor (the L3
+  // `thisHierarchyAccountsFor` rule), so an unrelated namesake declines.
+  it("does not resolve `this.X()` to ANOTHER class's same-file method", () => {
+    const symbolTable = tableWith([
+      "src/widgets.ts",
+      [
+        sym("Form#submit", "submit", "src/widgets.ts", ["Form"]),
+        sym("Panel#setState", "setState", "src/widgets.ts", ["Panel"]),
+        sym("Form", "Form", "src/widgets.ts", []),
+        sym("Panel", "Panel", "src/widgets.ts", []),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      { callText: "this.setState()", receiver: "this", member: "setState", startLine: 7 },
+      ctx({ symbolTable, callerFile: "src/widgets.ts", callerScope: ["Form"] }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  // The recall half of the same rule: an ancestor anchored to the caller's file
+  // by the run hierarchy still answers — `Form extends Panel` declared together.
+  it("resolves `this.X()` to a file-anchored extends ancestor's same-file method", () => {
+    const symbolTable = tableWith([
+      "src/widgets.ts",
+      [
+        sym("Form#submit", "submit", "src/widgets.ts", ["Form"]),
+        sym("Panel#setState", "setState", "src/widgets.ts", ["Panel"]),
+        sym("Form", "Form", "src/widgets.ts", []),
+        sym("Panel", "Panel", "src/widgets.ts", []),
+      ],
+    ]);
+    const hierarchy: HierarchyView = {
+      getAncestors: (fqName) =>
+        fqName === "Form"
+          ? [{ sourceFqName: "Form", ancestorFqName: "Panel", ancestorSymbolId: "Panel", kind: "super", depth: 1 }]
+          : [],
+      getDescendants: () => [],
+    };
+    const outcome = strat.attempt(
+      { callText: "this.setState()", receiver: "this", member: "setState", startLine: 7 },
+      ctx({ symbolTable, callerFile: "src/widgets.ts", callerScope: ["Form"], hierarchy }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/widgets.ts", targetSymbolId: "Panel#setState" },
+    });
+  });
+
+  // bd tea-rags-mcp-nj8i6: a CLASS-BODY chunk (a field initializer) has an empty
+  // `callerScope`, but its `callerSymbolId` IS the class. Reading it lets the
+  // enclosing class be known, so an ambiguous member name resolves to the
+  // class's own method instead of being lost to the ambiguity.
+  it("resolves a class-body `this.X()` with an ambiguous member name via the chunk's own class id", () => {
+    const symbolTable = tableWith([
+      "src/widgets.ts",
+      [
+        sym("Form#setState", "setState", "src/widgets.ts", ["Form"]),
+        sym("Panel#setState", "setState", "src/widgets.ts", ["Panel"]),
+        sym("Form", "Form", "src/widgets.ts", []),
+        sym("Panel", "Panel", "src/widgets.ts", []),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      { callText: "this.setState()", receiver: "this", member: "setState", startLine: 3 },
+      ctx({ symbolTable, callerFile: "src/widgets.ts", callerScope: [], callerSymbolId: "Form" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/widgets.ts", targetSymbolId: "Form#setState" },
+    });
   });
 });
 
@@ -466,6 +542,98 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
     );
     const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./other.js" }] }));
+    expect(outcome.kind).toBe("continue");
+  });
+});
+
+describe("TSImportNarrowedFallbackSymbolResolutionStrategy barrel hop (bd tea-rags-mcp-4pa9o)", () => {
+  const strat = new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg);
+  // The receiver text is what the walker records for a constructed receiver —
+  // the pv7ul evidence class, the shape the four recovered self-index sites
+  // (QuarantineStore#load, CollectionRegistry#list, QuarantineStore#clearAll,
+  // QuarantineStore#count) all take.
+  const call: CallRef = { callText: "new Store().load()", receiver: "new Store()", member: "load", startLine: 1 };
+  const barrelImport = [{ importText: "./stores/index.js", importedNames: ["Store"] }];
+
+  it("recovers a barrel-mediated import: narrowing follows the binding's re-export origin", () => {
+    // The import maps to the barrel, which declares no `load`, so without the
+    // hop the narrowing set is empty and the site sits in
+    // `dynamic:missWithInProjectDef`. With it, the binding's own re-export
+    // origin joins the set and picks the file the caller's import names.
+    const symbolTable = tableWith(
+      ["src/stores/index.ts", []],
+      [
+        "src/stores/impl.ts",
+        [sym("Store", "Store", "src/stores/impl.ts", []), sym("Store#load", "load", "src/stores/impl.ts", ["Store"])],
+      ],
+      ["src/other.ts", [sym("Other#load", "load", "src/other.ts", ["Other"])]],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/stores/impl.ts", targetSymbolId: "Store#load" },
+    });
+  });
+
+  it("leaves the no-barrel case unchanged: a direct import narrows without any hop", () => {
+    // The mapped file already declares the receiver, so the kernel hop
+    // declines (`reexportOriginFile` returns null) and the set is exactly
+    // what the pre-hop mapper produced.
+    const symbolTable = tableWith(
+      [
+        "src/stores/impl.ts",
+        [sym("Store", "Store", "src/stores/impl.ts", []), sym("Store#load", "load", "src/stores/impl.ts", ["Store"])],
+      ],
+      ["src/other.ts", [sym("Other#load", "load", "src/other.ts", ["Other"])]],
+    );
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./stores/impl.js", importedNames: ["Store"] }] }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/stores/impl.ts", targetSymbolId: "Store#load" },
+    });
+  });
+
+  it("declines the hop when the bound name is itself a project-wide namesake", () => {
+    // The bound is the mapper's own: `reexportOriginFile` refuses to pick
+    // between unrelated declaring packages, no file joins the set, and the
+    // ambiguous `load` fan stays unresolved rather than guessed.
+    const symbolTable = tableWith(
+      ["src/stores/index.ts", []],
+      [
+        "src/north/store.ts",
+        [
+          sym("Store", "Store", "src/north/store.ts", []),
+          sym("NorthStore#load", "load", "src/north/store.ts", ["NorthStore"]),
+        ],
+      ],
+      [
+        "src/south/store.ts",
+        [
+          sym("Store", "Store", "src/south/store.ts", []),
+          sym("SouthStore#load", "load", "src/south/store.ts", ["SouthStore"]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("does not hop for a receiver no import binds", () => {
+    const symbolTable = tableWith(
+      ["src/stores/index.ts", []],
+      [
+        "src/stores/impl.ts",
+        [sym("Store", "Store", "src/stores/impl.ts", []), sym("Store#load", "load", "src/stores/impl.ts", ["Store"])],
+      ],
+      ["src/other.ts", [sym("Other#load", "load", "src/other.ts", ["Other"])]],
+    );
+    const outcome = strat.attempt(
+      call,
+      ctx({ symbolTable, imports: [{ importText: "./unrelated.js", importedNames: ["Widget"] }] }),
+    );
     expect(outcome.kind).toBe("continue");
   });
 });

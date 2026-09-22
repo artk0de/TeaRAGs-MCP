@@ -85,7 +85,7 @@ describe("GoCallResolver — method promotion through struct embedding", () => {
     const ctx = engineCtx({
       localBindings: undefined,
       localCallBindings: { engine: "New" },
-      functionReturnTypes: { New: "Engine" },
+      functionReturnTypes: { "::New": "Engine" },
     });
     expect(resolver.resolve(call("engine", "GET"), ctx)?.targetSymbolId).toBe("RouterGroup#GET");
   });

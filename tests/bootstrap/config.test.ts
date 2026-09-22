@@ -156,6 +156,13 @@ describe("parseAppConfig (Zod bridge)", () => {
 
     expect(config.ingestCode.supportedExtensions).toEqual(expect.arrayContaining([".ts", ".tsx", ".mts", ".cts"]));
   });
+
+  it("ingests JavaScript's ESM/CJS module extensions .mjs and .cjs (bd tea-rags-mcp-oxodb)", async () => {
+    const { parseAppConfig } = await freshImport();
+    const config = parseAppConfig();
+
+    expect(config.ingestCode.supportedExtensions).toEqual(expect.arrayContaining([".js", ".jsx", ".mjs", ".cjs"]));
+  });
 });
 
 // ---------------------------------------------------------------------------

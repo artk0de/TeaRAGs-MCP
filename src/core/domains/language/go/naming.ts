@@ -53,11 +53,22 @@ export function goSymbolOf(node: AstNode): GoSymbol | null {
     // codegraph row (a ghost-row mismatch `.claude/rules/symbolid-convention.md`
     // warns against). Sharing this clause fixes that latent lockstep gap.
     const spec = node.children.find((c) => c.type === "type_spec" || c.type === "type_alias");
-    const id = spec?.childForFieldName("name");
-    if (!id) return null;
-    return { name: id.text, symbolId: id.text, instanceMethod: false };
+    return spec ? goTypeSpecSymbolOf(spec) : null;
   }
   return null;
+}
+
+/**
+ * The ONE reader of a `type_spec` / `type_alias` name — the per-spec half of
+ * the `type_declaration` clause above. Both emission paths call it: the single
+ * form (`type Foo Bar`, read here off the declaration's lone spec) and the
+ * grouped form (`type ( A ...; B ... )`, each spec mapped by `goNameOf`), so
+ * the two node shapes cannot drift apart. bd tea-rags-mcp-fov8f.
+ */
+export function goTypeSpecSymbolOf(spec: AstNode): GoSymbol | null {
+  const id = spec.childForFieldName("name");
+  if (!id) return null;
+  return { name: id.text, symbolId: id.text, instanceMethod: false };
 }
 
 /**

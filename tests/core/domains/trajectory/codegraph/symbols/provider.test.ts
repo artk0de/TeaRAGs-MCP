@@ -2095,6 +2095,46 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  // bd tea-rags-mcp-fov8f — the SECOND spec of a grouped type declaration used
+  // to be invisible to the graph (only the first spec emitted), so a same-file
+  // usage of it had no symbol row to resolve against. All three specs must land
+  // in the symbol table.
+  it("resolves every spec of a grouped type declaration, the later ones included", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-go-grouped-"));
+    try {
+      mkdirSync(join(root, "pkg"), { recursive: true });
+      writeFileSync(
+        join(root, "pkg", "grouped.go"),
+        [
+          "package pkg",
+          "",
+          "type (",
+          "\tA struct { n int }",
+          "\tB struct{}",
+          "\tI interface { M() }",
+          ")",
+          "",
+          "func (b *B) N() {}",
+          "",
+          "func useB() { b := B{}; b.N() }",
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["pkg/grouped.go"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // First spec — already worked before the fix.
+      expect(lookup.lookupByShortName("A").length).toBeGreaterThan(0);
+      // Second and third specs — the loss this bead fixes.
+      expect(lookup.lookupByShortName("B").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("I").length).toBeGreaterThan(0);
+      // A method on the second grouped type resolves as its own row.
+      expect(lookup.lookup("B#N").length).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("buildFileSignals dispatches .java files through extractFromJavaFile + javaNameOf", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-java-disp-"));
     try {

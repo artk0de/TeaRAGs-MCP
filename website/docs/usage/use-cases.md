@@ -251,7 +251,7 @@ activity intensity and churn context.
 **Problem:** During incidents, you need to quickly find recently changed code
 near the bug, assess blast radius, and identify what else might be affected.
 
-**Solution:** Filter by `git.ageDays <= 7` to find recent changes, combine with
+**Solution:** Filter by `maxAgeDays: 7` to find recent changes, combine with
 semantic search to find related logic.
 
 **Skill:** `/tea-rags:bug-hunt [symptom]` — directs search toward historically buggy + recently touched code.
@@ -279,7 +279,7 @@ in sensitive paths.
 through commit history, finding patterns of change, and identifying which
 tickets drove modifications.
 
-**Solution:** Use `git.taskIds` to trace code back to tickets, and churn signals
+**Solution:** Use `git.file.taskIds` to trace code back to tickets, and churn signals
 to understand evolution patterns.
 
 **Skill:** `/tea-rags:explore [symbol or concept]` — overlay surfaces `taskIds`, `ageDays`, `commitCount`, `recentDominantAuthor`, `blameDominantAuthor`.
