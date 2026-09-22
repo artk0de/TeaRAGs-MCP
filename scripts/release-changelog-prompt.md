@@ -138,5 +138,14 @@ the user-facing benefit.
     (`scripts/lib/changelog-emphasis.js`). Anything you mark up is left exactly
     as you wrote it and reads inconsistently beside what the renderer produced.
 
+11. **Backtick every CLI command, flag, env var and tool name you name.**
+    `tea-rags projects prune`, `--force-enrichments`, `QDRANT_TURBO_QUANT`,
+    `rank_chunks` — a thing the user types is code, not prose. Published notes
+    have shipped bare `tea-rags projects prune now sweeps…`, which reads as a
+    sentence that happens to start with the product name. It also matters to
+    rendering: the emphasis pass in rule 10 treats a backtick span as a wall, so
+    a backticked command is left alone while a bare one can have its first word
+    marked up.
+
 Do not emit anything to stdout. The only output is the `release-notes.json`
 file.
