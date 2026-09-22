@@ -135,6 +135,13 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       // reading is the least alarming one — `critical` for an entire repository
       // is a false alarm, not a finding.
       bandTieBreak: "lower",
+      // A one- or two-commit file can only read 0 or 100, so the bottom of the
+      // commitCount distribution manufactures both tails and pins p95 on the 100
+      // atom. Measured on this index (typescript source): observed variance
+      // against the pure-binomial floor is 0.82 over all 1288 files — spread
+      // indistinguishable from sampling noise — and 1.75 from commitCount p75
+      // upwards, where p95 also comes off the atom (100 → 78).
+      minSupportPercentile: 75,
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },
@@ -270,6 +277,10 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       // Same reading as the file-scope twin — the rate belongs to the code
       // under test, so the test bucket is left unsampled.
       sourceScopeOnly: true,
+      // Same reading as the file-scope twin, measured on the same index
+      // (typescript source): variance-to-binomial ratio 0.94 over all 5806
+      // chunks, 1.44 from commitCount p75 (= 3) upwards, where p95 drops 100 → 80.
+      minSupportPercentile: 75,
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },

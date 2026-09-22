@@ -60,8 +60,8 @@ function admitsChunkType(filter: string | readonly string[], pointChunkType: unk
 }
 
 /**
- * Push a signal value to target array if the point passes chunkType filter
- * and the value qualifies as an observation of that signal.
+ * The value this point contributes to the signal's sample, or undefined when it
+ * contributes none.
  *
  * A missing key is already rejected by the `typeof` test, so the numeric floor
  * only decides what a ZERO means. It defaults to "no measurement" — the common
@@ -72,8 +72,29 @@ function admitsChunkType(filter: string | readonly string[], pointChunkType: unk
  * `dedupe` is supplied for signals declaring `stats.dedupeByFile`: the token
  * identifies (bucket, signal, file), so each distinct file contributes at most
  * one value to that bucket. Without it a file-scoped value repeated on every
- * chunk would let a many-chunk file dominate its own distribution.
+ * chunk would let a many-chunk file dominate its own distribution. The token is
+ * consumed here, so a caller that defers the push still spends the file's one
+ * slot exactly once.
  */
+function admittedSignalValue(
+  point: { payload: Record<string, unknown> },
+  signal: PayloadSignalDescriptor,
+  pointChunkType: unknown,
+  dedupe?: { seen: Set<string>; token: string },
+): number | undefined {
+  const filter = signal.stats?.chunkTypeFilter;
+  if (filter !== undefined && !admitsChunkType(filter, pointChunkType)) return undefined;
+  const val = readPayloadPath(point.payload, signal.key);
+  if (typeof val !== "number") return undefined;
+  if (!(signal.stats?.zeroIsValidObservation ? val >= 0 : val > 0)) return undefined;
+  if (dedupe) {
+    if (dedupe.seen.has(dedupe.token)) return undefined;
+    dedupe.seen.add(dedupe.token);
+  }
+  return val;
+}
+
+/** Push a signal value to target array when the point contributes one. */
 function tryPushSignalValue(
   point: { payload: Record<string, unknown> },
   signal: PayloadSignalDescriptor,
@@ -81,16 +102,22 @@ function tryPushSignalValue(
   target: number[],
   dedupe?: { seen: Set<string>; token: string },
 ): void {
-  const filter = signal.stats?.chunkTypeFilter;
-  if (filter !== undefined && !admitsChunkType(filter, pointChunkType)) return;
-  const val = readPayloadPath(point.payload, signal.key);
-  if (typeof val === "number" && (signal.stats?.zeroIsValidObservation ? val >= 0 : val > 0)) {
-    if (dedupe) {
-      if (dedupe.seen.has(dedupe.token)) return;
-      dedupe.seen.add(dedupe.token);
-    }
-    target.push(val);
-  }
+  const val = admittedSignalValue(point, signal, pointChunkType, dedupe);
+  if (val !== undefined) target.push(val);
+}
+
+/**
+ * Full payload key of the sibling a signal's `confidence.support` names, at the
+ * signal's OWN namespace and scope — `git.chunk.bugFixRate` with
+ * `support: "commitCount"` resolves to `git.chunk.commitCount`. Undefined when
+ * the key carries no `{namespace}.{file|chunk}.` prefix to resolve against, or
+ * when no support is declared.
+ */
+function supportKeyFor(signal: PayloadSignalDescriptor): string | undefined {
+  const support = signal.stats?.confidence?.support;
+  if (!support) return undefined;
+  const m = /^(git|codegraph)\.(file|chunk)\./.exec(signal.key);
+  return m ? `${m[1]}.${m[2]}.${support}` : undefined;
 }
 
 /** Pre-pass: count test chunks per language for scope detection. */
@@ -115,10 +142,41 @@ function derivePointContext(point: StatsPoint, scopeConfig: ScopeDetectionConfig
   return { pointChunkType, lang, isCodeLanguage, relPath, scope };
 }
 
+/** Stats bucket holding the global `perSignal` aggregate. */
+const GLOBAL_STATS_BUCKET = "all";
+/** Stats bucket holding one language's pooled aggregate — feeds the sample-size gate only. */
+function languageStatsBucket(lang: string): string {
+  return `lang|${lang}`;
+}
+/** Stats bucket holding one language's aggregate at one scope. */
+function scopedStatsBucket(lang: string, scope: "source" | "test"): string {
+  return `${lang}|${scope}`;
+}
+
 interface SignalValuesResult {
   valueArrays: Map<string, number[]>;
   perLanguageValues: Map<string, Map<string, number[]>>;
   perLanguageScopedValues: Map<string, Map<string, { source: number[]; test: number[] }>>;
+  /** Resolved `minSupportPercentile` floors: bucket → signal key → support value. */
+  supportFloors: Map<string, Map<string, number>>;
+}
+
+/**
+ * One gated signal's deferred sample for one stats bucket.
+ *
+ * The floor is a percentile of ANOTHER signal accumulated in the SAME pass, so
+ * it does not exist until the pass ends: the pairs are collected during
+ * `accept` and filtered in `result`, once `support` holds the whole bucket.
+ */
+interface GatedSample {
+  signal: PayloadSignalDescriptor;
+  minSupportPercentile: number;
+  bucket: string;
+  /** The bucket's value array for this signal — qualified values land here. */
+  target: number[];
+  /** The bucket's value array for the SUPPORT signal, sampled under its own rules. */
+  support: number[];
+  pairs: { value: number; support: number }[];
 }
 
 /**
@@ -135,9 +193,18 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
   private readonly perLanguageScopedValues = new Map<string, Map<string, { source: number[]; test: number[] }>>();
   /** (bucket, signal, file) tokens already counted for `dedupeByFile` signals. */
   private readonly seenFileScoped = new Set<string>();
+  /** Support key per gated signal, resolved once — empty when nothing is gated. */
+  private readonly supportKeys = new Map<string, string>();
+  /** Deferred samples keyed `<bucket>|<signal key>`. */
+  private readonly gatedSamples = new Map<string, GatedSample>();
 
   constructor(private readonly statsSignals: PayloadSignalDescriptor[]) {
     this.valueArrays = new Map(statsSignals.map((s) => [s.key, []]));
+    for (const signal of statsSignals) {
+      if (signal.stats?.minSupportPercentile === undefined) continue;
+      const supportKey = supportKeyFor(signal);
+      if (supportKey !== undefined) this.supportKeys.set(signal.key, supportKey);
+    }
   }
 
   /** Dedupe descriptor for a file-scoped signal in one bucket; undefined otherwise. */
@@ -154,31 +221,32 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
     if (ctx.isCodeLanguage && ctx.scope === "source") {
       for (const signal of this.statsSignals) {
         const arr = this.valueArrays.get(signal.key);
-        if (arr) tryPushSignalValue(point, signal, ctx.pointChunkType, arr, this.fileScopedDedupe(signal, ctx, "all"));
+        if (!arr) continue;
+        if (signal.stats?.minSupportPercentile === undefined) {
+          tryPushSignalValue(point, signal, ctx.pointChunkType, arr, this.fileScopedDedupe(signal, ctx, "all"));
+          continue;
+        }
+        this.deferGated(point, signal, ctx, "all", GLOBAL_STATS_BUCKET, arr, this.supportValuesFor(signal));
       }
     }
     if (typeof ctx.lang !== "string") return;
 
-    let langMap = this.perLanguageValues.get(ctx.lang);
-    if (!langMap) {
-      langMap = new Map<string, number[]>();
-      for (const signal of this.statsSignals) langMap.set(signal.key, []);
-      this.perLanguageValues.set(ctx.lang, langMap);
-    }
+    const langMap = this.langBucket(ctx.lang);
     for (const signal of this.statsSignals) {
       const langArr = langMap.get(signal.key);
-      if (langArr) {
+      if (!langArr) continue;
+      if (signal.stats?.minSupportPercentile === undefined) {
         tryPushSignalValue(point, signal, ctx.pointChunkType, langArr, this.fileScopedDedupe(signal, ctx, "lang"));
+        continue;
       }
+      const supportKey = this.supportKeys.get(signal.key);
+      const support = supportKey === undefined ? undefined : langMap.get(supportKey);
+      this.deferGated(point, signal, ctx, "lang", languageStatsBucket(ctx.lang), langArr, support);
     }
 
     if (ctx.scope === null) return;
-    let scopedMap = this.perLanguageScopedValues.get(ctx.lang);
-    if (!scopedMap) {
-      scopedMap = new Map();
-      for (const signal of this.statsSignals) scopedMap.set(signal.key, { source: [], test: [] });
-      this.perLanguageScopedValues.set(ctx.lang, scopedMap);
-    }
+    const { scope } = ctx;
+    const scopedMap = this.scopedBucket(ctx.lang);
     for (const signal of this.statsSignals) {
       const scopedArr = scopedMap.get(signal.key);
       if (!scopedArr) continue;
@@ -186,17 +254,120 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
       // the bucket stays empty and `computeCollectionStats` publishes no test
       // stats for it — which is what makes the reranker leave a test-scope
       // point unlabeled rather than grade it on the source ladder.
-      if (ctx.scope === "test" && signal.stats?.sourceScopeOnly) continue;
-      const target = ctx.scope === "test" ? scopedArr.test : scopedArr.source;
-      tryPushSignalValue(point, signal, ctx.pointChunkType, target, this.fileScopedDedupe(signal, ctx, ctx.scope));
+      if (scope === "test" && signal.stats?.sourceScopeOnly) continue;
+      const target = scope === "test" ? scopedArr.test : scopedArr.source;
+      if (signal.stats?.minSupportPercentile === undefined) {
+        tryPushSignalValue(point, signal, ctx.pointChunkType, target, this.fileScopedDedupe(signal, ctx, scope));
+        continue;
+      }
+      const supportKey = this.supportKeys.get(signal.key);
+      const supportArr = supportKey === undefined ? undefined : scopedMap.get(supportKey);
+      const support = scope === "test" ? supportArr?.test : supportArr?.source;
+      this.deferGated(point, signal, ctx, scope, scopedStatsBucket(ctx.lang, scope), target, support);
     }
   }
 
+  private langBucket(lang: string): Map<string, number[]> {
+    let langMap = this.perLanguageValues.get(lang);
+    if (!langMap) {
+      langMap = new Map<string, number[]>();
+      for (const signal of this.statsSignals) langMap.set(signal.key, []);
+      this.perLanguageValues.set(lang, langMap);
+    }
+    return langMap;
+  }
+
+  private scopedBucket(lang: string): Map<string, { source: number[]; test: number[] }> {
+    let scopedMap = this.perLanguageScopedValues.get(lang);
+    if (!scopedMap) {
+      scopedMap = new Map();
+      for (const signal of this.statsSignals) scopedMap.set(signal.key, { source: [], test: [] });
+      this.perLanguageScopedValues.set(lang, scopedMap);
+    }
+    return scopedMap;
+  }
+
+  /** The global bucket's array for a gated signal's support sibling. */
+  private supportValuesFor(signal: PayloadSignalDescriptor): number[] | undefined {
+    const supportKey = this.supportKeys.get(signal.key);
+    return supportKey === undefined ? undefined : this.valueArrays.get(supportKey);
+  }
+
+  /**
+   * Hold a gated signal's contribution back until the support distribution for
+   * this bucket is complete. The point's admission (chunk-type filter, zero
+   * rule, per-file dedupe) is decided NOW, so the file's one dedupe slot is
+   * spent exactly as an ungated signal would spend it.
+   */
+  private deferGated(
+    point: StatsPoint,
+    signal: PayloadSignalDescriptor,
+    ctx: PointContext,
+    dedupeBucket: string,
+    sampleBucket: string,
+    target: number[],
+    supportValues: number[] | undefined,
+  ): void {
+    const dedupe = this.fileScopedDedupe(signal, ctx, dedupeBucket);
+    const value = admittedSignalValue(point, signal, ctx.pointChunkType, dedupe);
+    if (value === undefined) return;
+
+    // No support distribution in this bucket — the support sibling declares no
+    // stats of its own, so no floor can be resolved here and the signal is
+    // sampled exactly as an ungated one. Persisting no floor keeps the read
+    // side ungated too, so both sides still describe the same population.
+    if (supportValues === undefined) {
+      target.push(value);
+      return;
+    }
+
+    const supportKey = this.supportKeys.get(signal.key);
+    const support = supportKey === undefined ? undefined : readPayloadPath(point.payload, supportKey);
+    // A unit whose support was never measured cannot be shown to qualify, so it
+    // does not join the sample — and the label path leaves it a bare number for
+    // the same reason.
+    if (typeof support !== "number") return;
+
+    const token = `${sampleBucket}|${signal.key}`;
+    let pending = this.gatedSamples.get(token);
+    if (!pending) {
+      pending = {
+        signal,
+        minSupportPercentile: signal.stats?.minSupportPercentile ?? 0,
+        bucket: sampleBucket,
+        target,
+        support: supportValues,
+        pairs: [],
+      };
+      this.gatedSamples.set(token, pending);
+    }
+    pending.pairs.push({ value, support });
+  }
+
   result(): SignalValuesResult {
+    const supportFloors = new Map<string, Map<string, number>>();
+    for (const pending of this.gatedSamples.values()) {
+      // Sorted COPY: the support's own array is sorted in place later by
+      // `computePerSignalStats`, and the floor must be the same number that
+      // pass publishes as the support's percentile.
+      const sorted = [...pending.support].sort((a, b) => a - b);
+      const floor = percentile(sorted, pending.minSupportPercentile);
+      for (const pair of pending.pairs) {
+        if (pair.support >= floor) pending.target.push(pair.value);
+      }
+      let perBucket = supportFloors.get(pending.bucket);
+      if (!perBucket) {
+        perBucket = new Map<string, number>();
+        supportFloors.set(pending.bucket, perBucket);
+      }
+      perBucket.set(pending.signal.key, floor);
+    }
+
     return {
       valueArrays: this.valueArrays,
       perLanguageValues: this.perLanguageValues,
       perLanguageScopedValues: this.perLanguageScopedValues,
+      supportFloors,
     };
   }
 }
@@ -248,6 +419,8 @@ interface ExtractedValues {
   perLanguageValues: Map<string, Map<string, number[]>>;
   /** Per-language scoped signal values: lang → signal → { source: number[], test: number[] }. */
   perLanguageScopedValues: Map<string, Map<string, { source: number[]; test: number[] }>>;
+  /** Resolved `minSupportPercentile` floors: bucket → signal key → support value. */
+  supportFloors: Map<string, Map<string, number>>;
 }
 
 function extractSignalValues(
@@ -310,6 +483,7 @@ function extractSignalValues(
     gitDataPaths,
     perLanguageValues: signalValues.perLanguageValues,
     perLanguageScopedValues: signalValues.perLanguageScopedValues,
+    supportFloors: signalValues.supportFloors,
   };
 }
 
@@ -317,6 +491,12 @@ function extractSignalValues(
  * Walk all descriptors with `stats.confidence` and collect the set of
  * percentiles each support signal must provide (via `labels` keys OR
  * `percentilesToCompute`). Returns Map<supportSignalKey, Set<percentile>>.
+ *
+ * Three references land here: `confidence.score.adaptivePercentile`, every `pN`
+ * in `confidence.label.rules[].whenSupportAtOrBelow`, and
+ * `stats.minSupportPercentile` — the sampling gate reads the SAME support at the
+ * same scope, and the floor it resolves is only checkable against a percentile
+ * the support actually persists.
  *
  * Scope handling: descriptor's own key carries the trajectory namespace and
  * scope prefix (`git.{file|chunk}.X` or `codegraph.{file|chunk}.X`). The
@@ -341,6 +521,9 @@ function collectReferencedPercentiles(signals: PayloadSignalDescriptor[]): Map<s
       result.set(supportFullKey, set);
     }
     if (typeof conf.score?.adaptivePercentile === "number") set.add(conf.score.adaptivePercentile);
+    // The sampling gate reads the same support at the same scope, and the floor
+    // it resolves is only checkable against a percentile the support persists.
+    if (typeof sig.stats?.minSupportPercentile === "number") set.add(sig.stats.minSupportPercentile);
     for (const rule of conf.label?.rules ?? []) {
       if (typeof rule.whenSupportAtOrBelow === "string") {
         const p = Number(rule.whenSupportAtOrBelow.slice(1));
@@ -425,7 +608,8 @@ export function validateSignalDependencies(
       if (!declaresPercentile(supportSig, p)) {
         throw new Error(
           `Signal dependency error: a descriptor references "${supportKey}" percentile p${p} ` +
-            `(via confidence.score.adaptivePercentile or confidence.label.rules[].whenSupportAtOrBelow), ` +
+            `(via confidence.score.adaptivePercentile, confidence.label.rules[].whenSupportAtOrBelow ` +
+            `or stats.minSupportPercentile), ` +
             `but ${supportKey} declares neither p${p} in stats.labels nor ${p} in stats.percentilesToCompute. ` +
             `Add ${p} to ${supportKey}.stats.percentilesToCompute (or p${p} to stats.labels if it should be a labeled tier).`,
         );
@@ -458,6 +642,12 @@ export function validateSignalDependencies(
 function computePerSignalStats(
   valueArrays: Map<string, number[]>,
   statsSignals: PayloadSignalDescriptor[],
+  /**
+   * Resolved support floors for the bucket these arrays belong to. Recorded
+   * alongside the percentiles so the read side excludes exactly the units the
+   * bands were computed without, instead of re-deriving a number of its own.
+   */
+  supportFloors?: Map<string, number>,
 ): Map<string, SignalStats> {
   const perSignal = new Map<string, SignalStats>();
   for (const signal of statsSignals) {
@@ -506,6 +696,9 @@ function computePerSignalStats(
       const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length;
       result.stddev = Math.sqrt(variance);
     }
+
+    const floor = supportFloors?.get(signal.key);
+    if (floor !== undefined) result.supportFloor = floor;
 
     perSignal.set(signal.key, result);
   }
@@ -577,7 +770,11 @@ export function computeCollectionStats(
   const chunkPoints = points.filter((point) => !isServicePointPayload(point.payload));
   const statsSignals = signals.filter((s) => s.stats !== undefined);
   const extracted = extractSignalValues(chunkPoints, statsSignals, trajectoryAccumulators);
-  const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
+  const perSignal = computePerSignalStats(
+    extracted.valueArrays,
+    statsSignals,
+    extracted.supportFloors.get(GLOBAL_STATS_BUCKET),
+  );
   const distributions = buildDistributions(extracted, gitTimePeriods);
 
   const totalChunks = chunkPoints.length;
@@ -601,14 +798,18 @@ export function computeCollectionStats(
     const scopedMap = extracted.perLanguageScopedValues.get(lang);
     if (!scopedMap) continue;
 
+    const sourceFloors = extracted.supportFloors.get(scopedStatsBucket(lang, "source"));
+    const testFloors = extracted.supportFloors.get(scopedStatsBucket(lang, "test"));
+
     const scopedStats = new Map<string, ScopedSignalStats>();
     for (const [key, { source: sourceValues, test: testValues }] of scopedMap) {
       const sourceArr = new Map<string, number[]>([[key, sourceValues]]);
-      const sourceStats = computePerSignalStats(sourceArr, statsSignals).get(key);
+      const sourceStats = computePerSignalStats(sourceArr, statsSignals, sourceFloors).get(key);
       if (!sourceStats) continue;
 
       const testArr = new Map<string, number[]>([[key, testValues]]);
-      const testStats = testValues.length > 0 ? computePerSignalStats(testArr, statsSignals).get(key) : undefined;
+      const testStats =
+        testValues.length > 0 ? computePerSignalStats(testArr, statsSignals, testFloors).get(key) : undefined;
 
       scopedStats.set(key, { source: sourceStats, test: testStats });
     }

@@ -170,7 +170,8 @@ export function resolvePayloadValue(payload: Record<string, unknown>, path: stri
  * A stats file is a measurement, and a measurement is only interpretable
  * against the procedure that produced it. Change the procedure — start counting
  * a file once instead of once per chunk, start admitting a measured zero,
- * restrict which chunk types are sampled, ask for another percentile — and the
+ * restrict which chunk types are sampled, drop the units the collection barely
+ * observed, ask for another percentile — and the
  * numbers already on disk answer a question nobody is asking any more. Nothing
  * about them looks wrong; they are simply about a different population, and
  * they keep feeding labels, filter-preset thresholds and adaptive bounds until
@@ -214,6 +215,7 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
     `perFile=${stats.dedupeByFile === true}`,
     `zeroCounts=${stats.zeroIsValidObservation === true}`,
     `sourceOnly=${stats.sourceScopeOnly === true}`,
+    `minSupport=${stats.minSupportPercentile ?? "*"}`,
     `mean=${stats.mean === true}`,
     `stddev=${stats.stddev === true}`,
   ].join(" ");

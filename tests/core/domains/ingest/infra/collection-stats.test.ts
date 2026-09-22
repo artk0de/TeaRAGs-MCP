@@ -1487,3 +1487,153 @@ describe("chunkTypeFilter admitting more than one chunk type", () => {
     expect(stats.perSignal.get("methodLines")!.max).toBe(7);
   });
 });
+
+describe("support-gated percentile sampling (minSupportPercentile)", () => {
+  /**
+   * `bugFixRate` over a one-commit file can only ever be 0 or 100, so the bottom
+   * of the support distribution manufactures both tails of the rate and the
+   * spread stops carrying between-unit information. Measured on this project's
+   * own index, typescript source: at commitCount >= 1 the observed variance sits
+   * AT the pure-binomial floor (ratio 0.94 chunk / 0.82 file) and p95 is the 100
+   * atom; from the support's own p75 upwards the ratio climbs to 1.44 / 1.75 and
+   * p95 comes off the atom. The floor has to BE that percentile rather than a
+   * constant, or it stops describing the corpus it is applied to.
+   */
+  const gatedWithControl: PayloadSignalDescriptor[] = [
+    {
+      key: "git.file.bugFixRate",
+      type: "number",
+      description: "Percentage of bug-fix commits (0-100)",
+      stats: {
+        labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+        zeroIsValidObservation: true,
+        dedupeByFile: true,
+        minSupportPercentile: 75,
+        confidence: { support: "commitCount" },
+      },
+    },
+    {
+      // Identical values on the identical points, no gate — the control.
+      key: "git.file.churnVolatility",
+      type: "number",
+      description: "ungated control carrying the identical values",
+      stats: { labels: { p50: "stable", p95: "erratic" }, dedupeByFile: true },
+    },
+    {
+      key: "git.file.commitCount",
+      type: "number",
+      description: "Total commits modifying this file",
+      stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, dedupeByFile: true },
+    },
+  ];
+
+  /** The extremes sit on the barely-observed units; the well-observed ones are moderate. */
+  const LOW_SUPPORT = [1, 1, 1, 1, 1, 1, 1, 1];
+  const LOW_SUPPORT_RATES = [100, 100, 100, 100, 100, 100, 100, 100];
+  const HIGH_SUPPORT = [10, 12, 14, 16];
+  const HIGH_SUPPORT_RATES = [20, 25, 30, 35];
+
+  function filePoints(language: string, tag: string, supports: number[], rates: number[], scale = 1) {
+    return supports.map((support, i) => ({
+      payload: {
+        language,
+        chunkType: "function",
+        isDocumentation: false,
+        relativePath: `src/${language}/${tag}${i}.x`,
+        git: { file: { commitCount: support * scale, bugFixRate: rates[i], churnVolatility: rates[i] } },
+      },
+    }));
+  }
+
+  function oneLanguage() {
+    return [
+      ...filePoints("typescript", "low", LOW_SUPPORT, LOW_SUPPORT_RATES),
+      ...filePoints("typescript", "high", HIGH_SUPPORT, HIGH_SUPPORT_RATES),
+    ];
+  }
+
+  /** Support p75 over [1×8, 10, 12, 14, 16] interpolates to 10.5 — only 12/14/16 qualify. */
+  const EXPECTED_FLOOR = 10.5;
+
+  it("samples only the units at or above the support floor, while the control samples everything", () => {
+    const stats = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const gated = stats.perLanguage.get("typescript")!.get("git.file.bugFixRate")!.source;
+    const control = stats.perLanguage.get("typescript")!.get("git.file.churnVolatility")!.source;
+
+    expect(gated.count).toBe(3);
+    expect(gated.min).toBe(25);
+    expect(control.count).toBe(12);
+    expect(control.min).toBe(20);
+  });
+
+  it("persists the resolved floor, equal to the support signal's percentile for that bucket", () => {
+    const stats = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const gated = stats.perLanguage.get("typescript")!.get("git.file.bugFixRate")!.source;
+    const support = stats.perLanguage.get("typescript")!.get("git.file.commitCount")!.source;
+
+    expect(gated.supportFloor).toBe(support.percentiles[75]);
+    expect(gated.supportFloor).toBe(EXPECTED_FLOOR);
+  });
+
+  it("resolves the floor per bucket, at the granularity the percentiles use", () => {
+    // Same shape in two languages, the second an order of magnitude better
+    // observed. One floor for the pooled global bucket, one per language.
+    const points = [
+      ...oneLanguage(),
+      ...filePoints("ruby", "low", LOW_SUPPORT, LOW_SUPPORT_RATES, 50),
+      ...filePoints("ruby", "high", HIGH_SUPPORT, HIGH_SUPPORT_RATES, 10),
+    ];
+    const stats = computeCollectionStats(points, gatedWithControl, ALL_ACCS);
+
+    const globalRate = stats.perSignal.get("git.file.bugFixRate")!;
+    const ts = stats.perLanguage.get("typescript")!;
+    const ruby = stats.perLanguage.get("ruby")!;
+
+    expect(globalRate.supportFloor).toBe(stats.perSignal.get("git.file.commitCount")!.percentiles[75]);
+    expect(ts.get("git.file.bugFixRate")!.source.supportFloor).toBe(
+      ts.get("git.file.commitCount")!.source.percentiles[75],
+    );
+    expect(ruby.get("git.file.bugFixRate")!.source.supportFloor).toBe(
+      ruby.get("git.file.commitCount")!.source.percentiles[75],
+    );
+    const floors = [
+      globalRate.supportFloor,
+      ts.get("git.file.bugFixRate")!.source.supportFloor,
+      ruby.get("git.file.bugFixRate")!.source.supportFloor,
+    ];
+    expect(new Set(floors).size).toBe(3);
+  });
+
+  it("leaves a signal that does not declare the gate untouched", () => {
+    const ungated: PayloadSignalDescriptor[] = gatedWithControl.map((s) =>
+      s.key === "git.file.bugFixRate" ? { ...s, stats: { ...s.stats, minSupportPercentile: undefined } } : s,
+    );
+    const withGate = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const withoutGate = computeCollectionStats(oneLanguage(), ungated, ALL_ACCS);
+
+    const control = (stats: ReturnType<typeof computeCollectionStats>) =>
+      stats.perLanguage.get("typescript")!.get("git.file.churnVolatility")!.source;
+
+    expect(control(withGate)).toEqual(control(withoutGate));
+    expect(control(withGate).supportFloor).toBeUndefined();
+    expect(withGate.perSignal.get("git.file.churnVolatility")).toEqual(
+      withoutGate.perSignal.get("git.file.churnVolatility"),
+    );
+  });
+
+  // The regression the whole change exists for: excluding the barely-observed
+  // units moves the bands, because those units are the ones holding the atom.
+  it("moves the percentiles when the low-support units hold the extremes", () => {
+    const stats = computeCollectionStats(oneLanguage(), gatedWithControl, ALL_ACCS);
+    const gated = stats.perLanguage.get("typescript")!.get("git.file.bugFixRate")!.source;
+    const control = stats.perLanguage.get("typescript")!.get("git.file.churnVolatility")!.source;
+
+    // Ungated: 8 of 12 files read 100, so p50 and p95 both land on the atom.
+    expect(control.percentiles[50]).toBe(100);
+    expect(control.percentiles[95]).toBe(100);
+    // Gated: the surviving spread is real, and p95 comes off the atom.
+    expect(gated.percentiles[50]).toBe(30);
+    expect(gated.percentiles[95]).toBeLessThan(100);
+    expect(gated.percentiles[50]).not.toBe(control.percentiles[50]);
+  });
+});

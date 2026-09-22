@@ -26,6 +26,7 @@ import type {
   PayloadSignalDescriptor,
   SignalConfidence,
   SignalFloors,
+  SignalStats,
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
 import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
@@ -742,6 +743,13 @@ export class Reranker {
       const signalStats = this.scopedStatsFor(fullKey, language, chunkType, relativePath);
       if (!signalStats?.percentiles) continue;
 
+      // The support gate, the read half of `stats.minSupportPercentile`. The
+      // bands above were computed over the QUALIFIED subpopulation only, so a
+      // unit the sampler excluded is not in the population they describe and
+      // gets the bare number — the same refusal `scopedStatsFor` makes for a
+      // scope whose bucket was never sampled.
+      if (!this.meetsSupportFloor(descriptor, signalStats, siblingValues)) continue;
+
       // Industry floors raise source-scope thresholds that sit below a
       // published limit; test scope stays purely percentile-derived, since
       // test files are systematically longer and a shared floor would collapse
@@ -791,7 +799,7 @@ export class Reranker {
     language: string | undefined,
     chunkType: string | undefined,
     relativePath?: string,
-  ): { percentiles: Record<number, number> } | undefined {
+  ): SignalStats | undefined {
     if (!this.collectionStats || !language) return undefined;
     const langStats = this.collectionStats.perLanguage?.get(language);
     if (!langStats) return undefined;
@@ -803,6 +811,40 @@ export class Reranker {
     });
     const signalStats = scope === "test" ? scopedStats.test : scopedStats.source;
     return signalStats?.percentiles ? signalStats : undefined;
+  }
+
+  /**
+   * Whether this point was observed well enough to be graded on a gated
+   * signal's bands — the read half of `stats.minSupportPercentile`.
+   *
+   * The support value is read at the SAME level as the signal, out of the
+   * level-scoped sibling map (`git.chunk.commitCount` for a chunk-level signal,
+   * `git.file.commitCount` for a file-level one), and compared against the floor
+   * the SAMPLER resolved and persisted for this bucket. Recomputing a floor here
+   * is precisely what must not happen: the two sides would then describe
+   * different populations the first time a percentile moved.
+   *
+   * Three ways to answer yes without a comparison, and each is the honest one:
+   * the signal declares no gate; the stats file carries no floor, meaning it was
+   * sampled before the declaration and its bands cover everything; or the
+   * descriptor names no support, in which case there is nothing to read. A
+   * MISSING support value on a gated signal answers no — a unit whose support
+   * was never measured cannot be shown to belong to the graded population, and
+   * the sampler left it out for the same reason.
+   */
+  private meetsSupportFloor(
+    descriptor: PayloadSignalDescriptor,
+    signalStats: SignalStats,
+    siblingValues: Record<string, number>,
+  ): boolean {
+    if (descriptor.stats?.minSupportPercentile === undefined) return true;
+    const floor = signalStats.supportFloor;
+    if (floor === undefined) return true;
+    const support = descriptor.stats.confidence?.support;
+    if (!support) return true;
+    const supportValue = siblingValues[support];
+    if (typeof supportValue !== "number") return false;
+    return supportValue >= floor;
   }
 
   /**

@@ -2865,3 +2865,119 @@ describe("reranker — batch min-max similarity normalization (cross-scale weigh
     expect(reranked[0].rankingOverlay).toBeUndefined();
   });
 });
+
+/**
+ * A gated signal's bands were computed over the QUALIFIED subpopulation, so a
+ * unit the gate excluded is not in the population the ladder describes. Grading
+ * it anyway is the same cross-population defect the scope pick refuses: a
+ * one-commit chunk reading 100 would take `critical` off a ladder built without
+ * it.
+ */
+describe("Reranker — support-gated labels (minSupportPercentile)", () => {
+  const gatedReranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  /** What the sampler resolved and persisted for the typescript source bucket. */
+  const SUPPORT_FLOOR = 4;
+
+  const statsWithFloor = (floor: number | undefined): CollectionSignalStats => ({
+    perSignal: new Map([
+      ["git.file.commitCount", { count: 100, min: 1, max: 40, percentiles: { 10: 1, 25: 2, 50: 2, 75: 4, 95: 13 } }],
+    ]),
+    perLanguage: new Map([
+      [
+        "typescript",
+        new Map([
+          [
+            "git.file.bugFixRate",
+            {
+              source: {
+                count: 40,
+                min: 0,
+                max: 100,
+                // Bands over the qualified units only.
+                percentiles: { 50: 25, 75: 43, 95: 78 },
+                ...(floor === undefined ? {} : { supportFloor: floor }),
+              },
+            },
+          ],
+        ]),
+      ],
+    ]),
+    distributions: {
+      totalFiles: 100,
+      language: {},
+      chunkType: {},
+      documentation: { docs: 0, code: 100 },
+      topAuthors: [],
+      topBlameAuthors: [],
+      othersCount: 0,
+    },
+    computedAt: Date.now(),
+  });
+
+  const sourcePoint = (commitCount: number): RerankableResult => ({
+    score: 0.8,
+    payload: {
+      relativePath: "src/a.ts",
+      startLine: 1,
+      endLine: 50,
+      language: "typescript",
+      chunkType: "function",
+      git: withStamps({ file: { commitCount, bugFixRate: 100, ageDays: 30 } }),
+    },
+  });
+
+  it("emits a bare number for a point whose support is below the floor", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
+
+    const ranked = await gatedReranker.rerank([sourcePoint(2)], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toBe(100);
+
+    gatedReranker.invalidateStats();
+  });
+
+  it("labels a point whose support is at or above the floor from the gated bands", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
+
+    const ranked = await gatedReranker.rerank([sourcePoint(10)], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toEqual({ value: 100, label: "critical" });
+
+    gatedReranker.invalidateStats();
+  });
+
+  it("emits a bare number when the point carries no support value at all", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(SUPPORT_FLOOR));
+
+    const noSupport: RerankableResult = {
+      score: 0.8,
+      payload: {
+        relativePath: "src/a.ts",
+        startLine: 1,
+        endLine: 50,
+        language: "typescript",
+        chunkType: "function",
+        git: withStamps({ file: { bugFixRate: 100, ageDays: 30 } }),
+      },
+    };
+    const ranked = await gatedReranker.rerank([noSupport], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toBe(100);
+
+    gatedReranker.invalidateStats();
+  });
+
+  // An index sampled before the declaration has no floor on disk, and its bands
+  // were computed over everything — so grading everything against them is the
+  // consistent reading until the stats-contract drift axis repairs the file.
+  it("labels normally when the stats file carries no resolved floor", async () => {
+    gatedReranker.setCollectionStats(statsWithFloor(undefined));
+
+    const ranked = await gatedReranker.rerank([sourcePoint(2)], "hotspots", "semantic_search");
+
+    expect(ranked[0].rankingOverlay!.file!.bugFixRate).toEqual({ value: 100, label: "concerning" });
+
+    gatedReranker.invalidateStats();
+  });
+});

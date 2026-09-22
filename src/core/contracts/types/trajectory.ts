@@ -122,6 +122,42 @@ export interface SignalStatsRequest {
    */
   dedupeByFile?: boolean;
   /**
+   * Sample this signal only from units the collection observed WELL ENOUGH: a
+   * unit contributes its value to a stats bucket only when its support value is
+   * at or above this percentile of the SUPPORT signal's own distribution in the
+   * same bucket. The support is whichever sibling `stats.confidence.support`
+   * already names — there is no second way to declare it.
+   *
+   * The floor is a percentile and never a constant, because what counts as
+   * "observed well enough" is a property of the corpus. Measured on this
+   * project's own index, typescript source, comparing the raw rate's observed
+   * variance against the pure-binomial floor `mean_i[p(1-p)/n_i]` — a ratio at
+   * or below 1 means the spread is indistinguishable from sampling noise:
+   *
+   *   git.chunk.bugFixRate   n>=1 → 0.94   n>=3 → 1.44   n>=10 → 1.99
+   *   git.file.bugFixRate    n>=1 → 0.82   n>=3 → 1.75   n>=10 → 3.00
+   *
+   * At the bottom of the support distribution the only attainable rates are 0
+   * and 100, so the whole population manufactures both tails: p95 sits ON the
+   * 100 atom and the `critical` band grades nothing. Excluding that
+   * subpopulation both restores real dispersion and moves p95 off the atom. The
+   * support's OWN p75 is where it happens — 3 commits per chunk and 4 per file
+   * on this index — which is a corpus-relative quantity, so the declaration
+   * names the percentile and lets the sampler resolve the number.
+   *
+   * Distinct from `sourceScopeOnly` and `chunkTypeFilter`, which select a
+   * population by KIND — what a unit IS (a test, a callable). This one selects
+   * by how well each unit was OBSERVED, which is a property of the measurement
+   * rather than of the unit, and is therefore not knowable until the support's
+   * own distribution exists. The sampler consequently resolves it at finalize
+   * time and persists the resolved number as `SignalStats.supportFloor`, so the
+   * label path excludes exactly the units the bands were computed without.
+   *
+   * Declaring it changes what the stats file SAMPLES, so it is part of
+   * `describeStatsSamplingContract`.
+   */
+  minSupportPercentile?: number;
+  /**
    * Declare that 0 is a real measurement of this signal, not the absence of
    * one, so a zero-valued point joins the percentile sample.
    *
@@ -292,6 +328,17 @@ export interface SignalStats {
   percentiles: Record<number, number>;
   mean?: number;
   stddev?: number;
+  /**
+   * Support value a unit had to reach to enter this sample, for a signal
+   * declaring `stats.minSupportPercentile`. The sampler resolves it from the
+   * support signal's distribution in THIS bucket and persists it here so the
+   * label path uses the identical number instead of re-deriving one; absent for
+   * an ungated signal, and absent on any file sampled before the declaration —
+   * where the bands were computed over everything, so grading everything
+   * against them stays the consistent reading until the `statsContract` drift
+   * axis repairs the file.
+   */
+  supportFloor?: number;
 }
 
 /** Signal stats split by scope (source code vs test code). */

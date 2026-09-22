@@ -98,4 +98,27 @@ describe("describeStatsSamplingContract", () => {
 
     expect(describeStatsSamplingContract([signal(stats)])).toEqual(describeStatsSamplingContract([signal(stats)]));
   });
+
+  // The support gate drops every unit the collection barely observed, so the
+  // percentiles on disk describe a different population the moment it is
+  // declared — and nothing about the numbers says so.
+  it("moves when a signal starts gating on its support", () => {
+    const before = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })]);
+    const after = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, minSupportPercentile: 75 })]);
+
+    expect(after["git.file.bugFixRate"]).not.toBe(before["git.file.bugFixRate"]);
+  });
+
+  it("moves again when the gate's percentile changes", () => {
+    const at75 = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, minSupportPercentile: 75 })]);
+    const at50 = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, minSupportPercentile: 50 })]);
+
+    expect(at50["git.file.bugFixRate"]).not.toBe(at75["git.file.bugFixRate"]);
+  });
+
+  it("stays put when the support gate is unchanged", () => {
+    const stats: PayloadSignalDescriptor["stats"] = { labels: { p50: "healthy" }, minSupportPercentile: 75 };
+
+    expect(describeStatsSamplingContract([signal(stats)])).toEqual(describeStatsSamplingContract([signal(stats)]));
+  });
 });
