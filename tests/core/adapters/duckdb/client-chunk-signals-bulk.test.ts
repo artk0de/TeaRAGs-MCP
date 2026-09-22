@@ -3,12 +3,20 @@
  * `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop in
  * `CodegraphEnrichmentProvider#buildChunkSignals` (the ~196s deferred-chunk tail).
  *
- * Equivalence invariant under test: for EVERY symbol, the bulk map's
- * {fanIn, fanOut, pageRank} is byte-identical to the three per-symbol getters —
- * same confidence-weighted `SUM(COALESCE(confidence,1.0))`, same 2-decimal
- * `roundEdgeWeightSum` boundary, same `Number()`/0 default for pageRank, and a
- * symbol absent from every table reads as {0,0,0} (matching the per-symbol
- * getters which each return 0 on no rows).
+ * Equivalence invariant under test: for every symbol of a graph with NO
+ * namesakes, the bulk map's {fanIn, fanOut, pageRank} is byte-identical to the
+ * three per-symbol getters — same confidence-weighted
+ * `SUM(COALESCE(confidence,1.0))`, same 2-decimal `roundEdgeWeightSum`
+ * boundary, same `Number()`/0 default for pageRank, and a symbol absent from
+ * every table reads as {0,0,0} (matching the per-symbol getters which each
+ * return 0 on no rows).
+ *
+ * The "no namesakes" qualifier is load-bearing since bd tea-rags-mcp-xtdkq: the
+ * bulk map is keyed by `(relPath, symbolId)` while the per-symbol getters still
+ * group on the bare id, so the two agree only where one file declares the
+ * symbol. Where several do, the getters answer the union and the bulk map does
+ * not — that divergence IS the fix, and it is pinned by
+ * `chunk-signals-bulk-namesake-scope.test.ts`.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +25,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import type { SymbolId } from "../../../../src/core/contracts/types/codegraph.js";
+import { fileScopedSymbolKey, type SymbolId } from "../../../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
@@ -93,17 +101,24 @@ describe("DuckDbGraphClient — getChunkSignalsBulk (deferred-chunk read-back)",
   it("matches the per-symbol getters for every symbol (confidence-weighted + rounding + 0-defaults)", async () => {
     await seed();
 
-    // The universe of symbols the deferred-chunk pass would look up, INCLUDING
-    // one that appears in no edge/metric table (must read as {0,0,0}).
-    const symbolIds: SymbolId[] = ["A#run", "B#x", "C#y", "D#z", "Missing#nope"];
+    // The universe of symbols the deferred-chunk pass would look up, each with
+    // the file that declares it, INCLUDING one that appears in no edge/metric
+    // table (must read as {0,0,0}).
+    const declarations: [SymbolId, string][] = [
+      ["A#run", "app/a.rb"],
+      ["B#x", "app/b.rb"],
+      ["C#y", "app/c.rb"],
+      ["D#z", "app/d.rb"],
+      ["Missing#nope", "app/missing.rb"],
+    ];
 
     const bulk = await db.getChunkSignalsBulk();
 
-    for (const id of symbolIds) {
+    for (const [id, relPath] of declarations) {
       const expectedFanIn = await db.getCalledByCount(id);
       const expectedFanOut = await db.getCallSiteCount(id);
       const expectedPageRank = await db.getPageRank(id);
-      const got = bulk.get(id);
+      const got = bulk.get(fileScopedSymbolKey({ relPath, symbolId: id }));
       expect({
         fanIn: got?.fanIn ?? 0,
         fanOut: got?.fanOut ?? 0,
@@ -113,11 +128,11 @@ describe("DuckDbGraphClient — getChunkSignalsBulk (deferred-chunk read-back)",
 
     // Concrete spot-check of the confidence-weighted values (2-decimal rounded):
     // C#y incoming = 1/3 (from A#run dynamic) + 1 (from B#x exact) = 1.33.
-    expect(bulk.get("C#y")?.fanIn).toBe(1.33);
+    expect(bulk.get(fileScopedSymbolKey({ relPath: "app/c.rb", symbolId: "C#y" }))?.fanIn).toBe(1.33);
     // A#run outgoing = 1 + 1/3 + 1/3 = 1.67.
-    expect(bulk.get("A#run")?.fanOut).toBe(1.67);
+    expect(bulk.get(fileScopedSymbolKey({ relPath: "app/a.rb", symbolId: "A#run" }))?.fanOut).toBe(1.67);
     // PageRank round-trips as a plain number.
-    expect(bulk.get("A#run")?.pageRank).toBe(0.12345);
+    expect(bulk.get(fileScopedSymbolKey({ relPath: "app/a.rb", symbolId: "A#run" }))?.pageRank).toBe(0.12345);
   });
 
   it("returns an empty map on a freshly migrated graph (no edges, no metrics)", async () => {

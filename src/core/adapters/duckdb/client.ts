@@ -299,7 +299,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.methodEdges.getCallSiteCount(symbolId);
   }
 
-  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+  async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
     return this.methodEdges.getChunkSignalsBulk();
   }
 

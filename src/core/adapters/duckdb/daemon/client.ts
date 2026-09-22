@@ -954,10 +954,12 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getCallSiteCount", { symbolId })) as number;
   }
 
-  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+  async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
     // Server serialises the Map as `[key, value][]` entries — rebuild here
-    // (same pattern as getCalleeEdges / listAdjacency).
-    const entries = (await this.call("getChunkSignalsBulk", {})) as [SymbolId, ChunkGraphSignals][];
+    // (same pattern as getCalleeEdges / listAdjacency). The key is the
+    // file-scoped composite (bd tea-rags-mcp-xtdkq), so the wire shape is
+    // unchanged — one more string, still one flat entry list.
+    const entries = (await this.call("getChunkSignalsBulk", {})) as [FileScopedSymbolId, ChunkGraphSignals][];
     return new Map(entries);
   }
 

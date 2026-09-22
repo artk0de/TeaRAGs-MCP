@@ -28,7 +28,14 @@
  * Pure: no I/O, no state, same input → same output.
  */
 
-import type { ChunkGraphSignals, SymbolId, SymbolLineRange } from "../../../../contracts/types/codegraph.js";
+import {
+  fileScopedSymbolKey,
+  type ChunkGraphSignals,
+  type FileScopedSymbolId,
+  type RelPath,
+  type SymbolId,
+  type SymbolLineRange,
+} from "../../../../contracts/types/codegraph.js";
 import type { ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { resolveChunkOwnerSymbol } from "./chunk-owner-symbol.js";
 import { buildCodegraphChunkSignals } from "./payload-signals.js";
@@ -88,28 +95,43 @@ const UNOWNED: CodegraphChunkSettlement = { kind: "unowned" };
 
 /**
  * Settle one file's stored chunks: each owned chunk takes its owner's signals
- * from `signalsBySymbol` (all-zero for a symbol the graph has no row for), each
- * unowned one settles without values — or the whole file is unsettled, with the
- * reason, and nothing about it may be written.
+ * from `signalsByFileScopedSymbol` (all-zero for a symbol the graph has no row
+ * for), each unowned one settles without values — or the whole file is
+ * unsettled, with the reason, and nothing about it may be written.
+ *
+ * `relPath` is what turns the whole-graph signal map into THIS file's slice. A
+ * symbolId is unique per file, so looking an owner up by the bare id hands a
+ * top-level `main` the union of every namesake's edges (bd tea-rags-mcp-xtdkq);
+ * the map is keyed by {@link fileScopedSymbolKey} and this is the file half of
+ * that key.
  */
 export function settleCodegraphChunkSignals(
+  relPath: RelPath,
   source: CodegraphChunkRangeSource,
   chunks: readonly CodegraphStoredChunk[],
-  signalsBySymbol: ReadonlyMap<SymbolId, ChunkGraphSignals>,
+  signalsByFileScopedSymbol: ReadonlyMap<FileScopedSymbolId, ChunkGraphSignals>,
 ): CodegraphFileChunkSettlement {
   switch (source.kind) {
     case "none":
       return { kind: "settled-without-signals", reason: source.reason };
     case "walk":
       if (source.ranges === undefined) return { kind: "unsettled", reason: "walked-file-without-ranges" };
-      return { kind: "signals", source: "walk", chunks: settleChunks(source.ranges, chunks, signalsBySymbol) };
+      return {
+        kind: "signals",
+        source: "walk",
+        chunks: settleChunks(relPath, source.ranges, chunks, signalsByFileScopedSymbol),
+      };
     case "persisted":
       // ANY unranged row, not only an all-unranged file: that row may be the
       // nested symbol a chunk belongs to, and narrowing without it lands the
       // chunk on the outer or anchor symbol — the stale owner this replaces.
       if (source.rowsWithoutRanges > 0) return { kind: "unsettled", reason: "persisted-rows-without-ranges" };
       if (source.ranges.length === 0) return { kind: "unsettled", reason: "no-persisted-symbol-rows" };
-      return { kind: "signals", source: "persisted", chunks: settleChunks(source.ranges, chunks, signalsBySymbol) };
+      return {
+        kind: "signals",
+        source: "persisted",
+        chunks: settleChunks(relPath, source.ranges, chunks, signalsByFileScopedSymbol),
+      };
   }
 }
 
@@ -139,11 +161,14 @@ export function toChunkSignalOverlays(
 }
 
 function settleChunks(
+  relPath: RelPath,
   ranges: readonly SymbolLineRange[],
   chunks: readonly CodegraphStoredChunk[],
-  signalsBySymbol: ReadonlyMap<SymbolId, ChunkGraphSignals>,
+  signalsByFileScopedSymbol: ReadonlyMap<FileScopedSymbolId, ChunkGraphSignals>,
 ): Map<string, CodegraphChunkSettlement> {
   const settled = new Map<string, CodegraphChunkSettlement>();
+  const signalsOf = (owner: SymbolId): ChunkGraphSignals | undefined =>
+    signalsByFileScopedSymbol.get(fileScopedSymbolKey({ relPath, symbolId: owner }));
   for (const chunk of chunks) {
     const owner = resolveChunkOwnerSymbol(
       { startLine: chunk.startLine, endLine: chunk.endLine, anchorSymbolId: chunk.symbolId },
@@ -151,9 +176,7 @@ function settleChunks(
     );
     settled.set(
       chunk.chunkId,
-      owner === undefined
-        ? UNOWNED
-        : { kind: "owned", owner, signals: buildCodegraphChunkSignals(signalsBySymbol.get(owner)) },
+      owner === undefined ? UNOWNED : { kind: "owned", owner, signals: buildCodegraphChunkSignals(signalsOf(owner)) },
     );
   }
   return settled;

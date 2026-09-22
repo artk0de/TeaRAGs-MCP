@@ -22,6 +22,7 @@ import {
   NESTED_OWNER_SYMBOL,
   NESTED_PART_CHUNK_ID,
   NESTED_PART_START_LINE,
+  OUTER_REL,
   RUN_POINTER_KEY,
   startEnrichmentLifecycleHarness,
   type EnrichmentLifecycleHarness,
@@ -45,7 +46,9 @@ describe("enrichment runs overlapping on one collection — real worker pool, co
     expect(nested?.startLine).toBeLessThanOrEqual(NESTED_PART_START_LINE);
     expect(nested?.endLine).toBeGreaterThanOrEqual(NESTED_PART_START_LINE);
     expect(symbols.has(ANCHOR_SYMBOL)).toBe(true);
-    expect(await harness.chunkSignalsOf(NESTED_OWNER_SYMBOL)).not.toEqual(await harness.chunkSignalsOf(ANCHOR_SYMBOL));
+    expect(await harness.chunkSignalsOf(OUTER_REL, NESTED_OWNER_SYMBOL)).not.toEqual(
+      await harness.chunkSignalsOf(OUTER_REL, ANCHOR_SYMBOL),
+    );
   }
 
   it("a recompute opened while the sync leg's run is still completing ends the collection on its own markers and owner overlays (71n0p, u3e77)", async () => {
@@ -97,7 +100,7 @@ describe("enrichment runs overlapping on one collection — real worker pool, co
     await expectDistinctOwnerSignals();
     const recomputeWrites = chunkSignalWritesOf(qdrant.chunkSignalWrites, NESTED_PART_CHUNK_ID, marker._run.startedAt);
     expect(recomputeWrites).toHaveLength(1);
-    expect(recomputeWrites[0]).toMatchObject(await harness.chunkSignalsOf(NESTED_OWNER_SYMBOL));
+    expect(recomputeWrites[0]).toMatchObject(await harness.chunkSignalsOf(OUTER_REL, NESTED_OWNER_SYMBOL));
   });
 
   it("releasing a superseded run leaves the newer run's worker-side state, so its deferred pass still maps owners (39xca.3)", async () => {
@@ -130,6 +133,6 @@ describe("enrichment runs overlapping on one collection — real worker pool, co
     expect(newerWrites).toHaveLength(1);
     // Not a bare `enrichedAt` stamp: the overlay of the symbol that owns the chunk.
     expect(Object.keys(newerWrites[0] ?? {}).sort()).toEqual(["enrichedAt", "fanIn", "fanOut", "pageRank"]);
-    expect(newerWrites[0]).toMatchObject(await harness.chunkSignalsOf(NESTED_OWNER_SYMBOL));
+    expect(newerWrites[0]).toMatchObject(await harness.chunkSignalsOf(OUTER_REL, NESTED_OWNER_SYMBOL));
   });
 });
