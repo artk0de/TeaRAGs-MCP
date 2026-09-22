@@ -1,25 +1,26 @@
 /**
- * `--force-enrichments <keys>` must cost ONE extraction+resolve cycle per
- * provider, not two (bd tea-rags-mcp-6aytq).
+ * `--force-enrichments <keys>` — the store repair PLUS the recompute cycle
+ * (bd tea-rags-mcp-6aytq, reinstated scoped by bd tea-rags-mcp-cneu7).
  *
  * `IndexingOps#recomputeEnrichments` drives two legs in sequence: the sync
  * (`ReindexPipeline#reindexChanges` → `EnrichmentCoordinator#runRepairPass`)
- * and the recompute (`EnrichmentCoordinator#recomputeEnrichments`). Only the
- * recompute writes payload — it is the leg that reads the chunk set back out of
- * the index, so it is the only one holding the chunk ids a file overlay is
- * applied through. Forcing the repair leg as well therefore bought a whole
- * extra pass-1 + pass-2 over the same corpus whose result was immediately
- * thrown away and rebuilt.
- *
- * Measured on taxdome 2026-08-14 17:30 (`--force-enrichments codegraph
- * --languages typescript`): the repair leg ran pass-1 over 10,621 files and
- * pass-2 over all of them, reached ALL_COMPLETE at +225.0s having applied
- * payload to `matchedFiles: 0`, and the recompute leg then started its own
- * pass-1 from zero at +262s. The run's 330s guard killed it mid-second-cycle.
+ * and the recompute (`EnrichmentCoordinator#recomputeEnrichments`). 6aytq
+ * removed the forcing because "the recompute's own file phase re-extracts
+ * every stored file unconditionally" — which held for the Qdrant PAYLOAD but
+ * NOT for the providers' persisted store rows: the recompute's DuckDB writes
+ * are additive, so a stale edge row written by older resolver code survived
+ * every run on an unchanged file (live on taxdome 2026-09-21: phantom
+ * cross-language method edges outlived two `--force-enrichments codegraph`
+ * runs; only a `CODEGRAPH_FORCE_RESOLVE=1` run, which forces the repair leg,
+ * retired them). The recompute therefore now routes its selected STORE
+ * providers through a forced repair first — the only diffing write path —
+ * and pays the second extraction cycle on purpose.
  *
  * Both legs converge on `EnrichmentExecutor#runFileBatch`, so counting
  * dispatches per path across one invocation counts cycles. A unit test on
- * either leg alone cannot see the duplication — it only exists in the wiring.
+ * either leg alone cannot see the wiring — the coordinator-level contract
+ * lives in `force-enrichments-provider-repair.test.ts`; this file pins the
+ * composed invocation: exactly two cycles, repair first, nothing else.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -125,7 +126,7 @@ function dispatchCounts(): Map<string, number> {
   return counts;
 }
 
-describe("--force-enrichments — one extraction cycle per provider (bd tea-rags-mcp-6aytq)", () => {
+describe("--force-enrichments — store repair, then the recompute cycle (6aytq / cneu7)", () => {
   let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let config: IngestCodeConfig;
@@ -168,15 +169,19 @@ describe("--force-enrichments — one extraction cycle per provider (bd tea-rags
     await cleanupTempDir(tempDir);
   });
 
-  it("dispatches each file for extraction exactly once", async () => {
+  it("dispatches each file exactly twice — the forced store repair, then the recompute cycle", async () => {
     await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"] });
 
     expect(dispatchCounts()).toEqual(
       new Map([
-        ["app.ts", 1],
-        ["util.ts", 1],
+        ["app.ts", 2],
+        ["util.ts", 2],
       ]),
     );
+    // The FIRST dispatch is the forced repair: one batch carrying the whole
+    // stored corpus (the recompute's file phase batches per stored batch, and
+    // would arrive with or without the repair — the repair is what must lead).
+    expect(extractedPaths.slice(0, 2).sort()).toEqual(["app.ts", "util.ts"]);
   });
 
   it("still re-extracts every file, so the force is not merely cheaper", async () => {

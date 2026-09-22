@@ -312,10 +312,16 @@ export class EnrichmentCoordinator {
    * otherwise take its early return and skip the finalize that recomputes the
    * derived tables, so a repair-only run has to be recognised as real work.
    *
-   * A DRIFT check only — `--force-enrichments` does not widen it: that flag's
-   * forced re-extraction is `recomputeEnrichments`, the leg right after this one,
-   * and forcing here too bought a duplicate pass-1 + pass-2 (bd tea-rags-mcp-6aytq).
-   * `CODEGRAPH_FORCE_RESOLVE` still widens it from outside, for profiling.
+   * A DRIFT check on every ordinary path — but the recompute path
+   * (`--force-enrichments`) NOW forces this repair for its selected store
+   * providers (bd tea-rags-mcp-cneu7), via `forceProviders` below. The
+   * recompute's own writes to a provider's per-file store are ADDITIVE, so
+   * they can never retire a stale edge row on an unchanged file; this leg's
+   * diffing per-file write is the only path that can. That reinstates the
+   * duplicate pass-1 + pass-2 bd tea-rags-mcp-6aytq removed — its premise
+   * ("the recompute re-extracts everything, no hash gate") held for Qdrant
+   * payload, not for the persisted DuckDB edge rows. `CODEGRAPH_FORCE_RESOLVE`
+   * remains the env knob widening the repair for profiling on ANY run.
    *
    * The compare is sound (bd tea-rags-mcp-sz1y0): both legs carry ONE hash, the
    * synchronizer's sha256 (`ParallelFileSynchronizer#hashFile`) — the scan hands
@@ -341,6 +347,17 @@ export class EnrichmentCoordinator {
      * cannot be read, which is the set `narrowDeferredChunkHandoff` promises.
      */
     forcedPaths?: ReadonlyMap<string, ReadonlySet<string>>,
+    /**
+     * Providers whose repair the RECOMPUTE path forces for its selectors (bd
+     * tea-rags-mcp-cneu7): every eligible file re-extracts for them even when
+     * the persisted hash matches, so their edge rows are rewritten through the
+     * store's diffing write path. Distinct from `CODEGRAPH_FORCE_RESOLVE`,
+     * which forces every provider from outside; and scoped to the caller's
+     * eligibility — a selector-forced leg NEVER prunes orphans, because its
+     * eligible set is the run's stored-chunk scope (language-restricted under
+     * `--languages`), not the file universe the orphan diff needs.
+     */
+    forceProviders?: ReadonlySet<string>,
   ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
@@ -350,6 +367,7 @@ export class EnrichmentCoordinator {
 
       const providerEligible = this.repairEligibleFiles(provider, scanned);
       const forced = [...(forcedPaths?.get(provider.key) ?? [])].filter((path) => providerEligible.has(path));
+      const forcedBySelector = forceProviders?.has(provider.key) ?? false;
 
       let persisted: Map<string, string | null> | undefined;
       try {
@@ -368,12 +386,17 @@ export class EnrichmentCoordinator {
       }
 
       const { repair, orphans }: ExtractionRepair = persisted
-        ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll)
+        ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll || forcedBySelector)
         : { repair: [], orphans: [] };
       const drifted = new Set(repair);
       const handedOff = forced.filter((path) => !drifted.has(path));
       repair.push(...handedOff);
-      if (orphans.length > 0) {
+      // Selector-forced eligibility is the run's stored-chunk scope, not the
+      // file universe: rows outside it are the unselected languages' live
+      // rows, and pruning them would delete the graph this run was told not
+      // to touch. The env knob keeps pruning — its eligibility is the full
+      // working-tree scan, where an out-of-set row really is an orphan.
+      if (!forcedBySelector && orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
       if (repair.length > 0) {
@@ -381,10 +404,12 @@ export class EnrichmentCoordinator {
           provider: provider.key,
           collection: collectionName,
           repaired: repair.length,
-          orphaned: orphans.length,
+          orphaned: forcedBySelector ? 0 : orphans.length,
           // Attributes a profile to a forced run; omitted when off, keeping the
           // ordinary run's log line byte-identical.
-          ...(this.forceResolveAll ? { forcedResolve: true } : {}),
+          ...(this.forceResolveAll || forcedBySelector
+            ? { forcedResolve: true, forcedBy: this.forceResolveAll ? "env" : "selector" }
+            : {}),
           // Files walked only because recovery handed their chunks to this run
           // (bd tea-rags-mcp-fxio5). Omitted when none, for the same reason.
           ...(handedOff.length > 0 ? { handedOff: handedOff.length } : {}),
@@ -611,6 +636,49 @@ export class EnrichmentCoordinator {
       ...(languages && languages.length > 0 ? { languages: [...languages] } : {}),
     });
     if (stored.items.length === 0) return EMPTY_METRICS;
+
+    // The recompute's own writes to a provider's per-file store are ADDITIVE —
+    // only the repair leg's diffing per-file write (`applyScopedRowDiff`)
+    // retires rows — so stale edge rows written by older resolver code survive
+    // every recompute on unchanged files (bd tea-rags-mcp-cneu7: phantom
+    // cross-language method edges lived through two `--force-enrichments
+    // codegraph` runs on taxdome, 2026-09-21). Route the selected STORE
+    // providers through a forced repair first, scoped to this run's stored
+    // corpus; the scroll/heal/chunk phases below then rebuild payload from the
+    // now-fresh edges exactly as before. Git-only selections skip this
+    // silently — a provider without a per-file store has nothing to reconcile.
+    const forceProviderSet = new Set(
+      this.providers.filter((p) => matched.includes(p.key) && p.readPersistedFileHashes).map((p) => p.key),
+    );
+    if (forceProviderSet.size > 0) {
+      // Membership drives the forced repair set; hash values keep the drift
+      // check sound for any store provider the selectors did not force, using
+      // the hashes the sync leg's repair captured. Unknown files carry "" —
+      // under force the value is never compared.
+      const hashesBeforeForcedRepair = this.runContentHashes;
+      const eligibilityMap = new Map(
+        [...stored.chunkMap.keys()].map((relPath) => [relPath, hashesBeforeForcedRepair?.get(relPath) ?? ""]),
+      );
+      pipelineLog.enrichmentPhase("RECOMPUTE_FORCED_PROVIDER_REPAIR", {
+        providers: [...forceProviderSet],
+        files: eligibilityMap.size,
+      });
+      await this.runRepairPass(collectionName, absolutePath, eligibilityMap, undefined, forceProviderSet);
+      // The synthetic eligibility map must not DISPLACE the run's hash stamp:
+      // `runRepairPass` captures its `scanned` as `runContentHashes`, and this
+      // run's finalize stamps that map onto every `cg_symbols_files` row — a
+      // `""` stamp never converges and the next incremental repairs the whole
+      // corpus (the o317j defect class). Restore what the sync leg captured.
+      // With NO prior map (a direct recompute call, no sync leg), keep the
+      // eligibility map instead of restoring `undefined`: the provider keeps
+      // the LAST map it was handed (`bindRunState` assigns only on a truthy
+      // one), so an undefined restore would leave the synthetic map as the
+      // sole stamp on whatever worker the repair pinned — and none on the
+      // others, which is exactly the partition-vs-single asymmetry the
+      // language-affinity parity test catches. A defined map rebinds every
+      // dispatch, keeping all workers symmetric.
+      this.runContentHashes = hashesBeforeForcedRepair ?? eligibilityMap;
+    }
 
     // `languages` reaches the run itself, not just the scroll: the terminal
     // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s). Every
