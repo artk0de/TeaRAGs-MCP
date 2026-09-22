@@ -5,46 +5,90 @@ sidebar_position: 99
 
 ## [1.44.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.0...v1.44.1) (2026-09-22)
 
-### Bug Fixes
-
-* **scripts:** take the contributor's name from their GitHub profile ([205398f](https://github.com/artk0de/TeaRAGs-MCP/commit/205398f04513ec600d9a4dad3effa1fdcc5ae109))
-
 ## [1.44.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.1...v1.44.0) (2026-09-22)
 
 ### 🔎 Search & ranking
 
-* File and chunk "age"/recency — used in freshness-based ranking, filters like `battleTested`, and the values shown in search results — now always reflect the current time instead of a stale snapshot from when the file was last indexed.
-* A new `contributor` filter matches any file a given person has recently committed to, filling a gap where the existing `recentAuthor` filter only matched files where that person was the single top committer.
+- File and chunk "age"/recency — used in freshness-based ranking, filters like
+  `battleTested`, and the values shown in search results — now always reflect
+  the current time instead of a stale snapshot from when the file was last
+  indexed.
+- A new `contributor` filter matches any file a given person has recently
+  committed to, filling a gap where the existing `recentAuthor` filter only
+  matched files where that person was the single top committer.
 
 ### 🧠 Code intelligence
 
-* Indexing the same project from multiple worktrees or checkouts no longer causes cross-talk between sessions — each build now gets its own isolated codegraph daemon instead of sharing one that could be killed mid-run by another session's indexing.
+- Indexing the same project from multiple worktrees or checkouts no longer
+  causes cross-talk between sessions — each build now gets its own isolated
+  codegraph daemon instead of sharing one that could be killed mid-run by
+  another session's indexing.
 
 ### ⚡ Indexing & performance
 
-* Index freshness checks now detect when the underlying sampling behind ranking statistics has changed, and repair the statistics automatically during a normal incremental index update instead of leaving outdated numbers in place.
-* Indexing now skips Swift/Xcode build artifacts and dependency checkouts (`.build/`, `Pods/`, etc.) by default, so a small Swift app's search results and rankings aren't diluted by vendored dependency source.
+- Index freshness checks now detect when the underlying sampling behind ranking
+  statistics has changed, and repair the statistics automatically during a
+  normal incremental index update instead of leaving outdated numbers in place.
+- Indexing now skips Swift/Xcode build artifacts and dependency checkouts
+  (`.build/`, `Pods/`, etc.) by default, so a small Swift app's search results
+  and rankings aren't diluted by vendored dependency source.
 
 ### 🗣 Language support
 
-* Swift is now a supported language for semantic search and call-graph navigation — functions, types, extensions, and both XCTest and Quick/Nimble test files are chunked and searchable, and call-graph resolution covers chained calls (e.g. `self.db.query()`), `super` calls up the superclass chain, and receivers typed with `any Protocol` existentials.
-* TypeScript call-graph navigation now resolves method calls made on freshly constructed objects and on values returned by factory functions (e.g. `new Thing().method()`, `createThing().method()`), which previously fell back to a file-only match.
+- Swift is now a supported language for semantic search and call-graph
+  navigation — functions, types, extensions, and both XCTest and Quick/Nimble
+  test files are chunked and searchable, and call-graph resolution covers
+  chained calls (e.g. `self.db.query()`), `super` calls up the superclass chain,
+  and receivers typed with `any Protocol` existentials.
+- TypeScript call-graph navigation now resolves method calls made on freshly
+  constructed objects and on values returned by factory functions (e.g.
+  `new Thing().method()`, `createThing().method()`), which previously fell back
+  to a file-only match.
 
 ### 🛠 CLI & workflow
 
-* `tea-rags doctor --restart` now restarts every running codegraph daemon on the machine instead of just one, needed now that multiple daemons can run side by side for different builds and worktrees.
+- `tea-rags doctor --restart` now restarts every running codegraph daemon on the
+  machine instead of just one, needed now that multiple daemons can run side by
+  side for different builds and worktrees.
 
 ### 🩹 Fixes
 
-* Ranking labels for signals like bug-fix rate, churn, and ownership (e.g. "healthy"/"critical") are now calculated correctly — covers files with too little commit history being mislabeled as maximally risky, test files being graded against unrelated source-code statistics, large multi-chunk files skewing labels for the whole project, and inverted label boundaries shown in index metrics.
-* Search results and index metrics for one project no longer show ranking labels computed from a different project that was searched earlier in the same session.
-* Renamed files now keep their correct commit and churn history — a rename could previously either drop the file's commit count to zero or misattribute the file's entire history to the rename commit alone.
-* Indexing's `--json` output now always reports whether enrichment health was actually checked, instead of silently omitting the field when it wasn't measured.
-* TypeScript/JavaScript call-graph navigation resolves substantially more method calls to their exact target — including calls through barrel/index re-export files and calls whose declaration lives inside a returned object literal from a factory or hook function — while no longer misattributing a call to an unrelated same-named method elsewhere in the same file.
-* Go call-graph resolution is more accurate: type declarations grouped in a single `type (...)` block are now all indexed (previously only the first was visible), and same-named constructor functions like `New()` declared in different packages no longer cross-resolve to each other.
-* JavaScript test files are now chunked and labeled as tests the same way TypeScript and Ruby files already were, and `.mjs`/`.cjs` files are now indexed and searchable — previously they had call-graph data but no searchable chunks at all.
-* The MCP filters-schema resource no longer names payload fields that were renamed or removed, which previously made a raw filter built from that documentation silently match nothing.
-* Call-graph completeness and reliability: edges to methods that resolve to multiple same-file candidates (e.g. multiple interface implementations in one file) are no longer silently dropped, concurrent indexing sessions no longer kill each other's in-flight codegraph writes, and cloning a project's codegraph database (e.g. for a new worktree) is now safe against interruption.
+- Ranking labels for signals like bug-fix rate, churn, and ownership (e.g.
+  "healthy"/"critical") are now calculated correctly — covers files with too
+  little commit history being mislabeled as maximally risky, test files being
+  graded against unrelated source-code statistics, large multi-chunk files
+  skewing labels for the whole project, and inverted label boundaries shown in
+  index metrics.
+- Search results and index metrics for one project no longer show ranking labels
+  computed from a different project that was searched earlier in the same
+  session.
+- Renamed files now keep their correct commit and churn history — a rename could
+  previously either drop the file's commit count to zero or misattribute the
+  file's entire history to the rename commit alone.
+- Indexing's `--json` output now always reports whether enrichment health was
+  actually checked, instead of silently omitting the field when it wasn't
+  measured.
+- TypeScript/JavaScript call-graph navigation resolves substantially more method
+  calls to their exact target — including calls through barrel/index re-export
+  files and calls whose declaration lives inside a returned object literal from
+  a factory or hook function — while no longer misattributing a call to an
+  unrelated same-named method elsewhere in the same file.
+- Go call-graph resolution is more accurate: type declarations grouped in a
+  single `type (...)` block are now all indexed (previously only the first was
+  visible), and same-named constructor functions like `New()` declared in
+  different packages no longer cross-resolve to each other.
+- JavaScript test files are now chunked and labeled as tests the same way
+  TypeScript and Ruby files already were, and `.mjs`/`.cjs` files are now
+  indexed and searchable — previously they had call-graph data but no searchable
+  chunks at all.
+- The MCP filters-schema resource no longer names payload fields that were
+  renamed or removed, which previously made a raw filter built from that
+  documentation silently match nothing.
+- Call-graph completeness and reliability: edges to methods that resolve to
+  multiple same-file candidates (e.g. multiple interface implementations in one
+  file) are no longer silently dropped, concurrent indexing sessions no longer
+  kill each other's in-flight codegraph writes, and cloning a project's
+  codegraph database (e.g. for a new worktree) is now safe against interruption.
 
 ## [1.43.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.0...v1.43.1) (2026-09-22)
 

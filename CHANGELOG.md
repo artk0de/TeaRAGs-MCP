@@ -1,10 +1,5 @@
 ## [1.44.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.0...v1.44.1) (2026-09-22)
 
-### Bug Fixes
-
-- **scripts:** take the contributor's name from their GitHub profile
-  ([205398f](https://github.com/artk0de/TeaRAGs-MCP/commit/205398f04513ec600d9a4dad3effa1fdcc5ae109))
-
 ## [1.44.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.1...v1.44.0) (2026-09-22)
 
 ### 🔎 Search & ranking
