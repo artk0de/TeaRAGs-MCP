@@ -16,6 +16,7 @@ export type {
   FindSymbolRequest,
   SearchResult,
   ExploreResponse,
+  PresetFilterNotice,
   SignalDescriptor,
   PresetDetail,
   PresetDescriptors,

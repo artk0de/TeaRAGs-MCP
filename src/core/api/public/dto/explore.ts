@@ -162,6 +162,33 @@ export interface SearchResult {
   rankingOverlay?: RankingOverlay;
 }
 
+/**
+ * A rerank preset's DEFAULT filter narrowed the candidate set, and the caller
+ * never wrote it. Emitted ONLY for that case: an explicit `filter` param, an
+ * explicit `filter: {}` clear, and a default that was dropped for excluding
+ * the caller's own scope all leave this absent.
+ *
+ * `excluded` is deliberately optional and is omitted today: the search issues
+ * one Qdrant query, so the unfiltered candidate count is not at hand and
+ * obtaining it would cost a second round-trip on every search
+ * (bd tea-rags-mcp-0qfpi).
+ */
+export interface PresetFilterNotice {
+  /** Rerank preset whose default filter applied, e.g. "techDebt". */
+  preset: string;
+  /**
+   * What narrowed: the filter-preset name(s) the default names, then the
+   * payload keys the compiled filter constrains — e.g. `production (isTest)`.
+   * A default written as a raw Qdrant filter has no name, so it reads
+   * `raw filter (<keys>)`.
+   */
+  by: string;
+  /** The literal search param that clears the default. Always `filter: {}`. */
+  clearWith: string;
+  /** Candidates the default removed. Present only when the count came free. */
+  excluded?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Search response types
 // ---------------------------------------------------------------------------
@@ -187,6 +214,13 @@ export interface ExploreResponse {
    * the lookup would have added. Today: find_symbol's collapsed-symbol fallback.
    */
   codegraphWarning?: string;
+  /**
+   * Present only when a rerank preset's DEFAULT filter — one the caller never
+   * wrote — narrowed the candidate set. Names the preset, the condition and
+   * how to clear it, so a thin or empty answer is attributable without having
+   * read the preset's definition first.
+   */
+  presetFilterNotice?: PresetFilterNotice;
 }
 
 // ---------------------------------------------------------------------------

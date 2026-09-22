@@ -173,3 +173,50 @@ describe("registerSearchTools — codegraphWarning", () => {
     expect("codegraphWarning" in result.structuredContent).toBe(false);
   });
 });
+
+// bd tea-rags-mcp-0qfpi — a rerank preset's DEFAULT filter narrowed the set and
+// the caller never wrote it. The notice rides the response next to driftWarning
+// so an empty or thin answer is attributable without reading preset source.
+describe("registerSearchTools — presetFilterNotice", () => {
+  const notice = { preset: "techDebt", by: "production (isTest)", clearWith: "filter: {}" };
+
+  it.each(["semantic_search", "hybrid_search", "rank_chunks", "find_similar"] as const)(
+    "%s passes presetFilterNotice through to structuredContent",
+    async (toolName) => {
+      const appMethod = {
+        semantic_search: "semanticSearch",
+        hybrid_search: "hybridSearch",
+        rank_chunks: "rankChunks",
+        find_similar: "findSimilar",
+      }[toolName];
+      const { captured } = makeHarness({
+        [appMethod]: vi.fn().mockResolvedValue({ results: [], presetFilterNotice: notice }),
+      });
+      const tool = captured.find((t) => t.name === toolName);
+
+      const result = (await tool!.handler({ path: "/x", query: "q", rerank: "techDebt" }, {})) as {
+        structuredContent: { presetFilterNotice?: typeof notice };
+      };
+
+      expect(result.structuredContent.presetFilterNotice).toEqual(notice);
+    },
+  );
+
+  it("omits presetFilterNotice when the caller's own filter is what applied", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "semantic_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q", filter: {} }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect("presetFilterNotice" in result.structuredContent).toBe(false);
+  });
+
+  it("declares presetFilterNotice on the shared search output schema", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.outputSchema).toHaveProperty("presetFilterNotice");
+    }
+  });
+});

@@ -67,6 +67,20 @@ export const SearchResultOutputSchema = {
       "absent on hybrid_search, rank_chunks, find_symbol, and on indexes with no measured scale (reindex fills it).",
   ),
   driftWarning: z.string().nullable().optional().describe("Warning if index may be stale"),
+  presetFilterNotice: z
+    .object({
+      preset: z.string().describe("Rerank preset whose DEFAULT filter applied"),
+      by: z.string().describe("Filter-preset name(s) and the payload keys they constrain, e.g. 'production (isTest)'"),
+      clearWith: z.string().describe("Search param that clears the default — always 'filter: {}'"),
+      excluded: z.number().optional().describe("Candidates the default removed, when the count was free"),
+    })
+    .optional()
+    .describe(
+      "A rerank preset's DEFAULT filter narrowed this result set and you did not write it. " +
+        "Most presets default to production (no tests / docs / block chunks), so a thin or empty " +
+        "answer may be the default, not the corpus. Re-run with the named clearWith param to see " +
+        "the excluded population. Absent whenever you passed your own 'filter'.",
+    ),
   codegraphWarning: z
     .string()
     .optional()
