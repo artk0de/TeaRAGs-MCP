@@ -1,29 +1,79 @@
+## [1.43.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.0...v1.43.1) (2026-09-22)
+
+### 🩹 Fixes
+
+* Ruby call-graph navigation (find-callers, impact analysis) now resolves calls to `module_function` methods, which previously returned no results
+
 ## [1.43.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.42.0...v1.43.0) (2026-09-19)
 
 ### ⚡ Indexing & performance
 
-* The first index of a new worktree for an already-indexed repository now seeds automatically from a sibling working tree's index — copying what's unchanged and only re-embedding what differs — turning a slow first index into a fast incremental one, with an opt-out when a from-scratch index is wanted
+- The first index of a new worktree for an already-indexed repository now seeds
+  automatically from a sibling working tree's index — copying what's unchanged
+  and only re-embedding what differs — turning a slow first index into a fast
+  incremental one, with an opt-out when a from-scratch index is wanted
 
 ### 🛠 CLI & workflow
 
-* `doctor --sweep-workers` finds and stops index-worker processes left running after a killed CLI command, with a dry-run preview and JSON output for scripting
-* `prime` now shows how much RAM and page cache an index is using against Qdrant's total, with a detailed memory breakdown available in debug mode
+- `doctor --sweep-workers` finds and stops index-worker processes left running
+  after a killed CLI command, with a dry-run preview and JSON output for
+  scripting
+- `prime` now shows how much RAM and page cache an index is using against
+  Qdrant's total, with a detailed memory breakdown available in debug mode
 
 ### 🩹 Fixes
 
-* Go code search and navigation is significantly more accurate: symbol lookups, call resolution, generics, struct embedding, and package imports (including build-tag variants and vendored dependencies) now resolve to the correct file and package instead of the wrong or no result
-* TypeScript and JavaScript code search and navigation resolve calls and imports far more accurately: `this`-member calls, interface implementations, and calls into base classes outside the project are now correctly attributed; imports resolve to the right file for extensionless imports, JSON modules, re-exports, and TypeScript's ESM/CJS module extensions
-* Search results now honor small limits exactly — asking for 1, 2, or 3 results no longer returns 5
-* Author and recency filters now do what they claim: filtering by who recently touched code (`recentAuthor`) actually filters results instead of being silently ignored, age-based filters stay consistent with what's actually indexed, and code committed the same day is no longer treated as having no date
-* Ranking presets and filters behave more predictably: the code-decomposition ranking preset again excludes test and block-level chunks by default when code-graph ranking is on, an explicit language filter is no longer silently narrowed by a preset's own default, and preset defaults no longer exclude the caller's own test or documentation files from results
-* Fixed stale or fabricated "last modified" dates and code-age values that could linger on code after a partial re-index or on a file with no commit history, which was throwing off freshness-based ranking and "recently changed" searches
-* `rank_chunks` custom ordering now only accepts fields tea-rags actually tracks, instead of silently ordering by nothing for an unsupported field; a one-time cleanup also removes leftover, unused index structures that were wasting disk space and slowing down every write
-* `.mts` and `.cts` TypeScript files are now indexed and searchable like other TypeScript files — correctly classified as source vs. test, and their imports resolve correctly
-* Worktree index seeding recovers correctly from interrupted or unreliable runs: it resumes a seed whose process died mid-way, refuses to seed from a sibling whose own state is incomplete, and never silently treats an unreadable seed marker as finished
-* Indexing now recovers cleanly when the background code-graph process dies or restarts mid-run: a stale connection can no longer read from or write to the wrong version of the graph, connections are released instead of leaking, and failures report their real cause instead of a generic timeout
-* Index-worker processes orphaned by a killed CLI run are now detected and cleaned up automatically, and correctly tracked regardless of the system's locale settings
-* Code-graph indexing no longer produces incomplete or corrupted results under concurrent activity: a graph read that overlaps another operation now fails and retries instead of silently returning a truncated graph, index rebuilds wait for in-flight writes instead of racing them, and a failed batch no longer lets other work double-process the same records
-* Running one MCP server across multiple projects no longer reports false configuration drift, or risks indexing with the wrong settings, when the server's own startup environment differs from a project's recorded configuration
+- Go code search and navigation is significantly more accurate: symbol lookups,
+  call resolution, generics, struct embedding, and package imports (including
+  build-tag variants and vendored dependencies) now resolve to the correct file
+  and package instead of the wrong or no result
+- TypeScript and JavaScript code search and navigation resolve calls and imports
+  far more accurately: `this`-member calls, interface implementations, and calls
+  into base classes outside the project are now correctly attributed; imports
+  resolve to the right file for extensionless imports, JSON modules, re-exports,
+  and TypeScript's ESM/CJS module extensions
+- Search results now honor small limits exactly — asking for 1, 2, or 3 results
+  no longer returns 5
+- Author and recency filters now do what they claim: filtering by who recently
+  touched code (`recentAuthor`) actually filters results instead of being
+  silently ignored, age-based filters stay consistent with what's actually
+  indexed, and code committed the same day is no longer treated as having no
+  date
+- Ranking presets and filters behave more predictably: the code-decomposition
+  ranking preset again excludes test and block-level chunks by default when
+  code-graph ranking is on, an explicit language filter is no longer silently
+  narrowed by a preset's own default, and preset defaults no longer exclude the
+  caller's own test or documentation files from results
+- Fixed stale or fabricated "last modified" dates and code-age values that could
+  linger on code after a partial re-index or on a file with no commit history,
+  which was throwing off freshness-based ranking and "recently changed" searches
+- `rank_chunks` custom ordering now only accepts fields tea-rags actually
+  tracks, instead of silently ordering by nothing for an unsupported field; a
+  one-time cleanup also removes leftover, unused index structures that were
+  wasting disk space and slowing down every write
+- `.mts` and `.cts` TypeScript files are now indexed and searchable like other
+  TypeScript files — correctly classified as source vs. test, and their imports
+  resolve correctly
+- Worktree index seeding recovers correctly from interrupted or unreliable runs:
+  it resumes a seed whose process died mid-way, refuses to seed from a sibling
+  whose own state is incomplete, and never silently treats an unreadable seed
+  marker as finished
+- Indexing now recovers cleanly when the background code-graph process dies or
+  restarts mid-run: a stale connection can no longer read from or write to the
+  wrong version of the graph, connections are released instead of leaking, and
+  failures report their real cause instead of a generic timeout
+- Index-worker processes orphaned by a killed CLI run are now detected and
+  cleaned up automatically, and correctly tracked regardless of the system's
+  locale settings
+- Code-graph indexing no longer produces incomplete or corrupted results under
+  concurrent activity: a graph read that overlaps another operation now fails
+  and retries instead of silently returning a truncated graph, index rebuilds
+  wait for in-flight writes instead of racing them, and a failed batch no longer
+  lets other work double-process the same records
+- Running one MCP server across multiple projects no longer reports false
+  configuration drift, or risks indexing with the wrong settings, when the
+  server's own startup environment differs from a project's recorded
+  configuration
 
 ## [1.42.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.41.0...v1.42.0) (2026-09-16)
 

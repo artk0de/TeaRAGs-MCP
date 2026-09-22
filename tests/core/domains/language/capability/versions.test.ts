@@ -199,12 +199,15 @@ describe("seeded support versions", () => {
       // typed to nothing, and widens `storedPropertyType` to the cross-file
       // field union plus the superclass chain — so an index built by walker 5
       // holds no fact about any `any`-annotated parameter, local or property.
+      // ruby walker 4: `module_function` now emits the static symbolId form
+      // alongside the instance one, so an index built by walker 3 holds none of
+      // the `M.foo` → `M#foo` edges this one emits for module functions.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
         ["javascript", 3],
         ["python", 8],
-        ["ruby", 3],
+        ["ruby", 4],
         ["java", 2],
         ["rust", 2],
         ["go", 4],

@@ -91,7 +91,15 @@ export function rbNameOf(
       // <<<self and def self.foo already produce static-form symbols via
       // classifyMethod, and `extend self` is conventionally a module idiom
       // (`extend self` inside a class is rare and semantically different).
-      if (node.type === "method" && kind === "instance" && rubyMethodInsideExtendSelfModule(node)) {
+      // `module_function` is the same promotion by a different idiom: it makes
+      // each affected `def` a private instance method AND a singleton method,
+      // so `M.foo` is a valid call site exactly as under `extend self`. Emitted
+      // through the same dual-form path — see rubyMethodUnderModuleFunction.
+      if (
+        node.type === "method" &&
+        kind === "instance" &&
+        (rubyMethodInsideExtendSelfModule(node) || rubyMethodUnderModuleFunction(node))
+      ) {
         return [
           { name: id.text, descendsInto: false, methodKind: "instance" },
           { name: id.text, descendsInto: false, methodKind: "static" },
@@ -182,6 +190,62 @@ function rubyMethodInsideExtendSelfModule(methodNode: AstNode): boolean {
         if (!args) continue;
         const firstArg = args.namedChildren[0];
         if (firstArg?.type === "self") return true;
+      }
+      return false;
+    }
+    p = p.parent;
+  }
+  return false;
+}
+
+/**
+ * Whether a `method` def is promoted to module-level by `module_function` in
+ * its enclosing module body. Ruby accepts three spellings, and all three make
+ * `M.foo` callable, so all three need the codegraph's static-form alias:
+ *
+ *   - bare `module_function` — a TOGGLE: every `def` that follows it in that
+ *     body is promoted, and every `def` above it is not. Position matters here,
+ *     which is the one way this differs from `extend self`.
+ *   - `module_function :foo, :bar` — names its targets, position-free.
+ *   - `module_function def foo; end` — promotes the def it wraps.
+ *
+ * Stops at the first enclosing `class` for the same reason `extend self` does:
+ * inside a class the idiom is rare and means something else.
+ */
+function rubyMethodUnderModuleFunction(methodNode: AstNode): boolean {
+  const defName = methodNode.childForFieldName("name")?.text;
+  const defRow = methodNode.startPosition.row;
+  let p: AstNode | null = methodNode.parent;
+  while (p) {
+    if (p.type === "class") return false;
+    if (p.type === "module") {
+      const body = p.childForFieldName("body");
+      const stmts = body ? body.children : p.children;
+      for (const stmt of stmts) {
+        // Bare toggle: tree-sitter-ruby parses a receiverless, argumentless
+        // `module_function` as a plain identifier statement, not a call.
+        if (stmt.type === "identifier" && stmt.text === "module_function") {
+          if (stmt.startPosition.row < defRow) return true;
+          continue;
+        }
+        if (stmt.type !== "call" && stmt.type !== "method_call") continue;
+        if (stmt.childForFieldName("receiver")) continue;
+        const methodField = stmt.childForFieldName("method") ?? stmt.children.find((c) => c.type === "identifier");
+        if (methodField?.text !== "module_function") continue;
+        const args = stmt.childForFieldName("arguments") ?? stmt.children.find((c) => c.type === "argument_list");
+        // A call node with no argument list is the toggle again, reached
+        // through a grammar shape that wraps it — treat it the same way.
+        if (!args || args.namedChildren.length === 0) {
+          if (stmt.startPosition.row < defRow) return true;
+          continue;
+        }
+        if (!defName) continue;
+        for (const arg of args.namedChildren) {
+          // `:foo` — simple_symbol text carries the leading colon.
+          if (arg.type === "simple_symbol" && arg.text.replace(/^:/, "") === defName) return true;
+          // `module_function def foo; end`
+          if (arg.type === "method" && arg.childForFieldName("name")?.text === defName) return true;
+        }
       }
       return false;
     }
