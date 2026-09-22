@@ -182,6 +182,11 @@ class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
     for (const signal of this.statsSignals) {
       const scopedArr = scopedMap.get(signal.key);
       if (!scopedArr) continue;
+      // A source-scope-only signal contributes nothing to the test bucket, so
+      // the bucket stays empty and `computeCollectionStats` publishes no test
+      // stats for it — which is what makes the reranker leave a test-scope
+      // point unlabeled rather than grade it on the source ladder.
+      if (ctx.scope === "test" && signal.stats?.sourceScopeOnly) continue;
       const target = ctx.scope === "test" ? scopedArr.test : scopedArr.source;
       tryPushSignalValue(point, signal, ctx.pointChunkType, target, this.fileScopedDedupe(signal, ctx, ctx.scope));
     }

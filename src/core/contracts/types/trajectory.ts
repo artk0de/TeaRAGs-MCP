@@ -95,6 +95,24 @@ export interface SignalStatsRequest {
    */
   chunkTypeFilter?: string | readonly string[];
   /**
+   * The signal's distribution is only meaningful over source code, so the test
+   * bucket is neither sampled nor published — a test-scope point keeps the bare
+   * number instead of a label.
+   *
+   * Distinct from `chunkTypeFilter`, which narrows WHICH chunks are sampled and
+   * empties the test bucket only as a side effect of the chunk types it happens
+   * to name. This says the emptiness is the POINT: `git.*.bugFixRate` measures
+   * how much of a file's history was spent fixing it, and a test file's fix rate
+   * tracks the code under test, not the test. Grading a spec against other specs
+   * on that axis answers a question nobody asked.
+   *
+   * Declaring it changes what the stats file SAMPLES, so it is part of
+   * `describeStatsSamplingContract` — an index built before the flip keeps its
+   * stale test-scope percentiles until the stats-contract drift axis reports
+   * them.
+   */
+  sourceScopeOnly?: boolean;
+  /**
    * Treat the signal as file-scoped: contribute at most one value per distinct
    * `relativePath` to each stats bucket (global, per-language, per-scope).
    *

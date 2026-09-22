@@ -120,6 +120,24 @@ carry their own navigators.
   dampening `k` is a source-code number while the filter still matches test
   chunks; and editing `CODE_TEST_PATHS` for a language whose chunker already
   emits test chunks changes nothing.
+
+  **Two aggregates ship in every stats file, and reading one for the other is
+  the standing trap.** `perSignal` is GLOBAL — one distribution per signal,
+  pooled across every code language, source scope only — and it is what filter
+  presets and the reranker's dampening `k` read. `perLanguage` is split by
+  (language, scope) and is what LABEL resolution and the `prime` digest read
+  (the resolution half is `../explore/CLAUDE.md`). Their numbers diverge
+  whenever a language sits below `MIN_LANGUAGE_SHARE`, because such a language
+  still enters the global pool but never earns a `perLanguage` entry. Measured
+  on this index: `git.file.bugFixRate` p75 is 43 globally and 50 in typescript
+  source, off 2158 pooled files against 2003 typescript ones. Quote the wrong
+  one and you will explain a threshold with a number no consumer of it ever saw
+  — which is exactly what happened here, twice, before this paragraph existed.
+  `prime` compounds it by rendering neither: it prints the `labelMap`, i.e. the
+  band thresholds left after `resolvableLabelBands` drops the unreachable ones,
+  so a percentile that ties away is absent from the digest while still sitting
+  in the stats file.
+
 - **`RerankPreset.filter` is a default a user filter REPLACES, and `relevance`
   must never declare one.** `resolveFilterSpec`
   (`api/internal/ops/explore-ops.ts`): `effective = spec ?? presetDefault`, and

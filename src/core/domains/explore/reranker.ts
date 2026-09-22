@@ -771,6 +771,20 @@ export class Reranker {
    * Per-language, scope-split stats for one signal key, with the source/test
    * pick and the no-global-fallback rule applied. Shared by the generic label
    * path and the age branch so both read stats identically.
+   *
+   * The pick is STRICT: a test-scope point reads test-scope stats or nothing.
+   * A signal whose test bucket was never sampled — every descriptor with a
+   * single-valued `chunkTypeFilter`, and anything declaring `sourceScopeOnly` —
+   * leaves the point with a bare number, exactly as a language absent from
+   * `perLanguage` does. Substituting the source distribution would grade the
+   * point against a population it is not in, and `IndexMetricsQuery` publishes
+   * a `test` labelMap only when that bucket exists, so the label would name a
+   * band the advertised vocabulary does not contain. It is also the collapse
+   * `applyLabelResolution` already refuses to cause: it skips
+   * `applySignalFloors` for test scope precisely because test files are
+   * systematically longer and a shared ladder pushes most of them into the top
+   * label — reading source percentiles here re-creates that, floors or no
+   * floors.
    */
   private scopedStatsFor(
     fullKey: string | undefined,
@@ -787,7 +801,7 @@ export class Reranker {
     const scope = detectScope(chunkType, relativePath ?? "", language, {
       languageTestChunkCounts: new Map(),
     });
-    const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
+    const signalStats = scope === "test" ? scopedStats.test : scopedStats.source;
     return signalStats?.percentiles ? signalStats : undefined;
   }
 

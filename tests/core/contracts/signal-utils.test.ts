@@ -4,10 +4,12 @@ import {
   blend,
   computeAlpha,
   confidenceDampening,
+  describeStatsSamplingContract,
   normalize,
   p95,
   toPhysicalPayloadKey,
 } from "../../../src/core/contracts/signal-utils.js";
+import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 
 describe("normalize", () => {
   it("normalizes value within range", () => {
@@ -73,5 +75,27 @@ describe("toPhysicalPayloadKey", () => {
   });
   it("passes top-level static keys through unchanged", () => {
     expect(toPhysicalPayloadKey("isTest")).toBe("isTest");
+  });
+});
+
+describe("describeStatsSamplingContract", () => {
+  function signal(stats: PayloadSignalDescriptor["stats"]): PayloadSignalDescriptor {
+    return { key: "git.file.bugFixRate", type: "number", description: "bug-fix share", stats };
+  }
+
+  // Dropping the test bucket changes WHICH values the stats file holds, so an
+  // index built before the flip keeps stale test-scope percentiles unless the
+  // drift axis can see the difference.
+  it("moves when a signal stops sampling the test scope", () => {
+    const before = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })]);
+    const after = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, sourceScopeOnly: true })]);
+
+    expect(after["git.file.bugFixRate"]).not.toBe(before["git.file.bugFixRate"]);
+  });
+
+  it("stays put when the declaration is unchanged", () => {
+    const stats: PayloadSignalDescriptor["stats"] = { labels: { p50: "healthy" }, sourceScopeOnly: true };
+
+    expect(describeStatsSamplingContract([signal(stats)])).toEqual(describeStatsSamplingContract([signal(stats)]));
   });
 });

@@ -124,6 +124,12 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       // p50/p75/p95, so declare p25 here for index-time computation.
       percentilesToCompute: [25],
       dedupeByFile: true,
+      // A spec's bug-fix rate measures the code under test, not the spec: the
+      // fixes land in the implementation and the spec is edited alongside. A
+      // test-scope ladder built from those rates grades specs against each
+      // other on a property none of them owns, so the bucket is not sampled and
+      // a test chunk keeps the bare number.
+      sourceScopeOnly: true,
       // A corpus that stamps one rate on every file (a shallow clone, a vendored
       // tree) ties all three bands. The rate then grades nothing, so the honest
       // reading is the least alarming one — `critical` for an entire repository
@@ -261,6 +267,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       zeroIsValidObservation: true,
       // Already a 0–100 percentage — render with "%" suffix, no ×100 scaling.
       format: "percent100",
+      // Same reading as the file-scope twin — the rate belongs to the code
+      // under test, so the test bucket is left unsampled.
+      sourceScopeOnly: true,
       confidence: {
         support: "commitCount",
         score: { threshold: 10, adaptivePercentile: 25 },

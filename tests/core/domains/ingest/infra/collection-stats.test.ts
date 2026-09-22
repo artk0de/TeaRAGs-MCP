@@ -719,6 +719,63 @@ describe("computeCollectionStats distributions", () => {
       expect(result.distributions.enrichmentTimeRange).toBeUndefined();
     });
 
+    // A ratio whose distribution only means something over source code has no
+    // business publishing a test-scope ladder: the test bucket would grade test
+    // chunks against a population nobody reasons about. Declaring the signal
+    // source-scope-only stops it being sampled there at all.
+    describe("sourceScopeOnly", () => {
+      const sourceScopeOnlySignals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.bugFixRate",
+          type: "number",
+          description: "bug-fix share",
+          stats: { labels: { p50: "healthy", p95: "critical" }, sourceScopeOnly: true },
+        },
+        {
+          key: "git.file.commitCount",
+          type: "number",
+          description: "commit count",
+          stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+        },
+      ];
+
+      function scopedPoints() {
+        const source = Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            language: "ruby",
+            chunkType: "function",
+            relativePath: `app/models/m${i}.rb`,
+            git: { file: { bugFixRate: 5 + i, commitCount: 2 + i } },
+          },
+        }));
+        const test = Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            language: "ruby",
+            chunkType: "test",
+            relativePath: `spec/models/m${i}_spec.rb`,
+            git: { file: { bugFixRate: 60 + i, commitCount: 20 + i } },
+          },
+        }));
+        return [...source, ...test];
+      }
+
+      it("leaves the test bucket unsampled while the source bucket still fills", () => {
+        const result = computeCollectionStats(scopedPoints(), sourceScopeOnlySignals, ALL_ACCS);
+
+        const bugFixRate = result.perLanguage.get("ruby")!.get("git.file.bugFixRate")!;
+        expect(bugFixRate.source.count).toBe(10);
+        expect(bugFixRate.test).toBeUndefined();
+      });
+
+      it("leaves a signal that does not declare it sampling both scopes", () => {
+        const result = computeCollectionStats(scopedPoints(), sourceScopeOnlySignals, ALL_ACCS);
+
+        const commitCount = result.perLanguage.get("ruby")!.get("git.file.commitCount")!;
+        expect(commitCount.source.count).toBe(10);
+        expect(commitCount.test!.count).toBe(10);
+      });
+    });
+
     it("global perSignal excludes test chunks", () => {
       const sourcePoints = Array.from({ length: 10 }, (_, i) =>
         makePoint({ methodLines: 20 + i, relativePath: `app/m${i}.rb` }),

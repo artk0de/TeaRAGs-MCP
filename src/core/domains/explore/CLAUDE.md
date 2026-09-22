@@ -108,6 +108,22 @@
   `collectionStats.perLanguage` entry, or no stats for the signal. Why: doc
   chunks, low-volume and new languages show a bare number instead of
   `{ value, label }` — stats coverage, not an `overlayMask` bug.
+- **The scope pick is strict too — a test-scope point reads test-scope stats or
+  nothing.** `Reranker#scopedStatsFor` picks by `detectScope` and does NOT fall
+  back to `source` when the test bucket is absent; the point keeps its bare
+  number, exactly as an unmeasured language does. Two populations have no test
+  bucket by construction: every descriptor with a single-valued
+  `chunkTypeFilter` (`methodLines`, `methodDensity`, all `codegraph.chunk.*`)
+  and every descriptor declaring `stats.sourceScopeOnly` (both
+  `git.*.bugFixRate`). Why: `IndexMetricsQuery#buildLanguageSignals` publishes a
+  `test` labelMap ONLY when that bucket exists, so a source-derived label on a
+  test point names a band the advertised vocabulary does not contain — and a
+  `prime` line reading `test: —` then contradicts a live overlay saying `large`.
+  It is also the collapse this file's floors bullet already refuses to cause:
+  test files are systematically longer, so grading them on the source ladder
+  pushes most of them into the top label whether floors are applied or not. A
+  cross-scope fallback lived here until 2026-09-22 and was asserted by a test
+  named for it.
 - **Mass-signal thresholds are floored per language:
   `threshold = max(percentile, floor)`, source scope only.** `moduleLines` /
   `moduleMethodCount` / `memberCount` pass through `applySignalFloors`

@@ -2427,7 +2427,11 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("falls back to source thresholds when test stats undefined", async () => {
+  // A test-scope point graded on the source ladder is graded against a
+  // population it is not in. The same signal's `labelMap` publishes no test
+  // bands at all, so the label and the advertised vocabulary disagree — the
+  // one thing per-scope stats exist to prevent.
+  it("emits no label when the test scope has no stats of its own", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map(),
       perLanguage: new Map([
@@ -2457,7 +2461,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     };
     rerankerWithLabels.setCollectionStats(collectionStats);
 
-    // Test chunk — no test stats, should fall back to source thresholds
+    // Test chunk — no test stats, so no label at all
     const testResult = await rerankerWithLabels.rerank(
       [
         {
@@ -2476,8 +2480,9 @@ describe("Reranker — label resolution in buildOverlay()", () => {
       "semantic_search",
     );
     const overlay = testResult[0].rankingOverlay!;
-    // Falls back to source: p75=10, 10>=10 → "high"
-    expect(overlay.file!.commitCount).toEqual({ value: 10, label: "high" });
+    // Source ladder would say p75=10, 10>=10 → "high". The bare number is the
+    // honest answer: this point's population was never measured.
+    expect(overlay.file!.commitCount).toBe(10);
 
     rerankerWithLabels.invalidateStats();
   });

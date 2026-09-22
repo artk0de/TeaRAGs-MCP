@@ -213,6 +213,7 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
     `chunkTypes=${chunkTypes}`,
     `perFile=${stats.dedupeByFile === true}`,
     `zeroCounts=${stats.zeroIsValidObservation === true}`,
+    `sourceOnly=${stats.sourceScopeOnly === true}`,
     `mean=${stats.mean === true}`,
     `stddev=${stats.stddev === true}`,
   ].join(" ");
