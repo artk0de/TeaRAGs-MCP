@@ -58,6 +58,14 @@ jobs:
           git log --no-merges --format='%H%x1f%s%x1f%an%x1f%ae%x1f%b%x1e' ${{ steps.range.outputs.range }} \
             | node scripts/git-log-to-json.js > commits.json
 
+      # Git only carries the name the committing machine was configured with, so
+      # a contributor lands in the credits as bare text. GitHub knows the account
+      # behind each commit — ask it, and the credits become `@handle` links.
+      - name: Resolve contributor GitHub handles
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: node scripts/resolve-author-handles.js commits.json > author-handles.json
+
       # claude-code-action@v1 only handles issue/PR/comment events ("Unsupported
       # event type: release"), so we drive the headless CLI directly. The OAuth
       # token authorizes the subscription — no Anthropic API key needed.

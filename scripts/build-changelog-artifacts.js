@@ -13,9 +13,14 @@ import {
 } from "./lib/render-changelog.js";
 
 const data = JSON.parse(readFileSync("release-notes.json", "utf8"));
+// GitHub logins for this range's commit authors, resolved from the API by
+// scripts/resolve-author-handles.js. Absent file → the renderer falls back to
+// its offline map and plain names, so a local run without a token still
+// produces valid artifacts.
+const handles = existsSync("author-handles.json") ? JSON.parse(readFileSync("author-handles.json", "utf8")) : {};
 // Contributors come from git (commits.json), NOT the agent — a deterministic
 // fact, never an LLM guess. Built by the same workflow step before the agent.
-const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")));
+const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")), handles);
 // Blog posts this release's commit range ADDED, from git via
 // scripts/blog-posts-to-json.js. Absent file → no posts → nothing rendered, so
 // a local run without the workflow step still produces valid artifacts.

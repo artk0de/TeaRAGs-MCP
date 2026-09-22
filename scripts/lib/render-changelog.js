@@ -15,13 +15,28 @@ const THEMES = [
   { key: "fixes", label: "🩹 Fixes" },
 ];
 
-// Email → GitHub handle for known contributors. Git author NAME varies across
-// machines (`artk0de` / `Arthur Korochansky`) but the EMAIL is stable, so the
-// email is the join key. Maps to the account whose avatar should surface in the
-// GitHub release Contributors block.
+// Email → GitHub handle, the OFFLINE fallback. The release job resolves handles
+// from the GitHub API (scripts/resolve-author-handles.js) and passes them in;
+// this map covers what an API lookup cannot answer — a co-author, who has no
+// commit of their own to look up, and any run without a token. Git author NAME
+// varies across machines (`artk0de` / `Arthur Korochansky`) but the EMAIL is
+// stable, so the email is the join key.
 const CONTRIBUTOR_HANDLES = {
   "art2rik.desperado@gmail.com": "artk0de",
 };
+
+// A handle renders as a BARE mention, never a markdown link. GitHub assembles
+// the avatar strip it shows under "Contributors" on the release page from the
+// mentions in the notes — measured on v1.43.1, where spelling the same handle
+// as `[@incubus](https://github.com/incubus)` dropped incubus out of that strip
+// and left only the account that published the release. The mention autolinks
+// to the profile anyway. The person's name follows in parentheses, since an
+// alias alone identifies the author only to people who already know the alias;
+// a name that IS the handle adds nothing and is dropped rather than doubled.
+function contributorCredit(handle, name) {
+  const mention = `@${handle}`;
+  return name && name.toLowerCase() !== handle.toLowerCase() ? `${mention} (${name})` : mention;
+}
 
 // CI bots and AI co-authors are not human contributors — keep them out of the
 // Contributors credit (and out of the release avatar block).
@@ -52,24 +67,38 @@ function parseCoAuthors(body) {
 }
 
 // Real human contributors for a release range, in first-seen order: every commit
-// author plus co-authored-by humans, minus CI bots and AI co-authors. Known
-// emails render as `@handle` mentions (avatar in the release block); unknown
-// humans render as their plain name — never a broken `@mention`.
-export function collectContributors(commits) {
-  const seen = new Set();
-  const out = [];
-  const add = (person) => {
+// author plus co-authored-by humans, minus CI bots and AI co-authors. An email
+// with a known handle renders as `@handle (Name)`; an unknown human renders as
+// their plain name — never a broken `@mention`. `resolvedHandles` is
+// the email → login map the release job built from the GitHub API, keyed
+// lowercase; it wins over the offline fallback above, which only has to cover
+// what the API cannot answer.
+export function collectContributors(commits, resolvedHandles = {}) {
+  const order = [];
+  const nameByEmail = new Map();
+  const remember = (person) => {
     const email = (person.email || "").toLowerCase();
-    if (NON_HUMAN_EMAILS.has(email) || seen.has(email)) return;
-    seen.add(email);
-    const handle = CONTRIBUTOR_HANDLES[email];
-    out.push(handle ? `@${handle}` : person.name);
+    if (NON_HUMAN_EMAILS.has(email)) return;
+    const known = nameByEmail.get(email);
+    if (known === undefined) {
+      nameByEmail.set(email, person.name || "");
+      order.push(email);
+      return;
+    }
+    // Git records whatever name the committing machine was configured with, so
+    // one person shows up as both `artk0de` and `Arthur Korochansky` across a
+    // release range. Credit the spelling that reads as a name.
+    if (!known.includes(" ") && (person.name || "").includes(" ")) nameByEmail.set(email, person.name);
   };
   for (const c of commits) {
-    if (c.author) add(c.author);
-    for (const co of parseCoAuthors(c.body || "")) add(co);
+    if (c.author) remember(c.author);
+    for (const co of parseCoAuthors(c.body || "")) remember(co);
   }
-  return out;
+  return order.map((email) => {
+    const name = nameByEmail.get(email);
+    const handle = resolvedHandles[email] || CONTRIBUTOR_HANDLES[email];
+    return handle ? contributorCredit(handle, name) : name;
+  });
 }
 
 // Product bullets are benefit-framed prose with no inline hash links — full

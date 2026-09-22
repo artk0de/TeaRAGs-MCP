@@ -231,7 +231,7 @@ describe("collectContributors", () => {
         body: "",
       },
     ];
-    expect(collectContributors(commits)).toEqual(["@artk0de"]);
+    expect(collectContributors(commits)).toEqual(["@artk0de (Arthur Korochansky)"]);
   });
 
   it("excludes CI bots and AI co-authors", () => {
@@ -263,6 +263,48 @@ describe("collectContributors", () => {
       },
     ];
     expect(collectContributors(commits)).toEqual(["@artk0de", "Jane Doe"]);
+  });
+
+  it("renders a handle the release job resolved at run time for an unknown email", () => {
+    const commits = [
+      { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "avl@logvinov.com" }, body: "" },
+    ];
+    expect(collectContributors(commits, { "avl@logvinov.com": "incubus" })).toEqual(["@incubus (Alexander Logvinov)"]);
+  });
+
+  it("matches a resolved handle case-insensitively on the email", () => {
+    const commits = [
+      { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "AVL@Logvinov.com" }, body: "" },
+    ];
+    expect(collectContributors(commits, { "avl@logvinov.com": "incubus" })).toEqual(["@incubus (Alexander Logvinov)"]);
+  });
+
+  it("omits the parenthesised name when git only ever recorded the handle itself", () => {
+    const commits = [
+      { hash: "aaa", subject: "feat: x", author: { name: "artk0de", email: "art2rik.desperado@gmail.com" }, body: "" },
+    ];
+    expect(collectContributors(commits)).toEqual(["@artk0de"]);
+  });
+
+  // Measured on the live v1.43.1 release: GitHub builds its own Contributors
+  // block (avatars, above Assets) from the BARE mentions in the notes. Spelling
+  // the same handle as `[@incubus](https://github.com/incubus)` dropped incubus
+  // out of that block entirely. A markdown link here is a regression, not a
+  // polish pass.
+  it("credits a bare mention so GitHub's own Contributors block picks the account up", () => {
+    const commits = [
+      { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "avl@logvinov.com" }, body: "" },
+    ];
+    const credit = collectContributors(commits, { "avl@logvinov.com": "incubus" })[0];
+    expect(credit.startsWith("@incubus")).toBe(true);
+    expect(credit).not.toContain("](https://github.com/");
+  });
+
+  it("keeps the plain name when no handle is known for the email", () => {
+    const commits = [
+      { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "avl@logvinov.com" }, body: "" },
+    ];
+    expect(collectContributors(commits, {})).toEqual(["Alexander Logvinov"]);
   });
 });
 
