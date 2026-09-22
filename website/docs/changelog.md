@@ -3,6 +3,68 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.44.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.1...v1.44.0) (2026-09-22)
+
+### Features
+
+* **adapters:** build-keyed codegraph daemon (tea-rags-mcp-42hno) ([7ee2b15](https://github.com/artk0de/TeaRAGs-MCP/commit/7ee2b15708d1a0f101339dc6074e93510793beed))
+* **bootstrap:** doctor --restart for build-keyed daemons (tea-rags-mcp-42hno) ([285b8ba](https://github.com/artk0de/TeaRAGs-MCP/commit/285b8ba388b7a943e8ca66bd29905bd676d4b85a))
+* **drift:** record how a stats file was sampled, and repair it when that moves ([bafb6a6](https://github.com/artk0de/TeaRAGs-MCP/commit/bafb6a6bdbcd1286b6815d0cab4e171a28baa196))
+* **filters:** typed contributor param + recentAuthors keyword index, schema v18 (y1870) ([b29be31](https://github.com/artk0de/TeaRAGs-MCP/commit/b29be31aa2d07b105b748b41bd860bdf3dab96d3))
+* **ingest:** default-ignore Swift and Xcode build artefacts ([e0b6d02](https://github.com/artk0de/TeaRAGs-MCP/commit/e0b6d0280f27e260433357c45d32f9f4fd1141b1))
+* **language:** add the swift tier-1 vertical (chunks, no call graph) ([98ca250](https://github.com/artk0de/TeaRAGs-MCP/commit/98ca2506d68918f0d508caee85473d1f926dc38a))
+* **language:** new/factory-call receiver evidence class for TS checker-off resolution (pv7ul) ([bd1ff26](https://github.com/artk0de/TeaRAGs-MCP/commit/bd1ff267a442a094c226ce1d6e295d5042ac19c6))
+* **language:** swift chained-receiver typing over a run-global field address ([f3755f3](https://github.com/artk0de/TeaRAGs-MCP/commit/f3755f3a1b8212110fdc25547320e6d3b89971ce))
+* **language:** swift codegraph, test chunking and doc comments ([14b5c1a](https://github.com/artk0de/TeaRAGs-MCP/commit/14b5c1a01bacc3ba3ce17a190d38f8df65118cb8))
+* **language:** swift quick chunking, type-name resolution, receiver typing ([e74a3cc](https://github.com/artk0de/TeaRAGs-MCP/commit/e74a3ccbb9c78661de3698fd8061bd3a2dbbee18))
+* **language:** swift super resolution over the superclass chain ([7a704b2](https://github.com/artk0de/TeaRAGs-MCP/commit/7a704b2e26dabb751c24cc2f847e05eeb65b766c))
+* **language:** type swift existential and parenthesised annotations ([3ccc36c](https://github.com/artk0de/TeaRAGs-MCP/commit/3ccc36c4d203a5ef2cbceb888ee4122702631c22))
+* **rerank:** derive age at read time from lastModifiedAt (9ot33) ([de249c8](https://github.com/artk0de/TeaRAGs-MCP/commit/de249c87d4df6a8d3f9cb3551db26122e588725b))
+
+### Improvements
+
+* **adapters:** hookless miss waits out the boot race first (tea-rags-mcp-42hno) ([d453132](https://github.com/artk0de/TeaRAGs-MCP/commit/d45313256f722b9a3d1e3cac4ed2f48d6f4dabab))
+* **git:** surface both walk windows on the prime enrichment row ([36cf728](https://github.com/artk0de/TeaRAGs-MCP/commit/36cf728d6c012c943d6491ad697f8a9c410cf3c8))
+* **plugin:** read plans by doc-TOC sections instead of wholesale re-reads (2y59y) ([dd95062](https://github.com/artk0de/TeaRAGs-MCP/commit/dd95062754ccb8cee5eddbabf3239ac0b9148f04))
+
+### Bug Fixes
+
+* **chunker:** compose test-scope chunker into javascript hooks per advertised capability (1etj8) ([65a3bab](https://github.com/artk0de/TeaRAGs-MCP/commit/65a3babbfc4309c22f9bd619eb4749cfe5a0ee52))
+* **cli:** always report whether the enrichment outcome was measured ([2712a44](https://github.com/artk0de/TeaRAGs-MCP/commit/2712a44c2b58728930086c72d28c7c850a47d0ce))
+* **daemon-store:** persist file-only method edges, migration 021 re-keys PK without target (rtp6v) ([3f4fc95](https://github.com/artk0de/TeaRAGs-MCP/commit/3f4fc95d11edbfb6f208c5667024ac427bcf4787)), closes [DuckDbFileGraphStore#writeFileRowsGroup](https://github.com/artk0de/DuckDbFileGraphStore/issues/writeFileRowsGroup)
+* **daemon:** refuse shutdown drain while another connection writes in flight (zgcmo) ([5f8f980](https://github.com/artk0de/TeaRAGs-MCP/commit/5f8f9804560396a09c8d5f6319b0fa6ad1f3c32f)), closes [CodegraphDaemonServer#hasWritesInFlight](https://github.com/artk0de/CodegraphDaemonServer/issues/hasWritesInFlight)
+* **explore:** key collection stats to their collection and revision (yntsd) ([5de1744](https://github.com/artk0de/TeaRAGs-MCP/commit/5de1744040adac542cd6da001e534bb6871ae745))
+* **explore:** read a signal band by its lower bound, not its upper ([2501e30](https://github.com/artk0de/TeaRAGs-MCP/commit/2501e30791e0eff97e070f695375c72ad04585ad))
+* **git:** read a renamed file's parent blob at its previous path ([66d70ea](https://github.com/artk0de/TeaRAGs-MCP/commit/66d70eaeac041c2977bf017740664c687581802a))
+* **ingest:** admit .mjs/.cjs as javascript sources in ingest (oxodb) ([0787459](https://github.com/artk0de/TeaRAGs-MCP/commit/0787459e1e5fa84fa7a6a5b7f2eed88e6a70459b))
+* **language:** barrel hop in importNarrowedFallback candidate narrowing (4pa9o) ([87bb255](https://github.com/artk0de/TeaRAGs-MCP/commit/87bb255c9f5effbf244deb295fa0cfe0b7b53662)), closes [QuarantineStore#load](https://github.com/artk0de/QuarantineStore/issues/load) [CollectionRegistry#list](https://github.com/artk0de/CollectionRegistry/issues/list) [QuarantineStore#clearAll](https://github.com/artk0de/QuarantineStore/issues/clearAll) [#count](https://github.com/artk0de/TeaRAGs-MCP/issues/count)
+* **language:** emit every spec of a Go grouped type declaration (fov8f) ([9387edf](https://github.com/artk0de/TeaRAGs-MCP/commit/9387edfe8f086cbac10301940eee2346dc295610))
+* **language:** extend the TS unnamed-declaration containment arm to the owner's lines (wr3n4) ([d057808](https://github.com/artk0de/TeaRAGs-MCP/commit/d057808da839a067e569cfe41b11cdd5096fc0a7))
+* **language:** key Go function return types by declaring package, not bare name (7h6j0) ([0f986c5](https://github.com/artk0de/TeaRAGs-MCP/commit/0f986c5cb1fc9123f57a80fd6324b4b0230cfe81)), closes [A#Run](https://github.com/artk0de/A/issues/Run)
+* **language:** let every declined receiver-bearing call reach the TS checker fallback (05uhs) ([458a7f2](https://github.com/artk0de/TeaRAGs-MCP/commit/458a7f221a600e51ca6ab4af2eb728a984ac651e))
+* **language:** owner-rule the TS same-file fallbacks, read class-body callerSymbolId (nj8i6) ([81ba958](https://github.com/artk0de/TeaRAGs-MCP/commit/81ba958386905e887ac20fab92dbfeaaa7da9aae)), closes [Panel#stopItNow](https://github.com/artk0de/Panel/issues/stopItNow) [Panel#setState](https://github.com/artk0de/Panel/issues/setState)
+* **maintenance:** make codegraph DB clone atomic via temp-copy + rename (i5kiu) ([5691357](https://github.com/artk0de/TeaRAGs-MCP/commit/5691357a8cb2ec19d752f7132efa6a1d0f719120))
+* **mcp:** generate filters-doc payload field list from signal descriptors (yd6zp) ([0852b53](https://github.com/artk0de/TeaRAGs-MCP/commit/0852b5341564eef4d71e166292f0ab15016862d4))
+* **plugin:** align test-DSL chunker guidance with generated matrix, drop dead hook paths (xsiqu) ([1752221](https://github.com/artk0de/TeaRAGs-MCP/commit/17522217bd6bf5d6e73a5ae1a8246ca60899e523))
+* **plugin:** sync chunkType supported-language lists with JS test-scope chunker (vhkd2) ([c1dfb42](https://github.com/artk0de/TeaRAGs-MCP/commit/c1dfb42d4f13e1413ff02016e1d9770eacc81f86))
+* **scripts:** credit release contributors by GitHub account, not git's name field ([ea77566](https://github.com/artk0de/TeaRAGs-MCP/commit/ea7756674cf9e68fa8a584739461febb846d84e7))
+* **signals:** band bugFixRate only over the units the corpus actually measured ([65ea25f](https://github.com/artk0de/TeaRAGs-MCP/commit/65ea25fadd106db45ddb15d0fe17287afd3f1321))
+* **signals:** count files once, and let a signal say which tied band wins ([1e04c23](https://github.com/artk0de/TeaRAGs-MCP/commit/1e04c2313733f7618cd4d3e7514f449199c2567e))
+* **signals:** grade a test-scope point on test-scope stats or not at all ([13730d7](https://github.com/artk0de/TeaRAGs-MCP/commit/13730d7c3bf71ceea4d8ff5182ea34d7a51889d5)), closes [Reranker#scopedStatsFor](https://github.com/artk0de/Reranker/issues/scopedStatsFor)
+* **signals:** let a signal declare that its zero is a measurement (j5b5i) ([775b0e0](https://github.com/artk0de/TeaRAGs-MCP/commit/775b0e0007addf46f4f86c8985a5c18a5adc889a))
+* **signals:** make the confidence mechanism actually fire ([b6cc428](https://github.com/artk0de/TeaRAGs-MCP/commit/b6cc42813da6f7735d160a2b5778d1bf6a085d03))
+* **signals:** rank a chunk's history against callables, not declaration surface ([7fafa1a](https://github.com/artk0de/TeaRAGs-MCP/commit/7fafa1a1bb5f5adf1f761d314825e52b2ad946e7))
+
+### Documentation
+
+* **plugin:** age is query-time now - rewrite stamp-lag guidance, bump 0.33.45 (9ot33) ([bb43344](https://github.com/artk0de/TeaRAGs-MCP/commit/bb433449a3e280f84987baa2768ceb6e720767cc))
+* **plugin:** route ownership to author, recent to recentAuthor, everything to contributor (dvgm9) ([05d8d14](https://github.com/artk0de/TeaRAGs-MCP/commit/05d8d14d800421504a0b009b8c4191bc6db0b582))
+* **signals:** a support floor moves filter-preset thresholds, not just labels ([39d75bf](https://github.com/artk0de/TeaRAGs-MCP/commit/39d75bfb6d3c11e62433e08c9ba0d360a3933c25))
+* **signals:** record why bugFixRate bands need a support floor, and why shrinkage is refused ([1985a25](https://github.com/artk0de/TeaRAGs-MCP/commit/1985a25da7c7e9039ea4b7f5279df8a7f688e092))
+* **specs:** build-keyed codegraph daemon design, nlls amendment (42hno) ([34df357](https://github.com/artk0de/TeaRAGs-MCP/commit/34df357a60b4bc462e58b43bb2644cf18ae817ad))
+* **specs:** query-time age derivation design, path (a) approved (9ot33) ([6ece870](https://github.com/artk0de/TeaRAGs-MCP/commit/6ece870c5bed31a6a63b849bc613c0c8a2e7aaf1))
+* **website:** rewrite raw-filter examples to split git.file/git.chunk payload keys (pn0sw) ([39a855d](https://github.com/artk0de/TeaRAGs-MCP/commit/39a855dedf8828c76a636babbd414256a4f7fa75))
+
 ## [1.43.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.0...v1.43.1) (2026-09-22)
 
 ### 🩹 Fixes
