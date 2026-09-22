@@ -69,8 +69,8 @@ function parseCoAuthors(body) {
 // Real human contributors for a release range, in first-seen order: every commit
 // author plus co-authored-by humans, minus CI bots and AI co-authors. An email
 // with a known handle renders as `@handle (Name)`; an unknown human renders as
-// their plain name — never a broken `@mention`. `resolvedHandles` is
-// the email → login map the release job built from the GitHub API, keyed
+// their plain name — never a broken `@mention`. `resolvedHandles` is the
+// email → { login, name } map the release job built from the GitHub API, keyed
 // lowercase; it wins over the offline fallback above, which only has to cover
 // what the API cannot answer.
 export function collectContributors(commits, resolvedHandles = {}) {
@@ -95,9 +95,13 @@ export function collectContributors(commits, resolvedHandles = {}) {
     for (const co of parseCoAuthors(c.body || "")) remember(co);
   }
   return order.map((email) => {
-    const name = nameByEmail.get(email);
-    const handle = resolvedHandles[email] || CONTRIBUTOR_HANDLES[email];
-    return handle ? contributorCredit(handle, name) : name;
+    const gitName = nameByEmail.get(email);
+    const resolved = resolvedHandles[email];
+    const handle = resolved?.login || CONTRIBUTOR_HANDLES[email];
+    // The profile name wins: git carries whatever the committing machine was
+    // configured with, which for someone committing under their own handle is
+    // the handle itself, leaving no name to credit.
+    return handle ? contributorCredit(handle, resolved?.name || gitName) : gitName;
   });
 }
 

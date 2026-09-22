@@ -269,17 +269,31 @@ describe("collectContributors", () => {
     const commits = [
       { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "avl@logvinov.com" }, body: "" },
     ];
-    expect(collectContributors(commits, { "avl@logvinov.com": "incubus" })).toEqual(["@incubus (Alexander Logvinov)"]);
+    const resolved = { "avl@logvinov.com": { login: "incubus", name: "Alexander Logvinov" } };
+    expect(collectContributors(commits, resolved)).toEqual(["@incubus (Alexander Logvinov)"]);
   });
 
   it("matches a resolved handle case-insensitively on the email", () => {
     const commits = [
       { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "AVL@Logvinov.com" }, body: "" },
     ];
-    expect(collectContributors(commits, { "avl@logvinov.com": "incubus" })).toEqual(["@incubus (Alexander Logvinov)"]);
+    const resolved = { "avl@logvinov.com": { login: "incubus", name: "Alexander Logvinov" } };
+    expect(collectContributors(commits, resolved)).toEqual(["@incubus (Alexander Logvinov)"]);
   });
 
-  it("omits the parenthesised name when git only ever recorded the handle itself", () => {
+  // git carries the name the committing machine was configured with, which here
+  // is the login itself — so the person's actual name exists only on their
+  // GitHub profile. Credit that, or the parentheses stay empty forever for
+  // anyone who commits under their handle.
+  it("prefers the GitHub profile name over a git name that is just the login", () => {
+    const commits = [
+      { hash: "aaa", subject: "feat: x", author: { name: "artk0de", email: "art2rik.desperado@gmail.com" }, body: "" },
+    ];
+    const resolved = { "art2rik.desperado@gmail.com": { login: "artk0de", name: "Arthur Korochansky" } };
+    expect(collectContributors(commits, resolved)).toEqual(["@artk0de (Arthur Korochansky)"]);
+  });
+
+  it("omits the parenthesised name when neither git nor the profile knows one", () => {
     const commits = [
       { hash: "aaa", subject: "feat: x", author: { name: "artk0de", email: "art2rik.desperado@gmail.com" }, body: "" },
     ];
@@ -295,9 +309,18 @@ describe("collectContributors", () => {
     const commits = [
       { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "avl@logvinov.com" }, body: "" },
     ];
-    const credit = collectContributors(commits, { "avl@logvinov.com": "incubus" })[0];
+    const resolved = { "avl@logvinov.com": { login: "incubus", name: "Alexander Logvinov" } };
+    const credit = collectContributors(commits, resolved)[0];
     expect(credit.startsWith("@incubus")).toBe(true);
     expect(credit).not.toContain("](https://github.com/");
+  });
+
+  it("falls back to the git name when the resolved profile carries none", () => {
+    const commits = [
+      { hash: "aaa", subject: "fix: y", author: { name: "Alexander Logvinov", email: "avl@logvinov.com" }, body: "" },
+    ];
+    const resolved = { "avl@logvinov.com": { login: "incubus", name: "" } };
+    expect(collectContributors(commits, resolved)).toEqual(["@incubus (Alexander Logvinov)"]);
   });
 
   it("keeps the plain name when no handle is known for the email", () => {

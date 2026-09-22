@@ -10,10 +10,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// commits → { email: login }, one lookup per distinct sha. A lookup that fails
-// or that GitHub cannot attribute to an account contributes nothing: the release
-// notes then fall back to the plain name, which is what they did before this
-// existed. Losing the whole credits block to one 403 would be the worse trade.
+// commits → { email: { login, name } }, one lookup per distinct sha. A lookup
+// that fails or that GitHub cannot attribute to an account contributes nothing:
+// the release notes then fall back to the plain git name, which is what they did
+// before this existed. Losing the whole credits block to one 403 would be the
+// worse trade.
 export async function buildHandleMap(commits, lookupCommitAuthor) {
   const handles = {};
   const asked = new Set();
@@ -27,7 +28,7 @@ export async function buildHandleMap(commits, lookupCommitAuthor) {
       continue;
     }
     if (!author?.email || !author.login) continue;
-    handles[author.email.toLowerCase()] = author.login;
+    handles[author.email.toLowerCase()] = { login: author.login, name: author.name ?? "" };
   }
   return handles;
 }
@@ -35,17 +36,30 @@ export async function buildHandleMap(commits, lookupCommitAuthor) {
 // The GitHub REST lookup the release job injects. `.author` is the account
 // GitHub matched the commit to (null for an unmatched email); `.commit.author`
 // is what git itself recorded, which is the key the renderer joins on.
+//
+// The profile name needs its own call — the commit payload carries only the git
+// name, and someone who commits as `artk0de` has "Arthur Korochansky" nowhere
+// but their profile. Profiles are fetched once per login, since a release range
+// is dozens of commits from a handful of people.
 export function githubCommitAuthorLookup(repo, token) {
+  const headers = { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) };
+  const profileNames = new Map();
+
+  const profileName = async (login) => {
+    if (profileNames.has(login)) return profileNames.get(login);
+    const response = await fetch(`https://api.github.com/users/${login}`, { headers });
+    const name = response.ok ? ((await response.json()).name ?? "") : "";
+    profileNames.set(login, name);
+    return name;
+  };
+
   return async (hash) => {
-    const response = await fetch(`https://api.github.com/repos/${repo}/commits/${hash}`, {
-      headers: {
-        accept: "application/vnd.github+json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    const response = await fetch(`https://api.github.com/repos/${repo}/commits/${hash}`, { headers });
     if (!response.ok) return null;
     const body = await response.json();
-    return body.author?.login ? { email: body.commit?.author?.email ?? "", login: body.author.login } : null;
+    const login = body.author?.login;
+    if (!login) return null;
+    return { email: body.commit?.author?.email ?? "", login, name: await profileName(login) };
   };
 }
 
