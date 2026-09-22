@@ -220,3 +220,63 @@ describe("registerSearchTools — presetFilterNotice", () => {
     }
   });
 });
+
+// bd tea-rags-mcp-l2lix — `fields` is a payload allow-list applied server-side.
+// It belongs on every tool that returns payload-bearing results, not on one of
+// them, and a path that matched nothing is reported rather than silently
+// producing empty payloads.
+describe("registerSearchTools — fields projection", () => {
+  const churnPath = "git.file.commitCount";
+
+  it("every search tool accepts a fields param", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.inputSchema).toHaveProperty("fields");
+    }
+  });
+
+  it("forwards fields to the App method verbatim", async () => {
+    const { captured, app } = makeHarness();
+    const tool = captured.find((t) => t.name === "semantic_search");
+
+    await tool!.handler({ path: "/x", query: "q", fields: [churnPath] }, {});
+
+    const call = (app.semanticSearch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(call.fields).toEqual([churnPath]);
+  });
+
+  it("passes fieldsWarning through to structuredContent", async () => {
+    const warning = `fields: no result carried "chunk.commitCount" — did you mean ${churnPath}?`;
+    const { captured } = makeHarness({
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], fieldsWarning: warning }),
+    });
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q", fields: ["chunk.commitCount"] }, {})) as {
+      structuredContent: { fieldsWarning?: string };
+    };
+
+    expect(result.structuredContent.fieldsWarning).toBe(warning);
+  });
+
+  it("omits fieldsWarning when every requested path landed", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q", fields: ["relativePath"] }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect("fieldsWarning" in result.structuredContent).toBe(false);
+  });
+
+  it("declares fieldsWarning on the shared search output schema", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.outputSchema).toHaveProperty("fieldsWarning");
+    }
+  });
+});

@@ -73,6 +73,13 @@ export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams 
   rerank?: string | { custom: Record<string, number> };
   metaOnly?: boolean;
   level?: SignalLevel;
+  /**
+   * Payload allow-list: dot-paths kept in each result's payload, applied
+   * server-side before serialization (e.g. `["relativePath",
+   * "git.file.commitCount"]`). Omitted → the full payload, exactly as before.
+   * A path that matched no result comes back on `fieldsWarning`.
+   */
+  fields?: string[];
 }
 
 /**
@@ -89,6 +96,13 @@ export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
   rerank?: string | { custom: Record<string, number> };
   metaOnly?: boolean;
   level?: SignalLevel;
+  /**
+   * Payload allow-list: dot-paths kept in each result's payload, applied
+   * server-side before serialization (e.g. `["relativePath",
+   * "git.file.commitCount"]`). Omitted → the full payload, exactly as before.
+   * A path that matched no result comes back on `fieldsWarning`.
+   */
+  fields?: string[];
 }
 
 export interface RankChunksRequest extends CollectionRef, TypedFilterParams {
@@ -99,6 +113,13 @@ export interface RankChunksRequest extends CollectionRef, TypedFilterParams {
   filter?: Record<string, unknown>;
   pathPattern?: string;
   metaOnly?: boolean;
+  /**
+   * Payload allow-list: dot-paths kept in each result's payload, applied
+   * server-side before serialization (e.g. `["relativePath",
+   * "git.file.commitCount"]`). Omitted → the full payload, exactly as before.
+   * A path that matched no result comes back on `fieldsWarning`.
+   */
+  fields?: string[];
 }
 
 export interface ExploreCodeRequest extends TypedFilterParams {
@@ -131,6 +152,13 @@ export interface FindSimilarRequest extends CollectionRef {
   offset?: number;
   metaOnly?: boolean;
   level?: SignalLevel;
+  /**
+   * Payload allow-list: dot-paths kept in each result's payload, applied
+   * server-side before serialization (e.g. `["relativePath",
+   * "git.file.commitCount"]`). Omitted → the full payload, exactly as before.
+   * A path that matched no result comes back on `fieldsWarning`.
+   */
+  fields?: string[];
 }
 
 /**
@@ -149,6 +177,13 @@ export interface FindSymbolRequest extends CollectionRef {
   rerank?: string | { custom: Record<string, number> };
   limit?: number;
   offset?: number;
+  /**
+   * Payload allow-list: dot-paths kept in each result's payload, applied
+   * server-side before serialization (e.g. `["relativePath",
+   * "git.file.commitCount"]`). Omitted → the full payload, exactly as before.
+   * A path that matched no result comes back on `fieldsWarning`.
+   */
+  fields?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +256,13 @@ export interface ExploreResponse {
    * read the preset's definition first.
    */
   presetFilterNotice?: PresetFilterNotice;
+  /**
+   * Present only when a `fields` path matched NO result. The payload shape is
+   * not statically knowable — `git.*` exists only where git enrichment ran —
+   * so a miss is reported rather than rejected, and the message names any path
+   * in the returned payloads carrying the same leaf. Results still return.
+   */
+  fieldsWarning?: string;
 }
 
 // ---------------------------------------------------------------------------

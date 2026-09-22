@@ -67,6 +67,15 @@ export const SearchResultOutputSchema = {
       "absent on hybrid_search, rank_chunks, find_symbol, and on indexes with no measured scale (reindex fills it).",
   ),
   driftWarning: z.string().nullable().optional().describe("Warning if index may be stale"),
+  fieldsWarning: z
+    .string()
+    .optional()
+    .describe(
+      "A path you passed in `fields` matched NO result, so its payloads came back without it. " +
+        "Names the path and, where the returned payloads carry the same leaf elsewhere, the paths " +
+        "that would have matched (e.g. git.commitCount → git.file.commitCount). " +
+        "Also legitimate when the index simply lacks that enrichment.",
+    ),
   presetFilterNotice: z
     .object({
       preset: z.string().describe("Rerank preset whose DEFAULT filter applied"),

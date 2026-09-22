@@ -77,4 +77,7 @@ export type {
   PathTraceResult,
 } from "./graph.js";
 
+export { projectSearchResultPayloads } from "./payload-projection.js";
+export type { PayloadProjectionOutcome } from "./payload-projection.js";
+
 export { stripInternalFields } from "./sanitize.js";

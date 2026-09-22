@@ -51,6 +51,7 @@ import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import {
+  projectSearchResultPayloads,
   stripInternalFields,
   type ExploreCodeRequest,
   type ExploreResponse,
@@ -117,6 +118,13 @@ interface ExploreFinalizeOptions {
    */
   attachConfidence?: boolean;
   presetFilterNotice?: PresetFilterNotice;
+  /**
+   * Caller's payload allow-list. Applied HERE rather than in each strategy:
+   * narrowing the payload that leaves the API is finalize work, the same step
+   * that strips internal fields, so one place serves every search tool
+   * (bd tea-rags-mcp-l2lix).
+   */
+  fields?: readonly string[];
 }
 
 export class ExploreOps {
@@ -208,7 +216,7 @@ export class ExploreOps {
       this.scrollRankStrategy,
       buildRankChunksContext(request, collectionName, filter, level),
       path,
-      { presetFilterNotice },
+      { presetFilterNotice, fields: request.fields },
     );
   }
 
@@ -249,13 +257,16 @@ export class ExploreOps {
     // find_similar response "high". Needs its own calibration corpus first.
     return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path, {
       presetFilterNotice,
+      fields: request.fields,
     });
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const strategy = this.buildFindSymbolStrategy(request);
-    const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path);
+    const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {
+      fields: request.fields,
+    });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
     // caller learns why a collapsed symbol is missing (bd tea-rags-mcp-a43tr).
@@ -326,17 +337,22 @@ export class ExploreOps {
     const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
       : undefined;
-    return {
-      results: results.map((r) => ({
+    const projection = projectSearchResultPayloads(
+      results.map((r) => ({
         id: r.id ?? "",
         score: r.score,
         payload: r.payload ? stripInternalFields(r.payload) : r.payload,
         rankingOverlay: r.rankingOverlay,
       })),
+      finalize.fields,
+    );
+    return {
+      results: projection.results,
       driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
       ...(confidence ? { confidence } : {}),
       ...(finalize.presetFilterNotice ? { presetFilterNotice: finalize.presetFilterNotice } : {}),
+      ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
     };
   }
 
@@ -363,7 +379,7 @@ export class ExploreOps {
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
-      { attachConfidence, presetFilterNotice },
+      { attachConfidence, presetFilterNotice, fields: request.fields },
     );
   }
 

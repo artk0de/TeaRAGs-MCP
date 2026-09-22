@@ -33,6 +33,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.driftWarning && { driftWarning: response.driftWarning }),
       ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
       ...(response.presetFilterNotice && { presetFilterNotice: response.presetFilterNotice }),
+      ...(response.fieldsWarning && { fieldsWarning: response.fieldsWarning }),
     },
     content: [],
   };
