@@ -1,13 +1,8 @@
 ## [1.43.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.43.0...v1.43.1) (2026-09-22)
 
-### Bug Fixes
+### 🩹 Fixes
 
-- **language:** resolve ruby module_function methods as module-level call
-  targets
-  ([fa4060d](https://github.com/artk0de/TeaRAGs-MCP/commit/fa4060dd9f0a9627b22e8b1b2d6f34847a741b85))
-- **language:** resolve ruby module_function methods as module-level call
-  targets
-  ([4f99645](https://github.com/artk0de/TeaRAGs-MCP/commit/4f996452523ec86547ab938d7999633318110ad7))
+* Ruby call-graph navigation (find-callers, impact analysis) now resolves calls to `module_function` methods, which previously returned no results
 
 ## [1.43.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.42.0...v1.43.0) (2026-09-19)
 
