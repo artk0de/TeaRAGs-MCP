@@ -230,20 +230,30 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       this.startHeartbeat(ctx.targetCollection);
-      const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
-        await this.executeParallelPipelines(
-          ctx,
-          changes,
-          quarantineStore,
-          retryPaths,
-          deferredChunkHandoff,
-          progressCallback,
-          overrides?.chunkSize,
-        );
+      const {
+        chunksAdded,
+        chunksDeleted,
+        processingCtx,
+        chunkMap,
+        filesSkippedDueToDeleteFailure,
+        filesFailedToDelete,
+      } = await this.executeParallelPipelines(
+        ctx,
+        changes,
+        quarantineStore,
+        retryPaths,
+        deferredChunkHandoff,
+        progressCallback,
+        overrides?.chunkSize,
+      );
       stats.chunksAdded = chunksAdded;
       stats.chunksDeleted = chunksDeleted;
       if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
         stats.filesSkippedDueToDeleteFailure = filesSkippedDueToDeleteFailure;
+        stats.status = "partial";
+      }
+      if (filesFailedToDelete !== undefined && filesFailedToDelete > 0) {
+        stats.filesFailedToDelete = filesFailedToDelete;
         stats.status = "partial";
       }
 
@@ -386,6 +396,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     deletionOutcome?: DeletionOutcome;
     /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
     filesSkippedDueToDeleteFailure?: number;
+    /** Count of removed (deleted / newly ignored) files whose old chunks could not be deleted. */
+    filesFailedToDelete?: number;
   }> {
     const plan = this.prepareParallelExecution(
       ctx,
@@ -406,7 +418,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     try {
       const exec = await this.runParallelPipelines(ctx, plan, progressCallback);
-      const filesSkippedDueToDeleteFailure = this.assessParallelOutcome(plan, exec);
+      const { filesSkippedDueToDeleteFailure, filesFailedToDelete } = this.assessParallelOutcome(plan, exec);
       return {
         chunksAdded: exec.addedChunks + exec.modifiedChunks,
         chunksDeleted: exec.chunksDeleted,
@@ -414,6 +426,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         chunkMap: plan.chunkMap,
         deletionOutcome: exec.deletionOutcome,
         filesSkippedDueToDeleteFailure,
+        filesFailedToDelete,
       };
     } finally {
       // Reverting deleted_threshold to 0.2 naturally triggers one optimizer
@@ -607,22 +620,34 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    *   coordinator.hasBlockedPaths() -> filesSkippedDueToDeleteFailure: N
    *   AND caller marks stats.status = "partial" when N > 0.
    * Drift in this counter silently leaves stale chunks in the index.
+   *
+   * A removed path (deleted / newly ignored) has no upsert for the coordinator
+   * to gate, so its failed delete never reaches `skippedFiles()` — yet its old
+   * chunks stay in the index all the same (bd tea-rags-mcp-fa9k). Those are
+   * counted separately as `filesFailedToDelete`, and the caller downgrades to
+   * "partial" on either counter.
    */
-  private assessParallelOutcome(plan: ParallelExecutionPlan, exec: ParallelExecutionResult): number | undefined {
+  private assessParallelOutcome(
+    plan: ParallelExecutionPlan,
+    exec: ParallelExecutionResult,
+  ): { filesSkippedDueToDeleteFailure?: number; filesFailedToDelete?: number } {
     let filesSkippedDueToDeleteFailure: number | undefined;
+    let filesFailedToDelete: number | undefined;
     if (exec.coordinator.hasBlockedPaths()) {
       const skipped = exec.coordinator.skippedFiles();
       filesSkippedDueToDeleteFailure = skipped.length;
+      filesFailedToDelete = plan.providerDeletedOnly.filter((path) => exec.deletionOutcome?.failed.has(path)).length;
       pipelineLog.step({ component: "Reindex" }, "REINDEX_PARTIAL_COMPLETE", {
         skippedFilesCount: skipped.length,
         skippedSample: skipped.slice(0, 20),
+        removedFilesFailedCount: filesFailedToDelete,
         blockedPathsCount: exec.deletionOutcome?.failed.size ?? 0,
       });
     }
 
     this.logPipelineStats(plan.pCtx, plan.parallelStart);
 
-    return filesSkippedDueToDeleteFailure;
+    return { filesSkippedDueToDeleteFailure, filesFailedToDelete };
   }
 
   // ── Finalization ─────────────────────────────────────────

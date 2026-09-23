@@ -15,6 +15,9 @@
  *   AND stats.status === "partial" when N > 0.
  */
 
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../../src/core/api/index.js";
@@ -160,6 +163,79 @@ describe("ReindexPipeline.executeParallelPipelines partial-outcome contract", ()
     expect(stats.filesModified).toBe(3);
     // Exactly one path blocked — Phase C must surface it, not absorb it.
     expect(stats.filesSkippedDueToDeleteFailure).toBe(1);
+    expect(stats.status).toBe("partial");
+  });
+
+  it("downgrades to 'partial' when only a removed file's L2 delete fails (no modified collision)", async () => {
+    // bd tea-rags-mcp-fa9k: a path that left the disk has no upsert for the
+    // coordinator to gate, so skippedFiles() stays empty. The failed delete
+    // still leaves that file's old chunks in the index, so the run is not
+    // "completed" — the removed-file failure must be counted on its own.
+    const kept = "kept.ts";
+    const removed = "removed.ts";
+    for (const p of [kept, removed]) {
+      await createTestFile(
+        codebaseDir,
+        p,
+        `export const ${p.replace(".ts", "")}Original = 1;\nconsole.log('Original ${p}');\nconst pad = 'padding content to meet the chunker minimum size threshold here';`,
+      );
+    }
+    await ingest.indexCodebase(codebaseDir);
+
+    vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("batched failed"));
+    vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("bulk failed"));
+    vi.spyOn(qdrant, "deletePointsByFilter").mockImplementation(async (_collection, filter) => {
+      const path = (filter as { must?: { match?: { value?: string } }[] }).must?.find(
+        (c) => c.match?.value !== undefined,
+      )?.match?.value;
+      if (path === removed) throw new Error(`L2 delete failed for ${removed}`);
+    });
+
+    // A modified file keeps the run on the parallel path (a delete-only run
+    // takes the fast path, which throws PartialDeletionError instead).
+    await createTestFile(
+      codebaseDir,
+      kept,
+      "export const keptNew = 2;\nconsole.log('New kept');\nconst pad = 'different padding content to trigger change detection properly now';",
+    );
+    await fs.rm(join(codebaseDir, removed));
+
+    const stats = await ingest.reindexChanges(codebaseDir);
+
+    expect(stats.filesModified).toBe(1);
+    expect(stats.filesDeleted).toBe(1);
+    // The modified file's own delete succeeded, so nothing was skipped.
+    expect(stats.filesSkippedDueToDeleteFailure).toBeUndefined();
+    expect(stats.filesFailedToDelete).toBe(1);
+    expect(stats.status).toBe("partial");
+  });
+
+  it("counts removed-file and modified-file delete failures in their own counters", async () => {
+    const paths = ["mod.ts", "gone.ts"];
+    for (const p of paths) {
+      await createTestFile(
+        codebaseDir,
+        p,
+        `export const ${p.replace(".ts", "")}Original = 1;\nconsole.log('Original ${p}');\nconst pad = 'padding content to meet the chunker minimum size threshold here';`,
+      );
+    }
+    await ingest.indexCodebase(codebaseDir);
+
+    vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("batched failed"));
+    vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("bulk failed"));
+    vi.spyOn(qdrant, "deletePointsByFilter").mockRejectedValue(new Error("L2 per-path failed"));
+
+    await createTestFile(
+      codebaseDir,
+      "mod.ts",
+      "export const modNew = 2;\nconsole.log('New mod');\nconst pad = 'different padding content to trigger change detection properly now';",
+    );
+    await fs.rm(join(codebaseDir, "gone.ts"));
+
+    const stats = await ingest.reindexChanges(codebaseDir);
+
+    expect(stats.filesSkippedDueToDeleteFailure).toBe(1);
+    expect(stats.filesFailedToDelete).toBe(1);
     expect(stats.status).toBe("partial");
   });
 });

@@ -170,6 +170,12 @@ export interface ChangeStats {
    * Present only when at least one path was blocked (see Phase 3.2).
    */
   filesSkippedDueToDeleteFailure?: number;
+  /**
+   * Files removed from disk (deleted or newly ignored) whose old chunks could
+   * not be deleted, so they remain in the index. Present only when at least one
+   * such delete failed; the run is then reported as "partial".
+   */
+  filesFailedToDelete?: number;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
