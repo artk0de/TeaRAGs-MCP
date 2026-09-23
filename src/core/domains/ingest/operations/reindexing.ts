@@ -237,6 +237,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         chunkMap,
         filesSkippedDueToDeleteFailure,
         filesFailedToDelete,
+        deletionOutcome,
       } = await this.executeParallelPipelines(
         ctx,
         changes,
@@ -258,7 +259,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       this.stopHeartbeat();
-      await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
+      // Every path whose delete failed still has its old chunks in the index —
+      // a removed file never left it, a modified file's re-ingest was skipped
+      // by the coordinator. Its snapshot entry stays as the previous run left
+      // it, so the next run detects it again and retries (bd tea-rags-mcp-ti1oa).
+      const unreconciled = deletionOutcome?.failed ?? new Set<string>();
+      await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime, unreconciled);
       return stats;
     } catch (error) {
       this.wrapUnexpectedError(error, ReindexFailedError);
@@ -658,10 +664,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     stats: ChangeStats,
     startTime: number,
+    unreconciled: ReadonlySet<string>,
   ): Promise<void> {
     const getEnrichmentStatus = await this.finalizeProcessing(processingCtx, chunkMap);
 
-    await this.closeRun(ctx, { snapshot: true });
+    await this.closeRun(ctx, { snapshot: true, retainPrevious: unreconciled });
 
     const enrichmentResult = getEnrichmentStatus();
     stats.enrichmentStatus = enrichmentResult.status;
@@ -698,11 +705,19 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    *
    * `snapshot: false` belongs to the zero-change return alone — there the
    * stored file list already matches disk, so rewriting it is pure cost.
+   *
+   * `retainPrevious` names paths this run left out of line with disk; their
+   * snapshot entries stay as the previous run saved them, so the next run
+   * retries them (bd tea-rags-mcp-ti1oa).
    */
-  private async closeRun(ctx: ReindexContext, { snapshot }: { snapshot: boolean }): Promise<void> {
+  private async closeRun(
+    ctx: ReindexContext,
+    { snapshot, retainPrevious }: { snapshot: boolean; retainPrevious?: ReadonlySet<string> },
+  ): Promise<void> {
     await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
     if (snapshot) {
-      await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
+      const options = retainPrevious && retainPrevious.size > 0 ? { retainPrevious } : undefined;
+      await ctx.synchronizer.updateSnapshot(ctx.currentFiles, undefined, options);
     }
     await ctx.synchronizer.deleteCheckpoint();
     await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);

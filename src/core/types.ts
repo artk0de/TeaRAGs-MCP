@@ -138,6 +138,10 @@ export interface IndexStats {
     chunksDeleted: number;
     /** Previously-quarantined files re-attempted this pass (unchanged content). */
     filesRetried: number;
+    /** Mirrors `ChangeStats.filesSkippedDueToDeleteFailure`; present only when non-zero. */
+    filesSkippedDueToDeleteFailure?: number;
+    /** Mirrors `ChangeStats.filesFailedToDelete`; present only when non-zero. */
+    filesFailedToDelete?: number;
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
@@ -166,14 +170,16 @@ export interface ChangeStats {
   migrations?: string[];
   /**
    * Files whose upsert was skipped because their delete silently failed.
-   * Their old chunks remain in the index and will be retried on next reindex.
+   * Their old chunks remain in the index; the saved snapshot keeps their
+   * previous hash, so the next reindex detects them as modified and retries.
    * Present only when at least one path was blocked (see Phase 3.2).
    */
   filesSkippedDueToDeleteFailure?: number;
   /**
    * Files removed from disk (deleted or newly ignored) whose old chunks could
    * not be deleted, so they remain in the index. Present only when at least one
-   * such delete failed; the run is then reported as "partial".
+   * such delete failed; the run is then reported as "partial". The saved
+   * snapshot keeps listing them, so the next reindex retries the delete.
    */
   filesFailedToDelete?: number;
 }

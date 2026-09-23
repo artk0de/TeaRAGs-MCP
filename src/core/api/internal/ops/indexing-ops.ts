@@ -1363,7 +1363,9 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
     filesIndexed: changeStats.filesAdded + changeStats.filesModified,
     chunksCreated: changeStats.chunksAdded,
     durationMs: changeStats.durationMs,
-    status: "completed",
+    // The pipeline downgrades to "partial" when a delete failed; hardcoding
+    // "completed" here reported a clean run over stale chunks (bd tea-rags-mcp-6l1w6).
+    status: changeStats.status,
     errors: [],
     enrichmentStatus: changeStats.enrichmentStatus,
     enrichmentDurationMs: changeStats.enrichmentDurationMs,
@@ -1378,6 +1380,10 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
       chunksAdded: changeStats.chunksAdded,
       chunksDeleted: changeStats.chunksDeleted,
       filesRetried: changeStats.filesRetried,
+      ...(changeStats.filesSkippedDueToDeleteFailure
+        ? { filesSkippedDueToDeleteFailure: changeStats.filesSkippedDueToDeleteFailure }
+        : {}),
+      ...(changeStats.filesFailedToDelete ? { filesFailedToDelete: changeStats.filesFailedToDelete } : {}),
     },
   };
 }
