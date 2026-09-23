@@ -62,15 +62,19 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
       // so the declaration names the percentile and the sampler resolves the
       // number; p75 is already published as connectionCount's `busy` tier.
       //
-      // Unlike `git.*.bugFixRate`, this does NOT clear the degenerate top band:
-      // instability reads exactly 1 whenever `fanIn` is 0, which is a
-      // structural fact about an entry point rather than a small-denominator
-      // artifact, so the 1.0 atom survives every floor (17 of the 306 admitted
-      // files still read it, one of them on 33 edges). p95 comes off the atom
-      // only around n>=8, by thinning the sample to 146 — a corpus-fitted
-      // number that would regress on an entry-point-heavy repo. The atom is the
-      // `fanIn == 0` class and wants its own treatment (bd tea-rags-mcp-z33bl).
+      // Unlike `git.*.bugFixRate`, the floor alone does NOT clear the
+      // degenerate top band: instability reads exactly 1 whenever `fanIn` is 0,
+      // which is a structural fact about an entry point rather than a
+      // small-denominator artifact, so the 1.0 atom survives every floor (17 of
+      // the 306 admitted files still read it, one of them on 33 edges).
       minSupportPercentile: 75,
+      // 1 is the pure-source class (`fanIn` 0) and 0 the pure-sink class
+      // (`fanOut` 0) — memberships, not positions on the scale, so they leave
+      // the SAMPLE and are still graded: above the interior p95 → `unstable`,
+      // below p50 → `stable`. Measured on this index (typescript source, 1158
+      // files, 427 at 0, 53 at 1): floor only p95 1.000 over 306; interior plus
+      // floor p75 0.833, p90 0.889, p95 0.909 over 289 (bd tea-rags-mcp-z4lgo).
+      structuralAtoms: [0, 1],
       confidence: {
         support: "connectionCount",
         score: { threshold: 5, adaptivePercentile: 25 },

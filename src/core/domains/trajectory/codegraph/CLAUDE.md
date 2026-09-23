@@ -275,27 +275,29 @@
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually
-  measured, and its top band still sits on 1.** The descriptor declares
+  measured, and over its interior only.** The descriptor declares
   `stats.minSupportPercentile: 75` against its existing `connectionCount`
-  support, so the sampler admits a file only above that percentile and persists
-  the resolved number as `SignalStats.supportFloor`; the mechanism and the read
-  half belong to `../CLAUDE.md`. The measurement behind it, on `code_8b243ffe`
+  support and `stats.structuralAtoms: [0, 1]`; both mechanisms and the read half
+  belong to `../CLAUDE.md`. The support floor, measured on `code_8b243ffe`
   typescript source: observed variance of the raw ratio against the
   pure-binomial floor `mean_i[p(1-p)/n_i]` is 0.79 over all 738 files — at or
   below 1, so the whole spread is sampling noise around one corpus ratio — then
   1.20 from n≥3 and 2.36 from the floor the declaration resolves to
-  (`connectionCount` p75 = 5, admitting 306 files). What the gate does NOT do,
-  and this is the difference from `git.*.bugFixRate`, is retire the degenerate
-  `unstable ≥1` band: instability is `fanOut / (fanIn + fanOut)`, so it reads
-  exactly 1 for every file nothing imports, which is a fact about an entry point
-  rather than thin evidence. 17 of the 306 admitted files still read it, one of
-  them on 33 edges, and p95 stays on the atom at every floor up to n≥8 — where
-  it only comes off by thinning the sample to 146, a corpus-fitted number that
-  would snap back on an entry-point-heavy repo. The atom is the `fanIn == 0`
-  class and wants its own treatment, not a higher floor. Live consequence beyond
-  labels: the gate narrows the GLOBAL bucket, so `unstableCore`'s
-  `instability p90` leg moved 0.9091 → 0.9117 on this index (its
-  `connectionCount p50` leg is ungated and stays at 3).
+  (`connectionCount` p75 = 5, admitting 306 files). The floor alone did NOT
+  retire the degenerate `unstable ≥1` band, and a higher floor is the wrong
+  lever: instability is `fanOut / (fanIn + fanOut)`, so it reads exactly 1 for
+  every file nothing imports and exactly 0 for every file that imports nothing —
+  facts about a pure source and a pure sink, not thin evidence. 17 of the 306
+  admitted files still read 1, one of them on 33 edges, and p95 stays on the
+  atom at every floor up to n≥8, where it only comes off by thinning the sample
+  to 146. Hence the atoms: on a later measurement (1158 typescript files, 427 at
+  0, 53 at 1) the floor-only sample reads p95 1.000 over 306, interior only
+  0.889 over 678, interior plus floor p75 0.833 / p90 0.889 / p95 0.909
+  over 289. Atoms stay graded, so an entry point still reads `unstable` and a
+  leaf `stable`. Live consequence beyond labels: both gates narrow the GLOBAL
+  bucket, so they move `unstableCore`'s `instability p90` leg (0.9091 → 0.9117
+  from the floor alone; its `connectionCount p50` leg is ungated and stays at
+  3).
 - **A flat `## Codegraph resolve` block in prime is the one-language case, not a
   lost breakdown.** `summarizeCodegraphResolve`
   (`../../ingest/pipeline/status-module.ts`) drops any language under

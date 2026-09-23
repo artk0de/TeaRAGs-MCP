@@ -176,6 +176,41 @@ export interface SignalStatsRequest {
    */
   zeroIsValidObservation?: boolean;
   /**
+   * Values the signal takes for a whole structural CLASS of units, regardless
+   * of how well any unit was observed. A point whose value equals one of them
+   * contributes nothing to any stats bucket (global, per-language, per-scope).
+   *
+   * Martin instability `fanOut / (fanIn + fanOut)` reads exactly 1 for every
+   * file with `fanIn` 0 and exactly 0 for every file with `fanOut` 0, at any
+   * support: pure source and pure sink are memberships, not positions on the
+   * scale. Left in the sample they decide where the bands sit. Measured on this
+   * project's own index, typescript source, 1158 files (427 at 0, 53 at 1): the
+   * support-floored sample reads p95 = 1.000 over 306 files, so the top band
+   * `unstable` holds a single value; interior only (0 < I < 1) gives p95 0.889
+   * over 678, and interior plus the p75 support floor gives p75 0.833, p90
+   * 0.889, p95 0.909 over 289.
+   *
+   * Atoms leave the SAMPLE only. They are still graded against the bands the
+   * interior produced, which is the point: I == 1 lands above the interior p95
+   * and reads `unstable`, I == 0 lands below p50 and reads `stable` — exactly
+   * Martin's reading of the two classes. The label path therefore needs no
+   * counterpart of this field, unlike `minSupportPercentile`.
+   *
+   * Distinct from `zeroIsValidObservation`, which answers whether a 0 was
+   * MEASURED at all; an atom was measured perfectly well and is excluded
+   * because its value is class membership. An atom wins over that flag: a
+   * declared atom 0 leaves the sample even when zeros are valid observations.
+   * Distinct from `minSupportPercentile`, which selects by observation quality:
+   * no support floor removes an atom, because a 33-edge entry point reads 1 as
+   * surely as a one-edge one. The two compose — the floor is resolved from the
+   * SUPPORT's distribution, which atoms of this signal do not touch, and the
+   * atom rule then drops the atoms the floor would have admitted.
+   *
+   * Declaring it changes what the stats file SAMPLES, so it is part of
+   * `describeStatsSamplingContract`.
+   */
+  structuralAtoms?: readonly number[];
+  /**
    * Display hint for consumers rendering this signal's thresholds (prime digest,
    * get_index_metrics labelMap). The stored labelMap / threshold value always
    * stays RAW — this is a render-time hint only, never a value transform.

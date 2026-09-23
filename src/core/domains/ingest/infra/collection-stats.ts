@@ -68,6 +68,8 @@ function admitsChunkType(filter: string | readonly string[], pointChunkType: unk
  * case, since most producers publish 0 for a file they never walked — and a
  * signal whose 0 is a real reading opts in via `stats.zeroIsValidObservation`.
  * Negative values are rejected either way: no signal here has a meaningful one.
+ * A value equal to one of `stats.structuralAtoms` is rejected after the zero
+ * rule, so an atom leaves the sample even when zeros are valid observations.
  *
  * `dedupe` is supplied for signals declaring `stats.dedupeByFile`: the token
  * identifies (bucket, signal, file), so each distinct file contributes at most
@@ -87,6 +89,7 @@ function admittedSignalValue(
   const val = readPayloadPath(point.payload, signal.key);
   if (typeof val !== "number") return undefined;
   if (!(signal.stats?.zeroIsValidObservation ? val >= 0 : val > 0)) return undefined;
+  if (signal.stats?.structuralAtoms?.includes(val)) return undefined;
   if (dedupe) {
     if (dedupe.seen.has(dedupe.token)) return undefined;
     dedupe.seen.add(dedupe.token);
@@ -755,6 +758,7 @@ function buildDistributions(
  * - Resolves dot-notation paths against each point's payload
  * - Skips missing/non-numeric/negative values, and zeros unless the signal
  *   declares `stats.zeroIsValidObservation`
+ * - Skips values the signal declares as `stats.structuralAtoms`
  * - Computes only what's declared: percentiles, mean, stddev
  * - Returns empty perSignal map for signals with no valid values
  */

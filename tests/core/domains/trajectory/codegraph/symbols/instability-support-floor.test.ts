@@ -140,6 +140,15 @@ const UNGATED_FILE_SIGNALS: PayloadSignalDescriptor[] = CODEGRAPH_SYMBOLS_FILE_S
   s.key === INSTABILITY_KEY ? { ...s, stats: { ...s.stats, minSupportPercentile: undefined } } : s,
 );
 
+/**
+ * The floor in isolation. `structuralAtoms` (bead z4lgo) also keeps the 1.0
+ * atom out of the sample, so a comparison that leaves it on would credit the
+ * floor with the atoms' work. Both sides of the floor-vs-no-floor regression
+ * below therefore run without it.
+ */
+const withoutStructuralAtoms = (signals: PayloadSignalDescriptor[]): PayloadSignalDescriptor[] =>
+  signals.map((s) => (s.key === INSTABILITY_KEY ? { ...s, stats: { ...s.stats, structuralAtoms: undefined } } : s));
+
 describe("codegraph.file.instability — support-floor sampling", () => {
   it("admits only the files whose connectionCount clears the floor", () => {
     const stats = computeCollectionStats(corpus(), CODEGRAPH_SYMBOLS_FILE_SIGNALS, staticStatsAccumulators);
@@ -173,8 +182,16 @@ describe("codegraph.file.instability — support-floor sampling", () => {
    * holding the 1.0 atom, so excluding them is what moves the bands.
    */
   it("takes the top band off the atom the one-edge files manufacture", () => {
-    const gated = computeCollectionStats(corpus(), CODEGRAPH_SYMBOLS_FILE_SIGNALS, staticStatsAccumulators);
-    const ungated = computeCollectionStats(corpus(), UNGATED_FILE_SIGNALS, staticStatsAccumulators);
+    const gated = computeCollectionStats(
+      corpus(),
+      withoutStructuralAtoms(CODEGRAPH_SYMBOLS_FILE_SIGNALS),
+      staticStatsAccumulators,
+    );
+    const ungated = computeCollectionStats(
+      corpus(),
+      withoutStructuralAtoms(UNGATED_FILE_SIGNALS),
+      staticStatsAccumulators,
+    );
 
     expect(ungated.perSignal.get(INSTABILITY_KEY)!.percentiles[95]).toBe(1);
     expect(gated.perSignal.get(INSTABILITY_KEY)!.percentiles[95]).toBeLessThan(1);
