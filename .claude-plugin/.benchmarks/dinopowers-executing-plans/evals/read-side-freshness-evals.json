@@ -1,0 +1,84 @@
+{
+  "skill": "dinopowers:executing-plans",
+  "feature": "read-side-freshness-precondition",
+  "tracking": "tea-rags-mcp-jufg1",
+  "spec": "docs/superpowers/specs/2026-07-02-dinopowers-read-side-freshness-precondition-design.md",
+  "date": "2026-09-23",
+  "kind": "feature-driven-update",
+  "supersedes": "explicit-worktree-lifecycle-evals.json (E1, E2 expectations; E3-E8 carried over unchanged below)",
+  "outcome": "Skill EDITED — Step 0 (CREATE at plan start) and the post-commit REINDEX item replaced by Step 2.0, a read-side precondition run before EVERY Task's guard: `tea-rags worktree info --json` → lazy `tea-rags worktree create` when absent → incremental `mcp__tea-rags__index_codebase` on the clone → guard addresses the clone alias. Added the seeded-path branch (worktree create refuses `Target collection already exists` when a first index_codebase on the path was seeded from a sibling working tree — behaviour landed after the spec, bd tea-rags-mcp-k8gac).",
+  "status": "NOT RUN. Describe cases are fixtures awaiting an /optimize-skill pass; the execution eval (X1) needs a live incremental index_codebase on a worktree clone, which is user-gated in this repo. The authoring agent could not dispatch eval subagents (concurrent-subagent limit) — see the jufg1 bead comment.",
+  "scenario": "Executing a multi-task plan in a git worktree (inline OR subagent-driven); tea-rags MCP + CLI available; no commit-reindex hook.",
+  "cases": [
+    {
+      "id": "F1",
+      "context": "worktree, multi-task, inline — replaces explicit-lifecycle E1",
+      "prompt": "I'm in git worktree .claude/worktrees/feat-x executing a 4-task plan inline. What do I do about the tea-rags index, and when?",
+      "expected": "Before EACH task's guard: `tea-rags worktree info --json`; absent → `tea-rags worktree create <name> --from <src> --path \"$PWD\" --no-git` (lazy, first task only); then incremental `mcp__tea-rags__index_codebase project: <clone>`; guard addresses the clone alias. Unconditional per task. NOT a hook, NOT a post-commit chore."
+    },
+    {
+      "id": "F2",
+      "context": "subagent-driven — replaces explicit-lifecycle E2",
+      "prompt": "Executing plan Task 2 of 5 in worktree .claude/worktrees/feat-x; I just committed Task 1. Is the worktree index fresh for Task 2's searches, or do I do something?",
+      "expected": "Not auto-fresh. PARENT runs Step 2.0 (info → incremental index_codebase on the clone) right before Task 2's guard, then dispatches; subagent does not reindex."
+    },
+    {
+      "id": "F3",
+      "context": "worktree, CREATE was never run (gap #2)",
+      "prompt": "Task 1 is committed (new function parseHeader in a new file). Starting Task 2, whose guard must see parseHeader. No worktree index clone was ever created. What exactly runs, in order, before Task 2's guard?",
+      "expected": "info → isWorktree false → worktree create (lazy) → incremental index_codebase on the new clone (picks up Task 1's commit; a fresh clone is stale by the branch diff until indexed) → guard with project: <clone alias>."
+    },
+    {
+      "id": "F4",
+      "context": "seeded path (post-spec behaviour, k8gac)",
+      "prompt": "Step 2.0: `tea-rags worktree info --json` says isWorktree false, and `tea-rags worktree create feat-x --from tea-rags --path \"$PWD\" --no-git` fails with 'Target collection already exists'. What now?",
+      "expected": "An earlier index_codebase on this path seeded an ordinary project from a sibling working tree. Do not delete it; reindex it incrementally by path (path: \"$PWD\") and point the guard at it; tell the user (worktree remove will refuse it at teardown)."
+    },
+    {
+      "id": "F5",
+      "context": "momentum trap (gap #1)",
+      "prompt": "I reindexed the clone after Task 2's commit, then fixed a review nit and amended. Starting Task 3 — can I skip the reindex since I already did one?",
+      "expected": "No. Step 2.0 runs before every guard, unconditionally; incremental is a no-op when nothing changed."
+    },
+    {
+      "id": "E3",
+      "context": "main checkout, multi-task (gate control, carried over)",
+      "prompt": "Executing a 3-task plan on the MAIN checkout (not a worktree). Do I create a worktree index clone?",
+      "expected": "NO clone, no Step 2.0 — main collection directly."
+    },
+    {
+      "id": "E4",
+      "context": "worktree, single-task (gate control, carried over)",
+      "prompt": "A SINGLE-task plan in worktree .claude/worktrees/fix-y. Do I create a clone?",
+      "expected": "NO clone — Step 2.0 gate is multi-task only."
+    },
+    {
+      "id": "E5",
+      "context": "worktree, merge (carried over)",
+      "prompt": "Plan complete in the worktree, merging to main. What about the index and the clone?",
+      "expected": "Explicit `mcp__tea-rags__index_codebase` on the main alias + `tea-rags worktree remove <name>` (finishing-a-development-branch Step 5)."
+    },
+    {
+      "id": "E6",
+      "context": "explore (over-trigger control, carried over)",
+      "prompt": "Find where the reranker resolves composite presets in src/core.",
+      "expected": "Discovery search; no clone, no Step 2.0, no executing-plans."
+    },
+    {
+      "id": "E8",
+      "context": "regression control (carried over)",
+      "prompt": "Task 3 of my plan edits api/public/dto/metrics.ts and infra/stats-cache.ts. What's the first tea-rags step before editing?",
+      "expected": "Step 2.0 when in a worktree multi-task plan, then ONE `mcp__tea-rags__semantic_search rerank: blastRadius metaOnly: true` with brace-expanded pathPattern over both files, then the SAFE/CAUTION/UNSAFE gate."
+    }
+  ],
+  "executionEval": {
+    "id": "X1",
+    "axis": "execution, not description — the axis the 2026-06-29 describe-only validation could not measure",
+    "setup": "Throwaway worktree of a small indexed project; 2-task plan. Task 1 adds a new exported function with a unique name and commits it. Task 2 edits a file that imports it.",
+    "procedure": "Run dinopowers:executing-plans end to end on the plan (real tool calls). Record the tool-call transcript.",
+    "pass": "Before Task 2's guard the transcript shows `tea-rags worktree info` and an incremental index_codebase on the clone alias, and Task 2's guard (or a find_symbol on the clone) returns Task 1's new symbol.",
+    "fail": "Task 2's guard runs without a preceding index_codebase on the clone, runs against the main alias, or cannot see Task 1's symbol.",
+    "baselineExpectation": "Pre-change skill (0.19.x, write-side Step 0 + post-commit REINDEX) expected to fail intermittently — that is the reported gap.",
+    "gate": "User-gated: needs a live index_codebase on the clone."
+  }
+}
