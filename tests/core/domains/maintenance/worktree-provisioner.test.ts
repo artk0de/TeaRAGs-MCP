@@ -40,6 +40,7 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
     embeddingFallbackUrl: "http://localhost:11434",
     codegraphEnabled: true,
     tuning: { TRAJECTORY_GIT_CHUNK_CONCURRENCY: "5" },
+    languageVersions: { ruby: { walker: 4, codegraphSchema: 2 } } as Record<string, Record<string, number>> | undefined,
     indexedAt: "t",
     teaRagsVersion: "1",
     chunksCount: 5,
@@ -62,6 +63,7 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
         record: vi.fn((e: Record<string, unknown>) => recorded.push(e)),
         setName: vi.fn(),
         setWorktreeProvenance: vi.fn(),
+        stampLanguageVersions: vi.fn(),
         remove: vi.fn(() => true),
         listWorktrees: vi.fn(() => []),
         findWorktree: vi.fn(() => null),
@@ -156,6 +158,26 @@ describe("WorktreeProvisioner.create saga", () => {
     await ops.create({ name: "x", createGit: false });
     expect("env" in recorded[0]).toBe(false);
     expect("tuning" in recorded[0]).toBe(false);
+  });
+
+  it("carries the source entry's language-version stamp onto the worktree clone", async () => {
+    // A clone holds the source's points verbatim, so it is as current as the
+    // source. Leaving the stamp off makes every language read as version 1 and
+    // the drift monitor demands a --force rebuild of already-current data.
+    const { deps, recorded } = makeDeps();
+    const ops = new WorktreeProvisioner(deps);
+    await ops.create({ name: "x", createGit: false });
+    expect(deps.registry.stampLanguageVersions).toHaveBeenCalledWith(recorded[0].collectionName, {
+      ruby: { walker: 4, codegraphSchema: 2 },
+    });
+  });
+
+  it("does not stamp language versions when the source entry has none (legacy source)", async () => {
+    const { deps, sourceEntry } = makeDeps();
+    delete (sourceEntry as { languageVersions?: unknown }).languageVersions;
+    const ops = new WorktreeProvisioner(deps);
+    await ops.create({ name: "x", createGit: false });
+    expect(deps.registry.stampLanguageVersions).not.toHaveBeenCalled();
   });
 
   it("rolls back ALL artifacts including the failing one in reverse on failure", async () => {
