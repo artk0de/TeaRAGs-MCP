@@ -18,7 +18,9 @@ export type InputErrorCode =
   | "INPUT_PROJECT_NAME_INVALID"
   | "INPUT_PROJECT_PATH_MISSING"
   | "INPUT_PROJECT_ALIAS_STALE"
-  | "INPUT_PATH_NOT_EXISTS";
+  | "INPUT_PATH_NOT_EXISTS"
+  | "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA"
+  | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
@@ -206,4 +208,67 @@ export class StaleProjectAliasError extends InputValidationError {
       hint: `Unregister the stale alias (\`tea-rags unregister ${name}\`) or re-register it with a live path (\`tea-rags register --name ${name} --path <new-path>\`).`,
     });
   }
+}
+
+/**
+ * Thrown by `create_collection` when its `schema` cannot serve as a document
+ * metadata schema — the top level does not describe an object, or the JSON
+ * Schema does not compile. Raised before the collection is created, so a
+ * rejected schema never leaves an untyped collection behind.
+ */
+export class InvalidDocumentMetadataSchemaError extends InputValidationError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA",
+      message: `Invalid document metadata schema: ${detail}`,
+      hint: 'Pass a JSON Schema whose top level is { "type": "object", "properties": { ... } } — it validates each document\'s metadata.',
+      cause,
+    });
+  }
+}
+
+/** One schema violation inside an `add_documents` batch. */
+export interface DocumentMetadataViolation {
+  /** Position of the document in the request's `documents` array. */
+  documentIndex: number;
+  documentId: string | number;
+  /** Dotted path inside `metadata`; empty for a violation on the object itself (e.g. unknown keys). */
+  field: string;
+  /** Zod's description of what the schema expected. */
+  expected: string;
+  /** The value found at `field`; `undefined` when the field is absent. */
+  received: unknown;
+}
+
+const MAX_REPORTED_VIOLATIONS = 10;
+
+/**
+ * Thrown by `add_documents` on a typed collection when any document's metadata
+ * violates the collection schema. The batch is all-or-nothing: nothing is
+ * embedded or stored. `violations` lists every violation across the batch; the
+ * message names the first ten.
+ */
+export class DocumentMetadataSchemaViolationError extends InputValidationError {
+  readonly violations: DocumentMetadataViolation[];
+
+  constructor(collection: string, violations: DocumentMetadataViolation[]) {
+    const lines = violations.slice(0, MAX_REPORTED_VIOLATIONS).map(describeViolation);
+    const rest = violations.length - lines.length;
+    if (rest > 0) lines.push(`… and ${rest} more`);
+    super({
+      code: "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION",
+      message:
+        `${violations.length} metadata violation(s) against the schema of collection "${collection}"; ` +
+        `no document was added: ${lines.join("; ")}`,
+      hint: "Fix the listed metadata fields and resend the whole batch. get_collection_info shows the collection schema.",
+    });
+    this.violations = violations;
+  }
+}
+
+function describeViolation(v: DocumentMetadataViolation): string {
+  const where = `documents[${v.documentIndex}] (id ${JSON.stringify(v.documentId)})`;
+  const field = v.field === "" ? "metadata" : `metadata.${v.field}`;
+  const got = v.received === undefined ? "" : ` (got ${JSON.stringify(v.received)})`;
+  return `${where} ${field}: ${v.expected}${got}`;
 }

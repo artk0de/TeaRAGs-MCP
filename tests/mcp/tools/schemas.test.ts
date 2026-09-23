@@ -46,6 +46,22 @@ describe("CreateCollectionSchema coercion", () => {
   });
 });
 
+describe("CreateCollectionSchema schema (typed collections)", () => {
+  it("accepts a JSON Schema object and passes it through untouched", () => {
+    const schema = { type: "object", properties: { helpful: { type: "number", default: 0 } } };
+    const result = parseCreateCollection({ name: "memory", schema });
+    expect(result.schema).toEqual(schema);
+  });
+
+  it("is optional — an untyped collection omits it", () => {
+    expect(parseCreateCollection({ name: "plain" }).schema).toBeUndefined();
+  });
+
+  it("rejects a schema that is not an object", () => {
+    expect(() => parseCreateCollection({ name: "memory", schema: "object" })).toThrow();
+  });
+});
+
 describe("IndexCodebaseSchema coercion", () => {
   it("coerces forceReindex string 'true' → boolean true", () => {
     const result = parseIndexCodebase({ path: "/tmp", forceReindex: "true" });

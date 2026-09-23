@@ -25,6 +25,7 @@ import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { GraphFacade } from "../internal/facades/graph-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
 import { CollectionOps } from "../internal/ops/collection-ops.js";
+import { DocumentMetadataSchemaCompiler } from "../internal/ops/document-metadata-schema.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
 import type { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
 import type { TracePathOps } from "../internal/ops/trace-path-ops.js";
@@ -238,6 +239,9 @@ function wireOps(deps: AppDeps): {
   document: DocumentOps;
   projectRegistry: ProjectRegistryOps;
 } {
+  // One compiler for both ops: the schema create_collection compiles is the
+  // validator add_documents then finds cached.
+  const metadataSchemas = new DocumentMetadataSchemaCompiler();
   return {
     collection: new CollectionOps(
       deps.qdrant,
@@ -246,8 +250,9 @@ function wireOps(deps: AppDeps): {
       deps.turboQuant,
       deps.modelGuard,
       deps.codegraphPool,
+      metadataSchemas,
     ),
-    document: new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard),
+    document: new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard, metadataSchemas),
     projectRegistry: deps.projectRegistryOps,
   };
 }
