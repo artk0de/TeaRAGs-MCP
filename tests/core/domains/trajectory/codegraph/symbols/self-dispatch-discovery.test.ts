@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   discoverSelfDispatchTemplates,
+  propagateSuperDelegatingTemplates,
   type SelfDispatchMethod,
   type SelfDispatchProbe,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.js";
@@ -31,10 +32,7 @@ describe("discoverSelfDispatchTemplates (DEFECT 2a)", () => {
       { symbolId: "KindOfService#call", enclosingType: "KindOfService", selfHookCandidates: ["perform"] },
     ];
     // KindOfService defines no `perform`; includers Create / Refresh do.
-    const probe = probeOf(
-      { Create: ["perform"], Refresh: ["perform"] },
-      { KindOfService: ["Create", "Refresh"] },
-    );
+    const probe = probeOf({ Create: ["perform"], Refresh: ["perform"] }, { KindOfService: ["Create", "Refresh"] });
 
     expect(discoverSelfDispatchTemplates(methods, probe)).toEqual([
       { templateSymbolId: "KindOfService#call", enclosingType: "KindOfService", hook: "perform" },
@@ -100,5 +98,75 @@ describe("discoverSelfDispatchTemplates (DEFECT 2a)", () => {
     expect(discoverSelfDispatchTemplates(methods, probe)).toEqual([
       { templateSymbolId: "Timing#call", enclosingType: "Timing", hook: "perform" },
     ]);
+  });
+});
+
+// A mixin overriding a template's member with `def call; super; rescue …; end`
+// (taxdome `Tech::KindOfAsyncWorkflowService#call` over `KindOfService#call`):
+// `super` re-enters the template on the SAME `self`, so the override reaches the
+// template's hook exactly as the template does — it is a template with that hook.
+describe("propagateSuperDelegatingTemplates", () => {
+  const KAWS = "Tech::KindOfAsyncWorkflowService";
+  const superDelegating = (symbolId: string, enclosingType: string): SelfDispatchMethod => ({
+    symbolId,
+    enclosingType,
+    selfHookCandidates: [],
+    superDelegates: true,
+  });
+  const ancestorsFrom =
+    (map: Record<string, readonly string[]>) =>
+    (type: string): readonly string[] =>
+      map[type] ?? [];
+
+  it("gives a super-delegating override the hook of the ancestor template it re-enters", () => {
+    const out = propagateSuperDelegatingTemplates(
+      [superDelegating(`${KAWS}#call`, KAWS)],
+      { "KindOfService#call": "perform" },
+      probeOf({ "Tech::AsyncWorkflows::Execute": ["perform"] }, {}),
+      ancestorsFrom({ [KAWS]: ["KindOfService"] }),
+    );
+    expect(out).toEqual({ "KindOfService#call": "perform", [`${KAWS}#call`]: "perform" });
+  });
+
+  it("does NOT propagate when the overriding type concretely defines the hook itself", () => {
+    const out = propagateSuperDelegatingTemplates(
+      [superDelegating(`${KAWS}#call`, KAWS)],
+      { "KindOfService#call": "perform" },
+      probeOf({ [KAWS]: ["perform"] }, {}),
+      ancestorsFrom({ [KAWS]: ["KindOfService"] }),
+    );
+    expect(out).toEqual({ "KindOfService#call": "perform" });
+  });
+
+  it("does NOT propagate for an override that never calls `super`", () => {
+    const out = propagateSuperDelegatingTemplates(
+      [{ symbolId: "Destroy#call", enclosingType: "Destroy", selfHookCandidates: ["success"] }],
+      { "KindOfService#call": "perform" },
+      probeOf({}, {}),
+      ancestorsFrom({ Destroy: ["KindOfService"] }),
+    );
+    expect(out).toEqual({ "KindOfService#call": "perform" });
+  });
+
+  it("follows a chain of super-delegating overrides to a fixpoint, whatever the input order", () => {
+    const out = propagateSuperDelegatingTemplates(
+      [superDelegating("Outer#call", "Outer"), superDelegating(`${KAWS}#call`, KAWS)],
+      { "KindOfService#call": "perform" },
+      probeOf({}, {}),
+      // Outer sees only the intermediate override, so it can inherit the hook only
+      // after an earlier pass has given that override one.
+      ancestorsFrom({ Outer: [KAWS], [KAWS]: ["KindOfService"] }),
+    );
+    expect(out).toMatchObject({ [`${KAWS}#call`]: "perform", "Outer#call": "perform" });
+  });
+
+  it("does NOT propagate when ancestor templates disagree on the hook (a fan-out, not one target)", () => {
+    const out = propagateSuperDelegatingTemplates(
+      [superDelegating("Mixed#call", "Mixed")],
+      { "KindOfService#call": "perform", "OtherBase#call": "run" },
+      probeOf({}, {}),
+      ancestorsFrom({ Mixed: ["KindOfService", "OtherBase"] }),
+    );
+    expect(out).not.toHaveProperty("Mixed#call");
   });
 });

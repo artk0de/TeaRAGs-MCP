@@ -247,6 +247,88 @@ describe("CodegraphEnrichmentProvider — self-instance delegation entry (DEFECT
   });
 });
 
+// The two v2 shapes taxdome left on the shared `KindOfService.call` node: a
+// service that overrides the delegated `#call` itself (no `perform`), and a
+// service reached through an intermediate type whose `#call` wraps `super` in a
+// rescue (`Tech::KindOfAsyncWorkflowService`).
+describe("CodegraphEnrichmentProvider — v2 overrides of the delegated instance method", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    const files: Record<string, string[]> = {
+      "kind_of_service.rb": [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+      ],
+      "destroy.rb": ["class Destroy < KindOfService", "  def call", "    :destroyed", "  end", "end"],
+      "async_service.rb": [
+        "class AsyncService < KindOfService",
+        "  def call",
+        "    super",
+        "  rescue StandardError",
+        "    :failed",
+        "  end",
+        "end",
+      ],
+      "execute.rb": ["class Execute < AsyncService", "  def perform", "    :done", "  end", "end"],
+      "c.rb": ["class C", "  def go", "    Destroy.call", "    Execute.call", "  end", "end"],
+    };
+    for (const [name, lines] of Object.entries(files)) {
+      writeFileSync(join(root, "src", name), [...lines, ""].join("\n"));
+    }
+    return Object.keys(files).map((name) => `src/${name}`);
+  };
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-self-dispatch-override-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-self-dispatch-override-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("lands each entry on the method `new.call` actually runs, never on the shared template", async () => {
+    await provider.streamFileBatch(root, writeFixture());
+    await provider.finalizeSignals(root);
+
+    const edges = await client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method WHERE source_symbol_id = 'C#go'",
+    );
+
+    expect(edges).toEqual(
+      expect.arrayContaining([
+        { source_symbol_id: "C#go", target_symbol_id: "Destroy#call", call_expression: "Destroy.call" },
+        { source_symbol_id: "C#go", target_symbol_id: "Execute#perform", call_expression: "Execute.call" },
+      ]),
+    );
+    expect(edges.map((e) => e.target_symbol_id)).not.toContain("KindOfService.call");
+  });
+});
+
 // bd tea-rags-mcp-bcdfe + tea-rags-mcp-wceck — the REDIRECT terminal. The base does
 // NOT merely omit the hook: it DECLARES it as a `raise NotImplementedError` stub,
 // and concrete subtypes override it (the spec's `ApplicationCsvExporter` /

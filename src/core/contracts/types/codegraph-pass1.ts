@@ -80,6 +80,14 @@ export interface SelfDispatchMethodDecl {
   readonly enclosingType: string;
   /** members this method invokes on `self` (bare / `self.X` / `self.new.X`), bare-normalized. */
   readonly selfHookCandidates: readonly string[];
+  /**
+   * The body calls `super` into its OWN member — the override re-enters the
+   * ancestor's method on the same `self`, so it reaches whatever hook that
+   * ancestor template reaches. Absent (never `false`) otherwise; a row persisted
+   * before the field existed reads as absent, i.e. no propagation — under-coverage,
+   * never a wrong target.
+   */
+  readonly superDelegates?: true;
 }
 
 /**
