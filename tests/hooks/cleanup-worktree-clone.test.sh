@@ -77,6 +77,41 @@ empty; note $? "non-Bash tool is a no-op"
 run "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git worktree remove $GONE_DIR\"},\"tool_response\":{\"stdout\":\"\"}}" "[]"
 empty; note $? "empty registry is a no-op"
 
+# 10. the full row shape `tea-rags worktree list --json` prints (WorktreeInfo,
+#     pretty-printed across lines) → orphan torn down. The fixtures above carry
+#     only the two keys the hook reads; this one pins the real CLI output
+#     (bd tea-rags-mcp-ghk1f: the CLI emitted no `path` and the sweep was a no-op).
+REAL_ROWS=$(cat <<EOF
+[
+  {
+    "isWorktree": true,
+    "collectionName": "code_gone",
+    "alias": "proj-worktree-gone",
+    "worktreeOf": "code_src",
+    "worktreeName": "gone",
+    "path": "$GONE_DIR",
+    "chunksCount": 12
+  },
+  {
+    "isWorktree": true,
+    "collectionName": "code_live",
+    "alias": "proj-worktree-live",
+    "worktreeOf": "code_src",
+    "worktreeName": "live",
+    "path": "$LIVE_DIR",
+    "chunksCount": 3
+  }
+]
+EOF
+)
+run "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git worktree remove $GONE_DIR\"},\"tool_response\":{\"stdout\":\"\"}}" "$REAL_ROWS"
+{ removed gone && ! removed live; }; note $? "real worktree list --json rows: orphan removed, live kept"
+
+# 11. a row without `path` → never removed (an unknown location is not proof
+#     the worktree is gone)
+run "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git worktree remove $GONE_DIR\"},\"tool_response\":{\"stdout\":\"\"}}" '[{"isWorktree":true,"worktreeName":"nopath"}]'
+empty; note $? "row without a path is never removed"
+
 rm -rf "$FAKEBIN" "$LIVE_DIR" "$CALLS"
 echo "---"; echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" = 0 ]
