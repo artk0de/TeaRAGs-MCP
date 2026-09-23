@@ -22,6 +22,7 @@ import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
 import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
+import { reapGitChildProcesses } from "../core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import {
   createApp,
   createComposition,
@@ -1191,6 +1192,10 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
 
   const cleanup = () => {
     registryWatchStop();
+    // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
+    // git as a direct child of THIS process; no parent-death guard reaches it,
+    // so an interrupted run's git children are killed here (bd tea-rags-mcp-w26dc).
+    reapGitChildProcesses();
     if ("terminate" in infra.embeddings && typeof infra.embeddings.terminate === "function") {
       void (infra.embeddings as { terminate: () => Promise<void> }).terminate();
     }
