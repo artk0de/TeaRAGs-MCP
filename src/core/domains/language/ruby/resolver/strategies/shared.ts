@@ -700,6 +700,21 @@ export function resolveSelfDispatchHookTarget(
   return target;
 }
 
+/**
+ * The enclosing type of a method symbolId — the segment before the class↔method
+ * separator: `KindOfService#call` → `KindOfService`, `KindOfService.call` →
+ * `KindOfService`, `Mod::Svc#m` → `Mod::Svc` (`::` is the namespace separator, not
+ * the method separator). `null` for a separatorless top-level function symbolId
+ * (never a template). Instance (`#`) and class (`.`) forms are both handled.
+ */
+export function enclosingTypeOf(symbolId: string): string | null {
+  const hash = symbolId.lastIndexOf("#");
+  if (hash !== -1) return symbolId.slice(0, hash);
+  const dot = symbolId.lastIndexOf(".");
+  if (dot !== -1) return symbolId.slice(0, dot);
+  return null;
+}
+
 /** Whether a resolved hook target points at a walker-marked abstract stub. */
 function targetIsAbstractStub(target: SymbolResolutionTarget, hook: string, ctx: CallContext): boolean {
   return lookupRubySymbolsByShortName(ctx, hook).some(

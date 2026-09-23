@@ -60,6 +60,8 @@ import {
   deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
   foldSelfDispatchTemplates,
+  propagateSuperDelegatingTemplates,
+  selfDispatchAncestors,
   type SelfDispatchMethod,
 } from "./self-dispatch-discovery.js";
 
@@ -958,8 +960,11 @@ export class CodegraphRunState {
     if (this.selfDispatchMethods.length > 0) {
       const symbolTable = await resolveSymbolTable();
       const selfDispatchProbe = buildSelfDispatchProbe(symbolTable, this.hierarchyView);
-      this.selfDispatchTemplates = foldSelfDispatchTemplates(
-        discoverSelfDispatchTemplates(this.selfDispatchMethods, selfDispatchProbe),
+      this.selfDispatchTemplates = propagateSuperDelegatingTemplates(
+        this.selfDispatchMethods,
+        foldSelfDispatchTemplates(discoverSelfDispatchTemplates(this.selfDispatchMethods, selfDispatchProbe)),
+        selfDispatchProbe,
+        selfDispatchAncestors(this.hierarchyView),
       );
       this.selfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.selfDispatchMethods);
       // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf): the walker types

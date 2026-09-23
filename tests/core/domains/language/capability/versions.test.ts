@@ -202,12 +202,16 @@ describe("seeded support versions", () => {
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
+      // ruby walker 5: a `Const.call` entry lands on a `#call` override below the
+      // delegator, and a `super`-delegating override inherits its ancestor
+      // template's hook (`superDelegates` in the pass-1 slice), so an index built
+      // by walker 4 holds those entries on the shared `KindOfService.call` node.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
         ["javascript", 3],
         ["python", 8],
-        ["ruby", 4],
+        ["ruby", 5],
         ["java", 2],
         ["rust", 2],
         ["go", 4],
