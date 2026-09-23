@@ -24,8 +24,23 @@
  */
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  DispatchRef,
+  FileExtraction,
+  ImportRef,
+} from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import {
+  bindJsDispatchLocals,
+  collectJsCallbackParams,
+  collectJsDispatchTables,
+  collectJsModuleBindingNames,
+  isJsFunctionLike,
+  jsExprToDispatchRef,
+  type JsDispatchScope,
+} from "./dispatch-tables.js";
 
 export interface JsExtractInput {
   tree: MaterializedTree;
@@ -37,7 +52,19 @@ export interface JsExtractInput {
 
 export function extractFromJavascriptFile(input: JsExtractInput): FileExtraction {
   const imports = collectJsImports(input.tree.rootNode);
-  const calls = collectJsCalls(input.tree.rootNode);
+  // bd tea-rags-mcp-hkj8 — lookup-table dispatch (port of n0zj). Module-level
+  // const tables are collected first so the call walk knows which subscript
+  // receivers are real dispatch tables. The gate unions in-file tables with the
+  // names the file binds to other modules (ES imports + CommonJS requires): an
+  // imported table is tagged here and the resolver picks its defining file,
+  // while `arr[i].push()` on a plain local is never tagged.
+  const dispatchTables = collectJsDispatchTables(input.tree.rootNode);
+  const dispatchTableNames = collectJsModuleBindingNames(input.tree.rootNode);
+  for (const name of Object.keys(dispatchTables)) dispatchTableNames.add(name);
+  const calls = collectJsCalls(input.tree.rootNode, dispatchTableNames);
+  // Callback params keyed by the symbolId of the chunk that owns each function
+  // body — feeds the resolver's bounded inter-procedural join.
+  const callbackParams = collectJsCallbackParams(input.tree.rootNode, input.chunks);
   const classExtends = collectJsClassExtends(input.tree.rootNode);
   const fileScope = collectJsDefinePropertySymbols(input.tree.rootNode);
   // Innermost-chunk attribution: assign each call to ONE chunk only — the
@@ -68,6 +95,8 @@ export function extractFromJavascriptFile(input: JsExtractInput): FileExtraction
     for (const [cls, parent] of classExtends) classExtendsRecord[cls] = parent;
     out.classExtends = classExtendsRecord;
   }
+  if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
+  if (Object.keys(callbackParams).length > 0) out.callbackParams = callbackParams;
   return out;
 }
 
@@ -100,49 +129,105 @@ function collectJsImports(root: AstNode): ImportRef[] {
   return out;
 }
 
-function collectJsCalls(root: AstNode): CallRef[] {
+/**
+ * Scope-aware call collection. A pre-order recursive walk — the same visiting
+ * order the flat walk had — that keeps a stack of dispatch-bound `const`
+ * locals per function body, so dispatch composes through
+ * `subscript → member → binding → call` (bd tea-rags-mcp-hkj8). Calls with no
+ * dispatch shape are emitted exactly as before.
+ */
+function collectJsCalls(root: AstNode, tableNames: ReadonlySet<string>): CallRef[] {
   const out: CallRef[] = [];
-  walk(root, (node) => {
-    // `new ClassName(args)` (bd tea-rags-mcp-i252). Same shape as the TS
-    // walker — `new_expression` with `constructor` field. JS parser
-    // shares this node type with tree-sitter-typescript.
-    if (node.type === "new_expression") {
-      const ctorNode = node.childForFieldName("constructor");
-      if (!ctorNode) return;
-      out.push({
-        callText: node.text,
-        receiver: ctorNode.text,
-        member: "constructor",
-        startLine: node.startPosition.row + 1,
-      });
-      return;
-    }
-    if (node.type !== "call_expression") return;
-    const callee = node.childForFieldName("function");
-    if (!callee) return;
-    const startLine = node.startPosition.row + 1;
-    if (callee.type === "member_expression") {
-      const obj = callee.childForFieldName("object");
-      const prop = callee.childForFieldName("property");
-      if (!obj || !prop) return;
-      out.push({ callText: node.text, receiver: obj.text, member: prop.text, startLine });
-    } else if (callee.type === "super") {
-      // Bare `super(arg)` in a constructor (bd tea-rags-mcp-3a84). The
-      // tree-sitter grammar emits `super` as the callee node type (no
-      // member access). Without this branch, the walker emitted
-      // `{ receiver: null, member: "super" }` which the resolver then
-      // tried to look up by short-name (always fails). Re-shape to the
-      // super-method form so js-resolver's `super` branch routes the
-      // call to the PARENT class's constructor via classExtends.
-      // Mirrors typescript-walker's identical branch.
-      out.push({ callText: node.text, receiver: "super", member: "constructor", startLine });
-    } else if (callee.type === "identifier") {
-      // Skip require/import — these are tracked as imports, not calls.
-      if (callee.text === "require" || callee.text === "import") return;
-      out.push({ callText: node.text, receiver: null, member: callee.text, startLine });
-    }
-  });
+  walkJsCalls(root, [new Map()], tableNames, out);
   return out;
+}
+
+function walkJsCalls(
+  node: AstNode,
+  scopes: readonly JsDispatchScope[],
+  tableNames: ReadonlySet<string>,
+  out: CallRef[],
+): void {
+  // Function-like nodes open a fresh binding scope; blocks and statements share
+  // the enclosing function's — function-scoped tracking is the real dispatcher
+  // shape. A declaration registers BEFORE its later siblings are visited.
+  const localScopes = isJsFunctionLike(node) ? [...scopes, new Map()] : scopes;
+  bindJsDispatchLocals(node, localScopes, tableNames);
+  emitJsCall(node, localScopes, tableNames, out);
+  for (const child of node.children) walkJsCalls(child, localScopes, tableNames, out);
+}
+
+function emitJsCall(
+  node: AstNode,
+  scopes: readonly JsDispatchScope[],
+  tableNames: ReadonlySet<string>,
+  out: CallRef[],
+): void {
+  // `new ClassName(args)` (bd tea-rags-mcp-i252). Same shape as the TS
+  // walker — `new_expression` with `constructor` field. JS parser
+  // shares this node type with tree-sitter-typescript.
+  if (node.type === "new_expression") {
+    const ctorNode = node.childForFieldName("constructor");
+    if (!ctorNode) return;
+    out.push({
+      callText: node.text,
+      receiver: ctorNode.text,
+      member: "constructor",
+      startLine: node.startPosition.row + 1,
+    });
+    return;
+  }
+  if (node.type !== "call_expression") return;
+  const callee = node.childForFieldName("function");
+  if (!callee) return;
+  const startLine = node.startPosition.row + 1;
+
+  // Dispatch call: the callee itself resolves to a candidate set (`TABLE[k](x)`,
+  // `TABLE[k].field(x)`, a field-bound local `f(x)`, or an entry-bound
+  // `e.field(x)`). The resolver fans it out and SKIPS normal receiver
+  // resolution, so receiver/member are best-effort only.
+  const dispatch = jsExprToDispatchRef(callee, scopes, tableNames);
+  if (dispatch) {
+    out.push({ callText: node.text, receiver: null, member: dispatch.field ?? dispatch.table, startLine, dispatch });
+    return;
+  }
+
+  let ref: CallRef;
+  if (callee.type === "member_expression") {
+    const obj = callee.childForFieldName("object");
+    const prop = callee.childForFieldName("property");
+    if (!obj || !prop) return;
+    ref = { callText: node.text, receiver: obj.text, member: prop.text, startLine };
+  } else if (callee.type === "super") {
+    // Bare `super(arg)` in a constructor (bd tea-rags-mcp-3a84). The
+    // tree-sitter grammar emits `super` as the callee node type (no
+    // member access). Without this branch, the walker emitted
+    // `{ receiver: null, member: "super" }` which the resolver then
+    // tried to look up by short-name (always fails). Re-shape to the
+    // super-method form so js-resolver's `super` branch routes the
+    // call to the PARENT class's constructor via classExtends.
+    // Mirrors typescript-walker's identical branch.
+    ref = { callText: node.text, receiver: "super", member: "constructor", startLine };
+  } else if (callee.type === "identifier") {
+    // Skip require/import — these are tracked as imports, not calls.
+    if (callee.text === "require" || callee.text === "import") return;
+    ref = { callText: node.text, receiver: null, member: callee.text, startLine };
+  } else {
+    return;
+  }
+
+  // A dispatch candidate-set passed positionally — the callback-param channel
+  // the resolver joins against the callee's invoked parameters.
+  const argsNode = node.childForFieldName("arguments");
+  if (argsNode) {
+    const dispatchArgs: { argIndex: number; candidate: DispatchRef }[] = [];
+    argsNode.namedChildren.forEach((arg, i) => {
+      const candidate = jsExprToDispatchRef(arg, scopes, tableNames);
+      if (candidate) dispatchArgs.push({ argIndex: i, candidate });
+    });
+    if (dispatchArgs.length > 0) ref.dispatchArgs = dispatchArgs;
+  }
+  out.push(ref);
 }
 
 /**
