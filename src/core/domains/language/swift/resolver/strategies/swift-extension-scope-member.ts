@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupSwiftTypeMember, type SwiftResolverConfig } from "./shared.js";
+import { lookupSwiftTypeMember, swiftEnclosingTypeIds, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * The enclosing type's member declared in ANOTHER file — the pass Swift needs
@@ -31,9 +31,15 @@ export class SwiftExtensionScopeMemberSymbolResolutionStrategy implements Symbol
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const selfScoped = call.receiver === null || call.receiver === "self" || call.receiver === "Self";
-    if (!selfScoped || ctx.callerScope.length === 0) return CONTINUE;
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const hit = lookupSwiftTypeMember(enclosing, call.member, ctx, this.cfg.mode);
-    return hit ? resolved(hit) : CONTINUE;
+    if (!selfScoped) return CONTINUE;
+    // `self` / `Self` is the innermost type alone; a bare name walks outward,
+    // as Swift's unqualified lookup does (`lookupLexicalMemberInFile`).
+    const enclosingTypes = swiftEnclosingTypeIds(ctx);
+    const searched = call.receiver === null ? enclosingTypes : enclosingTypes.slice(0, 1);
+    for (const typeId of searched) {
+      const hit = lookupSwiftTypeMember(typeId, call.member, ctx, this.cfg.mode);
+      if (hit) return resolved(hit);
+    }
+    return CONTINUE;
   }
 }

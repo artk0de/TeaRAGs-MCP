@@ -37,6 +37,7 @@
 import { resolveLocalBindingType, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import type { ReceiverTypePorts } from "../../kernel/receiver-type-propagation.js";
+import { swiftSelfTypeName } from "./strategies/shared.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
@@ -94,7 +95,7 @@ function swiftHeadType(
   members: SwiftMemberTypeLookup,
 ): TypeRef | undefined {
   if (!SWIFT_IDENTIFIER.test(head)) return undefined;
-  const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+  const enclosing = swiftSelfTypeName(ctx);
   if (head === "self" || head === "Self") {
     if (enclosing === undefined) return undefined;
     return { form: head === "self" ? "instance" : "class", name: enclosing };

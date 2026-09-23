@@ -24,6 +24,7 @@ import {
 import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
 import type { SwiftMemberTypeLookup } from "../swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "../swift-symbol-lookup.js";
+import { isSwiftTypeName } from "../swift-type-name.js";
 
 export interface SwiftResolverConfig {
   mode: AmbiguousResolveMode;
@@ -90,23 +91,90 @@ export function resolveSwiftBoundTypeMember(
 }
 
 /**
- * Look up `<enclosingType>#<member>` / `<enclosingType>.<member>` constrained to
- * the caller's OWN file — the same-file arm the `self.` and bare-call passes
- * share. A hit here outranks anything the project-wide passes could say,
- * because a type's method declared in the very file that calls it is not a
- * guess.
+ * The TYPES lexically enclosing the caller, innermost first, each as the
+ * qualified id its members compose under (bd tea-rags-mcp-3ievc).
+ *
+ * `callerScope` is the chain of NAMES a declaration sits in — `["Outer",
+ * "Inner"]` for a method of a nested type, `["Store", "run"]` for a local
+ * function inside `Store#run` — while the members of `Inner` compose as
+ * `Outer.Inner#m`. So the enclosing type is never the bare last segment: it is
+ * the scope PREFIX, joined with Swift's `.` separator, and only at a depth whose
+ * segment names a TYPE. A function segment is skipped, which is what lets a
+ * local function (or a closure inside one) reach its type's members — Swift
+ * captures `self` there. The type test is the UpperCamelCase guideline this
+ * vertical already spends as evidence (`../swift-type-name.ts`); a dotted
+ * segment — `extension AFError.Reason` — is judged by its last component.
+ */
+export function swiftEnclosingTypeIds(ctx: CallContext): string[] {
+  const out: string[] = [];
+  for (let depth = ctx.callerScope.length; depth > 0; depth--) {
+    if (!isTypeSegment(ctx.callerScope[depth - 1])) continue;
+    out.push(ctx.callerScope.slice(0, depth).join("."));
+  }
+  return out;
+}
+
+/**
+ * The innermost enclosing TYPE's own scope segment — what `self` denotes,
+ * spelled the way the walker keys `classFieldTypes` and `classExtends` (the
+ * declaration's name text, so `Inner` for a nested type and `AFError.Reason`
+ * for an extension of one). Undefined at file scope. Skips function segments
+ * for the reason {@link swiftEnclosingTypeIds} states.
+ */
+export function swiftSelfTypeName(ctx: CallContext): string | undefined {
+  for (let depth = ctx.callerScope.length; depth > 0; depth--) {
+    const segment = ctx.callerScope[depth - 1];
+    if (isTypeSegment(segment)) return segment;
+  }
+  return undefined;
+}
+
+/** Whether a scope segment names a type — judged by its last `.` component. */
+function isTypeSegment(segment: string): boolean {
+  return isSwiftTypeName(segment.slice(segment.lastIndexOf(".") + 1));
+}
+
+/** Look up `<typeId>#<member>` then `<typeId>.<member>`, constrained to the caller's OWN file. */
+function lookupTypeMemberInCallerFile(typeId: string, member: string, ctx: CallContext): SymbolResolutionTarget | null {
+  const instanceHit = lookupSwiftSymbols(ctx, `${typeId}#${member}`).find((def) => def.relPath === ctx.callerFile);
+  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+  const staticHit = lookupSwiftSymbols(ctx, `${typeId}.${member}`).find((def) => def.relPath === ctx.callerFile);
+  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+  return null;
+}
+
+/**
+ * The same-file arm of `self.member()` / `Self.member()`: the member of the
+ * INNERMOST enclosing type, and only that one. A hit here outranks anything the
+ * project-wide passes could say, because a type's method declared in the very
+ * file that calls it is not a guess.
+ *
+ * Deliberately not the outward walk {@link lookupLexicalMemberInFile} does:
+ * `self` inside a nested type is the NESTED type, and Swift gives it no
+ * implicit reference to an outer instance.
  *
  * Returns null when the caller has no enclosing type (a top-level function) or
  * neither form is declared in the file; the caller then continues down the
  * chain to the extension-scope pass, which is where a Swift type split across
  * files is answered.
  */
-export function lookupEnclosingTypeMemberInFile(member: string, ctx: CallContext): SymbolResolutionTarget | null {
-  const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-  if (!enclosing) return null;
-  const instanceHit = lookupSwiftSymbols(ctx, `${enclosing}#${member}`).find((def) => def.relPath === ctx.callerFile);
-  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-  const staticHit = lookupSwiftSymbols(ctx, `${enclosing}.${member}`).find((def) => def.relPath === ctx.callerFile);
-  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+export function lookupSelfTypeMemberInFile(member: string, ctx: CallContext): SymbolResolutionTarget | null {
+  const selfType = swiftEnclosingTypeIds(ctx)[0];
+  return selfType === undefined ? null : lookupTypeMemberInCallerFile(selfType, member, ctx);
+}
+
+/**
+ * The same-file arm of a BARE call: Swift's unqualified lookup, which searches
+ * the members of each enclosing type from the innermost outward and stops at
+ * the first that declares the name. So an inner declaration shadows an outer
+ * one, and a nested type's body still reaches a sibling nested type or its own
+ * enclosing type's static members — `Options(rawValue:)` written inside
+ * `Download.Options` names `Download.Options`, found one scope out.
+ */
+export function lookupLexicalMemberInFile(member: string, ctx: CallContext): SymbolResolutionTarget | null {
+  for (const typeId of swiftEnclosingTypeIds(ctx)) {
+    const hit = lookupTypeMemberInCallerFile(typeId, member, ctx);
+    if (hit) return hit;
+  }
   return null;
 }

@@ -808,6 +808,93 @@ describe("SwiftCallResolver — enclosingBareCall", () => {
     );
     expect(target).toEqual({ targetRelPath: "Sources/Store.swift", targetSymbolId: "Store#helper" });
   });
+
+  // bd tea-rags-mcp-3ievc — a nested type's scope is `["Outer", "Inner"]`
+  // while its members compose as `Outer.Inner#m`, so the enclosing type has to
+  // be read QUALIFIED, and a bare name walks the lexical scopes outward the way
+  // Swift's unqualified lookup does.
+  it("resolves a bare call inside a NESTED type to that type's qualified member", () => {
+    const t = table({ "Sources/Outer.swift": [{ symbolId: "Outer.Inner#helper", scope: ["Outer", "Inner"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "helper"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner#helper");
+  });
+
+  it("lets the innermost type's member shadow the outer type's namesake", () => {
+    const t = table({
+      "Sources/Outer.swift": [
+        { symbolId: "Outer.Inner.make", scope: ["Outer", "Inner"] },
+        { symbolId: "Outer.make", scope: ["Outer"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "make"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner.make");
+  });
+
+  it("walks OUTWARD to a sibling nested type — the construction `Options(rawValue:)` inside `Options`", () => {
+    // A type chunk's own calls run in the type (its bodyScope), so a static
+    // initializer constructing the type itself is found one scope further out.
+    const t = table({
+      "Sources/Download.swift": [
+        { symbolId: "Download.Options", scope: ["Download"] },
+        { symbolId: "Options", scope: [] },
+      ],
+      "Sources/Other.swift": [{ symbolId: "Options", scope: [] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "Options"),
+      ctx({ callerFile: "Sources/Download.swift", callerScope: ["Download", "Options"], symbolTable: t }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Download.swift", targetSymbolId: "Download.Options" });
+  });
+
+  it("skips a FUNCTION scope — a local function's bare call reaches the enclosing type", () => {
+    const t = table({ "Sources/Store.swift": [{ symbolId: "Store#helper", scope: ["Store"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "helper"),
+      ctx({ callerFile: "Sources/Store.swift", callerScope: ["Store", "run"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Store#helper");
+  });
+});
+
+describe("SwiftCallResolver — selfMember in nested scopes (bd tea-rags-mcp-3ievc)", () => {
+  it("reads `self` as the innermost TYPE, qualified", () => {
+    const t = table({
+      "Sources/Outer.swift": [
+        { symbolId: "Outer.Inner#helper", scope: ["Outer", "Inner"] },
+        { symbolId: "Outer#helper", scope: ["Outer"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("self", "helper"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner#helper");
+  });
+
+  it("never reads `self` as an OUTER type — a nested type has no implicit outer self", () => {
+    const t = table({ "Sources/Outer.swift": [{ symbolId: "Outer#helper", scope: ["Outer"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self", "helper"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("reads `self` inside a local function as the type enclosing that function", () => {
+    const t = table({ "Sources/Store.swift": [{ symbolId: "Store#helper", scope: ["Store"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self", "helper"),
+      ctx({ callerFile: "Sources/Store.swift", callerScope: ["Store", "run"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Store#helper");
+  });
 });
 
 describe("SwiftCallResolver — extensionScopeMember", () => {

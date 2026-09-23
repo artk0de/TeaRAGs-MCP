@@ -36,6 +36,7 @@ import { extname, join, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline";
 
 import {
+  chunkCallerScope,
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
@@ -376,7 +377,7 @@ export async function walkCorpus(
       const ctx: CallContext = {
         declaredDependencies,
         callerFile: relPath,
-        callerScope: chunk.scope,
+        callerScope: chunkCallerScope(chunk),
         callerSymbolId: chunk.symbolId,
         imports: extraction.imports,
         symbolTable,

@@ -32,6 +32,7 @@ import Parser from "tree-sitter";
 import { CONTINUE, DROP, resolved as resolvedOutcome } from "../src/core/contracts/resolution.js";
 import type { AstNode } from "../src/core/contracts/types/ast.js";
 import {
+  chunkCallerScope,
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   resolveLocalBinding,
   resolveLocalBindingType,
@@ -866,7 +867,7 @@ function resolvePass2(extraction: FileExtraction): void {
       if (DUCK_ENABLED) noteDuckCall(call, receiverKind, extraction.relPath, chunk);
       const ctx: CallContext = {
         callerFile: extraction.relPath,
-        callerScope: chunk.scope,
+        callerScope: chunkCallerScope(chunk),
         callerSymbolId: chunk.symbolId,
         imports: extraction.imports,
         symbolTable,
@@ -3459,7 +3460,7 @@ function fxResolvePass(extractions: FileExtraction[], env: FxEnv): FxPassResult 
         result.kindTally[receiverKind].attempted += 1;
         const ctx: CallContext = {
           callerFile: extraction.relPath,
-          callerScope: chunk.scope,
+          callerScope: chunkCallerScope(chunk),
           callerSymbolId: chunk.symbolId,
           imports: extraction.imports,
           symbolTable,
@@ -9558,7 +9559,7 @@ function ccBuildContext(
     Object.keys(overlay.ivars).length === 0 ? file.ivarTypes : ccMergeIvarTypes(file.ivarTypes ?? {}, overlay.ivars);
   return {
     callerFile: file.extraction.relPath,
-    callerScope: chunk !== null ? chunk.scope : [...scope],
+    callerScope: chunk !== null ? chunkCallerScope(chunk) : [...scope],
     callerSymbolId: chunk?.symbolId ?? "",
     imports: file.extraction.imports,
     symbolTable,

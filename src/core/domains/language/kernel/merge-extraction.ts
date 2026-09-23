@@ -86,6 +86,7 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   // The merge key itself, and the lexical chain that travels with it.
   symbolId: (base) => base,
   scope: (base) => base,
+  bodyScope: (base) => base,
   // The channel a pass is normally here to add to.
   calls: (base, pass) => [...base, ...pass],
   localBindings: (base, pass) => mergeLocalBindings(base, pass),

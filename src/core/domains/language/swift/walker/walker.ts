@@ -139,7 +139,7 @@ export interface SwiftExtractInput {
   code: string;
   relPath: string;
   language: string;
-  chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  chunks: { symbolId: string; startLine: number; endLine: number; scope: string[]; bodyScope?: string[] }[];
 }
 
 export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
@@ -157,6 +157,8 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    // A type chunk's own calls run inside the type (`swiftNameOf` opts in).
+    if (c.bodyScope !== undefined) chunk.bodyScope = c.bodyScope;
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
     return chunk;

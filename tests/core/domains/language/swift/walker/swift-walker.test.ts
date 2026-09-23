@@ -956,3 +956,47 @@ describe("swift walker — existential and parenthesized annotations", () => {
     expect(extractMaterialized(src).classFieldTypes?.Session).toBeUndefined();
   });
 });
+
+describe("swift walker — a type chunk's own calls run with the type as `self` (bd tea-rags-mcp-3ievc)", () => {
+  /** The chunk set the pipeline hands the walker: kernel `collectSymbols` over the MATERIALIZED tree. */
+  function extractWithKernelChunks(src: string) {
+    const tree = { rootNode: materializeTree(parse(src).rootNode, src) };
+    const chunks = collectSymbols(tree, (node) => swiftNameOf(node), ".", true, new DefaultSymbolIdComposer());
+    return extractFromSwiftFile({ tree, code: src, relPath: "Sources/Sample.swift", language: "swift", chunks });
+  }
+
+  const src = [
+    "struct Invoice {",
+    "  var total: Int { compute() }",
+    "  func compute() -> Int { return 1 }",
+    "  struct Line {",
+    "    let tag = Invoice.label()",
+    "  }",
+    "}",
+    "extension Invoice {",
+    "  var doubled: Int { compute() * 2 }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("gives a type chunk a bodyScope naming the type itself, and keeps its declaration scope", () => {
+    const { chunks } = extractWithKernelChunks(src);
+    const invoice = chunks.find((c) => c.symbolId === "Invoice");
+    expect(invoice?.scope).toEqual([]);
+    expect(invoice?.bodyScope).toEqual(["Invoice"]);
+    // The computed property is not chunked, so its call lands on the type chunk.
+    expect(invoice?.calls.map((c) => c.member)).toEqual(["compute"]);
+  });
+
+  it("gives a NESTED type the full lexical chain, and an extension the extended type", () => {
+    const { chunks } = extractWithKernelChunks(src);
+    expect(chunks.find((c) => c.symbolId === "Invoice.Line")?.bodyScope).toEqual(["Invoice", "Line"]);
+    expect(chunks.find((c) => c.symbolId === "Invoice~2")?.bodyScope).toEqual(["Invoice"]);
+  });
+
+  it("leaves a method chunk without a bodyScope — its scope already is the caller scope", () => {
+    const method = extractWithKernelChunks(src).chunks.find((c) => c.symbolId === "Invoice#compute");
+    expect(method?.scope).toEqual(["Invoice"]);
+    expect(method).not.toHaveProperty("bodyScope");
+  });
+});
