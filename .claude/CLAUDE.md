@@ -290,8 +290,9 @@ per-session/per-worktree concern; main carries canonical _source_ after merge,
 not necessarily global link.
 
 ```bash
-# 1. Worktree: build the worktree branch + point global tea-rags at it
+# 1. Worktree: install + build the worktree branch + point global tea-rags at it
 cd .claude/worktrees/<branch>
+npm install
 npm run build
 npm link
 
@@ -301,6 +302,10 @@ npm link
 # 3. After tests pass: MERGE the worktree branch into main.
 cd /Users/artk0re/Dev/Tools/tea-rags-mcp
 git merge worktree-<branch> --no-ff
+
+# Before building main (or any other checkout) after the merge: npm install
+# first. The merged package.json may declare a dependency main's node_modules
+# does not have yet.
 
 # Do NOT relink main here. Leave the global link where your session needs it
 # (typically the worktree build you just tested). A parallel session may have its
@@ -315,8 +320,17 @@ actively testing — point at build you need, leave it. Once merged, worktree
 source preserved on main regardless of link; later `npm link` from any checkout
 reproduces it.
 
-### Why build AND link each time
+### Why install, build AND link each time
 
+- `npm install` brings `node_modules` in line with `package.json`.
+  `npm run build` compiles; it does NOT install. A checkout keeps the deps it
+  had when created, so a branch that ADDS a dependency (e.g. a tree-sitter
+  grammar) leaves every other checkout one install short once it merges. The
+  build still succeeds and the server dies at startup with
+  `ERR_MODULE_NOT_FOUND: Cannot find package '<pkg>'`, which `/mcp reconnect`
+  surfaces only as "Failed to reconnect to tea-rags" with no diagnostic; running
+  the linked binary by hand (`tea-rags --version`) shows the trace. Run it
+  unconditionally: a no-op install costs seconds (bd tea-rags-mcp-7lnos).
 - `npm link` registers current `package.json` path as global symlink source.
   Does NOT trigger build — consumer (MCP server) loads whatever `build/`
   contains at next start.
@@ -490,8 +504,9 @@ large project is hours, rarely the right tool for testing unreleased changes.
 ### Test sequence when new functionality affects payload
 
 ```bash
-# 1. Worktree: build + link + reindex tea-rags + (optionally another project)
+# 1. Worktree: install + build + link + reindex tea-rags + (optionally another project)
 cd .claude/worktrees/<branch>
+npm install
 npm run build
 npm link
 # → reconnect MCP servers
