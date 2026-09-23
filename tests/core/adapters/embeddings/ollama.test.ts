@@ -715,6 +715,79 @@ describe("OllamaEmbeddings", () => {
       await expect(promise).rejects.toThrow(OllamaUnavailableError);
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
+
+    it("should report how long it waited before giving up, so a caller does not wait the budget again (bd tea-rags-mcp-umatc)", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { unavailableRetryMaxWaitMs: 500, unavailableRetryBaseDelayMs: 100 },
+        undefined,
+        true,
+      );
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const promise = provider.embed("test text");
+      promise.catch(() => {});
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const error = await promise.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(OllamaUnavailableError);
+      expect((error as OllamaUnavailableError).recoveryWaitMs).toBe(500);
+    });
+
+    it("should announce each recovery wait and the recovery, so a caller can show it is waiting (bd tea-rags-mcp-umatc)", async () => {
+      // Without this the wait is silent outside DEBUG: an index run sat for the
+      // whole budget with nothing on screen, then printed the error.
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { unavailableRetryMaxWaitMs: 60_000, unavailableRetryBaseDelayMs: 100 },
+        "http://127.0.0.1:9",
+        true,
+      );
+      const events: unknown[] = [];
+      provider.onRecoveryWait = (event) => events.push(event);
+      mockFetch
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockResolvedValue({ ok: true, json: async () => ({ embedding: Array(768).fill(0.5) }) });
+
+      const promise = provider.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
+
+      expect(events).toEqual([
+        { state: "waiting", url: "http://127.0.0.1:9", elapsedMs: 0, budgetMs: 60_000 },
+        { state: "waiting", url: "http://127.0.0.1:9", elapsedMs: 100, budgetMs: 60_000 },
+        { state: "recovered", url: "http://127.0.0.1:9", elapsedMs: 300 },
+      ]);
+    });
+
+    it("should announce nothing when the host answers first time", async () => {
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { unavailableRetryMaxWaitMs: 60_000, unavailableRetryBaseDelayMs: 100 },
+        undefined,
+        true,
+      );
+      const onRecoveryWait = vi.fn();
+      provider.onRecoveryWait = onRecoveryWait;
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({ embedding: Array(768).fill(0.5) }) });
+
+      await provider.embed("test text");
+
+      expect(onRecoveryWait).not.toHaveBeenCalled();
+    });
+
+    it("should report no recovery wait when the wait is disabled", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, undefined, true);
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const error = await provider.embed("test text").catch((e: unknown) => e);
+
+      expect((error as OllamaUnavailableError).recoveryWaitMs).toBe(0);
+    });
   });
 
   describe("native batch API (/api/embed)", () => {

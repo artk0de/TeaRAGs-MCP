@@ -194,6 +194,12 @@ export function formatProgressLine(message: WorkerMessage): string | null {
       if (message.state === "ready") return `${label}ready ✓ in ${fmtDuration(message.elapsedMs)}`;
       return message.state === "recovering" ? `${label}recovering shards… (waiting)` : `${label}starting up… (waiting)`;
     }
+    case "embedding-state": {
+      // No elapsed for the same reason as qdrant-state: one line per state.
+      const label = "embedding provider".padEnd(LABEL_WIDTH);
+      if (message.state === "recovered") return `${label}${message.url} back ✓ after ${fmtDuration(message.elapsedMs)}`;
+      return `${label}${message.url} not reachable — waiting up to ${Math.round(message.budgetMs / 1000)}s for it`;
+    }
     case "error":
       return `error: ${message.message}`;
     case "status":
@@ -334,6 +340,9 @@ export class TtyProgressRenderer implements ProgressRenderer {
       case "qdrant-state":
         this.renderQdrantStateBar(message);
         break;
+      case "embedding-state":
+        this.renderEmbeddingStateBar(message);
+        break;
       case "embedding":
         this.renderEmbeddingBar(message);
         break;
@@ -431,6 +440,55 @@ export class TtyProgressRenderer implements ProgressRenderer {
     const existing = this.barStates.get(key);
     if (existing) {
       existing.rate = rate;
+      return;
+    }
+    const bar = this.multibar.create(0, 0, { label, rate, eta: "", elapsed: "", totalFinal: false });
+    this.barStates.set(key, {
+      bar,
+      startMs: this.now() - message.elapsedMs,
+      value: 0,
+      total: 0,
+      label,
+      rate,
+      done: false,
+      etaBaseSeconds: null,
+      etaBaseAtMs: this.now(),
+      totalFinal: false,
+    });
+    this.startTickIfNeeded();
+  }
+
+  /**
+   * Embedding-provider recovery wait (bd tea-rags-mcp-umatc): the same
+   * indeterminate row as the qdrant readiness wait, frozen with Done ✓ once the
+   * provider answers. A later wait on the same run reopens it.
+   */
+  private renderEmbeddingStateBar(message: WorkerMessageOf<"embedding-state">): void {
+    const key = "embedding-state";
+    const label = this.colors.brand("embedding provider".padEnd(LABEL_WIDTH));
+    const existing = this.barStates.get(key);
+    if (message.state === "recovered") {
+      if (!existing) return;
+      existing.done = true;
+      existing.bar.update(existing.value, {
+        label: existing.label,
+        rate: "",
+        elapsed: "",
+        eta: "",
+        done: { elapsed: fmtDuration(message.elapsedMs) },
+      });
+      return;
+    }
+    const rate = this.colors.dim(
+      `${message.url} not reachable — waiting up to ${Math.round(message.budgetMs / 1000)}s…`,
+    );
+    if (existing) {
+      existing.rate = rate;
+      if (existing.done) {
+        existing.done = false;
+        existing.startMs = this.now() - message.elapsedMs;
+        this.startTickIfNeeded();
+      }
       return;
     }
     const bar = this.multibar.create(0, 0, { label, rate, eta: "", elapsed: "", totalFinal: false });
@@ -616,6 +674,7 @@ export class JsonProgressRenderer implements ProgressRenderer {
       case "enrichment":
       case "turbo-migration":
       case "qdrant-state":
+      case "embedding-state":
         // no-op in JSON mode — progress bars suppressed
         break;
     }

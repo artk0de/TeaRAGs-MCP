@@ -162,6 +162,28 @@ describe("IndexingOps — forceEnrichments", () => {
     expect(deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
   });
 
+  it("refuses to start when the embedding provider is down — before the sync touches the index (bd tea-rags-mcp-umatc)", async () => {
+    // The sync leg deletes a changed file's old chunks and then embeds the new
+    // ones. With the provider down at startup it got as far as the delete and
+    // died on the embed: measured 2026-09-23 on a scratch index, a
+    // `--force-enrichments all` run with Ollama unreachable took the collection
+    // from 8 points to 2. The incremental and full paths gate on the provider
+    // first; the recompute has to as well.
+    const unavailable = new Error("Ollama is not reachable at http://127.0.0.1:9");
+    const deps = makeDeps({
+      embeddings: {
+        embed: vi.fn().mockRejectedValue(unavailable),
+        resolveModelInfo: vi.fn().mockResolvedValue(undefined),
+      } as never,
+      healthCheckRetryAttempts: 1,
+    });
+    const ops = new IndexingOps(deps);
+
+    await expect(ops.run("/repo", { forceEnrichments: ["git"] })).rejects.toBe(unavailable);
+    expect(deps.reindex.reindexChanges).not.toHaveBeenCalled();
+    expect(deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
+  });
+
   it("never falls through to a full index", async () => {
     const deps = makeDeps();
     const ops = new IndexingOps(deps);
