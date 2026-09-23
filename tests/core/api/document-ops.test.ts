@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
+import { DocumentMetadataSchemaViolationError } from "../../../src/core/api/errors.js";
 import { DocumentOps } from "../../../src/core/api/internal/ops/document-ops.js";
 
 function createMockQdrant(overrides: Partial<QdrantManager> = {}): QdrantManager {
@@ -106,6 +107,62 @@ describe("DocumentOps", () => {
       const result = await ops.add(request);
 
       expect(result).toEqual({ count: 2 });
+    });
+
+    describe("typed collection (schema in collection metadata)", () => {
+      const schema = {
+        type: "object",
+        properties: {
+          domain: { type: "string" },
+          helpful: { type: "number", default: 0 },
+        },
+        required: ["domain"],
+      };
+
+      beforeEach(() => {
+        qdrant = createMockQdrant({
+          getCollectionInfo: vi.fn().mockResolvedValue({
+            name: "memory",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine",
+            hybridEnabled: false,
+            metadata: { documentMetadataSchema: schema },
+          }),
+        });
+        ops = new DocumentOps(qdrant, embeddings);
+      });
+
+      it("stores the validated metadata with schema defaults filled in", async () => {
+        await ops.add({
+          collection: "memory",
+          documents: [
+            { id: "b1", text: "hello world", metadata: { domain: "crm" } },
+            { id: "b2", text: "foo bar", metadata: { domain: "sms", helpful: 2 } },
+          ],
+        });
+
+        expect(qdrant.addPoints).toHaveBeenCalledWith("memory", [
+          { id: "b1", vector: [0.1, 0.2, 0.3], payload: { text: "hello world", domain: "crm", helpful: 0 } },
+          { id: "b2", vector: [0.4, 0.5, 0.6], payload: { text: "foo bar", domain: "sms", helpful: 2 } },
+        ]);
+      });
+
+      it("rejects the whole batch before embedding when one document violates", async () => {
+        await expect(
+          ops.add({
+            collection: "memory",
+            documents: [
+              { id: "b1", text: "hello world", metadata: { domain: "crm" } },
+              { id: "b2", text: "foo bar", metadata: { helpful: "many" } },
+            ],
+          }),
+        ).rejects.toBeInstanceOf(DocumentMetadataSchemaViolationError);
+
+        expect(embeddings.embedBatch).not.toHaveBeenCalled();
+        expect(qdrant.addPoints).not.toHaveBeenCalled();
+        expect(qdrant.addPointsWithSparse).not.toHaveBeenCalled();
+      });
     });
   });
 

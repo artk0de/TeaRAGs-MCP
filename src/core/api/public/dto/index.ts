@@ -39,6 +39,7 @@ export type {
 export type {
   // Collection
   CreateCollectionRequest,
+  DocumentMetadataSchema,
   CollectionInfo,
   CollectionMemoryBytes,
   CollectionMemoryMetrics,

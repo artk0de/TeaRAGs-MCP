@@ -56,6 +56,15 @@ export const CreateCollectionSchema = {
         "Euclid: absolute vector distance, rarely needed for text embeddings.",
     ),
   enableHybrid: coerceBoolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
+  schema: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Optional JSON Schema for document metadata — makes the collection typed. " +
+        'Top level must be { "type": "object", "properties": {...} }. ' +
+        "add_documents then validates every document's metadata against it (all-or-nothing per batch) " +
+        "and stores schema `default` values for absent fields. Omit for free-form metadata.",
+    ),
 };
 
 export const DeleteCollectionSchema = {

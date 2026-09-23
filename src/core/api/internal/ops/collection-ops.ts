@@ -13,6 +13,11 @@ import type {
   CollectionMemoryMetrics,
   CreateCollectionRequest,
 } from "../../public/dto/index.js";
+import {
+  DOCUMENT_METADATA_SCHEMA_KEY,
+  DocumentMetadataSchemaCompiler,
+  readDocumentMetadataSchema,
+} from "./document-metadata-schema.js";
 
 export class CollectionOps {
   constructor(
@@ -22,9 +27,14 @@ export class CollectionOps {
     private readonly turboQuant: boolean,
     private readonly modelGuard?: EmbeddingModelGuard,
     private readonly codegraphPool?: GraphDbClientPool,
+    private readonly metadataSchemas: DocumentMetadataSchemaCompiler = new DocumentMetadataSchemaCompiler(),
   ) {}
 
   async create(request: CreateCollectionRequest): Promise<CollectionInfo> {
+    // Compile before anything is created: a schema that cannot validate must
+    // not leave an untyped collection behind under the requested name.
+    if (request.schema) this.metadataSchemas.compile(request.schema);
+
     // Ask the provider what its model really is before sizing the collection.
     // getDimensions() alone is the static model-table guess, and a collection
     // built on a wrong guess fails at the first add_documents — after this call
@@ -33,14 +43,21 @@ export class CollectionOps {
     const vectorSize = resolved?.dimensions || this.embeddings.getDimensions();
     const enableHybrid = request.enableHybrid || false;
 
-    await this.qdrant.createCollection(
+    const createArgs = [
       request.name,
       vectorSize,
       request.distance,
       enableHybrid,
       this.quantizationScalar,
       this.turboQuant,
-    );
+    ] as const;
+    if (request.schema) {
+      await this.qdrant.createCollection(...createArgs, undefined, {
+        [DOCUMENT_METADATA_SCHEMA_KEY]: request.schema,
+      });
+    } else {
+      await this.qdrant.createCollection(...createArgs);
+    }
 
     this.modelGuard?.recordModel(request.name);
 
@@ -52,6 +69,7 @@ export class CollectionOps {
       hybridEnabled: enableHybrid,
       status: "green",
       optimizerStatus: "ok",
+      ...(request.schema && { schema: request.schema }),
     };
   }
 
@@ -60,7 +78,10 @@ export class CollectionOps {
   }
 
   async getInfo(name: string): Promise<CollectionInfo> {
-    return this.qdrant.getCollectionInfo(name);
+    // The raw collection metadata is storage; the DTO names what it holds.
+    const { metadata, ...info } = await this.qdrant.getCollectionInfo(name);
+    const schema = readDocumentMetadataSchema(metadata);
+    return schema ? { ...info, schema } : info;
   }
 
   /**

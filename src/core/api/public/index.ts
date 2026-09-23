@@ -41,6 +41,7 @@ export type {
   EnrichmentProgressEvent,
   // Collection DTOs
   CreateCollectionRequest,
+  DocumentMetadataSchema,
   CollectionInfo,
   CollectionMemoryBytes,
   CollectionMemoryMetrics,
@@ -65,8 +66,10 @@ export {
   PathDoesNotExistError,
   ProjectPathMissingError,
   StaleProjectAliasError,
+  InvalidDocumentMetadataSchemaError,
+  DocumentMetadataSchemaViolationError,
 } from "../errors.js";
-export type { InputErrorCode } from "../errors.js";
+export type { InputErrorCode, DocumentMetadataViolation } from "../errors.js";
 
 // ── Error classes — foundation + config (infra/errors.ts) ─────────────
 export {

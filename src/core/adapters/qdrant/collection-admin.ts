@@ -39,6 +39,11 @@ export interface CollectionInfo {
    * unrecognized quantization variant).
    */
   quantization: "turbo" | "scalar" | "none";
+  /**
+   * Application JSON stored on the collection itself (`config.metadata`,
+   * written at creation). Absent when the collection carries none.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -84,6 +89,7 @@ export class QdrantCollectionAdmin {
     quantizationScalar = false,
     turboQuant = false,
     strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
+    metadata?: Record<string, unknown>,
   ): Promise<void> {
     type DistanceType = "Cosine" | "Euclid" | "Dot" | "Manhattan";
     type VectorConfig =
@@ -113,6 +119,7 @@ export class QdrantCollectionAdmin {
         max_resident_memory_percent?: number;
         search_max_batchsize?: number;
       };
+      metadata?: Record<string, unknown>;
     }
 
     const config: CollectionConfig = enableSparse
@@ -154,6 +161,10 @@ export class QdrantCollectionAdmin {
         ...(strictMode.searchMaxBatchsize !== undefined && { search_max_batchsize: strictMode.searchMaxBatchsize }),
       };
     }
+
+    // Written with the collection, not patched on after: a collection whose
+    // metadata write failed would exist without it and behave as untyped.
+    if (metadata) config.metadata = metadata;
 
     try {
       await this.connection.call(async () => this.connection.client.createCollection(name, config));
@@ -221,6 +232,7 @@ export class QdrantCollectionAdmin {
       status: (info.status ?? "green") as "green" | "yellow" | "red",
       optimizerStatus: typeof info.optimizer_status === "string" ? info.optimizer_status : "unknown",
       quantization: mapQuantization((info.config as { quantization_config?: unknown }).quantization_config),
+      ...(isJsonObject(info.config.metadata) && { metadata: info.config.metadata }),
     };
   }
 
@@ -525,6 +537,11 @@ function mapQuantization(config: unknown): "turbo" | "scalar" | "none" {
     if ("scalar" in config) return "scalar";
   }
   return "none";
+}
+
+/** `config.metadata` is typed as a payload OR null; only a JSON object is metadata. */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Detect Qdrant 409 Conflict (collection already exists). */
