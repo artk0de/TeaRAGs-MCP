@@ -206,9 +206,13 @@ describe("seeded support versions", () => {
       // delegator, and a `super`-delegating override inherits its ancestor
       // template's hook (`superDelegates` in the pass-1 slice), so an index built
       // by walker 4 holds those entries on the shared `KindOfService.call` node.
+      // typescript walker 12: bd tea-rags-mcp-v0207 adds the annotated-factory
+      // hop to the owner rule, so an index built by walker 11 holds file-only
+      // edges where a member declared on a same-file type the factory's return
+      // annotation names now pins the factory's own member.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 11],
+        ["typescript", 12],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 5],
