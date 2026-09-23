@@ -168,6 +168,12 @@ export { resolveQdrantUrl, EMBEDDED_MARKER } from "../../adapters/qdrant/embedde
 // repository (a checkout and its linked worktrees), so it can inherit config.
 export { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
 
+// ── Language capability ceilings (cli/prime per-index tier lines) ─────
+// Static per-language descriptors, never measured numbers — prime pairs them
+// with the realized resolve rate it already reads (bd tea-rags-mcp-xip6g).
+export { resolveLanguageCapabilities } from "../../domains/language/capability/resolve.js";
+export type { LanguageCapability } from "../../contracts/types/language.js";
+
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────
 export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 

@@ -5,35 +5,26 @@ import type {
   LanguageProvider,
 } from "../../contracts/types/language.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
-import { capability as bashCapability } from "./bash/capability.js";
 import { BashLanguage } from "./bash/index.js";
 import { signalFloors as bashSignalFloors } from "./bash/signal-floors.js";
+import { nativeLanguageCapabilities } from "./capability/native.js";
 import { UnsupportedLanguageError } from "./errors.js";
-import { capability as goCapability } from "./go/capability.js";
 import { GoLanguage } from "./go/index.js";
 import { signalFloors as goSignalFloors } from "./go/signal-floors.js";
-import { capability as javaCapability } from "./java/capability.js";
 import { JavaLanguage } from "./java/index.js";
 import { signalFloors as javaSignalFloors } from "./java/signal-floors.js";
-import { capability as javascriptCapability } from "./javascript/capability.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
 import { signalFloors as javascriptSignalFloors } from "./javascript/signal-floors.js";
-import { capability as markdownCapability } from "./markdown/capability.js";
 import { MarkdownLanguage } from "./markdown/index.js";
 import { signalFloors as markdownSignalFloors } from "./markdown/signal-floors.js";
-import { capability as pythonCapability } from "./python/capability.js";
 import { PythonLanguage } from "./python/index.js";
 import { signalFloors as pythonSignalFloors } from "./python/signal-floors.js";
-import { capability as rubyCapability } from "./ruby/capability.js";
 import { RubyLanguage } from "./ruby/index.js";
 import { signalFloors as rubySignalFloors } from "./ruby/signal-floors.js";
-import { capability as rustCapability } from "./rust/capability.js";
 import { RustLanguage } from "./rust/index.js";
 import { signalFloors as rustSignalFloors } from "./rust/signal-floors.js";
-import { capability as swiftCapability } from "./swift/capability.js";
 import { SwiftLanguage } from "./swift/index.js";
 import { signalFloors as swiftSignalFloors } from "./swift/signal-floors.js";
-import { capability as typescriptCapability } from "./typescript/capability.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 import { signalFloors as typescriptSignalFloors } from "./typescript/signal-floors.js";
 
@@ -144,18 +135,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * generator (rule + README renderers) and prime's per-index highlight.
    */
   capabilities(): Map<string, LanguageCapability> {
-    return new Map<string, LanguageCapability>([
-      ["ruby", rubyCapability],
-      ["typescript", typescriptCapability],
-      ["javascript", javascriptCapability],
-      ["python", pythonCapability],
-      ["go", goCapability],
-      ["java", javaCapability],
-      ["rust", rustCapability],
-      ["bash", bashCapability],
-      ["swift", swiftCapability],
-      ["markdown", markdownCapability],
-    ]);
+    return nativeLanguageCapabilities();
   }
 
   /**
