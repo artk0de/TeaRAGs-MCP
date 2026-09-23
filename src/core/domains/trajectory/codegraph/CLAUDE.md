@@ -53,6 +53,30 @@
   ran last (bd tea-rags-mcp-9i2ow), and "no ranges" degraded silently into bare
   stamps over 52k taxdome chunks (fxio5) and persisted anchor owners (71n0p). A
   producer that calls the rule without the settlement reintroduces both.
+- **A chunk signal is addressed by `(relPath, symbolId)`; the bare symbolId
+  names every namesake at once.** `DuckDbMethodEdgeReader#getChunkSignalsBulk`
+  groups the method edge table by `target_rel_path, target_symbol_id` /
+  `source_rel_path, source_symbol_id` and keys its map with
+  `fileScopedSymbolKey`, and `settleCodegraphChunkSignals` takes the `relPath`
+  as its first argument for the sole purpose of composing that key — the same
+  scoping `getCalleeEdgesScoped` carries for `trace_path` (bd
+  tea-rags-mcp-oxnvl). `DuckDbSignalDriftStore`'s `CURRENT_SYMBOL_SIGNALS` CTE
+  groups the same way, because the diff has to compare the expression the
+  PAYLOAD is built from; grouping there on the bare id while the payload carries
+  the per-file number leaves every namesake permanently "moved". Why: a
+  `SymbolId` is unique per FILE, so the bare grouping merged every top-level
+  declaration sharing a name into ONE node and wrote the UNION of their edges
+  onto each — measured on this index, `src/index.ts#main`,
+  `src/cli/index-progress/worker.ts#main` and `daemon/entry.ts#main` all carried
+  `codegraph.chunk.fanOut = 543` against a `god-method` threshold of 67, and the
+  `decomposition` preset spent result slots on it (bd tea-rags-mcp-xtdkq).
+  **`pageRank` is NOT yet fixed**: `cg_symbols_metrics` is keyed by `symbol_id`
+  alone and the rank is computed over `streamAdjacency("method")`, which yields
+  bare ids, so every namesake shares one node in the PageRank graph and the bulk
+  read hands each declaring file that same value. Un-merging it is a schema
+  change to `cg_symbols_metrics` + `cg_symbols_cycles` (whose method-scope
+  members are bare ids that `find_cycles` renders), not an edit to this pass.
+
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** Every `GraphDbClientPool` and
   `CodegraphDbFiles` method that derives a DuckDB path takes a
@@ -250,6 +274,30 @@
 
 ## Gotchas
 
+- **`codegraph.file.instability` is sampled over the files the graph actually
+  measured, and over its interior only.** The descriptor declares
+  `stats.minSupportPercentile: 75` against its existing `connectionCount`
+  support and `stats.structuralAtoms: [0, 1]`; both mechanisms and the read half
+  belong to `../CLAUDE.md`. The support floor, measured on `code_8b243ffe`
+  typescript source: observed variance of the raw ratio against the
+  pure-binomial floor `mean_i[p(1-p)/n_i]` is 0.79 over all 738 files — at or
+  below 1, so the whole spread is sampling noise around one corpus ratio — then
+  1.20 from n≥3 and 2.36 from the floor the declaration resolves to
+  (`connectionCount` p75 = 5, admitting 306 files). The floor alone did NOT
+  retire the degenerate `unstable ≥1` band, and a higher floor is the wrong
+  lever: instability is `fanOut / (fanIn + fanOut)`, so it reads exactly 1 for
+  every file nothing imports and exactly 0 for every file that imports nothing —
+  facts about a pure source and a pure sink, not thin evidence. 17 of the 306
+  admitted files still read 1, one of them on 33 edges, and p95 stays on the
+  atom at every floor up to n≥8, where it only comes off by thinning the sample
+  to 146. Hence the atoms: on a later measurement (1158 typescript files, 427 at
+  0, 53 at 1) the floor-only sample reads p95 1.000 over 306, interior only
+  0.889 over 678, interior plus floor p75 0.833 / p90 0.889 / p95 0.909
+  over 289. Atoms stay graded, so an entry point still reads `unstable` and a
+  leaf `stable`. Live consequence beyond labels: both gates narrow the GLOBAL
+  bucket, so they move `unstableCore`'s `instability p90` leg (0.9091 → 0.9117
+  from the floor alone; its `connectionCount p50` leg is ungated and stays at
+  3).
 - **A flat `## Codegraph resolve` block in prime is the one-language case, not a
   lost breakdown.** `summarizeCodegraphResolve`
   (`../../ingest/pipeline/status-module.ts`) drops any language under

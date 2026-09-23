@@ -311,40 +311,91 @@ export class DuckDbMethodEdgeReader {
 
   /**
    * Set-based read-back of `{ fanIn, fanOut, pageRank }` for every symbol in the
-   * graph — the batched replacement for looping `getCalledByCount` +
-   * `getCallSiteCount` + `getPageRank` per chunk (`buildChunkSignals`). Three
-   * whole-table GROUP-BY / scan queries (no `IN (…)` list → no param-limit
-   * chunking) instead of `3 × chunkCount` point queries. Each value is computed
-   * identically to the per-symbol getter — same `SUM(COALESCE(confidence, 1.0))`
-   * with `roundEdgeWeightSum`, same `Number()` pageRank — so a caller that reads
-   * `map.get(id) ?? { 0, 0, 0 }` gets byte-identical results.
+   * graph, keyed by `(relPath, symbolId)` — the batched replacement for looping
+   * `getCalledByCount` + `getCallSiteCount` + `getPageRank` per chunk
+   * (`buildChunkSignals`). Three whole-table GROUP-BY / scan queries (no
+   * `IN (…)` list → no param-limit chunking) instead of `3 × chunkCount` point
+   * queries.
+   *
+   * The key is file-scoped for the same reason {@link getCalleeEdgesScoped} is
+   * (bd tea-rags-mcp-oxnvl, here bd tea-rags-mcp-xtdkq): a `SymbolId` is unique
+   * per FILE, so grouping on the bare id merged every namesake into one node and
+   * the deferred chunk pass wrote that UNION onto each of them. Measured on this
+   * repo's own index before the fix: `src/index.ts#main`,
+   * `src/cli/index-progress/worker.ts#main` and
+   * `src/core/adapters/duckdb/daemon/entry.ts#main` all carried
+   * `codegraph.chunk.fanOut = 543` — every top-level `main`'s callees added up,
+   * scripts included, against a `god-method` threshold of 67. The edge rows
+   * already carry `source_rel_path` / `target_rel_path`, so the scope costs
+   * nothing but the wider GROUP BY.
+   *
+   * fanIn is grouped by the TARGET's file and fanOut by the SOURCE's, i.e. by
+   * the file each declaration lives in — a symbol called from twenty files still
+   * has one fanIn of twenty, it is just no longer pooled with its namesakes.
+   *
+   * Each value is computed identically to the per-symbol getter — same
+   * `SUM(COALESCE(confidence, 1.0))` with `roundEdgeWeightSum`, same `Number()`
+   * pageRank — so a caller reading `map.get(key) ?? { 0, 0, 0 }` gets the same
+   * numbers those getters return for a symbol with no namesake.
+   *
+   * PageRank is the exception and is knowingly left merged: `cg_symbols_metrics`
+   * is keyed by `symbol_id` alone and the rank itself is computed over an
+   * adjacency of bare ids (`streamAdjacency("method")`), so every namesake
+   * shares one node in the PageRank graph. Fanning the one value out to each
+   * declaring file is what preserves today's behaviour; making the RANK itself
+   * per-declaration is a schema change to `cg_symbols_metrics` /
+   * `cg_symbols_cycles` and is tracked separately.
    */
-  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
-    const out = new Map<SymbolId, ChunkGraphSignals>();
-    const entryFor = (id: string): ChunkGraphSignals => {
-      let e = out.get(id);
+  async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
+    const out = new Map<FileScopedSymbolId, ChunkGraphSignals>();
+    /** Every file-scoped entry a bare symbolId has, for the merged-node pageRank fan-out. */
+    const keysBySymbolId = new Map<SymbolId, FileScopedSymbolId[]>();
+    const entryFor = (relPath: RelPath, symbolId: SymbolId): ChunkGraphSignals => {
+      const key = fileScopedSymbolKey({ relPath, symbolId });
+      let e = out.get(key);
       if (!e) {
         e = { fanIn: 0, fanOut: 0, pageRank: 0 };
-        out.set(id, e);
+        out.set(key, e);
+        const siblings = keysBySymbolId.get(symbolId);
+        if (siblings) siblings.push(key);
+        else keysBySymbolId.set(symbolId, [key]);
       }
       return e;
     };
-    const fanInRows = await this.session.queryAll<{ id: string; n: number | null }>(
+    const fanInRows = await this.session.queryAll<{ id: string; path: string; n: number | null }>(
       // target_symbol_id IS NOT NULL mirrors the drift store's fan_in CTE: a
       // file-only edge (bd tea-rags-mcp-rtp6v) has no target symbol, so it
       // must pollute no symbol's fan-in — and without the filter its NULL
       // group would surface here as a junk map entry keyed null.
-      "SELECT target_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL GROUP BY target_symbol_id",
+      `SELECT target_symbol_id AS id, target_rel_path AS path, SUM(COALESCE(confidence, 1.0)) AS n
+         FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL
+        GROUP BY target_rel_path, target_symbol_id`,
     );
-    for (const r of fanInRows) entryFor(r.id).fanIn = roundEdgeWeightSum(Number(r.n ?? 0));
-    const fanOutRows = await this.session.queryAll<{ id: string; n: number | null }>(
-      "SELECT source_symbol_id AS id, SUM(COALESCE(confidence, 1.0)) AS n FROM cg_symbols_edges_method GROUP BY source_symbol_id",
+    for (const r of fanInRows) entryFor(r.path, r.id).fanIn = roundEdgeWeightSum(Number(r.n ?? 0));
+    const fanOutRows = await this.session.queryAll<{ id: string; path: string; n: number | null }>(
+      `SELECT source_symbol_id AS id, source_rel_path AS path, SUM(COALESCE(confidence, 1.0)) AS n
+         FROM cg_symbols_edges_method GROUP BY source_rel_path, source_symbol_id`,
     );
-    for (const r of fanOutRows) entryFor(r.id).fanOut = roundEdgeWeightSum(Number(r.n ?? 0));
-    const pageRankRows = await this.session.queryAll<{ id: string; page_rank: number | bigint | string }>(
-      "SELECT symbol_id AS id, page_rank FROM cg_symbols_metrics",
+    for (const r of fanOutRows) entryFor(r.path, r.id).fanOut = roundEdgeWeightSum(Number(r.n ?? 0));
+    const pageRankRows = await this.session.queryAll<{
+      id: string;
+      path: string | null;
+      page_rank: number | bigint | string;
+    }>(
+      // The LEFT JOIN is what gives a rank a FILE to land under. `cg_symbols`
+      // is the declaration table, so it answers for the symbols a chunk can be
+      // owned by; the edge-derived keys below cover a ranked symbol that
+      // participates in edges without a declaration row of its own (the same
+      // gap `DuckDbGraphAnalyticsStore#resolveMethodSymbolPaths` documents).
+      `SELECT m.symbol_id AS id, s.rel_path AS path, m.page_rank
+         FROM cg_symbols_metrics m
+         LEFT JOIN cg_symbols s ON s.symbol_id = m.symbol_id`,
     );
-    for (const r of pageRankRows) entryFor(r.id).pageRank = Number(r.page_rank);
+    for (const r of pageRankRows) {
+      const rank = Number(r.page_rank);
+      if (r.path !== null) entryFor(r.path, r.id).pageRank = rank;
+      for (const key of keysBySymbolId.get(r.id) ?? []) (out.get(key) as ChunkGraphSignals).pageRank = rank;
+    }
     return out;
   }
 }

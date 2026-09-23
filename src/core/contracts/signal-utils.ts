@@ -171,7 +171,8 @@ export function resolvePayloadValue(payload: Record<string, unknown>, path: stri
  * against the procedure that produced it. Change the procedure — start counting
  * a file once instead of once per chunk, start admitting a measured zero,
  * restrict which chunk types are sampled, drop the units the collection barely
- * observed, ask for another percentile — and the
+ * observed, drop the values that mark a structural class, ask for another
+ * percentile — and the
  * numbers already on disk answer a question nobody is asking any more. Nothing
  * about them looks wrong; they are simply about a different population, and
  * they keep feeding labels, filter-preset thresholds and adaptive bounds until
@@ -206,9 +207,16 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
       : [...(typeof stats.chunkTypeFilter === "string" ? [stats.chunkTypeFilter] : stats.chunkTypeFilter)]
           .sort()
           .join("+");
+  const atoms = [...new Set(stats.structuralAtoms ?? [])].sort((a, b) => a - b);
 
   // Sorted and fully spelled out: the string is compared, so a reordering of
   // the declaration must not read as a change, and an added property must.
+  //
+  // `atoms=` is the one term written only when declared. Every stamp already
+  // on disk was written without it, and a signal that declares no atoms samples
+  // exactly what it sampled before — spelling out `atoms=*` would still move
+  // that signal's stamp, so every signal of every existing index would report
+  // drift for a recompute that cannot change a single digit.
   return [
     `p=${[...percentiles].sort((a, b) => a - b).join(".")}`,
     `chunkTypes=${chunkTypes}`,
@@ -216,6 +224,7 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
     `zeroCounts=${stats.zeroIsValidObservation === true}`,
     `sourceOnly=${stats.sourceScopeOnly === true}`,
     `minSupport=${stats.minSupportPercentile ?? "*"}`,
+    ...(atoms.length > 0 ? [`atoms=${atoms.join("+")}`] : []),
     `mean=${stats.mean === true}`,
     `stddev=${stats.stddev === true}`,
   ].join(" ");

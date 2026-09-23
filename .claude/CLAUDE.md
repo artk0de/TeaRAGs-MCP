@@ -80,6 +80,24 @@ search cascade — not these.) A navigator cites code by symbol (`Class#method`,
 silently — `tests/navigator-code-references.test.ts` fails on any
 `file.ts:NNN`-style reference.
 
+**A navigator names a CONTRACT; it never ENUMERATES that contract's
+implementers** (bd tea-rags-mcp-fk920). "TypeScript and JavaScript answer
+`hasInProjectDefinition`" was true when written, went stale the day the Swift
+vertical landed, and an agent repeated it to the user as current fact — the
+citation guard above could not catch it, because it constrains the FORM of a
+citation and not the TRUTH of a claim. An enumeration of code is the navigator
+content that rots fastest: the set moves whenever a language, strategy, or
+provider is added, which is routine here. So state which CONTRACT decides
+membership, then point at the test that DERIVES the set from the code —
+`tests/navigator-enumerations.test.ts` holds the derived sets and fails when
+prose and code disagree. This is the "state each fact ONCE" contract above,
+applied between prose and code rather than between two navigators: the set lives
+in one verified place, and prose cannot contradict it because prose no longer
+states it. Derive from the surface production READS (for a language capability,
+the `<lang>/index.ts` facade, never the `CallResolver` behind it) so the test
+also catches an implementation nothing forwards. A worked example naming ONE
+language stays legal; two is an enumeration.
+
 | Navigator (under `src/core/`)         | What it briefs you on                                                                |
 | ------------------------------------- | ------------------------------------------------------------------------------------ |
 | `domains/trajectory/`                 | derived-signal namespace, stats scoping, filter-preset compilation                   |

@@ -114,7 +114,8 @@ export class SchemaBuilder {
       " Omitted → the rerank preset's default filter applies (most: production = no tests/docs/block); " +
       "any explicit filter replaces it, {} clears it; skipped automatically when typed params explicitly select " +
       'what it excludes (testFile "only" / "include", documentation "only" / "include", ' +
-      'chunkType test/test_setup, language "markdown").';
+      'chunkType test/test_setup, language "markdown"). ' +
+      "When a default DOES apply, the response carries presetFilterNotice naming it and how to clear it.";
 
     return z.union([rawFilterSchema, presetsSchema]).describe(description);
   }

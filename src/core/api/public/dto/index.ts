@@ -16,6 +16,7 @@ export type {
   FindSymbolRequest,
   SearchResult,
   ExploreResponse,
+  PresetFilterNotice,
   SignalDescriptor,
   PresetDetail,
   PresetDescriptors,
@@ -75,5 +76,8 @@ export type {
   TracedPath,
   PathTraceResult,
 } from "./graph.js";
+
+export { projectSearchResultPayloads } from "./payload-projection.js";
+export type { PayloadProjectionOutcome } from "./payload-projection.js";
 
 export { stripInternalFields } from "./sanitize.js";
