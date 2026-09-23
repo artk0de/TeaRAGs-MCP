@@ -6,17 +6,27 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 // Post-refactor sync layout: consistent-hash + merkle moved to sync/infra/,
-// sharded-snapshot to sync/snapshot/. SnapshotMigrator API changed (now takes
-// a SnapshotStore adapter via Migrator orchestration) — its v2→v3 test below
-// no longer compiles against the new shape and is skip()'d. See plan
-// `2026-05-17-integration-tests-rewrite-impl.md`.
+// sharded-snapshot to sync/snapshot/. The v2→v3 snapshot migration is no
+// longer a standalone SnapshotMigrator call: it runs inside the Migrator sweep
+// IngestFacade#reindexChanges performs before change detection, so the
+// scenario below drives it through that public path.
 import { ConsistentHash } from "../../../build/core/domains/ingest/sync/infra/consistent-hash.js";
 import { ParallelFileSynchronizer } from "../../../build/core/domains/ingest/sync/parallel-synchronizer.js";
 import { ShardedSnapshotManager } from "../../../build/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 import { TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, log, section, skip } from "../helpers.mjs";
+import {
+  assert,
+  createProbeOnlyEmbeddings,
+  createTestFacades,
+  createTestFile,
+  hashContent,
+  log,
+  resources,
+  section,
+  seedLegacyIndexedCollection,
+} from "../helpers.mjs";
 
-export async function testParallelSync() {
+export async function testParallelSync(qdrant) {
   section("13. Parallel File Synchronization & Sharded Snapshots");
 
   const parallelTestDir = join(TEST_DIR, "parallel_sync");
@@ -140,15 +150,83 @@ export async function testParallelSync() {
   await sync.deleteSnapshot();
   assert(!(await sync.hasSnapshot()), "Sync snapshot deleted");
 
-  // === TEST: SnapshotMigrator v2 → v3 ===
-  // Skipped: SnapshotMigrator API changed during SOLID refactor. Constructor
-  // now takes a single SnapshotStore adapter and the migrator is driven by
-  // the top-level Migrator class (which also needs schema/sparse stores),
-  // not standalone needsMigration()/migrate() calls. Restoring this scenario
-  // requires constructing the full Migrator graph — out of scope for the
-  // integration-test path-remap pass. Filed as follow-up: rewrite v2→v3
-  // snapshot migration test against Migrator orchestration.
-  skip("SnapshotMigrator v2→v3 — API replaced by Migrator orchestration (follow-up)");
+  // === TEST: SnapshotMigrator v2 → v3 (via IngestFacade#reindexChanges) ===
+  await testSnapshotV2ToShardedMigration(qdrant);
 
   log("pass", "Parallel sync tests complete");
+}
+
+/**
+ * A codebase indexed under the v2 snapshot format (single JSON with
+ * fileMetadata) is upgraded to the sharded format by the Migrator sweep the
+ * next incremental reindex runs. The v2 file lists one entry whose file is gone
+ * from disk: the migration must drop it rather than carry it into the sharded
+ * snapshot, where change detection would report it as a deletion.
+ */
+async function testSnapshotV2ToShardedMigration(qdrant) {
+  log("info", "Testing SnapshotMigrator v2 → sharded via IngestFacade#reindexChanges...");
+
+  const codebase = join(TEST_DIR, "snapshot_v2_migration");
+  const snapshotDir = join(TEST_DIR, "snapshot_v2_migration_snapshots");
+  await fs.mkdir(join(codebase, "src"), { recursive: true });
+  await fs.mkdir(snapshotDir, { recursive: true });
+  resources.trackSnapshotDir(snapshotDir);
+
+  const contents = {
+    "src/a.ts": "export const a = 1;\n",
+    "src/b.ts": "export function b(): number {\n  return 2;\n}\n",
+  };
+  const fileMetadata = {};
+  for (const [relativePath, content] of Object.entries(contents)) {
+    const absolutePath = await createTestFile(codebase, relativePath, content);
+    const stat = await fs.stat(absolutePath);
+    fileMetadata[relativePath] = { mtime: stat.mtimeMs, size: stat.size, hash: hashContent(content) };
+  }
+  fileMetadata["src/gone.ts"] = { mtime: 1000, size: 10, hash: "hash-of-a-deleted-file" };
+
+  // An existing index whose snapshot is still in the legacy v2 layout.
+  const embeddings = createProbeOnlyEmbeddings();
+  const collectionName = await seedLegacyIndexedCollection(qdrant, embeddings, codebase);
+  const legacySnapshotPath = join(snapshotDir, `${collectionName}.json`);
+  await fs.writeFile(legacySnapshotPath, JSON.stringify({ version: "2", codebasePath: codebase, fileMetadata }));
+
+  const { ingest } = createTestFacades(qdrant, embeddings, { snapshotDir });
+  const stats = await ingest.reindexChanges(codebase);
+
+  assert(stats.status === "completed", `Reindex over a v2 snapshot completes: ${stats.status}`);
+  assert(
+    stats.filesAdded === 0 && stats.filesModified === 0,
+    `Migrated metadata matches disk, nothing added/modified: +${stats.filesAdded} ~${stats.filesModified}`,
+  );
+  assert(
+    stats.filesDeleted === 0,
+    `Entry for a missing file dropped by the migration, not reported deleted: -${stats.filesDeleted}`,
+  );
+
+  const shardedMeta = join(snapshotDir, collectionName, "meta.json");
+  assert(await pathExists(shardedMeta), "Sharded snapshot written by the migration");
+  assert(!(await pathExists(legacySnapshotPath)), "Legacy v2 snapshot removed after migration");
+  assert(!(await pathExists(`${legacySnapshotPath}.backup`)), "Migration backup removed by post-run snapshot cleanup");
+
+  const migrated = await new ShardedSnapshotManager(snapshotDir, collectionName, 4).load();
+  assert(migrated !== null, "Migrated sharded snapshot loads");
+  assert(migrated?.codebasePath === codebase, "Migrated snapshot keeps the codebase path");
+  assert(
+    migrated?.files.size === 2 && !migrated.files.has("src/gone.ts"),
+    `Migrated snapshot holds only files present on disk: ${[...(migrated?.files.keys() ?? [])].join(", ")}`,
+  );
+  assert(
+    migrated?.files.get("src/a.ts")?.hash === fileMetadata["src/a.ts"].hash &&
+      migrated?.files.get("src/b.ts")?.hash === fileMetadata["src/b.ts"].hash,
+    "Migrated snapshot carries the v2 file hashes",
+  );
+}
+
+async function pathExists(path) {
+  try {
+    await fs.access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
