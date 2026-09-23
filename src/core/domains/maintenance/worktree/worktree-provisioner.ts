@@ -157,6 +157,17 @@ export class WorktreeProvisioner {
     });
     registry.setName(targetLogical, alias);
     registry.setWorktreeProvenance(targetLogical, sourceEntry.collectionName, input.name);
+    // The clone's points ARE the source's — `cloneCollectionFootprint` copied
+    // them — so the source's corpus-wide language stamp describes the clone as
+    // exactly as it describes the source. It cannot ride along in `record()`:
+    // that stickiness preserves an EXISTING entry's stamp (bd
+    // tea-rags-mcp-frwka), and a fresh clone has no prior entry. Without this
+    // the clone reads as version 1 for every language, and the drift monitor
+    // tells the user to `--force` a full rebuild of data that is already
+    // current — which is the one thing cloning exists to avoid.
+    if (sourceEntry.languageVersions) {
+      registry.stampLanguageVersions(targetLogical, sourceEntry.languageVersions);
+    }
 
     return {
       collectionName: targetLogical,
