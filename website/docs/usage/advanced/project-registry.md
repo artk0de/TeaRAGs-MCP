@@ -524,12 +524,15 @@ is the inspection counterpart to `doctor --recover-registry`:
 
 ```bash
 tea-rags projects orphans
-# code_a1b2c3d4    4218
-# code_55667788     931
+# COLLECTION       CHUNKS
+# code_a1b2c3d4      4.2k
+# code_55667788       931
 ```
 
-Each line is `<collectionName>\t<chunkCount>`. Add `--json` for a
-machine-readable list of `{ collectionName, chunksCount }` records.
+The text output is an aligned table with compact chunk counts, colored on a
+terminal (`NO_COLOR` turns it off). Add `--json` for a machine-readable list
+of `{ collectionName, chunksCount }` records with exact counts — script
+against that, not the table.
 
 **Alias-aware.** Qdrant's zero-downtime reindex builds versioned physical
 collections (e.g. `code_8b243ffe_v2`) that are pointed to by an alias

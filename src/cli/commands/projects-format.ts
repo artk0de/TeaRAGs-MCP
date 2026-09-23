@@ -207,3 +207,66 @@ export function formatProjectsTable(entries: CollectionEntry[], opts: FormatProj
 
   return `${lines.join("\n")}\n`;
 }
+
+/** Width of the `key:` column in `projects info` — the longest key plus its colon. */
+const INFO_KEY_WIDTH = "embeddingDimensions:".length;
+
+/**
+ * Render one registry entry as the `tea-rags projects info` key: value block.
+ *
+ * `realpath` is the live resolution of `entry.path`: `null` when the directory
+ * is gone, a different path when a symlink or a moved mount stands in between.
+ * Keys are dim so the values carry the eye; a value that is a placeholder
+ * rather than data (`(none)`, `(never)`) is dim too, and the two states that
+ * ask the user to act — a missing directory, a moved one — take alert / warn.
+ */
+export function formatProjectInfo(entry: CollectionEntry, realpath: string | null, c: Colorizer): string {
+  const lines: string[] = [];
+  const row = (key: string, value: string): void => {
+    lines.push(`${c.dim(padRight(`${key}:`, INFO_KEY_WIDTH))} ${value}`);
+  };
+  const orPlaceholder = (value: string | number | null | undefined, placeholder: string): string =>
+    value ? String(value) : c.dim(placeholder);
+
+  row("name", entry.name ? c.bold(c.brand(entry.name)) : c.bold(c.warn("(no name)")));
+  row("collectionName", entry.collectionName);
+  row("path", entry.path);
+  if (realpath === null) {
+    row("realpath", c.alert("(missing on disk)"));
+  } else if (realpath !== entry.path) {
+    row("realpath", c.warn(realpath));
+    lines.push(`${" ".repeat(INFO_KEY_WIDTH + 1)}${c.warn("(symlink or moved mount — re-register to refresh)")}`);
+  }
+  row("qdrantUrl", orPlaceholder(entry.qdrantUrl, "(none)"));
+  row("embeddingModel", orPlaceholder(entry.embeddingModel, "(none)"));
+  row("embeddingDimensions", String(entry.embeddingDimensions || 0));
+  row("chunksCount", String(entry.chunksCount));
+  row("indexedAt", orPlaceholder(entry.indexedAt, "(never)"));
+  row("teaRagsVersion", orPlaceholder(entry.teaRagsVersion, "(unknown)"));
+
+  return `${lines.join("\n")}\n`;
+}
+
+/** One Qdrant collection the registry does not know about. */
+export interface OrphanCollectionRow {
+  collectionName: string;
+  chunksCount: number;
+}
+
+const ORPHAN_HEADER = "COLLECTION";
+
+/**
+ * Render `tea-rags projects orphans` as an aligned table. The collection column
+ * is as wide as its longest name; every orphan is painted as a warning — each
+ * row is something the user is being asked to look at.
+ */
+export function formatOrphansTable(rows: OrphanCollectionRow[], c: Colorizer): string {
+  const nameWidth = Math.max(ORPHAN_HEADER.length, ...rows.map((r) => r.collectionName.length));
+  const header = c.bold(c.brand([padRight(ORPHAN_HEADER, nameWidth), padLeft("CHUNKS", CHUNKS_WIDTH)].join(GAP)));
+  const lines = [header];
+  for (const { collectionName, chunksCount } of rows) {
+    const name = c.warn(collectionName) + " ".repeat(nameWidth - collectionName.length);
+    lines.push([name, padLeft(humanCount(chunksCount), CHUNKS_WIDTH)].join(GAP));
+  }
+  return `${lines.join("\n")}\n`;
+}
