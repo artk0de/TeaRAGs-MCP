@@ -70,7 +70,8 @@ describe("resolveLanguageCodeVersions", () => {
 
     // codegraphSchema 2: bd tea-rags-mcp-9i2ow — cg_symbols line ranges and the
     // one chunk-owner rule for every writer of codegraph chunk signals.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 2, codegraphSchema: 2 });
+    // chunking 2: bd tea-rags-mcp-msv3l — test files chunked by example.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 2, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();

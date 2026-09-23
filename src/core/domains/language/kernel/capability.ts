@@ -22,9 +22,19 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * written under two disagreeing mappings, the heal reaches only symbols whose
  * signals move, and only a walk fills the new columns — so every index needs
  * `--force-enrichments codegraph`, across all languages.
+ *
+ * chunking 2: test files are chunked by EXAMPLE (bd tea-rags-mcp-msv3l, epic
+ * tea-rags-mcp-phftd) — `kernel/test-scope-chunks.ts` emits one chunk per
+ * example with the id `<top>.<scope>.<example>` and a `test_scope` parentType,
+ * and the engine honours a hook-provided parentType. This is the epic's ONE
+ * chunking bump: every language's test-chunker migration onto the kernel lands
+ * under it and re-pins its own `chunking` digest without bumping. Its scope is
+ * TEST FILES ONLY — the minimal remedy is a scoped `--force` over test files of
+ * the migrated languages (bd tea-rags-mcp-j4oww, which must land before this
+ * number merges); until then the drift report routes it to a plain `--force`.
  */
 export const sharedVersions: LanguageSupportVersions = {
-  chunking: 1,
+  chunking: 2,
   walker: 2,
   codegraphSchema: 2,
 };

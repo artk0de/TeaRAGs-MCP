@@ -19,6 +19,7 @@ export interface VersionAxisSources {
 const LANGUAGE_ROOT = "src/core/domains/language";
 const HOOKS_ROOT = "src/core/domains/ingest/pipeline/chunker/hooks";
 const CHUNKER_ROOT = "src/core/domains/ingest/pipeline/chunker";
+const TEST_SCOPE_CHUNKS = `${LANGUAGE_ROOT}/kernel/test-scope-chunks.ts`;
 
 /**
  * What the `*` pseudo-language's axes vouch for: the sources every language
@@ -49,6 +50,10 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       // `chunker/materialize.ts` is a seven-line re-export; the AST every
       // chunker and the codegraph provider actually walk is built here.
       "src/core/infra/materialize.ts",
+      // Test-scope chunk emission every language's test chunker hands its
+      // scope tree to: it moves chunks and never an edge, so it is pruned back
+      // out of the kernel's walker axis below.
+      TEST_SCOPE_CHUNKS,
     ],
   },
   {
@@ -71,7 +76,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
     // Same exclusion as a language's own `capability.ts`, for the same reason:
     // `kernel/capability.ts` HOLDS `sharedVersions`, so digesting it would make
     // every bump invalidate the pin it just moved.
-    exclude: [`${LANGUAGE_ROOT}/kernel/capability.ts`],
+    exclude: [`${LANGUAGE_ROOT}/kernel/capability.ts`, TEST_SCOPE_CHUNKS],
   },
 ];
 

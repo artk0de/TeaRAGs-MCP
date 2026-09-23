@@ -4,6 +4,8 @@ paths:
   - "src/core/domains/language/*/chunking/rspec-*.ts"
   - "tests/core/domains/language/*/chunking/test-*.test.ts"
   - "tests/core/domains/language/*/chunking/rspec-*.test.ts"
+  - "src/core/domains/language/kernel/test-scope-chunks.ts"
+  - "tests/core/domains/language/kernel/test-scope-chunks.test.ts"
 ---
 
 # Test-Spec DSL Chunking (MANDATORY canonical structure)
@@ -21,10 +23,10 @@ interchangeable.
 
 Test-spec chunker = **two hooks**, not one:
 
-| Hook file                                                    | Type                                  | Responsibility                                                                                                                       |
-| ------------------------------------------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `<lang>/test-dsl-filter.ts` (or `rspec-filter.ts`)           | `filterNode` only, `process` is no-op | `isTestFile(path)` + `getCallName(node)` + DSL-vocabulary membership. Rejects non-DSL call nodes globally added to `chunkableTypes`. |
-| `<lang>/test-scope-chunker.ts` (or `rspec-scope-chunker.ts`) | `process` writer                      | Builds scope tree from a CONTAINER call, emits per-leaf chunks, sets `ctx.skipChildren = true`, claims via writing `ctx.bodyChunks`. |
+| Hook file                                                    | Type                                  | Responsibility                                                                                                                                  |
+| ------------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<lang>/test-dsl-filter.ts` (or `rspec-filter.ts`)           | `filterNode` only, `process` is no-op | `isTestFile(path)` + `getCallName(node)` + DSL-vocabulary membership. Rejects non-DSL call nodes globally added to `chunkableTypes`.            |
+| `<lang>/test-scope-chunker.ts` (or `rspec-scope-chunker.ts`) | `process` writer                      | Builds the `TestScope` tree from a CONTAINER call, hands it to the kernel, sets `ctx.skipChildren = true`, claims via writing `ctx.bodyChunks`. |
 
 Split keeps scope-tree weight off filter hot-path, and lets scope chunker assume
 callers already known DSL calls in test files.
@@ -52,51 +54,78 @@ Filter accepts call iff `getCallName(node) ∈ ALL_DSL_METHODS`. Scope chunker
 runs only when `getCallName(containerNode) ∈ CONTAINER_METHODS` (guarded via
 `isDslContainerCall`).
 
-## `Scope` shape (MANDATORY)
+## Kernel owns emission (MANDATORY — bd tea-rags-mcp-msv3l)
+
+A language's scope chunker does exactly two things: read its AST into the
+neutral `TestScope` tree (`src/core/contracts/types/chunker.ts`), and pick the
+`topLevelName`. It then hands both to `produceTestScopeChunks`
+(`src/core/domains/language/kernel/test-scope-chunks.ts`), which owns what the
+chunks are, their ids, their line ranges and the `~N` rule. A hook that builds
+`BodyChunkResult`s itself is pre-kernel code awaiting migration (epic
+tea-rags-mcp-phftd), never a pattern to copy.
+
+## `TestScope` shape (MANDATORY)
 
 ```ts
 interface TestScope {
-  name: string; // formatted: `${callName} ${firstArgText}` e.g. "describe 'User'"
-  node: Parser.SyntaxNode; // the AST node of the container call
-  isLeaf: boolean; // true ↔ children.length === 0
-  setupLines: SetupLine[]; // own setup (beforeEach/let/before) — NOT inherited
-  ownItBlocks: ItBlock[]; // own example calls (it/test/specify)
-  children: TestScope[]; // nested container scopes (describe/context inside)
-  otherLines: SetupLine[]; // non-DSL statements inside body, non-blank, non-claimed
+  name: string; // display form of the container call: "describe 'User'", "context \"when admin\""
+  startLine: number; // 1-based rows of the container call — orders scopes among examples
+  endLine: number;
+  setupLines: TestScopeLine[]; // own setup (beforeEach/let/before) — NOT inherited
+  otherLines: TestScopeLine[]; // non-DSL statements inside body, non-blank, non-claimed
+  examples: TestExample[]; // own examples (it/test/specify)
+  children: TestScope[]; // nested container scopes; leaf ↔ children.length === 0
+}
+interface TestExample {
+  name: string; // display form of the example call: "it 'returns nil'", "it.skip \"pending\""
+  text: string;
+  startLine: number;
+  endLine: number;
+}
+interface TestScopeLine {
+  text: string;
+  sourceLine: number;
+  delegatesExamples?: boolean; // runs examples defined elsewhere (RSpec it_behaves_like)
 }
 ```
 
-`SetupLine.sourceLine` + `ItBlock.startLine/endLine` = 1-based source line
-numbers for chunk line-range computation.
-
 ## Chunk emission rules (MANDATORY — identical across languages)
 
-Per scope encountered walking tree from root:
+The unit is the **example**. Scopes are outline nodes, not chunks.
 
-| Scope kind                                                    | Output                                                                                                                                      |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Leaf with its**                                             | One `chunkType: "test"` chunk. `content` = inherited ancestor setup + own setup + otherLines + it blocks, joined with `\n`, then `.trim()`. |
-| **Leaf without its** (only setup/other)                       | One `chunkType: "test_setup"` chunk. Same composition minus its.                                                                            |
-| **Intermediate with own its** (has children AND own examples) | One extra `chunkType: "test_setup"` chunk for own setup + otherLines + own its. Children walked separately.                                 |
-| **Intermediate without own its**                              | Walked recursively; no chunk for the intermediate itself.                                                                                   |
-| **Empty** (no its, no setup, no other)                        | Skipped — zero chunks.                                                                                                                      |
+| Source                                                        | Output                                                                                                                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Every example** (leaf or intermediate scope, root included) | One `chunkType: "test"` chunk. `content` = every ancestor's setup (outermost first) + its scope's own setup + its scope's otherLines + the example, joined with `\n`, then `.trim()`. |
+| **Leaf without examples** (setup/other only)                  | One chunk of its own setup + otherLines (no ancestor setup): `"test"` when a setup line has `delegatesExamples`, else `"test_setup"`.                                                 |
+| **Scope with children or examples**                           | No chunk of its own — its setup reaches the index inside its examples.                                                                                                                |
+| **Empty**                                                     | Zero chunks.                                                                                                                                                                          |
 
-Always-applied filters:
+Always-applied rules:
 
 - **Min content**: drop chunks where `content.length < 50` (after trim).
-- **Oversized split**: when
-  `content.length > maxChunkSize && ownItBlocks.length > 1`, emit one chunk per
-  `it` block with `setupParts + otherParts` duplicated as shared prefix. Same
-  `symbolId` across the split parts.
+- **Size budget**: when an example chunk exceeds `maxChunkSize`, the setup
+  prefix sheds whole statements from the OUTERMOST end until it fits; the
+  example is never cut by the kernel. An example oversized on its own is split
+  by the engine's hard cap into `<exampleId>#partN` windows (`parentSymbolId` =
+  the example id), which the outline folds back into one line.
+- **Order**: chunks follow source order — scopes and examples interleaved by
+  start line.
 
 ## symbolId / parent fields (MANDATORY)
 
-| Field            | Format                                                                                                                           |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `symbolId`       | `` `${topLevelName}.${scope.name}` `` — e.g. `"User.context 'when admin'"` or `"CLI 'doctor' command.describe \"orphan count\""` |
-| `name`           | `scope.name` — formatted as `"describe 'X'"` / `"context 'Y'"` / `"it.skip 'Z'"`                                                 |
-| `parentSymbolId` | `topLevelName` only — strip quotes/backticks from string args, use identifier text for `describe(User, …)`                       |
-| `parentType`     | `"call_expression"` (TS) / `"call"` (Ruby) — the AST node type of the top-level container                                        |
+| Chunk           | `symbolId`                         | `name`         | `parentSymbolId` | `parentType`                              |
+| --------------- | ---------------------------------- | -------------- | ---------------- | ----------------------------------------- |
+| Example         | `` `${scopeId}.${example.name}` `` | `example.name` | `scopeId`        | `"test_scope"` (`TEST_SCOPE_PARENT_TYPE`) |
+| Setup-only leaf | `scopeId`                          | `scope.name`   | `topLevelName`   | the container's AST type (engine)         |
+
+`scopeId` = `` `${topLevelName}.${scope.name}` `` — the IMMEDIATE scope's name,
+not the path: `User.context 'when admin'.it 'can invite'`. A repeated id gets
+`~N` (1-based, first occurrence unchanged), counted in source order over the
+whole tree; a scope's `~N` carries into its examples' ids.
+`parentType: "test_scope"` is what explore reads to draw a scope and to answer a
+scope id with an outline of its examples — a test chunk under any other
+parentType is a setup-only scope or a pre-example-era chunk and renders as a
+plain line.
 
 `topLevelName` extraction priority on root scope's first arg:
 
@@ -104,13 +133,32 @@ Always-applied filters:
 2. `identifier` / `constant` → use text as-is
 3. fallback: full `scope.name`
 
+## Outline contract (what agents see)
+
+- `find_symbol(relativePath: <test file>)` lists each scope id once, at its
+  first example, with its example ids nested under it.
+- `find_symbol(symbol: <scope id>)` returns an outline of that scope's example
+  ids, no bodies.
+- `find_symbol(symbol: <example id>)` returns that example's chunk (inherited
+  setup + example), `#partN` windows merged.
+
 ## Line range rule (MANDATORY)
 
-`startLine` / `endLine` MUST compute from scope's **own** line sources only (own
-setupLines + own otherLines + own ownItBlocks). NEVER include ancestor setup
-line ranges — even though ancestor content spliced into chunk `content` for
-context. Else `git blame` lookups + `Read` offsets drift onto parent's setup
-file region.
+An example chunk's `startLine` / `endLine` are the example's own rows. A
+setup-only chunk's are its own setup + other lines. NEVER include ancestor setup
+line ranges — even though ancestor content is spliced into `content` for
+context. Else `git blame` lookups + `Read` offsets drift onto the parent's setup
+region.
+
+## Versioning (MANDATORY)
+
+The example shape is `sharedVersions.chunking` 2 — the epic's ONE bump. A
+language migrating its scope chunker onto the kernel re-pins its own `chunking`
+digest WITHOUT bumping (`npm run pin:lang-versions`, commit body
+`Versions: covered by *.chunking 2 (tea-rags-mcp-phftd)`), as long as that
+shared bump has not yet been released to an index. The bump's scope is test
+files only; its minimal remedy is a scoped `--force` over test files
+(tea-rags-mcp-j4oww).
 
 ## Test-file detection (MANDATORY)
 
@@ -155,6 +203,9 @@ chunker).
 
 ## Reference implementations
 
+- Emission: `src/core/domains/language/kernel/test-scope-chunks.ts`, spec
+  `tests/core/domains/language/kernel/test-scope-chunks.test.ts`. The language
+  hooks below still build their own chunks until their phftd migration lands.
 - Ruby: `hooks/ruby/rspec-filter.ts` + `hooks/ruby/rspec-scope-chunker.ts`
 - TypeScript: `hooks/typescript/test-dsl-filter.ts` +
   `hooks/typescript/test-scope-chunker.ts`
