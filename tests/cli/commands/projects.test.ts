@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { projectsCommand, runInfo, runList, runRegister, runUnregister } from "../../../src/cli/commands/projects.js";
+import { createColorizer } from "../../../src/cli/infra/color.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("CLI 'projects' command group", () => {
@@ -26,11 +27,85 @@ describe("CLI 'projects' command group", () => {
     mkdirSync(repo);
     writeFileSync(join(repo, ".keep"), "");
     process.env.TEA_RAGS_DATA_DIR = dir;
+    // Layout assertions read plain text: force color off regardless of the
+    // developer's terminal (FORCE_COLOR in the shell would otherwise leak in).
+    vi.stubEnv("NO_COLOR", "1");
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     delete process.env.TEA_RAGS_DATA_DIR;
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  describe("colored status lines", () => {
+    const colored = createColorizer({ env: { FORCE_COLOR: "1" }, isTTY: true });
+
+    beforeEach(() => {
+      vi.stubEnv("NO_COLOR", undefined);
+      vi.stubEnv("FORCE_COLOR", "1");
+      vi.stubEnv("COLORFGBG", undefined);
+    });
+
+    function captureStdout(): { out: () => string; restore: () => void } {
+      const calls: string[] = [];
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        calls.push(String(chunk));
+        return true;
+      });
+      return {
+        out: () => calls.join(""),
+        restore: () => {
+          spy.mockRestore();
+        },
+      };
+    }
+
+    it("paints a successful registration as ok", async () => {
+      const cap = captureStdout();
+      try {
+        await runRegister({ path: repo, name: "alpha" });
+        expect(cap.out()).toContain(colored.ok("Registered 'alpha'"));
+      } finally {
+        cap.restore();
+      }
+    });
+
+    it("paints an unknown name on unregister as a warning", async () => {
+      const cap = captureStdout();
+      try {
+        await runUnregister({ name: "ghost" });
+        expect(cap.out()).toBe(`${colored.warn("'ghost' was not registered")}\n`);
+      } finally {
+        cap.restore();
+      }
+    });
+
+    it("paints the removal as ok and the leftover-collection note as a warning", async () => {
+      await runRegister({ path: repo, name: "alpha" });
+      const cap = captureStdout();
+      try {
+        await runUnregister({ name: "alpha" });
+        expect(cap.out()).toContain(colored.ok("Removed 'alpha' from registry."));
+        // The note runs to the end of the line, so match the warn escape's opening half.
+        const warnOpen = colored.warn("").replace("\x1b[0m", "");
+        expect(cap.out()).toContain(`${warnOpen}Note: Qdrant collection`);
+      } finally {
+        cap.restore();
+      }
+    });
+
+    it("renders info through the colored key: value block", async () => {
+      await runRegister({ path: repo, name: "alpha" });
+      const cap = captureStdout();
+      try {
+        runInfo({ name: "alpha" });
+        expect(cap.out()).toContain(colored.bold(colored.brand("alpha")));
+        expect(cap.out()).toContain(colored.dim("collectionName:     "));
+      } finally {
+        cap.restore();
+      }
+    });
   });
 
   describe("register", () => {
@@ -266,6 +341,8 @@ describe("CLI 'projects' command group", () => {
         expect(out).toContain("code_orphan_1");
         expect(out).toContain("code_orphan_2");
         expect(out).not.toContain("code_known");
+        expect(out).toMatch(/^COLLECTION +CHUNKS$/m);
+        expect(out).toMatch(/^code_orphan_1 +123$/m);
       } finally {
         stdout.mockRestore();
       }
@@ -326,7 +403,7 @@ describe("CLI 'projects' command group", () => {
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
         await runOrphans({ json: false }, fakeQdrant);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
-        expect(out).toMatch(/^code_broken\t0$/m);
+        expect(out).toMatch(/^code_broken +0$/m);
       } finally {
         stdout.mockRestore();
       }
