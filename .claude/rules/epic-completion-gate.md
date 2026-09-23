@@ -28,7 +28,9 @@ npm run build
 A bare build is always allowed and collides with nothing — **the global
 `npm link` pointer is the shared resource, not the build**. A fresh worktree has
 no `build/`, and `chunker/infra/pool.ts` forks the COMPILED worker, so worker-
-forking specs (and therefore pre-commit) fail until the worktree is built once.
+forking specs fail until the worktree is built once. Pre-commit builds a missing
+`build/` itself when `src/` is staged, but does not rebuild a stale one — a
+coverage run for the gate still needs a fresh build.
 
 Pair it with `npm link` ONLY when the MCP server has to load the change for
 step 3. See `.claude/CLAUDE.md` → "MCP Integration Testing" for the link rules

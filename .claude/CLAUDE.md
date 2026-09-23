@@ -341,9 +341,10 @@ reproduces it.
   locally.** It touches nothing global, so it cannot collide with a parallel
   session — **the link is the shared resource, not the build.** Standing case: a
   fresh worktree has no `build/`, and the chunker pool forks the _compiled_
-  worker, so every worker-forking test — and therefore pre-commit — fails until
-  the worktree is built once. Build it, don't link it. (Tracked as
-  `tea-rags-mcp-hyj9d`; the mechanism is owned by
+  worker, so every worker-forking test fails until the worktree is built once.
+  Pre-commit builds a missing `build/` itself when `src/` is staged (it does not
+  rebuild a stale one, and never links); a direct `vitest` run still needs the
+  build. Build it, don't link it. (The mechanism is owned by
   `src/core/domains/ingest/pipeline/CLAUDE.md`.)
 - **Reindex is ALWAYS user-gated**, regardless of worktree count — rewrites the
   shared Qdrant index, depends on ollama embeddings (can flap mid-run). This
