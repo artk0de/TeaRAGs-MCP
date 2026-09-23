@@ -206,10 +206,14 @@ describe("seeded support versions", () => {
       // delegator, and a `super`-delegating override inherits its ancestor
       // template's hook (`superDelegates` in the pass-1 slice), so an index built
       // by walker 4 holds those entries on the shared `KindOfService.call` node.
+      // javascript walker 4: bd tea-rags-mcp-hkj8 extracts lookup-table
+      // dispatch (`dispatchTables`, `CallRef.dispatch`, `callbackParams`,
+      // `dispatchArgs`), so an index built by walker 3 holds none of the
+      // caller→candidate edges `H[k]()` / `T[k].f()` sites now fan out to.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
-        ["javascript", 3],
+        ["javascript", 4],
         ["python", 8],
         ["ruby", 5],
         ["java", 2],

@@ -37,8 +37,8 @@
       "digest": "sha256:93a865e0486d9bb62f627c1fc9393818759c634f5773487521ae28198ee66540"
     },
     "walker": {
-      "version": 3,
-      "digest": "sha256:6dfe72da095b5a9590ac4c11b56376afc025185a0b5aaaab9495ea4f8f909feb"
+      "version": 4,
+      "digest": "sha256:4d1dbdbb9955330bb84adbc88dede7c0a3537bbdd35a47a00e85dd2ee07f81ca"
     }
   },
   "markdown": {
