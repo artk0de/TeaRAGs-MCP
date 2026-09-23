@@ -5,10 +5,9 @@ sidebar_position: 99
 
 ## [1.44.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.1...v1.44.2) (2026-09-23)
 
-### Bug Fixes
+### 🩹 Fixes
 
-* **maintenance:** carry the source language-version stamp onto a worktree clone ([8047ccb](https://github.com/artk0de/TeaRAGs-MCP/commit/8047ccb801050b7f70ed48874c7730ba57cdab62))
-* **maintenance:** carry the source language-version stamp onto a worktree clone ([4f5d533](https://github.com/artk0de/TeaRAGs-MCP/commit/4f5d53364183c075ec68a5ea44ef0ff1ee73ca1d))
+* Cloning a project into a worktree no longer misreports every language as out of date, so it stops recommending an unnecessary full reindex
 
 ## [1.44.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.0...v1.44.1) (2026-09-22)
 
