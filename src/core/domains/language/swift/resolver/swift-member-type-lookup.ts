@@ -46,6 +46,7 @@
 import type {
   AmbiguousResolveMode,
   CallContext,
+  CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import {
@@ -56,10 +57,10 @@ import {
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
 import {
-  lookupSwiftSymbols,
   lookupSwiftTypeMember,
   qualifySwiftTypeName,
   qualifySwiftTypeNameWithin,
+  swiftMemberCandidates,
 } from "./swift-symbol-lookup.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
 
@@ -99,18 +100,26 @@ export class SwiftMemberTypeLookup {
    * when the strict gate then finds that declaration ambiguous (two files each
    * composing `DataRequest#resume`). Falling through to `Request#resume` there
    * would answer with the one declaration the source provably does not call.
+   *
+   * Given the CALL, "declares" means declares an overload the call's argument
+   * labels fit (bd tea-rags-mcp-y99pg.7): Swift resolves an overload over the
+   * whole hierarchy, so `uploadProgress(queue:closure:)` on a `DataRequest`
+   * passes the subclass's `uploadProgress(bufferingPolicy:)` for `Request`'s.
    */
   memberOn(
     typeName: string,
     member: string,
     ctx: CallContext,
     mode: AmbiguousResolveMode,
+    call?: CallRef,
   ): SymbolResolutionTarget | null {
     const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
       // The chain's keys are type names as WRITTEN; members compose under the
       // qualified id (`qualifySwiftTypeName`).
       const typeId = qualifySwiftTypeName(candidate, ctx);
-      return declaresMember(typeId, member, ctx) ? { target: lookupSwiftTypeMember(typeId, member, ctx, mode) } : null;
+      return declaresMember(typeId, member, ctx, call)
+        ? { target: lookupSwiftTypeMember(typeId, member, ctx, mode, call) }
+        : null;
     });
     return scan.target?.target ?? null;
   }
@@ -134,10 +143,10 @@ export class SwiftMemberTypeLookup {
   }
 }
 
-/** Whether `typeName` declares `member` in either spelling, whatever the cardinality. */
-function declaresMember(typeName: string, member: string, ctx: CallContext): boolean {
+/** Whether `typeName` declares `member` in either spelling — one the call fits, given one — whatever the cardinality. */
+function declaresMember(typeName: string, member: string, ctx: CallContext, call?: CallRef): boolean {
   return (
-    lookupSwiftSymbols(ctx, `${typeName}#${member}`).length > 0 ||
-    lookupSwiftSymbols(ctx, `${typeName}.${member}`).length > 0
+    swiftMemberCandidates(ctx, `${typeName}#${member}`, call).length > 0 ||
+    swiftMemberCandidates(ctx, `${typeName}.${member}`, call).length > 0
   );
 }

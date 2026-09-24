@@ -1851,3 +1851,160 @@ describe("SwiftCallResolver — underscore-prefixed type names", () => {
     expect(underscored?.targetSymbolId).toBe("_Encoder.Inner");
   });
 });
+
+/**
+ * Argument labels select among overloads (bd tea-rags-mcp-y99pg.7). A Swift
+ * call names its labels and whether it passes a trailing closure; a declaration
+ * that cannot accept them is not the target, however near it sits.
+ */
+describe("SwiftCallResolver — argument-label overload selection", () => {
+  type Def = {
+    symbolId: string;
+    scope: string[];
+    arity?: { minRequired: number; maxPositional: number; hasSplat: boolean };
+    kwargs?: { required: string[]; optional: string[]; hasSplat: boolean };
+    acceptsBlock?: boolean;
+  };
+  function signedTable(rows: Record<string, Def[]>): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    for (const [relPath, defs] of Object.entries(rows)) {
+      t.upsertFile(
+        relPath,
+        defs.map((d) => ({
+          ...d,
+          fqName: d.symbolId,
+          shortName: (d.symbolId.split(/[#.]/).pop() ?? d.symbolId).replace(/~\d+$/, ""),
+          relPath,
+        })),
+      );
+    }
+    return t;
+  }
+  const none = { minRequired: 0, maxPositional: 0, hasSplat: false };
+  const noLabels = { required: [], optional: [], hasSplat: false };
+  const t = signedTable({
+    "Sources/Validation.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      {
+        symbolId: "DataRequest#validate",
+        scope: ["DataRequest"],
+        arity: none,
+        kwargs: { required: ["statusCode"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+      {
+        symbolId: "DataRequest#validate~2",
+        scope: ["DataRequest"],
+        arity: none,
+        kwargs: noLabels,
+        acceptsBlock: false,
+      },
+    ],
+    "Sources/DataRequest.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      {
+        symbolId: "DataRequest#validate",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 1, hasSplat: false },
+        kwargs: noLabels,
+        acceptsBlock: true,
+      },
+    ],
+  });
+  const declarations = {
+    "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+    "Sources/Validation.swift": [{ typeId: "DataRequest", reopens: true }],
+  };
+  const inValidation = {
+    callerFile: "Sources/Validation.swift",
+    callerScope: ["DataRequest", "validate"],
+    symbolTable: t,
+    typeDeclarations: declarations,
+  };
+
+  it("passes over a same-file overload that cannot take a trailing closure", () => {
+    const target = new SwiftCallResolver().resolve(
+      { ...call(null, "validate"), argCount: 0, kwargKeys: [], passesBlock: true },
+      ctx(inValidation),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/DataRequest.swift", targetSymbolId: "DataRequest#validate" });
+  });
+
+  it("lands on the overload whose labels the call writes", () => {
+    const labelled = new SwiftCallResolver().resolve(
+      { ...call("self", "validate"), argCount: 0, kwargKeys: ["statusCode"], passesBlock: false },
+      ctx(inValidation),
+    );
+    const bare = new SwiftCallResolver().resolve(
+      { ...call(null, "validate"), argCount: 0, kwargKeys: [], passesBlock: false },
+      ctx(inValidation),
+    );
+    expect(labelled?.targetSymbolId).toBe("DataRequest#validate");
+    expect(labelled?.targetRelPath).toBe("Sources/Validation.swift");
+    expect(bare?.targetSymbolId).toBe("DataRequest#validate~2");
+  });
+
+  it("keeps the nearest declaration when the call carries no signature evidence", () => {
+    const target = new SwiftCallResolver().resolve(call(null, "validate"), ctx(inValidation));
+    expect(target?.targetRelPath).toBe("Sources/Validation.swift");
+  });
+
+  it("emits nothing when no declaration accepts the call's labels", () => {
+    const notes = signedTable({
+      "Sources/Notifications.swift": [
+        { symbolId: "Notification", scope: [] },
+        {
+          symbolId: "Notification#init",
+          scope: ["Notification"],
+          arity: none,
+          kwargs: { required: ["name", "request"], optional: [], hasSplat: false },
+          acceptsBlock: false,
+        },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      { ...call("self", "init"), argCount: 0, kwargKeys: ["name", "object", "userInfo"], passesBlock: false },
+      ctx({
+        callerFile: "Sources/Notifications.swift",
+        callerScope: ["Notification", "init"],
+        symbolTable: notes,
+        typeDeclarations: { "Sources/Notifications.swift": [{ typeId: "Notification", reopens: true }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a trailing closure stands in for one possible-closure requirement", () => {
+  it("resolves `world.configure { … }` onto `configure(_ closure: QuickConfigurer)`", () => {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("Sources/World.swift", [
+      { symbolId: "World", fqName: "World", shortName: "World", relPath: "Sources/World.swift", scope: [] },
+      {
+        symbolId: "World#configure",
+        fqName: "World#configure",
+        shortName: "configure",
+        relPath: "Sources/World.swift",
+        scope: ["World"],
+        arity: { minRequired: 1, maxPositional: 1, hasSplat: false },
+        kwargs: { required: [], optional: [], hasSplat: false },
+        acceptsBlock: true,
+      },
+    ]);
+    const base = {
+      callerFile: "Sources/Config.swift",
+      symbolTable: t,
+      localBindings: { world: [{ line: 5, type: "World" }] },
+    };
+    const closure = new SwiftCallResolver().resolve(
+      { ...call("world", "configure"), argCount: 0, kwargKeys: [], passesBlock: true },
+      ctx(base),
+    );
+    const empty = new SwiftCallResolver().resolve(
+      { ...call("world", "configure"), argCount: 0, kwargKeys: [], passesBlock: false },
+      ctx(base),
+    );
+    expect(closure?.targetSymbolId).toBe("World#configure");
+    expect(empty).toBeNull();
+  });
+});

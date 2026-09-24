@@ -25,6 +25,7 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type CallRef,
   type SymbolDefinition,
   type SymbolLookupOptions,
   type SymbolResolutionTarget,
@@ -131,12 +132,97 @@ export function lookupSwiftTypeMember(
   member: string,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
+  call?: CallRef,
 ): SymbolResolutionTarget | null {
-  const instanceHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}#${member}`), mode);
-  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-  const staticHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}.${member}`), mode);
-  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+  for (const id of [`${typeName}#${member}`, `${typeName}.${member}`]) {
+    const hit = pickSwiftOverload(swiftMemberCandidates(ctx, id, call), mode);
+    if (hit) return { targetRelPath: hit.relPath, targetSymbolId: hit.symbolId };
+  }
   return null;
+}
+
+/**
+ * The declarations of member id `id` a call can reach: the id itself when the
+ * call carries no signature evidence (every pre-label shape), else the id and
+ * its same-file overloads (`id~2`, …) narrowed to the ones whose labels,
+ * unlabelled count and closure acceptance fit the call
+ * ({@link narrowSwiftOverloads}).
+ */
+export function swiftMemberCandidates(ctx: CallContext, id: string, call?: CallRef): SymbolDefinition[] {
+  if (call?.argCount === undefined) return lookupSwiftSymbols(ctx, id);
+  return narrowSwiftOverloads(call, lookupSwiftOverloads(ctx, id));
+}
+
+/** `id` and every same-file overload `id~N` of it — the suffixes are contiguous per file. */
+function lookupSwiftOverloads(ctx: CallContext, id: string): SymbolDefinition[] {
+  const out = lookupSwiftSymbols(ctx, id);
+  for (let n = 2; n <= SWIFT_MAX_OVERLOADS; n++) {
+    const more = lookupSwiftSymbols(ctx, `${id}~${n}`);
+    if (more.length === 0) break;
+    out.push(...more);
+  }
+  return out;
+}
+
+/** A cap on the `~N` probe, far above any overload set a real type declares. */
+const SWIFT_MAX_OVERLOADS = 64;
+
+/**
+ * Keep the declarations a call's argument labels can reach (bd
+ * tea-rags-mcp-y99pg.7), over the signature the Swift walker maps labels onto:
+ * labelled parameters as keywords (`kwargs`), unlabelled ones as positional
+ * slots (`arity`), closure acceptance as `acceptsBlock`. A declaration with no
+ * recorded signature is kept — missing evidence never drops, as in every
+ * kernel narrower.
+ */
+export function narrowSwiftOverloads(call: CallRef, defs: SymbolDefinition[]): SymbolDefinition[] {
+  if (call.argCount === undefined) return defs;
+  return defs.filter((def) => swiftCallFits(call, def));
+}
+
+/**
+ * Whether `def` can be the target of `call`:
+ *
+ *   - every label the call writes is one the declaration declares, and it
+ *     takes no fewer unlabelled arguments than the call passes (unless
+ *     variadic);
+ *   - a trailing closure needs a parameter that can take one — a declaration
+ *     PROVEN to have none cannot be the target. Ruby's `BlockNarrower` only
+ *     prefers, because Ruby ignores an unused block; Swift rejects the call;
+ *   - every requirement is met, except that a trailing closure may stand in
+ *     for ONE: the walker keeps a parameter whose type may be a closure
+ *     typealias (`_ closure: QuickConfigurer`) required, since only a proven
+ *     closure type can be declared optional up front.
+ */
+function swiftCallFits(call: CallRef, def: SymbolDefinition): boolean {
+  const argCount = call.argCount ?? 0;
+  const keys = call.kwargKeys ?? [];
+  if (call.passesBlock && def.acceptsBlock === false) return false;
+  let missing = 0;
+  if (def.kwargs !== undefined) {
+    const declared = new Set([...def.kwargs.required, ...(def.kwargs.optional ?? [])]);
+    if (!keys.every((key) => declared.has(key))) return false;
+    missing += def.kwargs.required.filter((label) => !keys.includes(label)).length;
+  }
+  if (def.arity !== undefined) {
+    if (!def.arity.hasSplat && argCount > def.arity.maxPositional) return false;
+    missing += Math.max(0, def.arity.minRequired - argCount);
+  }
+  return missing <= (call.passesBlock ? 1 : 0);
+}
+
+/**
+ * One declaration from a narrowed overload set: the unsuffixed declarations
+ * first (the pick every lookup made before labels were read), and among
+ * declarations of ONE file the first — a file's `id` / `id~2` are the same
+ * member's overloads, not an ambiguity about where it lives. Across files the
+ * cardinality gate decides, as it always has.
+ */
+function pickSwiftOverload(defs: SymbolDefinition[], mode: AmbiguousResolveMode): SymbolDefinition | null {
+  const unsuffixed = defs.filter((def) => !hasSwiftOverloadSuffix(def.symbolId));
+  const pool = unsuffixed.length > 0 ? unsuffixed : defs;
+  if (pool.length > 1 && pool.every((def) => def.relPath === pool[0].relPath)) return pool[0];
+  return pickSingleCandidate(pool, mode);
 }
 
 /**

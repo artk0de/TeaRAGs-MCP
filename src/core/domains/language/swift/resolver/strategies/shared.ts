@@ -18,12 +18,13 @@ import { DROP, resolved } from "../../../../../contracts/resolution.js";
 import type {
   AmbiguousResolveMode,
   CallContext,
+  CallRef,
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "../swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "../swift-member-type-lookup.js";
-import { lookupSwiftSymbols, lookupSwiftTypeMember } from "../swift-symbol-lookup.js";
+import { lookupSwiftTypeMember, swiftMemberCandidates } from "../swift-symbol-lookup.js";
 
 export { lookupSwiftTypeMember, swiftEnclosingTypeIds, swiftSelfTypeName };
 
@@ -70,17 +71,28 @@ export function resolveSwiftBoundTypeMember(
   member: string,
   ctx: CallContext,
   cfg: SwiftResolverConfig,
+  call?: CallRef,
 ): SymbolResolutionOutcome {
-  const hit = cfg.memberTypes.memberOn(typeName, member, ctx, cfg.mode);
+  const hit = cfg.memberTypes.memberOn(typeName, member, ctx, cfg.mode, call);
   return hit ? resolved(hit) : DROP;
 }
 
-/** Look up `<typeId>#<member>` then `<typeId>.<member>`, constrained to the caller's OWN file. */
-function lookupTypeMemberInCallerFile(typeId: string, member: string, ctx: CallContext): SymbolResolutionTarget | null {
-  const instanceHit = lookupSwiftSymbols(ctx, `${typeId}#${member}`).find((def) => def.relPath === ctx.callerFile);
-  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-  const staticHit = lookupSwiftSymbols(ctx, `${typeId}.${member}`).find((def) => def.relPath === ctx.callerFile);
-  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+/**
+ * Look up `<typeId>#<member>` then `<typeId>.<member>`, constrained to the
+ * caller's OWN file — and, given the call, to an overload its argument labels
+ * fit (bd tea-rags-mcp-y99pg.7), so a same-file declaration the call cannot
+ * reach no longer shadows the one in another file that it does.
+ */
+function lookupTypeMemberInCallerFile(
+  typeId: string,
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+): SymbolResolutionTarget | null {
+  for (const id of [`${typeId}#${member}`, `${typeId}.${member}`]) {
+    const hit = swiftMemberCandidates(ctx, id, call).find((def) => def.relPath === ctx.callerFile);
+    if (hit) return { targetRelPath: hit.relPath, targetSymbolId: hit.symbolId };
+  }
   return null;
 }
 
@@ -99,9 +111,13 @@ function lookupTypeMemberInCallerFile(typeId: string, member: string, ctx: CallC
  * chain to the extension-scope pass, which is where a Swift type split across
  * files is answered.
  */
-export function lookupSelfTypeMemberInFile(member: string, ctx: CallContext): SymbolResolutionTarget | null {
+export function lookupSelfTypeMemberInFile(
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+): SymbolResolutionTarget | null {
   const selfType = swiftEnclosingTypeIds(ctx)[0];
-  return selfType === undefined ? null : lookupTypeMemberInCallerFile(selfType, member, ctx);
+  return selfType === undefined ? null : lookupTypeMemberInCallerFile(selfType, member, ctx, call);
 }
 
 /**
@@ -112,9 +128,13 @@ export function lookupSelfTypeMemberInFile(member: string, ctx: CallContext): Sy
  * enclosing type's static members — `Options(rawValue:)` written inside
  * `Download.Options` names `Download.Options`, found one scope out.
  */
-export function lookupLexicalMemberInFile(member: string, ctx: CallContext): SymbolResolutionTarget | null {
+export function lookupLexicalMemberInFile(
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+): SymbolResolutionTarget | null {
   for (const typeId of swiftEnclosingTypeIds(ctx)) {
-    const hit = lookupTypeMemberInCallerFile(typeId, member, ctx);
+    const hit = lookupTypeMemberInCallerFile(typeId, member, ctx, call);
     if (hit) return hit;
   }
   return null;

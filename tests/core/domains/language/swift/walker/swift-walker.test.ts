@@ -1465,3 +1465,68 @@ describe("swift walker — generic constructions and the implicit `catch` bindin
     expect(typeAt(src, "error", 7)).toBeUndefined();
   });
 });
+
+/**
+ * Argument labels on both sides (bd tea-rags-mcp-y99pg.7): a declaration
+ * publishes its labelled parameters as `kwargs`, its unlabelled ones as
+ * `arity` and whether it takes a closure as `acceptsBlock`; a call publishes
+ * the labels it writes, its unlabelled argument count and whether it passes a
+ * trailing closure.
+ */
+describe("swift walker — argument-label signatures", () => {
+  it("publishes a declaration's labels, positional arity and closure acceptance on its chunk", () => {
+    const src = [
+      "func validate(statusCode: Int, _ x: Int = 0, _ rest: Int..., completion: @escaping () -> Void) {}",
+      "",
+    ].join("\n");
+    const chunk = extract(src, [{ symbolId: "validate", scope: [], startLine: 1, endLine: 1 }]).chunks[0];
+    expect(chunk.kwargs).toEqual({ required: ["statusCode"], optional: ["completion"], hasSplat: false });
+    expect(chunk.arity).toEqual({ minRequired: 0, maxPositional: 2, hasSplat: true });
+    expect(chunk.acceptsBlock).toBe(true);
+  });
+
+  it("publishes an initializer's signature, and a closure-free one as not accepting a block", () => {
+    const src = ["struct Box {", "  init(url: URL, _ n: Int) {}", "}", ""].join("\n");
+    const chunks = [
+      { symbolId: "Box", scope: [], startLine: 1, endLine: 3 },
+      { symbolId: "Box#init", scope: ["Box"], startLine: 2, endLine: 2 },
+    ];
+    const chunk = extract(src, chunks).chunks[1];
+    expect(chunk.kwargs).toEqual({ required: ["url"], optional: [], hasSplat: false });
+    expect(chunk.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(chunk.acceptsBlock).toBe(false);
+  });
+
+  it("records a call's labels, unlabelled count and trailing closure", () => {
+    const src = ["func go() {", "  validate(statusCode: 1) { }", "  run(1, x: 2)", "}", ""].join("\n");
+    const { calls } = extract(src).chunks[0];
+    expect(calls.find((c) => c.member === "validate")).toMatchObject({
+      argCount: 0,
+      kwargKeys: ["statusCode"],
+      passesBlock: true,
+    });
+    expect(calls.find((c) => c.member === "run")).toMatchObject({ argCount: 1, kwargKeys: ["x"], passesBlock: false });
+  });
+});
+
+describe("swift walker — a closure spelled through a typealias", () => {
+  it("counts an `@escaping` alias as a closure and an unmarked alias as a possible one", () => {
+    const src = [
+      "func progress(queue: DispatchQueue = .main, closure: @escaping ProgressHandler) {}",
+      "func configure(_ closure: QuickConfigurer) {}",
+      "func count(of items: [Item]) {}",
+      "",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "progress", scope: [], startLine: 1, endLine: 1 },
+      { symbolId: "configure", scope: [], startLine: 2, endLine: 2 },
+      { symbolId: "count", scope: [], startLine: 3, endLine: 3 },
+    ];
+    const [progress, configure, count] = extract(src, chunks).chunks;
+    expect(progress.kwargs).toEqual({ required: [], optional: ["queue", "closure"], hasSplat: false });
+    expect(progress.acceptsBlock).toBe(true);
+    expect(configure.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(configure.acceptsBlock).toBe(true);
+    expect(count.acceptsBlock).toBe(false);
+  });
+});

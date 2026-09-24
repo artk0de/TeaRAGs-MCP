@@ -249,6 +249,8 @@ describe("seeded support versions", () => {
       // swift walker 22: specialised constructions are call sites and type their
       // binding, and `catch` binds `error`, so an index built by walker 21 misses
       // both.
+      // swift walker 23: definitions carry argument-label signatures and call sites
+      // their labels, so an index built by walker 22 targets the first overload.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -265,7 +267,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 22],
+        ["swift", 23],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

@@ -14,6 +14,16 @@ export const capability: LanguageCapability = {
     summary:
       "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
   },
+  // walker 23: every function records its argument-label signature (labelled
+  // parameters as keywords, unlabelled ones as positional slots, closure
+  // acceptance three-valued) and every call site its labels, count and trailing
+  // closure, so an overloaded member resolves to the declaration the call's
+  // labels reach (bd tea-rags-mcp-y99pg.7). Measured (swiftc -dump-ast oracle):
+  // Alamofire TOTAL 0.826 -> 0.825 (1195 -> 1193 of 1446; the two lost edges
+  // were wrong self.init targets), Quick unmoved at 0.915; the edge landing on
+  // the oracle's own overload rose 909 -> 1067 of 1126 (Alamofire) and
+  // 245 -> 258 of 279 (Quick), wrong-file edges 13 -> 7. So an index built by
+  // walker 22 points overloaded calls at the first namesake.
   // walker 22: an explicitly specialised construction (`Protected<[T]>(...)`,
   // `DataResponse<T, E>(...)`), which tree-sitter-swift parses as a
   // `constructor_expression` rather than a call, is now emitted as a call site
@@ -306,7 +316,7 @@ export const capability: LanguageCapability = {
   // must route `--force`, not `--force-enrichments`.
   // chunking 4: the grammar bump above — files 0.7.1 could not parse now
   // chunk at real symbol boundaries, so the chunk set moves again.
-  versions: { chunking: 4, walker: 22, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 23, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

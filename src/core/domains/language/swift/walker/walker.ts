@@ -125,11 +125,13 @@
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
+  AritySignature,
   CallRef,
   CallResultBinding,
   ChunkExtraction,
   FileExtraction,
   ImportRef,
+  KwargSignature,
   LocalBinding,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
@@ -152,6 +154,7 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   const evidence = collectSwiftFileTypeEvidence(root);
   const bindingOwnership = assignBindingsToInnermostChunks(collectSwiftTypedBindings(root, evidence), input.chunks);
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const signatures = collectSwiftCallableSignatures(root, input.chunks);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -162,6 +165,12 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
     };
     // A type chunk's own calls run inside the type (`swiftNameOf` opts in).
     if (c.bodyScope !== undefined) chunk.bodyScope = c.bodyScope;
+    const signature = signatures.get(chunkIndex);
+    if (signature) {
+      chunk.arity = signature.arity;
+      chunk.kwargs = signature.kwargs;
+      chunk.acceptsBlock = signature.acceptsBlock;
+    }
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings.localBindings).length > 0) chunk.localBindings = bindings.localBindings;
     if (bindings && Object.keys(bindings.callResultBindings).length > 0) {
@@ -302,6 +311,38 @@ function collectSwiftStructuredReturnTypes(
   return out;
 }
 
+/**
+ * chunk index → the argument-label signature of the `func` / `init` that chunk
+ * IS, matched the way {@link collectSwiftStructuredReturnTypes} matches a
+ * declaration to its chunk: same start line, final id segment naming it.
+ */
+function collectSwiftCallableSignatures(
+  root: AstNode,
+  chunks: readonly { symbolId: string; startLine: number }[],
+): Map<number, SwiftCallableSignature> {
+  const indicesByLine = new Map<number, number[]>();
+  chunks.forEach((chunk, index) => {
+    const at = indicesByLine.get(chunk.startLine);
+    if (at) at.push(index);
+    else indicesByLine.set(chunk.startLine, [index]);
+  });
+  const out = new Map<number, SwiftCallableSignature>();
+  walk(root, (node) => {
+    if (
+      node.type !== "function_declaration" &&
+      node.type !== "protocol_function_declaration" &&
+      node.type !== "init_declaration"
+    ) {
+      return;
+    }
+    const name = node.type === "init_declaration" ? "init" : node.childForFieldName("name")?.text;
+    if (name === undefined) return;
+    const index = indicesByLine.get(node.startPosition.row + 1)?.find((i) => composedIdNames(chunks[i].symbolId, name));
+    if (index !== undefined && !out.has(index)) out.set(index, swiftCallableSignature(node));
+  });
+  return out;
+}
+
 /** Whether a composed id's final segment is `name`, an overload suffix aside. */
 function composedIdNames(symbolId: string, name: string): boolean {
   const base = symbolId.replace(OVERLOAD_SUFFIX, "");
@@ -420,8 +461,15 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     // `Protected<[T]>(…)`: a construction the grammar does not call a call.
     if (node.type === "constructor_expression") {
       const name = swiftConstructedGenericFact(node).nominal;
+      const constructorSuffix = node.children.find((c) => c.type === "constructor_suffix");
       if (name && !name.includes(".")) {
-        out.push({ callText: node.text, receiver: null, member: name, startLine: node.startPosition.row + 1 });
+        out.push({
+          callText: node.text,
+          receiver: null,
+          member: name,
+          startLine: node.startPosition.row + 1,
+          ...(constructorSuffix ? swiftCallArguments(constructorSuffix) : {}),
+        });
       }
       return;
     }
@@ -432,10 +480,11 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     const callee = node.namedChildren.find((c) => c !== suffix);
     if (!callee) return;
     const startLine = node.startPosition.row + 1;
+    const signature = swiftCallArguments(suffix);
     if (callee.type === "simple_identifier") {
       // Invoking a closure VALUE calls no declared symbol (bd tea-rags-mcp-y99pg.8).
       if (node.children.some((c) => c.type === "?") || isSwiftLocalValueName(callee.text, node)) return;
-      out.push({ callText: node.text, receiver: null, member: callee.text, startLine });
+      out.push({ callText: node.text, receiver: null, member: callee.text, startLine, ...signature });
       return;
     }
     if (callee.type !== "navigation_expression") return;
@@ -447,6 +496,7 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
       receiver: normalizeSwiftReceiver(target.text),
       member: member.text,
       startLine,
+      ...signature,
     });
   });
   return out;
@@ -846,9 +896,144 @@ function swiftParameterTypeNode(parameter: AstNode): AstNode | null {
   const at = parameter.children.findIndex((c) => c.type === ":");
   if (at === -1) return null;
   for (let i = at + 1; i < parameter.children.length; i++) {
-    if (parameter.children[i].type !== "type_modifiers") return parameter.children[i];
+    const child = parameter.children[i];
+    // `@escaping` alone parses as `parameter_modifiers`, with `@Sendable` as `type_modifiers`.
+    if (child.type !== "type_modifiers" && child.type !== "parameter_modifiers") return child;
   }
   return null;
+}
+
+/** A callable's argument-label signature, in the shape `SymbolDefinition` persists. */
+interface SwiftCallableSignature {
+  readonly arity: AritySignature;
+  readonly kwargs: KwargSignature;
+  readonly acceptsBlock: boolean;
+}
+
+/**
+ * The argument-label signature of a `func` / `init` (bd tea-rags-mcp-y99pg.7),
+ * mapped onto the kernel's call-compatibility axes: a LABELLED parameter is a
+ * keyword (`kwargs`), an unlabelled (`_`) one a positional slot (`arity`), and
+ * whether a trailing closure can land on it (`acceptsBlock`).
+ *
+ * Whether a parameter can take a closure is three-valued
+ * ({@link swiftClosureCapability}), because a closure type is very often
+ * spelled through a typealias (`closure: @escaping ProgressHandler`,
+ * `_ closure: QuickConfigurer`) that no file-local read can expand. A PROVEN
+ * closure parameter is never required on either axis — a trailing closure may
+ * satisfy it without its label or its position — and neither is a defaulted
+ * or variadic one. A POSSIBLE one stays required, and the resolver lets a
+ * trailing closure stand in for one missing requirement. `acceptsBlock` is
+ * false only when no parameter can take a closure. A single parameter name is
+ * both label and local name, which is Swift's rule for every declaration here.
+ */
+function swiftCallableSignature(fn: AstNode): SwiftCallableSignature {
+  const required: string[] = [];
+  const optional: string[] = [];
+  let minRequired = 0;
+  let maxPositional = 0;
+  let hasSplat = false;
+  let acceptsBlock = false;
+  fn.children.forEach((parameter, i) => {
+    if (parameter.type !== "parameter") return;
+    const colon = parameter.children.findIndex((c) => c.type === ":");
+    const names = parameter.children
+      .slice(0, colon === -1 ? undefined : colon)
+      .filter((c) => c.type === "simple_identifier")
+      .map((c) => c.text);
+    const label = names[0] === "_" ? null : (names[0] ?? null);
+    const capability = swiftClosureCapability(parameter, fn);
+    const variadic = parameter.children.some((c) => c.type === "...");
+    const defaulted = fn.children[i + 1]?.type === "=";
+    const mandatory = capability !== "yes" && !variadic && !defaulted;
+    if (capability !== "no") acceptsBlock = true;
+    if (label !== null) {
+      (mandatory ? required : optional).push(label);
+      return;
+    }
+    maxPositional += 1;
+    if (variadic) hasSplat = true;
+    if (mandatory) minRequired += 1;
+  });
+  return {
+    arity: { minRequired, maxPositional, hasSplat },
+    kwargs: { required, optional, hasSplat: false },
+    acceptsBlock,
+  };
+}
+
+/** Value types a closure is never spelled as — the common non-closure parameter types. */
+const SWIFT_NON_CLOSURE_TYPES: ReadonlySet<string> = new Set([
+  "String",
+  "Substring",
+  "Character",
+  "Int",
+  "Int8",
+  "Int16",
+  "Int32",
+  "Int64",
+  "UInt",
+  "UInt8",
+  "UInt16",
+  "UInt32",
+  "UInt64",
+  "Double",
+  "Float",
+  "CGFloat",
+  "Bool",
+  "Data",
+  "Date",
+  "URL",
+  "UUID",
+  "TimeInterval",
+  "DispatchQueue",
+  "OperationQueue",
+]);
+
+/**
+ * Whether a parameter can take a closure: `yes` for a function type or an
+ * `@escaping` / `@autoclosure` / `@Sendable` one (only a closure carries
+ * those), `no` for a type that is provably not a function — an array,
+ * dictionary, real tuple or metatype, a protocol-constrained generic
+ * parameter (a function type conforms to no protocol), or a common value
+ * type — and `maybe` for any other name, which may be a closure typealias.
+ */
+function swiftClosureCapability(parameter: AstNode, fn: AstNode): "yes" | "no" | "maybe" {
+  const typeNode = swiftParameterTypeNode(parameter);
+  if (swiftFunctionTypeNode(typeNode) !== null) return "yes";
+  const attributed = parameter.children.some(
+    (c) =>
+      (c.type === "type_modifiers" || c.type === "parameter_modifiers") &&
+      /@(escaping|autoclosure|Sendable)\b/.test(c.text),
+  );
+  if (attributed) return "yes";
+  let bare = typeNode;
+  while (bare?.type === "optional_type") bare = bare.namedChildren[0] ?? null;
+  if (!bare) return "maybe";
+  if (bare.type === "array_type" || bare.type === "dictionary_type" || bare.type === "metatype") return "no";
+  if (bare.type === "tuple_type" && parenthesizedSwiftTypeNode(bare) === null) return "no";
+  if (bare.type !== "user_type") return "maybe";
+  const name = bare.text.replace(/<[\s\S]*$/, "");
+  if (name.endsWith(".Type") || SWIFT_NON_CLOSURE_TYPES.has(name)) return "no";
+  const constraint = swiftGenericConstraint(name, fn);
+  return constraint !== undefined && constraint !== null ? "no" : "maybe";
+}
+
+/**
+ * What a call writes, on the same axes: its labels, its unlabelled argument
+ * count and whether a trailing closure follows the parentheses.
+ */
+function swiftCallArguments(suffix: AstNode): Pick<CallRef, "argCount" | "kwargKeys" | "passesBlock"> {
+  const args = suffix.children.find((c) => c.type === "value_arguments")?.namedChildren ?? [];
+  const kwargKeys: string[] = [];
+  let argCount = 0;
+  for (const arg of args) {
+    if (arg.type !== "value_argument") continue;
+    const label = arg.children.find((c) => c.type === "value_argument_label")?.text;
+    if (label === undefined) argCount += 1;
+    else kwargKeys.push(label);
+  }
+  return { argCount, kwargKeys, passesBlock: suffix.children.some((c) => c.type === "lambda_literal") };
 }
 
 /** A `function_type` node, looking through `?` and parentheses: `((T) -> Void)?`. */

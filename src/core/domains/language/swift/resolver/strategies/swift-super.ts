@@ -62,7 +62,7 @@ export class SwiftSuperSymbolResolutionStrategy implements SymbolResolutionStrat
     const scan = findMemberInAncestorChain(
       enclosing,
       this.linearizerFor(ctx),
-      (candidate) => lookupSwiftTypeMember(candidate, call.member, ctx, this.cfg.mode),
+      (candidate) => lookupSwiftTypeMember(candidate, call.member, ctx, this.cfg.mode, call),
       { startAfter: true },
     );
     return scan.target === null ? DROP : resolved(scan.target);
