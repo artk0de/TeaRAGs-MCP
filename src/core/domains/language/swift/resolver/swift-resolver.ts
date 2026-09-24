@@ -92,14 +92,10 @@
  * (`JSONDecoder()`) emits no edge and leaves the denominator unless an
  * extension declares an initializer (`./swift-type-declarations.ts`).
  *
- * One relative is still open:
- *
- * 1. **A TOP-LEVEL type as an explicit receiver from outside it.**
- *    `Invoice.empty()` written in another type resolves to nothing:
- *    `scopedTypeReceiver` qualifies against the caller's scope only, and the
- *    terminal pass answers bare calls by design. An unqualified global probe is
- *    a precision decision of its own and belongs with a measurement, not a
- *    docblock.
+ * A TOP-LEVEL type as an explicit receiver from outside it (`Invoice.empty()`
+ * written in another type) is answered by `scopedTypeReceiver`'s module-scope
+ * step (bd tea-rags-mcp-y99pg.9), measured on Alamofire and Quick with no
+ * edge the typechecker disputes.
  */
 
 import {

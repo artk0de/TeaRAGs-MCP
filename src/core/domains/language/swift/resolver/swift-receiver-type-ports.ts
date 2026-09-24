@@ -180,7 +180,7 @@ function swiftTypeTextName(text: string): string | undefined {
     return splitAtBracketDepthZero(trimmed.slice(1, -1), ":").length > 1 ? "Dictionary" : "Array";
   }
   const nominal = trimmed.replace(/<[\s\S]*>$/, "");
-  return /^[A-Z][\w.]*$/.test(nominal) ? nominal : undefined;
+  return /^_*[A-Z][\w.]*$/.test(nominal) ? nominal : undefined;
 }
 
 /**

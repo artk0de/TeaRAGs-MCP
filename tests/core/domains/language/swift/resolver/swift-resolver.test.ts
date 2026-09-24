@@ -1813,3 +1813,41 @@ describe("SwiftCallResolver — a type's conventional singleton", () => {
     expect(target).toBeNull();
   });
 });
+
+/**
+ * `_URLEncodedFormEncoder` is a TYPE: Swift's convention marks an internal
+ * type with a leading underscore, and the UpperCamelCase test must read past
+ * it (bd tea-rags-mcp-y99pg.9).
+ */
+describe("SwiftCallResolver — underscore-prefixed type names", () => {
+  const t = table({
+    "Sources/Encoder.swift": [
+      { symbolId: "_Encoder", scope: [] },
+      { symbolId: "_Encoder~2", scope: [] },
+      { symbolId: "_Encoder.Inner", scope: ["_Encoder"] },
+      { symbolId: "Outer", scope: [] },
+      { symbolId: "Outer.Inner", scope: ["Outer"] },
+    ],
+  });
+
+  it("collapses a same-file re-opening of an underscore-prefixed type for a construction", () => {
+    const target = new SwiftCallResolver().resolve(
+      call(null, "_Encoder"),
+      ctx({ callerFile: "Sources/Other.swift", symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("_Encoder");
+  });
+
+  it("constructs a nested type through its underscore-prefixed outer type", () => {
+    const outer = new SwiftCallResolver().resolve(
+      call("Outer", "Inner"),
+      ctx({ callerFile: "Sources/Other.swift", symbolTable: t }),
+    );
+    const underscored = new SwiftCallResolver().resolve(
+      call("_Encoder", "Inner"),
+      ctx({ callerFile: "Sources/Other.swift", symbolTable: t }),
+    );
+    expect(outer?.targetSymbolId).toBe("Outer.Inner");
+    expect(underscored?.targetSymbolId).toBe("_Encoder.Inner");
+  });
+});

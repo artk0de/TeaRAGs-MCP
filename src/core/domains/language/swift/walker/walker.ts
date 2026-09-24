@@ -747,7 +747,7 @@ function swiftMetatypeArgumentType(suffix: AstNode, slot: SwiftMetatypeSlot): st
   if (value?.type !== "navigation_expression") return null;
   if (value.childForFieldName("suffix")?.childForFieldName("suffix")?.text !== "self") return null;
   const typeText = value.childForFieldName("target")?.text;
-  return typeText !== undefined && /^[A-Z][\w.]*$/.test(typeText) ? typeText : null;
+  return typeText !== undefined && /^_*[A-Z][\w.]*$/.test(typeText) ? typeText : null;
 }
 
 /** Declarations whose `type_parameters` and `where` clause scope a generic name over their subtree. */
@@ -1254,7 +1254,7 @@ function constructedTypeFact(value: AstNode | null): SwiftTypeFact {
   if (value?.type !== "call_expression") return NO_TYPE;
   const callee = value.namedChildren.find((c) => c.type !== "call_suffix");
   if (callee?.type !== "simple_identifier") return NO_TYPE;
-  return /^[A-Z]/.test(callee.text) ? { nominal: callee.text, element: null } : NO_TYPE;
+  return /^_*[A-Z]/.test(callee.text) ? { nominal: callee.text, element: null } : NO_TYPE;
 }
 
 /** A `pattern` node's identifier when it binds exactly one name; null for tuple / destructuring patterns. */
@@ -1483,7 +1483,7 @@ function swiftReceiverTypeName(node: AstNode | null, scope: SwiftTypeScope, dept
   if (node.type === "simple_identifier" && node.text !== "Self") {
     const fact = swiftIdentifierFact(node.text, scope);
     if (fact.nominal) return fact.nominal;
-    return /^[A-Z]/.test(node.text) ? node.text : null;
+    return /^_*[A-Z]/.test(node.text) ? node.text : null;
   }
   return swiftExpressionFact(node, scope, depth + 1).nominal;
 }
@@ -1505,7 +1505,7 @@ function swiftCallResultFact(node: AstNode, scope: SwiftTypeScope, depth: number
   if (!suffix || suffix.text.startsWith("[")) return NO_TYPE;
   const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
   if (!callee) return NO_TYPE;
-  if (callee.type === "simple_identifier" && /^[A-Z]/.test(callee.text)) {
+  if (callee.type === "simple_identifier" && /^_*[A-Z]/.test(callee.text)) {
     return { nominal: callee.text, element: null };
   }
   if (callee.type === "navigation_expression") {

@@ -21,6 +21,13 @@ const SWIFT_SCOPE_SEPARATOR = ".";
  * `Configuration` struct, a `Coordinator` class per view), so the shape is
  * common rather than exotic.
  *
+ * The walk ends at the MODULE scope (bd tea-rags-mcp-y99pg.9): a top-level
+ * type named from outside it (`DebugDescription.description(of:)`,
+ * `QuickConfiguration.configureSubclassesIfNeeded(world:)`) is the same
+ * lookup with an empty prefix, taken last so a nested namesake still shadows
+ * it. Measured on Alamofire and Quick: +28 edges, none the typechecker
+ * disputes.
+ *
  * ## What it requires before it answers
  *
  * The receiver must be UpperCamelCase (`isSwiftTypeName`) and the qualified
@@ -77,7 +84,10 @@ export class SwiftScopedTypeReceiverSymbolResolutionStrategy implements SymbolRe
     if (!receiver || SWIFT_PSEUDO_RECEIVERS.has(receiver) || receiver.includes(SWIFT_SCOPE_SEPARATOR)) return CONTINUE;
     if (!isSwiftTypeName(receiver)) return CONTINUE;
 
-    for (let depth = ctx.callerScope.length; depth > 0; depth--) {
+    // Depth 0 is the module scope: `Invoice.empty()` written outside
+    // `Invoice` (bd tea-rags-mcp-y99pg.9). Innermost first, which is Swift's
+    // own name lookup — a nested `Account` shadows a top-level one.
+    for (let depth = ctx.callerScope.length; depth >= 0; depth--) {
       const qualified = [...ctx.callerScope.slice(0, depth), receiver].join(SWIFT_SCOPE_SEPARATOR);
       if (lookupSwiftSymbols(ctx, qualified).length === 0) continue;
       return resolveSwiftBoundTypeMember(qualified, call.member, ctx, this.cfg);
