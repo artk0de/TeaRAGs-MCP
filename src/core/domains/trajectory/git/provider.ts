@@ -140,6 +140,18 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private blameCache: Map<string, { oid: string; lines: BlameLine[] }> | null = null;
   private blameCacheRoot: string | null = null;
   private blameCacheDirty = false;
+  /** Run-scoped blame single-flight: `root \0 relPath \0 HEAD-OID` → the blame
+   *  of that file, queued/running on the pool OR already completed in THIS run.
+   *  A streaming run spreads one file's chunks over several batches, and each
+   *  batch's populateBlameMap used to miss the OID cache (written only on
+   *  completion) while the first blame still sat queued behind the pool's
+   *  one-in-flight-per-worker limit — taxdome issued 71,301 `git blame`s for
+   *  ~34k files. A later batch now awaits the registered promise instead.
+   *  Keyed on the resolved OID so a changed file never reuses a stale blame;
+   *  completed [] results stay here (not in the persistent OID cache). A
+   *  rejected blame drops its keys so the next batch retries. Cleared at the
+   *  finalize seam (finalizeSignals). */
+  private readonly runBlames = new Map<string, Promise<BlameLine[]>>();
   /** FILE-phase off-main-thread blame pool (bd tea-rags-mcp-dog1v). Lazily
    *  spawned on the first shallow cache-miss, closed at the finalize seam. */
   private blamePool?: BlameWorkerPool;
@@ -316,6 +328,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.persistBlameCache();
     this.blameCache = null;
     this.blameCacheRoot = null;
+    this.runBlames.clear();
     await this.oidReaderPromise?.then(async (r) => r.close()).catch(() => undefined);
     this.oidReaderPromise = null;
     this.oidReaderRoot = null;
@@ -469,8 +482,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     );
     const cache = this.ensureBlameCache(root);
 
+    // Classify and register SYNCHRONOUSLY (no await until the loop ends): a
+    // concurrent batch reaching this point later sees every key registered
+    // here, so a file can never miss in two batches at once.
     let hits = 0;
     const missEntries: [string, FileChurnData][] = [];
+    const joinedEntries: [string, FileChurnData, Promise<BlameLine[]>][] = [];
+    type RunBlameSettler = { relPath: string; resolve: (lines: BlameLine[]) => void; reject: (e: unknown) => void };
+    const settleMisses = new Map<string, RunBlameSettler>();
     for (const [relPath, churnData] of entries) {
       const oid = oidByPath.get(relPath);
       const cached = oid ? cache.get(relPath) : undefined;
@@ -478,9 +497,21 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         hits++;
         this.blameByChurnData.set(churnData, cached.lines);
         this.blameByRelPath.set(relPath, cached.lines);
-      } else {
-        missEntries.push([relPath, churnData]);
+        continue;
       }
+      const runKey = `${root}\0${relPath}\0${oid ?? ""}`;
+      const inRun = this.runBlames.get(runKey);
+      if (inRun) {
+        joinedEntries.push([relPath, churnData, inRun]);
+        continue;
+      }
+      let settle!: RunBlameSettler;
+      const promise = new Promise<BlameLine[]>((resolve, reject) => (settle = { relPath, resolve, reject }));
+      // Mark handled: a rejection nobody joined must not surface as unhandled.
+      promise.catch(() => undefined);
+      this.runBlames.set(runKey, promise);
+      settleMisses.set(runKey, settle);
+      missEntries.push([relPath, churnData]);
     }
 
     // Blame every cache-miss on the off-main-thread pool. Blame is native
@@ -501,21 +532,44 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     };
 
     if (missEntries.length > 0) {
-      const blameByPath = await this.ensureBlamePool().blame(
-        root,
-        this.config.vcsAdapter,
-        missEntries.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
-        this.config.logTimeoutMs,
-      );
+      let blameByPath: Map<string, BlameLine[]>;
+      try {
+        blameByPath = await this.ensureBlamePool().blame(
+          root,
+          this.config.vcsAdapter,
+          missEntries.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
+          this.config.logTimeoutMs,
+        );
+      } catch (error) {
+        // Release the keys so a later batch re-dispatches instead of joining
+        // the failure; batches already joined see the same error this one does.
+        for (const [runKey, settle] of settleMisses) {
+          this.runBlames.delete(runKey);
+          settle.reject(error);
+        }
+        throw error;
+      }
       for (const [relPath, churnData] of missEntries) {
         recordBlame(relPath, churnData, blameByPath.get(relPath) ?? []);
       }
+      for (const settle of settleMisses.values()) {
+        settle.resolve(blameByPath.get(settle.relPath) ?? []);
+      }
+    }
+
+    // In-run reuse: the owning batch already wrote the OID cache (non-empty
+    // lines only), so a joiner records the lines for its own batch state only.
+    for (const [relPath, churnData, promise] of joinedEntries) {
+      const lines = await promise;
+      this.blameByChurnData.set(churnData, lines);
+      this.blameByRelPath.set(relPath, lines);
     }
 
     options?.onBlameStats?.({
       files: entries.length,
       hits,
       misses: missEntries.length,
+      joined: joinedEntries.length,
       durationMs: Date.now() - startedAt,
     });
   }
