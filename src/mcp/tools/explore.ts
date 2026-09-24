@@ -121,8 +121,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "symbolId convention: Class#method (instance), Class.method (static). " +
       'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +
       "attach rankingOverlay with churn/ownership/bugFixRate labels alongside " +
-      "definition — no second semantic_search needed. " +
-      'Supports `level: "file" | "chunk"` like other search tools.',
+      "definition — no second semantic_search needed.\n\n" +
+      "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSymbolSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.findSymbol({

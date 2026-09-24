@@ -36,24 +36,13 @@ function collectionPathFields() {
       .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
       .optional()
       .describe(
-        "[RECOMMENDED] Project alias from registry — stable name survives path moves. " +
-          "Use when alias exists; fall back to 'collection'/'path' only when no alias registered. " +
-          "Resolution priority: collection > project > path.",
+        "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
       ),
-    collection: z
-      .string()
-      .optional()
-      .describe(
-        "Internal Qdrant collection name (lowest-level handle). " +
-          "Prefer 'project' when alias registered; provide one of 'project', 'collection', 'path'.",
-      ),
+    collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
     path: z
       .string()
       .optional()
-      .describe(
-        "Filesystem path to indexed codebase (auto-resolves to collection). " +
-          "Prefer 'project' when alias registered; provide one of 'project', 'collection', 'path'.",
-      ),
+      .describe("Indexed codebase path; auto-resolves to its collection. Prefer 'project' when aliased."),
   };
 }
 
@@ -75,9 +64,7 @@ const GetCallersInputShape = {
     .boolean()
     .optional()
     .describe(
-      "Also attach `ambiguousCallers`: ambiguous dispatch sites whose member matches target — " +
-        "call MAY reach target among candidateCount candidates; not materialized as edges (bd f2jsb). " +
-        "Default false — response unchanged.",
+      "Also attach ambiguousCallers: member-matched dispatch sites that MAY reach target, not edges. Default false.",
     ),
 };
 
@@ -107,9 +94,7 @@ const FindCyclesInputShape = {
     .string()
     .optional()
     .describe(
-      "Picomatch glob scoping result to subdomain/module (e.g. '**/domains/ingest/**', " +
-        "'{src/core/api,src/mcp}/**'). Cycle kept if AT LEAST ONE member resolves to matching " +
-        "file path — cross-boundary cycles retained. Omit for no filter.",
+      "Glob scoping cycles, e.g. '**/domains/ingest/**'. Cycle kept when ≥1 member file matches (cross-boundary stays).",
     ),
 };
 
@@ -118,10 +103,7 @@ const GetArchitectureReportInputShape = {
   pathPattern: z
     .string()
     .optional()
-    .describe(
-      "Picomatch glob scoping judged edges: edge counts when SOURCE file matches " +
-        "(e.g. 'src/core/domains/ingest/**'). Instability always whole-graph. Omit for whole project.",
-    ),
+    .describe("Glob scoping judged edges by SOURCE file. Instability stays whole-graph. Omit for whole project."),
   limit: z
     .number()
     .int()
@@ -148,24 +130,19 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
     fromPath: z
       .string()
       .optional()
-      .describe(
-        "Exact relative path pinning 'from' when the symbol id names several files " +
-          "(top-level symbols share bare ids). Omit to trace from all; response lists candidates as 'namesakes'.",
-      ),
+      .describe("Exact relative path pinning 'from' when its id names several files. Omit → all, listed as namesakes."),
     toPath: z.string().optional().describe("Exact relative path pinning 'to'. Same semantics as fromPath."),
     rerank: schemaBuilder
       .buildPresetSchema("trace_path")
       .optional()
-      .describe(
-        "Rerank preset scoring per-step danger for overlay (optional — omit for lean path enumeration, no danger ranking)",
-      ),
+      .describe("Danger preset scoring each step for the overlay. Omit for lean path enumeration."),
     maxDepth: z
       .number()
       .int()
       .positive()
       .max(20)
       .optional()
-      .describe("Max hops per path (default 8). Capped at 20 — deep traces on dense graphs expensive; prefer default."),
+      .describe("Max hops per path (default 8, cap 20 — deep traces on dense graphs are expensive)."),
     maxPaths: z
       .number()
       .int()

@@ -150,7 +150,7 @@ Every reranked search result carries `rankingOverlay` — metaOnly included:
 - `{value,label}` when signal has labels (resolved via `signal-labels`
   resource), else raw value.
 - Labels live ONLY here. Payload = raw values at filter-key paths, metaOnly or
-  not. Contract owner: `metaOnly` param description of any search tool.
+  not. Contract owner: `tea-rags://schema/overview` → `### metaOnly`.
 
 Use overlay to:
 

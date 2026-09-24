@@ -39,8 +39,8 @@ skills.
 5. **`proven` → `level: "chunk"`** — `proven` is file-level
    (`signalLevel: "file"`) → without it DSL chunks regroup per file. Test-scoped
    calls need no `filter`: server skips a preset's production default when
-   `chunkType` / `testFile` select tests (rule: `filter` param description).
-   Server predating that rule returns 0 → add `filter: {}`.
+   `chunkType` / `testFile` select tests (rule: `tea-rags://schema/overview` →
+   `### filter`). Server predating that rule returns 0 → add `filter: {}`.
 6. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
    blocks consumed by other skills, not surfaced to user.
 

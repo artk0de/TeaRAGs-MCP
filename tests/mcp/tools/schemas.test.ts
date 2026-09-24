@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import type { SchemaBuilder } from "../../../src/core/api/index.js";
-import { CreateCollectionSchema, createSearchSchemas, IndexCodebaseSchema } from "../../../src/mcp/tools/schemas.js";
+import {
+  CreateCollectionSchema,
+  createSearchSchemas,
+  IndexCodebaseSchema,
+  TYPED_FILTER_PARAM_NAMES,
+} from "../../../src/mcp/tools/schemas.js";
 
 // Minimal mock SchemaBuilder — returns a simple string schema for rerank
 // since we only care about coercion of number/boolean fields, not rerank shape.
 const mockSchemaBuilder = {
   buildRerankSchema: () => z.string(),
   buildFilterSchema: () => z.record(z.string(), z.any()),
+  filterParamNames: () => [...TYPED_FILTER_PARAM_NAMES],
 } as unknown as SchemaBuilder;
 
 const { SearchCodeSchema, SemanticSearchSchema, HybridSearchSchema, RankChunksSchema } =
@@ -327,9 +333,42 @@ describe("contributor typed filter", () => {
   });
 });
 
-describe("level description lists every level-aware filter's default", () => {
-  it("names author among the file-default filters", () => {
+// The per-filter level defaults moved to tea-rags://schema/overview
+// (bd tea-rags-mcp-ewg2s) — pinned in tests/mcp/resources/resources.test.ts.
+// The inline hint keeps the one fact a caller must not miss: level also
+// scopes the level-aware filters.
+describe("level hint", () => {
+  it("states that level scopes level-aware filters", () => {
     const description = (SemanticSearchSchema.level as z.ZodTypeAny).description ?? "";
-    expect(description).toMatch(/\bauthor[^;.]*: file/);
+    expect(description).toMatch(/level-aware filters/);
+  });
+});
+
+// A typed filter whose trajectory is not registered has no FilterDescriptor:
+// exposing it would accept the param and run the search unfiltered
+// (bd tea-rags-mcp-86wsz). The schema exposes exactly the applied set.
+describe("typed filter exposure follows the registered filter params", () => {
+  const withoutCodegraph = createSearchSchemas({
+    ...mockSchemaBuilder,
+    buildRerankSchema: () => z.string(),
+    buildFilterSchema: () => z.record(z.string(), z.any()),
+    filterParamNames: () => ["language", "author", "minAgeDays"],
+  } as unknown as SchemaBuilder);
+
+  it("drops a catalog filter the registry does not apply", () => {
+    for (const schema of [
+      withoutCodegraph.SemanticSearchSchema,
+      withoutCodegraph.HybridSearchSchema,
+      withoutCodegraph.SearchCodeSchema,
+      withoutCodegraph.RankChunksSchema,
+    ]) {
+      expect(Object.keys(schema)).not.toContain("minFanIn");
+      expect(Object.keys(schema)).toContain("author");
+    }
+  });
+
+  it("strips a dropped filter from a request instead of failing it", () => {
+    const parsed = z.object(withoutCodegraph.SemanticSearchSchema).parse({ query: "q", minFanIn: 3 });
+    expect("minFanIn" in parsed).toBe(false);
   });
 });

@@ -96,6 +96,7 @@ vi.mock("../../src/core/api/internal/facades/explore-facade.js", () => ({
 vi.mock("../../src/core/domains/explore/reranker.js", () => ({
   Reranker: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.setFilterPresetNames = vi.fn();
+    this.setFilterParamNames = vi.fn();
   }),
 }));
 vi.mock("../../src/core/domains/explore/rerank/presets/index.js", () => ({
