@@ -914,8 +914,11 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, Map<string, 
   const body = node.childForFieldName("body");
   if (!name || !body) return;
   for (const member of body.children) {
-    if (member.type !== "property_declaration") continue;
-    const fieldName = singleIdentifierPatternName(member.childForFieldName("name"));
+    if (member.type !== "property_declaration" && member.type !== "protocol_property_declaration") continue;
+    const fieldName =
+      member.type === "property_declaration"
+        ? singleIdentifierPatternName(member.childForFieldName("name"))
+        : protocolRequirementName(member);
     const fact = swiftDeclaredPropertyFact(member);
     if (!fieldName || (!fact.nominal && !fact.element)) continue;
     let fields = into.get(name.text);
@@ -925,6 +928,17 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, Map<string, 
     }
     if (!fields.has(fieldName)) fields.set(fieldName, fact);
   }
+}
+
+/**
+ * The name a protocol property requirement (`var manager: Manager { get }`)
+ * declares. Its `pattern` carries the `var` keyword's binding pattern BESIDE
+ * the name, so the one-identifier read a stored property uses finds nothing.
+ */
+function protocolRequirementName(requirement: AstNode): string | null {
+  const pattern = requirement.children.find((c) => c.type === "pattern");
+  const names = pattern?.namedChildren.filter((c) => c.type === "simple_identifier") ?? [];
+  return names.length === 1 ? names[0].text : null;
 }
 
 /**
@@ -1365,8 +1379,17 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
         : swiftIdentifierFact(node.text, scope);
     case "navigation_expression": {
       const member = node.childForFieldName("suffix")?.childForFieldName("suffix");
+      if (!member) return NO_TYPE;
+      const element = swiftElementAccess(
+        node.childForFieldName("target"),
+        member.text,
+        SWIFT_ELEMENT_PROPERTIES,
+        scope,
+        depth,
+      );
+      if (element) return element;
       const owner = swiftReceiverTypeName(node.childForFieldName("target"), scope, depth);
-      if (!member || !owner) return NO_TYPE;
+      if (!owner) return NO_TYPE;
       return scope.evidence.propertyTypes.get(owner)?.get(member.text) ?? NO_TYPE;
     }
     case "call_expression":
@@ -1485,6 +1508,12 @@ function swiftCallResultFact(node: AstNode, scope: SwiftTypeScope, depth: number
   if (callee.type === "simple_identifier" && /^[A-Z]/.test(callee.text)) {
     return { nominal: callee.text, element: null };
   }
+  if (callee.type === "navigation_expression") {
+    const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+    const target = callee.childForFieldName("target");
+    const element = member ? swiftElementAccess(target, member, SWIFT_ELEMENT_METHODS, scope, depth) : null;
+    if (element) return element;
+  }
   // A generic return bound by a `Type.self` argument names its type at the
   // call; the declared return holds only its constraint.
   const slot = swiftCalleeEvidence(callee, scope.evidence.metatypeReturns, scope, depth);
@@ -1499,6 +1528,38 @@ function enclosingSwiftFunctionKey(node: AstNode): number {
     if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return current.startIndex;
   }
   return -1;
+}
+
+/** `[T]` properties that read one element. */
+const SWIFT_ELEMENT_PROPERTIES: ReadonlySet<string> = new Set(["first", "last"]);
+
+/** `[T]` methods that return one element (optional or not). */
+const SWIFT_ELEMENT_METHODS: ReadonlySet<string> = new Set([
+  "removeFirst",
+  "removeLast",
+  "popLast",
+  "randomElement",
+  "first",
+  "last",
+  "min",
+  "max",
+]);
+
+/**
+ * The element an accessor reads off an `[T]` value — `xs.first`,
+ * `xs.removeFirst()` — or null. Keyed on the `element` slot, which only an
+ * array type produces, so a project type's own `first` is never read this way.
+ */
+function swiftElementAccess(
+  target: AstNode | null,
+  member: string,
+  accessors: ReadonlySet<string>,
+  scope: SwiftTypeScope,
+  depth: number,
+): SwiftTypeFact | null {
+  if (!target || !accessors.has(member)) return null;
+  const { element } = swiftExpressionFact(target, scope, depth + 1);
+  return element ? { nominal: element, element: null } : null;
 }
 
 /**

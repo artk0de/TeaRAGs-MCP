@@ -1390,3 +1390,43 @@ describe("swift walker — invocations of closure values are not calls", () => {
     expect(callees(src)).toEqual(["helper"]);
   });
 });
+
+describe("swift walker — protocol property requirements publish their types", () => {
+  it("types a `var x: T { get }` requirement like a stored property", () => {
+    const src = [
+      "protocol StateProvider {",
+      "  var serverTrustManager: ServerTrustManager? { get }",
+      "  var monitor: (any EventMonitor)? { get set }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).classFieldTypes?.StateProvider).toEqual({
+      serverTrustManager: "ServerTrustManager",
+      monitor: "EventMonitor",
+    });
+  });
+
+  it("reads the same requirement off the materialized tree", () => {
+    const src = ["protocol StateProvider {", "  var manager: Manager { get }", "}", ""].join("\n");
+    expect(extractMaterialized(src).classFieldTypes?.StateProvider?.manager).toBe("Manager");
+  });
+});
+
+describe("swift walker — an array's element accessors return the element", () => {
+  it("types a local bound to `removeFirst()` / `first` of an `[T]`", () => {
+    const src = [
+      "func go(adapters: [any RequestAdapter]) {",
+      "  var pending = adapters",
+      "  let adapter = pending.removeFirst()",
+      "  adapter.adapt()",
+      "  if let head = adapters.first {",
+      "    head.adapt()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "adapter", 4)).toBe("RequestAdapter");
+    expect(typeAt(src, "head", 6)).toBe("RequestAdapter");
+    expect(typeAt(src, "pending", 4)).toBeUndefined();
+  });
+});

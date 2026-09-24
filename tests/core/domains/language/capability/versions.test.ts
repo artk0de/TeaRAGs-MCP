@@ -240,6 +240,9 @@ describe("seeded support versions", () => {
       // swift walker 19: closure-value invocations are no longer calls, so an index
       // built by walker 18 keeps edges from `stream(...)` / `handler?(...)` to
       // namesake methods.
+      // swift walker 20: protocol property requirements publish their types and
+      // `[T]` element accessors type as the element, so an index built by walker 19
+      // misses calls through them.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -256,7 +259,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 19],
+        ["swift", 20],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
