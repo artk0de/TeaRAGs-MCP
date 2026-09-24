@@ -327,11 +327,37 @@ describe("summarizeCodegraphResolve — ambiguous fan-out dual recall (j0pki)", 
     expect(summary?.coveredRecall).toBeCloseTo(summary?.inProjectEdgeRecall ?? -1, 10);
   });
 
-  it("guards the empty denominator — coveredRecall is 0, not NaN", () => {
+  it("guards the empty denominator — recall is null (nothing scored), not NaN and not 0", () => {
     // Every attempted call is external → recall denominator collapses to 0.
+    // bd tea-rags-mcp-stpvj: null, the same empty-denominator value qodqg gave
+    // resolveSuccessRate — 0 would read as "linked none of what it tried".
     const summary = summarizeCodegraphResolve([rowAf("ruby", "chain", 4, 0, 0, 4)]);
+    expect(summary?.inProjectEdgeRecall).toBeNull();
+    expect(summary?.coveredRecall).toBeNull();
+  });
+
+  it("reports null recall on the per-language and per-receiver-kind rows whose denominator is empty", () => {
+    const summary = summarizeCodegraphResolve([
+      rowAf("swift", "index", 6, 0, 0, 6),
+      rowAf("ruby", "chain", 4, 0, 0, 4),
+    ]);
+    expect(summary?.byLanguage).toHaveLength(2);
+    for (const lang of summary?.byLanguage ?? []) {
+      expect(lang.inProjectEdgeRecall).toBeNull();
+      expect(lang.byReceiverKind?.length).toBeGreaterThan(0);
+      for (const kind of lang.byReceiverKind ?? []) {
+        expect(kind.inProjectEdgeRecall).toBeNull();
+        expect(kind.coveredRecall).toBeNull();
+      }
+    }
+  });
+
+  it("keeps a scored zero recall as 0, distinct from the empty case", () => {
+    const summary = summarizeCodegraphResolve([rowAf("swift", "index", 3, 0, 0)]);
     expect(summary?.inProjectEdgeRecall).toBe(0);
     expect(summary?.coveredRecall).toBe(0);
+    expect(summary?.byReceiverKind?.[0]?.inProjectEdgeRecall).toBe(0);
+    expect(summary?.byReceiverKind?.[0]?.coveredRecall).toBe(0);
   });
 
   it("carries ambiguousFanout + coveredRecall onto the per-receiver-kind rows (DEBUG, single language)", () => {

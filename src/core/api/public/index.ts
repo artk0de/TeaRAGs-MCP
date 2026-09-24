@@ -24,6 +24,7 @@ export { isEnrichmentRecompute } from "./dto/index.js";
 // the same empty-denominator rule the chain-tally harness uses (bd qodqg).
 export {
   EMPTY_RESOLVE_DENOMINATOR_MARKER,
+  formatResolveRate,
   formatResolveRateCell,
   resolveRateMiss,
 } from "../../contracts/resolve-rate.js";

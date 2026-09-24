@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
+import { formatResolveRate } from "../../../../contracts/resolve-rate.js";
 import type {
   ClassFieldParamLink,
   CodegraphPass1FileAggregates,
@@ -1306,12 +1307,12 @@ export class CodegraphRunState {
     // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes external,
     // dynamic-undeterminable, no-in-project-def and core-ambiguous calls: none can
     // resolve to an in-project symbol, so the rate equals inProjectEdgeRecall by
-    // construction. `max(1, …)` guards a divide-by-zero when all were excluded.
-    const internalAttempted = Math.max(
-      1,
-      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
-    );
-    const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
+    // construction. An empty denominator (nothing attempted, or every attempted
+    // call excluded) is `null` — nothing was scored, which is neither 1 nor 0;
+    // the former `max(1, …)` guard reported it as 0 (bd tea-rags-mcp-stpvj).
+    const internalAttempted =
+      callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous;
+    const resolveSuccessRate = internalAttempted <= 0 ? null : callsResolved / internalAttempted;
     // inProjectEdgeRecall — graph completeness: only residual misses WITH an
     // in-project def are true recall holes (no-in-project-def and core homonyms
     // through an untyped receiver, bd 83cl7, are excluded).
@@ -1325,14 +1326,16 @@ export class CodegraphRunState {
         callsCoreAmbiguous,
     );
     const recallDenominator = callsResolved + missWithInProjectDef;
-    const inProjectEdgeRecall = recallDenominator === 0 ? 0 : callsResolved / recallDenominator;
+    const inProjectEdgeRecall = recallDenominator === 0 ? null : callsResolved / recallDenominator;
     const byReceiverKind = aggregateReceiverKinds(this.stats);
+    // The raw per-bucket `rate` is resolved / attempted (a j431 diagnostic, not
+    // the excluded metric); a bucket with no attempted call has nothing to score.
     const resolveByReceiverKind = Object.fromEntries(
       RECEIVER_KINDS.map((kind) => {
         const t = byReceiverKind[kind];
         return [
           kind,
-          { attempted: t.attempted, resolved: t.resolved, rate: t.attempted === 0 ? 0 : t.resolved / t.attempted },
+          { attempted: t.attempted, resolved: t.resolved, rate: t.attempted === 0 ? null : t.resolved / t.attempted },
         ];
       }),
     );
@@ -1344,7 +1347,7 @@ export class CodegraphRunState {
         return `${kind} ${t.resolved}/${t.attempted}`;
       }).join(", ");
       process.stderr.write(
-        `[codegraph] resolve by receiver-kind (rate ${resolveSuccessRate.toFixed(2)}, ` +
+        `[codegraph] resolve by receiver-kind (rate ${formatResolveRate(resolveSuccessRate, (r) => r.toFixed(2))}, ` +
           `${callsExternalSkipped}/${callsAttempted} external-skipped, ` +
           `${callsUnresolvable} unresolvable): ${summary}\n`,
       );
