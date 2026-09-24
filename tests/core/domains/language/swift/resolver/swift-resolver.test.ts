@@ -3149,3 +3149,49 @@ describe("SwiftCallResolver — a construction-initialized field's generic argum
     expect(new SwiftCallResolver().resolve(call("state", "reset", 11), context("value"))).toBeNull();
   });
 });
+
+describe("SwiftCallResolver — a nested enum's payload bound through `self` (bd tea-rags-mcp-y99pg.31)", () => {
+  // `case let .formatted(formatter): formatter.string(from: date)` inside a
+  // method of `URLEncodedFormEncoder.DateEncoding`: `self` names the NESTED
+  // enum, whose cases are published under its qualified id.
+  const t = table({
+    "Sources/URLEncodedFormEncoder.swift": [
+      { symbolId: "URLEncodedFormEncoder", scope: [] },
+      { symbolId: "URLEncodedFormEncoder.DateEncoding", scope: ["URLEncodedFormEncoder"] },
+      {
+        symbolId: "URLEncodedFormEncoder.DateEncoding#encode",
+        scope: ["URLEncodedFormEncoder", "DateEncoding"],
+      },
+    ],
+    "Sources/ResponseSerialization.swift": [
+      { symbolId: "StringResponseSerializer", scope: [] },
+      { symbolId: "StringResponseSerializer.string", scope: ["StringResponseSerializer"] },
+    ],
+  });
+  const within = ctx({
+    callerFile: "Sources/URLEncodedFormEncoder.swift",
+    callerScope: ["URLEncodedFormEncoder", "DateEncoding", "encode"],
+    symbolTable: t,
+    typeDeclarations: {
+      "Sources/URLEncodedFormEncoder.swift": [
+        { typeId: "URLEncodedFormEncoder", reopens: false },
+        {
+          typeId: "URLEncodedFormEncoder.DateEncoding",
+          reopens: false,
+          enumCasePayloads: { formatted: ["DateFormatter"] },
+        },
+      ],
+      "Sources/ResponseSerialization.swift": [{ typeId: "StringResponseSerializer", reopens: false }],
+    },
+    callResultBindings: {
+      formatter: [{ line: 5, callee: "self", enumPayload: { caseName: "formatted", index: 0 }, scopeEndLine: 6 }],
+    },
+  });
+
+  it("types the payload name, so an SDK member only a project namesake shares leaves the denominator", () => {
+    const site = call("formatter", "string", 6);
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(site, within)).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, within)).toBe(false);
+  });
+});
