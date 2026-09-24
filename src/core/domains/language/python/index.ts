@@ -112,7 +112,6 @@ export class PythonLanguage implements LanguageProvider {
     // the FULL catalogue (bd tea-rags-mcp-w205u.1).
     walk: (input) => extractFromPythonFile(input),
     nameOf: (node) => pyNameOf(node),
-    // Empty today — see ./walker/passes.ts.
     passes: PYTHON_EXTRACTION_PASSES,
     // Every channel the Python walker emits is rooted in one of these: chunks and
     // the type channels in a def or a class, `calls` (decorators included) in a

@@ -6,11 +6,13 @@
  * `extractFromPythonFile`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { pythonAnnotationTypeFacetPass } from "./passes/annotation-type-facts.js";
+import { PYTHON_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { pythonTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   pythonAnnotationTypeFacetPass,
   pythonTypeAbstractnessFacetPass,
+  createIdentifierDeclarationFacetPass(PYTHON_IDENTIFIER_DECLARATION_SYNTAX),
 ];

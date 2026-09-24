@@ -106,7 +106,6 @@ export class RubyLanguage implements LanguageProvider {
     // project's catalogue from the run's Gemfile so class-body macro DECLARES
     // are gated to the gems THIS project declares. undefined -> FULL catalogue.
     nameOf: (node, gemfileContent) => rbNameOf(node, catalogueForGemfile(gemfileContent)),
-    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
     passes: RUBY_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;

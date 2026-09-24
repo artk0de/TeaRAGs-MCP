@@ -48,23 +48,51 @@ export interface IdentifierDeclarationSyntax {
 /** Sigils (`@`, `@@`, `$`) and a trailing `!`/`?` allowed; destructuring patterns and literals rejected. */
 const IDENTIFIER_LIKE = /^[@$]{0,2}[A-Za-z_]\w*[!?]?$/;
 
+/**
+ * The grammar field names a {@link fieldRule} may read. A closed set rather than
+ * a free string so every read below stays a LITERAL `childForFieldName("…")`:
+ * the materialization field-loss guard (`surveyWalkerFieldReads`) harvests field
+ * names from literal call sites only, and a field read through a variable is one
+ * it cannot check against a grammar's materialization losses.
+ */
+export type IdentifierDeclarationField = "name" | "type" | "value" | "pattern" | "left" | "right" | "property";
+
+function readDeclarationField(node: AstNode, field: IdentifierDeclarationField): AstNode | null {
+  switch (field) {
+    case "name":
+      return node.childForFieldName("name");
+    case "type":
+      return node.childForFieldName("type");
+    case "value":
+      return node.childForFieldName("value");
+    case "pattern":
+      return node.childForFieldName("pattern");
+    case "left":
+      return node.childForFieldName("left");
+    case "right":
+      return node.childForFieldName("right");
+    case "property":
+      return node.childForFieldName("property");
+  }
+}
+
 /** Field-driven rule for the common shape: name/type/value are named fields. */
 export function fieldRule(
   nodeType: string,
   kind: DeclaredIdentifierSite["kind"],
-  fields: { name: string; type?: string; value?: string },
+  fields: { name: IdentifierDeclarationField; type?: IdentifierDeclarationField; value?: IdentifierDeclarationField },
 ): IdentifierDeclarationRule {
   return {
     nodeType,
     collect: (node) => {
-      const nameNode = node.childForFieldName(fields.name);
+      const nameNode = readDeclarationField(node, fields.name);
       if (nameNode === null) return [];
       return [
         {
           nameNode,
           kind,
-          typeNode: fields.type === undefined ? null : node.childForFieldName(fields.type),
-          valueNode: fields.value === undefined ? null : node.childForFieldName(fields.value),
+          typeNode: fields.type === undefined ? null : readDeclarationField(node, fields.type),
+          valueNode: fields.value === undefined ? null : readDeclarationField(node, fields.value),
         },
       ];
     },
