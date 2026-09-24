@@ -425,6 +425,8 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     if (!callee) return;
     const startLine = node.startPosition.row + 1;
     if (callee.type === "simple_identifier") {
+      // Invoking a closure VALUE calls no declared symbol (bd tea-rags-mcp-y99pg.8).
+      if (node.children.some((c) => c.type === "?") || isSwiftLocalValueName(callee.text, node)) return;
       out.push({ callText: node.text, receiver: null, member: callee.text, startLine });
       return;
     }
@@ -440,6 +442,50 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     });
   });
   return out;
+}
+
+/**
+ * Whether `name`, at `at`, names a VALUE the enclosing code declares — a
+ * parameter of an enclosing function or closure, or a `let` / `var` an
+ * enclosing block declares ABOVE `at` — rather than a function. Swift resolves
+ * a bare name to the innermost declaration, so such a `name(...)` invokes the
+ * value and calls no declared symbol. The walk stops at the enclosing type: a
+ * stored property of closure type is indistinguishable from a method by name
+ * here, and only the optional-call form (`name?(…)`) says which it is.
+ */
+function isSwiftLocalValueName(name: string, at: AstNode): boolean {
+  const line = at.startPosition.row;
+  for (let current = at.parent; current; current = current.parent) {
+    if (current.type === "class_declaration" || current.type === "protocol_declaration") return false;
+    if (SWIFT_FUNCTION_LIKE_NODES.has(current.type) && declaresSwiftParameter(current, name)) return true;
+    if (current.type === "lambda_literal") {
+      const params = swiftLambdaParameters(current) ?? [];
+      if (params.some((p) => p.childForFieldName("name")?.text === name)) return true;
+    }
+    if (current.type === "statements") {
+      for (const statement of current.children) {
+        if (statement.startPosition.row >= line) break;
+        if (
+          statement.type === "property_declaration" &&
+          singleIdentifierPatternName(statement.childForFieldName("name")) === name
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** Whether a function-like declaration takes a parameter whose INTERNAL name is `name`. */
+function declaresSwiftParameter(fn: AstNode, name: string): boolean {
+  return fn.children.some((parameter) => {
+    if (parameter.type !== "parameter") return false;
+    const colon = parameter.children.findIndex((c) => c.type === ":");
+    const names = parameter.children.slice(0, colon === -1 ? undefined : colon);
+    const internal = names.filter((c) => c.type === "simple_identifier").pop();
+    return internal?.text === name;
+  });
 }
 
 /**

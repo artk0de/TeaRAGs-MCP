@@ -1345,3 +1345,48 @@ describe("swift walker — a local declared in a closure ends with the closure",
     expect(typeAt(src, "helper", 6)).toBeUndefined();
   });
 });
+
+/**
+ * Invoking a closure VALUE is not a call to a declared symbol (bd
+ * tea-rags-mcp-y99pg.8): `stream(event)` on a `stream:` parameter,
+ * `perform()` on a local closure, `requestDidFinish?(request)` on an optional
+ * closure property. Emitting them hands the terminal short-name pass a name
+ * whose namesake function is never the target.
+ */
+describe("swift walker — invocations of closure values are not calls", () => {
+  const callees = (src: string): string[] => extract(src).chunks[0].calls.map((c) => c.member);
+
+  it("emits no call for a parameter invoked as a function", () => {
+    expect(callees("func go(stream: (Int) -> Void) {\n  stream(2)\n  helper()\n}\n")).toEqual(["helper"]);
+  });
+
+  it("emits no call for an optional call", () => {
+    expect(callees("func go() {\n  requestDidFinish?(1)\n}\n")).toEqual([]);
+  });
+
+  it("emits no call for a local closure or a closure parameter", () => {
+    const src = [
+      "func go() {",
+      "  let perform = { 1 }",
+      "  perform()",
+      "  run { handler in",
+      "    handler()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(callees(src)).toEqual(["run"]);
+  });
+
+  it("keeps a call whose name is only declared AFTER it, or in another function", () => {
+    const src = [
+      "func other(helper: () -> Void) {}",
+      "func go() {",
+      "  helper()",
+      "  let helper = { 1 }",
+      "}",
+      "",
+    ].join("\n");
+    expect(callees(src)).toEqual(["helper"]);
+  });
+});
