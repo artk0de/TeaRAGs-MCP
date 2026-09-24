@@ -64,5 +64,9 @@ export const capability: LanguageCapability = {
   // `missWithInProjectDef`. No edge moves; the persisted resolve rate does.
   // walker 13: the two branches above bumped 10 -> 11 independently and were
   // merged, so neither parent's index holds the merged extraction.
-  versions: { chunking: 1, walker: 13, codegraphSchema: 2 },
+  // walker 14: bd tea-rags-mcp-r8hme.2. Every import records the names it
+  // takes from the module (`importedExportNames`: the imported spelling, `*`
+  // for a star import or `import m`), persisted on the file edge (migration
+  // 030). No edge moves.
+  versions: { chunking: 1, walker: 14, codegraphSchema: 2 },
 };

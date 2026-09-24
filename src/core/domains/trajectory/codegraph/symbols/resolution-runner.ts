@@ -205,26 +205,45 @@ function defaultImportFileEdges(
       ctx,
     );
     if (target) {
-      fileEdges.push({ targetRelPath: target.targetRelPath, importText: imp.importText });
+      fileEdges.push({
+        targetRelPath: target.targetRelPath,
+        importText: imp.importText,
+        ...(imp.importedExportNames ? { importedExportNames: imp.importedExportNames } : {}),
+        ...(imp.reexportedExportNames ? { reexportedExportNames: imp.reexportedExportNames } : {}),
+      });
     }
   }
   return fileEdges;
 }
 
+/** Union of two optional name lists, first-seen order; absent when both are. */
+function unionExportNames(a: string[] | undefined, b: string[] | undefined): string[] | undefined {
+  if (!a) return b && [...b];
+  if (!b) return a;
+  return [...new Set([...a, ...b])];
+}
+
 /**
  * One row per (source, target) pair is all `cg_symbols_edges_file` can hold —
- * its PRIMARY KEY is the pair, not the import statement. First occurrence
- * wins; later duplicates carry no information the schema has room for.
+ * its PRIMARY KEY is the pair, not the import statement. The first occurrence's
+ * import text wins; the export names of EVERY occurrence are unioned onto it
+ * (bd tea-rags-mcp-r8hme.2), since a default import and a named import of one
+ * file are one edge that takes both.
  */
 function dedupeFileEdgesByTarget(edges: GraphEdges["fileEdges"]): GraphEdges["fileEdges"] {
-  const seen = new Set<string>();
-  const deduped: GraphEdges["fileEdges"] = [];
+  const byTarget = new Map<string, GraphEdges["fileEdges"][number]>();
   for (const edge of edges) {
-    if (seen.has(edge.targetRelPath)) continue;
-    seen.add(edge.targetRelPath);
-    deduped.push(edge);
+    const first = byTarget.get(edge.targetRelPath);
+    if (!first) {
+      byTarget.set(edge.targetRelPath, { ...edge });
+      continue;
+    }
+    const imported = unionExportNames(first.importedExportNames, edge.importedExportNames);
+    const reexported = unionExportNames(first.reexportedExportNames, edge.reexportedExportNames);
+    if (imported) first.importedExportNames = imported;
+    if (reexported) first.reexportedExportNames = reexported;
   }
-  return deduped;
+  return [...byTarget.values()];
 }
 
 export class CallEdgeResolutionRunner {

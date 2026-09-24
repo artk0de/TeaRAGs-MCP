@@ -28,10 +28,12 @@ import {
   type CycleScope,
   type FileDependencyGraph,
   type FileImportLookup,
+  type NonPublicMemberEdge,
   type RelPath,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
+import { decodeFileEdgeExportNames } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
@@ -126,8 +128,11 @@ export class DuckDbGraphAnalyticsStore {
       source_rel_path: string;
       target_rel_path: string;
       call_weight: number | string;
+      imported_export_names: string | null;
+      reexported_export_names: string | null;
     }>(
-      `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight
+      `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
+              e.imported_export_names, e.reexported_export_names
        FROM cg_symbols_edges_file e
        LEFT JOIN (
          SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
@@ -139,12 +144,61 @@ export class DuckDbGraphAnalyticsStore {
     );
     return {
       files: fileRows.map((r) => ({ relPath: r.rel_path, language: r.language, symbolCount: Number(r.symbol_count) })),
-      edges: edgeRows.map((r) => ({
-        sourceRelPath: r.source_rel_path,
-        targetRelPath: r.target_rel_path,
-        callWeight: Number(r.call_weight),
-      })),
+      edges: edgeRows.map((r) => {
+        // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.
+        const imported = decodeFileEdgeExportNames(r.imported_export_names);
+        const reexported = decodeFileEdgeExportNames(r.reexported_export_names);
+        return {
+          sourceRelPath: r.source_rel_path,
+          targetRelPath: r.target_rel_path,
+          callWeight: Number(r.call_weight),
+          ...(imported ? { importedExportNames: imported } : {}),
+          ...(reexported ? { reexportedExportNames: reexported } : {}),
+        };
+      }),
     };
+  }
+
+  /**
+   * Resolved method edges into members declared `private` / `protected` or
+   * named with a leading underscore, whose declaring file is one of
+   * `languages` (bd tea-rags-mcp-r8hme.1). The name / visibility test only
+   * narrows the candidate set; which edge is a convention-privacy leak is the
+   * boundary diagnostics' call.
+   */
+  async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
+    if (languages.length === 0) return [];
+    const rows = await this.session.queryAll<{
+      source_rel_path: string;
+      source_symbol_id: string;
+      target_rel_path: string;
+      target_symbol_id: string;
+      short_name: string;
+      visibility: string | null;
+      language: string;
+      call_expression: string;
+    }>(
+      `SELECT m.source_rel_path, m.source_symbol_id, m.target_rel_path, m.target_symbol_id,
+              s.short_name, s.visibility, f.language, m.call_expression
+       FROM cg_symbols_edges_method m
+       JOIN cg_symbols s ON s.rel_path = m.target_rel_path AND s.symbol_id = m.target_symbol_id
+       JOIN cg_symbols_files f ON f.rel_path = m.target_rel_path
+       WHERE m.target_symbol_id IS NOT NULL
+         AND f.language IN (${languages.map(() => "?").join(", ")})
+         AND (s.visibility IN ('private', 'protected') OR starts_with(s.short_name, '_'))
+       ORDER BY m.source_rel_path, m.source_symbol_id, m.target_rel_path, m.target_symbol_id`,
+      [...languages],
+    );
+    return rows.map((r) => ({
+      sourceRelPath: r.source_rel_path,
+      sourceSymbolId: r.source_symbol_id,
+      targetRelPath: r.target_rel_path,
+      targetSymbolId: r.target_symbol_id,
+      targetShortName: r.short_name,
+      targetVisibility: r.visibility,
+      targetLanguage: r.language,
+      callExpression: r.call_expression,
+    }));
   }
 
   /** The files importing `relPath` (bd tea-rags-mcp-gfvr8). */

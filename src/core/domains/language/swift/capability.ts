@@ -464,30 +464,79 @@ export const capability: LanguageCapability = {
   // inside a type whose hierarchy the SDK declares the member on and the
   // project does not (implicit `self.map` inside a `Publisher`); an index
   // built by any earlier walker holds neither branch's extraction whole.
-  // walker 48: bd tea-rags-mcp-y99pg.33 — an extension's `where Self: Q` /
+  // walker 48: bd tea-rags-mcp-y99pg.32 — a `Set<T>` / `Array<T>` spelling
+  // carries its element like `[T]` does, so `for x in set` and
+  // `set.forEach { $0… }` type their item (a closure parameter declared
+  // `(Set<Request>) -> Void` included). Measured: Alamofire TOTAL 0.988 ->
+  // 0.989 (1250/1265 -> 1251/1265), Quick 0.997 unchanged, WRONG 8; edges
+  // +1 / -0 (Session.swift:274 `$0.cancel` -> Request#cancel, oracle-matched).
+  // walker 49: bd tea-rags-mcp-y99pg.32 — a published closure-parameter type
+  // keeps its concrete generic arguments (`Result<URLRequest, Error>`), so a
+  // closure passed to a protocol method in another file reads `result.get()`
+  // as `URLRequest`. Measured: Alamofire TOTAL 0.989 -> 0.990 (1251/1265 ->
+  // 1252/1265), Quick 0.997 unchanged, WRONG 8; edges +1 / -0
+  // (Session.swift:1276 -> URLRequest#validate, oracle-matched).
+  // walker 50: bd tea-rags-mcp-y99pg.32 — each `let` clause of a multi-line
+  // `if` / `guard` / `while` condition is positioned on its own line, so a
+  // later clause's spelling folds the earlier ones (a spelling is visible
+  // strictly below its line). Measured: Alamofire TOTAL 0.990 -> 0.991
+  // (1252/1265 -> 1252/1264: Request.swift:1213 `cookies.map` proven
+  // `Array<HTTPCookie>` and SDK `map`, oracle `Collection.map`), Quick 0.997
+  // unchanged, WRONG 8; edges +0 / -0.
+  // walkers 51-54: bd tea-rags-mcp-y99pg.34, built as 48-51 on a parallel
+  // branch off walker 47 and renumbered at the merge with y99pg.32; the
+  // measurements below are that branch's own, taken without y99pg.32.
+  // walker 51 (branch 48): bd tea-rags-mcp-y99pg.34 — `self` inside an extension of an
+  // array type (`extension [P]`, `extension Array where Element == P`) iterates
+  // as its element, so `for x in self` binds `x`. Alamofire TOTAL 0.988 ->
+  // 0.989 (1250/1265 -> 1251/1265), Quick unchanged, WRONG 8 -> 8; edges +1 / -0,
+  // the one the typechecker binds (`ServerTrustEvaluating.evaluate`).
+  // walker 52 (branch 49): bd tea-rags-mcp-y99pg.34 — `typeDeclarations` publishes which
+  // stored properties a generic parameter types and each re-opening's `where`
+  // clause, so inside `extension Protected where Value == Request.MutableState`
+  // `self` is a `Protected<Request.MutableState>` and `value` a
+  // `Request.MutableState`. Alamofire TOTAL 0.989 -> 0.991 (1251/1265 ->
+  // 1252/1264), Quick unchanged, WRONG 8 -> 8; edges +1 / -0
+  // (`Request.State.canTransitionTo`, as swiftc binds it), and one SDK site
+  // (`type.map` on a `[SecCertificate]`) proved external.
+  // walker 53 (branch 50): bd tea-rags-mcp-y99pg.34 — a receiver known only by an SDK CLASS
+  // bound (`ExtendedType: Bundle`) is read as that class plus its project
+  // subclasses, so a member only an unrelated project type declares leaves the
+  // denominator. Alamofire TOTAL 0.991 -> 0.991 (1252/1264 -> 1252/1263),
+  // Quick unchanged, WRONG 8 -> 8; edges +0 / -0; `type.paths` on a `Bundle`
+  // proved external (swiftc: Bundle.paths(forResourcesOfType:inDirectory:)).
+  // walker 54 (branch 51): bd tea-rags-mcp-y99pg.34 — the receiver fold's hop cap moves
+  // from three links to five, so a five-link chain of SDK links is typed.
+  // Alamofire TOTAL 0.991 -> 0.992 (1252/1263 -> 1252/1262), Quick unchanged,
+  // WRONG 8 -> 8; edges +0 / -0; HTTPHeaders.swift:383 `….last.map` proved an
+  // SDK member (swiftc: Optional.map).
+  // walkers 55-58: bd tea-rags-mcp-y99pg.33, built as 48-51 on a parallel
+  // branch off walker 47 and renumbered at the merge with y99pg.32 / .34; the
+  // measurements below are that branch's own, taken without either.
+  // walker 55 (branch 48): bd tea-rags-mcp-y99pg.33 — an extension's `where Self: Q` /
   // `Self == X` constraints reach `typeDeclarations`, and an implicit-self call
   // inside that body resolves to the constraint's member: Alamofire TOTAL
   // 0.988 -> 0.989 (1250/1265 -> 1251/1265), Quick unchanged, WRONG 8 -> 8,
   // edges +1 / -0 (`serializeDownload`'s `serialize`, oracle-confirmed).
-  // walker 49: bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries each
+  // walker 56 (branch 49): bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries each
   // stored property's attribute types, and `$name` types as its wrapper's
   // `projectedValue` (`@Published` → `Published<Value>.Publisher`): Alamofire
   // TOTAL 0.989 -> 0.990 (1251/1265 -> 1251/1264), Quick unchanged, WRONG 8,
   // edges +0 / -0 (watchOS `$result.compactMap(\.self).map` proved Combine's).
-  // walker 50: bd tea-rags-mcp-y99pg.33 — `T?` is `Optional<T>`: bindings
+  // walker 57 (branch 50): bd tea-rags-mcp-y99pg.33 — `T?` is `Optional<T>`: bindings
   // and properties declared optional, the receiver as written
   // (`CallRef.writtenReceiver`) and SDK optionals reach the fold, and a member
   // written straight on an optional is `Optional`'s: Alamofire TOTAL 0.990 ->
   // 0.991 (1251/1264 -> 1251/1262), Quick unchanged, WRONG 8, edges +0 / -0
   // (ResponseSerialization `Optional.map` x2, oracle-confirmed).
-  // walker 51: bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries each
+  // walker 58 (branch 51): bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries each
   // type body's nominal member typealiases, which bind `Self.X` in an SDK
   // member's types on a project conformer (`compactMap { stream in` inside a
   // `Publisher` whose `typealias Output = DataStreamRequest.Stream<…>`):
   // Alamofire TOTAL 0.991 -> 0.992 (1251/1262 -> 1251/1261), Quick unchanged,
   // WRONG 8, edges +0 / -0 (Combine `completion.error.map` is `Optional.map`,
   // oracle-confirmed).
-  versions: { chunking: 4, walker: 51, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 58, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

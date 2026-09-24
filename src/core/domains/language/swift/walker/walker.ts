@@ -97,9 +97,10 @@
  *   nothing). The element type is held in {@link SwiftTypeFact}'s own slot,
  *   which only `for x in xs` and the element accessors read and which
  *   nothing emits, so the invariant is structural rather than a rule someone
- *   has to remember. A `Set<Foo>` / `[String: Foo]` element is NOT read:
- *   `swiftTypeFactOf` reduces a generic to its base name, and a dictionary
- *   iterates as a tuple the single-name pattern rejects anyway.
+ *   has to remember. A `Set<Foo>` / `Array<Foo>` spelling fills the same slot
+ *   (bd tea-rags-mcp-y99pg.32) — its one generic argument IS its element — and
+ *   a `[String: Foo]` element is NOT read: a dictionary iterates as a tuple the
+ *   single-name pattern rejects anyway.
  * - A non-CapWords initializer whose callee this file does NOT declare
  *   (`let t = makeThing()`) binds nothing — its return type is unknowable here
  *   and recording the FUNCTION name as a type fabricates a `makeThing#member`
@@ -141,6 +142,7 @@ import type {
   LocalBinding,
   SelfConstraintFact,
   SwiftFieldConstruction,
+  SwiftWhereClauseFact,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
@@ -242,8 +244,14 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     }
     const conforms = swiftInheritedTypeNames(node);
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
-    const { fieldTypeArguments, fieldConstructions, memberClosureParameters, genericInitializers } =
-      swiftGenericMemberFacts(node, genericParameters);
+    const {
+      fieldTypeArguments,
+      fieldConstructions,
+      memberClosureParameters,
+      genericInitializers,
+      genericFieldParameters,
+    } = swiftGenericMemberFacts(node, genericParameters);
+    const whereClause = kind === "extension" ? swiftWhereClauseFact(node) : undefined;
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     const functionAliasReturns = swiftFunctionAliasReturns(node);
     const selfConstraints = kind === "extension" ? swiftSelfConstraints(node) : undefined;
@@ -270,6 +278,8 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(propertyAttributeTypes ? { propertyAttributeTypes } : {}),
       ...(optionalProperties.length > 0 ? { optionalProperties } : {}),
       ...(memberTypeAliases ? { memberTypeAliases } : {}),
+      ...(genericFieldParameters ? { genericFieldParameters } : {}),
+      ...(whereClause ? { whereClause } : {}),
     });
   });
   return out;
@@ -371,6 +381,47 @@ function swiftSelfConstraints(node: AstNode): SelfConstraintFact | undefined {
 }
 
 /**
+ * A re-opening's `where` clause with the lines it scopes (bd
+ * tea-rags-mcp-y99pg.34): each same-type requirement's type as written, each
+ * conformance or superclass requirement's nominal. Read positionally — the
+ * constrained name first, the type last — for the materialization hazard
+ * {@link swiftTypeNodeAfter} documents. Undefined when the clause states
+ * neither.
+ */
+function swiftWhereClauseFact(node: AstNode): SwiftWhereClauseFact | undefined {
+  const sameType = createIdentifierRecord<string>();
+  const bounds = createIdentifierRecord<string>();
+  let anySameType = false;
+  let anyBound = false;
+  for (const clause of node.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      for (const requirement of constraint.namedChildren) {
+        const name = requirement.namedChildren[0]?.text.trim();
+        const type = requirement.namedChildren[requirement.namedChildCount - 1];
+        if (!name || !type || requirement.namedChildCount < 2 || Object.hasOwn(sameType, name)) continue;
+        if (requirement.type === "equality_constraint") {
+          sameType[name] = type.text.trim();
+          anySameType = true;
+        } else if (requirement.type === "inheritance_constraint" && !Object.hasOwn(bounds, name)) {
+          const { nominal } = swiftTypeFactOf(type);
+          if (nominal === null) continue;
+          bounds[name] = nominal;
+          anyBound = true;
+        }
+      }
+    }
+  }
+  if (!anySameType && !anyBound) return undefined;
+  return {
+    startLine: node.startPosition.row + 1,
+    endLine: node.endPosition.row + 1,
+    ...(anySameType ? { sameType } : {}),
+    ...(anyBound ? { bounds } : {}),
+  };
+}
+
+/**
  * What each function-typed `typealias` a type body declares returns (bd
  * tea-rags-mcp-y99pg.22): `typealias Handler = (Callback) -> DataRequest` →
  * `Handler: "DataRequest"`. Read positionally, past `=` and then `->`.
@@ -450,10 +501,13 @@ function swiftGenericMemberFacts(
   fieldConstructions?: Record<string, SwiftFieldConstruction>;
   memberClosureParameters?: Record<string, (string | null)[] | null>;
   genericInitializers?: GenericInitializerFact[];
+  genericFieldParameters?: Record<string, string>;
 } {
   const body = node.childForFieldName("body");
   if (!body) return {};
   const fields = createIdentifierRecord<(string | null)[]>();
+  const genericFields = createIdentifierRecord<string>();
+  let anyGenericField = false;
   const constructions = createIdentifierRecord<SwiftFieldConstruction>();
   const closures = createIdentifierRecord<(string | null)[] | null>();
   const initializers: GenericInitializerFact[] = [];
@@ -472,6 +526,13 @@ function swiftGenericMemberFacts(
         : value?.type === "constructor_expression"
           ? (value.namedChildren.find((c) => c.type === "user_type") ?? null)
           : null;
+      // `var value: Value` / `Value?` — typed by whatever a receiver binds the parameter to (bd tea-rags-mcp-y99pg.34).
+      const unwrapped = typeNode?.type === "optional_type" ? (typeNode.namedChildren[0] ?? null) : typeNode;
+      if (unwrapped?.type === "user_type" && genericParameters.includes(unwrapped.text.trim())) {
+        genericFields[name] = unwrapped.text.trim();
+        anyGenericField = true;
+        continue;
+      }
       const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
       if (args) {
         fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
@@ -503,6 +564,7 @@ function swiftGenericMemberFacts(
     ...(anyConstruction ? { fieldConstructions: constructions } : {}),
     ...(anyClosure ? { memberClosureParameters: closures } : {}),
     ...(initializers.length > 0 ? { genericInitializers: initializers } : {}),
+    ...(anyGenericField ? { genericFieldParameters: genericFields } : {}),
   };
 }
 
@@ -587,11 +649,53 @@ function swiftClosureParameterTypeNames(
       const typeNode = item.namedChildren[item.namedChildCount - 1] ?? null;
       const written = typeNode?.type === "user_type" ? typeNode.text : undefined;
       if (written !== undefined && genericParameters.includes(written)) types.push(written);
-      else types.push(swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal);
+      else {
+        types.push(
+          swiftSpelledWithArguments(
+            swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal,
+            typeNode,
+            fn,
+            genericParameters,
+          ),
+        );
+      }
     }
     found = types;
   }
   return found;
+}
+
+/**
+ * `nominal` spelled with the generic arguments `typeNode` states —
+ * `Result<URLRequest, Error>` for `Result<URLRequest, any Error>` (bd
+ * tea-rags-mcp-y99pg.32) — so a reader in another file can bind the
+ * declaring SDK type's parameters (`Result.get()` returns `Success`). Each
+ * argument is reduced to its nominal. The bare nominal when there are no
+ * arguments, when one names nothing, or when one is a generic parameter in
+ * scope: that is bound per use, not declared. Read positionally off
+ * `type_arguments`, past an optional's `?`.
+ */
+function swiftSpelledWithArguments(
+  nominal: string | null,
+  typeNode: AstNode | null,
+  at: AstNode,
+  genericParameters: readonly string[],
+): string | null {
+  if (nominal === null) return null;
+  let bare = typeNode;
+  while (bare?.type === "optional_type") bare = bare.namedChildren[0] ?? null;
+  if (bare?.type !== "user_type") return nominal;
+  const args = bare.children.find((c) => c.type === "type_arguments")?.namedChildren ?? [];
+  if (args.length === 0) return nominal;
+  const names: string[] = [];
+  for (const arg of args) {
+    const name = swiftTypeFactOf(arg).nominal;
+    if (name === null || genericParameters.includes(name) || swiftGenericConstraint(name, at) !== undefined) {
+      return nominal;
+    }
+    names.push(name);
+  }
+  return `${nominal}<${names.join(", ")}>`;
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
@@ -1826,7 +1930,10 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const scopeEndLine =
           node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
         for (const clause of swiftOptionalBindingClauses(node)) {
-          const site = siteOf(node);
+          // Each clause on its OWN line: a multi-line condition's later clause
+          // folds the earlier ones, and a spelling is visible strictly below
+          // its line (bd tea-rags-mcp-y99pg.32).
+          const site = siteOf(clause.nameNode);
           const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
           const annotatedOrInferred =
             annotated.nominal || annotated.element
@@ -2007,6 +2114,8 @@ function swiftTuplePatternNames(item: AstNode | null): [string | null, string | 
 /** One `let x` / `var x` clause of a `guard` / `if` / `while` condition list. */
 interface SwiftOptionalBindingClause {
   readonly name: string;
+  /** The bound identifier — where the clause's binding is positioned. */
+  readonly nameNode: AstNode;
   /** The binding's own `: T` annotation, when written. */
   readonly annotation: AstNode | null;
   /**
@@ -2040,7 +2149,7 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
       next += 1;
     }
     const value = kids[next]?.type === "=" ? (kids[next + 1] ?? null) : nameNode;
-    out.push({ name: nameNode.text, annotation, value });
+    out.push({ name: nameNode.text, nameNode, annotation, value });
   }
   return out;
 }
@@ -2227,7 +2336,29 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   // `Foo.Type` / `Foo.Protocol` is Foo's metatype: a member read off it is one
   // of Foo's static members, which compose under Foo (bd tea-rags-mcp-y99pg.12).
   const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim().replace(SWIFT_METATYPE_SUFFIX, "");
-  return bare.length > 0 ? { nominal: bare, element: null } : NO_TYPE;
+  if (bare.length === 0) return NO_TYPE;
+  return { nominal: bare, element: swiftSpelledSequenceElement(typeNode, bare) };
+}
+
+/**
+ * The standard library sequences whose ONE generic argument is their
+ * `Element` — `Set<Request>` iterates `Request`s exactly as `[Request]` does
+ * (bd tea-rags-mcp-y99pg.32). `Dictionary`, `Result` and every other generic
+ * type are absent: an argument of theirs is not what a `for` or a `forEach`
+ * hands its body.
+ */
+const SWIFT_SINGLE_ELEMENT_SEQUENCES: ReadonlySet<string> = new Set(["Array", "Set", "ArraySlice", "ContiguousArray"]);
+
+/**
+ * The element nominal a `user_type` spelling one of
+ * {@link SWIFT_SINGLE_ELEMENT_SEQUENCES} with its argument states, or null.
+ * Read positionally off `type_arguments`, for the materialization hazard
+ * {@link swiftTypeNodeAfter} documents.
+ */
+function swiftSpelledSequenceElement(typeNode: AstNode, nominal: string): string | null {
+  if (!SWIFT_SINGLE_ELEMENT_SEQUENCES.has(nominal)) return null;
+  const args = typeNode.children.find((c) => c.type === "type_arguments")?.namedChildren ?? [];
+  return args.length === 1 ? swiftTypeFactOf(args[0]).nominal : null;
 }
 
 /**
@@ -2271,7 +2402,7 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
     case "postfix_expression":
       return swiftExpressionFact(node.namedChildren[0] ?? null, scope, depth + 1);
     case "self_expression":
-      return { nominal: scope.site.enclosingType, element: null };
+      return { nominal: scope.site.enclosingType, element: enclosingSwiftSelfElement(node) };
     case "simple_identifier":
       return node.text === "Self"
         ? { nominal: scope.site.enclosingType, element: null }
@@ -2519,6 +2650,33 @@ function enclosingSwiftClosureEndLine(node: AstNode): number | undefined {
     if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return undefined;
   }
   return undefined;
+}
+
+/**
+ * The element `self` iterates as inside an extension of an ARRAY type:
+ * `extension [ServerTrustEvaluating]` or `extension Array where Element ==
+ * ServerTrustEvaluating` — so `for evaluator in self` types `evaluator` (bd
+ * tea-rags-mcp-y99pg). Any other enclosing type answers null. The `where`
+ * clause is read positionally: the constrained name first, the type last.
+ */
+function enclosingSwiftSelfElement(node: AstNode): string | null {
+  let declaration: AstNode | null = node.parent;
+  while (declaration && declaration.type !== "class_declaration" && declaration.type !== "protocol_declaration") {
+    declaration = declaration.parent;
+  }
+  if (declaration?.type !== "class_declaration" || swiftTypeDeclarationKind(declaration) !== "extension") return null;
+  const name = declaration.childForFieldName("name");
+  if (name?.type === "array_type") return swiftTypeFactOf(name).element;
+  if (name?.type !== "user_type" || name.text.trim() !== "Array") return null;
+  for (const clause of declaration.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      const equality = constraint.namedChildren.find((c) => c.type === "equality_constraint");
+      if (equality?.namedChildren[0]?.text !== "Element") continue;
+      return swiftTypeFactOf(equality.namedChildren[equality.namedChildCount - 1]).nominal;
+    }
+  }
+  return null;
 }
 
 /** Short name of the nearest enclosing nominal type, as `classFieldTypes` keys it. */

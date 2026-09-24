@@ -107,6 +107,13 @@ interface RunFileDiscovery {
   readonly data: Promise<Map<string, FileChurnData>>;
 }
 
+/** One chunk batch's copy of the file-phase output it walks with, keyed by
+ *  relative path (see GitEnrichmentProvider#blameByRelPath). */
+interface ChunkPhaseHandoffSlice {
+  readonly blameByPath: Map<string, BlameLine[]>;
+  readonly churnByPath: Map<string, FileChurnData>;
+}
+
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
@@ -127,9 +134,25 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** Blame results keyed by FileChurnData identity — populated in buildFileSignals,
    *  consumed in fileSignalTransform. WeakMap auto-cleans when churnData is GC'd. */
   private readonly blameByChurnData = new WeakMap<FileChurnData, BlameLine[]>();
-  /** Blame results keyed by relative path — passed into buildChunkChurnMap so
-   *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
-  private blameByRelPath: Map<string, BlameLine[]> = new Map();
+  /** FILE → CHUNK handoff, keyed by relative path: the blame lines and the
+   *  file churn a file batch produced, held until the chunk batches that walk
+   *  the same file have read them. Same blame pass as file-level.
+   *
+   *  Enrichment streams per batch and ChunkPhase gates a batch's chunk walk on
+   *  THAT batch's file work only, so file batches N+1..N+k routinely finish
+   *  before chunk batch N — and one file's chunks span several batches. The
+   *  handoff therefore cannot be "the latest file batch's state" nor be dropped
+   *  after any single chunk batch: each file-batch write takes a hold on the
+   *  path (`chunkHandoffHolds`), each chunk batch releases the holds of the
+   *  paths it walked, and an entry is deleted when its last hold goes. A hold
+   *  nobody releases (a "file-only" path, a failed file batch) is evicted by
+   *  generation at the NEXT run's finalizeSignals — not this run's, which
+   *  CompletionRunner calls before draining the streaming chunk work. */
+  private readonly blameByRelPath = new Map<string, BlameLine[]>();
+  private readonly churnByRelPath = new Map<string, FileChurnData>();
+  private readonly chunkHandoffHolds = new Map<string, { pending: number; generation: number }>();
+  /** Bumped at every finalizeSignals — see blameByRelPath. */
+  private chunkHandoffGeneration = 0;
 
   /** Persistent OID-keyed blame cache (bd tea-rags-mcp-v2mlw): blame lines
    *  survive across runs keyed by each file's HEAD blob OID, so
@@ -140,6 +163,18 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private blameCache: Map<string, { oid: string; lines: BlameLine[] }> | null = null;
   private blameCacheRoot: string | null = null;
   private blameCacheDirty = false;
+  /** Run-scoped blame single-flight: `root \0 relPath \0 HEAD-OID` → the blame
+   *  of that file, queued/running on the pool OR already completed in THIS run.
+   *  A streaming run spreads one file's chunks over several batches, and each
+   *  batch's populateBlameMap used to miss the OID cache (written only on
+   *  completion) while the first blame still sat queued behind the pool's
+   *  one-in-flight-per-worker limit — taxdome issued 71,301 `git blame`s for
+   *  ~34k files. A later batch now awaits the registered promise instead.
+   *  Keyed on the resolved OID so a changed file never reuses a stale blame;
+   *  completed [] results stay here (not in the persistent OID cache). A
+   *  rejected blame drops its keys so the next batch retries. Cleared at the
+   *  finalize seam (finalizeSignals). */
+  private readonly runBlames = new Map<string, Promise<BlameLine[]>>();
   /** FILE-phase off-main-thread blame pool (bd tea-rags-mcp-dog1v). Lazily
    *  spawned on the first shallow cache-miss, closed at the finalize seam. */
   private blamePool?: BlameWorkerPool;
@@ -243,7 +278,6 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
   private readonly enrichmentCache = new GitEnrichmentCache();
   private readonly isoGitCache: Record<string, unknown> = {};
-  private lastFileResult: Map<string, FileChurnData> | null = null;
   /** Run-scoped discovery — see RunFileDiscovery. Lazy on the first streaming
    *  batch, reset by finalizeSignals (and re-keyed automatically when HEAD moves). */
   private fileDiscovery: RunFileDiscovery | null = null;
@@ -278,9 +312,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** Per-batch streaming: same computation as buildFileSignals, scoped to the
    *  batch's paths — but the batch's FileChurnData is SLICED from the ONE
    *  run-scoped repo-wide discovery instead of a fresh per-batch full-history
-   *  pathspec log (bd tea-rags-mcp-j4lm9). Populates blameByRelPath/lastFileResult
-   *  for the batch so the matching buildChunkSignals call (same batch) sees
-   *  per-range ownership. Arrow-property so `this` survives being passed as a
+   *  pathspec log (bd tea-rags-mcp-j4lm9). Hands the batch's blame and churn
+   *  to the chunk phase (blameByRelPath) so the matching buildChunkSignals call
+   *  sees per-range ownership whenever it runs. Arrow-property so `this` survives being passed as a
    *  coordinator callback. */
   streamFileBatch = async (
     root: string,
@@ -316,6 +350,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.persistBlameCache();
     this.blameCache = null;
     this.blameCacheRoot = null;
+    this.runBlames.clear();
+    this.evictStaleChunkHandoff();
     await this.oidReaderPromise?.then(async (r) => r.close()).catch(() => undefined);
     this.oidReaderPromise = null;
     this.oidReaderRoot = null;
@@ -383,7 +419,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     rawData: Map<string, FileChurnData>,
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
-    this.lastFileResult = rawData;
+    // Take the chunk-phase hold synchronously, before the blame await: the
+    // gated chunk batch of THIS file batch releases it (see blameByRelPath).
+    for (const [relPath, churnData] of rawData) this.holdForChunkPhase(relPath, churnData);
 
     // Build bug-fix SHA set from merge branch prefixes (all commits across all files)
     const allCommits = new Map<string, CommitInfo>();
@@ -448,12 +486,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    *  results only are cached: [] can be a transient blame failure (blameFile
    *  swallows errors) — pinning it would freeze the failure.
    *
-   *  Accumulates into `this.blameByRelPath` across calls — buildFileSignals
-   *  may be invoked multiple times per indexing run (initial pass + backfill,
-   *  reindex_changes, etc.). chunk enrichment runs AFTER all file passes via
-   *  buildChunkSignals, so the chunk-level blame map must retain entries from
-   *  every prior pass. Replacing the map would erase blame for files indexed
-   *  in earlier batches and produce "unknown" chunk ownership. */
+   *  Accumulates into `this.blameByRelPath` across calls — file passes (every
+   *  streaming batch, backfill, recovery) interleave with the chunk batches
+   *  that read them, so an entry lives until its chunk-phase holds are
+   *  released (see blameByRelPath). Replacing or clearing the map would erase
+   *  blame for files other batches still owe a chunk walk and produce
+   *  "unknown" chunk ownership. */
   private async populateBlameMap(
     root: string,
     rawData: Map<string, FileChurnData>,
@@ -469,8 +507,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     );
     const cache = this.ensureBlameCache(root);
 
+    // Classify and register SYNCHRONOUSLY (no await until the loop ends): a
+    // concurrent batch reaching this point later sees every key registered
+    // here, so a file can never miss in two batches at once.
     let hits = 0;
     const missEntries: [string, FileChurnData][] = [];
+    const joinedEntries: [string, FileChurnData, Promise<BlameLine[]>][] = [];
+    type RunBlameSettler = { relPath: string; resolve: (lines: BlameLine[]) => void; reject: (e: unknown) => void };
+    const settleMisses = new Map<string, RunBlameSettler>();
     for (const [relPath, churnData] of entries) {
       const oid = oidByPath.get(relPath);
       const cached = oid ? cache.get(relPath) : undefined;
@@ -478,9 +522,21 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         hits++;
         this.blameByChurnData.set(churnData, cached.lines);
         this.blameByRelPath.set(relPath, cached.lines);
-      } else {
-        missEntries.push([relPath, churnData]);
+        continue;
       }
+      const runKey = `${root}\0${relPath}\0${oid ?? ""}`;
+      const inRun = this.runBlames.get(runKey);
+      if (inRun) {
+        joinedEntries.push([relPath, churnData, inRun]);
+        continue;
+      }
+      let settle!: RunBlameSettler;
+      const promise = new Promise<BlameLine[]>((resolve, reject) => (settle = { relPath, resolve, reject }));
+      // Mark handled: a rejection nobody joined must not surface as unhandled.
+      promise.catch(() => undefined);
+      this.runBlames.set(runKey, promise);
+      settleMisses.set(runKey, settle);
+      missEntries.push([relPath, churnData]);
     }
 
     // Blame every cache-miss on the off-main-thread pool. Blame is native
@@ -501,21 +557,44 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     };
 
     if (missEntries.length > 0) {
-      const blameByPath = await this.ensureBlamePool().blame(
-        root,
-        this.config.vcsAdapter,
-        missEntries.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
-        this.config.logTimeoutMs,
-      );
+      let blameByPath: Map<string, BlameLine[]>;
+      try {
+        blameByPath = await this.ensureBlamePool().blame(
+          root,
+          this.config.vcsAdapter,
+          missEntries.map(([relPath, churnData]) => ({ relPath, historyDepthHint: churnData.commits.length })),
+          this.config.logTimeoutMs,
+        );
+      } catch (error) {
+        // Release the keys so a later batch re-dispatches instead of joining
+        // the failure; batches already joined see the same error this one does.
+        for (const [runKey, settle] of settleMisses) {
+          this.runBlames.delete(runKey);
+          settle.reject(error);
+        }
+        throw error;
+      }
       for (const [relPath, churnData] of missEntries) {
         recordBlame(relPath, churnData, blameByPath.get(relPath) ?? []);
       }
+      for (const settle of settleMisses.values()) {
+        settle.resolve(blameByPath.get(settle.relPath) ?? []);
+      }
+    }
+
+    // In-run reuse: the owning batch already wrote the OID cache (non-empty
+    // lines only), so a joiner records the lines for its own batch state only.
+    for (const [relPath, churnData, promise] of joinedEntries) {
+      const lines = await promise;
+      this.blameByChurnData.set(churnData, lines);
+      this.blameByRelPath.set(relPath, lines);
     }
 
     options?.onBlameStats?.({
       files: entries.length,
       hits,
       misses: missEntries.length,
+      joined: joinedEntries.length,
       durationMs: Date.now() - startedAt,
     });
   }
@@ -571,6 +650,61 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.blameCacheDirty = false;
   }
 
+  /** One file-batch write: record the file's churn and take a chunk-phase hold
+   *  on the path. Its blame lands in blameByRelPath via populateBlameMap. */
+  private holdForChunkPhase(relPath: string, churnData: FileChurnData): void {
+    this.churnByRelPath.set(relPath, churnData);
+    const hold = this.chunkHandoffHolds.get(relPath);
+    if (hold) {
+      hold.pending++;
+      hold.generation = this.chunkHandoffGeneration;
+    } else {
+      this.chunkHandoffHolds.set(relPath, { pending: 1, generation: this.chunkHandoffGeneration });
+    }
+  }
+
+  /** The handoff entries for one chunk batch's paths, copied out so the walk
+   *  never reads the live maps. */
+  private sliceChunkHandoff(relPaths: readonly string[]): ChunkPhaseHandoffSlice {
+    const blameByPath = new Map<string, BlameLine[]>();
+    const churnByPath = new Map<string, FileChurnData>();
+    for (const rel of relPaths) {
+      const blame = this.blameByRelPath.get(rel);
+      if (blame) blameByPath.set(rel, blame);
+      const churn = this.churnByRelPath.get(rel);
+      if (churn) churnByPath.set(rel, churn);
+    }
+    return { blameByPath, churnByPath };
+  }
+
+  /** Release one hold per path a chunk batch walked; the last release drops
+   *  the entry. A path with no hold (a chunk-only recovery batch) is a no-op. */
+  private releaseChunkHandoff(relPaths: readonly string[]): void {
+    for (const rel of relPaths) {
+      const hold = this.chunkHandoffHolds.get(rel);
+      if (!hold) continue;
+      hold.pending--;
+      if (hold.pending <= 0) this.dropChunkHandoff(rel);
+    }
+  }
+
+  /** Run-boundary eviction. finalizeSignals fires BEFORE CompletionRunner
+   *  drains the streaming chunk work, so this run's holds must survive it:
+   *  evict only holds last taken before the PREVIOUS finalize — by now every
+   *  chunk batch of that run has drained — then open a new generation. */
+  private evictStaleChunkHandoff(): void {
+    for (const [rel, hold] of this.chunkHandoffHolds) {
+      if (hold.generation < this.chunkHandoffGeneration) this.dropChunkHandoff(rel);
+    }
+    this.chunkHandoffGeneration++;
+  }
+
+  private dropChunkHandoff(relPath: string): void {
+    this.chunkHandoffHolds.delete(relPath);
+    this.blameByRelPath.delete(relPath);
+    this.churnByRelPath.delete(relPath);
+  }
+
   async buildChunkSignals(
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
@@ -583,45 +717,55 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     // duck type is structurally ChunkChurnWalkPool — cast at the boundary
     // (precedent: blobReader below).
     const walkThread = options?.churnWalkThread as unknown as ChunkChurnWalkPool | undefined;
+    // Snapshot this batch's file-phase handoff SYNCHRONOUSLY, before any await:
+    // the walk reads the snapshot, never the live maps, and the holds are
+    // released only after the walk — whatever other batches do meanwhile.
+    const relPaths = [...chunkMap.keys()].map((key) => (key.startsWith(root) ? key.slice(root.length + 1) : key));
+    const handoff = this.sliceChunkHandoff(relPaths);
     let rawResult: Map<string, Map<string, ChunkChurnOverlay>>;
-    if (walkThread && options?.commitDiscovery && options.skipCache) {
-      rawResult = await this.walkChunkChurnOffThread(root, chunkMap, walkThread, options.commitDiscovery, options);
-    } else {
-      rawResult = await buildChunkChurnMap(
-        await this.adapterFor(root),
-        chunkMap,
-        this.enrichmentCache,
-        this.isoGitCache,
-        this.config.chunkConcurrency,
-        this.config.chunkMaxAgeMonths,
-        this.lastFileResult ?? undefined,
-        this.squashOpts,
-        this.config.chunkTimeoutMs,
-        this.config.chunkMaxFileLines,
-        options?.concurrencySemaphore,
-        options?.skipCache,
-        this.blameByRelPath,
-        // kc93: run-scoped reader shared across batches when ChunkPhase injects
-        // one. The duck-typed contract shape is structurally BlobBatchReader.
-        options?.blobReader,
-        // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
-        // batches — the same sweep commits are otherwise re-diffed per batch.
-        options?.diffMemo,
-        // 82va1: run-scoped commit-discovery matrix — the walk slices it
-        // in-memory instead of paying a per-batch pathspec log.
-        options?.commitDiscovery,
-        // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
-        options?.onWalkStats,
-      );
+    try {
+      if (walkThread && options?.commitDiscovery && options.skipCache) {
+        rawResult = await this.walkChunkChurnOffThread(
+          root,
+          chunkMap,
+          walkThread,
+          options.commitDiscovery,
+          handoff,
+          options,
+        );
+      } else {
+        rawResult = await buildChunkChurnMap(
+          await this.adapterFor(root),
+          chunkMap,
+          this.enrichmentCache,
+          this.isoGitCache,
+          this.config.chunkConcurrency,
+          this.config.chunkMaxAgeMonths,
+          handoff.churnByPath,
+          this.squashOpts,
+          this.config.chunkTimeoutMs,
+          this.config.chunkMaxFileLines,
+          options?.concurrencySemaphore,
+          options?.skipCache,
+          handoff.blameByPath,
+          // kc93: run-scoped reader shared across batches when ChunkPhase injects
+          // one. The duck-typed contract shape is structurally BlobBatchReader.
+          options?.blobReader,
+          // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
+          // batches — the same sweep commits are otherwise re-diffed per batch.
+          options?.diffMemo,
+          // 82va1: run-scoped commit-discovery matrix — the walk slices it
+          // in-memory instead of paying a per-batch pathspec log.
+          options?.commitDiscovery,
+          // iqpuu: per-walk instrumentation for the [ChunkChurn] pipeline line.
+          options?.onWalkStats,
+        );
+      }
+    } finally {
+      // Released on failure too: a failed walk is healed by backfill/recovery,
+      // which run their own file pass and take their own holds.
+      this.releaseChunkHandoff(relPaths);
     }
-
-    // Chunk enrichment is the last reader of blameByRelPath. Swap in a fresh
-    // map so every file's BlameLine[] (and the porcelain those slices used to
-    // pin) is not retained for the provider/daemon lifetime — the next run's
-    // file passes repopulate it. Replacing (not clearing) leaves any reference
-    // already handed to buildChunkChurnMap intact. (blameByChurnData is a
-    // WeakMap and self-evicts.)
-    this.blameByRelPath = new Map();
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();
     for (const [filePath, overlayMap] of rawResult) {
@@ -638,17 +782,17 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * bd tea-rags-mcp-iqpuu: off-thread chunk-churn walk. Builds one fully
    * serializable job — the batch's relativized chunk map, the pre-sliced
    * discovery rows + shared bugFixShaSet (queried HERE so the run-scoped
-   * matrix stays a main-thread singleton), and the blame / file-churn slices
-   * this instance accumulated during streamFileBatch — and ships it to the
-   * dedicated walk worker. Walk semantics are byte-identical to the inline
-   * path: the worker runs the same buildChunkChurnMapUncached with its own
-   * run-scoped reader/memo/limiter.
+   * matrix stays a main-thread singleton), and the batch's blame / file-churn
+   * handoff — and ships it to the dedicated walk worker. Walk semantics are
+   * byte-identical to the inline path: the worker runs the same
+   * buildChunkChurnMapUncached with its own run-scoped reader/memo/limiter.
    */
   private async walkChunkChurnOffThread(
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     walkThread: ChunkChurnWalkPool,
     discovery: NonNullable<ChunkSignalOptions["commitDiscovery"]>,
+    handoff: ChunkPhaseHandoffSlice,
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     const relativeChunkMap = relativizeChunkMap(root, chunkMap);
@@ -676,26 +820,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
     const bugFixShas = await discovery.getBugFixShas().catch(() => new Set<string>());
 
-    // Slice the file-phase state to this batch's files (only existing
-    // entries) — equivalent to the inline path passing the full maps, since
-    // the walk only reads keys of its own relativeChunkMap.
-    const blameByPath = new Map<string, BlameLine[]>();
-    const fileChurnData = this.lastFileResult ? new Map<string, FileChurnData>() : undefined;
-    for (const rel of relativeChunkMap.keys()) {
-      const blame = this.blameByRelPath.get(rel);
-      if (blame) blameByPath.set(rel, blame);
-      const churn = this.lastFileResult?.get(rel);
-      if (churn && fileChurnData) fileChurnData.set(rel, churn);
-    }
-
     const outcome = await walkThread.walk({
       repoRoot: root,
       gitAdapter: this.config.vcsAdapter,
       relativeChunkMap,
       commitEntries,
       bugFixShas,
-      blameByPath,
-      fileChurnData,
+      // The batch's file-phase handoff, snapshotted by buildChunkSignals before
+      // the awaits above — reading the live maps here raced other batches.
+      blameByPath: handoff.blameByPath,
+      fileChurnData: handoff.churnByPath,
       squashOpts: this.squashOpts,
       concurrency: this.config.chunkConcurrency,
       maxAgeMonths: this.config.chunkMaxAgeMonths,

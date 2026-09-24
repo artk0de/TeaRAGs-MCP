@@ -28,8 +28,14 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import type { BlameLine, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
+import { resolveGitExecutable } from "../../../../../infra/git-executable.js";
 import { ChunkChurnWalkThreadError } from "../../errors.js";
-import type { BlameJobInput, ChurnWalkThreadRequest, ChurnWalkThreadResponse } from "./protocol.js";
+import type {
+  BlameJobInput,
+  ChurnWalkThreadRequest,
+  ChurnWalkThreadResponse,
+  ChurnWalkWorkerData,
+} from "./protocol.js";
 
 /** Worker script path — always compiled JS in build/ (worker_threads require
  *  compiled JS; same idiom as churn-walk/thread.ts). */
@@ -141,7 +147,8 @@ export class BlameWorkerPool {
   private ensureWorker(idx: number): Worker {
     const existing = this.workers[idx];
     if (existing) return existing;
-    const worker = new Worker(WORKER_PATH);
+    const workerData: ChurnWalkWorkerData = { gitExecutable: resolveGitExecutable() };
+    const worker = new Worker(WORKER_PATH, { workerData });
     worker.on("message", (response: ChurnWalkThreadResponse) => {
       this.onResponse(response);
     });

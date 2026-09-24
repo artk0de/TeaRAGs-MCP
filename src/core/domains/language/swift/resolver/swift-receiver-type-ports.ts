@@ -52,6 +52,7 @@ import {
   stripCallArgs,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
+import { parseSwiftTypeText } from "../vocabulary/swift-type-text.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { boundedBy } from "./swift-sdk-member-types.js";
@@ -67,20 +68,23 @@ import { isSwiftTypeName } from "./swift-type-name.js";
 /**
  * How many LINKS a receiver may carry and still be folded.
  *
- * Three, against the kernel's default of four, and the number is measured
- * rather than picked: across Alamofire and Quick, 192 of the 195 unresolved
- * chained receivers carry exactly ONE link, two carry two, and one carries
- * three. So three covers every shape either corpus contains, with nothing left
- * to buy above it.
+ * Five, and the number is measured rather than picked. It was three while
+ * every hop was a `classFieldTypes` read keyed by a type's SHORT name — no
+ * file, no module — where the chance that some link resolves against a
+ * namesake compounds with depth. Two things moved since: the SDK substrate
+ * answers a link on an SDK type from its declaration, exactly (bd
+ * tea-rags-mcp-y99pg.25), and the one receiver past three links that either
+ * corpus contains is such a chain — Alamofire's default User-Agent,
+ * `ProcessInfo.processInfo.arguments.first?.split(separator: "/").last`, five
+ * links, all SDK. Across Alamofire and Quick every other chained receiver
+ * carries at most three, so five changes no other site (bd
+ * tea-rags-mcp-y99pg.34).
  *
- * What a fourth hop would cost is the reason not to take it anyway. Every hop
- * here is a `classFieldTypes` read keyed by a type's SHORT name — no file, no
- * module — so the chance that some link resolves against a namesake compounds
- * with depth, and unlike Python there is no import mapper downstream to catch
- * a type that was never in the project at all. A chain past the cap is left
- * untyped, which is the one answer that cannot be wrong.
+ * The namesake risk stays the reason not to raise it further on speculation:
+ * a project link past five is still a short-name read, and a chain past the
+ * cap is left untyped, which is the one answer that cannot be wrong.
  */
-const SWIFT_CHAIN_MAX_HOPS = 3;
+const SWIFT_CHAIN_MAX_HOPS = 5;
 
 /**
  * Static properties that, by the Swift API Design Guidelines' naming of
@@ -175,7 +179,8 @@ function swiftHeadType(
   }
   if (head === "self" || head === "Self") {
     if (enclosing === undefined) return undefined;
-    return { form: head === "self" ? "instance" : "class", name: enclosing };
+    // `self` carries what a constrained extension binds (bd tea-rags-mcp-y99pg.34).
+    return head === "self" ? members.selfType(enclosing, atLine, ctx) : { form: "class", name: enclosing };
   }
   if (head === "super") return undefined;
 
@@ -188,6 +193,9 @@ function swiftHeadType(
       const field = swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(enclosing, head, ctx));
       return keepsOptionals && members.isOptionalProperty(enclosing, head, ctx) ? swiftOptionalOf(field) : field;
     }
+    // A property typed as a generic parameter a constrained extension binds (bd tea-rags-mcp-y99pg.34).
+    const bound = members.genericFieldType(members.selfType(enclosing, atLine, ctx), head, ctx);
+    if (bound !== undefined) return bound;
     // An implicit-self property the SDK declares on the enclosing type —
     // `allHTTPHeaderFields` inside `extension URLRequest` (bd tea-rags-mcp-y99pg.25).
     const selfRef = { form: "instance" as const, name: enclosing };
@@ -566,6 +574,9 @@ function swiftMemberHopType(
     // `completion.error` on an `error: AFError?` (bd tea-rags-mcp-y99pg.33).
     return keepsOptionals && members.isOptionalProperty(recv.name, member, ctx) ? swiftOptionalOf(field) : field;
   }
+  // A property typed as a generic parameter: the receiver's argument for it (bd tea-rags-mcp-y99pg.34).
+  const generic = members.genericFieldType(recv, member, ctx);
+  if (generic !== undefined) return generic;
   // Not a property: a METHOD hop, typed by what the declaration the call
   // lands on returns. Strict: an ambiguous callee types nothing.
   const returned = members.memberReturnType(recv.name, member, ctx);
@@ -711,7 +722,7 @@ function swiftClosureParameterType(
   const declared = signature.types?.[index];
   if (declared === null || declared === undefined) return undefined;
   const slot = signature.genericParameters.indexOf(declared);
-  if (slot === -1) return boundedBy(type, { form: "instance", name: declared });
+  if (slot === -1) return boundedBy(type, swiftDeclaredTypeRef(declared));
   const carried = type.args?.[slot];
   if (carried !== undefined) return boundedBy(type, carried);
   const field = receiver.startsWith("self.") ? receiver.slice("self.".length) : receiver;
@@ -770,7 +781,7 @@ function swiftBareCalleeClosureParameterType(
       if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) {
         return undefined;
       }
-      return { form: "instance", name: declared };
+      return swiftDeclaredTypeRef(declared);
     }
     if (members.memberReach(enclosing, callee, ctx).declared) return undefined;
     if (members.sdkDeclaresMember(enclosing, callee, ctx)) {
@@ -803,9 +814,23 @@ function swiftConstructionClosureParameterType(
   if (signature !== undefined) {
     const declared = signature.types?.[index];
     if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) return undefined;
-    return { form: "instance", name: declared };
+    return swiftDeclaredTypeRef(declared);
   }
   return members.sdkClosureParameterType(type, "init", index, ctx);
+}
+
+/**
+ * A published closure-parameter type as a value of it: `Result<URLRequest,
+ * Error>` → `Result` of `URLRequest` and `Error`, so an SDK member read off it
+ * substitutes the declaring type's parameters (bd tea-rags-mcp-y99pg.32). The
+ * walker spells arguments only when every one is a plain nominal; anything
+ * else parses to the bare nominal the text starts with.
+ */
+function swiftDeclaredTypeRef(declared: string): TypeRef {
+  const parsed = parseSwiftTypeText(declared);
+  if (parsed?.kind !== "nominal") return { form: "instance", name: declared.replace(/<[\s\S]*$/, "") };
+  const args = parsed.args.map((arg) => (arg.kind === "nominal" && arg.args.length === 0 ? arg.path : null));
+  return swiftTypeRefWithArguments(parsed.path, args);
 }
 
 /**

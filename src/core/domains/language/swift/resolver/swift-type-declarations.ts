@@ -21,6 +21,7 @@ import type {
   CallContext,
   GenericInitializerFact,
   SwiftFieldConstruction,
+  SwiftWhereClauseFact,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import { RunScopedMemo, splitAtBracketDepthZero } from "../../kernel/index.js";
@@ -50,6 +51,10 @@ interface SwiftTypeDeclarationSets {
   readonly optionalProperties: ReadonlyMap<string, ReadonlySet<string>>;
   /** typeId → member typealias → the nominal it aliases, first declaration wins (bd tea-rags-mcp-y99pg.33). */
   readonly memberTypeAliases: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  /** typeId → stored property → the generic parameter it is typed as (bd tea-rags-mcp-y99pg.34). */
+  readonly genericFields: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  /** relPath → the constrained re-openings it holds, each with its `where` clause (bd tea-rags-mcp-y99pg.34). */
+  readonly whereClauses: ReadonlyMap<string, readonly { typeId: string; clause: SwiftWhereClauseFact }[]>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -146,6 +151,8 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const memberTypeAliases = new Map<string, Map<string, string>>();
   const initializers = new Map<string, GenericInitializerFact[]>();
   const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
+  const genericFields = new Map<string, Readonly<Record<string, string>>>();
+  const whereClauses = new Map<string, { typeId: string; clause: SwiftWhereClauseFact }[]>();
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
   for (const relPath of Object.keys(channel).sort()) {
@@ -157,6 +164,15 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         generics.set(fact.typeId, fact.genericParameters);
       }
       mergeFieldArguments(fieldArguments, fact);
+      // A stored property lives in the type's own declaration; Swift lets no extension add one.
+      if (fact.genericFieldParameters !== undefined && !fact.reopens && !genericFields.has(fact.typeId)) {
+        genericFields.set(fact.typeId, fact.genericFieldParameters);
+      }
+      if (fact.whereClause !== undefined) {
+        const list = whereClauses.get(relPath) ?? [];
+        list.push({ typeId: fact.typeId, clause: fact.whereClause });
+        whereClauses.set(relPath, list);
+      }
       if (fact.genericInitializers !== undefined) {
         initializers.set(fact.typeId, [...(initializers.get(fact.typeId) ?? []), ...fact.genericInitializers]);
       }
@@ -217,6 +233,8 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     propertyAttributes,
     optionalProperties,
     memberTypeAliases,
+    genericFields,
+    whereClauses,
   };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
@@ -261,6 +279,29 @@ export function swiftConformances(typeId: string, ctx: CallContext): readonly st
 /** `typeId`'s own generic parameter names, or none (bd tea-rags-mcp-y99pg.13). */
 export function swiftGenericParameters(typeId: string, ctx: CallContext): readonly string[] {
   return setsFor(ctx)?.generics.get(typeId) ?? [];
+}
+
+/** The generic parameter of `typeId` its stored property `field` is typed as, or undefined (bd tea-rags-mcp-y99pg.34). */
+export function swiftGenericFieldParameter(typeId: string, field: string, ctx: CallContext): string | undefined {
+  const fields = setsFor(ctx)?.genericFields.get(typeId);
+  return fields !== undefined && Object.hasOwn(fields, field) ? fields[field] : undefined;
+}
+
+/**
+ * The `where` clause of the re-opening of `typeId` in `relPath` whose lines
+ * hold `line`, or undefined (bd tea-rags-mcp-y99pg.34). Extensions sit at file
+ * scope and never nest, so at most one holds a line.
+ */
+export function swiftWhereClauseAt(
+  typeId: string,
+  relPath: string,
+  line: number,
+  ctx: CallContext,
+): SwiftWhereClauseFact | undefined {
+  for (const { typeId: id, clause } of setsFor(ctx)?.whereClauses.get(relPath) ?? []) {
+    if (id === typeId && clause.startLine <= line && line <= clause.endLine) return clause;
+  }
+  return undefined;
 }
 
 /** The generic arguments `typeId` declares its property `field` with, or undefined. */

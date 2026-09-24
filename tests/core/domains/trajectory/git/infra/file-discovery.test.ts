@@ -36,6 +36,12 @@ import {
 } from "../../../../../../src/core/domains/trajectory/git/infra/file-reader.js";
 import { GitEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/git/provider.js";
 
+// The spawn counter is a PATH shim, so pin the PATH executable — otherwise the
+// client resolves Apple's /usr/bin/git and bypasses the shim entirely.
+vi.mock("../../../../../../src/core/infra/git-executable.js", () => ({
+  resolveGitExecutable: () => "git",
+}));
+
 const TMP_BASE = realpathSync(tmpdir());
 
 // The real-git provider tests here spawn many git subprocesses; under the full

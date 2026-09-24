@@ -25,6 +25,7 @@ import type {
   GraphFileNode,
   HierarchySnapshot,
   InheritanceEdge,
+  NonPublicMemberEdge,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -1092,6 +1093,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return (await this.call("readFileDependencyGraph", {})) as FileDependencyGraph;
+  }
+
+  async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
+    return (await this.call("readNonPublicMemberEdges", { languages: [...languages] })) as NonPublicMemberEdge[];
   }
 
   async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {

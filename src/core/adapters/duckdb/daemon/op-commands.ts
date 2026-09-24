@@ -263,6 +263,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope as CycleScope)).entries()]),
   // Plain arrays on the wire — nothing to rebuild on the client.
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
+  readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),

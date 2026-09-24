@@ -406,8 +406,10 @@ export interface TypeDeclarationFact {
    * For each method taking ONE function-typed parameter, the types that
    * function's parameters are declared with, by method name:
    * `func write<U>(_ closure: (inout Value) throws -> U)` → `{ write: ["Value"] }`.
-   * An entry is a nominal, one of {@link genericParameters} (bound per receiver
-   * by its type arguments), or `null`. A method whose overloads disagree maps
+   * An entry is a nominal — spelled with its generic arguments when every one
+   * is a concrete nominal (`Result<URLRequest, Error>`, bd
+   * tea-rags-mcp-y99pg.32) — one of {@link genericParameters} (bound per
+   * receiver by its type arguments), or `null`. A method whose overloads disagree maps
    * to `null`. Absent when no method takes a closure.
    */
   readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;
@@ -468,6 +470,31 @@ export interface TypeDeclarationFact {
    * none is nominal.
    */
   readonly memberTypeAliases?: Readonly<Record<string, string>>;
+  /**
+   * Stored properties whose declared type IS one of {@link genericParameters},
+   * by property name: `var value: Value` inside `Protected<Value>` →
+   * `{ value: "Value" }` — what a receiver's generic arguments substitute (bd
+   * tea-rags-mcp-y99pg.34). Absent when none is.
+   */
+  readonly genericFieldParameters?: Readonly<Record<string, string>>;
+  /**
+   * A re-opening's `where` clause and the lines it scopes (bd
+   * tea-rags-mcp-y99pg.34): inside `extension Protected where Value ==
+   * Request.MutableState`, `self` is a `Protected<Request.MutableState>`.
+   * Absent on a declaration without one.
+   */
+  readonly whereClause?: SwiftWhereClauseFact;
+}
+
+/** A constrained re-opening's `where` clause (`TypeDeclarationFact.whereClause`). */
+export interface SwiftWhereClauseFact {
+  /** 1-based first and last line of the re-opening the clause scopes. */
+  readonly startLine: number;
+  readonly endLine: number;
+  /** Same-type requirements, type text as written: `Value == Request.MutableState` → `{ Value: "Request.MutableState" }`. */
+  readonly sameType?: Readonly<Record<string, string>>;
+  /** Conformance / superclass requirements, the nominal named: `ExtendedType: Bundle` → `{ ExtendedType: "Bundle" }`. */
+  readonly bounds?: Readonly<Record<string, string>>;
 }
 
 /** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */
@@ -586,6 +613,21 @@ export interface ImportRef {
    * a dispatch table.
    */
   importedBindings?: Record<string, string>;
+  /**
+   * Names this statement takes from the TARGET module's export surface
+   * (bd tea-rags-mcp-r8hme.2), in the target's spelling — `import { a as b }`
+   * takes `a`. `default` is a default import, `*` the whole module (a
+   * namespace import, `import m` in Python, a require bound whole). Absent when
+   * the statement names nothing (a side-effect import) or the walker does not
+   * record it. Carried onto the persisted file edge; the facade check reads it.
+   */
+  importedExportNames?: string[];
+  /**
+   * Names a source re-export forwards from the target (`export { a } from`),
+   * in the target's spelling; `*` for `export * from` / `export * as ns from`.
+   * Absent on every statement that is not a source re-export.
+   */
+  reexportedExportNames?: string[];
 }
 
 export interface ChunkExtraction {

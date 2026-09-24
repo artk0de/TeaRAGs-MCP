@@ -635,9 +635,12 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
   });
 
   // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.17): a `(k, v)` pattern over a
-  // DICTIONARY now binds its key and value types; a Set and a tuple pattern
-  // over anything else still bind nothing.
-  it("declines a Set and a tuple pattern over a non-dictionary; binds a dictionary's key and value", () => {
+  // DICTIONARY now binds its key and value types; a tuple pattern over
+  // anything else still binds nothing. INVARIANT CHANGED again (bd
+  // tea-rags-mcp-y99pg.32): a `Set<Thing>` iterates `Thing`s, as the
+  // typechecker binds `for x in s` — the old decline was the walker dropping
+  // generic arguments, not a claim about Set.
+  it("binds a Set's element and a dictionary's key and value; declines a tuple pattern over a non-dictionary", () => {
     const src = [
       "func go(s: Set<Thing>, d: [String: Foo], xs: [Thing]) {",
       "  for x in s { x.touch() }",
@@ -647,7 +650,7 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
       "",
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
-    expect(bindings?.x).toBeUndefined();
+    expect(bindings?.x?.[0].type).toBe("Thing");
     expect(bindings?.k?.[0].type).toBe("String");
     expect(bindings?.v?.[0].type).toBe("Foo");
     expect(bindings?.i).toBeUndefined();
@@ -1126,7 +1129,12 @@ describe("swift walker — typeDeclarations", () => {
     ].join("\n");
     expect(extractMaterialized(src).typeDeclarations).toEqual([
       { typeId: "Outer.Inner", reopens: true },
-      { typeId: "Array", reopens: true },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): a re-opening now publishes its `where` clause.
+      {
+        typeId: "Array",
+        reopens: true,
+        whereClause: { startLine: 2, endLine: 2, sameType: { Element: "Header" } },
+      },
       // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
       { typeId: "Box", reopens: false, conforms: ["Base"], genericParameters: ["T"] },
     ]);
@@ -1204,6 +1212,40 @@ describe("swift walker — closure parameters typed by the parameter they are pa
     ].join("\n");
     expect(typeAt(src, "$0", 2)).toBe("Thing");
     expect(typeAt(src, "t", 3)).toBe("Thing");
+  });
+
+  // Session.withAllRequests { requests in requests.forEach { $0.cancel() } }
+  // on `(Set<Request>) -> Void` (bd tea-rags-mcp-y99pg.32).
+  it("reads the element of a sequence spelled with its generic argument — `Set<T>`, `Array<T>`", () => {
+    const src = [
+      "final class Pool {",
+      "  func withAll(perform action: @escaping (Set<Thing>) -> Void) {}",
+      "  func go(xs: Array<Thing>) {",
+      "    withAll { all in",
+      "      all.forEach { $0.touch() }",
+      "    }",
+      "    for x in xs { x.touch() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "all", 5)).toBe("Set");
+    expect(typeAt(src, "$0", 5)).toBe("Thing");
+    expect(typeAt(src, "x", 7)).toBe("Thing");
+    const bindings = extractMaterialized(src).chunks[0].localBindings;
+    expect(bindings?.$0?.[0].type).toBe("Thing");
+  });
+
+  it("reads no element off a generic type that is not a single-element sequence", () => {
+    const src = [
+      "func go(r: Result<Thing, Error>, d: Dictionary<String, Thing>) {",
+      "  for x in d { x.touch() }",
+      "  r.map { $0.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "x", 2)).toBeUndefined();
+    expect(typeAt(src, "$0", 3)).toBeUndefined();
   });
 
   it("declines a callee with more than one function-typed parameter", () => {
@@ -1330,6 +1372,29 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
     expect(extract(src).chunks[0].callResultBindings?.r).toEqual([
       { line: 2, callee: "sp.req.handler", scopeEndLine: 4 },
     ]);
+  });
+
+  // Request.cURLDescription: `let cookies = cookieStorage.cookies(for: url)` two
+  // lines below `if`, folding a `cookieStorage` bound one clause above it (bd
+  // tea-rags-mcp-y99pg.32). A spelling is visible strictly below its line, so
+  // every clause sitting on the `if` line hid each from the next.
+  it("positions each clause of a multi-line condition on its own line", () => {
+    const src = [
+      "func go() {",
+      "  if",
+      "    let storage = configuration.httpCookieStorage,",
+      "    let cookies = storage.cookies(for: url), !cookies.isEmpty {",
+      "    cookies.run()",
+      "  }",
+      "  guard let a = sp.a, let b = a.b else { return }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extractMaterialized(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.storage).toEqual([{ line: 3, callee: "configuration.httpCookieStorage", scopeEndLine: 6 }]);
+    expect(bindings.cookies).toEqual([{ line: 4, callee: "storage.cookies", scopeEndLine: 6 }]);
+    expect(bindings.a?.[0].line).toBe(7);
+    expect(bindings.b?.[0].line).toBe(7);
   });
 
   it("types a cast local by the cast's target type", () => {
@@ -1593,6 +1658,32 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     });
   });
 
+  // `adapter.adapt(…) { result in let r = try result.get() }` in another file
+  // needs `Result`'s arguments to type `get()` (bd tea-rags-mcp-y99pg.32).
+  it("publishes a closure parameter's concrete generic arguments with its nominal", () => {
+    const src = [
+      "public protocol RequestAdapter {",
+      "  func adapt(_ urlRequest: URLRequest, using state: State,",
+      "             completion: @escaping @Sendable (_ result: Result<URLRequest, any Error>) -> Void)",
+      "}",
+      "final class Box<Value> {",
+      "  func load(_ done: (Result<Value, Error>) -> Void) {}",
+      "  func each(_ body: (Set<Thing>) -> Void) {}",
+      "}",
+      "",
+    ].join("\n");
+    for (const facts of [extract(src).typeDeclarations ?? [], extractMaterialized(src).typeDeclarations ?? []]) {
+      expect(facts.find((f) => f.typeId === "RequestAdapter")?.memberClosureParameters).toEqual({
+        adapt: ["Result<URLRequest, Error>"],
+      });
+      // An argument naming a generic parameter is bound per use, not declared.
+      expect(facts.find((f) => f.typeId === "Box")?.memberClosureParameters).toEqual({
+        load: ["Result"],
+        each: ["Set<Thing>"],
+      });
+    }
+  });
+
   it("binds a closure's parameters to the callee they are passed to when no declaration here types them", () => {
     const src = [
       "final class Request {",
@@ -1825,6 +1916,80 @@ describe("swift walker — a generic-argument extension's spelled id (bd tea-rag
   });
 });
 
+describe("swift walker — `self` in an extension of an array type iterates its element (bd tea-rags-mcp-y99pg)", () => {
+  const cases = [
+    ["an array-spelled extension", "extension [Evaluator] {"],
+    ["an `Array where Element ==` extension", "extension Array where Element == Evaluator {"],
+  ] as const;
+  for (const [label, header] of cases) {
+    it(`types \`for x in self\` by the element in ${label}`, () => {
+      const src = [header, "  func run() {", "    for e in self {", "      e.evaluate()", "    }", "  }", "}", ""].join(
+        "\n",
+      );
+      expect(typeAt(src, "e", 4)).toBe("Evaluator");
+      expect(resolveLocalBindingType(extractMaterialized(src).chunks[0].localBindings, "e", 4)).toBe("Evaluator");
+    });
+  }
+
+  it("types nothing for `self` in an extension of a non-array type", () => {
+    const src = [
+      "extension Box where Element == Evaluator {",
+      "  func run() {",
+      "    for e in self { e.go() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "e", 3)).toBeUndefined();
+  });
+});
+
+describe("swift walker — generic-typed fields and extension `where` clauses (bd tea-rags-mcp-y99pg.34)", () => {
+  const src = [
+    "final class Protected<Value> {",
+    "  private var value: Value",
+    "  var backup: Value?",
+    "  let count: Int",
+    "}",
+    "extension Protected where Value == Request.MutableState {",
+    "  func go() { value.state.run() }",
+    "}",
+    "extension Box where Item: Bundle, Other == [Cert] {",
+    "}",
+    "extension Plain {}",
+    "",
+  ].join("\n");
+  const expected = [
+    {
+      typeId: "Protected",
+      reopens: false,
+      genericParameters: ["Value"],
+      genericFieldParameters: { value: "Value", backup: "Value" },
+      // `backup: Value?` is also an optional property (bd tea-rags-mcp-y99pg.33).
+      optionalProperties: ["backup"],
+    },
+    {
+      typeId: "Protected",
+      reopens: true,
+      whereClause: { startLine: 6, endLine: 8, sameType: { Value: "Request.MutableState" } },
+    },
+    {
+      typeId: "Box",
+      reopens: true,
+      whereClause: { startLine: 9, endLine: 10, sameType: { Other: "[Cert]" }, bounds: { Item: "Bundle" } },
+    },
+    { typeId: "Plain", reopens: true },
+  ];
+
+  it("publishes which fields a generic parameter types, and each re-opening's where clause", () => {
+    expect(extract(src).typeDeclarations).toEqual(expected);
+  });
+
+  it("publishes the same facts off the MATERIALIZED tree", () => {
+    expect(extractMaterialized(src).typeDeclarations).toEqual(expected);
+  });
+});
+
 describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)", () => {
   it("publishes what a function-typed alias declared in a type returns", () => {
     const src = [
@@ -1948,7 +2113,14 @@ describe("swift walker — a protocol extension's `where Self` constraints (bd t
 
   it("publishes the types a `Self` constraint names, with the extension's line span", () => {
     for (const out of [extract(src), extractMaterialized(src)]) {
-      expect(out.typeDeclarations).toEqual([
+      // The same clause also reaches `whereClause` (bd tea-rags-mcp-y99pg.34);
+      // this pins only the `Self` reading.
+      const selfFacts = out.typeDeclarations?.map(({ typeId, reopens, selfConstraints }) => ({
+        typeId,
+        reopens,
+        ...(selfConstraints ? { selfConstraints } : {}),
+      }));
+      expect(selfFacts).toEqual([
         { typeId: "Download", reopens: true, selfConstraints: { types: ["DataSerializer"], startLine: 1, endLine: 5 } },
         { typeId: "Download", reopens: true, selfConstraints: { types: ["URLSerializer"], startLine: 6, endLine: 7 } },
         { typeId: "Protected", reopens: true },

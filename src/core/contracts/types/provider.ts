@@ -389,8 +389,11 @@ export interface FileSignalOptions {
    *  populateBlameMap pass with cache hit/miss counters and wall duration;
    *  the file phase binds it to the pipeline debug log ([GitEnrich] BLAME
    *  line + "blame" stage). Never serialized: attached only on inline /
-   *  main-thread dispatch paths (precedent: onWalkStats). */
-  onBlameStats?: (stats: { files: number; hits: number; misses: number; durationMs: number }) => void;
+   *  main-thread dispatch paths (precedent: onWalkStats). `misses` counts
+   *  blames THIS pass dispatched; `joined` counts files served by a blame
+   *  another batch of the same run queued or completed (no new `git blame`).
+   *  files = hits + misses + joined. */
+  onBlameStats?: (stats: { files: number; hits: number; misses: number; joined: number; durationMs: number }) => void;
 }
 
 /**
