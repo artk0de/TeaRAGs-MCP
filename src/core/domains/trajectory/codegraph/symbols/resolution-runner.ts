@@ -14,6 +14,7 @@
  * `trajectory/** -> domains/language/**`).
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   chunkCallerScope,
   type CallContext,
@@ -438,7 +439,7 @@ export class CallEdgeResolutionRunner {
       // fact (bd tea-rags-mcp-bvalc). Names YARD already bound are untouched.
       const localBindings = seedParamLocalBindings(
         chunk.localBindings,
-        this.runState.paramTypes[chunk.symbolId],
+        identifierEntry(this.runState.paramTypes, chunk.symbolId),
         chunk.startLine,
       );
       for (const call of chunk.calls) {

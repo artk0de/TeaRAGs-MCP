@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
   ClassFieldParamLink,
   CodegraphPass1FileAggregates,
@@ -250,7 +251,7 @@ export function buildIncludedBy(
   ancestors: Record<string, readonly string[]>,
   prepended: Record<string, readonly string[]>,
 ): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+  const out: Record<string, string[]> = createIdentifierRecord();
   const add = (child: string, ancestor: string): void => {
     const list = (out[ancestor] ??= []);
     if (!list.includes(child)) list.push(child);
@@ -369,7 +370,7 @@ export class CodegraphRunState {
    * walked in pass-1, keyed by class: a variable's bound type is usually declared
    * in a DIFFERENT file than the caller, so per-file ancestor maps are insufficient.
    */
-  ancestors: Record<string, readonly string[]> = {};
+  ancestors: Record<string, readonly string[]> = createIdentifierRecord();
 
   /**
    * Per-run set of FQs declared COMPACT (`class A::B::C`), aggregated from
@@ -384,7 +385,7 @@ export class CodegraphRunState {
    * tea-rags-mcp-3jvn). Same lifecycle as `ancestors`; walked BEFORE the bound
    * class itself so prepended modules' methods shadow the class's own.
    */
-  prependedAncestors: Record<string, readonly string[]> = {};
+  prependedAncestors: Record<string, readonly string[]> = createIdentifierRecord();
 
   /**
    * Reverse include-by index built ONCE from the frozen ancestor + prepended maps
@@ -392,28 +393,28 @@ export class CodegraphRunState {
    * reads it only when BOTH resolver ancestor inputs ARE the run-global maps; the
    * per-file fallback (single-file / test mode) still computes fresh.
    */
-  includedBy: Record<string, string[]> = {};
+  includedBy: Record<string, string[]> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.classExtends` (bd tea-rags-mcp-d29r):
    * single-inheritance parent map merged across files, so `super()` routes to the
    * parent regardless of which file declares it.
    */
-  classExtends: Record<string, string> = {};
+  classExtends: Record<string, string> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.classSchemaTables` (bd
    * tea-rags-mcp-8l5fo): `class FQ → explicit ORM table override`, read ONCE at
    * the barrier to decide which model owns each schema table. Lifecycle as `classExtends`.
    */
-  schemaTables: Record<string, string> = {};
+  schemaTables: Record<string, string> = createIdentifierRecord();
 
   /**
    * Raw persisted-schema snapshot contents for the CURRENT run, keyed by the
    * declaring language's `schemaRelPath` and read ONCE by {@link loadSchemaSnapshots}
    * — the barrier (`seal`) has no `root` of its own. bd tea-rags-mcp-8l5fo.
    */
-  schemaSnapshots: Record<string, string> = {};
+  schemaSnapshots: Record<string, string> = createIdentifierRecord();
   private schemaSnapshotsLoaded = false;
 
   /**
@@ -421,7 +422,7 @@ export class CodegraphRunState {
    * tea-rags-mcp-6g9c): `functionName → declaredReturnTypeName`, so `x := New();
    * x.method()` binds even when `New` lives in another file. Lifecycle as `classExtends`.
    */
-  returnTypes: Record<string, string> = {};
+  returnTypes: Record<string, string> = createIdentifierRecord();
 
   /**
    * Per-run union of `FileExtraction.instantiatedTypes` (bd tea-rags-mcp-pffv),
@@ -436,14 +437,14 @@ export class CodegraphRunState {
    * duplicate class key. Stays empty while no type source emits `kind:"ivar"`
    * facts (bd tea-rags-mcp-wr7ku) — expected, not a wiring defect.
    */
-  ivarTypes: Record<string, Record<string, string>> = {};
+  ivarTypes: Record<string, Record<string, string>> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.structuredReturnTypes`
    * (`"<fqClass>#method" → RubyTypeRef`) for the precise structured-return path,
    * which keeps union / container refs across files. Last-write-wins.
    */
-  structuredReturnTypes: Record<string, RubyTypeRef> = {};
+  structuredReturnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.classFieldTypesByClassKey` (bd
@@ -454,7 +455,7 @@ export class CodegraphRunState {
    * so an absent map reads the same as an empty one. Last-write-wins on a
    * duplicate class key, mirroring `ivarTypes`; reset at the same seams.
    */
-  classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  classFieldTypesByClassKey: Record<string, Record<string, string>> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.classFieldCallResults` (bd
@@ -463,7 +464,7 @@ export class CodegraphRunState {
    * `structuredReturnTypes` at resolve time. Same key shape and lifecycle as
    * `classFieldTypesByClassKey`. NOT persisted.
    */
-  classFieldCallResults: Record<string, Record<string, string>> = {};
+  classFieldCallResults: Record<string, Record<string, string>> = createIdentifierRecord();
 
   /**
    * Per-run `FileExtraction.moduleReexports`, keyed by the relPath that wrote each
@@ -471,7 +472,7 @@ export class CodegraphRunState {
    * that only re-exports a name. Assignment, not union: a re-walk must REPLACE
    * what the file said, never keep a statement it has since deleted.
    */
-  moduleReexports: Record<string, readonly ModuleReexport[]> = {};
+  moduleReexports: Record<string, readonly ModuleReexport[]> = createIdentifierRecord();
 
   /**
    * Per-run `FileExtraction.buildConstraint`, keyed by the relPath that declared
@@ -481,7 +482,7 @@ export class CodegraphRunState {
    * file the run did not walk (`pass1Hydrators`), so an incremental run tells
    * the twins apart exactly as a full one does.
    */
-  buildConstraintsByFile: Record<string, string> = {};
+  buildConstraintsByFile: Record<string, string> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table NAME
@@ -489,7 +490,7 @@ export class CodegraphRunState {
    * disambiguates by the caller's import map. Re-walking a file replaces its own
    * entry (dedup by relPath).
    */
-  dispatchTables: Record<string, DispatchTableDef[]> = {};
+  dispatchTables: Record<string, DispatchTableDef[]> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.callbackParams` keyed by the
@@ -497,7 +498,7 @@ export class CodegraphRunState {
    * files so the resolver's bounded inter-procedural join sees a callee's
    * invoked param positions regardless of which file declared it.
    */
-  callbackParams: Record<string, number[]> = {};
+  callbackParams: Record<string, number[]> = createIdentifierRecord();
 
   /**
    * Per-run normalized inheritance rows (bd tea-rags-mcp-o17v2), accumulated so
@@ -527,7 +528,7 @@ export class CodegraphRunState {
    * at the barrier for every `CallContext.selfDispatchTemplates`. Empty until the
    * barrier runs — the Ruby entry strategy CONTINUEs when it is empty.
    */
-  selfDispatchTemplates: Record<string, string> = {};
+  selfDispatchTemplates: Record<string, string> = createIdentifierRecord();
 
   /**
    * Run-global self-instantiating CLASS-method symbolIds (DEFECT 2 v2), built at
@@ -549,7 +550,7 @@ export class CodegraphRunState {
    * barrier and, holding only real definitions, gates which constant-lookup
    * candidate is the actual callee.
    */
-  paramNames: Record<string, readonly string[]> = {};
+  paramNames: Record<string, readonly string[]> = createIdentifierRecord();
 
   /**
    * Per-run aggregation of `FileExtraction.classFieldParamLinks` (bd
@@ -557,7 +558,7 @@ export class CodegraphRunState {
    * verbatim from a parameter. Merged run-global because a class reopened across
    * files must present ONE link set to the barrier fold.
    */
-  classFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = {};
+  classFieldParamLinks: Record<string, Record<string, ClassFieldParamLink>> = createIdentifierRecord();
 
   /**
    * Coordinates (`"fqClass|@ivar"`) the walker typed on its own anywhere in the
@@ -573,7 +574,7 @@ export class CodegraphRunState {
    * from `knownTargetCallArgs` (bd tea-rags-mcp-bvalc). Seeded into each
    * method chunk's `localBindings` during pass-2. Empty until the barrier runs.
    */
-  paramTypes: KnownTargetParamTypes = {};
+  paramTypes: KnownTargetParamTypes = createIdentifierRecord();
 
   /**
    * Run-global `fqClass → "@ivar" → typeName` derived at the barrier by joining
@@ -581,7 +582,7 @@ export class CodegraphRunState {
    * Overlaid UNDER each file's own `classFieldTypes` in pass-2. Empty until the
    * barrier runs — an empty overlay leaves the channel byte-identical.
    */
-  derivedClassFieldTypes: Record<string, Record<string, string>> = {};
+  derivedClassFieldTypes: Record<string, Record<string, string>> = createIdentifierRecord();
 
   /**
    * Raw `Gemfile` contents for the CURRENT run, read ONCE by {@link loadGemfile}
@@ -850,9 +851,9 @@ export class CodegraphRunState {
     // Column VALUE types (bd tea-rags-mcp-2a5oo) — returned rather than merged
     // here, because they rank BELOW every other return fact and the barrier's
     // derived facts are not all folded yet at this point.
-    const returnTypes: Record<string, RubyTypeRef> = {};
+    const returnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
     for (const source of this.schemaColumnSources) {
-      const snapshot = this.schemaSnapshots[source.schemaRelPath];
+      const snapshot = identifierEntry(this.schemaSnapshots, source.schemaRelPath);
       if (snapshot === undefined) continue;
       const models = collectSchemaColumnModels({
         classAncestors: this.ancestors,
@@ -953,7 +954,7 @@ export class CodegraphRunState {
     // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo): only here are the
     // ancestry map (which classes are models) and the `self.table_name` overrides
     // both complete. The column VALUE types are held back and merged LAST (below).
-    let schemaColumnReturnTypes: Record<string, RubyTypeRef> = {};
+    let schemaColumnReturnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
     if (this.schemaColumnSources.length > 0) {
       schemaColumnReturnTypes = this.applySchemaColumns(await resolveSymbolTable());
     }
@@ -980,7 +981,8 @@ export class CodegraphRunState {
         [...this.selfInstantiatingClassMethods, ...Object.keys(this.selfDispatchTemplates)],
         this.structuredReturnTypes,
         selfDispatchProbe.relatedConcreteTypes,
-        (typeName) => symbolTable.lookup(typeName).length > 0 || this.ancestors[typeName] !== undefined,
+        (typeName) =>
+          symbolTable.lookup(typeName).length > 0 || identifierEntry(this.ancestors, typeName) !== undefined,
       );
       for (const [key, ref] of Object.entries(entryReturnTypes)) {
         this.structuredReturnTypes[key] = ref;
@@ -1018,11 +1020,11 @@ export class CodegraphRunState {
    */
   private resetInterprocParamState(): void {
     this.knownTargetCallArgs.clear();
-    this.paramNames = {};
-    this.classFieldParamLinks = {};
+    this.paramNames = createIdentifierRecord();
+    this.classFieldParamLinks = createIdentifierRecord();
     this.typedClassFields.clear();
-    this.paramTypes = {};
-    this.derivedClassFieldTypes = {};
+    this.paramTypes = createIdentifierRecord();
+    this.derivedClassFieldTypes = createIdentifierRecord();
   }
 
   /**
@@ -1050,32 +1052,32 @@ export class CodegraphRunState {
     } = this.stats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.stats = createEmptyRunStats();
-      this.ancestors = {};
+      this.ancestors = createIdentifierRecord();
       this.compactClasses = new Set();
       this.gemfileContent = undefined;
       this.gemfileLoaded = false;
       this.declaredDependencies = undefined;
       this.declaredDependenciesLoaded = false;
       this.projectRoot = undefined;
-      this.prependedAncestors = {};
-      this.classExtends = {};
-      this.schemaTables = {};
-      this.schemaSnapshots = {};
+      this.prependedAncestors = createIdentifierRecord();
+      this.classExtends = createIdentifierRecord();
+      this.schemaTables = createIdentifierRecord();
+      this.schemaSnapshots = createIdentifierRecord();
       this.schemaSnapshotsLoaded = false;
-      this.returnTypes = {};
+      this.returnTypes = createIdentifierRecord();
       this.instantiatedTypes.clear();
-      this.ivarTypes = {};
-      this.classFieldTypesByClassKey = {};
-      this.classFieldCallResults = {};
-      this.moduleReexports = {};
-      this.buildConstraintsByFile = {};
-      this.structuredReturnTypes = {};
-      this.dispatchTables = {};
-      this.callbackParams = {};
+      this.ivarTypes = createIdentifierRecord();
+      this.classFieldTypesByClassKey = createIdentifierRecord();
+      this.classFieldCallResults = createIdentifierRecord();
+      this.moduleReexports = createIdentifierRecord();
+      this.buildConstraintsByFile = createIdentifierRecord();
+      this.structuredReturnTypes = createIdentifierRecord();
+      this.dispatchTables = createIdentifierRecord();
+      this.callbackParams = createIdentifierRecord();
       this.inheritanceRows = [];
       this.hierarchyView = undefined;
       this.selfDispatchMethods = [];
-      this.selfDispatchTemplates = {};
+      this.selfDispatchTemplates = createIdentifierRecord();
       this.selfInstantiatingClassMethods = [];
       this.resetInterprocParamState();
       // The wide reset emptied every run-global map, so every flag goes with it.
@@ -1130,16 +1132,16 @@ export class CodegraphRunState {
       );
     }
     this.stats = createEmptyRunStats();
-    this.ancestors = {};
+    this.ancestors = createIdentifierRecord();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
     this.declaredDependencies = undefined;
     this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
-    this.schemaSnapshots = {};
+    this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
-    this.prependedAncestors = {};
+    this.prependedAncestors = createIdentifierRecord();
     // ONLY these two: the real-run branch deliberately leaves classExtends,
     // returnTypes, ivarTypes and structuredReturnTypes standing, and clearing
     // their flags here would send pass-2 to the per-file fallback while the
@@ -1231,7 +1233,7 @@ export class CodegraphRunState {
    * `drainMetrics` owns read-and-clear of the tally.
    */
   clearForNextRun(): void {
-    this.ancestors = {};
+    this.ancestors = createIdentifierRecord();
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
     this.mirroredRelPaths.clear();
@@ -1244,26 +1246,26 @@ export class CodegraphRunState {
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
     this.beginRunScope();
-    this.prependedAncestors = {};
-    this.includedBy = {};
-    this.classExtends = {};
-    this.schemaTables = {};
-    this.schemaSnapshots = {};
+    this.prependedAncestors = createIdentifierRecord();
+    this.includedBy = createIdentifierRecord();
+    this.classExtends = createIdentifierRecord();
+    this.schemaTables = createIdentifierRecord();
+    this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
-    this.returnTypes = {};
+    this.returnTypes = createIdentifierRecord();
     this.instantiatedTypes.clear();
-    this.ivarTypes = {};
-    this.classFieldTypesByClassKey = {};
-    this.classFieldCallResults = {};
-    this.moduleReexports = {};
-    this.buildConstraintsByFile = {};
-    this.structuredReturnTypes = {};
-    this.dispatchTables = {};
-    this.callbackParams = {};
+    this.ivarTypes = createIdentifierRecord();
+    this.classFieldTypesByClassKey = createIdentifierRecord();
+    this.classFieldCallResults = createIdentifierRecord();
+    this.moduleReexports = createIdentifierRecord();
+    this.buildConstraintsByFile = createIdentifierRecord();
+    this.structuredReturnTypes = createIdentifierRecord();
+    this.dispatchTables = createIdentifierRecord();
+    this.callbackParams = createIdentifierRecord();
     this.inheritanceRows = [];
     this.hierarchyView = undefined;
     this.selfDispatchMethods = [];
-    this.selfDispatchTemplates = {};
+    this.selfDispatchTemplates = createIdentifierRecord();
     this.selfInstantiatingClassMethods = [];
     this.resetInterprocParamState();
     this.clearContributed();
@@ -1276,7 +1278,7 @@ export class CodegraphRunState {
    * `provider-run-reset-seams.test.ts`.
    */
   clearAll(): void {
-    this.ancestors = {};
+    this.ancestors = createIdentifierRecord();
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
     this.mirroredRelPaths.clear();
@@ -1289,25 +1291,25 @@ export class CodegraphRunState {
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
     this.beginRunScope();
-    this.prependedAncestors = {};
-    this.classExtends = {};
-    this.schemaTables = {};
-    this.schemaSnapshots = {};
+    this.prependedAncestors = createIdentifierRecord();
+    this.classExtends = createIdentifierRecord();
+    this.schemaTables = createIdentifierRecord();
+    this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
-    this.returnTypes = {};
+    this.returnTypes = createIdentifierRecord();
     this.instantiatedTypes.clear();
-    this.ivarTypes = {};
-    this.classFieldTypesByClassKey = {};
-    this.classFieldCallResults = {};
-    this.moduleReexports = {};
-    this.buildConstraintsByFile = {};
-    this.structuredReturnTypes = {};
-    this.dispatchTables = {};
-    this.callbackParams = {};
+    this.ivarTypes = createIdentifierRecord();
+    this.classFieldTypesByClassKey = createIdentifierRecord();
+    this.classFieldCallResults = createIdentifierRecord();
+    this.moduleReexports = createIdentifierRecord();
+    this.buildConstraintsByFile = createIdentifierRecord();
+    this.structuredReturnTypes = createIdentifierRecord();
+    this.dispatchTables = createIdentifierRecord();
+    this.callbackParams = createIdentifierRecord();
     this.inheritanceRows = [];
     this.hierarchyView = undefined;
     this.selfDispatchMethods = [];
-    this.selfDispatchTemplates = {};
+    this.selfDispatchTemplates = createIdentifierRecord();
     this.selfInstantiatingClassMethods = [];
     this.resetInterprocParamState();
     this.clearContributed();
@@ -1401,14 +1403,17 @@ export class CodegraphRunState {
     // that never writes the channel contributes nothing.
     if (extraction.classFieldTypesByClassKey) {
       for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey)) {
-        this.classFieldTypesByClassKey[classKey] = { ...this.classFieldTypesByClassKey[classKey], ...fields };
+        this.classFieldTypesByClassKey[classKey] = {
+          ...identifierEntry(this.classFieldTypesByClassKey, classKey),
+          ...fields,
+        };
       }
     }
     // Its call-assigned sibling (bd tea-rags-mcp-w205u, E4.6c) — same key, same
     // union, and the same reason no language gate is needed.
     if (extraction.classFieldCallResults) {
       for (const [classKey, fields] of Object.entries(extraction.classFieldCallResults)) {
-        this.classFieldCallResults[classKey] = { ...this.classFieldCallResults[classKey], ...fields };
+        this.classFieldCallResults[classKey] = { ...identifierEntry(this.classFieldCallResults, classKey), ...fields };
       }
     }
     // The file's `from` statements, verbatim under its own path (bd
@@ -1463,7 +1468,7 @@ export class CodegraphRunState {
         if (chunk.paramNames !== undefined) this.paramNames[chunk.symbolId] = chunk.paramNames;
       }
       for (const [fqClass, fields] of Object.entries(extraction.classFieldParamLinks ?? {})) {
-        this.classFieldParamLinks[fqClass] = { ...this.classFieldParamLinks[fqClass], ...fields };
+        this.classFieldParamLinks[fqClass] = { ...identifierEntry(this.classFieldParamLinks, fqClass), ...fields };
       }
       for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {})) {
         for (const ivar of Object.keys(fields)) this.typedClassFields.add(`${fqClass}|${ivar}`);

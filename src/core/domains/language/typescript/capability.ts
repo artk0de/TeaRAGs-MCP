@@ -102,5 +102,5 @@ export const capability: LanguageCapability = {
   // recovering the `createAppContext(): Promise<AppContext>` pins walker 10's
   // containment arm left file-only. Classes, cross-file types and
   // un-annotated factories still decline.
-  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 13, codegraphSchema: 2 },
 };

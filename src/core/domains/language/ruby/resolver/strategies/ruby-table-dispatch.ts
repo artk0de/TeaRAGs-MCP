@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import type {
   CallContext,
   CallRef,
@@ -82,7 +83,7 @@ export class RubyTableDispatchResolver implements DispatchResolverComponent {
    * disambiguated); else drop rather than guess (m46z).
    */
   private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
-    const defs = ctx.dispatchTables?.[name];
+    const defs = identifierEntry(ctx.dispatchTables, name);
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
     const inFile = defs.filter((d) => d.relPath === ctx.callerFile);

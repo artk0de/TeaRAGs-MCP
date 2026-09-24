@@ -57,6 +57,7 @@
  * whole index at the read site, which is where the distinction actually pays.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { swiftTypeFieldKeyParts } from "../type-field-address.js";
@@ -69,7 +70,7 @@ const EMPTY_UNION: SwiftTypeFieldUnion = Object.freeze({});
 
 /** Fold every Swift key of the run-global channel into one map per TYPE NAME. */
 function buildSwiftTypeFieldUnion(byClassKey: Record<string, Record<string, string>>): SwiftTypeFieldUnion {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   // Sorted, so the collision order above is a property of the project rather
   // than of the order this run happened to walk its files in.
   for (const key of Object.keys(byClassKey).sort()) {
@@ -77,10 +78,10 @@ function buildSwiftTypeFieldUnion(byClassKey: Record<string, Record<string, stri
     if (parts === undefined || !isSwiftSourcePath(parts.relPath)) continue;
     const fields = byClassKey[key];
     const merged = out[parts.typeName];
-    if (merged === undefined) out[parts.typeName] = { ...fields };
+    if (merged === undefined) out[parts.typeName] = Object.assign(createIdentifierRecord<string>(), fields);
     // First writer of a FIELD keeps it; a type seen again contributes only the
     // names no earlier file spelled.
-    else for (const [field, type] of Object.entries(fields)) if (!(field in merged)) merged[field] = type;
+    else for (const [field, type] of Object.entries(fields)) if (!Object.hasOwn(merged, field)) merged[field] = type;
   }
   return out;
 }

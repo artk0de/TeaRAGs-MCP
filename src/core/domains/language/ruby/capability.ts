@@ -36,7 +36,7 @@ export const capability: LanguageCapability = {
   // override inherits its ancestor template's hook (persisted as `superDelegates` in
   // the pass-1 slice). Edges that sat on the shared `KindOfService.call` node move,
   // and rows written earlier carry no `superDelegates`, so only the recompute moves them.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

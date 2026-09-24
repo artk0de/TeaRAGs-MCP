@@ -26,5 +26,5 @@ export const capability: LanguageCapability = {
   // walker 4: bd tea-rags-mcp-fov8f — every spec of a grouped `type ( ... )`
   // declaration emits (the walk kept only the first spec's symbol); indexed Go
   // projects need `--force-enrichments codegraph`.
-  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
 };

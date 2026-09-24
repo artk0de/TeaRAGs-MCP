@@ -37,6 +37,7 @@
  * per-resolver lookup, whose memos belong to the resolver.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBindingType, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
@@ -186,7 +187,7 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
       // Not a property: a METHOD hop, typed by what the declaration the call
       // lands on returns. Strict: an ambiguous callee types nothing.
       const callee = members.memberOn(recv.name, member, ctx, "strict")?.targetSymbolId;
-      return callee ? ctx.structuredReturnTypes?.[callee] : undefined;
+      return callee ? identifierEntry(ctx.structuredReturnTypes, callee) : undefined;
     },
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
     // An argument list carries its own dots (`request(for: task.id)`).

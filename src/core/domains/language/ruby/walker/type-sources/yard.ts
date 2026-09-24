@@ -1,3 +1,4 @@
+import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
 import { RUBY_NIL_TYPE_REF, rubyUnionOf } from "../../type-ref.js";
@@ -136,7 +137,7 @@ function collectYardRawParamBrackets(code: string): Map<number, Record<string, s
     if (name || bracket) {
       // Keep the RAW bracket string; yardBracketToRef will validate it.
       if (name && bracket) {
-        if (!pending) pending = {};
+        if (!pending) pending = createIdentifierRecord();
         pending[name] = bracket.trim();
       }
       continue;
@@ -185,7 +186,7 @@ export function collectYardParamTypes(code: string): Map<number, Record<string, 
     if (name && bracket) {
       const type = parseYardBracketType(bracket);
       if (type) {
-        if (!pending) pending = {};
+        if (!pending) pending = createIdentifierRecord();
         pending[name] = type;
       }
       continue;
@@ -216,7 +217,7 @@ export function collectYardParamTypes(code: string): Map<number, Record<string, 
  * reject containers here rather than unwrap them.
  */
 export function collectYardReturnTypes(code: string): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = createIdentifierRecord();
   let pendingReturn: string | null = null;
   // Mirror of collectYardReturnFacts' `@!attribute` ownership guard: a `@return`
   // nested under a `@!attribute` documents the attribute accessor, so it binds

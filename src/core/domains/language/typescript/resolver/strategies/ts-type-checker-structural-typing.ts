@@ -41,6 +41,7 @@
 
 import type ts from "typescript";
 
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
@@ -270,7 +271,7 @@ function boundReceiverType(call: CallRef, ctx: CallContext): string | null {
     const field = receiver.slice(THIS_PREFIX.length);
     if (field.includes(TS_SCOPE_SEPARATOR) || ctx.callerScope.length === 0) return null;
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    return ctx.classFieldTypes?.[enclosing]?.[field] ?? null;
+    return identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), field) ?? null;
   }
   return resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) ?? null;
 }

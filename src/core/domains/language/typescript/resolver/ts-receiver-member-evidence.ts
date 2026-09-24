@@ -54,6 +54,7 @@
 
 import ts from "typescript";
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
@@ -237,7 +238,8 @@ function anchorBaseClass(
   if (binding === undefined) return null;
   const mappedFile = mapImportToFile(binding.importText, ctx.callerFile, cfg.tsOptions, cfg.fileExists);
   if (mappedFile === null) return null;
-  const name = segments.length > 1 ? (segments.at(-1) ?? root) : (binding.importedBindings?.[root] ?? root);
+  const name =
+    segments.length > 1 ? (segments.at(-1) ?? root) : (identifierEntry(binding.importedBindings, root) ?? root);
   return { name, file: reexportOriginFile(name, mappedFile, ctx, cfg.mode) ?? mappedFile };
 }
 
@@ -287,7 +289,7 @@ function importBindingAccountsFor(
   const mappedFile = mapImportToFile(binding.importText, ctx.callerFile, cfg.tsOptions, cfg.fileExists);
   if (mappedFile === null) return false;
   const declaringFileOf = (name: string): string => reexportOriginFile(name, mappedFile, ctx, cfg.mode) ?? mappedFile;
-  const exportedName = binding.importedBindings?.[receiver];
+  const exportedName = identifierEntry(binding.importedBindings, receiver);
   if (exportedName !== undefined) {
     return candidate.scope.at(-1) === exportedName && declaringFileOf(exportedName) === candidate.relPath;
   }

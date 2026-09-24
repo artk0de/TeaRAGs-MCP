@@ -50,5 +50,5 @@ export const capability: LanguageCapability = {
   // `CallRef.dispatch` and fans out to the table's callables instead of going
   // through the chain. Rows written by walker 8 have neither channel, so those
   // sites keep their old bare-call answer until the Python rows are rewritten.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
 };
