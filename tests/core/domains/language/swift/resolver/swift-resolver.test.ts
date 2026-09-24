@@ -1475,3 +1475,89 @@ describe("SwiftCallResolver — a member INHERITED from the superclass", () => {
     expect(target).toBeNull();
   });
 });
+
+/**
+ * `typeDeclarations` (bd tea-rags-mcp-y99pg.1) — which file DECLARES a type and
+ * which only re-opens it. Both compose the same id, so without this fact a type
+ * extended in another file reads as ambiguous, and a type the project only
+ * extends reads as one it declares.
+ */
+describe("SwiftCallResolver — a type's declaration versus its re-openings", () => {
+  const reopened = table({
+    "Sources/World.swift": [{ symbolId: "World", scope: [] }],
+    "Sources/World+DSL.swift": [{ symbolId: "World", scope: [] }],
+    "Sources/Spec.swift": [{ symbolId: "Spec#run", scope: ["Spec"] }],
+  });
+  const reopenedFacts = {
+    "Sources/World.swift": [{ typeId: "World", reopens: false }],
+    "Sources/World+DSL.swift": [{ typeId: "World", reopens: true }],
+  };
+
+  it("lands a construction of a type re-opened in another file on the file that declares it", () => {
+    const target = new SwiftCallResolver().resolve(
+      call(null, "World"),
+      ctx({
+        callerFile: "Sources/Spec.swift",
+        callerScope: ["Spec"],
+        symbolTable: reopened,
+        typeDeclarations: reopenedFacts,
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/World.swift", targetSymbolId: "World" });
+  });
+
+  it("keeps the cross-file ambiguity when no run published the fact", () => {
+    const target = new SwiftCallResolver().resolve(
+      call(null, "World"),
+      ctx({ callerFile: "Sources/Spec.swift", callerScope: ["Spec"], symbolTable: reopened }),
+    );
+    expect(target).toBeNull();
+  });
+
+  const extendedOnly = table({
+    "Sources/JSONDecoder+Alamofire.swift": [{ symbolId: "JSONDecoder", scope: [] }],
+    "Sources/Request.swift": [{ symbolId: "Request#decode", scope: ["Request"] }],
+  });
+  const extendedOnlyFacts = {
+    "Sources/JSONDecoder+Alamofire.swift": [{ typeId: "JSONDecoder", reopens: true, conforms: ["DataDecoder"] }],
+  };
+
+  it("emits no edge for a construction of a type the project only extends", () => {
+    const resolver = new SwiftCallResolver();
+    const site = call(null, "JSONDecoder");
+    const context = ctx({
+      callerFile: "Sources/Request.swift",
+      callerScope: ["Request"],
+      symbolTable: extendedOnly,
+      typeDeclarations: extendedOnlyFacts,
+    });
+    expect(resolver.resolve(site, context)).toBeNull();
+    // The SDK's initializer is what runs — nothing in the project defines it.
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(false);
+  });
+
+  it("keeps the edge and the denominator when an extension declares an initializer", () => {
+    const withInit = table({
+      "Sources/URLRequest+Alamofire.swift": [
+        { symbolId: "URLRequest", scope: [] },
+        { symbolId: "URLRequest#init", scope: ["URLRequest"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session#request", scope: ["Session"] }],
+    });
+    const resolver = new SwiftCallResolver();
+    const site = call(null, "URLRequest");
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: withInit,
+      typeDeclarations: { "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }] },
+    });
+    // Which initializer runs is an argument-label question; until labels are
+    // read, the extension that declares one keeps the edge it had before.
+    expect(resolver.resolve(site, context)).toEqual({
+      targetRelPath: "Sources/URLRequest+Alamofire.swift",
+      targetSymbolId: "URLRequest",
+    });
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(true);
+  });
+});

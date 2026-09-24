@@ -337,3 +337,34 @@ describe("CodegraphRunState.absorb collects the Python run-global channels", () 
     expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": narrowed });
   });
 });
+
+/**
+ * `typeDeclarations` (bd tea-rags-mcp-y99pg.1) — the file's whole truth about the
+ * types it declares, at the grain `moduleReexports` merges at: keyed by the
+ * declaring relPath, replaced on a re-walk, dropped when the file declares none.
+ */
+describe("CodegraphRunState keeps each file's type declarations under its own path", () => {
+  it("absorbs an unwalked file's declarations from its persisted row", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(walkedFile("Sources/Spec.swift"), []);
+    const declarations = [{ typeId: "World", reopens: false }];
+
+    await runState.seal(noopTable, async () => [
+      persistedSlice("Sources/World.swift", { typeDeclarations: declarations }),
+    ]);
+
+    expect(runState.typeDeclarations).toEqual({ "Sources/World.swift": declarations });
+  });
+
+  it("replaces a re-walked file's list, and drops it once the file declares no type", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(walkedFile("Sources/World.swift", { typeDeclarations: [{ typeId: "World", reopens: false }] }), []);
+
+    const renamed = [{ typeId: "Globe", reopens: false }];
+    runState.absorb(walkedFile("Sources/World.swift", { typeDeclarations: renamed }), []);
+    expect(runState.typeDeclarations).toEqual({ "Sources/World.swift": renamed });
+
+    runState.absorb(walkedFile("Sources/World.swift"), []);
+    expect(runState.typeDeclarations).toEqual({});
+  });
+});

@@ -59,7 +59,7 @@
  * Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
-import type { ModuleReexport } from "./codegraph-extraction.js";
+import type { ModuleReexport, TypeDeclarationFact } from "./codegraph-extraction.js";
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
@@ -228,4 +228,19 @@ export interface CodegraphPass1FileAggregates {
    * Persisted LAST, so every other row keeps its bytes.
    */
   buildConstraint?: string;
+  /**
+   * The file's type declarations (`FileExtraction.typeDeclarations`, bd
+   * tea-rags-mcp-y99pg.1) — which files DECLARE a type and which only re-open it.
+   *
+   * Persisted because the question is asked about files the caller does not
+   * own: `World()` in `Example.swift` needs to know `World.swift` holds the
+   * declaration and `World+DSL.swift` only an extension, and an incremental run
+   * that walked the caller alone has read neither. Like `moduleReexports` it is
+   * the file's WHOLE truth about its declarations, so a re-walk replaces it.
+   *
+   * Cost: one short entry per type declaration on the rows of files that carry
+   * one; a JSON key on the existing `aggregates_json` column, so no schema
+   * change. Persisted LAST, so every other row keeps its bytes.
+   */
+  typeDeclarations?: readonly TypeDeclarationFact[];
 }

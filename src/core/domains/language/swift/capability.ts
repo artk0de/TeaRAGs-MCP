@@ -14,6 +14,21 @@ export const capability: LanguageCapability = {
     summary:
       "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
   },
+  // walker 13: the walker publishes `typeDeclarations`, a hydrated run-global
+  // channel naming the files that DECLARE a type and the files that only re-open
+  // it (bd tea-rags-mcp-y99pg.1). `extension World` composes exactly the id
+  // `class World` does, so the lookups could not tell them apart: a type re-opened
+  // across files read as ambiguous, and a type the project only extends read as
+  // one it declares. The lookups now keep a type id's declaring file, and a
+  // construction of a type the project only EXTENDS (`JSONDecoder()`, `Array(x)`,
+  // `URL(string:)`) emits no edge and leaves the denominator unless an extension
+  // declares an initializer. Measured (swiftc -dump-ast oracle): Alamofire TOTAL
+  // 0.712 -> 0.729 (1071/1505 -> 1045/1434; bareCall 0.913 -> 0.971), Quick
+  // 0.844 -> 0.870 (bareCall 0.923 -> 1.000). Edges: +7 / +4, every one the
+  // typechecker's target (`World()`, `AsyncWorld()`, `DataRequest(...)`); -33 /
+  // -18, every one a construction the oracle binds to an SDK initializer (31 + 5
+  // oracle-covered, the rest in files the oracle does not compile). So an index
+  // built by walker 12 carries no declaration fact at all.
   // walker 12: a property's type is qualified from the type that DECLARES the
   // property, not from the caller. `var dataEncoding: DataEncoding` written inside
   // `URLEncodedFormEncoder` names `URLEncodedFormEncoder.DataEncoding`, and a
@@ -197,7 +212,7 @@ export const capability: LanguageCapability = {
   // must route `--force`, not `--force-enrichments`.
   // chunking 4: the grammar bump above — files 0.7.1 could not parse now
   // chunk at real symbol boundaries, so the chunk set moves again.
-  versions: { chunking: 4, walker: 12, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 13, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

@@ -219,6 +219,10 @@ describe("seeded support versions", () => {
       // swift walker 12: a property's type is qualified from its declaring type
       // outward, so an index built by walker 11 holds no edge through a field typed
       // by a nested type of the field's owner.
+      // swift walker 13: the walker publishes `typeDeclarations` (declaration vs
+      // re-opening), so an index built by walker 12 still lands constructions of a
+      // Foundation type on the project's extension of it and leaves a type re-opened
+      // across files ambiguous.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -235,7 +239,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 12],
+        ["swift", 13],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

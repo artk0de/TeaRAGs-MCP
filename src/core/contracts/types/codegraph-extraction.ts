@@ -336,6 +336,39 @@ export interface FileExtraction {
    * build constraints.
    */
   buildConstraint?: string;
+  /**
+   * Every TYPE declaration the file carries, the primary declaration and the
+   * re-openings alike, in source order (bd tea-rags-mcp-y99pg.1).
+   *
+   * A symbol id cannot say which file holds a type's own declaration: Swift's
+   * `extension Request` composes exactly the id `class Request` does, so a type
+   * re-opened across files reads as ambiguous, and a type the project only
+   * EXTENDS (`extension JSONDecoder`) reads as one it declares. This is the fact
+   * both questions need. Undefined for a file declaring no type, and for
+   * languages whose walkers do not collect it.
+   */
+  typeDeclarations?: readonly TypeDeclarationFact[];
+}
+
+/**
+ * One type declaration a file carries (`FileExtraction.typeDeclarations`).
+ */
+export interface TypeDeclarationFact {
+  /** The type's composed id, nesting included: `Request`, `Request.State`. */
+  readonly typeId: string;
+  /**
+   * `true` for a RE-OPENING — a declaration that adds members to a type
+   * declared elsewhere (Swift `extension`) — and `false` for the type's own
+   * declaration. A type with re-openings only is not the project's type.
+   */
+  readonly reopens: boolean;
+  /**
+   * The supertypes this declaration names — superclass and protocols alike, in
+   * clause order, generic arguments dropped (`Base<T>` → `Base`). A re-opening
+   * lists the conformances IT adds (`extension SecTrust: AlamofireExtended`).
+   * Absent when the declaration names none.
+   */
+  readonly conforms?: readonly string[];
 }
 
 /**

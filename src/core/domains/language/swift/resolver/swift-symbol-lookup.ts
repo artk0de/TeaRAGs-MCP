@@ -30,6 +30,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import { swiftEnclosingTypeIds } from "./swift-enclosing-scope.js";
+import { swiftDeclaringFiles } from "./swift-type-declarations.js";
 import { hasSwiftOverloadSuffix, isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "./swift-type-name.js";
 
 const SWIFT_SOURCE_EXTENSION = ".swift";
@@ -41,7 +42,10 @@ export function isSwiftSourcePath(relPath: string): boolean {
 
 /** Exact-id lookup (`Store`, `Store#save`, `Store.make`) over Swift declarations only. */
 export function lookupSwiftSymbols(ctx: CallContext, symbolId: string): SymbolDefinition[] {
-  return ctx.symbolTable.lookup(symbolId).filter((def) => isSwiftSourcePath(def.relPath));
+  return keepDeclaringFiles(
+    ctx.symbolTable.lookup(symbolId).filter((def) => isSwiftSourcePath(def.relPath)),
+    ctx,
+  );
 }
 
 /**
@@ -54,7 +58,28 @@ export function lookupSwiftSymbolsByShortName(
   options?: SymbolLookupOptions,
 ): SymbolDefinition[] {
   const swiftDefs = ctx.symbolTable.lookupByShortName(name, options).filter((def) => isSwiftSourcePath(def.relPath));
-  return collapseReopenedTypeDeclarations(swiftDefs);
+  return keepDeclaringFiles(collapseReopenedTypeDeclarations(swiftDefs), ctx);
+}
+
+/**
+ * Drop the re-openings of a type re-opened ACROSS files (bd tea-rags-mcp-y99pg.1).
+ *
+ * `World.swift` declares `World` and `World+DSL.swift` extends it: both compose
+ * the id `World`, and the cardinality gate reads one logical type as two. The
+ * run's `typeDeclarations` channel names the file holding the declaration, and
+ * only a TYPE id is narrowed — a member (`World#run`) is declared where it is
+ * declared, extension or not. A type the project only re-opens keeps every
+ * re-opening here: whether such a type is a target at all is a question for the
+ * construction site (`isSwiftReopenedOnlyType`), not for a lookup that also
+ * serves `World.shared`-style class heads. No channel, no narrowing.
+ */
+function keepDeclaringFiles(defs: SymbolDefinition[], ctx: CallContext): SymbolDefinition[] {
+  if (ctx.typeDeclarations === undefined || defs.length < 2) return defs;
+  return defs.filter((def) => {
+    if (!isSwiftTypeDeclarationId(def.symbolId)) return true;
+    const declaring = swiftDeclaringFiles(stripSwiftOverloadSuffix(def.symbolId), ctx);
+    return declaring === undefined || declaring.size === 0 || declaring.has(def.relPath);
+  });
 }
 
 /**

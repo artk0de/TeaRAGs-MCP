@@ -1059,3 +1059,67 @@ describe("swift walker — a type chunk's own calls run with the type as `self` 
     expect(method).not.toHaveProperty("bodyScope");
   });
 });
+
+/**
+ * `typeDeclarations` — which file DECLARES a type and which only re-opens it
+ * (bd tea-rags-mcp-y99pg.1). tree-sitter-swift parses `extension T` as the same
+ * `class_declaration` node `class T` is, and both compose the id `T`, so the
+ * keyword is the only evidence of which one a node is.
+ */
+describe("swift walker — typeDeclarations", () => {
+  it("records a type's own declaration and its conformances", () => {
+    const extraction = extractMaterialized("final class Session: NSObject, Sendable {\n  func run() {}\n}\n");
+    expect(extraction.typeDeclarations).toEqual([
+      { typeId: "Session", reopens: false, conforms: ["NSObject", "Sendable"] },
+    ]);
+  });
+
+  it("marks an extension as a re-opening and keeps the conformances it adds", () => {
+    const extraction = extractMaterialized("extension SecTrust: AlamofireExtended {}\n");
+    expect(extraction.typeDeclarations).toEqual([
+      { typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] },
+    ]);
+  });
+
+  it("composes a nested declaration under every enclosing type, an extension's included", () => {
+    const src = [
+      "struct Request {",
+      "  enum State { case idle }",
+      "}",
+      "extension Encoder {",
+      "  final class Container {}",
+      "}",
+      "",
+    ].join("\n");
+    expect(extractMaterialized(src).typeDeclarations).toEqual([
+      { typeId: "Request", reopens: false },
+      { typeId: "Request.State", reopens: false },
+      { typeId: "Encoder", reopens: true },
+      { typeId: "Encoder.Container", reopens: false },
+    ]);
+  });
+
+  it("reads an extension of a nested type by its written path and drops generic arguments", () => {
+    const src = [
+      "extension Outer.Inner {}",
+      "extension Array where Element == Header {}",
+      "class Box<T>: Base<T> {}",
+      "",
+    ].join("\n");
+    expect(extractMaterialized(src).typeDeclarations).toEqual([
+      { typeId: "Outer.Inner", reopens: true },
+      { typeId: "Array", reopens: true },
+      { typeId: "Box", reopens: false, conforms: ["Base"] },
+    ]);
+  });
+
+  it("records a protocol as a declaration of its own", () => {
+    expect(extractMaterialized("protocol Monitor: AnyObject {\n  func tick()\n}\n").typeDeclarations).toEqual([
+      { typeId: "Monitor", reopens: false, conforms: ["AnyObject"] },
+    ]);
+  });
+
+  it("publishes nothing for a file that declares no type", () => {
+    expect(extractMaterialized("func free() {}\n").typeDeclarations).toBeUndefined();
+  });
+});

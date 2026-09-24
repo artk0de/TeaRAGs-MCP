@@ -1,7 +1,9 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupSwiftSymbolsByShortName } from "../swift-symbol-lookup.js";
+import { lookupSwiftSymbols, lookupSwiftSymbolsByShortName } from "../swift-symbol-lookup.js";
+import { isSwiftReopenedOnlyType, swiftExtensionDeclaresInit } from "../swift-type-declarations.js";
+import { isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "../swift-type-name.js";
 import type { SwiftResolverConfig } from "./shared.js";
 
 /**
@@ -39,7 +41,21 @@ export class SwiftGlobalShortNameSymbolResolutionStrategy implements SymbolResol
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null) return CONTINUE;
     const hit = pickSingleCandidate(lookupSwiftSymbolsByShortName(ctx, call.member), this.cfg.mode);
-    if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
-    return CONTINUE;
+    if (!hit) return CONTINUE;
+    // `JSONDecoder()` where the project only EXTENDS `JSONDecoder` and declares
+    // no initializer of it: the SDK's initializer runs, and the extension is
+    // not it (bd tea-rags-mcp-y99pg.1). An extension that DOES declare one
+    // keeps its edge — telling that initializer from the SDK's is an
+    // argument-label question this pass cannot answer yet.
+    if (isSwiftTypeDeclarationId(hit.symbolId)) {
+      const typeId = stripSwiftOverloadSuffix(hit.symbolId);
+      if (
+        isSwiftReopenedOnlyType(typeId, ctx) &&
+        !swiftExtensionDeclaresInit(typeId, (id) => lookupSwiftSymbols(ctx, id))
+      ) {
+        return CONTINUE;
+      }
+    }
+    return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
   }
 }

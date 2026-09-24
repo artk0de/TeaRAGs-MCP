@@ -130,6 +130,7 @@ import type {
   FileExtraction,
   ImportRef,
   LocalBinding,
+  TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
@@ -184,6 +185,76 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   const structuredReturnTypes = collectSwiftStructuredReturnTypes(root, input.chunks);
   if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
+  const typeDeclarations = collectSwiftTypeDeclarations(root);
+  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
+  return out;
+}
+
+/**
+ * Every type declaration of the file, in source order — the
+ * `typeDeclarations` channel (bd tea-rags-mcp-y99pg.1).
+ *
+ * tree-sitter-swift parses `extension T` as the same `class_declaration` node a
+ * `class T` is, and the symbol id both compose is `T`, so the keyword is the
+ * only evidence of which one a node is. A declaration's id is its own name
+ * under every enclosing declaration — an extension's included, since a type
+ * nested in `extension Encoder` composes as `Encoder.Container` — and an
+ * extension's own id is its name AS WRITTEN: Swift only lets an extension sit
+ * at file scope, so that path is already qualified from the module.
+ *
+ * `conforms` lists every inheritance specifier, superclass and protocols
+ * alike, because the clause marks neither; {@link collectSwiftClassExtends}
+ * is where the superclass is told apart for `super`.
+ */
+function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
+  const out: TypeDeclarationFact[] = [];
+  walk(root, (node) => {
+    const kind = swiftTypeDeclarationKind(node);
+    if (kind === null) return;
+    const name = swiftTypeNameText(node.childForFieldName("name")?.text);
+    if (name === undefined) return;
+    const enclosing: string[] = [];
+    for (let current = node.parent; current; current = current.parent) {
+      if (swiftTypeDeclarationKind(current) === null) continue;
+      const outer = swiftTypeNameText(current.childForFieldName("name")?.text);
+      if (outer !== undefined) enclosing.unshift(outer);
+    }
+    const conforms = swiftInheritedTypeNames(node);
+    out.push({
+      typeId: [...enclosing, name].join("."),
+      reopens: kind === "extension",
+      ...(conforms.length > 0 ? { conforms } : {}),
+    });
+  });
+  return out;
+}
+
+/** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
+function swiftTypeDeclarationKind(node: AstNode): string | null {
+  if (node.type === "protocol_declaration") return "protocol";
+  if (node.type !== "class_declaration") return null;
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child === null || child.isNamed) continue;
+    if (child.type === "extension" || SWIFT_TYPE_DECLARATION_KEYWORDS.has(child.type)) return child.type;
+  }
+  return null;
+}
+
+/** A declared or extended type's name with any generic argument list dropped (`Box<T>` → `Box`). */
+function swiftTypeNameText(text: string | undefined): string | undefined {
+  const name = text?.split("<")[0]?.trim();
+  return name !== undefined && name.length > 0 ? name : undefined;
+}
+
+/** Every inheritance specifier's type name, generic arguments dropped, in clause order. */
+function swiftInheritedTypeNames(node: AstNode): string[] {
+  const out: string[] = [];
+  for (const child of node.namedChildren) {
+    if (child.type !== "inheritance_specifier") continue;
+    const name = swiftTypeNameText(child.text);
+    if (name !== undefined) out.push(name);
+  }
   return out;
 }
 

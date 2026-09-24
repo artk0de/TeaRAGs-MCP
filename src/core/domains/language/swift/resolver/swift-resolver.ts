@@ -79,19 +79,20 @@
  * (`collapseReopenedTypeDeclarations` in `./swift-symbol-lookup.ts`), and a
  * nested type's short-name receiver is re-qualified against the caller's scope
  * (`scopedTypeReceiver`). Both leaned on reading a composed symbolId as a type
- * declaration (`./swift-type-name.ts`); neither needed a contract change. Two
- * relatives of theirs are still open, and both need evidence this chain does
- * not have:
+ * declaration (`./swift-type-name.ts`); neither needed a contract change.
  *
- * 1. **A type re-opened across FILES.** `struct Invoice` in `Invoice.swift` and
- *    `extension Invoice` in `Invoice+Codable.swift` compose the IDENTICAL id
- *    `Invoice` in two files, and nothing in a `SymbolDefinition` says which one
- *    carries the type's own body. The same-file fold deliberately declines it,
- *    so a construction of such a type stays ambiguous and emits no edge.
- *    Closing it needs the container/leaf fact `NamedSymbol.descendsInto`
- *    already holds and `collectSymbols` drops — a kernel and contract change
- *    across all nine languages, not a Swift patch.
- * 2. **A TOP-LEVEL type as an explicit receiver from outside it.**
+ * A type re-opened across FILES needed one, and has it: `struct Invoice` in
+ * `Invoice.swift` and `extension Invoice` in `Invoice+Codable.swift` compose
+ * the IDENTICAL id, and nothing in a `SymbolDefinition` says which carries the
+ * type's own body. The walker's run-global `typeDeclarations` channel does (bd
+ * tea-rags-mcp-y99pg.1), so the lookups keep only the declaring file of a type
+ * id, and a construction of a type the project only EXTENDS
+ * (`JSONDecoder()`) emits no edge and leaves the denominator unless an
+ * extension declares an initializer (`./swift-type-declarations.ts`).
+ *
+ * One relative is still open:
+ *
+ * 1. **A TOP-LEVEL type as an explicit receiver from outside it.**
  *    `Invoice.empty()` written in another type resolves to nothing:
  *    `scopedTypeReceiver` qualifies against the caller's scope only, and the
  *    terminal pass answers bare calls by design. An unqualified global probe is
@@ -122,7 +123,14 @@ import {
   type SwiftResolverConfig,
 } from "./strategies/index.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
-import { lookupSwiftSymbolsByShortName } from "./swift-symbol-lookup.js";
+import { lookupSwiftSymbols, lookupSwiftSymbolsByShortName } from "./swift-symbol-lookup.js";
+import { isSwiftReopenedOnlyType, swiftExtensionDeclaresInit } from "./swift-type-declarations.js";
+import { isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "./swift-type-name.js";
+
+/** Whether a definition is the type id of a type the run proves the project only re-opens. */
+function isReopenedOnlyTypeId(symbolId: string, ctx: CallContext): boolean {
+  return isSwiftTypeDeclarationId(symbolId) && isSwiftReopenedOnlyType(stripSwiftOverloadSuffix(symbolId), ctx);
+}
 
 export class SwiftCallResolver implements CallResolver {
   readonly language = "swift";
@@ -171,6 +179,15 @@ export class SwiftCallResolver implements CallResolver {
    * nothing; retrofitting it later would move a published rate.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupSwiftSymbolsByShortName(ctx, call.member).length > 0;
+    const defs = lookupSwiftSymbolsByShortName(ctx, call.member);
+    if (defs.length === 0) return false;
+    // A construction of a type the project only EXTENDS runs an SDK
+    // initializer unless an extension declares one (bd tea-rags-mcp-y99pg.1).
+    if (call.receiver === null && defs.every((def) => isReopenedOnlyTypeId(def.symbolId, ctx))) {
+      return defs.some((def) =>
+        swiftExtensionDeclaresInit(stripSwiftOverloadSuffix(def.symbolId), (id) => lookupSwiftSymbols(ctx, id)),
+      );
+    }
+    return true;
   }
 }
