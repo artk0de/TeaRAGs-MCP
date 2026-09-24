@@ -141,6 +141,26 @@ describe("formatPrime — language capability tiers (xip6g)", () => {
     expect(lines).toContain("markdown: ast partial · tests na · codegraph none");
   });
 
+  // bd tea-rags-mcp-stpvj — a null recall is "nothing scored": the marker, not a number.
+  it("renders the empty-denominator marker for a language whose recall is null", () => {
+    const lines = section(
+      formatPrime(
+        data(
+          {},
+          {
+            codegraphResolve: {
+              inProjectEdgeRecall: null,
+              callsAttempted: 6,
+              callsResolved: 0,
+              callsExternalSkipped: 6,
+            },
+          },
+        ),
+      ),
+    );
+    expect(lines).toContain("typescript: ast full · tests high · codegraph moderate · resolve —");
+  });
+
   it("does not guess which language an unsplit rate belongs to when several are primary", () => {
     const lines = section(
       formatPrime(

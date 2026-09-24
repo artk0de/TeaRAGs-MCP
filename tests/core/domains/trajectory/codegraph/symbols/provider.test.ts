@@ -210,10 +210,11 @@ describe("CodegraphEnrichmentProvider", () => {
     // Per-idiom breakdown (bd tea-rags-mcp-j431): both calls are constant
     // receivers (Foo, Mystery), one resolves → constant bucket 1/2.
     const byKind = (
-      m as { resolveByReceiverKind: Record<string, { attempted: number; resolved: number; rate: number }> }
+      m as { resolveByReceiverKind: Record<string, { attempted: number; resolved: number; rate: number | null }> }
     ).resolveByReceiverKind;
     expect(byKind.constant).toEqual({ attempted: 2, resolved: 1, rate: 0.5 });
-    expect(byKind.dynamic).toEqual({ attempted: 0, resolved: 0, rate: 0 });
+    // bd tea-rags-mcp-stpvj — no attempted call: nothing scored, null not 0.
+    expect(byKind.dynamic).toEqual({ attempted: 0, resolved: 0, rate: null });
 
     // Read-and-clear semantics — the next call must start from zero
     // even before another sink cycle. Coordinator relies on this for

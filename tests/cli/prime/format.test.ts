@@ -1181,6 +1181,20 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       expect(out).toContain("## Codegraph resolve\nresolve rate: 0.96\n\n");
     });
 
+    // bd tea-rags-mcp-stpvj — the default line is shown without DEBUG, so a
+    // null (nothing scored) recall must render the marker, never "0".
+    it("renders the empty-denominator marker for a null recall, top-level and per language", () => {
+      expect(render(summary({ inProjectEdgeRecall: null }))).toContain("## Codegraph resolve\nresolve rate: —\n\n");
+      const tally = multiLanguage(0, 0);
+      const ruby = tally.byLanguage?.[1];
+      if (ruby) ruby.inProjectEdgeRecall = null;
+      expect(render(tally)).toContain("resolve rate: typescript 0.99 · ruby —\n");
+    });
+
+    it("keeps a scored zero recall as 0 in the default line", () => {
+      expect(render(summary({ inProjectEdgeRecall: 0 }))).toContain("resolve rate: 0\n");
+    });
+
     // resolveSuccessRate is DEBUG-only on the producer side, so the default
     // line must read the always-present recall.
     it("reads inProjectEdgeRecall, not the DEBUG-only resolveSuccessRate", () => {

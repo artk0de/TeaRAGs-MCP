@@ -1,7 +1,12 @@
 import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../core/api/public/dto/collection.js";
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
-import { formatResolveRateCell, resolveRateMiss, type LanguageCapability } from "../../core/api/public/index.js";
+import {
+  formatResolveRate,
+  formatResolveRateCell,
+  resolveRateMiss,
+  type LanguageCapability,
+} from "../../core/api/public/index.js";
 import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason, PrimeRegistryEntry } from "./types.js";
 
@@ -263,7 +268,7 @@ function formatLanguageCapabilitySection(
 ): string[] {
   if (!capabilities) return [];
   const rates = realizedResolveRates(primaries, resolve);
-  const rows: { languages: string[]; tiers: string; rate?: number }[] = [];
+  const rows: { languages: string[]; tiers: string; rate?: number | null }[] = [];
   for (const language of languages) {
     const capability = capabilities.get(language);
     if (!capability) continue;
@@ -282,7 +287,7 @@ function formatLanguageCapabilitySection(
     "## Language capability — ceiling tier · realized resolve",
     ...rows.map(
       (row) =>
-        `${row.languages.join(", ")}: ${row.tiers}${row.rate === undefined ? "" : ` · resolve ${roundTwo(row.rate)}`}`,
+        `${row.languages.join(", ")}: ${row.tiers}${row.rate === undefined ? "" : ` · resolve ${renderRecall(row.rate)}`}`,
     ),
   ];
 }
@@ -307,8 +312,8 @@ function formatCapabilityTiers(capability: LanguageCapability): string {
 function realizedResolveRates(
   primaries: readonly string[],
   resolve: CodegraphResolve | undefined,
-): Map<string, number> {
-  const rates = new Map<string, number>();
+): Map<string, number | null> {
+  const rates = new Map<string, number | null>();
   if (!resolve) return rates;
   const byLanguage = resolve.byLanguage ?? [];
   for (const row of byLanguage) rates.set(row.language, row.inProjectEdgeRecall);
@@ -372,6 +377,14 @@ function formatThreshold(threshold: number, format?: "percent" | "percent100"): 
 
 function roundTwo(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * A recall shown without counters. `null` is the DTO's "nothing scored" value
+ * (bd tea-rags-mcp-stpvj) and renders the shared marker; a scored 0 stays `0`.
+ */
+function renderRecall(rate: number | null): string {
+  return formatResolveRate(rate, (r) => `${roundTwo(r)}`);
 }
 
 // Local to the prime digest layer: the MCP tool layer (register-status-tools)
@@ -630,8 +643,8 @@ function formatResolvePlain(resolve: CodegraphResolve): string[] {
   const languages = resolve.byLanguage ?? [];
   const rate =
     languages.length > 0
-      ? languages.map((l) => `${l.language} ${roundTwo(l.inProjectEdgeRecall)}`).join(" · ")
-      : `${roundTwo(resolve.inProjectEdgeRecall)}`;
+      ? languages.map((l) => `${l.language} ${renderRecall(l.inProjectEdgeRecall)}`).join(" · ")
+      : renderRecall(resolve.inProjectEdgeRecall);
   const lines = ["## Codegraph resolve", `resolve rate: ${rate}`];
   // Plain counterpart of the DEBUG ⚠ line (bd tea-rags-mcp-znxg8). The reader
   // needs the consequence — get_callers misses callers of those services — and

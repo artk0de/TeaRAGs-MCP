@@ -40,6 +40,16 @@ export function resolveRateMiss(t: ResolveRateCounts): number {
 /** What an empty-denominator rate renders as — a marker, never a number. */
 export const EMPTY_RESOLVE_DENOMINATOR_MARKER = "—";
 
+/**
+ * A bare rate with no counters beside it — prime's default `resolve rate:`
+ * line, the per-language capability row, the run-end stderr diagnostic. `null`
+ * (nothing scored) renders the marker; a scored 0 renders as a number (bd
+ * tea-rags-mcp-stpvj).
+ */
+export function formatResolveRate(rate: number | null, renderRate: (rate: number) => string): string {
+  return rate === null ? EMPTY_RESOLVE_DENOMINATOR_MARKER : renderRate(rate);
+}
+
 /** One `rate counters` cell of a resolve-rate row. */
 export interface ResolveRateCell {
   /**
