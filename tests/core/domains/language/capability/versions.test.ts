@@ -342,6 +342,10 @@ describe("seeded support versions", () => {
       // at RUBY's own defs-per-member p99, not the polyglot corpus one (taxdome:
       // 19, not 16), so an index built by walker 7 reports as `ambiguous` the
       // 17–19-survivor fans this one materializes as edges.
+      // swift walker 44: a closure passed to a bare callee binds its parameters
+      // by that callee (bd tea-rags-mcp-y99pg.29), so an index built by walker
+      // 43 charges `withCheckedContinuation { continuation in … }` SDK calls as
+      // misses.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 14],
@@ -351,7 +355,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 43],
+        ["swift", 44],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

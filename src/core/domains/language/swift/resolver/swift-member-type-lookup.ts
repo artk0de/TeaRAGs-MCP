@@ -135,6 +135,21 @@ export class SwiftMemberTypeLookup {
     return this.sdkMembers.closureParameterType(sdk.receiver, member, index, sdk.order);
   }
 
+  /**
+   * Whether an SDK type on `typeName`'s lookup order declares `member` —
+   * the implicit-self question a bare callee asks before it may be read as a
+   * module-level function (bd tea-rags-mcp-y99pg.29).
+   */
+  sdkDeclaresMember(typeName: string, member: string, ctx: CallContext): boolean {
+    const sdk = this.sdkView({ form: "instance", name: typeName }, ctx);
+    return sdk.order.some((candidate) => this.sdk.ownMembers(candidate, member).length > 0);
+  }
+
+  /** The SDK-declared type of the `index`-th parameter of the closure the module-level function `name` takes. */
+  sdkFunctionClosureParameterType(name: string, index: number): TypeRef | undefined {
+    return this.sdkMembers.functionClosureParameterType(name, index);
+  }
+
   /** The instance an SDK construction `T(…)` / `T { … }` spelled `typeText` builds. */
   sdkConstructionType(typeText: string): SwiftNominalTypeRef | undefined {
     return this.sdkMembers.constructionType(typeText);
@@ -273,8 +288,7 @@ export class SwiftMemberTypeLookup {
     if (order.some((candidate) => declaresMember(qualifySwiftTypeName(candidate, ctx), call.member, ctx, call))) {
       return false;
     }
-    const sdk = this.sdkView({ form: "instance", name: typeName }, ctx);
-    return sdk.order.some((candidate) => this.sdk.ownMembers(candidate, call.member).length > 0);
+    return this.sdkDeclaresMember(typeName, call.member, ctx);
   }
 
   /**

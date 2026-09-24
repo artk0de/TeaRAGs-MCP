@@ -3149,3 +3149,62 @@ describe("SwiftCallResolver — a construction-initialized field's generic argum
     expect(new SwiftCallResolver().resolve(call("state", "reset", 11), context("value"))).toBeNull();
   });
 });
+
+describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mcp-y99pg.29)", () => {
+  const t = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#resume", scope: ["Request"] },
+      { symbolId: "Request#finish", scope: ["Request"] },
+      { symbolId: "Request#withState", scope: ["Request"] },
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Request.swift": [
+      { typeId: "Request", reopens: false, memberClosureParameters: { withState: ["Request.State"] } },
+      { typeId: "Request.State", reopens: false },
+    ],
+  };
+  const context = (callee: string, name = "continuation", symbolTable = t): CallContext =>
+    ctx({
+      callerFile: "Sources/Request.swift",
+      callerScope: ["Request", "run"],
+      symbolTable,
+      typeDeclarations,
+      callResultBindings: { [name]: [{ line: 10, callee, closureParameter: 0, scopeEndLine: 12 }] },
+    });
+
+  it("types the closure parameter of a module-level SDK function", () => {
+    // `withCheckedContinuation { continuation in continuation.resume(…) }` runs
+    // `CheckedContinuation.resume`, never the project's `Request#resume`.
+    const resolver = new SwiftCallResolver();
+    const site = call("continuation", "resume", 11);
+    expect(resolver.hasInProjectDefinition(site, context("withCheckedContinuation"))).toBe(false);
+    expect(resolver.hasInProjectDefinition(site, context("withCheckedThrowingContinuation"))).toBe(false);
+  });
+
+  it("keeps the denominator when the project declares a module-level namesake of the SDK function", () => {
+    const shadowed = table({
+      "Sources/Request.swift": [
+        { symbolId: "Request", scope: [] },
+        { symbolId: "Request#resume", scope: ["Request"] },
+      ],
+      "Sources/Helpers.swift": [{ symbolId: "withCheckedContinuation", scope: [] }],
+    });
+    const site = call("continuation", "resume", 11);
+    const within = context("withCheckedContinuation", "continuation", shadowed);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, within)).toBe(true);
+  });
+
+  it("types the closure parameter of an implicit-self method of the enclosing type", () => {
+    const target = new SwiftCallResolver().resolve(call("$0", "canTransitionTo", 11), context("withState", "$0"));
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("types nothing for a bare callee neither the enclosing type nor the SDK declares", () => {
+    const site = call("continuation", "finish", 11);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context("makeStream"))).toBe(true);
+  });
+});

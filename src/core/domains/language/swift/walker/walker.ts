@@ -1329,9 +1329,15 @@ function swiftClosureArgumentFacts(lambda: AstNode, scope: SwiftTypeScope): read
 }
 
 /**
- * The SPELLING of the member a closure literal is passed to — `mutableState.write`
- * for `mutableState.write { … }` — or undefined when the callee is not a member
- * access on a value chain the resolver can fold.
+ * The SPELLING of the callee a closure literal is passed to — `mutableState.write`
+ * for `mutableState.write { … }`, `withCheckedContinuation` for a BARE callee
+ * (bd tea-rags-mcp-y99pg.29) — or undefined when the callee is neither a member
+ * access on a value chain the resolver can fold nor a bare name.
+ *
+ * Only the call's LAST closure is spelled: the resolver reads the callee's
+ * last function-typed parameter, the one a trailing closure fills, so an
+ * earlier closure of `handle { … } onCancel: { … }` would be typed by the
+ * wrong parameter.
  */
 function swiftClosureCalleeSpelling(lambda: AstNode): string | undefined {
   let suffix = lambda.parent;
@@ -1339,11 +1345,28 @@ function swiftClosureCalleeSpelling(lambda: AstNode): string | undefined {
   if (suffix?.type !== "call_suffix") return undefined;
   const call = suffix.parent;
   if (call?.type !== "call_expression") return undefined;
+  if (lastClosureArgument(suffix)?.startIndex !== lambda.startIndex) return undefined;
   const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
+  if (callee?.type === "simple_identifier") return callee.text;
   if (callee?.type !== "navigation_expression") return undefined;
   const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
   const target = swiftValueChainSpelling(callee.childForFieldName("target"));
   return member && target ? `${target}.${member}` : undefined;
+}
+
+/** The last closure literal a call passes — parenthesized or trailing — or undefined. */
+function lastClosureArgument(suffix: AstNode): AstNode | undefined {
+  let last: AstNode | undefined;
+  for (const child of suffix.children) {
+    if (child.type === "lambda_literal") last = child;
+    else if (child.type === "value_arguments") {
+      for (const argument of child.namedChildren) {
+        const value = argument.type === "value_argument" ? argument.namedChildren.at(-1) : undefined;
+        if (value?.type === "lambda_literal") last = value;
+      }
+    }
+  }
+  return last;
 }
 
 /** How many `$n` parameters a closure's own body reads: one past the highest `n`. */

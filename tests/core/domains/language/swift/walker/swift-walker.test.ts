@@ -1611,6 +1611,43 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     ]);
     expect(bindings.$0).toEqual([{ line: 6, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 6 }]);
   });
+
+  it("binds a closure passed to a BARE callee no declaration here types (bd tea-rags-mcp-y99pg.29)", () => {
+    const src = [
+      "final class DataRequest {",
+      "  func run() async {",
+      "    await withCheckedContinuation { continuation in",
+      "      continuation.resume(returning: 1)",
+      "    }",
+      "    compactMap { $0.event }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.continuation).toEqual([
+      { line: 3, callee: "withCheckedContinuation", closureParameter: 0, scopeEndLine: 5 },
+    ]);
+    expect(bindings.$0).toEqual([{ line: 6, callee: "compactMap", closureParameter: 0, scopeEndLine: 6 }]);
+  });
+
+  it("binds only the LAST closure of a call, the one a closure-typed parameter lookup describes", () => {
+    const src = [
+      "final class Task {",
+      "  func run() {",
+      "    handle { first in",
+      "      first.go()",
+      "    } onCancel: { second in",
+      "      second.stop()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.first).toBeUndefined();
+    expect(bindings.second).toEqual([{ line: 5, callee: "handle", closureParameter: 0, scopeEndLine: 7 }]);
+  });
 });
 
 describe("swift walker — enum case payload bindings (bd tea-rags-mcp-y99pg.16)", () => {

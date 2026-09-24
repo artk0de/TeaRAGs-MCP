@@ -15,7 +15,9 @@
  * kind, generic parameters (and their conformance constraints), superclass,
  * conformances, member type aliases / associated-type defaults, and per member
  * its kind, staticness, declared type or return type, the types of its
- * FUNCTION-typed parameters, and its own generic parameters. Overloads that
+ * FUNCTION-typed parameters, and its own generic parameters — plus, in the
+ * same shape, every module-level function that takes a closure (bd
+ * tea-rags-mcp-y99pg.29). Overloads that
  * agree on all of those collapse to one signature: argument labels are not
  * kept, because only the PROJECT's overloads are ever picked by label — an SDK
  * overload set answers "declared" and "returns". Type spellings are rebuilt from the
@@ -120,10 +122,19 @@ const MEMBER_KINDS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Marker protocols every type conforms to implicitly and that declare no
- * member: listing them on each of ~4,000 types costs size and buys nothing.
+ * Marker protocols that declare no member: listing them on each of ~4,000
+ * types costs size and buys nothing. `Sendable` is one too, and the extractor
+ * reports it for some UIKit classes on one run and not the next (bd
+ * tea-rags-mcp-y99pg.29), so keeping it would make the artifact churn with no
+ * change to what member lookup can reach.
  */
-const MARKER_PROTOCOLS: ReadonlySet<string> = new Set(["Copyable", "Escapable", "BitwiseCopyable", "SendableMetatype"]);
+const MARKER_PROTOCOLS: ReadonlySet<string> = new Set([
+  "Copyable",
+  "Escapable",
+  "BitwiseCopyable",
+  "SendableMetatype",
+  "Sendable",
+]);
 
 function sdkPath(sdk: ModuleSpec["sdk"]): string {
   return execFileSync("xcrun", ["--sdk", sdk, "--show-sdk-path"], { encoding: "utf8" }).trim();
@@ -263,6 +274,54 @@ function main(): void {
     return { g: names, gc };
   };
 
+  /**
+   * One signature string per distinct shape: kind code, `^g1,g2:Constraint`
+   * for member-level generic parameters (those not among `ownerGenerics`),
+   * `>returns`, then `|closure` per parameter (positional; empty for a
+   * non-function one).
+   */
+  const signatureOf = (s: SymbolGraphSymbol, code: string, ownerGenerics: readonly string[]): string => {
+    let returns: string | null = null;
+    if (code.startsWith("p")) {
+      const typeFragments = afterColon(s.declarationFragments ?? []);
+      returns = typeFragments === null ? null : render(typeFragments);
+    } else if (code.startsWith("c")) {
+      returns = null;
+    } else if (s.functionSignature?.returns !== undefined) {
+      const r = render(s.functionSignature.returns);
+      returns = r === "()" || r === "Void" ? null : r;
+    }
+    const closures: string[] = [];
+    for (const param of s.functionSignature?.parameters ?? []) {
+      const typeFragments = afterColon(param.declarationFragments ?? []);
+      const text = typeFragments === null ? "" : render(typeFragments);
+      closures.push(text.includes("->") ? text : "");
+    }
+    while (closures.length > 0 && closures[closures.length - 1] === "") closures.pop();
+    // Member-level generic parameters (depth deeper than the owner's).
+    const ownerDepth = ownerGenerics.length > 0 ? 0 : -1;
+    const own = (s.swiftGenerics?.parameters ?? []).filter(
+      (p) => p.depth > ownerDepth && !ownerGenerics.includes(p.name),
+    );
+    const methodGenerics: string[] = [];
+    for (const p of own) {
+      const constraint = (s.swiftGenerics?.constraints ?? []).find(
+        (c) => (c.kind === "conformance" || c.kind === "superclass") && c.lhs === p.name,
+      );
+      methodGenerics.push(constraint ? `${p.name}:${constraint.rhs}` : p.name);
+    }
+    for (const text of [returns ?? "", ...closures, ...methodGenerics]) {
+      if (/[|^]/.test(text)) {
+        throw new Error(`signature delimiter inside a type: ${s.pathComponents.join(".")}: ${text}`);
+      }
+    }
+    let signature = code;
+    if (methodGenerics.length > 0) signature += `^${methodGenerics.join(",")}`;
+    if (returns !== null) signature += `>${returns}`;
+    if (closures.length > 0) signature += closures.map((c) => `|${c}`).join("");
+    return signature;
+  };
+
   // Types first, so a member of a type another module declares finds its kind.
   for (const graph of graphs) {
     for (const s of graph.symbols) {
@@ -305,47 +364,28 @@ function main(): void {
       if (code === undefined) continue;
       const name = kind === "swift.subscript" || kind === "swift.type.subscript" ? "subscript" : baseName(last);
       if (hidden(name)) continue;
-      let returns: string | null = null;
-      if (code.startsWith("p")) {
-        const typeFragments = afterColon(s.declarationFragments ?? []);
-        returns = typeFragments === null ? null : render(typeFragments);
-      } else if (code.startsWith("c")) {
-        returns = null;
-      } else if (s.functionSignature?.returns !== undefined) {
-        const r = render(s.functionSignature.returns);
-        returns = r === "()" || r === "Void" ? null : r;
-      }
-      const closures: string[] = [];
-      for (const param of s.functionSignature?.parameters ?? []) {
-        const typeFragments = afterColon(param.declarationFragments ?? []);
-        const text = typeFragments === null ? "" : render(typeFragments);
-        closures.push(text.includes("->") ? text : "");
-      }
-      while (closures.length > 0 && closures[closures.length - 1] === "") closures.pop();
-      // Method-level generic parameters (depth deeper than the owner's).
-      const ownerDepth = (owner.g ?? []).length > 0 ? 0 : -1;
-      const own = (s.swiftGenerics?.parameters ?? []).filter(
-        (p) => p.depth > ownerDepth && !(owner.g ?? []).includes(p.name),
-      );
-      const methodGenerics: string[] = [];
-      for (const p of own) {
-        const constraint = (s.swiftGenerics?.constraints ?? []).find(
-          (c) => (c.kind === "conformance" || c.kind === "superclass") && c.lhs === p.name,
-        );
-        methodGenerics.push(constraint ? `${p.name}:${constraint.rhs}` : p.name);
-      }
-      // One signature string per distinct shape: kind code, `^g1,g2:Constraint`
-      // for method-level generic parameters, `>returns`, then `|closure` per
-      // parameter (positional; empty for a non-function one).
-      for (const text of [returns ?? "", ...closures, ...methodGenerics]) {
-        if (/[|^]/.test(text)) throw new Error(`signature delimiter inside a type: ${path.join(".")}: ${text}`);
-      }
-      let signature = code;
-      if (methodGenerics.length > 0) signature += `^${methodGenerics.join(",")}`;
-      if (returns !== null) signature += `>${returns}`;
-      if (closures.length > 0) signature += closures.map((c) => `|${c}`).join("");
+      const signature = signatureOf(s, code, owner.g ?? []);
       const list = (owner.m[name] ??= []);
       if (!list.includes(signature)) list.push(signature);
+    }
+  }
+
+  // Module-level functions that take a closure (bd tea-rags-mcp-y99pg.29):
+  // `withCheckedContinuation { continuation in … }` binds its closure's
+  // parameter from the function's declaration, and nothing else about a free
+  // function is read, so one without a function-typed parameter is dropped —
+  // Security and SystemConfiguration alone export thousands of C functions.
+  const functions = new Map<string, string[]>();
+  for (const graph of graphs) {
+    for (const s of graph.symbols) {
+      if (s.kind.identifier !== "swift.func" || s.pathComponents.length !== 1) continue;
+      const name = baseName(s.pathComponents[0]);
+      if (hidden(name)) continue;
+      const signature = signatureOf(s, "m", []);
+      if (!signature.includes("|")) continue;
+      const list = functions.get(name) ?? [];
+      if (!list.includes(signature)) list.push(signature);
+      functions.set(name, list);
     }
   }
 
@@ -374,11 +414,15 @@ function main(): void {
     if (entry === undefined) continue;
     entry.c?.sort();
     const members: Record<string, string[]> = {};
-    for (const name of Object.keys(entry.m).sort()) members[name] = entry.m[name];
+    // Overload order is the extractor's and varies run to run; every reader
+    // requires the shapes to agree, so sorting them changes no answer.
+    for (const name of Object.keys(entry.m).sort()) members[name] = [...entry.m[name]].sort();
     entry.m = members;
     sorted[path] = entry;
   }
-  const json = JSON.stringify({ v: 1, types: sorted });
+  const sortedFunctions: Record<string, string[]> = {};
+  for (const name of [...functions.keys()].sort()) sortedFunctions[name] = [...(functions.get(name) ?? [])].sort();
+  const json = JSON.stringify({ v: 1, types: sorted, functions: sortedFunctions });
   // Held in a raw template literal, so the JSON needs no second escaping pass.
   if (json.includes("`") || json.includes("${")) throw new Error("vocabulary JSON is not raw-template safe");
   const modules = MODULES.map((m) => m.module).join(", ");
@@ -387,7 +431,8 @@ function main(): void {
  * The Swift SDK substrate: every public type of the modules below, with its
  * kind, generic parameters (and their constraints), superclass, conformances,
  * member type aliases, and members — kind, declared or returned type, the
- * types of function-typed parameters, method-level generic parameters.
+ * types of function-typed parameters, method-level generic parameters —
+ * and every module-level function that takes a closure, in the same shape.
  *
  * GENERATED by \`scripts/gen-swift-sdk-vocabulary.ts\` from
  * \`swift-symbolgraph-extract\` (${toolchain}; SDKs: ${sdks}).
@@ -402,7 +447,7 @@ function main(): void {
 export const SWIFT_SDK_VOCABULARY_JSON: string = String.raw\`${json}\`;
 `;
   writeFileSync(target, source, "utf8");
-  console.error(`wrote ${target}: ${types.size} types, ${source.length} bytes`);
+  console.error(`wrote ${target}: ${types.size} types, ${functions.size} functions, ${source.length} bytes`);
 }
 
 main();

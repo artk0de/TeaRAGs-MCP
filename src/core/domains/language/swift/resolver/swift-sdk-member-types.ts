@@ -85,19 +85,39 @@ export class SwiftSdkMemberTypes {
   ): TypeRef | undefined {
     const found = this.find(receiver, member, order);
     if (found === undefined) return undefined;
+    return boundedBy(found.receiver, this.agreedClosureParameter(found.shapes, index, found.receiver, found.owner));
+  }
+
+  /**
+   * The same question for the module-level function `name` (bd
+   * tea-rags-mcp-y99pg.29): `withCheckedContinuation { continuation in … }`
+   * calls its closure with a `CheckedContinuation`. Only the function's own
+   * generic parameters are in scope, each bound by its constraint.
+   */
+  functionClosureParameterType(name: string, index: number): TypeRef | undefined {
+    return this.agreedClosureParameter(this.sdk.globalFunctions(name), index, undefined, undefined);
+  }
+
+  /** The `index`-th parameter type of the last closure every shape taking one agrees on. */
+  private agreedClosureParameter(
+    shapes: readonly SwiftSdkMember[],
+    index: number,
+    receiver: SwiftNominalTypeRef | undefined,
+    owner: SwiftSdkType | undefined,
+  ): TypeRef | undefined {
     let agreed: TypeRef | undefined;
-    for (const shape of found.shapes) {
+    for (const shape of shapes) {
       const closure = [...shape.closureParameters].reverse().find((text) => text !== "");
       if (closure === undefined) continue;
       const parsed = parseSwiftTypeText(closure);
       const fn = parsed?.kind === "optional" ? parsed.wrapped : parsed;
       if (fn?.kind !== "function" || index >= fn.params.length) continue;
-      const type = this.typeOf(fn.params[index], found.receiver, found.owner, shape);
+      const type = this.typeOf(fn.params[index], receiver, owner, shape);
       if (type === undefined) return undefined;
       if (agreed !== undefined && !sameNominal(agreed, type)) return undefined;
       agreed ??= type;
     }
-    return boundedBy(found.receiver, agreed);
+    return agreed;
   }
 
   /**
