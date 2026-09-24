@@ -16,6 +16,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metadata-point.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
@@ -68,17 +69,13 @@ function emptyTally(): ResolveTally {
 }
 
 /**
- * Genuine recall holes in a tally: attempted misses minus every bucket that can
- * never become an in-project edge — external-library targets (ykj7), dynamic
- * sends (cai0), members with no in-project def (cai0.2), and core homonyms on an
- * untyped receiver (83cl7). The single place the exclusion list is written, so
- * the three rates below can never drift apart.
+ * Genuine recall holes in a tally. The exclusion list lives in
+ * `contracts/resolve-rate.ts#resolveRateMiss`, shared with the renderers that
+ * must tell an empty denominator from a scored one, so the three rates below
+ * and every rendering of them can never drift apart.
  */
 function missWithInProjectDef(t: ResolveTally): number {
-  return Math.max(
-    0,
-    t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
-  );
+  return resolveRateMiss(t);
 }
 
 /**

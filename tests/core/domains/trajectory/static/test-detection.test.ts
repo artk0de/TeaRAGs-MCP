@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { detectTestFile } from "../../../../../src/core/domains/trajectory/static/test-detection.js";
+import { classify } from "../../../../../src/core/infra/file-classification/index.js";
 
 describe("detectTestFile", () => {
   describe("typescript", () => {
@@ -20,8 +21,8 @@ describe("detectTestFile", () => {
       expect(detectTestFile("src/utils.ts", "typescript")).toBe(false);
     });
 
-    it("rejects files with test in directory but not filename", () => {
-      expect(detectTestFile("tests/helpers/setup.ts", "typescript")).toBe(false);
+    it("detects support files under a test directory (bd tea-rags-mcp-9ty5z)", () => {
+      expect(detectTestFile("tests/helpers/setup.ts", "typescript")).toBe(true);
     });
 
     it("detects test files in the ESM / CJS module formats (bd tea-rags-mcp-1y13c)", () => {
@@ -231,8 +232,8 @@ describe("detectTestFile", () => {
   });
 
   describe("edge cases", () => {
-    it("matches on filename, not directory path", () => {
-      expect(detectTestFile("test/helpers/factory.ts", "typescript")).toBe(false);
+    it("matches on directory path, not only the filename (bd tea-rags-mcp-9ty5z)", () => {
+      expect(detectTestFile("test/helpers/factory.ts", "typescript")).toBe(true);
     });
 
     it("handles nested paths", () => {
@@ -241,6 +242,34 @@ describe("detectTestFile", () => {
 
     it("handles bare filename without directory", () => {
       expect(detectTestFile("utils.test.ts", "typescript")).toBe(true);
+    });
+  });
+
+  describe("path-aware classification (bd tea-rags-mcp-9ty5z)", () => {
+    it("detects shared fixtures under a test root that carry no test suffix", () => {
+      expect(detectTestFile("tests/core/domains/ingest/__helpers__/test-helpers.ts", "typescript")).toBe(true);
+      expect(detectTestFile("tests/helpers.py", "python")).toBe(true);
+      expect(detectTestFile("src/test/java/Helper.java", "java")).toBe(true);
+      expect(detectTestFile("spec/support/factory_bot.rb", "ruby")).toBe(true);
+    });
+
+    it("agrees with the infra file classifier on every path", () => {
+      for (const [relPath, language] of [
+        ["tests/core/domains/ingest/__helpers__/test-helpers.ts", "typescript"],
+        ["src/core/domains/trajectory/static/provider.ts", "typescript"],
+        ["pkg/utils_test.go", "go"],
+        ["Tests/UserTests.swift", "swift"],
+        ["src/UserTest.kt", "kotlin"],
+        ["lib/user.dart", "dart"],
+      ] as const) {
+        expect(detectTestFile(relPath, language), relPath).toBe(classify(relPath).isTest);
+      }
+    });
+
+    it("answers false for a path the classifier cannot take (absolute, parent-relative, empty)", () => {
+      expect(detectTestFile("/abs/tests/a.ts", "typescript")).toBe(false);
+      expect(detectTestFile("../other/tests/a.ts", "typescript")).toBe(false);
+      expect(detectTestFile("", "typescript")).toBe(false);
     });
   });
 });

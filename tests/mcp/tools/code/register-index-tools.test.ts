@@ -89,3 +89,41 @@ describe("index_codebase — worktree seed", () => {
     expect(text).not.toContain("Worktree seed");
   });
 });
+
+describe("index_codebase — partial incremental run (bd tea-rags-mcp-6l1w6)", () => {
+  const cleanRun: IndexStats = { ...seededRun, worktreeSeed: undefined };
+
+  it("warns how many files kept stale chunks, and that the next reindex retries them", async () => {
+    const { handler } = harness({
+      ...cleanRun,
+      status: "partial",
+      errors: [],
+      changeDetails: { ...cleanRun.changeDetails!, filesSkippedDueToDeleteFailure: 3, filesFailedToDelete: 1 },
+    });
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text).toContain(
+      "Warning: partial run — old chunks could not be deleted for 4 file(s) " +
+        "(1 removed, 3 modified not re-indexed); the next reindex retries them.",
+    );
+    // No empty "Warnings:" block when the run carries no error strings.
+    expect(text).not.toContain("Warnings:");
+  });
+
+  it("names only the counter that is set", async () => {
+    const { handler } = harness({
+      ...cleanRun,
+      status: "partial",
+      changeDetails: { ...cleanRun.changeDetails!, filesFailedToDelete: 2 },
+    });
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+
+    expect(text).toContain("old chunks could not be deleted for 2 file(s) (2 removed);");
+  });
+
+  it("prints no warning for a completed run", async () => {
+    const { handler } = harness(cleanRun);
+    const [{ text }] = (await handler({ path: "/repo" }, {})).content;
+    expect(text).not.toContain("Warning");
+  });
+});

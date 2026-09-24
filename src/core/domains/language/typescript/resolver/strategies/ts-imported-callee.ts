@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
@@ -72,7 +73,7 @@ export class TSImportedCalleeSymbolResolutionStrategy implements SymbolResolutio
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver) return CONTINUE;
     for (const imp of ctx.imports) {
-      const exportedName = imp.importedBindings?.[call.member];
+      const exportedName = identifierEntry(imp.importedBindings, call.member);
       if (exportedName === undefined) continue;
       const importedFile = mapImportToFile(imp.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
       if (!importedFile) continue;

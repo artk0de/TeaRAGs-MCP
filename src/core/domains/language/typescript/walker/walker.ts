@@ -16,6 +16,7 @@
  * walker becomes the canonical extraction shape.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
@@ -61,7 +62,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   const classExtends = collectClassExtends(input.tree.rootNode);
   // Convert nested Map → nested Record so the contract survives NDJSON
   // spill between walker emit and resolver consume.
-  const classFieldTypesRecord: Record<string, Record<string, string>> = {};
+  const classFieldTypesRecord: Record<string, Record<string, string>> = createIdentifierRecord();
   for (const [cls, fields] of classFieldTypes) {
     classFieldTypesRecord[cls] = Object.fromEntries(fields);
   }
@@ -114,7 +115,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
     // Convert Map → Record so the field round-trips through the NDJSON
     // spill in the codegraph provider. Mirrors the same discipline as
     // ruby-walker's `classAncestors` / `classPrependedAncestors`.
-    const classExtendsRecord: Record<string, string> = {};
+    const classExtendsRecord: Record<string, string> = createIdentifierRecord();
     for (const [cls, parent] of classExtends) classExtendsRecord[cls] = parent;
     out.classExtends = classExtendsRecord;
   }
@@ -417,7 +418,7 @@ function attachNamespaceMemberBindings(root: AstNode, imports: ImportRef[]): voi
     const owner = byLocalName.get(value.text);
     if (!owner) return;
     for (const binding of objectPatternBindings(target)) {
-      owner.importedBindings ??= {};
+      owner.importedBindings ??= createIdentifierRecord();
       owner.importedBindings[binding.local] ??= binding.exported;
     }
   });
@@ -916,7 +917,7 @@ function isFunctionLike(node: AstNode): boolean {
  * usable entries (pure config objects) are omitted.
  */
 function collectDispatchTables(root: AstNode): Record<string, DispatchTable> {
-  const out: Record<string, DispatchTable> = {};
+  const out: Record<string, DispatchTable> = createIdentifierRecord();
   const consider = (decl: AstNode): void => {
     if (decl.type !== "lexical_declaration" || !isConstDeclaration(decl)) return;
     for (const d of decl.children) {
@@ -937,7 +938,7 @@ function collectDispatchTables(root: AstNode): Record<string, DispatchTable> {
 }
 
 function objectToTableEntries(objNode: AstNode): Record<string, string | Record<string, string>> {
-  const entries: Record<string, string | Record<string, string>> = {};
+  const entries: Record<string, string | Record<string, string>> = createIdentifierRecord();
   for (const pair of objNode.namedChildren) {
     if (pair.type !== "pair") continue;
     const key = keyText(pair.childForFieldName("key"));
@@ -954,7 +955,7 @@ function objectToTableEntries(objNode: AstNode): Record<string, string | Record<
 }
 
 function objectFieldsToMap(objNode: AstNode): Record<string, string> {
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = createIdentifierRecord();
   for (const pair of objNode.namedChildren) {
     if (pair.type !== "pair") continue;
     const key = keyText(pair.childForFieldName("key"));
@@ -983,7 +984,7 @@ function collectCallbackParams(
   root: AstNode,
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[],
 ): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
+  const out: Record<string, number[]> = createIdentifierRecord();
   walk(root, (node) => {
     if (!isFunctionLike(node)) return;
     const params = node.childForFieldName("parameters");
@@ -1279,7 +1280,7 @@ function assignParamBindingsToInnermostChunks(
       }
     }
     if (bestIdx === -1) continue;
-    const bucket = out.get(bestIdx) ?? {};
+    const bucket = out.get(bestIdx) ?? createIdentifierRecord<LocalBinding[]>();
     (bucket[binding.name] ??= []).push({ line: binding.startLine, type: binding.type });
     out.set(bestIdx, bucket);
   }

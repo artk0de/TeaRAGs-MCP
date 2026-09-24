@@ -37,6 +37,7 @@
  * per-resolver lookup, whose memos belong to the resolver.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   resolveLocalBinding,
   type CallContext,
@@ -208,7 +209,7 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
       // Not a property: a METHOD hop, typed by what the declaration the call
       // lands on returns. Strict: an ambiguous callee types nothing.
       const callee = members.memberOn(recv.name, member, ctx, "strict")?.targetSymbolId;
-      if (callee) return ctx.structuredReturnTypes?.[callee];
+      if (callee) return identifierEntry(ctx.structuredReturnTypes, callee);
       // `NotificationCenter.default`: a type's own singleton, by convention.
       if (recv.form === "class" && SWIFT_SINGLETON_PROPERTIES.has(member)) return { form: "instance", name: recv.name };
       return undefined;
@@ -246,7 +247,7 @@ export function swiftLocalValueType(
 ): string | undefined {
   const typed = resolveLocalBinding(ctx.localBindings, name, atLine);
   let spelled: CallResultBinding | undefined;
-  for (const binding of ctx.callResultBindings?.[name] ?? []) {
+  for (const binding of identifierEntry(ctx.callResultBindings, name) ?? []) {
     if (binding.line >= atLine) continue;
     if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
     if (spelled === undefined || binding.line > spelled.line) spelled = binding;

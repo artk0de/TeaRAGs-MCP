@@ -43,6 +43,7 @@
  * run's hierarchy to the next (bd tea-rags-mcp-z99hp).
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
   AmbiguousResolveMode,
   CallContext,
@@ -131,7 +132,11 @@ export class SwiftMemberTypeLookup {
    */
   private propertyTypeOn(typeName: string, member: string, ctx: CallContext): string | null {
     const key = typeName.slice(typeName.lastIndexOf(".") + 1);
-    return ctx.classFieldTypes?.[key]?.[member] ?? this.fields.fieldsOf(key, ctx)?.[member] ?? null;
+    return (
+      identifierEntry(identifierEntry(ctx.classFieldTypes, key), member) ??
+      identifierEntry(this.fields.fieldsOf(key, ctx), member) ??
+      null
+    );
   }
 
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {

@@ -37,5 +37,11 @@ export const capability: LanguageCapability = {
   // to TypeScript / JavaScript files, so the bare-call fallback and `super` no
   // longer land on a Ruby or Python namesake, and such a call counts as
   // `noInProjectDef`.
-  versions: { chunking: 2, walker: 3, codegraphSchema: 2 },
+  // walker 4: bd tea-rags-mcp-hkj8 — lookup-table dispatch (port of the
+  // TypeScript n0zj mechanism). The walker records module-level const tables
+  // (`dispatchTables`), tags `H[k]()` / `T[k].f()` / const-bound dispatch
+  // locals with `CallRef.dispatch`, records `callbackParams` and
+  // `dispatchArgs`; the resolver fans them out. New caller→candidate edges;
+  // those call sites move from the `dynamic` / `index` buckets to `bareCall`.
+  versions: { chunking: 2, walker: 5, codegraphSchema: 2 },
 };

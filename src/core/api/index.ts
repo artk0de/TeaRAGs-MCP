@@ -27,6 +27,7 @@ export type {
   ProgressCallback,
   // Collection DTOs
   CreateCollectionRequest,
+  DocumentMetadataSchema,
   CollectionInfo,
   // Document DTOs
   AddDocumentsRequest,

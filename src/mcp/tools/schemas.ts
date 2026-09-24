@@ -56,6 +56,15 @@ export const CreateCollectionSchema = {
         "Euclid: absolute vector distance, rarely needed for text embeddings.",
     ),
   enableHybrid: coerceBoolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
+  schema: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Optional JSON Schema for document metadata — makes the collection typed. " +
+        'Top level must be { "type": "object", "properties": {...} }. ' +
+        "add_documents then validates every document's metadata against it (all-or-nothing per batch) " +
+        "and stores schema `default` values for absent fields. Omit for free-form metadata.",
+    ),
 };
 
 export const DeleteCollectionSchema = {
@@ -347,8 +356,8 @@ function levelField() {
         "Analysis level. 'chunk' = rank individual code chunks (functions, classes, blocks) — " +
           "use for decomposition candidates, hotspot detection. " +
           "'file' = rank files as aggregated units — use for tech debt and ownership analysis; " +
-          "each result carries payload.members, an outline of what matched inside that file " +
-          "(markdown files get their heading TOC), in the same format find_symbol(relativePath) returns. " +
+          "each result carries only file-level payload (relativePath, language, imports, git.file, " +
+          "codegraph.symbols.file, …) — no chunk fields, no content; outline a file via find_symbol(relativePath). " +
           "Also sets payload scope of level-aware filters; unset → each filter's own default " +
           "(minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/author/minFanIn/minFanOut: file). " +
           "modifiedAfter/modifiedBefore/recentAuthor file-level regardless. " +

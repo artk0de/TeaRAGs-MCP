@@ -268,7 +268,8 @@ export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): stri
   md += "`modifiedBefore` always read `git.file.lastModifiedAt`, `recentAuthor` always ";
   md += "`git.file.recentDominantAuthor*`, `contributor` always `git.file.recentAuthors`, any ";
   md += "`level`. (2) Result granularity: ";
-  md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
+  md += '`level: "file"` → one result per file, file-level payload only (no chunk fields, no content; ';
+  md += "outline via `find_symbol(relativePath)`). `minAgeDays` / `maxAgeDays` ";
   md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
   md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
   md += "Age reads are query-time: overlay `ageDays`, `age`/`recency` rerank and the ageDays filter ";

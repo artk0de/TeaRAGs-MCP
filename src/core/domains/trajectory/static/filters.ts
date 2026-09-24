@@ -1,5 +1,6 @@
 import { globToTextFilter } from "../../../adapters/qdrant/filters/glob.js";
 import type { FilterDescriptor } from "../../../contracts/types/provider.js";
+import { TEST_EXCLUSION_FILTER_CONDITIONS } from "./test-exclusion.js";
 
 export const staticFilters: FilterDescriptor[] = [
   {
@@ -46,7 +47,9 @@ export const staticFilters: FilterDescriptor[] = [
     type: "string",
     toCondition: (value: unknown) => {
       if (value === "only") return { must: [{ key: "isTest", match: { value: true } }] };
-      if (value === "exclude") return { must_not: [{ key: "isTest", match: { value: true } }] };
+      // Shared with the filter-preset compiler, codegraph bridge included (bd
+      // tea-rags-mcp-9ty5z).
+      if (value === "exclude") return { must_not: [...TEST_EXCLUSION_FILTER_CONDITIONS] };
       return {};
     },
   },

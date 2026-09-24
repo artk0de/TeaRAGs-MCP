@@ -260,3 +260,38 @@ describe("Ollama failover invalidates the model guard (bd tea-rags-mcp-g5nmi)", 
     ctx.cleanup?.();
   });
 });
+
+describe("the Ollama recovery wait reaches the AppContext caller (bd tea-rags-mcp-umatc)", () => {
+  // Same composition-root harness: the hook is armed on the REAL provider only
+  // when the caller asks for it, and what the provider emits must arrive intact.
+  beforeEach(() => {
+    captured.primaryAlive = true;
+    captured.embeddings = undefined;
+    qdrantSpies.getPoint.mockResolvedValue(null);
+    vi.stubGlobal("fetch", vi.fn(fakeFetch));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("forwards the provider's recovery-wait events to onEmbeddingRecoveryWait", async () => {
+    const events: unknown[] = [];
+    const ctx = await createAppContext(makeConfig(), { onEmbeddingRecoveryWait: (event) => events.push(event) });
+    const embeddings = captured.embeddings as OllamaEmbeddingsType;
+
+    expect(embeddings.onRecoveryWait, "createAppContext never armed onRecoveryWait").toBeDefined();
+    embeddings.onRecoveryWait?.({ state: "waiting", url: PRIMARY_URL, elapsedMs: 0, budgetMs: 240_000 });
+    expect(events).toEqual([{ state: "waiting", url: PRIMARY_URL, elapsedMs: 0, budgetMs: 240_000 }]);
+
+    ctx.cleanup?.();
+  });
+
+  it("leaves the hook unset when nobody listens — the MCP server has no screen to show it on", async () => {
+    const ctx = await createAppContext(makeConfig());
+
+    expect((captured.embeddings as OllamaEmbeddingsType).onRecoveryWait).toBeUndefined();
+
+    ctx.cleanup?.();
+  });
+});

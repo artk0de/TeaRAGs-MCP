@@ -311,9 +311,9 @@ describe("SimilarSearchStrategy", () => {
     expect(callArgs.limit).toBeGreaterThan(5); // strictly greater than user-requested limit
   });
 
-  // tea-rags-mcp-zrma: the collapsed chunks are the answer to "what in this
-  // file is similar" — they must survive as an outline, not be thrown away.
-  it("attaches a members outline of the collapsed chunks at file level", async () => {
+  // bd tea-rags-mcp-947xf / mwq0k: a file hit names the file — no members
+  // outline, no fields of whichever chunk happened to represent it.
+  it("returns a file hit with no members outline and no chunk-scoped fields", async () => {
     const qdrant = createMockQdrant([
       { id: "1", score: 0.95, payload: { relativePath: "src/a.ts", name: "Alpha", symbolId: "Alpha", startLine: 1 } },
       {
@@ -332,7 +332,8 @@ describe("SimilarSearchStrategy", () => {
 
     const results = await strategy.execute({ collectionName: "col", limit: 5, level: "file" });
 
-    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+    expect(results).toHaveLength(1);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
 
   it("returns userFilter unchanged when buildFilter produces no must clauses (empty must, has should)", async () => {

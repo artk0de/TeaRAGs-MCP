@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/tea-rags"><img src="https://img.shields.io/npm/v/tea-rags?logo=npm&color=d4af37" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/tea-rags"><img src="https://img.shields.io/npm/dm/tea-rags?logo=npm&color=d4af37" alt="npm downloads"></a>
   <a href="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml"><img src="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/artk0de/TeaRAGs-MCP"><img src="https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF" alt="codecov"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-d4af37" alt="MIT license"></a>
@@ -303,6 +304,31 @@ In Claude Code, `/tea-rags:index` does the same. Then ask your agent:
 | **Ranks for the task**       | —                  | Similarity only  | 23 presets — see [What It Answers](#-what-it-answers) |
 | **Cost on a large monorepo** | Many agent turns   | One query        | One query                                             |
 
+### 🆚 Compared to other tools
+
+TeaRAGs is not a coding agent. It is the context layer an agent queries, so the
+closest comparisons are the tools that hand a codebase to an LLM. Every
+competitor cell links to that product's own documentation, checked on
+2026-09-23; "—" means the capability is not in those docs.
+
+|                                                                                                                      | Ranks by git history                                                                                | Semantic search                                         | Call graph                                                                                                               | Serves context over MCP                                                                 | Runs locally                                                                               | Rerank presets |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------- |
+| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 23 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
+| [Aider](https://github.com/Aider-AI/aider)                                                                           | —                                                                                                   | —                                                       | ⚠️ [internal only](https://aider.chat/docs/repomap.html): a file dependency graph ranks the repo map it sends to the LLM | ❌ [not built in — open feature request](https://github.com/Aider-AI/aider/issues/4506) | ✅ [terminal CLI, works with local models](https://github.com/Aider-AI/aider)              | —              |
+| [Repomix](https://github.com/yamadashy/repomix)                                                                      | ⚠️ [orders files by git change count](https://github.com/yamadashy/repomix) inside the packed file  | —                                                       | —                                                                                                                        | ✅ [`repomix --mcp`](https://github.com/yamadashy/repomix)                              | ✅ CLI                                                                                     | —              |
+| [Sourcegraph](https://sourcegraph.com/docs/api/mcp) (incl. [Cody Enterprise](https://sourcegraph.com/docs/cody/faq)) | ⚠️ [commit and diff search](https://sourcegraph.com/docs/api/mcp); no ranking by history documented | ✅ [`nls_search`](https://sourcegraph.com/docs/api/mcp) | ✅ [`go_to_definition`, `find_references`](https://sourcegraph.com/docs/api/mcp)                                         | ✅ [MCP server on Enterprise plans](https://sourcegraph.com/docs/api/mcp)               | ⚠️ [your Sourcegraph instance](https://sourcegraph.com/docs/api/mcp), self-hosted or cloud | —              |
+
+Two names that usually come up here changed shape. Cody Free and Cody Pro shut
+down on 2025-07-23 ([Sourcegraph](https://sourcegraph.com/docs/cody/faq)); Cody
+Enterprise continues and uses Sourcegraph Search as its context source, which is
+why it shares the Sourcegraph row. GitHub ended the Copilot Workspace technical
+preview on 2025-05-30
+([GitHub Next](https://githubnext.com/projects/copilot-workspace/)).
+
+A wider table against other MCP code-search servers (claude-context, serena,
+grepai, …) lives in the
+[comparison guide](https://artk0de.github.io/TeaRAGs-MCP/introduction/comparison).
+
 ## ⚙️ How It Works
 
 ```mermaid
@@ -388,7 +414,7 @@ Rows are ordered by overall capability, richest support first.
 | **_JavaScript_** | 🌔 **full** · tree-sitter (assignment chunking, describe/it scopes, module/class split)                           | 🌖 **high** · testScopeChunker (describe/it scopes)                                                                                                                                        | 🌖 **high** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)                                                                                                                    |
 | **_Ruby_**       | 🌔 **full** · tree-sitter (RSpec block grouping, comment attachment, spec scope splitting, method-body splitting) | 🌖 **high** · RSpec scope chunker (parent setup injected)                                                                                                                                  | untyped 🌖 **high** · YARD 🌕 **maximum** · RBS/Sorbet 🌑 **TBD** — 15-strategy chain + 4 dispatch components + 20-grammar DSL catalogue + YARD type-source + db/schema.rb column accessors |
 | **_Swift_**      | 🌔 **full** · tree-sitter                                                                                         | 🌖 **high** · XCTest + swift-testing recognition (test cases, setUp/tearDown, @Test/@Suite) plus Quick/Nimble DSL scope chunking (per-scenario chunks with ancestor beforeEach spliced in) | 🌖 **high** — 9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing                                                   |
-| **_Python_**     | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                                                                                                                                                                | 🌖 **high** — 9-strategy chain + C3 MRO + CHA cone dispatch + re-export-aware import mapping + annotation, docstring and return-type facts                                                  |
+| **_Python_**     | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                                                                                                                                                                | 🌖 **high** — 9-strategy chain + C3 MRO + CHA cone dispatch + dict-table dispatch + re-export-aware import mapping + annotation, docstring and return-type facts                            |
 | **_Go_**         | 🌔 **full** · tree-sitter (func/type split)                                                                       | 🌓 **medium** · generic AST                                                                                                                                                                | 🌗 **moderate** — 7-pass chain + scope-aware typed locals + struct-field chains + embedding promotion + go.mod module-path imports; no interface dispatch                                   |
 | **_Java_**       | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                                                                                                                                                                | 🌗 **moderate** — 6-strategy + java.lang stdlib whitelist + overload disambiguation                                                                                                         |
 | **_Rust_**       | 🌔 **full** · tree-sitter (named-item extraction)                                                                 | 🌓 **medium** · generic AST (#[test] attrs not preserved)                                                                                                                                  | 🌗 **moderate** — 6-strategy; trait-based dispatch                                                                                                                                          |
@@ -401,6 +427,32 @@ Rows are ordered by overall capability, richest support first.
 </details>
 <!-- markdownlint-enable MD033 -->
 <!-- END lang-compat -->
+
+### MCP clients
+
+Every language above works the same way in every client — the client only
+decides how much of the tooling on top of the MCP server you get.
+
+| Client                                                  | MCP tools                                                | Routing guide (`tea-rags://schema/search-guide`) | Skills (`/tea-rags:*`) and `dinopowers` | Setup wizard                 |
+| ------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------ | --------------------------------------- | ---------------------------- |
+| **Claude Code**                                         | ✅ stdio                                                 | ✅ plus the plugin's routing rules               | ✅ plugins                              | ✅ `/tea-rags-setup:install` |
+| **Other stdio clients** (Cursor, Roo Code, Continue, …) | ✅ `tea-rags server`                                     | ✅ where the client reads MCP resources          | — plugins are Claude Code only          | — manual install             |
+| **HTTP clients**                                        | ✅ `tea-rags server --http` (Streamable HTTP, port 3000) | ✅ where the client reads MCP resources          | —                                       | — manual install             |
+
+### Embedding providers
+
+Set `EMBEDDING_PROVIDER`; `EMBEDDING_MODEL` overrides the default model.
+
+| Provider             | `EMBEDDING_PROVIDER` | Where it runs           | Default model                                      | Needs            |
+| -------------------- | -------------------- | ----------------------- | -------------------------------------------------- | ---------------- |
+| **Ollama** (default) | `ollama`             | Local                   | `unclemusclez/jina-embeddings-v2-base-code:latest` | A running Ollama |
+| **ONNX** (beta)      | `onnx`               | Local, built-in runtime | `jinaai/jina-embeddings-v2-base-code-fp16`         | Nothing          |
+| **OpenAI**           | `openai`             | Cloud                   | `text-embedding-3-small`                           | `OPENAI_API_KEY` |
+| **Cohere**           | `cohere`             | Cloud                   | `embed-english-v3.0`                               | `COHERE_API_KEY` |
+| **Voyage**           | `voyage`             | Cloud                   | `voyage-2`                                         | `VOYAGE_API_KEY` |
+
+Throughput per provider and how to choose:
+[Embedding Providers](https://artk0de.github.io/TeaRAGs-MCP/config/providers/).
 
 ## ⌨️ CLI
 
@@ -415,6 +467,42 @@ Rows are ordered by overall capability, richest support first.
 | `tea-rags tune`           | Auto-tune performance parameters for your hardware                  |
 | `tea-rags update`         | Check for and install a newer version                               |
 | `tea-rags server`         | Start the MCP server                                                |
+
+## 🙋 FAQ
+
+**How is this different from Aider or Copilot?** Those are coding agents;
+TeaRAGs is what an agent asks before it writes. It indexes the repository once,
+keeps the index fresh, and answers over MCP with code plus its history and call
+graph. Any agent that speaks MCP can use it. See
+[Compared to other tools](#-compared-to-other-tools).
+
+**Does it need the cloud?** No. Qdrant and DuckDB run embedded under
+`~/.tea-rags`, and the default embeddings come from a local Ollama (or the
+built-in ONNX runtime), so code never leaves your machine. The network is used
+to download the Qdrant binary on first run and for a cached npm version check in
+`tea-rags prime`. OpenAI, Cohere and Voyage are opt-in.
+
+**How big a repository can it handle?** The largest measured index is a
+production monolith of 3M+ lines of Ruby and TypeScript: ~33k files, 140k
+chunks, 1.3 GB of vectors and 1.1 GB of call graph (see
+[System requirements](#-system-requirements)). After the first run, reindexing
+is incremental — only changed files are re-embedded.
+
+**Which languages are supported?** Nine languages get AST chunking and a call
+graph of varying depth: TypeScript, JavaScript, Ruby, Python, Swift, Go, Java,
+Rust and Bash. Markdown is chunked by heading; SQL and JSON fall back to plain
+character chunks. Per-language depth is in
+[Languages Compatibilities](#languages-compatibilities).
+
+**How accurate are the git signals?** They are read from your real history; the
+one heuristic is bug-fix detection. A commit counts as a bug fix when its
+message says so (`fix:`, `[Bug]`, `TICKET-123 Fix …`, `fixes #123`) or it
+arrived through a merged `fix/`, `hotfix/` or `bugfix/` branch; "fix typo", "fix
+lint" and similar are excluded. Chunk-level history follows each chunk's lines
+through diff hunks and looks back 6 months by default (12 for file level); files
+over 10,000 lines get file-level signals only. Labels such as _high_ or
+_concerning_ are percentiles of your own repository, and signals backed by only
+a few commits are dampened before they affect ranking.
 
 ## 📚 Documentation
 
@@ -438,6 +526,10 @@ Engineering notes behind the releases, each with the corpus it was measured on �
 - [Why this blog exists — 2026-08-19](https://artk0de.github.io/TeaRAGs-MCP/blog/why-this-blog-exists)
 
 <!-- BLOG:END -->
+
+## ⭐ Star History
+
+[![Star History chart](https://api.star-history.com/svg?repos=artk0de/TeaRAGs-MCP&type=Date)](https://star-history.com/#artk0de/TeaRAGs-MCP&Date)
 
 ## 🤝 Contributing
 

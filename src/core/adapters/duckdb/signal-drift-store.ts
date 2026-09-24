@@ -21,9 +21,10 @@
  * from 1 to 0.25, and grouping the fan on the bare symbolId while the payload
  * carries the per-file number leaves every namesake permanently "moved".
  *
- * `page_rank` is the one column still joined on the bare `symbol_id`, because
- * `cg_symbols_metrics` has no other key — see `getChunkSignalsBulk` for why
- * that rank is shared by every namesake.
+ * `page_rank` joins on `(rel_path, symbol_id)` like the fan (bd
+ * tea-rags-mcp-4g9ga, migration 028), falling back to a rank 028 carried over
+ * with no file (`rel_path = ''`) — the value `getChunkSignalsBulk` writes for
+ * such a symbol, so the migration alone names nothing as moved.
  *
  * Who drives the refresh, and why `transitiveImpact` / `isHub` sit outside the
  * comparison: `src/core/domains/trajectory/codegraph/CLAUDE.md`.
@@ -66,11 +67,12 @@ const CURRENT_SYMBOL_SIGNALS = `
            s.chunk_id,
            COALESCE(fi.fan_in, 0)   AS fan_in,
            COALESCE(fo.fan_out, 0)  AS fan_out,
-           COALESCE(m.page_rank, 0) AS page_rank
+           COALESCE(m.page_rank, ml.page_rank, 0) AS page_rank
     FROM cg_symbols s
     LEFT JOIN fi ON fi.rel_path = s.rel_path AND fi.symbol_id = s.symbol_id
     LEFT JOIN fo ON fo.rel_path = s.rel_path AND fo.symbol_id = s.symbol_id
-    LEFT JOIN cg_symbols_metrics m ON m.symbol_id = s.symbol_id
+    LEFT JOIN cg_symbols_metrics m ON m.rel_path = s.rel_path AND m.symbol_id = s.symbol_id
+    LEFT JOIN cg_symbols_metrics ml ON ml.rel_path = '' AND ml.symbol_id = s.symbol_id
   )`;
 
 /**

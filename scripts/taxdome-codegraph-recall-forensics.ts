@@ -149,6 +149,7 @@ import {
   seedParamLocalBindings,
   type KnownTargetParamTypes,
 } from "../src/core/domains/trajectory/codegraph/symbols/call-arg-param-types.js";
+import { loadCodegraphGrammarSync } from "../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import {
   buildHierarchySnapshot,
   normalizeInheritanceEdges,
@@ -7040,7 +7041,7 @@ function runCalleeShapeOracle(): void {
     try {
       const code = readFileSync(join(ROOT, relPath), "utf8");
       const parser = new Parser();
-      parser.setLanguage(rbConfig.loadParser());
+      parser.setLanguage(loadCodegraphGrammarSync(factory, RUBY_EXT));
       root = materializeTree(parser.parse(code).rootNode, code);
     } catch {
       parseFailures += 1;
@@ -7198,7 +7199,7 @@ function runNullaryOracle(): void {
     try {
       const code = readFileSync(join(ROOT, relPath), "utf8");
       const parser = new Parser();
-      parser.setLanguage(rbConfig.loadParser());
+      parser.setLanguage(loadCodegraphGrammarSync(factory, RUBY_EXT));
       root = materializeTree(parser.parse(code).rootNode, code);
     } catch {
       parseFailures += 1;
@@ -7561,7 +7562,7 @@ function runIntraClassOracle(): void {
     try {
       code = readFileSync(join(ROOT, relPath), "utf8");
       const parser = new Parser();
-      parser.setLanguage(rbConfig.loadParser());
+      parser.setLanguage(loadCodegraphGrammarSync(factory, RUBY_EXT));
       root = materializeTree(parser.parse(code).rootNode, code);
     } catch {
       parseFailures += 1;
@@ -13013,7 +13014,7 @@ async function main(): Promise<void> {
     try {
       const code = readFileSync(join(ROOT, relPath), "utf8");
       const parser = new Parser();
-      parser.setLanguage(rbConfig.loadParser());
+      parser.setLanguage(loadCodegraphGrammarSync(factory, RUBY_EXT));
       const nativeTree = parser.parse(code);
       const materializedRoot = materializeTree(nativeTree.rootNode, code);
       const materializedTree = { rootNode: materializedRoot };

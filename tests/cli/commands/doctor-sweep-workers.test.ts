@@ -82,9 +82,12 @@ describe("runWorkerSweepDoctor (f924y)", () => {
       out += String(chunk);
       return true;
     });
+    // Status-tag assertions read plain text: force color off regardless of the terminal.
+    vi.stubEnv("NO_COLOR", "1");
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     rmSync(dir, { recursive: true, force: true });
   });

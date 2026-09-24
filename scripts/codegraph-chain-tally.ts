@@ -66,6 +66,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { extname, join, resolve as resolvePath, sep } from "node:path";
 
 import { deferred } from "../src/core/contracts/resolution.js";
+import { formatResolveRateCell, resolveRateMiss } from "../src/core/contracts/resolve-rate.js";
 import {
   chunkCallerScope,
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
@@ -642,15 +643,12 @@ export interface RunResult {
 }
 
 /**
- * Misses the rate charges as failures — `status-module.ts#missWithInProjectDef`
- * for one kind's row. `ambiguousFanout` is deliberately NOT subtracted: the
- * strict rate keeps an over-cap fan in the denominator.
+ * Misses the rate charges as failures for one kind's row — the shared
+ * `contracts/resolve-rate.ts#resolveRateMiss`, the same exclusion list
+ * `status-module.ts#missWithInProjectDef` persists rates with.
  */
 export function kindMissWithInProjectDef(t: ReceiverKindTally): number {
-  return Math.max(
-    0,
-    t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
-  );
+  return resolveRateMiss(t);
 }
 
 /** Knobs the E6 timing legs add; every one of them is off in a default run. */
@@ -1055,7 +1053,8 @@ async function main(): Promise<void> {
 /**
  * The `## Codegraph resolve` per-kind section, recomputed offline. `rate` is
  * `resolved / (resolved + miss)` — the exact `resolveSuccessRate` formula, with
- * `miss` the residual the rate charges as a failure.
+ * `miss` the residual the rate charges as a failure. An empty denominator
+ * renders as the `—` marker with the counters kept, never as a rate (bd qodqg).
  */
 export function formatKindStatsBlock(
   stats: Record<ReceiverKind, ReceiverKindTally>,
@@ -1069,9 +1068,15 @@ export function formatKindStatsBlock(
     const miss = kindMissWithInProjectDef(t);
     totals.resolved += t.resolved;
     totals.miss += miss;
-    const rate = t.resolved + miss === 0 ? 1 : t.resolved / (t.resolved + miss);
+    const kindDenominator = t.resolved + miss;
+    const cell = formatResolveRateCell({
+      rate: t.resolved / kindDenominator,
+      denominator: kindDenominator,
+      counters: `${t.resolved}/${kindDenominator}`,
+      renderRate: (rate) => rate.toFixed(3),
+    });
     lines.push(
-      `  ${kind.padEnd(11)} ${rate.toFixed(3)} ${t.resolved}/${t.resolved + miss}` +
+      `  ${kind.padEnd(11)} ${cell}` +
         ` · attempted ${t.attempted} · external ${t.externalSkipped} · noInProjectDef ${t.noInProjectDef}` +
         ` · coreAmbiguous ${t.coreAmbiguous} · unresolvable ${t.unresolvable}` +
         ` · ambiguousFanout ${t.ambiguousFanout} · MISS ${miss}`,
@@ -1079,10 +1084,13 @@ export function formatKindStatsBlock(
     for (const sample of samples?.[kind] ?? []) lines.push(`      miss: ${sample}`);
   }
   const denominator = totals.resolved + totals.miss;
-  lines.push(
-    `  TOTAL       ${(denominator === 0 ? 1 : totals.resolved / denominator).toFixed(3)}` +
-      ` ${totals.resolved}/${denominator} · residual miss ${totals.miss}`,
-  );
+  const totalCell = formatResolveRateCell({
+    rate: totals.resolved / denominator,
+    denominator,
+    counters: `${totals.resolved}/${denominator}`,
+    renderRate: (rate) => rate.toFixed(3),
+  });
+  lines.push(`  TOTAL       ${totalCell} · residual miss ${totals.miss}`);
   return lines;
 }
 

@@ -16,12 +16,13 @@ import {
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
-import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
+import { OllamaEmbeddings, type OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
 import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
+import { reapGitChildProcesses } from "../core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import {
   createApp,
   createComposition,
@@ -160,6 +161,7 @@ async function resolveInfrastructure(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
   onTurboMigration?: TurboMigrationListener,
+  onEmbeddingRecoveryWait?: (event: OllamaRecoveryWaitEvent) => void,
 ): Promise<InfraContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData, zodConfig.qdrantTune.lowMemory);
   if (resolution.mode === "external") {
@@ -218,6 +220,9 @@ async function resolveInfrastructure(
       // with the index. Drop it and let the next check re-measure.
       modelGuardSlot.current?.invalidateAll();
     };
+    // Armed before the first request below, so a provider that is already
+    // down at startup is reported as a wait from its first pause on.
+    if (onEmbeddingRecoveryWait) embeddings.onRecoveryWait = onEmbeddingRecoveryWait;
   }
 
   // Eagerly init ONNX to get calibrated batch size before pipeline config
@@ -943,6 +948,11 @@ export interface AppContextOptions {
   /** Notified while a startup TurboQuant collection migration's optimizer pass runs (CLI, over IPC). */
   onTurboMigration?: TurboMigrationListener;
   /**
+   * Notified while an unreachable Ollama is waited for (CLI, over IPC), so the
+   * wait shows on screen instead of passing in silence (bd tea-rags-mcp-umatc).
+   */
+  onEmbeddingRecoveryWait?: (event: OllamaRecoveryWaitEvent) => void;
+  /**
    * Where this process's env came from. The MCP server entry points declare
    * `server`, so a registered project's stamped index shape outranks the spawn
    * env in BOTH the index run and the env drift axis (tea-rags-mcp-o0qsw).
@@ -956,7 +966,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   setDebug(zodConfig.core.debug);
   const ambientEnvRole = options?.ambientEnvRole ?? "invocation";
 
-  const infra = await resolveInfrastructure(config, zodConfig, options?.onTurboMigration);
+  const infra = await resolveInfrastructure(
+    config,
+    zodConfig,
+    options?.onTurboMigration,
+    options?.onEmbeddingRecoveryWait,
+  );
   // Registry must exist before wireCodegraph because GraphFacade resolves
   // the `{ collection, project, path }` triad through it. startWatching()
   // is deferred until later — registry construction alone is side-effect
@@ -1189,8 +1204,17 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });
 
+  // Idempotent: under stdio both the signal listeners and the stdin-close
+  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once.
+  let cleanedUp = false;
   const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
     registryWatchStop();
+    // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
+    // git as a direct child of THIS process; no parent-death guard reaches it,
+    // so an interrupted run's git children are killed here (bd tea-rags-mcp-w26dc).
+    reapGitChildProcesses();
     if ("terminate" in infra.embeddings && typeof infra.embeddings.terminate === "function") {
       void (infra.embeddings as { terminate: () => Promise<void> }).terminate();
     }

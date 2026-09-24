@@ -9,24 +9,17 @@
  */
 
 import { readdirSync, readFileSync, type Dirent } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 
 import type { Ignore } from "ignore";
 import Parser from "tree-sitter";
-import BashLang from "tree-sitter-bash";
-import GoLang from "tree-sitter-go";
-import JavaLang from "tree-sitter-java";
-import JsLang from "tree-sitter-javascript";
-import PyLang from "tree-sitter-python";
-import RbLang from "tree-sitter-ruby";
-import RustLang from "tree-sitter-rust";
-import SwiftLang from "tree-sitter-swift";
-import TsLang from "tree-sitter-typescript";
 
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
   LanguageFactoryDescriptor,
+  LanguageKernel,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
@@ -39,12 +32,17 @@ import type { CodegraphRunState } from "./run-state.js";
  * Per-extension parser config. Codegraph walks any file whose extension has a
  * {@link CODEGRAPH_LANGUAGES} row; the walk and `nameOf` come from the injected
  * `LanguageFactoryDescriptor` (`factory.create(lang).walker`), keyed by language
- * name. Adding a language: a tree-sitter grammar dependency, a native
- * `domains/language/<lang>` provider, and a row here.
+ * name, and so does the grammar (`factory.create(lang).kernel`). Adding a
+ * language: a tree-sitter grammar dependency, a native `domains/language/<lang>`
+ * provider whose kernel names it, and a row here.
  */
 export interface CodegraphLanguageConfig {
+  /**
+   * Language the file is walked as. Its grammar comes from that language's
+   * kernel (`LanguageFactory.create(language).kernel`), selected per extension
+   * by `extractLanguage(mod, extension)` — see {@link loadCodegraphGrammar}.
+   */
   language: string;
-  loadParser: () => Parser.Language;
   /**
    * Joiner used to build the fully-qualified symbol id from the scope
    * stack + the local node name. TypeScript / Python use ".", Ruby
@@ -66,16 +64,14 @@ export interface CodegraphLanguageConfig {
 }
 
 export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
-  // `.ts` and `.tsx` load different grammars; the native TypeScript walker
-  // handles both grammars' node types.
+  // `.ts` and `.tsx` load different grammars (the TypeScript kernel selects by
+  // extension); the native TypeScript walker handles both grammars' node types.
   ".ts": {
     language: "typescript",
-    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
     scopeSeparator: ".",
   },
   ".tsx": {
     language: "typescript",
-    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).tsx,
     scopeSeparator: ".",
   },
   // The ESM / CJS module formats (bd tea-rags-mcp-1y13c): the `typescript`
@@ -85,54 +81,44 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   // move together.
   ".mts": {
     language: "typescript",
-    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
     scopeSeparator: ".",
   },
   ".cts": {
     language: "typescript",
-    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
     scopeSeparator: ".",
   },
   ".py": {
     language: "python",
-    loadParser: () => PyLang,
     scopeSeparator: ".",
   },
   ".rb": {
     language: "ruby",
-    loadParser: () => RbLang,
     scopeSeparator: "::",
   },
   // JavaScript variants — the single `tree-sitter-javascript` grammar serves all
   // four extensions.
   ".js": {
     language: "javascript",
-    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".jsx": {
     language: "javascript",
-    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".mjs": {
     language: "javascript",
-    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".cjs": {
     language: "javascript",
-    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".go": {
     language: "go",
-    loadParser: () => GoLang,
     scopeSeparator: ".",
   },
   ".java": {
     language: "java",
-    loadParser: () => JavaLang,
     scopeSeparator: ".",
     // bd tea-rags-mcp-a466 — each Java overload needs its own symbolId so
     // `get_callers` / `get_callees` can pin the right body.
@@ -140,7 +126,6 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   },
   ".rs": {
     language: "rust",
-    loadParser: () => RustLang,
     scopeSeparator: "::",
   },
   // Swift — one grammar, one extension. `.` joins nested types
@@ -151,23 +136,78 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   // suffixes duplicates `~N` — the two halves must agree per AST node.
   ".swift": {
     language: "swift",
-    loadParser: () => SwiftLang,
     scopeSeparator: ".",
     disambiguateOverloads: true,
   },
   // Bash — two extensions, one grammar (`.sh` and `.bash` share the single
-  // BashLang).
+  // tree-sitter-bash grammar).
   ".sh": {
     language: "bash",
-    loadParser: () => BashLang,
     scopeSeparator: ".",
   },
   ".bash": {
     language: "bash",
-    loadParser: () => BashLang,
     scopeSeparator: ".",
   },
 };
+
+/**
+ * The tree-sitter grammar a file of `extension` is parsed with, loaded through
+ * its language's kernel: `factory.create(language)` (which throws
+ * `GrammarPackageNotInstalledError` when the kernel's `grammarPackage` does not
+ * resolve), `kernel.loadModule()`, then `kernel.extractLanguage(mod, extension)`.
+ *
+ * bd tea-rags-mcp-e2pu7 — the extractor used to import every grammar
+ * statically, so ONE missing grammar package failed this module at link time
+ * with a raw ERR_MODULE_NOT_FOUND, for every language at once. Loading per
+ * language, on demand, confines a missing grammar to its own files.
+ */
+export async function loadCodegraphGrammar(
+  factory: LanguageFactoryDescriptor,
+  extension: string,
+): Promise<Parser.Language> {
+  const { language, kernel } = kernelForExtension(factory, extension);
+  return grammarFromModule(language, extension, kernel, await kernel.loadModule());
+}
+
+const requireGrammar = createRequire(import.meta.url);
+
+/**
+ * Synchronous twin of {@link loadCodegraphGrammar} for the offline harnesses
+ * (`scripts/`), whose per-file walks are synchronous. Same kernel, same
+ * `extractLanguage` selection — only the module fetch differs (`require` of
+ * `kernel.grammarPackage` instead of `kernel.loadModule()`); a grammar package
+ * is CommonJS, so both reach the same `module.exports` object.
+ */
+export function loadCodegraphGrammarSync(factory: LanguageFactoryDescriptor, extension: string): Parser.Language {
+  const { language, kernel } = kernelForExtension(factory, extension);
+  if (kernel.grammarPackage === undefined) {
+    throw new Error(`Codegraph language "${language}" names no grammar package`);
+  }
+  return grammarFromModule(language, extension, kernel, requireGrammar(kernel.grammarPackage) as TreeSitterModule);
+}
+
+type TreeSitterModule = Awaited<ReturnType<LanguageKernel["loadModule"]>>;
+
+function kernelForExtension(
+  factory: LanguageFactoryDescriptor,
+  extension: string,
+): { language: string; kernel: LanguageKernel } {
+  const row = CODEGRAPH_LANGUAGES[extension];
+  if (!row) throw new Error(`No codegraph language for extension "${extension}"`);
+  return { language: row.language, kernel: factory.create(row.language).kernel };
+}
+
+function grammarFromModule(
+  language: string,
+  extension: string,
+  kernel: LanguageKernel,
+  mod: TreeSitterModule,
+): Parser.Language {
+  if (mod === null) throw new Error(`Codegraph language "${language}" loads no grammar`);
+  const grammar = kernel.extractLanguage ? kernel.extractLanguage(mod, extension) : (mod.default ?? mod);
+  return grammar as Parser.Language;
+}
 
 /** Extensions with a {@link CODEGRAPH_LANGUAGES} row — the only files the walk can parse. */
 export const CODEGRAPH_SUPPORTED_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(CODEGRAPH_LANGUAGES));
@@ -219,6 +259,11 @@ export class CodegraphFileExtractor {
    * unit in at once and can jump past an exact multiple (see `recordPass1`).
    */
   private nextPass1ProgressAt = PASS1_PROGRESS_EVERY;
+  /**
+   * Grammar per extension, loaded once through the language kernel. A failed
+   * load (missing grammar package) is evicted, so a later file re-checks.
+   */
+  private readonly grammars = new Map<string, Promise<Parser.Language>>();
 
   constructor(private readonly deps: CodegraphFileExtractorDeps) {}
 
@@ -285,9 +330,9 @@ export class CodegraphFileExtractor {
   }
 
   /** Parse + walk one file from disk, recording its pass-1 time. */
-  extract(root: string, relPath: string): FileExtraction {
+  async extract(root: string, relPath: string): Promise<FileExtraction> {
     const startedAtMs = Date.now();
-    const extraction = this.parse(root, relPath);
+    const extraction = await this.parse(root, relPath);
     this.recordPass1(extraction.language, Date.now() - startedAtMs);
     return extraction;
   }
@@ -323,8 +368,12 @@ export class CodegraphFileExtractor {
     );
   }
 
-  /** Parse + walk one file. Timing and progress belong to `extract`. */
-  parse(root: string, relPath: string): FileExtraction {
+  /**
+   * Parse + walk one file. Timing and progress belong to `extract`. Rejects with
+   * `GrammarPackageNotInstalledError` when this file's language has no installed
+   * grammar; files of other languages are unaffected.
+   */
+  async parse(root: string, relPath: string): Promise<FileExtraction> {
     const ext = extensionOf(relPath);
     const langConfig = CODEGRAPH_LANGUAGES[ext];
     if (!langConfig) {
@@ -344,7 +393,7 @@ export class CodegraphFileExtractor {
     const { runState } = this.deps;
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
-    parser.setLanguage(langConfig.loadParser());
+    parser.setLanguage(await this.grammarFor(ext));
     // Materialize the native tree right after parse so collectSymbols and the walk
     // both see the deterministic plain-JS AstNode tree, as at the chunker boundary
     // (rdv7d).
@@ -380,5 +429,15 @@ export class CodegraphFileExtractor {
       // undefined → no manifest anywhere → FULL catalogue.
       declaredDependencies: runState.declaredDependencies,
     });
+  }
+
+  private async grammarFor(extension: string): Promise<Parser.Language> {
+    let pending = this.grammars.get(extension);
+    if (!pending) {
+      pending = loadCodegraphGrammar(this.deps.languageFactory, extension);
+      this.grammars.set(extension, pending);
+      pending.catch(() => this.grammars.delete(extension));
+    }
+    return pending;
   }
 }

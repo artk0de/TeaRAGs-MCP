@@ -67,8 +67,26 @@ describe("staticFilters", () => {
   it("testFile='exclude' produces must_not condition on isTest", () => {
     const f = staticFilters.find((f) => f.param === "testFile")!;
     const result = f.toCondition("exclude");
-    expect(result.must_not).toEqual([{ key: "isTest", match: { value: true } }]);
+    expect(result.must_not).toEqual([
+      { key: "isTest", match: { value: true } },
+      { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
+    ]);
     expect(result.must).toBeUndefined();
+  });
+
+  it("testFile='exclude' also drops points codegraph skipped as tests — bridge for indexes built before path-aware isTest (bd tea-rags-mcp-9ty5z)", () => {
+    const f = staticFilters.find((f) => f.param === "testFile")!;
+    expect(f.toCondition("exclude").must_not).toContainEqual({
+      key: "codegraph.symbols.file.skippedAs",
+      match: { value: "test" },
+    });
+  });
+
+  it("testFile='only' selects by isTest alone — the bridge is exclusion-only", () => {
+    const f = staticFilters.find((f) => f.param === "testFile")!;
+    const result = f.toCondition("only");
+    expect(result.must_not).toBeUndefined();
+    expect(result.should).toBeUndefined();
   });
 
   it("testFile='include' produces no conditions", () => {

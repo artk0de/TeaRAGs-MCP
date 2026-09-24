@@ -84,8 +84,25 @@ export interface CycleEntry {
   /** Numeric id assigned at recompute time; stable within a single recompute, NOT across recomputes. */
   cycleId: number;
   scope: CycleScope;
-  /** Members in walk order (the order returned by Tarjan's pop sequence). */
+  /**
+   * Members in walk order (the order returned by Tarjan's pop sequence): a
+   * relPath per member in the file scope, a bare symbolId in the method scope.
+   */
   members: string[];
+  /**
+   * Method scope only — each member's symbolId with the file that declares it,
+   * index-aligned with `members` (bd tea-rags-mcp-4g9ga). A symbolId is unique
+   * per FILE, so the bare `members` entry cannot tell two namesakes apart; this
+   * is the member's identity. `relativePath` is `""` only for a row carried over
+   * by migration 028 and not yet recomputed.
+   */
+  memberLocations?: CycleMemberLocation[];
+}
+
+/** One method-scope cycle member, addressed by `(relativePath, symbolId)`. */
+export interface CycleMemberLocation {
+  symbolId: SymbolId;
+  relativePath: RelPath;
 }
 
 export interface GraphFileNode {

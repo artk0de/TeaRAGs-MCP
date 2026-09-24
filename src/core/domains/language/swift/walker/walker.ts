@@ -123,6 +123,7 @@
  * where a populated list would silently retarget them.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   AritySignature,
@@ -299,7 +300,7 @@ function collectSwiftStructuredReturnTypes(
     if (ids) ids.push(chunk.symbolId);
     else idsByLine.set(chunk.startLine, [chunk.symbolId]);
   }
-  const out: Record<string, TypeRef> = {};
+  const out: Record<string, TypeRef> = createIdentifierRecord();
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
     const name = node.childForFieldName("name")?.text;
@@ -380,7 +381,7 @@ const SWIFT_TYPE_DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(["class", "
  * channel for anything but `super` must revisit it.
  */
 function collectSwiftClassExtends(root: AstNode): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = createIdentifierRecord();
   walk(root, (node) => {
     if (node.type !== "class_declaration") return;
     if (swiftDeclarationKeyword(node) !== "class") return;
@@ -1143,9 +1144,9 @@ function protocolRequirementName(requirement: AstNode): string | null {
  * nothing here while still typing `for item in items` inside the walker.
  */
 function swiftClassFieldTypes(evidence: SwiftFileTypeEvidence): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   for (const [typeName, fields] of evidence.propertyTypes) {
-    const published: Record<string, string> = {};
+    const published: Record<string, string> = createIdentifierRecord();
     for (const [fieldName, fact] of fields) if (fact.nominal) published[fieldName] = fact.nominal;
     if (Object.keys(published).length > 0) out[typeName] = published;
   }
@@ -1167,7 +1168,7 @@ function swiftClassFieldTypesByClassKey(
   published: Record<string, Record<string, string>>,
   relPath: string,
 ): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   for (const [typeName, fields] of Object.entries(published)) out[swiftTypeFieldKey(relPath, typeName)] = fields;
   return out;
 }
@@ -1866,7 +1867,7 @@ function assignBindingsToInnermostChunks(
     if (bestIdx === -1) continue;
     let bucket = out.get(bestIdx);
     if (!bucket) {
-      bucket = { localBindings: {}, callResultBindings: {} };
+      bucket = { localBindings: createIdentifierRecord(), callResultBindings: createIdentifierRecord() };
       out.set(bestIdx, bucket);
     }
     const scoped = binding.scopeEndLine === undefined ? {} : { scopeEndLine: binding.scopeEndLine };

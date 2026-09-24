@@ -442,7 +442,24 @@
   rows and 0 edges, so the guard is free — and free is not load-bearing, so it
   stays unclaimed rather than shipped on an argument (bd tea-rags-mcp-w205u,
   E4.4a).
-- **`resolveDispatch` composes `[cone]` — `dynamic` is PARKED behind
+- **The dict-table component leads the dispatch stack, and it answers only calls
+  the walker tagged.** `PythonTableDispatchResolver` reads `CallRef.dispatch` /
+  `dispatchArgs` and returns nothing for every other call, so the cone and
+  `dynamic` keep their order behind it (bd tea-rags-mcp-pbwd). Two rules carry
+  its precision. The TABLE is chosen through the caller's own evidence
+  (`pythonImportBoundFile` — its import binding for the name, or its own file),
+  never by a namesake. An ENTRY resolves the way a direct call spelled the same
+  way would: in a table the caller's file declares it goes through the
+  production chain as a MODULE-scope call, so a local of the calling function
+  can never shadow it; in an imported table the caller's imports say nothing
+  about the table file's names, so it is looked up from that file through
+  `moduleReexports` alone — `resolveExportedName` for a name,
+  `resolveExportedModule` for a `module.fn` head. A walker-tagged site skips the
+  exact chain, so the walker's gate is what keeps a call off it: in-file tables
+  plus the names a module-level `from` import binds, MINUS imported CapWords
+  names, because `ConfigAttribute[bool]("TESTING")` is a generic instantiation
+  the chain resolves.
+- **Behind it, `resolveDispatch` composes `[cone]` — `dynamic` is PARKED behind
   `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default OFF (D10), and the LAST component
   declines every receiver another layer owns.** The flag is read once at
   composition, in production and in the oracle's parity stack alike, so a

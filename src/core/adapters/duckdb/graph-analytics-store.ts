@@ -13,84 +13,82 @@
  * diagnostics in `domains/trajectory/codegraph/symbols/boundary-diagnostics/`
  * own the judgement.
  *
- * The one piece of logic that IS here is cycle path filtering: a `CycleEntry`
- * carries members, not paths, so matching a glob against a method-scope cycle
- * means resolving each symbol back to its file through the edge table.
+ * Method-scope vertices are FILE-SCOPED (bd tea-rags-mcp-4g9ga): a `SymbolId`
+ * is unique per file, so the method adjacency is keyed by
+ * `fileScopedSymbolKey(relPath, symbolId)` and `replaceCycles` /
+ * `replacePageRanks` split that key back into the `(rel_path, symbol_id)` the
+ * tables are keyed by (migration 028). The composite key never leaves the
+ * stream → algorithm → persist loop; readers see the two columns.
  */
 
-import type { CycleEntry, CycleScope, FileDependencyGraph, SymbolId } from "../../contracts/types/codegraph.js";
+import {
+  fileScopedSymbolKey,
+  parseFileScopedSymbolKey,
+  type CycleEntry,
+  type CycleScope,
+  type FileDependencyGraph,
+  type RelPath,
+  type SymbolId,
+} from "../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
+
+/**
+ * The files a cycle's members live in — what a `pathPattern` is matched
+ * against. A cycle is kept iff AT LEAST ONE member's file matches: cycles that
+ * cross a scope boundary are usually the most interesting and must NOT be
+ * dropped by a stricter "all members match" rule.
+ *
+ * The file scope's member IS its path. The method scope reads each member's
+ * OWN declaring file off the row, never a name resolution — resolving the bare
+ * id `init` back to files answers every file declaring an `init`, which kept a
+ * namesake's unrelated cycle under a pattern that names only one of them (bd
+ * tea-rags-mcp-4g9ga). A row carried over by migration 028 has no file yet and
+ * matches no pattern until the next recompute rewrites it.
+ */
+function memberPaths(entry: CycleEntry): string[] {
+  return entry.memberLocations ? entry.memberLocations.map((m) => m.relativePath) : entry.members;
+}
+
+/** `rel_path` of a derived row carried over by migration 028 — its file is unknown. */
+const UNKNOWN_REL_PATH = "";
+
+/** Vertex id of a method-scope node: the declaration, not the bare name. */
+function methodVertex(relPath: unknown, symbolId: unknown): string {
+  return fileScopedSymbolKey({ relPath: String(relPath), symbolId: String(symbolId) });
+}
 
 export class DuckDbGraphAnalyticsStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async findCycles(scope: CycleScope, pathPattern?: string): Promise<CycleEntry[]> {
-    const rows = await this.session.queryAll<{ cycle_id: number | bigint; member: string; position: number | bigint }>(
-      "SELECT cycle_id, member, position FROM cg_symbols_cycles WHERE scope = ? ORDER BY cycle_id, position",
+    const rows = await this.session.queryAll<{
+      cycle_id: number | bigint;
+      member_rel_path: string;
+      member: string;
+      position: number | bigint;
+    }>(
+      "SELECT cycle_id, member_rel_path, member, position FROM cg_symbols_cycles WHERE scope = ? ORDER BY cycle_id, position",
       [scope],
     );
-    const grouped = new Map<number, string[]>();
+    const grouped = new Map<number, CycleEntry>();
     for (const row of rows) {
       const cycleId = Number(row.cycle_id);
-      const arr = grouped.get(cycleId);
-      if (arr) arr.push(row.member);
-      else grouped.set(cycleId, [row.member]);
+      let entry = grouped.get(cycleId);
+      if (!entry) {
+        entry =
+          scope === "method" ? { cycleId, scope, members: [], memberLocations: [] } : { cycleId, scope, members: [] };
+        grouped.set(cycleId, entry);
+      }
+      entry.members.push(row.member);
+      entry.memberLocations?.push({ symbolId: row.member, relativePath: row.member_rel_path });
     }
-    const entries = [...grouped.entries()].map(([cycleId, members]) => ({ cycleId, scope, members }));
+    const entries = [...grouped.values()];
     if (!pathPattern) return entries;
-    return this.filterCyclesByPath(entries, scope, pathPattern);
-  }
-
-  /**
-   * Keep a cycle iff AT LEAST ONE of its members resolves to a file path
-   * matching `pathPattern`. The "at least one" semantics is deliberate:
-   * cycles that cross a scope boundary (one member inside, one outside)
-   * are usually the most interesting and must NOT be silently dropped by
-   * a stricter "all members match" rule.
-   *
-   * File scope: a member IS the rel_path → match directly. Method scope:
-   * a member is a symbol id; its file path is resolved from the method
-   * edge table (source/target rel_path), since `cg_symbols` is only
-   * populated by `upsertSymbols`, not by every `upsertFile`.
-   */
-  private async filterCyclesByPath(
-    entries: CycleEntry[],
-    scope: CycleScope,
-    pathPattern: string,
-  ): Promise<CycleEntry[]> {
     // The same matcher the explore tools enforce pathPattern with.
     const isMatch = compilePathPatternMatcher(pathPattern);
     if (!isMatch) return entries;
-    if (scope === "file") {
-      return entries.filter((e) => e.members.some((member) => isMatch(member)));
-    }
-    const symbolToPaths = await this.resolveMethodSymbolPaths(entries.flatMap((e) => e.members));
-    return entries.filter((e) => e.members.some((member) => (symbolToPaths.get(member) ?? []).some((p) => isMatch(p))));
-  }
-
-  /**
-   * Map each given method symbol id to the file path(s) it appears in,
-   * read from the method-edge table. Bounded by the cycle membership set
-   * via an `IN (…)` filter so the scan never widens to the whole graph.
-   */
-  private async resolveMethodSymbolPaths(symbolIds: readonly string[]): Promise<Map<string, string[]>> {
-    const map = new Map<string, string[]>();
-    const unique = [...new Set(symbolIds)];
-    if (unique.length === 0) return map;
-    const placeholders = unique.map(() => "?").join(", ");
-    const rows = await this.session.queryAll<{ sym: string; path: string }>(
-      `SELECT source_symbol_id AS sym, source_rel_path AS path FROM cg_symbols_edges_method WHERE source_symbol_id IN (${placeholders})
-       UNION
-       SELECT target_symbol_id AS sym, target_rel_path AS path FROM cg_symbols_edges_method WHERE target_symbol_id IN (${placeholders})`,
-      [...unique, ...unique],
-    );
-    for (const row of rows) {
-      const paths = map.get(row.sym);
-      if (paths) paths.push(row.path);
-      else map.set(row.sym, [row.path]);
-    }
-    return map;
+    return entries.filter((e) => memberPaths(e).some((p) => isMatch(p)));
   }
 
   /**
@@ -152,6 +150,11 @@ export class DuckDbGraphAnalyticsStore {
    * Stream the adjacency for the requested scope as `[source, target]`
    * pairs, fetched from DuckDB one result chunk (~2048 rows) at a time.
    *
+   * Method-scope vertices are `fileScopedSymbolKey(relPath, symbolId)` of each
+   * endpoint's own file, never the bare id — a bare id is one vertex for every
+   * namesake, which merged unrelated cycles and shared one PageRank across
+   * them (bd tea-rags-mcp-4g9ga).
+   *
    * Method scope additionally carries the per-edge dispatch confidence as a
    * third tuple element (bd tea-rags-mcp-s5ato) — legacy NULL rows coalesce
    * to 1.0 — so the SCC/PageRank consumers can weight dynamic/cone fan-out
@@ -172,26 +175,32 @@ export class DuckDbGraphAnalyticsStore {
     const sql =
       scope === "file"
         ? "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file"
-        : "SELECT source_symbol_id, target_symbol_id, COALESCE(confidence, 1.0) FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
+        : "SELECT source_rel_path, source_symbol_id, target_rel_path, target_symbol_id, COALESCE(confidence, 1.0) FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL";
     for await (const row of this.session.streamRows(sql)) {
-      const source = row[0];
-      const target = row[1];
-      // Defensive: WHERE already excludes null targets for method scope, but
-      // keep the guard so a null can never become the string "null".
-      if (source === null || source === undefined || target === null || target === undefined) continue;
       if (scope === "file") {
+        const [source, target] = row;
+        // Defensive: keep a null from ever becoming the string "null".
+        if (source === null || source === undefined || target === null || target === undefined) continue;
         yield [String(source), String(target)];
-      } else {
-        const weight = row[2];
-        yield [String(source), String(target), weight === null || weight === undefined ? 1 : Number(weight)];
+        continue;
       }
+      const [sourcePath, source, targetPath, target, weight] = row;
+      // Defensive: WHERE already excludes null targets, but keep the guard so a
+      // null can never become the string "null".
+      if (source === null || source === undefined || target === null || target === undefined) continue;
+      yield [
+        methodVertex(sourcePath, source),
+        methodVertex(targetPath, target),
+        weight === null || weight === undefined ? 1 : Number(weight),
+      ];
     }
   }
 
   /**
    * Materialise the adjacency map for the requested scope from the
    * appropriate edge table. For file scope, vertices are relPath; for
-   * method scope, vertices are symbolId. Method edges with null
+   * method scope, vertices are file-scoped symbol keys — the vertex identity
+   * `streamAdjacency` yields (bd tea-rags-mcp-4g9ga). Method edges with null
    * target_symbol_id (resolver couldn't pin the call) are skipped —
    * phantom edges pollute graph algorithms downstream.
    *
@@ -204,31 +213,21 @@ export class DuckDbGraphAnalyticsStore {
    * decide their own representation.
    */
   async listAdjacency(scope: CycleScope): Promise<Map<string, string[]>> {
-    if (scope === "file") {
-      const rows = await this.session.queryAll<{ source_rel_path: string; target_rel_path: string }>(
-        "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file",
-      );
-      const adj = new Map<string, string[]>();
-      for (const row of rows) {
-        const list = adj.get(row.source_rel_path);
-        if (list) list.push(row.target_rel_path);
-        else adj.set(row.source_rel_path, [row.target_rel_path]);
-      }
-      return adj;
-    }
-    const rows = await this.session.queryAll<{ source_symbol_id: string; target_symbol_id: string | null }>(
-      "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL",
-    );
     const adj = new Map<string, string[]>();
-    for (const row of rows) {
-      if (row.target_symbol_id === null) continue;
-      const list = adj.get(row.source_symbol_id);
-      if (list) list.push(row.target_symbol_id);
-      else adj.set(row.source_symbol_id, [row.target_symbol_id]);
+    for await (const [source, target] of this.streamAdjacency(scope)) {
+      const list = adj.get(source);
+      if (list) list.push(target);
+      else adj.set(source, [target]);
     }
     return adj;
   }
 
+  /**
+   * Replace `scope`'s cycles. A method-scope member arrives as the vertex id
+   * `streamAdjacency` yielded and is split into `(member_rel_path, member)`; a
+   * file-scope member is its own path. A method member with no separator — a
+   * caller handing bare ids — lands under the unknown (`""`) file.
+   */
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
     return this.session.transaction(async () => {
       await this.session.run("DELETE FROM cg_symbols_cycles WHERE scope = ?", [scope]);
@@ -236,27 +235,109 @@ export class DuckDbGraphAnalyticsStore {
       for (let cycleId = 0; cycleId < sccs.length; cycleId++) {
         const members = sccs[cycleId];
         for (let position = 0; position < members.length; position++) {
-          rows.push([cycleId, scope, members[position], position]);
+          const vertex = members[position];
+          if (scope === "file") {
+            rows.push([cycleId, scope, vertex, vertex, position]);
+          } else {
+            const { relPath, symbolId } = parseFileScopedSymbolKey(vertex);
+            rows.push([cycleId, scope, relPath, symbolId, position]);
+          }
         }
       }
-      await this.session.insertBatched("cg_symbols_cycles", ["cycle_id", "scope", "member", "position"], rows);
+      await this.session.insertBatched(
+        "cg_symbols_cycles",
+        ["cycle_id", "scope", "member_rel_path", "member", "position"],
+        rows,
+      );
     });
   }
 
+  /**
+   * Replace every rank. Keys are method-scope vertex ids, split into
+   * `(rel_path, symbol_id)`; a bare-id key lands under the unknown (`""`) file,
+   * which readers fan out to every namesake — the pre-028 merged semantics.
+   */
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
     return this.session.transaction(async () => {
       await this.session.exec("DELETE FROM cg_symbols_metrics");
-      const rows = [...ranks].map(([symbolId, rank]) => [symbolId, String(rank)]);
-      await this.session.insertBatched("cg_symbols_metrics", ["symbol_id", "page_rank"], rows);
+      const rows = [...ranks].map(([vertex, rank]) => {
+        const { relPath, symbolId } = parseFileScopedSymbolKey(vertex);
+        return [relPath, symbolId, String(rank)];
+      });
+      await this.session.insertBatched("cg_symbols_metrics", ["rel_path", "symbol_id", "page_rank"], rows);
+      // The last write of every full recompute: the derived tables describe the
+      // current graph again (bd tea-rags-mcp-dy852).
+      await this.session.exec("DELETE FROM cg_derived_stale");
     });
   }
 
-  async getPageRank(symbolId: SymbolId): Promise<number> {
-    const rows = await this.session.queryAll<{ page_rank: number | bigint | string }>(
-      "SELECT page_rank FROM cg_symbols_metrics WHERE symbol_id = ?",
-      [symbolId],
-    );
+  /**
+   * Cheap derived-table prune for deleted files (bd tea-rags-mcp-dy852), in
+   * place of the whole-graph recompute a deletion-only reindex does not run:
+   * drop every cycle (either scope) with a member in a deleted file, drop the
+   * deleted files' ranks, and mark the rest stale — every remaining rank was
+   * computed over a graph that still held the deleted nodes. The next full
+   * recompute clears the mark (`replacePageRanks`).
+   *
+   * Must run BEFORE the files' base rows are removed: only a path
+   * `cg_symbols_files` still knows marks the tables stale, so deleting a file
+   * the graph never walked (a README) costs the next run nothing.
+   */
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    const unique = [...new Set(relPaths)];
+    if (unique.length === 0) return;
+    const placeholders = unique.map(() => "?").join(", ");
+    await this.session.transaction(async () => {
+      const walked = await this.session.queryAll<{ n: number | bigint }>(
+        `SELECT COUNT(*) AS n FROM cg_symbols_files WHERE rel_path IN (${placeholders})`,
+        unique,
+      );
+      // Bounded by the repository's cycle membership (tens of rows on this
+      // project's own index), so the touched cycles are named here and each one
+      // deleted by its key.
+      const touched = await this.session.queryAll<{ scope: string; cycle_id: number | bigint }>(
+        `SELECT DISTINCT scope, cycle_id FROM cg_symbols_cycles WHERE member_rel_path IN (${placeholders})`,
+        unique,
+      );
+      for (const { scope, cycle_id } of touched) {
+        await this.session.run("DELETE FROM cg_symbols_cycles WHERE scope = ? AND cycle_id = ?", [
+          scope,
+          Number(cycle_id),
+        ]);
+      }
+      await this.session.run(`DELETE FROM cg_symbols_metrics WHERE rel_path IN (${placeholders})`, unique);
+      if (Number(walked[0]?.n ?? 0) > 0) {
+        await this.session.exec("INSERT OR IGNORE INTO cg_derived_stale (marker) VALUES ('derived')");
+      }
+    });
+  }
+
+  /** Whether a deletion pruned the derived tables since the last full recompute. */
+  async hasStaleDerivedTables(): Promise<boolean> {
+    const rows = await this.session.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_derived_stale");
+    return Number(rows[0]?.n ?? 0) > 0;
+  }
+
+  /**
+   * The PageRank of one declaration. With `relPath`: the rank stored for that
+   * file, else a rank carried without a file (migration 028), else 0. Without
+   * it the bare id is ambiguous across namesakes, so the highest rank any
+   * declaration of that name holds is returned. 0 when nothing is ranked.
+   */
+  async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
+    const rows =
+      relPath === undefined
+        ? await this.session.queryAll<{ page_rank: number | bigint | string | null }>(
+            "SELECT MAX(page_rank) AS page_rank FROM cg_symbols_metrics WHERE symbol_id = ?",
+            [symbolId],
+          )
+        : await this.session.queryAll<{ page_rank: number | bigint | string | null }>(
+            `SELECT page_rank FROM cg_symbols_metrics
+              WHERE symbol_id = ? AND rel_path IN (?, ?)
+              ORDER BY rel_path = ? DESC LIMIT 1`,
+            [symbolId, relPath, UNKNOWN_REL_PATH, relPath],
+          );
     const raw = rows[0]?.page_rank;
-    return raw === undefined ? 0 : Number(raw);
+    return raw === undefined || raw === null ? 0 : Number(raw);
   }
 }

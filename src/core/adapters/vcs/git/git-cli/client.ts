@@ -8,8 +8,7 @@
  * so resident memory never includes the whole pack.
  */
 
-import { execFile, execFileSync, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { execFile, execFileSync, spawn, type ExecFileOptions } from "node:child_process";
 
 import { isDebug } from "../../../../infra/runtime.js";
 import type {
@@ -20,10 +19,32 @@ import type {
   CommitWithChangedFiles,
   FileChurnData,
 } from "../../types.js";
+import { trackGitChildProcess } from "./git-child-process-registry.js";
 import { parseBlameOutput, parseCommitFileNumstat, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
 import { execWithStallGuard } from "./stall-guard-exec.js";
 
-const execFileAsync = promisify(execFile);
+/** `execFile` as a promise, with the child registered for shutdown reaping (bd tea-rags-mcp-w26dc). */
+async function execFileAsync(
+  file: string,
+  args: string[],
+  options: ExecFileOptions & { encoding?: BufferEncoding },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      file,
+      args,
+      { ...options, encoding: options.encoding ?? "utf8" },
+      (err: Error | null, stdout: string, stderr: string) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
+    trackGitChildProcess(child);
+  });
+}
 
 // ── Generic utility ──────────────────────────────────────────────
 
@@ -261,6 +282,7 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
   const ensureChild = (): NonNullable<typeof child> => {
     if (child) return child;
     const c = spawn("git", ["cat-file", "--batch"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
+    trackGitChildProcess(c);
     c.stdout?.on("data", onData);
     c.stdin?.on("error", (err) => {
       // Writing to a git process that has already exited (a non-repo dir exits
@@ -299,6 +321,9 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
       closed = true;
       const c = child;
       if (!c) return; // never spawned — nothing to tear down
+      // Already dead (crashed mid-walk, or reaped at shutdown): its "close" has
+      // fired or is about to, and awaiting it again would never resolve.
+      if (c.exitCode !== null || c.signalCode !== null) return;
       await new Promise<void>((resolve) => {
         const done = (): void => {
           clearTimeout(timer);
@@ -375,6 +400,7 @@ export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckRead
   const ensureChild = (): NonNullable<typeof child> => {
     if (child) return child;
     const c = spawn("git", ["cat-file", "--batch-check"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
+    trackGitChildProcess(c);
     c.stdout?.on("data", onData);
     c.stdin?.on("error", (err) => {
       // Writing to a git process that has already exited (a non-repo dir exits
@@ -413,6 +439,9 @@ export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckRead
       closed = true;
       const c = child;
       if (!c) return; // never spawned — nothing to tear down
+      // Already dead (crashed mid-walk, or reaped at shutdown): its "close" has
+      // fired or is about to, and awaiting it again would never resolve.
+      if (c.exitCode !== null || c.signalCode !== null) return;
       await new Promise<void>((resolve) => {
         const done = (): void => {
           clearTimeout(timer);

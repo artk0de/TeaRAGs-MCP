@@ -10,7 +10,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CodegraphDaemonRestartOutcome } from "../../../src/bootstrap/codegraph-daemon-restart.js";
 import {
@@ -29,9 +29,12 @@ beforeEach(() => {
     out += String(chunk);
     return true;
   };
+  // Status-tag assertions read plain text: force color off regardless of the terminal.
+  vi.stubEnv("NO_COLOR", "1");
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   process.stdout.write = origWrite;
 });
 

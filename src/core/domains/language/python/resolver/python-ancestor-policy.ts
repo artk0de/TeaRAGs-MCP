@@ -47,6 +47,7 @@
  * (decision 7: netbox has ~3,600 classes and ~30,000 `self.` call sites).
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
   AmbiguousResolveMode,
   CallContext,
@@ -109,7 +110,7 @@ export function createPythonAncestorPolicy(
     let closure: AncestorClosure = "closed";
     const basesOf = (key: string): readonly string[] => {
       const parsed = parsePythonClassKey(key);
-      const spellings = ctx.classAncestors?.[key];
+      const spellings = identifierEntry(ctx.classAncestors, key);
       if (parsed === null || spellings === undefined) {
         // No hierarchy recorded under this key — two different facts wearing
         // one shape (bd tea-rags-mcp-graiw). A class the run DECLARES and the

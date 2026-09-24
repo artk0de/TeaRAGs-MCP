@@ -12,6 +12,7 @@
  * factored here so they live once.
  */
 
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
@@ -247,7 +248,7 @@ export function goCallResultType(
   // unknown, and reads the method's bare-keyed entry package-blind.
   const returnType =
     calleePackageDir === undefined
-      ? ctx.functionReturnTypes?.[name]
+      ? identifierEntry(ctx.functionReturnTypes, name)
       : ctx.functionReturnTypes?.[goFunctionReturnTypesKey(calleePackageDir, name)];
   return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx, calleePackageDir);
 }

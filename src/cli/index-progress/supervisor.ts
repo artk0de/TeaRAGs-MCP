@@ -139,14 +139,29 @@ export async function superviseIndexing(child: WorkerHandle, opts: SuperviseOpti
           // Rendered by renderer.handle (called above): the daemon state line
           // shows BEFORE any progress bars while the worker waits (2nfdm).
           break;
+        case "embedding-state":
+          // Rendered by renderer.handle (called above): the embedding
+          // provider's recovery wait, shown like the qdrant one (umatc).
+          break;
         case "error":
           // Run-phase fatal. JSON mode must emit a parseable error object —
           // a silent exit 1 with zero bytes is exactly the 2nfdm bug.
+          // The hint is the actionable half of a typed fatal ("Start Ollama:
+          // …"), so it is printed wherever the message is (bd tea-rags-mcp-umatc).
           finish(1, () => {
             if (jsonRenderer) {
-              out(JSON.stringify({ error: { code: raw.code ?? "UNKNOWN", message: raw.message } }));
+              out(
+                JSON.stringify({
+                  error: {
+                    code: raw.code ?? "UNKNOWN",
+                    message: raw.message,
+                    ...(raw.hint !== undefined ? { hint: raw.hint } : {}),
+                  },
+                }),
+              );
             } else {
               out(colors.alert(`error: ${raw.message}`));
+              if (raw.hint !== undefined) out(`hint: ${raw.hint}`);
             }
           });
           break;

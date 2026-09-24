@@ -56,6 +56,7 @@ import {
   PythonChainAnswerProbe,
   pythonDynamicDispatchEnabled,
   PythonDynamicDispatchResolver,
+  PythonTableDispatchResolver,
 } from "../src/core/domains/language/python/resolver/dispatch/index.js";
 import {
   createPythonSymbolResolutionChain,
@@ -348,7 +349,13 @@ export async function walkCorpus(
   // `dispatchDrift` keeps measuring the composition rather than the flag.
   const parityMapper = new PythonImportFileMapper();
   const parityExternal = new ExternalCallClassifier(new PythonExternalVocabulary(parityMapper));
+  // The dict-table component leads, as in production (bd tea-rags-mcp-pbwd).
+  // This walk threads no `dispatchTables` / `callbackParams` into its contexts
+  // and skips every `call.dispatch` site before the fan pass, so the component
+  // answers nothing here; it is composed so the stack stays production's order.
+  const parityTableProbe = new PythonChainAnswerProbe(buildPythonChain());
   const parityComponents: DispatchResolverComponent[] = [
+    new PythonTableDispatchResolver((call, ctx) => parityTableProbe.resolve(call, ctx), parityMapper),
     new ConeDispatchResolver(new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }), CONE_MAX_DEFAULT),
   ];
   if (pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)) {

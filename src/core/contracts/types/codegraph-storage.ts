@@ -185,7 +185,9 @@ export interface GraphDbClient {
    * `cg_ambiguous_fanout` aggregates whose `member` matches the target's
    * member segment — call sites whose over-cap candidate set plausibly
    * contained the target — WITHOUT materializing the suppressed edges.
-   * Ordered by (sourceSymbolId, callExpression); `limit` defaults to 50.
+   * Ordered by (sourceSymbolId, sourceRelPath, callExpression) — a namesake
+   * caller in another file is its own aggregate (migration 027); `limit`
+   * defaults to 50.
    * Empty `member` always returns [] (aggregates never record one).
    */
   getAmbiguousCallersByMember: (member: string, limit?: number) => Promise<AmbiguousCallerSite[]>;
@@ -344,6 +346,20 @@ export interface GraphDbClient {
   /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
   removeSymbolsForFile: (relPath: RelPath) => Promise<void>;
 
+  /**
+   * Cheap derived-table prune for deleted files (bd tea-rags-mcp-dy852):
+   * drop every cycle with a member in one of `relPaths` and those files'
+   * PageRank rows, and mark the derived tables stale when any path was a
+   * walked file. Called by `handleDeletedPaths` BEFORE the base rows go.
+   */
+  pruneDerivedForDeletedFiles: (relPaths: readonly RelPath[]) => Promise<void>;
+
+  /**
+   * Whether a deletion pruned the derived tables since the last full cycles +
+   * PageRank recompute, which clears the mark.
+   */
+  hasStaleDerivedTables: () => Promise<boolean>;
+
   /** Bulk read for bootstrap hydration. Returns every persisted symbol
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */
@@ -481,6 +497,11 @@ export interface GraphDbClient {
    * (e.g. `Map<number, number[]>` with a separate id-table) instead of
    * paying the string-keyed `Map<string, string[]>` overhead twice.
    *
+   * Vertices are relPaths in the file scope and `FileScopedSymbolId`s
+   * (`fileScopedSymbolKey`) in the method scope — never bare symbolIds, which
+   * name every namesake at once (bd tea-rags-mcp-4g9ga). `listAdjacency`
+   * uses the same identity.
+   *
    * Method scope also yields the per-edge dispatch confidence as an
    * optional third element (bd tea-rags-mcp-s5ato; legacy NULL rows
    * coalesce to 1.0) so PageRank can weight dynamic/cone fan-out edges.
@@ -502,7 +523,9 @@ export interface GraphDbClient {
    * SCC list. Domain runs Tarjan; adapter persists the result.
    * Each inner array is one SCC's members in walk order; cycle_id is
    * assigned by the adapter using the array index. Single-node SCCs
-   * are caller-filtered.
+   * are caller-filtered. Method-scope members are the vertex ids
+   * `streamAdjacency` yields (`FileScopedSymbolId`); the adapter splits
+   * them back into the member's file and symbolId.
    */
   replaceCycles: (scope: CycleScope, sccs: readonly (readonly string[])[]) => Promise<void>;
 
@@ -510,18 +533,22 @@ export interface GraphDbClient {
 
   /**
    * Atomically replace the per-symbol PageRank table with the supplied
-   * ranks. Domain runs the iterative algorithm; adapter persists.
+   * ranks, keyed by the method-scope vertex ids `streamAdjacency` yields.
+   * Domain runs the iterative algorithm; adapter persists.
    * Empty input wipes the table — useful after a force-reindex when
    * the method graph is fully rebuilt.
    */
   replacePageRanks: (ranks: ReadonlyMap<string, number>) => Promise<void>;
 
   /**
-   * Look up the PageRank of a single symbol. Returns 0 when the symbol
-   * is unknown or the metrics table hasn't been populated yet — both
+   * Look up the PageRank of a single declaration. Ranks are keyed by
+   * `(relPath, symbolId)` (bd tea-rags-mcp-4g9ga): with `relPath` the rank of
+   * that file's declaration; without it the bare id is ambiguous across
+   * namesakes and the highest rank among them is returned. Returns 0 when the
+   * symbol is unknown or the metrics table hasn't been populated yet — both
    * cases are treated as "rank-irrelevant".
    */
-  getPageRank: (symbolId: SymbolId) => Promise<number>;
+  getPageRank: (symbolId: SymbolId, relPath?: RelPath) => Promise<number>;
 
   /**
    * Symbols and files whose derived signals (`fanIn` / `fanOut` / `pageRank`,

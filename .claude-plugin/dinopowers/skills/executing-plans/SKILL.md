@@ -2,11 +2,12 @@
 name: executing-plans
 description:
   Execute written implementation plan whose Tasks edit code, per-Task
-  SAFE/CAUTION/UNSAFE git-signal verdict before edit AND code-style cascade for
-  code-generation Tasks (style from silo authors, strategy+template from proven
-  neighbors). Triggers on "execute the plan", "start Task N", "выполни план",
-  "начни задачу", "run the plan", "implement the plan steps". NOT for one-off
-  edits without a written plan. Wraps superpowers:executing-plans with tea-rags
+  SAFE/CAUTION/UNSAFE git-signal verdict before edit AND data-driven cascade for
+  code-generation and behavior-modification Tasks (style from silo authors,
+  strategy+template from proven neighbors, callers + tests-at-risk on modify).
+  Triggers on "execute the plan", "start Task N", "выполни план", "начни
+  задачу", "run the plan", "implement the plan steps". NOT for one-off edits
+  without a written plan. Wraps superpowers:executing-plans with tea-rags
   git-signal verdicts and tea-rags:data-driven-generation cascade.
 ---
 
@@ -34,68 +35,36 @@ call.
 
 ## Mandatory Step Order (DO NOT SKIP)
 
-0. **Step 0** — Worktree index clone (ONCE, at plan start): executing multi-task
-   plan in git worktree → CREATE clone before Task 1 (see Step 0 below). Skip
-   for single-task plans, explore-only, main-checkout work.
-1. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
-2. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
-3. **MUST** Step 5 — Code-Gen Cascade for code-generation Tasks (invoke
-   `tea-rags:data-driven-generation`)
-4. Step 6 — chain into `superpowers:executing-plans`
-5. **After each Task's commit** — REINDEX worktree clone explicitly
-   (`mcp__tea-rags__index_codebase`, incremental) so next Task reads fresh code.
-   No background hook; skipping leaves later Tasks on stale payloads.
+1. **Step 2.0** — clone freshness precondition, EVERY Task, right before the
+   Step 2 guard (worktree multi-task plans only): clone exists (lazy CREATE) +
+   incremental reindex. Skip for single-task plans, explore-only, main-checkout
+   work.
+2. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
+3. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
+4. **MUST** Step 5 — Code-Gen Cascade for generation AND behavior-modification
+   Tasks (invoke `tea-rags:data-driven-generation`)
+5. Step 6 — chain into `superpowers:executing-plans`
 
 ⚠️ Skipping Step 5 → ungrounded code. Skipping Step 6 → parent workflow never
-runs. Skipping per-Task REINDEX → silently degrades every later Task's tea-rags
-results.
+runs. Skipping Step 2.0 → guard reads stale clone (or `main`) → verdict computed
+on code this branch already changed.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
 **Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) and worktree-clone
 lifecycle in `tea-rags/rules/index-freshness.md`. **NO background reindex
-hook**: multi-task plan in worktree → CREATE clone at plan start (Step 0),
-REINDEX explicitly after EACH Task's commit so next Task reads fresh code. Run
+hook**: freshness = READ-side precondition (Step 2.0) run before each Task's
+first tea-rags call — not post-commit chore remembered after moving on. Run
 `mcp__tea-rags__index_codebase` manually to search uncommitted WIP.
 
 Plus cross-plugin chain for code generation:
 
 - `tea-rags:data-driven-generation` — invoked from Step 5 below for any Task
-  that GENERATES code (new files, functions, classes, rewrites). Pulls strategy,
-  template, silo-author style. Not a `superpowers:Y` redirect — additional
-  MANDATORY step wrapper inserts.
-
-## Step 0 — Worktree index clone (worktree multi-task plans, once)
-
-Before Task 1, executing **multi-task plan inside git worktree** (inline-driven
-OR subagent-driven) → give worktree its own index clone so per-Task searches see
-this branch's code, not main's. Run **explicitly — user sees it**:
-
-```bash
-tea-rags worktree create <name> --from <src-alias> --path "$PWD" --no-git
-```
-
-- `<name>` — short worktree label; clone registers as
-  `<src-alias>-worktree-<name>`. `--from` names source project (registry alias
-  worktree branched from); `--path "$PWD"` is worktree root; `--no-git` attaches
-  to existing worktree dir instead of creating one.
-- **Gate:** only for multi-task plan in worktree. Single-task plans,
-  explore-only sessions, main-checkout work search main collection directly — no
-  clone. Source index very large → state size, confirm before cloning.
-- **Subagent-driven:** parent runs this ONCE; dispatched subagents inherit clone
-  via worktree path.
-
-Then after EACH Task's commit (Mandatory Step Order item 5), REINDEX clone so
-next Task reads fresh code:
-
-```
-mcp__tea-rags__index_codebase  project: "<src-alias>-worktree-<name>"
-```
-
-Full lifecycle (create → reindex → teardown) and cleanup-hook backstop:
-`tea-rags/rules/index-freshness.md`. Teardown runs in
-`dinopowers:finishing-a-development-branch`.
+  that GENERATES code (new files, functions, classes, rewrites) or CHANGES
+  behavior of existing symbol (MODIFY). Pulls strategy, template, silo-author
+  style; on modify, tests-at-risk + callers. Not a `superpowers:Y` redirect —
+  additional MANDATORY step wrapper inserts.
 
 ## Reading the plan — doc-TOC, not wholesale Read
 
@@ -124,13 +93,62 @@ Output:
 If `taskFileList` empty (pure new-file creation): skip to Step 4 with verdict
 `SAFE (new files only)`.
 
+## Step 2.0 — Clone freshness precondition (worktree multi-task plans, EVERY Task)
+
+Runs immediately BEFORE the Step 2 guard of EVERY Task — read moment is where
+staleness bites. Replaces "create at plan start" + "reindex after each commit"
+(both got dropped under momentum). Run **explicitly — user sees each command**;
+never a hook.
+
+1. **Exists?** From worktree root:
+
+   ```bash
+   tea-rags worktree info --json
+   ```
+
+   - `isWorktree: true` → clone exists; target = its `alias`
+     (`<src-alias>-worktree-<name>`).
+   - `isWorktree: false` → lazy CREATE (fires on first Task that needs it):
+
+     ```bash
+     tea-rags worktree create <name> --from <src-alias> --path "$PWD" --no-git
+     ```
+
+     `<name>` = short worktree label; `--from` = source alias worktree branched
+     from; `--no-git` attaches to existing dir. Source index very large → state
+     size, confirm before cloning.
+
+   - CREATE refuses `Target collection already exists` → an earlier
+     `index_codebase` on this path already SEEDED an ordinary project from a
+     sibling working tree (not a clone: `worktree info` answers `false`,
+     `worktree remove` refuses it). Do not delete it. Target = `path: "$PWD"`;
+     tell user.
+
+2. **Fresh?** Incremental reindex of target — picks up every prior Task's
+   commit; no-op when clean:
+
+   ```
+   mcp__tea-rags__index_codebase  project: "<src-alias>-worktree-<name>"   (seeded case: path: "$PWD")
+   ```
+
+3. **Read it.** Step 2 guard + every tea-rags call of this Task address SAME
+   target — clone alias, never main alias.
+
+- **Gate:** only multi-task plan in worktree. Single-task plans, explore-only
+  sessions, main-checkout work → main collection directly: no clone, no Step
+  2.0.
+- **Subagent-driven:** PARENT runs Step 2.0 before dispatching each Task;
+  subagent does not reindex, inherits clone via worktree path.
+- Teardown: `dinopowers:finishing-a-development-branch`.
+
 ## Step 2 — Pre-touch guard call
 
 Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` Step 2:
 
 ```
-project:     <alias from list_projects — RECOMMENDED, omit path when set>
+project:     <alias from list_projects — RECOMMENDED, omit path when set;
+              worktree plan → Step 2.0 target (clone alias)>
 path:        <current project path — fallback when no alias is registered>
 query:       <taskIntent from Step 1>
 pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion
@@ -226,11 +244,11 @@ may chain into `superpowers:test-driven-development`,
 
 ## Step 4.5 — Per-Task proven-template lookup (code-generation Tasks)
 
-For Task about to execute, if classified as code-generation / code-modification
-(same heuristic as `dinopowers:writing-plans` Step 3.5: keywords "implement",
-"add", "write", "extend", "refactor", "modify"
-
-- "function | method | class | helper | module"):
+For Task about to execute, if classified as code-generation (same heuristic as
+`dinopowers:writing-plans` Step 3.5: keywords "implement", "add", "write",
+"extend" + "function | method | class | helper | module") — i.e. Step 5 row
+**Generation** (DDG mode CREATE / EXTEND). **Modification** Tasks skip 4.5: DDG
+MODIFY mode skips TEMPLATE — symbol itself is the reference.
 
 1. Plan document already carries `**Proven templates**` subsection for this Task
    (written by writing-plans Step 3.5) → USE that. Skip recipe re-invocation —
@@ -248,18 +266,34 @@ without re-invoking recipe.
 **Skip clause:** non-code Tasks (config, test, doc) bypass this step, proceed
 directly to Step 5.
 
-## Step 5 — Code-Gen Cascade (MANDATORY for code-generation Tasks)
+## Step 5 — Code-Gen Cascade (MANDATORY for generation + modification Tasks)
 
 After verdict gate clears (SAFE proceeds, CAUTION confirmed, UNSAFE overridden),
-classify Task by intent BEFORE invoking `superpowers:executing-plans`.
+classify Task by intent BEFORE invoking `superpowers:executing-plans`. DDG picks
+its own mode (CREATE / EXTEND / MODIFY) via `find_symbol` probe — wrapper only
+decides WHETHER to invoke.
 
-| Task intent                                                                                              | Action                                                                         |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write |
-| **Refactor only**: rename, move, extract, inline, reformat — no new logic                                | Skip Step 5 — no template/style needed                                         |
-| **Modification only**: change behavior in-place (bug fix, condition tweak, log message)                  | Skip Step 5 — agent edits in-context, no new pattern                           |
-| **Deletion**: remove file, remove function, prune dead code                                              | Skip Step 5 — no generation                                                    |
-| **Trivial**: typo, comment update, single-token swap                                                     | Skip Step 5 AND skip wrapper entirely — direct Edit                            |
+| Task intent                                                                                                  | Action                                                                                           |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (CREATE / EXTEND) |
+| **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (MODIFY)          |
+| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5 — DDG out of scope for pure refactor                                                 |
+| **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                      |
+| **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                              |
+
+Why MANDATORY for modification — DDG MODIFY mode owns what in-context edit
+misses:
+
+- **Tests-at-risk** — `tea-rags:tests-as-context` recipe finds tests pinning
+  current behavior → run them; unpinned behavior noted.
+- **`get_callers` on modified symbol** — changed behavior propagates through
+  real call edges; callers relying on old contract surface BEFORE commit.
+- **Symbol-own style + strategy** — minimal diff matched to symbol itself,
+  strategy from its own labels (DEFENSIVE on `bugFixRate` critical). Hotfix
+  (exact location given) = MODIFY minus STRATEGY/STYLE — DDG decides, not
+  wrapper.
+- **REUSE for introduced logic** — new branch/guard reuses existing helper
+  instead of N-th reimplementation.
 
 Why MANDATORY for generation: without `tea-rags:data-driven-generation` agent
 generates code disconnected from project conventions. Misses:
@@ -293,9 +327,10 @@ After Step 5 returns (strategy + template + style decided), THEN invoke
 `Skill(superpowers:executing-plans)` (or its TDD onward chain via
 `Skill(dinopowers:test-driven-development)`) to write the code.
 
-**Order matters:** guard (Step 2) → verdict gate (Step 4) → data-driven cascade
-(Step 5) → executing-plans chain. Skipping Step 5 for generation Task = same
-severity as skipping guard for existing-file Task.
+**Order matters:** freshness (Step 2.0) → guard (Step 2) → verdict gate (Step 4)
+→ data-driven cascade (Step 5) → executing-plans chain. Skipping Step 5 for
+generation or modification Task = same severity as skipping guard for
+existing-file Task.
 
 ## Red Flags — STOP and restart from Step 2
 
@@ -322,8 +357,15 @@ severity as skipping guard for existing-file Task.
   Edit), restart from Step 5. Manual sibling-Read is exactly what data-driven
   skill replaces with structured strategy + proven template + silo style.
 - Invoked `tea-rags:data-driven-generation` for pure refactor (rename, move,
-  extract) → over-trigger; adds no value when no new code written. Restart from
+  extract) → over-trigger; adds no value when behavior unchanged. Restart from
   Step 5 classification; refactor row says SKIP.
+- Bug fix / condition tweak in existing method edited in-context, "no new
+  pattern, DDG not needed" → wrong: Modification row. Pause before Edit, invoke
+  DDG (MODIFY: tests-at-risk + `get_callers`).
+- Worktree plan, Task N guard issued without Step 2.0 this Task ("clone made at
+  start", "reindexed last commit", "nothing changed") → run Step 2.0 now; it is
+  per Task, before the guard, unconditional.
+- Guard addressed main alias inside worktree plan → redo against clone alias.
 
 ## Common Mistakes
 
@@ -337,3 +379,5 @@ severity as skipping guard for existing-file Task.
 | Invoke `superpowers:executing-plans` for the whole plan at once       | Wrapper is per-Task — gate each Task separately                                                                                                          |
 | For new-file Task: `Read sibling.ts` then `Write new.ts` directly     | Skips Step 5. Sibling-by-Read picks arbitrary example, ignores `bugFixRate`/`blameDominantAuthor` signals. Use `Skill(tea-rags:data-driven-generation)`. |
 | Generation Task → guard SAFE (new file) → straight to executing-plans | SAFE (new file) only resolves blast-radius gate. Step 5 is a SEPARATE gate — strategy + template + style still needed. Both gates must clear.            |
+| Modification Task → guard SAFE → edit in-context                      | SAFE says file is safe to touch, not that callers survive new behavior. DDG MODIFY runs tests-at-risk + `get_callers` — Step 5 still applies.            |
+| Reindex clone "after commit" as cleanup of finished Task              | Write-side chore → dropped under momentum. Freshness is Step 2.0 of NEXT Task, run right before its guard.                                               |

@@ -24,6 +24,7 @@
  * Emit-only-non-empty is preserved end to end: a channel the kernel helper left
  * absent stays absent here.
  */
+import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef, WalkContext } from "../../../../../contracts/types/language.js";
 import { typeFactChannels } from "../../../kernel/type-fact-channels.js";
@@ -67,7 +68,7 @@ export function pythonTypeChannels(
   if (kernel.chunks !== undefined) out.chunks = kernel.chunks;
 
   if (kernel.structuredReturnTypes !== undefined) {
-    const rekeyed: Record<string, TypeRef> = {};
+    const rekeyed: Record<string, TypeRef> = createIdentifierRecord();
     for (const [key, ref] of Object.entries(kernel.structuredReturnTypes)) {
       rekeyed[pythonStructuredReturnKey(key, ctx.relPath)] = ref;
     }
@@ -75,8 +76,8 @@ export function pythonTypeChannels(
   }
 
   if (kernel.ivarTypes !== undefined) {
-    const classFieldTypes: Record<string, Record<string, string>> = {};
-    const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+    const classFieldTypes: Record<string, Record<string, string>> = createIdentifierRecord();
+    const classFieldTypesByClassKey: Record<string, Record<string, string>> = createIdentifierRecord();
     for (const [fqClass, fields] of Object.entries(kernel.ivarTypes)) {
       const segments = fqClass.split("::");
       const shortName = segments[segments.length - 1];

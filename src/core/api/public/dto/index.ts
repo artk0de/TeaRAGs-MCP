@@ -39,6 +39,7 @@ export type {
 export type {
   // Collection
   CreateCollectionRequest,
+  DocumentMetadataSchema,
   CollectionInfo,
   CollectionMemoryBytes,
   CollectionMemoryMetrics,
@@ -63,6 +64,7 @@ export type {
   AmbiguousCallerResult,
   CalleeResult,
   CallerResult,
+  CycleMemberLocation,
   CycleResult,
   FindCyclesRequest,
   FindCyclesResponse,

@@ -52,6 +52,43 @@ function makeExecutor(runFileBatch: ReturnType<typeof vi.fn>, overrides: Record<
   } as never;
 }
 
+/**
+ * `EnrichmentCoordinator.hasStaleDerivedState` (bd tea-rags-mcp-dy852): a
+ * deletion leaves a provider's derived tables pruned but stale, and a run with
+ * nothing else to do asks here whether it still owes them a finalize.
+ */
+describe("EnrichmentCoordinator.hasStaleDerivedState", () => {
+  it("is true when any provider reports stale derived state for the collection", async () => {
+    const hasStaleDerivedState = vi.fn().mockResolvedValue(true);
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      makeProvider({ hasStaleDerivedState }),
+      undefined,
+      makeExecutor(vi.fn()),
+    );
+
+    expect(await coordinator.hasStaleDerivedState("code_x_v1")).toBe(true);
+    expect(hasStaleDerivedState).toHaveBeenCalledWith("code_x_v1");
+  });
+
+  it("is false when no provider keeps derived state", async () => {
+    const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(vi.fn()));
+
+    expect(await coordinator.hasStaleDerivedState("code_x_v1")).toBe(false);
+  });
+
+  it("treats an unreadable store as not stale, so a broken provider cannot force a finalize every run", async () => {
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      makeProvider({ hasStaleDerivedState: vi.fn().mockRejectedValue(new Error("daemon gone")) }),
+      undefined,
+      makeExecutor(vi.fn()),
+    );
+
+    expect(await coordinator.hasStaleDerivedState("code_x_v1")).toBe(false);
+  });
+});
+
 describe("EnrichmentCoordinator.runRepairPass", () => {
   it("re-extracts exactly the drifted and missing files, and prunes orphan rows", async () => {
     const runFileBatch = vi.fn().mockResolvedValue(new Map());

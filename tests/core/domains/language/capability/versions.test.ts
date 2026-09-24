@@ -121,7 +121,9 @@ describe("seeded support versions", () => {
       // python walker 8: bd tea-rags-mcp-z99hp scoped the ancestor linearizer
       // the same way — by the identity of `classAncestors` rather than by the
       // pooled table — so rows written by walker 7 can carry edges resolved on
-      // an MRO merged from a previous run's base lists.
+      // an MRO merged from a previous run's base lists; python walker 9: bd
+      // tea-rags-mcp-pbwd added dict-table dispatch — `dispatchTables`,
+      // `callbackParams` and tagged `CallRef.dispatch` sites walker 8 never wrote.
       // ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
@@ -258,16 +260,34 @@ describe("seeded support versions", () => {
       // delegator, and a `super`-delegating override inherits its ancestor
       // template's hook (`superDelegates` in the pass-1 slice), so an index built
       // by walker 4 holds those entries on the shared `KindOfService.call` node.
+      // javascript walker 4: bd tea-rags-mcp-hkj8 extracts lookup-table
+      // dispatch (`dispatchTables`, `CallRef.dispatch`, `callbackParams`,
+      // `dispatchArgs`), so an index built by walker 3 holds none of the
+      // caller→candidate edges `H[k]()` / `T[k].f()` sites now fan out to.
+      // typescript walker 12: bd tea-rags-mcp-v0207 adds the annotated-factory
+      // hop to the owner rule, so an index built by walker 11 holds file-only
+      // edges where a member declared on a same-file type the factory's return
+      // annotation names now pins the factory's own member.
+      // typescript 13, javascript 5, python 10, ruby 6, java 3, rust 3, go 5,
+      // swift 11: bd tea-rags-mcp-f4ce0 keys every identifier-keyed extraction
+      // record by own key (`createIdentifierRecord` / `identifierEntry`). A
+      // local, field or class named `toString` / `constructor` / `__proto__`
+      // used to hit `Object.prototype` and throw, so the whole FILE dropped out
+      // of the graph (9 of commons-lang's) — an index built by the previous
+      // walker holds no row for any such file until the recompute rewrites it.
+      // swift walker 24: that fix merged onto swift walker 23, which had moved
+      // independently (bd tea-rags-mcp-y99pg), so neither parent's index holds
+      // the merged extraction.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 11],
-        ["javascript", 3],
-        ["python", 8],
-        ["ruby", 5],
-        ["java", 2],
-        ["rust", 2],
-        ["go", 4],
-        ["swift", 23],
+        ["typescript", 13],
+        ["javascript", 5],
+        ["python", 10],
+        ["ruby", 6],
+        ["java", 3],
+        ["rust", 3],
+        ["go", 5],
+        ["swift", 24],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

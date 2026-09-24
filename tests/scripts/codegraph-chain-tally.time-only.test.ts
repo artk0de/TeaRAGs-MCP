@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatKindStatsBlock,
   formatTimingBlock,
   parseArgs,
   scoredExtensionsFor,
   type ChainTallyTiming,
 } from "../../scripts/codegraph-chain-tally.js";
+import { emptyReceiverKindTally } from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 
 /**
  * The scored set is inverted out of the engine's own extension→language map
@@ -104,5 +106,33 @@ describe("formatTimingBlock", () => {
     const empty: ChainTallyTiming = { pass1Ms: 12, pass2Ms: 0, totalMs: 12, peakRssMb: 90, loc: 0 };
     const lines = formatTimingBlock(empty, { files: 0, sites: 0, timeOnly: true }).join("\n");
     expect(lines).not.toMatch(/NaN|Infinity/);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-qodqg — a kind whose every site is `noInProjectDef` has an
+ * empty denominator. It rendered `1.000 0/0`, the same column a kind that
+ * resolved everything reads; the owner decision is a non-numeric marker with
+ * the counters kept, for both the per-kind rows and TOTAL.
+ */
+describe("formatKindStatsBlock — empty denominator", () => {
+  it("renders an all-noInProjectDef kind and an empty TOTAL as the marker, not 1.000", () => {
+    const stats = emptyReceiverKindTally();
+    stats.index = { ...stats.index, attempted: 6, noInProjectDef: 6 };
+    const lines = formatKindStatsBlock(stats, undefined);
+    const indexRow = lines.find((l) => l.trimStart().startsWith("index "));
+    const totalRow = lines.find((l) => l.trimStart().startsWith("TOTAL"));
+    expect(indexRow).toContain("—  0/0");
+    expect(indexRow).not.toContain("1.000");
+    expect(totalRow).toContain("—  0/0");
+    expect(totalRow).not.toContain("1.000");
+  });
+
+  it("keeps a numeric rate for a kind that scored something, even at 0", () => {
+    const stats = emptyReceiverKindTally();
+    stats.index = { ...stats.index, attempted: 3 };
+    const lines = formatKindStatsBlock(stats, undefined).join("\n");
+    expect(lines).toContain("0.000 0/3");
+    expect(lines).not.toContain("—");
   });
 });

@@ -41,7 +41,9 @@ export async function runServer(args: ServerArgs): Promise<void> {
     await startHttpServer({ config, ctx, promptsConfig });
   } else {
     const server = createConfiguredServer(ctx, promptsConfig);
-    await startStdioServer(server);
+    // bd tea-rags-mcp-e6cpu — stdin closing (or SIGTERM/SIGINT) releases
+    // resources and then exits; the listeners above only release.
+    await startStdioServer(server, { cleanup: ctx.cleanup });
 
     if (deprecations.length > 0) {
       const lines = deprecations.map((d) => `${d.oldName} -> use ${d.newName}`).join(", ");

@@ -110,12 +110,13 @@ describe("filterMetaOnly", () => {
     { key: "startLine", type: "number", description: "Start line" },
   ];
 
-  it("extracts score and payload signal fields", () => {
+  // bd tea-rags-mcp-947xf: the score lives on the hit, not in its payload.
+  it("extracts payload signal fields and no copy of the score", () => {
     const results: SearchResult[] = [
       { score: 0.9, payload: { relativePath: "src/a.ts", language: "typescript", startLine: 1, content: "code..." } },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);
-    expect(meta[0].score).toBe(0.9);
+    expect(meta[0]).not.toHaveProperty("score");
     expect(meta[0].relativePath).toBe("src/a.ts");
     expect(meta[0].language).toBe("typescript");
     expect(meta[0].startLine).toBe(1);
@@ -358,28 +359,13 @@ describe("filterMetaOnly", () => {
     });
   });
 
-  // tea-rags-mcp-zrma — the file-level members outline is synthetic, so it is
-  // absent from payloadSignals and gets dropped when filterMetaOnly rebuilds
-  // the payload. rank_chunks defaults to metaOnly=true, which is exactly where
-  // the outline earns its keep: without it the caller learns a file matched
-  // but not what inside it did.
-  it("preserves the synthetic members outline in metaOnly projection", () => {
+  // bd tea-rags-mcp-947xf — the file-level members outline is gone; a stray
+  // undeclared `members` key is rebuilt away like any other undeclared field.
+  it("does not forward an undeclared members field", () => {
     const results: SearchResult[] = [
-      {
-        score: 0.9,
-        payload: {
-          relativePath: "src/reranker.ts",
-          members: "src/reranker.ts\n  Reranker\n    Reranker#rerank",
-        },
-      },
+      { score: 0.9, payload: { relativePath: "src/reranker.ts", members: "src/reranker.ts\n  Reranker" } },
     ];
-    const meta = filterMetaOnly(results, payloadSignals, []);
-    expect(meta[0].members).toBe("src/reranker.ts\n  Reranker\n    Reranker#rerank");
-  });
-
-  it("omits members when the payload carries none", () => {
-    const results: SearchResult[] = [{ score: 0.9, payload: { relativePath: "src/a.ts" } }];
-    expect(filterMetaOnly(results, payloadSignals, [])[0].members).toBeUndefined();
+    expect(filterMetaOnly(results, payloadSignals, [])[0]).not.toHaveProperty("members");
   });
 });
 

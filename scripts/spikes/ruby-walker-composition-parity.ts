@@ -36,6 +36,7 @@ import Parser from "tree-sitter";
 
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { extractFromRubyFile } from "../../src/core/domains/language/ruby/index.js";
+import { loadCodegraphGrammarSync } from "../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { materializeTree } from "../../src/core/infra/materialize.js";
 import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
@@ -89,7 +90,8 @@ async function main(): Promise<void> {
   const beforeCommit = resolveCheckoutCommit(beforeRoot);
   const extractNative = await nativeExtractor(beforeRoot);
   const config = CODEGRAPH_LANGUAGES[".rb"];
-  const { walker } = new LanguageFactory().create(config.language);
+  const factory = new LanguageFactory();
+  const { walker } = factory.create(config.language);
   if (!walker) throw new Error("ruby provider exposes no walker");
   const composer = new DefaultSymbolIdComposer();
   const mismatches: string[] = [];
@@ -97,7 +99,7 @@ async function main(): Promise<void> {
   for (const relPath of rubyFiles(root, limit)) {
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
-    parser.setLanguage(config.loadParser());
+    parser.setLanguage(loadCodegraphGrammarSync(factory, ".rb"));
     const tree = { rootNode: materializeTree(parser.parse(code).rootNode, code) };
     const chunks = collectSymbols(
       tree,
