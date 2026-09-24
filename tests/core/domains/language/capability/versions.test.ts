@@ -346,9 +346,12 @@ describe("seeded support versions", () => {
       // callees and nested-enum `switch self` payloads bind (bd
       // tea-rags-mcp-y99pg.31), so an index built by walker 43 lacks those edges
       // and charges an SDK payload's calls as misses.
+      // typescript walker 15: bd tea-rags-mcp-g7h1y keeps the member edge of a
+      // `.call` / `.apply` / `.bind` whose receiver's declared type declares
+      // that member (`this.connection.call(fn)` → `QdrantConnection#call`).
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 14],
+        ["typescript", 15],
         ["javascript", 6],
         ["python", 13],
         ["ruby", 8],
