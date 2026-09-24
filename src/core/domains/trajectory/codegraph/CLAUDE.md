@@ -209,6 +209,17 @@
   the rows — and until then `callsUnnarrowedTemplate` is the only number that
   says so, because every rate on `cg_run_stats` counts these calls as successes.
 
+- **A run-global map keyed by class NAME is partitioned by language family, and
+  pass-2 reads the caller's partition, never the view.** `CodegraphRunState`
+  stores ancestors, prepends, `classExtends` and the include-by index in a
+  `LanguageFamilyRecord` (`symbols/language-family-record.ts`);
+  `buildResolverInputs` reads `ancestorsFor(language)` and its siblings, while
+  the `ancestors` / `classExtends` getters are an all-family view kept for the
+  registry, the flag-parity test and diagnostics. Why: a top-level class's name
+  is bare in most languages, so one record let a TypeScript `Error` answer
+  `super` and the MRO for a Ruby `Error` (bd tea-rags-mcp-nbf8q). A new
+  class-name channel read through a view reintroduces that.
+
 - **Every `ResolverInputs` channel reaches BOTH `CallContext`s the runner
   builds, and one function is what makes that structural.**
   `resolution-runner.ts` constructs a context twice — once for file edges, once

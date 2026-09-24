@@ -286,10 +286,16 @@ export class CallEdgeResolutionRunner {
     // Resolver receives the run-global `classAncestors` so it can walk
     // a bound type's inheritance chain regardless of which file
     // declares that class. Per-file ancestors are merged into
-    // `runState.ancestors` during pass-1 (sink.write).
-    const ancestors = state.hasRunGlobalEntries("ancestors") ? state.ancestors : extraction.classAncestors;
-    const prependedAncestors = state.hasRunGlobalEntries("prependedAncestors")
-      ? state.prependedAncestors
+    // `runState.ancestors` during pass-1 (sink.write). Class names are shared
+    // across languages, so every class-name map is read from the CALLER's
+    // language family partition, never the all-family view (bd
+    // tea-rags-mcp-nbf8q).
+    const { language } = extraction;
+    const ancestorsRunGlobal = state.hasRunGlobalEntries("ancestors");
+    const prependedRunGlobal = state.hasRunGlobalEntries("prependedAncestors");
+    const ancestors = ancestorsRunGlobal ? state.ancestorsFor(language) : extraction.classAncestors;
+    const prependedAncestors = prependedRunGlobal
+      ? state.prependedAncestorsFor(language)
       : extraction.classPrependedAncestors;
     // Reverse include-by index (bd cai0/2oky5 Task 4): find which classes include
     // a given module (`resolveViaIncludingClasses` in ruby-super.ts). When BOTH
@@ -299,14 +305,16 @@ export class CallEdgeResolutionRunner {
     // (per-file extraction maps) still computes fresh, so the result is
     // byte-identical in every case.
     const includedBy =
-      ancestors === state.ancestors && prependedAncestors === state.prependedAncestors
-        ? state.includedBy
+      ancestorsRunGlobal && prependedRunGlobal
+        ? state.includedByFor(language)
         : buildIncludedBy(ancestors ?? {}, prependedAncestors ?? {});
     return {
       ancestors,
       prependedAncestors,
       includedBy,
-      classExtends: state.hasRunGlobalEntries("classExtends") ? state.classExtends : extraction.classExtends,
+      classExtends: state.hasRunGlobalEntries("classExtends")
+        ? state.classExtendsFor(language)
+        : extraction.classExtends,
       returnTypes: state.hasRunGlobalEntries("returnTypes") ? state.returnTypes : extraction.functionReturnTypes,
       // Run-global instantiation set if any file contributed, else this file's
       // own (mirrors the returnTypes "run-global if present else extraction"
