@@ -2834,3 +2834,82 @@ describe("SwiftCallResolver — a stored closure of a function typealias as a ch
     expect(target?.targetSymbolId).toBe("DataRequest#resume");
   });
 });
+
+describe("SwiftCallResolver — the generated SDK substrate (bd tea-rags-mcp-y99pg.24)", () => {
+  const t = table({
+    "Sources/Stream+Alamofire.swift": [
+      { symbolId: "Stream", scope: [] },
+      { symbolId: "Stream#closeQuietly", scope: ["Stream"] },
+    ],
+    "Sources/Publisher+Alamofire.swift": [
+      { symbolId: "Publisher", scope: [] },
+      { symbolId: "Publisher#resume", scope: ["Publisher"] },
+    ],
+    "Sources/Session.swift": [
+      { symbolId: "Session", scope: [] },
+      { symbolId: "Session#runActivity", scope: ["Session"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Stream+Alamofire.swift": [{ typeId: "Stream", reopens: true }],
+    "Sources/Publisher+Alamofire.swift": [{ typeId: "Publisher", reopens: true }],
+    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+  };
+  const context = (bindings: CallContext["localBindings"]): CallContext =>
+    ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session", "go"],
+      symbolTable: t,
+      typeDeclarations,
+      localBindings: bindings,
+    });
+
+  it("reaches a project extension of an SDK superclass from a subclass receiver", () => {
+    const site = call("stream", "closeQuietly", 6);
+    const resolver = new SwiftCallResolver();
+    const within = context({ stream: [{ line: 5, type: "OutputStream" }] });
+    expect(resolver.resolve(site, within)?.targetSymbolId).toBe("Stream#closeQuietly");
+    expect(resolver.hasInProjectDefinition(site, within)).toBe(true);
+  });
+
+  it("proves external a member only an SDK protocol outside the receiver's hierarchy re-opens", () => {
+    // `Data` conforms to no `Publisher`: the project's `extension Publisher`
+    // is a namesake, whatever the protocol's name suggests.
+    const site = call("payload", "resume", 6);
+    const within = context({ payload: [{ line: 5, type: "Data" }] });
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, within)).toBe(false);
+  });
+
+  it("keeps a member the receiver's SDK conformances reach", () => {
+    const site = call("upstream", "resume", 6);
+    const within = context({ upstream: [{ line: 5, type: "AnyPublisher" }] });
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, within)).toBe(true);
+  });
+
+  it("reads a sugar-spelled extension id as the SDK type it re-opens", () => {
+    const sugared = table({
+      "Sources/HTTPHeaders.swift": [
+        { symbolId: "[HTTPHeader]", scope: [] },
+        { symbolId: "[HTTPHeader]#index", scope: ["[HTTPHeader]"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+    });
+    const within = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session", "go"],
+      symbolTable: sugared,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [{ typeId: "[HTTPHeader]", reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+      },
+      localBindings: { key: [{ line: 5, type: "String" }] },
+    });
+    // `String` is no Array: `extension [HTTPHeader]`'s `index` is a namesake.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("key", "index", 6), within)).toBe(false);
+  });
+
+  it("types an SDK type spelled as the receiver from the substrate, not a list", () => {
+    const site = call("XCTContext", "runActivity", 6);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context({}))).toBe(false);
+  });
+});

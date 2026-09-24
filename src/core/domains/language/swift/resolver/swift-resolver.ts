@@ -112,6 +112,8 @@ import {
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { propagateReceiverType, type ReceiverTypePorts } from "../../kernel/receiver-type-propagation.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
+import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
 import {
   SwiftChainedReceiverTypeSymbolResolutionStrategy,
   SwiftEnclosingBareCallSymbolResolutionStrategy,
@@ -127,14 +129,13 @@ import {
 import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { createSwiftReceiverTypePorts } from "./swift-receiver-type-ports.js";
-import { SWIFT_SDK_TYPE_NAMES } from "./swift-sdk-types.js";
 import {
   lookupSwiftBareNameDefinitions,
   lookupSwiftSymbolsByShortName,
   swiftMemberCandidates,
 } from "./swift-symbol-lookup.js";
 import { isSwiftReopenedOnlyType, swiftDeclaringFiles, swiftExtensionDeclaresInit } from "./swift-type-declarations.js";
-import { isSwiftTypeDeclarationId, mayBeSwiftSdkProtocol, stripSwiftOverloadSuffix } from "./swift-type-name.js";
+import { isSwiftTypeDeclarationId, isSwiftTypeName, stripSwiftOverloadSuffix } from "./swift-type-name.js";
 
 /**
  * Receiver types on which Swift looks a member up DYNAMICALLY: any `@objc`
@@ -152,6 +153,8 @@ export class SwiftCallResolver implements CallResolver {
   readonly language = "swift";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly memberTypes = new SwiftMemberTypeLookup();
+  /** What the SDK declares (bd tea-rags-mcp-y99pg.24): the generated substrate, shared process-wide. */
+  private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary();
   /** The chain's own receiver fold, reused by the denominator question. */
   private readonly ports: ReceiverTypePorts = createSwiftReceiverTypePorts(this.memberTypes);
 
@@ -248,8 +251,9 @@ export class SwiftCallResolver implements CallResolver {
    *   - a receiver it cannot type;
    *   - an index with no `typeDeclarations` channel, where "declared" and
    *     "extended" cannot be told apart;
-   *   - a def on a type the project only extends whose name may be an SDK
-   *     protocol, since which SDK types conform to it is not in the index.
+   *   - a def on a type the project only extends that the SDK substrate does
+   *     not declare, or reached from a receiver type whose supertypes neither
+   *     the project nor the substrate publishes (bd tea-rags-mcp-y99pg.24).
    */
   private receiverMayReach(call: CallRef, ctx: CallContext, defs: readonly SymbolDefinition[]): boolean {
     if (ctx.typeDeclarations === undefined) return true;
@@ -270,9 +274,19 @@ export class SwiftCallResolver implements CallResolver {
       if (declaring === undefined) return true;
       // A type the project declares, outside the receiver's hierarchy: a namesake.
       if (declaring.size > 0) continue;
-      if (mayBeSwiftSdkProtocol(owner)) return true;
+      // A re-opened SDK type outside the receiver's hierarchy — which the
+      // lookup read through the SDK substrate — is a namesake too (bd
+      // tea-rags-mcp-y99pg.24). Neither a re-opened name the substrate does
+      // not know nor a receiver type whose supertypes nobody publishes proves
+      // anything.
+      if (!this.sdk.hasType(swiftSpelledNominal(owner)) || !this.hierarchyKnown(typeName, ctx)) return true;
     }
     return false;
+  }
+
+  /** Whether the project or the SDK substrate declares `typeName`, so its supertypes are on record. */
+  private hierarchyKnown(typeName: string, ctx: CallContext): boolean {
+    return (swiftDeclaringFiles(typeName, ctx)?.size ?? 0) > 0 || this.sdk.hasType(typeName);
   }
 
   /**
@@ -280,8 +294,8 @@ export class SwiftCallResolver implements CallResolver {
    * the chain's own fold. An UpperCamelCase receiver nothing in the project
    * declares is usually an SDK type, but it may as well be a global value the
    * index has no channel for (Alamofire's `let AF = Session.default`, whose
-   * `AF.request` IS a project call), so it types one only when the name is on
-   * {@link SWIFT_SDK_TYPE_NAMES}. A receiver typed `AnyObject` / `AnyClass`
+   * `AF.request` IS a project call), so it types one only when the generated
+   * SDK substrate declares the name (bd tea-rags-mcp-y99pg.24). A receiver typed `AnyObject` / `AnyClass`
    * types nothing: see {@link SWIFT_DYNAMIC_LOOKUP_TYPES}.
    */
   private receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {
@@ -297,9 +311,10 @@ export class SwiftCallResolver implements CallResolver {
       if (type.form !== "class" && type.form !== "instance") return undefined;
       return SWIFT_DYNAMIC_LOOKUP_TYPES.has(type.name) ? undefined : type.name;
     }
-    // An SDK type spelled as the receiver: only a name on the vocabulary,
-    // which the project neither declares nor binds as a local.
-    if (!SWIFT_SDK_TYPE_NAMES.has(receiver) || (swiftDeclaringFiles(receiver, ctx)?.size ?? 0) > 0) return undefined;
+    // An SDK type spelled as the receiver: only a type the SDK substrate
+    // declares, which the project neither declares nor binds as a local.
+    if (!isSwiftTypeName(receiver) || !this.sdk.hasType(receiver)) return undefined;
+    if ((swiftDeclaringFiles(receiver, ctx)?.size ?? 0) > 0) return undefined;
     return resolveLocalBinding(ctx.localBindings, receiver, call.startLine) === undefined ? receiver : undefined;
   }
 }

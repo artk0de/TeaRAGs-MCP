@@ -281,6 +281,10 @@ describe("seeded support versions", () => {
       // index built by walker 34 lacks them.
       // swift walker 36: `functionAliasReturns` is new channel content, so an index
       // built by walker 35 types no stored-closure call head.
+      // swift walker 37: SDK facts come from the generated symbol-graph
+      // substrate and member lookup walks SDK superclass chains, so an index
+      // built by walker 36 lacks the edges into project extensions of an SDK
+      // superclass and persisted a denominator the hand-written lists drew.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -315,7 +319,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 36],
+        ["swift", 37],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
