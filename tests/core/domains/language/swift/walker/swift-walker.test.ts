@@ -228,14 +228,15 @@ describe("extractFromSwiftFile — localBindings", () => {
     expect(r.chunks[0].localBindings?.s?.[0].type).toBe("Set");
   });
 
-  it("binds NOTHING for an array or dictionary annotation", () => {
-    // A `[Thing]` is an Array, not a Thing. `LocalBinding.type` is a bare
-    // string with no container slot, so binding the ELEMENT type here would
-    // pin `xs.append(...)` to `Thing#append`.
+  it("binds an array annotation as Array and a dictionary one as Dictionary", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): this used to bind NOTHING.
+    // A `[Thing]` is an Array, not a Thing — binding the ELEMENT would pin
+    // `xs.append(...)` to `Thing#append` — and it IS an Array, whose project
+    // extensions (`extension Array where Element == Header`) a call can reach.
     const src = ["func go(xs: [Thing], d: [String: Foo]) {", "  xs.append(y)", "}", ""].join("\n");
     const r = extract(src);
-    expect(r.chunks[0].localBindings?.xs).toBeUndefined();
-    expect(r.chunks[0].localBindings?.d).toBeUndefined();
+    expect(r.chunks[0].localBindings?.xs?.[0].type).toBe("Array");
+    expect(r.chunks[0].localBindings?.d?.[0].type).toBe("Dictionary");
   });
 
   it("attributes a parameter binding to the method chunk, not the enclosing type chunk", () => {
@@ -562,22 +563,23 @@ describe("extractFromSwiftFile — call-result locals typed by a same-file decla
     expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Invoice");
   });
 
-  it("binds NOTHING for an array-returning function", () => {
-    // Same invariant as an array annotation: the local is an Array, not a
-    // Thing, and `LocalBinding.type` has no container slot to say so.
+  it("binds an array-returning function's result as Array", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14), as for an annotation: the
+    // local is an Array, not a Thing; it used to bind nothing.
     const src = ["func all() -> [Thing] { [] }", "func go() {", "  let xs = all()", "  xs.append(y)", "}", ""].join(
       "\n",
     );
-    expect(extract(src).chunks[0].localBindings?.xs).toBeUndefined();
+    expect(extract(src).chunks[0].localBindings?.xs?.[0].type).toBe("Array");
   });
 });
 
 describe("extractFromSwiftFile — `for x in` element typing", () => {
-  it("types the loop variable from an array-annotated parameter, and still binds NOTHING for the array", () => {
+  it("types the loop variable from an array-annotated parameter, and the array as Array", () => {
     const src = ["func go(xs: [Thing]) {", "  for x in xs {", "    x.touch()", "  }", "}", ""].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
     expect(bindings?.x?.[0].type).toBe("Thing");
-    expect(bindings?.xs).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): was undefined.
+    expect(bindings?.xs?.[0].type).toBe("Array");
   });
 
   it("types the loop variable from an array-typed stored property", () => {
@@ -594,7 +596,8 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
     ].join("\n");
     const r = extract(src);
     expect(r.chunks[0].localBindings?.item?.[0].type).toBe("Thing");
-    expect(r.classFieldTypes?.Store?.items).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): was undefined.
+    expect(r.classFieldTypes?.Store?.items).toBe("Array");
   });
 
   it("types the loop variable from an array-returning same-file function", () => {
@@ -612,8 +615,8 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
 
   it("types the loop variable through a `guard let` that unwraps an optional array", () => {
     // Unwrapping `[Thing]?` yields `[Thing]`, so the unwrapped name carries the
-    // ELEMENT and still no nominal of its own — the loop reads one, the
-    // container rule keeps the other empty.
+    // ELEMENT for the loop and is itself an Array (INVARIANT CHANGED, bd
+    // tea-rags-mcp-y99pg.14: it used to bind nothing).
     const src = [
       "class Store {",
       "  var items: [Thing]?",
@@ -628,7 +631,7 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
     expect(bindings?.x?.[0].type).toBe("Thing");
-    expect(bindings?.list).toBeUndefined();
+    expect(bindings?.list?.[0].type).toBe("Array");
   });
 
   it("declines a Set, a dictionary and a tuple pattern", () => {
@@ -674,9 +677,10 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     expect(r.classFieldTypes?.Worker?.queue).toBe("Queue");
   });
 
-  it("does NOT record an array-typed or untyped literal property", () => {
+  it("records an array-typed property as Array and still no untyped literal property", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): `items` used to be dropped.
     const src = ["class Store {", "  var items: [Thing] = []", "  var counter = 0", "}", ""].join("\n");
-    expect(extract(src).classFieldTypes?.Store).toBeUndefined();
+    expect(extract(src).classFieldTypes?.Store).toEqual({ items: "Array" });
   });
 
   it("leaves classFieldTypes absent when no type declares a typed stored property", () => {
@@ -1012,7 +1016,9 @@ describe("swift walker — declared return types published run-global (bd tea-ra
       "}",
       "",
     ].join("\n");
-    expect(publishedReturns(src)).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): `d` returns an Array, which
+    // a member call on its result dispatches on; it used to publish nothing.
+    expect(publishedReturns(src)).toEqual({ "Store#d": { form: "instance", name: "Array" } });
   });
 });
 
@@ -1428,7 +1434,8 @@ describe("swift walker — an array's element accessors return the element", () 
     ].join("\n");
     expect(typeAt(src, "adapter", 4)).toBe("RequestAdapter");
     expect(typeAt(src, "head", 6)).toBe("RequestAdapter");
-    expect(typeAt(src, "pending", 4)).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): the array itself is an Array.
+    expect(typeAt(src, "pending", 4)).toBe("Array");
   });
 });
 

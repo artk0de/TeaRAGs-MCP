@@ -2344,3 +2344,30 @@ describe("SwiftCallResolver — an implicit initializer of a project type stays 
     expect(new SwiftCallResolver().hasInProjectDefinition(call("super", "init"), context)).toBe(true);
   });
 });
+
+describe("SwiftCallResolver — an Array receiver reaches `extension [T]` (bd tea-rags-mcp-y99pg.14)", () => {
+  it("resolves onto a member declared under the array sugar spelling", () => {
+    const t = table({
+      "Sources/HTTPHeaders.swift": [
+        { symbolId: "HTTPHeaders", scope: [] },
+        { symbolId: "[HTTPHeader]", scope: [] },
+        { symbolId: "[HTTPHeader]#index", scope: ["[HTTPHeader]"] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/HTTPHeaders.swift",
+      callerScope: ["HTTPHeaders"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [
+          { typeId: "HTTPHeaders", reopens: false },
+          { typeId: "[HTTPHeader]", reopens: true },
+        ],
+      },
+      localBindings: { headers: [{ line: 5, type: "Array" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("headers", "index"), context)?.targetSymbolId).toBe("[HTTPHeader]#index");
+    expect(resolver.hasInProjectDefinition(call("headers", "sort"), context)).toBe(false);
+  });
+});

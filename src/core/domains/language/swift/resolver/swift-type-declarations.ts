@@ -18,6 +18,7 @@
  */
 
 import type { CallContext, TypeDeclarationFact } from "../../../../contracts/types/codegraph.js";
+import { splitAtBracketDepthZero } from "../../kernel/receiver-type-propagation.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 
 interface SwiftTypeDeclarationSets {
@@ -168,4 +169,24 @@ export function swiftMemberClosureParameters(
   ctx: CallContext,
 ): readonly (string | null)[] | null | undefined {
   return setsFor(ctx)?.closureParameters.get(typeId)?.get(member);
+}
+
+/**
+ * The sugar spellings under which the project re-opens `Array` or
+ * `Dictionary` — `extension [HTTPHeader]` composes its members as
+ * `[HTTPHeader]#index` (bd tea-rags-mcp-y99pg.14). Element-blind: a receiver
+ * typed `Array` reaches every `[T]` extension, and two of them declaring one
+ * member leave the lookup ambiguous rather than pick one.
+ */
+export function swiftSugarAliases(typeId: string, ctx: CallContext): readonly string[] {
+  if (typeId !== "Array" && typeId !== "Dictionary") return [];
+  const sets = setsFor(ctx);
+  if (sets === undefined) return [];
+  const aliases: string[] = [];
+  for (const id of [...sets.declaring.keys(), ...sets.reopening.keys()]) {
+    if (!id.startsWith("[") || !id.endsWith("]") || aliases.includes(id)) continue;
+    const isDictionary = splitAtBracketDepthZero(id.slice(1, -1), ":").length > 1;
+    if (isDictionary === (typeId === "Dictionary")) aliases.push(id);
+  }
+  return aliases;
 }

@@ -140,7 +140,9 @@ describe("swift tier 2 — extraction over the real fixtures", () => {
   });
 
   it("records a stored property's declared type under its owning type", () => {
-    expect(classFieldTypes.Ledger?.accounts).toBeUndefined(); // [String: Account] — a dictionary, not an Account
+    // [String: Account] — a Dictionary, not an Account (INVARIANT CHANGED, bd
+    // tea-rags-mcp-y99pg.14: it used to be dropped).
+    expect(classFieldTypes.Ledger?.accounts).toBe("Dictionary");
     expect(classFieldTypes["Ledger.Account"]).toBeUndefined(); // keyed by the type's own short name
     expect(classFieldTypes.Account?.balance).toBe("Decimal");
     expect(classFieldTypes.Invoice?.state).toBe("InvoiceState");

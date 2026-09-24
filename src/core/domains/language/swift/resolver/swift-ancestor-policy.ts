@@ -1,7 +1,7 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
-import { swiftConformances } from "./swift-type-declarations.js";
+import { swiftConformances, swiftSugarAliases } from "./swift-type-declarations.js";
 
 /**
  * Swift's answer to the kernel's linearization question, and it is the SHORTEST
@@ -66,6 +66,9 @@ export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext
   order(classKey, ctx, recurse, insertable) {
     const base = identifierEntry(ctx.classExtends, classKey);
     const order = base === undefined || base === classKey ? [classKey] : [classKey, ...recurse(base)];
+    // `extension [HTTPHeader]` re-opens Array under its sugar spelling, and
+    // its members compose under that spelling (bd tea-rags-mcp-y99pg.14).
+    for (const alias of swiftSugarAliases(classKey, ctx)) if (!order.includes(alias)) order.push(alias);
     for (const protocol of swiftConformances(classKey, ctx)) {
       if (protocol === classKey) continue;
       order.push(...insertable(protocol, [order]));

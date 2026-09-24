@@ -85,17 +85,21 @@
  *
  * ## What is deliberately NOT bound
  *
- * - `[Thing]` and `[String: Foo]` annotations bind NOTHING for the annotated
- *   NAME. `LocalBinding.type` is a bare string with no container slot, so
- *   binding the element type would type the ARRAY as a `Thing` and pin
+ * - A `[Thing]` annotation never binds the annotated NAME as a `Thing`.
+ *   `LocalBinding.type` is a bare string with no container slot, so binding
+ *   the element type would type the ARRAY as a `Thing` and pin
  *   `xs.append(_:)` to `Thing#append` — the Python lesson
  *   (`domains/language/CLAUDE.md`, "Python publishes type facts on THREE
- *   channels"), reached here through a different grammar. The element type is
- *   held in {@link SwiftTypeFact}'s own slot, which only `for x in xs` reads
- *   and which nothing emits, so the invariant is structural rather than a rule
- *   someone has to remember. A `Set<Foo>` / `[String: Foo]` element is NOT
- *   read: `swiftTypeFactOf` reduces a generic to its base name, and a
- *   dictionary iterates as a tuple the single-name pattern rejects anyway.
+ *   channels"), reached here through a different grammar. It binds `Array`
+ *   (and `[String: Foo]` binds `Dictionary`), the standard-library types those
+ *   spellings ARE, so a call reaches the project's `extension Array where
+ *   Element == Header` (bd tea-rags-mcp-y99pg.14; until then they bound
+ *   nothing). The element type is held in {@link SwiftTypeFact}'s own slot,
+ *   which only `for x in xs` and the element accessors read and which
+ *   nothing emits, so the invariant is structural rather than a rule someone
+ *   has to remember. A `Set<Foo>` / `[String: Foo]` element is NOT read:
+ *   `swiftTypeFactOf` reduces a generic to its base name, and a dictionary
+ *   iterates as a tuple the single-name pattern rejects anyway.
  * - A non-CapWords initializer whose callee this file does NOT declare
  *   (`let t = makeThing()`) binds nothing — its return type is unknowable here
  *   and recording the FUNCTION name as a type fabricates a `makeThing#member`
@@ -668,7 +672,7 @@ export function normalizeSwiftReceiver(text: string): string {
  * nothing else — and exists so `for x in xs` can type `x` without ever letting
  * `xs` be typed as a `T`. Keeping them apart is what makes the container rule
  * structural: a caller that wants a receiver type reads `nominal` and gets
- * `null` for an array, whatever the element is.
+ * `Array` for an array, whatever the element is.
  */
 interface SwiftTypeFact {
   readonly nominal: string | null;
@@ -1665,10 +1669,11 @@ function swiftTypeNodeAfter(node: AstNode, separator: string): AstNode | null {
  *     a PARENTHESIZED type, and the parentheses are required around an
  *     existential before `?`. A tuple with two or more items proves nothing,
  *     because no member dispatches on a tuple.
- *   - `array_type` — `[Foo]` → ELEMENT `Foo` and no nominal. An Array is not a
- *     Foo; see the container note in the file docblock.
- *   - anything else, notably `dictionary_type` / `function_type` /
- *     `opaque_type`, and a `tuple_type` that is a real tuple — nothing.
+ *   - `array_type` — `[Foo]` → nominal `Array`, ELEMENT `Foo`. An Array is not
+ *     a Foo; see the container note in the file docblock.
+ *   - `dictionary_type` — `[K: V]` → nominal `Dictionary`, no element.
+ *   - anything else, notably `function_type`, and a `tuple_type` that is a
+ *     real tuple — nothing.
  */
 const SWIFT_METATYPE_SUFFIX = /\.(?:Type|Protocol)$/;
 
@@ -1676,9 +1681,9 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   if (!typeNode) return NO_TYPE;
   if (typeNode.type === "optional_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
   if (typeNode.type === "array_type") {
-    const element = swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal;
-    return element ? { nominal: null, element } : NO_TYPE;
+    return { nominal: "Array", element: swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal };
   }
+  if (typeNode.type === "dictionary_type") return { nominal: "Dictionary", element: null };
   // `any P` and `some P` both dispatch a member call on P's requirement.
   if (typeNode.type === "existential_type" || typeNode.type === "opaque_type") {
     return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
