@@ -41,7 +41,12 @@ export const capability: LanguageCapability = {
   // declaration books as `noInProjectDef` instead of `missWithInProjectDef`.
   // No edge moves; the persisted resolve rate does, and only a recompute
   // rewrites a `cg_run_stats` row the previous walker tallied.
-  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-nbf8q item 4 — the dynamic fan-out cap reads Ruby's
+  // own defs-per-member p99 (`RUBY_FANOUT_POPULATION`), not the polyglot corpus
+  // one: taxdome 19, not 16. Fans of 17–19 survivors a walker-7 index recorded as
+  // `ambiguous` become edges. Bumped past an unreleased 7 because a worktree
+  // build may already have stamped an index at it.
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

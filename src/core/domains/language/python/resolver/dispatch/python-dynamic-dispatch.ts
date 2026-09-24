@@ -9,7 +9,11 @@ import { buildDispatchCascade, EnclosingClassPrivateAccess, resolveNarrowedFanou
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 import { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
-import { PY_DYNAMIC_RECEIVER_CONFIDENCE, resolvePythonDispatchFanMax } from "./python-dispatch-policy.js";
+import {
+  PY_DYNAMIC_RECEIVER_CONFIDENCE,
+  PYTHON_FANOUT_POPULATION,
+  resolvePythonDispatchFanMax,
+} from "./python-dispatch-policy.js";
 
 /** An instance member — `Cls#member`. A module function (`fn`) and a
  *  class-level `Cls.member` are not what a VALUE receiver dispatches. */
@@ -66,6 +70,7 @@ export class PythonDynamicDispatchResolver implements DispatchResolverComponent 
     return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, PY_DYNAMIC_RECEIVER_CONFIDENCE, {
       cap: this.fanMax,
       edgeKind: "dynamic",
+      population: PYTHON_FANOUT_POPULATION,
     });
   }
 }

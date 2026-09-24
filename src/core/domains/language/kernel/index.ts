@@ -48,7 +48,12 @@ export {
   type ExtractionFacetPass,
   type ExtractionWalkerParts,
 } from "./extraction-passes.js";
-export { DISPATCH_FANOUT_CAP_FLOOR, buildDispatchFanoutPolicy, dispatchFanoutPolicyFor } from "./fanout-policy.js";
+export {
+  DISPATCH_FANOUT_CAP_FLOOR,
+  DISPATCH_FANOUT_POPULATION_MIN_MEMBERS,
+  buildDispatchFanoutPolicy,
+  dispatchFanoutPolicyFor,
+} from "./fanout-policy.js";
 export { mergeExtraction, type ExtractionChannelMerger, type ExtractionMergeRulebook } from "./merge-extraction.js";
 export { methodKindFromClassify } from "./method-kind.js";
 export { conventionClassNameFor, type NamingConventionPorts } from "./naming-convention.js";

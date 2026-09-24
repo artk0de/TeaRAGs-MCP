@@ -4,6 +4,19 @@
  * confidence a fanned edge carries.
  */
 
+import type { DispatchFanoutPopulation } from "../../../../../contracts/types/language.js";
+import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
+
+/**
+ * The population the corpus-adaptive ceiling is computed over (bd
+ * tea-rags-mcp-nbf8q): the Python files `lookupPythonSymbolsByShortName` draws
+ * candidates from, so a polyglot repo's other half no longer sets Python's
+ * ceiling. Inert on output today — the ceiling is floored at 16 and
+ * {@link PY_DISPATCH_FAN_MAX} (4) is always the tighter of the two — but it
+ * keeps the ceiling honest if the Python cap is ever lifted past the floor.
+ */
+export const PYTHON_FANOUT_POPULATION: DispatchFanoutPopulation = { family: "python", ownsPath: isPythonSourcePath };
+
 /**
  * Python's dispatch fan cap.
  *
