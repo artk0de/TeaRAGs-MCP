@@ -22,5 +22,8 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (params, `let` locals, struct fields; annotation,
   // struct-literal and `X::new` types) for the naming lexicon. Rows written by
   // walker 4 carry none, so only the recompute adds them.
-  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
+  // walker 7: bd tea-rags-mcp-4p3sb.17 — an `identifierDeclarations` annotation
+  // of `Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T>` or a
+  // slice `&[T]` names its element, so a walker-6 row types `items` as `Vec`.
+  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
 };

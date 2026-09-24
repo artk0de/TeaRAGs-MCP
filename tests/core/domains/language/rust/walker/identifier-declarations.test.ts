@@ -34,7 +34,7 @@ describe("Rust walker — identifier declarations", () => {
     const chunks = [{ symbolId: "Svc", startLine: 1, endLine: 6, scope: [] }];
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "repo", kind: "field", line: 2, ownerSymbolId: "Svc", typeName: "Repo", typeSource: "annotation" },
-      { name: "cache", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "Vec", typeSource: "annotation" },
+      { name: "cache", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "Item", typeSource: "annotation" },
       { name: "db", kind: "field", line: 4, ownerSymbolId: "Svc", typeName: "Db", typeSource: "annotation" },
       { name: "pair", kind: "field", line: 5, ownerSymbolId: "Svc" },
     ]);
@@ -64,7 +64,7 @@ describe("Rust walker — identifier declarations", () => {
     const owner = { ownerSymbolId: "Svc#load" };
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "id", kind: "param", line: 2, ...owner, typeName: "str", typeSource: "annotation" },
-      { name: "xs", kind: "param", line: 2, ...owner, typeName: "Vec", typeSource: "annotation" },
+      { name: "xs", kind: "param", line: 2, ...owner, typeName: "Doc", typeSource: "annotation" },
       { name: "a", kind: "param", line: 2, ...owner },
       { name: "b", kind: "param", line: 2, ...owner },
       { name: "pool", kind: "param", line: 2, ...owner, typeName: "std::sync::Pool", typeSource: "annotation" },
@@ -162,5 +162,34 @@ describe("Rust walker — identifier declarations", () => {
         );
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
+  });
+
+  // bd tea-rags-mcp-4p3sb.17 — a collection or wrapper names its element; maps keep their head.
+  it("unwraps Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T> and &[T] to the element", () => {
+    const code = [
+      "fn f(a: Vec<Job>, b: VecDeque<Job>, c: HashSet<Tag>, d: BTreeSet<Tag>, e: Option<Repo>, g: Box<Repo>,",
+      "  h: Rc<Repo>, i: Arc<Repo>, j: &[Job], k: &mut [u8], l: Option<Box<Repo>>, m: std::collections::HashSet<Tag>,",
+      "  n: HashMap<String, Job>, o: BTreeMap<u32, Job>, p: Vec<(u8, u8)>, q: Box<dyn Fn()>, s: Rc<RefCell<Db>>) {}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }]);
+    expect(Object.fromEntries((declarations ?? []).map((d) => [d.name, d.typeName]))).toEqual({
+      a: "Job",
+      b: "Job",
+      c: "Tag",
+      d: "Tag",
+      e: "Repo",
+      g: "Repo",
+      h: "Repo",
+      i: "Repo",
+      j: "Job",
+      k: "u8",
+      l: "Repo",
+      m: "Tag",
+      n: "HashMap",
+      o: "BTreeMap",
+      p: undefined,
+      q: undefined,
+      s: "RefCell",
+    });
   });
 });

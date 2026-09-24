@@ -14,8 +14,11 @@
  * property declaration is scanned as its flat `pattern [type_annotation] [= value]`
  * clause list, so `let x: Int = 1, y = Foo()` yields both names.
  *
- * The annotation type is the nominal (`Set<Foo>` → `Set`, `Outer.Inner` kept),
- * seen through `?`, `any` / `some` and array sugar (`[Item]` → `Item`). A
+ * The annotation type is the nominal (`Dictionary<K, V>` → `Dictionary`,
+ * `Outer.Inner` kept), seen through `?`, `any` / `some` and array sugar
+ * (`[Item]` → `Item`); `Array<T>` / `Set<T>` / `Optional<T>` name their element
+ * the same way (bd tea-rags-mcp-4p3sb.17). A map keeps its head, an element with
+ * no nominal name (a tuple) gives no type. A
  * constructor is a CapWords callee (`Widget()`, `Foo.Bar()`) or an explicitly
  * specialised construction (`Protected<[T]>(…)`). A local or property bound to
  * a call carries its callee, split the way the walker splits its `CallRef`,
@@ -92,12 +95,32 @@ const rule = (nodeType: string, collect: IdentifierDeclarationRule["collect"]): 
   collect,
 });
 
-/** `Foo` / `Set<Foo>` → `Set` / `Outer.Inner`, seen through `?`, `any` / `some` and `[Element]`. */
+/** Generic heads whose annotation names its first type argument, matched on the final segment (`Swift.Array`). */
+const ELEMENT_NAMING_HEADS = new Set(["Array", "Set", "Optional"]);
+
+/** A `user_type`'s nominal as written, generic arguments dropped: `Dictionary<K, V>` → `Dictionary`. */
+function swiftUserTypeNominal(userType: AstNode): string | undefined {
+  const nominal = userType.text.split("<")[0].trim();
+  return nominal === "" ? undefined : nominal;
+}
+
+/**
+ * `Foo` / `Dictionary<K, V>` → `Dictionary` / `Outer.Inner`, seen through `?`,
+ * `any` / `some` and `[Element]`; `Array<T>` / `Set<T>` / `Optional<T>` → the
+ * element. The type arguments are the `user_type`'s trailing child, read by
+ * position like every other read here.
+ */
 function swiftAnnotationTypeName(node: AstNode): string | undefined {
   switch (node.type) {
     case "user_type": {
-      const nominal = node.text.split("<")[0].trim();
-      return nominal === "" ? undefined : nominal;
+      const nominal = swiftUserTypeNominal(node);
+      if (nominal === undefined || !ELEMENT_NAMING_HEADS.has(nominal.slice(nominal.lastIndexOf(".") + 1))) {
+        return nominal;
+      }
+      const args = node.namedChildren.at(-1);
+      if (args?.type !== "type_arguments") return nominal;
+      const element = args.namedChildren[0];
+      return element ? swiftAnnotationTypeName(element) : undefined;
     }
     case "optional_type":
     case "existential_type":
@@ -111,11 +134,15 @@ function swiftAnnotationTypeName(node: AstNode): string | undefined {
   }
 }
 
-/** `Widget()` / `Foo.Bar()` (CapWords final segment) / `Protected<[T]>(…)` → the constructed type. */
+/**
+ * `Widget()` / `Foo.Bar()` (CapWords final segment) / `Protected<[T]>(…)` → the
+ * constructed type, by its head even for a collection: `Array<Job>()` constructs
+ * an `Array`.
+ */
 function swiftConstructorTypeName(value: AstNode): string | undefined {
   if (value.type === "constructor_expression") {
     const constructed = value.namedChildren.find((child) => child.type === "user_type");
-    return constructed ? swiftAnnotationTypeName(constructed) : undefined;
+    return constructed ? swiftUserTypeNominal(constructed) : undefined;
   }
   if (value.type !== "call_expression") return undefined;
   const callee = value.namedChildren.find((child) => child.type !== "call_suffix");

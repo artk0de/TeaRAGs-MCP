@@ -10,10 +10,13 @@
  * children. `var` is no annotation — its name is typed by a `new X()`
  * initializer or joined at sink time.
  *
- * The annotation type drops generic arguments (`List<Doc>` → `List`), keeps a
+ * The annotation type drops generic arguments (`Map<K, V>` → `Map`), keeps a
  * qualified name as written (`com.acme.Panel`) and unwraps an array to its
  * element (`Widget[]` → `Widget`) — the lexicon groups `widgets` with
- * `Widget`, as Go's slices do. A local or field initialized by a method call
+ * `Widget`, as Go's slices do. A collection or wrapper
+ * (`List / Set / Collection / Iterable / Optional / Stream<T>`) names its
+ * element the same way (bd tea-rags-mcp-4p3sb.17); a map keeps its head, an
+ * unbounded `?` element gives no type. A local or field initialized by a method call
  * carries its callee, split the way the walker splits its `CallRef`; `new X()`
  * carries none, because the walker emits no `CallRef` for an object creation.
  */
@@ -79,7 +82,27 @@ const catchParameterRule: IdentifierDeclarationRule = {
   },
 };
 
-/** `Repo` / `List<Doc>` → `List` / `com.acme.Panel` / `Widget[]` → `Widget` / `int`; `var` → none. */
+/** Generic heads whose annotation names its first type argument, matched on the final segment (`java.util.List`). */
+const ELEMENT_NAMING_HEADS = new Set(["List", "Set", "Collection", "Iterable", "Optional", "Stream"]);
+
+/** A generic's head as written: `Repo<Doc>` → `Repo`, `java.util.List<Doc>` → `java.util.List`. */
+function javaGenericHeadName(generic: AstNode): string | undefined {
+  const base = generic.namedChildren[0];
+  return base ? javaAnnotationTypeName(base) : undefined;
+}
+
+/** The first type argument, read positionally; a bounded wildcard (`? extends Doc`) by its bound. */
+function firstTypeArgument(generic: AstNode): AstNode | null {
+  const args = generic.namedChildren.find((child) => child.type === "type_arguments");
+  const first = args?.namedChildren[0] ?? null;
+  return first?.type === "wildcard" ? (first.namedChildren.at(-1) ?? null) : first;
+}
+
+/**
+ * `Repo` / `Map<K, V>` → `Map` / `com.acme.Panel` / `Widget[]` → `Widget` /
+ * `int`; a collection or wrapper (`List<Doc>`, `Optional<Doc>`) → the element;
+ * `var` and an unbounded `?` → none.
+ */
 function javaAnnotationTypeName(node: AstNode): string | undefined {
   switch (node.type) {
     case "type_identifier":
@@ -90,8 +113,10 @@ function javaAnnotationTypeName(node: AstNode): string | undefined {
     case "boolean_type":
       return node.text;
     case "generic_type": {
-      const base = node.namedChildren[0];
-      return base ? javaAnnotationTypeName(base) : undefined;
+      const head = javaGenericHeadName(node);
+      if (head === undefined || !ELEMENT_NAMING_HEADS.has(head.slice(head.lastIndexOf(".") + 1))) return head;
+      const element = firstTypeArgument(node);
+      return element ? javaAnnotationTypeName(element) : undefined;
     }
     case "array_type": {
       // The element is the first named child (then `dimensions`). Read by position,
@@ -105,11 +130,16 @@ function javaAnnotationTypeName(node: AstNode): string | undefined {
   }
 }
 
-/** `new Document(id)` / `new Repo<>()` / `new com.acme.Panel()` → the created type, generic args dropped. */
+/**
+ * `new Document(id)` / `new Repo<>()` / `new com.acme.Panel()` → the created
+ * type, generic args dropped. The created class is named by its head even when
+ * it is a collection: `new ArrayList<Doc>()` constructs an `ArrayList`.
+ */
 function javaConstructorTypeName(value: AstNode): string | undefined {
   if (value.type !== "object_creation_expression") return undefined;
   const typeNode = value.childForFieldName("type");
-  return typeNode ? javaAnnotationTypeName(typeNode) : undefined;
+  if (!typeNode) return undefined;
+  return typeNode.type === "generic_type" ? javaGenericHeadName(typeNode) : javaAnnotationTypeName(typeNode);
 }
 
 export const JAVA_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {

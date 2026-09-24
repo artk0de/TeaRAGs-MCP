@@ -22,5 +22,8 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (params, locals, fields; annotation and `new X()`
   // types) for the naming lexicon. Rows written by walker 5 carry none, so only
   // the recompute adds them.
-  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-4p3sb.17 — an `identifierDeclarations` annotation
+  // of `List / Set / Collection / Iterable / Optional / Stream<T>` names its
+  // element, so a walker-7 row types `docs` as `List`.
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
 };

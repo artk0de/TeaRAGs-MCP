@@ -143,4 +143,25 @@ describe("Swift walker — identifier declarations", () => {
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
   });
+
+  // bd tea-rags-mcp-4p3sb.17 — a collection or wrapper names its element; maps keep their head.
+  it("unwraps Array<T> / Set<T> / Optional<T> to the element, read positionally", () => {
+    const code = [
+      "func f(a: Array<Job>, b: Set<Tag>, c: Optional<Repo>, e: Dictionary<String, Job>, g: Array<[Job]>,",
+      "       h: Swift.Array<Job>, i: Set<Job>?, j: Array<(Int, Int)>, k: [Set<Tag>], l: Optional<Array<Repo>>) {}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [{ symbolId: "f", startLine: 1, endLine: 2, scope: [] }]);
+    expect(Object.fromEntries((declarations ?? []).map((d) => [d.name, d.typeName]))).toEqual({
+      a: "Job",
+      b: "Tag",
+      c: "Repo",
+      e: "Dictionary",
+      g: "Job",
+      h: "Job",
+      i: "Job",
+      j: undefined,
+      k: "Tag",
+      l: "Repo",
+    });
+  });
 });

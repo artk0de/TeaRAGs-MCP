@@ -11,8 +11,12 @@
  * untyped site, since the annotation types the whole pattern.
  *
  * The annotation type strips `&`, `mut` and lifetimes and drops generic
- * arguments (`Vec<Item>` → `Vec`), keeping a path as written
- * (`std::sync::Pool`). By constructor: a struct literal (`X { … }`) and a
+ * arguments (`HashMap<K, V>` → `HashMap`), keeping a path as written
+ * (`std::sync::Pool`) — except that a collection or wrapper
+ * (`Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T>`) and a
+ * slice (`&[T]`) name their ELEMENT (bd tea-rags-mcp-4p3sb.17): the lexicon
+ * groups `items` with `Item`. A map keeps its head; an element with no nominal
+ * name (a tuple, a `dyn` trait) gives no type. By constructor: a struct literal (`X { … }`) and a
  * `X::new(…)` call (the path before `::new`, turbofish dropped); any other
  * associated function (`Default::default()`) is joined at sink time. A `let`
  * bound to a call or macro carries its callee, split the way the walker splits
@@ -106,17 +110,45 @@ const letRule: IdentifierDeclarationRule = {
     ),
 };
 
-/** `Repo` / `&'a mut Db` / `Vec<Item>` / `std::sync::Pool` → the nominal name; tuples, arrays, fns → none. */
+/** Generic heads whose annotation names its first type argument, matched on the final path segment. */
+const ELEMENT_NAMING_HEADS = new Set(["Vec", "VecDeque", "HashSet", "BTreeSet", "Option", "Box", "Rc", "Arc"]);
+
+/** The first type argument of a `generic_type`, lifetimes skipped; read positionally. */
+function firstTypeArgument(generic: AstNode): AstNode | null {
+  const args = generic.namedChildren.find((child) => child.type === "type_arguments");
+  return args?.namedChildren.find((child) => child.type !== "lifetime") ?? null;
+}
+
+/**
+ * `Repo` / `&'a mut Db` / `HashMap<K, V>` → `HashMap` / `std::sync::Pool` → the
+ * nominal name; a collection or wrapper (`Vec<Item>`, `Option<Box<Repo>>`) and a
+ * slice (`&[Item]`) → the element; tuples, fixed arrays, fns → none.
+ */
 function rustAnnotationTypeName(node: AstNode): string | undefined {
   switch (node.type) {
     case "type_identifier":
     case "primitive_type":
     case "scoped_type_identifier":
       return node.text;
-    case "reference_type":
-    case "generic_type": {
+    case "reference_type": {
       const inner = node.childForFieldName("type");
       return inner ? rustAnnotationTypeName(inner) : undefined;
+    }
+    case "generic_type": {
+      const base = node.childForFieldName("type");
+      const head = base ? rustAnnotationTypeName(base) : undefined;
+      if (head === undefined || !ELEMENT_NAMING_HEADS.has(head.slice(head.lastIndexOf(":") + 1))) return head;
+      const element = firstTypeArgument(node);
+      return element ? rustAnnotationTypeName(element) : undefined;
+    }
+    case "array_type": {
+      // A slice `[T]` only — a fixed array `[T; N]` carries its `;`. The element
+      // is read by position, not as the `element` field, for the same reason
+      // Java's `array_type` is: the materialization guard surveys field names
+      // across every grammar.
+      if (node.children.some((child) => child.type === ";")) return undefined;
+      const element = node.namedChildren[0];
+      return element ? rustAnnotationTypeName(element) : undefined;
     }
     default:
       return undefined;

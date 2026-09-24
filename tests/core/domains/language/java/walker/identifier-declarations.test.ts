@@ -48,7 +48,7 @@ describe("Java walker — identifier declarations", () => {
       { name: "a", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "int", typeSource: "annotation" },
       { name: "b", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "int", typeSource: "annotation" },
       { name: "id", kind: "param", line: 4, ...owner, typeName: "String", typeSource: "annotation" },
-      { name: "xs", kind: "param", line: 4, ...owner, typeName: "List", typeSource: "annotation" },
+      { name: "xs", kind: "param", line: 4, ...owner, typeName: "Doc", typeSource: "annotation" },
       { name: "more", kind: "param", line: 4, ...owner, typeName: "Item", typeSource: "annotation" },
       { name: "doc", kind: "local", line: 5, ...owner, typeName: "Document", typeSource: "annotation" },
       { name: "row", kind: "local", line: 6, ...owner, boundCallee: { member: "get", receiver: "repo" } },
@@ -110,5 +110,37 @@ describe("Java walker — identifier declarations", () => {
         );
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
+  });
+
+  // bd tea-rags-mcp-4p3sb.17 — a collection or wrapper names its element; maps keep their head.
+  it("unwraps List / Set / Collection / Iterable / Optional / Stream<T> to the element", () => {
+    const code = [
+      "class A {",
+      "  void f(List<Job> a, Set<Tag> b, Collection<Job> c, Iterable<Job> d, Optional<Repo> e, Stream<Job> g,",
+      "      java.util.List<Job> h, Optional<com.acme.Repo> i, List<Job[]> j, Stream<List<Job>> k,",
+      "      List<? extends Job> l, List<? super Job> m, List<?> n, Map<String, Job> o, HashSet<Tag> q) {}",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "A", startLine: 1, endLine: 5, scope: [] },
+      { symbolId: "A#f", startLine: 2, endLine: 4, scope: ["A"] },
+    ]);
+    expect(Object.fromEntries((declarations ?? []).map((d) => [d.name, d.typeName]))).toEqual({
+      a: "Job",
+      b: "Tag",
+      c: "Job",
+      d: "Job",
+      e: "Repo",
+      g: "Job",
+      h: "Job",
+      i: "com.acme.Repo",
+      j: "Job",
+      k: "Job",
+      l: "Job",
+      m: "Job",
+      n: undefined,
+      o: "Map",
+      q: "HashSet",
+    });
   });
 });
