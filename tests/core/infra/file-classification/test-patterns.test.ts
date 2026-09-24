@@ -7,7 +7,9 @@ import { TEST_PATTERNS, TEST_PATTERNS_BY_LANGUAGE } from "../../../../src/core/i
 // none added (substrate spec backward-compat invariant). One deliberate
 // addition since: TypeScript's ESM / CJS module formats (`.mts` / `.cts`),
 // which ingest and the codegraph index as TypeScript (bd tea-rags-mcp-1y13c),
-// carry TypeScript's own test suffixes.
+// carry TypeScript's own test suffixes. A second: the languages only the
+// retired static-trajectory basename regex knew (php … clojure), folded in when
+// `payload.isTest` moved onto this classifier (bd tea-rags-mcp-9ty5z).
 const CANONICAL_TEST_PATTERNS = [
   "**/tests/**",
   "**/test/**",
@@ -39,6 +41,25 @@ const CANONICAL_TEST_PATTERNS = [
   "**/*IT.java",
   "**/*_test.go",
   "**/*_test.rs",
+  "**/*Test.php",
+  "**/*Test.cs",
+  "**/*Tests.cs",
+  "**/*Test.cpp",
+  "**/*Tests.cpp",
+  "**/*Test.cc",
+  "**/*Tests.cc",
+  "**/*Test.cxx",
+  "**/*Tests.cxx",
+  "**/*Test.c",
+  "**/*Tests.c",
+  "**/*Test.swift",
+  "**/*Tests.swift",
+  "**/*Test.kt",
+  "**/*_test.dart",
+  "**/*Spec.scala",
+  "**/*Test.scala",
+  "**/*_test.clj",
+  "**/*_test.cljs",
 ];
 
 describe("TEST_PATTERNS_BY_LANGUAGE — per-language test path patterns (in infra)", () => {

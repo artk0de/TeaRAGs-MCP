@@ -67,6 +67,19 @@ export const TEST_PATTERNS_BY_LANGUAGE: Readonly<Record<string, readonly string[
   java: ["**/*Test.java", "**/*Tests.java", "**/*IT.java"],
   go: ["**/*_test.go"],
   rust: ["**/*_test.rs"],
+  // Carried over from the retired static-trajectory basename regex (bd
+  // tea-rags-mcp-9ty5z) so `payload.isTest` loses no language when it moved
+  // onto this classifier. Matching is case-insensitive (the `ignore` default),
+  // so `*Test.php` also covers `*test.php`.
+  php: ["**/*Test.php"],
+  c_sharp: ["**/*Test.cs", "**/*Tests.cs"],
+  cpp: ["**/*Test.cpp", "**/*Tests.cpp", "**/*Test.cc", "**/*Tests.cc", "**/*Test.cxx", "**/*Tests.cxx"],
+  c: ["**/*Test.c", "**/*Tests.c"],
+  swift: ["**/*Test.swift", "**/*Tests.swift"],
+  kotlin: ["**/*Test.kt"],
+  dart: ["**/*_test.dart"],
+  scala: ["**/*Spec.scala", "**/*Test.scala"],
+  clojure: ["**/*_test.clj", "**/*_test.cljs"],
 };
 
 /**
