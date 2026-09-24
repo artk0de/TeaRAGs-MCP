@@ -1217,3 +1217,70 @@ describe("swift walker — closure parameters typed by the parameter they are pa
     expect(typeAt(src, "$0", 2)).toBeUndefined();
   });
 });
+
+/**
+ * A generic parameter is not a type the index can hold: `responseSerializer:
+ * Serializer` where `<Serializer: DataResponseSerializerProtocol>` dispatches on
+ * the protocol, and `func request<R: Request>(for: …, as type: R.Type) -> R?`
+ * returns whatever type the `as:` argument names (bd tea-rags-mcp-y99pg.6).
+ */
+describe("swift walker — generic parameters read through their constraints", () => {
+  it("types a parameter declared with a constrained generic parameter as the constraint", () => {
+    const src = [
+      "func go<Serializer: ResponseSerializer>(serializer: Serializer) {",
+      "  serializer.serialize()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "serializer", 2)).toBe("ResponseSerializer");
+  });
+
+  it("reads a `where` clause constraint on the enclosing type for a stored property", () => {
+    const src = [
+      "final class Interceptor<AuthenticatorType>: Base where AuthenticatorType: Authenticator {",
+      "  let authenticator: AuthenticatorType",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).classFieldTypes?.Interceptor?.authenticator).toBe("Authenticator");
+  });
+
+  it("binds nothing for an unconstrained generic parameter", () => {
+    const src = ["func go<T>(value: T) {", "  value.use()", "}", ""].join("\n");
+    expect(typeAt(src, "value", 2)).toBeUndefined();
+  });
+
+  it("types an opaque `some P` parameter as the protocol", () => {
+    const src = ["func go(value: some Encoder) {", "  value.use()", "}", ""].join("\n");
+    expect(typeAt(src, "value", 2)).toBe("Encoder");
+  });
+
+  it("types a call-result local from the metatype argument a generic return is bound by", () => {
+    const src = [
+      "final class Delegate {",
+      "  func request<R: Request>(for task: Int, as type: R.Type) -> R? { nil }",
+      "  func go() {",
+      "    if let request = request(for: 1, as: DataRequest.self) {",
+      "      request.didReceive()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "request", 5)).toBe("DataRequest");
+  });
+
+  it("falls back to the constraint when the metatype argument is not a `.self` literal", () => {
+    const src = [
+      "final class Delegate {",
+      "  func request<R: Request>(for task: Int, as type: R.Type) -> R? { nil }",
+      "  func go(kind: Request.Type) {",
+      "    guard let request = request(for: 1, as: kind) else { return }",
+      "    request.didReceive()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "request", 5)).toBe("Request");
+  });
+});

@@ -14,6 +14,20 @@ export const capability: LanguageCapability = {
     summary:
       "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
   },
+  // walker 16: a generic parameter reads as its constraint (bd
+  // tea-rags-mcp-y99pg.6). `responseSerializer: Serializer` under
+  // `<Serializer: DataResponseSerializerProtocol>`, and a stored property typed by
+  // the enclosing type's `where AuthenticatorType: Authenticator`, are typed as
+  // the protocol whose requirement the call dispatches on; an unconstrained one
+  // (and an associated type such as `Serializer.SerializedObject`) types nothing,
+  // where walker 15 recorded the bare generic name. A generic return bound by a
+  // metatype argument (`request(for: task, as: DataRequest.self)` over
+  // `-> R?` with `as type: R.Type`) types the local as the named type. `some P`
+  // reads as `P`. Measured (swiftc -dump-ast oracle): Alamofire TOTAL 0.775 ->
+  // 0.788 (1111 -> 1130 of 1434; localVar 116/168 -> 131/176, dynamic 209/358 ->
+  // 212/350), Quick unmoved at 0.870. Edges +19 / -0, all 19 the typechecker's
+  // target. So an index built by walker 15 misses every call on a generic-typed
+  // value.
   // walker 15: a closure's parameters take their types from the parameter the
   // closure is passed to (bd tea-rags-mcp-y99pg.3). `performEvent { $0.x() }`
   // types `$0` (and a named `m in`) from the callee's ONE function-typed
@@ -234,7 +248,7 @@ export const capability: LanguageCapability = {
   // must route `--force`, not `--force-enrichments`.
   // chunking 4: the grammar bump above — files 0.7.1 could not parse now
   // chunk at real symbol boundaries, so the chunk set moves again.
-  versions: { chunking: 4, walker: 15, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 16, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

@@ -229,6 +229,9 @@ describe("seeded support versions", () => {
       // swift walker 15: closure parameters (`$0`, named) are typed from the
       // function-typed parameter they are passed to, so an index built by walker 14
       // misses every call on a closure parameter.
+      // swift walker 16: generic parameters read as their constraints and a
+      // metatype-bound generic return as the named type, so an index built by walker
+      // 15 misses every call on a generic-typed value.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -245,7 +248,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 15],
+        ["swift", 16],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

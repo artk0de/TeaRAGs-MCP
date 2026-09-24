@@ -529,6 +529,19 @@ interface SwiftFileTypeEvidence {
    * which one a closure lands on is a label question.
    */
   readonly closureParameters: Map<string, readonly SwiftTypeFact[] | null>;
+  /**
+   * `returnKey(owner, funcName) → the argument` whose `Type.self` value names
+   * what a generic return is (`as type: R.Type` → `-> R`), `null` where two
+   * declarations disagree. Read before `returnTypes`, which holds only the
+   * return's constraint.
+   */
+  readonly metatypeReturns: Map<string, SwiftMetatypeSlot | null>;
+}
+
+/** Which argument of a call binds a generic return: by label, or by position when unlabelled. */
+interface SwiftMetatypeSlot {
+  readonly label: string | null;
+  readonly index: number;
 }
 
 /**
@@ -582,6 +595,7 @@ function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
   const propertyTypes = new Map<string, Map<string, SwiftTypeFact>>();
   const returnTypes = new Map<string, SwiftTypeFact | null>();
   const closureParameters = new Map<string, readonly SwiftTypeFact[] | null>();
+  const metatypeReturns = new Map<string, SwiftMetatypeSlot | null>();
   walk(root, (node) => {
     if (node.type === "class_declaration" || node.type === "protocol_declaration") {
       collectSwiftPropertyTypes(node, propertyTypes);
@@ -597,6 +611,12 @@ function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
       if (seen === undefined) closureParameters.set(key, closure);
       else if (!sameSwiftFacts(seen, closure)) closureParameters.set(key, null);
     }
+    const slot = swiftMetatypeReturnSlot(node);
+    if (slot !== undefined) {
+      const seen = metatypeReturns.get(key);
+      if (seen === undefined) metatypeReturns.set(key, slot);
+      else if (seen?.label !== slot.label || seen.index !== slot.index) metatypeReturns.set(key, null);
+    }
     const fact = swiftDeclaredReturnFact(node);
     if (!fact) return;
     const previous = returnTypes.get(key);
@@ -604,7 +624,7 @@ function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
     // `previous === null` is the poisoned marker, and optional access keeps it poisoned.
     else if (previous?.nominal !== fact.nominal || previous?.element !== fact.element) returnTypes.set(key, null);
   });
-  return { propertyTypes, returnTypes, closureParameters };
+  return { propertyTypes, returnTypes, closureParameters, metatypeReturns };
 }
 
 /** Whether two positional fact lists state the same types; `null` (poisoned) equals nothing. */
@@ -632,13 +652,132 @@ function swiftClosureParameterFacts(fn: AstNode): readonly SwiftTypeFact[] | nul
     const facts: SwiftTypeFact[] = [];
     for (const item of params?.namedChildren ?? []) {
       if (item.type !== "tuple_type_item") continue;
-      const fact = swiftTypeFactOf(item.namedChildren[item.namedChildCount - 1] ?? null);
-      const named = fact.nominal ?? fact.element;
-      facts.push(named && !declaresSwiftGenericName(fn, named) ? fact : NO_TYPE);
+      facts.push(swiftGenericResolvedFact(swiftTypeFactOf(item.namedChildren[item.namedChildCount - 1] ?? null), fn));
     }
     found = facts;
   }
   return found;
+}
+
+/**
+ * Where a generic return is bound by a METATYPE argument —
+ * `func request<R: Request>(for: …, as type: R.Type) -> R?` returns whatever
+ * type the `as:` argument names. The slot is the argument's label, or its
+ * position when the parameter has none; `undefined` when the return is not
+ * the declaration's own generic parameter or no parameter carries `R.Type`.
+ */
+function swiftMetatypeReturnSlot(fn: AstNode): SwiftMetatypeSlot | undefined {
+  const returned = swiftTypeFactOf(swiftTypeNodeAfter(fn, "->")).nominal;
+  if (!returned || !declaresSwiftTypeParameter(fn, returned)) return undefined;
+  let index = 0;
+  for (const parameter of fn.children) {
+    if (parameter.type !== "parameter") continue;
+    if (swiftParameterTypeNode(parameter)?.text === `${returned}.Type`) {
+      const names = parameter.children.filter((c) => c.type === "simple_identifier").map((c) => c.text);
+      const label = names.length > 1 ? names[0] : (names[0] ?? "_");
+      return { label: label === "_" ? null : label, index };
+    }
+    index += 1;
+  }
+  return undefined;
+}
+
+/**
+ * The type a call's metatype argument names — `DataRequest` for
+ * `request(for: task, as: DataRequest.self)` — or null when the argument is
+ * not a `Type.self` literal.
+ */
+function swiftMetatypeArgumentType(suffix: AstNode, slot: SwiftMetatypeSlot): string | null {
+  const args = suffix.children.find((c) => c.type === "value_arguments")?.namedChildren ?? [];
+  const values = args.filter((a) => a.type === "value_argument");
+  const labelOf = (arg: AstNode): string | null =>
+    arg.children.find((c) => c.type === "value_argument_label")?.text ?? null;
+  const arg = slot.label === null ? values[slot.index] : values.find((a) => labelOf(a) === slot.label);
+  const value = arg?.namedChildren[arg.namedChildCount - 1];
+  if (value?.type !== "navigation_expression") return null;
+  if (value.childForFieldName("suffix")?.childForFieldName("suffix")?.text !== "self") return null;
+  const typeText = value.childForFieldName("target")?.text;
+  return typeText !== undefined && /^[A-Z][\w.]*$/.test(typeText) ? typeText : null;
+}
+
+/** Declarations whose `type_parameters` and `where` clause scope a generic name over their subtree. */
+const SWIFT_GENERIC_SCOPES: ReadonlySet<string> = new Set([
+  "function_declaration",
+  "protocol_function_declaration",
+  "init_declaration",
+  "subscript_declaration",
+  "class_declaration",
+]);
+
+/**
+ * What a generic parameter NAME stands for at `at`: `undefined` when no
+ * enclosing declaration declares it (so it is a real type name), else the
+ * nominal of its conformance constraint — inline (`<R: Request>`) or in a
+ * `where` clause (`where T: Authenticator`) — or null when unconstrained.
+ *
+ * A call on a value of a constrained generic type dispatches on the
+ * constraint's requirement, which is the declaration the typechecker binds, so
+ * the constraint IS the receiver type for member lookup. The nearest declaring
+ * scope wins, which is Swift's own shadowing.
+ */
+function swiftGenericConstraint(name: string, at: AstNode): string | null | undefined {
+  for (let current: AstNode | null = at; current; current = current.parent) {
+    if (!SWIFT_GENERIC_SCOPES.has(current.type)) continue;
+    const declared = current.children
+      .find((c) => c.type === "type_parameters")
+      ?.namedChildren.find((p) => p.type === "type_parameter" && p.namedChildren[0]?.text === name);
+    if (!declared) continue;
+    if (declared.namedChildCount > 1) return swiftTypeFactOf(declared.namedChildren[1]).nominal;
+    for (const clause of current.children) {
+      if (clause.type !== "type_constraints") continue;
+      for (const constraint of clause.namedChildren) {
+        const inheritance = constraint.namedChildren.find((c) => c.type === "inheritance_constraint");
+        if (inheritance?.namedChildren[0]?.text !== name) continue;
+        return swiftTypeFactOf(inheritance.namedChildren[inheritance.namedChildCount - 1]).nominal;
+      }
+    }
+    return null;
+  }
+  return undefined;
+}
+
+/**
+ * A fact with every generic parameter name replaced by its constraint
+ * ({@link swiftGenericConstraint}). A member of a generic parameter
+ * (`Serializer.SerializedObject`, an associated type) proves nothing.
+ */
+function swiftGenericResolvedFact(fact: SwiftTypeFact, at: AstNode): SwiftTypeFact {
+  const resolve = (name: string | null): string | null => {
+    if (name === null) return null;
+    const head = name.split(".")[0];
+    const constraint = swiftGenericConstraint(head, at);
+    if (constraint === undefined) return name;
+    return head === name ? constraint : null;
+  };
+  const nominal = resolve(fact.nominal);
+  const element = resolve(fact.element);
+  return nominal === fact.nominal && element === fact.element ? fact : { nominal, element };
+}
+
+/**
+ * The evidence a CALL reads from a table keyed by {@link returnKey}, in
+ * Swift's lookup order: a bare callee on the enclosing type, then at the top
+ * level; a qualified one on whatever its receiver types to.
+ */
+function swiftCalleeEvidence<T>(
+  callee: AstNode,
+  table: ReadonlyMap<string, T>,
+  scope: SwiftTypeScope,
+  depth: number,
+): T | undefined {
+  if (callee.type === "simple_identifier") {
+    const own = table.get(returnKey(scope.site.enclosingType, callee.text));
+    return own !== undefined ? own : table.get(returnKey(null, callee.text));
+  }
+  if (callee.type !== "navigation_expression") return undefined;
+  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
+  const owner = swiftReceiverTypeName(callee.childForFieldName("target"), scope, depth);
+  return member && owner ? table.get(returnKey(owner, member.text)) : undefined;
 }
 
 /**
@@ -663,19 +802,6 @@ function swiftFunctionTypeNode(typeNode: AstNode | null): AstNode | null {
   return null;
 }
 
-/** Whether `name` is a generic parameter of `fn` or of any type declaration enclosing it. */
-function declaresSwiftGenericName(fn: AstNode, name: string): boolean {
-  for (let current: AstNode | null = fn; current; current = current.parent) {
-    if (
-      (current === fn || current.type === "class_declaration" || current.type === "protocol_declaration") &&
-      declaresSwiftTypeParameter(current, name)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * The positional facts a closure literal's parameters take from the call it
  * is an argument of — trailing or parenthesized — or null when nothing proves
@@ -694,23 +820,16 @@ function swiftClosureArgumentFacts(lambda: AstNode, scope: SwiftTypeScope): read
   if (call?.type !== "call_expression") return null;
   const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
   if (!callee) return null;
-  const closures = scope.evidence.closureParameters;
-  if (callee.type === "simple_identifier") {
-    const own = closures.get(returnKey(scope.site.enclosingType, callee.text));
-    if (own !== undefined) return own;
-    return closures.get(returnKey(null, callee.text)) ?? null;
+  if (callee.type === "navigation_expression") {
+    const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+    const target = callee.childForFieldName("target");
+    const element = target ? swiftExpressionFact(target, scope, 0).element : null;
+    const arity = member === undefined ? undefined : SWIFT_ELEMENT_CLOSURE_ARITY.get(member);
+    if (element && arity !== undefined) {
+      return Array.from({ length: arity }, () => ({ nominal: element, element: null }));
+    }
   }
-  if (callee.type !== "navigation_expression") return null;
-  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
-  const target = callee.childForFieldName("target");
-  if (!member || !target) return null;
-  const { element } = swiftExpressionFact(target, scope, 0);
-  const arity = SWIFT_ELEMENT_CLOSURE_ARITY.get(member);
-  if (element && arity !== undefined) {
-    return Array.from({ length: arity }, () => ({ nominal: element, element: null }));
-  }
-  const owner = swiftReceiverTypeName(target, scope, 0);
-  return owner ? (closures.get(returnKey(owner, member)) ?? null) : null;
+  return swiftCalleeEvidence(callee, scope.evidence.closureParameters, scope, 0) ?? null;
 }
 
 /** The `lambda_parameter` nodes a closure literal names, or null when it uses `$0`-style ones. */
@@ -802,16 +921,16 @@ function swiftClassFieldTypesByClassKey(
  * Swift writes its return types, so this is a read rather than the terminal-
  * expression fold `kernel/return-inference.ts` performs for Ruby and Python.
  * The two gates are what keep the read honest: a universal / empty type
- * (`Any`, `Void`, `Self`) has no member to land on, and the function's OWN
- * generic parameter is a name that exists only inside the signature —
- * recording `T` would fabricate a `T#member` target at every call site.
+ * (`Any`, `Void`, `Self`) has no member to land on, and a generic parameter
+ * is a name that exists only inside the signature — recording `T` would
+ * fabricate a `T#member` target at every call site, so it reads as its
+ * constraint, or as nothing when it has none (bd tea-rags-mcp-y99pg.6).
  */
 function swiftDeclaredReturnFact(node: AstNode): SwiftTypeFact | null {
-  const fact = swiftTypeFactOf(swiftTypeNodeAfter(node, "->"));
+  const fact = swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(node, "->")), node);
   const named = fact.nominal ?? fact.element;
   if (!named) return null;
-  if (SWIFT_UNUSABLE_RETURN_TYPES.has(named)) return null;
-  return declaresSwiftTypeParameter(node, named) ? null : fact;
+  return SWIFT_UNUSABLE_RETURN_TYPES.has(named) ? null : fact;
 }
 
 /** Whether `name` is one of the declaration's own generic parameters (`func decode<T>() -> T`). */
@@ -906,7 +1025,10 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       case "parameter":
       case "lambda_parameter": {
         const name = node.childForFieldName("name");
-        if (name) record(name.text, swiftTypeFactOf(swiftTypeNodeAfter(node, ":")), siteOf(node));
+        if (name) {
+          const declared = swiftTypeFactOf(swiftTypeNodeAfter(node, ":"));
+          record(name.text, swiftGenericResolvedFact(declared, node), siteOf(node));
+        }
         return;
       }
       case "property_declaration": {
@@ -927,7 +1049,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
           node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
         for (const clause of swiftOptionalBindingClauses(node)) {
           const site = siteOf(node);
-          const annotated = swiftTypeFactOf(clause.annotation);
+          const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
           const annotatedOrInferred =
             annotated.nominal || annotated.element
               ? annotated
@@ -1032,7 +1154,7 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
  */
 function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
   const annotation = node.children.find((c) => c.type === "type_annotation");
-  if (annotation) return swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":"));
+  if (annotation) return swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":")), node);
   return constructedTypeFact(node.childForFieldName("value"));
 }
 
@@ -1115,7 +1237,10 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
     const element = swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal;
     return element ? { nominal: null, element } : NO_TYPE;
   }
-  if (typeNode.type === "existential_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
+  // `any P` and `some P` both dispatch a member call on P's requirement.
+  if (typeNode.type === "existential_type" || typeNode.type === "opaque_type") {
+    return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
+  }
   if (typeNode.type === "tuple_type") return swiftTypeFactOf(parenthesizedSwiftTypeNode(typeNode));
   if (typeNode.type !== "user_type") return NO_TYPE;
   const raw = typeNode.text;
@@ -1244,17 +1369,15 @@ function swiftCallResultFact(node: AstNode, scope: SwiftTypeScope, depth: number
   if (!suffix || suffix.text.startsWith("[")) return NO_TYPE;
   const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
   if (!callee) return NO_TYPE;
-  if (callee.type === "simple_identifier") {
-    if (/^[A-Z]/.test(callee.text)) return { nominal: callee.text, element: null };
-    const own = scope.evidence.returnTypes.get(returnKey(scope.site.enclosingType, callee.text));
-    if (own !== undefined) return own ?? NO_TYPE;
-    return scope.evidence.returnTypes.get(returnKey(null, callee.text)) ?? NO_TYPE;
+  if (callee.type === "simple_identifier" && /^[A-Z]/.test(callee.text)) {
+    return { nominal: callee.text, element: null };
   }
-  if (callee.type !== "navigation_expression") return NO_TYPE;
-  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
-  const owner = swiftReceiverTypeName(callee.childForFieldName("target"), scope, depth);
-  if (!member || !owner) return NO_TYPE;
-  return scope.evidence.returnTypes.get(returnKey(owner, member.text)) ?? NO_TYPE;
+  // A generic return bound by a `Type.self` argument names its type at the
+  // call; the declared return holds only its constraint.
+  const slot = swiftCalleeEvidence(callee, scope.evidence.metatypeReturns, scope, depth);
+  const bound = slot ? swiftMetatypeArgumentType(suffix, slot) : null;
+  if (bound !== null) return { nominal: bound, element: null };
+  return swiftCalleeEvidence(callee, scope.evidence.returnTypes, scope, depth) ?? NO_TYPE;
 }
 
 /** `startIndex` of the nearest enclosing function-like declaration; `-1` at type / file level. */
