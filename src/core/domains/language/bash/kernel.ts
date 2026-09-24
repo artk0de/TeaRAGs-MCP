@@ -38,6 +38,7 @@ interface TreeSitterLanguageModule {
 
 export const bashKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-bash"),
+  grammarPackage: "tree-sitter-bash",
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
   isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",

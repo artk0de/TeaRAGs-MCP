@@ -357,6 +357,14 @@ export type CollectSymbolsFn = (
 export interface LanguageKernel {
   /** Lazily load the tree-sitter language module for this language. */
   loadModule: () => Promise<TreeSitterLanguageModule | null>;
+  /**
+   * npm package `loadModule` imports the grammar from (`tree-sitter-ruby`, …).
+   * `LanguageFactory.create` checks it resolves before handing the provider
+   * out, so a missing grammar is a typed error naming the package rather than
+   * a raw resolver trace (bd tea-rags-mcp-e2pu7). Absent for a language that
+   * loads no grammar.
+   */
+  grammarPackage?: string;
   /** Extract the grammar from a loaded module when nested (e.g. `{ typescript, tsx }`). */
   extractLanguage?: (mod: TreeSitterLanguageModule) => unknown;
   /**

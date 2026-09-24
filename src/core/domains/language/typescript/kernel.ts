@@ -40,6 +40,7 @@ interface TreeSitterLanguageModule {
 
 export const typescriptKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-typescript"),
+  grammarPackage: "tree-sitter-typescript",
   extractLanguage: (mod: TreeSitterLanguageModule) => {
     if (typeof mod.default === "object" && mod.default !== null && "typescript" in mod.default) {
       return (mod.default as Record<string, unknown>).typescript;

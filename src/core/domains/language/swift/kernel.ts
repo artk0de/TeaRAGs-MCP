@@ -41,6 +41,7 @@ interface TreeSitterLanguageModule {
 
 export const swiftKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-swift"),
+  grammarPackage: "tree-sitter-swift",
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
   scopeContainerTypes: ["class_declaration", "protocol_declaration"],
