@@ -36,6 +36,8 @@ interface SwiftTypeDeclarationSets {
   readonly closureParameters: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[] | null>>;
   /** typeId → the ids its generic-argument extensions compose members under (bd tea-rags-mcp-y99pg.19). */
   readonly spellings: ReadonlyMap<string, readonly string[]>;
+  /** typeId → function-typed alias → what calling it returns (bd tea-rags-mcp-y99pg.22). */
+  readonly functionAliases: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
   readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
 }
@@ -90,6 +92,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
   const closureParameters = new Map<string, Map<string, readonly (string | null)[] | null>>();
   const spellings = new Map<string, string[]>();
+  const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
@@ -103,6 +106,9 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       }
       mergeFieldArguments(fieldArguments, fact);
       mergeClosureParameters(closureParameters, fact);
+      if (fact.functionAliasReturns !== undefined && !functionAliases.has(fact.typeId)) {
+        functionAliases.set(fact.typeId, fact.functionAliasReturns);
+      }
       if (fact.spelledAs !== undefined) {
         const list = spellings.get(fact.typeId) ?? [];
         if (!list.includes(fact.spelledAs)) list.push(fact.spelledAs);
@@ -121,7 +127,17 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       conforms.set(fact.typeId, list);
     }
   }
-  const fresh = { declaring, reopening, conforms, generics, fieldArguments, closureParameters, spellings, enumCases };
+  const fresh = {
+    declaring,
+    reopening,
+    conforms,
+    generics,
+    fieldArguments,
+    closureParameters,
+    spellings,
+    functionAliases,
+    enumCases,
+  };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
 }
@@ -230,4 +246,23 @@ export function swiftEnumCasePayloadType(
   const cases = byFile?.get(ctx.callerFile) ?? (byFile?.size === 1 ? [...byFile.values()][0] : undefined);
   if (cases === undefined || !Object.hasOwn(cases, caseName)) return undefined;
   return cases[caseName][index] ?? undefined;
+}
+
+/**
+ * What calling a value of the function-typed alias `alias` returns, the alias
+ * read lexically from `scopes` (innermost first), or undefined (bd
+ * tea-rags-mcp-y99pg.22).
+ */
+export function swiftFunctionAliasReturn(
+  alias: string,
+  scopes: readonly string[],
+  ctx: CallContext,
+): { returned: string; declaredIn: string } | undefined {
+  const aliases = setsFor(ctx)?.functionAliases;
+  if (aliases === undefined) return undefined;
+  for (const scope of scopes) {
+    const table = aliases.get(scope);
+    if (table !== undefined && Object.hasOwn(table, alias)) return { returned: table[alias], declaredIn: scope };
+  }
+  return undefined;
 }

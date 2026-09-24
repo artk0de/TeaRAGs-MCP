@@ -52,8 +52,8 @@ import {
 } from "../../kernel/receiver-type-propagation.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
-import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
-import { swiftEnumCasePayloadType } from "./swift-type-declarations.js";
+import { lookupSwiftSymbols, qualifySwiftTypeNameWithin } from "./swift-symbol-lookup.js";
+import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
 /**
@@ -175,20 +175,50 @@ function swiftImplicitSelfCallHeadType(
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
   if (enclosing === undefined) return undefined;
-  const open = head.indexOf("(");
-  const name = open > 0 ? head.slice(0, open) : "";
-  if (!SWIFT_IDENTIFIER.test(name) || name.startsWith("$") || !head.endsWith(")")) return undefined;
-  if (closingParenIndex(head, open) !== head.length - 1) return undefined;
+  const name = swiftCallHeadCallee(head);
+  if (name === undefined || name.startsWith("$")) return undefined;
   if (swiftLocalValueType(name, atLine, ctx, ports, members) !== undefined) return undefined;
-  return members.memberReturnType(enclosing, name, ctx);
+  const method = members.memberReturnType(enclosing, name, ctx);
+  if (method !== undefined) return method;
+  // A stored CLOSURE called in place: `responseHandler { … }` on a
+  // `responseHandler: Handler` whose alias is a function type returns what
+  // that function type returns (bd tea-rags-mcp-y99pg.22).
+  const property = members.typeOfProperty(enclosing, name, ctx);
+  if (property === undefined) return undefined;
+  const scopes = swiftEnclosingTypeIds(ctx);
+  const alias = swiftFunctionAliasReturn(property, scopes, ctx);
+  if (alias === undefined) return undefined;
+  return { form: "instance", name: qualifySwiftTypeNameWithin(alias.returned, alias.declaredIn, ctx) };
 }
 
-/** The index of the `)` closing the `(` at `open`, or -1. */
-function closingParenIndex(text: string, open: number): number {
+/**
+ * The callee of a head that is ONE call — `name(…)`, `name { … }` or
+ * `name(…) { … }`, the argument list or trailing closure running to the end
+ * of the head — or undefined.
+ */
+function swiftCallHeadCallee(head: string): string | undefined {
+  const open = head.search(/[({]/);
+  const name = open > 0 ? head.slice(0, open).trim() : "";
+  if (!SWIFT_IDENTIFIER.test(name)) return undefined;
+  let end = open;
+  while (end < head.length) {
+    const close = closingBracketIndex(head, end);
+    if (close === -1) return undefined;
+    if (close === head.length - 1) return name;
+    end = close + 1;
+    while (end < head.length && /\s/.test(head[end])) end++;
+    if (head[end] !== "{") return undefined;
+  }
+  return undefined;
+}
+
+/** The index of the bracket closing the `(` or `{` at `open`, or -1. */
+function closingBracketIndex(text: string, open: number): number {
+  const [opener, closer] = text[open] === "{" ? ["{", "}"] : ["(", ")"];
   let depth = 0;
   for (let i = open; i < text.length; i++) {
-    if (text[i] === "(") depth++;
-    else if (text[i] === ")" && --depth === 0) return i;
+    if (text[i] === opener) depth++;
+    else if (text[i] === closer && --depth === 0) return i;
   }
   return -1;
 }

@@ -1706,3 +1706,17 @@ describe("swift walker — a generic-argument extension's spelled id (bd tea-rag
     ]);
   });
 });
+
+describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)", () => {
+  it("publishes what a function-typed alias declared in a type returns", () => {
+    const src = [
+      "struct DataResponsePublisher {",
+      "  private typealias Handler = (@escaping @Sendable (_ response: Int) -> Void) -> DataRequest",
+      "  typealias Output = Int",
+      "}",
+      "",
+    ].join("\n");
+    const fact = (extract(src).typeDeclarations ?? []).find((f) => f.typeId === "DataResponsePublisher");
+    expect(fact?.functionAliasReturns).toEqual({ Handler: "DataRequest" });
+  });
+});

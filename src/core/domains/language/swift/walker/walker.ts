@@ -241,6 +241,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
     const { fieldTypeArguments, memberClosureParameters } = swiftGenericMemberFacts(node, genericParameters);
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
+    const functionAliasReturns = swiftFunctionAliasReturns(node);
     // `extension Collection<String>` composes its members under the name as
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
@@ -254,9 +255,33 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(memberClosureParameters ? { memberClosureParameters } : {}),
       ...(enumCasePayloads ? { enumCasePayloads } : {}),
       ...(spelledAs === undefined ? {} : { spelledAs }),
+      ...(functionAliasReturns ? { functionAliasReturns } : {}),
     });
   });
   return out;
+}
+
+/**
+ * What each function-typed `typealias` a type body declares returns (bd
+ * tea-rags-mcp-y99pg.22): `typealias Handler = (Callback) -> DataRequest` →
+ * `Handler: "DataRequest"`. Read positionally, past `=` and then `->`.
+ */
+function swiftFunctionAliasReturns(node: AstNode): Record<string, string> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const out = createIdentifierRecord<string>();
+  let any = false;
+  for (const member of body.namedChildren) {
+    if (member.type !== "typealias_declaration") continue;
+    const alias = member.namedChildren.find((c) => c.type === "type_identifier")?.text;
+    const aliased = swiftTypeNodeAfter(member, "=");
+    if (alias === undefined || aliased?.type !== "function_type") continue;
+    const returned = swiftTypeFactOf(swiftTypeNodeAfter(aliased, "->")).nominal;
+    if (returned === null || SWIFT_UNUSABLE_RETURN_TYPES.has(returned)) continue;
+    out[alias] = returned;
+    any = true;
+  }
+  return any ? out : undefined;
 }
 
 /**

@@ -2802,3 +2802,35 @@ describe("SwiftCallResolver — `super.init()` into a superclass with an implici
     expect(target).toBeNull();
   });
 });
+
+describe("SwiftCallResolver — a stored closure of a function typealias as a chain head (bd tea-rags-mcp-y99pg.22)", () => {
+  it("types `responseHandler { … }` by what its alias's function type returns", () => {
+    const t = table({
+      "Sources/Combine.swift": [
+        { symbolId: "DataResponsePublisher", scope: [] },
+        { symbolId: "DataResponsePublisher.Inner", scope: ["DataResponsePublisher"] },
+      ],
+      "Sources/DataRequest.swift": [
+        { symbolId: "DataRequest", scope: [] },
+        { symbolId: "DataRequest#resume", scope: ["DataRequest"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("responseHandler { response in\n  _ = downstream.receive(response)\n}", "resume", 12),
+      ctx({
+        callerFile: "Sources/Combine.swift",
+        callerScope: ["DataResponsePublisher", "Inner", "request"],
+        symbolTable: t,
+        typeDeclarations: {
+          "Sources/Combine.swift": [
+            { typeId: "DataResponsePublisher", reopens: false, functionAliasReturns: { Handler: "DataRequest" } },
+            { typeId: "DataResponsePublisher.Inner", reopens: false },
+          ],
+          "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+        },
+        classFieldTypes: { Inner: { responseHandler: "Handler" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#resume");
+  });
+});

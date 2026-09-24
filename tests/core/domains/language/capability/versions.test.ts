@@ -279,6 +279,8 @@ describe("seeded support versions", () => {
       // edges.
       // swift walker 35: implicit-initializer `super.init()` edges are new, so an
       // index built by walker 34 lacks them.
+      // swift walker 36: `functionAliasReturns` is new channel content, so an index
+      // built by walker 35 types no stored-closure call head.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -313,7 +315,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 35],
+        ["swift", 36],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

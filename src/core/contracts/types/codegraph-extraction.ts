@@ -407,6 +407,13 @@ export interface TypeDeclarationFact {
    * tea-rags-mcp-y99pg.19). Absent when the two agree.
    */
   readonly spelledAs?: string;
+  /**
+   * The return type of each FUNCTION-typed alias this declaration's body
+   * declares: `typealias Handler = (Callback) -> DataRequest` →
+   * `Handler: "DataRequest"` — what calling a stored closure of that alias
+   * yields (bd tea-rags-mcp-y99pg.22). Absent when none.
+   */
+  readonly functionAliasReturns?: Readonly<Record<string, string>>;
 }
 
 /**
