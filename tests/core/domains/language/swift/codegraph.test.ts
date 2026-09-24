@@ -24,7 +24,10 @@ import type { LanguageProvider } from "../../../../../src/core/contracts/types/l
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { CODEGRAPH_LANGUAGES } from "../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
+import {
+  CODEGRAPH_LANGUAGES,
+  loadCodegraphGrammarSync,
+} from "../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { lastSegment } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -33,14 +36,15 @@ const INVOICE = "Sources/Payables/Invoice.swift";
 const LEDGER = "Sources/Payables/Ledger.swift";
 
 const swiftRow = CODEGRAPH_LANGUAGES[".swift"];
-const provider: LanguageProvider = new LanguageFactory().create("swift");
+const factory = new LanguageFactory();
+const provider: LanguageProvider = factory.create("swift");
 const composer = new DefaultSymbolIdComposer();
 
 /** Parse + walk one fixture exactly as `CodegraphFileExtractor.parse` does. */
 function extractFixture(fileName: string, relPath: string) {
   const code = readFileSync(join(FIXTURES, fileName), "utf8");
   const parser = new Parser();
-  parser.setLanguage(swiftRow.loadParser());
+  parser.setLanguage(loadCodegraphGrammarSync(factory, ".swift"));
   const tree = { rootNode: parser.parse(code).rootNode };
   const { walker } = provider;
   if (!walker) throw new Error("swift provider has no walker");

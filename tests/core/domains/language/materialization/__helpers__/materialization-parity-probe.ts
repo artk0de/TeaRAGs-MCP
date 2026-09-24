@@ -35,7 +35,10 @@ import type { CollectedSymbolRange } from "../../../../../../src/core/contracts/
 import { LanguageFactory } from "../../../../../../src/core/domains/language/factory.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { CODEGRAPH_LANGUAGES } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
+import {
+  CODEGRAPH_LANGUAGES,
+  loadCodegraphGrammarSync,
+} from "../../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 /** Repository root — six levels up from `tests/core/domains/language/materialization/__helpers__/`. */
@@ -560,12 +563,16 @@ export const MATERIALIZATION_PARITY_CORPUS: readonly MaterializationParityFixtur
   { grammarKey: "bash", language: "bash", extension: ".sh", relPath: "scripts/ledger.sh", source: BASH_SOURCE },
 ];
 
-/** Parse a fixture with the SAME grammar row the codegraph extractor would use. */
+/** Builds the kernels the codegraph extractor loads grammars through. */
+const grammarFactory = new LanguageFactory();
+
+/** Parse a fixture with the SAME grammar the codegraph extractor would use. */
 export function parseFixture(fixture: MaterializationParityFixture): Parser.Tree {
-  const config = CODEGRAPH_LANGUAGES[fixture.extension];
-  if (config === undefined) throw new Error(`no CODEGRAPH_LANGUAGES row for ${fixture.extension}`);
+  if (CODEGRAPH_LANGUAGES[fixture.extension] === undefined) {
+    throw new Error(`no CODEGRAPH_LANGUAGES row for ${fixture.extension}`);
+  }
   const parser = new Parser();
-  parser.setLanguage(config.loadParser());
+  parser.setLanguage(loadCodegraphGrammarSync(grammarFactory, fixture.extension));
   return parser.parse(fixture.source);
 }
 
@@ -576,8 +583,8 @@ export function parseFixture(fixture: MaterializationParityFixture): Parser.Tree
  */
 export function distinctGrammarExtensions(): string[] {
   const seen = new Map<unknown, string>();
-  for (const [extension, config] of Object.entries(CODEGRAPH_LANGUAGES)) {
-    const grammar: unknown = config.loadParser();
+  for (const extension of Object.keys(CODEGRAPH_LANGUAGES)) {
+    const grammar: unknown = loadCodegraphGrammarSync(grammarFactory, extension);
     if (!seen.has(grammar)) seen.set(grammar, extension);
   }
   return [...seen.values()];

@@ -365,8 +365,13 @@ export interface LanguageKernel {
    * loads no grammar.
    */
   grammarPackage?: string;
-  /** Extract the grammar from a loaded module when nested (e.g. `{ typescript, tsx }`). */
-  extractLanguage?: (mod: TreeSitterLanguageModule) => unknown;
+  /**
+   * Extract the grammar from a loaded module when nested (e.g. `{ typescript, tsx }`).
+   * `extension` (with the dot) selects a per-extension grammar where one module
+   * ships several — the codegraph walk passes it (`.tsx` → the tsx grammar); the
+   * chunker omits it and gets the language's default grammar.
+   */
+  extractLanguage?: (mod: TreeSitterLanguageModule, extension?: string) => unknown;
   /**
    * Namespace separator joining nested scope names: `"::"` (Ruby/Rust), `"."`
    * (TS/JS/Python/Go/Java). Default `"."`. Applies to namespaces / nested
