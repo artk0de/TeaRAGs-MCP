@@ -13,6 +13,7 @@ export type {
   StableDependenciesExclusionCounts,
   StableDependenciesOptions,
   StableDependenciesReport,
+  StableDependenciesScope,
   StableDependenciesSummary,
   StableDependencyRootCause,
   StableDependencyViolation,

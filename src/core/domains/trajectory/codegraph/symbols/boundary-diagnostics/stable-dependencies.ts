@@ -1,4 +1,5 @@
 import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { CODEGRAPH_SYMBOLS_FILE_SIGNALS, type MartinInstability } from "../payload-signals.js";
 import { classifyDirectoryRelation } from "./directory-relation.js";
 import { computeFileInstabilities } from "./file-instability.js";
@@ -6,6 +7,7 @@ import type {
   StableDependenciesExclusionCounts,
   StableDependenciesOptions,
   StableDependenciesReport,
+  StableDependenciesScope,
   StableDependencyRootCause,
   StableDependencyViolation,
 } from "./types.js";
@@ -83,6 +85,9 @@ const NO_EDGES: MartinInstability = { instability: 0, connectionCount: 0 };
  *    On taxdome (bd tea-rags-mcp-er6mu) 209 of 415 violations were this shape,
  *    ~25 of a 26 sample noise. `judgePrivateCollaborators` opts back in.
  *
+ * Before any of these, an edge whose source does not match
+ * `sourcePathPattern` is out of scope (`summary.scope`).
+ *
  * Violations are also grouped by target into `rootCauses` (see
  * {@link StableDependencyRootCause}).
  *
@@ -100,6 +105,11 @@ export function detectStableDependencyViolations(
   const tolerance = options.tolerance ?? DEFAULT_SDP_TOLERANCE;
   const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
   const judgePrivateCollaborators = options.judgePrivateCollaborators ?? false;
+  const inScope = compilePathPatternMatcher(options.sourcePathPattern);
+  const scope: StableDependenciesScope | undefined =
+    inScope && options.sourcePathPattern
+      ? { sourcePathPattern: options.sourcePathPattern, outOfScopeEdgeCount: 0 }
+      : undefined;
   const instabilities = computeFileInstabilities(graph);
   const walkedFiles = new Set<RelPath>(graph.files.map((f) => f.relPath));
   const noSymbolFiles = findNoSymbolFiles(graph);
@@ -118,7 +128,9 @@ export function detectStableDependencyViolations(
   for (const edge of graph.edges) {
     const source = instabilities.get(edge.sourceRelPath) ?? NO_EDGES;
     const target = instabilities.get(edge.targetRelPath) ?? NO_EDGES;
-    if (edge.sourceRelPath === edge.targetRelPath) {
+    if (scope && inScope && !inScope(edge.sourceRelPath)) {
+      scope.outOfScopeEdgeCount++;
+    } else if (edge.sourceRelPath === edge.targetRelPath) {
       excluded.selfEdges++;
     } else if (!walkedFiles.has(edge.sourceRelPath) || !walkedFiles.has(edge.targetRelPath)) {
       excluded.unwalkedEndpoints++;
@@ -163,6 +175,7 @@ export function detectStableDependencyViolations(
       consideredEdgeCount,
       violationCount: violations.length,
       excluded,
+      ...(scope ? { scope } : {}),
     },
     noSymbolEndpointFiles: [...excludedByNoSymbolFile]
       .map(([relPath, excludedEdgeCount]) => ({ relPath, excludedEdgeCount }))

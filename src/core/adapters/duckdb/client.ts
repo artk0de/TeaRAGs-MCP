@@ -345,11 +345,9 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   /**
-   * Whole-graph read for the boundary diagnostics (bd tea-rags-mcp-thc7s).
-   * In-process only for now: it is not on `GraphDbClient`, so no daemon op
-   * proxies it — the report script opens a file copy directly. Exposing it
-   * through an MCP tool means adding it to the contract and the daemon op
-   * table together (bd tea-rags-mcp-94hd9).
+   * Whole-graph read for the boundary diagnostics (bd tea-rags-mcp-thc7s). The
+   * report script opens a file copy in-process; `get_architecture_report` reads
+   * it through the daemon op of the same name (bd tea-rags-mcp-94hd9).
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return this.analytics.readFileDependencyGraph();

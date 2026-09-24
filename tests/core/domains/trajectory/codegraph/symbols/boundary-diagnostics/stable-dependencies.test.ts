@@ -474,3 +474,49 @@ describe("detectStableDependencyViolations — root causes", () => {
     expect(report.violations).toHaveLength(7);
   });
 });
+
+// bd tea-rags-mcp-94hd9: the architecture report scopes by `pathPattern` — an
+// edge is judged when its SOURCE matches. Instability stays whole-graph: a
+// file's fan does not shrink because the reader looks at one module.
+describe("detectStableDependencyViolations — source scope", () => {
+  function twoModules(): FileDependencyGraph {
+    // a/s.ts and b/s.ts: 5 importers each, 1 import → I = 1/6.
+    // shared/volatile.ts: imported by both, imports 4 → I = 4/6.
+    return merge(
+      {
+        files: [walked("a/s.ts"), walked("b/s.ts"), walked("shared/volatile.ts")],
+        edges: [edge("a/s.ts", "shared/volatile.ts"), edge("b/s.ts", "shared/volatile.ts")],
+      },
+      importersOf("a/s.ts", 5, "a/in"),
+      importersOf("b/s.ts", 5, "b/in"),
+      importsOf("shared/volatile.ts", 4, "vendor/v"),
+    );
+  }
+
+  it("judges only edges whose source matches, with instabilities from the whole graph", () => {
+    const report = detectStableDependencyViolations(twoModules(), { sourcePathPattern: "a/**" });
+
+    expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
+      "a/s.ts -> shared/volatile.ts",
+    ]);
+    expect(report.violations[0].targetInstability).toBe(4 / 6);
+    expect(report.rootCauses.map((r) => [r.targetRelPath, r.sources])).toEqual([["shared/volatile.ts", ["a/s.ts"]]]);
+    // Out-of-scope edges are counted once, under the scope, not under any exclusion reason.
+    const outOfScope = twoModules().edges.filter((e) => !e.sourceRelPath.startsWith("a/")).length;
+    expect(report.summary.scope).toEqual({ sourcePathPattern: "a/**", outOfScopeEdgeCount: outOfScope });
+    expect(report.summary.edgeCount).toBe(twoModules().edges.length);
+  });
+
+  it("the private-collaborator rule still counts importers outside the scope", () => {
+    // Scoped to a/, shared/volatile.ts still has b/s.ts as a second importer.
+    const report = detectStableDependencyViolations(twoModules(), { sourcePathPattern: "a/**" });
+
+    expect(report.summary.excluded.privateCollaborators).toBe(0);
+    expect(report.violations).toHaveLength(1);
+  });
+
+  it("reports no scope when no pattern is given", () => {
+    expect(detectStableDependencyViolations(twoModules()).summary.scope).toBeUndefined();
+    expect(detectStableDependencyViolations(twoModules(), { sourcePathPattern: "" }).summary.scope).toBeUndefined();
+  });
+});

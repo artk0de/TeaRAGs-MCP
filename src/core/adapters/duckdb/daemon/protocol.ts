@@ -90,6 +90,9 @@ export const DAEMON_OPS = [
   "getFileMetricsBulk",
   "findCycles",
   "listAdjacency",
+  // Whole file dependency graph for the architecture report (bd tea-rags-mcp-94hd9).
+  // REQUIRED, not legacy-tolerated: an empty graph would read as "no violations".
+  "readFileDependencyGraph",
   "hasStaleDerivedTables",
   "getPageRank",
   "findSymbolChunk",
@@ -113,7 +116,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
     | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile

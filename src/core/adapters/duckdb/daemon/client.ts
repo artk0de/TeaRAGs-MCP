@@ -13,6 +13,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileDependencyGraph,
   FileGraphMetrics,
   FileResolveStatsWrite,
   FileScopedSymbolId,
@@ -1063,6 +1064,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     // entries (a Map cannot JSON-serialise) — rebuild the Map here.
     const entries = (await this.call("listAdjacency", { scope })) as [string, string[]][];
     return new Map(entries);
+  }
+
+  async readFileDependencyGraph(): Promise<FileDependencyGraph> {
+    return (await this.call("readFileDependencyGraph", {})) as FileDependencyGraph;
   }
 
   async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {

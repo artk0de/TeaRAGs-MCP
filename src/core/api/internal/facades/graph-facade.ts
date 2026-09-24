@@ -1,7 +1,7 @@
 /**
  * GraphFacade — thin orchestrator over the per-collection
  * `GraphDbClientPool` for the MCP graph tools (`get_callers`,
- * `get_callees`, `find_cycles`).
+ * `get_callees`, `find_cycles`, `get_architecture_report`).
  *
  * Per `.claude/rules/facade-discipline.md` the facade only validates
  * input and delegates. The body is intentionally tiny — when result
@@ -30,6 +30,7 @@ import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/cod
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,
@@ -39,6 +40,7 @@ import type {
   GetCallersResponse,
 } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
+import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
@@ -76,6 +78,8 @@ interface GraphAddressing {
 }
 
 export class GraphFacade {
+  private readonly architectureReport = new ArchitectureReportOps();
+
   constructor(private readonly deps: GraphFacadeDeps) {}
 
   /**
@@ -171,6 +175,14 @@ export class GraphFacade {
 
   async resolveSymbolChunk(addr: GraphAddressing, symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null);
+  }
+
+  async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
+    return this.withReadHandle(
+      req,
+      async (handle) => this.architectureReport.build(handle.graphDb, req),
+      ArchitectureReportOps.empty(req),
+    );
   }
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {

@@ -33,6 +33,13 @@ export interface StableDependenciesOptions {
    * under `StableDependenciesExclusionCounts.privateCollaborators` instead.
    */
   judgePrivateCollaborators?: boolean;
+  /**
+   * Picomatch glob (`compilePathPatternMatcher`): judge only edges whose SOURCE
+   * matches. Instabilities, importer counts and root-cause cycles still read
+   * the whole graph — a file's fan does not shrink because the reader looks at
+   * one module. Empty or absent: every edge is in scope.
+   */
+  sourcePathPattern?: string;
 }
 
 /** One dependency that runs from a more stable file to a less stable one. */
@@ -76,6 +83,13 @@ export interface StableDependenciesExclusionCounts {
   privateCollaborators: number;
 }
 
+/** Present when `StableDependenciesOptions.sourcePathPattern` scoped the run. */
+export interface StableDependenciesScope {
+  sourcePathPattern: string;
+  /** Edges read whose source did not match — never judged, counted under no exclusion reason. */
+  outOfScopeEdgeCount: number;
+}
+
 export interface StableDependenciesSummary {
   tolerance: number;
   minConnectionCount: number;
@@ -85,6 +99,7 @@ export interface StableDependenciesSummary {
   consideredEdgeCount: number;
   violationCount: number;
   excluded: StableDependenciesExclusionCounts;
+  scope?: StableDependenciesScope;
 }
 
 /** A file the no-symbol rule excluded, and how many edges it took out of judgement. */
