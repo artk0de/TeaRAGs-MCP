@@ -49,6 +49,21 @@ describe("SwiftSdkVocabulary", () => {
     expect(sdk.findAlias("Array", "SubSequence")?.text).toBe("ArraySlice<Element>");
   });
 
+  it("publishes the closure a module-level SDK function takes (bd tea-rags-mcp-y99pg.29)", () => {
+    const shapes = sdk.globalFunctions("withCheckedContinuation");
+    expect(shapes.length).toBeGreaterThan(0);
+    expect(shapes.every((shape) => shape.closureParameters.at(-1) === "(CheckedContinuation<T, Never>) -> Void")).toBe(
+      true,
+    );
+    // The typed-throws overload spells its failure as the function's own `E: Error`.
+    const throwing = sdk.globalFunctions("withCheckedThrowingContinuation");
+    expect(throwing.length).toBeGreaterThan(1);
+    for (const shape of throwing) {
+      expect(shape.closureParameters.at(-1)).toMatch(/^\(CheckedContinuation<T, (any Error|E)>\) -> Void$/);
+    }
+    expect(sdk.globalFunctions("noSuchFunction")).toEqual([]);
+  });
+
   it("spells every declared and returned type in a grammar the parser covers", () => {
     const raw = JSON.parse(SWIFT_SDK_VOCABULARY_JSON) as {
       types: Record<string, { m: Record<string, string[]> }>;

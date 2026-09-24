@@ -352,6 +352,13 @@ describe("seeded support versions", () => {
       // typescript walker 15: bd tea-rags-mcp-g7h1y keeps the member edge of a
       // `.call` / `.apply` / `.bind` whose receiver's declared type declares
       // that member (`this.connection.call(fn)` → `QdrantConnection#call`).
+      // swift walker 46: bd tea-rags-mcp-y99pg.29 — a closure passed to a bare
+      // callee or a construction binds its parameters by that callee's (or the
+      // initializer's) closure parameter, so an index built by walker 45 charges
+      // `withCheckedContinuation { continuation in … }` SDK calls as misses.
+      // swift walker 47: y99pg.29 merged with y99pg.30 / .31 — a bare call an
+      // enclosing type's SDK supertype declares leaves the denominator, and no
+      // earlier walker's index holds both branches' extraction whole.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
@@ -361,7 +368,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 45],
+        ["swift", 47],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

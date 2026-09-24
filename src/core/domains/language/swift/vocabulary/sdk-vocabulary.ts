@@ -11,7 +11,8 @@
  * list could: which members a type declares (its own, then its superclass
  * chain's and its conformances', walked here exactly as Swift's member lookup
  * walks them), what each member's declared or returned type is, and what a
- * closure a member takes is called with.
+ * closure a member takes is called with — and, for the module-level
+ * functions that take one, what that closure is called with.
  *
  * Constructed only through {@link swiftSdkVocabulary}: the JSON is parsed once
  * per process, on first use, and every resolver shares the result — it is
@@ -67,6 +68,8 @@ interface RawType {
 interface RawVocabulary {
   readonly v: number;
   readonly types: Readonly<Record<string, RawType>>;
+  /** Module-level functions that take a closure, by base name (bd tea-rags-mcp-y99pg.29). */
+  readonly functions?: Readonly<Record<string, readonly string[]>>;
 }
 
 const TYPE_KINDS: Readonly<Record<string, SwiftSdkTypeKind>> = {
@@ -95,6 +98,7 @@ export class SwiftSdkVocabulary {
   private readonly typeCache = new Map<string, SwiftSdkType>();
   private readonly memberCache = new Map<string, readonly SwiftSdkMember[]>();
   private readonly supertypeCache = new Map<string, readonly string[]>();
+  private readonly functionCache = new Map<string, readonly SwiftSdkMember[]>();
 
   constructor(private readonly raw: RawVocabulary) {}
 
@@ -132,6 +136,20 @@ export class SwiftSdkVocabulary {
     const members = signatures.map(parseSignature);
     this.memberCache.set(key, members);
     return members;
+  }
+
+  /**
+   * The shapes of the module-level function `name` — only one taking a
+   * closure is recorded, since a closure parameter is all resolution reads off
+   * a free function (bd tea-rags-mcp-y99pg.29).
+   */
+  globalFunctions(name: string): readonly SwiftSdkMember[] {
+    const cached = this.functionCache.get(name);
+    if (cached !== undefined) return cached;
+    const raw = this.raw.functions;
+    const shapes = raw !== undefined && Object.hasOwn(raw, name) ? raw[name].map(parseSignature) : [];
+    this.functionCache.set(name, shapes);
+    return shapes;
   }
 
   /**

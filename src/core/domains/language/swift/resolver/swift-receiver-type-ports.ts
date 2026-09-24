@@ -53,7 +53,12 @@ import {
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { boundedBy } from "./swift-sdk-member-types.js";
-import { lookupSwiftSymbols, qualifySwiftTypeName, qualifySwiftTypeNameWithin } from "./swift-symbol-lookup.js";
+import {
+  lookupSwiftSymbols,
+  lookupSwiftSymbolsByShortName,
+  qualifySwiftTypeName,
+  qualifySwiftTypeNameWithin,
+} from "./swift-symbol-lookup.js";
 import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
@@ -517,7 +522,8 @@ function swiftClosureParameterType(
   members: SwiftMemberTypeLookup,
 ): TypeRef | undefined {
   const cut = callee.lastIndexOf(".");
-  if (cut <= 0) return undefined;
+  if (cut === 0) return undefined;
+  if (cut === -1) return swiftBareCalleeClosureParameterType(callee, index, line, ctx, ports, members);
   const receiver = callee.slice(0, cut);
   const member = callee.slice(cut + 1);
   const foldLine = line - 1;
@@ -545,6 +551,84 @@ function swiftClosureParameterType(
   }
   const argument = members.fieldTypeArguments(enclosing, field, ctx)?.[slot];
   return argument === null || argument === undefined ? undefined : { form: "instance", name: argument };
+}
+
+/**
+ * The type of the `index`-th parameter of a closure passed to a BARE callee
+ * (bd tea-rags-mcp-y99pg.29), in Swift's own lookup order for an unqualified
+ * name:
+ *
+ *   1. an implicit-self METHOD of the enclosing type — the project's
+ *      declaration first, then one the SDK declares on the type's hierarchy
+ *      (`compactMap { … }` inside a `Publisher`). A member either source
+ *      declares shadows every module-level function of that name, so a
+ *      declaration that types nothing here ends the lookup;
+ *   2. a module-level SDK function (`withCheckedContinuation { continuation in`),
+ *      unless the project declares a module-level namesake, which shadows it.
+ *
+ * A name a local binds is a closure VALUE being called, and types nothing. So
+ * does a project method's closure slot naming one of its type's generic
+ * parameters: nothing at a bare call states the enclosing type's arguments.
+ */
+function swiftBareCalleeClosureParameterType(
+  callee: string,
+  index: number,
+  line: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const foldLine = line - 1;
+  if (isSwiftTypeName(callee)) {
+    return swiftConstructionClosureParameterType(callee, index, foldLine, ctx, ports, members);
+  }
+  if (!SWIFT_IDENTIFIER.test(callee) || callee.startsWith("$")) return undefined;
+  if (resolveLocalBinding(ctx.localBindings, callee, foldLine) !== undefined) return undefined;
+  if (swiftLocalValueType(callee, foldLine, ctx, ports, members) !== undefined) return undefined;
+  const enclosing = swiftSelfTypeName(ctx);
+  if (enclosing !== undefined) {
+    const signature = members.closureParameterTypes(enclosing, callee, ctx);
+    if (signature !== undefined) {
+      const declared = signature.types?.[index];
+      if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) {
+        return undefined;
+      }
+      return { form: "instance", name: declared };
+    }
+    if (members.memberReach(enclosing, callee, ctx).declared) return undefined;
+    if (members.sdkDeclaresMember(enclosing, callee, ctx)) {
+      return members.sdkClosureParameterType({ form: "instance", name: enclosing }, callee, index, ctx);
+    }
+  }
+  if (lookupSwiftSymbolsByShortName(ctx, callee).some((def) => def.scope.length === 0)) return undefined;
+  return members.sdkFunctionClosureParameterType(callee, index);
+}
+
+/**
+ * The closure parameter of a CONSTRUCTION — `StreamOf(bufferingPolicy:) { continuation in`,
+ * `AsyncStream { continuation in` (bd tea-rags-mcp-y99pg.29): what the
+ * constructed type's `init` says its closure takes — the project's
+ * declaration first, else the SDK's. A slot naming one of the type's own
+ * generic parameters types nothing: the construction's arguments are not
+ * folded here.
+ */
+function swiftConstructionClosureParameterType(
+  typeText: string,
+  index: number,
+  foldLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const type = propagateReceiverType(typeText, foldLine, ctx, ports);
+  if (type?.form !== "class") return undefined;
+  const signature = members.closureParameterTypes(type.name, "init", ctx);
+  if (signature !== undefined) {
+    const declared = signature.types?.[index];
+    if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) return undefined;
+    return { form: "instance", name: declared };
+  }
+  return members.sdkClosureParameterType(type, "init", index, ctx);
 }
 
 /**

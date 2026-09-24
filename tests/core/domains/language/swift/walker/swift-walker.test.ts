@@ -1612,6 +1612,72 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     expect(bindings.$0).toEqual([{ line: 6, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 6 }]);
   });
 
+  it("binds a closure passed to a BARE callee no declaration here types (bd tea-rags-mcp-y99pg.29)", () => {
+    const src = [
+      "final class DataRequest {",
+      "  func run() async {",
+      "    await withCheckedContinuation { continuation in",
+      "      continuation.resume(returning: 1)",
+      "    }",
+      "    compactMap { $0.event }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.continuation).toEqual([
+      { line: 3, callee: "withCheckedContinuation", closureParameter: 0, scopeEndLine: 5 },
+    ]);
+    expect(bindings.$0).toEqual([{ line: 6, callee: "compactMap", closureParameter: 0, scopeEndLine: 6 }]);
+  });
+
+  it("binds a closure passed to a CONSTRUCTION by the constructed type (bd tea-rags-mcp-y99pg.29)", () => {
+    const src = [
+      "final class Request {",
+      "  func run() {",
+      "    StreamOf<T>(bufferingPolicy: p) { continuation in",
+      "      continuation.finish()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.continuation).toEqual([{ line: 3, callee: "StreamOf", closureParameter: 0, scopeEndLine: 5 }]);
+  });
+
+  it("publishes an initializer's closure parameters, skipping a closure slot that takes none", () => {
+    const src = [
+      "public struct StreamOf<Element> {",
+      "  fileprivate typealias Continuation = AsyncStream<Element>.Continuation",
+      "  fileprivate init(bufferingPolicy: BufferingPolicy = .unbounded,",
+      "                   onTermination: (() -> Void)? = nil,",
+      "                   builder: @escaping (Continuation) -> Void) {}",
+      "}",
+      "",
+    ].join("\n");
+    const fact = (extract(src).typeDeclarations ?? []).find((f) => f.typeId === "StreamOf");
+    expect(fact?.memberClosureParameters).toEqual({ init: ["Continuation"] });
+  });
+
+  it("binds only the LAST closure of a call, the one a closure-typed parameter lookup describes", () => {
+    const src = [
+      "final class Task {",
+      "  func run() {",
+      "    handle { first in",
+      "      first.go()",
+      "    } onCancel: { second in",
+      "      second.stop()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.first).toBeUndefined();
+    expect(bindings.second).toEqual([{ line: 5, callee: "handle", closureParameter: 0, scopeEndLine: 7 }]);
+  });
+
   it("binds a property observer's implicit and named parameters to the property's type (bd tea-rags-mcp-y99pg.31)", () => {
     const src = [
       "final class DetailViewController {",
