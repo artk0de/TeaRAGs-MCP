@@ -27,8 +27,7 @@
 import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef, WalkContext } from "../../../../../contracts/types/language.js";
-import { typeFactChannels } from "../../../kernel/type-fact-channels.js";
-import type { TypeFactStore } from "../../../kernel/type-fact-store.js";
+import { typeFactChannels, type TypeFactStore } from "../../../kernel/index.js";
 
 /**
  * The run-global address of a MODULE-LEVEL return fact — `<relPath>::<name>`

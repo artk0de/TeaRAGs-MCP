@@ -1,6 +1,6 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
+import type { AncestorLinearizationPolicy } from "../../kernel/index.js";
 import { swiftSdkVocabulary, type SwiftSdkType } from "../vocabulary/sdk-vocabulary.js";
 import { swiftConformances, swiftDeclaringFiles, swiftSugarAliases } from "./swift-type-declarations.js";
 

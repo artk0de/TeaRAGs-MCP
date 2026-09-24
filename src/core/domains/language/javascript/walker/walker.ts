@@ -32,7 +32,7 @@ import type {
   FileExtraction,
   ImportRef,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import {
   bindJsDispatchLocals,
   collectJsCallbackParams,

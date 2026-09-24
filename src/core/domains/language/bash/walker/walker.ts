@@ -22,7 +22,7 @@
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 
 export interface BashExtractInput {
   tree: MaterializedTree;

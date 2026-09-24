@@ -52,7 +52,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { pythonKernel } from "./kernel.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";

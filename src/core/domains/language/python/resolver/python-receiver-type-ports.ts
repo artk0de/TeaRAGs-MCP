@@ -28,7 +28,7 @@ import {
   splitReceiverHops,
   stripCallArgs,
   type ReceiverTypePorts,
-} from "../../kernel/receiver-type-propagation.js";
+} from "../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {

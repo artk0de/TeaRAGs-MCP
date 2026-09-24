@@ -7,8 +7,7 @@
  * both (`.fromFacts` at 50 call sites, `RubyFileTypeEnv.store` as a type), and
  * nothing in the repo constructs it or tests it with `instanceof`.
  */
-import { TypeFactStore } from "../../kernel/type-fact-store.js";
-import type { TypeFact } from "../../kernel/type-facts.js";
+import { TypeFactStore, type TypeFact } from "../../kernel/index.js";
 
 /** Ruby source precedence: first = strongest. `associations` (Rails DSL
  *  inflection) ranks below YARD annotations; `body-last-expr` (service `call` /

@@ -5,8 +5,7 @@ import {
   type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { buildDispatchCascade } from "../../../kernel/dispatch-cascade.js";
-import { EnclosingClassPrivateAccess, resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
+import { buildDispatchCascade, EnclosingClassPrivateAccess, resolveNarrowedFanout } from "../../../kernel/index.js";
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 import { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";

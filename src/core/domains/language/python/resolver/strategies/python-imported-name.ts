@@ -6,7 +6,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { reexportOriginFile } from "../../../kernel/reexport-origin.js";
+import { reexportOriginFile } from "../../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";

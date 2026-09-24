@@ -24,8 +24,8 @@ import {
   declaredVisibilityFacetPass,
   type DeclaredVisibility,
   type DeclaredVisibilityReader,
-} from "../../../kernel/declared-visibility-pass.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
+  type ExtractionFacetPass,
+} from "../../../kernel/index.js";
 import { tsNameOf } from "../name-of.js";
 
 const CLASS_MEMBER_TYPES: ReadonlySet<string> = new Set(["method_definition", "public_field_definition"]);

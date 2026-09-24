@@ -22,8 +22,8 @@ import {
   declaredVisibilityFacetPass,
   type DeclaredVisibility,
   type DeclaredVisibilityReader,
-} from "../../../kernel/declared-visibility-pass.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
+  type ExtractionFacetPass,
+} from "../../../kernel/index.js";
 import { javaNameOf } from "../name-of.js";
 
 const ACCESS_KEYWORDS: ReadonlySet<string> = new Set(["private", "protected", "public"]);

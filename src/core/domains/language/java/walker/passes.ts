@@ -13,7 +13,7 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { javaDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 
 export const JAVA_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [javaDeclaredVisibilityFacetPass];

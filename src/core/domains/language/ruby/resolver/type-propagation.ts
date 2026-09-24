@@ -55,14 +55,14 @@ import {
   propagateReceiverType,
   stripCallArgs,
   type ReceiverTypePorts,
-} from "../../kernel/receiver-type-propagation.js";
+} from "../../kernel/index.js";
 import { catalogueForGemfile } from "../gemfile.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
 
 export { boundCallReturnType } from "./ruby-bound-call-return-types.js";
-export { CHAIN_MAX_HOPS_DEFAULT } from "../../kernel/receiver-type-propagation.js";
+export { CHAIN_MAX_HOPS_DEFAULT } from "../../kernel/index.js";
 export {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,

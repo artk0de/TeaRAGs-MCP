@@ -9,9 +9,7 @@
  * an edit to `extractFromPythonFile`.
  */
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
-import { TypeFactStore } from "../../../kernel/type-fact-store.js";
-import type { InlineTypeSource } from "../../../kernel/type-facts.js";
+import { TypeFactStore, type ExtractionFacetPass, type InlineTypeSource } from "../../../kernel/index.js";
 import { pythonLocalTypeTrackingEnabled } from "../walker.js";
 import {
   PYTHON_ANNOTATION_SOURCE,

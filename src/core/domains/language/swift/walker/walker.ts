@@ -143,7 +143,7 @@ import type {
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { swiftTypeFieldKey } from "../type-field-address.js";
 
 export interface SwiftExtractInput {

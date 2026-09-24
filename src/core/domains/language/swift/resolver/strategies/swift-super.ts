@@ -5,9 +5,9 @@ import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../..
 import {
   createAncestorLinearizer,
   findMemberInAncestorChain,
+  RunScopedMemo,
   type AncestorLinearizer,
-} from "../../../kernel/ancestor-walk.js";
-import { RunScopedMemo } from "../../../kernel/run-scoped-memo.js";
+} from "../../../kernel/index.js";
 import { SWIFT_ANCESTOR_POLICY } from "../swift-ancestor-policy.js";
 import { lookupSwiftSymbols, qualifySwiftTypeName } from "../swift-symbol-lookup.js";
 import { lookupSwiftTypeMember, swiftSelfTypeName, type SwiftResolverConfig } from "./shared.js";

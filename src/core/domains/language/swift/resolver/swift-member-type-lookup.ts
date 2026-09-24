@@ -54,9 +54,9 @@ import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   createAncestorLinearizer,
   findMemberInAncestorChain,
+  RunScopedMemo,
   type AncestorLinearizer,
-} from "../../kernel/ancestor-walk.js";
-import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+} from "../../kernel/index.js";
 import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
 import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";

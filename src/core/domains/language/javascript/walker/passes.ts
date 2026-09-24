@@ -16,8 +16,7 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import { declaredVisibilityFacetPass } from "../../kernel/declared-visibility-pass.js";
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import { declaredVisibilityFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { readEcmascriptDeclaredVisibility } from "../../typescript/walker/passes/declared-visibility.js";
 
 export const JAVASCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [

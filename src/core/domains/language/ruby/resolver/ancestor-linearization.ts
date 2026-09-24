@@ -24,7 +24,7 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { createAncestorLinearizer, type AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
+import { createAncestorLinearizer, type AncestorLinearizationPolicy } from "../../kernel/index.js";
 
 /**
  * The hierarchy facts a linearization needs — the three walker-recorded maps,

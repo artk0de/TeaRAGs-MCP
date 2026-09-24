@@ -13,7 +13,7 @@
  * `ivar` and `return` facts have no such gate: their channels union by key.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type { InlineTypeSource, TypeFact } from "../../../kernel/type-facts.js";
+import type { InlineTypeSource, TypeFact } from "../../../kernel/index.js";
 import {
   isPythonClassFormDef,
   pythonAnnotationExpression,

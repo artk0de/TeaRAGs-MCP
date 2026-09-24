@@ -49,7 +49,7 @@ import {
   splitAtBracketDepthZero,
   splitReceiverHops,
   type ReceiverTypePorts,
-} from "../../kernel/receiver-type-propagation.js";
+} from "../../kernel/index.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { boundedBy } from "./swift-sdk-member-types.js";

@@ -18,7 +18,7 @@
 import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../../kernel/index.js";
 import { goEmbeddedFieldKey, goStructClassKey } from "../../struct-fields.js";
 
 export const goStructFieldTypesFacetPass: ExtractionFacetPass = {

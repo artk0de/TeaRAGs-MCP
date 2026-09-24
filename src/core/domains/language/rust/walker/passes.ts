@@ -12,7 +12,7 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { rustDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 
 export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [rustDeclaredVisibilityFacetPass];

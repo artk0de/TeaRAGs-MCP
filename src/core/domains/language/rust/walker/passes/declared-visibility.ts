@@ -22,8 +22,8 @@ import {
   declaredVisibilityFacetPass,
   type DeclaredVisibility,
   type DeclaredVisibilityReader,
-} from "../../../kernel/declared-visibility-pass.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
+  type ExtractionFacetPass,
+} from "../../../kernel/index.js";
 import { rustNameOf } from "../name-of.js";
 
 const UNRECORDED_ITEM_TYPES: ReadonlySet<string> = new Set(["impl_item", "macro_definition"]);

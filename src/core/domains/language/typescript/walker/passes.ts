@@ -14,7 +14,7 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { typescriptDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 
 export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [typescriptDeclaredVisibilityFacetPass];

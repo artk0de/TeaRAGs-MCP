@@ -5,8 +5,11 @@ import {
   type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { buildDispatchCascade } from "../../../kernel/dispatch-cascade.js";
-import { EXPLICIT_RECEIVER_VISIBILITY_ACCESS, resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
+import {
+  buildDispatchCascade,
+  EXPLICIT_RECEIVER_VISIBILITY_ACCESS,
+  resolveNarrowedFanout,
+} from "../../../kernel/index.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import { rubyDynamicFanoutSuppressed } from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";

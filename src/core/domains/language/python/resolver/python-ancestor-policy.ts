@@ -56,12 +56,12 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import {
   createAncestorLinearizer,
+  reexportOriginFile,
+  RunScopedMemo,
   type AncestorClosure,
   type AncestorLinearizationPolicy,
   type AncestorLinearizer,
-} from "../../kernel/ancestor-walk.js";
-import { reexportOriginFile } from "../../kernel/reexport-origin.js";
-import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+} from "../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";

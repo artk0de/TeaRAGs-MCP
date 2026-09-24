@@ -11,7 +11,7 @@
  * path on the annotated corpora.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type { InlineTypeSource, TypeFact } from "../../../kernel/type-facts.js";
+import type { InlineTypeSource, TypeFact } from "../../../kernel/index.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
 import { isPythonClassFormDef, walkPythonScopes } from "./python-def-scope-walk.js";
 import { pythonNominalReceiverName, pythonTypeRefFromText } from "./python-type-annotation.js";

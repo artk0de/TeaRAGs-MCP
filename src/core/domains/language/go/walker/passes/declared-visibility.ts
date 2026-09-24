@@ -20,8 +20,8 @@
 import {
   declaredVisibilityFacetPass,
   type DeclaredVisibilityReader,
-} from "../../../kernel/declared-visibility-pass.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
+  type ExtractionFacetPass,
+} from "../../../kernel/index.js";
 import { goNameOf } from "../name-of.js";
 
 const EXPORTED = /^\p{Lu}/u;
