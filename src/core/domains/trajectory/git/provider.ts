@@ -57,6 +57,7 @@ import {
 import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
+import { sliceCommitsFollowingRenames } from "./infra/rename-following.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
@@ -658,7 +659,12 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     let commitEntries: CommitWithChangedFiles[];
     try {
       // The contract duck type's commit shape is structurally CommitInfo.
-      commitEntries = await discovery.commitsForFiles([...relativeChunkMap.keys()]);
+      // Widened to pre-rename paths exactly as the inline walk does (bd
+      // tea-rags-mcp-z8w16); the worker resolves them to HEAD paths.
+      commitEntries = await sliceCommitsFollowingRenames(
+        async (paths) => discovery.commitsForFiles(paths),
+        [...relativeChunkMap.keys()],
+      );
     } catch (error) {
       if (isDebug()) {
         console.error(
