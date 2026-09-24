@@ -81,9 +81,19 @@ zod MCP schemas.
      target's `kind = 'return'` row to fill `call-return` for rows with no type.
    - **Task 6** — row builder: `finder` stage from a language-owned finder
      vocabulary (Ruby list in the spec; other languages empty in v1);
-     `bound_call_expression` = the `CallRef.callText` of the owner chunk's call
-     with the same `startLine`, `member` and `receiver` (absent when not exactly
-     one match); strip a leading `::` from Ruby type names.
+     `bound_call_expression` = the `CallRef.callText` of the FIRST call in the
+     owner chunk with `startLine >= decl.line` and the same `member` and
+     `receiver` (the value's call precedes any later namesake call; covers
+     `x =\n  foo()`, where the call starts a line below the declaration —
+     `boundCallee` carries no line, per 3e); absent when none matches; strip a
+     leading `::` from Ruby type names.
+   - **Task 3f (new, after 3e)** — generic collection unwrapping in the
+     languages 3e left out: Rust
+     `Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T>` and
+     slices `&[T]`; Java
+     `List / Set / Collection / Iterable / Optional / Stream<T>`; Swift
+     `Array<T> / Set<T> / Optional<T>`. Maps keep their head. Walker bump for
+     the three languages.
    - **Task 7** — `NamingShape` gains `CALLEE_DERIVED` (name == callee member
      minus a verb prefix `find_|get_|fetch_|load_|build_|create_|new_|make_` and
      a trailing `!`/`?`); `EXACT` accepts the plural of `snake(T)`;
