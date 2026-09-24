@@ -484,11 +484,53 @@ function swiftClosureParameterTypeNames(
       const typeNode = item.namedChildren[item.namedChildCount - 1] ?? null;
       const written = typeNode?.type === "user_type" ? typeNode.text : undefined;
       if (written !== undefined && genericParameters.includes(written)) types.push(written);
-      else types.push(swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal);
+      else {
+        types.push(
+          swiftSpelledWithArguments(
+            swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal,
+            typeNode,
+            fn,
+            genericParameters,
+          ),
+        );
+      }
     }
     found = types;
   }
   return found;
+}
+
+/**
+ * `nominal` spelled with the generic arguments `typeNode` states —
+ * `Result<URLRequest, Error>` for `Result<URLRequest, any Error>` (bd
+ * tea-rags-mcp-y99pg.32) — so a reader in another file can bind the
+ * declaring SDK type's parameters (`Result.get()` returns `Success`). Each
+ * argument is reduced to its nominal. The bare nominal when there are no
+ * arguments, when one names nothing, or when one is a generic parameter in
+ * scope: that is bound per use, not declared. Read positionally off
+ * `type_arguments`, past an optional's `?`.
+ */
+function swiftSpelledWithArguments(
+  nominal: string | null,
+  typeNode: AstNode | null,
+  at: AstNode,
+  genericParameters: readonly string[],
+): string | null {
+  if (nominal === null) return null;
+  let bare = typeNode;
+  while (bare?.type === "optional_type") bare = bare.namedChildren[0] ?? null;
+  if (bare?.type !== "user_type") return nominal;
+  const args = bare.children.find((c) => c.type === "type_arguments")?.namedChildren ?? [];
+  if (args.length === 0) return nominal;
+  const names: string[] = [];
+  for (const arg of args) {
+    const name = swiftTypeFactOf(arg).nominal;
+    if (name === null || genericParameters.includes(name) || swiftGenericConstraint(name, at) !== undefined) {
+      return nominal;
+    }
+    names.push(name);
+  }
+  return `${nominal}<${names.join(", ")}>`;
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */

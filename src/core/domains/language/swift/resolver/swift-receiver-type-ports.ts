@@ -50,6 +50,7 @@ import {
   splitReceiverHops,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
+import { parseSwiftTypeText } from "../vocabulary/swift-type-text.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { boundedBy } from "./swift-sdk-member-types.js";
@@ -534,7 +535,7 @@ function swiftClosureParameterType(
   const declared = signature.types?.[index];
   if (declared === null || declared === undefined) return undefined;
   const slot = signature.genericParameters.indexOf(declared);
-  if (slot === -1) return boundedBy(type, { form: "instance", name: declared });
+  if (slot === -1) return boundedBy(type, swiftDeclaredTypeRef(declared));
   const carried = type.args?.[slot];
   if (carried !== undefined) return boundedBy(type, carried);
   const field = receiver.startsWith("self.") ? receiver.slice("self.".length) : receiver;
@@ -593,7 +594,7 @@ function swiftBareCalleeClosureParameterType(
       if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) {
         return undefined;
       }
-      return { form: "instance", name: declared };
+      return swiftDeclaredTypeRef(declared);
     }
     if (members.memberReach(enclosing, callee, ctx).declared) return undefined;
     if (members.sdkDeclaresMember(enclosing, callee, ctx)) {
@@ -626,9 +627,23 @@ function swiftConstructionClosureParameterType(
   if (signature !== undefined) {
     const declared = signature.types?.[index];
     if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) return undefined;
-    return { form: "instance", name: declared };
+    return swiftDeclaredTypeRef(declared);
   }
   return members.sdkClosureParameterType(type, "init", index, ctx);
+}
+
+/**
+ * A published closure-parameter type as a value of it: `Result<URLRequest,
+ * Error>` → `Result` of `URLRequest` and `Error`, so an SDK member read off it
+ * substitutes the declaring type's parameters (bd tea-rags-mcp-y99pg.32). The
+ * walker spells arguments only when every one is a plain nominal; anything
+ * else parses to the bare nominal the text starts with.
+ */
+function swiftDeclaredTypeRef(declared: string): TypeRef {
+  const parsed = parseSwiftTypeText(declared);
+  if (parsed?.kind !== "nominal") return { form: "instance", name: declared.replace(/<[\s\S]*$/, "") };
+  const args = parsed.args.map((arg) => (arg.kind === "nominal" && arg.args.length === 0 ? arg.path : null));
+  return swiftTypeRefWithArguments(parsed.path, args);
 }
 
 /**

@@ -406,8 +406,10 @@ export interface TypeDeclarationFact {
    * For each method taking ONE function-typed parameter, the types that
    * function's parameters are declared with, by method name:
    * `func write<U>(_ closure: (inout Value) throws -> U)` → `{ write: ["Value"] }`.
-   * An entry is a nominal, one of {@link genericParameters} (bound per receiver
-   * by its type arguments), or `null`. A method whose overloads disagree maps
+   * An entry is a nominal — spelled with its generic arguments when every one
+   * is a concrete nominal (`Result<URLRequest, Error>`, bd
+   * tea-rags-mcp-y99pg.32) — one of {@link genericParameters} (bound per
+   * receiver by its type arguments), or `null`. A method whose overloads disagree maps
    * to `null`. Absent when no method takes a closure.
    */
   readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;

@@ -1630,6 +1630,32 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     });
   });
 
+  // `adapter.adapt(…) { result in let r = try result.get() }` in another file
+  // needs `Result`'s arguments to type `get()` (bd tea-rags-mcp-y99pg.32).
+  it("publishes a closure parameter's concrete generic arguments with its nominal", () => {
+    const src = [
+      "public protocol RequestAdapter {",
+      "  func adapt(_ urlRequest: URLRequest, using state: State,",
+      "             completion: @escaping @Sendable (_ result: Result<URLRequest, any Error>) -> Void)",
+      "}",
+      "final class Box<Value> {",
+      "  func load(_ done: (Result<Value, Error>) -> Void) {}",
+      "  func each(_ body: (Set<Thing>) -> Void) {}",
+      "}",
+      "",
+    ].join("\n");
+    for (const facts of [extract(src).typeDeclarations ?? [], extractMaterialized(src).typeDeclarations ?? []]) {
+      expect(facts.find((f) => f.typeId === "RequestAdapter")?.memberClosureParameters).toEqual({
+        adapt: ["Result<URLRequest, Error>"],
+      });
+      // An argument naming a generic parameter is bound per use, not declared.
+      expect(facts.find((f) => f.typeId === "Box")?.memberClosureParameters).toEqual({
+        load: ["Result"],
+        each: ["Set<Thing>"],
+      });
+    }
+  });
+
   it("binds a closure's parameters to the callee they are passed to when no declaration here types them", () => {
     const src = [
       "final class Request {",
