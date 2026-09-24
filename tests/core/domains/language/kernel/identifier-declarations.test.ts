@@ -1,0 +1,117 @@
+/**
+ * The kernel identifier-declaration pass (bd tea-rags-mcp-4p3sb.2). The syntax
+ * object lives in the test so the kernel contract is pinned language-free.
+ */
+import Parser from "tree-sitter";
+import TS from "tree-sitter-typescript";
+import { describe, expect, it } from "vitest";
+
+import type { AstNode } from "../../../../../src/core/contracts/types/ast.js";
+import type { WalkContext } from "../../../../../src/core/contracts/types/language.js";
+import {
+  createIdentifierDeclarationFacetPass,
+  fieldRule,
+  innermostChunkSymbolId,
+  type IdentifierDeclarationSyntax,
+} from "../../../../../src/core/domains/language/kernel/identifier-declarations.js";
+
+const syntax: IdentifierDeclarationSyntax = {
+  rules: [
+    fieldRule("required_parameter", "param", { name: "pattern", type: "type" }),
+    fieldRule("variable_declarator", "local", {
+      name: "name",
+      type: "type",
+      value: "value",
+    }),
+  ],
+  annotationTypeName: (n: AstNode) => n.text.replace(/^:\s*/, "").split("<")[0].trim() || undefined,
+  constructorTypeName: (v: AstNode) =>
+    v.type === "new_expression" ? v.childForFieldName("constructor")?.text : undefined,
+};
+
+function run(src: string, chunks: WalkContext["chunks"]) {
+  const p = new Parser();
+  p.setLanguage(TS.typescript);
+  const tree = p.parse(src);
+  return createIdentifierDeclarationFacetPass(syntax).run(tree.rootNode, {
+    code: src,
+    relPath: "a.ts",
+    language: "typescript",
+    chunks,
+  });
+}
+
+describe("identifier declaration pass", () => {
+  const chunks = [
+    { symbolId: "Svc", startLine: 1, endLine: 6, scope: [] },
+    { symbolId: "Svc#load", startLine: 2, endLine: 5, scope: ["Svc"] },
+  ];
+  const src = [
+    "class Svc {",
+    "  load(id: string, repo: Repo<Doc>) {",
+    "    const doc = new Document(id);",
+    "    const row = repo.get(id); const doc2: Document = row;",
+    "  }",
+    "}",
+  ].join("\n");
+
+  it("records params and locals with owner, line and syntactic type", () => {
+    expect(run(src, chunks).identifierDeclarations).toEqual([
+      {
+        name: "id",
+        kind: "param",
+        line: 2,
+        ownerSymbolId: "Svc#load",
+        typeName: "string",
+        typeSource: "annotation",
+      },
+      {
+        name: "repo",
+        kind: "param",
+        line: 2,
+        ownerSymbolId: "Svc#load",
+        typeName: "Repo",
+        typeSource: "annotation",
+      },
+      {
+        name: "doc",
+        kind: "local",
+        line: 3,
+        ownerSymbolId: "Svc#load",
+        typeName: "Document",
+        typeSource: "constructor",
+      },
+      { name: "row", kind: "local", line: 4, ownerSymbolId: "Svc#load" },
+      {
+        name: "doc2",
+        kind: "local",
+        line: 4,
+        ownerSymbolId: "Svc#load",
+        typeName: "Document",
+        typeSource: "annotation",
+      },
+    ]);
+  });
+
+  it("returns an empty partial when nothing is declared", () => {
+    expect(run("class A {}", [{ symbolId: "A", startLine: 1, endLine: 1, scope: [] }])).toEqual({});
+  });
+
+  it("dedupes reassignment within one owner", () => {
+    const out = run("function f() { let x = 1; x = 2; let x2 = 3 }", [
+      { symbolId: "f", startLine: 1, endLine: 1, scope: [] },
+    ]);
+    expect(out.identifierDeclarations?.map((d) => d.name)).toEqual(["x", "x2"]);
+  });
+
+  it("innermost chunk: smallest span, deeper scope on tie", () => {
+    const c = [
+      { symbolId: "A", startLine: 1, endLine: 10, scope: [] },
+      { symbolId: "A#constructor", startLine: 1, endLine: 10, scope: ["A"] },
+      { symbolId: "A#m", startLine: 3, endLine: 4, scope: ["A"] },
+    ];
+    expect(innermostChunkSymbolId(3, c)).toBe("A#m");
+    expect(innermostChunkSymbolId(8, c)).toBe("A#constructor");
+    expect(innermostChunkSymbolId(20, c)).toBeUndefined();
+  });
+});
