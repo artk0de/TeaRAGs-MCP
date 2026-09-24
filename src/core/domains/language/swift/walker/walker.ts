@@ -1302,7 +1302,8 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       case "lambda_parameter": {
         const name = node.childForFieldName("name");
         if (name) {
-          const declared = swiftTypeFactOf(swiftTypeNodeAfter(node, ":"));
+          // Past `inout` / `@escaping`, which sit between the colon and the type.
+          const declared = swiftTypeFactOf(swiftParameterTypeNode(node));
           record(name.text, swiftGenericResolvedFact(declared, node), siteOf(node));
         }
         return;
@@ -1527,6 +1528,8 @@ function swiftTypeNodeAfter(node: AstNode, separator: string): AstNode | null {
  *   - anything else, notably `dictionary_type` / `function_type` /
  *     `opaque_type`, and a `tuple_type` that is a real tuple — nothing.
  */
+const SWIFT_METATYPE_SUFFIX = /\.(?:Type|Protocol)$/;
+
 function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   if (!typeNode) return NO_TYPE;
   if (typeNode.type === "optional_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
@@ -1539,10 +1542,13 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
     return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
   }
   if (typeNode.type === "tuple_type") return swiftTypeFactOf(parenthesizedSwiftTypeNode(typeNode));
+  if (typeNode.type === "metatype") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
   if (typeNode.type !== "user_type") return NO_TYPE;
   const raw = typeNode.text;
   const generics = raw.indexOf("<");
-  const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim();
+  // `Foo.Type` / `Foo.Protocol` is Foo's metatype: a member read off it is one
+  // of Foo's static members, which compose under Foo (bd tea-rags-mcp-y99pg.12).
+  const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim().replace(SWIFT_METATYPE_SUFFIX, "");
   return bare.length > 0 ? { nominal: bare, element: null } : NO_TYPE;
 }
 

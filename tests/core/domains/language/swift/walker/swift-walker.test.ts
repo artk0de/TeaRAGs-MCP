@@ -1530,3 +1530,19 @@ describe("swift walker — a closure spelled through a typealias", () => {
     expect(count.acceptsBlock).toBe(false);
   });
 });
+
+describe("swift walker — parameter modifiers and metatypes (bd tea-rags-mcp-y99pg.12)", () => {
+  it("types an inout parameter by the type after its modifier", () => {
+    const src = ["func handle(insideLock state: inout MutableState) {", "  state.update()", "}", ""].join("\n");
+    expect(typeAt(src, "state", 2)).toBe("MutableState");
+    expect(resolveLocalBindingType(extractMaterialized(src).chunks[0].localBindings, "state", 2)).toBe("MutableState");
+  });
+
+  it("types a metatype parameter by the type it is the metatype of", () => {
+    const src = ["func make(_ type: EmptyResponse.Type, of kind: Kind.Type?) {", "  type.emptyValue()", "}", ""].join(
+      "\n",
+    );
+    expect(typeAt(src, "type", 2)).toBe("EmptyResponse");
+    expect(typeAt(src, "kind", 2)).toBe("Kind");
+  });
+});
