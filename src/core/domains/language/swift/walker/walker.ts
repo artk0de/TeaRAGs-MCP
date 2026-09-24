@@ -417,6 +417,14 @@ function stripImportKeywords(text: string): string {
 function collectSwiftCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
+    // `Protected<[T]>(…)`: a construction the grammar does not call a call.
+    if (node.type === "constructor_expression") {
+      const name = swiftConstructedGenericFact(node).nominal;
+      if (name && !name.includes(".")) {
+        out.push({ callText: node.text, receiver: null, member: name, startLine: node.startPosition.row + 1 });
+      }
+      return;
+    }
     if (node.type !== "call_expression") return;
     const suffix = node.children.find((c) => c.type === "call_suffix");
     // Bracketed suffix = subscript read (`items[i]`, `dict["k"]`), not a call.
@@ -1156,6 +1164,15 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         record(name, { nominal: collection.element, element: null }, site, swiftThenBlockEndLine(node));
         break;
       }
+      // `catch { error… }` — a clause with no pattern binds `error: any Error`
+      // for its own block (bd tea-rags-mcp-y99pg.10).
+      case "catch_block": {
+        if (node.namedChildren.some((c) => c.type !== "catch_keyword" && c.type !== "statements")) return;
+        const body = node.namedChildren.find((c) => c.type === "statements");
+        if (!body) return;
+        record("error", { nominal: "Error", element: null }, siteOf(body), node.endPosition.row + 1);
+        return;
+      }
       case "lambda_literal": {
         const site = siteOf(node);
         const facts = swiftClosureArgumentFacts(node, { evidence, bindingsByName, site });
@@ -1251,10 +1268,22 @@ function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
  * `isCapWordsConstructor`.
  */
 function constructedTypeFact(value: AstNode | null): SwiftTypeFact {
+  if (value?.type === "constructor_expression") return swiftConstructedGenericFact(value);
   if (value?.type !== "call_expression") return NO_TYPE;
   const callee = value.namedChildren.find((c) => c.type !== "call_suffix");
   if (callee?.type !== "simple_identifier") return NO_TYPE;
   return /^_*[A-Z]/.test(callee.text) ? { nominal: callee.text, element: null } : NO_TYPE;
+}
+
+/**
+ * `Protected<[T]>(…)` — tree-sitter-swift parses an explicitly specialised
+ * construction as a `constructor_expression` over a `user_type`, not a call —
+ * types as the generic's nominal (bd tea-rags-mcp-y99pg.10).
+ */
+function swiftConstructedGenericFact(node: AstNode): SwiftTypeFact {
+  const constructed = node.namedChildren.find((c) => c.type === "user_type") ?? null;
+  const fact = swiftTypeFactOf(constructed);
+  return fact.nominal && /^_*[A-Z]/.test(fact.nominal) ? fact : NO_TYPE;
 }
 
 /** A `pattern` node's identifier when it binds exactly one name; null for tuple / destructuring patterns. */
@@ -1394,6 +1423,8 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
     }
     case "call_expression":
       return swiftCallResultFact(node, scope, depth);
+    case "constructor_expression":
+      return swiftConstructedGenericFact(node);
     // `x as? Foo` / `x as! Foo` / `x as Foo` — the cast names its type.
     case "as_expression":
       return swiftTypeFactOf(node.namedChildren[node.namedChildCount - 1] ?? null);

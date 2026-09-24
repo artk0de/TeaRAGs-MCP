@@ -1430,3 +1430,38 @@ describe("swift walker — an array's element accessors return the element", () 
     expect(typeAt(src, "pending", 4)).toBeUndefined();
   });
 });
+
+describe("swift walker — generic constructions and the implicit `catch` binding", () => {
+  it("types a generic construction `Protected<[T]>(…)` as its nominal, and records it as a call", () => {
+    const src = [
+      "final class Request {",
+      "  let validators = Protected<[() -> Void]>([])",
+      "  func go() {",
+      "    let local = Box<Int>(1)",
+      "    local.open()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extract(src);
+    expect(r.classFieldTypes?.Request?.validators).toBe("Protected");
+    expect(typeAt(src, "local", 5)).toBe("Box");
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(expect.arrayContaining(["Protected", "Box"]));
+  });
+
+  it("binds `error` as `Error` inside a `catch` block without a pattern, and only there", () => {
+    const src = [
+      "func go() {",
+      "  do {",
+      "    try run()",
+      "  } catch {",
+      "    error.report()",
+      "  }",
+      "  error.gone()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "error", 5)).toBe("Error");
+    expect(typeAt(src, "error", 7)).toBeUndefined();
+  });
+});
