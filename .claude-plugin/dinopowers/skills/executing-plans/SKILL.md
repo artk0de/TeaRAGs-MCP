@@ -187,10 +187,13 @@ Results empty (files brand-new, not yet in git): verdict defaults to
 
 ## Step 3 — Compute verdict per file, aggregate to Task verdict
 
-For each unique `relativePath` in results, extract from `payload.git.file.*`:
+For each unique `relativePath` in results, read labels from
+`rankingOverlay.file.*` (`{value,label}`; kept under metaOnly), raw values from
+`payload.git.file.*` (essential fields only under metaOnly):
 
 - `commitCount` — churn magnitude
-- `bugFixRate` — historical quality (percent of commits tagged as fix/bug)
+- `bugFixRate` — historical quality (percent of commits tagged as fix/bug);
+  overlay only under metaOnly (non-essential)
 - `blameDominantAuthorPct` (with adaptive label `shared` / `concentrated` /
   `silo` / `deep-silo`) — live-line silo indicator
 - `imports` score (from ranking overlay) — blast radius proxy

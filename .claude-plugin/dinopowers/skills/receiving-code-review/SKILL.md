@@ -96,9 +96,11 @@ Results empty: verdict `UNVERIFIABLE (target not in index)`. Don't fabricate.
 
 ## Step 3 — Compute agreement verdict
 
-Extract from payload: `imports`, `commitCount`, `bugFixRate`,
-`blameDominantAuthor` (live-line owner) + `recentDominantAuthor` (recent
-committer).
+Extract raw from payload (`imports` root, `git.file.commitCount`,
+`git.file.blameDominantAuthor` live-line owner); labels + non-essential signals
+(`bugFixRate`, `recentDominantAuthor` recent committer) from
+`rankingOverlay.file.*` when the rerank surfaces them — metaOnly payload keeps
+git essential fields only.
 
 Verdict ladder:
 

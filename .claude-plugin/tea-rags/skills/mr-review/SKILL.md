@@ -96,11 +96,13 @@ MR description = review intent — feeds D6 invariants.
 
 1. Parse hunks → touched files + changed line ranges (new side).
 2. Per touched source file — cap 15, above → ask user to narrow scope:
-   `find_symbol relativePath=<file> project=<alias>` → outline. Intersect
-   changed ranges with symbol spans → changed symbols + chunk UUIDs.
+   `find_symbol relativePath=<file> rerank="hotspots" project=<alias>` →
+   outline. Intersect changed ranges with symbol spans → changed symbols + chunk
+   UUIDs.
 3. Output per file: `{file, changedSymbols[], chunkUUIDs[], overlay}` — working
-   set every Phase 3 dimension reads. Overlay = `git.file.*`, `git.chunk.*`,
-   `codegraph.*` from find_symbol payloads.
+   set every Phase 3 dimension reads. Overlay = labels from
+   `rankingOverlay.{file,chunk}.*` + raw values from payload `git.*`,
+   `codegraph.symbols.*` (payload never carries labels).
 
 Non-indexed touched files (new in MR, generated, docs) → `overlay: none`, still
 eligible for D6.
