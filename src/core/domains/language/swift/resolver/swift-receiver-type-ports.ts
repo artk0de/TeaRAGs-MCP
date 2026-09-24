@@ -50,7 +50,7 @@ import {
   splitReceiverHops,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
-import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
+import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
 import { swiftEnumCasePayloadType } from "./swift-type-declarations.js";
@@ -117,12 +117,14 @@ const SWIFT_IDENTIFIER = /^(?:[A-Za-z_]\w*|\$\d+)$/;
  * segments that would only produce a wrong lookup.
  */
 function swiftHeadType(
-  head: string,
+  written: string,
   atLine: number,
   ctx: CallContext,
   members: SwiftMemberTypeLookup,
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
+  // `try` / `await` mark the expression, not its type (bd tea-rags-mcp-y99pg.20).
+  const head = written.replace(SWIFT_EFFECT_PREFIX, "");
   const enclosing = swiftSelfTypeName(ctx);
   if (!SWIFT_IDENTIFIER.test(head)) {
     return swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ?? swiftLiteralHeadType(head);
@@ -141,9 +143,22 @@ function swiftHeadType(
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
   }
 
-  if (isSwiftTypeName(head) && lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
+  if (!isSwiftTypeName(head)) return undefined;
+  // A type nested in an enclosing type shadows a top-level namesake — Swift's
+  // lexical lookup, innermost first (bd tea-rags-mcp-y99pg.20).
+  for (const scope of swiftEnclosingTypeIds(ctx)) {
+    for (const candidate of [`${scope}.${head}`, scope.endsWith(`.${head}`) ? scope : null]) {
+      if (candidate !== null && lookupSwiftSymbols(ctx, candidate).length > 0) {
+        return { form: "class", name: candidate };
+      }
+    }
+  }
+  if (lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
   return undefined;
 }
+
+/** `try` / `try?` / `try!` / `await`, possibly stacked, ahead of a chain head. */
+const SWIFT_EFFECT_PREFIX = /^(?:(?:try[?!]?|await)\s+)+/;
 
 /**
  * `validate(statusCode: codes)` as a chain head (bd tea-rags-mcp-y99pg.18): a

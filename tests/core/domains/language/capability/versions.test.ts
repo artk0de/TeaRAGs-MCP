@@ -274,6 +274,9 @@ describe("seeded support versions", () => {
       // walker 31 types no chain through one.
       // swift walker 33: `spelledAs` is new channel content, so an index built by
       // walker 32 reaches no generic-argument extension.
+      // swift walker 34: resolver-side chain-head reads changed which edges exist,
+      // so an index built by walker 33 lacks the `try`-headed and nested-type-headed
+      // edges.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -308,7 +311,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 33],
+        ["swift", 34],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

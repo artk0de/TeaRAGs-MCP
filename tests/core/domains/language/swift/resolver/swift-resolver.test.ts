@@ -2733,3 +2733,41 @@ describe("SwiftCallResolver — a generic-argument extension's spelled id (bd te
     expect(resolver.hasInProjectDefinition(call("encodings", "qualityEncoded", 4), context)).toBe(true);
   });
 });
+
+describe("SwiftCallResolver — `try` call heads and nested type heads (bd tea-rags-mcp-y99pg.20)", () => {
+  it("types a `try`-prefixed implicit-self call head", () => {
+    const t = table({
+      "Sources/Box.swift": [
+        { symbolId: "Box", scope: [] },
+        { symbolId: "Box#make", scope: ["Box"] },
+        { symbolId: "Widget", scope: [] },
+        { symbolId: "Widget#run", scope: ["Widget"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("try make(policy: policy)", "run", 5),
+      ctx({
+        callerFile: "Sources/Box.swift",
+        callerScope: ["Box", "go"],
+        symbolTable: t,
+        structuredReturnTypes: { "Box#make": { form: "instance", name: "Widget" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Widget#run");
+  });
+
+  it("types a chain head naming a type nested in an enclosing type", () => {
+    const t = table({
+      "Sources/Encoder.swift": [
+        { symbolId: "Encoder", scope: [] },
+        { symbolId: "Encoder.DateEncoding", scope: ["Encoder"] },
+        { symbolId: "Encoder.DateEncoding#read", scope: ["Encoder", "DateEncoding"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("DateEncoding.shared", "read", 5),
+      ctx({ callerFile: "Sources/Encoder.swift", callerScope: ["Encoder", "DateEncoding", "encode"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Encoder.DateEncoding#read");
+  });
+});
