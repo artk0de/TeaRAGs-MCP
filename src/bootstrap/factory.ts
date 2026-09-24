@@ -1204,7 +1204,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });
 
+  // Idempotent: under stdio both the signal listeners and the stdin-close
+  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once.
+  let cleanedUp = false;
   const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
     registryWatchStop();
     // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
     // git as a direct child of THIS process; no parent-death guard reaches it,
