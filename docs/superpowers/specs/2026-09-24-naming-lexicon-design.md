@@ -142,6 +142,35 @@ was `list`. No collection flag: the shape classifier accepts the plural of
 generics) are recorded but excluded from `byType` — Phase 0's TS top three were
 primitives.
 
+### Naming convention in the language descriptor (amendment 2026-09-25)
+
+Casing is a static fact of the language, owned by the substrate — not a table
+inside the lexicon. `LanguageCapability` (`contracts/types/language.ts`, one
+descriptor per `<lang>/capability.ts`, aggregated by
+`LanguageFactory.capabilities()`) gains:
+
+```ts
+type IdentifierCasing = "snake" | "camel" | "pascal" | "screamingSnake";
+type IdentifierRole =
+  "type" | "module" | "method" | "param" | "local" | "field" | "constant";
+/** Per role: accepted casings, the FIRST is canonical (used to render a name). */
+naming?: Readonly<Record<IdentifierRole, readonly IdentifierCasing[]>>;
+```
+
+Absent only for a language without identifiers (markdown); a test derives that
+`naming` is declared exactly by the languages publishing
+`identifierDeclarations`. Examples:
+
+| Language | type / module | method, param, local, field | constant               |
+| -------- | ------------- | --------------------------- | ---------------------- |
+| Ruby     | pascal        | snake                       | screamingSnake, pascal |
+| Go       | pascal, camel | camel, pascal (exported)    | camel, pascal          |
+| TS / JS  | pascal        | camel                       | camel, screamingSnake  |
+
+Sigils (`@`, `@@`, `$`, `self.`) and predicate / bang suffixes are not casing —
+the lexicon strips them before classifying. A read-path fact: no walker bump,
+`Versions: unchanged` with a re-pin.
+
 ### TS / JS in v1
 
 Declarations: full coverage. Types: annotations and `new X()` only.
@@ -240,17 +269,17 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
    SQL.
 3. **byType.** One GROUP BY over `cg_identifiers` (`type_name, kind, name`), top
    5 names per kind.
-4. **Shapes.** Pure function over the rows through the language's
-   `NamingConventionPorts` (`kernel/naming-convention.ts`, used in reverse):
-   `EXACT` (`snake(T)`), `QUALIFIED` (`snake(T)_q`, checked to co-occur with a
-   second binding of T in the same owner), `TAIL` (a suffix of `snake(T)`),
-   `VERB_TYPE` (`find_` + `snake(T)` …, on `return`), `CALLEE_DERIVED` (a local
-   / field named after its `bound_member` with the verb prefix and `!` / `?`
-   dropped — `x = find_x!(id)` — decided from the name and the callee alone, so
-   it classifies UNTYPED rows too), `FREE`. Rows carry their `typeSource`;
-   stages 3–4 run here (see "Type recovery"). Shares plus confidence `(n/k)^2`.
-   The convention is induced from the distribution, never assumed: a project
-   that names by role returns a `FREE`-dominant answer.
+4. **Shapes.** Pure function over the rows, rendering `snake(T)` / `camel(T)`
+   with the canonical casing the language descriptor's `naming` declares for the
+   row's role: `EXACT` (`snake(T)`), `QUALIFIED` (`snake(T)_q`, checked to
+   co-occur with a second binding of T in the same owner), `TAIL` (a suffix of
+   `snake(T)`), `VERB_TYPE` (`find_` + `snake(T)` …, on `return`),
+   `CALLEE_DERIVED` (a local / field named after its `bound_member` with the
+   verb prefix and `!` / `?` dropped — `x = find_x!(id)` — decided from the name
+   and the callee alone, so it classifies UNTYPED rows too), `FREE`. Rows carry
+   their `typeSource`; stages 3–4 run here (see "Type recovery"). Shares plus
+   confidence `(n/k)^2`. The convention is induced from the distribution, never
+   assumed: a project that names by role returns a `FREE`-dominant answer.
 5. **Concept** (optional). Explore semantic strategy, called in-process:
 
    | Parameter   | Value                                                              |

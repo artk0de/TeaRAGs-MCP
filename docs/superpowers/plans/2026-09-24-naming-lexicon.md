@@ -58,9 +58,13 @@ zod MCP schemas.
    6), which sees the fully merged `FileExtraction`.
 3. **Pass-2 `call-arg` param types are not persisted in v1.** Rows are built at
    sink time (pass-1). This is the same class of increment as TS checker types.
-4. **Shape classification uses a per-language casing table**, not
-   `NamingConventionPorts` (those exist for Ruby/Python only and answer class
-   existence, not casing).
+4. **Casing lives in the language descriptor** (superseded 2026-09-25 by user:
+   "camelCase/snakeCase помести в дескриптор языка … это должно быть частью
+   субстрата"). Not `NamingConventionPorts` (Ruby/Python only, answer class
+   existence) and not a table inside the lexicon: `LanguageCapability.naming`
+   declares accepted casings per identifier role, first canonical (spec §
+   "Naming convention in the language descriptor"). Task 3g adds it; Task 7
+   reads it.
 5. **Type recovery for untyped rows (2026-09-25, after Phase 0; user-approved:
    "давай пробовать все методы").** Phase 0: 8.3% of taxdome declarations typed
    syntactically. Spec § "Type recovery" adds `boundCallee` to the channel and
@@ -94,6 +98,19 @@ zod MCP schemas.
      `List / Set / Collection / Iterable / Optional / Stream<T>`; Swift
      `Array<T> / Set<T> / Optional<T>`. Maps keep their head. Walker bump for
      the three languages.
+   - **Task 3g (new, after 3f)** — `IdentifierCasing`, `IdentifierRole` and
+     `LanguageCapability.naming` in `contracts/types/language.ts`; every code
+     language's `capability.ts` declares it (markdown omits); a derived-set test
+     in `tests/navigator-enumerations.test.ts` (languages declaring `naming` ==
+     languages publishing `identifierDeclarations`); a table test pinning each
+     language's canonical casing per role. `npm run gen:lang-compat` only if the
+     generated docs render the descriptor (they do not today — the drift-guard
+     test decides). Re-pin; `Versions: unchanged — read-path descriptor`.
+   - **Task 7 (casing)** — `casing.ts` drops `identifierCasingFor(language)`;
+     `renderIdentifier(typeName, casing)` and `detectIdentifierCasing(name)`
+     stay pure; the canonical casing per role is passed in from the descriptor
+     by the ops layer (Task 8), so `domains/explore/naming-lexicon` never
+     imports the language domain.
    - **Task 7** — `NamingShape` gains `CALLEE_DERIVED` (name == callee member
      minus a verb prefix `find_|get_|fetch_|load_|build_|create_|new_|make_` and
      a trailing `!`/`?`); `EXACT` accepts the plural of `snake(T)`;
