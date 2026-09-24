@@ -367,6 +367,19 @@ function levelField() {
 }
 
 /**
+ * The metaOnly response contract — stated once, shared by every tool's
+ * metaOnly description (filterMetaOnly / applyEssentialSignals select raw
+ * fields; BaseExploreStrategy#applyMetaOnly keeps rankingOverlay).
+ */
+const META_ONLY_CONTRACT =
+  "Payload stays RAW, same paths and value forms as without metaOnly — flat signals at the root, " +
+  "git reduced to essential fields (commitCount, ageDays, taskIds, blame*), codegraph.symbols.* whole — " +
+  "never {value,label}. Labels live only in rankingOverlay.{file,chunk}.<field> ({value,label} when " +
+  "labelled, else raw), present on metaOnly results whenever rerank ran; flat structural signals " +
+  "(methodLines, imports) sit under rankingOverlay.file. A signal outside the essential set is read " +
+  "from rankingOverlay (if the preset surfaces it) or with metaOnly=false.";
+
+/**
  * Shared payload allow-list. Every tool that returns payload-bearing results
  * accepts it, so an agent never has to remember which one does
  * (bd tea-rags-mcp-l2lix).
@@ -384,7 +397,7 @@ function fieldsField() {
           "codegraph.symbols.{file,chunk}.*; read tea-rags://schema/signals for the paths. " +
           "EXACT list: nothing is added back, relativePath included. " +
           "Omitted → the full payload (today's behaviour). Note metaOnly is a different " +
-          "axis — it drops the chunk BODY and keeps every signal. " +
+          "axis — it drops the body and trims git to essential fields (see metaOnly). " +
           "A path no result carried comes back on fieldsWarning instead of failing.",
       ),
   };
@@ -399,9 +412,10 @@ function paginationFields(metaOnlyDefault?: boolean) {
       .default(metaOnlyDefault ?? false)
       .describe(
         metaOnlyDefault
-          ? "Return only metadata (path, lines, git info) without content. " +
-              "Default: true (rank_chunks is analytics-oriented; use false to include code content)."
-          : "Return only metadata (path, lines, git info) without content. Reduces response size. Default: false.",
+          ? `Return metadata without content. ${
+              META_ONLY_CONTRACT
+            } Default: true (rank_chunks is analytics-oriented; use false to include code content).`
+          : `Return metadata without content. Reduces response size. ${META_ONLY_CONTRACT} Default: false.`,
       ),
   };
 }
@@ -545,7 +559,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .describe("Glob pattern for filtering by file path (picomatch). Example: '**/services/**'"),
     metaOnly: coerceBoolean()
       .optional()
-      .describe("Return only metadata (path, lines, git info) without content. Use for existence checks."),
+      .describe(`Return metadata without content. Use for existence checks. ${META_ONLY_CONTRACT}`),
     rerank: semanticSearchRerankSchema
       .optional()
       .describe(
