@@ -61,6 +61,38 @@ zod MCP schemas.
 4. **Shape classification uses a per-language casing table**, not
    `NamingConventionPorts` (those exist for Ruby/Python only and answer class
    existence, not casing).
+5. **Type recovery for untyped rows (2026-09-25, after Phase 0; user-approved:
+   "давай пробовать все методы").** Phase 0: 8.3% of taxdome declarations typed
+   syntactically. Spec § "Type recovery" adds `boundCallee` to the channel and
+   four stages — `binding` and `finder` persisted by the row builder,
+   `call-return` (edge join) and `name-inferred` computed at query time — plus
+   the `CALLEE_DERIVED` shape, a `byCallee` answer, walker-side collection
+   unwrapping for Python/TS, a leading-`::` strip and a primitive stop-list.
+   Pass-1 constraint (amendment 3) holds: `binding` sees only walker-built
+   `localBindings`; resolver-inferred types reach rows only through the
+   `call-return` edge join. Deltas per task:
+   - **Task 3e (new)** — `boundCallee` + collection unwrapping, below.
+   - **Task 5** — three nullable columns `bound_member`, `bound_receiver`,
+     `bound_call_expression`; `IdentifierRow` gains the same optional fields;
+     new read `aggregateIdentifiersByCallee({ callees, pathPrefixes })` →
+     `{ member, receiver, kind, name, n, exampleOwner }[]`; the type aggregate
+     LEFT JOINs `cg_symbols_edges_method` (`edge_kind = 'exact'`, exactly one
+     target per `(source_symbol_id, source_rel_path, call_expression)`) and the
+     target's `kind = 'return'` row to fill `call-return` for rows with no type.
+   - **Task 6** — row builder: `finder` stage from a language-owned finder
+     vocabulary (Ruby list in the spec; other languages empty in v1);
+     `bound_call_expression` = the `CallRef.callText` of the owner chunk's call
+     with the same `startLine`, `member` and `receiver` (absent when not exactly
+     one match); strip a leading `::` from Ruby type names.
+   - **Task 7** — `NamingShape` gains `CALLEE_DERIVED` (name == callee member
+     minus a verb prefix `find_|get_|fetch_|load_|build_|create_|new_|make_` and
+     a trailing `!`/`?`); `EXACT` accepts the plural of `snake(T)`;
+     `isNonConceptType(typeName)` stop-list
+     (`string number boolean int str bool float unknown any Any object void None nil`,
+     single-letter generics).
+   - **Task 8** — `name-inferred` stage (≥ 3 typed rows, one type ≥ 80%) in the
+     ops layer, never written; `evidence` counts per `typeSource`; `byCallee`
+     when a draft carries `callee` and no type.
 
 ## File Structure
 
@@ -478,6 +510,36 @@ language is left out.
       `feat(trajectory): identifier declarations for <lang>[, <lang2>]`.
 
 ---
+
+#### Task 3e: `boundCallee` + collection unwrapping (all languages)
+
+**Files:** `contracts/types/codegraph-extraction.ts` (`IdentifierDeclaration`
+gains
+`readonly boundCallee?: { readonly member: string; readonly receiver?: string }`),
+`kernel/identifier-declarations.ts` (`IdentifierDeclarationSyntax` gains
+`boundCalleeOf?(value: AstNode): { member; receiver? } | undefined`; the kernel
+calls it for `local` / `field` sites that carry a value node), each
+`<lang>/walker/passes/identifier-declarations.ts`, walker version bump for every
+language, ledger + re-pin, tests per language.
+
+Rule: the OUTERMOST call of the value only, read with the same member/receiver
+split the language's monolith walker uses for `CallRef` (reuse its helper — the
+row builder matches on it, so the two must agree by construction; a test per
+language asserts `boundCallee` equals the `CallRef` `{member, receiver}` of the
+same line). Chained receivers keep their text (`Doc.where(x).first` → member
+`first`, receiver `Doc.where(x)`). Constructors stay `typeSource: "constructor"`
+and also carry `boundCallee`.
+
+Collection unwrapping: Python annotations
+`list[T] / List[T] / Sequence[T] / Iterable[T] / set[T] / tuple[T, ...] / Optional[T]`
+→ `T`; TypeScript `T[]`, `Array<T>`, `ReadonlyArray<T>`, `Set<T>` → `T`
+(`Promise<T>` keeps its head: not a collection, and its names differ —
+`docPromise`). Maps keep the head. Existing 3a/3b expectations that pin `list` /
+untyped arrays are invariant changes — update them red-first and say so in the
+commit body.
+
+Commit:
+`feat(trajectory): identifier declarations carry the bound callee (tea-rags-mcp-4p3sb.<new>)`.
 
 ### Task 4: Phase 0 — offline size census (no reindex)
 

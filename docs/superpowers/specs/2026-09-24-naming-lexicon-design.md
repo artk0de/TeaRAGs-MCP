@@ -54,9 +54,16 @@ One MCP tool serves both, so the agent gets one vocabulary source.
 
 ```ts
 identifierDeclarations: IdentifierDeclaration[]
-// { name, kind, line, ownerSymbolId, typeName?, typeSource? }
+// { name, kind, line, ownerSymbolId, typeName?, typeSource?, boundCallee? }
 // kind: "param" | "local" | "field" | "return"
+// boundCallee: { member, receiver? } — the OUTERMOST call of the value a
+//   local / field is bound to (`x = find_x!(id)` → { member: "find_x!" },
+//   `row = Doc.find(id)` → { member: "find", receiver: "Doc" }). Absent for
+//   params and for values that are not a call.
 ```
+
+Untyped declarations are most of the corpus (Phase 0: 91.7% of taxdome), and the
+value they are bound to is what makes them usable — see "Type recovery".
 
 `kind` belongs to the declaration because it is a syntactic fact, universal
 across languages. `LocalBinding` (`contracts/types/codegraph-local-binding.ts`)
@@ -98,6 +105,43 @@ with `source: "call-arg"`.
 The new channel gets its row in the `kernel/merge-extraction.ts` rulebook (the
 mapped type makes a missing row a compile error).
 
+### Type recovery (amendment 2026-09-25, after Phase 0)
+
+Phase 0 measured 8.3% of taxdome declarations typed syntactically (Ruby 2.3%).
+Untyped rows stay in the table; four recovery stages type them, strongest first.
+Each stage writes its own `typeSource`, so the lexicon reports evidence per
+source and a stage can be switched off without a reindex.
+
+| #   | Stage          | `typeSource`    | Where                          | Rule                                                                                                                                                                                                                                                        |
+| --- | -------------- | --------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | resolver fact  | `binding`       | row builder (sink)             | the owner chunk's `localBindings` / `ivarTypes` / `classFieldTypes` — types the resolver chain already builds                                                                                                                                               |
+| 2   | finder         | `finder`        | row builder (sink)             | `boundCallee.receiver` is a constant and `member` is in the language's finder vocabulary (Ruby: `find`, `find!`, `find_by`, `find_by!`, `first`, `last`, `take`, `create`, `create!`, `find_or_create_by`, `find_or_initialize_by`) → the receiver constant |
+| 3   | callee return  | `call-return`   | lexicon query (join)           | the row's `bound_call_expression` joins `cg_symbols_edges_method` (`edge_kind = 'exact'`, one target) → the target's `return` row in `cg_identifiers`                                                                                                       |
+| 4   | name inference | `name-inferred` | lexicon query, never persisted | a name typed ≥ 3 times in scope with one type holding ≥ 80% of those rows lends that type to its untyped occurrences                                                                                                                                        |
+
+Stage 3 is a query-time join rather than a write-time copy: an incremental
+reindex that changes a callee's return type is visible at once, and nothing is
+rewritten in the caller's file. The row builder makes the join exact by copying
+`CallRef.callText` — found in the same file's extraction by
+`(startLine, member, receiver)` — into `bound_call_expression`, the same text
+the edge table keys on.
+
+Stage 4 is a statistic over observed rows, not the `snake(T) == name`
+convention, so it does not break the invariant below — but it is never
+persisted, and its rows are counted apart (`inferred`) so a reader sees how much
+of an answer rests on it.
+
+Normalization. The row builder strips a leading `::` from Ruby type names
+(`::System` → `System`). Collection annotations are unwrapped to the element by
+the WALKER in every language (`list[Job]` → `Job`, `Job[]` → `Job`, `Array<Job>`
+→ `Job`, `Vec<Job>` → `Job`) — Go, Java and Swift already do, Python and
+TypeScript are aligned in Task 3e, because Phase 0 showed Python's top type name
+was `list`. No collection flag: the shape classifier accepts the plural of
+`snake(T)` as `EXACT`. Primitive and top types (`string`, `number`, `boolean`,
+`int`, `str`, `bool`, `unknown`, `any`, `Any`, `object`, `T`-style single-letter
+generics) are recorded but excluded from `byType` — Phase 0's TS top three were
+primitives.
+
 ### TS / JS in v1
 
 Declarations: full coverage. Types: annotations and `new X()` only.
@@ -115,7 +159,10 @@ CREATE TABLE cg_identifiers (
   name            VARCHAR NOT NULL,
   type_name       VARCHAR,
   type_source     VARCHAR,
-  line            INTEGER NOT NULL
+  line            INTEGER NOT NULL,
+  bound_member          VARCHAR,     -- boundCallee.member
+  bound_receiver        VARCHAR,     -- boundCallee.receiver
+  bound_call_expression VARCHAR      -- CallRef.callText, the edge-table join key
 );
 ```
 
@@ -145,11 +192,18 @@ naming-convention source; name→type inference lives only in the resolver — a
 is pinned by a test, because a lexicon fed by its own convention would confirm
 itself.
 
+The recovery stages keep it. Stage 3 may read an edge the resolver typed through
+a naming convention — but the convention then typed the RECEIVER, a different
+name from the declaration being classified, so the declared name is still an
+observation. Stage 4 is a frequency over observed rows, not a name→type rule,
+and is never written.
+
 ### Size
 
-Unmeasured. Earlier typed-only estimate for taxdome was 320–450k rows, 25–45 MB
-against 287 MB of live codegraph data; storing untyped declarations too may
-double or triple it. Phase 0 measures it offline, before any reindex.
+Measured in Phase 0 (plan, "Phase 0 results"): taxdome 255,254 declarations, 39
+MB naive upper bound before DuckDB dictionary compression, against 287 MB of
+live codegraph data. The three `bound_*` columns add at most ~40% to that bound
+on locals and fields. Untyped rows stay.
 
 ### Reindex
 
@@ -173,7 +227,9 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
 { project | collection | path,
   pathPattern?, language?,          // language required when concept is set
   types?, anchors?, concept?,
-  names?: { name, kind?, type? }[] } // at least one of types / anchors / concept / names
+  names?: { name, kind?, type?, callee?: { member, receiver? } }[] }
+  // at least one of types / anchors / concept / names;
+  // a draft's `callee` drives `byCallee` when its type is unknown
 ```
 
 ### Pipeline
@@ -188,9 +244,13 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
    `NamingConventionPorts` (`kernel/naming-convention.ts`, used in reverse):
    `EXACT` (`snake(T)`), `QUALIFIED` (`snake(T)_q`, checked to co-occur with a
    second binding of T in the same owner), `TAIL` (a suffix of `snake(T)`),
-   `VERB_TYPE` (`find_` + `snake(T)` …, on `return`), `FREE`. Shares plus
-   confidence `(n/k)^2`. The convention is induced from the distribution, never
-   assumed: a project that names by role returns a `FREE`-dominant answer.
+   `VERB_TYPE` (`find_` + `snake(T)` …, on `return`), `CALLEE_DERIVED` (a local
+   / field named after its `bound_member` with the verb prefix and `!` / `?`
+   dropped — `x = find_x!(id)` — decided from the name and the callee alone, so
+   it classifies UNTYPED rows too), `FREE`. Rows carry their `typeSource`;
+   stages 3–4 run here (see "Type recovery"). Shares plus confidence `(n/k)^2`.
+   The convention is induced from the distribution, never assumed: a project
+   that names by role returns a `FREE`-dominant answer.
 5. **Concept** (optional). Explore semantic strategy, called in-process:
 
    | Parameter   | Value                                                              |
@@ -216,7 +276,10 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
 ```
 { scope,
   byType: [{ type, kinds: { local, param, field, return: [{ name, n }] },
-             shapes, confidence }],
+             shapes, confidence,
+             evidence: { annotation, constructor, binding, finder,
+                         "call-return", "name-inferred" } }],  // row counts per typeSource
+  byCallee?: [{ member, receiver?, locals: [{ name, n }], shapes }],  // untyped path
   concept?: { terms: [{ term, score, holders: symbolId[≤3] }] },
   names: [{ name, verdict, suggestion?, evidence: { n, example } }] }
 ```
