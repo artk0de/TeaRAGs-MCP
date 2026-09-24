@@ -635,9 +635,12 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
   });
 
   // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.17): a `(k, v)` pattern over a
-  // DICTIONARY now binds its key and value types; a Set and a tuple pattern
-  // over anything else still bind nothing.
-  it("declines a Set and a tuple pattern over a non-dictionary; binds a dictionary's key and value", () => {
+  // DICTIONARY now binds its key and value types; a tuple pattern over
+  // anything else still binds nothing. INVARIANT CHANGED again (bd
+  // tea-rags-mcp-y99pg.32): a `Set<Thing>` iterates `Thing`s, as the
+  // typechecker binds `for x in s` — the old decline was the walker dropping
+  // generic arguments, not a claim about Set.
+  it("binds a Set's element and a dictionary's key and value; declines a tuple pattern over a non-dictionary", () => {
     const src = [
       "func go(s: Set<Thing>, d: [String: Foo], xs: [Thing]) {",
       "  for x in s { x.touch() }",
@@ -647,7 +650,7 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
       "",
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
-    expect(bindings?.x).toBeUndefined();
+    expect(bindings?.x?.[0].type).toBe("Thing");
     expect(bindings?.k?.[0].type).toBe("String");
     expect(bindings?.v?.[0].type).toBe("Foo");
     expect(bindings?.i).toBeUndefined();
@@ -1204,6 +1207,40 @@ describe("swift walker — closure parameters typed by the parameter they are pa
     ].join("\n");
     expect(typeAt(src, "$0", 2)).toBe("Thing");
     expect(typeAt(src, "t", 3)).toBe("Thing");
+  });
+
+  // Session.withAllRequests { requests in requests.forEach { $0.cancel() } }
+  // on `(Set<Request>) -> Void` (bd tea-rags-mcp-y99pg.32).
+  it("reads the element of a sequence spelled with its generic argument — `Set<T>`, `Array<T>`", () => {
+    const src = [
+      "final class Pool {",
+      "  func withAll(perform action: @escaping (Set<Thing>) -> Void) {}",
+      "  func go(xs: Array<Thing>) {",
+      "    withAll { all in",
+      "      all.forEach { $0.touch() }",
+      "    }",
+      "    for x in xs { x.touch() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "all", 5)).toBe("Set");
+    expect(typeAt(src, "$0", 5)).toBe("Thing");
+    expect(typeAt(src, "x", 7)).toBe("Thing");
+    const bindings = extractMaterialized(src).chunks[0].localBindings;
+    expect(bindings?.$0?.[0].type).toBe("Thing");
+  });
+
+  it("reads no element off a generic type that is not a single-element sequence", () => {
+    const src = [
+      "func go(r: Result<Thing, Error>, d: Dictionary<String, Thing>) {",
+      "  for x in d { x.touch() }",
+      "  r.map { $0.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "x", 2)).toBeUndefined();
+    expect(typeAt(src, "$0", 3)).toBeUndefined();
   });
 
   it("declines a callee with more than one function-typed parameter", () => {
