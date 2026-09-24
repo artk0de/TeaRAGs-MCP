@@ -102,7 +102,8 @@ describe("composite godModule", () => {
       "codegraph.file.transitiveImpact",
       "codegraph.file.isHub",
     ]);
-    expect(preset.overlayMask.chunk).toEqual(["memberCount"]);
+    // File-level ranking never emits a chunk bucket — a chunk mask would be dead.
+    expect(preset.overlayMask.chunk).toBeUndefined();
   });
 
   it("overrides the static variant when codegraph is registered", () => {
