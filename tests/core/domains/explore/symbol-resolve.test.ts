@@ -1346,4 +1346,68 @@ describe("resolveSymbols", () => {
       expect(results[0].payload?.content).toBe(INDEX_FRESHNESS_TOC);
     });
   });
+
+  describe("test scope outline by example (tea-rags-mcp-msv3l)", () => {
+    const scopeId = "User.context 'when admin'";
+    const exampleChunk = (id: string, symbolId: string, parentSymbolId: string, startLine: number) => ({
+      id,
+      payload: {
+        symbolId,
+        name: symbolId.slice(parentSymbolId.length + 1),
+        chunkType: "test",
+        isTest: true,
+        parentSymbolId,
+        parentType: "test_scope",
+        relativePath: "spec/models/user_spec.rb",
+        language: "ruby",
+        content: `let(:user) { create(:user) }\nit "case ${startLine}" do\n  expect(user).to be_admin\nend`,
+        startLine,
+        endLine: startLine + 2,
+        git: { file: { commitCount: 3, ageDays: 9 } },
+      },
+    });
+
+    it("answers a scope id with an outline of its example ids and no example bodies", () => {
+      const chunks = [
+        exampleChunk("e-2", `${scopeId}.it 'can invite'`, scopeId, 15),
+        exampleChunk("e-1", `${scopeId}.it 'can manage accounts'`, scopeId, 10),
+      ];
+
+      const results = resolveSymbols(chunks, scopeId);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.symbolId).toBe(scopeId);
+      expect(results[0].payload?.content).toBe(
+        [scopeId, `  ${scopeId}.it 'can manage accounts'`, `  ${scopeId}.it 'can invite'`].join("\n"),
+      );
+    });
+
+    it("lists an oversized example held only as #partN windows once, by its base id", () => {
+      const huge = `${scopeId}.it 'exports everything'`;
+      const chunks = [
+        exampleChunk("e-1", `${scopeId}.it 'can invite'`, scopeId, 10),
+        exampleChunk("p-2", `${huge}#part2`, huge, 40),
+        exampleChunk("p-1", `${huge}#part1`, huge, 20),
+      ];
+
+      const results = resolveSymbols(chunks, scopeId);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`, `  ${huge}`].join("\n"));
+    });
+
+    it("answers an example id with that example's chunk, its #partN windows merged rather than outlined", () => {
+      const exampleId = `${scopeId}.it 'exports everything'`;
+      const chunks = [
+        exampleChunk("p-1", `${exampleId}#part1`, exampleId, 20),
+        exampleChunk("p-2", `${exampleId}#part2`, exampleId, 40),
+      ];
+
+      const results = resolveSymbols(chunks, exampleId);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.symbolId).toBe(exampleId);
+      expect(results[0].payload?.mergedChunkIds).toEqual(["p-1", "p-2"]);
+    });
+  });
 });

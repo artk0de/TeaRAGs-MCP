@@ -112,7 +112,8 @@ from the same index.
 | Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |
 | Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |
 | Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |
-| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Top>.<scope>")` — leaf scope chunk (split scope parts share that id, merged)                                       |
+| Describe-it scope name from a stacktrace    | The failing scope and its examples      | `find_symbol(symbol: "<Top>.<scope>")` — OUTLINE of example ids (`<Top>.<scope>.<example>`); older index: merged leaf scope chunk         |
+| Test example id (from an outline / result)  | That example with inherited setup       | `find_symbol(symbol: "<Top>.<scope>.<example>")` — one example chunk, `#partN` windows merged; repeated descriptions carry `~N`           |
 
 `find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +
 rankingOverlay in one call). `offset` pagination works on every search tool;
@@ -156,6 +157,7 @@ follow-ups. Choose mode by what you hold:
 | **Class or module name**         | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded |
 | Existence check only             | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)        |
 | Doc section (hash from a result) | `symbol: "doc:<hash>"`            | full section content (split parts merged)      |
+| Test scope id                    | `symbol: "<Top>.<scope>"`         | OUTLINE: example ids, NO bodies                |
 
 **Mode B — `relativePath:` (you have a file path) — USE THIS MORE.** With no
 symbol, just a path, find_symbol returns a synthetic outline of the whole file.

@@ -378,4 +378,114 @@ describe("CodeChunkGrouper", () => {
       expect(result.payload?.chunkCount).toBe(2);
     });
   });
+
+  describe("groupFile on a test file (outline by example, tea-rags-mcp-msv3l)", () => {
+    const specPath = "spec/models/user_spec.rb";
+    const testChunk = (
+      id: string,
+      symbolId: string,
+      parentSymbolId: string,
+      startLine: number,
+      chunkType = "test",
+    ): ScrollChunk => ({
+      id,
+      payload: {
+        symbolId,
+        name: symbolId.slice(parentSymbolId.length + 1),
+        chunkType,
+        isTest: true,
+        parentSymbolId,
+        parentType: "test_scope",
+        relativePath: specPath,
+        language: "ruby",
+        content: `it "case ${startLine}" do\n  expect(user).to be_valid\nend`,
+        startLine,
+        endLine: startLine + 2,
+      },
+    });
+    const admin = "User.context 'when admin'";
+    const guest = "User.context 'when guest'";
+
+    it("lists each scope once as an address with its examples nested under it, in line order", () => {
+      const chunks = [
+        testChunk("e-3", `${guest}.it 'cannot invite'`, guest, 30),
+        testChunk("e-1", `${admin}.it 'can manage accounts'`, admin, 10),
+        testChunk("e-2", `${admin}.it 'can invite'`, admin, 15),
+      ];
+
+      const result = CodeChunkGrouper.groupFile(chunks);
+
+      expect(result.payload?.content).toBe(
+        [
+          specPath,
+          `  ${admin}`,
+          `    ${admin}.it 'can manage accounts'`,
+          `    ${admin}.it 'can invite'`,
+          `  ${guest}`,
+          `    ${guest}.it 'cannot invite'`,
+        ].join("\n"),
+      );
+    });
+
+    it("folds an oversized example's #partN windows into one line under its scope", () => {
+      const huge = `${admin}.it 'exports everything'`;
+      const chunks = [
+        testChunk("e-1", `${admin}.it 'can invite'`, admin, 10),
+        testChunk("p-1", `${huge}#part1`, huge, 20),
+        testChunk("p-2", `${huge}#part2`, huge, 40),
+      ];
+
+      const result = CodeChunkGrouper.groupFile(chunks);
+
+      expect(result.payload?.content).toBe(
+        [specPath, `  ${admin}`, `    ${admin}.it 'can invite'`, `    ${huge}`].join("\n"),
+      );
+    });
+
+    it("draws a setup-only scope and a pre-example-era test chunk as plain lines, not as a scope", () => {
+      const setupOnly = testChunk("s-1", "User.context 'shared fixtures'", "User", 3, "test_setup");
+      const legacy = testChunk("l-1", "User.describe User", "User", 20);
+      setupOnly.payload.parentType = "call";
+      legacy.payload.parentType = "call";
+
+      const result = CodeChunkGrouper.groupFile([setupOnly, legacy]);
+
+      expect(result.payload?.content).toBe(
+        [specPath, "  User.context 'shared fixtures'", "  User.describe User"].join("\n"),
+      );
+    });
+
+    it("leaves non-test orphans labelled by their own qualified symbolId", () => {
+      const chunks: ScrollChunk[] = [
+        {
+          id: "m-1",
+          payload: {
+            symbolId: "Reranker#rerank",
+            name: "rerank",
+            chunkType: "function",
+            parentSymbolId: "Reranker",
+            relativePath: "src/reranker.ts",
+            startLine: 5,
+            endLine: 9,
+          },
+        },
+        {
+          id: "m-2",
+          payload: {
+            symbolId: "Reranker#score",
+            name: "score",
+            chunkType: "function",
+            parentSymbolId: "Reranker",
+            relativePath: "src/reranker.ts",
+            startLine: 12,
+            endLine: 20,
+          },
+        },
+      ];
+
+      const result = CodeChunkGrouper.groupFile(chunks);
+
+      expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank\n  Reranker#score");
+    });
+  });
 });
