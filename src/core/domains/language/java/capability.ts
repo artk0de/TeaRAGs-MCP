@@ -10,5 +10,8 @@ export const capability: LanguageCapability = {
   // in-method call used to be emitted a second time from its enclosing class
   // chunk; commons-lang measured 17,641 sites collapsing to 8,719, so an already
   // indexed Java project carries duplicate call rows until it recomputes.
-  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
+  // walker 4: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
+  // visibility on `ChunkExtraction.visibility` — `private` / `protected` / `public` (package-private unrecorded) — persisted in
+  // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
+  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
 };

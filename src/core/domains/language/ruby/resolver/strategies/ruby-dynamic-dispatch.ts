@@ -6,7 +6,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import { buildDispatchCascade } from "../../../kernel/dispatch-cascade.js";
-import { resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
+import { EXPLICIT_RECEIVER_VISIBILITY_ACCESS, resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import { rubyDynamicFanoutSuppressed } from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
@@ -70,6 +70,11 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
   private readonly narrowers = buildDispatchCascade({
     duckVocabulary: RUBY_DUCK_VOCAB,
     classifyLiteralReceiver: classifyRubyLiteralReceiver,
+    // Ruby `private` forbids any explicit receiver but `self`, and this cascade
+    // only sees non-`self` explicit receivers (`self` and bare calls belong to
+    // the exact chain, `exactChainOwnsReceiverShape`) — so a private candidate
+    // is never reachable here.
+    visibilityAccess: EXPLICIT_RECEIVER_VISIBILITY_ACCESS,
   });
 
   constructor(private readonly cfg: ResolverConfig) {}

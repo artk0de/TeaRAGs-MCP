@@ -102,5 +102,8 @@ export const capability: LanguageCapability = {
   // recovering the `createAppContext(): Promise<AppContext>` pins walker 10's
   // containment arm left file-only. Classes, cross-file types and
   // un-annotated factories still decline.
-  versions: { chunking: 1, walker: 13, codegraphSchema: 2 },
+  // walker 14: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
+  // visibility on `ChunkExtraction.visibility` — a class member's declared access level (`private` / `protected` / `#name`) — persisted in
+  // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
+  versions: { chunking: 1, walker: 14, codegraphSchema: 2 },
 };

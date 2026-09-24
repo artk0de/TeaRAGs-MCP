@@ -141,6 +141,16 @@
   (`SUM(confidence)` fanIn/fanOut, PageRank split across the fan); navigation
   hides them via `isNavigationVisibleEdge`. Why: over the cap a multi-survivor
   site emits nothing, and fanIn read unweighted over-counts a fan m-fold.
+- **`visibility` is a declared level; its REACH is a per-language rule.** Every
+  native walker records the declared access level on the one three-value union,
+  but `"private"` reaches differently per language, so `VisibilityNarrower` asks
+  an injected `VisibilityAccessPolicy`
+  (`DispatchCascadeOptions.visibilityAccess`) and never reads the word itself.
+  Its default is the explicit-receiver rule (private never reachable) — correct
+  for Ruby only. A language that runs `buildDispatchCascade` over candidates
+  with recorded visibility MUST inject its own rule. Why: under the default,
+  `other.priv()` inside the declaring class drops silently — a resolve-rate loss
+  no test on the walker sees (bd tea-rags-mcp-jwjyr.1).
 - **Receiver chain typing is a kernel fold with per-language ports.**
   `kernel/receiver-type-propagation.ts` owns the walk — split on `.`, seed the
   head, thread each hop through `memberTypeOf`, STOP at the first unknown, cap

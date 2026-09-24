@@ -480,9 +480,11 @@
   runner's dispatch→resolve pair at ONE chain run per site. The fan cap is
   Python's own `PY_DISPATCH_FAN_MAX` (4, `CODEGRAPH_PY_DISPATCH_FAN_MAX` to
   re-measure), read ONCE at composition and floored by the corpus-adaptive
-  policy in `resolveNarrowedFanout`; the cascade takes neither language
-  injection, because the runtime-member question is asked one gate earlier and a
-  literal receiver never survives the shape gates.
+  policy in `resolveNarrowedFanout`; the cascade takes neither the
+  duck-vocabulary nor the literal-receiver injection, because the runtime-member
+  question is asked one gate earlier and a literal receiver never survives the
+  shape gates. It DOES inject its visibility access rule (enclosing class, bd
+  jwjyr.1).
 - **The `dynamic` component's measured precision is NOT the plan's estimate,
   both E4.1.3 stop rules fired, and that is why the flag defaults off** (bd
   tea-rags-mcp-w205u; numbers in
@@ -600,10 +602,14 @@
   bare `*` opens the keyword-only region without either. On the call side a
   `*xs` splat OMITS `argCount` rather than guessing — a missing count is "no
   evidence, keep every candidate", a wrong one drops the right target. Python
-  writes NO `visibility` (`_name` is a convention, not a keyword),
-  `acceptsBlock` or `paramNames`; both narrowers that read them keep every
-  candidate on absent evidence. A `@property` is not marked in any way — an
-  attribute read is not a call site, so no `CallRef` ever reaches its signature.
+  writes `visibility: "private"` ONLY for a name-mangled method (`__name`, not a
+  dunder); `_name` is a convention, not a keyword, and stays unrecorded. The
+  dispatch cascade reads it under the ENCLOSING-CLASS access rule it injects,
+  never the explicit-receiver default — mangling makes `obj.__x` legal inside a
+  class of the declaring name. No `acceptsBlock` or `paramNames`; the block
+  narrower keeps every candidate on absent evidence. A `@property` is not marked
+  in any way — an attribute read is not a call site, so no `CallRef` ever
+  reaches its signature.
 - **The class-body reader emits only on project-class EVIDENCE, and is SILENT
   rather than external otherwise.** A bare `X()` and `X.as_manager()` both take
   `declared ∪ importBound` — an import binding is enough because the emitted
