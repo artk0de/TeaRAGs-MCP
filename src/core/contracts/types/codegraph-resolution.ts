@@ -13,7 +13,7 @@
  */
 
 import type { DispatchFanoutOutcome, DispatchTableDef } from "./codegraph-dispatch.js";
-import type { CallRef, FileExtraction, ImportRef, ModuleReexport } from "./codegraph-extraction.js";
+import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, ModuleReexport } from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
@@ -202,6 +202,18 @@ export function pickSingleCandidate<T>(candidates: readonly T[], mode: Ambiguous
   if (candidates.length === 0) return null;
   if (mode === "first") return candidates[0];
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * The `callerScope` a chunk's own calls resolve in: its `bodyScope` when the
+ * walker stamped one (a TYPE chunk, whose body runs inside the type), else its
+ * declaration `scope` (bd tea-rags-mcp-3ievc). The ONE read of that choice —
+ * the resolution runner and every offline harness that rebuilds a call-site
+ * `CallContext` go through it, so a harness cannot measure a caller scope
+ * production does not use.
+ */
+export function chunkCallerScope(chunk: Pick<ChunkExtraction, "scope" | "bodyScope">): string[] {
+  return chunk.bodyScope ?? chunk.scope;
 }
 
 /**

@@ -21,7 +21,15 @@
  * declarations of ONE re-opened Swift type back into one candidate.
  */
 
-import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../../../contracts/types/codegraph.js";
+import {
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type SymbolDefinition,
+  type SymbolLookupOptions,
+  type SymbolResolutionTarget,
+} from "../../../../contracts/types/codegraph.js";
+import { swiftEnclosingTypeIds } from "./swift-enclosing-scope.js";
 import { hasSwiftOverloadSuffix, isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "./swift-type-name.js";
 
 const SWIFT_SOURCE_EXTENSION = ".swift";
@@ -86,4 +94,63 @@ function collapseReopenedTypeDeclarations(defs: SymbolDefinition[]): SymbolDefin
     const base = stripSwiftOverloadSuffix(def.symbolId);
     return !defs.some((other) => other.symbolId === base && other.relPath === def.relPath);
   });
+}
+
+/**
+ * Resolve `<typeName>#<member>` (instance) then `<typeName>.<member>` (static /
+ * class) over Swift declarations. Instance first because Swift's type members
+ * are overwhelmingly instance-level and a static namesake is the rarer shape.
+ */
+export function lookupSwiftTypeMember(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const instanceHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}#${member}`), mode);
+  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+  const staticHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}.${member}`), mode);
+  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+  return null;
+}
+
+/**
+ * The composed id a type NAME denotes at the call site — the name as a walker
+ * fact WROTE it (`let token: CancellationToken`) against the id its members
+ * compose under (`DataStreamRequest.CancellationToken#cancel`).
+ *
+ * Swift resolves a written type name lexically, and this follows that as far
+ * as the index can:
+ *
+ *   1. a declaration composed under the name itself — a top-level type, or a
+ *      name that already arrives qualified — is what the name means;
+ *   2. otherwise the TYPE declarations nested under some other type whose own
+ *      last segment is the name (`<Outer>.CancellationToken`). One such
+ *      declaration is the answer; several are narrowed to those nested inside
+ *      a type ENCLOSING THE CALLER, innermost first — `State` written in
+ *      `Request` is `Request.State`, not `Socket.State`;
+ *   3. anything still ambiguous answers `undefined`, and the name is looked up
+ *      as written, which finds nothing.
+ *
+ * The narrowing reads the caller's scope, not the scope the fact was WRITTEN
+ * in, because that is all a call site carries. The two coincide for the shapes
+ * that dominate — a property typed by a sibling nested type, a local typed by
+ * the enclosing type's own nested state — and where they do not, several
+ * namesakes and no enclosing one leave the answer at `undefined`.
+ */
+export function qualifySwiftTypeName(typeName: string, ctx: CallContext): string {
+  if (lookupSwiftSymbols(ctx, typeName).length > 0) return typeName;
+  const suffix = `.${typeName}`;
+  const shortName = typeName.slice(typeName.lastIndexOf(".") + 1);
+  const nested = new Set<string>();
+  for (const def of lookupSwiftSymbolsByShortName(ctx, shortName)) {
+    const base = stripSwiftOverloadSuffix(def.symbolId);
+    if (base.endsWith(suffix) && isSwiftTypeDeclarationId(base)) nested.add(base);
+  }
+  if (nested.size === 1) return [...nested][0];
+  for (const enclosing of swiftEnclosingTypeIds(ctx)) {
+    const qualified = `${enclosing}${suffix}`;
+    if (nested.has(qualified)) return qualified;
+  }
+  return typeName;
 }

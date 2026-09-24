@@ -956,3 +956,106 @@ describe("swift walker — existential and parenthesized annotations", () => {
     expect(extractMaterialized(src).classFieldTypes?.Session).toBeUndefined();
   });
 });
+
+describe("swift walker — declared return types published run-global (bd tea-rags-mcp-kkwg3)", () => {
+  /** Kernel chunks over the MATERIALIZED tree — the return type is read positionally, so this is the shape that matters. */
+  function publishedReturns(src: string) {
+    const tree = { rootNode: materializeTree(parse(src).rootNode, src) };
+    const chunks = collectSymbols(tree, (node) => swiftNameOf(node), ".", true, new DefaultSymbolIdComposer());
+    return extractFromSwiftFile({ tree, code: src, relPath: "Sources/Sample.swift", language: "swift", chunks })
+      .structuredReturnTypes;
+  }
+
+  it("keys each declared return by the callee's OWN composed symbolId", () => {
+    const src = [
+      "struct Store {",
+      "  func load() -> Repo { Repo() }",
+      "  static func make() -> Store { Store() }",
+      "  struct Inner {",
+      "    func child() -> Leaf? { nil }",
+      "  }",
+      "}",
+      "func build() -> Widget { Widget() }",
+      "",
+    ].join("\n");
+    expect(publishedReturns(src)).toEqual({
+      "Store#load": { form: "instance", name: "Repo" },
+      "Store.make": { form: "instance", name: "Store" },
+      // An optional return is the wrapped type: a call on it dispatches there.
+      "Store.Inner#child": { form: "instance", name: "Leaf" },
+      build: { form: "instance", name: "Widget" },
+    });
+  });
+
+  it("keys each OVERLOAD separately, so two returns never collapse into one", () => {
+    const src = [
+      "struct Store {",
+      "  func load(id: Int) -> Repo { Repo() }",
+      "  func load(name: String) -> Cache { Cache() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(publishedReturns(src)).toEqual({
+      "Store#load": { form: "instance", name: "Repo" },
+      "Store#load~2": { form: "instance", name: "Cache" },
+    });
+  });
+
+  it("publishes nothing for a return no member can dispatch on", () => {
+    const src = [
+      "struct Store {",
+      "  func a() -> Void {}",
+      "  func b() -> Self { self }",
+      "  func c<T>() -> T { fatalError() }",
+      "  func d() -> [Repo] { [] }",
+      "  func e() {}",
+      "}",
+      "",
+    ].join("\n");
+    expect(publishedReturns(src)).toBeUndefined();
+  });
+});
+
+describe("swift walker — a type chunk's own calls run with the type as `self` (bd tea-rags-mcp-3ievc)", () => {
+  /** The chunk set the pipeline hands the walker: kernel `collectSymbols` over the MATERIALIZED tree. */
+  function extractWithKernelChunks(src: string) {
+    const tree = { rootNode: materializeTree(parse(src).rootNode, src) };
+    const chunks = collectSymbols(tree, (node) => swiftNameOf(node), ".", true, new DefaultSymbolIdComposer());
+    return extractFromSwiftFile({ tree, code: src, relPath: "Sources/Sample.swift", language: "swift", chunks });
+  }
+
+  const src = [
+    "struct Invoice {",
+    "  var total: Int { compute() }",
+    "  func compute() -> Int { return 1 }",
+    "  struct Line {",
+    "    let tag = Invoice.label()",
+    "  }",
+    "}",
+    "extension Invoice {",
+    "  var doubled: Int { compute() * 2 }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("gives a type chunk a bodyScope naming the type itself, and keeps its declaration scope", () => {
+    const { chunks } = extractWithKernelChunks(src);
+    const invoice = chunks.find((c) => c.symbolId === "Invoice");
+    expect(invoice?.scope).toEqual([]);
+    expect(invoice?.bodyScope).toEqual(["Invoice"]);
+    // The computed property is not chunked, so its call lands on the type chunk.
+    expect(invoice?.calls.map((c) => c.member)).toEqual(["compute"]);
+  });
+
+  it("gives a NESTED type the full lexical chain, and an extension the extended type", () => {
+    const { chunks } = extractWithKernelChunks(src);
+    expect(chunks.find((c) => c.symbolId === "Invoice.Line")?.bodyScope).toEqual(["Invoice", "Line"]);
+    expect(chunks.find((c) => c.symbolId === "Invoice~2")?.bodyScope).toEqual(["Invoice"]);
+  });
+
+  it("leaves a method chunk without a bodyScope — its scope already is the caller scope", () => {
+    const method = extractWithKernelChunks(src).chunks.find((c) => c.symbolId === "Invoice#compute");
+    expect(method?.scope).toEqual(["Invoice"]);
+    expect(method).not.toHaveProperty("bodyScope");
+  });
+});

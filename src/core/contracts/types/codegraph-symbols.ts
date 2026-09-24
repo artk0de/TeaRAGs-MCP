@@ -146,6 +146,20 @@ export interface NamedSymbol {
    * bd tea-rags-mcp-d1f8 this-resolve.
    */
   absolute?: boolean;
+  /**
+   * When `true`, the declaration is a TYPE whose own body executes with the
+   * type as its enclosing scope, so `collectSymbols` stamps the range with a
+   * `bodyScope` — its scope extended by its own name — and the resolution
+   * runner hands that, not `scope`, to the chunk's calls as `callerScope`.
+   *
+   * `scope` cannot carry it: it is also the DECLARATION's lexical scope, which
+   * the symbol table keys member lookups on, and for a type chunk the two
+   * differ — `struct Invoice` is declared at top level (`[]`) while a computed
+   * property or a stored-property initializer inside it runs as `Invoice`
+   * (bd tea-rags-mcp-3ievc). Opt-in per nameOf: a language that leaves it unset
+   * keeps every range, and every caller scope, byte-identical.
+   */
+  opensSelfScope?: boolean;
 }
 
 /**

@@ -66,10 +66,11 @@
  * emits NO edge. Recall is therefore capped below Java's, where the import
  * table answers a large share of receivers outright.
  *
- * Raising it further is a typing problem, not a chain problem: publishing the
- * walker's declared return types as a channel the fold can read, and recording
- * protocol conformances for an MRO. Both are increments on top of this, not
- * gaps in it.
+ * Raising it further is a typing problem, not a chain problem. The walker's
+ * declared return types now reach the fold (`structuredReturnTypes`, bd
+ * tea-rags-mcp-kkwg3), so a METHOD link is typed where the callee declares its
+ * return; recording protocol conformances for an MRO is the increment still
+ * open on top of this, not a gap in it.
  *
  * ## Where a TYPE NAME still does not resolve
  *

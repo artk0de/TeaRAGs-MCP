@@ -19,7 +19,12 @@ import { join } from "node:path";
 import Parser from "tree-sitter";
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
+import {
+  chunkCallerScope,
+  type CallContext,
+  type CallRef,
+  type SymbolDefinition,
+} from "../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageProvider } from "../../../../../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -85,7 +90,7 @@ function resolveCallFrom(callerSymbolId: string, member: string) {
     if (!call) throw new Error(`no call to ${member} inside ${callerSymbolId}`);
     const ctx: CallContext = {
       callerFile: extraction.relPath,
-      callerScope: chunk.scope,
+      callerScope: chunkCallerScope(chunk),
       callerSymbolId: chunk.symbolId,
       imports: extraction.imports,
       symbolTable,

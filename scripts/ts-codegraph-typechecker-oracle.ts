@@ -169,12 +169,13 @@ import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 import ts from "typescript";
 
-import type {
-  CallContext,
-  CallRef,
-  FileExtraction,
-  RelPath,
-  SymbolDefinition,
+import {
+  chunkCallerScope,
+  type CallContext,
+  type CallRef,
+  type FileExtraction,
+  type RelPath,
+  type SymbolDefinition,
 } from "../src/core/contracts/types/codegraph.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
@@ -1787,7 +1788,7 @@ export function buildCallContext(
 ): CallContext {
   return {
     callerFile: extraction.relPath,
-    callerScope: chunk.scope,
+    callerScope: chunkCallerScope(chunk),
     callerSymbolId: chunk.symbolId,
     imports: extraction.imports,
     symbolTable,

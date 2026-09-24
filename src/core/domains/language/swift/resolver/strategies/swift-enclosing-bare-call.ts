@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEnclosingTypeMemberInFile, type SwiftResolverConfig } from "./shared.js";
+import { lookupLexicalMemberInFile, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * A bare `helper()` inside a type body is shorthand for `self.helper()` (or a
@@ -22,7 +22,7 @@ export class SwiftEnclosingBareCallSymbolResolutionStrategy implements SymbolRes
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null || ctx.callerScope.length === 0) return CONTINUE;
-    const sameFileHit = lookupEnclosingTypeMemberInFile(call.member, ctx);
+    const sameFileHit = lookupLexicalMemberInFile(call.member, ctx);
     return sameFileHit ? resolved(sameFileHit) : CONTINUE;
   }
 }

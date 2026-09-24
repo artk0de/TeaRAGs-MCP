@@ -808,6 +808,93 @@ describe("SwiftCallResolver — enclosingBareCall", () => {
     );
     expect(target).toEqual({ targetRelPath: "Sources/Store.swift", targetSymbolId: "Store#helper" });
   });
+
+  // bd tea-rags-mcp-3ievc — a nested type's scope is `["Outer", "Inner"]`
+  // while its members compose as `Outer.Inner#m`, so the enclosing type has to
+  // be read QUALIFIED, and a bare name walks the lexical scopes outward the way
+  // Swift's unqualified lookup does.
+  it("resolves a bare call inside a NESTED type to that type's qualified member", () => {
+    const t = table({ "Sources/Outer.swift": [{ symbolId: "Outer.Inner#helper", scope: ["Outer", "Inner"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "helper"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner#helper");
+  });
+
+  it("lets the innermost type's member shadow the outer type's namesake", () => {
+    const t = table({
+      "Sources/Outer.swift": [
+        { symbolId: "Outer.Inner.make", scope: ["Outer", "Inner"] },
+        { symbolId: "Outer.make", scope: ["Outer"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "make"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner.make");
+  });
+
+  it("walks OUTWARD to a sibling nested type — the construction `Options(rawValue:)` inside `Options`", () => {
+    // A type chunk's own calls run in the type (its bodyScope), so a static
+    // initializer constructing the type itself is found one scope further out.
+    const t = table({
+      "Sources/Download.swift": [
+        { symbolId: "Download.Options", scope: ["Download"] },
+        { symbolId: "Options", scope: [] },
+      ],
+      "Sources/Other.swift": [{ symbolId: "Options", scope: [] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "Options"),
+      ctx({ callerFile: "Sources/Download.swift", callerScope: ["Download", "Options"], symbolTable: t }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Download.swift", targetSymbolId: "Download.Options" });
+  });
+
+  it("skips a FUNCTION scope — a local function's bare call reaches the enclosing type", () => {
+    const t = table({ "Sources/Store.swift": [{ symbolId: "Store#helper", scope: ["Store"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call(null, "helper"),
+      ctx({ callerFile: "Sources/Store.swift", callerScope: ["Store", "run"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Store#helper");
+  });
+});
+
+describe("SwiftCallResolver — selfMember in nested scopes (bd tea-rags-mcp-3ievc)", () => {
+  it("reads `self` as the innermost TYPE, qualified", () => {
+    const t = table({
+      "Sources/Outer.swift": [
+        { symbolId: "Outer.Inner#helper", scope: ["Outer", "Inner"] },
+        { symbolId: "Outer#helper", scope: ["Outer"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("self", "helper"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Outer.Inner#helper");
+  });
+
+  it("never reads `self` as an OUTER type — a nested type has no implicit outer self", () => {
+    const t = table({ "Sources/Outer.swift": [{ symbolId: "Outer#helper", scope: ["Outer"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self", "helper"),
+      ctx({ callerFile: "Sources/Outer.swift", callerScope: ["Outer", "Inner"], symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("reads `self` inside a local function as the type enclosing that function", () => {
+    const t = table({ "Sources/Store.swift": [{ symbolId: "Store#helper", scope: ["Store"] }] });
+    const target = new SwiftCallResolver().resolve(
+      call("self", "helper"),
+      ctx({ callerFile: "Sources/Store.swift", callerScope: ["Store", "run"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Store#helper");
+  });
 });
 
 describe("SwiftCallResolver — extensionScopeMember", () => {
@@ -1050,6 +1137,288 @@ describe("SwiftCallResolver — super", () => {
         callerScope: ["A"],
         symbolTable: t,
         classExtends: { A: "B", B: "A" },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags-mcp-kkwg3, ll93g)", () => {
+  const t = table({
+    "Sources/Provider.swift": [{ symbolId: "Provider#request", scope: ["Provider"] }],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#didFail", scope: ["Request"] },
+    ],
+    "Sources/Upload.swift": [{ symbolId: "Upload", scope: [] }],
+  });
+
+  it("types a CALL hop by the callee's published return type", () => {
+    // `provider.request(for: task.id).didFail()` — the dot inside the argument
+    // list belongs to the argument, not to the chain.
+    const target = new SwiftCallResolver().resolve(
+      call("provider.request(for: task.id)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        localBindings: { provider: [{ line: 5, type: "Provider" }] },
+        structuredReturnTypes: { "Provider#request": { form: "instance", name: "Request" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Request.swift", targetSymbolId: "Request#didFail" });
+  });
+
+  it("reads the return type of the method the call ACTUALLY lands on, inherited ones included", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("upload.request(for: x)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        classExtends: { Upload: "Provider" },
+        localBindings: { upload: [{ line: 5, type: "Upload" }] },
+        structuredReturnTypes: { "Provider#request": { form: "instance", name: "Request" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#didFail");
+  });
+
+  it("emits nothing for a call hop whose callee publishes no return type", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("provider.request(for: x)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        localBindings: { provider: [{ line: 5, type: "Provider" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("types a PARENTHESISED CAST head by the type it names", () => {
+    for (const receiver of ["(value as Request)", "(value as? Request)", "(value as! Request)"]) {
+      const target = new SwiftCallResolver().resolve(
+        call(receiver, "didFail"),
+        ctx({ callerFile: "Sources/Delegate.swift", symbolTable: t }),
+      );
+      expect(target?.targetSymbolId).toBe("Request#didFail");
+    }
+  });
+
+  it("threads a cast head through a further hop", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("(value as Provider).request(for: x)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        structuredReturnTypes: { "Provider#request": { form: "instance", name: "Request" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#didFail");
+  });
+
+  it("types an ARRAY or DICTIONARY literal head as the collection it builds", () => {
+    // Swift spells `[a, b]` an `Array` and `[k: v]` a `Dictionary`; a member
+    // only the project's own `extension Array` declares is then reachable.
+    const withExtensions = table({
+      "Sources/Array+Ext.swift": [{ symbolId: "Array#joinedWithAmpersands", scope: ["Array"] }],
+      "Sources/Dictionary+Ext.swift": [{ symbolId: "Dictionary#merged", scope: ["Dictionary"] }],
+    });
+    const array = new SwiftCallResolver().resolve(
+      call("[first, second]", "joinedWithAmpersands"),
+      ctx({ callerFile: "Sources/Encoder.swift", symbolTable: withExtensions }),
+    );
+    expect(array?.targetSymbolId).toBe("Array#joinedWithAmpersands");
+    const dictionary = new SwiftCallResolver().resolve(
+      call('["a": 1]', "merged"),
+      ctx({ callerFile: "Sources/Encoder.swift", symbolTable: withExtensions }),
+    );
+    expect(dictionary?.targetSymbolId).toBe("Dictionary#merged");
+  });
+
+  it("types a collection cast as the collection, and DROPs a member the project never declares on it", () => {
+    // `(allHeaderFields as [String: String]).map` is a `Dictionary.map` — the
+    // standard library's, which no project symbol answers.
+    const target = new SwiftCallResolver().resolve(
+      call("(value as [String: String])", "map"),
+      ctx({ callerFile: "Sources/Delegate.swift", symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a SHORT type name reaches its NESTED declaration", () => {
+  // A walker type fact is the name as WRITTEN — `let token: CancellationToken`
+  // inside `DataStreamRequest` — while the type composes as
+  // `DataStreamRequest.CancellationToken`. Swift resolves the written name
+  // lexically; so must the member lookup.
+  it("qualifies a field's short type name to the one nested type declaring it", () => {
+    const t = table({
+      "Sources/Stream.swift": [
+        { symbolId: "DataStreamRequest.CancellationToken", scope: ["DataStreamRequest"] },
+        { symbolId: "DataStreamRequest.CancellationToken#cancel", scope: ["DataStreamRequest", "CancellationToken"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("token", "cancel"),
+      ctx({
+        callerFile: "Sources/Stream.swift",
+        callerScope: ["DataStreamRequest", "Stream"],
+        symbolTable: t,
+        classFieldTypes: { Stream: { token: "CancellationToken" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataStreamRequest.CancellationToken#cancel");
+  });
+
+  const twoStates = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+    "Sources/Socket.swift": [
+      { symbolId: "Socket.State", scope: ["Socket"] },
+      { symbolId: "Socket.State#canTransitionTo", scope: ["Socket", "State"] },
+    ],
+  });
+
+  it("picks the namesake nested in the CALLER's own enclosing type when several exist", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Request.swift",
+        callerScope: ["Request"],
+        symbolTable: twoStates,
+        localBindings: { state: [{ line: 5, type: "State" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("stays silent when several nested namesakes exist and none encloses the caller", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Other.swift",
+        callerScope: ["Other"],
+        symbolTable: twoStates,
+        localBindings: { state: [{ line: 5, type: "State" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("keeps a TOP-LEVEL declaration of the name ahead of any nested namesake", () => {
+    const t = table({
+      "Sources/State.swift": [
+        { symbolId: "State", scope: [] },
+        { symbolId: "State#canTransitionTo", scope: ["State"] },
+      ],
+      "Sources/Request.swift": [
+        { symbolId: "Request.State", scope: ["Request"] },
+        { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Other.swift",
+        callerScope: ["Other"],
+        symbolTable: t,
+        localBindings: { state: [{ line: 5, type: "State" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("State#canTransitionTo");
+  });
+});
+
+describe("SwiftCallResolver — a member INHERITED from the superclass", () => {
+  // `DataRequest: Request` — `resume()` / `cancel()` live on `Request`, and a
+  // receiver typed `DataRequest` (a local, a stored property, `self`) dispatches
+  // there statically unless the subclass overrides.
+  const hierarchy = {
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#resume", scope: ["Request"] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+    ],
+    "Sources/DataRequest.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      { symbolId: "DataRequest#cancel", scope: ["DataRequest"] },
+    ],
+  };
+  const classExtends = { DataRequest: "Request" };
+
+  it("resolves a call on a LOCAL of the subclass type to the superclass's member", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("req", "resume"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        symbolTable: table(hierarchy),
+        classExtends,
+        localBindings: { req: [{ line: 5, type: "DataRequest" }] },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Request.swift", targetSymbolId: "Request#resume" });
+  });
+
+  it("lets the subclass's OWN override win over the inherited member", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("req", "cancel"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        symbolTable: table(hierarchy),
+        classExtends,
+        localBindings: { req: [{ line: 5, type: "DataRequest" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#cancel");
+  });
+
+  it("resolves a STORED PROPERTY of the subclass type to the superclass's member", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request", "resume"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        callerScope: ["DataTask"],
+        symbolTable: table(hierarchy),
+        classExtends,
+        classFieldTypes: { DataTask: { request: "DataRequest" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#resume");
+  });
+
+  it("resolves `self.member()` and a bare call inside the subclass to the inherited member", () => {
+    for (const receiver of ["self", null]) {
+      const target = new SwiftCallResolver().resolve(
+        call(receiver, "resume"),
+        ctx({
+          callerFile: "Sources/DataRequest.swift",
+          callerScope: ["DataRequest"],
+          symbolTable: table(hierarchy),
+          classExtends,
+        }),
+      );
+      expect(target?.targetSymbolId).toBe("Request#resume");
+    }
+  });
+
+  it("does NOT fall through to the superclass when the subclass's own member is AMBIGUOUS", () => {
+    // Two files declaring `DataRequest#resume` is a cross-file ambiguity the
+    // strict gate drops; answering with `Request#resume` instead would pick the
+    // one declaration the source provably does NOT call.
+    const t = table({
+      ...hierarchy,
+      "Sources/A.swift": [{ symbolId: "DataRequest#resume", scope: ["DataRequest"] }],
+      "Sources/B.swift": [{ symbolId: "DataRequest#resume", scope: ["DataRequest"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("req", "resume"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        symbolTable: t,
+        classExtends,
+        localBindings: { req: [{ line: 5, type: "DataRequest" }] },
       }),
     );
     expect(target).toBeNull();

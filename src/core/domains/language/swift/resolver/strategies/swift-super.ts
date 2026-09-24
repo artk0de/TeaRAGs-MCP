@@ -8,7 +8,7 @@ import {
 } from "../../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../../kernel/run-scoped-memo.js";
 import { SWIFT_ANCESTOR_POLICY } from "../swift-ancestor-policy.js";
-import { lookupSwiftTypeMember, type SwiftResolverConfig } from "./shared.js";
+import { lookupSwiftTypeMember, swiftSelfTypeName, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * `super.X()` — the enclosing class's superclass chain, entered AFTER the class
@@ -56,7 +56,7 @@ export class SwiftSuperSymbolResolutionStrategy implements SymbolResolutionStrat
     // A `super` call outside a type body is not expressible in Swift, so an
     // absent enclosing scope means the index disagrees with the language. DROP
     // rather than continue: the later passes would treat it as a bare call.
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+    const enclosing = swiftSelfTypeName(ctx);
     if (enclosing === undefined) return DROP;
 
     const scan = findMemberInAncestorChain(

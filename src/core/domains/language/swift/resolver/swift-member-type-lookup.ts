@@ -40,7 +40,11 @@
  * run's hierarchy to the next (bd tea-rags-mcp-z99hp).
  */
 
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
+import type {
+  AmbiguousResolveMode,
+  CallContext,
+  SymbolResolutionTarget,
+} from "../../../../contracts/types/codegraph.js";
 import {
   createAncestorLinearizer,
   findMemberInAncestorChain,
@@ -48,6 +52,7 @@ import {
 } from "../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { SWIFT_ANCESTOR_POLICY } from "./swift-ancestor-policy.js";
+import { lookupSwiftSymbols, lookupSwiftTypeMember, qualifySwiftTypeName } from "./swift-symbol-lookup.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
 
 export class SwiftMemberTypeLookup {
@@ -62,6 +67,35 @@ export class SwiftMemberTypeLookup {
     return scan.target ?? undefined;
   }
 
+  /**
+   * The METHOD `member` a value of `typeName` dispatches to: the type's own
+   * declaration, else the nearest superclass declaring it — the same walk
+   * `typeOfProperty` makes for a property, and for the same reason. Swift
+   * declares shared behaviour on a base class and calls it through the
+   * subclass constantly (`DataRequest` inherits `resume()` / `cancel()` from
+   * `Request`), and a bound receiver whose own type is searched alone DROPs
+   * every one of those calls.
+   *
+   * The walk stops at the FIRST class that declares the member at all, even
+   * when the strict gate then finds that declaration ambiguous (two files each
+   * composing `DataRequest#resume`). Falling through to `Request#resume` there
+   * would answer with the one declaration the source provably does not call.
+   */
+  memberOn(
+    typeName: string,
+    member: string,
+    ctx: CallContext,
+    mode: AmbiguousResolveMode,
+  ): SymbolResolutionTarget | null {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      // The chain's keys are type names as WRITTEN; members compose under the
+      // qualified id (`qualifySwiftTypeName`).
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      return declaresMember(typeId, member, ctx) ? { target: lookupSwiftTypeMember(typeId, member, ctx, mode) } : null;
+    });
+    return scan.target?.target ?? null;
+  }
+
   private propertyTypeOn(typeName: string, member: string, ctx: CallContext): string | null {
     return ctx.classFieldTypes?.[typeName]?.[member] ?? this.fields.fieldsOf(typeName, ctx)?.[member] ?? null;
   }
@@ -73,4 +107,12 @@ export class SwiftMemberTypeLookup {
     this.linearizers.set(ctx.runScope, ctx, fresh);
     return fresh;
   }
+}
+
+/** Whether `typeName` declares `member` in either spelling, whatever the cardinality. */
+function declaresMember(typeName: string, member: string, ctx: CallContext): boolean {
+  return (
+    lookupSwiftSymbols(ctx, `${typeName}#${member}`).length > 0 ||
+    lookupSwiftSymbols(ctx, `${typeName}.${member}`).length > 0
+  );
 }
