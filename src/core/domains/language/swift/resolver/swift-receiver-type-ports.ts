@@ -534,8 +534,11 @@ function swiftBareCalleeClosureParameterType(
   ports: ReceiverTypePorts,
   members: SwiftMemberTypeLookup,
 ): TypeRef | undefined {
-  if (!SWIFT_IDENTIFIER.test(callee) || callee.startsWith("$")) return undefined;
   const foldLine = line - 1;
+  if (isSwiftTypeName(callee)) {
+    return swiftConstructionClosureParameterType(callee, index, foldLine, ctx, ports, members);
+  }
+  if (!SWIFT_IDENTIFIER.test(callee) || callee.startsWith("$")) return undefined;
   if (resolveLocalBinding(ctx.localBindings, callee, foldLine) !== undefined) return undefined;
   if (swiftLocalValueType(callee, foldLine, ctx, ports, members) !== undefined) return undefined;
   const enclosing = swiftSelfTypeName(ctx);
@@ -555,6 +558,33 @@ function swiftBareCalleeClosureParameterType(
   }
   if (lookupSwiftSymbolsByShortName(ctx, callee).some((def) => def.scope.length === 0)) return undefined;
   return members.sdkFunctionClosureParameterType(callee, index);
+}
+
+/**
+ * The closure parameter of a CONSTRUCTION — `StreamOf(bufferingPolicy:) { continuation in`,
+ * `AsyncStream { continuation in` (bd tea-rags-mcp-y99pg.29): what the
+ * constructed type's `init` says its closure takes — the project's
+ * declaration first, else the SDK's. A slot naming one of the type's own
+ * generic parameters types nothing: the construction's arguments are not
+ * folded here.
+ */
+function swiftConstructionClosureParameterType(
+  typeText: string,
+  index: number,
+  foldLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const type = propagateReceiverType(typeText, foldLine, ctx, ports);
+  if (type?.form !== "class") return undefined;
+  const signature = members.closureParameterTypes(type.name, "init", ctx);
+  if (signature !== undefined) {
+    const declared = signature.types?.[index];
+    if (declared === null || declared === undefined || signature.genericParameters.includes(declared)) return undefined;
+    return { form: "instance", name: declared };
+  }
+  return members.sdkClosureParameterType(type, "init", index, ctx);
 }
 
 /**

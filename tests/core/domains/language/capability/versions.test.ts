@@ -346,6 +346,8 @@ describe("seeded support versions", () => {
       // by that callee (bd tea-rags-mcp-y99pg.29), so an index built by walker
       // 43 charges `withCheckedContinuation { continuation in … }` SDK calls as
       // misses.
+      // swift walker 45: an initializer publishes its closure parameters, so an
+      // index built by walker 44 leaves a construction's closure parameters untyped.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 14],
@@ -355,7 +357,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 44],
+        ["swift", 45],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

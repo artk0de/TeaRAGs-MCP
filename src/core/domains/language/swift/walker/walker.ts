@@ -384,10 +384,10 @@ function swiftGenericMemberFacts(
     if (member.type === "init_declaration") {
       const initializer = swiftGenericInitializer(member, genericParameters);
       if (initializer) initializers.push(initializer);
-      continue;
-    }
-    if (member.type !== "function_declaration" && member.type !== "protocol_function_declaration") continue;
-    const name = member.childForFieldName("name")?.text;
+    } else if (member.type !== "function_declaration" && member.type !== "protocol_function_declaration") continue;
+    // An initializer publishes under `init`, the member a construction's
+    // closure is read off (bd tea-rags-mcp-y99pg.29).
+    const name = member.type === "init_declaration" ? "init" : member.childForFieldName("name")?.text;
     const types = name ? swiftClosureParameterTypeNames(member, genericParameters) : undefined;
     if (!name || types === undefined) continue;
     anyClosure = true;
@@ -456,7 +456,8 @@ function sameSwiftTypeNames(a: readonly (string | null)[] | null, b: readonly (s
 
 /**
  * The declared parameter types of the ONE function-typed parameter `fn`
- * takes — `undefined` when it takes none, `null` when it takes two or more.
+ * takes that itself takes a parameter — `undefined` when it takes none,
+ * `null` when it takes two or more.
  * A name the enclosing type declares as a generic parameter is kept as that
  * name, to be bound by a receiver's type arguments; a method's own generic
  * parameter reads as its constraint, or nothing.
@@ -470,8 +471,12 @@ function swiftClosureParameterTypeNames(
     if (parameter.type !== "parameter") continue;
     const functionType = swiftFunctionTypeNode(swiftParameterTypeNode(parameter));
     if (!functionType) continue;
-    if (found !== undefined) return null;
     const params = functionType.children.find((c) => c.type === "tuple_type");
+    // A slot whose function takes nothing (`onTermination: (() -> Void)?`)
+    // can never receive a closure that names a parameter, so it does not
+    // compete for one (bd tea-rags-mcp-y99pg.29).
+    if (!(params?.namedChildren ?? []).some((item) => item.type === "tuple_type_item")) continue;
+    if (found !== undefined) return null;
     const types: (string | null)[] = [];
     for (const item of params?.namedChildren ?? []) {
       if (item.type !== "tuple_type_item") continue;
@@ -1342,10 +1347,20 @@ function swiftClosureArgumentFacts(lambda: AstNode, scope: SwiftTypeScope): read
 function swiftClosureCalleeSpelling(lambda: AstNode): string | undefined {
   let suffix = lambda.parent;
   if (suffix?.type === "value_argument") suffix = suffix.parent?.parent ?? null;
-  if (suffix?.type !== "call_suffix") return undefined;
+  if (suffix?.type !== "call_suffix" && suffix?.type !== "constructor_suffix") return undefined;
   const call = suffix.parent;
-  if (call?.type !== "call_expression") return undefined;
+  if (call?.type !== "call_expression" && call?.type !== "constructor_expression") return undefined;
   if (lastClosureArgument(suffix)?.startIndex !== lambda.startIndex) return undefined;
+  // `StreamOf<T>(…) { … }` — an explicitly specialised construction — is spelled
+  // by its type, generic arguments dropped: the resolver reads the type's `init`.
+  if (call.type === "constructor_expression") {
+    // Positional, not `constructed_type`: see the materialization hazard {@link swiftTypeNodeAfter} documents.
+    const typeNode = call.namedChildren.find((c) => c.type === "user_type");
+    const constructed = typeNode?.text.replace(/<[^<>]*(?:<[^<>]*>[^<>]*)*>/g, "");
+    return constructed !== undefined && SWIFT_TYPE_NAME_TEXT.test(constructed) && /^[\w.]+$/.test(constructed)
+      ? constructed
+      : undefined;
+  }
   const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
   if (callee?.type === "simple_identifier") return callee.text;
   if (callee?.type !== "navigation_expression") return undefined;

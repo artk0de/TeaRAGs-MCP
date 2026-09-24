@@ -3203,6 +3203,42 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
     expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
   });
 
+  it("types the closure parameter of a project type's initializer", () => {
+    const withStream = table({
+      "Sources/Request.swift": [
+        { symbolId: "Request", scope: [] },
+        { symbolId: "Request#finish", scope: ["Request"] },
+      ],
+      "Sources/StreamOf.swift": [{ symbolId: "StreamOf", scope: [] }],
+    });
+    const within = ctx({
+      callerFile: "Sources/Request.swift",
+      callerScope: ["Request", "run"],
+      symbolTable: withStream,
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/StreamOf.swift": [
+          {
+            typeId: "StreamOf",
+            reopens: false,
+            genericParameters: ["Element"],
+            memberClosureParameters: { init: ["Continuation"] },
+          },
+        ],
+      },
+      callResultBindings: {
+        continuation: [{ line: 10, callee: "StreamOf", closureParameter: 0, scopeEndLine: 12 }],
+      },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("continuation", "finish", 11), within)).toBe(false);
+  });
+
+  it("types the closure parameter of an SDK type's initializer", () => {
+    // `AsyncStream { continuation in … }` calls its builder with an `AsyncStream.Continuation`.
+    const site = call("continuation", "finish", 11);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context("AsyncStream"))).toBe(false);
+  });
+
   it("types nothing for a bare callee neither the enclosing type nor the SDK declares", () => {
     const site = call("continuation", "finish", 11);
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context("makeStream"))).toBe(true);
