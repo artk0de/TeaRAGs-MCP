@@ -227,14 +227,21 @@ carry their own navigators.
   label on a small-share language, not a polyglot-mixed one, and nothing falls
   back to the global distribution (`../explore/CLAUDE.md` owns the resolution
   side).
-- **`payload.isTest` is a filename regex, absent when false, 16 languages.**
-  `detectTestFile` (`static/test-detection.ts`) matches `basename(relativePath)`
-  only, so `spec/models/user_spec.rb` hits while `tests/helpers.py` and
-  `src/test/java/Helper.java` do not; the provider writes the key only on a hit
-  (`StaticPayloadBuilder#buildPayload`). Why: `production` / `coreLogic` exclude
-  by `isTest`, so directory-organized suites leak through them — and a condition
-  written `isTest = false` matches nothing, leaving the shipped
-  `{ op: "eq", value: true, occur: "must_not" }` as the only working form.
+- **`payload.isTest` is owned by the infra file classifier, absent when false.**
+  `detectTestFile` (`static/test-detection.ts`) delegates to `classify` in
+  `core/infra/file-classification/`, the same patterns the codegraph exclusion
+  and the enrichment `skippedAs: "test"` stamp read, so it is path-aware
+  (`tests/helpers.py` hits). Add a test shape THERE, never beside
+  `detectTestFile`. The provider writes the key only on a hit
+  (`StaticPayloadBuilder#buildPayload`), so a condition written `isTest = false`
+  matches nothing; `{ op: "eq", value: true, occur: "must_not" }` is the only
+  working form. Indexes built before bd tea-rags-mcp-9ty5z carry the old
+  filename-only flag until `--force`; `testFile: "exclude"` bridges them with a
+  `must_not` on `codegraph.symbols.file.skippedAs = "test"`
+  (`static/filters.ts`), while the `production` / `coreLogic` presets still read
+  `isTest` alone. Why: two classifiers answering "is this a test" disagreed, and
+  every churn-weighted preset ranked shared `__helpers__` fixtures as
+  production.
 
 ## See also
 
