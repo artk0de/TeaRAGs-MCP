@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
-import { AliasOperationError } from "../../../../src/core/adapters/qdrant/errors.js";
+import { QdrantConnection } from "../../../../src/core/adapters/qdrant/connection.js";
+import { AliasOperationError, QdrantUnavailableError } from "../../../../src/core/adapters/qdrant/errors.js";
 
 function createMockClient() {
   return {
@@ -12,13 +13,26 @@ function createMockClient() {
 
 type MockClient = ReturnType<typeof createMockClient>;
 
+/** A real connection whose REST client is the mock — alias ops run through its `call` guard. */
+function connectionFor(client: MockClient): QdrantConnection {
+  const connection = new QdrantConnection("http://127.0.0.1:6333");
+  connection.client = client as never;
+  return connection;
+}
+
+function staleSocketReset(): TypeError {
+  return Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+  });
+}
+
 describe("QdrantAliasManager", () => {
   let client: MockClient;
   let aliases: QdrantAliasManager;
 
   beforeEach(() => {
     client = createMockClient();
-    aliases = new QdrantAliasManager(client as never);
+    aliases = new QdrantAliasManager(connectionFor(client));
   });
 
   describe("createAlias", () => {
@@ -184,6 +198,44 @@ describe("QdrantAliasManager", () => {
       });
       expect(await aliases.resolveActive("code_x_v4")).toBe("code_x_v4");
       expect(await aliases.resolveActive("unknown")).toBe("unknown");
+    });
+  });
+
+  describe("connection guard", () => {
+    it("listAliases survives a stale keep-alive socket reset via the connection's retry", async () => {
+      client.getAliases
+        .mockRejectedValueOnce(staleSocketReset())
+        .mockResolvedValueOnce({ aliases: [{ alias_name: "code_x", collection_name: "code_x_v4" }] });
+
+      expect(await aliases.listAliases()).toEqual([{ aliasName: "code_x", collectionName: "code_x_v4" }]);
+      expect(client.getAliases).toHaveBeenCalledTimes(2);
+    });
+
+    it("updateCollectionAliases survives a stale keep-alive socket reset via the connection's retry", async () => {
+      client.updateCollectionAliases.mockRejectedValueOnce(staleSocketReset()).mockResolvedValueOnce({});
+
+      await aliases.switchAlias("code_x", "code_x_v3", "code_x_v4");
+      expect(client.updateCollectionAliases).toHaveBeenCalledTimes(2);
+    });
+
+    it("reads the connection's client at call time, so a reconnect-swapped client is used", async () => {
+      const connection = connectionFor(client);
+      const manager = new QdrantAliasManager(connection);
+      const swapped = createMockClient();
+      swapped.getAliases.mockResolvedValue({ aliases: [{ alias_name: "a", collection_name: "a_v2" }] });
+      connection.client = swapped as never;
+
+      expect(await manager.isAlias("a")).toBe(true);
+      expect(client.getAliases).not.toHaveBeenCalled();
+    });
+
+    it("keeps the typed connection failure as the cause when the retry fails too", async () => {
+      client.getAliases.mockRejectedValue(staleSocketReset());
+
+      const err = await aliases.listAliases().catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AliasOperationError);
+      expect((err as AliasOperationError).cause).toBeInstanceOf(QdrantUnavailableError);
     });
   });
 });
