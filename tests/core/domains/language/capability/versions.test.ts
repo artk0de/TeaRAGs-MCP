@@ -212,6 +212,10 @@ describe("seeded support versions", () => {
       // return type and no edge off a call hop; walker 10 qualifies a short
       // type name to the nested type it denotes, so an index built by walker 9
       // holds no edge into a nested type's member reached by its short name.
+      // swift walker 11 (with chunking 4): the grammar moves from
+      // tree-sitter-swift 0.7.1 to 0.7.3, which parses files 0.7.1 left as
+      // ERROR nodes, so an index built by walker 10 holds parse-error ids and
+      // none of the edges out of those files.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -228,7 +232,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 10],
+        ["swift", 11],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
@@ -240,9 +244,12 @@ describe("seeded support versions", () => {
       // XCTest and swift-testing members, so `.swift` test files now emit
       // `test` / `test_setup` chunks, and `detectScope` switches the project
       // from path-based to chunkType-based test accounting once they appear.
+      // swift chunking 3 added the Quick scope chunker; chunking 4 is the
+      // grammar bump to 0.7.3 — files 0.7.1 failed to parse now split at real
+      // symbol boundaries, so the chunk set moves.
       const CHUNKING_BUMPED = new Map([
         ["javascript", 2],
-        ["swift", 3],
+        ["swift", 4],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

@@ -9,9 +9,38 @@ export const capability: LanguageCapability = {
     tech: "XCTest + swift-testing recognition (test cases, setUp/tearDown, @Test/@Suite) plus Quick/Nimble DSL scope chunking (per-scenario chunks with ancestor beforeEach spliced in)",
   },
   codegraph: {
-    tier: "moderate",
-    tech: "9-strategy chain + super over the superclass chain + implicit-self and chained field typing + extension-scope and nested-type receivers; no import narrowing",
+    tier: "high",
+    tech: "9-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope and nested-type receivers; no import narrowing",
+    summary:
+      "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
   },
+  // tree-sitter-swift 0.7.1 -> 0.7.3 (walker 11, chunking 4). Upstream tagged
+  // 0.7.3 but never published it to npm, so it ships as our own N-API prebuild
+  // package `@artk0de/tree-sitter-swift@0.7.3-prebuild.1`, built from the
+  // pinned upstream release asset by `scripts/vendor/tree-sitter-swift/`. The
+  // grammar now parses `@unchecked Sendable`, `#if` inside a type body and
+  // `nonisolated(unsafe)`, each of which 0.7.1 turned into ERROR nodes that
+  // cost whole files their scopes (Session.swift, SessionDelegate.swift) and
+  // minted ids like `Session.swift#webSocketRequest#init` for members of a
+  // type. Measured at walker 10, per receiverKind, 0.7.1 -> 0.7.3:
+  //   Alamofire TOTAL 0.568 -> 0.706 (852/1501 -> 1062/1505); localVar
+  //   0.317 -> 0.581, selfMember 0.741 -> 1.000, super 0.688 -> 0.813,
+  //   bareCall 0.874 -> 0.913, chain 0.099 -> 0.223, dynamic 0.218 -> 0.485.
+  //   Quick TOTAL 0.523 -> 0.844 (214/409 -> 362/429); localVar 0.200 ->
+  //   0.789, selfMember 0.350 -> 1.000, super 0.167 -> 0.333, bareCall 0.842
+  //   -> 0.923, chain 0.341 -> 0.882, dynamic 0.185 -> 0.759.
+  // Edges: Alamofire +210 gained, 37 retargeted (every one from a parse-error
+  // id onto the real member, e.g. `#performEagerlyIfNecessary` ->
+  // `Session#performEagerlyIfNecessary`), 0 lost; Quick +148, 9 retargeted, 0
+  // lost. The chunk set MOVES: with the production chunker config 271 of 2401
+  // Alamofire chunks change across 15 of 101 files and 110 of 672 Quick chunks
+  // across 9 of 113, because files that failed to parse now split at real
+  // symbol boundaries — hence chunking 4 as well as walker 11, and the drift
+  // hint routes `--force` for Swift projects. The same numbers move codegraph
+  // from `moderate` to `high`: typed receivers (selfMember 1.000 on both
+  // corpora) now resolve as reliably as the structural chain allows, and what
+  // stays unresolved is dominated by closure parameters (`$0`) and Foundation
+  // or UIKit receivers the project does not declare.
   // walker 10: a type name a walker fact WROTE short resolves to the nested
   // type it denotes. Members compose under the qualified id
   // (`DataStreamRequest.CancellationToken#cancel`), but a property or local
@@ -154,7 +183,9 @@ export const capability: LanguageCapability = {
   // adds the Quick scope chunker, which MOVES THE CHUNK SET — one giant `spec`
   // chunk becomes N scenario chunks with new ids and ranges — so the drift hint
   // must route `--force`, not `--force-enrichments`.
-  versions: { chunking: 3, walker: 10, codegraphSchema: 2 },
+  // chunking 4: the grammar bump above — files 0.7.1 could not parse now
+  // chunk at real symbol boundaries, so the chunk set moves again.
+  versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

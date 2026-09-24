@@ -71,11 +71,11 @@
   },
   "swift": {
     "chunking": {
-      "version": 3,
+      "version": 4,
       "digest": "sha256:2d801131eaa3bebb86fb6b3481840872199418de5e26eb01dc2935e22ddf67bb"
     },
     "walker": {
-      "version": 10,
+      "version": 11,
       "digest": "sha256:c4faaffe5ebb76fd71ce6e98e0826d28b2982a20243275263e3574e09959fdff"
     }
   },
