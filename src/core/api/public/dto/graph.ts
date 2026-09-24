@@ -104,10 +104,22 @@ export interface CycleResult {
   /** Numeric id assigned at recompute time. Stable within one recompute. */
   cycleId: number;
   scope: CycleScope;
-  /** Members in walk order. */
+  /** Members in walk order: relPaths (file scope) or bare symbolIds (method scope). */
   members: string[];
+  /**
+   * Method scope only — per member, index-aligned with `members`: its symbolId
+   * and the file that declares it. Tells namesakes apart (two `init` in one Go
+   * package, every top-level `main`), which the bare `members` entry cannot.
+   * `relativePath` is `""` for a cycle not yet recomputed since migration 027.
+   */
+  memberLocations?: CycleMemberLocation[];
   /** Convenience — member count (always >= 2). */
   length: number;
+}
+
+export interface CycleMemberLocation {
+  symbolId: SymbolId;
+  relativePath: RelPath;
 }
 
 export interface FindCyclesResponse {

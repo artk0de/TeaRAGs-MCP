@@ -122,7 +122,8 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
-    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
+    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
+    | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
     | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths
     | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped

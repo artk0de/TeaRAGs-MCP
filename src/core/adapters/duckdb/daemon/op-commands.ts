@@ -252,7 +252,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // The adapter returns a `Map<string, string[]>`; serialise as entries
   // so it survives JSON framing (the client rebuilds the Map).
   listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope as CycleScope)).entries()]),
-  getPageRank: read(async (graphDb, p) => graphDb.getPageRank(p.symbolId as SymbolId)),
+  getPageRank: read(async (graphDb, p) =>
+    graphDb.getPageRank(p.symbolId as SymbolId, p.relPath as RelPath | undefined),
+  ),
 
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   getSupertypes: read(async (graphDb, p) => graphDb.getSupertypes(p.fqName as string)),

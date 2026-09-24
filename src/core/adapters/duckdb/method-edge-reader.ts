@@ -338,17 +338,15 @@ export class DuckDbMethodEdgeReader {
    * pageRank — so a caller reading `map.get(key) ?? { 0, 0, 0 }` gets the same
    * numbers those getters return for a symbol with no namesake.
    *
-   * PageRank is the exception and is knowingly left merged: `cg_symbols_metrics`
-   * is keyed by `symbol_id` alone and the rank itself is computed over an
-   * adjacency of bare ids (`streamAdjacency("method")`), so every namesake
-   * shares one node in the PageRank graph. Fanning the one value out to each
-   * declaring file is what preserves today's behaviour; making the RANK itself
-   * per-declaration is a schema change to `cg_symbols_metrics` /
-   * `cg_symbols_cycles` and is tracked separately.
+   * PageRank is per declaration too (bd tea-rags-mcp-4g9ga): the rank is
+   * computed over the file-scoped adjacency `streamAdjacency("method")` yields
+   * and `cg_symbols_metrics` is keyed `(rel_path, symbol_id)` (migration 027).
+   * The one merged value left is a rank 027 carried over with no file, which is
+   * fanned out to every declaring file until the next recompute replaces it.
    */
   async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
     const out = new Map<FileScopedSymbolId, ChunkGraphSignals>();
-    /** Every file-scoped entry a bare symbolId has, for the merged-node pageRank fan-out. */
+    /** Every file-scoped entry a bare symbolId has, for the carried-over (pre-027) pageRank fan-out. */
     const keysBySymbolId = new Map<SymbolId, FileScopedSymbolId[]>();
     const entryFor = (relPath: RelPath, symbolId: SymbolId): ChunkGraphSignals => {
       const key = fileScopedSymbolKey({ relPath, symbolId });
@@ -379,21 +377,27 @@ export class DuckDbMethodEdgeReader {
     for (const r of fanOutRows) entryFor(r.path, r.id).fanOut = roundEdgeWeightSum(Number(r.n ?? 0));
     const pageRankRows = await this.session.queryAll<{
       id: string;
-      path: string | null;
+      path: string;
       page_rank: number | bigint | string;
+      decl_path: string | null;
     }>(
-      // The LEFT JOIN is what gives a rank a FILE to land under. `cg_symbols`
-      // is the declaration table, so it answers for the symbols a chunk can be
-      // owned by; the edge-derived keys below cover a ranked symbol that
-      // participates in edges without a declaration row of its own (the same
-      // gap `DuckDbGraphAnalyticsStore#resolveMethodSymbolPaths` documents).
-      `SELECT m.symbol_id AS id, s.rel_path AS path, m.page_rank
+      // A rank is keyed by the declaration it was computed for. `rel_path = ''`
+      // is a rank migration 027 carried over from the merged-node era with no
+      // file to name: it still goes to every declaring file, exactly as before,
+      // until the next recompute replaces it with per-file rows. Those rows
+      // come first so a file-scoped rank for the same id is applied last.
+      `SELECT m.symbol_id AS id, m.rel_path AS path, m.page_rank, d.rel_path AS decl_path
          FROM cg_symbols_metrics m
-         LEFT JOIN cg_symbols s ON s.symbol_id = m.symbol_id`,
+         LEFT JOIN cg_symbols d ON m.rel_path = '' AND d.symbol_id = m.symbol_id
+        ORDER BY m.rel_path <> ''`,
     );
     for (const r of pageRankRows) {
       const rank = Number(r.page_rank);
-      if (r.path !== null) entryFor(r.path, r.id).pageRank = rank;
+      if (r.path !== "") {
+        entryFor(r.path, r.id).pageRank = rank;
+        continue;
+      }
+      if (r.decl_path !== null) entryFor(r.decl_path, r.id).pageRank = rank;
       for (const key of keysBySymbolId.get(r.id) ?? []) (out.get(key) as ChunkGraphSignals).pageRank = rank;
     }
     return out;

@@ -481,6 +481,11 @@ export interface GraphDbClient {
    * (e.g. `Map<number, number[]>` with a separate id-table) instead of
    * paying the string-keyed `Map<string, string[]>` overhead twice.
    *
+   * Vertices are relPaths in the file scope and `FileScopedSymbolId`s
+   * (`fileScopedSymbolKey`) in the method scope — never bare symbolIds, which
+   * name every namesake at once (bd tea-rags-mcp-4g9ga). `listAdjacency`
+   * uses the same identity.
+   *
    * Method scope also yields the per-edge dispatch confidence as an
    * optional third element (bd tea-rags-mcp-s5ato; legacy NULL rows
    * coalesce to 1.0) so PageRank can weight dynamic/cone fan-out edges.
@@ -502,7 +507,9 @@ export interface GraphDbClient {
    * SCC list. Domain runs Tarjan; adapter persists the result.
    * Each inner array is one SCC's members in walk order; cycle_id is
    * assigned by the adapter using the array index. Single-node SCCs
-   * are caller-filtered.
+   * are caller-filtered. Method-scope members are the vertex ids
+   * `streamAdjacency` yields (`FileScopedSymbolId`); the adapter splits
+   * them back into the member's file and symbolId.
    */
   replaceCycles: (scope: CycleScope, sccs: readonly (readonly string[])[]) => Promise<void>;
 
@@ -510,18 +517,22 @@ export interface GraphDbClient {
 
   /**
    * Atomically replace the per-symbol PageRank table with the supplied
-   * ranks. Domain runs the iterative algorithm; adapter persists.
+   * ranks, keyed by the method-scope vertex ids `streamAdjacency` yields.
+   * Domain runs the iterative algorithm; adapter persists.
    * Empty input wipes the table — useful after a force-reindex when
    * the method graph is fully rebuilt.
    */
   replacePageRanks: (ranks: ReadonlyMap<string, number>) => Promise<void>;
 
   /**
-   * Look up the PageRank of a single symbol. Returns 0 when the symbol
-   * is unknown or the metrics table hasn't been populated yet — both
+   * Look up the PageRank of a single declaration. Ranks are keyed by
+   * `(relPath, symbolId)` (bd tea-rags-mcp-4g9ga): with `relPath` the rank of
+   * that file's declaration; without it the bare id is ambiguous across
+   * namesakes and the highest rank among them is returned. Returns 0 when the
+   * symbol is unknown or the metrics table hasn't been populated yet — both
    * cases are treated as "rank-irrelevant".
    */
-  getPageRank: (symbolId: SymbolId) => Promise<number>;
+  getPageRank: (symbolId: SymbolId, relPath?: RelPath) => Promise<number>;
 
   /**
    * Symbols and files whose derived signals (`fanIn` / `fanOut` / `pageRank`,

@@ -69,13 +69,15 @@
   onto each — measured on this index, `src/index.ts#main`,
   `src/cli/index-progress/worker.ts#main` and `daemon/entry.ts#main` all carried
   `codegraph.chunk.fanOut = 543` against a `god-method` threshold of 67, and the
-  `decomposition` preset spent result slots on it (bd tea-rags-mcp-xtdkq).
-  **`pageRank` is NOT yet fixed**: `cg_symbols_metrics` is keyed by `symbol_id`
-  alone and the rank is computed over `streamAdjacency("method")`, which yields
-  bare ids, so every namesake shares one node in the PageRank graph and the bulk
-  read hands each declaring file that same value. Un-merging it is a schema
-  change to `cg_symbols_metrics` + `cg_symbols_cycles` (whose method-scope
-  members are bare ids that `find_cycles` renders), not an edit to this pass.
+  `decomposition` preset spent result slots on it (bd tea-rags-mcp-xtdkq). The
+  derived tables follow the same identity (bd tea-rags-mcp-4g9ga, migration
+  027): `streamAdjacency("method")` yields `fileScopedSymbolKey` vertices, so
+  Tarjan and PageRank never see a bare id, `cg_symbols_metrics` is keyed
+  `(rel_path, symbol_id)`, and `cg_symbols_cycles` stores each method member's
+  own `member_rel_path` — which `find_cycles` renders as `memberLocations` and
+  matches `pathPattern` against, never a name-to-file resolution. A row with
+  `rel_path = ''` is one 027 carried over from the merged era; readers fan that
+  rank out to every namesake until the next recompute rewrites it.
 
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** Every `GraphDbClientPool` and

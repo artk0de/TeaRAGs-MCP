@@ -1057,8 +1057,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return new Map(entries);
   }
 
-  async getPageRank(symbolId: SymbolId): Promise<number> {
-    return (await this.call("getPageRank", { symbolId })) as number;
+  async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
+    return (await this.call("getPageRank", relPath === undefined ? { symbolId } : { symbolId, relPath })) as number;
   }
 
   async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {
