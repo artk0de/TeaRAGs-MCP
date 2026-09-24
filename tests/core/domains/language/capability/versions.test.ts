@@ -121,7 +121,9 @@ describe("seeded support versions", () => {
       // python walker 8: bd tea-rags-mcp-z99hp scoped the ancestor linearizer
       // the same way — by the identity of `classAncestors` rather than by the
       // pooled table — so rows written by walker 7 can carry edges resolved on
-      // an MRO merged from a previous run's base lists.
+      // an MRO merged from a previous run's base lists; python walker 9: bd
+      // tea-rags-mcp-pbwd added dict-table dispatch — `dispatchTables`,
+      // `callbackParams` and tagged `CallRef.dispatch` sites walker 8 never wrote.
       // ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
@@ -210,7 +212,7 @@ describe("seeded support versions", () => {
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
         ["javascript", 3],
-        ["python", 8],
+        ["python", 9],
         ["ruby", 5],
         ["java", 2],
         ["rust", 2],
