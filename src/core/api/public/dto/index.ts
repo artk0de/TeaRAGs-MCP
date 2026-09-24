@@ -64,6 +64,7 @@ export type {
   AmbiguousCallerResult,
   CalleeResult,
   CallerResult,
+  CycleMemberLocation,
   CycleResult,
   FindCyclesRequest,
   FindCyclesResponse,

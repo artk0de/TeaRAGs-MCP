@@ -183,6 +183,7 @@ export class GraphFacade {
             cycleId: e.cycleId,
             scope: e.scope,
             members: e.members,
+            ...(e.memberLocations ? { memberLocations: e.memberLocations } : {}),
             length: e.members.length,
           })),
         };

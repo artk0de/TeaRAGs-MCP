@@ -142,11 +142,12 @@ describe("file-graph writer — file-only method edges persist (rtp6v)", () => {
     await seedCallerEdges();
 
     const adjacency = await db.listAdjacency("method");
-    expect(adjacency.get("Caller#run")).toEqual(["Handler#on"]);
+    // Method vertices are file-scoped since bd tea-rags-mcp-4g9ga.
+    expect(adjacency.get("src/caller.ts|Caller#run")).toEqual(["src/handler.ts|Handler#on"]);
 
     const pairs: [string, string, number?][] = [];
     for await (const pair of db.streamAdjacency("method")) pairs.push(pair);
-    expect(pairs).toEqual([["Caller#run", "Handler#on", 1]]);
+    expect(pairs).toEqual([["src/caller.ts|Caller#run", "src/handler.ts|Handler#on", 1]]);
   });
 
   it("trace_path batch frontier (getCalleeEdges / getCalleeEdgesScoped) keeps excluding the file-only edge", async () => {

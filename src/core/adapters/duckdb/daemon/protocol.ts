@@ -45,6 +45,8 @@ export const DAEMON_OPS = [
   "upsertFile",
   "removeFile",
   "removeSymbolsForFile",
+  // Derived-table prune on deletion (bd tea-rags-mcp-dy852).
+  "pruneDerivedForDeletedFiles",
   "upsertSymbols",
   "upsertSymbolsBulk",
   "upsertFilesBulk",
@@ -88,6 +90,7 @@ export const DAEMON_OPS = [
   "getFileMetricsBulk",
   "findCycles",
   "listAdjacency",
+  "hasStaleDerivedTables",
   "getPageRank",
   "findSymbolChunk",
   // Per-file symbol line ranges for the payload healer's chunk-owner rule
@@ -110,7 +113,8 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | shutdown | ping
+    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
@@ -122,7 +126,8 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
-    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
+    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
+    | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
     | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths
     | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped

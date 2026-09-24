@@ -359,8 +359,16 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.analytics.replacePageRanks(ranks);
   }
 
-  async getPageRank(symbolId: SymbolId): Promise<number> {
-    return this.analytics.getPageRank(symbolId);
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.analytics.pruneDerivedForDeletedFiles(relPaths);
+  }
+
+  async hasStaleDerivedTables(): Promise<boolean> {
+    return this.analytics.hasStaleDerivedTables();
+  }
+
+  async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
+    return this.analytics.getPageRank(symbolId, relPath);
   }
 
   // ── Derived-signal drift (bd tea-rags-mcp-a2ddb) ──

@@ -682,6 +682,14 @@ export interface EnrichmentProvider {
    */
   handleDeletedPaths?: (paths: string[], options?: DeletedPathOptions) => Promise<void>;
   /**
+   * Optional — whether a deletion left this provider's derived (whole-graph)
+   * state pruned but not recomputed (bd tea-rags-mcp-dy852). A reindex with
+   * nothing else to do asks through `EnrichmentCoordinator#hasStaleDerivedState`
+   * and, when true, drives `runFinalizeOnly` so the provider's finalize
+   * recomputes. Absent ⇒ the provider keeps no such state.
+   */
+  hasStaleDerivedState?: (collectionName?: PhysicalCollectionName) => Promise<boolean>;
+  /**
    * Per-file enrichment policy. The coordinator classifies each file once
    * (FileClassification) and asks the provider how much enrichment it wants.
    * Absent ⇒ "full" (backward-compatible: existing providers enrich

@@ -834,6 +834,53 @@ console.log('This file has secrets');`,
       repairSpy.mockRestore();
       beginRunSpy.mockRestore();
     });
+
+    // bd tea-rags-mcp-dy852 — a deletion prunes the derived codegraph tables and
+    // marks them stale instead of recomputing them on the deletion-only fast
+    // path. The recompute rides the next run: on a run where nothing changed,
+    // that is the finalize-only closer.
+    it("finalizes a no-change run when a provider's derived tables are stale", async () => {
+      await createTestFile(codebaseDir, "stale.ts", "export const stale = 1;\nconsole.log('Stale');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass").mockResolvedValue(0);
+      const staleSpy = vi.spyOn(EnrichmentCoordinator.prototype, "hasStaleDerivedState").mockResolvedValue(true);
+      const finalizeSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runFinalizeOnly");
+
+      try {
+        await ingest.reindexChanges(codebaseDir);
+
+        expect(staleSpy).toHaveBeenCalledTimes(1);
+        expect(staleSpy.mock.calls[0]?.[0]).toMatch(/_v\d+$/);
+        expect(finalizeSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        repairSpy.mockRestore();
+        staleSpy.mockRestore();
+        finalizeSpy.mockRestore();
+      }
+    });
+
+    it("keeps the deletion-only fast path closed even when the deletion left the derived tables stale", async () => {
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep');");
+      await createTestFile(codebaseDir, "gone.ts", "export const gone = 2;\nconsole.log('Gone');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass").mockResolvedValue(0);
+      const staleSpy = vi.spyOn(EnrichmentCoordinator.prototype, "hasStaleDerivedState").mockResolvedValue(true);
+      const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+
+      try {
+        await fs.unlink(join(codebaseDir, "gone.ts"));
+        const stats = await ingest.reindexChanges(codebaseDir);
+
+        expect(stats.filesDeleted).toBe(1);
+        expect(beginRunSpy).not.toHaveBeenCalled();
+      } finally {
+        repairSpy.mockRestore();
+        staleSpy.mockRestore();
+        beginRunSpy.mockRestore();
+      }
+    });
   });
 
   // bd tea-rags-mcp-fxio5 — pre-reindex recovery hands a deferring provider's

@@ -208,7 +208,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       );
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
-        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
+        // A deletion-only run prunes the derived codegraph tables and leaves
+        // them stale rather than paying the recompute on its fast path (bd
+        // tea-rags-mcp-dy852). This branch is the next run that has nothing to
+        // chunk, so it owes that finalize even when the repair found nothing.
+        const staleDerived = repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection));
+        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
         // No snapshot: nothing changed, so the stored file list already matches
         // what is on disk.
         await this.closeRun(ctx, { snapshot: false });
@@ -746,9 +751,20 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     repaired: number,
     /** The narrowed recovery handoff whose files this repair walked (bd tea-rags-mcp-fxio5). */
     deferredChunkHandoff: DeferredChunkRecoveryHandoff,
+    /**
+     * A provider's derived tables were pruned by an earlier deletion and not yet
+     * recomputed (bd tea-rags-mcp-dy852): finalize even though nothing was
+     * repaired. Only the no-change branch passes it — the deletion-only fast
+     * path is the run that pruned, and stays closed.
+     */
+    staleDerived = false,
   ): Promise<void> {
-    if (repaired === 0) return;
-    pipelineLog.reindexPhase("REPAIR_FINALIZE_START", { repaired, collection: ctx.targetCollection });
+    if (repaired === 0 && !staleDerived) return;
+    pipelineLog.reindexPhase("REPAIR_FINALIZE_START", {
+      repaired,
+      ...(staleDerived ? { staleDerived: true } : {}),
+      collection: ctx.targetCollection,
+    });
     try {
       stats.enrichmentMetrics = await this.enrichment.runFinalizeOnly(
         ctx.absolutePath,
