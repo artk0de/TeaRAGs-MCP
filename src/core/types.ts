@@ -241,9 +241,11 @@ export interface CodegraphResolveSummary {
    * Raw resolver capability over ALL internal-attempted calls (denominator
    * polluted by no-in-project-def calls, so it reads far lower than recall).
    * Surfaced ONLY under DEBUG — it misleads a casual reader who expects it to
-   * mean graph completeness.
+   * mean graph completeness. `null` when the rate denominator is empty (every
+   * attempted site fell into an excluded bucket): nothing was scored, which is
+   * neither 1 nor 0 (bd tea-rags-mcp-qodqg). Absent = not DEBUG.
    */
-  resolveSuccessRate?: number;
+  resolveSuccessRate?: number | null;
   callsAttempted: number;
   callsResolved: number;
   /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
@@ -339,15 +341,15 @@ export interface EdgeKindBreakdown {
 
 /**
  * tea-rags-mcp-cnqrg — one per-language slice of {@link CodegraphResolveSummary}.
- * `resolveSuccessRate` uses the same `resolved / max(1, attempted − external)`
- * formula as the aggregate, scoped to this language's call-sites.
+ * `resolveSuccessRate` uses the same formula as the aggregate, scoped to this
+ * language's call-sites, and the same `null` for an empty denominator.
  */
 export interface CodegraphResolveLanguageRow {
   language: string;
   /** Graph-completeness for this language (always present). See {@link CodegraphResolveSummary.inProjectEdgeRecall}. */
   inProjectEdgeRecall: number;
-  /** Raw resolver capability for this language. DEBUG-only (see summary). */
-  resolveSuccessRate?: number;
+  /** Raw resolver capability for this language. DEBUG-only; `null` = nothing scored (see summary). */
+  resolveSuccessRate?: number | null;
   callsAttempted: number;
   callsResolved: number;
   callsExternalSkipped: number;
@@ -375,8 +377,8 @@ export interface CodegraphResolveLanguageRow {
  * tea-rags-mcp-7m5xz — one per-receiver-kind slice of the resolve tally.
  * `receiverKind` mirrors {@link ResolveRunStatsRow.receiverKind} (a plain
  * string — the domain `ReceiverKind` enum is NOT imported across this
- * boundary). `resolveSuccessRate` uses the same
- * `resolved / max(1, attempted − externalSkipped)` formula as the aggregate.
+ * boundary). `resolveSuccessRate` uses the same formula as the aggregate, and
+ * is `null` when the bucket's denominator is empty (bd tea-rags-mcp-qodqg).
  */
 export interface CodegraphResolveKindRow {
   receiverKind: string;
@@ -414,7 +416,8 @@ export interface CodegraphResolveKindRow {
    * a pre-migration-022 index whose column was never written.
    */
   callsUnnarrowedTemplate: number;
-  resolveSuccessRate: number;
+  /** `null` = empty denominator, nothing scored in this bucket (bd tea-rags-mcp-qodqg). */
+  resolveSuccessRate: number | null;
 }
 
 export interface IndexStatus {

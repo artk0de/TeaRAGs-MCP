@@ -42,8 +42,11 @@ export const EMPTY_RESOLVE_DENOMINATOR_MARKER = "—";
 
 /** One `rate counters` cell of a resolve-rate row. */
 export interface ResolveRateCell {
-  /** The rate to render when the denominator is non-empty; ignored otherwise. */
-  rate: number;
+  /**
+   * The rate to render when the denominator is non-empty; ignored otherwise.
+   * `null` is the DTO's empty-denominator value and always renders the marker.
+   */
+  rate: number | null;
   /** `resolved + resolveRateMiss` — zero means nothing was scored. */
   denominator: number;
   /** The row's counters (e.g. `0/6`), rendered in both cases. */
@@ -57,6 +60,6 @@ export interface ResolveRateCell {
  * empty — the counters stay so the reader still sees what was attempted.
  */
 export function formatResolveRateCell(cell: ResolveRateCell): string {
-  if (cell.denominator === 0) return `${EMPTY_RESOLVE_DENOMINATOR_MARKER}  ${cell.counters}`;
+  if (cell.denominator === 0 || cell.rate === null) return `${EMPTY_RESOLVE_DENOMINATOR_MARKER}  ${cell.counters}`;
   return `${cell.renderRate(cell.rate)} ${cell.counters}`;
 }
