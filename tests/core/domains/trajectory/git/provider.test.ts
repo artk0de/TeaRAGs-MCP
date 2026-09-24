@@ -775,4 +775,114 @@ describe("GitEnrichmentProvider", () => {
       expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
     });
   });
+
+  describe("file→chunk handoff across interleaved streaming batches", () => {
+    // Enrichment streams per batch, and ChunkPhase gates a batch's chunk walk
+    // only on THAT batch's file work: file batch B can finish before chunk
+    // batch A runs. Live taxdome: 53,836 of 107,428 touched chunks got
+    // "unknown" chunk ownership while their file ownership was known.
+    const line = (author: string) => ({
+      lineNumber: 1,
+      sha: `sha-${author}`,
+      author,
+      authorEmail: "x@x",
+      timestamp: 0,
+    });
+    const churn = (author: string) => ({ commits: [{ hash: `h-${author}`, author }], recentAuthors: [author] });
+    const chunk = (id: string) => [{ chunkId: id, startLine: 1, endLine: 1 }];
+    const blameArgOf = (call: number) =>
+      vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[12] as Map<string, unknown>;
+    const churnArgOf = (call: number) =>
+      vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[6] as Map<string, unknown> | undefined;
+    const liveBlame = (): Map<string, unknown> =>
+      (provider as unknown as { blameByRelPath: Map<string, unknown> }).blameByRelPath;
+
+    beforeEach(() => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(buildChunkChurnMap).mockClear();
+      vi.mocked(buildChunkChurnMap).mockResolvedValue(new Map());
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
+        new Map([
+          ["src/a.ts", churn("Alice")],
+          ["src/b.ts", churn("Bob")],
+        ]) as never,
+      );
+      vi.mocked(blameFile).mockImplementation(async (_root, relPath) =>
+        relPath === "src/a.ts" ? [line("Alice")] : relPath === "src/b.ts" ? [line("Bob")] : [],
+      );
+    });
+
+    it("chunk batch B still sees its blame when file batch B completed before chunk batch A", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca")]]));
+      await provider.buildChunkSignals("/repo", new Map([["src/b.ts", chunk("cb")]]));
+
+      expect(blameArgOf(-2).get("src/a.ts")).toEqual([line("Alice")]);
+      expect(blameArgOf(-1).get("src/b.ts")).toEqual([line("Bob")]);
+    });
+
+    it("chunk batch A reads its OWN batch's file churn, not the latest file batch's", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca")]]));
+
+      expect(churnArgOf(-1)?.get("src/a.ts")).toEqual(churn("Alice"));
+    });
+
+    it("a file whose chunks span two batches keeps its blame for the second chunk batch", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca1")]]));
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca2")]]));
+
+      expect(blameArgOf(-1).get("src/a.ts")).toEqual([line("Alice")]);
+      // Both consumers released their hold — nothing retained afterwards.
+      expect(liveBlame().size).toBe(0);
+    });
+
+    it("off-thread walk job carries blame for a batch whose file work finished before an earlier chunk batch", async () => {
+      const discovery = {
+        commitsForFiles: vi.fn().mockResolvedValue([]),
+        getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
+      };
+      const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
+      const opts = { churnWalkThread: walkThread, commitDiscovery: discovery, skipCache: true } as never;
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["/repo/src/a.ts", chunk("ca")]]), opts);
+      await provider.buildChunkSignals("/repo", new Map([["/repo/src/b.ts", chunk("cb")]]), opts);
+
+      const job = walkThread.walk.mock.calls.at(-1)?.[0] as {
+        blameByPath: Map<string, unknown>;
+        fileChurnData?: Map<string, unknown>;
+      };
+      expect(job.blameByPath.get("src/b.ts")).toEqual([line("Bob")]);
+      expect(job.fileChurnData?.get("src/b.ts")).toEqual(churn("Bob"));
+    });
+
+    it("keeps blame across finalizeSignals, which CompletionRunner calls BEFORE draining streaming chunk work", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.finalizeSignals();
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca")]]));
+
+      expect(blameArgOf(-1).get("src/a.ts")).toEqual([line("Alice")]);
+    });
+
+    it("evicts a never-consumed entry at the NEXT run's finalize (bounded retention)", async () => {
+      // e.g. a "file-only" file: file level enriches it, chunk level never walks it.
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.finalizeSignals();
+      expect(liveBlame().has("src/a.ts")).toBe(true); // this run may still consume it
+
+      await provider.finalizeSignals(); // next run's finalize
+
+      expect(liveBlame().size).toBe(0);
+    });
+  });
 });

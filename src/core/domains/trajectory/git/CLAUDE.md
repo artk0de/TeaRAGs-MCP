@@ -50,6 +50,18 @@ their own navigators.
 
 ## Gotchas
 
+- **The file→chunk blame handoff is held per path, never per batch, and survives
+  `finalizeSignals`.** A chunk batch is gated only on ITS OWN file batch, so
+  later file batches finish before earlier chunk walks, one file's chunks span
+  several batches, and `CompletionRunner` calls `finalizeSignals` BEFORE it
+  drains streaming chunk work. `GitEnrichmentProvider#blameByRelPath` therefore
+  lives until every file-batch hold on the path is released by a chunk walk
+  (`holdForChunkPhase` / `releaseChunkHandoff`); unreleased holds are evicted
+  one run later (`evictStaleChunkHandoff`). Why: the old per-batch map swap left
+  53,836 of 107,428 touched chunks on a taxdome `--force-enrichments git` at
+  `blameDominantAuthor: "unknown"` — the recompute fires every file batch at
+  once, so the race was maximal there and near-absent on embedding-paced
+  streaming. Clearing at `finalizeSignals` would reintroduce it.
 - **Two unrelated ownership families coexist: `recent*` (commit window) vs
   `blame*` (live lines).** `assembleFileSignals`
   (`infra/metrics/file-assembler.ts`) writes both side by side —
