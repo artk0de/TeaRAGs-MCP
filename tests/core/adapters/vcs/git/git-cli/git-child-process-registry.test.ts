@@ -32,6 +32,12 @@ import {
   trackGitChildProcess,
 } from "../../../../../../src/core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 
+// The fake git is reached through PATH, so pin the PATH executable — otherwise
+// the client resolves Apple's /usr/bin/git and bypasses the fixture entirely.
+vi.mock("../../../../../../src/core/infra/git-executable.js", () => ({
+  resolveGitExecutable: () => "git",
+}));
+
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
