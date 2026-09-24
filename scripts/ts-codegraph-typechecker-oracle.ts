@@ -199,6 +199,7 @@ import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/sy
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectDependencyManifestSources, readDeclaredDependencies } from "../src/core/infra/dependency-manifests.js";
 import { fileIsInertForExtraction } from "../src/core/infra/extraction-fast-path.js";
+import type { PathFilter } from "../src/core/infra/file-classification/index.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 import {
   DECLARATION_FILE_SUFFIXES,
@@ -1400,7 +1401,7 @@ interface CorpusExclusionFilter {
   /** `.gitignore` and friends plus the ingest baseline — production never indexes these at all. */
   ingest: Ignore;
   /** Generated + test + per-language non-app globs — indexed for search, but no codegraph nodes. */
-  codegraph: Ignore;
+  codegraph: PathFilter;
 }
 
 /**

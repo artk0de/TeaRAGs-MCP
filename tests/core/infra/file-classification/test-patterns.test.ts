@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { TEST_PATTERNS, TEST_PATTERNS_BY_LANGUAGE } from "../../../../src/core/infra/file-classification/patterns.js";
+import {
+  CASE_INSENSITIVE_TEST_PATTERNS,
+  CASE_SENSITIVE_TEST_PATTERNS,
+  TEST_PATTERNS,
+  TEST_PATTERNS_BY_LANGUAGE,
+} from "../../../../src/core/infra/file-classification/patterns.js";
 
 // The canonical pre-relocation flat TEST_PATTERNS set. The per-language
 // reorganization MUST stay lossless against this — no test-file shape dropped,
@@ -90,5 +95,27 @@ describe("TEST_PATTERNS_BY_LANGUAGE — per-language test path patterns (in infr
 
   it("contains no duplicate patterns in the flat list", () => {
     expect(TEST_PATTERNS.length).toBe(new Set(TEST_PATTERNS).size);
+  });
+
+  it("partitions the flat list by case sensitivity — PascalCase suffixes only (bd tea-rags-mcp-ezm9o)", () => {
+    const sensitive = new Set(CASE_SENSITIVE_TEST_PATTERNS);
+    expect(new Set([...CASE_SENSITIVE_TEST_PATTERNS, ...CASE_INSENSITIVE_TEST_PATTERNS])).toEqual(
+      new Set(TEST_PATTERNS),
+    );
+    expect(CASE_INSENSITIVE_TEST_PATTERNS.filter((p) => sensitive.has(p))).toEqual([]);
+    for (const p of ["**/*Test.java", "**/*IT.java", "**/*Test.kt", "**/*Tests.swift", "**/*Tests.cs"]) {
+      expect(sensitive.has(p), p).toBe(true);
+    }
+    for (const p of ["**/*Spec.scala", "**/*Test.php"]) expect(sensitive.has(p), p).toBe(true);
+    // Directories, lowercase conventions and the mixed-case C / C++ suffixes stay case-insensitive.
+    for (const p of [
+      ...TEST_PATTERNS_BY_LANGUAGE.common,
+      "**/*_test.go",
+      "**/*.spec.ts",
+      "**/*Test.cc",
+      "**/*Tests.c",
+    ]) {
+      expect(sensitive.has(p), p).toBe(false);
+    }
   });
 });

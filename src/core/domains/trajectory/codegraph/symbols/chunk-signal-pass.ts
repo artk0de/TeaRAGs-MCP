@@ -8,8 +8,6 @@
  * file gets and records the walk's ranges it reads.
  */
 
-import type { Ignore } from "ignore";
-
 import type {
   FileExtraction,
   GraphDbClient,
@@ -18,6 +16,7 @@ import type {
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
 import type { ChunkLookupEntry, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   CodegraphChunkSettlementTally,
@@ -40,7 +39,7 @@ export class CodegraphChunkSignalPass {
      */
     private readonly walkRangesByCollection: Map<string, Map<string, SymbolLineRange[]>>,
     /** The provider's codegraph-layer ignore filter — the same instance its policy reads. */
-    private readonly exclusionFilter: Ignore,
+    private readonly exclusionFilter: PathFilter,
   ) {}
 
   /**

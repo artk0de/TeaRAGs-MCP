@@ -334,16 +334,19 @@ describe("seeded support versions", () => {
       // namesake is another language's moves out of the charged bucket.
       // python 13: jwjyr.1 (11) and nbf8q (11, 12) bumped from 10 on separate
       // branches and were merged.
+      // java 5, swift 43: bd tea-rags-mcp-ezm9o matches the PascalCase test
+      // suffixes case-sensitively, so `Latest.java` / `Latest.swift` enter a
+      // graph an index built by the previous walker excluded them from.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 14],
         ["javascript", 6],
         ["python", 13],
         ["ruby", 7],
-        ["java", 4],
+        ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 42],
+        ["swift", 43],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

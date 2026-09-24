@@ -23,6 +23,7 @@ import type {
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
+import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { CodegraphPhaseTimings } from "./phase-timings.js";
@@ -246,7 +247,7 @@ export interface CodegraphFileExtractorDeps {
   /** Shared with the pass-2 finalizer so both halves land in one summary. */
   phaseTimings: CodegraphPhaseTimings;
   /** The provider's codegraph-layer ignore filter — the same instance its policy reads. */
-  exclusionFilter: Ignore;
+  exclusionFilter: PathFilter;
 }
 
 /**
