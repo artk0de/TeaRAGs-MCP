@@ -187,6 +187,31 @@ export class CodegraphDaemonBuildUnavailableError extends InfraError {
 }
 
 /**
+ * A codegraph daemon refused to start because another live daemon already owns
+ * its build-key directory (bd tea-rags-mcp-imgjx). Raised by `runDaemon` after
+ * it has asked its process to exit cleanly: the losing side of a spawn race must
+ * not open a DuckDB file or take over the socket — an unreachable twin holding a
+ * collection's RW lock is exactly what stalled the reachable daemon's opens for
+ * a full idle-eviction window. Never crosses the socket; it only tells an
+ * in-process caller why no daemon handle came back.
+ */
+export class CodegraphDaemonOwnedElsewhereError extends InfraError {
+  constructor(owner: { buildDir: string; ownerPid: number | undefined }, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_OWNED_ELSEWHERE",
+      message:
+        `Codegraph daemon key directory ${owner.buildDir} is already owned by live daemon ` +
+        `pid ${owner.ownerPid ?? "unknown"}; this daemon did not start`,
+      hint:
+        "Nothing to do: clients reach the owning daemon over the same socket. A second daemon of " +
+        "the same build only starts when two spawns race, and the loser exits on its own.",
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
  * The wire carries only `{ name, message }` (see `DaemonResponse`), so a
  * refusal cannot survive the socket as a class instance — the pool recognizes
  * it by the error name the daemon put on the response.
