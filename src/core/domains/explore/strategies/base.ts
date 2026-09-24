@@ -9,6 +9,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import { fileScopeOf, reduceToFileScope, type FileScope } from "../chunk-grouping/file-scope.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
@@ -29,12 +30,17 @@ function requestedPageSize(limit: number | undefined): number {
 export abstract class BaseExploreStrategy implements ExploreStrategy {
   abstract readonly type: "vector" | "hybrid" | "scroll-rank" | "similar";
 
+  /** Payload keys a `level: "file"` hit keeps, derived once from payloadSignals. */
+  private readonly fileScope: FileScope;
+
   constructor(
     protected readonly qdrant: QdrantManager,
     protected readonly reranker: Reranker,
     protected readonly payloadSignals: PayloadSignalDescriptor[],
     protected readonly essentialKeys: string[],
-  ) {}
+  ) {
+    this.fileScope = fileScopeOf(payloadSignals);
+  }
 
   /** Main entry point: apply defaults → execute search → post-process. */
   async execute(ctx: ExploreContext): Promise<ExploreResult[]> {
@@ -65,7 +71,8 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    * Post-process raw results:
    *   1. Rerank (if non-relevance preset)
    *   2. Trim to requested limit
-   *   3. metaOnly formatting (if ctx.metaOnly)
+   *   3. Reduce file-level hits to file scope (after ranking — see `shapeFileLevel`)
+   *   4. metaOnly formatting (if ctx.metaOnly)
    */
   protected async postProcess(results: ExploreResult[], originalCtx: ExploreContext): Promise<ExploreResult[]> {
     const requestedLimit = requestedPageSize(originalCtx.limit);
@@ -87,7 +94,10 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     }
     filtered = filtered.slice(0, requestedLimit);
 
-    // 3. metaOnly formatting
+    // 3. File scope
+    filtered = this.shapeFileLevel(filtered, originalCtx);
+
+    // 4. metaOnly formatting
     if (originalCtx.metaOnly) {
       return this.applyMetaOnly(filtered);
     }
@@ -96,14 +106,28 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   }
 
   /**
+   * At `level: "file"`, reduce each hit's payload to the fields describing the
+   * file (bd tea-rags-mcp-mwq0k). Runs AFTER rerank: ranking reads the full
+   * representative chunk payload, the response carries only file scope.
+   * `rankingOverlay` is a sibling of the payload and passes through untouched.
+   */
+  protected shapeFileLevel(results: ExploreResult[], ctx: ExploreContext): ExploreResult[] {
+    if (ctx.level !== "file") return results;
+    return results.map((result) =>
+      result.payload ? { ...result, payload: reduceToFileScope(result.payload, this.fileScope) } : result,
+    );
+  }
+
+  /**
    * Apply metaOnly formatting: strip raw content, keep metadata from payloadSignals.
-   * Wraps filterMetaOnly output back as ExploreResult[].
+   * Wraps filterMetaOnly output back as ExploreResult[]; the score stays on the
+   * hit, never copied into its payload (bd tea-rags-mcp-947xf).
    */
   protected applyMetaOnly(results: ExploreResult[]): ExploreResult[] {
     const metaResults = filterMetaOnly(results, this.payloadSignals, this.essentialKeys);
     return metaResults.map((meta, i) => ({
       id: results[i].id,
-      score: meta.score as number,
+      score: results[i].score,
       payload: meta,
     }));
   }

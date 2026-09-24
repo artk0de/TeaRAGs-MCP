@@ -229,10 +229,10 @@ describe("HybridSearchStrategy", () => {
     expect(new Set(paths).size).toBeLessThanOrEqual(results.length);
   });
 
-  // tea-rags-mcp-zrma: file-level dedup used to discard every chunk but the
-  // best one, so the caller saw "something matched in this file" and had to
-  // issue a second query to learn what.
-  it("attaches a members outline of everything that matched inside the file", async () => {
+  // bd tea-rags-mcp-947xf / mwq0k: the candidate pool covered nearly the whole
+  // file, so `members` degenerated into the full outline find_symbol already
+  // owns; and the representative chunk leaked its own line range and symbol.
+  it("returns a file hit with no members outline and no chunk-scoped fields", async () => {
     const mockResults = [
       {
         id: "1",
@@ -262,6 +262,7 @@ describe("HybridSearchStrategy", () => {
       level: "file",
     });
 
-    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+    expect(results).toHaveLength(1);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
 });
