@@ -43,5 +43,5 @@ export const capability: LanguageCapability = {
   // locals with `CallRef.dispatch`, records `callbackParams` and
   // `dispatchArgs`; the resolver fans them out. New caller→candidate edges;
   // those call sites move from the `dynamic` / `index` buckets to `bareCall`.
-  versions: { chunking: 2, walker: 4, codegraphSchema: 2 },
+  versions: { chunking: 2, walker: 5, codegraphSchema: 2 },
 };

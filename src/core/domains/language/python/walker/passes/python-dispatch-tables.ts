@@ -37,6 +37,7 @@
  * assigned twice at module level is ambiguous and dropped.
  */
 
+import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { DispatchRef, DispatchTable } from "../../../../../contracts/types/codegraph.js";
 
@@ -76,7 +77,7 @@ export function collectPythonDispatchTables(root: AstNode): Record<string, Dispa
       if (right?.type === "dictionary") literals.set(left.text, right);
     }
   }
-  const out: Record<string, DispatchTable> = {};
+  const out: Record<string, DispatchTable> = createIdentifierRecord();
   for (const [name, literal] of literals) {
     if (assignCount.get(name) !== 1) continue;
     const entries = dictionaryToTableEntries(literal);
@@ -234,7 +235,7 @@ export function pythonCallbackParamsBySymbol(
   byDefLine: ReadonlyMap<number, ReadonlySet<number>>,
   chunks: readonly { symbolId: string; startLine: number }[],
 ): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
+  const out: Record<string, number[]> = createIdentifierRecord();
   for (const [line, positions] of byDefLine) {
     const chunk = chunks.find((c) => c.startLine === line);
     if (!chunk) continue;
@@ -244,7 +245,7 @@ export function pythonCallbackParamsBySymbol(
 }
 
 function dictionaryToTableEntries(dict: AstNode): Record<string, string | Record<string, string>> {
-  const entries: Record<string, string | Record<string, string>> = {};
+  const entries: Record<string, string | Record<string, string>> = createIdentifierRecord();
   for (const pair of dict.namedChildren) {
     if (pair.type !== "pair") continue; // `**other` splat, comment
     const keyNode = pair.childForFieldName("key");
@@ -263,7 +264,7 @@ function dictionaryToTableEntries(dict: AstNode): Record<string, string | Record
 }
 
 function dictionaryToFieldMap(dict: AstNode): Record<string, string> {
-  const fields: Record<string, string> = {};
+  const fields: Record<string, string> = createIdentifierRecord();
   for (const pair of dict.namedChildren) {
     if (pair.type !== "pair") continue;
     const keyNode = pair.childForFieldName("key");

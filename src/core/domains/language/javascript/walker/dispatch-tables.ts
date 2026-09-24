@@ -23,6 +23,7 @@
  * out.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { DispatchRef, DispatchTable } from "../../../../contracts/types/codegraph.js";
 
@@ -42,7 +43,7 @@ type ChunkRange = { symbolId: string; startLine: number; endLine: number; scope:
  * config objects) are omitted.
  */
 export function collectJsDispatchTables(root: AstNode): Record<string, DispatchTable> {
-  const out: Record<string, DispatchTable> = {};
+  const out: Record<string, DispatchTable> = createIdentifierRecord();
   const consider = (decl: AstNode): void => {
     if (decl.type !== "lexical_declaration" || !isConstDeclaration(decl)) return;
     for (const d of decl.children) {
@@ -63,7 +64,7 @@ export function collectJsDispatchTables(root: AstNode): Record<string, DispatchT
 }
 
 function objectToTableEntries(objNode: AstNode): Record<string, string | Record<string, string>> {
-  const entries: Record<string, string | Record<string, string>> = {};
+  const entries: Record<string, string | Record<string, string>> = createIdentifierRecord();
   for (const member of objNode.namedChildren) {
     if (member.type === "shorthand_property_identifier") {
       entries[member.text] = member.text; // S2 shorthand: `{ fnA }` ≡ `{ fnA: fnA }`
@@ -84,7 +85,7 @@ function objectToTableEntries(objNode: AstNode): Record<string, string | Record<
 }
 
 function objectFieldsToMap(objNode: AstNode): Record<string, string> {
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = createIdentifierRecord();
   for (const member of objNode.namedChildren) {
     if (member.type === "shorthand_property_identifier") {
       map[member.text] = member.text;
@@ -273,7 +274,7 @@ export function isJsFunctionLike(node: AstNode): boolean {
  * body, attributed to the innermost chunk that owns the declaration line.
  */
 export function collectJsCallbackParams(root: AstNode, chunks: readonly ChunkRange[]): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
+  const out: Record<string, number[]> = createIdentifierRecord();
   walk(root, (node) => {
     if (!isJsFunctionLike(node)) return;
     const body = node.childForFieldName("body");

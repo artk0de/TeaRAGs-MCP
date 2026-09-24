@@ -26,7 +26,8 @@
  * to file paths via Python's module-path conventions.
  */
 
-import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
+import { isSameAstNode, type AstNode, type MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
   CallResultBinding,
@@ -98,12 +99,12 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   const decoratorCalls: CallRef[] = [];
   // bd tea-rags-mcp-pic4 — Python class single-base map for super()
   // resolution. Single inheritance only (first listed base).
-  const classExtends: Record<string, string> = {};
+  const classExtends: Record<string, string> = createIdentifierRecord();
   // bd tea-rags-mcp-rjuc — instance-field types declared in `__init__`
   // (`self.service = SomeService()`) recorded as CLASS-LEVEL state so the
   // resolver can pin `self.service.process()` cross-method. Mirrors the
   // TS/Java `classFieldTypes` channel.
-  const classFieldTypes: Record<string, Record<string, string>> = {};
+  const classFieldTypes: Record<string, Record<string, string>> = createIdentifierRecord();
   // bd tea-rags-mcp-1v12o.2.4 (E6.1) — collected ONCE per file and sliced per
   // chunk below, because the collector this replaces walked the whole file tree
   // once per chunk: netbox's `dcim/tests/test_filtersets.py` (7.7k lines, 620
@@ -137,17 +138,17 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // bd tea-rags-mcp-y4hro — the MULTI-base, file-qualified hierarchy channel the
   // ancestor walk linearizes. `classExtends` stays exactly as it is beside it:
   // `python-self-field.ts` and `pythonTypeOwnsMembers` both read it.
-  const classAncestors: Record<string, readonly string[]> = {};
+  const classAncestors: Record<string, readonly string[]> = createIdentifierRecord();
   // bd tea-rags-mcp-f0xaa — the SAME fields under the run-global class key, so a
   // subclass in another file can read what its base assigned. The short-name
   // channel above cannot answer that: it is per-file and its key is ambiguous
   // run-global.
-  const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  const classFieldTypesByClassKey: Record<string, Record<string, string>> = createIdentifierRecord();
   // bd tea-rags-mcp-w205u, E4.6c — the fields whose RHS is a CALL, recorded as
   // the callee SPELLING because the walker cannot know what it returns. Scanned
   // here, FILTERED after the class-body merge below, so a field any of the three
   // type collectors answered for is excluded on this file's final type map.
-  const fieldCallResultScan: Record<string, Record<string, string | null>> = {};
+  const fieldCallResultScan: Record<string, Record<string, string | null>> = createIdentifierRecord();
   walkPythonClassScopes(root, [
     collectPythonClassAncestors(classAncestors, input.relPath, imports),
     collectPythonClassFieldTypesByClassKey(classFieldTypesByClassKey, input.relPath),
@@ -363,7 +364,7 @@ function collectPythonClassFieldTypes(out: Record<string, Record<string, string>
     const className = nameNode.text;
     const body = node.childForFieldName("body");
     if (!body) return;
-    const fields: Record<string, string> = {};
+    const fields: Record<string, string> = createIdentifierRecord();
     walk(body, (inner) => {
       const found = pythonSelfFieldType(inner);
       if (found !== undefined) fields[found.field] = found.type;
@@ -536,7 +537,7 @@ function collectPythonClassFieldCallResults(
       const found = pythonSelfFieldCallee(node);
       if (found !== undefined) {
         const key = `${relPath}::${classFq}`;
-        const fields = (seen[key] ??= {});
+        const fields = (seen[key] ??= createIdentifierRecord());
         // `null` is the conflict marker; once set it never goes back.
         fields[found.field] = found.field in fields && fields[found.field] !== found.callee ? null : found.callee;
       }
@@ -554,12 +555,12 @@ function finalizePythonClassFieldCallResults(
   seen: Record<string, Record<string, string | null>>,
   typed: Record<string, Record<string, string>>,
 ): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   for (const [key, fields] of Object.entries(seen)) {
     const typedFields = typed[key] ?? {};
-    const kept: Record<string, string> = {};
+    const kept: Record<string, string> = createIdentifierRecord();
     for (const [field, callee] of Object.entries(fields)) {
-      if (callee === null || field in typedFields) continue;
+      if (callee === null || Object.hasOwn(typedFields, field)) continue;
       kept[field] = callee;
     }
     if (Object.keys(kept).length > 0) out[key] = kept;
@@ -638,7 +639,7 @@ function qualifyPythonBase(baseText: string, imports: readonly ImportRef[]): str
   const trailing = segments.slice(1);
   const tail = (parts: readonly string[]): string => parts[parts.length - 1] ?? "";
   for (const imp of imports) {
-    const bound = imp.importedBindings?.[root];
+    const bound = identifierEntry(imp.importedBindings, root);
     if (bound === undefined) {
       // A name with no recorded binding — only `*` today. Read it as the
       // from-import default: the statement's own module is the container.
@@ -971,7 +972,7 @@ function pythonLocalBindingsInRange(
   startLine: number,
   endLine: number,
 ): Record<string, LocalBinding[]> {
-  const out: Record<string, LocalBinding[]> = {};
+  const out: Record<string, LocalBinding[]> = createIdentifierRecord();
   for (const site of sites) {
     if (site.binding.line < startLine || site.binding.line > endLine) continue;
     (out[site.name] ??= []).push(site.binding);
@@ -1091,7 +1092,7 @@ function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
       // excluded by node IDENTITY — `from a import a` is a real shape and a
       // text comparison would drop it.
       const importedNames: string[] = [];
-      const importedBindings: Record<string, string> = {};
+      const importedBindings: Record<string, string> = createIdentifierRecord();
       // The module text the re-export entries point back at, spelled exactly as
       // `importText` below spells it — the mapper resolves both through the same
       // relative/absolute rules and a divergence here would silently miss.
@@ -1100,7 +1101,7 @@ function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
         if (sourceModule.length > 0) reexports.push(entry);
       };
       for (const child of node.namedChildren) {
-        if (child === moduleField || child.type === "import_prefix") continue;
+        if (isSameAstNode(child, moduleField) || child.type === "import_prefix") continue;
         if (child.type === "wildcard_import") {
           // A star binds no single member: it is a name for the resolver's
           // star-import path and nothing for the binding table.
@@ -1402,7 +1403,7 @@ function pythonCalleeSpine(node: AstNode): { text: string; hops: number } | null
  * `{}` and loses every entry.
  */
 function collectPythonCallResultBindings(root: AstNode): Record<string, CallResultBinding[]> {
-  const out: Record<string, CallResultBinding[]> = {};
+  const out: Record<string, CallResultBinding[]> = createIdentifierRecord();
   const scan = (node: AstNode, inFunction: boolean): void => {
     if (node.type === "assignment" && inFunction && node.childForFieldName("type") === null) {
       const lhs = node.namedChild(0);
@@ -1426,7 +1427,7 @@ function pythonCallResultBindingsInRange(
   startLine: number,
   endLine: number,
 ): Record<string, CallResultBinding[]> | undefined {
-  const out: Record<string, CallResultBinding[]> = {};
+  const out: Record<string, CallResultBinding[]> = createIdentifierRecord();
   for (const [name, list] of Object.entries(bindings)) {
     const kept = list.filter((binding) => binding.line >= startLine && binding.line <= endLine);
     if (kept.length > 0) out[name] = kept;

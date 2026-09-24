@@ -30,6 +30,7 @@
  * types (`int`, `boolean`, …) and untyped declarations bind nothing.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
@@ -93,7 +94,7 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
     fileScope: [],
   };
   if (classFieldTypes.size > 0) {
-    const record: Record<string, Record<string, string>> = {};
+    const record: Record<string, Record<string, string>> = createIdentifierRecord();
     for (const [cls, fields] of classFieldTypes) record[cls] = Object.fromEntries(fields);
     out.classFieldTypes = record;
   }
@@ -214,7 +215,7 @@ function assignBindingsToInnermostChunks(
     if (bestIdx === -1) continue;
     let bucket = out.get(bestIdx);
     if (!bucket) {
-      bucket = {};
+      bucket = createIdentifierRecord();
       out.set(bestIdx, bucket);
     }
     (bucket[binding.name] ??= []).push({ line: binding.startLine, type: binding.type });

@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
@@ -54,7 +55,7 @@ export class JavascriptTableDispatchResolver implements DispatchResolverComponen
     }
     if (call.dispatchArgs && call.dispatchArgs.length > 0) {
       const calleeSymbolId = this.resolveCallee(call, ctx)?.targetSymbolId ?? null;
-      const invoked = calleeSymbolId ? ctx.callbackParams?.[calleeSymbolId] : undefined;
+      const invoked = calleeSymbolId ? identifierEntry(ctx.callbackParams, calleeSymbolId) : undefined;
       if (calleeSymbolId && invoked && invoked.length > 0) {
         for (const arg of call.dispatchArgs) {
           if (!invoked.includes(arg.argIndex)) continue;
@@ -99,7 +100,7 @@ export class JavascriptTableDispatchResolver implements DispatchResolverComponen
    * in-file table); still ambiguous → drop rather than guess.
    */
   private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
-    const defs = ctx.dispatchTables?.[name];
+    const defs = identifierEntry(ctx.dispatchTables, name);
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
     const importedFiles = this.importedProjectFiles(ctx);

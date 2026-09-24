@@ -27,6 +27,7 @@
  * barrier.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type {
   ChunkExtraction,
   GlobalSymbolTable,
@@ -306,7 +307,7 @@ export function foldSelfDispatchTemplates(templates: readonly SelfDispatchTempla
     set.add(t.hook);
     hooksBySymbol.set(t.templateSymbolId, set);
   }
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = createIdentifierRecord();
   for (const [symbolId, hooks] of hooksBySymbol) {
     if (hooks.size === 1) map[symbolId] = [...hooks][0];
   }
@@ -421,7 +422,7 @@ export function deriveServiceEntryReturnTypes(
     if (declared.form !== "class" && declared.form !== "instance") return true;
     return isProjectDeclaredType(declared.name);
   };
-  const derived: Record<string, RubyTypeRef> = {};
+  const derived: Record<string, RubyTypeRef> = createIdentifierRecord();
   for (const symbolId of entrySymbolIds) {
     const split = splitMethodSymbolId(symbolId);
     if (split === null) continue;

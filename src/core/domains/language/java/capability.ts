@@ -10,5 +10,5 @@ export const capability: LanguageCapability = {
   // in-method call used to be emitted a second time from its enclosing class
   // chunk; commons-lang measured 17,641 sites collapsing to 8,719, so an already
   // indexed Java project carries duplicate call rows until it recomputes.
-  versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
 };

@@ -229,16 +229,23 @@ describe("seeded support versions", () => {
       // hop to the owner rule, so an index built by walker 11 holds file-only
       // edges where a member declared on a same-file type the factory's return
       // annotation names now pins the factory's own member.
+      // typescript 13, javascript 5, python 10, ruby 6, java 3, rust 3, go 5,
+      // swift 11: bd tea-rags-mcp-f4ce0 keys every identifier-keyed extraction
+      // record by own key (`createIdentifierRecord` / `identifierEntry`). A
+      // local, field or class named `toString` / `constructor` / `__proto__`
+      // used to hit `Object.prototype` and throw, so the whole FILE dropped out
+      // of the graph (9 of commons-lang's) — an index built by the previous
+      // walker holds no row for any such file until the recompute rewrites it.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 12],
-        ["javascript", 4],
-        ["python", 9],
-        ["ruby", 5],
-        ["java", 2],
-        ["rust", 2],
-        ["go", 4],
-        ["swift", 10],
+        ["typescript", 13],
+        ["javascript", 5],
+        ["python", 10],
+        ["ruby", 6],
+        ["java", 3],
+        ["rust", 3],
+        ["go", 5],
+        ["swift", 11],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

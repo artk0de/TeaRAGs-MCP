@@ -10,6 +10,7 @@
  * by the `codegraph.ts` barrel.
  */
 
+import { identifierEntry } from "../identifier-record.js";
 import type { RubyTypeRef } from "./language.js";
 
 /**
@@ -106,7 +107,7 @@ export function resolveLocalBinding(
   varName: string,
   atLine: number,
 ): LocalBinding | undefined {
-  const list = bindings?.[varName];
+  const list = identifierEntry(bindings, varName);
   if (!list || list.length === 0) return undefined;
   let best: LocalBinding | undefined;
   for (const binding of list) {
@@ -172,7 +173,7 @@ export function nearestCallResultBinding(
   varName: string,
   atLine: number,
 ): CallResultBinding | undefined {
-  const list = bindings?.[varName];
+  const list = identifierEntry(bindings, varName);
   if (!list || list.length === 0) return undefined;
   let best: CallResultBinding | undefined;
   for (const binding of list) {

@@ -47,6 +47,7 @@
  * - `ruby-bound-call-return-types.ts` — the `localCallBindings` channel.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import {
@@ -226,7 +227,10 @@ function rubySeedHead(
 export function ivarTypeName(ivar: string, ctx: CallContext): string | undefined {
   if (ctx.callerScope.length === 0) return undefined;
   const scopeKey = ctx.callerScope.join("::");
-  return ctx.ivarTypes?.[scopeKey]?.[ivar] ?? ctx.classFieldTypes?.[scopeKey]?.[ivar];
+  return (
+    identifierEntry(identifierEntry(ctx.ivarTypes, scopeKey), ivar) ??
+    identifierEntry(identifierEntry(ctx.classFieldTypes, scopeKey), ivar)
+  );
 }
 
 /** {@link ivarTypeName} lifted to the engine's structured ref (always instance form). */

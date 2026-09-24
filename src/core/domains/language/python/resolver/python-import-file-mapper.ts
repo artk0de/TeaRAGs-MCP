@@ -34,6 +34,7 @@
 
 import { posix } from "node:path";
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
@@ -201,7 +202,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
   ): RelPath | null {
     if (declaresName(relPath, name, ctx)) return relPath;
     if (depth >= MAX_REEXPORT_HOPS) return null;
-    const entries = ctx.moduleReexports?.[relPath];
+    const entries = identifierEntry(ctx.moduleReexports, relPath);
     if (entries === undefined) return null;
     for (const entry of entries) {
       if (entry.exportedName !== name || entry.sourceName === undefined) continue;
@@ -262,7 +263,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
     visited: Set<RelPath>,
   ): RelPath | null {
     if (depth >= MAX_REEXPORT_HOPS) return null;
-    const entries = ctx.moduleReexports?.[relPath];
+    const entries = identifierEntry(ctx.moduleReexports, relPath);
     if (entries === undefined) return null;
     for (const entry of entries) {
       if (entry.exportedName !== name || entry.sourceName === undefined) continue;

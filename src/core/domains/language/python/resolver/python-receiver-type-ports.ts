@@ -19,6 +19,7 @@
  * (`wall ≤ +25%` on netbox) actually cares about.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBinding, type CallContext, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
@@ -339,7 +340,7 @@ function pythonClassChainHeadSeed(
   mapper: PythonImportFileMapper,
 ): { type: TypeRef; consumedMembers: 0 } | undefined {
   if (!PYTHON_CLASS_HEAD.test(head)) return undefined;
-  if (ctx.localBindings?.[head] !== undefined) return undefined;
+  if (identifierEntry(ctx.localBindings, head) !== undefined) return undefined;
   if (resolveTypeFile(head, ctx, mapper) === null) return undefined;
   return { type: { form: "class", name: head }, consumedMembers: 0 };
 }

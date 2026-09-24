@@ -68,6 +68,7 @@
  * single-target resolution chain.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   pickSingleCandidate,
@@ -582,7 +583,7 @@ export class TSCallResolver implements CallResolver {
     if (call.dispatchArgs && call.dispatchArgs.length > 0) {
       const callee = this.resolve(call, ctx);
       const calleeSymbolId = callee?.targetSymbolId ?? null;
-      const invoked = calleeSymbolId ? ctx.callbackParams?.[calleeSymbolId] : undefined;
+      const invoked = calleeSymbolId ? identifierEntry(ctx.callbackParams, calleeSymbolId) : undefined;
       if (calleeSymbolId && invoked && invoked.length > 0) {
         for (const arg of call.dispatchArgs) {
           if (!invoked.includes(arg.argIndex)) continue;
@@ -644,7 +645,7 @@ export class TSCallResolver implements CallResolver {
    * ambiguous, drop rather than guess (m46z safety).
    */
   private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
-    const defs = ctx.dispatchTables?.[name];
+    const defs = identifierEntry(ctx.dispatchTables, name);
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
     const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.mode, this.fileExists);

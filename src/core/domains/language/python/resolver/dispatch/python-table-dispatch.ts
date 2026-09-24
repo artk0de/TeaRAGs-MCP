@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import type {
   CallContext,
   CallRef,
@@ -63,7 +64,7 @@ export class PythonTableDispatchResolver implements DispatchResolverComponent {
     if (call.dispatch) return { kind: "edges", edges: this.fan(call.dispatch, null, call, ctx) };
     if (!call.dispatchArgs || call.dispatchArgs.length === 0) return { kind: "edges", edges: [] };
     const callee = this.answer(call, ctx)?.targetSymbolId ?? null;
-    const invoked = callee === null ? undefined : ctx.callbackParams?.[callee];
+    const invoked = callee === null ? undefined : identifierEntry(ctx.callbackParams, callee);
     if (callee === null || !invoked || invoked.length === 0) return { kind: "edges", edges: [] };
     const edges: DispatchEdge[] = [];
     for (const arg of call.dispatchArgs) {
@@ -103,7 +104,7 @@ export class PythonTableDispatchResolver implements DispatchResolverComponent {
    * binding in sight — is dropped rather than guessed (m46z).
    */
   private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
-    const defs = ctx.dispatchTables?.[name];
+    const defs = identifierEntry(ctx.dispatchTables, name);
     if (!defs || defs.length === 0) return null;
     const file = pythonImportBoundFile(
       name,

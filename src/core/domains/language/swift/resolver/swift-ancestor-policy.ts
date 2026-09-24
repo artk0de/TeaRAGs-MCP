@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
 
@@ -33,7 +34,7 @@ import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js"
  */
 export const SWIFT_ANCESTOR_POLICY: AncestorLinearizationPolicy<CallContext> = {
   order(classKey, ctx, recurse) {
-    const base = ctx.classExtends?.[classKey];
+    const base = identifierEntry(ctx.classExtends, classKey);
     // A self-referential record cannot come from compilable Swift, but it can
     // come from an index built over a half-rewritten tree. The kernel's
     // per-path guard already stops a longer cycle; this stops the tightest one

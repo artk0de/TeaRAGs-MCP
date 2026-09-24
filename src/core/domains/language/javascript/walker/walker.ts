@@ -23,6 +23,7 @@
  * also handled below.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
@@ -91,7 +92,7 @@ export function extractFromJavascriptFile(input: JsExtractInput): FileExtraction
     // Convert Map → Record so the field round-trips through the NDJSON
     // spill in the codegraph provider. Mirrors typescript-walker's
     // discipline (bd tea-rags-mcp-d29r).
-    const classExtendsRecord: Record<string, string> = {};
+    const classExtendsRecord: Record<string, string> = createIdentifierRecord();
     for (const [cls, parent] of classExtends) classExtendsRecord[cls] = parent;
     out.classExtends = classExtendsRecord;
   }
