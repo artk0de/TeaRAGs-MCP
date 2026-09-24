@@ -1,8 +1,8 @@
 import { CONTINUE } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/index.js";
-import { createSwiftReceiverTypePorts } from "../swift-receiver-type-ports.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import { createSwiftWrittenReceiverTypePorts, swiftCallReceiverType } from "../swift-receiver-type-ports.js";
 import { resolveSwiftBoundTypeMember, type SwiftResolverConfig } from "./shared.js";
 
 /**
@@ -75,8 +75,12 @@ import { resolveSwiftBoundTypeMember, type SwiftResolverConfig } from "./shared.
  * this type" is the only honest form of that statement here, and it is already
  * what `resolveSwiftBoundTypeMember` says.
  */
-/** A plain value name — the single-hop passes' receiver, never this one's. */
-const SWIFT_IDENTIFIER_RECEIVER = /^[A-Za-z_$][\w$]*$/;
+/**
+ * A plain value name — the single-hop passes' receiver, never this one's. A
+ * wrapper's projection `$name` is not one: it names no binding, and only the
+ * fold types it (bd tea-rags-mcp-y99pg.33).
+ */
+const SWIFT_IDENTIFIER_RECEIVER = /^(?!\$[A-Za-z_])[A-Za-z_$][\w$]*$/;
 
 export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "chainedReceiverType";
@@ -85,14 +89,16 @@ export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolR
   private readonly ports: ReceiverTypePorts;
 
   constructor(private readonly cfg: SwiftResolverConfig) {
-    this.ports = createSwiftReceiverTypePorts(cfg.memberTypes);
+    this.ports = createSwiftWrittenReceiverTypePorts(cfg.memberTypes);
   }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const { receiver } = call;
     if (!receiver || (!receiver.includes(".") && SWIFT_IDENTIFIER_RECEIVER.test(receiver))) return CONTINUE;
 
-    const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
+    // Folded AS WRITTEN: `response.map(…)` on an optional is `Optional`'s
+    // member, `response?.map(…)` the wrapped type's (bd tea-rags-mcp-y99pg.33).
+    const type = swiftCallReceiverType(call, ctx, this.ports, this.cfg.memberTypes);
     if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
     return resolveSwiftBoundTypeMember(type.name, call.member, ctx, this.cfg, call);
   }

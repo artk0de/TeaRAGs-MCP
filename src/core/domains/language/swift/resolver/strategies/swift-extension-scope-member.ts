@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { swiftSelfConstraintsAt } from "../swift-type-declarations.js";
 import { swiftEnclosingTypeIds, type SwiftResolverConfig } from "./shared.js";
 
 /**
@@ -41,6 +42,15 @@ export class SwiftExtensionScopeMemberSymbolResolutionStrategy implements Symbol
     const searched = call.receiver === null ? enclosingTypes : enclosingTypes.slice(0, 1);
     for (const typeId of searched) {
       const hit = this.cfg.memberTypes.memberOn(typeId, call.member, ctx, this.cfg.mode, call);
+      if (hit) return resolved(hit);
+    }
+    // Inside `extension Download where Self: DataSerializer`, `Self` is a
+    // `DataSerializer` too (bd tea-rags-mcp-y99pg.33): its requirements are
+    // members of the innermost type there, after the type's own.
+    const innermost = enclosingTypes[0];
+    if (innermost === undefined) return CONTINUE;
+    for (const constraint of swiftSelfConstraintsAt(innermost, call.startLine, ctx)) {
+      const hit = this.cfg.memberTypes.memberOn(constraint, call.member, ctx, this.cfg.mode, call);
       if (hit) return resolved(hit);
     }
     return CONTINUE;
