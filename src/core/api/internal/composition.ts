@@ -214,6 +214,10 @@ export function createComposition(options: CompositionOptions = {}): Composition
   // Passthrough the registered filter-preset names so the MCP schema layer
   // (SchemaBuilder) can surface them through its single Reranker dependency.
   reranker.setFilterPresetNames(registry.filterPresetNames());
+  // Same passthrough for the typed filter params the registry applies — the
+  // schema layer exposes only these, so a trajectory that is not registered
+  // (codegraph off) contributes no dead params (bd tea-rags-mcp-86wsz).
+  reranker.setFilterParamNames(registry.getAllFilters().map((f) => f.param));
 
   return {
     registry,

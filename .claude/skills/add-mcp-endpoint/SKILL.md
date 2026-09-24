@@ -169,7 +169,11 @@ In `src/mcp/tools/schemas.ts`:
 
 - Add to `createSearchSchemas()` function
 - Use `schemaBuilder.buildRerankSchema(toolName)` for rerank param
-- Use `typedFilterFields()` for standard filters
+- Use `typedFilterFields(appliedFilterParams)` for standard filters — exposes
+  only params a registered trajectory applies (`SchemaBuilder#filterParamNames`)
+- Param `.describe()` = ≤ 20-word hint; reference prose → `buildOverview`
+  (`tea-rags://schema/overview`). `tests/mcp/tools/param-applicability.test.ts`
+  enforces both over the real tools/list
 - Use `collectionPathFields()` for collection/path resolution
 - Use `searchCommonFields()` for query/limit/filter/pathPattern
 

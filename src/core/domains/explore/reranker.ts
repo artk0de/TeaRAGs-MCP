@@ -103,6 +103,7 @@ export class Reranker {
   private payloadFieldKeys?: string[];
   private recomputeService?: StatsRecomputeService;
   private resolvedFilterPresetNames: string[] = [];
+  private resolvedFilterParamNames: string[] = [];
   private ageCapabilityMap?: Map<string, { cap: AgeDerivationCapability; level: "file" | "chunk" }>;
 
   constructor(
@@ -360,6 +361,21 @@ export class Reranker {
   /** Registered filter-preset names (for the MCP `filter` param `{ presets }` arm). */
   filterPresetNames(): string[] {
     return [...this.resolvedFilterPresetNames];
+  }
+
+  /**
+   * Set the typed filter param names the trajectory registry APPLIES
+   * (`FilterDescriptor#param` of every registered trajectory). Wired at
+   * composition time, like {@link setFilterPresetNames}, so SchemaBuilder can
+   * expose only the params a search's filter build honours (bd tea-rags-mcp-86wsz).
+   */
+  setFilterParamNames(names: readonly string[]): void {
+    this.resolvedFilterParamNames = [...names];
+  }
+
+  /** Typed filter param names the registered trajectories apply. */
+  filterParamNames(): string[] {
+    return [...this.resolvedFilterParamNames];
   }
 
   /** Payload signal descriptors (for dynamic resource generation). */
