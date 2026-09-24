@@ -5,6 +5,8 @@
  *   1. struct field types (bd tea-rags-mcp-e6xx) — every top-level struct's
  *      named and embedded fields on `classFieldTypesByClassKey`, the channel
  *      the resolver follows for method promotion and field chains.
+ *   2. declared visibility (bd tea-rags-mcp-jwjyr.1) — exported vs
+ *      package-private on `ChunkExtraction.visibility`.
  *
  * A new Go extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -14,6 +16,10 @@
  */
 
 import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import { goDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 import { goStructFieldTypesFacetPass } from "./passes/struct-field-types.js";
 
-export const GO_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [goStructFieldTypesFacetPass];
+export const GO_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  goStructFieldTypesFacetPass,
+  goDeclaredVisibilityFacetPass,
+];

@@ -1,8 +1,10 @@
 /**
- * Java's ordered extraction passes — EMPTY, which is what makes Java a plugin
- * host without moving a byte of its output: `composeExtractionWalker` runs
- * `extractFromJavaFile` and, finding no passes, hands that result back BY
- * IDENTITY (bd tea-rags-mcp-zhetx, E1 seam 0).
+ * Java's ordered extraction passes. The monolith `extractFromJavaFile` runs
+ * first (bd tea-rags-mcp-zhetx, E1 seam 0); each facet below folds in after it.
+ *
+ *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — `private` / `protected`
+ *      / `public` on `ChunkExtraction.visibility`, which the monolith never
+ *      fills; package-private stays unrecorded.
  *
  * A new Java extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -12,5 +14,6 @@
  */
 
 import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import { javaDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 
-export const JAVA_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
+export const JAVA_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [javaDeclaredVisibilityFacetPass];

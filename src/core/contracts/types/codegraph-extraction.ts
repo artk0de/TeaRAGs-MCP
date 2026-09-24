@@ -606,10 +606,19 @@ export interface ChunkExtraction {
    */
   paramNames?: string[];
   /**
-   * Visibility of the method definition this chunk represents (bd xlnub).
-   * Populated by the Ruby walker using the class-body visibility state machine
-   * (`private` / `protected` / `public` bare calls, inline `private def`,
-   * symbol form). Undefined for non-method chunks and non-Ruby languages.
+   * DECLARED access level of the definition this chunk represents (bd xlnub),
+   * mapped per language onto one three-value union. Ruby's walker fills it from
+   * the class-body visibility state machine (`private` / `protected` / `public`
+   * bare calls, inline `private def`, symbol form); every other native language
+   * fills it through its declared-visibility pass (bd tea-rags-mcp-jwjyr.1,
+   * `<lang>/walker/passes/declared-visibility.ts`, or the def-signature pass for
+   * Python). Undefined wherever the language states no provable level — Java
+   * package-private, a Python `_name`, a TypeScript declaration outside a class.
+   *
+   * The same word means different reach per language (Ruby: no explicit
+   * receiver; TypeScript/Java: the declaring class; Swift: the file; Go: the
+   * package; Rust: the module tree), so a consumer never reads `"private"`
+   * without that language's access rule — see `VisibilityAccessPolicy`.
    */
   visibility?: "public" | "private" | "protected";
   /** Keyword-arg signature of the method this chunk represents (bd d9o7o).

@@ -306,16 +306,21 @@ describe("seeded support versions", () => {
       // swift walker 24: that fix merged onto swift walker 23, which had moved
       // independently (bd tea-rags-mcp-y99pg), so neither parent's index holds
       // the merged extraction.
+      // typescript 14, javascript 6, python 11, java 4, rust 4, go 6, swift 37:
+      // bd tea-rags-mcp-jwjyr.1 records each language's DECLARED visibility on
+      // `ChunkExtraction.visibility` (ruby already did), so an index built by
+      // the previous walker holds a NULL `cg_symbols.visibility` for every
+      // symbol of these languages until the recompute rewrites it.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 13],
-        ["javascript", 5],
-        ["python", 10],
+        ["typescript", 14],
+        ["javascript", 6],
+        ["python", 11],
         ["ruby", 6],
-        ["java", 3],
-        ["rust", 3],
-        ["go", 5],
-        ["swift", 36],
+        ["java", 4],
+        ["rust", 4],
+        ["go", 6],
+        ["swift", 37],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

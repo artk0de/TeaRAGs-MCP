@@ -43,5 +43,8 @@ export const capability: LanguageCapability = {
   // locals with `CallRef.dispatch`, records `callbackParams` and
   // `dispatchArgs`; the resolver fans them out. New caller→candidate edges;
   // those call sites move from the `dynamic` / `index` buckets to `bareCall`.
-  versions: { chunking: 2, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
+  // visibility on `ChunkExtraction.visibility` — a class member's `#name` private access — persisted in
+  // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
+  versions: { chunking: 2, walker: 6, codegraphSchema: 2 },
 };

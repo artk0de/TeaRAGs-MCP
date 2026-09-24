@@ -198,9 +198,10 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   const callResultBindings = trackTypes
     ? collectPythonCallResultBindings(root)
     : ({} as Record<string, CallResultBinding[]>);
-  // bd tea-rags-mcp-w205u — the two neutral signature channels the kernel's
-  // `ArityNarrower` / `KwargNarrower` read. Collected ONCE per file and joined
-  // by `startLine`, which is the `def` line for a decorated method too: the
+  // bd tea-rags-mcp-w205u — the neutral signature channels the kernel's
+  // `ArityNarrower` / `KwargNarrower` read, plus the name-mangling
+  // `visibility` `VisibilityNarrower` reads (bd jwjyr.1). Collected ONCE per
+  // file and joined by `startLine`, which is the `def` line for a decorated method too: the
   // chunk range comes from `collectSymbols` + `pyNameOf`, and `pyNameOf` names
   // the `function_definition`, never its `decorated_definition` wrapper. A chunk
   // that is not a def — a class, a module — simply finds nothing, the same
@@ -218,6 +219,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     if (signature !== undefined) {
       base.arity = signature.arity;
       if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
+      if (signature.visibility !== undefined) base.visibility = signature.visibility;
     }
     if (trackTypes) {
       const bindings = pythonLocalBindingsInRange(localBindingSites, c.startLine, c.endLine);

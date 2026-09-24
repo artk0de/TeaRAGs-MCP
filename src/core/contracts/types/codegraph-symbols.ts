@@ -301,6 +301,8 @@ export interface SymbolDefinition {
   relPath: RelPath;
   scope: string[];
   arity?: AritySignature;
+  /** Declared access level, threaded from `ChunkExtraction.visibility` — whose
+   *  doc owns what `"private"` means per language. */
   visibility?: "public" | "private" | "protected";
   /** Keyword-arg signature of this method definition (bd d9o7o). Undefined for
    *  non-method chunks / methods with no kwargs. */
