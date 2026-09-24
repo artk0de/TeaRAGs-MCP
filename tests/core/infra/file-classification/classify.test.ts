@@ -58,4 +58,48 @@ describe("classify", () => {
     expect(c.isSource).toBe(false);
     expect(c.isGenerated).toBe(false);
   });
+
+  describe("PascalCase test suffixes match case-sensitively (bd tea-rags-mcp-ezm9o)", () => {
+    it("does NOT flag a production file whose name merely ends in lowercase `test` / `it`", () => {
+      expect(classify("src/main/java/com/acme/Latest.java").isTest).toBe(false);
+      expect(classify("src/main/kotlin/com/acme/Contest.kt").isTest).toBe(false);
+      expect(classify("src/main/java/com/acme/Audit.java").isTest).toBe(false);
+      expect(classify("Sources/Billing/Latest.swift").isTest).toBe(false);
+      expect(classify("src/Billing/Contests.cs").isTest).toBe(false);
+      expect(classify("src/main/scala/Respec.scala").isTest).toBe(false);
+      expect(classify("src/Latest.php").isTest).toBe(false);
+    });
+
+    it("still flags the PascalCase test conventions", () => {
+      expect(classify("src/main/java/com/acme/LatestTest.java").isTest).toBe(true);
+      expect(classify("src/main/java/com/acme/LatestTests.java").isTest).toBe(true);
+      expect(classify("src/main/java/com/acme/LatestIT.java").isTest).toBe(true);
+      expect(classify("src/main/kotlin/com/acme/ContestTest.kt").isTest).toBe(true);
+      expect(classify("Sources/Billing/ContestTests.swift").isTest).toBe(true);
+      expect(classify("src/Billing/ContestTests.cs").isTest).toBe(true);
+      expect(classify("src/main/scala/ContestSpec.scala").isTest).toBe(true);
+      expect(classify("src/ContestTest.php").isTest).toBe(true);
+    });
+
+    it("keeps directory conventions case-insensitive", () => {
+      expect(classify("Tests/BillingTests/Latest.swift").isTest).toBe(true);
+      expect(classify("Test/Contest.kt").isTest).toBe(true);
+      expect(classify("Spec/Latest.java").isTest).toBe(true);
+    });
+
+    it("keeps lowercase conventions behaving as before", () => {
+      expect(classify("pkg/repo_test.go").isTest).toBe(true);
+      expect(classify("pkg/test_user.py").isTest).toBe(true);
+      expect(classify("src/app.spec.ts").isTest).toBe(true);
+      expect(classify("src/App.Spec.ts").isTest).toBe(true);
+      expect(classify("lib/user_spec.rb").isTest).toBe(true);
+    });
+
+    it("keeps C / C++ suffixes case-insensitive — their convention is mixed-case (`foo_test.cc`)", () => {
+      expect(classify("src/parser_test.cc").isTest).toBe(true);
+      expect(classify("src/parser_tests.cpp").isTest).toBe(true);
+      expect(classify("src/ParserTest.cpp").isTest).toBe(true);
+      expect(classify("src/unittest.c").isTest).toBe(true);
+    });
+  });
 });

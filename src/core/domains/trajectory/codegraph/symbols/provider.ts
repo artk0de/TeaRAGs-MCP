@@ -54,6 +54,7 @@ import type {
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
+import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   buildCodegraphExclusionFilter,
@@ -257,7 +258,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `db/migrate/**`). Never empty: the generated + test patterns are
    * unconditional. The extractor and the chunk pass hold this same instance.
    */
-  private readonly codegraphExclusionFilter: Ignore;
+  private readonly codegraphExclusionFilter: PathFilter;
   /**
    * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq). Owned
    * here, not by the finalizer, because pass-1 runs on this side and both halves

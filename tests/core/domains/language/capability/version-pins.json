@@ -27,7 +27,7 @@
   },
   "java": {
     "walker": {
-      "version": 4,
+      "version": 5,
       "digest": "sha256:3a44a19919396a611e40b5a68c254ceab563c650cb43401eb69d6dcd707a176e"
     }
   },
@@ -75,7 +75,7 @@
       "digest": "sha256:2d801131eaa3bebb86fb6b3481840872199418de5e26eb01dc2935e22ddf67bb"
     },
     "walker": {
-      "version": 42,
+      "version": 43,
       "digest": "sha256:95fd9fd95d4b8b60a00418fb0e4b75112c8d8221e9cc98df508b158a3998a8f1"
     }
   },
