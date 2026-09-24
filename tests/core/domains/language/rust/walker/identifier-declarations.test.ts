@@ -12,9 +12,12 @@ function parse(src: string) {
 }
 
 /** Through the COMPOSED walker, so the pass is exercised where production runs it. */
+function extractionOf(src: string, chunks: WalkInput["chunks"]) {
+  return new RustLanguage().walker.walk({ tree: parse(src), code: src, relPath: "svc.rs", language: "rust", chunks });
+}
+
 function declarationsOf(src: string, chunks: WalkInput["chunks"]) {
-  return new RustLanguage().walker.walk({ tree: parse(src), code: src, relPath: "svc.rs", language: "rust", chunks })
-    .identifierDeclarations;
+  return extractionOf(src, chunks).identifierDeclarations;
 }
 
 // bd tea-rags-mcp-4p3sb.5 — the naming lexicon's syntactic half for Rust.
@@ -66,18 +69,98 @@ describe("Rust walker — identifier declarations", () => {
       { name: "b", kind: "param", line: 2, ...owner },
       { name: "pool", kind: "param", line: 2, ...owner, typeName: "std::sync::Pool", typeSource: "annotation" },
       { name: "doc", kind: "local", line: 3, ...owner, typeName: "Document", typeSource: "constructor" },
-      { name: "row", kind: "local", line: 4, ...owner },
-      { name: "cfg", kind: "local", line: 5, ...owner, typeName: "Config", typeSource: "annotation" },
-      { name: "w", kind: "local", line: 6, ...owner, typeName: "Widget", typeSource: "constructor" },
-      { name: "g", kind: "local", line: 7, ...owner, typeName: "crate::ui::Panel", typeSource: "constructor" },
-      { name: "d", kind: "local", line: 8, ...owner },
+      { name: "row", kind: "local", line: 4, ...owner, boundCallee: { member: "get", receiver: "self.repo" } },
+      {
+        name: "cfg",
+        kind: "local",
+        line: 5,
+        ...owner,
+        typeName: "Config",
+        typeSource: "annotation",
+        boundCallee: { member: "new", receiver: "Config" },
+      },
+      {
+        name: "w",
+        kind: "local",
+        line: 6,
+        ...owner,
+        typeName: "Widget",
+        typeSource: "constructor",
+        boundCallee: { member: "new", receiver: "Widget" },
+      },
+      {
+        name: "g",
+        kind: "local",
+        line: 7,
+        ...owner,
+        typeName: "crate::ui::Panel",
+        typeSource: "constructor",
+        boundCallee: { member: "new", receiver: "crate::ui::Panel" },
+      },
+      { name: "d", kind: "local", line: 8, ...owner, boundCallee: { member: "default", receiver: "Default" } },
       { name: "p", kind: "local", line: 9, ...owner },
       { name: "q", kind: "local", line: 9, ...owner },
-      { name: "r", kind: "local", line: 10, ...owner, typeName: "Rc", typeSource: "constructor" },
+      {
+        name: "r",
+        kind: "local",
+        line: 10,
+        ...owner,
+        typeName: "Rc",
+        typeSource: "constructor",
+        boundCallee: { member: "new", receiver: "Rc" },
+      },
       { name: "f", kind: "local", line: 11, ...owner },
       { name: "k", kind: "param", line: 11, ...owner, typeName: "Key", typeSource: "annotation" },
       { name: "z", kind: "param", line: 11, ...owner },
-      { name: "s", kind: "local", line: 12, ...owner, typeName: "Wrapper", typeSource: "constructor" },
+      {
+        name: "s",
+        kind: "local",
+        line: 12,
+        ...owner,
+        typeName: "Wrapper",
+        typeSource: "constructor",
+        boundCallee: { member: "new", receiver: "Wrapper::<u8>" },
+      },
     ]);
+  });
+
+  // bd tea-rags-mcp-4p3sb.16 — the row builder finds the CallRef by (startLine, member, receiver).
+  it("binds a local / field to the outermost call, as the CallRef the walker emits on that line", () => {
+    const code = [
+      "impl Svc {",
+      "    async fn load(&self, id: u32) {",
+      "        let a = fetch(id)?;",
+      "        let b = self.api.get(id).await;",
+      "        let c = self.api.get(id).await?;",
+      "        let v = vec![1, 2];",
+      "        let m = mymod::make!(id);",
+      "        let n = 1;",
+      "    }",
+      "}",
+    ].join("\n");
+    const extraction = extractionOf(code, [
+      { symbolId: "Svc", startLine: 1, endLine: 10, scope: [] },
+      { symbolId: "Svc#load", startLine: 2, endLine: 9, scope: ["Svc"] },
+    ]);
+    const bound = Object.fromEntries((extraction.identifierDeclarations ?? []).map((d) => [d.name, d.boundCallee]));
+    expect(bound).toEqual({
+      id: undefined,
+      a: { member: "fetch" },
+      b: { member: "get", receiver: "self.api" },
+      c: { member: "get", receiver: "self.api" },
+      v: { member: "vec" },
+      m: { member: "make", receiver: "mymod" },
+      n: undefined,
+    });
+    for (const declaration of extraction.identifierDeclarations ?? []) {
+      if (declaration.boundCallee === undefined) continue;
+      const onLine = extraction.chunks
+        .flatMap((chunk) => chunk.calls)
+        .filter((call) => call.startLine === declaration.line)
+        .map((call) =>
+          call.receiver === null ? { member: call.member } : { member: call.member, receiver: call.receiver },
+        );
+      expect(onLine).toContainEqual(declaration.boundCallee);
+    }
   });
 });

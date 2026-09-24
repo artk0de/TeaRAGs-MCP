@@ -104,6 +104,33 @@ describe("identifier declaration pass", () => {
     expect(out.identifierDeclarations?.map((d) => d.name)).toEqual(["x", "x2"]);
   });
 
+  // bd tea-rags-mcp-4p3sb.16 — the hook reads the value of a local / field only.
+  it("asks `boundCalleeOf` for local and field values, never for a param's default", () => {
+    const withCallee: IdentifierDeclarationSyntax = {
+      ...syntax,
+      rules: [
+        fieldRule("required_parameter", "param", { name: "pattern", type: "type", value: "value" }),
+        ...syntax.rules.slice(1),
+      ],
+      boundCalleeOf: (v: AstNode) =>
+        v.type === "call_expression" ? { member: v.text.replace(/\(.*$/, ""), receiver: "r" } : undefined,
+    };
+    const p = new Parser();
+    p.setLanguage(TS.typescript);
+    const code = "function f(a = g()) { const x = h(); const y = 1; }";
+    const out = createIdentifierDeclarationFacetPass(withCallee).run(p.parse(code).rootNode, {
+      code,
+      relPath: "a.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "f", startLine: 1, endLine: 1, scope: [] }],
+    });
+    expect(out.identifierDeclarations).toEqual([
+      { name: "a", kind: "param", line: 1, ownerSymbolId: "f" },
+      { name: "x", kind: "local", line: 1, ownerSymbolId: "f", boundCallee: { member: "h", receiver: "r" } },
+      { name: "y", kind: "local", line: 1, ownerSymbolId: "f" },
+    ]);
+  });
+
   it("innermost chunk: smallest span, deeper scope on tie", () => {
     const c = [
       { symbolId: "A", startLine: 1, endLine: 10, scope: [] },

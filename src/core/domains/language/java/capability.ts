@@ -22,5 +22,5 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (params, locals, fields; annotation and `new X()`
   // types) for the naming lexicon. Rows written by walker 5 carry none, so only
   // the recompute adds them.
-  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
 };

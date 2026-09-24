@@ -13,16 +13,20 @@
  * The annotation type drops generic arguments (`List<Doc>` → `List`), keeps a
  * qualified name as written (`com.acme.Panel`) and unwraps an array to its
  * element (`Widget[]` → `Widget`) — the lexicon groups `widgets` with
- * `Widget`, as Go's slices do.
+ * `Widget`, as Go's slices do. A local or field initialized by a method call
+ * carries its callee, split the way the walker splits its `CallRef`; `new X()`
+ * carries none, because the walker emits no `CallRef` for an object creation.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import {
+  boundCalleeFromCallShape,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { javaCallSiteShape } from "../walker.js";
 
 /** `T a = …, b;` — one site per `variable_declarator`, typed by the shared declaration type. */
 function declaratorRule(nodeType: string, kind: DeclaredIdentifierSite["kind"]): IdentifierDeclarationRule {
@@ -121,4 +125,5 @@ export const JAVA_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   ],
   annotationTypeName: javaAnnotationTypeName,
   constructorTypeName: javaConstructorTypeName,
+  boundCalleeOf: (value) => boundCalleeFromCallShape(javaCallSiteShape(value)),
 };

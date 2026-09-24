@@ -12,9 +12,18 @@ function parse(src: string) {
 }
 
 /** Through the COMPOSED walker, so the pass is exercised where production runs it. */
+function extractionOf(src: string, chunks: WalkInput["chunks"]) {
+  return new BashLanguage().walker.walk({
+    tree: parse(src),
+    code: src,
+    relPath: "deploy.sh",
+    language: "bash",
+    chunks,
+  });
+}
+
 function declarationsOf(src: string, chunks: WalkInput["chunks"]) {
-  return new BashLanguage().walker.walk({ tree: parse(src), code: src, relPath: "deploy.sh", language: "bash", chunks })
-    .identifierDeclarations;
+  return extractionOf(src, chunks).identifierDeclarations;
 }
 
 // bd tea-rags-mcp-4p3sb.6 — the naming lexicon's syntactic half for Bash.
@@ -48,5 +57,42 @@ describe("Bash walker — identifier declarations", () => {
       { name: "PATH_X", kind: "local", line: 8, ...owner },
       { name: "f", kind: "local", line: 11, ...owner },
     ]);
+  });
+
+  // bd tea-rags-mcp-4p3sb.16 — the row builder finds the CallRef by (startLine, member, receiver).
+  it("binds a local / field to the outermost call, as the CallRef the walker emits on that line", () => {
+    const code = [
+      "g() { echo x; }",
+      "f() {",
+      "  a=$(g arg)",
+      '  local b="$(g)"',
+      "  c=$(date +%s)",
+      "  d=$(g | tr a b)",
+      "  e=plain",
+      "}",
+    ].join("\n");
+    const extraction = extractionOf(code, [
+      { symbolId: "g", startLine: 1, endLine: 1, scope: [] },
+      { symbolId: "f", startLine: 2, endLine: 8, scope: [] },
+    ]);
+    const bound = Object.fromEntries((extraction.identifierDeclarations ?? []).map((d) => [d.name, d.boundCallee]));
+    expect(bound).toEqual({
+      a: { member: "g" },
+      b: { member: "g" },
+      // An external binary is no call edge; a pipeline has no single callee.
+      c: undefined,
+      d: undefined,
+      e: undefined,
+    });
+    for (const declaration of extraction.identifierDeclarations ?? []) {
+      if (declaration.boundCallee === undefined) continue;
+      const onLine = extraction.chunks
+        .flatMap((chunk) => chunk.calls)
+        .filter((call) => call.startLine === declaration.line)
+        .map((call) =>
+          call.receiver === null ? { member: call.member } : { member: call.member, receiver: call.receiver },
+        );
+      expect(onLine).toContainEqual(declaration.boundCallee);
+    }
   });
 });

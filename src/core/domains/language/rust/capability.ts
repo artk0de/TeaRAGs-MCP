@@ -22,5 +22,5 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (params, `let` locals, struct fields; annotation,
   // struct-literal and `X::new` types) for the naming lexicon. Rows written by
   // walker 4 carry none, so only the recompute adds them.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

@@ -11,7 +11,8 @@
  * grammar repeats the `name` field, which `childForFieldName` answers only once,
  * so names are read as the node's identifier children. A `:=` / `var` value is
  * paired with its name POSITIONALLY; a multi-value call (`row, err := f()`)
- * gives no name an initializer.
+ * binds only its FIRST name to the call — `row` is the call's result, `err` is
+ * not — so only that name carries the bound callee.
  *
  * The declaration type unwraps pointers AND slices / arrays to the element
  * (`[]*Doc` → `Doc`) — the lexicon groups `docs` with `Doc`. That is
@@ -23,11 +24,13 @@
  */
 
 import { isSameAstNode, type AstNode } from "../../../../../contracts/types/ast.js";
-import type {
-  DeclaredIdentifierSite,
-  IdentifierDeclarationRule,
-  IdentifierDeclarationSyntax,
+import {
+  boundCalleeFromCallShape,
+  type DeclaredIdentifierSite,
+  type IdentifierDeclarationRule,
+  type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { goCallSiteShape } from "../walker.js";
 
 function childrenOfType(node: AstNode | null, type: string): AstNode[] {
   return node === null ? [] : node.namedChildren.filter((child) => child.type === type);
@@ -47,14 +50,25 @@ function parameterSites(node: AstNode): DeclaredIdentifierSite[] {
   return childrenOfType(node, "identifier").map((nameNode) => ({ nameNode, kind: "param", typeNode }));
 }
 
-/** `x, y := a, b` — each name paired with the value at its position, when the counts line up. */
+/**
+ * The initializer of the `i`-th of `nameCount` names: the value at its
+ * position when the counts line up; for one multi-value CALL on the right, the
+ * call for the first name only (a call is never a composite literal, so it
+ * cannot type that name by constructor).
+ */
+function positionalValue(values: readonly AstNode[], nameCount: number, i: number): AstNode | null {
+  if (values.length === nameCount) return values[i];
+  return values.length === 1 && i === 0 && values[0].type === "call_expression" ? values[0] : null;
+}
+
+/** `x, y := a, b` — each name paired with the value at its position. */
 function shortVarSites(node: AstNode): DeclaredIdentifierSite[] {
   const names = childrenOfType(node.childForFieldName("left"), "identifier");
   const values = node.childForFieldName("right")?.namedChildren ?? [];
   return names.map((nameNode, i) => ({
     nameNode,
     kind: "local",
-    valueNode: values.length === names.length ? values[i] : null,
+    valueNode: positionalValue(values, names.length, i),
   }));
 }
 
@@ -67,7 +81,7 @@ function varSpecSites(node: AstNode): DeclaredIdentifierSite[] {
     nameNode,
     kind: "local",
     typeNode,
-    valueNode: values.length === names.length ? values[i] : null,
+    valueNode: positionalValue(values, names.length, i),
   }));
 }
 
@@ -131,4 +145,5 @@ export const GO_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   ],
   annotationTypeName: goDeclarationTypeName,
   constructorTypeName: goConstructorTypeName,
+  boundCalleeOf: (value) => boundCalleeFromCallShape(goCallSiteShape(value)),
 };

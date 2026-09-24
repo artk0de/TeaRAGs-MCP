@@ -12,11 +12,13 @@
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type {
-  DeclaredIdentifierSite,
-  IdentifierDeclarationRule,
-  IdentifierDeclarationSyntax,
+import {
+  boundCalleeFromCallShape,
+  type DeclaredIdentifierSite,
+  type IdentifierDeclarationRule,
+  type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { rubyCallShape } from "../call-collection.js";
 
 /** Parameter forms whose declared name is the `name` field; a bare `identifier` is its own name. */
 const NAMED_PARAMETER_TYPES = new Set([
@@ -71,4 +73,5 @@ export const RUBY_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   ],
   annotationTypeName: () => undefined,
   constructorTypeName: rubyConstructorTypeName,
+  boundCalleeOf: (value) => boundCalleeFromCallShape(rubyCallShape(value)),
 };

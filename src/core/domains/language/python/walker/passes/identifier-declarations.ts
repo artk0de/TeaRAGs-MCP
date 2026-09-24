@@ -4,9 +4,13 @@
  * `identifierDeclarations`: def parameters (`self` included — it is a
  * declaration), locals and `self.<attr>` fields declared by a plain assignment.
  *
- * The annotation type is the WRITTEN head: `list[Job]` names `list`, the way the
- * lexicon groups names by the type a reader sees, not by the element the
- * resolver would unwrap. A constructor is a call whose final segment is
+ * The annotation type is the written head, except that a sequence, a set, a
+ * tuple and `Optional` name their ELEMENT (`list[Job]` → `Job`,
+ * `Optional[Repo]` → `Repo`) — the lexicon groups `jobs` with `Job`, as Go's
+ * slices and Java's arrays already do; a mapping keeps its head (`dict`). A
+ * local or field bound to a call carries that call's callee, split the way the
+ * walker splits its `CallRef`, `await` seen through. A constructor is a call
+ * whose final segment is
  * CapWords (`Document()`, `models.Invoice()`) — PEP 8's class spelling; a
  * lowercase callee's type is joined at sink time from the return-type channels.
  * Multiple assignment (`a, b = …`), augmented assignment and an attribute on
@@ -14,12 +18,15 @@
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
+  boundCalleeFromCallShape,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { pythonCalleeMemberReceiver } from "../walker.js";
 
 /** Splat patterns wrap their identifier with no field name. */
 const SPLAT_PATTERN_TYPES = new Set(["list_splat_pattern", "dictionary_splat_pattern"]);
@@ -73,7 +80,32 @@ const assignmentRule: IdentifierDeclarationRule = {
   },
 };
 
-/** The written head of an annotation: `Repo`, `models.Repo`, `list[Job]` → `list`, `"Repo"` → `Repo`. */
+/** Generic heads whose annotation names its first type argument, matched on the final segment (`typing.List`). */
+const ELEMENT_NAMING_HEADS = new Set([
+  "list",
+  "List",
+  "Sequence",
+  "Iterable",
+  "set",
+  "Set",
+  "tuple",
+  "Tuple",
+  "Optional",
+]);
+
+/** The first type argument: `generic_type`'s `type_parameter` list, or a `subscript`'s first index. */
+function firstTypeArgument(node: AstNode): AstNode | null {
+  if (node.type === "generic_type") {
+    return node.namedChildren.find((child) => child.type === "type_parameter")?.namedChild(0) ?? null;
+  }
+  return node.namedChildren[1] ?? null;
+}
+
+/**
+ * The type an annotation names: `Repo`, `models.Repo`, `"Repo"` → `Repo`, a
+ * generic by its head (`dict[str, Job]` → `dict`) — except a sequence / set /
+ * tuple / `Optional`, which names its element (`list[Job]` → `Job`).
+ */
 function pythonAnnotationTypeName(typeNode: AstNode): string | undefined {
   const inner = typeNode.type === "type" ? typeNode.namedChild(0) : typeNode;
   if (inner === null) return undefined;
@@ -85,7 +117,12 @@ function pythonAnnotationTypeName(typeNode: AstNode): string | undefined {
     case "subscript":
     case "generic_type": {
       const head = inner.childForFieldName("value") ?? inner.namedChild(0);
-      return head === null ? undefined : pythonAnnotationTypeName(head);
+      const headName = head === null ? undefined : pythonAnnotationTypeName(head);
+      if (headName === undefined || !ELEMENT_NAMING_HEADS.has(headName.slice(headName.lastIndexOf(".") + 1))) {
+        return headName;
+      }
+      const element = firstTypeArgument(inner);
+      return element === null ? undefined : pythonAnnotationTypeName(element);
     }
     case "string": {
       const unquoted = /^(["'])([A-Za-z_][\w.]*)(?:\[.*\])?\1$/.exec(inner.text);
@@ -105,6 +142,14 @@ function pythonConstructorTypeName(value: AstNode): string | undefined {
   return /^[A-Z]/.test(finalSegment) ? callee.text : undefined;
 }
 
+/** `f(x)` / `obj.m(x)` / `await obj.m(x)` → the callee as the walker's `CallRef` splits it. */
+function pythonBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
+  const call = value.type === "await" ? value.namedChild(0) : value;
+  const fn = call?.type === "call" ? call.childForFieldName("function") : null;
+  if (fn?.type !== "identifier" && fn?.type !== "attribute") return undefined;
+  return boundCalleeFromCallShape(pythonCalleeMemberReceiver(fn));
+}
+
 export const PYTHON_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     { nodeType: "parameters", collect: parameterSites },
@@ -113,4 +158,5 @@ export const PYTHON_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax =
   ],
   annotationTypeName: pythonAnnotationTypeName,
   constructorTypeName: pythonConstructorTypeName,
+  boundCalleeOf: pythonBoundCallee,
 };

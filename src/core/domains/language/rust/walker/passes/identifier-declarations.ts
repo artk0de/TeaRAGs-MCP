@@ -14,16 +14,21 @@
  * arguments (`Vec<Item>` → `Vec`), keeping a path as written
  * (`std::sync::Pool`). By constructor: a struct literal (`X { … }`) and a
  * `X::new(…)` call (the path before `::new`, turbofish dropped); any other
- * associated function (`Default::default()`) is joined at sink time.
+ * associated function (`Default::default()`) is joined at sink time. A `let`
+ * bound to a call or macro carries its callee, split the way the walker splits
+ * its `CallRef`, seen through `?`, `.await` and `&`.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
+  boundCalleeFromCallShape,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { rustCallSiteShape } from "../walker.js";
 
 /** Pattern nodes whose bound names sit below them; literals and paths bind nothing. */
 const DESTRUCTURING_PATTERNS = new Set([
@@ -157,6 +162,18 @@ function rustConstructorTypeName(value: AstNode): string | undefined {
   }
 }
 
+/** Wrappers a call's value passes through unchanged in kind: `f()?`, `f().await`, `&f()`. */
+const CALL_WRAPPER_TYPES = new Set(["try_expression", "await_expression", "reference_expression"]);
+
+function rustBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
+  let call: AstNode | null = value;
+  while (call !== null && CALL_WRAPPER_TYPES.has(call.type)) {
+    // `&mut f()` — the operand is the last named child, after any `mutable_specifier`.
+    call = call.namedChildren.at(-1) ?? null;
+  }
+  return call === null ? undefined : boundCalleeFromCallShape(rustCallSiteShape(call));
+}
+
 export const RUST_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     parameterRule,
@@ -166,4 +183,5 @@ export const RUST_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   ],
   annotationTypeName: rustAnnotationTypeName,
   constructorTypeName: rustConstructorTypeName,
+  boundCalleeOf: rustBoundCallee,
 };

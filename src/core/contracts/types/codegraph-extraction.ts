@@ -400,6 +400,22 @@ export interface IdentifierDeclaration {
   readonly ownerSymbolId: string;
   readonly typeName?: string;
   readonly typeSource?: Extract<IdentifierTypeSource, "annotation" | "constructor">;
+  /**
+   * The OUTERMOST call a `local` / `field` is bound to, split the way the
+   * language's walker splits that call's `CallRef` — so the sink-time row builder
+   * finds the `CallRef` (and its `callText`) by `(startLine, member, receiver)`.
+   * `x = find_x!(id)` → `{ member: "find_x!" }`, `row = Doc.find(id)` →
+   * `{ member: "find", receiver: "Doc" }`. Absent on params, on values that are
+   * not a call, and on calls the walker emits no `CallRef` for.
+   */
+  readonly boundCallee?: IdentifierBoundCallee;
+}
+
+/** The callee a declared identifier is bound to — a `CallRef`'s `member` / `receiver` pair. */
+export interface IdentifierBoundCallee {
+  readonly member: string;
+  /** Absent for a receiverless call (`CallRef.receiver === null`). */
+  readonly receiver?: string;
 }
 
 /** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */

@@ -16,7 +16,11 @@
  */
 
 import type { AstNode } from "../../../contracts/types/ast.js";
-import type { FileExtraction, IdentifierDeclaration } from "../../../contracts/types/codegraph.js";
+import type {
+  FileExtraction,
+  IdentifierBoundCallee,
+  IdentifierDeclaration,
+} from "../../../contracts/types/codegraph.js";
 import type { WalkContext } from "../../../contracts/types/language.js";
 import type { ExtractionFacetPass } from "./extraction-passes.js";
 
@@ -26,7 +30,7 @@ export interface DeclaredIdentifierSite {
   kind: "param" | "local" | "field";
   /** Written type annotation. */
   typeNode?: AstNode | null;
-  /** Initializer, for constructor typing. */
+  /** Initializer, for constructor typing and — on a local / field — the bound callee. */
   valueNode?: AstNode | null;
 }
 
@@ -43,6 +47,13 @@ export interface IdentifierDeclarationSyntax {
   annotationTypeName: (typeNode: AstNode) => string | undefined;
   /** `X.new` / `new X()` / `X()` / `&X{}` / `X::new` → "X"; else undefined. */
   constructorTypeName: (valueNode: AstNode) => string | undefined;
+  /**
+   * The OUTERMOST call `valueNode` is, as the `{ member, receiver }` the
+   * language's walker puts on that call's `CallRef` — read through the walker's
+   * own split, so the two agree by construction. Asked for local / field
+   * values only; undefined when the value is no call the walker emits.
+   */
+  boundCalleeOf?: (valueNode: AstNode) => IdentifierBoundCallee | undefined;
 }
 
 /** Sigils (`@`, `@@`, `$`) and a trailing `!`/`?` allowed; destructuring patterns and literals rejected. */
@@ -137,6 +148,24 @@ function typeOf(
   return {};
 }
 
+/** A walker's `{ member, receiver }` call split (`receiver: null` for a bare call) as a bound callee. */
+export function boundCalleeFromCallShape(
+  shape: { readonly member: string; readonly receiver: string | null } | null | undefined,
+): IdentifierBoundCallee | undefined {
+  if (!shape) return undefined;
+  return shape.receiver === null ? { member: shape.member } : { member: shape.member, receiver: shape.receiver };
+}
+
+/** A parameter's default is no binding the body chose, so only locals and fields carry a callee. */
+function boundCalleeOf(
+  site: DeclaredIdentifierSite,
+  syntax: IdentifierDeclarationSyntax,
+): Pick<IdentifierDeclaration, "boundCallee"> {
+  if (site.kind === "param" || !site.valueNode || syntax.boundCalleeOf === undefined) return {};
+  const boundCallee = syntax.boundCalleeOf(site.valueNode);
+  return boundCallee === undefined ? {} : { boundCallee };
+}
+
 export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarationSyntax): ExtractionFacetPass {
   const rulesByNodeType = new Map<string, IdentifierDeclarationRule[]>();
   for (const rule of syntax.rules) {
@@ -164,7 +193,14 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
             const key = `${ownerSymbolId}\u0000${site.kind}\u0000${name}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            declarations.push({ name, kind: site.kind, line, ownerSymbolId, ...typeOf(site, syntax) });
+            declarations.push({
+              name,
+              kind: site.kind,
+              line,
+              ownerSymbolId,
+              ...typeOf(site, syntax),
+              ...boundCalleeOf(site, syntax),
+            });
           }
         }
         const { children } = node;

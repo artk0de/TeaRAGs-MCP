@@ -12,5 +12,5 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (a function's assignments, `local` / `declare`
   // names, loop variables) for the naming lexicon. Rows written by walker 1
   // carry none, so only the recompute adds them.
-  versions: { chunking: 2, walker: 2, codegraphSchema: 2 },
+  versions: { chunking: 2, walker: 3, codegraphSchema: 2 },
 };

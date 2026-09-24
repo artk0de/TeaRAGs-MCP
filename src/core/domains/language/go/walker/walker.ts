@@ -356,6 +356,35 @@ interface GoCallSites {
   bareCalleeHeads: Map<CallRef, string>;
 }
 
+/** The `{ receiver, member }` pair a Go `CallRef` carries. */
+export interface GoCallShape {
+  receiver: string | null;
+  member: string;
+}
+
+/**
+ * The `{ receiver, member }` of the `CallRef` {@link collectGoCalls} emits for
+ * `node`, or null when it emits none. `pkg.Func()` / `x.Method()` → the
+ * selector's operand and field; any other callee is a bare call named by its
+ * text; a one-argument generic instantiation (`pair[int](x)`) is a bare call
+ * named by the instantiated type as written. Read by the identifier-declaration
+ * pass so a declaration's bound callee matches that `CallRef` by construction
+ * (bd tea-rags-mcp-4p3sb.16).
+ */
+export function goCallSiteShape(node: AstNode): GoCallShape | null {
+  if (node.type === "type_conversion_expression") {
+    const type = node.childForFieldName("type");
+    return type?.type === "generic_type" ? { receiver: null, member: type.text } : null;
+  }
+  if (node.type !== "call_expression") return null;
+  const fn = node.childForFieldName("function");
+  if (!fn) return null;
+  if (fn.type !== "selector_expression") return { receiver: null, member: fn.text };
+  const operand = fn.childForFieldName("operand");
+  const field = fn.childForFieldName("field");
+  return operand && field ? { receiver: operand.text, member: field.text } : null;
+}
+
 function collectGoCalls(root: AstNode): GoCallSites {
   const out: CallRef[] = [];
   const bareCalleeHeads = new Map<CallRef, string>();
@@ -368,32 +397,30 @@ function collectGoCalls(root: AstNode): GoCallSites {
     // has — and the resolver decides whether the operand names a generic
     // declaration. A conversion to any other type (`[]byte(s)`) is left alone.
     if (node.type === "type_conversion_expression") {
-      const type = node.childForFieldName("type");
-      if (type?.type === "generic_type") {
+      const shape = goCallSiteShape(node);
+      if (shape) {
         const ref: CallRef = {
           callText: node.text,
-          receiver: null,
-          member: type.text,
+          receiver: shape.receiver,
+          member: shape.member,
           startLine: node.startPosition.row + 1,
         };
         out.push(ref);
-        const base = type.childForFieldName("type");
+        const base = node.childForFieldName("type")?.childForFieldName("type");
         if (base?.type === "type_identifier") bareCalleeHeads.set(ref, base.text);
       }
       return;
     }
     if (node.type !== "call_expression") return;
     const fn = node.childForFieldName("function");
-    if (!fn) return;
+    const shape = goCallSiteShape(node);
+    if (!fn || !shape) return;
     const startLine = node.startPosition.row + 1;
     if (fn.type === "selector_expression") {
-      const operand = fn.childForFieldName("operand");
-      const field = fn.childForFieldName("field");
-      if (!operand || !field) return;
-      out.push({ callText: node.text, receiver: operand.text, member: field.text, startLine });
+      out.push({ callText: node.text, receiver: shape.receiver, member: shape.member, startLine });
       return;
     }
-    const ref: CallRef = { callText: node.text, receiver: null, member: fn.text, startLine };
+    const ref: CallRef = { callText: node.text, receiver: shape.receiver, member: shape.member, startLine };
     if (fn.type === "identifier") bareCalleeHeads.set(ref, fn.text);
     if (fn.type === "index_expression") {
       const operand = fn.childForFieldName("operand");

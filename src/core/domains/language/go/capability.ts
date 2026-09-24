@@ -33,5 +33,5 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (params, locals, struct fields; annotation and
   // composite-literal types) for the naming lexicon. Rows written by walker 6
   // carry none, so only the recompute adds them.
-  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
 };

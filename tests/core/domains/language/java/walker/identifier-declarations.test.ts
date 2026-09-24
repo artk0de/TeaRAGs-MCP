@@ -12,9 +12,12 @@ function parse(src: string) {
 }
 
 /** Through the COMPOSED walker, so the pass is exercised where production runs it. */
+function extractionOf(src: string, chunks: WalkInput["chunks"]) {
+  return new JavaLanguage().walker.walk({ tree: parse(src), code: src, relPath: "Svc.java", language: "java", chunks });
+}
+
 function declarationsOf(src: string, chunks: WalkInput["chunks"]) {
-  return new JavaLanguage().walker.walk({ tree: parse(src), code: src, relPath: "Svc.java", language: "java", chunks })
-    .identifierDeclarations;
+  return extractionOf(src, chunks).identifierDeclarations;
 }
 
 // bd tea-rags-mcp-4p3sb.6 — the naming lexicon's syntactic half for Java.
@@ -48,9 +51,17 @@ describe("Java walker — identifier declarations", () => {
       { name: "xs", kind: "param", line: 4, ...owner, typeName: "List", typeSource: "annotation" },
       { name: "more", kind: "param", line: 4, ...owner, typeName: "Item", typeSource: "annotation" },
       { name: "doc", kind: "local", line: 5, ...owner, typeName: "Document", typeSource: "annotation" },
-      { name: "row", kind: "local", line: 6, ...owner },
+      { name: "row", kind: "local", line: 6, ...owner, boundCallee: { member: "get", receiver: "repo" } },
       { name: "p", kind: "local", line: 7, ...owner, typeName: "com.acme.Panel", typeSource: "constructor" },
-      { name: "ws", kind: "local", line: 8, ...owner, typeName: "Widget", typeSource: "annotation" },
+      {
+        name: "ws",
+        kind: "local",
+        line: 8,
+        ...owner,
+        typeName: "Widget",
+        typeSource: "annotation",
+        boundCallee: { member: "make", receiver: "factory" },
+      },
       // Pre-order: the statement declares `r` and `s` before its lambdas are visited.
       { name: "r", kind: "local", line: 9, ...owner, typeName: "Runnable", typeSource: "annotation" },
       { name: "s", kind: "local", line: 9, ...owner, typeName: "Runnable", typeSource: "annotation" },
@@ -60,5 +71,44 @@ describe("Java walker — identifier declarations", () => {
       { name: "rd", kind: "local", line: 11, ...owner, typeName: "Reader", typeSource: "annotation" },
       { name: "e", kind: "local", line: 11, ...owner, typeName: "IOException", typeSource: "annotation" },
     ]);
+  });
+
+  // bd tea-rags-mcp-4p3sb.16 — the row builder finds the CallRef by (startLine, member, receiver).
+  it("binds a local / field to the outermost call, as the CallRef the walker emits on that line", () => {
+    const code = [
+      "class Svc {",
+      "  private Repo repo = Repos.create();",
+      "  void load(String id) {",
+      "    Doc doc = repo.find(id);",
+      "    var all = find(id);",
+      "    Doc made = new Doc();",
+      "    int n = 1;",
+      "  }",
+      "}",
+    ].join("\n");
+    const extraction = extractionOf(code, [
+      { symbolId: "Svc", startLine: 1, endLine: 9, scope: [] },
+      { symbolId: "Svc#load", startLine: 3, endLine: 8, scope: ["Svc"] },
+    ]);
+    const bound = Object.fromEntries((extraction.identifierDeclarations ?? []).map((d) => [d.name, d.boundCallee]));
+    expect(bound).toEqual({
+      repo: { member: "create", receiver: "Repos" },
+      id: undefined,
+      doc: { member: "find", receiver: "repo" },
+      all: { member: "find" },
+      // The walker emits no CallRef for an object creation, so `new Doc()` binds nothing.
+      made: undefined,
+      n: undefined,
+    });
+    for (const declaration of extraction.identifierDeclarations ?? []) {
+      if (declaration.boundCallee === undefined) continue;
+      const onLine = extraction.chunks
+        .flatMap((chunk) => chunk.calls)
+        .filter((call) => call.startLine === declaration.line)
+        .map((call) =>
+          call.receiver === null ? { member: call.member } : { member: call.member, receiver: call.receiver },
+        );
+      expect(onLine).toContainEqual(declaration.boundCallee);
+    }
   });
 });

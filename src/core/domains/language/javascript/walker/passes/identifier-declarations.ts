@@ -3,11 +3,13 @@
  * ECMAScript half of TypeScript's, with no annotations. The JavaScript grammar
  * has no `required_parameter`: a `formal_parameters` list holds the binding
  * targets themselves (`id`, `opts = …`, `{ a }`, `[x]`, `...more`). The only
- * syntactic type is `new X()`.
+ * syntactic type is `new X()`. A local or field bound to a call carries that
+ * call's callee, split the way this walker splits its `CallRef`.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import {
+  boundCalleeFromCallShape,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationSyntax,
@@ -17,7 +19,9 @@ import {
   ECMASCRIPT_VARIABLE_DECLARATOR_RULE,
   ecmascriptBindingSites,
   ecmascriptConstructorTypeName,
+  ecmascriptOutermostCall,
 } from "../../../typescript/walker/passes/identifier-declarations.js";
+import { javascriptCallSiteShape } from "../walker.js";
 
 function formalParameterSites(list: AstNode): DeclaredIdentifierSite[] {
   return list.namedChildren.flatMap((param) =>
@@ -36,4 +40,5 @@ export const JAVASCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSynt
   ],
   annotationTypeName: () => undefined,
   constructorTypeName: ecmascriptConstructorTypeName,
+  boundCalleeOf: (value) => boundCalleeFromCallShape(javascriptCallSiteShape(ecmascriptOutermostCall(value))),
 };

@@ -17,15 +17,20 @@
  * The annotation type is the nominal (`Set<Foo>` → `Set`, `Outer.Inner` kept),
  * seen through `?`, `any` / `some` and array sugar (`[Item]` → `Item`). A
  * constructor is a CapWords callee (`Widget()`, `Foo.Bar()`) or an explicitly
- * specialised construction (`Protected<[T]>(…)`).
+ * specialised construction (`Protected<[T]>(…)`). A local or property bound to
+ * a call carries its callee, split the way the walker splits its `CallRef`,
+ * seen through `try` and `await` (read positionally, like everything here).
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type {
-  DeclaredIdentifierSite,
-  IdentifierDeclarationRule,
-  IdentifierDeclarationSyntax,
+import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
+import {
+  boundCalleeFromCallShape,
+  type DeclaredIdentifierSite,
+  type IdentifierDeclarationRule,
+  type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { swiftCallSiteShape } from "../walker.js";
 
 /** Type bodies whose `let` / `var` members are stored properties, not locals. */
 const TYPE_BODY_TYPES = new Set(["class_body", "enum_class_body", "protocol_body"]);
@@ -120,6 +125,15 @@ function swiftConstructorTypeName(value: AstNode): string | undefined {
   return /^_*[A-Z]/.test(finalSegment) ? callee.text : undefined;
 }
 
+/** `try f()` / `try? f()` / `await f()` / `try await f()` → the call `f()`. */
+function swiftBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
+  let call: AstNode | undefined = value;
+  while (call?.type === "try_expression" || call?.type === "await_expression") {
+    call = call.namedChildren.find((child) => child.type !== "try_operator");
+  }
+  return call === undefined ? undefined : boundCalleeFromCallShape(swiftCallSiteShape(call));
+}
+
 export const SWIFT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     rule("parameter", parameterSites),
@@ -128,4 +142,5 @@ export const SWIFT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = 
   ],
   annotationTypeName: swiftAnnotationTypeName,
   constructorTypeName: swiftConstructorTypeName,
+  boundCalleeOf: swiftBoundCallee,
 };

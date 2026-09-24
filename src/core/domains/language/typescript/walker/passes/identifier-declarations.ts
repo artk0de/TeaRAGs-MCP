@@ -8,15 +8,25 @@
  * TypeScript, and JavaScript's syntax imports both from here. A destructuring
  * pattern binds each name as its own site, untyped: the annotation on
  * `{ a, b }: Opts` types the object, not `a`.
+ *
+ * An array or set annotation names its ELEMENT (`Job[]`, `Array<Job>`,
+ * `ReadonlyArray<Job>`, `Set<Job>` → `Job`) — the lexicon groups `jobs` with
+ * `Job`, as Go's slices and Java's arrays already do. `Promise<Job>` and maps
+ * keep their head: a `docPromise` is not a `doc`. A local or field bound to a
+ * call carries that call's callee, split the way the walker splits its
+ * `CallRef`, `await` and a non-null `!` seen through.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
+  boundCalleeFromCallShape,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
 } from "../../../kernel/identifier-declarations.js";
+import { typescriptCallSiteShape } from "../walker.js";
 
 /** Destructuring shapes whose bound names sit below the pattern node. */
 function boundNameNodes(pattern: AstNode): AstNode[] {
@@ -106,7 +116,14 @@ export const ECMASCRIPT_VARIABLE_DECLARATOR_RULE: IdentifierDeclarationRule = {
     ),
 };
 
-/** Nominal annotations only: `Repo`, `ns.Repo`, `Repo<Doc>` → `Repo`, `string`; unions, arrays, literals → none. */
+/** Generic heads whose annotation names its first type argument. */
+const ELEMENT_NAMING_HEADS = new Set(["Array", "ReadonlyArray", "Set"]);
+
+/**
+ * Nominal annotations only: `Repo`, `ns.Repo`, `Repo<Doc>` → `Repo`, `string`;
+ * `Job[]` / `readonly Job[]` / `Array<Job>` / `ReadonlyArray<Job>` / `Set<Job>`
+ * → `Job`; unions, tuples, literals → none.
+ */
 function typescriptAnnotationTypeName(typeNode: AstNode): string | undefined {
   const inner = typeNode.type === "type_annotation" ? typeNode.namedChild(0) : typeNode;
   if (inner === null) return undefined;
@@ -115,11 +132,32 @@ function typescriptAnnotationTypeName(typeNode: AstNode): string | undefined {
     case "nested_type_identifier":
     case "predefined_type":
       return inner.text;
-    case "generic_type":
-      return inner.childForFieldName("name")?.text;
+    case "array_type":
+    case "readonly_type": {
+      const element = inner.namedChild(0);
+      return element === null ? undefined : typescriptAnnotationTypeName(element);
+    }
+    case "generic_type": {
+      const head = inner.childForFieldName("name")?.text;
+      if (head === undefined || !ELEMENT_NAMING_HEADS.has(head)) return head;
+      // Positional: the argument list is the `type_arguments` child.
+      const element = inner.namedChildren.find((child) => child.type === "type_arguments")?.namedChild(0) ?? null;
+      return element === null ? undefined : typescriptAnnotationTypeName(element);
+    }
     default:
       return undefined;
   }
+}
+
+/** The call an initializer IS: `await f()` and `f()!` are the call `f()`. */
+export function ecmascriptOutermostCall(value: AstNode): AstNode {
+  return value.type === "await_expression" || value.type === "non_null_expression"
+    ? (value.namedChild(0) ?? value)
+    : value;
+}
+
+function typescriptBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
+  return boundCalleeFromCallShape(typescriptCallSiteShape(ecmascriptOutermostCall(value)));
 }
 
 export const TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
@@ -132,4 +170,5 @@ export const TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSynt
   ],
   annotationTypeName: typescriptAnnotationTypeName,
   constructorTypeName: ecmascriptConstructorTypeName,
+  boundCalleeOf: typescriptBoundCallee,
 };

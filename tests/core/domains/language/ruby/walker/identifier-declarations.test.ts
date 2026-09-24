@@ -12,9 +12,12 @@ function parse(src: string) {
 }
 
 /** Through the COMPOSED walker, so the pass is exercised where production runs it. */
+function extractionOf(src: string, chunks: WalkInput["chunks"]) {
+  return new RubyLanguage().walker.walk({ tree: parse(src), code: src, relPath: "a.rb", language: "ruby", chunks });
+}
+
 function declarationsOf(src: string, chunks: WalkInput["chunks"]) {
-  return new RubyLanguage().walker.walk({ tree: parse(src), code: src, relPath: "a.rb", language: "ruby", chunks })
-    .identifierDeclarations;
+  return extractionOf(src, chunks).identifierDeclarations;
 }
 
 // bd tea-rags-mcp-4p3sb.3 — the naming lexicon's syntactic half for Ruby.
@@ -36,7 +39,13 @@ describe("Ruby walker — identifier declarations", () => {
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "id", kind: "param", line: 2, ownerSymbolId: "ProcessEvent#call" },
       { name: "ignored", kind: "param", line: 2, ownerSymbolId: "ProcessEvent#call" },
-      { name: "tax_automation_document", kind: "local", line: 3, ownerSymbolId: "ProcessEvent#call" },
+      {
+        name: "tax_automation_document",
+        kind: "local",
+        line: 3,
+        ownerSymbolId: "ProcessEvent#call",
+        boundCallee: { member: "find_tax_automation_document!" },
+      },
       {
         name: "@document",
         kind: "field",
@@ -44,8 +53,15 @@ describe("Ruby walker — identifier declarations", () => {
         ownerSymbolId: "ProcessEvent#call",
         typeName: "TaxAutomationDocument",
         typeSource: "constructor",
+        boundCallee: { member: "new", receiver: "TaxAutomationDocument" },
       },
-      { name: "row", kind: "local", line: 5, ownerSymbolId: "ProcessEvent#call" },
+      {
+        name: "row",
+        kind: "local",
+        line: 5,
+        ownerSymbolId: "ProcessEvent#call",
+        boundCallee: { member: "find", receiver: "TaxAutomationDocument" },
+      },
     ]);
   });
 
@@ -74,7 +90,53 @@ describe("Ruby walker — identifier declarations", () => {
         ownerSymbolId: "m",
         typeName: "Billing::Invoice",
         typeSource: "constructor",
+        boundCallee: { member: "new", receiver: "Billing::Invoice" },
       },
     ]);
+  });
+
+  // bd tea-rags-mcp-4p3sb.16 — the row builder finds the CallRef by (startLine, member, receiver).
+  it("binds a local / field to the outermost call, as the CallRef the walker emits on that line", () => {
+    const src = [
+      "class Svc",
+      "  def call(id)",
+      "    doc = Doc.where(x: id).first",
+      "    user = current_user",
+      "    rec = Billing::Invoice.find(id)",
+      "    sent = obj.send(:publish)",
+      "    same = id",
+      "    top = ::Top.build",
+      "    @widget = Widget.new",
+      "    n = 1 + 2",
+      "  end",
+      "end",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "Svc", startLine: 1, endLine: 12, scope: [] },
+      { symbolId: "Svc#call", startLine: 2, endLine: 11, scope: ["Svc"] },
+    ];
+    const extraction = extractionOf(src, chunks);
+    const bound = Object.fromEntries((extraction.identifierDeclarations ?? []).map((d) => [d.name, d.boundCallee]));
+    expect(bound).toEqual({
+      id: undefined,
+      doc: { member: "first", receiver: "Doc.where(x: id)" },
+      user: { member: "current_user" },
+      rec: { member: "find", receiver: "Billing::Invoice" },
+      sent: { member: "publish", receiver: "obj" },
+      same: undefined,
+      top: { member: "build", receiver: "Top" },
+      "@widget": { member: "new", receiver: "Widget" },
+      n: undefined,
+    });
+    for (const declaration of extraction.identifierDeclarations ?? []) {
+      if (declaration.boundCallee === undefined) continue;
+      const onLine = extraction.chunks
+        .flatMap((chunk) => chunk.calls)
+        .filter((call) => call.startLine === declaration.line)
+        .map((call) =>
+          call.receiver === null ? { member: call.member } : { member: call.member, receiver: call.receiver },
+        );
+      expect(onLine).toContainEqual(declaration.boundCallee);
+    }
   });
 });
