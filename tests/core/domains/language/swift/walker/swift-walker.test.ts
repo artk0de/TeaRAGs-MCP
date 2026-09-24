@@ -1721,6 +1721,38 @@ describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)
   });
 });
 
+describe("swift walker — literal-initialized locals (bd tea-rags-mcp-y99pg.27)", () => {
+  const src = [
+    "func go() {",
+    '  var components = ["$ curl -v"]',
+    '  let name = "x"',
+    "  let things = [Thing(), Thing()]",
+    '  let mixed = [Thing(), "y"]',
+    "  let empty = []",
+    '  components.append("-X")',
+    "  let head = things.first",
+    "  let other = mixed.first",
+    "}",
+    "",
+  ].join("\n");
+
+  it("types a string literal as String", () => {
+    expect(typeAt(src, "name", 7)).toBe("String");
+  });
+
+  it("types a non-empty array literal as Array of its elements' common type", () => {
+    expect(typeAt(src, "components", 7)).toBe("Array");
+    expect(typeAt(src, "things", 7)).toBe("Array");
+    expect(typeAt(src, "mixed", 7)).toBe("Array");
+    expect(typeAt(src, "head", 10)).toBe("Thing");
+    expect(typeAt(src, "other", 10)).toBeUndefined();
+  });
+
+  it("types nothing for an empty literal", () => {
+    expect(typeAt(src, "empty", 7)).toBeUndefined();
+  });
+});
+
 describe("swift walker — construction-initialized field arguments (bd tea-rags-mcp-y99pg.26)", () => {
   const src = [
     "final class Protected<Value> {",

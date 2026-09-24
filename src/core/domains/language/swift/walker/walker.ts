@@ -2020,6 +2020,13 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
       return swiftCallResultFact(node, scope, depth);
     case "constructor_expression":
       return swiftConstructedGenericFact(node);
+    // A literal's default type (bd tea-rags-mcp-y99pg.27): `"…"` is String.
+    case "line_string_literal":
+    case "multi_line_string_literal":
+    case "raw_string_literal":
+      return { nominal: "String", element: null };
+    case "array_literal":
+      return swiftArrayLiteralFact(node, scope, depth);
     // `x as? Foo` / `x as! Foo` / `x as Foo` — the cast names its type.
     case "as_expression":
       return swiftTypeFactOf(node.namedChildren[node.namedChildCount - 1] ?? null);
@@ -2032,6 +2039,19 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
     default:
       return NO_TYPE;
   }
+}
+
+/**
+ * `[a, b]` is an Array whose element is the type every element proves, or no
+ * element where they disagree or one proves nothing; `[]` proves nothing, since
+ * only its context types it (bd tea-rags-mcp-y99pg.27).
+ */
+function swiftArrayLiteralFact(node: AstNode, scope: SwiftTypeScope, depth: number): SwiftTypeFact {
+  const elements = node.namedChildren.filter((c) => c.type !== "comment");
+  if (elements.length === 0) return NO_TYPE;
+  const types = new Set(elements.map((element) => swiftExpressionFact(element, scope, depth + 1).nominal));
+  const [only] = types;
+  return { nominal: "Array", element: types.size === 1 && only !== undefined ? only : null };
 }
 
 /**
