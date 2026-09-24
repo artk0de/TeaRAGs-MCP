@@ -1284,3 +1284,64 @@ describe("swift walker — generic parameters read through their constraints", (
     expect(typeAt(src, "request", 5)).toBe("Request");
   });
 });
+
+/**
+ * A local whose right-hand side is a value chain this file cannot type — its
+ * links live in other files — is recorded by SPELLING in `callResultBindings`
+ * for the resolver to fold with the whole symbol table in scope (bd
+ * tea-rags-mcp-y99pg.6). A cast types its local outright.
+ */
+describe("swift walker — locals typed later: value-chain spellings and casts", () => {
+  it("records an untyped chain local by its spelling, sugar and arguments stripped", () => {
+    const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
+    const chunk = extract(src).chunks[0];
+    expect(chunk.callResultBindings?.e).toEqual([{ line: 2, callee: "sp.mgr.eval" }]);
+    expect(chunk.localBindings?.e).toBeUndefined();
+  });
+
+  it("records the left operand of `??`, scoped to an `if let` body", () => {
+    const src = [
+      "func go() {",
+      "  if let r = sp?.req(for: t)?.handler ?? sp?.handler {",
+      "    r.run()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].callResultBindings?.r).toEqual([
+      { line: 2, callee: "sp.req.handler", scopeEndLine: 4 },
+    ]);
+  });
+
+  it("types a cast local by the cast's target type", () => {
+    const src = ["func go() {", "  let c = x as? Foo", "  c?.run()", "}", ""].join("\n");
+    expect(typeAt(src, "c", 3)).toBe("Foo");
+  });
+
+  it("records no spelling for a chain headed by a bare call", () => {
+    const src = ["func go() {", "  let n = make().value", "  n.run()", "}", ""].join("\n");
+    expect(extract(src).chunks[0].callResultBindings).toBeUndefined();
+  });
+
+  it("reads the same spelling off the materialized tree", () => {
+    const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
+    expect(extractMaterialized(src).chunks[0].callResultBindings?.e?.[0].callee).toBe("sp.mgr.eval");
+  });
+});
+
+describe("swift walker — a local declared in a closure ends with the closure", () => {
+  it("keeps a closure's local out of the lines after its closing brace", () => {
+    const src = [
+      "func go() {",
+      "  run {",
+      "    let helper = Helper()",
+      "    helper.use()",
+      "  }",
+      "  helper.gone()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "helper", 4)).toBe("Helper");
+    expect(typeAt(src, "helper", 6)).toBeUndefined();
+  });
+});

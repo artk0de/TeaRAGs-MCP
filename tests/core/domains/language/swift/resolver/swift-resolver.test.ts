@@ -1660,3 +1660,94 @@ describe("SwiftCallResolver — members reached through protocol conformances", 
     expect(target).toBeNull();
   });
 });
+
+/**
+ * A local recorded by its right-hand side's SPELLING (`callResultBindings`) is
+ * typed by folding that spelling as a receiver chain (bd tea-rags-mcp-y99pg.6).
+ */
+describe("SwiftCallResolver — locals bound to a value chain", () => {
+  const t = table({
+    "Sources/Manager.swift": [
+      { symbolId: "Manager", scope: [] },
+      { symbolId: "Manager#evaluator", scope: ["Manager"] },
+    ],
+    "Sources/Evaluating.swift": [
+      { symbolId: "Evaluating", scope: [] },
+      { symbolId: "Evaluating#evaluate", scope: ["Evaluating"] },
+    ],
+    "Sources/Delegate.swift": [
+      { symbolId: "Delegate", scope: [] },
+      { symbolId: "Delegate#evaluate", scope: ["Delegate"] },
+    ],
+  });
+  const base = {
+    callerFile: "Sources/Delegate.swift",
+    callerScope: ["Delegate", "go"],
+    symbolTable: t,
+    localBindings: { manager: [{ line: 2, type: "Manager" }] },
+    structuredReturnTypes: { "Manager#evaluator": { form: "instance" as const, name: "Evaluating" } },
+  };
+
+  it("folds the spelling to type a bare receiver", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator", "evaluate", 6),
+      ctx({ ...base, callResultBindings: { evaluator: [{ line: 5, callee: "manager.evaluator" }] } }),
+    );
+    expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
+  });
+
+  it("folds it for the head of a dotted receiver too", () => {
+    const tt = table({
+      "Sources/Evaluating.swift": [
+        { symbolId: "Evaluating", scope: [] },
+        { symbolId: "Policy", scope: [] },
+        { symbolId: "Policy#check", scope: ["Policy"] },
+      ],
+      "Sources/Manager.swift": [{ symbolId: "Manager#evaluator", scope: ["Manager"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator.policy", "check", 6),
+      ctx({
+        ...base,
+        symbolTable: tt,
+        classFieldTypesByClassKey: { "Sources/Evaluating.swift::Evaluating": { policy: "Policy" } },
+        callResultBindings: { evaluator: [{ line: 5, callee: "manager.evaluator" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Policy#check");
+  });
+
+  it("never lets a local's own right-hand side read the local it binds", () => {
+    // `var manager = manager.evaluator` — the right-hand side names the
+    // PARAMETER above, not the local being declared.
+    const target = new SwiftCallResolver().resolve(
+      call("manager", "evaluate", 6),
+      ctx({ ...base, callResultBindings: { manager: [{ line: 5, callee: "manager.evaluator" }] } }),
+    );
+    expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
+  });
+
+  it("a later typed binding shadows an earlier spelling", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator", "evaluate", 8),
+      ctx({
+        ...base,
+        localBindings: { ...base.localBindings, evaluator: [{ line: 7, type: "Delegate" }] },
+        callResultBindings: { evaluator: [{ line: 5, callee: "manager.evaluator" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Delegate#evaluate");
+  });
+
+  it("a spelling it cannot fold leaves the receiver to the passes after it, as an unrecorded local did", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator", "evaluate", 6),
+      ctx({
+        ...base,
+        classFieldTypes: { Delegate: { evaluator: "Evaluating" } },
+        callResultBindings: { evaluator: [{ line: 5, callee: "unknown.thing" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
+  });
+});

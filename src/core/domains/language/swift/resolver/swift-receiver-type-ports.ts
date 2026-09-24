@@ -37,9 +37,14 @@
  * per-resolver lookup, whose memos belong to the resolver.
  */
 
-import { resolveLocalBindingType, type CallContext } from "../../../../contracts/types/codegraph.js";
+import {
+  resolveLocalBinding,
+  type CallContext,
+  type CallResultBinding,
+} from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
+  propagateReceiverType,
   splitAtBracketDepthZero,
   splitReceiverHops,
   type ReceiverTypePorts,
@@ -100,6 +105,7 @@ function swiftHeadType(
   atLine: number,
   ctx: CallContext,
   members: SwiftMemberTypeLookup,
+  ports: ReceiverTypePorts,
 ): TypeRef | undefined {
   if (!SWIFT_IDENTIFIER.test(head)) return swiftLiteralHeadType(head);
   const enclosing = swiftSelfTypeName(ctx);
@@ -109,8 +115,8 @@ function swiftHeadType(
   }
   if (head === "super") return undefined;
 
-  const bound = resolveLocalBindingType(ctx.localBindings, head, atLine);
-  if (bound !== undefined) return { form: "instance", name: bound };
+  const local = swiftLocalValueType(head, atLine, ctx, ports);
+  if (local !== undefined) return { form: "instance", name: local };
 
   if (enclosing !== undefined) {
     const fieldType = members.typeOfProperty(enclosing, head, ctx);
@@ -169,9 +175,11 @@ function swiftTypeTextName(text: string): string | undefined {
  * `propagateReceiverType`.
  */
 export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): ReceiverTypePorts {
-  return Object.freeze({
+  // Self-referential: a head bound to a value chain is typed by folding that
+  // chain through these same ports.
+  const ports: ReceiverTypePorts = Object.freeze({
     singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
-      swiftHeadType(receiver, atLine, ctx, members),
+      swiftHeadType(receiver, atLine, ctx, members, ports),
     // See the module docblock: a Swift chain head is a complete answer on its
     // own, so there is nothing for a seed to consume the first link for.
     seedHead: (): undefined => undefined,
@@ -192,4 +200,41 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
     // An argument list carries its own dots (`request(for: task.id)`).
     splitReceiverHops,
   });
+  return ports;
+}
+
+/**
+ * The type a LOCAL value name holds at `atLine`, or `undefined`.
+ *
+ * Two channels, the more recent declaration winning: `localBindings`, which
+ * the walker typed, and `callResultBindings`, the SPELLING of a right-hand
+ * side whose links live in other files (bd tea-rags-mcp-y99pg.6), folded here
+ * through `ports` with the whole run in scope. The spelling is folded at its
+ * own line and a spelling is only visible STRICTLY below its line, so
+ * `var request = request.adapted()` reads the `request` declared above it,
+ * and every nested fold moves to an earlier line — the recursion terminates.
+ *
+ * A spelling that folds to nothing answers `undefined`, exactly as an
+ * unrecorded local did before the channel existed, and the callers keep their
+ * fallbacks. Swift scoping says such a local SHADOWS a same-named property;
+ * dropping on it was measured and cost correct edges
+ * (`let example = wrapper.example` beside a stored `example`), because a local
+ * named after a property overwhelmingly holds the property's type.
+ */
+export function swiftLocalValueType(
+  name: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+): string | undefined {
+  const typed = resolveLocalBinding(ctx.localBindings, name, atLine);
+  let spelled: CallResultBinding | undefined;
+  for (const binding of ctx.callResultBindings?.[name] ?? []) {
+    if (binding.line >= atLine) continue;
+    if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
+    if (spelled === undefined || binding.line > spelled.line) spelled = binding;
+  }
+  if (spelled === undefined || (typed !== undefined && typed.line >= spelled.line)) return typed?.type;
+  const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
+  return folded?.form === "instance" ? folded.name : undefined;
 }

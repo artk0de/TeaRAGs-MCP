@@ -126,6 +126,7 @@
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
+  CallResultBinding,
   ChunkExtraction,
   FileExtraction,
   ImportRef,
@@ -162,7 +163,10 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
     // A type chunk's own calls run inside the type (`swiftNameOf` opts in).
     if (c.bodyScope !== undefined) chunk.bodyScope = c.bodyScope;
     const bindings = bindingOwnership.get(chunkIndex);
-    if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
+    if (bindings && Object.keys(bindings.localBindings).length > 0) chunk.localBindings = bindings.localBindings;
+    if (bindings && Object.keys(bindings.callResultBindings).length > 0) {
+      chunk.callResultBindings = bindings.callResultBindings;
+    }
     return chunk;
   });
   const out: FileExtraction = {
@@ -960,6 +964,13 @@ interface SwiftScopedBinding {
   readonly functionKey: number;
   /** 1-based last line the binding is visible on; absent ⇒ visible to the end of its chunk. */
   readonly scopeEndLine?: number;
+  /**
+   * The right-hand side's SPELLING when this file cannot type it — a value
+   * chain whose links live in other files (bd tea-rags-mcp-y99pg.6). Emitted as
+   * a `callResultBindings` entry for the resolver to fold; inside the walker the
+   * binding types nothing but still SHADOWS a same-named property.
+   */
+  readonly valueChain?: string;
 }
 
 /** Where a right-hand side is being typed — the coordinates every lookup is relative to. */
@@ -1005,21 +1016,32 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     functionKey: enclosingSwiftFunctionKey(node),
     enclosingType: enclosingSwiftTypeName(node),
   });
-  const record = (name: string, fact: SwiftTypeFact, site: SwiftBindingSite, scopeEndLine?: number): void => {
+  const record = (
+    name: string,
+    fact: SwiftTypeFact,
+    site: SwiftBindingSite,
+    scopeEndLine?: number,
+    valueChain?: string,
+  ): void => {
     if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
-    if (!fact.nominal && !fact.element) return;
+    if (!fact.nominal && !fact.element && valueChain === undefined) return;
     const binding: SwiftScopedBinding = {
       name,
       fact,
       line: site.line,
       functionKey: site.functionKey,
       scopeEndLine,
+      valueChain,
     };
     collected.push(binding);
     const sameName = bindingsByName.get(name);
     if (sameName) sameName.push(binding);
     else bindingsByName.set(name, [binding]);
   };
+  // A local only: a type-level property's initializer is not a scope a
+  // receiver is read in.
+  const deferredSpelling = (fact: SwiftTypeFact, value: AstNode | null, site: SwiftBindingSite): string | undefined =>
+    fact.nominal || fact.element || site.functionKey === -1 ? undefined : (swiftValueChainSpelling(value) ?? undefined);
   walk(root, (node) => {
     switch (node.type) {
       case "parameter":
@@ -1036,10 +1058,9 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         if (!name) return;
         const site = siteOf(node);
         const declared = swiftDeclaredPropertyFact(node);
-        const fact = declared.nominal
-          ? declared
-          : swiftExpressionFact(node.childForFieldName("value"), { evidence, bindingsByName, site }, 0);
-        record(name, fact, site);
+        const value = node.childForFieldName("value");
+        const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
+        record(name, fact, site, enclosingSwiftClosureEndLine(node), deferredSpelling(fact, value, site));
         return;
       }
       case "guard_statement":
@@ -1057,7 +1078,8 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
           // Unwrapping `[T]?` yields `[T]`, so the element slot survives the
           // unwrap — the array still binds no receiver, and a `for` over the
           // unwrapped name still types its item.
-          record(clause.name, annotatedOrInferred, site, scopeEndLine);
+          const spelling = deferredSpelling(annotatedOrInferred, clause.value, site);
+          record(clause.name, annotatedOrInferred, site, scopeEndLine, spelling);
         }
         return;
       }
@@ -1303,8 +1325,53 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
     }
     case "call_expression":
       return swiftCallResultFact(node, scope, depth);
+    // `x as? Foo` / `x as! Foo` / `x as Foo` — the cast names its type.
+    case "as_expression":
+      return swiftTypeFactOf(node.namedChildren[node.namedChildCount - 1] ?? null);
+    // `a ?? b` — the left operand, unwrapped; the right one where it proves nothing.
+    case "nil_coalescing_expression": {
+      const left = swiftExpressionFact(node.namedChildren[0] ?? null, scope, depth + 1);
+      if (left.nominal || left.element) return left;
+      return swiftExpressionFact(node.namedChildren[node.namedChildCount - 1] ?? null, scope, depth + 1);
+    }
     default:
       return NO_TYPE;
+  }
+}
+
+/**
+ * The SPELLING of a value chain the resolver can fold — `self`, a value or
+ * type name, then `.member` and `.method(…)` links — with `try` / `await`,
+ * optional chaining, force unwraps and call arguments stripped, and `a ?? b`
+ * read as `a`. Null for anything else, a chain headed by a bare call included:
+ * the fold types a head by name, and `make()` is no name.
+ */
+function swiftValueChainSpelling(node: AstNode | null, depth = 0): string | null {
+  if (!node || depth > SWIFT_MAX_TYPE_HOPS + 2) return null;
+  switch (node.type) {
+    case "try_expression":
+    case "await_expression":
+      return swiftValueChainSpelling(node.namedChildren[node.namedChildCount - 1] ?? null, depth + 1);
+    case "postfix_expression":
+    case "nil_coalescing_expression":
+      return swiftValueChainSpelling(node.namedChildren[0] ?? null, depth + 1);
+    case "self_expression":
+      return "self";
+    case "simple_identifier":
+      return node.text;
+    case "navigation_expression": {
+      const member = node.childForFieldName("suffix")?.childForFieldName("suffix");
+      const target = swiftValueChainSpelling(node.childForFieldName("target"), depth + 1);
+      return member?.type === "simple_identifier" && target !== null ? `${target}.${member.text}` : null;
+    }
+    case "call_expression": {
+      const suffix = node.children.find((c) => c.type === "call_suffix");
+      if (!suffix || suffix.children.some((c) => c.type !== "value_arguments")) return null;
+      const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
+      return callee?.type === "navigation_expression" ? swiftValueChainSpelling(callee, depth + 1) : null;
+    }
+    default:
+      return null;
   }
 }
 
@@ -1388,6 +1455,20 @@ function enclosingSwiftFunctionKey(node: AstNode): number {
   return -1;
 }
 
+/**
+ * 1-based last line of the closure a declaration sits in, when its nearest
+ * scope is a closure rather than a function: a `let` inside `{ … }` is gone at
+ * the brace, and without the bound a sibling closure's same-named local would
+ * type this one's reads. `undefined` outside any closure.
+ */
+function enclosingSwiftClosureEndLine(node: AstNode): number | undefined {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "lambda_literal") return current.endPosition.row + 1;
+    if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return undefined;
+  }
+  return undefined;
+}
+
 /** Short name of the nearest enclosing nominal type, as `classFieldTypes` keys it. */
 function enclosingSwiftTypeName(node: AstNode): string | null {
   for (let current = node.parent; current; current = current.parent) {
@@ -1441,10 +1522,10 @@ function swiftThenBlockEndLine(node: AstNode): number | undefined {
 function assignBindingsToInnermostChunks(
   bindings: readonly SwiftScopedBinding[],
   chunks: { startLine: number; endLine: number; scope: string[] }[],
-): Map<number, Record<string, LocalBinding[]>> {
-  const out = new Map<number, Record<string, LocalBinding[]>>();
+): Map<number, SwiftChunkBindings> {
+  const out = new Map<number, SwiftChunkBindings>();
   for (const binding of bindings) {
-    if (!binding.fact.nominal) continue;
+    if (!binding.fact.nominal && binding.valueChain === undefined) continue;
     let bestIdx = -1;
     let bestSpan = Number.POSITIVE_INFINITY;
     let bestDepth = -1;
@@ -1462,14 +1543,25 @@ function assignBindingsToInnermostChunks(
     if (bestIdx === -1) continue;
     let bucket = out.get(bestIdx);
     if (!bucket) {
-      bucket = {};
+      bucket = { localBindings: {}, callResultBindings: {} };
       out.set(bestIdx, bucket);
     }
-    const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal };
-    if (binding.scopeEndLine !== undefined) emitted.scopeEndLine = binding.scopeEndLine;
-    (bucket[binding.name] ??= []).push(emitted);
+    const scoped = binding.scopeEndLine === undefined ? {} : { scopeEndLine: binding.scopeEndLine };
+    if (binding.fact.nominal) {
+      const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal, ...scoped };
+      (bucket.localBindings[binding.name] ??= []).push(emitted);
+    } else if (binding.valueChain !== undefined) {
+      const emitted: CallResultBinding = { line: binding.line, callee: binding.valueChain, ...scoped };
+      (bucket.callResultBindings[binding.name] ??= []).push(emitted);
+    }
   }
   return out;
+}
+
+/** One chunk's share of the file's bindings, in the two channels a chunk carries them in. */
+interface SwiftChunkBindings {
+  readonly localBindings: Record<string, LocalBinding[]>;
+  readonly callResultBindings: Record<string, CallResultBinding[]>;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {
