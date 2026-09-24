@@ -72,6 +72,7 @@ import {
 import {
   swiftFieldTypeArguments,
   swiftGenericParameters,
+  swiftIsOptionalProperty,
   swiftMemberClosureParameters,
   swiftPropertyAttributeTypes,
 } from "./swift-type-declarations.js";
@@ -109,6 +110,43 @@ export class SwiftMemberTypeLookup {
    */
   constructor(private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary()) {
     this.sdkMembers = new SwiftSdkMemberTypes(sdk);
+    this.sdkMembersKeepingOptionals = new SwiftSdkMemberTypes(sdk, true);
+  }
+
+  /** The SDK reader that keeps a declared `T?` an `Optional` (bd tea-rags-mcp-y99pg.33). */
+  private readonly sdkMembersKeepingOptionals: SwiftSdkMemberTypes;
+
+  /**
+   * {@link sdkMemberType} with a declared `T?` kept an `Optional` of `T` —
+   * for the fold that reads the source's unwrap sugar (bd tea-rags-mcp-y99pg.33).
+   */
+  sdkMemberTypeKeepingOptionals(receiver: SwiftNominalTypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+    if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
+    const sdk = this.sdkView(receiver, ctx);
+    return this.sdkMembersKeepingOptionals.memberType(sdk.receiver, member, sdk.order);
+  }
+
+  /**
+   * Whether `Optional` itself declares `member` — the project's `extension
+   * Optional` or the SDK — so a member written straight on an optional value
+   * is `Optional`'s and not the wrapped type's (bd tea-rags-mcp-y99pg.33).
+   */
+  optionalDeclares(member: string, ctx: CallContext): boolean {
+    return (
+      this.memberReach(SWIFT_OPTIONAL, member, ctx).declared || this.sdkDeclaresMember(SWIFT_OPTIONAL, member, ctx)
+    );
+  }
+
+  /**
+   * Whether the property `member` of `typeName` — found where
+   * {@link typeOfProperty} finds it — is declared `T?` (bd tea-rags-mcp-y99pg.33).
+   */
+  isOptionalProperty(typeName: string, member: string, ctx: CallContext): boolean {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) =>
+      this.propertyTypeOn(candidate, member, ctx),
+    );
+    if (scan.definingClassKey === null) return false;
+    return swiftIsOptionalProperty(qualifySwiftTypeName(scan.definingClassKey, ctx), member, ctx);
   }
 
   /** Whether the SDK substrate declares a type of this path. */
@@ -396,6 +434,9 @@ function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
   if ((a.form !== "instance" && a.form !== "class") || (b.form !== "instance" && b.form !== "class")) return false;
   return a.form === b.form && a.name === b.name;
 }
+
+/** The standard library's `Optional`, which a declared `T?` is (bd tea-rags-mcp-y99pg.33). */
+const SWIFT_OPTIONAL = "Optional";
 
 /** The members that make a type a property wrapper: Swift requires `wrappedValue`, and `$x` reads `projectedValue`. */
 const SWIFT_WRAPPER_MEMBERS: readonly string[] = ["wrappedValue", "projectedValue"];

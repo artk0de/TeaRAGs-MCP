@@ -3568,3 +3568,86 @@ describe("SwiftCallResolver — a property wrapper's projected value `$name` (bd
     expect(new SwiftCallResolver().hasInProjectDefinition(call("$level", "map"), within)).toBe(true);
   });
 });
+
+/**
+ * `T?` is `Optional<T>` (bd tea-rags-mcp-y99pg.33). A member written straight
+ * on an optional — no `?` / `!` between them — is `Optional`'s own: Alamofire's
+ * `response.map(\.statusCode).map { … }` on an `HTTPURLResponse?` runs
+ * `Optional.map` twice, and a project `map` on another type is a namesake.
+ * Behind `?` / `!` the member is the wrapped type's. A member `Optional` does
+ * not declare is read off the wrapped type either way, which is where a value
+ * the index believes optional but the source unwrapped some other way lands.
+ */
+describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/DataResponse.swift": [
+      { symbolId: "DataResponse", scope: [] },
+      { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+    ],
+    "Sources/Box.swift": [
+      { symbolId: "Box", scope: [] },
+      { symbolId: "Box#map", scope: ["Box"] },
+      { symbolId: "Box#open", scope: ["Box"] },
+    ],
+    "Sources/Completion.swift": [{ symbolId: "Completion", scope: [] }],
+  });
+  const typeDeclarations = {
+    "Sources/DataResponse.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/Box.swift": [{ typeId: "Box", reopens: false }],
+    "Sources/Completion.swift": [{ typeId: "Completion", reopens: false, optionalProperties: ["error", "box"] }],
+  };
+  const optional = (name: string) => ({
+    form: "instance" as const,
+    name: "Optional",
+    args: [{ form: "instance" as const, name }],
+  });
+  const within = ctx({
+    callerFile: "Sources/Serializer.swift",
+    callerScope: ["Serializer", "run"],
+    symbolTable: t,
+    typeDeclarations,
+    localBindings: {
+      response: [{ line: 5, type: "HTTPURLResponse", typeRef: optional("HTTPURLResponse") }],
+      request: [{ line: 5, type: "URLRequest", typeRef: optional("URLRequest") }],
+      box: [{ line: 5, type: "Box", typeRef: optional("Box") }],
+      completion: [{ line: 5, type: "Completion" }],
+    },
+    classFieldTypesByClassKey: { "Sources/Completion.swift::Completion": { error: "AFError", box: "Box" } },
+  });
+  const written = (receiver: string, writtenReceiver: string, member: string) => ({
+    ...call(receiver, member),
+    writtenReceiver,
+  });
+
+  it("reads a member written straight on an optional off `Optional`", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("response.map(\\.statusCode)", "map"), within)).toBe(false);
+    expect(
+      resolver.hasInProjectDefinition(
+        call("request.flatMap(\\.httpMethod)\n  .flatMap(HTTPMethod.init)", "map"),
+        within,
+      ),
+    ).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("box", "map"), within)).toBe(false);
+    expect(resolver.resolve(call("box", "map"), within)).toBeNull();
+  });
+
+  it("reads a member behind `?` / `!` off the wrapped type", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(written("box", "box?", "map"), within)?.targetSymbolId).toBe("Box#map");
+    expect(resolver.resolve(written("box", "box!", "map"), within)?.targetSymbolId).toBe("Box#map");
+  });
+
+  it("reads a member `Optional` does not declare off the wrapped type", () => {
+    expect(new SwiftCallResolver().resolve(call("box", "open"), within)?.targetSymbolId).toBe("Box#open");
+  });
+
+  it("types a property declared optional as an Optional", () => {
+    const resolver = new SwiftCallResolver();
+    // `completion.box` is a `Box?`: `.map` on it is `Optional.map`, never `Box#map`.
+    expect(resolver.hasInProjectDefinition(call("completion.box", "map"), within)).toBe(false);
+    expect(resolver.resolve(written("completion.box", "completion.box?", "map"), within)?.targetSymbolId).toBe(
+      "Box#map",
+    );
+  });
+});

@@ -19,7 +19,9 @@
  *     value of it is (`Result`'s `Failure: Error` → `Error`) — marked
  *     `upperBound`: the constraint's members are callable on the value, but its
  *     own type may add more, so the denominator must not read it as proof;
- *   - an optional by what it wraps, the collapse every receiver gets.
+ *   - an optional by what it wraps, the collapse every NORMALIZED receiver
+ *     gets — the fold over a receiver as written keeps it an `Optional`
+ *     (`keepsOptionals`, bd tea-rags-mcp-y99pg.33).
  *
  * A result it cannot build answers `undefined`, and so does a member whose
  * overloads disagree on it: the fold stops there, which is the answer that
@@ -44,7 +46,16 @@ interface SwiftSdkMemberFound {
 type SwiftTypeBindings = ReadonlyMap<string, TypeRef | undefined>;
 
 export class SwiftSdkMemberTypes {
-  constructor(private readonly sdk: SwiftSdkVocabulary) {}
+  /**
+   * @param keepsOptionals Whether a declared `T?` stays an `Optional` of `T`
+   *   (bd tea-rags-mcp-y99pg.33) — for a reader that knows where the source
+   *   unwraps it — instead of collapsing to `T`, which is every other reader's
+   *   view.
+   */
+  constructor(
+    private readonly sdk: SwiftSdkVocabulary,
+    private readonly keepsOptionals = false,
+  ) {}
 
   /**
    * The type of `receiver.member` when an SDK type on `order` (the receiver's
@@ -215,8 +226,10 @@ export class SwiftSdkMemberTypes {
   ): TypeRef | undefined {
     if (depth > SWIFT_SDK_SUBSTITUTION_DEPTH) return undefined;
     switch (expr.kind) {
-      case "optional":
-        return this.substitute(expr.wrapped, bindings, receiver, depth + 1);
+      case "optional": {
+        const wrapped = this.substitute(expr.wrapped, bindings, receiver, depth + 1);
+        return this.keepsOptionals ? withArgs({ form: "instance", name: "Optional" }, [wrapped]) : wrapped;
+      }
       case "array":
         return withArgs({ form: "instance", name: "Array" }, [
           this.substitute(expr.element, bindings, receiver, depth + 1),

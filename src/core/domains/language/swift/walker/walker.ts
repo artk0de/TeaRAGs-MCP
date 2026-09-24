@@ -248,6 +248,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const functionAliasReturns = swiftFunctionAliasReturns(node);
     const selfConstraints = kind === "extension" ? swiftSelfConstraints(node) : undefined;
     const propertyAttributeTypes = swiftPropertyAttributeTypes(node);
+    const optionalProperties = swiftOptionalPropertyNames(node);
     // `extension Collection<String>` composes its members under the name as
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
@@ -266,8 +267,21 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(functionAliasReturns ? { functionAliasReturns } : {}),
       ...(selfConstraints ? { selfConstraints } : {}),
       ...(propertyAttributeTypes ? { propertyAttributeTypes } : {}),
+      ...(optionalProperties.length > 0 ? { optionalProperties } : {}),
     });
   });
+  return out;
+}
+
+/** The properties a type body annotates `T?` (bd tea-rags-mcp-y99pg.33), in source order. */
+function swiftOptionalPropertyNames(node: AstNode): string[] {
+  const body = node.childForFieldName("body");
+  const out: string[] = [];
+  for (const member of body?.children ?? []) {
+    if (member.type !== "property_declaration" || !swiftDeclaresOptional(member)) continue;
+    const name = singleIdentifierPatternName(member.childForFieldName("name"));
+    if (name && !out.includes(name)) out.push(name);
+  }
   return out;
 }
 
@@ -801,9 +815,13 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     const target = callee.childForFieldName("target");
     const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
     if (!target || !member) return;
+    const receiver = normalizeSwiftReceiver(target.text);
+    // `a?.c()` puts its `?` beside the target, not inside it (bd tea-rags-mcp-y99pg.33).
+    const written = callee.children.some((c) => c.type === "?") ? `${target.text}?` : target.text;
     out.push({
       callText: node.text,
-      receiver: normalizeSwiftReceiver(target.text),
+      receiver,
+      ...(written === receiver ? {} : { writtenReceiver: written }),
       member: member.text,
       startLine,
       ...signature,
@@ -1640,6 +1658,13 @@ interface SwiftScopedBinding {
    * slot `index` of its case `caseName` (bd tea-rags-mcp-y99pg.16).
    */
   readonly enumPayload?: { readonly caseName: string; readonly index: number };
+  /**
+   * Set when the binding's own declaration spells its type `T?` — a
+   * parameter or an annotated `let` / `var` — so its value is an `Optional`
+   * of `fact.nominal` (bd tea-rags-mcp-y99pg.33). Never inferred: an
+   * `if let` re-binding is the unwrapped value.
+   */
+  readonly optional?: true;
 }
 
 /** Where a right-hand side is being typed — the coordinates every lookup is relative to. */
@@ -1693,6 +1718,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     valueChain?: string,
     closureParameter?: number,
     enumPayload?: { readonly caseName: string; readonly index: number },
+    optional?: boolean,
   ): void => {
     if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
     if (!fact.nominal && !fact.element && valueChain === undefined) return;
@@ -1705,6 +1731,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       valueChain,
       ...(closureParameter === undefined ? {} : { closureParameter }),
       ...(enumPayload === undefined ? {} : { enumPayload }),
+      ...(optional === true ? { optional: true as const } : {}),
     };
     collected.push(binding);
     const sameName = bindingsByName.get(name);
@@ -1722,8 +1749,19 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const name = node.childForFieldName("name");
         if (name) {
           // Past `inout` / `@escaping`, which sit between the colon and the type.
-          const declared = swiftTypeFactOf(swiftParameterTypeNode(node));
-          record(name.text, swiftGenericResolvedFact(declared, node), siteOf(node));
+          const typeNode = swiftParameterTypeNode(node);
+          const declared = swiftTypeFactOf(typeNode);
+          const optional = typeNode?.type === "optional_type";
+          record(
+            name.text,
+            swiftGenericResolvedFact(declared, node),
+            siteOf(node),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            optional,
+          );
         }
         return;
       }
@@ -1734,7 +1772,16 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const declared = swiftDeclaredPropertyFact(node);
         const value = node.childForFieldName("value");
         const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
-        record(name, fact, site, enclosingSwiftClosureEndLine(node), deferredSpelling(fact, value, site));
+        record(
+          name,
+          fact,
+          site,
+          enclosingSwiftClosureEndLine(node),
+          deferredSpelling(fact, value, site),
+          undefined,
+          undefined,
+          declared.nominal !== null && swiftDeclaresOptional(node),
+        );
         // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
         // parameter is a value of the property's DECLARED type, for the
         // clause's own body (bd tea-rags-mcp-y99pg.31).
@@ -2005,6 +2052,16 @@ export function swiftModuleValueOf(node: AstNode): SwiftModuleValueFact | null {
  * {@link swiftExpressionFact} when this is silent; a type-level property does
  * not, because the property map is that walk's input.
  */
+/**
+ * Whether a `property_declaration` ANNOTATES its type as `T?` (bd
+ * tea-rags-mcp-y99pg.33). `T!` is not: an implicitly unwrapped value reads its
+ * members off `T`. Read positionally, as every type position here is.
+ */
+function swiftDeclaresOptional(node: AstNode): boolean {
+  const annotation = node.children.find((c) => c.type === "type_annotation");
+  return annotation !== undefined && swiftTypeNodeAfter(annotation, ":")?.type === "optional_type";
+}
+
 function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
   const annotation = node.children.find((c) => c.type === "type_annotation");
   if (annotation) return swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":")), node);
@@ -2515,7 +2572,22 @@ function assignBindingsToInnermostChunks(
     }
     const scoped = binding.scopeEndLine === undefined ? {} : { scopeEndLine: binding.scopeEndLine };
     if (binding.fact.nominal) {
-      const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal, ...scoped };
+      const emitted: LocalBinding = {
+        line: binding.line,
+        type: binding.fact.nominal,
+        ...scoped,
+        // `T?` keeps `type: T` for every reader that wants the wrapped type,
+        // and says what the value IS beside it (bd tea-rags-mcp-y99pg.33).
+        ...(binding.optional === true
+          ? {
+              typeRef: {
+                form: "instance" as const,
+                name: "Optional",
+                args: [{ form: "instance" as const, name: binding.fact.nominal }],
+              },
+            }
+          : {}),
+      };
       (bucket.localBindings[binding.name] ??= []).push(emitted);
     } else if (binding.valueChain !== undefined) {
       const emitted: CallResultBinding = {

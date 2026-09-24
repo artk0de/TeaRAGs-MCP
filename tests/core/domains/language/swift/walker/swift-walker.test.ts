@@ -1980,3 +1980,68 @@ describe("swift walker — property attribute types, the candidates for a proper
     }
   });
 });
+
+/**
+ * `T?` is `Optional<T>` (bd tea-rags-mcp-y99pg.33). `response.map(\.statusCode)`
+ * on a `response: HTTPURLResponse?` is `Optional.map`, and only the
+ * source's `?` / `!` says whether a member is read off the optional or off
+ * what it wraps — so the walker keeps both facts next to the ones it
+ * already published (the `type` string, the normalized receiver) instead
+ * of in place of them.
+ */
+describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99pg.33)", () => {
+  it("marks a binding DECLARED `T?` as an Optional of T, and nothing else", () => {
+    const src = [
+      "func go(response: HTTPURLResponse?, plain: Foo, forced: Bar!) {",
+      "  var local: Baz? = nil",
+      "  if let response {",
+      "    response.run()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const bindings = out.chunks[0].localBindings ?? {};
+      expect(bindings.response?.[0]).toMatchObject({
+        type: "HTTPURLResponse",
+        typeRef: { form: "instance", name: "Optional", args: [{ form: "instance", name: "HTTPURLResponse" }] },
+      });
+      expect(bindings.local?.[0].typeRef).toEqual({
+        form: "instance",
+        name: "Optional",
+        args: [{ form: "instance", name: "Baz" }],
+      });
+      // The `if let` re-binding is the unwrapped value.
+      expect(bindings.response?.[1]).toMatchObject({ type: "HTTPURLResponse" });
+      expect(bindings.response?.[1].typeRef).toBeUndefined();
+      expect(bindings.plain?.[0].typeRef).toBeUndefined();
+    }
+  });
+
+  it("publishes the properties a type declares optional", () => {
+    const src = [
+      "struct Completion {",
+      "  let request: URLRequest?",
+      "  let error: AFError?",
+      "  let metrics: Metrics",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "Completion");
+      expect(fact?.optionalProperties).toEqual(["request", "error"]);
+    }
+  });
+
+  it("keeps the receiver as written beside the normalized one when unwrap sugar was stripped", () => {
+    const src = ["func go() {", "  a?.b!.c()", "  obj?.maybe()", "  plain.run()", "}", ""].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      expect(calls).toContainEqual(expect.objectContaining({ receiver: "a.b", writtenReceiver: "a?.b!", member: "c" }));
+      expect(calls).toContainEqual(
+        expect.objectContaining({ receiver: "obj", writtenReceiver: "obj?", member: "maybe" }),
+      );
+      expect(calls.find((c) => c.member === "run")?.writtenReceiver).toBeUndefined();
+    }
+  });
+});

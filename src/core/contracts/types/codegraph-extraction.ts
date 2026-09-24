@@ -451,6 +451,13 @@ export interface TypeDeclarationFact {
    * tea-rags-mcp-y99pg.33). Absent when no property carries one.
    */
   readonly propertyAttributeTypes?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The properties this declaration declares OPTIONAL (`let error: AFError?`),
+   * in source order — the ones whose value is an `Optional` of the type the
+   * field channels publish for them (bd tea-rags-mcp-y99pg.33). Absent when
+   * none is.
+   */
+  readonly optionalProperties?: readonly string[];
 }
 
 /** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */
@@ -715,6 +722,15 @@ export interface CallRef {
    *  name otherwise. */
   member: string;
   startLine: number;
+  /**
+   * The receiver exactly as the source spells it, where a language's
+   * `receiver` normalizes sugar away: Swift strips optional chaining and
+   * force unwraps (`a?.b!` → `a.b`) so the receiver matches the names
+   * bindings are keyed by, and only this text still says which links read a
+   * member off an `Optional` and which off what it wraps (bd
+   * tea-rags-mcp-y99pg.33). Absent when identical to `receiver`.
+   */
+  writtenReceiver?: string;
   /**
    * Present when this call dispatches through a lookup table
    * (bd tea-rags-mcp-n0zj). The resolver expands it to fan-out edges over

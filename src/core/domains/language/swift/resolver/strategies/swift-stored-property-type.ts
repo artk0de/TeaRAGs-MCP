@@ -1,9 +1,12 @@
 import { CONTINUE, DROP } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import { createSwiftWrittenReceiverTypePorts } from "../swift-receiver-type-ports.js";
 import {
   resolveSwiftBoundTypeMember,
   SWIFT_PSEUDO_RECEIVERS,
+  swiftOptionalCallOwner,
   swiftSelfTypeName,
   type SwiftResolverConfig,
 } from "./shared.js";
@@ -46,7 +49,12 @@ import {
  */
 export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "storedPropertyType";
-  constructor(private readonly cfg: SwiftResolverConfig) {}
+  /** The fold over the receiver AS WRITTEN, for a property declared `T?` (bd tea-rags-mcp-y99pg.33). */
+  private readonly writtenPorts: ReceiverTypePorts;
+
+  constructor(private readonly cfg: SwiftResolverConfig) {
+    this.writtenPorts = createSwiftWrittenReceiverTypePorts(cfg.memberTypes);
+  }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
@@ -60,6 +68,7 @@ export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolRe
 
     const typeName = this.cfg.memberTypes.typeOfProperty(enclosing, property, ctx);
     if (!typeName) return explicitSelf ? DROP : CONTINUE;
-    return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg, call);
+    const owner = swiftOptionalCallOwner(call, ctx, this.writtenPorts, this.cfg) ?? typeName;
+    return resolveSwiftBoundTypeMember(owner, call.member, ctx, this.cfg, call);
   }
 }

@@ -2,8 +2,17 @@ import { CONTINUE } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import type { ReceiverTypePorts } from "../../../kernel/index.js";
-import { createSwiftReceiverTypePorts, swiftLocalValueType } from "../swift-receiver-type-ports.js";
-import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolverConfig } from "./shared.js";
+import {
+  createSwiftReceiverTypePorts,
+  createSwiftWrittenReceiverTypePorts,
+  swiftLocalValueType,
+} from "../swift-receiver-type-ports.js";
+import {
+  resolveSwiftBoundTypeMember,
+  SWIFT_PSEUDO_RECEIVERS,
+  swiftOptionalCallOwner,
+  type SwiftResolverConfig,
+} from "./shared.js";
 
 /**
  * A receiver that names a LOCAL — one the walker typed (a parameter
@@ -29,15 +38,20 @@ export class SwiftLocalBindingSymbolResolutionStrategy implements SymbolResoluti
 
   /** ONE ports object for the life of the resolver — the fold allocates nothing per call site. */
   private readonly ports: ReceiverTypePorts;
+  /** The same fold over the receiver AS WRITTEN (bd tea-rags-mcp-y99pg.33). */
+  private readonly writtenPorts: ReceiverTypePorts;
 
   constructor(private readonly cfg: SwiftResolverConfig) {
     this.ports = createSwiftReceiverTypePorts(cfg.memberTypes);
+    this.writtenPorts = createSwiftWrittenReceiverTypePorts(cfg.memberTypes);
   }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver || SWIFT_PSEUDO_RECEIVERS.has(call.receiver)) return CONTINUE;
     const boundType = swiftLocalValueType(call.receiver, call.startLine, ctx, this.ports, this.cfg.memberTypes);
     if (boundType === undefined) return CONTINUE;
-    return resolveSwiftBoundTypeMember(boundType, call.member, ctx, this.cfg, call);
+    // `box.map { … }` on a `box: Box?` is `Optional.map`, not `Box#map`.
+    const owner = swiftOptionalCallOwner(call, ctx, this.writtenPorts, this.cfg) ?? boundType;
+    return resolveSwiftBoundTypeMember(owner, call.member, ctx, this.cfg, call);
   }
 }

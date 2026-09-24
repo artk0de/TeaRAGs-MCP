@@ -115,7 +115,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../kernel/index.js";
+import type { ReceiverTypePorts } from "../../kernel/index.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
 import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
@@ -134,7 +134,7 @@ import {
 } from "./strategies/index.js";
 import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
-import { createSwiftReceiverTypePorts } from "./swift-receiver-type-ports.js";
+import { createSwiftWrittenReceiverTypePorts, swiftCallReceiverType } from "./swift-receiver-type-ports.js";
 import {
   lookupSwiftBareNameDefinitions,
   lookupSwiftSymbolsByShortName,
@@ -161,8 +161,12 @@ export class SwiftCallResolver implements CallResolver {
   private readonly memberTypes = new SwiftMemberTypeLookup();
   /** What the SDK declares (bd tea-rags-mcp-y99pg.24): the generated substrate, shared process-wide. */
   private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary();
-  /** The chain's own receiver fold, reused by the denominator question. */
-  private readonly ports: ReceiverTypePorts = createSwiftReceiverTypePorts(this.memberTypes);
+  /**
+   * The chain's fold over a receiver AS WRITTEN, reused by the denominator
+   * question — unwrap sugar and all, so an `Optional` the source did not
+   * unwrap is typed as one (bd tea-rags-mcp-y99pg.33).
+   */
+  private readonly writtenPorts: ReceiverTypePorts = createSwiftWrittenReceiverTypePorts(this.memberTypes);
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     // ONE lookup for the whole chain: its field union and ancestor linearizers
@@ -329,7 +333,7 @@ export class SwiftCallResolver implements CallResolver {
       const enclosing = swiftSelfTypeName(ctx);
       return enclosing === undefined ? undefined : identifierEntry(ctx.classExtends, enclosing);
     }
-    const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
+    const type = swiftCallReceiverType(call, ctx, this.writtenPorts, this.memberTypes);
     if (type !== undefined) {
       if (type.form !== "class" && type.form !== "instance") return undefined;
       // A type known only as a bound proves nothing about what the value cannot reach (bd tea-rags-mcp-y99pg.25).

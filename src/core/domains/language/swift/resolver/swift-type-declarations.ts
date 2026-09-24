@@ -46,6 +46,8 @@ interface SwiftTypeDeclarationSets {
   readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
   /** typeId → property → its attribute types, the wrapper candidates (bd tea-rags-mcp-y99pg.33). */
   readonly propertyAttributes: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
+  /** typeId → the properties any declaration of it annotates `T?` (bd tea-rags-mcp-y99pg.33). */
+  readonly optionalProperties: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -138,6 +140,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
   const propertyAttributes = new Map<string, Map<string, readonly string[]>>();
+  const optionalProperties = new Map<string, Set<string>>();
   const initializers = new Map<string, GenericInitializerFact[]>();
   const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
   // Sorted, so which file's clause comes first is a property of the project
@@ -158,6 +161,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         constructions.push({ owner: fact.typeId, field, construction });
       }
       mergeClosureParameters(closureParameters, fact);
+      for (const field of fact.optionalProperties ?? []) add(optionalProperties, fact.typeId, field);
       for (const [field, types] of Object.entries(fact.propertyAttributeTypes ?? {})) {
         const fields = propertyAttributes.get(fact.typeId) ?? new Map<string, readonly string[]>();
         if (!fields.has(field)) fields.set(field, types);
@@ -203,6 +207,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     functionAliases,
     enumCases,
     propertyAttributes,
+    optionalProperties,
   };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
@@ -340,6 +345,11 @@ export function swiftFunctionAliasReturn(
  */
 export function swiftPropertyAttributeTypes(typeId: string, field: string, ctx: CallContext): readonly string[] {
   return setsFor(ctx)?.propertyAttributes.get(typeId)?.get(field) ?? [];
+}
+
+/** Whether a declaration of `typeId` annotates its property `field` as `T?` (bd tea-rags-mcp-y99pg.33). */
+export function swiftIsOptionalProperty(typeId: string, field: string, ctx: CallContext): boolean {
+  return setsFor(ctx)?.optionalProperties.get(typeId)?.has(field) ?? false;
 }
 
 /**

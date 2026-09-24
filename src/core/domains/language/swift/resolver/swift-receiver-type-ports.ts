@@ -41,6 +41,7 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   resolveLocalBinding,
   type CallContext,
+  type CallRef,
   type CallResultBinding,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
@@ -48,6 +49,7 @@ import {
   propagateReceiverType,
   splitAtBracketDepthZero,
   splitReceiverHops,
+  stripCallArgs,
   type ReceiverTypePorts,
 } from "../../kernel/index.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
@@ -151,6 +153,7 @@ function swiftHeadType(
   ctx: CallContext,
   members: SwiftMemberTypeLookup,
   ports: ReceiverTypePorts,
+  keepsOptionals = false,
 ): TypeRef | undefined {
   // `try` / `await` mark the expression, not its type (bd tea-rags-mcp-y99pg.20);
   // a head a chain continues on the next line carries that line break.
@@ -176,17 +179,21 @@ function swiftHeadType(
   }
   if (head === "super") return undefined;
 
-  const local = swiftLocalValueTypeRef(head, atLine, ctx, ports, members);
+  const local = swiftLocalValueTypeRef(head, atLine, ctx, ports, members, keepsOptionals);
   if (local?.form === "instance") return local;
 
   if (enclosing !== undefined) {
     const fieldType = members.typeOfProperty(enclosing, head, ctx);
     if (fieldType !== undefined) {
-      return swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(enclosing, head, ctx));
+      const field = swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(enclosing, head, ctx));
+      return keepsOptionals && members.isOptionalProperty(enclosing, head, ctx) ? swiftOptionalOf(field) : field;
     }
     // An implicit-self property the SDK declares on the enclosing type —
     // `allHTTPHeaderFields` inside `extension URLRequest` (bd tea-rags-mcp-y99pg.25).
-    const sdkProperty = members.sdkMemberType({ form: "instance", name: enclosing }, head, ctx);
+    const selfRef = { form: "instance" as const, name: enclosing };
+    const sdkProperty = keepsOptionals
+      ? members.sdkMemberTypeKeepingOptionals(selfRef, head, ctx)
+      : members.sdkMemberType(selfRef, head, ctx);
     if (sdkProperty !== undefined) return sdkProperty;
   }
 
@@ -410,12 +417,140 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
   return ports;
 }
 
+/**
+ * The fold over a receiver AS WRITTEN — `CallRef.writtenReceiver`, unwrap
+ * sugar intact — in which `T?` is `Optional<T>` (bd tea-rags-mcp-y99pg.33).
+ *
+ * Every other fold reads text the walker normalized, where `a?.b` and `a.b`
+ * are one string, so it has to read an optional as what it wraps. This one
+ * reads the sugar: a link written straight on an optional value
+ * (`response.map(…)`) is `Optional`'s member; behind `?` / `!` it is the
+ * wrapped type's. A member `Optional` does not declare falls through to the
+ * wrapped type either way — the index's belief that a value is optional is
+ * only as good as the unwraps the walker saw. Optional-ness comes from a
+ * binding or property DECLARED `T?` and from an SDK member's declared type;
+ * a local bound by spelling is folded by the normalized ports, since its
+ * spelling carries no sugar to read.
+ */
+export function createSwiftWrittenReceiverTypePorts(members: SwiftMemberTypeLookup): ReceiverTypePorts {
+  const spelled = createSwiftReceiverTypePorts(members);
+  return Object.freeze({
+    singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined => {
+      const { text, unwraps } = swiftUnwrapSugar(receiver);
+      const type = swiftHeadType(text, atLine, ctx, members, spelled, true);
+      return unwraps ? swiftUnwrappedOptional(type) : type;
+    },
+    seedHead: (): undefined => undefined,
+    memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined => {
+      const { text, unwraps } = swiftUnwrapSugar(member);
+      const type = boundedBy(recv, swiftWrittenMemberHopType(recv, text, ctx, members));
+      return unwraps ? swiftUnwrappedOptional(type) : type;
+    },
+    maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
+    splitReceiverHops: swiftWrittenReceiverHops,
+  });
+}
+
+/**
+ * The type of `call`'s receiver AS THE CALL'S MEMBER IS LOOKED UP ON IT (bd
+ * tea-rags-mcp-y99pg.33): the written receiver folded through `writtenPorts`
+ * ({@link createSwiftWrittenReceiverTypePorts}), then — for an `Optional` the
+ * source did not unwrap — `Optional` itself where it declares the member,
+ * else the wrapped type.
+ */
+export function swiftCallReceiverType(
+  call: CallRef,
+  ctx: CallContext,
+  writtenPorts: ReceiverTypePorts,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const receiver = call.writtenReceiver ?? call.receiver;
+  if (receiver === null) return undefined;
+  const type = propagateReceiverType(receiver, call.startLine, ctx, writtenPorts);
+  return type === undefined ? undefined : swiftOptionalMemberOwner(type, call.member, ctx, members);
+}
+
+/** What `member` written straight on a value of `type` is looked up on: see {@link swiftCallReceiverType}. */
+function swiftOptionalMemberOwner(
+  type: TypeRef,
+  member: string,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  if (!isSwiftOptionalRef(type) || members.optionalDeclares(member, ctx)) return type;
+  return swiftUnwrappedOptional(type);
+}
+
+/** One member hop in the written fold: `Optional`'s own member first, else the wrapped type's. */
+function swiftWrittenMemberHopType(
+  recv: TypeRef,
+  member: string,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const owner = swiftOptionalMemberOwner(recv, stripCallArgs(member), ctx, members);
+  return owner === undefined ? undefined : swiftMemberHopType(owner, member, ctx, members, true);
+}
+
+/** `Optional<T>` as the fold spells it. */
+function swiftOptionalOf(wrapped: TypeRef): TypeRef {
+  return { form: "instance", name: SWIFT_OPTIONAL, args: [wrapped] };
+}
+
+/** Whether `type` is an `Optional` value. */
+function isSwiftOptionalRef(type: TypeRef): boolean {
+  return type.form === "instance" && type.name === SWIFT_OPTIONAL;
+}
+
+/**
+ * What unwrapping `type` yields: the wrapped type of an `Optional` (nothing,
+ * when the fold never learned it), and any other type itself — a value the
+ * index read as non-optional is already what an unwrap would give.
+ */
+function swiftUnwrappedOptional(type: TypeRef | undefined): TypeRef | undefined {
+  if (type === undefined || !isSwiftOptionalRef(type) || (type.form !== "instance" && type.form !== "class")) {
+    return type;
+  }
+  const wrapped = type.args?.[0];
+  return wrapped === undefined ? undefined : boundedBy(type, wrapped);
+}
+
+/** A written head or link with its trailing `?` / `!` split off. */
+function swiftUnwrapSugar(text: string): { readonly text: string; readonly unwraps: boolean } {
+  const trimmed = text.trim();
+  const marker = /[?!]+$/.exec(trimmed);
+  return marker === null ? { text, unwraps: false } : { text: trimmed.slice(0, marker.index), unwraps: true };
+}
+
+/**
+ * The hop split for a WRITTEN receiver: the depth-aware split every Swift fold
+ * uses, with each link's trailing `?` / `!` moved ahead of its argument list
+ * (`c(x)?` → `c?(x)`) — the kernel strips a link's arguments before the port
+ * sees it, and the unwrap must survive that. The head keeps its sugar where it
+ * stands: the port reads a head whole.
+ */
+function swiftWrittenReceiverHops(receiver: string): string[] {
+  return splitReceiverHops(receiver).map((segment, i) => {
+    if (i === 0) return segment;
+    const trimmed = segment.trim();
+    const marker = /[?!]+$/.exec(trimmed);
+    if (marker === null) return segment;
+    const base = trimmed.slice(0, marker.index);
+    const open = base.search(/[({]/);
+    return open <= 0 ? trimmed : `${base.slice(0, open)}${marker[0]}${base.slice(open)}`;
+  });
+}
+
+/** The standard library's `Optional`, which a declared `T?` is (bd tea-rags-mcp-y99pg.33). */
+const SWIFT_OPTIONAL = "Optional";
+
 /** The type one member hop off `recv` denotes — the fold's `memberTypeOf`, before the bound mark. */
 function swiftMemberHopType(
   recv: TypeRef,
   member: string,
   ctx: CallContext,
   members: SwiftMemberTypeLookup,
+  keepsOptionals = false,
 ): TypeRef | undefined {
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
   // `self.$result` / `model.$result`: the property's wrapper, projected (bd tea-rags-mcp-y99pg.33).
@@ -427,7 +562,9 @@ function swiftMemberHopType(
   // the hop's own form is `instance` either way.
   const fieldType = members.typeOfProperty(recv.name, member, ctx);
   if (fieldType !== undefined) {
-    return swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(recv.name, member, ctx));
+    const field = swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(recv.name, member, ctx));
+    // `completion.error` on an `error: AFError?` (bd tea-rags-mcp-y99pg.33).
+    return keepsOptionals && members.isOptionalProperty(recv.name, member, ctx) ? swiftOptionalOf(field) : field;
   }
   // Not a property: a METHOD hop, typed by what the declaration the call
   // lands on returns. Strict: an ambiguous callee types nothing.
@@ -435,7 +572,9 @@ function swiftMemberHopType(
   if (returned) return returned;
   // A member the project declares on none of the receiver's types: the
   // SDK's declaration, substituted for the receiver (bd tea-rags-mcp-y99pg.25).
-  const declared = members.sdkMemberType(recv, member, ctx);
+  const declared = keepsOptionals
+    ? members.sdkMemberTypeKeepingOptionals(recv, member, ctx)
+    : members.sdkMemberType(recv, member, ctx);
   if (declared) return declared;
   // `NotificationCenter.default`: a type's own singleton, by convention.
   if (recv.form === "class" && SWIFT_SINGLETON_PROPERTIES.has(member)) return { form: "instance", name: recv.name };
@@ -482,8 +621,15 @@ function swiftLocalValueTypeRef(
   ctx: CallContext,
   ports: ReceiverTypePorts,
   members: SwiftMemberTypeLookup,
+  keepsOptionals = false,
 ): TypeRef | undefined {
   const typed = resolveLocalBinding(ctx.localBindings, name, atLine);
+  // A binding declared `T?` IS an `Optional` of T, for the reader that knows
+  // where the source unwraps it (bd tea-rags-mcp-y99pg.33).
+  const typedRef = (binding: NonNullable<typeof typed>): TypeRef =>
+    keepsOptionals && binding.typeRef !== undefined && isSwiftOptionalRef(binding.typeRef)
+      ? binding.typeRef
+      : { form: "instance", name: binding.type };
   let spelled: CallResultBinding | undefined;
   for (const binding of identifierEntry(ctx.callResultBindings, name) ?? []) {
     if (!swiftBindingVisible(binding, name, atLine)) continue;
@@ -491,7 +637,7 @@ function swiftLocalValueTypeRef(
     if (spelled === undefined || binding.line > spelled.line) spelled = binding;
   }
   if (spelled === undefined || (typed !== undefined && typed.line >= spelled.line)) {
-    return typed === undefined ? undefined : { form: "instance", name: typed.type };
+    return typed === undefined ? undefined : typedRef(typed);
   }
   if (spelled.closureParameter !== undefined) {
     return swiftClosureParameterType(spelled.callee, spelled.closureParameter, spelled.line, ctx, ports, members);
