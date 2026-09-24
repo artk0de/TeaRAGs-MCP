@@ -117,6 +117,8 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids). " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
       "never Read the file or grep a saved dump. " +
+      "Member lines may end in declared visibility, e.g. 'Class#helper (private)' (codegraph; " +
+      "no suffix = unknown) — drop the suffix before drilling. " +
       "Uses Qdrant text match. Partial match supported: 'Reranker' → class outline. " +
       "symbolId convention: Class#method (instance), Class.method (static). " +
       'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +

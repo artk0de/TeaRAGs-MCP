@@ -105,6 +105,10 @@ export const DAEMON_OPS = [
   "hasStaleDerivedTables",
   "getPageRank",
   "findSymbolChunk",
+  // Declared visibility of a batch of symbols for the graph tools and the
+  // find_symbol outline (bd tea-rags-mcp-sqqkz). REQUIRED like getFileImporters:
+  // a daemon from an older build is restarted at handshake, not asked blindly.
+  "getSymbolVisibilities",
   // Per-file symbol line ranges for the payload healer's chunk-owner rule
   // (bd tea-rags-mcp-9i2ow). Its own op, so a daemon from an older build answers
   // "unknown daemon op" — a tolerated legacy op, see `LEGACY_TOLERATED_OPS`.
@@ -141,7 +145,7 @@ export interface DaemonRequest {
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
     | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
-    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths
+    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths | getSymbolVisibilities
     | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
