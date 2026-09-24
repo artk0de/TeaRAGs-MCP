@@ -14,7 +14,7 @@ import {
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type { LanguageCodeVersions, LanguageFactoryDescriptor } from "../../contracts/types/language.js";
-import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
+import type { FilterDescriptor, WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, SignalFloors } from "../../contracts/types/trajectory.js";
@@ -30,13 +30,18 @@ import { CODEGRAPH_FILTER_PRESETS } from "../../domains/trajectory/codegraph/sym
 import {
   CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
   CODEGRAPH_SYMBOLS_FILE_SIGNALS,
+  codegraphFilters,
 } from "../../domains/trajectory/codegraph/symbols/index.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "../../domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
-import { buildCompositeFilterPresets } from "../../domains/trajectory/composite/filter-presets/index.js";
+import {
+  ALL_COMPOSITE_FILTER_PRESETS,
+  buildCompositeFilterPresets,
+} from "../../domains/trajectory/composite/filter-presets/index.js";
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
+import { filterPayloadKeys } from "../../domains/trajectory/filter-payload-keys.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import { GIT_FILTER_PRESETS } from "../../domains/trajectory/git/filter-presets/index.js";
-import { gitPayloadSignalDescriptors } from "../../domains/trajectory/git/index.js";
+import { gitFilters, gitPayloadSignalDescriptors } from "../../domains/trajectory/git/index.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { gitDerivedSignals } from "../../domains/trajectory/git/rerank/derived-signals/index.js";
@@ -184,28 +189,63 @@ export function fullRegistryDerivedSignals(): DerivedSignalDescriptor[] {
  *
  * REQUIRED = the schema pipeline's own indexes ∪ every physical path rank_chunks
  * can order by, resolved by the rule a query uses (`OrderByFieldResolver`) over
- * the full registry, each with the schema `payloadFieldIndexSchema` gives it —
- * the same schema `ScrollRankStrategy` creates lazily. KNOWN = the physical key
- * of every full-registry payload signal: an index there is legitimate even when
- * nothing requires it (the set schema-v16 judged against).
+ * the full registry, ∪ every physical key a typed filter or a filter preset can
+ * condition on (bd tea-rags-mcp-18xh5), learned by running those builders
+ * (`filterPayloadKeys`) — each with the schema `payloadFieldIndexSchema` gives
+ * it, the same schema `ScrollRankStrategy` creates lazily. A filter key no
+ * payload signal descriptor names (`git.file.recentDominantAuthorEmail`, the
+ * email arm of `recentAuthor`) takes the type of the value its condition
+ * matches; a range over such a key has no safe schema and is left out. KNOWN =
+ * the physical key of every full-registry payload signal: an index there is
+ * legitimate even when nothing requires it (the set schema-v16 judged against).
  */
 export function declaredPayloadIndexSet(): DeclaredPayloadIndexSet {
   const signals = fullRegistryPayloadSignalDescriptors();
   const types = new Map(signals.map((descriptor) => [toPhysicalPayloadKey(descriptor.key), descriptor.type] as const));
 
   const required = new Map<string, PayloadFieldIndexSchema>();
-  for (const key of SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS) {
-    // A managed key's schema never depends on the declared type.
-    const schema = payloadFieldIndexSchema(key, "number");
-    if (schema) required.set(key, schema);
-  }
-  for (const path of new OrderByFieldResolver(fullRegistryDerivedSignals(), signals).allOrderByPaths()) {
-    const type = types.get(path);
+  const declare = (path: string, type: PayloadSignalDescriptor["type"] | undefined): void => {
     const schema = type === undefined ? undefined : payloadFieldIndexSchema(path, type);
     if (schema && !required.has(path)) required.set(path, schema);
+  };
+  for (const key of SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS) {
+    // A managed key's schema never depends on the declared type.
+    declare(key, "number");
+  }
+  for (const path of new OrderByFieldResolver(fullRegistryDerivedSignals(), signals).allOrderByPaths()) {
+    declare(path, types.get(path));
+  }
+  for (const [path, matchedType] of filterPayloadKeys(fullRegistryFilters(), fullRegistryFilterPresets())) {
+    declare(path, types.get(path) ?? matchedType);
   }
 
   return { required, known: new Set(types.keys()) };
+}
+
+/**
+ * Every typed filter any trajectory of THIS BUILD declares — the companion of
+ * `fullRegistryPayloadSignalDescriptors`: the filter keys a collection needs
+ * indexed must not depend on the flags of the process that decides them.
+ *
+ * A trajectory added to `createComposition` must be added here too —
+ * `tests/core/api/composition-declared-payload-indexes.test.ts` fails until it is.
+ */
+export function fullRegistryFilters(): FilterDescriptor[] {
+  return [...new StaticTrajectory().filters, ...gitFilters, ...codegraphFilters];
+}
+
+/**
+ * Every filter preset of THIS BUILD, ungated — `assembleFilterPresets` with
+ * every trajectory registered. Same reason and same parity test as
+ * `fullRegistryFilters`.
+ */
+export function fullRegistryFilterPresets(): FilterPresetDef[] {
+  return [
+    ...STATIC_FILTER_PRESETS,
+    ...GIT_FILTER_PRESETS,
+    ...CODEGRAPH_FILTER_PRESETS,
+    ...ALL_COMPOSITE_FILTER_PRESETS,
+  ];
 }
 
 export function fullRegistryStatsAccumulators(): StatsAccumulatorDescriptor[] {

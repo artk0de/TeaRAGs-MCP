@@ -97,6 +97,14 @@ export interface FilterDescriptor {
   description: string;
   /** Parameter type for schema generation */
   type: "string" | "number" | "boolean" | "string[]";
+  /**
+   * The values an ENUMERATED param accepts (`'only' | 'exclude' | 'include'`).
+   * Required when `toCondition` emits a condition only for some values: the
+   * declared payload index set learns a filter's keys by probing `toCondition`
+   * with these (bd tea-rags-mcp-18xh5), and a descriptor that emits nothing
+   * for its probe fails the composition parity test.
+   */
+  values?: readonly unknown[];
   /** Convert user param value to Qdrant filter condition(s) */
   toCondition: (value: unknown, level?: FilterLevel) => FilterConditionResult;
 }
