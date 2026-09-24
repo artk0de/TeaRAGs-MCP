@@ -1732,7 +1732,10 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const scopeEndLine =
           node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
         for (const clause of swiftOptionalBindingClauses(node)) {
-          const site = siteOf(node);
+          // Each clause on its OWN line: a multi-line condition's later clause
+          // folds the earlier ones, and a spelling is visible strictly below
+          // its line (bd tea-rags-mcp-y99pg.32).
+          const site = siteOf(clause.nameNode);
           const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
           const annotatedOrInferred =
             annotated.nominal || annotated.element
@@ -1913,6 +1916,8 @@ function swiftTuplePatternNames(item: AstNode | null): [string | null, string | 
 /** One `let x` / `var x` clause of a `guard` / `if` / `while` condition list. */
 interface SwiftOptionalBindingClause {
   readonly name: string;
+  /** The bound identifier — where the clause's binding is positioned. */
+  readonly nameNode: AstNode;
   /** The binding's own `: T` annotation, when written. */
   readonly annotation: AstNode | null;
   /**
@@ -1946,7 +1951,7 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
       next += 1;
     }
     const value = kids[next]?.type === "=" ? (kids[next + 1] ?? null) : nameNode;
-    out.push({ name: nameNode.text, annotation, value });
+    out.push({ name: nameNode.text, nameNode, annotation, value });
   }
   return out;
 }

@@ -1369,6 +1369,29 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
     ]);
   });
 
+  // Request.cURLDescription: `let cookies = cookieStorage.cookies(for: url)` two
+  // lines below `if`, folding a `cookieStorage` bound one clause above it (bd
+  // tea-rags-mcp-y99pg.32). A spelling is visible strictly below its line, so
+  // every clause sitting on the `if` line hid each from the next.
+  it("positions each clause of a multi-line condition on its own line", () => {
+    const src = [
+      "func go() {",
+      "  if",
+      "    let storage = configuration.httpCookieStorage,",
+      "    let cookies = storage.cookies(for: url), !cookies.isEmpty {",
+      "    cookies.run()",
+      "  }",
+      "  guard let a = sp.a, let b = a.b else { return }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extractMaterialized(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.storage).toEqual([{ line: 3, callee: "configuration.httpCookieStorage", scopeEndLine: 6 }]);
+    expect(bindings.cookies).toEqual([{ line: 4, callee: "storage.cookies", scopeEndLine: 6 }]);
+    expect(bindings.a?.[0].line).toBe(7);
+    expect(bindings.b?.[0].line).toBe(7);
+  });
+
   it("types a cast local by the cast's target type", () => {
     const src = ["func go() {", "  let c = x as? Foo", "  c?.run()", "}", ""].join("\n");
     expect(typeAt(src, "c", 3)).toBe("Foo");
