@@ -31,7 +31,9 @@ explore output already exists this conversation, use it.
 
 Labels live in `rankingOverlay.file.<signal>` and
 `rankingOverlay.chunk.<signal>`. Each labeled value:
-`{ value: N, label: "high" }`.
+`{ value: N, label: "high" }`. Only fields in the preset's `overlayMask` are
+labelled — choose the preset by the labels you need; raw values under
+`payload.git.*` are never labelled.
 
 For label definitions: `tea-rags://schema/signal-labels`. For thresholds:
 `get_index_metrics`.
@@ -52,19 +54,20 @@ Probe ambiguous → ask user which mode. One question, genuine ambiguity only.
 
 **Step matrix** — mode selects steps + signal sources:
 
-| Step        | CREATE                                 | EXTEND                         | MODIFY                        |
-| ----------- | -------------------------------------- | ------------------------------ | ----------------------------- |
-| 1 STRATEGY  | area labels                            | container labels               | symbol's own labels           |
-| 2 TEMPLATE  | run                                    | run                            | skip                          |
-| 3 PLACEMENT | run                                    | fixed = container; guard fires | skip                          |
-| 4 REUSE     | run                                    | run                            | run — for introduced logic    |
-| 5 STYLE     | blame-owner                            | container file itself          | symbol itself; blame = review |
-| 6 GENERATE  | strategy + style + manifest            | same                           | minimal diff per strategy     |
-| 7 VERIFY    | identifiers + declaration + self-check | same                           | + tests-at-risk               |
-| 8 IMPACT    | blastRadius of new code                | container fanIn                | `get_callers` — MANDATORY     |
+| Step        | CREATE                      | EXTEND                         | MODIFY                     |
+| ----------- | --------------------------- | ------------------------------ | -------------------------- |
+| 1 STRATEGY  | area labels                 | container labels               | symbol's own labels        |
+| 2 TEMPLATE  | run                         | run                            | skip                       |
+| 3 PLACEMENT | run                         | fixed = container; guard fires | skip                       |
+| 4 REUSE     | run                         | run                            | run — for introduced logic |
+| 5 STYLE     | blame-owner + lexicon       | container file + lexicon       | symbol itself + lexicon    |
+| 6 GENERATE  | strategy + style + manifest | same                           | minimal diff per strategy  |
+| 7 VERIFY    | symbol risks + N-th-way     | same                           | + tests-at-risk            |
+| 8 IMPACT    | blastRadius of new code     | container fanIn                | `get_callers` — MANDATORY  |
 
 - **Hotfix** (user gives exact location) = MODIFY, additionally skip STRATEGY
-  and STYLE. REUSE still applies to introduced logic.
+  and the blame part of STYLE. REUSE still applies to introduced logic; the
+  lexicon still runs when the fix introduces a name.
 - **Greenfield** = CREATE over empty area — TEMPLATE/STYLE searches degrade to
   empty naturally, don't pre-skip.
 - **REUSE never skipped in any mode** — shared infra exists even when feature is
@@ -193,10 +196,83 @@ left, new contributor took over): defer to `blameDominantAuthor` for style
 (their code is what's there now), but flag `recentDominantAuthor` as secondary
 reviewer for fastest turnaround.
 
+#### Naming (lexicon)
+
+Names are the project's ontology. A value the project already names gets the
+project's name; a new term only for a genuinely new concept. Learn the
+CONVENTION — how a name relates to its value's type and to the call it is bound
+from — not one name to copy.
+
+Canonical failure (taxdome, Ruby): the project writes
+`tax_automation_document = find_tax_automation_document!(id)`, and a second
+binding of that model in one scope gets a qualifier
+(`tax_automation_document_ignored`). The agent wrote
+`row = find_vendor_envelope(id)` returning a `TaxAutomationDocument`: `row`
+carries no type (the Ruby resolver types receivers from names, so the graph
+loses edges), `vendor_envelope` is a term the project never uses.
+
+**Codegraph on** (prime `## Enrichment` lists `codegraph.symbols`) → ONE
+`get_naming_lexicon` call here, before GENERATE — the vocabulary sits in context
+while writing, so misfits are prevented, not detected:
+
+| Mode            | `types`                          | `anchors`           | `concept`             | `names`            |
+| --------------- | -------------------------------- | ------------------- | --------------------- | ------------------ |
+| CREATE          | value types of template+manifest | template + manifest | yes — the new symbol  | the new symbol(s)  |
+| EXTEND          | + container field types          | + container         | only for a new method | the new method     |
+| MODIFY / hotfix | symbol signature + its locals    | the symbol          | no                    | new locals/methods |
+
+- `language` = target language (required with `concept`); `pathPattern` = target
+  area (the tool widens it under 5 rows and reports `scope`).
+- `concept` = a DESCRIPTION of what the new symbol denotes ("pulls signed
+  envelopes from the e-signature vendor into tax documents") — never the draft
+  name: a draft pulls in its own lexical neighbours.
+- `names[]` = drafts with `kind` (`local`/`param`/`field`/`return`) and `type`
+  when known. Type unknown but bound from a call →
+  `callee: { member, receiver? }`.
+
+Reading the answer — the dominant shape per kind IS the convention:
+
+| Shape            | Name to build (casing as the returned names show)                         |
+| ---------------- | ------------------------------------------------------------------------- |
+| `EXACT`          | the type itself: `tax_automation_document`, plural for a collection       |
+| `QUALIFIED`      | EXACT + qualifier, for a second binding of the type in one scope          |
+| `TAIL`           | trailing word(s) of the type: `document`                                  |
+| `VERB_TYPE`      | `return`: verb + type — `find_tax_automation_document!`                   |
+| `CALLEE_DERIVED` | the callee without verb prefix and `!`/`?`: `x = find_x!(id)`             |
+| `FREE`           | project names by ROLE — pick from `kinds.<kind>` names; never force EXACT |
+
+- `byType[].kinds.<kind>[].name` = the vocabulary; a dominant name is reused
+  verbatim. `confidence` low or `evidence` mostly `name-inferred` = weak
+  evidence, prefer the template's code.
+- `byCallee` = how the project names values bound from that call (untyped path).
+- `concept.terms` = the project's words for the concept. A holder that already
+  IS what you are about to write → back to Step 4 and gate that holder (a missed
+  reuse, not a naming issue) — never rename and write a sibling.
+- `names[]`: `CONFORMS` → keep. `MISFIT` → take `suggestion` (`holder` shows
+  where the project uses it). `NEW_TERM` → adopt a `topTerms` term if it denotes
+  the same concept; otherwise the concept is new — keep the term, justify it in
+  Step 6.
+- `driftWarning` or empty `byType` → no history for the type; take names from
+  the template's code and say so.
+
+**Codegraph off** → tool absent; concept part only: `semantic_search` with
+`query` = the concept description, `language`, `pathPattern` = L2 (widen to the
+project under 5 hits), `filter: { presets: "production" }`,
+`rerank: { custom: { similarity: 0.7, imports: 0.3 } }` (import-proxy for the
+graph weights), `limit: 30`, `metaOnly: true`. Split holders' symbolIds and
+paths into words; recurring terms = the vocabulary. Value names: follow how the
+template's code names the same types.
+
+Output: the vocabulary for Step 6.
+
 ### Step 6: GENERATE
 
 Apply strategy + style + reuse manifest — call manifest helpers, NEVER
 reimplement them. MODIFY: minimal diff per strategy.
+
+Names come from the Step 5 vocabulary, built by the dominant shape. A word
+outside it is `NEW_TERM` and gets one line in the output:
+`NEW_TERM <term> — <why no project term denotes this>`.
 
 Tests alongside (CREATE/EXTEND): invoke `tea-rags:tests-as-context` recipe
 `fixture-lookup` (intent = setup you need) — existing setup patterns, not
@@ -204,23 +280,33 @@ invented mocks. SKIP verdict → proceed without.
 
 ### Step 7: VERIFY
 
-Verify ALL referenced identifiers:
+No per-identifier existence sweep — specs and the type-checker catch a
+hallucinated name; the sweep only spends tokens. Verify what they miss:
 
-1. find_symbol(metaOnly=true) for every function name, type name. ripgrep for
-   import paths (find_symbol doesn't cover imports).
-2. 0 results = hallucinated identifier → fix before committing.
-3. Generated class declaration modeled on template (superclass / include / mixin
-   / implements): chunk headers DON'T carry declarations — Read template file
-   head (`templates[0].path`, declaration lines only, limit ~30) + verify
-   generated declaration against real one. Wrong base class / missing include →
-   fix before committing. Sanctioned Read: declaration lives OUTSIDE chunk.
-4. **N-th-way self-check:** `find_similar` with `positiveCode` = generated code;
+1. **Symbol risks** — symbols the new code calls or changes, ≤ 5, most central
+   first: `find_symbol(symbol, rerank: "criticalPath", metaOnly: true)`. Its
+   chunk mask labels `codegraph.chunk.pageRank`, `codegraph.chunk.fanIn`,
+   `codegraph.chunk.fanOut`, `bugFixRate`, `commitCount` — read
+   `rankingOverlay.chunk.<field>.label`.
+   - Callee `bugFixRate` critical → call it defensively (guard its inputs,
+     handle its failure mode); confirm a test pins the scenario you rely on,
+     else report it unpinned.
+   - Changed symbol `pageRank` critical or `chunk.fanIn` central → Step 8
+     `get_callers` (already mandatory for MODIFY).
+   - Reviewer routing stays in Step 5 — not repeated here.
+   - Codegraph off → `rerank: "dangerous"`: file-level labels only, react to
+     `rankingOverlay.file.bugFixRate`. Never `dangerous` while codegraph is on —
+     it leaves the chunk labels unread.
+2. **N-th-way self-check:** `find_similar` with `positiveCode` = generated code;
    ignore hits on template + target file. Near-duplicate hit in another module =
    you wrote the N-th way → back to Step 4 gate (import instead) or surface to
    user.
-5. **MODIFY:** `tea-rags:tests-as-context` recipe `tests-at-risk` (affectedFiles
+3. **MODIFY:** `tea-rags:tests-as-context` recipe `tests-at-risk` (affectedFiles
    = [target file], intent = change description) → run the pinning scenarios.
    SKIP verdict → note behavior unpinned, proceed.
+
+Step 7 is the extension point for post-generation structural checks — add them
+here, not as a second verification step.
 
 ### Step 8: IMPACT
 
