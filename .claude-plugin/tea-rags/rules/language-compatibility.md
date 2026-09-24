@@ -70,8 +70,11 @@ here. Per-project realized numbers live in **prime**, never in this file.
 ## Realized trust = prime, not this table
 
 This table is the **capability ceiling** of the mechanism — a static product
-fact. The trust you actually get on YOUR index is prime's `resolveSuccessRate`
-per language (it depends on the corpus). Variance is largest for dynamically
+fact. The trust you actually get on YOUR index is prime's
+`## Language capability — ceiling tier · realized resolve` section: one line per
+language the index holds, its ceiling tiers, and `· resolve <rate>` where the
+index measured one (no rate → unmeasured, or split across several primary
+languages — read `## Codegraph resolve`). Variance is largest for dynamically
 typed languages: Ruby is **high** untyped, **maximum** YARD-annotated, and drops
 on un-annotated Rails — and that swing is a prime number, not a language
 property.

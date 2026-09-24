@@ -59,7 +59,7 @@ import {
 import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
-import { applyEssentialSignalsToOverlay } from "../post-process.js";
+import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -192,12 +192,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
    * (chunkCount, mergedChunkIds, merged startLine/endLine) intact and only
    * adjust the git layer to match the semantic/hybrid contract:
    *
-   *   metaOnly=true  → essential git keys + overlay signals (when reranked)
+   *   metaOnly=true  → signal namespaces reduced to their essential keys, raw;
+   *                    rankingOverlay (when reranked) stays on the result
    *   metaOnly=false → full payload passes through unchanged
    *
    * Using BaseExploreStrategy.applyMetaOnly would strip synthetic outline
-   * fields (not present in payloadSignals), so we apply a targeted git
-   * filter via applyEssentialGitToResult instead.
+   * fields (not present in payloadSignals), so we apply a targeted namespace
+   * filter via applyEssentialSignals instead.
    */
   protected override async postProcess(
     results: ExploreResult[],
@@ -217,9 +218,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     processed = processed.slice(0, limit);
 
     if (originalCtx.metaOnly) {
-      processed = processed.map(
-        (r) => applyEssentialSignalsToOverlay(r, this.essentialKeys, this.payloadSignals) as ExploreResult,
-      );
+      processed = processed.map((r) => applyEssentialSignals(r, this.essentialKeys) as ExploreResult);
     }
 
     return processed;

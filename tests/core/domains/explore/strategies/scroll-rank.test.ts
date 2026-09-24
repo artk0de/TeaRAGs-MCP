@@ -322,6 +322,33 @@ describe("ScrollRankStrategy", () => {
     }
   });
 
+  // metaOnly contract (2026-09-24): rank_chunks defaults metaOnly=true and the
+  // overlay is where every label lives, so the default must keep it.
+  it("keeps rankingOverlay under the default metaOnly and leaves the payload raw", async () => {
+    const overlay = {
+      preset: "decomposition",
+      chunk: { methodLines: { value: 200, label: "decomposition_candidate" } },
+    };
+    const reranker = createMockReranker();
+    vi.mocked(reranker.rerank).mockImplementation((results: RerankableResult[]) =>
+      results.map((r, i) => ({ ...r, score: 1 - i * 0.1, rankingOverlay: overlay })),
+    );
+
+    const results = await createStrategy(undefined, reranker).execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "chunk",
+      limit: 3,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.rankingOverlay).toEqual(overlay);
+      expect(JSON.stringify(r.payload)).not.toContain('"label"');
+      expect(typeof r.payload?.methodLines).toBe("number");
+    }
+  });
+
   it("scrolls a codegraph signal by the stored payload path its descriptor declares", async () => {
     const pageRankDesc: DerivedSignalDescriptor = {
       name: "pageRank",

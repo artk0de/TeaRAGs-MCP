@@ -190,7 +190,10 @@ export function registerCodegraphTools(
       description:
         "Return strongly-connected components (cycles) from import or call graph. " +
         "Cycles length >= 2; single-node 'cycles' excluded. Read from pre-computed " +
-        "table — sub-millisecond per call.",
+        "table — sub-millisecond per call. scope=method: members are symbol ids and " +
+        "memberLocations lists {symbolId, relativePath} per member in the same order — " +
+        "namesakes in different files are distinct members; an empty relativePath means " +
+        "the cycle was not recomputed since the index upgrade.",
       inputSchema: FindCyclesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },

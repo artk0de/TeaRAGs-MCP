@@ -121,14 +121,15 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   /**
    * Apply metaOnly formatting: strip raw content, keep metadata from payloadSignals.
    * Wraps filterMetaOnly output back as ExploreResult[]; the score stays on the
-   * hit, never copied into its payload (bd tea-rags-mcp-947xf).
+   * hit, never copied into its payload (bd tea-rags-mcp-947xf). The
+   * rankingOverlay stays too: the metaOnly payload is raw, so the overlay is
+   * the only place a reranked hit's labels live.
    */
   protected applyMetaOnly(results: ExploreResult[]): ExploreResult[] {
     const metaResults = filterMetaOnly(results, this.payloadSignals, this.essentialKeys);
-    return metaResults.map((meta, i) => ({
-      id: results[i].id,
-      score: results[i].score,
-      payload: meta,
-    }));
+    return metaResults.map((meta, i) => {
+      const { id, score, rankingOverlay } = results[i];
+      return rankingOverlay ? { id, score, payload: meta, rankingOverlay } : { id, score, payload: meta };
+    });
   }
 }

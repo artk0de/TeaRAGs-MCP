@@ -25,8 +25,10 @@ tests-as-context preflight.
 ```text
 per changed symbol (cap 10):
   get_callers symbolId=<Class.method> project=<alias> limit=15
-overlay read: codegraph.file.fanIn / transitiveImpact / isHub,
-              codegraph.chunk.fanIn / pageRank (labels from prime)
+  find_symbol symbol=<Class.method> rerank="blastRadius" metaOnly=true
+overlay read: rankingOverlay.file.fanIn / transitiveImpact / isHub,
+              rankingOverlay.chunk.fanIn (labels); raw values at
+              payload.codegraph.symbols.{file,chunk}.* (pageRank there)
 severity: chunk.fanIn frequent+ OR file.isHub → major "hub edit" (cite caller
           list + fanIn label); else observation
 ```
@@ -68,8 +70,9 @@ fix: name the twin file and what in it plausibly needs the matching edit.
 ## D3 fragile-zone (zero extra calls — Phase 2 overlay)
 
 ```text
-overlay read: git.file.bugFixRate / churnVolatility / recencyWeightedFreq,
-              git.chunk.bugFixRate on changed chunks
+overlay read: rankingOverlay.file.bugFixRate / churnVolatility /
+              recencyWeightedFreq, rankingOverlay.chunk.bugFixRate on changed
+              chunks (hotspots overlay from Phase 2)
 severity: concerning+/erratic+/burst labels → major when paired with missing
           test update (D5 cross-ref), else minor "fragile zone — extra care"
 ```
@@ -83,8 +86,9 @@ fix: ask for the test that pins the changed branch, or for splitting the edit �
 ## D4 silo-style
 
 ```text
-trigger: git.file.blameDominantAuthorPct at silo/deep-silo label AND MR author
-         (external) / git user (local) ≠ blameDominantAuthor
+trigger: rankingOverlay.file.blameDominantAuthorPct at silo/deep-silo label
+         AND MR author (external) / git user (local) ≠ payload
+         git.file.blameDominantAuthor
 then:    semantic_search query=<changed symbol behavior>
            pathPattern=<same dir glob> rerank="proven" limit=5 project=<alias>
 severity: minor — style/naming deviation from proven neighbors, cite the

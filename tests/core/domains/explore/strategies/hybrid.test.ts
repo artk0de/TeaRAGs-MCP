@@ -270,6 +270,38 @@ describe("HybridSearchStrategy", () => {
     expect(results).toHaveLength(1);
     expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
+
+  // metaOnly contract (2026-09-24): labels live only on rankingOverlay.
+  it("keeps rankingOverlay under metaOnly and leaves the payload raw", async () => {
+    const overlay = { preset: "hotspots", file: { commitCount: { value: 37, label: "extreme" } } };
+    const qdrant = createMockQdrant(true, [
+      { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", git: { file: { commitCount: 37 } } } },
+    ]);
+    const reranker = {
+      rerank: vi.fn((results: object[]) => results.map((r) => ({ ...r, rankingOverlay: overlay }))),
+    } as unknown as Reranker;
+    const strategy = new HybridSearchStrategy(
+      qdrant,
+      reranker,
+      [
+        { key: "relativePath", type: "string", description: "path" },
+        { key: "git.file.commitCount", type: "number", description: "commits" },
+      ],
+      ["git.file.commitCount"],
+    );
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      embedding: [0.1, 0.2],
+      query: "q",
+      limit: 10,
+      rerank: "hotspots",
+      metaOnly: true,
+    });
+
+    expect(results[0].rankingOverlay).toEqual(overlay);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts", git: { file: { commitCount: 37 } } });
+  });
 });
 
 describe("HybridSearchStrategy — adapter query-parameter rejection (bd tea-rags-mcp-pn12w)", () => {

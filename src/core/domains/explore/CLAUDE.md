@@ -33,15 +33,15 @@
   reads chunk signals for alpha-blending and `language`/`chunkType` for overlay
   labels — stripping first silently changes ranking; and an undeclared flat key
   is dropped from file hits by design.
-- **metaOnly places each overlay value in the namespace that OWNS it.**
-  `post-process.ts#mergeOverlayIntoOwners` (behind `filterMetaOnly` and
-  `applyEssentialSignalsToOverlay`) resolves a bare overlay field through
-  `buildSignalKeyMap` to its descriptor and writes the labelled value at that
-  key's physical path; a flat (static) owner is skipped because the raw value
-  already sits at the payload root, an unowned field is dropped. Why: one
-  preset's `overlayMask` spans trajectories, and merging the whole overlay into
-  `git.*` put `imports` and `fanIn` under the history block (bd
-  tea-rags-mcp-rtjrn).
+- **A metaOnly payload is raw; its labels live only on `rankingOverlay`.**
+  `post-process.ts#filterMetaOnly` and `post-process.ts#applyEssentialSignals`
+  select fields and never write an overlay value into the payload, and
+  `BaseExploreStrategy#applyMetaOnly` carries the hit's `rankingOverlay`
+  through. Why: the overlay is keyed by bare field name while one preset's
+  `overlayMask` spans trajectories, so every merge into the payload either
+  misplaced a key (bd tea-rags-mcp-rtjrn put `imports` and `fanIn` under
+  `git.*`) or turned a stored number into `{value, label}` at a path filters and
+  `fields` address as raw.
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has
