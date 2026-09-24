@@ -322,11 +322,14 @@ describe("seeded support versions", () => {
       // swift walker 24: that fix merged onto swift walker 23, which had moved
       // independently (bd tea-rags-mcp-y99pg), so neither parent's index holds
       // the merged extraction.
+      // python walker 11: bd tea-rags-mcp-nbf8q gives the package re-export
+      // hop a Python-only lookup, so a namesake another language declares no
+      // longer blocks it or lands a Python import on a `.ts` file.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 13],
         ["javascript", 5],
-        ["python", 10],
+        ["python", 11],
         ["ruby", 6],
         ["java", 3],
         ["rust", 3],

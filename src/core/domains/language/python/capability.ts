@@ -50,5 +50,10 @@ export const capability: LanguageCapability = {
   // `CallRef.dispatch` and fans out to the table's callables instead of going
   // through the chain. Rows written by walker 8 have neither channel, so those
   // sites keep their old bare-call answer until the Python rows are rewritten.
-  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
+  // walker 11: bd tea-rags-mcp-nbf8q — the package re-export hop
+  // (`reexportOriginFile`) asks a Python-only lookup. A namesake another
+  // language declares no longer makes the hop ambiguous or lands a Python
+  // import on a `.ts` file, so imported-name, module-member and ancestor-base
+  // edges move on polyglot repos.
+  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
 };
