@@ -52,7 +52,7 @@ import {
 } from "../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { SWIFT_ANCESTOR_POLICY } from "./swift-ancestor-policy.js";
-import { lookupSwiftSymbols, lookupSwiftTypeMember } from "./swift-symbol-lookup.js";
+import { lookupSwiftSymbols, lookupSwiftTypeMember, qualifySwiftTypeName } from "./swift-symbol-lookup.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
 
 export class SwiftMemberTypeLookup {
@@ -87,9 +87,12 @@ export class SwiftMemberTypeLookup {
     ctx: CallContext,
     mode: AmbiguousResolveMode,
   ): SymbolResolutionTarget | null {
-    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) =>
-      declaresMember(candidate, member, ctx) ? { target: lookupSwiftTypeMember(candidate, member, ctx, mode) } : null,
-    );
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      // The chain's keys are type names as WRITTEN; members compose under the
+      // qualified id (`qualifySwiftTypeName`).
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      return declaresMember(typeId, member, ctx) ? { target: lookupSwiftTypeMember(typeId, member, ctx, mode) } : null;
+    });
     return scan.target?.target ?? null;
   }
 

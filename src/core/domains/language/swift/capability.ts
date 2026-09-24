@@ -12,6 +12,22 @@ export const capability: LanguageCapability = {
     tier: "moderate",
     tech: "9-strategy chain + super over the superclass chain + implicit-self and chained field typing + extension-scope and nested-type receivers; no import narrowing",
   },
+  // walker 10: a type name a walker fact WROTE short resolves to the nested
+  // type it denotes. Members compose under the qualified id
+  // (`DataStreamRequest.CancellationToken#cancel`), but a property or local
+  // annotated `CancellationToken` inside `DataStreamRequest` carries the short
+  // spelling, so every member lookup on it probed an id nothing declares.
+  // `qualifySwiftTypeName` keeps a name that some declaration composes under
+  // as-is, and otherwise takes the one nested type declaration whose last
+  // segments are the name — narrowed, when several exist, to the one nested in
+  // a type enclosing the caller (`URLEncoding.Destination` vs
+  // `URLEncodedFormParameterEncoder.Destination`). Still ambiguous stays
+  // unresolved. Measured TOTAL 0.564 -> 0.568 (846 -> 852 of 1501, Alamofire;
+  // dynamic 0.206 -> 0.218), Quick unmoved; under grammar 0.7.3 0.701 -> 0.706
+  // (seven edges, including the `token.cancel` a 0.7.3 parse had retargeted
+  // away). Zero edges lost on either grammar. So an index built by walker 9
+  // holds no edge into a member of a nested type reached through its short
+  // name.
   // walker 9: the walker PUBLISHES its declared return types, run-global under
   // `structuredReturnTypes`, keyed by the callee's own composed symbolId
   // (overload suffix included, taken from the chunk collected at the
@@ -138,7 +154,7 @@ export const capability: LanguageCapability = {
   // adds the Quick scope chunker, which MOVES THE CHUNK SET — one giant `spec`
   // chunk becomes N scenario chunks with new ids and ranges — so the drift hint
   // must route `--force`, not `--force-enrichments`.
-  versions: { chunking: 3, walker: 9, codegraphSchema: 2 },
+  versions: { chunking: 3, walker: 10, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

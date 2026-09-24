@@ -44,7 +44,7 @@ import {
   splitReceiverHops,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
-import { swiftSelfTypeName } from "./strategies/shared.js";
+import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
 import { isSwiftTypeName } from "./swift-type-name.js";

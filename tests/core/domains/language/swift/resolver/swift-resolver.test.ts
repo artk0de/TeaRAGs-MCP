@@ -1246,6 +1246,91 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
   });
 });
 
+describe("SwiftCallResolver — a SHORT type name reaches its NESTED declaration", () => {
+  // A walker type fact is the name as WRITTEN — `let token: CancellationToken`
+  // inside `DataStreamRequest` — while the type composes as
+  // `DataStreamRequest.CancellationToken`. Swift resolves the written name
+  // lexically; so must the member lookup.
+  it("qualifies a field's short type name to the one nested type declaring it", () => {
+    const t = table({
+      "Sources/Stream.swift": [
+        { symbolId: "DataStreamRequest.CancellationToken", scope: ["DataStreamRequest"] },
+        { symbolId: "DataStreamRequest.CancellationToken#cancel", scope: ["DataStreamRequest", "CancellationToken"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("token", "cancel"),
+      ctx({
+        callerFile: "Sources/Stream.swift",
+        callerScope: ["DataStreamRequest", "Stream"],
+        symbolTable: t,
+        classFieldTypes: { Stream: { token: "CancellationToken" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataStreamRequest.CancellationToken#cancel");
+  });
+
+  const twoStates = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+    "Sources/Socket.swift": [
+      { symbolId: "Socket.State", scope: ["Socket"] },
+      { symbolId: "Socket.State#canTransitionTo", scope: ["Socket", "State"] },
+    ],
+  });
+
+  it("picks the namesake nested in the CALLER's own enclosing type when several exist", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Request.swift",
+        callerScope: ["Request"],
+        symbolTable: twoStates,
+        localBindings: { state: [{ line: 5, type: "State" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("stays silent when several nested namesakes exist and none encloses the caller", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Other.swift",
+        callerScope: ["Other"],
+        symbolTable: twoStates,
+        localBindings: { state: [{ line: 5, type: "State" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("keeps a TOP-LEVEL declaration of the name ahead of any nested namesake", () => {
+    const t = table({
+      "Sources/State.swift": [
+        { symbolId: "State", scope: [] },
+        { symbolId: "State#canTransitionTo", scope: ["State"] },
+      ],
+      "Sources/Request.swift": [
+        { symbolId: "Request.State", scope: ["Request"] },
+        { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Other.swift",
+        callerScope: ["Other"],
+        symbolTable: t,
+        localBindings: { state: [{ line: 5, type: "State" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("State#canTransitionTo");
+  });
+});
+
 describe("SwiftCallResolver — a member INHERITED from the superclass", () => {
   // `DataRequest: Request` — `resume()` / `cancel()` live on `Request`, and a
   // receiver typed `DataRequest` (a local, a stored property, `self`) dispatches
