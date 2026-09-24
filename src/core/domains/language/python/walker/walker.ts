@@ -38,7 +38,7 @@ import type {
   LocalBinding,
   ModuleReexport,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";

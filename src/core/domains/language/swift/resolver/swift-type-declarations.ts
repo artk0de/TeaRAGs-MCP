@@ -23,8 +23,7 @@ import type {
   SwiftFieldConstruction,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
-import { splitAtBracketDepthZero } from "../../kernel/receiver-type-propagation.js";
-import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+import { RunScopedMemo, splitAtBracketDepthZero } from "../../kernel/index.js";
 
 interface SwiftTypeDeclarationSets {
   /** typeId → the files holding its own declaration. */

@@ -1,7 +1,7 @@
 import { CONTINUE } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
 import { createSwiftReceiverTypePorts, swiftLocalValueType } from "../swift-receiver-type-ports.js";
 import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolverConfig } from "./shared.js";
 

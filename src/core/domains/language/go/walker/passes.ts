@@ -15,7 +15,7 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { goDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 import { goStructFieldTypesFacetPass } from "./passes/struct-field-types.js";
 

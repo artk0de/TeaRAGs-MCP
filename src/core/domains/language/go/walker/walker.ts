@@ -30,7 +30,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { goImportBoundName, goImportNameClaims, goImportsByClaimedName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 import { goFunctionReturnTypesKey, goPackageDirOf, goQualifiedTypeName } from "../type-name.js";

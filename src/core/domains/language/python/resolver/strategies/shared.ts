@@ -27,11 +27,12 @@ import {
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
+  propagateReceiverType,
+  typeRefReceiverForm,
   type AncestorClosure,
   type AncestorLinearizer,
-} from "../../../kernel/ancestor-walk.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
-import { typeRefReceiverForm } from "../../../kernel/type-ref.js";
+  type ReceiverTypePorts,
+} from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";

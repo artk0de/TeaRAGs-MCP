@@ -37,7 +37,7 @@ import { posix } from "node:path";
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
-import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+import { RunScopedMemo } from "../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import { lookupPythonSymbolsByShortName } from "./strategies/shared.js";
 

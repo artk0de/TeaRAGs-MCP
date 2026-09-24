@@ -40,7 +40,7 @@ import {
   type CallRef,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
-import { stripCallArgs, type ReceiverTypePorts } from "../../kernel/receiver-type-propagation.js";
+import { stripCallArgs, type ReceiverTypePorts } from "../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "./python-receiver-type-ports.js";

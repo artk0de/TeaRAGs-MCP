@@ -59,7 +59,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+import { RunScopedMemo } from "../../kernel/index.js";
 import { swiftTypeFieldKeyParts } from "../type-field-address.js";
 import { isSwiftSourcePath } from "./swift-symbol-lookup.js";
 

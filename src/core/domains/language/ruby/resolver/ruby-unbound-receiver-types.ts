@@ -30,7 +30,7 @@
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
-import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/naming-convention.js";
+import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/index.js";
 import { catalogueForGemfile } from "../gemfile.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
 import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";

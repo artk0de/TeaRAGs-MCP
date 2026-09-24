@@ -110,7 +110,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../kernel/receiver-type-propagation.js";
+import { propagateReceiverType, type ReceiverTypePorts } from "../../kernel/index.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
 import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";

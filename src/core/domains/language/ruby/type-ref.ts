@@ -11,4 +11,4 @@ export {
   typeRefNonNilArms as rubyNonNilArms,
   typeRefReceiverForm as rubyReceiverForm,
   typeRefUnionOf as rubyUnionOf,
-} from "../kernel/type-ref.js";
+} from "../kernel/index.js";
