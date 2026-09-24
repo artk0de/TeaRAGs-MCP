@@ -78,6 +78,28 @@ export interface FileDependencyGraph {
   edges: FileDependencyEdge[];
 }
 
+/**
+ * One file edge as the per-file import reads return it: the
+ * {@link FileDependencyEdge} plus the import text the walker recorded
+ * (`null` for a legacy row that carries none).
+ */
+export interface FileImportEdge extends FileDependencyEdge {
+  importText: string | null;
+}
+
+/**
+ * One file's import edges in one direction (bd tea-rags-mcp-gfvr8) — the
+ * files importing it, or the files it imports. `fileKnown` says whether the
+ * walk extracted the file (`cg_symbols_files`), so an empty `edges` on a known
+ * file ("nothing imports it") stays distinguishable from a path the graph has
+ * never seen. An unwalked file can still carry edges: an import of a file the
+ * walk skipped is a real row that counts toward its source's fanOut.
+ */
+export interface FileImportLookup {
+  fileKnown: boolean;
+  edges: FileImportEdge[];
+}
+
 export type CycleScope = "file" | "method";
 
 export interface CycleEntry {

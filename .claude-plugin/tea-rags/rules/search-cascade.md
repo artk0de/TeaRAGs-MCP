@@ -185,7 +185,12 @@ than calling a tool to discover it's missing. Precedence — start cheap, escala
 only if needed:
 
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
-   Default for impact & dependency questions; instant, no traversal.
+   Default for impact & dependency questions; instant, no traversal. Pass
+   `symbolId` for call edges, OR `relativePath` (repo-relative file, no
+   `symbolId`) for FILE scope: `get_callers` → `importers[]` (files importing
+   it), `get_callees` → `imports[]` (files it imports), each with `importText` +
+   `callWeight`, heaviest first. Unknown path → empty list + `message`, not a
+   fact about the file.
 2. **`find_cycles`** — detect circular dependency chains.
 3. **`trace_path`** — ALL paths A→B. Lean by default (path enumeration only);
    pass `rerank="bugHunt"` (or `dangerous`/`hotspots`/`blastRadius`) to attach

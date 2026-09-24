@@ -44,6 +44,7 @@ import type {
   EdgeKindCount,
   FileDependencyGraph,
   FileGraphMetrics,
+  FileImportLookup,
   FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -362,6 +363,16 @@ export class DuckDbGraphClient implements GraphDbClient {
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return this.analytics.readFileDependencyGraph();
+  }
+
+  /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */
+  async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
+    return this.analytics.getFileImporters(relPath);
+  }
+
+  /** File-scope `get_callees` (bd tea-rags-mcp-gfvr8): the files `relPath` imports. */
+  async getFileImports(relPath: RelPath): Promise<FileImportLookup> {
+    return this.analytics.getFileImports(relPath);
   }
 
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {

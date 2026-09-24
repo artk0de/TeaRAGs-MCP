@@ -16,6 +16,7 @@ import type {
   EdgeKindCount,
   FileDependencyGraph,
   FileGraphMetrics,
+  FileImportLookup,
   FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -1086,6 +1087,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return (await this.call("readFileDependencyGraph", {})) as FileDependencyGraph;
+  }
+
+  async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
+    return (await this.call("getFileImporters", { relPath })) as FileImportLookup;
+  }
+
+  async getFileImports(relPath: RelPath): Promise<FileImportLookup> {
+    return (await this.call("getFileImports", { relPath })) as FileImportLookup;
   }
 
   async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {

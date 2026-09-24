@@ -824,3 +824,44 @@ describe("CodegraphDaemonServer.handle — readFileDependencyGraph", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-gfvr8: file-scope get_callers / get_callees read one file's
+// import edges through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — getFileImporters / getFileImports", () => {
+  it("are read ops answering one file's importers and imports", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_fie_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+
+    const importers = await server.handle({
+      id: 3,
+      op: "getFileImporters",
+      params: { collection: c, relPath: "b.ts" },
+    });
+    const imports = await server.handle({ id: 4, op: "getFileImports", params: { collection: c, relPath: "a.ts" } });
+
+    expect(DAEMON_OP_COMMANDS.getFileImporters.access).toBe("read");
+    expect(DAEMON_OP_COMMANDS.getFileImports.access).toBe("read");
+    const edge = { sourceRelPath: "a.ts", targetRelPath: "b.ts", importText: "./b", callWeight: 0 };
+    expect((importers as { result: unknown }).result).toEqual({ fileKnown: true, edges: [edge] });
+    expect((imports as { result: unknown }).result).toEqual({ fileKnown: true, edges: [edge] });
+    await pool.closeAll();
+  });
+});
