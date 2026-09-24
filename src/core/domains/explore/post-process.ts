@@ -10,10 +10,11 @@
  * BASE_PAYLOAD_SIGNALS is injected via payloadSignals parameter.
  */
 
+import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { RankingOverlay } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
-import type { Reranker, RerankMode } from "./reranker.js";
+import { buildSignalKeyMap, type Reranker, type RerankMode } from "./reranker.js";
 import { keepPathPatternMatches } from "./strategies/path-pattern-fill.js";
 
 // ---------------------------------------------------------------------------
@@ -95,12 +96,53 @@ function hasOverlayData(overlay: RankingOverlay): boolean {
   );
 }
 
-/** Build git object from ranking overlay raw signals. */
-function buildGitFromOverlay(overlay: RankingOverlay): Record<string, unknown> {
-  const git: Record<string, unknown> = {};
-  if (overlay.file && Object.keys(overlay.file).length > 0) git.file = overlay.file;
-  if (overlay.chunk && Object.keys(overlay.chunk).length > 0) git.chunk = overlay.chunk;
-  return git;
+/**
+ * Merge each ranking-overlay value into the payload namespace of the signal
+ * descriptor that OWNS it (bd tea-rags-mcp-rtjrn). A preset's overlayMask mixes
+ * trajectories — techDebt lists git signals, the static `imports` and
+ * `codegraph.file.fanIn` — while the overlay itself is keyed by bare field name
+ * per level, so the owner is recovered the way `Reranker#applyLabelResolution`
+ * recovers it: `<level>.<field>` first, then the bare field, through
+ * `buildSignalKeyMap`.
+ *
+ *   - a nested owner (`git.file.commitCount`, `codegraph.file.fanIn`) receives
+ *     the labelled value at its PHYSICAL path (`toPhysicalPayloadKey` —
+ *     `codegraph.symbols.file.fanIn`);
+ *   - a flat owner (`imports`, `methodLines`) is a top-level static key the
+ *     caller already carries raw — writing it anywhere would duplicate it;
+ *   - a field no descriptor owns has no namespace to go to and is dropped.
+ *
+ * Copy-on-write along each written path: `target` may share subtrees with the
+ * hit's own payload, which must not change.
+ */
+function mergeOverlayIntoOwners(
+  target: Record<string, unknown>,
+  overlay: RankingOverlay,
+  signalKeyMap: ReadonlyMap<string, string>,
+): void {
+  for (const level of ["file", "chunk"] as const) {
+    const entries = overlay[level];
+    if (!entries) continue;
+    for (const [field, value] of Object.entries(entries)) {
+      const ownerKey = signalKeyMap.get(`${level}.${field}`) ?? signalKeyMap.get(field);
+      if (!ownerKey?.includes(".")) continue;
+      setAtPathCopyOnWrite(target, toPhysicalPayloadKey(ownerKey).split("."), value);
+    }
+  }
+}
+
+function setAtPathCopyOnWrite(target: Record<string, unknown>, path: string[], value: unknown): void {
+  let node = target;
+  for (const segment of path.slice(0, -1)) {
+    const child = node[segment];
+    const copy: Record<string, unknown> =
+      typeof child === "object" && child !== null && !Array.isArray(child)
+        ? { ...(child as Record<string, unknown>) }
+        : {};
+    node[segment] = copy;
+    node = copy;
+  }
+  node[path[path.length - 1]] = value;
 }
 
 /** Filter full git payload to only essential trajectory fields. */
@@ -134,7 +176,8 @@ function filterGitByEssential(
  * essentialKeys list at runtime (keys shaped `<namespace>.<level>.<field>`,
  * e.g. `git.file.commitCount`). For each namespace discovered in
  * essentialKeys, the corresponding payload branch is filtered to the allowed
- * fields, and any ranking overlay's `{file, chunk}` signals are merged on top.
+ * fields; the ranking overlay's `{file, chunk}` signals are then merged into
+ * the namespace that owns each one (`mergeOverlayIntoOwners`).
  *
  * Use case: outline strategies (find_symbol) need to enforce the metaOnly
  * signal contract without losing synthetic outline fields (chunkCount,
@@ -142,14 +185,16 @@ function filterGitByEssential(
  * and would drop those synthetic fields; this helper preserves everything
  * outside the signal namespaces.
  *
- * Overlay namespace: the current RankingOverlay shape exposes only
- * `{file, chunk}` levels without namespace, so overlay signals are merged
- * into each namespace present in essentialKeys. In practice only one
- * trajectory contributes overlay at a time (rerank is single-preset), so the
- * merge is unambiguous. When multi-namespace overlay lands, this helper
- * needs a namespace hint — today's shape does not carry one.
+ * Overlay namespace: the RankingOverlay shape carries `{file, chunk}` levels
+ * without a namespace, and one preset's mask spans several trajectories, so
+ * the owner of each overlay key comes from `payloadSignals` — never from which
+ * namespaces essentialKeys happens to name (bd tea-rags-mcp-rtjrn).
  */
-export function applyEssentialSignalsToOverlay(result: SearchResult, essentialKeys: string[]): SearchResult {
+export function applyEssentialSignalsToOverlay(
+  result: SearchResult,
+  essentialKeys: string[],
+  payloadSignals: PayloadSignalDescriptor[],
+): SearchResult {
   const byNamespace = groupEssentialKeysByNamespace(essentialKeys);
   const overlay = result.rankingOverlay;
   const overlayActive = overlay ? hasOverlayData(overlay) : false;
@@ -173,15 +218,6 @@ export function applyEssentialSignalsToOverlay(result: SearchResult, essentialKe
       if (Object.keys(levelFiltered).length > 0) filtered[level] = levelFiltered;
     }
 
-    if (overlay && overlayActive) {
-      for (const level of ["file", "chunk"] as const) {
-        const overlayLevel = overlay[level];
-        if (overlayLevel && Object.keys(overlayLevel).length > 0) {
-          filtered[level] = { ...(filtered[level] ?? {}), ...overlayLevel };
-        }
-      }
-    }
-
     if (Object.keys(filtered).length > 0) {
       newPayload[namespace] = filtered;
     } else if (newPayload[namespace] !== undefined) {
@@ -189,6 +225,7 @@ export function applyEssentialSignalsToOverlay(result: SearchResult, essentialKe
     }
   }
 
+  if (overlay && overlayActive) mergeOverlayIntoOwners(newPayload, overlay, buildSignalKeyMap(payloadSignals));
   if (overlay?.preset) newPayload.preset = overlay.preset;
 
   return { ...result, payload: newPayload };
@@ -230,6 +267,7 @@ export function filterMetaOnly(
   payloadSignals: PayloadSignalDescriptor[],
   essentialTrajectoryFields: string[],
 ): Record<string, unknown>[] {
+  const signalKeyMap = buildSignalKeyMap(payloadSignals);
   return results.map((r) => {
     // The score stays on the hit — a payload copy duplicated it (bd tea-rags-mcp-947xf).
     const meta: Record<string, unknown> = {};
@@ -243,27 +281,7 @@ export function filterMetaOnly(
     const fullGit = r.payload?.git as Record<string, Record<string, unknown>> | undefined;
 
     // Always include essential trajectory fields from full payload
-    let gitResult: Record<string, unknown> = {};
-    if (fullGit) {
-      gitResult = filterGitByEssential(fullGit, essentialTrajectoryFields);
-    }
-
-    if (overlay && hasOverlayData(overlay)) {
-      const gitFromOverlay = buildGitFromOverlay(overlay);
-      // Overlay signals take precedence over essential fields
-      for (const level of ["file", "chunk"] as const) {
-        if (gitFromOverlay[level]) {
-          gitResult[level] = {
-            ...(gitResult[level] as Record<string, unknown> | undefined),
-            ...(gitFromOverlay[level] as Record<string, unknown>),
-          };
-        }
-      }
-      meta.preset = overlay.preset;
-    } else if (overlay?.preset) {
-      meta.preset = overlay.preset;
-    }
-
+    const gitResult = fullGit ? filterGitByEssential(fullGit, essentialTrajectoryFields) : {};
     if (Object.keys(gitResult).length > 0) meta.git = gitResult;
 
     // Preserve codegraph nested section (tea-rags-mcp-0am0). MCP callers in
@@ -278,6 +296,12 @@ export function filterMetaOnly(
     if (codegraph && typeof codegraph === "object") {
       meta.codegraph = codegraph;
     }
+
+    // Overlay values take precedence over essential/raw fields, each inside the
+    // namespace that owns it — a static or codegraph key never lands in `git`
+    // (bd tea-rags-mcp-rtjrn).
+    if (overlay && hasOverlayData(overlay)) mergeOverlayIntoOwners(meta, overlay, signalKeyMap);
+    if (overlay?.preset) meta.preset = overlay.preset;
 
     return meta;
   });

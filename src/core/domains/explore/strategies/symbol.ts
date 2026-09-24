@@ -217,7 +217,9 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     processed = processed.slice(0, limit);
 
     if (originalCtx.metaOnly) {
-      processed = processed.map((r) => applyEssentialSignalsToOverlay(r, this.essentialKeys) as ExploreResult);
+      processed = processed.map(
+        (r) => applyEssentialSignalsToOverlay(r, this.essentialKeys, this.payloadSignals) as ExploreResult,
+      );
     }
 
     return processed;
