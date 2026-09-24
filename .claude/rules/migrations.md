@@ -97,16 +97,24 @@ collections/snapshots/caches already contain:
 
 ## Migration Pipelines
 
-Four run through `Migrator` on the reindex sweep; `database` runs separately,
+Five run through `Migrator` on the reindex sweep; `database` runs separately,
 against the DuckDB client, on graph open.
 
-| Pipeline   | What it upgrades         | Version storage                           | Runner class       |
-| ---------- | ------------------------ | ----------------------------------------- | ------------------ |
-| `schema`   | Qdrant collection schema | `__schema_metadata__` point in collection | `SchemaMigrator`   |
-| `snapshot` | On-disk snapshot format  | Implicit (derived from format on disk)    | `SnapshotMigrator` |
-| `sparse`   | BM25 sparse vectors      | `__schema_metadata__.sparseVersion`       | `SparseMigrator`   |
-| `stats`    | Collection stats cache   | Implicit (derived from the data present)  | `StatsMigrator`    |
-| `database` | Codegraph DuckDB tables  | `schema_migrations` table in the DB       | `runMigrations`    |
+| Pipeline         | What it upgrades                    | Version storage                           | Runner class           |
+| ---------------- | ----------------------------------- | ----------------------------------------- | ---------------------- |
+| `schema`         | Qdrant collection schema            | `__schema_metadata__` point in collection | `SchemaMigrator`       |
+| `snapshot`       | On-disk snapshot format             | Implicit (derived from format on disk)    | `SnapshotMigrator`     |
+| `sparse`         | BM25 sparse vectors                 | `__schema_metadata__.sparseVersion`       | `SparseMigrator`       |
+| `stats`          | Collection stats cache              | Implicit (derived from the data present)  | `StatsMigrator`        |
+| `payloadIndexes` | Trajectory-declared payload indexes | Implicit (derived from `payload_schema`)  | `PayloadIndexMigrator` |
+| `database`       | Codegraph DuckDB tables             | `schema_migrations` table in the DB       | `runMigrations`        |
+
+`payloadIndexes` (bd tea-rags-mcp-mimq0) reconciles every run against
+`declaredPayloadIndexSet` (`api/internal/composition.ts`): it CREATES a declared
+index the collection lacks and NAMES — never drops — one nothing declares. A
+field rank_chunks can order by is declared by that derivation, so a new derived
+signal source needs no migration; a new FILTER-only index still takes the
+`schema` route below, and removing an index is still a `schema` drop.
 
 ### Deriving the version from data, not from a declaration
 
@@ -248,6 +256,8 @@ Migrations hardcoded in runner constructors — no auto-discovery:
 - Snapshot: `src/core/domains/maintenance/migration/snapshot-migrator.ts`
 - Sparse: `src/core/domains/maintenance/migration/sparse-migrator.ts`
 - Stats: `src/core/domains/maintenance/migration/stats-migrator.ts`
+- Payload indexes:
+  `src/core/domains/maintenance/migration/payload-index-migrator.ts`
 - Database:
   `src/core/domains/maintenance/migration/database/migrations/index.ts`
 

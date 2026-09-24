@@ -231,6 +231,14 @@ export class SchemaManager {
     private readonly qdrant: QdrantManager,
     private readonly schemaVersion: number,
     private readonly sparseVersion = 0,
+    /**
+     * The trajectory-declared indexes a collection must carry beyond the ones
+     * this class owns — the `required` half of the composition root's
+     * `declaredPayloadIndexSet` (bd tea-rags-mcp-mimq0). A new collection gets
+     * them here because the reindex sweep that reconciles them never runs on
+     * one; the adapter cannot derive them itself (domain-boundaries rule).
+     */
+    private readonly declaredIndexes: ReadonlyMap<string, PayloadFieldIndexSchema> = new Map(),
   ) {
     this.metadataPoint = new SchemaMetadataPointStore(qdrant);
   }
@@ -309,6 +317,14 @@ export class SchemaManager {
     // Create the keyword index the `contributor` typed filter matches on
     // (git.file.recentAuthors — every recent-window committer, dominant or not).
     for (const { path, schema } of RECENT_AUTHORS_FILTER_INDEXES) {
+      await this.qdrant.createPayloadIndex(collectionName, path, schema);
+      indexes.push(path);
+    }
+
+    // Create the trajectory-declared indexes (rank_chunks order-by fields) the
+    // composition root passed in, skipping any this class already created.
+    for (const [path, schema] of this.declaredIndexes) {
+      if (indexes.includes(path)) continue;
       await this.qdrant.createPayloadIndex(collectionName, path, schema);
       indexes.push(path);
     }

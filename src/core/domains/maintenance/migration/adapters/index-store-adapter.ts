@@ -7,10 +7,12 @@
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { PayloadFieldIndex } from "../../../../adapters/qdrant/payload-index.js";
+import type { PayloadFieldIndexSchema } from "../../../../adapters/qdrant/schema-manager.js";
 import { SchemaMetadataPointStore } from "../../../../adapters/qdrant/schema-metadata-point.js";
-import type { IndexStore } from "../types.js";
+import { resolvePhysicalCollection } from "../../../../infra/collection-name.js";
+import type { IndexStore, PayloadIndexStore } from "../types.js";
 
-export class IndexStoreAdapter implements IndexStore {
+export class IndexStoreAdapter implements IndexStore, PayloadIndexStore {
   private readonly metadataPoint: SchemaMetadataPointStore;
 
   constructor(private readonly qdrant: QdrantManager) {
@@ -95,5 +97,13 @@ export class IndexStoreAdapter implements IndexStore {
 
   async dropPayloadIndex(collection: string, field: string): Promise<void> {
     await this.qdrant.deletePayloadIndex(collection, field);
+  }
+
+  async resolvePhysicalCollection(collection: string): Promise<string> {
+    return resolvePhysicalCollection(collection, await this.qdrant.aliases.listAliases());
+  }
+
+  async createPayloadIndex(collection: string, field: string, schema: PayloadFieldIndexSchema): Promise<void> {
+    await this.qdrant.createPayloadIndex(collection, field, schema);
   }
 }
