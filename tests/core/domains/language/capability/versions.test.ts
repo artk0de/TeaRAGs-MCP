@@ -342,9 +342,12 @@ describe("seeded support versions", () => {
       // at RUBY's own defs-per-member p99, not the polyglot corpus one (taxdome:
       // 19, not 16), so an index built by walker 7 reports as `ambiguous` the
       // 17–19-survivor fans this one materializes as edges.
+      // typescript walker 15: bd tea-rags-mcp-g7h1y keeps the member edge of a
+      // `.call` / `.apply` / `.bind` whose receiver's declared type declares
+      // that member (`this.connection.call(fn)` → `QdrantConnection#call`).
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 14],
+        ["typescript", 15],
         ["javascript", 6],
         ["python", 13],
         ["ruby", 8],

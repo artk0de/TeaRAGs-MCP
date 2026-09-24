@@ -717,6 +717,19 @@ export interface CallRef {
    */
   dynamicSend?: boolean;
   /**
+   * The literal `<receiver>.call(…)` / `.apply(…)` / `.bind(…)` member call the
+   * walker UNWRAPPED this ref from (bd tea-rags-mcp-f2u54). `receiver`/`member`
+   * above name the invoked function; this names the invoker as written.
+   *
+   * The unwrap is a syntactic bet that the invoker's receiver is a function. It
+   * is wrong whenever the receiver is an OBJECT whose type declares a member of
+   * that name — `this.connection.call(fn)` on a class with a real `call` method
+   * — and only the resolver, holding the symbol table, can tell the two apart.
+   * So the walker keeps both readings and the resolver picks (bd
+   * tea-rags-mcp-g7h1y).
+   */
+  functionInvokerSite?: { receiver: string; member: string };
+  /**
    * Set by the walker when this call site is a JSX component tag rather than a
    * call expression — `<Foo prop={x} />`, which is sugar over
    * `React.createElement(Foo, …)` (or the automatic runtime's `jsx(Foo, …)`).

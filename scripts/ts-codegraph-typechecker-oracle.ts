@@ -928,6 +928,9 @@ function constructorShortName(expression: ts.LeftHandSideExpression): string | n
  * what an edge points at and what production's JSX pass asks for too.
  */
 function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: CallRef): OracleQueryResult {
+  const invokerMember = queryFunctionInvokerMember(handle, cache, call);
+  if (invokerMember !== null) return invokerMember;
+
   const node = locateCallLike(handle.sourceFile, call);
   if (node === null) return queryValueReference(handle, cache, call);
 
@@ -939,6 +942,37 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
   const categories = classifyTypeFeatures(node, checker, signature, declaration);
 
   return placeDeclaration(declaration, cache, categories);
+}
+
+/**
+ * The checker's answer for an unwrapped `.call` / `.apply` / `.bind` site read
+ * as the MEMBER call it is written as, or `null` when that reading is not the
+ * truth (bd tea-rags-mcp-g7h1y).
+ *
+ * The walker keeps the literal invoker on `functionInvokerSite` because the
+ * unwrap is only right for a function receiver; `this.connection.call(fn)` on
+ * a class declaring `call` is an ordinary member call. The checker settles it
+ * from the invoker's own signature: an in-project declaration means the
+ * receiver's type declares the member, so that IS the ground truth. Anything
+ * else — `Function.prototype.call` in `lib.es5.d.ts`, no declaration at all —
+ * is the function-receiver case, left to {@link queryValueReference} exactly as
+ * before.
+ */
+export function queryFunctionInvokerMember(
+  handle: TSProgramHandle,
+  cache: TSProgramCache,
+  call: CallRef,
+): OracleQueryResult | null {
+  const site = call.functionInvokerSite;
+  if (site === undefined) return null;
+  const node = findCallExpression(handle.sourceFile, call.startLine, site.member);
+  if (node === null) return null;
+
+  const { checker } = handle;
+  const signature = checker.getResolvedSignature(node);
+  const declaration = signature?.declaration ?? declarationViaSymbol(node, checker);
+  const result = placeDeclaration(declaration, cache, classifyTypeFeatures(node, checker, signature, declaration));
+  return result.outcome.kind === "inProject" ? result : null;
 }
 
 /**
