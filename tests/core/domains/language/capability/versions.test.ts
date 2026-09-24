@@ -258,6 +258,9 @@ describe("seeded support versions", () => {
       // swift walker 26: generic closure parameters bind through the callee's
       // declaration, so an index built by walker 25 leaves every such closure
       // parameter untyped.
+      // swift walker 27: the codegraph resolve-rate denominator excludes typed
+      // receivers whose member no reachable type declares, so a rate a walker-26
+      // run persisted is lower than this build reports.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -292,7 +295,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 26],
+        ["swift", 27],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

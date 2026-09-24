@@ -14,6 +14,15 @@ export const capability: LanguageCapability = {
     summary:
       "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
   },
+  // walker 27: the resolve-rate denominator stops charging a call whose receiver
+  // is TYPED and whose member no type on that receiver's hierarchy, conformances
+  // or possible SDK-protocol extensions declares (`task.resume()` on a
+  // `URLSessionTask`, `super.awakeFromNib()` on a UIKit superclass,
+  // `MainActor.run`), and a construction of an extension-only type whose labels
+  // no extension initializer takes (bd tea-rags-mcp-y99pg.11). Edges are
+  // unchanged; the persisted `cg_run_stats` rate moves: Alamofire TOTAL 0.836 ->
+  // 0.892 (1209/1446 -> 1209/1355), Quick 0.917 -> 0.971 (366/399 -> 366/377),
+  // every excluded oracle-covered site the typechecker's own SDK target.
   // walker 26: a type publishes its generic parameters, the generic arguments of
   // its stored properties and the parameter types of each method's closure on
   // `typeDeclarations`, and a closure literal the file cannot type binds its
@@ -334,7 +343,7 @@ export const capability: LanguageCapability = {
   // must route `--force`, not `--force-enrichments`.
   // chunking 4: the grammar bump above — files 0.7.1 could not parse now
   // chunk at real symbol boundaries, so the chunk set moves again.
-  versions: { chunking: 4, walker: 26, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 27, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

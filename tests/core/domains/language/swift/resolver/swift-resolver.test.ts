@@ -2125,3 +2125,222 @@ describe("SwiftCallResolver — a stored property seen as a binding still lends 
     );
   });
 });
+
+/**
+ * The miss classifier's denominator question for a RECEIVER call (bd
+ * tea-rags-mcp-y99pg.11): Swift is statically typed, so once the receiver's
+ * type is known, the only declarations a call can reach are that type's own,
+ * its ancestors' and conformances', and a project extension of a protocol the
+ * SDK may make it conform to. A project member of the same name anywhere else
+ * is a namesake, not a definition this call has.
+ */
+describe("SwiftCallResolver — in-project definition of a typed receiver's member", () => {
+  const sdkReceiverTable = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#resume", scope: ["Request"] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+    ],
+    "Sources/MultipartFormData.swift": [
+      { symbolId: "MultipartFormData", scope: [] },
+      { symbolId: "MultipartFormData#append", scope: ["MultipartFormData"] },
+    ],
+    "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+  });
+  const declarations = {
+    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+    "Sources/MultipartFormData.swift": [{ typeId: "MultipartFormData", reopens: false }],
+    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+  };
+
+  it("answers false for an SDK-typed local whose member only a project namesake declares", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+      localBindings: { task: [{ line: 5, type: "URLSessionTask" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("task", "resume"), context)).toBeNull();
+    expect(resolver.hasInProjectDefinition(call("task", "resume"), context)).toBe(false);
+  });
+
+  it("keeps the denominator for an undeclared UpperCamelCase receiver, which may be a global value", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+    });
+    // `let AF = Session.default` — nothing the index publishes types it.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("AF", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator for a receiver typed AnyObject, where lookup is dynamic", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+      localBindings: { target: [{ line: 5, type: "AnyObject" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator when the typed receiver's own hierarchy declares the member", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+      localBindings: { request: [{ line: 5, type: "Request" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("request", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator when a project extension of an SDK protocol declares the member", () => {
+    const withProtocolExtension = table({
+      "Sources/Collection+Alamofire.swift": [
+        { symbolId: "Collection", scope: [] },
+        { symbolId: "Collection#resume", scope: ["Collection"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+    });
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: withProtocolExtension,
+      typeDeclarations: {
+        "Sources/Collection+Alamofire.swift": [{ typeId: "Collection", reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+      },
+      localBindings: { tasks: [{ line: 5, type: "Array" }] },
+    });
+    // `Array: Collection` is the SDK's fact, not the project's — it cannot be
+    // ruled out, so the site stays a miss the chain is charged for.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("tasks", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator for a receiver it cannot type", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("$0", "append"), context)).toBe(true);
+  });
+
+  it("answers false for a construction whose labels no extension initializer declares", () => {
+    const withInit = table({
+      "Sources/Result+Alamofire.swift": [
+        { symbolId: "Result", scope: [] },
+        { symbolId: "Result#init", scope: ["Result"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+    });
+    withInit.upsertFile("Sources/Result+Alamofire.swift", [
+      {
+        symbolId: "Result",
+        fqName: "Result",
+        shortName: "Result",
+        relPath: "Sources/Result+Alamofire.swift",
+        scope: [],
+      },
+      {
+        symbolId: "Result#init",
+        fqName: "Result#init",
+        shortName: "init",
+        relPath: "Sources/Result+Alamofire.swift",
+        scope: ["Result"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["value", "error"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+    ]);
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: withInit,
+      typeDeclarations: {
+        "Sources/Result+Alamofire.swift": [{ typeId: "Result", reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    const catching = { ...call(null, "Result"), argCount: 0, kwargKeys: [], passesBlock: true };
+    const valueError = { ...call(null, "Result"), argCount: 0, kwargKeys: ["value", "error"], passesBlock: false };
+    expect(resolver.hasInProjectDefinition(catching, context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(valueError, context)).toBe(true);
+  });
+});
+
+describe("SwiftCallResolver — in-project definition of an SDK type receiver and of super", () => {
+  const t = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#data", scope: ["Request"] },
+      { symbolId: "Request#run", scope: ["Request"] },
+    ],
+    "Sources/Spec.swift": [
+      { symbolId: "Spec", scope: [] },
+      { symbolId: "Spec#recordFailure", scope: ["Spec"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+    "Sources/Spec.swift": [{ typeId: "Spec", reopens: false, conforms: ["XCTestCase"] }],
+  };
+
+  it("answers false for a member read off an SDK type the vocabulary names", () => {
+    const context = ctx({
+      callerFile: "Sources/Request.swift",
+      callerScope: ["Request"],
+      symbolTable: t,
+      typeDeclarations,
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("JSONSerialization", "data"), context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("MainActor", "run"), context)).toBe(false);
+  });
+
+  it("answers false for super when the SDK superclass is where the member lives", () => {
+    const context = ctx({
+      callerFile: "Sources/Spec.swift",
+      callerScope: ["Spec"],
+      symbolTable: t,
+      typeDeclarations,
+      classExtends: { Spec: "XCTestCase" },
+    });
+    // `Spec#recordFailure` is the override calling up, not the target.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("super", "recordFailure"), context)).toBe(false);
+  });
+});
+
+describe("SwiftCallResolver — an implicit initializer of a project type stays in the denominator", () => {
+  it("keeps super.init() on a project superclass that declares no initializer", () => {
+    const t = table({
+      "Sources/World.swift": [
+        { symbolId: "WrapperBase", scope: [] },
+        { symbolId: "Wrapper", scope: [] },
+        { symbolId: "Other#init", scope: ["Other"] },
+        { symbolId: "Other", scope: [] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/World.swift",
+      callerScope: ["Wrapper"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/World.swift": [
+          { typeId: "WrapperBase", reopens: false, conforms: ["NSObject"] },
+          { typeId: "Wrapper", reopens: false, conforms: ["WrapperBase"] },
+          { typeId: "Other", reopens: false },
+        ],
+      },
+      classExtends: { Wrapper: "WrapperBase", WrapperBase: "NSObject" },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("super", "init"), context)).toBe(true);
+  });
+});

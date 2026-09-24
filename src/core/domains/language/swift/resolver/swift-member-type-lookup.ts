@@ -80,6 +80,14 @@ export interface SwiftClosureSignature {
   readonly ownerTypeId: string;
 }
 
+/** What a member lookup on one type can reach: see {@link SwiftMemberTypeLookup#memberReach}. */
+export interface SwiftMemberReach {
+  /** Whether a type the lookup reads declares the member at all. */
+  readonly declared: boolean;
+  /** The types the lookup reads, as written and as qualified. */
+  readonly types: ReadonlySet<string>;
+}
+
 export class SwiftMemberTypeLookup {
   private readonly linearizers = new RunScopedMemo<CallContext, AncestorLinearizer<CallContext>>();
   private readonly fields = new SwiftTypeFieldIndex();
@@ -170,6 +178,30 @@ export class SwiftMemberTypeLookup {
       return { types, genericParameters: swiftGenericParameters(typeId, ctx), ownerTypeId: typeId };
     });
     return scan.target ?? undefined;
+  }
+
+  /**
+   * Every type a member lookup on `typeName` reads — the type itself, its
+   * superclass chain and the conformances the project names for any of them —
+   * each in both the spelling the chain keys it by and its qualified id, and
+   * whether any of them declares `member` in any overload (bd
+   * tea-rags-mcp-y99pg.11).
+   *
+   * The denominator question, not the resolution one: a call ARGUMENT that
+   * fits no overload is still a call on a member the project declares, so no
+   * call narrows the answer here.
+   */
+  memberReach(typeName: string, member: string, ctx: CallContext): SwiftMemberReach {
+    const { order } = this.linearizerFor(ctx).linearize(typeName);
+    const types = new Set<string>();
+    let declared = false;
+    for (const candidate of order) {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      types.add(candidate);
+      types.add(typeId);
+      if (!declared && declaresMember(typeId, member, ctx)) declared = true;
+    }
+    return { declared, types };
   }
 
   /**
