@@ -55,5 +55,9 @@ export const capability: LanguageCapability = {
   // language declares no longer makes the hop ambiguous or lands a Python
   // import on a `.ts` file, so imported-name, module-member and ancestor-base
   // edges move on polyglot repos.
-  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
+  // walker 12: bd tea-rags-mcp-nbf8q — the facade answers
+  // `hasInProjectDefinition` from Python files only, so a miss whose only
+  // namesake is a `.ts` / `.rb` declaration books as `noInProjectDef` instead of
+  // `missWithInProjectDef`. No edge moves; the persisted resolve rate does.
+  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
 };

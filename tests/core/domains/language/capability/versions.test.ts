@@ -325,12 +325,15 @@ describe("seeded support versions", () => {
       // python walker 11: bd tea-rags-mcp-nbf8q gives the package re-export
       // hop a Python-only lookup, so a namesake another language declares no
       // longer blocks it or lands a Python import on a `.ts` file.
+      // python walker 12, ruby walker 7: bd tea-rags-mcp-nbf8q — both facades
+      // answer `hasInProjectDefinition` from their own files, so a miss whose
+      // only namesake is another language's moves out of the charged bucket.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 13],
         ["javascript", 5],
-        ["python", 11],
-        ["ruby", 6],
+        ["python", 12],
+        ["ruby", 7],
         ["java", 3],
         ["rust", 3],
         ["go", 5],
