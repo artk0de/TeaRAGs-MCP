@@ -1721,6 +1721,28 @@ describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)
   });
 });
 
+describe("swift walker — protocol compositions (bd tea-rags-mcp-y99pg.28)", () => {
+  it("types a composition of one protocol and marker protocols as that protocol", () => {
+    const src = [
+      "func receive<S>(subscriber: S) where S: Subscriber & Sendable {",
+      "  subscriber.receive(1)",
+      "}",
+      "func take<T: AnyObject & Monitor>(monitor: T, both: any Monitor & Logger, any: any Sendable & Monitor) {",
+      "  monitor.log()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "subscriber", 2)).toBe("Subscriber");
+    expect(typeAt(src, "monitor", 5)).toBe("Monitor");
+    expect(typeAt(src, "any", 5)).toBe("Monitor");
+  });
+
+  it("types nothing for a composition of two protocols", () => {
+    const src = ["func take(both: any Monitor & Logger) {", "  both.log()", "}", ""].join("\n");
+    expect(typeAt(src, "both", 2)).toBeUndefined();
+  });
+});
+
 describe("swift walker — literal-initialized locals (bd tea-rags-mcp-y99pg.27)", () => {
   const src = [
     "func go() {",

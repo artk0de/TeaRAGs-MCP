@@ -294,6 +294,9 @@ describe("seeded support versions", () => {
       // swift walker 40: string and array literals bind their default types,
       // so an index built by walker 39 charges a literal-bound local's SDK
       // calls as misses.
+      // swift walker 41: a protocol composition types as its one non-marker
+      // protocol, so an index built by walker 40 leaves `S: Subscriber &
+      // Sendable` values untyped.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -328,7 +331,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 40],
+        ["swift", 41],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

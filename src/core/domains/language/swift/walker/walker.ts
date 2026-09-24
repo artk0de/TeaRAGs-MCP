@@ -1925,6 +1925,16 @@ function swiftTypeNodeAfter(node: AstNode, separator: string): AstNode | null {
  */
 const SWIFT_METATYPE_SUFFIX = /\.(?:Type|Protocol)$/;
 
+/** Constraints that declare no member a call could dispatch on: marker protocols and `AnyObject`. */
+const SWIFT_MARKER_PROTOCOLS: ReadonlySet<string> = new Set([
+  "Sendable",
+  "AnyObject",
+  "Copyable",
+  "Escapable",
+  "BitwiseCopyable",
+  "SendableMetatype",
+]);
+
 function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   if (!typeNode) return NO_TYPE;
   if (typeNode.type === "optional_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
@@ -1943,6 +1953,12 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   // `any P` and `some P` both dispatch a member call on P's requirement.
   if (typeNode.type === "existential_type" || typeNode.type === "opaque_type") {
     return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
+  }
+  // `Subscriber & Sendable` dispatches on Subscriber: a marker protocol declares
+  // no member. Two real protocols leave the lookup undecided (bd tea-rags-mcp-y99pg.28).
+  if (typeNode.type === "protocol_composition_type") {
+    const real = typeNode.namedChildren.filter((c) => !SWIFT_MARKER_PROTOCOLS.has(c.text.trim()));
+    return real.length === 1 ? swiftTypeFactOf(real[0]) : NO_TYPE;
   }
   if (typeNode.type === "tuple_type") return swiftTypeFactOf(parenthesizedSwiftTypeNode(typeNode));
   if (typeNode.type === "metatype") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
