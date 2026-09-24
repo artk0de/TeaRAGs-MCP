@@ -35,8 +35,8 @@ export class DecompositionCompositePreset implements CompositeRerankPreset {
     chunkDensity: 0.15,
   };
   readonly overlayMask: OverlayMask = {
-    chunk: ["codegraph.chunk.fanOut", "codegraph.chunk.fanIn", "codegraph.chunk.pageRank"],
-    file: ["methodLines", "codegraph.file.transitiveImpact"],
+    chunk: ["methodLines", "codegraph.chunk.fanOut", "codegraph.chunk.fanIn", "codegraph.chunk.pageRank"],
+    file: ["codegraph.file.transitiveImpact"],
   };
   readonly groupBy = "parentSymbolId";
 }

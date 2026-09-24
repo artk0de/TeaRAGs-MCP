@@ -24,7 +24,7 @@ export class DecompositionPreset implements RerankPreset {
     chunkDensity: 0.2,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["methodLines"],
+    chunk: ["methodLines"],
   };
   readonly groupBy = "parentSymbolId";
 }
