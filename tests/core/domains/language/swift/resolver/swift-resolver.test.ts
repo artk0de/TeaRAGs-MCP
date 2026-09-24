@@ -3525,4 +3525,59 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
     expect(resolver.hasInProjectDefinition(call("type", "map", 3), context)).toBe(false);
     expect(resolver.hasInProjectDefinition(call("type", "map", 20), context)).toBe(true);
   });
+
+  describe("a value known only by a CLASS bound", () => {
+    // `type.paths(forResourcesOfType:inDirectory:)` inside `extension
+    // AlamofireExtension where ExtendedType: Bundle`, beside the project's own
+    // `AlamofireExtension.paths(forResourcesOfTypes:)`.
+    const bounded = (bound: string, extra: Record<string, { symbolId: string; scope: string[] }[]> = {}) => {
+      const symbolTable = table({
+        "Sources/AlamofireExtended.swift": [
+          { symbolId: "AlamofireExtension", scope: [] },
+          { symbolId: "AlamofireExtension#paths", scope: ["AlamofireExtension"] },
+        ],
+        ...extra,
+      });
+      const declarations: Record<string, { typeId: string; reopens: boolean; conforms?: string[] }[]> = {};
+      for (const [relPath, defs] of Object.entries(extra)) {
+        declarations[relPath] = defs
+          .filter((d) => d.scope.length === 0)
+          .map((d) => ({ typeId: d.symbolId, reopens: false, conforms: [bound] }));
+      }
+      return ctx({
+        callerFile: "Sources/Bundle.swift",
+        callerScope: ["AlamofireExtension"],
+        symbolTable,
+        typeDeclarations: {
+          ...declarations,
+          "Sources/AlamofireExtended.swift": typeDeclarations["Sources/AlamofireExtended.swift"],
+          "Sources/Bundle.swift": [
+            {
+              typeId: "AlamofireExtension",
+              reopens: true,
+              whereClause: { startLine: 1, endLine: 9, bounds: { ExtendedType: bound } },
+            },
+          ],
+        },
+      });
+    };
+
+    it("proves external a member only a project type outside the bound's hierarchy declares", () => {
+      expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), bounded("Bundle"))).toBe(false);
+    });
+
+    it("keeps the denominator when a project subclass of the bound declares the member", () => {
+      const withSubclass = bounded("Bundle", {
+        "Sources/AppBundle.swift": [
+          { symbolId: "AppBundle", scope: [] },
+          { symbolId: "AppBundle#paths", scope: ["AppBundle"] },
+        ],
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), withSubclass)).toBe(true);
+    });
+
+    it("keeps the denominator under a PROTOCOL bound, whose conformers need not say so", () => {
+      expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), bounded("Hashable"))).toBe(true);
+    });
+  });
 });

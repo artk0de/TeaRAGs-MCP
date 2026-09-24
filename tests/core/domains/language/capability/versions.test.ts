@@ -365,6 +365,9 @@ describe("seeded support versions", () => {
       // swift walker 49: bd tea-rags-mcp-y99pg.34 — `genericFieldParameters` and
       // `whereClause` are new channel content, so an index built by walker 48
       // cannot type a generic-typed property inside a constrained extension.
+      // swift walker 50: bd tea-rags-mcp-y99pg.34 — a receiver known by an SDK
+      // class bound leaves the denominator for a member no subclass declares, so
+      // an index built by walker 49 still charges those sites as misses.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
@@ -374,7 +377,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 49],
+        ["swift", 50],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
