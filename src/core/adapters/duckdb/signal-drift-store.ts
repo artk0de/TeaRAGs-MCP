@@ -211,14 +211,17 @@ export class DuckDbSignalDriftStore {
    * forget those rows and heal them once for nothing.
    */
   async refreshSymbolSignalsPrev(): Promise<void> {
+    // Recreated, not `DELETE`d: a keyed table keeps every deleted generation in
+    // the file (bd tea-rags-mcp-dvzdm — 1.78M stored rows for 107k live on
+    // taxdome). `recreateEmptyTable` carries the reason and the DDL it keeps.
     return this.session.transaction(async () => {
-      await this.session.run("DELETE FROM cg_symbol_signals_prev");
+      await this.session.recreateEmptyTable("cg_symbol_signals_prev");
       await this.session.run(
         `${CURRENT_SYMBOL_SIGNALS}
          INSERT INTO cg_symbol_signals_prev (rel_path, symbol_id, fan_in, fan_out, page_rank)
          SELECT rel_path, symbol_id, fan_in, fan_out, page_rank FROM cur`,
       );
-      await this.session.run("DELETE FROM cg_file_signals_prev");
+      await this.session.recreateEmptyTable("cg_file_signals_prev");
       await this.session.run(
         `${CURRENT_FILE_SIGNALS}
          INSERT INTO cg_file_signals_prev (rel_path, fan_in, fan_out)

@@ -65,6 +65,10 @@ export const DAEMON_OPS = [
   // Baseline refresh for the derived-signal drift diff (bd tea-rags-mcp-a2ddb).
   // A WRITE: it replaces both `cg_*_signals_prev` tables in one transaction.
   "refreshSymbolSignalsPrev",
+  // Rewrite the collection's graph file without its dead row versions, when
+  // enough of it is dead (bd tea-rags-mcp-dvzdm). A WRITE: admitted in write
+  // order, and the swap happens inside the daemon, which owns the file.
+  "compactStorage",
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
@@ -116,7 +120,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
     | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile

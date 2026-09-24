@@ -485,3 +485,39 @@ export class DuckDbCloseFailedError extends InfraError {
     });
   }
 }
+
+/**
+ * A codegraph storage compaction (bd tea-rags-mcp-dvzdm) did not complete.
+ *
+ * `stage` says how far it got, and therefore what is on disk:
+ * - `copy` — the staged copy could not be written or did not match the live
+ *   database (`detail` names what differed); the staging file was removed and
+ *   the live file never moved.
+ * - `publish` — the atomic rename of the staged copy over the live file
+ *   failed; the live file is still the original and the client still has it
+ *   open.
+ * - `reopen` — the compacted file IS published, but opening it failed; the
+ *   client reports no open file, so its pool retires it and the next acquire
+ *   opens the path afresh.
+ *
+ * A compaction is best-effort: the caller logs this and a later run retries.
+ */
+export class CodegraphStorageCompactionFailedError extends InfraError {
+  readonly stage: "copy" | "publish" | "reopen";
+
+  constructor(dbPath: string, stage: "copy" | "publish" | "reopen", cause?: Error, detail?: string) {
+    super({
+      code: "INFRA_CODEGRAPH_STORAGE_COMPACTION_FAILED",
+      message: `Codegraph storage compaction of ${dbPath} failed at the ${stage} stage${detail ? `: ${detail}` : ""}`,
+      hint:
+        stage === "reopen"
+          ? "The compacted database is in place but could not be opened; the next codegraph operation " +
+            "reopens it. Inspect cause for the driver message."
+          : "The original database file is untouched. The next index run retries the compaction; " +
+            "inspect cause for the driver or filesystem message.",
+      httpStatus: 500,
+      cause,
+    });
+    this.stage = stage;
+  }
+}

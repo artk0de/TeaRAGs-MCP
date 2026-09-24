@@ -38,6 +38,7 @@ import type {
   ChunkGraphSignals,
   CodegraphPass1FileAggregates,
   CodegraphSignalDrift,
+  CodegraphStorageCompactionOutcome,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -62,7 +63,7 @@ import type {
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
 import { DuckDbGraphAnalyticsStore } from "./graph-analytics-store.js";
-import { DuckDbGraphSession, type DuckDbGraphSessionOptions } from "./graph-session.js";
+import { DuckDbGraphSession, type DuckDbGraphSessionOptions, type OpenedDatabaseFile } from "./graph-session.js";
 import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
@@ -120,6 +121,16 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async checkpoint(): Promise<void> {
     return this.session.checkpoint();
+  }
+
+  /** See `GraphDbClient.compactStorage`; the protocol is `DuckDbGraphSession#compactDatabaseFile`. */
+  async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
+    return this.session.compactDatabaseFile();
+  }
+
+  /** The database file this client holds open now — what the pool checks its path against. */
+  openedDatabaseFile(): OpenedDatabaseFile | undefined {
+    return this.session.openedDatabaseFile();
   }
 
   async hasData(): Promise<boolean> {

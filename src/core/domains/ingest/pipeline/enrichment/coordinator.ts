@@ -34,7 +34,7 @@ import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
 import type { CodegraphPayloadHealRunner } from "./codegraph-payload-heal.js";
-import { CompletionRunner } from "./completion-runner.js";
+import { CompletionRunner, type CodegraphStorageCompactionRunner } from "./completion-runner.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { computeExtractionRepair, type ExtractionRepair } from "./extraction-repair.js";
 import { FilePhase } from "./file-phase.js";
@@ -289,6 +289,12 @@ export class EnrichmentCoordinator {
      * step rather than running a stub.
      */
     private readonly codegraphHeal?: CodegraphPayloadHealRunner,
+    /**
+     * Reclaims the dead row versions a run leaves in the collection's graph
+     * file (bd tea-rags-mcp-dvzdm). Built beside `codegraphHeal`, by the same
+     * root, under the same condition.
+     */
+    private readonly codegraphCompaction?: CodegraphStorageCompactionRunner,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
@@ -1186,6 +1192,7 @@ export class EnrichmentCoordinator {
       markerStore: this.markerStore,
       executor: this.executor,
       codegraphHeal: this.codegraphHeal,
+      codegraphCompaction: this.codegraphCompaction,
     });
 
     let resolveDone!: (m: EnrichmentMetrics) => void;

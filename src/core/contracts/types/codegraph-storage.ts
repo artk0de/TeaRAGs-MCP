@@ -142,6 +142,42 @@ export interface CodegraphSignalDrift {
 }
 
 /**
+ * Size of a graph store as the compaction decision reads it (bd
+ * tea-rags-mcp-dvzdm): the rows every table answers to `count(*)`, the row
+ * versions its storage still holds (live plus deleted-but-unreclaimed), and the
+ * file's bytes on disk.
+ */
+export interface CodegraphStorageFootprint {
+  liveRows: number;
+  storedRows: number;
+  fileBytes: number;
+}
+
+/**
+ * How one {@link GraphDbClient.compactStorage} call settled. Plain data, so it
+ * survives the daemon's JSON round trip.
+ *
+ * - `belowThreshold` — the store is small, or mostly live rows; nothing to gain.
+ * - `streamOpen` — a stream was reading the file on its own connection; the
+ *   next run tries again.
+ * - `unsupported` — a daemon from a build that predates the operation.
+ */
+export type CodegraphStorageCompactionOutcome =
+  | {
+      readonly kind: "skipped";
+      readonly reason: "belowThreshold" | "streamOpen" | "unsupported";
+      readonly footprint?: CodegraphStorageFootprint;
+    }
+  | {
+      readonly kind: "compacted";
+      readonly bytesBefore: number;
+      readonly bytesAfter: number;
+      readonly liveRows: number;
+      readonly storedRows: number;
+      readonly durationMs: number;
+    };
+
+/**
  * Driver-agnostic graph DB client.
  *
  * Slice 1 ships `DuckDbGraphClient`; slice 4 ships `PostgresGraphClient`.
@@ -527,6 +563,17 @@ export interface GraphDbClient {
    * checkpoint when the WAL is empty is cheap.
    */
   checkpoint: () => Promise<void>;
+
+  /**
+   * Rewrite the store without the dead row versions it keeps, when enough of
+   * it is dead to be worth the cost (bd tea-rags-mcp-dvzdm). The call is safe
+   * to issue after every run: below the threshold it only measures.
+   *
+   * Concurrent calls on the same store wait for it rather than fail, and the
+   * client stays usable afterwards. A failure leaves the previous store intact
+   * and is reported as a typed error; nothing is lost by retrying on a later run.
+   */
+  compactStorage: () => Promise<CodegraphStorageCompactionOutcome>;
 
   /**
    * Atomically replace the cycles table for `scope` with the supplied

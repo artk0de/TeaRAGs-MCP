@@ -9,7 +9,9 @@
  * on open instances; `release(collectionName)` exists for tests.
  *
  * A cached client is handed out only while its path still names the database
- * file it opened — see `acquire` (bd tea-rags-mcp-amh78).
+ * file it holds open — see `acquire` (bd tea-rags-mcp-amh78). A storage
+ * compaction swapping that file under the client (bd tea-rags-mcp-dvzdm) is not
+ * such a replacement: the client reports the file it holds NOW.
  */
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
@@ -46,6 +48,7 @@ import {
   isDaemonDrainRefusal,
 } from "./errors.js";
 import { purgeStaleSpills } from "./spill-files.js";
+import type { CodegraphCompactionPolicy } from "./storage-compaction.js";
 
 /**
  * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`: enough to lose
@@ -113,6 +116,12 @@ export interface GraphDbClientPoolOptions {
    * `adapters` may not import, so every construction site must pass one.
    */
   applyMigrations: DatabaseMigrationApplier;
+  /**
+   * When a client this pool opens compacts its database file (bd
+   * tea-rags-mcp-dvzdm). Absent everywhere in production, so the default
+   * policy applies; tests lower the floor so a small fixture qualifies.
+   */
+  compactionPolicy?: CodegraphCompactionPolicy;
   /**
    * Called after the pool closes — or tries to close — the cached read-write
    * client it held for a collection: a stale client being replaced, `release`,
@@ -212,20 +221,15 @@ export interface GraphDbClientPoolIdleEviction {
 }
 
 /**
- * The database file a cached client opened, as `dev` + `ino` read right after
- * the open. A path check alone cannot tell the file the client writes into from
- * a different database put at the same path since (bd tea-rags-mcp-amh78).
+ * A cached client. The file it holds open is asked of the client itself
+ * (`DuckDbGraphClient#openedDatabaseFile`), not recorded here at open time: a
+ * storage compaction swaps the file under the client (bd tea-rags-mcp-dvzdm),
+ * and an identity snapshotted by the pool would read that as the file being
+ * replaced behind the client's back (bd tea-rags-mcp-amh78).
  */
-interface OpenedDatabaseFile {
-  dev: bigint;
-  ino: bigint;
-}
-
 interface PoolEntry {
   graphDb: DuckDbGraphClient;
   symbolTable: GlobalSymbolTable;
-  /** What `holdsOpenedDatabaseFile` compares the path against on every cached return. */
-  databaseFile: OpenedDatabaseFile;
 }
 
 /**
@@ -419,8 +423,10 @@ export class GraphDbClientPool {
    * opened. One `statSync` per cached return — no directory scan on the hot path.
    */
   private holdsOpenedDatabaseFile(collectionName: PhysicalCollectionName, entry: PoolEntry): boolean {
+    const opened = entry.graphDb.openedDatabaseFile();
+    if (!opened) return false;
     const current = statSync(this.pathFor(collectionName), { bigint: true, throwIfNoEntry: false });
-    return current?.dev === entry.databaseFile.dev && current.ino === entry.databaseFile.ino;
+    return current?.dev === opened.dev && current.ino === opened.ino;
   }
 
   /**
@@ -883,13 +889,11 @@ export class GraphDbClientPool {
         tempDirectory: this.spillDir,
         preserveInsertionOrder: this.options.resources?.preserveInsertionOrder,
       },
+      compactionPolicy: this.options.compactionPolicy,
     });
-    let databaseFile: OpenedDatabaseFile;
     try {
+      // Records the file this open created or found — what every cached return checks.
       await graphDb.init();
-      // The file this open created or found — what every cached return checks.
-      const opened = statSync(dbPath, { bigint: true });
-      databaseFile = { dev: opened.dev, ino: opened.ino };
       // The DDL steps live in the maintenance domain, which adapters may not
       // import — the composition root injects the applier (required option, so
       // a missed call site is a type error rather than a schema-less DB).
@@ -912,7 +916,7 @@ export class GraphDbClientPool {
       }
     }
 
-    const entry: PoolEntry = { graphDb, symbolTable, databaseFile };
+    const entry: PoolEntry = { graphDb, symbolTable };
     this.clients.set(collectionName, entry);
     return entry;
   }

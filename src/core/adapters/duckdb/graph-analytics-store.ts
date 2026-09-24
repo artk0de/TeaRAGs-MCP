@@ -259,7 +259,10 @@ export class DuckDbGraphAnalyticsStore {
    */
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
     return this.session.transaction(async () => {
-      await this.session.exec("DELETE FROM cg_symbols_metrics");
+      // Recreated, not `DELETE`d: the keyed table otherwise keeps every previous
+      // recompute in the file (bd tea-rags-mcp-dvzdm — 4.84M stored rows for 58k
+      // live on taxdome). `recreateEmptyTable` carries the reason.
+      await this.session.recreateEmptyTable("cg_symbols_metrics");
       const rows = [...ranks].map(([vertex, rank]) => {
         const { relPath, symbolId } = parseFileScopedSymbolKey(vertex);
         return [relPath, symbolId, String(rank)];
