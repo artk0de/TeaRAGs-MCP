@@ -138,6 +138,51 @@ export interface ResolvableCallSite {
 type CallResolutionOutcome = "resolved" | "unresolved" | "ambiguous";
 
 /**
+ * Everything pass-2 decided about ONE call site, before any of it is counted
+ * (bd tea-rags-mcp-c6xuu). {@link CallEdgeResolutionRunner#resolveCallSites}
+ * folds it into the run stats; an offline harness folds it into its own
+ * per-kind tally through the same {@link tallyCallSiteVerdict}, so the
+ * dispatch-table fan, the additive `dispatchArgs` join and the
+ * `unnarrowedTemplate` gate reach both by construction.
+ */
+export interface CallSiteVerdict {
+  receiverKind: ReceiverKind;
+  outcome: CallResolutionOutcome;
+  /** The method edges this site pushed, in push order. Empty unless `resolved`. */
+  edges: MethodEdges;
+  /** The over-cap aggregate, present exactly when `outcome === "ambiguous"`. */
+  ambiguousFanout?: AmbiguousFanouts[number];
+  /** Resolved onto a shared self-dispatch entry rather than the concrete hook. */
+  unnarrowedTemplate: boolean;
+  /** The denominator bucket, present exactly when `outcome === "unresolved"`. */
+  missBucket?: ResolveMissBucket;
+}
+
+/**
+ * Fold one verdict into a per-receiver-kind tally — the per-kind half of the
+ * runner's bookkeeping, shared with the offline harnesses. `missWithInProjectDef`
+ * has no counter: it is the residual `getRunMetrics` derives by subtraction.
+ */
+export function tallyCallSiteVerdict(
+  kindTally: Record<ReceiverKind, ReceiverKindTally>,
+  verdict: CallSiteVerdict,
+): void {
+  const row = kindTally[verdict.receiverKind];
+  row.attempted += 1;
+  if (verdict.outcome === "ambiguous") {
+    row.ambiguousFanout += 1;
+    return;
+  }
+  if (verdict.outcome === "resolved") {
+    row.resolved += 1;
+    if (verdict.unnarrowedTemplate) row.unnarrowedTemplate += 1;
+    return;
+  }
+  const bucket = verdict.missBucket;
+  if (bucket !== undefined && bucket !== "missWithInProjectDef") row[bucket] += 1;
+}
+
+/**
  * Generic import→file-edge resolution: synthesise a "call-shaped" lookup per
  * import so the same resolver contract handles import-to-file resolution. Used
  * for every language whose `LanguageSymbolResolver` facade does NOT expose
@@ -243,14 +288,20 @@ export class CallEdgeResolutionRunner {
     return out;
   }
 
-  resolve(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
-    // Resolver capability comes from the injected LanguageFactoryDescriptor (keyed by
-    // language NAME) — each native provider carries its own `CallResolver`.
-    // `create` throws for unregistered languages, so gate on `supported()` first
-    // (the defensive empty extraction emits `language: ""`, never registered).
-    const resolver = this.languageFactory.supported().includes(extraction.language)
-      ? this.languageFactory.create(extraction.language).resolver
+  /**
+   * Resolver capability comes from the injected LanguageFactoryDescriptor (keyed
+   * by language NAME) — each native provider carries its own `CallResolver`.
+   * `create` throws for unregistered languages, so gate on `supported()` first
+   * (the defensive empty extraction emits `language: ""`, never registered).
+   */
+  private resolverFor(language: string): LanguageSymbolResolver | undefined {
+    return this.languageFactory.supported().includes(language)
+      ? this.languageFactory.create(language).resolver
       : undefined;
+  }
+
+  resolve(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
+    const resolver = this.resolverFor(extraction.language);
     const methodEdges: MethodEdges = [];
     // Over-cap ambiguous dispatch fan-outs (bd f2jsb / j0pki) — one aggregate
     // record per suppressed fan-out, persisted alongside this file's edges via
@@ -462,54 +513,88 @@ export class CallEdgeResolutionRunner {
     kindTally: Record<ReceiverKind, ReceiverKindTally>,
   ): void {
     const { stats } = this.runState;
-    this.forEachCallSite(extraction, symbolTable, inputs, ({ chunk, call, localBindings, ctx }) => {
+    this.forEachCallSite(extraction, symbolTable, inputs, (site) => {
+      const verdict = this.judgeCallSite(site, resolver, symbolTable);
+      methodEdges.push(...verdict.edges);
+      if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
+      tallyCallSiteVerdict(kindTally, verdict);
       stats.callsAttempted += 1;
-      const receiverKind = classifyReceiverKind(call, localBindings);
-      kindTally[receiverKind].attempted += 1;
-      const edgesBefore = methodEdges.length;
-      const outcome = this.dispatchCall(call, chunk, ctx, resolver, methodEdges, ambiguousFanouts);
-      if (outcome === "ambiguous") {
+      if (verdict.outcome === "ambiguous") {
         // Over-cap dynamic fan-out (bd f2jsb / j0pki): its own bucket — not a
         // genuine miss, not external. The miss classifiers must NOT count it.
         stats.callsAmbiguousFanout += 1;
-        kindTally[receiverKind].ambiguousFanout += 1;
         return;
       }
-      if (outcome === "resolved") {
+      if (verdict.outcome === "resolved") {
         stats.callsResolved += 1;
-        kindTally[receiverKind].resolved += 1;
-        if (this.landedOnSharedTemplate(methodEdges, edgesBefore, ctx, receiverKind)) {
-          kindTally[receiverKind].unnarrowedTemplate += 1;
-        }
         return;
       }
-      this.classifyMiss(call, ctx, resolver, symbolTable, kindTally, receiverKind);
+      const bucket = verdict.missBucket;
+      if (bucket === "unresolvable") stats.callsUnresolvable += 1;
+      else if (bucket === "externalSkipped") stats.callsExternalSkipped += 1;
+      else if (bucket === "noInProjectDef") stats.callsNoInProjectDef += 1;
+      else if (bucket === "coreAmbiguous") stats.callsCoreAmbiguous += 1;
     });
   }
 
   /**
+   * Resolve ONE call site and decide every counter it moves, without moving
+   * any (bd tea-rags-mcp-c6xuu): the receiver kind, the three-way outcome, the
+   * edges and over-cap aggregate it produced, the shared-template gate and the
+   * miss bucket. The single decision both {@link resolveCallSites} and
+   * {@link callSiteVerdicts} read.
+   */
+  private judgeCallSite(
+    { chunk, call, localBindings, ctx }: ResolvableCallSite,
+    resolver: LanguageSymbolResolver,
+    symbolTable: GlobalSymbolTable,
+  ): CallSiteVerdict {
+    const receiverKind = classifyReceiverKind(call, localBindings);
+    const edges: MethodEdges = [];
+    const fanouts: AmbiguousFanouts = [];
+    const outcome = this.dispatchCall(call, chunk, ctx, resolver, edges, fanouts);
+    const verdict: CallSiteVerdict = { receiverKind, outcome, edges, unnarrowedTemplate: false };
+    if (outcome === "ambiguous") verdict.ambiguousFanout = fanouts[0];
+    else if (outcome === "resolved") {
+      verdict.unnarrowedTemplate = this.landedOnSharedTemplate(edges, ctx, receiverKind);
+    } else verdict.missBucket = classifyResolveMiss(call, ctx, resolver, symbolTable);
+    return verdict;
+  }
+
+  /**
    * Every call site of one file with the `CallContext` pass-2 resolves it
-   * against — the run-global channels of the file's language family, the
-   * barrier-seeded local bindings — built exactly as {@link resolve} builds
-   * them, without resolving anything (bd tea-rags-mcp-pkfi7).
+   * against AND the verdict it reaches there — the edges it pushes and every
+   * counter it moves — decided by the SAME {@link judgeCallSite} {@link resolve}
+   * runs, without touching the run stats.
    *
    * For offline harnesses that drive the production resolver site by site
    * (`scripts/codegraph-chain-tally.ts`). A harness that assembled its own
    * context drifted from this one each time a channel changed shape — most
    * recently when nbf8q / qea83 partitioned the class-name, return-type and
-   * hierarchy channels by language family — so the harness asks the runner
-   * instead. Valid after `CodegraphRunState#seal`, like `resolve`.
+   * hierarchy channels by language family (bd tea-rags-mcp-pkfi7). A harness
+   * that replayed the per-site routing drifted the same way: it skipped
+   * dispatch-table sites, never replayed the additive `dispatchArgs` join and
+   * had no `unnarrowedTemplate` gate (bd tea-rags-mcp-c6xuu). So the harness
+   * asks the runner for both, and folds the verdicts with
+   * {@link tallyCallSiteVerdict}. Empty for a language the factory has no
+   * resolver for, as `resolve` emits no method edges there. Valid after
+   * `CodegraphRunState#seal`, like `resolve`.
    */
-  callSiteContexts(extraction: FileExtraction, symbolTable: GlobalSymbolTable): ResolvableCallSite[] {
-    const sites: ResolvableCallSite[] = [];
+  callSiteVerdicts(
+    extraction: FileExtraction,
+    symbolTable: GlobalSymbolTable,
+  ): (ResolvableCallSite & { verdict: CallSiteVerdict })[] {
+    const resolver = this.resolverFor(extraction.language);
+    if (!resolver) return [];
+    const out: (ResolvableCallSite & { verdict: CallSiteVerdict })[] = [];
     this.forEachCallSite(extraction, symbolTable, this.buildResolverInputs(extraction), (site) => {
-      sites.push(site);
+      out.push({ ...site, verdict: this.judgeCallSite(site, resolver, symbolTable) });
     });
-    return sites;
+    return out;
   }
 
   /**
-   * The one call-site walk {@link resolveCallSites} and {@link callSiteContexts}
+   * The one call-site walk {@link resolveCallSites} and {@link callSiteVerdicts}
    * share, so the context a harness reads cannot differ from the one production
    * resolves against.
    */
@@ -569,18 +654,12 @@ export class CallEdgeResolutionRunner {
    * The registries are Ruby-only and empty everywhere else, so the early return
    * keeps every other language's hot path untouched.
    */
-  private landedOnSharedTemplate(
-    methodEdges: MethodEdges,
-    edgesBefore: number,
-    ctx: CallContext,
-    receiverKind: ReceiverKind,
-  ): boolean {
+  private landedOnSharedTemplate(siteEdges: MethodEdges, ctx: CallContext, receiverKind: ReceiverKind): boolean {
     if (receiverKind !== "constant") return false;
     const templates = ctx.selfDispatchTemplates;
     const entries = ctx.selfInstantiatingClassMethods;
     if (templates === undefined && entries === undefined) return false;
-    for (let i = edgesBefore; i < methodEdges.length; i++) {
-      const target = methodEdges[i].targetSymbolId;
+    for (const { targetSymbolId: target } of siteEdges) {
       if (target === null) continue;
       if (templates?.[target] !== undefined) return true;
       if (entries?.includes(target) === true) return true;
@@ -740,28 +819,6 @@ export class CallEdgeResolutionRunner {
       resolved = true;
     }
     return resolved ? "resolved" : "unresolved";
-  }
-
-  /**
-   * Bucket an unresolved call, then tally the verdict {@link classifyResolveMiss}
-   * reached into BOTH the aggregate scalars and this kind's row.
-   */
-  private classifyMiss(
-    call: CallRef,
-    ctx: CallContext,
-    resolver: LanguageSymbolResolver,
-    symbolTable: GlobalSymbolTable,
-    kindTally: Record<ReceiverKind, ReceiverKindTally>,
-    receiverKind: ReceiverKind,
-  ): void {
-    const { stats } = this.runState;
-    const bucket = classifyResolveMiss(call, ctx, resolver, symbolTable);
-    if (bucket === "missWithInProjectDef") return;
-    if (bucket === "unresolvable") stats.callsUnresolvable += 1;
-    else if (bucket === "externalSkipped") stats.callsExternalSkipped += 1;
-    else if (bucket === "noInProjectDef") stats.callsNoInProjectDef += 1;
-    else stats.callsCoreAmbiguous += 1;
-    kindTally[receiverKind][bucket] += 1;
   }
 }
 
