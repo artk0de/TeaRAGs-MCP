@@ -159,6 +159,26 @@ export interface NarrowedFanoutOptions {
   readonly cap?: number;
   /** Edge kind carried by every emitted edge. Default `"dynamic"`. */
   readonly edgeKind?: DispatchEdge["edgeKind"];
+  /**
+   * The definitions this language's candidates are drawn from, so the policy
+   * cap derives from THIS language's p99 rather than the polyglot corpus's
+   * (bd tea-rags-mcp-nbf8q). Absent ⇒ the corpus policy.
+   */
+  readonly population?: DispatchFanoutPopulation;
+}
+
+/**
+ * The definition population a dispatch fan-out policy is computed over (bd
+ * tea-rags-mcp-nbf8q). `ownsPath` MUST be the predicate the caller filters its
+ * candidate lookup with — the p99 then describes exactly the population the
+ * survivors come from. `family` is the memo key and names the population, so
+ * one family id must always travel with one predicate; a family, not a single
+ * language, because a family that resolves across its members (TypeScript and
+ * JavaScript) draws candidates from all of them.
+ */
+export interface DispatchFanoutPopulation {
+  readonly family: string;
+  readonly ownsPath: (relPath: RelPath) => boolean;
 }
 
 /**

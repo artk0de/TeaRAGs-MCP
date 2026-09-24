@@ -15,6 +15,7 @@
  */
 
 import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../../../contracts/types/codegraph.js";
+import type { DispatchFanoutPopulation } from "../../../../contracts/types/language.js";
 
 /**
  * Whether a symbol-table relPath is a Ruby file the resolver may attribute a
@@ -27,6 +28,14 @@ import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../.
 export function isRubyPath(relPath: string): boolean {
   return relPath.endsWith(".rb") || relPath.endsWith(".rake") || relPath.endsWith(".gemspec");
 }
+
+/**
+ * The population Ruby's dispatch fan-out cap is computed over (bd
+ * tea-rags-mcp-nbf8q): exactly the files {@link lookupRubySymbolsByShortName}
+ * draws candidates from, so the p99 describes the fans it caps. On taxdome the
+ * polyglot corpus p99 is 16 and Ruby's own 19.
+ */
+export const RUBY_FANOUT_POPULATION: DispatchFanoutPopulation = { family: "ruby", ownsPath: isRubyPath };
 
 /**
  * Short-name lookup restricted to RUBY candidates — the ONLY short-name entry

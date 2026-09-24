@@ -136,11 +136,14 @@
 - **Dispatch narrowing terminates FOUR ways** (`kernel/dispatch-narrowing.ts`):
   0 survivors → no edges; 1 → one `dynamic` edge at `confidence: 1.0`
   (evidence-unique, NOT type-proven); over the corpus-adaptive cap from
-  `dispatchFanoutPolicyFor` → `ambiguous` with NO edges (f2jsb); else the fan at
-  `discount/m`. Sub-1 edges reach analytics confidence-WEIGHTED
-  (`SUM(confidence)` fanIn/fanOut, PageRank split across the fan); navigation
-  hides them via `isNavigationVisibleEdge`. Why: over the cap a multi-survivor
-  site emits nothing, and fanIn read unweighted over-counts a fan m-fold.
+  `dispatchFanoutPolicyFor` → `ambiguous` with NO edges (f2jsb) — computed over
+  the caller's `NarrowedFanoutOptions.population` when it passes one, which must
+  be the predicate its candidate lookup filters with (nbf8q); a caller that
+  omits it is capped by the polyglot corpus p99; else the fan at `discount/m`.
+  Sub-1 edges reach analytics confidence-WEIGHTED (`SUM(confidence)`
+  fanIn/fanOut, PageRank split across the fan); navigation hides them via
+  `isNavigationVisibleEdge`. Why: over the cap a multi-survivor site emits
+  nothing, and fanIn read unweighted over-counts a fan m-fold.
 - **`visibility` is a declared level; its REACH is a per-language rule.** Every
   native walker records the declared access level on the one three-value union,
   but `"private"` reaches differently per language, so `VisibilityNarrower` asks

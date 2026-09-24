@@ -338,12 +338,16 @@ describe("seeded support versions", () => {
       // java 5, swift 43: bd tea-rags-mcp-ezm9o matches the PascalCase test
       // suffixes case-sensitively, so `Latest.java` / `Latest.swift` enter a
       // graph an index built by the previous walker excluded them from.
+      // ruby walker 8: bd tea-rags-mcp-nbf8q item 4 caps Ruby's dynamic fan-out
+      // at RUBY's own defs-per-member p99, not the polyglot corpus one (taxdome:
+      // 19, not 16), so an index built by walker 7 reports as `ambiguous` the
+      // 17–19-survivor fans this one materializes as edges.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 14],
         ["javascript", 6],
         ["python", 13],
-        ["ruby", 7],
+        ["ruby", 8],
         ["java", 5],
         ["rust", 4],
         ["go", 6],
