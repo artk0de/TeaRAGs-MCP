@@ -1020,4 +1020,31 @@ New cases (neutral user framing, no rule vocabulary in the prompt, same `mustDo`
 
 ## Phase 0 results
 
-(filled by Task 4)
+Census `5766a0195` (`scripts/identifier-declarations-census.ts`), syntactic
+types only — the sink-time join (Task 6) has not run, so `typed` is a floor.
+Full JSON outputs are reproducible with the script; the summary:
+
+| Corpus   | Files  | Declarations | Typed (syntactic) | Naive bytes | Wall  |
+| -------- | ------ | ------------ | ----------------- | ----------- | ----- |
+| tea-rags | 1,245  | 29,899       | 10,914 (36.5%)    | 3.2 MB      | 4.8 s |
+| taxdome  | 24,242 | 255,254      | 21,235 (8.3%)     | 39.0 MB     | 67 s  |
+
+Per language on taxdome: ruby 33,413 param / 27,165 local / 12,163 field, 1,640
+typed (all `constructor`); typescript 84,838 / 96,434 / 233, 19,590 typed
+(18,758 `annotation`); javascript 990 declarations; bash 18 locals. Zero parse
+failures and zero unwalked files on both corpora.
+
+Observations that feed Tasks 6–7:
+
+- TS top type names are primitives (`string` 3,288, `number` 2,787, `boolean`
+  805 on taxdome) — type mode needs a primitive stop-list, or it ranks
+  non-concepts first.
+- Collection typing is inconsistent: Go/Java/Swift unwrap to the element
+  (`[]*Doc` → `Doc`), Python records the head (`list` is its top name), TS
+  leaves `T[]` untyped.
+- Ruby constructor names keep a leading `::` (`System` 171 vs `::System` 18) —
+  normalize at the row builder.
+- The census process peaks at 5.5 GB RSS on taxdome outside the V8 heap
+  (identical under `--max-old-space-size=1024`); suspected per-file native
+  `Parser` retention in the shared `extractFile` helper. Script-only, does not
+  touch the production chunker pool.
