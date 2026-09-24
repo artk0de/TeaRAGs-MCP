@@ -49,6 +49,46 @@ import type { SymbolNodeFlushQueue } from "./node-flush.js";
 import type { CodegraphRunState } from "./run-state.js";
 import { extractSelfDispatchMethods, SELF_DISPATCH_LANGUAGE } from "./self-dispatch-discovery.js";
 
+/**
+ * The pass-1 STATE of one file, shared by the sink's `write` (a file this sink
+ * owns) and `mirror` (a file another language partition owns): the in-memory
+ * symbol table entry, the run-global aggregates and the inheritance rows.
+ * Everything pass-2 resolves AGAINST, and nothing it writes. Exported so an
+ * offline harness walks pass 1 through the same absorb rather than a copy of it
+ * (bd tea-rags-mcp-pkfi7).
+ */
+export function absorbPass1FileState(
+  runState: CodegraphRunState,
+  symbolTable: GlobalSymbolTable,
+  extraction: FileExtraction,
+  defs: SymbolDefinition[],
+  role: FileExtractionAbsorbRole,
+): void {
+  // The in-memory table is the resolver's source of truth during the run;
+  // the durable copy (`write` buffers it) exists for a later run's hydration.
+  symbolTable.upsertFile(extraction.relPath, defs);
+  // Merge this file's pass-1 aggregates (ancestors, return types, dispatch
+  // tables, instantiations, …) into the run-global state so pass-2 resolves
+  // against the whole run regardless of which file declared what. Ruby-only
+  // for the self-dispatch candidates (DEFECT 2) — the entry strategy that
+  // consumes the discovered map is Ruby.
+  runState.absorb(
+    extraction,
+    extraction.language === SELF_DISPATCH_LANGUAGE ? extractSelfDispatchMethods(extraction.chunks) : [],
+    role,
+  );
+  // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
+  // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
+  // CHA cone resolver. Resolving ancestor symbol_ids against the now-partial
+  // table is unnecessary here — the cone reads by fqName — so pass a null
+  // resolver and let the per-file persist (pass-2) own symbol_id binding.
+  // Rows land in the file's language family (bd tea-rags-mcp-qea83).
+  runState.absorbInheritanceRows(
+    extraction.language,
+    normalizeInheritanceEdges(extraction, () => null),
+  );
+}
+
 export interface CodegraphSinkDeps {
   /** Resolve the in-memory symbol table for the active collection. */
   resolveSymbolTable: (collectionName?: PhysicalCollectionName) => Promise<GlobalSymbolTable>;
@@ -178,48 +218,11 @@ export function createCodegraphExtractionSink(
     }
   };
 
-  /**
-   * The pass-1 STATE of one file, shared by `write` (a file this sink owns) and
-   * `mirror` (a file another language partition owns): the in-memory symbol
-   * table entry, the run-global aggregates and the inheritance rows. Everything
-   * pass-2 resolves AGAINST, and nothing it writes.
-   */
-  const absorbPass1State = (
-    extraction: FileExtraction,
-    symbolTable: GlobalSymbolTable,
-    defs: SymbolDefinition[],
-    role: FileExtractionAbsorbRole,
-  ): void => {
-    // The in-memory table is the resolver's source of truth during the run;
-    // the durable copy (`write` buffers it) exists for a later run's hydration.
-    symbolTable.upsertFile(extraction.relPath, defs);
-    // Merge this file's pass-1 aggregates (ancestors, return types, dispatch
-    // tables, instantiations, …) into the run-global state so pass-2 resolves
-    // against the whole run regardless of which file declared what. Ruby-only
-    // for the self-dispatch candidates (DEFECT 2) — the entry strategy that
-    // consumes the discovered map is Ruby.
-    deps.runState.absorb(
-      extraction,
-      extraction.language === SELF_DISPATCH_LANGUAGE ? extractSelfDispatchMethods(extraction.chunks) : [],
-      role,
-    );
-    // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
-    // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
-    // CHA cone resolver. Resolving ancestor symbol_ids against the now-partial
-    // table is unnecessary here — the cone reads by fqName — so pass a null
-    // resolver and let the per-file persist (pass-2) own symbol_id binding.
-    // Rows land in the file's language family (bd tea-rags-mcp-qea83).
-    deps.runState.absorbInheritanceRows(
-      extraction.language,
-      normalizeInheritanceEdges(extraction, () => null),
-    );
-  };
-
   return {
     mirror: async (extraction) => {
       assertOpen("mirror");
       const symbolTable = await deps.resolveSymbolTable(collectionName);
-      absorbPass1State(extraction, symbolTable, deps.buildSymbolDefs(extraction), "mirror");
+      absorbPass1FileState(deps.runState, symbolTable, extraction, deps.buildSymbolDefs(extraction), "mirror");
     },
     write: async (extraction) => {
       assertOpen("write");
@@ -236,7 +239,7 @@ export function createCodegraphExtractionSink(
       // eager batched flush, so `skipDurableNodeWrite` suppresses the
       // (idempotent) per-file re-write here; the in-memory table build stays
       // unconditional (the resolver needs it in this context).
-      absorbPass1State(extraction, symbolTable, defs, "own");
+      absorbPass1FileState(deps.runState, symbolTable, extraction, defs, "own");
       if (!skipDurableNodeWrite) {
         deps.nodeFlush.buffer(extraction.relPath, defs, deps.collectionKey(collectionName), collectionName);
       }

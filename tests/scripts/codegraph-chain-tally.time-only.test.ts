@@ -1,13 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   formatKindStatsBlock,
   formatTimingBlock,
   parseArgs,
+  run,
   scoredExtensionsFor,
   type ChainTallyTiming,
 } from "../../scripts/codegraph-chain-tally.js";
-import { emptyReceiverKindTally } from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
+import {
+  buildCorpusExclusionFilter,
+  buildSymbolDefs,
+  collectSourceFiles,
+  extractFile,
+} from "../../scripts/ts-codegraph-typechecker-oracle.js";
+import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
+import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+import { absorbPass1FileState } from "../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
+import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import type { ReceiverKind } from "../../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { CallEdgeResolutionRunner } from "../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
+import {
+  CodegraphRunState,
+  emptyReceiverKindTally,
+  languageKindTally,
+  type ReceiverKindTally,
+} from "../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
+import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { collectDependencyManifestSources } from "../../src/core/infra/dependency-manifests.js";
 
 /**
  * The scored set is inverted out of the engine's own extension→language map
@@ -135,4 +160,167 @@ describe("formatKindStatsBlock — empty denominator", () => {
     expect(lines).toContain("0.000 0/3");
     expect(lines).not.toContain("—");
   });
+});
+
+/**
+ * bd tea-rags-mcp-pkfi7 — the harness must resolve a polyglot corpus exactly as
+ * the production runner does. Production partitions the run-global class-name
+ * maps, the return-type maps and the CHA hierarchy by language FAMILY (bd
+ * nbf8q / qea83); a harness that merges them into one record lets a TypeScript
+ * `Error` subclass join a Ruby `Error`'s cone and a Go method `get` type a Ruby
+ * `get`, so `--time-only --kind-stats` stops measuring what a live run books.
+ *
+ * The reference side is the provider's pass-1 seam and pass-2 runner: the
+ * extraction sink's `absorbPass1FileState` per walked file, `seal` at the
+ * barrier, `CallEdgeResolutionRunner#resolve` per scored file. The harness must
+ * agree with it per call site and per receiver-kind counter.
+ *
+ * `zz/repo.rb` sorts AFTER `pkg/store.go`, so a merged last-write-wins
+ * `functionReturnTypes` hands the Go method `get` the Ruby `get`'s `Widget`
+ * and the Go leg loses `x.Save()`. The TS / Ruby `Error` pair keeps the
+ * hierarchy partition under the same parity assertion.
+ */
+describe("codegraph-chain-tally polyglot parity with the production runner (pkfi7)", () => {
+  let corpus: string;
+
+  function write(relPath: string, content: string): void {
+    const absolute = join(corpus, relPath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content, "utf8");
+  }
+
+  beforeAll(() => {
+    corpus = mkdtempSync(join(tmpdir(), "chain-tally-polyglot-"));
+    write(
+      "web/errors.ts",
+      'export class AppError extends Error {\n  describe(): string {\n    return "app";\n  }\n}\n',
+    );
+    write(
+      "app/errors.rb",
+      [
+        "class NotFound < Error",
+        "  def describe",
+        '    "nf"',
+        "  end",
+        "end",
+        "",
+        "class Handler",
+        "  # @param err [Error]",
+        "  def handle(err)",
+        "    err.describe",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "zz/repo.rb",
+      [
+        "class Widget",
+        "  def spin",
+        "    1",
+        "  end",
+        "end",
+        "",
+        "class Repo",
+        "  # @return [Widget]",
+        "  def get",
+        "    Widget.new",
+        "  end",
+        "",
+        "  def run",
+        "    w = get",
+        "    w.spin",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "pkg/store.go",
+      [
+        "package pkg",
+        "",
+        "type Record struct{}",
+        "",
+        "func (r *Record) Save() {}",
+        "",
+        "type Store struct{}",
+        "",
+        "func (s *Store) get() *Record { return &Record{} }",
+        "",
+        "func (s *Store) use() {",
+        "\tx := s.get()",
+        "\tx.Save()",
+        "}",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  afterAll(() => {
+    rmSync(corpus, { recursive: true, force: true });
+  });
+
+  /** What production books for `lang`: its method edges and its per-kind counters. */
+  async function productionRun(lang: string): Promise<{
+    answers: string[];
+    kinds: Record<ReceiverKind, ReceiverKindTally>;
+  }> {
+    const factory = new LanguageFactory({ repoRoot: corpus });
+    const composer = new DefaultSymbolIdComposer();
+    const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
+    state.bindProjectRoot(corpus);
+    state.loadGemfile(corpus);
+    state.loadDeclaredDependencies(corpus);
+    state.loadSchemaSnapshots(corpus);
+    const table = new InMemoryGlobalSymbolTable();
+    const selection = await collectSourceFiles(
+      corpus,
+      corpus,
+      await buildCorpusExclusionFilter(corpus, factory),
+      Object.keys(CODEGRAPH_LANGUAGES),
+    );
+    const extractions: FileExtraction[] = [];
+    for (const relPath of selection.kept) {
+      const extraction = extractFile(corpus, relPath, composer, factory, state.declaredDependencies);
+      if (extraction === null) continue;
+      absorbPass1FileState(state, table, extraction, buildSymbolDefs(extraction), "own");
+      extractions.push(extraction);
+    }
+    await state.seal(async () => table);
+    const runner = new CallEdgeResolutionRunner(factory, state);
+    runner.prepareResolvePass();
+    const answers: string[] = [];
+    for (const extraction of extractions) {
+      if (extraction.language !== lang) continue;
+      for (const edge of runner.resolve(extraction, table).methodEdges) {
+        answers.push(`${extraction.relPath} ${edge.callExpression} -> ${edge.targetRelPath}#${edge.targetSymbolId}`);
+      }
+    }
+    return { answers: answers.sort(), kinds: languageKindTally(state.stats, lang) };
+  }
+
+  it.each(["ruby", "go", "typescript"])(
+    "books the same %s edges and receiver-kind counters as the production runner",
+    async (lang) => {
+      const harness = await run(corpus, lang, null, Number.MAX_SAFE_INTEGER, true, true, {
+        timeOnly: true,
+        kindStats: true,
+      });
+      const reference = await productionRun(lang);
+
+      expect(harness.fanSites).toBe(0);
+      const answers = harness.rows
+        .filter((row) => row.runnerAnswer !== null)
+        .map(
+          (row) =>
+            `${row.relPath} ${row.callText} -> ${row.runnerAnswer?.targetRelPath}#${row.runnerAnswer?.targetSymbolId}`,
+        )
+        .sort();
+      expect(answers).toEqual(reference.answers);
+      expect(harness.kindStats).toEqual(reference.kinds);
+    },
+    60_000,
+  );
 });
