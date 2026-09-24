@@ -1931,3 +1931,28 @@ describe("swift walker — construction-initialized field arguments (bd tea-rags
     }
   });
 });
+
+describe("swift walker — a protocol extension's `where Self` constraints (bd tea-rags-mcp-y99pg.33)", () => {
+  const src = [
+    "extension Download where Self: DataSerializer {",
+    "  func serializeDownload() {",
+    "    serialize()",
+    "  }",
+    "}",
+    "extension Download where Self == URLSerializer, Value: Equatable {",
+    "}",
+    "extension Protected where Value: Equatable {",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes the types a `Self` constraint names, with the extension's line span", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      expect(out.typeDeclarations).toEqual([
+        { typeId: "Download", reopens: true, selfConstraints: { types: ["DataSerializer"], startLine: 1, endLine: 5 } },
+        { typeId: "Download", reopens: true, selfConstraints: { types: ["URLSerializer"], startLine: 6, endLine: 7 } },
+        { typeId: "Protected", reopens: true },
+      ]);
+    }
+  });
+});

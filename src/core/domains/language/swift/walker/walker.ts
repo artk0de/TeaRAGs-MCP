@@ -139,6 +139,7 @@ import type {
   ImportRef,
   KwargSignature,
   LocalBinding,
+  SelfConstraintFact,
   SwiftFieldConstruction,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
@@ -245,6 +246,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       swiftGenericMemberFacts(node, genericParameters);
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     const functionAliasReturns = swiftFunctionAliasReturns(node);
+    const selfConstraints = kind === "extension" ? swiftSelfConstraints(node) : undefined;
     // `extension Collection<String>` composes its members under the name as
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
@@ -261,9 +263,36 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(enumCasePayloads ? { enumCasePayloads } : {}),
       ...(spelledAs === undefined ? {} : { spelledAs }),
       ...(functionAliasReturns ? { functionAliasReturns } : {}),
+      ...(selfConstraints ? { selfConstraints } : {}),
     });
   });
   return out;
+}
+
+/**
+ * What an extension's `where` clause says `Self` is (bd tea-rags-mcp-y99pg.33):
+ * `extension Download where Self: DataSerializer` — inside that body `Self`
+ * conforms to `DataSerializer` too, so an implicit-self call reaches its
+ * requirements. `Self == X` names `X` the same way. A constraint on any other
+ * name (`where Value: Equatable`) says nothing about `Self`. Each constraint
+ * is read positionally — subject first, constraining type last — for the
+ * materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftSelfConstraints(node: AstNode): SelfConstraintFact | undefined {
+  const types: string[] = [];
+  for (const clause of node.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      const relation = constraint.namedChildren.find(
+        (c) => c.type === "inheritance_constraint" || c.type === "equality_constraint",
+      );
+      if (relation?.namedChildren[0]?.text !== "Self") continue;
+      const { nominal } = swiftTypeFactOf(relation.namedChildren[relation.namedChildCount - 1]);
+      if (nominal !== null && !types.includes(nominal)) types.push(nominal);
+    }
+  }
+  if (types.length === 0) return undefined;
+  return { types, startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 };
 }
 
 /**

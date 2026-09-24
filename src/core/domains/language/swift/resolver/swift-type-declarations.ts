@@ -323,3 +323,19 @@ export function swiftFunctionAliasReturn(
   }
   return undefined;
 }
+
+/**
+ * The types `Self` is constrained to at `line` of the caller's file, inside a
+ * re-opening of `typeId` whose `where` clause names them (bd
+ * tea-rags-mcp-y99pg.33): `extension Download where Self: DataSerializer`. Read
+ * from the caller's own file only — the constraint holds inside that body and
+ * nowhere else. Empty when no such re-opening spans the line.
+ */
+export function swiftSelfConstraintsAt(typeId: string, line: number, ctx: CallContext): readonly string[] {
+  for (const fact of ctx.typeDeclarations?.[ctx.callerFile] ?? []) {
+    const constraint = fact.selfConstraints;
+    if (fact.typeId !== typeId || constraint === undefined) continue;
+    if (line >= constraint.startLine && line <= constraint.endLine) return constraint.types;
+  }
+  return [];
+}

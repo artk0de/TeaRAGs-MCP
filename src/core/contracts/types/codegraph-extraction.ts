@@ -433,6 +433,23 @@ export interface TypeDeclarationFact {
    * yields (bd tea-rags-mcp-y99pg.22). Absent when none.
    */
   readonly functionAliasReturns?: Readonly<Record<string, string>>;
+  /**
+   * What a re-opening's `where` clause says `Self` is inside its body:
+   * `extension Download where Self: DataSerializer` → `types: ["DataSerializer"]`
+   * (a `Self == X` constraint names `X` the same way), with the declaration's
+   * 1-indexed line span — the constraint holds inside THIS body only, and a
+   * file routinely re-opens one protocol several times under different
+   * constraints. Absent when the clause constrains nothing about `Self`.
+   */
+  readonly selfConstraints?: SelfConstraintFact;
+}
+
+/** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */
+export interface SelfConstraintFact {
+  /** The nominals `Self` conforms to or equals, in clause order. */
+  readonly types: readonly string[];
+  readonly startLine: number;
+  readonly endLine: number;
 }
 
 /** A stored property's initializing construction (`TypeDeclarationFact.fieldConstructions`). */

@@ -3440,3 +3440,65 @@ describe("SwiftCallResolver — module-level values (bd tea-rags-mcp-y99pg.30)",
     expect(resolver.hasInProjectDefinition(call("sharedStore", "save"), context)).toBe(true);
   });
 });
+
+/**
+ * `extension Download where Self: DataSerializer` (bd tea-rags-mcp-y99pg.33):
+ * inside that body `Self` conforms to BOTH protocols, so a bare
+ * `serialize(…)` is `DataSerializer`'s requirement — Alamofire's
+ * `serializeDownload` default. Only the extension carrying the constraint
+ * sees it: a sibling extension of the same protocol in the same file does not.
+ */
+describe("SwiftCallResolver — a protocol extension's `where Self` constraints (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/ResponseSerialization.swift": [
+      { symbolId: "DataSerializer", scope: [] },
+      { symbolId: "DataSerializer#serialize", scope: ["DataSerializer"] },
+      { symbolId: "Download", scope: [] },
+      { symbolId: "Download#serializeDownload", scope: ["Download"] },
+      { symbolId: "Download#other", scope: ["Download"] },
+    ],
+    // A namesake on an unrelated type: the short name alone is ambiguous.
+    "Sources/StringSerializer.swift": [
+      { symbolId: "StringSerializer", scope: [] },
+      { symbolId: "StringSerializer#serialize", scope: ["StringSerializer"] },
+    ],
+  });
+  const within = ctx({
+    callerFile: "Sources/ResponseSerialization.swift",
+    callerScope: ["Download", "serializeDownload"],
+    symbolTable: t,
+    typeDeclarations: {
+      "Sources/ResponseSerialization.swift": [
+        { typeId: "DataSerializer", reopens: false },
+        { typeId: "Download", reopens: false },
+        {
+          typeId: "Download",
+          reopens: true,
+          selfConstraints: { types: ["DataSerializer"], startLine: 20, endLine: 30 },
+        },
+        { typeId: "Download", reopens: true },
+      ],
+    },
+  });
+
+  it("resolves a bare call to the constraint's member inside the constrained extension", () => {
+    expect(new SwiftCallResolver().resolve(call(null, "serialize", 25), within)).toEqual({
+      targetRelPath: "Sources/ResponseSerialization.swift",
+      targetSymbolId: "DataSerializer#serialize",
+    });
+  });
+
+  it("resolves `self.` the same way", () => {
+    expect(new SwiftCallResolver().resolve(call("self", "serialize", 25), within)?.targetSymbolId).toBe(
+      "DataSerializer#serialize",
+    );
+  });
+
+  it("does not lend the constraint to a line outside that extension", () => {
+    expect(new SwiftCallResolver().resolve(call(null, "serialize", 40), within)).toBeNull();
+  });
+
+  it("still prefers the extended protocol's own member", () => {
+    expect(new SwiftCallResolver().resolve(call(null, "other", 25), within)?.targetSymbolId).toBe("Download#other");
+  });
+});
