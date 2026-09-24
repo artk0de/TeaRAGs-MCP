@@ -520,7 +520,43 @@ interface SwiftFileTypeEvidence {
    * that coordinate disagree and the name is therefore unusable.
    */
   readonly returnTypes: Map<string, SwiftTypeFact | null>;
+  /**
+   * `returnKey(owner, funcName) → positional parameter facts` of the ONE
+   * function-typed parameter that declaration takes — what a closure passed to
+   * it binds `$0`, `$1`, … or its named parameters to (bd
+   * tea-rags-mcp-y99pg.3). `null` where two declarations of the coordinate
+   * disagree, or where one declaration takes two function-typed parameters and
+   * which one a closure lands on is a label question.
+   */
+  readonly closureParameters: Map<string, readonly SwiftTypeFact[] | null>;
 }
+
+/**
+ * Sequence methods whose closure receives the ELEMENT — one parameter, or two
+ * for the comparators. Read only off an `element` fact, which only an `[T]`
+ * type produces, so a project type's own namesake method is never re-read as a
+ * collection's.
+ */
+const SWIFT_ELEMENT_CLOSURE_ARITY: ReadonlyMap<string, number> = new Map([
+  ["forEach", 1],
+  ["map", 1],
+  ["compactMap", 1],
+  ["flatMap", 1],
+  ["filter", 1],
+  ["first", 1],
+  ["last", 1],
+  ["contains", 1],
+  ["allSatisfy", 1],
+  ["firstIndex", 1],
+  ["lastIndex", 1],
+  ["drop", 1],
+  ["prefix", 1],
+  ["removeAll", 1],
+  ["sorted", 2],
+  ["sort", 2],
+  ["min", 2],
+  ["max", 2],
+]);
 
 /** Key a declared return under its owning type (`null` = top level) plus its name. */
 function returnKey(owner: string | null, name: string): string {
@@ -545,6 +581,7 @@ function returnKey(owner: string | null, name: string): string {
 function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
   const propertyTypes = new Map<string, Map<string, SwiftTypeFact>>();
   const returnTypes = new Map<string, SwiftTypeFact | null>();
+  const closureParameters = new Map<string, readonly SwiftTypeFact[] | null>();
   walk(root, (node) => {
     if (node.type === "class_declaration" || node.type === "protocol_declaration") {
       collectSwiftPropertyTypes(node, propertyTypes);
@@ -553,15 +590,153 @@ function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
     if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
     const name = node.childForFieldName("name")?.text;
     if (!name) return;
+    const key = returnKey(enclosingSwiftTypeName(node), name);
+    const closure = swiftClosureParameterFacts(node);
+    if (closure !== undefined) {
+      const seen = closureParameters.get(key);
+      if (seen === undefined) closureParameters.set(key, closure);
+      else if (!sameSwiftFacts(seen, closure)) closureParameters.set(key, null);
+    }
     const fact = swiftDeclaredReturnFact(node);
     if (!fact) return;
-    const key = returnKey(enclosingSwiftTypeName(node), name);
     const previous = returnTypes.get(key);
     if (previous === undefined) returnTypes.set(key, fact);
     // `previous === null` is the poisoned marker, and optional access keeps it poisoned.
     else if (previous?.nominal !== fact.nominal || previous?.element !== fact.element) returnTypes.set(key, null);
   });
-  return { propertyTypes, returnTypes };
+  return { propertyTypes, returnTypes, closureParameters };
+}
+
+/** Whether two positional fact lists state the same types; `null` (poisoned) equals nothing. */
+function sameSwiftFacts(a: readonly SwiftTypeFact[] | null, b: readonly SwiftTypeFact[] | null): boolean {
+  if (a === null || b === null) return false;
+  if (a.length !== b.length) return false;
+  return a.every((fact, i) => fact.nominal === b[i].nominal && fact.element === b[i].element);
+}
+
+/**
+ * The positional parameter facts of the ONE function-typed parameter a
+ * declaration takes: `undefined` when it takes none, `null` when it takes two
+ * or more. A name that is a generic parameter of the declaration or of its
+ * enclosing type (`(inout Value) -> U` on `Protected<Value>`) proves nothing —
+ * it is bound per use, not declared.
+ */
+function swiftClosureParameterFacts(fn: AstNode): readonly SwiftTypeFact[] | null | undefined {
+  let found: readonly SwiftTypeFact[] | null | undefined;
+  for (const parameter of fn.children) {
+    if (parameter.type !== "parameter") continue;
+    const functionType = swiftFunctionTypeNode(swiftParameterTypeNode(parameter));
+    if (!functionType) continue;
+    if (found !== undefined) return null;
+    const params = functionType.children.find((c) => c.type === "tuple_type");
+    const facts: SwiftTypeFact[] = [];
+    for (const item of params?.namedChildren ?? []) {
+      if (item.type !== "tuple_type_item") continue;
+      const fact = swiftTypeFactOf(item.namedChildren[item.namedChildCount - 1] ?? null);
+      const named = fact.nominal ?? fact.element;
+      facts.push(named && !declaresSwiftGenericName(fn, named) ? fact : NO_TYPE);
+    }
+    found = facts;
+  }
+  return found;
+}
+
+/**
+ * The type node of a `parameter`, past any `type_modifiers` (`@escaping`,
+ * `@Sendable`) — which tree-sitter-swift places between the `:` and the type.
+ */
+function swiftParameterTypeNode(parameter: AstNode): AstNode | null {
+  const at = parameter.children.findIndex((c) => c.type === ":");
+  if (at === -1) return null;
+  for (let i = at + 1; i < parameter.children.length; i++) {
+    if (parameter.children[i].type !== "type_modifiers") return parameter.children[i];
+  }
+  return null;
+}
+
+/** A `function_type` node, looking through `?` and parentheses: `((T) -> Void)?`. */
+function swiftFunctionTypeNode(typeNode: AstNode | null): AstNode | null {
+  if (!typeNode) return null;
+  if (typeNode.type === "function_type") return typeNode;
+  if (typeNode.type === "optional_type") return swiftFunctionTypeNode(typeNode.namedChildren[0] ?? null);
+  if (typeNode.type === "tuple_type") return swiftFunctionTypeNode(parenthesizedSwiftTypeNode(typeNode));
+  return null;
+}
+
+/** Whether `name` is a generic parameter of `fn` or of any type declaration enclosing it. */
+function declaresSwiftGenericName(fn: AstNode, name: string): boolean {
+  for (let current: AstNode | null = fn; current; current = current.parent) {
+    if (
+      (current === fn || current.type === "class_declaration" || current.type === "protocol_declaration") &&
+      declaresSwiftTypeParameter(current, name)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The positional facts a closure literal's parameters take from the call it
+ * is an argument of — trailing or parenthesized — or null when nothing proves
+ * them.
+ *
+ * Two sources, both declarations: the callee's ONE function-typed parameter
+ * when this file declares the callee (same lookup order as
+ * {@link swiftCallResultFact}), and the ELEMENT of an `[T]` receiver for a
+ * sequence method (`xs.forEach { $0… }`).
+ */
+function swiftClosureArgumentFacts(lambda: AstNode, scope: SwiftTypeScope): readonly SwiftTypeFact[] | null {
+  let suffix = lambda.parent;
+  if (suffix?.type === "value_argument") suffix = suffix.parent?.parent ?? null;
+  if (suffix?.type !== "call_suffix") return null;
+  const call = suffix.parent;
+  if (call?.type !== "call_expression") return null;
+  const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
+  if (!callee) return null;
+  const closures = scope.evidence.closureParameters;
+  if (callee.type === "simple_identifier") {
+    const own = closures.get(returnKey(scope.site.enclosingType, callee.text));
+    if (own !== undefined) return own;
+    return closures.get(returnKey(null, callee.text)) ?? null;
+  }
+  if (callee.type !== "navigation_expression") return null;
+  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+  const target = callee.childForFieldName("target");
+  if (!member || !target) return null;
+  const { element } = swiftExpressionFact(target, scope, 0);
+  const arity = SWIFT_ELEMENT_CLOSURE_ARITY.get(member);
+  if (element && arity !== undefined) {
+    return Array.from({ length: arity }, () => ({ nominal: element, element: null }));
+  }
+  const owner = swiftReceiverTypeName(target, scope, 0);
+  return owner ? (closures.get(returnKey(owner, member)) ?? null) : null;
+}
+
+/** The `lambda_parameter` nodes a closure literal names, or null when it uses `$0`-style ones. */
+function swiftLambdaParameters(lambda: AstNode): AstNode[] | null {
+  const signature = lambda.children.find((c) => c.type === "lambda_function_type");
+  if (!signature) return null;
+  const list = signature.children.find((c) => c.type === "lambda_function_type_parameters");
+  return list ? list.children.filter((c) => c.type === "lambda_parameter") : [];
+}
+
+/**
+ * Whether a closure body nests an implicit-parameter closure. Such a closure
+ * re-binds `$0` for its own body, and one this walker cannot type would
+ * otherwise see the OUTER `$0`'s type, since a binding here is scoped by line.
+ */
+function nestsImplicitParameterClosure(lambda: AstNode): boolean {
+  let nested = false;
+  const visit = (node: AstNode): void => {
+    for (const child of node.children) {
+      if (nested) return;
+      if (child.type === "lambda_literal" && swiftLambdaParameters(child) === null) nested = true;
+      else visit(child);
+    }
+  };
+  visit(lambda);
+  return nested;
 }
 
 /** One nominal type body's `propertyName → fact` entries, merged into the file map. */
@@ -775,6 +950,27 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         );
         if (!collection.element) return;
         record(name, { nominal: collection.element, element: null }, site, swiftThenBlockEndLine(node));
+        break;
+      }
+      case "lambda_literal": {
+        const site = siteOf(node);
+        const facts = swiftClosureArgumentFacts(node, { evidence, bindingsByName, site });
+        if (!facts) return;
+        const endLine = node.endPosition.row + 1;
+        const named = swiftLambdaParameters(node);
+        if (named === null) {
+          if (nestsImplicitParameterClosure(node)) return;
+          facts.forEach((fact, i) => {
+            record(`$${i}`, fact, site, endLine);
+          });
+          return;
+        }
+        named.forEach((parameter, i) => {
+          const name = parameter.childForFieldName("name")?.text;
+          // An annotated parameter is typed by its own `lambda_parameter` arm.
+          if (!name || name === "_" || i >= facts.length || parameter.children.some((c) => c.type === ":")) return;
+          record(name, facts[i], site, endLine);
+        });
         break;
       }
       default:

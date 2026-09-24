@@ -60,8 +60,9 @@
  * CapWords initializer, a stored property, or `self`. `chainedReceiverType`
  * threads those facts along a dotted receiver, but it cannot manufacture the
  * ones the walker never wrote — an un-annotated `let` inferred from a
- * function's return type, a closure parameter typed by context, a
- * protocol-typed value's dynamic dispatch, any link that is a METHOD call
+ * function's return type, a closure parameter whose callee this file does
+ * not declare (a same-file callee's function-typed parameter, and the element
+ * of an `[T]` receiver, DO type one — bd tea-rags-mcp-y99pg.3), any link that is a METHOD call
  * rather than a property (`a.makeThing().run()`) — and each of those still
  * emits NO edge. Recall is therefore capped below Java's, where the import
  * table answers a large share of receivers outright.

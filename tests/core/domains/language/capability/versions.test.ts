@@ -226,6 +226,9 @@ describe("seeded support versions", () => {
       // swift walker 14: member lookup reaches protocol members through conformances,
       // so an index built by walker 13 misses `trust.af.*` and every other member a
       // protocol or its extension provides.
+      // swift walker 15: closure parameters (`$0`, named) are typed from the
+      // function-typed parameter they are passed to, so an index built by walker 14
+      // misses every call on a closure parameter.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -242,7 +245,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 14],
+        ["swift", 15],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

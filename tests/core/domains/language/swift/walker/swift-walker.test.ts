@@ -1123,3 +1123,97 @@ describe("swift walker — typeDeclarations", () => {
     expect(extractMaterialized("func free() {}\n").typeDeclarations).toBeUndefined();
   });
 });
+
+/**
+ * A closure's parameters take their types from the parameter the closure is
+ * passed to (bd tea-rags-mcp-y99pg.3): `performEvent { $0.urlSession(...) }`
+ * types `$0` from `func performEvent(_ event: @escaping (any EventMonitor) ->
+ * Void)`, and `xs.forEach { $0.touch() }` from the element of an `[Thing]`.
+ */
+describe("swift walker — closure parameters typed by the parameter they are passed to", () => {
+  const monitorSrc = [
+    "final class Composite {",
+    "  func performEvent(_ event: @Sendable @escaping (any Monitor) -> Void) {}",
+    "  func go() {",
+    "    performEvent { $0.tick() }",
+    "    performEvent { m in",
+    "      m.tick()",
+    "    }",
+    "    $0.gone()",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("types `$0` of a trailing closure from the callee's function-typed parameter", () => {
+    expect(typeAt(monitorSrc, "$0", 4)).toBe("Monitor");
+  });
+
+  it("types a named closure parameter the same way", () => {
+    expect(typeAt(monitorSrc, "m", 6)).toBe("Monitor");
+  });
+
+  it("scopes a closure parameter to the closure body", () => {
+    expect(typeAt(monitorSrc, "$0", 8)).toBeUndefined();
+  });
+
+  it("reads the same facts off the materialized tree", () => {
+    const bindings = extractMaterialized(monitorSrc).chunks[0].localBindings;
+    expect(bindings?.$0?.[0].type).toBe("Monitor");
+    expect(bindings?.m?.[0].type).toBe("Monitor");
+  });
+
+  it("types a closure passed to a top-level function as its last argument", () => {
+    const src = [
+      "func visit(_ n: Int, _ body: (Thing, Int) -> Void) {}",
+      "func go() {",
+      "  visit(3, { $0.touch() })",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 3)).toBe("Thing");
+    expect(typeAt(src, "$1", 3)).toBe("Int");
+  });
+
+  it("types the closure of a sequence method from the receiver's element", () => {
+    const src = [
+      "func go(xs: [Thing]) {",
+      "  xs.forEach { $0.touch() }",
+      "  _ = xs.map { t in t.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 2)).toBe("Thing");
+    expect(typeAt(src, "t", 3)).toBe("Thing");
+  });
+
+  it("declines a callee with more than one function-typed parameter", () => {
+    const src = [
+      "func run(_ a: (Thing) -> Void, _ b: (Other) -> Void) {}",
+      "func go() {",
+      "  run({ _ in }) { $0.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 3)).toBeUndefined();
+  });
+
+  it("binds no `$0` in a closure that nests an implicit-parameter closure it cannot type", () => {
+    const src = [
+      "func each(_ body: (Thing) -> Void) {}",
+      "func go() {",
+      "  each {",
+      "    unknown { $0.other() }",
+      "    $0.touch()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 4)).toBeUndefined();
+  });
+
+  it("types no closure passed to a callee this file does not declare", () => {
+    const src = ["func go() {", "  unknown { $0.touch() }", "}", ""].join("\n");
+    expect(typeAt(src, "$0", 2)).toBeUndefined();
+  });
+});
