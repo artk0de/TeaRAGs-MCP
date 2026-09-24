@@ -109,5 +109,10 @@ export const capability: LanguageCapability = {
   // unwraps carries the literal invoker as `functionInvokerSite`, and the
   // resolver keeps the member edge (`QdrantConnection#call`) when the receiver's
   // declared type declares that member. Function receivers unwrap as before.
-  versions: { chunking: 1, walker: 15, codegraphSchema: 2 },
+  // walker 16: bd tea-rags-mcp-r8hme.2. Every module reference records the
+  // export names it takes (`importedExportNames`) and every source re-export
+  // the names it forwards (`reexportedExportNames`), persisted on the file edge
+  // (migration 030) for the facade check. No edge moves; the names fill only on
+  // `--force-enrichments codegraph`.
+  versions: { chunking: 1, walker: 16, codegraphSchema: 2 },
 };

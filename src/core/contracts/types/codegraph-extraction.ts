@@ -570,6 +570,21 @@ export interface ImportRef {
    * a dispatch table.
    */
   importedBindings?: Record<string, string>;
+  /**
+   * Names this statement takes from the TARGET module's export surface
+   * (bd tea-rags-mcp-r8hme.2), in the target's spelling — `import { a as b }`
+   * takes `a`. `default` is a default import, `*` the whole module (a
+   * namespace import, `import m` in Python, a require bound whole). Absent when
+   * the statement names nothing (a side-effect import) or the walker does not
+   * record it. Carried onto the persisted file edge; the facade check reads it.
+   */
+  importedExportNames?: string[];
+  /**
+   * Names a source re-export forwards from the target (`export { a } from`),
+   * in the target's spelling; `*` for `export * from` / `export * as ns from`.
+   * Absent on every statement that is not a source re-export.
+   */
+  reexportedExportNames?: string[];
 }
 
 export interface ChunkExtraction {

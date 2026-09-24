@@ -46,5 +46,9 @@ export const capability: LanguageCapability = {
   // walker 6: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — a class member's `#name` private access — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
-  versions: { chunking: 2, walker: 6, codegraphSchema: 2 },
+  // walker 7: bd tea-rags-mcp-r8hme.2. ESM imports, `require` and dynamic
+  // `import()` record the export names they take (`importedExportNames`),
+  // persisted on the file edge (migration 030). Re-exports still produce no
+  // edge in this walker. No edge moves.
+  versions: { chunking: 2, walker: 7, codegraphSchema: 2 },
 };

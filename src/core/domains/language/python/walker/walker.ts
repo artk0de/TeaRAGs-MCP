@@ -1076,6 +1076,8 @@ function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
           startLine: node.startPosition.row + 1,
           importedNames: [local],
           importedBindings: { [local]: imported },
+          // bd tea-rags-mcp-r8hme.2 — `import m` binds the whole module.
+          importedExportNames: ["*"],
         });
       }
     } else if (node.type === "import_from_statement") {
@@ -1131,11 +1133,17 @@ function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
       // optional channels, and what keeps the NDJSON spill small.
       const names = importedNames.length > 0 ? { importedNames } : {};
       const bindings = Object.keys(importedBindings).length > 0 ? { importedBindings } : {};
+      // bd tea-rags-mcp-r8hme.2 — the names taken from the module, in ITS
+      // spelling: a binding's value, `*` for the star.
+      const exportNames = importedNames.map((local) =>
+        local === "*" ? "*" : (identifierEntry(importedBindings, local) ?? local),
+      );
+      const exported = exportNames.length > 0 ? { importedExportNames: [...new Set(exportNames)] } : {};
       if (moduleField) {
-        out.push({ importText: sourceModule, startLine, ...names, ...bindings });
+        out.push({ importText: sourceModule, startLine, ...names, ...bindings, ...exported });
       } else if (prefix) {
         // `from . import x` — no module name, just the prefix.
-        out.push({ importText: prefix, startLine, ...names, ...bindings });
+        out.push({ importText: prefix, startLine, ...names, ...bindings, ...exported });
       }
     }
   };

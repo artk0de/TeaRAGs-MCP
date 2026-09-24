@@ -15,8 +15,22 @@
  * What lives here is the part every language agrees on.
  */
 
-import type { CallContext, FileExtraction, GraphEdges } from "../../contracts/types/codegraph.js";
+import type { CallContext, FileExtraction, GraphEdges, ImportRef } from "../../contracts/types/codegraph.js";
 import type { ImportFileMapper } from "../../contracts/types/language.js";
+
+/**
+ * The file edge one import produces once mapped to `targetRelPath`: its import
+ * text plus the export names it takes or forwards (bd tea-rags-mcp-r8hme.2),
+ * each present only when the import recorded it.
+ */
+export function importFileEdge(targetRelPath: string, imp: ImportRef): GraphEdges["fileEdges"][number] {
+  return {
+    targetRelPath,
+    importText: imp.importText,
+    ...(imp.importedExportNames ? { importedExportNames: imp.importedExportNames } : {}),
+    ...(imp.reexportedExportNames ? { reexportedExportNames: imp.reexportedExportNames } : {}),
+  };
+}
 
 export function resolveImportFileEdges(
   extraction: FileExtraction,
@@ -34,10 +48,7 @@ export function resolveImportFileEdges(
     // self-edge is a real row in `cg_symbols_edges_file` and would count into
     // the file's own fanIn and fanOut.
     if (target.relPath === extraction.relPath) continue;
-    fileEdges.push({
-      targetRelPath: target.relPath,
-      importText: imp.importText,
-    });
+    fileEdges.push(importFileEdge(target.relPath, imp));
   }
   // NOT deduped here. `CallEdgeResolutionRunner#buildFileEdges` applies
   // `dedupeFileEdgesByTarget` to whatever either branch returns, because the

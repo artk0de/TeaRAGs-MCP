@@ -53,6 +53,7 @@ import type {
   GraphFileNode,
   HierarchySnapshot,
   InheritanceEdge,
+  NonPublicMemberEdge,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -368,6 +369,11 @@ export class DuckDbGraphClient implements GraphDbClient {
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return this.analytics.readFileDependencyGraph();
+  }
+
+  /** Convention-privacy candidates (bd tea-rags-mcp-r8hme.1); daemon op of the same name. */
+  async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
+    return this.analytics.readNonPublicMemberEdges(languages);
   }
 
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */

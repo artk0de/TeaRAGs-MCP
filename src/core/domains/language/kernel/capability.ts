@@ -36,9 +36,18 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * written under two disagreeing mappings, the heal reaches only symbols whose
  * signals move, and only a walk fills the new columns — so every index needs
  * `--force-enrichments codegraph`, across all languages.
+ *
+ * walker 5: `cg_symbols_edges_file` gained `imported_export_names` /
+ * `reexported_export_names` (migration 030, bd tea-rags-mcp-r8hme.2). The
+ * import→file engine and the runner's per-target dedupe carry them onto the
+ * edge, unioned over every import of one target. No edge moves; only a walk
+ * fills the columns, so the facade check reads the file-level rule until
+ * `--force-enrichments codegraph` runs. `codegraphSchema` stays at 2: this
+ * walker bump already routes every index to that same whole-collection
+ * recompute, and a second axis would name the same remedy twice.
  */
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 1,
-  walker: 4,
+  walker: 5,
   codegraphSchema: 2,
 };

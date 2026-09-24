@@ -900,3 +900,66 @@ describe("CodegraphDaemonServer.handle — getSymbolVisibilities", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-r8hme.1: the convention-privacy check reads its candidate
+// method edges through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — readNonPublicMemberEdges", () => {
+  it("is a read op that returns method edges into non-public members of the requested languages", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_npm_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "app/a.py", language: "python" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "run", targetSymbolId: "B#_x", targetRelPath: "pkg/b.py", callExpression: "b._x()" },
+          ],
+        },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "pkg/b.py", language: "python" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 3,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "pkg/b.py",
+        definitions: [{ symbolId: "B#_x", fqName: "B#_x", shortName: "_x", relPath: "pkg/b.py", scope: [] }],
+      },
+    });
+
+    const res = await server.handle({
+      id: 4,
+      op: "readNonPublicMemberEdges",
+      params: { collection: c, languages: ["python"] },
+    });
+
+    expect(DAEMON_OP_COMMANDS.readNonPublicMemberEdges.access).toBe("read");
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual([
+      {
+        sourceRelPath: "app/a.py",
+        sourceSymbolId: "run",
+        targetRelPath: "pkg/b.py",
+        targetSymbolId: "B#_x",
+        targetShortName: "_x",
+        targetVisibility: null,
+        targetLanguage: "python",
+        callExpression: "b._x()",
+      },
+    ]);
+    await pool.closeAll();
+  });
+});

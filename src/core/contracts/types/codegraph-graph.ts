@@ -55,7 +55,7 @@ export interface FileDependencyGraphFile {
  * One file → file dependency: a `cg_symbols_edges_file` row, the edge set
  * `codegraph.file.fanIn` / `fanOut` / `instability` are counted over.
  */
-export interface FileDependencyEdge {
+export interface FileDependencyEdge extends FileEdgeExportNames {
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   /**
@@ -76,6 +76,26 @@ export interface FileDependencyEdge {
 export interface FileDependencyGraph {
   files: FileDependencyGraphFile[];
   edges: FileDependencyEdge[];
+}
+
+/**
+ * One resolved method edge into a member whose name or declaration marks it
+ * non-public — declared `private` / `protected`, or named with a leading
+ * underscore (bd tea-rags-mcp-r8hme.1). Which of those is a convention-privacy
+ * leak is the boundary diagnostics' call; this is only the candidate set.
+ */
+export interface NonPublicMemberEdge {
+  sourceRelPath: RelPath;
+  sourceSymbolId: SymbolId;
+  targetRelPath: RelPath;
+  targetSymbolId: SymbolId;
+  targetShortName: string;
+  /** `cg_symbols.visibility` of the target; `null` when the walker records none. */
+  targetVisibility: string | null;
+  /** `cg_symbols_files.language` of the target's declaring file. */
+  targetLanguage: string;
+  /** The call as written (`callText`) — for a Ruby `send(:x)` unwrap, the `send` call itself. */
+  callExpression: string;
 }
 
 /**
@@ -293,8 +313,21 @@ export interface FileResolveStatsWrite {
   completeLanguages: string[];
 }
 
+/**
+ * The names a file edge takes from, and forwards out of, its target's export
+ * surface (bd tea-rags-mcp-r8hme.2) — the union over every import statement the
+ * edge stands for. Each list is absent when no statement recorded one, so
+ * "not recorded" never reads as "names nothing".
+ */
+export interface FileEdgeExportNames {
+  /** {@link ImportRef.importedExportNames}, unioned per edge. */
+  importedExportNames?: string[];
+  /** {@link ImportRef.reexportedExportNames}, unioned per edge. */
+  reexportedExportNames?: string[];
+}
+
 export interface GraphEdges {
-  fileEdges: { targetRelPath: RelPath; importText: string | null }[];
+  fileEdges: ({ targetRelPath: RelPath; importText: string | null } & FileEdgeExportNames)[];
   methodEdges: {
     sourceSymbolId: SymbolId;
     targetSymbolId: SymbolId | null;
