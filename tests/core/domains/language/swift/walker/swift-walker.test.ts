@@ -635,9 +635,12 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
   });
 
   // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.17): a `(k, v)` pattern over a
-  // DICTIONARY now binds its key and value types; a Set and a tuple pattern
-  // over anything else still bind nothing.
-  it("declines a Set and a tuple pattern over a non-dictionary; binds a dictionary's key and value", () => {
+  // DICTIONARY now binds its key and value types; a tuple pattern over
+  // anything else still binds nothing. INVARIANT CHANGED again (bd
+  // tea-rags-mcp-y99pg.32): a `Set<Thing>` iterates `Thing`s, as the
+  // typechecker binds `for x in s` — the old decline was the walker dropping
+  // generic arguments, not a claim about Set.
+  it("binds a Set's element and a dictionary's key and value; declines a tuple pattern over a non-dictionary", () => {
     const src = [
       "func go(s: Set<Thing>, d: [String: Foo], xs: [Thing]) {",
       "  for x in s { x.touch() }",
@@ -647,7 +650,7 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
       "",
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
-    expect(bindings?.x).toBeUndefined();
+    expect(bindings?.x?.[0].type).toBe("Thing");
     expect(bindings?.k?.[0].type).toBe("String");
     expect(bindings?.v?.[0].type).toBe("Foo");
     expect(bindings?.i).toBeUndefined();
@@ -1206,6 +1209,40 @@ describe("swift walker — closure parameters typed by the parameter they are pa
     expect(typeAt(src, "t", 3)).toBe("Thing");
   });
 
+  // Session.withAllRequests { requests in requests.forEach { $0.cancel() } }
+  // on `(Set<Request>) -> Void` (bd tea-rags-mcp-y99pg.32).
+  it("reads the element of a sequence spelled with its generic argument — `Set<T>`, `Array<T>`", () => {
+    const src = [
+      "final class Pool {",
+      "  func withAll(perform action: @escaping (Set<Thing>) -> Void) {}",
+      "  func go(xs: Array<Thing>) {",
+      "    withAll { all in",
+      "      all.forEach { $0.touch() }",
+      "    }",
+      "    for x in xs { x.touch() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "all", 5)).toBe("Set");
+    expect(typeAt(src, "$0", 5)).toBe("Thing");
+    expect(typeAt(src, "x", 7)).toBe("Thing");
+    const bindings = extractMaterialized(src).chunks[0].localBindings;
+    expect(bindings?.$0?.[0].type).toBe("Thing");
+  });
+
+  it("reads no element off a generic type that is not a single-element sequence", () => {
+    const src = [
+      "func go(r: Result<Thing, Error>, d: Dictionary<String, Thing>) {",
+      "  for x in d { x.touch() }",
+      "  r.map { $0.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "x", 2)).toBeUndefined();
+    expect(typeAt(src, "$0", 3)).toBeUndefined();
+  });
+
   it("declines a callee with more than one function-typed parameter", () => {
     const src = [
       "func run(_ a: (Thing) -> Void, _ b: (Other) -> Void) {}",
@@ -1330,6 +1367,29 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
     expect(extract(src).chunks[0].callResultBindings?.r).toEqual([
       { line: 2, callee: "sp.req.handler", scopeEndLine: 4 },
     ]);
+  });
+
+  // Request.cURLDescription: `let cookies = cookieStorage.cookies(for: url)` two
+  // lines below `if`, folding a `cookieStorage` bound one clause above it (bd
+  // tea-rags-mcp-y99pg.32). A spelling is visible strictly below its line, so
+  // every clause sitting on the `if` line hid each from the next.
+  it("positions each clause of a multi-line condition on its own line", () => {
+    const src = [
+      "func go() {",
+      "  if",
+      "    let storage = configuration.httpCookieStorage,",
+      "    let cookies = storage.cookies(for: url), !cookies.isEmpty {",
+      "    cookies.run()",
+      "  }",
+      "  guard let a = sp.a, let b = a.b else { return }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extractMaterialized(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.storage).toEqual([{ line: 3, callee: "configuration.httpCookieStorage", scopeEndLine: 6 }]);
+    expect(bindings.cookies).toEqual([{ line: 4, callee: "storage.cookies", scopeEndLine: 6 }]);
+    expect(bindings.a?.[0].line).toBe(7);
+    expect(bindings.b?.[0].line).toBe(7);
   });
 
   it("types a cast local by the cast's target type", () => {
@@ -1591,6 +1651,32 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     expect(facts.find((f) => f.typeId === "Request")?.fieldTypeArguments).toEqual({
       mutableState: ["MutableState"],
     });
+  });
+
+  // `adapter.adapt(…) { result in let r = try result.get() }` in another file
+  // needs `Result`'s arguments to type `get()` (bd tea-rags-mcp-y99pg.32).
+  it("publishes a closure parameter's concrete generic arguments with its nominal", () => {
+    const src = [
+      "public protocol RequestAdapter {",
+      "  func adapt(_ urlRequest: URLRequest, using state: State,",
+      "             completion: @escaping @Sendable (_ result: Result<URLRequest, any Error>) -> Void)",
+      "}",
+      "final class Box<Value> {",
+      "  func load(_ done: (Result<Value, Error>) -> Void) {}",
+      "  func each(_ body: (Set<Thing>) -> Void) {}",
+      "}",
+      "",
+    ].join("\n");
+    for (const facts of [extract(src).typeDeclarations ?? [], extractMaterialized(src).typeDeclarations ?? []]) {
+      expect(facts.find((f) => f.typeId === "RequestAdapter")?.memberClosureParameters).toEqual({
+        adapt: ["Result<URLRequest, Error>"],
+      });
+      // An argument naming a generic parameter is bound per use, not declared.
+      expect(facts.find((f) => f.typeId === "Box")?.memberClosureParameters).toEqual({
+        load: ["Result"],
+        each: ["Set<Thing>"],
+      });
+    }
   });
 
   it("binds a closure's parameters to the callee they are passed to when no declaration here types them", () => {

@@ -3440,3 +3440,57 @@ describe("SwiftCallResolver — module-level values (bd tea-rags-mcp-y99pg.30)",
     expect(resolver.hasInProjectDefinition(call("sharedStore", "save"), context)).toBe(true);
   });
 });
+
+describe("SwiftCallResolver — a closure parameter declared with generic arguments (bd tea-rags-mcp-y99pg.32)", () => {
+  // Session.swift: `guard let adapter = adapter(for: request)`, then
+  // `adapter.adapt(initialRequest, using: state) { result in
+  //    let adaptedRequest = try result.get(); try adaptedRequest.validate() }`
+  // with `completion: (Result<URLRequest, any Error>) -> Void` declared on the
+  // protocol in another file.
+  const t = table({
+    "Sources/RequestInterceptor.swift": [
+      { symbolId: "RequestAdapter", scope: [] },
+      { symbolId: "RequestAdapter#adapt", scope: ["RequestAdapter"] },
+    ],
+    "Sources/URLRequest+Alamofire.swift": [
+      { symbolId: "URLRequest", scope: [] },
+      { symbolId: "URLRequest#validate", scope: ["URLRequest"] },
+    ],
+    "Sources/Session.swift": [
+      { symbolId: "Session", scope: [] },
+      { symbolId: "Session#perform", scope: ["Session"] },
+    ],
+  });
+  const declarations = (adapt: string) => ({
+    "Sources/RequestInterceptor.swift": [
+      { typeId: "RequestAdapter", reopens: false, memberClosureParameters: { adapt: [adapt] } },
+    ],
+    "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
+    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+  });
+  const context = (adapt: string): CallContext =>
+    ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session", "perform"],
+      symbolTable: t,
+      typeDeclarations: declarations(adapt),
+      localBindings: { adapter: [{ line: 9, type: "RequestAdapter", scopeEndLine: 15 }] },
+      callResultBindings: {
+        result: [{ line: 10, callee: "adapter.adapt", closureParameter: 0, scopeEndLine: 15 }],
+        adaptedRequest: [{ line: 11, callee: "result.get", scopeEndLine: 15 }],
+      },
+    });
+
+  it("substitutes the declared arguments into the SDK member the parameter is read through", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("adaptedRequest", "validate", 12),
+      context("Result<URLRequest, Error>"),
+    );
+    expect(target?.targetSymbolId).toBe("URLRequest#validate");
+  });
+
+  it("types nothing through a closure parameter published without its arguments", () => {
+    const target = new SwiftCallResolver().resolve(call("adaptedRequest", "validate", 12), context("Result"));
+    expect(target).toBeNull();
+  });
+});

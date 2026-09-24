@@ -97,9 +97,10 @@
  *   nothing). The element type is held in {@link SwiftTypeFact}'s own slot,
  *   which only `for x in xs` and the element accessors read and which
  *   nothing emits, so the invariant is structural rather than a rule someone
- *   has to remember. A `Set<Foo>` / `[String: Foo]` element is NOT read:
- *   `swiftTypeFactOf` reduces a generic to its base name, and a dictionary
- *   iterates as a tuple the single-name pattern rejects anyway.
+ *   has to remember. A `Set<Foo>` / `Array<Foo>` spelling fills the same slot
+ *   (bd tea-rags-mcp-y99pg.32) — its one generic argument IS its element — and
+ *   a `[String: Foo]` element is NOT read: a dictionary iterates as a tuple the
+ *   single-name pattern rejects anyway.
  * - A non-CapWords initializer whose callee this file does NOT declare
  *   (`let t = makeThing()`) binds nothing — its return type is unknowable here
  *   and recording the FUNCTION name as a type fabricates a `makeThing#member`
@@ -483,11 +484,53 @@ function swiftClosureParameterTypeNames(
       const typeNode = item.namedChildren[item.namedChildCount - 1] ?? null;
       const written = typeNode?.type === "user_type" ? typeNode.text : undefined;
       if (written !== undefined && genericParameters.includes(written)) types.push(written);
-      else types.push(swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal);
+      else {
+        types.push(
+          swiftSpelledWithArguments(
+            swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal,
+            typeNode,
+            fn,
+            genericParameters,
+          ),
+        );
+      }
     }
     found = types;
   }
   return found;
+}
+
+/**
+ * `nominal` spelled with the generic arguments `typeNode` states —
+ * `Result<URLRequest, Error>` for `Result<URLRequest, any Error>` (bd
+ * tea-rags-mcp-y99pg.32) — so a reader in another file can bind the
+ * declaring SDK type's parameters (`Result.get()` returns `Success`). Each
+ * argument is reduced to its nominal. The bare nominal when there are no
+ * arguments, when one names nothing, or when one is a generic parameter in
+ * scope: that is bound per use, not declared. Read positionally off
+ * `type_arguments`, past an optional's `?`.
+ */
+function swiftSpelledWithArguments(
+  nominal: string | null,
+  typeNode: AstNode | null,
+  at: AstNode,
+  genericParameters: readonly string[],
+): string | null {
+  if (nominal === null) return null;
+  let bare = typeNode;
+  while (bare?.type === "optional_type") bare = bare.namedChildren[0] ?? null;
+  if (bare?.type !== "user_type") return nominal;
+  const args = bare.children.find((c) => c.type === "type_arguments")?.namedChildren ?? [];
+  if (args.length === 0) return nominal;
+  const names: string[] = [];
+  for (const arg of args) {
+    const name = swiftTypeFactOf(arg).nominal;
+    if (name === null || genericParameters.includes(name) || swiftGenericConstraint(name, at) !== undefined) {
+      return nominal;
+    }
+    names.push(name);
+  }
+  return `${nominal}<${names.join(", ")}>`;
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
@@ -1689,7 +1732,10 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const scopeEndLine =
           node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
         for (const clause of swiftOptionalBindingClauses(node)) {
-          const site = siteOf(node);
+          // Each clause on its OWN line: a multi-line condition's later clause
+          // folds the earlier ones, and a spelling is visible strictly below
+          // its line (bd tea-rags-mcp-y99pg.32).
+          const site = siteOf(clause.nameNode);
           const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
           const annotatedOrInferred =
             annotated.nominal || annotated.element
@@ -1870,6 +1916,8 @@ function swiftTuplePatternNames(item: AstNode | null): [string | null, string | 
 /** One `let x` / `var x` clause of a `guard` / `if` / `while` condition list. */
 interface SwiftOptionalBindingClause {
   readonly name: string;
+  /** The bound identifier — where the clause's binding is positioned. */
+  readonly nameNode: AstNode;
   /** The binding's own `: T` annotation, when written. */
   readonly annotation: AstNode | null;
   /**
@@ -1903,7 +1951,7 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
       next += 1;
     }
     const value = kids[next]?.type === "=" ? (kids[next + 1] ?? null) : nameNode;
-    out.push({ name: nameNode.text, annotation, value });
+    out.push({ name: nameNode.text, nameNode, annotation, value });
   }
   return out;
 }
@@ -2080,7 +2128,29 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   // `Foo.Type` / `Foo.Protocol` is Foo's metatype: a member read off it is one
   // of Foo's static members, which compose under Foo (bd tea-rags-mcp-y99pg.12).
   const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim().replace(SWIFT_METATYPE_SUFFIX, "");
-  return bare.length > 0 ? { nominal: bare, element: null } : NO_TYPE;
+  if (bare.length === 0) return NO_TYPE;
+  return { nominal: bare, element: swiftSpelledSequenceElement(typeNode, bare) };
+}
+
+/**
+ * The standard library sequences whose ONE generic argument is their
+ * `Element` — `Set<Request>` iterates `Request`s exactly as `[Request]` does
+ * (bd tea-rags-mcp-y99pg.32). `Dictionary`, `Result` and every other generic
+ * type are absent: an argument of theirs is not what a `for` or a `forEach`
+ * hands its body.
+ */
+const SWIFT_SINGLE_ELEMENT_SEQUENCES: ReadonlySet<string> = new Set(["Array", "Set", "ArraySlice", "ContiguousArray"]);
+
+/**
+ * The element nominal a `user_type` spelling one of
+ * {@link SWIFT_SINGLE_ELEMENT_SEQUENCES} with its argument states, or null.
+ * Read positionally off `type_arguments`, for the materialization hazard
+ * {@link swiftTypeNodeAfter} documents.
+ */
+function swiftSpelledSequenceElement(typeNode: AstNode, nominal: string): string | null {
+  if (!SWIFT_SINGLE_ELEMENT_SEQUENCES.has(nominal)) return null;
+  const args = typeNode.children.find((c) => c.type === "type_arguments")?.namedChildren ?? [];
+  return args.length === 1 ? swiftTypeFactOf(args[0]).nominal : null;
 }
 
 /**
