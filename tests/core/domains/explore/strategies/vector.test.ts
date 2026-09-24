@@ -186,4 +186,32 @@ describe("VectorSearchStrategy", () => {
     expect(results[0].score).toBe(0.9);
     expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
+
+  // metaOnly contract (2026-09-24): the payload stays RAW — labels live only on
+  // rankingOverlay, which a metaOnly hit keeps.
+  it("keeps rankingOverlay under metaOnly and leaves the payload raw", async () => {
+    const overlay = { preset: "hotspots", file: { commitCount: { value: 37, label: "extreme" } } };
+    const hit = { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", git: { file: { commitCount: 37 } } } };
+    const qdrant = { search: vi.fn().mockResolvedValue([hit]) } as unknown as QdrantManager;
+    const reranker = {
+      rerank: vi.fn((results: object[]) => results.map((r) => ({ ...r, rankingOverlay: overlay }))),
+    } as unknown as Reranker;
+    const strategy = new VectorSearchStrategy(
+      qdrant,
+      reranker,
+      [RELATIVE_PATH, GIT_FILE_COMMITS],
+      ["git.file.commitCount"],
+    );
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      embedding: [0.1],
+      limit: 10,
+      rerank: "hotspots",
+      metaOnly: true,
+    });
+
+    expect(results[0].rankingOverlay).toEqual(overlay);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts", git: { file: { commitCount: 37 } } });
+  });
 });

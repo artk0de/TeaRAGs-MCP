@@ -356,4 +356,31 @@ describe("SimilarSearchStrategy", () => {
     // Original filter passed through, not wrapped/rebuilt.
     expect(callArgs.filter).toBe(userFilter);
   });
+
+  // metaOnly contract (2026-09-24): labels live only on rankingOverlay.
+  it("keeps rankingOverlay under metaOnly and leaves the payload raw", async () => {
+    const overlay = { preset: "hotspots", file: { commitCount: { value: 37, label: "extreme" } } };
+    const qdrant = createMockQdrant([
+      { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", git: { file: { commitCount: 37 } } } },
+    ]);
+    const reranker = {
+      rerank: vi.fn((results: object[]) => results.map((r) => ({ ...r, rankingOverlay: overlay }))),
+    } as unknown as Reranker;
+    const strategy = new SimilarSearchStrategy(
+      qdrant,
+      reranker,
+      [
+        { key: "relativePath", type: "string", description: "path" },
+        { key: "git.file.commitCount", type: "number", description: "commits" },
+      ],
+      ["git.file.commitCount"],
+      createMockEmbeddings(),
+      { positiveIds: ["uuid-1"] },
+    );
+
+    const results = await strategy.execute({ collectionName: "col", limit: 5, rerank: "hotspots", metaOnly: true });
+
+    expect(results[0].rankingOverlay).toEqual(overlay);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts", git: { file: { commitCount: 37 } } });
+  });
 });

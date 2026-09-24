@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import {
-  applyEssentialSignalsToOverlay,
+  applyEssentialSignals,
   computeFetchLimit,
   filterMetaOnly,
   postProcess,
@@ -108,18 +108,18 @@ describe("filterMetaOnly", () => {
     { key: "relativePath", type: "string", description: "File path" },
     { key: "language", type: "string", description: "Language" },
     { key: "startLine", type: "number", description: "Start line" },
-    // Overlay values merge into the namespace of the descriptor that owns them
-    // (bd tea-rags-mcp-rtjrn), so the git signals the overlays below carry are
-    // declared here, as the git trajectory declares them in production.
+    // Git signals declared as the git trajectory declares them in production.
     { key: "git.file.ageDays", type: "number", description: "File age" },
     { key: "git.file.commitCount", type: "number", description: "File commits" },
     { key: "git.chunk.commitCount", type: "number", description: "Chunk commits" },
   ];
 
-  // bd tea-rags-mcp-rtjrn — the live shape: a techDebt file-level overlay
-  // carries a git signal, a static flat signal (`imports`) and a codegraph
-  // signal (`fanIn`). Each lands in its OWN namespace, never all under `git`.
-  describe("overlay merge is owner-correct", () => {
+  // metaOnly contract (2026-09-24, supersedes bd tea-rags-mcp-rtjrn): the
+  // payload is RAW everywhere — every value at its owner path in its stored
+  // form, never a {value,label}. Labels live only on the hit's rankingOverlay.
+  // Live shape: a techDebt file-level overlay carries a git signal, a static
+  // flat signal (`imports`) and a codegraph signal (`fanIn`).
+  describe("payload stays raw whatever the overlay carries", () => {
     const ownedSignals: PayloadSignalDescriptor[] = [
       ...payloadSignals,
       { key: "git.file.bugFixRate", type: "number", description: "Bug-fix rate" },
@@ -146,50 +146,36 @@ describe("filterMetaOnly", () => {
       },
     });
 
-    it("keeps static and codegraph overlay keys out of git.file", () => {
-      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];
-      expect((meta.git as any).file).toEqual({ commitCount: { value: 27, label: "high" } });
+    it("carries no {value,label} anywhere in the payload", () => {
+      const meta = filterMetaOnly([liveFileHit()], ownedSignals, ["git.file.commitCount"])[0];
+      expect(JSON.stringify(meta)).not.toContain('"label"');
     });
 
-    it("never duplicates a top-level static key and leaves it raw", () => {
+    it("keeps git essential fields raw at their owner path", () => {
+      const meta = filterMetaOnly([liveFileHit()], ownedSignals, ["git.file.commitCount"])[0];
+      expect(meta.git).toEqual({ file: { commitCount: 27 } });
+    });
+
+    it("keeps a static signal raw at the payload root", () => {
       const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];
       expect(meta.imports).toEqual(["./a", "./b"]);
     });
 
-    it("merges a codegraph overlay value into codegraph.symbols at its level", () => {
+    it("forwards the codegraph branch raw", () => {
       const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];
-      expect((meta.codegraph as any).symbols.file).toEqual({ fanIn: { value: 12, label: "frequent" }, fanOut: 3 });
+      expect((meta.codegraph as any).symbols.file).toEqual({ fanIn: 12, fanOut: 3 });
+    });
+
+    it("adds no overlay-only git field and no preset to the payload", () => {
+      const meta = filterMetaOnly([liveFileHit()], ownedSignals, [])[0];
+      expect(meta.git).toBeUndefined();
+      expect(meta).not.toHaveProperty("preset");
     });
 
     it("does not mutate the hit's own payload", () => {
       const hit = liveFileHit();
       filterMetaOnly([hit], ownedSignals, []);
       expect((hit.payload as any).codegraph.symbols.file.fanIn).toBe(12);
-    });
-
-    it("routes chunk-level overlay keys to their owners too", () => {
-      const hit: SearchResult = {
-        score: 0.8,
-        payload: { relativePath: "src/hub.ts", codegraph: { symbols: { chunk: { fanIn: 4 } } } },
-        rankingOverlay: {
-          preset: "hotspots",
-          chunk: { commitCount: { value: 3, label: "typical" }, fanIn: { value: 4, label: "typical" } },
-        },
-      };
-      const meta = filterMetaOnly([hit], ownedSignals, [])[0];
-      expect(meta.git).toEqual({ chunk: { commitCount: { value: 3, label: "typical" } } });
-      expect((meta.codegraph as any).symbols.chunk).toEqual({ fanIn: { value: 4, label: "typical" } });
-    });
-
-    it("drops an overlay key no descriptor owns", () => {
-      const hit: SearchResult = {
-        score: 0.8,
-        payload: { relativePath: "src/hub.ts" },
-        rankingOverlay: { preset: "techDebt", file: { mystery: 1 } },
-      };
-      const meta = filterMetaOnly([hit], ownedSignals, [])[0];
-      expect(meta.git).toBeUndefined();
-      expect(meta).not.toHaveProperty("mystery");
     });
   });
 
@@ -207,7 +193,7 @@ describe("filterMetaOnly", () => {
     expect(meta[0].content).toBeUndefined();
   });
 
-  it("includes overlay git data when overlay has data", () => {
+  it("does not copy file-level overlay values into the payload", () => {
     const results: SearchResult[] = [
       {
         score: 0.8,
@@ -219,9 +205,9 @@ describe("filterMetaOnly", () => {
       },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);
-    expect(meta[0].git).toEqual({ file: { ageDays: 100, commitCount: 5 } });
+    expect(meta[0].git).toBeUndefined();
     expect(meta[0].derived).toBeUndefined();
-    expect(meta[0].preset).toBe("techDebt");
+    expect(meta[0]).not.toHaveProperty("preset");
   });
 
   it("filters git by essential fields when no overlay", () => {
@@ -282,7 +268,7 @@ describe("filterMetaOnly", () => {
     expect(meta[0].git).toBeUndefined();
   });
 
-  it("includes chunk-level overlay data", () => {
+  it("does not copy chunk-level overlay values into the payload", () => {
     const results: SearchResult[] = [
       {
         score: 0.5,
@@ -294,10 +280,10 @@ describe("filterMetaOnly", () => {
       },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);
-    expect(meta[0].git).toEqual({ chunk: { commitCount: 3 } });
+    expect(meta[0].git).toBeUndefined();
   });
 
-  it("merges essential fields with overlay data when both exist", () => {
+  it("keeps only raw essential fields when an overlay also exists", () => {
     const results: SearchResult[] = [
       {
         score: 0.8,
@@ -319,17 +305,13 @@ describe("filterMetaOnly", () => {
       "git.chunk.commitCount",
       "git.chunk.taskIds",
     ]);
-    const git = meta[0].git as Record<string, Record<string, unknown>>;
-    // overlay signals present
-    expect(git.file.ageDays).toBe(100);
-    expect(git.file.commitCount).toBe(5);
-    // essential fields merged from full payload
-    expect(git.file.taskIds).toEqual(["TD-123", "TD-456"]);
-    expect(git.chunk.commitCount).toBe(3);
-    expect(git.chunk.taskIds).toEqual(["TD-123"]);
-    // non-essential fields excluded
-    expect(git.file.recentAuthors).toBeUndefined();
-    expect(meta[0].preset).toBe("techDebt");
+    // essential fields only, raw from the full payload — the overlay's
+    // ageDays/commitCount stay on rankingOverlay
+    expect(meta[0].git).toEqual({
+      file: { taskIds: ["TD-123", "TD-456"] },
+      chunk: { commitCount: 3, taskIds: ["TD-123"] },
+    });
+    expect(meta[0]).not.toHaveProperty("preset");
   });
 
   it("includes imports when marked essential in payload signals", () => {
@@ -354,11 +336,9 @@ describe("filterMetaOnly", () => {
     expect(meta[0].content).toBeUndefined();
   });
 
-  it("attaches overlay.preset to meta even when overlay has no file/chunk signal data", () => {
-    // A reranker may emit a ranking overlay with only the preset name and
-    // no file/chunk signal entries (e.g. a preset matched but no signals
-    // were extracted). The "preset-only" overlay branch must still carry
-    // the preset name through so consumers can attribute the score.
+  it("does not copy the overlay preset into the payload", () => {
+    // The preset is attributed by rankingOverlay.preset, which a metaOnly hit
+    // keeps; a payload copy would be a field the non-metaOnly payload lacks.
     const results: SearchResult[] = [
       {
         score: 0.42,
@@ -370,8 +350,8 @@ describe("filterMetaOnly", () => {
       },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);
-    expect(meta[0].preset).toBe("stable");
-    // No git block produced since overlay had no data and no essentials requested.
+    expect(meta[0]).not.toHaveProperty("preset");
+    // No git block produced: no essentials requested.
     expect(meta[0].git).toBeUndefined();
   });
 
@@ -412,7 +392,7 @@ describe("filterMetaOnly", () => {
     });
   });
 
-  it("preserves codegraph chunk section alongside git overlay", () => {
+  it("preserves codegraph chunk section when the hit has an overlay", () => {
     const results: SearchResult[] = [
       {
         score: 0.8,
@@ -434,7 +414,7 @@ describe("filterMetaOnly", () => {
       },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);
-    expect(meta[0].git).toEqual({ chunk: { commitCount: 3 } });
+    expect(meta[0].git).toBeUndefined();
     const codegraph = meta[0].codegraph as { symbols?: { chunk?: Record<string, unknown> } } | undefined;
     expect(codegraph?.symbols?.chunk).toEqual({
       "codegraph.chunk.fanIn": 5,
@@ -453,20 +433,14 @@ describe("filterMetaOnly", () => {
 });
 
 // ---------------------------------------------------------------------------
-// applyEssentialSignalsToOverlay
+// applyEssentialSignals
 // ---------------------------------------------------------------------------
 
-describe("applyEssentialSignalsToOverlay", () => {
-  // Overlay values merge into their owning namespace (bd tea-rags-mcp-rtjrn).
-  const signals: PayloadSignalDescriptor[] = [
-    { key: "git.file.commitCount", type: "number", description: "File commits" },
-    { key: "git.file.bugFixRate", type: "number", description: "Bug-fix rate" },
-    { key: "git.file.churnVolatility", type: "number", description: "Churn volatility" },
-    { key: "imports", type: "string[]", description: "File imports", level: "file" },
-    { key: "codegraph.file.fanIn", type: "number", description: "File fan-in" },
-  ];
-
-  it("merges overlay keys into their owners only, never into every essential namespace", () => {
+describe("applyEssentialSignals", () => {
+  // metaOnly contract (2026-09-24, supersedes bd tea-rags-mcp-rtjrn): the
+  // find_symbol metaOnly payload is raw — overlay values never enter it; the
+  // hit keeps its rankingOverlay, where every label lives.
+  it("never merges overlay values or the preset into the payload", () => {
     const result: SearchResult = {
       score: 0.9,
       payload: {
@@ -484,12 +458,29 @@ describe("applyEssentialSignalsToOverlay", () => {
         },
       },
     };
-    const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"], signals);
+    const out = applyEssentialSignals(result, ["git.file.commitCount"]);
     const payload = out.payload as any;
-    expect(payload.git.file).toEqual({ commitCount: 27, bugFixRate: { value: 40, label: "concerning" } });
+    expect(payload.git.file).toEqual({ commitCount: 27 });
     expect(payload.imports).toEqual(["./a"]);
-    expect(payload.codegraph.symbols.file).toEqual({ fanIn: { value: 12, label: "frequent" } });
-    expect(payload.codegraph.file).toBeUndefined();
+    expect(payload.codegraph.symbols.file).toEqual({ fanIn: 12 });
+    expect(payload).not.toHaveProperty("preset");
+    expect(JSON.stringify(payload)).not.toContain('"label"');
+    expect(out.rankingOverlay).toBe(result.rankingOverlay);
+  });
+
+  // bd tea-rags-mcp-0x55i — an essential codegraph key is LOGICAL
+  // (`codegraph.file.fanIn`); the payload stores it PHYSICALLY
+  // (`codegraph.symbols.file.fanIn`), so the filter must read the physical path.
+  it("keeps an essential codegraph key at its physical payload path", () => {
+    const result: SearchResult = {
+      score: 0.9,
+      payload: {
+        relativePath: "src/foo.ts",
+        codegraph: { symbols: { file: { fanIn: 12, fanOut: 3 }, chunk: { pageRank: 0.01 } } },
+      },
+    };
+    const out = applyEssentialSignals(result, ["codegraph.file.fanIn"]);
+    expect((out.payload as any).codegraph).toEqual({ symbols: { file: { fanIn: 12 } } });
   });
 
   const buildResult = (gitFile: Record<string, unknown>, gitChunk?: Record<string, unknown>): SearchResult => ({
@@ -509,7 +500,7 @@ describe("applyEssentialSignalsToOverlay", () => {
     );
     const essentialKeys = ["git.file.commitCount", "git.file.ageDays", "git.chunk.commitCount"];
 
-    const out = applyEssentialSignalsToOverlay(result, essentialKeys, signals);
+    const out = applyEssentialSignals(result, essentialKeys);
     const { git } = out.payload as any;
 
     expect(Object.keys(git.file).sort()).toEqual(["ageDays", "commitCount"]);
@@ -521,7 +512,7 @@ describe("applyEssentialSignalsToOverlay", () => {
 
   it("preserves non-git payload fields (outline scaffolding untouched)", () => {
     const result = buildResult({ commitCount: 5, recentDominantAuthor: "x" });
-    const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"], signals);
+    const out = applyEssentialSignals(result, ["git.file.commitCount"]);
 
     // Outline-specific fields preserved
     expect(out.payload?.relativePath).toBe("src/foo.ts");
@@ -529,43 +520,46 @@ describe("applyEssentialSignalsToOverlay", () => {
     expect(out.payload?.chunkCount).toBe(3);
   });
 
-  it("merges ranking overlay signals on top of essential fields", () => {
+  it("keeps a raw essential value raw when the overlay labels the same field", () => {
     const result: SearchResult = {
       score: 0.9,
       payload: { relativePath: "src/foo.ts", git: { file: { commitCount: 27, bugFixRate: 42 } } },
       rankingOverlay: {
         preset: "bugHunt",
-        file: { bugFixRate: { value: 42, label: "healthy" }, churnVolatility: { value: 3.26, label: "stable" } },
+        file: { commitCount: { value: 27, label: "high" }, churnVolatility: { value: 3.26, label: "stable" } },
       },
     };
-    const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"], signals);
-    const { git } = out.payload as any;
-
-    expect(git.file.commitCount).toBe(27); // essential kept
-    expect(git.file.bugFixRate).toEqual({ value: 42, label: "healthy" }); // overlay overwrites raw
-    expect(git.file.churnVolatility).toEqual({ value: 3.26, label: "stable" }); // overlay adds
-    expect((out.payload as any).preset).toBe("bugHunt");
+    const out = applyEssentialSignals(result, ["git.file.commitCount"]);
+    expect((out.payload as any).git).toEqual({ file: { commitCount: 27 } });
+    expect(out.payload).not.toHaveProperty("preset");
   });
 
-  it("leaves payload unchanged when no essential keys and no overlay", () => {
+  it("leaves payload unchanged when no essential keys", () => {
     const result = buildResult({ commitCount: 5 });
-    const out = applyEssentialSignalsToOverlay(result, [], signals);
-    expect(out).toBe(result);
+    expect(applyEssentialSignals(result, [])).toBe(result);
+  });
+
+  it("leaves payload unchanged when no essential keys even if the hit is reranked", () => {
+    const result: SearchResult = {
+      ...buildResult({ commitCount: 5 }),
+      rankingOverlay: { preset: "hotspots", file: { commitCount: { value: 5, label: "low" } } },
+    };
+    expect(applyEssentialSignals(result, [])).toBe(result);
   });
 
   it("drops namespace entirely when no essential fields match", () => {
     const result = buildResult({ recentDominantAuthor: "x", enrichedAt: "y" });
-    const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"], signals); // no match
+    const out = applyEssentialSignals(result, ["git.file.commitCount"]); // no match
     expect((out.payload as any).git).toBeUndefined();
     expect(out.payload?.relativePath).toBe("src/foo.ts"); // non-git preserved
   });
 
   it("ignores keys with fewer than 3 segments (flat fields handled elsewhere)", () => {
     const result = buildResult({ commitCount: 5 });
-    const out = applyEssentialSignalsToOverlay(result, ["imports", "methodLines"], signals);
-    // Flat keys produce no namespace groups and no overlay → payload
-    // passes through unchanged. Flat-field preservation is the caller's
-    // concern (e.g. filterMetaOnly already iterates payloadSignals).
+    const out = applyEssentialSignals(result, ["imports", "methodLines"]);
+    // Flat keys produce no namespace groups → payload passes through
+    // unchanged. Flat-field preservation is the caller's concern (e.g.
+    // filterMetaOnly already iterates payloadSignals).
     expect(out).toBe(result);
   });
 
@@ -579,14 +573,14 @@ describe("applyEssentialSignalsToOverlay", () => {
         },
       },
     };
-    const out = applyEssentialSignalsToOverlay(result, ["runtime.file.memoryMb", "runtime.file.cpuPct"], signals);
+    const out = applyEssentialSignals(result, ["runtime.file.memoryMb", "runtime.file.cpuPct"]);
     const { runtime } = out.payload as any;
     expect(Object.keys(runtime.file).sort()).toEqual(["cpuPct", "memoryMb"]);
     expect(runtime.file.debugTrace).toBeUndefined();
     expect(runtime.file.internalId).toBeUndefined();
   });
 
-  it("handles missing payload namespace with only overlay present", () => {
+  it("writes no namespace from the overlay when the payload lacks it", () => {
     const result: SearchResult = {
       score: 0.9,
       payload: { relativePath: "src/foo.ts" }, // no git in payload
@@ -595,9 +589,8 @@ describe("applyEssentialSignalsToOverlay", () => {
         file: { bugFixRate: { value: 10, label: "healthy" } },
       },
     };
-    const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"], signals);
-    const { git } = out.payload as any;
-    expect(git.file.bugFixRate).toEqual({ value: 10, label: "healthy" });
-    expect((out.payload as any).preset).toBe("hotspots");
+    const out = applyEssentialSignals(result, ["git.file.commitCount"]);
+    expect((out.payload as any).git).toBeUndefined();
+    expect(out.payload).not.toHaveProperty("preset");
   });
 });

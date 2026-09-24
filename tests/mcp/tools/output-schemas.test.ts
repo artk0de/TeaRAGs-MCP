@@ -40,6 +40,19 @@ describe("SearchResultOutputSchema", () => {
     expect(result.results[0].rankingOverlay?.preset).toBe("techDebt");
   });
 
+  // The overlay the reranker emits is RankingOverlay { preset, file?, chunk? } —
+  // labelled values plus raw unlabelled ones. The declared schema must keep
+  // both levels, since a metaOnly payload is raw and the overlay carries every label.
+  it("keeps the rankingOverlay file and chunk levels the reranker emits", () => {
+    const overlay = {
+      preset: "techDebt",
+      file: { commitCount: { value: 37, label: "extreme" }, imports: ["./a"] },
+      chunk: { methodLines: { value: 120, label: "decomposition_candidate" } },
+    };
+    const result = schema.parse({ results: [{ score: 0.9, rankingOverlay: overlay }] });
+    expect(result.results[0].rankingOverlay).toEqual(overlay);
+  });
+
   it("validates result with content field", () => {
     const result = schema.parse({
       results: [

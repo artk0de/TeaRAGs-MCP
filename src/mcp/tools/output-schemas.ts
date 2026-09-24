@@ -8,16 +8,17 @@
 
 import { z } from "zod";
 
+/** Mirrors RankingOverlay (contracts/types/reranker.ts). */
 const RankingOverlaySchema = z.object({
   preset: z.string().optional().describe("Rerank preset used"),
-  raw: z
-    .object({
-      file: z.record(z.string(), z.unknown()).optional().describe("Raw file-level signals"),
-      chunk: z.record(z.string(), z.unknown()).optional().describe("Raw chunk-level signals"),
-    })
+  file: z
+    .record(z.string(), z.unknown())
     .optional()
-    .describe("Raw signal values from payload"),
-  derived: z.record(z.string(), z.number()).optional().describe("Normalized derived signals (0-1)"),
+    .describe("File-level signals keyed by bare field name: {value,label} when labelled, else the raw value"),
+  chunk: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Chunk-level signals keyed by bare field name: {value,label} when labelled, else the raw value"),
 });
 
 const GitMetadataSchema = z
