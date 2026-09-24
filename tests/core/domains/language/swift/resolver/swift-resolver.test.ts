@@ -2771,3 +2771,34 @@ describe("SwiftCallResolver — `try` call heads and nested type heads (bd tea-r
     expect(target?.targetSymbolId).toBe("Encoder.DateEncoding#read");
   });
 });
+
+describe("SwiftCallResolver — `super.init()` into a superclass with an implicit initializer (bd tea-rags-mcp-y99pg.21)", () => {
+  const t = table({
+    "Sources/World.swift": [
+      { symbolId: "_ExampleWrapperBase", scope: [] },
+      { symbolId: "ExampleWrapper", scope: [] },
+      { symbolId: "ExampleWrapper#init", scope: ["ExampleWrapper"] },
+    ],
+  });
+  const base = {
+    callerFile: "Sources/World.swift",
+    callerScope: ["ExampleWrapper", "init"],
+    symbolTable: t,
+  };
+
+  it("lands on the superclass it initializes when the project declares no initializer of it", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("super", "init", 9),
+      ctx({ ...base, classExtends: { ExampleWrapper: "_ExampleWrapperBase" } }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/World.swift", targetSymbolId: "_ExampleWrapperBase" });
+  });
+
+  it("emits nothing when the superclass is not the project's", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("super", "init", 9),
+      ctx({ ...base, classExtends: { ExampleWrapper: "NSObject" } }),
+    );
+    expect(target).toBeNull();
+  });
+});

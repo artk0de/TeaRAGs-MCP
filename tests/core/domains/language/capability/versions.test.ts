@@ -277,6 +277,8 @@ describe("seeded support versions", () => {
       // swift walker 34: resolver-side chain-head reads changed which edges exist,
       // so an index built by walker 33 lacks the `try`-headed and nested-type-headed
       // edges.
+      // swift walker 35: implicit-initializer `super.init()` edges are new, so an
+      // index built by walker 34 lacks them.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -311,7 +313,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 34],
+        ["swift", 35],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
