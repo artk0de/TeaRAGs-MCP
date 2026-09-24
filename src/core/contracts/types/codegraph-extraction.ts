@@ -357,6 +357,19 @@ export interface FileExtraction {
    * census ran and found no type; absent for a language with no census pass.
    */
   typeAbstractness?: TypeAbstractnessCensus;
+  /**
+   * Every named value a symbol declares — parameters, locals, fields — with the
+   * type the SYNTAX states, when it states one (bd tea-rags-mcp-4p3sb.1).
+   *
+   * Syntactic facts only: the kernel identifier-declaration pass never sees the
+   * native walker's type channels, so a declaration typed only by a binding, a
+   * field type or a return type is joined at sink time, not here. File-scope
+   * declarations (no owning chunk) are out of scope.
+   *
+   * Plain array (NOT Map) for NDJSON-spill round-trip. Undefined for a file
+   * declaring nothing, and for languages whose passes do not collect it.
+   */
+  identifierDeclarations?: readonly IdentifierDeclaration[];
 }
 
 /** A file's type-abstractness census ({@link FileExtraction.typeAbstractness}). */
@@ -365,6 +378,28 @@ export interface TypeAbstractnessCensus {
   abstractTypeCount: number;
   /** Types that implement behaviour. */
   concreteTypeCount: number;
+}
+
+/** What a declared identifier is to its owning symbol. `return` is a sink-time row, never a pass emission. */
+export type IdentifierDeclarationKind = "param" | "local" | "field" | "return";
+
+/**
+ * Where a declared identifier's type came from. The pass emits the first two;
+ * the rest are joined at sink time from the language's type channels.
+ */
+export type IdentifierTypeSource = "annotation" | "constructor" | "binding" | "field-type" | "return-type";
+
+/** One identifier declaration (`FileExtraction.identifierDeclarations`). */
+export interface IdentifierDeclaration {
+  readonly name: string;
+  /** The pass never emits `return` — that row is built at sink time. */
+  readonly kind: Exclude<IdentifierDeclarationKind, "return">;
+  /** 1-based line of the declared name. */
+  readonly line: number;
+  /** The innermost chunk containing the declaration. */
+  readonly ownerSymbolId: string;
+  readonly typeName?: string;
+  readonly typeSource?: Extract<IdentifierTypeSource, "annotation" | "constructor">;
 }
 
 /** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */
