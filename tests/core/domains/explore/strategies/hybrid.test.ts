@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { CollectionInfo, QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
+import {
+  QdrantInvalidQueryParameterError,
+  QdrantOperationError,
+} from "../../../../../src/core/adapters/qdrant/errors.js";
+import { InvalidQueryError } from "../../../../../src/core/domains/explore/errors.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { HybridSearchStrategy } from "../../../../../src/core/domains/explore/strategies/hybrid.js";
 import { HybridNotEnabledError } from "../../../../../src/core/domains/explore/strategies/types.js";
@@ -263,5 +268,41 @@ describe("HybridSearchStrategy", () => {
     });
 
     expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+  });
+});
+
+describe("HybridSearchStrategy — adapter query-parameter rejection (bd tea-rags-mcp-pn12w)", () => {
+  const reason = "semanticWeight must be a finite number in [0, 1]";
+
+  function rejectingQdrant(error: Error): QdrantManager {
+    const qdrant = createMockQdrant(true);
+    vi.mocked(qdrant.hybridSearch).mockRejectedValue(error);
+    return qdrant;
+  }
+
+  it("surfaces the adapter's rejection as the explore InvalidQueryError, byte-identical to the MCP client", async () => {
+    const strategy = createStrategy(rejectingQdrant(new QdrantInvalidQueryParameterError(reason)));
+
+    const error: unknown = await strategy
+      .execute({ collectionName: "test_col", embedding: [0.1], query: "q", limit: 5 })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(InvalidQueryError);
+    const mapped = error as InvalidQueryError;
+    expect(mapped.code).toBe("EXPLORE_INVALID_QUERY");
+    expect(mapped.httpStatus).toBe(400);
+    expect(mapped.toUserMessage()).toBe(
+      "[EXPLORE_INVALID_QUERY] Invalid query: semanticWeight must be a finite number in [0, 1]" +
+        "\n\nHint: Provide a non-empty search query",
+    );
+  });
+
+  it("lets every other adapter error through untouched", async () => {
+    const unrelated = new QdrantOperationError("query", "boom");
+    const strategy = createStrategy(rejectingQdrant(unrelated));
+
+    await expect(strategy.execute({ collectionName: "test_col", embedding: [0.1], query: "q", limit: 5 })).rejects.toBe(
+      unrelated,
+    );
   });
 });

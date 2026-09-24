@@ -176,6 +176,30 @@ export class QdrantPointNotFoundError extends InfraError {
   }
 }
 
+/**
+ * A ranked query was refused before it reached Qdrant because one of its
+ * parameters is out of range.
+ *
+ * The adapter owns the check (it is the layer that knows what Qdrant accepts)
+ * but not the user-facing wording: `adapters` may not import a domain, so the
+ * explore strategy that issued the query translates this into its own
+ * `InvalidQueryError`. `reason` is kept bare for exactly that translation — the
+ * MCP client must see the explore error, not this one.
+ */
+export class QdrantInvalidQueryParameterError extends InfraError {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super({
+      code: "INFRA_QDRANT_INVALID_QUERY_PARAMETER",
+      message: `Qdrant query rejected: ${reason}`,
+      hint: "Pass query parameters within the documented range",
+      httpStatus: 400,
+    });
+    this.reason = reason;
+  }
+}
+
 export class CollectionAlreadyExistsError extends InfraError {
   constructor(collectionName: string, cause?: Error) {
     super({
