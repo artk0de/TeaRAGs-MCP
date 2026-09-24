@@ -2124,7 +2124,7 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
     case "postfix_expression":
       return swiftExpressionFact(node.namedChildren[0] ?? null, scope, depth + 1);
     case "self_expression":
-      return { nominal: scope.site.enclosingType, element: null };
+      return { nominal: scope.site.enclosingType, element: enclosingSwiftSelfElement(node) };
     case "simple_identifier":
       return node.text === "Self"
         ? { nominal: scope.site.enclosingType, element: null }
@@ -2372,6 +2372,33 @@ function enclosingSwiftClosureEndLine(node: AstNode): number | undefined {
     if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return undefined;
   }
   return undefined;
+}
+
+/**
+ * The element `self` iterates as inside an extension of an ARRAY type:
+ * `extension [ServerTrustEvaluating]` or `extension Array where Element ==
+ * ServerTrustEvaluating` — so `for evaluator in self` types `evaluator` (bd
+ * tea-rags-mcp-y99pg). Any other enclosing type answers null. The `where`
+ * clause is read positionally: the constrained name first, the type last.
+ */
+function enclosingSwiftSelfElement(node: AstNode): string | null {
+  let declaration: AstNode | null = node.parent;
+  while (declaration && declaration.type !== "class_declaration" && declaration.type !== "protocol_declaration") {
+    declaration = declaration.parent;
+  }
+  if (declaration?.type !== "class_declaration" || swiftTypeDeclarationKind(declaration) !== "extension") return null;
+  const name = declaration.childForFieldName("name");
+  if (name?.type === "array_type") return swiftTypeFactOf(name).element;
+  if (name?.type !== "user_type" || name.text.trim() !== "Array") return null;
+  for (const clause of declaration.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      const equality = constraint.namedChildren.find((c) => c.type === "equality_constraint");
+      if (equality?.namedChildren[0]?.text !== "Element") continue;
+      return swiftTypeFactOf(equality.namedChildren[equality.namedChildCount - 1]).nominal;
+    }
+  }
+  return null;
 }
 
 /** Short name of the nearest enclosing nominal type, as `classFieldTypes` keys it. */

@@ -359,6 +359,9 @@ describe("seeded support versions", () => {
       // swift walker 47: y99pg.29 merged with y99pg.30 / .31 — a bare call an
       // enclosing type's SDK supertype declares leaves the denominator, and no
       // earlier walker's index holds both branches' extraction whole.
+      // swift walker 48: bd tea-rags-mcp-y99pg.34 — `self` in an array-type
+      // extension iterates as its element, so an index built by walker 47 holds
+      // no binding for `for x in self` there.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
@@ -368,7 +371,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 47],
+        ["swift", 48],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

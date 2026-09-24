@@ -1825,6 +1825,34 @@ describe("swift walker — a generic-argument extension's spelled id (bd tea-rag
   });
 });
 
+describe("swift walker — `self` in an extension of an array type iterates its element (bd tea-rags-mcp-y99pg)", () => {
+  const cases = [
+    ["an array-spelled extension", "extension [Evaluator] {"],
+    ["an `Array where Element ==` extension", "extension Array where Element == Evaluator {"],
+  ] as const;
+  for (const [label, header] of cases) {
+    it(`types \`for x in self\` by the element in ${label}`, () => {
+      const src = [header, "  func run() {", "    for e in self {", "      e.evaluate()", "    }", "  }", "}", ""].join(
+        "\n",
+      );
+      expect(typeAt(src, "e", 4)).toBe("Evaluator");
+      expect(resolveLocalBindingType(extractMaterialized(src).chunks[0].localBindings, "e", 4)).toBe("Evaluator");
+    });
+  }
+
+  it("types nothing for `self` in an extension of a non-array type", () => {
+    const src = [
+      "extension Box where Element == Evaluator {",
+      "  func run() {",
+      "    for e in self { e.go() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "e", 3)).toBeUndefined();
+  });
+});
+
 describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)", () => {
   it("publishes what a function-typed alias declared in a type returns", () => {
     const src = [
