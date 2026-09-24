@@ -410,25 +410,107 @@ export function declarationAccountsFor(
 ): boolean {
   const declaringFile = programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
   const sameSite = declaringFile !== null && declarationFileTypes(declaringFile, candidate.relPath);
+  const candidateOwner = candidate.scope.at(-1);
+  // The annotated-factory hop (bd tea-rags-mcp-v0207) answers for an interface
+  // member and a type-alias literal member alike, so it is asked on both
+  // branches below — never across files.
+  const annotatedFactoryOwns =
+    declaringFile === candidate.relPath &&
+    candidateOwner !== undefined &&
+    candidateOwnerReturnsDeclaringType(declaration, candidateOwner);
   const declaringOwner = declarationOwnerName(declaration);
   if (declaringOwner === null) {
     if (sameSite && candidateEnclosesDeclaration(declaration, candidate, declaringFile === candidate.relPath)) {
       return true;
     }
-    const candidateOwner = candidate.scope.at(-1);
     return (
-      declaringFile === candidate.relPath &&
-      candidateOwner !== undefined &&
-      candidateOwnerEnclosesDeclaration(declaration, candidateOwner)
+      (declaringFile === candidate.relPath &&
+        candidateOwner !== undefined &&
+        candidateOwnerEnclosesDeclaration(declaration, candidateOwner)) ||
+      annotatedFactoryOwns
     );
   }
-  const candidateOwner = candidate.scope.at(-1);
   if (candidateOwner === undefined) return false;
   if (sameSite && candidateOwner === declaringOwner) return true;
+  if (annotatedFactoryOwns) return true;
   return (
     ctx.hierarchy
       ?.getDescendants(declaringOwner, { transitive: true })
       .some((edge) => edge.sourceFqName === candidateOwner) ?? false
+  );
+}
+
+/**
+ * Is the declaration a member of a same-file named TYPE that the candidate's
+ * owner — a top-level factory — names as its return annotation (bd
+ * tea-rags-mcp-v0207)?
+ *
+ * The factory/hook idiom again, annotated: `createAppContext():
+ * Promise<AppContext>` returns `{ …, cleanup }`, so the checker declares
+ * `ctx.cleanup` on `AppContext` — an interface, or the type literal a type alias
+ * names — and never on the factory's own `cleanup`. The wr3n4 containment arm
+ * cannot reach it: the type sits outside the factory's lines, and its name is
+ * not the candidate's owner.
+ *
+ * The evidence is the ANNOTATION, which the author wrote to say "this factory
+ * produces that type": the candidate's owner must be a top-level function (or a
+ * `const` bound to an arrow / function expression) in the type's own file whose
+ * declared return type is the type, bare or under `Promise<…>`. A candidate
+ * scoped under that factory is then the member the returned object carries. The
+ * type is found the way {@link candidateOwnerEnclosesDeclaration} finds an owner
+ * — the FIRST named declaration enclosing the member — and only an interface or
+ * a type alias qualifies: a class declares its own members, and its method, not
+ * a factory's namesake, is the dispatch target. An un-annotated factory, a
+ * factory annotated with another type, a type imported from another file, or a
+ * nested factory all decline.
+ */
+function candidateOwnerReturnsDeclaringType(declaration: ts.Declaration, candidateOwner: string): boolean {
+  const declaringType = enclosingNamedTypeDeclaration(declaration);
+  if (declaringType === null) return false;
+  const returnType = topLevelFactoryReturnAnnotation(declaringType.getSourceFile(), candidateOwner);
+  return returnType !== undefined && annotationNamesType(returnType, declaringType.name.text);
+}
+
+/** The first named declaration enclosing `declaration`, when it is an interface or a type alias. */
+function enclosingNamedTypeDeclaration(
+  declaration: ts.Declaration,
+): ts.InterfaceDeclaration | ts.TypeAliasDeclaration | null {
+  let node: ts.Node | undefined = declaration.parent;
+  while (node !== undefined) {
+    if (ts.getNameOfDeclaration(node as ts.Declaration) !== undefined) {
+      return ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) ? node : null;
+    }
+    node = node.parent;
+  }
+  return null;
+}
+
+/** The declared return type of the top-level function or function-valued `const` called `name`. */
+function topLevelFactoryReturnAnnotation(sourceFile: ts.SourceFile, name: string): ts.TypeNode | undefined {
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return statement.type;
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const variable of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(variable.name) || variable.name.text !== name) continue;
+      const { initializer } = variable;
+      if (initializer !== undefined && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))) {
+        return initializer.type;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** `T` or `Promise<T>` — the annotation names the type `typeName` itself. */
+function annotationNamesType(annotation: ts.TypeNode, typeName: string): boolean {
+  if (!ts.isTypeReferenceNode(annotation) || !ts.isIdentifier(annotation.typeName)) return false;
+  if (annotation.typeName.text === typeName) return true;
+  const [awaited] = annotation.typeArguments ?? [];
+  return (
+    annotation.typeName.text === "Promise" &&
+    annotation.typeArguments?.length === 1 &&
+    awaited !== undefined &&
+    annotationNamesType(awaited, typeName)
   );
 }
 

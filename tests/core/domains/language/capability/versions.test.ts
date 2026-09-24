@@ -210,9 +210,13 @@ describe("seeded support versions", () => {
       // dispatch (`dispatchTables`, `CallRef.dispatch`, `callbackParams`,
       // `dispatchArgs`), so an index built by walker 3 holds none of the
       // caller→candidate edges `H[k]()` / `T[k].f()` sites now fan out to.
+      // typescript walker 12: bd tea-rags-mcp-v0207 adds the annotated-factory
+      // hop to the owner rule, so an index built by walker 11 holds file-only
+      // edges where a member declared on a same-file type the factory's return
+      // annotation names now pins the factory's own member.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 11],
+        ["typescript", 12],
         ["javascript", 4],
         ["python", 8],
         ["ruby", 5],

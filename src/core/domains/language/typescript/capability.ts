@@ -95,5 +95,12 @@ export const capability: LanguageCapability = {
   // `reexportOriginFile` with its own ambiguity bounds; receivers no import
   // binds are unchanged, as are `selectTableDef`, `resolveCandidateName`,
   // `receiverSymbol` and the cone locator's import narrowing.
-  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
+  // walker 12: bd tea-rags-mcp-v0207. The owner rule gains the
+  // annotated-factory hop: a member the checker declares on a same-file
+  // interface / type alias accounts for a candidate whose owner is a
+  // top-level factory annotated to return that type (bare or `Promise<…>`),
+  // recovering the `createAppContext(): Promise<AppContext>` pins walker 10's
+  // containment arm left file-only. Classes, cross-file types and
+  // un-annotated factories still decline.
+  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
 };
