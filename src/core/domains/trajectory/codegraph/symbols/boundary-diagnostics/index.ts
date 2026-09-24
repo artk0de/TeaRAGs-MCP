@@ -1,6 +1,17 @@
 export { classifyDirectoryRelation } from "./directory-relation.js";
 export { computeFileInstabilities } from "./file-instability.js";
 export {
+  detectLeakingAbstractions,
+  FACADE_ADOPTION_MAJORITY,
+  FACADE_MIN_EXTERNAL_IMPORTERS,
+  FACADE_MODULE_EXCLUSION_REASONS,
+  FACADE_OTSU_MIN_POPULATION,
+  MODULE_ENTRY_FILE_NAMES,
+  resolveFacadeAdoptionThreshold,
+  type FacadeAdoptionThresholdPolicy,
+} from "./leaking-abstraction.js";
+export { otsuSplit, type OtsuSplit } from "./otsu-split.js";
+export {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,
@@ -9,6 +20,16 @@ export {
 } from "./stable-dependencies.js";
 export type {
   DependencyDirectoryRelation,
+  FacadeAdoption,
+  FacadeLeakKind,
+  FacadeLeakRootCause,
+  FacadeLeakViolation,
+  FacadeModuleAssessment,
+  FacadeModuleExclusionReason,
+  FacadeModuleStatus,
+  LeakingAbstractionOptions,
+  LeakingAbstractionReport,
+  LeakingAbstractionSummary,
   NoSymbolEndpointFile,
   StableDependenciesExclusionCounts,
   StableDependenciesOptions,

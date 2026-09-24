@@ -3,9 +3,10 @@
  * (bd tea-rags-mcp-94hd9).
  *
  * Reads the whole file dependency graph from a codegraph handle, runs the
- * boundary detectors owned by the codegraph trajectory, and shapes the typed
+ * boundary detectors owned by the codegraph trajectory — Stable Dependencies
+ * and leaking abstraction (bd tea-rags-mcp-jetrd) — and shapes the typed
  * report DTO. Lives in `api/internal` because it bridges the trajectory's
- * detector and the public DTO — the one layer allowed to import both.
+ * detectors and the public DTO — the one layer allowed to import both.
  *
  * Collection resolution and the READ handle are the caller's
  * (`GraphFacade#getArchitectureReport` routes through the same daemon-proxied
@@ -16,16 +17,22 @@ import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
 import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
+  detectLeakingAbstractions,
   detectStableDependencyViolations,
+  FACADE_MODULE_EXCLUSION_REASONS,
   NO_SYMBOL_ENDPOINT_REASON,
   PRIVATE_COLLABORATOR_REASON,
+  type FacadeModuleAssessment,
+  type LeakingAbstractionReport,
   type StableDependenciesReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import type {
   ArchitectureRootCause,
   ArchitectureViolation,
+  FacadeModuleSummary,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  LeakingAbstractionReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
 
@@ -35,44 +42,24 @@ export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
 type ArchitectureReportScope = Pick<GetArchitectureReportRequest, "pathPattern" | "limit">;
 
 export class ArchitectureReportOps {
-  /** Judge the graph behind `graphDb` and shape the report. */
+  /**
+   * Judge the graph behind `graphDb` and shape the report. Violations and root
+   * causes are listed per detector — Stable Dependencies first — each capped
+   * at `limit`; the summaries keep the totals.
+   */
   async build(
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
     request: ArchitectureReportScope,
   ): Promise<GetArchitectureReportResponse> {
     const graph = await graphDb.readFileDependencyGraph();
-    const report = detectStableDependencyViolations(graph, { sourcePathPattern: request.pathPattern });
+    const sdp = detectStableDependencyViolations(graph, { sourcePathPattern: request.pathPattern });
+    const leaks = detectLeakingAbstractions(graph, { sourcePathPattern: request.pathPattern });
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
-      summary: { stableDependencies: summarise(report) },
-      rootCauses: report.rootCauses.slice(0, limit).map(
-        (r): ArchitectureRootCause => ({
-          detector: "stableDependencies",
-          targetRelPath: r.targetRelPath,
-          targetInstability: r.targetInstability,
-          violationCount: r.violationCount,
-          maxInstabilityDelta: r.maxInstabilityDelta,
-          sources: r.sources,
-          cycleWithDependents: r.cycleWithDependents,
-        }),
-      ),
-      violations: report.violations.slice(0, limit).map(
-        (v): ArchitectureViolation => ({
-          detector: "stableDependencies",
-          sourceRelPath: v.sourceRelPath,
-          targetRelPath: v.targetRelPath,
-          evidence: {
-            sourceInstability: v.sourceInstability,
-            targetInstability: v.targetInstability,
-            instabilityDelta: v.instabilityDelta,
-            sourceConnectionCount: v.sourceConnectionCount,
-            targetConnectionCount: v.targetConnectionCount,
-            callWeight: v.callWeight,
-            directoryRelation: v.directoryRelation,
-          },
-        }),
-      ),
+      summary: { stableDependencies: summarise(sdp), leakingAbstraction: summariseLeaks(leaks, limit) },
+      rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit)],
+      violations: [...sdpViolations(sdp, limit), ...leakViolations(leaks, limit)],
     };
   }
 
@@ -100,6 +87,7 @@ export class ArchitectureReportOps {
           },
           exclusionReasons: EXCLUSION_REASONS,
         },
+        leakingAbstraction: summariseLeaks(detectLeakingAbstractions({ files: [], edges: [] }), 0),
       },
       rootCauses: [],
       violations: [],
@@ -125,4 +113,120 @@ function summarise(report: StableDependenciesReport): StableDependenciesReportSu
     exclusionReasons: EXCLUSION_REASONS,
     ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
   };
+}
+
+function sdpRootCauses(report: StableDependenciesReport, limit: number): ArchitectureRootCause[] {
+  return report.rootCauses.slice(0, limit).map(
+    (r): ArchitectureRootCause => ({
+      detector: "stableDependencies",
+      targetRelPath: r.targetRelPath,
+      targetInstability: r.targetInstability,
+      violationCount: r.violationCount,
+      maxInstabilityDelta: r.maxInstabilityDelta,
+      sources: r.sources,
+      cycleWithDependents: r.cycleWithDependents,
+    }),
+  );
+}
+
+function sdpViolations(report: StableDependenciesReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map(
+    (v): ArchitectureViolation => ({
+      detector: "stableDependencies",
+      sourceRelPath: v.sourceRelPath,
+      targetRelPath: v.targetRelPath,
+      evidence: {
+        sourceInstability: v.sourceInstability,
+        targetInstability: v.targetInstability,
+        instabilityDelta: v.instabilityDelta,
+        sourceConnectionCount: v.sourceConnectionCount,
+        targetConnectionCount: v.targetConnectionCount,
+        callWeight: v.callWeight,
+        directoryRelation: v.directoryRelation,
+      },
+    }),
+  );
+}
+
+function summariseLeaks(report: LeakingAbstractionReport, limit: number): LeakingAbstractionReportSummary {
+  const { summary } = report;
+  const notAdopted = report.modules
+    .filter((m) => m.status === "facade-not-adopted")
+    .sort((a, b) => b.externalImporterCount - a.externalImporterCount || compareCodePoints(a.moduleDir, b.moduleDir));
+  return {
+    adoptionThreshold: summary.adoptionThreshold,
+    adoptionThresholdMethod: summary.adoptionThresholdMethod,
+    ...(summary.adoptionSeparability === undefined
+      ? {}
+      : { adoptionSeparability: Math.round(summary.adoptionSeparability * 1000) / 1000 }),
+    minExternalImporters: summary.minExternalImporters,
+    edgeCount: summary.edgeCount,
+    judgedEdgeCount: summary.judgedEdgeCount,
+    violationCount: summary.violationCount,
+    rootCauseCount: report.rootCauses.length,
+    violationsByKind: { ...summary.violationsByKind },
+    moduleCount: summary.moduleCount,
+    activeModuleCount: summary.activeModuleCount,
+    excludedModules: { ...summary.excludedModules },
+    exclusionReasons: { ...FACADE_MODULE_EXCLUSION_REASONS },
+    activeModules: report.modules
+      .filter((m) => m.status === "active")
+      .slice(0, limit)
+      .map(moduleSummary),
+    notAdoptedModules: notAdopted.slice(0, limit).map(moduleSummary),
+    ...(summary.scope ? { outOfScopeEdgeCount: summary.scope.outOfScopeEdgeCount } : {}),
+  };
+}
+
+function moduleSummary(m: FacadeModuleAssessment): FacadeModuleSummary {
+  return {
+    moduleDir: m.moduleDir,
+    facadeRelPath: m.facadeRelPath,
+    externalImporterCount: m.externalImporterCount,
+    facadeImporterCount: m.facadeImporterCount,
+    deepImporterCount: m.deepImporterCount,
+    adoption: m.adoption,
+  };
+}
+
+function leakRootCauses(report: LeakingAbstractionReport, limit: number): ArchitectureRootCause[] {
+  return report.rootCauses.slice(0, limit).map(
+    (r): ArchitectureRootCause => ({
+      detector: "leakingAbstraction",
+      moduleDir: r.moduleDir,
+      facadeRelPath: r.facadeRelPath,
+      adoption: r.adoption,
+      facadeImporterCount: r.facadeImporterCount,
+      deepImporterCount: r.deepImporterCount,
+      violationCount: r.violationCount,
+      bypassCount: r.bypassCount,
+      internalReachCount: r.internalReachCount,
+      sources: r.sources,
+    }),
+  );
+}
+
+function leakViolations(report: LeakingAbstractionReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map(
+    (v): ArchitectureViolation => ({
+      detector: "leakingAbstraction",
+      kind: v.kind,
+      sourceRelPath: v.sourceRelPath,
+      targetRelPath: v.targetRelPath,
+      evidence: {
+        moduleDir: v.moduleDir,
+        facadeRelPath: v.facadeRelPath,
+        adoption: v.adoption,
+        facadeImporterCount: v.facadeImporterCount,
+        deepImporterCount: v.deepImporterCount,
+        callWeight: v.callWeight,
+      },
+    }),
+  );
+}
+
+/** Locale-independent, so the order is the same on every machine. */
+function compareCodePoints(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }

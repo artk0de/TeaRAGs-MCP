@@ -103,14 +103,16 @@ const GetArchitectureReportInputShape = {
   pathPattern: z
     .string()
     .optional()
-    .describe("Glob scoping judged edges by SOURCE file. Instability stays whole-graph. Omit for whole project."),
+    .describe(
+      "Glob scoping judged edges by SOURCE file. Instability and adoption stay whole-graph. Omit for whole project.",
+    ),
   limit: z
     .number()
     .int()
     .positive()
     .max(500)
     .optional()
-    .describe("Max violations and max root causes returned (default 50). Summary keeps totals."),
+    .describe("Max violations and max root causes per detector (default 50). Summary keeps totals."),
 };
 
 /**
@@ -244,11 +246,13 @@ export function registerCodegraphTools(
       title: "Get Architecture Report",
       description:
         "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
-        "Returns typed violations with per-line evidence. Detector: Stable Dependencies Principle — " +
-        "stable file depending on less stable one (both instabilities, delta, support, call weight, " +
-        "directory relation). rootCauses groups violations by unstable target — read first; " +
-        "cycleWithDependents = target references own dependents. Summary counts excluded edges " +
-        "(privateCollaborators = source is target's sole importer, not judged). Backed by codegraph DuckDB.",
+        "Typed violations with per-line evidence, per detector. stableDependencies (Stable Dependencies " +
+        "Principle): stable file depending on less stable one (instabilities, delta, support, call weight, directory relation); rootCauses group " +
+        "by unstable target, cycleWithDependents = target references own dependents. leakingAbstraction: " +
+        "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
+        "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
+        "bypass = facade re-exports target, internal-reach = it does not; rootCauses per module. Summary " +
+        "counts exclusions with named reasons. Diagnosis, not prescription.",
       inputSchema: GetArchitectureReportInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },

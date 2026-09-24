@@ -143,3 +143,113 @@ export interface StableDependenciesReport {
    */
   noSymbolEndpointFiles: NoSymbolEndpointFile[];
 }
+
+/**
+ * How an edge into an active module leaks its abstraction (bd tea-rags-mcp-jetrd):
+ *
+ * - `bypass`         — the facade itself imports the target (re-exports it): the
+ *                      importer could have gone through the facade and did not.
+ * - `internal-reach` — the facade does not import the target: the importer
+ *                      reaches something the module never offered.
+ */
+export type FacadeLeakKind = "bypass" | "internal-reach";
+
+/**
+ * Why a module's boundary is not judged:
+ *
+ * - `facade-not-adopted` — adoption not admitted by the adaptive threshold
+ *   (`resolveFacadeAdoptionThreshold`): the importers themselves do not treat
+ *   the entry file as the module's surface.
+ * - `too-few-importers`  — fewer than `FACADE_MIN_EXTERNAL_IMPORTERS` external
+ *   importers: adoption over so few files says nothing.
+ * - `language-enforced`  — a Go package: the compiler already enforces the
+ *   package boundary, so nothing can leak past it at file level.
+ */
+export type FacadeModuleExclusionReason = "facade-not-adopted" | "too-few-importers" | "language-enforced";
+
+export type FacadeModuleStatus = "active" | FacadeModuleExclusionReason;
+
+/** A module's facade adoption, counted over DISTINCT external importing files. */
+export interface FacadeAdoption {
+  /** `facadeImporterCount / (facadeImporterCount + deepImporterCount)`; 0 with no importer. */
+  adoption: number;
+  /** External importers whose every edge into the module targets its entry file. */
+  facadeImporterCount: number;
+  /** External importers with at least one edge to a non-entry file (a file doing both counts here). */
+  deepImporterCount: number;
+}
+
+/** One candidate module and whether its boundary is judged. */
+export interface FacadeModuleAssessment extends FacadeAdoption {
+  /** The module directory, repo-relative; `""` for the repository root. */
+  moduleDir: string;
+  /** The entry file (facade); `null` for a Go package, which has none. */
+  facadeRelPath: RelPath | null;
+  /** Distinct files outside the module with a file edge into it. */
+  externalImporterCount: number;
+  status: FacadeModuleStatus;
+}
+
+/** One edge from outside an active module into one of its non-entry files. */
+export interface FacadeLeakViolation extends FacadeAdoption {
+  kind: FacadeLeakKind;
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  /** The innermost active module the edge leaks past. */
+  moduleDir: string;
+  facadeRelPath: RelPath;
+  /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
+  callWeight: number;
+}
+
+export interface LeakingAbstractionOptions {
+  /**
+   * Picomatch glob: judge only edges whose SOURCE matches. Adoption is always
+   * counted over the whole graph — a module's importers do not shrink because
+   * the reader looks at one area.
+   */
+  sourcePathPattern?: string;
+}
+
+export interface LeakingAbstractionSummary {
+  /** The adaptive cut: Otsu's split over the population, or 0.5 under `majority`. */
+  adoptionThreshold: number;
+  /** How `adoptionThreshold` was drawn; either way adoption must also be > 0.5. */
+  adoptionThresholdMethod: "otsu" | "majority";
+  /** η of the Otsu cut (σ²between / σ²total); present only under `otsu`. */
+  adoptionSeparability?: number;
+  minExternalImporters: number;
+  /** Every file edge read. */
+  edgeCount: number;
+  /** In-scope edges entering an active module from outside it — the edges judged. */
+  judgedEdgeCount: number;
+  violationCount: number;
+  violationsByKind: { bypass: number; internalReach: number };
+  /** Candidate modules: directories with an entry file, plus Go package directories. */
+  moduleCount: number;
+  activeModuleCount: number;
+  excludedModules: { facadeNotAdopted: number; tooFewImporters: number; languageEnforced: number };
+  /** Present when `sourcePathPattern` scoped the run (same shape as the SDP scope). */
+  scope?: StableDependenciesScope;
+}
+
+/** Every violation of one module, as one finding: the module's leak profile. */
+export interface FacadeLeakRootCause extends FacadeAdoption {
+  moduleDir: string;
+  facadeRelPath: RelPath;
+  violationCount: number;
+  bypassCount: number;
+  internalReachCount: number;
+  /** Distinct violating sources, by path. */
+  sources: RelPath[];
+}
+
+export interface LeakingAbstractionReport {
+  /** `internal-reach` first, then call weight, then path. */
+  violations: FacadeLeakViolation[];
+  /** `violations` grouped by module: most violations first, then `moduleDir`. */
+  rootCauses: FacadeLeakRootCause[];
+  /** Every candidate module, by `moduleDir`. */
+  modules: FacadeModuleAssessment[];
+  summary: LeakingAbstractionSummary;
+}

@@ -4,10 +4,12 @@
  * The report answers "is the code laid out correctly", not "is it dangerous to
  * touch" (that is risk-assessment's question). It is a list of typed
  * violations, each carrying the evidence that makes it one, plus root-cause
- * groups and the exclusion summary. Every finding names its `detector`: the
- * Stable Dependencies Principle is the only one today; later boundary
- * detectors (epic r8hme) extend the `ArchitectureViolation` /
- * `ArchitectureRootCause` unions and `ArchitectureReportSummary`.
+ * groups and the exclusion summary. Every finding names its `detector`:
+ * `stableDependencies` (Stable Dependencies Principle) and
+ * `leakingAbstraction` (A4, bd tea-rags-mcp-jetrd — imports past a facade the
+ * module's importers adopted). Later boundary detectors (epic r8hme) extend the
+ * `ArchitectureViolation` / `ArchitectureRootCause` unions and
+ * `ArchitectureReportSummary`.
  */
 
 import type { RelPath } from "../../../contracts/types/codegraph.js";
@@ -21,10 +23,11 @@ export interface GetArchitectureReportRequest {
   path?: string;
   /**
    * Picomatch glob scoping the judged edges: an edge counts when its SOURCE
-   * file matches. Instabilities are always computed over the whole graph.
+   * file matches. Instabilities and facade adoption are always computed over
+   * the whole graph.
    */
   pathPattern?: string;
-  /** Max violations and max root causes returned (default 50); the summary keeps the totals. */
+  /** Max violations and max root causes returned per detector (default 50); the summary keeps the totals. */
   limit?: number;
 }
 
@@ -56,7 +59,41 @@ export interface StableDependencyArchitectureViolation {
   evidence: StableDependencyViolationEvidence;
 }
 
-export type ArchitectureViolation = StableDependencyArchitectureViolation;
+/**
+ * How an edge into a module with an adopted facade leaks past it:
+ * `bypass` = the facade itself imports the target (the importer could have
+ * gone through it), `internal-reach` = the facade does not.
+ */
+export type FacadeLeakKind = "bypass" | "internal-reach";
+
+/** Why an edge into a module is a leaking-abstraction violation. */
+export interface FacadeLeakViolationEvidence {
+  /** The innermost module with an active boundary the edge leaks past. */
+  moduleDir: string;
+  /** Its entry file (facade). */
+  facadeRelPath: RelPath;
+  /** facadeImporterCount / (facadeImporterCount + deepImporterCount). */
+  adoption: number;
+  /** Distinct external importers going only through the facade. */
+  facadeImporterCount: number;
+  /** Distinct external importers reaching a non-entry file (a file doing both counts here). */
+  deepImporterCount: number;
+  /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
+  callWeight: number;
+}
+
+/** A file outside a module importing one of its non-entry files while its peers use the facade. */
+export interface FacadeLeakArchitectureViolation {
+  detector: "leakingAbstraction";
+  kind: FacadeLeakKind;
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  evidence: FacadeLeakViolationEvidence;
+}
+
+export type LeakingAbstractionArchitectureViolation = FacadeLeakArchitectureViolation;
+
+export type ArchitectureViolation = StableDependencyArchitectureViolation | LeakingAbstractionArchitectureViolation;
 
 /** Every Stable Dependencies violation into one unstable target, as one finding. */
 export interface StableDependencyArchitectureRootCause {
@@ -71,7 +108,22 @@ export interface StableDependencyArchitectureRootCause {
   cycleWithDependents: boolean;
 }
 
-export type ArchitectureRootCause = StableDependencyArchitectureRootCause;
+/** Every leaking-abstraction violation of one module, as one finding. */
+export interface LeakingAbstractionArchitectureRootCause {
+  detector: "leakingAbstraction";
+  moduleDir: string;
+  facadeRelPath: RelPath;
+  adoption: number;
+  facadeImporterCount: number;
+  deepImporterCount: number;
+  violationCount: number;
+  bypassCount: number;
+  internalReachCount: number;
+  /** Distinct violating sources, by path. */
+  sources: RelPath[];
+}
+
+export type ArchitectureRootCause = StableDependencyArchitectureRootCause | LeakingAbstractionArchitectureRootCause;
 
 /** Edges read but not judged, by the first reason that applied. */
 export interface StableDependenciesExclusionSummary {
@@ -101,16 +153,70 @@ export interface StableDependenciesReportSummary {
   outOfScopeEdgeCount?: number;
 }
 
+/** Why a module's boundary is not judged by the leaking-abstraction detector. */
+export type FacadeModuleExclusionReason = "facade-not-adopted" | "too-few-importers" | "language-enforced";
+
+/** One module and its facade adoption. */
+export interface FacadeModuleSummary {
+  moduleDir: string;
+  /** Entry file; `null` for a Go package. */
+  facadeRelPath: RelPath | null;
+  externalImporterCount: number;
+  facadeImporterCount: number;
+  deepImporterCount: number;
+  adoption: number;
+}
+
+export interface LeakingAbstractionReportSummary {
+  /**
+   * The adaptive adoption threshold: Otsu's split over the adoption of every
+   * module with enough importers, or 0.5 under `majority`. Either way a
+   * boundary is judged only when adoption is also STRICTLY above 0.5.
+   */
+  adoptionThreshold: number;
+  /** `otsu` when the population allowed a split (≥ 8 modules, ≥ 2 distinct values), else `majority`. */
+  adoptionThresholdMethod: "otsu" | "majority";
+  /** η = σ²between / σ²total of the Otsu cut, 3 decimals; absent under `majority`. Near 1 = clean split. */
+  adoptionSeparability?: number;
+  /** Minimum distinct external importers for a boundary to be judged (3). */
+  minExternalImporters: number;
+  /** Every file edge read. */
+  edgeCount: number;
+  /** In-scope edges entering an active module from outside it. */
+  judgedEdgeCount: number;
+  /** Total violations, before `limit`. */
+  violationCount: number;
+  /** Total root causes (modules with a violation), before `limit`. */
+  rootCauseCount: number;
+  violationsByKind: { bypass: number; internalReach: number };
+  /** Candidate modules: directories with an entry file, plus Go packages. */
+  moduleCount: number;
+  activeModuleCount: number;
+  excludedModules: { facadeNotAdopted: number; tooFewImporters: number; languageEnforced: number };
+  /** Human-readable meaning of each module exclusion. */
+  exclusionReasons: Record<FacadeModuleExclusionReason, string>;
+  /** The modules whose boundary is judged, by path; capped at `limit`. */
+  activeModules: FacadeModuleSummary[];
+  /** Modules excluded as `facade-not-adopted`, most importers first; capped at `limit`. */
+  notAdoptedModules: FacadeModuleSummary[];
+  /** Edges whose source did not match `pathPattern`; present only when scoped. */
+  outOfScopeEdgeCount?: number;
+}
+
 export interface ArchitectureReportSummary {
   stableDependencies: StableDependenciesReportSummary;
+  leakingAbstraction: LeakingAbstractionReportSummary;
 }
 
 export interface GetArchitectureReportResponse {
   /** The scope the report was judged under, echoed; absent = whole graph. */
   pathPattern?: string;
   summary: ArchitectureReportSummary;
-  /** Read these first: most violations first, then largest delta. */
+  /**
+   * Read these first. Per detector, `stableDependencies` then
+   * `leakingAbstraction`, each capped at `limit` and ordered most violations first.
+   */
   rootCauses: ArchitectureRootCause[];
-  /** Most severe first. */
+  /** Per detector in the same order, each capped at `limit`, most severe first. */
   violations: ArchitectureViolation[];
 }
