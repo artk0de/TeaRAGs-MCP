@@ -130,6 +130,14 @@ function isSelfReceiver(receiver: string | null): boolean {
 }
 
 /**
+ * The one language whose files {@link extractSelfDispatchMethods} runs on — the
+ * entry strategy consuming the discovered templates is Ruby's. The barrier
+ * reads and writes this language's family partitions for everything it derives
+ * from self-dispatch (bd tea-rags-mcp-qea83).
+ */
+export const SELF_DISPATCH_LANGUAGE = "ruby";
+
+/**
  * Per-method self-dispatch candidates from a file's method chunks: each method
  * that self-calls (`H` / `self.H` / `self.new.H` / `self.class.new.H`) one or
  * more members, deduped and normalized to bare names, or that calls `super`

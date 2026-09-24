@@ -209,16 +209,22 @@
   the rows — and until then `callsUnnarrowedTemplate` is the only number that
   says so, because every rate on `cg_run_stats` counts these calls as successes.
 
-- **A run-global map keyed by class NAME is partitioned by language family, and
-  pass-2 reads the caller's partition, never the view.** `CodegraphRunState`
-  stores ancestors, prepends, `classExtends` and the include-by index in a
-  `LanguageFamilyRecord` (`symbols/language-family-record.ts`);
-  `buildResolverInputs` reads `ancestorsFor(language)` and its siblings, while
-  the `ancestors` / `classExtends` getters are an all-family view kept for the
-  registry, the flag-parity test and diagnostics. Why: a top-level class's name
-  is bare in most languages, so one record let a TypeScript `Error` answer
-  `super` and the MRO for a Ruby `Error` (bd tea-rags-mcp-nbf8q). A new
-  class-name channel read through a view reintroduces that.
+- **A run-global map keyed by a bare class or method NAME is partitioned by
+  language family, and pass-2 reads the caller's partition, never the view.**
+  `CodegraphRunState` stores ancestors, prepends, `classExtends`, the include-by
+  index, `returnTypes` and `structuredReturnTypes` in a `LanguageFamilyRecord`
+  (`symbols/language-family-record.ts`), and the inheritance rows and hierarchy
+  view per family too; `buildResolverInputs` reads `ancestorsFor(language)` and
+  its siblings, the call-site context `hierarchyViewFor(language)`, while the
+  same-named getters are an all-family view kept for the registry, the
+  flag-parity test and diagnostics. Why: a top-level class's name is bare in
+  most languages, so one record let a TypeScript `Error` answer `super` and the
+  MRO for a Ruby `Error` (bd tea-rags-mcp-nbf8q), and a Go method `get` type a
+  Ruby `get` (bd tea-rags-mcp-qea83). A new name-keyed channel read through a
+  view reintroduces that. A map only one language writes stays run-wide
+  (`schemaTables`, `ivarTypes` — Ruby's) until a second writer appears; a map
+  whose key names the declaring file (`classFieldTypesByClassKey`) needs no
+  partition.
 
 - **Every `ResolverInputs` channel reaches BOTH `CallContext`s the runner
   builds, and one function is what makes that structural.**

@@ -34,7 +34,7 @@ import {
   type CodegraphRunState,
   type ReceiverKindTally,
 } from "./run-state.js";
-import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
+import { extractSelfDispatchMethods, SELF_DISPATCH_LANGUAGE } from "./self-dispatch-discovery.js";
 import { lastSegment } from "./symbol-name.js";
 
 type ChunkExtraction = FileExtraction["chunks"][number];
@@ -269,7 +269,7 @@ export class CallEdgeResolutionRunner {
     // the two drifting apart.
     const pass1Aggregates = buildPass1Aggregates(
       extraction,
-      extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
+      extraction.language === SELF_DISPATCH_LANGUAGE ? extractSelfDispatchMethods(extraction.chunks) : [],
     );
     if (pass1Aggregates !== undefined) edges.pass1Aggregates = pass1Aggregates;
     return edges;
@@ -289,7 +289,8 @@ export class CallEdgeResolutionRunner {
     // `runState.ancestors` during pass-1 (sink.write). Class names are shared
     // across languages, so every class-name map is read from the CALLER's
     // language family partition, never the all-family view (bd
-    // tea-rags-mcp-nbf8q).
+    // tea-rags-mcp-nbf8q) — and so are the bare-name return maps and the
+    // hierarchy view (bd tea-rags-mcp-qea83).
     const { language } = extraction;
     const ancestorsRunGlobal = state.hasRunGlobalEntries("ancestors");
     const prependedRunGlobal = state.hasRunGlobalEntries("prependedAncestors");
@@ -315,7 +316,9 @@ export class CallEdgeResolutionRunner {
       classExtends: state.hasRunGlobalEntries("classExtends")
         ? state.classExtendsFor(language)
         : extraction.classExtends,
-      returnTypes: state.hasRunGlobalEntries("returnTypes") ? state.returnTypes : extraction.functionReturnTypes,
+      returnTypes: state.hasRunGlobalEntries("returnTypes")
+        ? state.returnTypesFor(language)
+        : extraction.functionReturnTypes,
       // Run-global instantiation set if any file contributed, else this file's
       // own (mirrors the returnTypes "run-global if present else extraction"
       // pattern). bd tea-rags-mcp-pffv.
@@ -326,7 +329,7 @@ export class CallEdgeResolutionRunner {
       // extraction" pattern as ancestors / return types.
       ivarTypes: state.hasRunGlobalEntries("ivarTypes") ? state.ivarTypes : extraction.ivarTypes,
       structuredReturnTypes: state.hasRunGlobalEntries("structuredReturnTypes")
-        ? state.structuredReturnTypes
+        ? state.structuredReturnTypesFor(language)
         : extraction.structuredReturnTypes,
       // `@ivar = <param>` fields completed at the barrier ride the file's OWN
       // classFieldTypes channel, overlaid UNDERNEATH it (bd tea-rags-mcp-bvalc).
@@ -565,8 +568,9 @@ export class CallEdgeResolutionRunner {
       callbackParams: this.runState.callbackParams,
       // bd tea-rags-mcp-o17v2 — run-global class hierarchy drives CHA cone
       // devirtualization of a polymorphic typed receiver. Built at the
-      // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
-      hierarchy: this.runState.hierarchyView,
+      // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops. The caller's
+      // language family's view, never the all-family one (bd tea-rags-mcp-qea83).
+      hierarchy: this.runState.hierarchyViewFor(extraction.language),
       // bd DEFECT 2 — run-global self-dispatch template map narrows an entry
       // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
       // strategy CONTINUEs (no-op).

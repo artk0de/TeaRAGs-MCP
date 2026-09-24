@@ -200,7 +200,10 @@ async function snapshot(opts: SnapshotOptions): Promise<void> {
       extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
       own ? "own" : "mirror",
     );
-    runState.inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
+    runState.absorbInheritanceRows(
+      extraction.language,
+      normalizeInheritanceEdges(extraction, () => null),
+    );
     if (own) owned.push(extraction);
     else foreignFiles += 1;
   }

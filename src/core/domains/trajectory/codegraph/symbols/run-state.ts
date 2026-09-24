@@ -48,7 +48,7 @@ import {
   type KnownTargetParamTypes,
 } from "./call-arg-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
-import { LanguageFamilyRecord } from "./language-family-record.js";
+import { languageFamilyOf, LanguageFamilyRecord } from "./language-family-record.js";
 import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
@@ -64,6 +64,7 @@ import {
   discoverSelfDispatchTemplates,
   foldSelfDispatchTemplates,
   propagateSuperDelegatingTemplates,
+  SELF_DISPATCH_LANGUAGE,
   selfDispatchAncestors,
   type SelfDispatchMethod,
 } from "./self-dispatch-discovery.js";
@@ -274,6 +275,18 @@ export function buildIncludedBy(
  */
 const EMPTY_ANCESTRY: Readonly<Record<string, readonly string[]>> =
   Object.freeze(createIdentifierRecord<readonly string[]>());
+
+/** The hierarchy a family with no inheritance rows sees — stateless, so one instance serves every run. */
+const EMPTY_HIERARCHY_VIEW: HierarchyView = new MapHierarchyView(buildHierarchySnapshot([]));
+
+/** One hierarchy view per family's rows, built at the barrier (bd tea-rags-mcp-qea83). */
+function buildHierarchyViewsPerFamily(
+  rowsByFamily: ReadonlyMap<string, readonly InheritanceEdgeRow[]>,
+): Map<string, HierarchyView> {
+  const out = new Map<string, HierarchyView>();
+  for (const [family, rows] of rowsByFamily) out.set(family, new MapHierarchyView(buildHierarchySnapshot(rows)));
+  return out;
+}
 
 function buildIncludedByPerFamily(
   ancestors: LanguageFamilyRecord<readonly string[]>,
@@ -495,8 +508,23 @@ export class CodegraphRunState {
    * Per-run aggregation of `FileExtraction.functionReturnTypes` (bd
    * tea-rags-mcp-6g9c): `functionName → declaredReturnTypeName`, so `x := New();
    * x.method()` binds even when `New` lives in another file. Lifecycle as `classExtends`.
+   *
+   * Partitioned by language family (bd tea-rags-mcp-qea83): Go keys a METHOD by
+   * its bare name and Ruby keys every method so, so one run-wide record let a Go
+   * `get` type a Ruby `get`'s result. Pass-2 reads {@link returnTypesFor};
+   * {@link returnTypes} is the all-family view.
    */
-  returnTypes: Record<string, string> = createIdentifierRecord();
+  private returnTypesByFamily = new LanguageFamilyRecord<string>();
+
+  /** The all-family view of {@link returnTypesByFamily} — never a resolver input. */
+  get returnTypes(): Record<string, string> {
+    return this.returnTypesByFamily.view();
+  }
+
+  /** `language`'s family partition of the run-global return-type map — stable identity for the run. */
+  returnTypesFor(language: string): Record<string, string> {
+    return this.returnTypesByFamily.forLanguage(language);
+  }
 
   /**
    * Per-run union of `FileExtraction.instantiatedTypes` (bd tea-rags-mcp-pffv),
@@ -517,8 +545,22 @@ export class CodegraphRunState {
    * Per-run aggregation of `FileExtraction.structuredReturnTypes`
    * (`"<fqClass>#method" → RubyTypeRef`) for the precise structured-return path,
    * which keeps union / container refs across files. Last-write-wins.
+   *
+   * Partitioned by language family (bd tea-rags-mcp-qea83): Ruby, Python and
+   * Swift all key a class member `Cls#m`, and a top-level class's name is bare
+   * in each. Pass-2 reads {@link structuredReturnTypesFor}.
    */
-  structuredReturnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
+  private structuredReturnTypesByFamily = new LanguageFamilyRecord<RubyTypeRef>();
+
+  /** The all-family view of {@link structuredReturnTypesByFamily} — never a resolver input. */
+  get structuredReturnTypes(): Record<string, RubyTypeRef> {
+    return this.structuredReturnTypesByFamily.view();
+  }
+
+  /** `language`'s family partition of the run-global structured-return map — stable identity for the run. */
+  structuredReturnTypesFor(language: string): Record<string, RubyTypeRef> {
+    return this.structuredReturnTypesByFamily.forLanguage(language);
+  }
 
   /**
    * Per-run aggregation of `FileExtraction.classFieldTypesByClassKey` (bd
@@ -587,16 +629,60 @@ export class CodegraphRunState {
    * the barrier builds a complete `MapHierarchyView` BEFORE any file resolves:
    * edges are persisted per file DURING pass-2, so the DB is incomplete when the
    * first CHA cone needs `getDescendants`.
+   *
+   * Partitioned by language family (bd tea-rags-mcp-qea83): rows are keyed by
+   * class NAME, so a TypeScript and a Ruby `Error` shared one descendant cone.
+   * Written only through {@link absorbInheritanceRows} and the seal hydrator;
+   * {@link inheritanceRows} is the all-family view.
    */
-  inheritanceRows: InheritanceEdgeRow[] = [];
+  private inheritanceRowsByFamily = new Map<string, InheritanceEdgeRow[]>();
+
+  /** Every family's rows, concatenated — a diagnostic view, never a resolver input. */
+  get inheritanceRows(): readonly InheritanceEdgeRow[] {
+    return [...this.inheritanceRowsByFamily.values()].flat();
+  }
+
+  /** Accumulate one file's normalized inheritance rows into `language`'s family. */
+  absorbInheritanceRows(language: string, rows: readonly InheritanceEdgeRow[]): void {
+    if (rows.length === 0) return;
+    const family = languageFamilyOf(language);
+    const bucket = this.inheritanceRowsByFamily.get(family);
+    if (bucket === undefined) this.inheritanceRowsByFamily.set(family, [...rows]);
+    else bucket.push(...rows);
+  }
 
   /**
-   * Bidirectional class-hierarchy view built from `inheritanceRows` at the
-   * barrier (bd tea-rags-mcp-o17v2) and threaded into every `CallContext.hierarchy`.
-   * `undefined` until the barrier runs (and on reset) — the cone resolver treats
-   * absent as "no cone".
+   * Bidirectional class-hierarchy views built per family from the inheritance
+   * rows at the barrier (bd tea-rags-mcp-o17v2, qea83); pass-2 threads
+   * {@link hierarchyViewFor} into every `CallContext.hierarchy`. `undefined`
+   * until the barrier runs (and on reset) — the cone resolver treats absent as
+   * "no cone". `all` caches the all-family view on first read.
    */
-  hierarchyView: HierarchyView | undefined;
+  private hierarchyByFamily: { perFamily: Map<string, HierarchyView>; all?: HierarchyView } | undefined;
+
+  /**
+   * The all-family hierarchy view — diagnostics and tests, never a resolver
+   * input. With one family it IS that family's view.
+   */
+  get hierarchyView(): HierarchyView | undefined {
+    const built = this.hierarchyByFamily;
+    if (built === undefined) return undefined;
+    if (built.all === undefined) {
+      const [only, ...rest] = built.perFamily.values();
+      built.all =
+        only !== undefined && rest.length === 0
+          ? only
+          : new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
+    }
+    return built.all;
+  }
+
+  /** `language`'s family hierarchy as built at the barrier; an empty view for a family with no rows. */
+  hierarchyViewFor(language: string): HierarchyView | undefined {
+    const built = this.hierarchyByFamily;
+    if (built === undefined) return undefined;
+    return built.perFamily.get(languageFamilyOf(language)) ?? EMPTY_HIERARCHY_VIEW;
+  }
 
   /**
    * Per-run self-dispatch method candidates (DEFECT 2): one LIGHT record per
@@ -768,27 +854,29 @@ export class CodegraphRunState {
     // symbol_id binding for the rows it writes. Runs for EVERY slice, not only
     // one carrying `inheritanceEdges`: the legacy class* records feed it too.
     inheritanceRows: (slice) => {
-      this.inheritanceRows.push(...normalizeInheritanceEdges(slice, () => null));
+      this.absorbInheritanceRows(
+        slice.language,
+        normalizeInheritanceEdges(slice, () => null),
+      );
     },
     selfDispatchMethods: (slice) => {
       if (slice.selfDispatchMethods !== undefined) this.selfDispatchMethods.push(...slice.selfDispatchMethods);
     },
     // Return types (bd tea-rags-mcp-8qyax). `markContributed` matters here —
     // without it pass-2 falls back to each file's own maps, the batch-scoped
-    // behaviour being repaired.
+    // behaviour being repaired. Both hydrate into the slice's language family
+    // (bd tea-rags-mcp-qea83), so batch-wins is judged within a family.
     structuredReturnTypes: (slice) => {
-      for (const [k, v] of Object.entries(slice.structuredReturnTypes ?? {})) {
-        if (k in this.structuredReturnTypes) continue;
-        this.structuredReturnTypes[k] = v;
-        this.markContributed("structuredReturnTypes");
-      }
+      this.mergeIntoFamily(
+        this.structuredReturnTypesByFamily,
+        slice.language,
+        slice.structuredReturnTypes,
+        "structuredReturnTypes",
+        "keep",
+      );
     },
     returnTypes: (slice) => {
-      for (const [k, v] of Object.entries(slice.functionReturnTypes ?? {})) {
-        if (k in this.returnTypes) continue;
-        this.returnTypes[k] = v;
-        this.markContributed("returnTypes");
-      }
+      this.mergeIntoFamily(this.returnTypesByFamily, slice.language, slice.functionReturnTypes, "returnTypes", "keep");
     },
     // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed`: neither is a
     // {@link RunGlobalMapName} — `buildResolverInputs` hands both to pass-2
@@ -956,43 +1044,52 @@ export class CodegraphRunState {
    * NOT persisted to `cg_symbols`: derived from a file outside the call graph and
    * rebuilt every run (lifecycle as `hierarchyView`).
    */
-  private applySchemaColumns(symbolTable: GlobalSymbolTable): Record<string, RubyTypeRef> {
-    if (symbolTable.setSchemaColumns === undefined) return {};
-    const definitions: SymbolDefinition[] = [];
+  private applySchemaColumns(symbolTable: GlobalSymbolTable): ReadonlyMap<string, Record<string, RubyTypeRef>> {
     // Column VALUE types (bd tea-rags-mcp-2a5oo) — returned rather than merged
     // here, because they rank BELOW every other return fact and the barrier's
-    // derived facts are not all folded yet at this point.
-    const returnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
+    // derived facts are not all folded yet at this point. Keyed by the language
+    // family whose ancestry made each class a model (bd tea-rags-mcp-qea83).
+    const returnTypesByFamily = new Map<string, Record<string, RubyTypeRef>>();
+    if (symbolTable.setSchemaColumns === undefined) return returnTypesByFamily;
+    const definitions: SymbolDefinition[] = [];
     for (const source of this.schemaColumnSources) {
       const snapshot = identifierEntry(this.schemaSnapshots, source.schemaRelPath);
       if (snapshot === undefined) continue;
+      const tables = source.parseSchema(snapshot);
       // Per family (bd tea-rags-mcp-nbf8q): a model's ancestry is walked inside
       // the namespace that declared it, so a namesake in another language can
-      // neither hide a model nor lend it a base.
-      const models = [...this.ancestorsByFamily.families()].flatMap(([, classAncestors]) =>
-        collectSchemaColumnModels({
+      // neither hide a model nor lend it a base — and its column types land in
+      // that family's return map (qea83).
+      for (const [family, classAncestors] of this.ancestorsByFamily.families()) {
+        const models = collectSchemaColumnModels({
           classAncestors,
           declaredTables: this.schemaTables,
           modelBaseClasses: source.modelBaseClasses,
           symbolTable,
-        }),
-      );
-      const {
-        definitions: synthesized,
-        returnTypes: synthesizedTypes,
-        stats,
-      } = synthesizeSchemaColumnDefs(source.parseSchema(snapshot), models, source.modelNameForTable);
-      definitions.push(...synthesized);
-      Object.assign(returnTypes, synthesizedTypes);
-      if (isDebug()) {
-        console.error("[GitEnrich] PHASE: CODEGRAPH_SCHEMA_COLUMNS", {
-          schema: source.schemaRelPath,
-          ...stats,
         });
+        const {
+          definitions: synthesized,
+          returnTypes: synthesizedTypes,
+          stats,
+        } = synthesizeSchemaColumnDefs(tables, models, source.modelNameForTable);
+        definitions.push(...synthesized);
+        let familyTypes = returnTypesByFamily.get(family);
+        if (familyTypes === undefined) {
+          familyTypes = createIdentifierRecord();
+          returnTypesByFamily.set(family, familyTypes);
+        }
+        Object.assign(familyTypes, synthesizedTypes);
+        if (isDebug()) {
+          console.error("[GitEnrich] PHASE: CODEGRAPH_SCHEMA_COLUMNS", {
+            schema: source.schemaRelPath,
+            family,
+            ...stats,
+          });
+        }
       }
     }
     symbolTable.setSchemaColumns(definitions);
-    return returnTypes;
+    return returnTypesByFamily;
   }
 
   /**
@@ -1065,23 +1162,26 @@ export class CodegraphRunState {
     if (loadPersistedPass1Aggregates !== undefined) {
       await this.hydratePersistedPass1Aggregates(loadPersistedPass1Aggregates);
     }
-    this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
+    this.hierarchyByFamily = { perFamily: buildHierarchyViewsPerFamily(this.inheritanceRowsByFamily) };
     this.includedByFamily = buildIncludedByPerFamily(this.ancestorsByFamily, this.prependedAncestorsByFamily);
     // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo): only here are the
     // ancestry map (which classes are models) and the `self.table_name` overrides
     // both complete. The column VALUE types are held back and merged LAST (below).
-    let schemaColumnReturnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
+    let schemaColumnReturnTypes: ReadonlyMap<string, Record<string, RubyTypeRef>> = new Map();
     if (this.schemaColumnSources.length > 0) {
       schemaColumnReturnTypes = this.applySchemaColumns(await resolveSymbolTable());
     }
     if (this.selfDispatchMethods.length > 0) {
       const symbolTable = await resolveSymbolTable();
-      const selfDispatchProbe = buildSelfDispatchProbe(symbolTable, this.hierarchyView);
+      // Self-dispatch is one language's (bd tea-rags-mcp-qea83): its hierarchy
+      // and return facts are that family's, never a namesake's in another.
+      const selfDispatchHierarchy = this.hierarchyViewFor(SELF_DISPATCH_LANGUAGE);
+      const selfDispatchProbe = buildSelfDispatchProbe(symbolTable, selfDispatchHierarchy);
       this.selfDispatchTemplates = propagateSuperDelegatingTemplates(
         this.selfDispatchMethods,
         foldSelfDispatchTemplates(discoverSelfDispatchTemplates(this.selfDispatchMethods, selfDispatchProbe)),
         selfDispatchProbe,
-        selfDispatchAncestors(this.hierarchyView),
+        selfDispatchAncestors(selfDispatchHierarchy),
       );
       this.selfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.selfDispatchMethods);
       // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf): the walker types
@@ -1095,24 +1195,26 @@ export class CodegraphRunState {
       // fiction and does not outrank a derivation.
       const entryReturnTypes = deriveServiceEntryReturnTypes(
         [...this.selfInstantiatingClassMethods, ...Object.keys(this.selfDispatchTemplates)],
-        this.structuredReturnTypes,
+        this.structuredReturnTypesFor(SELF_DISPATCH_LANGUAGE),
         selfDispatchProbe.relatedConcreteTypes,
         (typeName) => symbolTable.lookup(typeName).length > 0 || this.ancestorsByFamily.hasInAnyFamily(typeName),
       );
-      for (const [key, ref] of Object.entries(entryReturnTypes)) {
-        this.structuredReturnTypes[key] = ref;
-        this.markContributed("structuredReturnTypes");
-      }
+      this.mergeIntoFamily(
+        this.structuredReturnTypesByFamily,
+        SELF_DISPATCH_LANGUAGE,
+        entryReturnTypes,
+        "structuredReturnTypes",
+        "overwrite",
+      );
     }
     // Persisted-schema column VALUE types (bd tea-rags-mcp-2a5oo), merged LAST and
     // only where the coordinate is still empty: a column accessor has no `def`, so
     // ANY other fact at `Model#col` describes a real declaration that must win.
-    for (const [key, ref] of Object.entries(schemaColumnReturnTypes)) {
-      if (key in this.structuredReturnTypes) continue;
-      // Barrier-derived but still a contribution: without the flag pass-2 falls
-      // back to per-file maps that lack these.
-      this.structuredReturnTypes[key] = ref;
-      this.markContributed("structuredReturnTypes");
+    // Barrier-derived but still a contribution (`mergeIntoFamily` flags it):
+    // without the flag pass-2 falls back to per-file maps that lack these. Each
+    // lands in the family whose ancestry made its class a model.
+    for (const [family, types] of schemaColumnReturnTypes) {
+      this.mergeIntoFamily(this.structuredReturnTypesByFamily, family, types, "structuredReturnTypes", "keep");
     }
     // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc): only
     // here is the method-definition index complete, so call-site candidates can be
@@ -1179,7 +1281,7 @@ export class CodegraphRunState {
       this.schemaTables = createIdentifierRecord();
       this.schemaSnapshots = createIdentifierRecord();
       this.schemaSnapshotsLoaded = false;
-      this.returnTypes = createIdentifierRecord();
+      this.returnTypesByFamily = new LanguageFamilyRecord();
       this.instantiatedTypes.clear();
       this.ivarTypes = createIdentifierRecord();
       this.classFieldTypesByClassKey = createIdentifierRecord();
@@ -1187,11 +1289,11 @@ export class CodegraphRunState {
       this.moduleReexports = createIdentifierRecord();
       this.buildConstraintsByFile = createIdentifierRecord();
       this.typeDeclarations = createIdentifierRecord();
-      this.structuredReturnTypes = createIdentifierRecord();
+      this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
       this.dispatchTables = createIdentifierRecord();
       this.callbackParams = createIdentifierRecord();
-      this.inheritanceRows = [];
-      this.hierarchyView = undefined;
+      this.inheritanceRowsByFamily = new Map();
+      this.hierarchyByFamily = undefined;
       this.selfDispatchMethods = [];
       this.selfDispatchTemplates = createIdentifierRecord();
       this.selfInstantiatingClassMethods = [];
@@ -1368,7 +1470,7 @@ export class CodegraphRunState {
     this.schemaTables = createIdentifierRecord();
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
-    this.returnTypes = createIdentifierRecord();
+    this.returnTypesByFamily = new LanguageFamilyRecord();
     this.instantiatedTypes.clear();
     this.ivarTypes = createIdentifierRecord();
     this.classFieldTypesByClassKey = createIdentifierRecord();
@@ -1376,11 +1478,11 @@ export class CodegraphRunState {
     this.moduleReexports = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
-    this.structuredReturnTypes = createIdentifierRecord();
+    this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
     this.dispatchTables = createIdentifierRecord();
     this.callbackParams = createIdentifierRecord();
-    this.inheritanceRows = [];
-    this.hierarchyView = undefined;
+    this.inheritanceRowsByFamily = new Map();
+    this.hierarchyByFamily = undefined;
     this.selfDispatchMethods = [];
     this.selfDispatchTemplates = createIdentifierRecord();
     this.selfInstantiatingClassMethods = [];
@@ -1413,7 +1515,7 @@ export class CodegraphRunState {
     this.schemaTables = createIdentifierRecord();
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
-    this.returnTypes = createIdentifierRecord();
+    this.returnTypesByFamily = new LanguageFamilyRecord();
     this.instantiatedTypes.clear();
     this.ivarTypes = createIdentifierRecord();
     this.classFieldTypesByClassKey = createIdentifierRecord();
@@ -1421,11 +1523,11 @@ export class CodegraphRunState {
     this.moduleReexports = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
-    this.structuredReturnTypes = createIdentifierRecord();
+    this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
     this.dispatchTables = createIdentifierRecord();
     this.callbackParams = createIdentifierRecord();
-    this.inheritanceRows = [];
-    this.hierarchyView = undefined;
+    this.inheritanceRowsByFamily = new Map();
+    this.hierarchyByFamily = undefined;
     this.selfDispatchMethods = [];
     this.selfDispatchTemplates = createIdentifierRecord();
     this.selfInstantiatingClassMethods = [];
@@ -1484,15 +1586,17 @@ export class CodegraphRunState {
         this.schemaTables[k] = v;
       }
     }
-    // Function return types run-global, keyed by function name (bd
-    // tea-rags-mcp-6g9c). Last write wins; the resolver's symbol-table existence
-    // gate suppresses a wrong type that survives a name collision.
-    if (extraction.functionReturnTypes) {
-      for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
-        this.returnTypes[k] = v;
-        this.markContributed("returnTypes");
-      }
-    }
+    // Function return types run-global, keyed by function name within the
+    // file's language family (bd tea-rags-mcp-6g9c, qea83). Last write wins; the
+    // resolver's symbol-table existence gate suppresses a wrong type that
+    // survives a same-family name collision.
+    this.mergeIntoFamily(
+      this.returnTypesByFamily,
+      language,
+      extraction.functionReturnTypes,
+      "returnTypes",
+      "overwrite",
+    );
     // The Ruby type-source PRECISE maps, run-global and keyed by class, so the
     // precise `@ivar.method()` / structured-return paths see types regardless of
     // the declaring file. Last-write-wins, mirroring functionReturnTypes.
@@ -1502,12 +1606,15 @@ export class CodegraphRunState {
         this.markContributed("ivarTypes");
       }
     }
-    if (extraction.structuredReturnTypes) {
-      for (const [k, v] of Object.entries(extraction.structuredReturnTypes)) {
-        this.structuredReturnTypes[k] = v;
-        this.markContributed("structuredReturnTypes");
-      }
-    }
+    // `Cls#m` is spelled alike by Ruby, Python and Swift — per family (bd
+    // tea-rags-mcp-qea83).
+    this.mergeIntoFamily(
+      this.structuredReturnTypesByFamily,
+      language,
+      extraction.structuredReturnTypes,
+      "structuredReturnTypes",
+      "overwrite",
+    );
     // The class-key-addressed field channel, run-global (bd tea-rags-mcp-f0xaa).
     // The key already names the declaring file, so a union across files cannot
     // conflate two same-named classes and no language gate is needed — a walker
