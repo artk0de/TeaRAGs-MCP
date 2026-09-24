@@ -34,6 +34,8 @@ interface SwiftTypeDeclarationSets {
   readonly fieldArguments: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[]>>;
   /** typeId → method → its closure's parameter types; `null` where declarations disagree. */
   readonly closureParameters: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[] | null>>;
+  /** typeId → the ids its generic-argument extensions compose members under (bd tea-rags-mcp-y99pg.19). */
+  readonly spellings: ReadonlyMap<string, readonly string[]>;
   /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
   readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
 }
@@ -87,6 +89,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const generics = new Map<string, readonly string[]>();
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
   const closureParameters = new Map<string, Map<string, readonly (string | null)[] | null>>();
+  const spellings = new Map<string, string[]>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
@@ -100,6 +103,11 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       }
       mergeFieldArguments(fieldArguments, fact);
       mergeClosureParameters(closureParameters, fact);
+      if (fact.spelledAs !== undefined) {
+        const list = spellings.get(fact.typeId) ?? [];
+        if (!list.includes(fact.spelledAs)) list.push(fact.spelledAs);
+        spellings.set(fact.typeId, list);
+      }
       // An enum's cases live in its own declaration; Swift lets no extension add one.
       if (fact.enumCasePayloads !== undefined && !fact.reopens) {
         const byFile =
@@ -113,7 +121,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       conforms.set(fact.typeId, list);
     }
   }
-  const fresh = { declaring, reopening, conforms, generics, fieldArguments, closureParameters, enumCases };
+  const fresh = { declaring, reopening, conforms, generics, fieldArguments, closureParameters, spellings, enumCases };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
 }
@@ -186,13 +194,17 @@ export function swiftMemberClosureParameters(
  * `Dictionary` — `extension [HTTPHeader]` composes its members as
  * `[HTTPHeader]#index` (bd tea-rags-mcp-y99pg.14). Element-blind: a receiver
  * typed `Array` reaches every `[T]` extension, and two of them declaring one
- * member leave the lookup ambiguous rather than pick one.
+ * member leave the lookup ambiguous rather than pick one. Any type also
+ * answers the ids its generic-argument extensions are spelled as
+ * (`Collection<String>`, bd tea-rags-mcp-y99pg.19), argument-blind for the
+ * same reason.
  */
 export function swiftSugarAliases(typeId: string, ctx: CallContext): readonly string[] {
-  if (typeId !== "Array" && typeId !== "Dictionary") return [];
   const sets = setsFor(ctx);
   if (sets === undefined) return [];
-  const aliases: string[] = [];
+  // `extension Collection<String>` composes under its spelled id (bd tea-rags-mcp-y99pg.19).
+  const aliases: string[] = [...(sets.spellings.get(typeId) ?? [])];
+  if (typeId !== "Array" && typeId !== "Dictionary") return aliases;
   for (const id of [...sets.declaring.keys(), ...sets.reopening.keys()]) {
     if (!id.startsWith("[") || !id.endsWith("]") || aliases.includes(id)) continue;
     const isDictionary = splitAtBracketDepthZero(id.slice(1, -1), ":").length > 1;

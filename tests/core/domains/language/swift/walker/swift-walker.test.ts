@@ -1697,3 +1697,12 @@ describe("swift walker — collection constructions and dictionary iteration (bd
     expect(typeAt(src, "name", 9)).toBe("String");
   });
 });
+
+describe("swift walker — a generic-argument extension's spelled id (bd tea-rags-mcp-y99pg.19)", () => {
+  it("publishes the id its members compose under beside the bare type id", () => {
+    const src = ["extension Collection<String> {", '  func qualityEncoded() -> String { "" }', "}", ""].join("\n");
+    expect(extract(src).typeDeclarations).toEqual([
+      { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
+    ]);
+  });
+});

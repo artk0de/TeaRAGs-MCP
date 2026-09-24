@@ -400,6 +400,13 @@ export interface TypeDeclarationFact {
    * tea-rags-mcp-y99pg.16). Absent when no case carries a payload.
    */
   readonly enumCasePayloads?: Readonly<Record<string, readonly (string | null)[]>>;
+  /**
+   * The id this declaration's members compose under when it differs from
+   * {@link typeId}: `extension Collection<String>` composes
+   * `Collection<String>#qualityEncoded` while its typeId is `Collection` (bd
+   * tea-rags-mcp-y99pg.19). Absent when the two agree.
+   */
+  readonly spelledAs?: string;
 }
 
 /**

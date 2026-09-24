@@ -241,6 +241,10 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
     const { fieldTypeArguments, memberClosureParameters } = swiftGenericMemberFacts(node, genericParameters);
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
+    // `extension Collection<String>` composes its members under the name as
+    // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
+    const written = node.childForFieldName("name")?.text.trim();
+    const spelledAs = kind === "extension" && written !== undefined && written !== name ? written : undefined;
     out.push({
       typeId: [...enclosing, name].join("."),
       reopens: kind === "extension",
@@ -249,6 +253,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
       ...(memberClosureParameters ? { memberClosureParameters } : {}),
       ...(enumCasePayloads ? { enumCasePayloads } : {}),
+      ...(spelledAs === undefined ? {} : { spelledAs }),
     });
   });
   return out;

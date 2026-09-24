@@ -2662,3 +2662,74 @@ describe("SwiftCallResolver — `-> Self` returns and implicit-self call heads (
     expect(target?.targetSymbolId).toBe("DataRequest#resume");
   });
 });
+
+describe("SwiftCallResolver — standard-library conformances of SDK collections (bd tea-rags-mcp-y99pg.19)", () => {
+  const t = table({
+    "Sources/HTTPHeaders.swift": [
+      { symbolId: "HTTPHeaders", scope: [] },
+      { symbolId: "Collection", scope: [] },
+      { symbolId: "Collection#qualityEncoded", scope: ["Collection"] },
+      { symbolId: "Sequence", scope: [] },
+      { symbolId: "Sequence#joinedPairs", scope: ["Sequence"] },
+    ],
+  });
+  const context = (type: string) =>
+    ctx({
+      callerFile: "Sources/HTTPHeaders.swift",
+      callerScope: ["HTTPHeaders", "make"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [
+          { typeId: "HTTPHeaders", reopens: false },
+          { typeId: "Collection", reopens: true },
+          { typeId: "Sequence", reopens: true },
+        ],
+      },
+      localBindings: { encodings: [{ line: 3, type }] },
+    });
+
+  it("reaches a `Collection` extension from an Array receiver", () => {
+    expect(
+      new SwiftCallResolver().resolve(call("encodings", "qualityEncoded", 4), context("Array"))?.targetSymbolId,
+    ).toBe("Collection#qualityEncoded");
+  });
+
+  it("reaches a `Sequence` extension from a Collection-typed receiver through its refinement", () => {
+    expect(
+      new SwiftCallResolver().resolve(call("encodings", "joinedPairs", 4), context("Collection"))?.targetSymbolId,
+    ).toBe("Sequence#joinedPairs");
+  });
+
+  it("reaches neither from a type the SDK does not make a collection", () => {
+    expect(new SwiftCallResolver().resolve(call("encodings", "qualityEncoded", 4), context("URL"))).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a generic-argument extension's spelled id (bd tea-rags-mcp-y99pg.19)", () => {
+  it("reaches members composed under `Collection<String>` from an Array receiver", () => {
+    const t = table({
+      "Sources/HTTPHeaders.swift": [
+        { symbolId: "HTTPHeaders", scope: [] },
+        { symbolId: "Collection<String>", scope: [] },
+        { symbolId: "Collection<String>#qualityEncoded", scope: ["Collection<String>"] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/HTTPHeaders.swift",
+      callerScope: ["HTTPHeaders", "make"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [
+          { typeId: "HTTPHeaders", reopens: false },
+          { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
+        ],
+      },
+      localBindings: { encodings: [{ line: 3, type: "Array" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("encodings", "qualityEncoded", 4), context)?.targetSymbolId).toBe(
+      "Collection<String>#qualityEncoded",
+    );
+    expect(resolver.hasInProjectDefinition(call("encodings", "qualityEncoded", 4), context)).toBe(true);
+  });
+});

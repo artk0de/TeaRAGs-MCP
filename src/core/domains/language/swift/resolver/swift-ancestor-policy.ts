@@ -1,7 +1,8 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
-import { swiftConformances, swiftSugarAliases } from "./swift-type-declarations.js";
+import { SWIFT_SDK_CONFORMANCES } from "./swift-sdk-types.js";
+import { swiftConformances, swiftDeclaringFiles, swiftSugarAliases } from "./swift-type-declarations.js";
 
 /**
  * Swift's answer to the kernel's linearization question, and it is the SHORTEST
@@ -60,7 +61,10 @@ export const SWIFT_ANCESTOR_POLICY: AncestorLinearizationPolicy<CallContext> = {
  *
  * Classes come first: a class's own members and its superclass chain are
  * found before any protocol default, which is how Swift itself prefers a
- * concrete implementation over an extension's.
+ * concrete implementation over an extension's. An SDK type's standard-library
+ * conformances come last ({@link SWIFT_SDK_CONFORMANCES}, bd
+ * tea-rags-mcp-y99pg.19): the index holds no declaration of `Array`, so
+ * nothing else says an `[T]` reaches `extension Collection`.
  */
 export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext> = {
   order(classKey, ctx, recurse, insertable) {
@@ -69,10 +73,17 @@ export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext
     // `extension [HTTPHeader]` re-opens Array under its sugar spelling, and
     // its members compose under that spelling (bd tea-rags-mcp-y99pg.14).
     for (const alias of swiftSugarAliases(classKey, ctx)) if (!order.includes(alias)) order.push(alias);
-    for (const protocol of swiftConformances(classKey, ctx)) {
+    for (const protocol of [...swiftConformances(classKey, ctx), ...sdkConformances(classKey, ctx)]) {
       if (protocol === classKey) continue;
       order.push(...insertable(protocol, [order]));
     }
     return order;
   },
 };
+
+/** The SDK's conformances of `classKey` — none for a type the project declares itself. */
+function sdkConformances(classKey: string, ctx: CallContext): readonly string[] {
+  const declared = swiftDeclaringFiles(classKey, ctx);
+  if (declared !== undefined && declared.size > 0) return [];
+  return SWIFT_SDK_CONFORMANCES.get(classKey) ?? [];
+}
