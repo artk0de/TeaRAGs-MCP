@@ -119,6 +119,18 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
 }
 
 /**
+ * One call site as pass-2 sees it: the call, its chunk, the chunk's local
+ * bindings AFTER barrier-derived parameter seeding (what the receiver-kind
+ * classifier reads), and the full `CallContext` the resolver is handed.
+ */
+export interface ResolvableCallSite {
+  chunk: ChunkExtraction;
+  call: CallRef;
+  localBindings: ChunkExtraction["localBindings"];
+  ctx: CallContext;
+}
+
+/**
  * What one call site produced. `"ambiguous"` is distinct from `"unresolved"`:
  * an over-cap fan-out is NOT a genuine miss and must skip miss classification
  * (bd f2jsb / j0pki).
@@ -450,6 +462,63 @@ export class CallEdgeResolutionRunner {
     kindTally: Record<ReceiverKind, ReceiverKindTally>,
   ): void {
     const { stats } = this.runState;
+    this.forEachCallSite(extraction, symbolTable, inputs, ({ chunk, call, localBindings, ctx }) => {
+      stats.callsAttempted += 1;
+      const receiverKind = classifyReceiverKind(call, localBindings);
+      kindTally[receiverKind].attempted += 1;
+      const edgesBefore = methodEdges.length;
+      const outcome = this.dispatchCall(call, chunk, ctx, resolver, methodEdges, ambiguousFanouts);
+      if (outcome === "ambiguous") {
+        // Over-cap dynamic fan-out (bd f2jsb / j0pki): its own bucket — not a
+        // genuine miss, not external. The miss classifiers must NOT count it.
+        stats.callsAmbiguousFanout += 1;
+        kindTally[receiverKind].ambiguousFanout += 1;
+        return;
+      }
+      if (outcome === "resolved") {
+        stats.callsResolved += 1;
+        kindTally[receiverKind].resolved += 1;
+        if (this.landedOnSharedTemplate(methodEdges, edgesBefore, ctx, receiverKind)) {
+          kindTally[receiverKind].unnarrowedTemplate += 1;
+        }
+        return;
+      }
+      this.classifyMiss(call, ctx, resolver, symbolTable, kindTally, receiverKind);
+    });
+  }
+
+  /**
+   * Every call site of one file with the `CallContext` pass-2 resolves it
+   * against — the run-global channels of the file's language family, the
+   * barrier-seeded local bindings — built exactly as {@link resolve} builds
+   * them, without resolving anything (bd tea-rags-mcp-pkfi7).
+   *
+   * For offline harnesses that drive the production resolver site by site
+   * (`scripts/codegraph-chain-tally.ts`). A harness that assembled its own
+   * context drifted from this one each time a channel changed shape — most
+   * recently when nbf8q / qea83 partitioned the class-name, return-type and
+   * hierarchy channels by language family — so the harness asks the runner
+   * instead. Valid after `CodegraphRunState#seal`, like `resolve`.
+   */
+  callSiteContexts(extraction: FileExtraction, symbolTable: GlobalSymbolTable): ResolvableCallSite[] {
+    const sites: ResolvableCallSite[] = [];
+    this.forEachCallSite(extraction, symbolTable, this.buildResolverInputs(extraction), (site) => {
+      sites.push(site);
+    });
+    return sites;
+  }
+
+  /**
+   * The one call-site walk {@link resolveCallSites} and {@link callSiteContexts}
+   * share, so the context a harness reads cannot differ from the one production
+   * resolves against.
+   */
+  private forEachCallSite(
+    extraction: FileExtraction,
+    symbolTable: GlobalSymbolTable,
+    inputs: ResolverInputs,
+    visit: (site: ResolvableCallSite) => void,
+  ): void {
     for (const chunk of extraction.chunks) {
       // Barrier-derived parameter types enter the chunk's own binding map at the
       // def line — the coordinate a YARD `@param` occupies — so every reader
@@ -461,28 +530,12 @@ export class CallEdgeResolutionRunner {
         chunk.startLine,
       );
       for (const call of chunk.calls) {
-        stats.callsAttempted += 1;
-        const receiverKind = classifyReceiverKind(call, localBindings);
-        kindTally[receiverKind].attempted += 1;
-        const ctx = this.buildCallContext(extraction, chunk, symbolTable, inputs, localBindings);
-        const edgesBefore = methodEdges.length;
-        const outcome = this.dispatchCall(call, chunk, ctx, resolver, methodEdges, ambiguousFanouts);
-        if (outcome === "ambiguous") {
-          // Over-cap dynamic fan-out (bd f2jsb / j0pki): its own bucket — not a
-          // genuine miss, not external. The miss classifiers must NOT count it.
-          stats.callsAmbiguousFanout += 1;
-          kindTally[receiverKind].ambiguousFanout += 1;
-          continue;
-        }
-        if (outcome === "resolved") {
-          stats.callsResolved += 1;
-          kindTally[receiverKind].resolved += 1;
-          if (this.landedOnSharedTemplate(methodEdges, edgesBefore, ctx, receiverKind)) {
-            kindTally[receiverKind].unnarrowedTemplate += 1;
-          }
-          continue;
-        }
-        this.classifyMiss(call, ctx, resolver, symbolTable, kindTally, receiverKind);
+        visit({
+          chunk,
+          call,
+          localBindings,
+          ctx: this.buildCallContext(extraction, chunk, symbolTable, inputs, localBindings),
+        });
       }
     }
   }
