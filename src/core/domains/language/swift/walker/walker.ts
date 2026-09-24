@@ -249,6 +249,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const selfConstraints = kind === "extension" ? swiftSelfConstraints(node) : undefined;
     const propertyAttributeTypes = swiftPropertyAttributeTypes(node);
     const optionalProperties = swiftOptionalPropertyNames(node);
+    const memberTypeAliases = swiftMemberTypeAliases(node);
     // `extension Collection<String>` composes its members under the name as
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
@@ -268,9 +269,36 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(selfConstraints ? { selfConstraints } : {}),
       ...(propertyAttributeTypes ? { propertyAttributeTypes } : {}),
       ...(optionalProperties.length > 0 ? { optionalProperties } : {}),
+      ...(memberTypeAliases ? { memberTypeAliases } : {}),
     });
   });
   return out;
+}
+
+/**
+ * The nominal member typealiases of a type body (bd tea-rags-mcp-y99pg.33):
+ * `typealias Output = DataStreamRequest.Stream<Value, AFError>` →
+ * `{ Output: "DataStreamRequest.Stream" }`. Only a plain nominal alias is
+ * kept — an optional, a metatype or a function type is not the nominal a
+ * `Self.Output` member dispatches on. The aliased type is read positionally
+ * for the materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftMemberTypeAliases(node: AstNode): Record<string, string> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const out = createIdentifierRecord<string>();
+  let any = false;
+  for (const member of body.namedChildren) {
+    if (member.type !== "typealias_declaration") continue;
+    const alias = member.namedChildren.find((c) => c.type === "type_identifier")?.text;
+    const aliased = swiftTypeNodeAfter(member, "=");
+    if (alias === undefined || aliased?.type !== "user_type") continue;
+    const { nominal } = swiftTypeFactOf(aliased);
+    if (nominal === null) continue;
+    out[alias] = nominal;
+    any = true;
+  }
+  return any ? out : undefined;
 }
 
 /** The properties a type body annotates `T?` (bd tea-rags-mcp-y99pg.33), in source order. */

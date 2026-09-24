@@ -3651,3 +3651,62 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
     );
   });
 });
+
+/**
+ * `compactMap { stream in … }` inside `struct DataStreamPublisher: Publisher`
+ * is Combine's `Publisher.compactMap`, whose closure takes `Self.Output` —
+ * and on this conformer `Output` is what its own `typealias Output = …`
+ * names (bd tea-rags-mcp-y99pg.33).
+ */
+describe("SwiftCallResolver — a conformer's member typealias binds `Self.X` (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/Combine.swift": [
+      { symbolId: "DataStreamPublisher", scope: [] },
+      { symbolId: "DataStreamPublisher#result", scope: ["DataStreamPublisher"] },
+    ],
+    "Sources/DataStreamRequest.swift": [
+      { symbolId: "DataStreamRequest", scope: [] },
+      { symbolId: "DataStreamRequest.Stream", scope: ["DataStreamRequest"] },
+      { symbolId: "DataStreamRequest.Stream#cancel", scope: ["DataStreamRequest", "Stream"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+    ],
+  });
+  const within = (memberTypeAliases?: Record<string, string>): CallContext =>
+    ctx({
+      callerFile: "Sources/Combine.swift",
+      callerScope: ["DataStreamPublisher", "result"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/Combine.swift": [
+          {
+            typeId: "DataStreamPublisher",
+            reopens: false,
+            conforms: ["Publisher"],
+            genericParameters: ["Value"],
+            ...(memberTypeAliases ? { memberTypeAliases } : {}),
+          },
+        ],
+        "Sources/DataStreamRequest.swift": [
+          { typeId: "DataStreamRequest", reopens: false },
+          { typeId: "DataStreamRequest.Stream", reopens: false, genericParameters: ["Success", "Failure"] },
+        ],
+        "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+      },
+      callResultBindings: { stream: [{ line: 10, callee: "compactMap", closureParameter: 0, scopeEndLine: 12 }] },
+    });
+
+  it("types the SDK closure's `Self.Output` parameter by the conformer's alias", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("stream", "cancel", 11),
+      within({ Output: "DataStreamRequest.Stream" }),
+    );
+    expect(target?.targetSymbolId).toBe("DataStreamRequest.Stream#cancel");
+  });
+
+  it("types nothing when the conformer declares no such alias", () => {
+    expect(new SwiftCallResolver().resolve(call("stream", "cancel", 11), within())).toBeNull();
+  });
+});

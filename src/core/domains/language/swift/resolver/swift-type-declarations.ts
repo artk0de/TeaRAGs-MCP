@@ -48,6 +48,8 @@ interface SwiftTypeDeclarationSets {
   readonly propertyAttributes: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
   /** typeId → the properties any declaration of it annotates `T?` (bd tea-rags-mcp-y99pg.33). */
   readonly optionalProperties: ReadonlyMap<string, ReadonlySet<string>>;
+  /** typeId → member typealias → the nominal it aliases, first declaration wins (bd tea-rags-mcp-y99pg.33). */
+  readonly memberTypeAliases: ReadonlyMap<string, ReadonlyMap<string, string>>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -141,6 +143,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
   const propertyAttributes = new Map<string, Map<string, readonly string[]>>();
   const optionalProperties = new Map<string, Set<string>>();
+  const memberTypeAliases = new Map<string, Map<string, string>>();
   const initializers = new Map<string, GenericInitializerFact[]>();
   const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
   // Sorted, so which file's clause comes first is a property of the project
@@ -166,6 +169,11 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         const fields = propertyAttributes.get(fact.typeId) ?? new Map<string, readonly string[]>();
         if (!fields.has(field)) fields.set(field, types);
         propertyAttributes.set(fact.typeId, fields);
+      }
+      for (const [alias, aliased] of Object.entries(fact.memberTypeAliases ?? {})) {
+        const aliases = memberTypeAliases.get(fact.typeId) ?? new Map<string, string>();
+        if (!aliases.has(alias)) aliases.set(alias, aliased);
+        memberTypeAliases.set(fact.typeId, aliases);
       }
       if (fact.functionAliasReturns !== undefined && !functionAliases.has(fact.typeId)) {
         functionAliases.set(fact.typeId, fact.functionAliasReturns);
@@ -208,6 +216,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     enumCases,
     propertyAttributes,
     optionalProperties,
+    memberTypeAliases,
   };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
@@ -345,6 +354,16 @@ export function swiftFunctionAliasReturn(
  */
 export function swiftPropertyAttributeTypes(typeId: string, field: string, ctx: CallContext): readonly string[] {
   return setsFor(ctx)?.propertyAttributes.get(typeId)?.get(field) ?? [];
+}
+
+/**
+ * The member typealiases the declarations of `typeId` declare, each to the
+ * nominal it names as spelled (bd tea-rags-mcp-y99pg.33): `typealias Output =
+ * DataStreamRequest.Stream<…>` → `Output` → `DataStreamRequest.Stream`.
+ * Undefined when none does or the channel is absent.
+ */
+export function swiftMemberTypeAliases(typeId: string, ctx: CallContext): ReadonlyMap<string, string> | undefined {
+  return setsFor(ctx)?.memberTypeAliases.get(typeId);
 }
 
 /** Whether a declaration of `typeId` annotates its property `field` as `T?` (bd tea-rags-mcp-y99pg.33). */

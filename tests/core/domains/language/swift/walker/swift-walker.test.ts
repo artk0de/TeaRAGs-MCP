@@ -1982,6 +1982,30 @@ describe("swift walker — property attribute types, the candidates for a proper
 });
 
 /**
+ * A type's member typealias is how it satisfies an associated type of a
+ * protocol it conforms to (bd tea-rags-mcp-y99pg.33): `typealias Output = …`
+ * inside a `Publisher` is what every `Self.Output` Combine declares means.
+ */
+describe("swift walker — member type aliases (bd tea-rags-mcp-y99pg.33)", () => {
+  const src = [
+    "public struct DataStreamPublisher<Value>: Publisher {",
+    "  public typealias Output = DataStreamRequest.Stream<Value, AFError>",
+    "  public typealias Failure = Never",
+    "  private typealias Handler = (@escaping Handler<Value>) -> DataStreamRequest",
+    "  typealias Maybe = Int?",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes each nominal alias of a type body by its nominal path", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "DataStreamPublisher");
+      expect(fact?.memberTypeAliases).toEqual({ Output: "DataStreamRequest.Stream", Failure: "Never" });
+    }
+  });
+});
+
+/**
  * `T?` is `Optional<T>` (bd tea-rags-mcp-y99pg.33). `response.map(\.statusCode)`
  * on a `response: HTTPURLResponse?` is `Optional.map`, and only the
  * source's `?` / `!` says whether a member is read off the optional or off

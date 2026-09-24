@@ -458,6 +458,16 @@ export interface TypeDeclarationFact {
    * none is.
    */
   readonly optionalProperties?: readonly string[];
+  /**
+   * The member typealiases this declaration's body declares, each to the
+   * nominal path it aliases (`typealias Output = DataStreamRequest.Stream<…>`
+   * → `{ Output: "DataStreamRequest.Stream" }`). How a type satisfies an
+   * associated type of a protocol it conforms to, and so what `Self.Output`
+   * in that protocol's members means on it (bd tea-rags-mcp-y99pg.33). An
+   * alias of a function, tuple, optional or metatype is left out. Absent when
+   * none is nominal.
+   */
+  readonly memberTypeAliases?: Readonly<Record<string, string>>;
 }
 
 /** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */

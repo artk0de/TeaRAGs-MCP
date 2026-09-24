@@ -61,7 +61,7 @@ import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-v
 import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
 import { SwiftModuleValueIndex } from "./swift-module-values.js";
-import { SwiftSdkMemberTypes, type SwiftNominalTypeRef } from "./swift-sdk-member-types.js";
+import { SwiftSdkMemberTypes, type SwiftNominalTypeRef, type SwiftSelfAliases } from "./swift-sdk-member-types.js";
 import {
   lookupSwiftOverloads,
   lookupSwiftTypeMember,
@@ -74,6 +74,7 @@ import {
   swiftGenericParameters,
   swiftIsOptionalProperty,
   swiftMemberClosureParameters,
+  swiftMemberTypeAliases,
   swiftPropertyAttributeTypes,
 } from "./swift-type-declarations.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
@@ -86,6 +87,13 @@ export interface SwiftClosureSignature {
   readonly genericParameters: readonly string[];
   /** The declaring type, from which a nominal entry is qualified. */
   readonly ownerTypeId: string;
+}
+
+/** A receiver as the SDK substrate is asked about it: the nominal, its lookup order, `Self`'s project aliases. */
+interface SwiftSdkView {
+  readonly receiver: SwiftNominalTypeRef;
+  readonly order: readonly string[];
+  readonly selfAliases: SwiftSelfAliases | undefined;
 }
 
 /** What a member lookup on one type can reach: see {@link SwiftMemberTypeLookup#memberReach}. */
@@ -123,7 +131,7 @@ export class SwiftMemberTypeLookup {
   sdkMemberTypeKeepingOptionals(receiver: SwiftNominalTypeRef, member: string, ctx: CallContext): TypeRef | undefined {
     if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
     const sdk = this.sdkView(receiver, ctx);
-    return this.sdkMembersKeepingOptionals.memberType(sdk.receiver, member, sdk.order);
+    return this.sdkMembersKeepingOptionals.memberType(sdk.receiver, member, sdk.order, sdk.selfAliases);
   }
 
   /**
@@ -162,7 +170,7 @@ export class SwiftMemberTypeLookup {
   sdkMemberType(receiver: SwiftNominalTypeRef, member: string, ctx: CallContext): TypeRef | undefined {
     if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
     const sdk = this.sdkView(receiver, ctx);
-    return this.sdkMembers.memberType(sdk.receiver, member, sdk.order);
+    return this.sdkMembers.memberType(sdk.receiver, member, sdk.order, sdk.selfAliases);
   }
 
   /** The SDK-declared type of the `index`-th parameter of the closure `receiver.member` takes, on the same terms. */
@@ -174,7 +182,7 @@ export class SwiftMemberTypeLookup {
   ): TypeRef | undefined {
     if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
     const sdk = this.sdkView(receiver, ctx);
-    return this.sdkMembers.closureParameterType(sdk.receiver, member, index, sdk.order);
+    return this.sdkMembers.closureParameterType(sdk.receiver, member, index, sdk.order, sdk.selfAliases);
   }
 
   /**
@@ -359,14 +367,38 @@ export class SwiftMemberTypeLookup {
    * found along: an extension's spelled id (`Collection<String>`,
    * `[HTTPHeader]`) reads as the nominal it re-opens.
    */
-  private sdkView(
-    receiver: SwiftNominalTypeRef,
-    ctx: CallContext,
-  ): { readonly receiver: SwiftNominalTypeRef; readonly order: readonly string[] } {
+  private sdkView(receiver: SwiftNominalTypeRef, ctx: CallContext): SwiftSdkView {
     const nominal = swiftSpelledNominal(receiver.name);
-    if (nominal === receiver.name) return { receiver, order: this.lookupOrder(receiver.name, ctx) };
+    if (nominal === receiver.name) {
+      const order = this.lookupOrder(receiver.name, ctx);
+      return { receiver, order, selfAliases: this.selfAliasesAlong(order, ctx) };
+    }
     const order = [...new Set([...this.lookupOrder(receiver.name, ctx), ...this.lookupOrder(nominal, ctx)])];
-    return { receiver: { ...receiver, name: nominal }, order };
+    return { receiver: { ...receiver, name: nominal }, order, selfAliases: this.selfAliasesAlong(order, ctx) };
+  }
+
+  /**
+   * What `Self.X` means on a receiver whose lookup order is `order` (bd
+   * tea-rags-mcp-y99pg.33): the member typealiases the project types on it
+   * declare, the nearest declaration of each name winning. Each alias is
+   * qualified from the type that declares it, as a property's type is
+   * ({@link typeOfProperty}). An alias naming one of its type's own generic
+   * parameters says nothing a bare receiver can bind, and is left out.
+   */
+  private selfAliasesAlong(order: readonly string[], ctx: CallContext): SwiftSelfAliases | undefined {
+    let out: Map<string, TypeRef> | undefined;
+    for (const candidate of order) {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const aliases = swiftMemberTypeAliases(typeId, ctx);
+      if (aliases === undefined) continue;
+      const generics = swiftGenericParameters(typeId, ctx);
+      for (const [alias, aliased] of aliases) {
+        if (out?.has(alias) === true || generics.includes(aliased)) continue;
+        out ??= new Map();
+        out.set(alias, { form: "instance", name: qualifySwiftTypeNameWithin(aliased, typeId, ctx) });
+      }
+    }
+    return out;
   }
 
   /**

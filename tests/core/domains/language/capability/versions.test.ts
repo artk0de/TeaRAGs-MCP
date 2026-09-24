@@ -367,6 +367,9 @@ describe("seeded support versions", () => {
       // swift walker 50: bd tea-rags-mcp-y99pg.33 — optional bindings,
       // optional properties and the written receiver are new extraction, so a
       // walker-49 index reads every optional as what it wraps.
+      // swift walker 51: bd tea-rags-mcp-y99pg.33 — member typealiases reach
+      // `typeDeclarations`, so a walker-50 index cannot bind `Self.X` on a
+      // project conformer.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
@@ -376,7 +379,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 50],
+        ["swift", 51],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
