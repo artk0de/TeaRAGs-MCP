@@ -1,6 +1,7 @@
 /**
  * Codegraph MCP tools — slice 1: get_callers, get_callees.
  * Slice 2 adds: find_cycles. Slice 6 adds: trace_path.
+ * get_architecture_report (bd tea-rags-mcp-94hd9) judges the file graph.
  *
  * All tools read directly from the codegraph DuckDB via the App's
  * GraphFacade (wired in createApp()).
@@ -90,6 +91,24 @@ const FindCyclesInputShape = {
         "'{src/core/api,src/mcp}/**'). Cycle kept if AT LEAST ONE member resolves to matching " +
         "file path — cross-boundary cycles retained. Omit for no filter.",
     ),
+};
+
+const GetArchitectureReportInputShape = {
+  ...collectionPathFields(),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe(
+      "Picomatch glob scoping judged edges: edge counts when SOURCE file matches " +
+        "(e.g. 'src/core/domains/ingest/**'). Instability always whole-graph. Omit for whole project.",
+    ),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .max(500)
+    .optional()
+    .describe("Max violations and max root causes returned (default 50). Summary keeps totals."),
 };
 
 /**
@@ -196,6 +215,27 @@ export function registerCodegraphTools(
     },
     async ({ project, collection, path, scope, pathPattern }) => {
       const response = await app.findCycles({ project, collection, path, scope, pathPattern });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "get_architecture_report",
+    {
+      title: "Get Architecture Report",
+      description:
+        "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
+        "Returns typed violations with per-line evidence. Detector: Stable Dependencies Principle — " +
+        "stable file depending on less stable one (both instabilities, delta, support, call weight, " +
+        "directory relation). rootCauses groups violations by unstable target — read first; " +
+        "cycleWithDependents = target references own dependents. Summary counts excluded edges " +
+        "(privateCollaborators = source is target's sole importer, not judged). Backed by codegraph DuckDB.",
+      inputSchema: GetArchitectureReportInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, pathPattern, limit }) => {
+      const response = await app.getArchitectureReport({ project, collection, path, pathPattern, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
