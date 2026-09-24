@@ -135,9 +135,11 @@ import type {
   CallResultBinding,
   ChunkExtraction,
   FileExtraction,
+  GenericInitializerFact,
   ImportRef,
   KwargSignature,
   LocalBinding,
+  SwiftFieldConstruction,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
@@ -239,7 +241,8 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     }
     const conforms = swiftInheritedTypeNames(node);
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
-    const { fieldTypeArguments, memberClosureParameters } = swiftGenericMemberFacts(node, genericParameters);
+    const { fieldTypeArguments, fieldConstructions, memberClosureParameters, genericInitializers } =
+      swiftGenericMemberFacts(node, genericParameters);
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     const functionAliasReturns = swiftFunctionAliasReturns(node);
     // `extension Collection<String>` composes its members under the name as
@@ -252,7 +255,9 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(conforms.length > 0 ? { conforms } : {}),
       ...(genericParameters.length > 0 ? { genericParameters } : {}),
       ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
+      ...(fieldConstructions ? { fieldConstructions } : {}),
       ...(memberClosureParameters ? { memberClosureParameters } : {}),
+      ...(genericInitializers ? { genericInitializers } : {}),
       ...(enumCasePayloads ? { enumCasePayloads } : {}),
       ...(spelledAs === undefined ? {} : { spelledAs }),
       ...(functionAliasReturns ? { functionAliasReturns } : {}),
@@ -338,23 +343,47 @@ function swiftGenericMemberFacts(
   genericParameters: readonly string[],
 ): {
   fieldTypeArguments?: Record<string, (string | null)[]>;
+  fieldConstructions?: Record<string, SwiftFieldConstruction>;
   memberClosureParameters?: Record<string, (string | null)[] | null>;
+  genericInitializers?: GenericInitializerFact[];
 } {
   const body = node.childForFieldName("body");
   if (!body) return {};
   const fields = createIdentifierRecord<(string | null)[]>();
+  const constructions = createIdentifierRecord<SwiftFieldConstruction>();
   const closures = createIdentifierRecord<(string | null)[] | null>();
+  const initializers: GenericInitializerFact[] = [];
   let anyField = false;
+  let anyConstruction = false;
   let anyClosure = false;
   for (const member of body.children) {
     if (member.type === "property_declaration") {
       const name = singleIdentifierPatternName(member.childForFieldName("name"));
+      if (!name) continue;
       const annotation = member.children.find((c) => c.type === "type_annotation");
-      const typeNode = annotation ? swiftTypeNodeAfter(annotation, ":") : null;
+      const value = annotation ? null : member.childForFieldName("value");
+      // `Protected<[T]>(…)` spells its arguments on the construction (bd tea-rags-mcp-y99pg.26).
+      const typeNode = annotation
+        ? swiftTypeNodeAfter(annotation, ":")
+        : value?.type === "constructor_expression"
+          ? (value.namedChildren.find((c) => c.type === "user_type") ?? null)
+          : null;
       const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
-      if (!name || !args) continue;
-      fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
-      anyField = true;
+      if (args) {
+        fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
+        anyField = true;
+        continue;
+      }
+      const construction = value ? swiftFieldConstruction(value) : null;
+      if (construction) {
+        constructions[name] = construction;
+        anyConstruction = true;
+      }
+      continue;
+    }
+    if (member.type === "init_declaration") {
+      const initializer = swiftGenericInitializer(member, genericParameters);
+      if (initializer) initializers.push(initializer);
       continue;
     }
     if (member.type !== "function_declaration" && member.type !== "protocol_function_declaration") continue;
@@ -367,8 +396,55 @@ function swiftGenericMemberFacts(
   }
   return {
     ...(anyField ? { fieldTypeArguments: fields } : {}),
+    ...(anyConstruction ? { fieldConstructions: constructions } : {}),
     ...(anyClosure ? { memberClosureParameters: closures } : {}),
+    ...(initializers.length > 0 ? { genericInitializers: initializers } : {}),
   };
+}
+
+/**
+ * `Protected(State())` → the constructed type and each argument's label and
+ * constructed nominal — null for anything but a CapWords construction with at
+ * least one argument of known type (bd tea-rags-mcp-y99pg.26).
+ */
+function swiftFieldConstruction(value: AstNode): SwiftFieldConstruction | null {
+  if (value.type !== "call_expression") return null;
+  const callee = value.namedChildren.find((c) => c.type !== "call_suffix");
+  if (callee?.type !== "simple_identifier" || !SWIFT_TYPE_NAME_TEXT.test(callee.text)) return null;
+  const suffix = value.namedChildren.find((c) => c.type === "call_suffix");
+  const list = suffix?.children.find((c) => c.type === "value_arguments")?.namedChildren ?? [];
+  const args: { label: string | null; type: string | null }[] = [];
+  for (const arg of list) {
+    if (arg.type !== "value_argument") continue;
+    const label = arg.children.find((c) => c.type === "value_argument_label")?.text ?? null;
+    const expression = arg.namedChildren.filter((c) => c.type !== "value_argument_label").at(-1) ?? null;
+    args.push({ label, type: constructedTypeFact(expression).nominal });
+  }
+  return args.some((arg) => arg.type !== null) ? { type: callee.text, arguments: args } : null;
+}
+
+/**
+ * An `init` whose parameters include one typed exactly as a generic parameter
+ * of the enclosing type: its labels and what each position binds. Read
+ * positionally, as every Swift parameter here.
+ */
+function swiftGenericInitializer(init: AstNode, genericParameters: readonly string[]): GenericInitializerFact | null {
+  if (genericParameters.length === 0) return null;
+  const labels: (string | null)[] = [];
+  const binds: (string | null)[] = [];
+  for (const parameter of init.children) {
+    if (parameter.type !== "parameter") continue;
+    const colon = parameter.children.findIndex((c) => c.type === ":");
+    const names = parameter.children
+      .slice(0, colon === -1 ? undefined : colon)
+      .filter((c) => c.type === "simple_identifier")
+      .map((c) => c.text);
+    labels.push(names[0] === "_" ? null : (names[0] ?? null));
+    const typeNode = swiftParameterTypeNode(parameter);
+    const written = typeNode?.type === "user_type" ? typeNode.text.trim() : undefined;
+    binds.push(written !== undefined && genericParameters.includes(written) ? written : null);
+  }
+  return binds.some((bound) => bound !== null) ? { labels, binds } : null;
 }
 
 /** Whether two overloads state the same closure parameter types; `null` (poisoned) equals nothing. */

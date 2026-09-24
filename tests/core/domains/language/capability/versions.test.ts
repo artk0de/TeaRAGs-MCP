@@ -288,6 +288,9 @@ describe("seeded support versions", () => {
       // swift walker 38: SDK member hops, closure parameters and construction
       // heads are typed from the substrate, so an index built by walker 37 lacks
       // those edges and charges their SDK sites as misses.
+      // swift walker 39: `fieldConstructions` and `genericInitializers` are new
+      // channel content, so an index built by walker 38 types no closure
+      // parameter of a construction-initialized generic field.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -322,7 +325,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 38],
+        ["swift", 39],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

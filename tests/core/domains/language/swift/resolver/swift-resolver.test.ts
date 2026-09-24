@@ -3096,3 +3096,56 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
     expect(resolver.hasInProjectDefinition(site, within)).toBe(false);
   });
 });
+
+describe("SwiftCallResolver — a construction-initialized field's generic arguments (bd tea-rags-mcp-y99pg.26)", () => {
+  const t = table({
+    "Sources/Protected.swift": [
+      { symbolId: "Protected", scope: [] },
+      { symbolId: "Protected#write", scope: ["Protected"] },
+    ],
+    "Sources/DataRequest.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      { symbolId: "DataRequest.DataMutableState", scope: ["DataRequest"] },
+      { symbolId: "DataRequest.DataMutableState#reset", scope: ["DataRequest", "DataMutableState"] },
+    ],
+  });
+  const protectedFact = {
+    typeId: "Protected",
+    reopens: false,
+    genericParameters: ["Value"],
+    memberClosureParameters: { write: ["Value"] },
+    genericInitializers: [{ labels: [null], binds: ["Value"] }],
+  };
+  const context = (label: string | null) =>
+    ctx({
+      callerFile: "Sources/DataRequest.swift",
+      callerScope: ["DataRequest"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/Protected.swift": [protectedFact],
+        "Sources/DataRequest.swift": [
+          {
+            typeId: "DataRequest",
+            reopens: false,
+            fieldConstructions: {
+              dataMutableState: { type: "Protected", arguments: [{ label, type: "DataMutableState" }] },
+            },
+          },
+          { typeId: "DataRequest.DataMutableState", reopens: false },
+        ],
+      },
+      classFieldTypes: { DataRequest: { dataMutableState: "Protected" } },
+      callResultBindings: {
+        state: [{ line: 10, callee: "dataMutableState.write", closureParameter: 0, scopeEndLine: 12 }],
+      },
+    });
+
+  it("binds the generic parameter through the initializer the construction's labels select", () => {
+    const target = new SwiftCallResolver().resolve(call("state", "reset", 11), context(null));
+    expect(target?.targetSymbolId).toBe("DataRequest.DataMutableState#reset");
+  });
+
+  it("binds nothing when no initializer takes the construction's labels", () => {
+    expect(new SwiftCallResolver().resolve(call("state", "reset", 11), context("value"))).toBeNull();
+  });
+});

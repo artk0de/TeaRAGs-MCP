@@ -1720,3 +1720,42 @@ describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)
     expect(fact?.functionAliasReturns).toEqual({ Handler: "DataRequest" });
   });
 });
+
+describe("swift walker — construction-initialized field arguments (bd tea-rags-mcp-y99pg.26)", () => {
+  const src = [
+    "final class Protected<Value> {",
+    "  init(_ value: Value) {}",
+    "  init(label: String) {}",
+    "}",
+    "final class DataRequest {",
+    "  private let dataMutableState = Protected(DataMutableState())",
+    "  let validators = Protected<[@Sendable () -> Void]>([])",
+    '  let named = Protected(label: "x")',
+    "  let plain = Helper()",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes the generic arguments an explicitly specialised construction spells", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "DataRequest");
+      expect(fact?.fieldTypeArguments).toEqual({ validators: ["Array"] });
+    }
+  });
+
+  it("publishes an unspecialised construction's argument labels and types", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "DataRequest");
+      expect(fact?.fieldConstructions).toEqual({
+        dataMutableState: { type: "Protected", arguments: [{ label: null, type: "DataMutableState" }] },
+      });
+    }
+  });
+
+  it("publishes which generic parameter each initializer parameter binds", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "Protected");
+      expect(fact?.genericInitializers).toEqual([{ labels: [null], binds: ["Value"] }]);
+    }
+  });
+});
