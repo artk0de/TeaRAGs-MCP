@@ -223,8 +223,8 @@ Disk taken by real indexes (turbo quantization, dense + sparse vectors):
 
 | Codebase                                | Indexed                                                     | Vector index (Qdrant) | Call graph (DuckDB) |
 | --------------------------------------- | ----------------------------------------------------------- | --------------------- | ------------------- |
-| Production monolith (Ruby + TypeScript) | **3M+ LoC + 118K lines of docs** · ~33k files · 140k chunks | 1.3 GB                | 1.1 GB              |
-| TeaRAGs itself (TypeScript)             | 433K LoC + 36K lines of docs · ~2.4k files · 25k chunks     | 1.2 GB                | 42 MB               |
+| Production monolith (Ruby + TypeScript) | **3M+ LoC + 118K lines of docs** · ~33k files · 140k chunks | 1.3 GB                | ~300 MB             |
+| TeaRAGs itself (TypeScript)             | 433K LoC + 36K lines of docs · ~2.4k files · 25k chunks     | 1.2 GB                | 27 MB               |
 
 The call graph grows with the code; the vector index barely does — a codebase
 seven times smaller still takes 1.2 GB.

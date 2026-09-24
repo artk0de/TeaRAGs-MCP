@@ -510,6 +510,32 @@ export const capability: LanguageCapability = {
   // Alamofire TOTAL 0.991 -> 0.992 (1252/1263 -> 1252/1262), Quick unchanged,
   // WRONG 8 -> 8; edges +0 / -0; HTTPHeaders.swift:383 `….last.map` proved an
   // SDK member (swiftc: Optional.map).
+  // walkers 55-58: bd tea-rags-mcp-y99pg.33, built as 48-51 on a parallel
+  // branch off walker 47 and renumbered at the merge with y99pg.32 / .34; the
+  // measurements below are that branch's own, taken without either.
+  // walker 55 (branch 48): bd tea-rags-mcp-y99pg.33 — an extension's `where Self: Q` /
+  // `Self == X` constraints reach `typeDeclarations`, and an implicit-self call
+  // inside that body resolves to the constraint's member: Alamofire TOTAL
+  // 0.988 -> 0.989 (1250/1265 -> 1251/1265), Quick unchanged, WRONG 8 -> 8,
+  // edges +1 / -0 (`serializeDownload`'s `serialize`, oracle-confirmed).
+  // walker 56 (branch 49): bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries each
+  // stored property's attribute types, and `$name` types as its wrapper's
+  // `projectedValue` (`@Published` → `Published<Value>.Publisher`): Alamofire
+  // TOTAL 0.989 -> 0.990 (1251/1265 -> 1251/1264), Quick unchanged, WRONG 8,
+  // edges +0 / -0 (watchOS `$result.compactMap(\.self).map` proved Combine's).
+  // walker 57 (branch 50): bd tea-rags-mcp-y99pg.33 — `T?` is `Optional<T>`: bindings
+  // and properties declared optional, the receiver as written
+  // (`CallRef.writtenReceiver`) and SDK optionals reach the fold, and a member
+  // written straight on an optional is `Optional`'s: Alamofire TOTAL 0.990 ->
+  // 0.991 (1251/1264 -> 1251/1262), Quick unchanged, WRONG 8, edges +0 / -0
+  // (ResponseSerialization `Optional.map` x2, oracle-confirmed).
+  // walker 58 (branch 51): bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries each
+  // type body's nominal member typealiases, which bind `Self.X` in an SDK
+  // member's types on a project conformer (`compactMap { stream in` inside a
+  // `Publisher` whose `typealias Output = DataStreamRequest.Stream<…>`):
+  // Alamofire TOTAL 0.991 -> 0.992 (1251/1262 -> 1251/1261), Quick unchanged,
+  // WRONG 8, edges +0 / -0 (Combine `completion.error.map` is `Optional.map`,
+  // oracle-confirmed).
   // walker 60: bd tea-rags-mcp-y99pg.35 — `typeDeclarations` publishes each own
   // declaration's keyword (`declarationKind`), and a member called on an
   // `AnyObject` / `AnyClass` value — Objective-C dynamic lookup — leaves the

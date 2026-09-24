@@ -374,15 +374,26 @@ describe("seeded support versions", () => {
       // swift walker 54: bd tea-rags-mcp-y99pg.34 — the chain fold's hop cap
       // moves from three links to five, so an index built by walker 50 leaves a
       // four- or five-link receiver untyped.
-      // swift walker 60: bd tea-rags-mcp-y99pg.35 — `declarationKind` is new
-      // `typeDeclarations` content, and an Objective-C dynamic-lookup call no
-      // project class can implement leaves the denominator, so an index built
-      // by an earlier walker still charges it as a miss.
       // typescript walker 16, javascript walker 7, python walker 14: bd
       // tea-rags-mcp-r8hme.2 records the export names every import takes (and,
       // for typescript, every re-export forwards) on the persisted file edge, so
       // an index built by the previous walker carries no names and the facade
       // check falls back to its file-level rule there.
+      // swift walker 55 (branch 48): bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries
+      // an extension's `where Self` constraints, so a walker-54 index cannot
+      // resolve an implicit-self call to the constraint's member.
+      // swift walker 56 (branch 49): bd tea-rags-mcp-y99pg.33 — property attribute types
+      // reach `typeDeclarations`, so a walker-55 index cannot type `$name`.
+      // swift walker 57 (branch 50): bd tea-rags-mcp-y99pg.33 — optional bindings,
+      // optional properties and the written receiver are new extraction, so a
+      // walker-56 index reads every optional as what it wraps.
+      // swift walker 58 (branch 51): bd tea-rags-mcp-y99pg.33 — member typealiases reach
+      // `typeDeclarations`, so a walker-57 index cannot bind `Self.X` on a
+      // project conformer.
+      // swift walker 60: bd tea-rags-mcp-y99pg.35 — `declarationKind` is new
+      // `typeDeclarations` content, and an Objective-C dynamic-lookup call no
+      // project class can implement leaves the denominator, so an index built
+      // by an earlier walker still charges it as a miss.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],
