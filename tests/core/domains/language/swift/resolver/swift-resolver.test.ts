@@ -1751,3 +1751,65 @@ describe("SwiftCallResolver — locals bound to a value chain", () => {
     expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
   });
 });
+
+/**
+ * `NotificationCenter.default`, `DispatchQueue.main`, `URLSession.shared` — a
+ * type's own singleton, named by Swift's API convention, is an instance of the
+ * type, and a project extension of that type is where its calls land
+ * (bd tea-rags-mcp-y99pg.5).
+ */
+describe("SwiftCallResolver — a type's conventional singleton", () => {
+  const t = table({
+    "Sources/Notifications.swift": [
+      { symbolId: "NotificationCenter", scope: [] },
+      { symbolId: "NotificationCenter#postNotification", scope: ["NotificationCenter"] },
+    ],
+    "Sources/Config.swift": [
+      { symbolId: "Config", scope: [] },
+      { symbolId: "Settings", scope: [] },
+      { symbolId: "Settings#reload", scope: ["Settings"] },
+      { symbolId: "Config#reload", scope: ["Config"] },
+    ],
+  });
+  const declarations = {
+    "Sources/Notifications.swift": [{ typeId: "NotificationCenter", reopens: true }],
+    "Sources/Config.swift": [
+      { typeId: "Config", reopens: false },
+      { typeId: "Settings", reopens: false },
+    ],
+  };
+
+  it("types `Type.default` as the type itself", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("NotificationCenter.default", "postNotification"),
+      ctx({ callerFile: "Sources/Request.swift", symbolTable: t, typeDeclarations: declarations }),
+    );
+    expect(target?.targetSymbolId).toBe("NotificationCenter#postNotification");
+  });
+
+  it("reads a declared property of that name instead, when the project declares one", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("Config.shared", "reload"),
+      ctx({
+        callerFile: "Sources/Request.swift",
+        symbolTable: t,
+        typeDeclarations: declarations,
+        classFieldTypesByClassKey: { "Sources/Config.swift::Config": { shared: "Settings" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Settings#reload");
+  });
+
+  it("reads no singleton off an instance", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("config.shared", "reload"),
+      ctx({
+        callerFile: "Sources/Request.swift",
+        symbolTable: t,
+        typeDeclarations: declarations,
+        localBindings: { config: [{ line: 5, type: "Config" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});

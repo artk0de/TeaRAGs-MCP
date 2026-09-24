@@ -72,6 +72,20 @@ import { isSwiftTypeName } from "./swift-type-name.js";
  */
 const SWIFT_CHAIN_MAX_HOPS = 3;
 
+/**
+ * Static properties that, by the Swift API Design Guidelines' naming of
+ * shared instances, hold an instance of the type they are read off:
+ * `NotificationCenter.default`, `URLSession.shared`, `DispatchQueue.main`,
+ * `Locale.current`, `UserDefaults.standard` (bd tea-rags-mcp-y99pg.5).
+ *
+ * Read only where nothing the project declares answers first — a declared
+ * property of that name is typed by its declaration, and a type the project
+ * does not declare or extend never seeds a chain at all — so this types the
+ * SDK singletons whose members the project adds in extensions, and nothing
+ * else.
+ */
+const SWIFT_SINGLETON_PROPERTIES: ReadonlySet<string> = new Set(["default", "shared", "main", "current", "standard"]);
+
 /** A bare Swift identifier — the only head shape any channel here can key on. */
 const SWIFT_IDENTIFIER = /^[A-Za-z_]\w*$/;
 
@@ -194,7 +208,10 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
       // Not a property: a METHOD hop, typed by what the declaration the call
       // lands on returns. Strict: an ambiguous callee types nothing.
       const callee = members.memberOn(recv.name, member, ctx, "strict")?.targetSymbolId;
-      return callee ? ctx.structuredReturnTypes?.[callee] : undefined;
+      if (callee) return ctx.structuredReturnTypes?.[callee];
+      // `NotificationCenter.default`: a type's own singleton, by convention.
+      if (recv.form === "class" && SWIFT_SINGLETON_PROPERTIES.has(member)) return { form: "instance", name: recv.name };
+      return undefined;
     },
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
     // An argument list carries its own dots (`request(for: task.id)`).

@@ -235,6 +235,8 @@ describe("seeded support versions", () => {
       // swift walker 17: locals bound to an untypable value chain are published by
       // spelling in `callResultBindings`, so an index built by walker 16 misses every
       // call on such a local.
+      // swift walker 18: a type's conventional singleton types as the type, so an
+      // index built by walker 17 misses calls through `NotificationCenter.default`.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -251,7 +253,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 17],
+        ["swift", 18],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
