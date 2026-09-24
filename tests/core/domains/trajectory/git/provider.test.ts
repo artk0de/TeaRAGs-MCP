@@ -629,5 +629,31 @@ describe("GitEnrichmentProvider", () => {
         expect.objectContaining({ commitEntries: [], bugFixShas: new Set() }),
       );
     });
+
+    it("ships commits made under a file's pre-rename path in the job (bd tea-rags-mcp-z8w16)", async () => {
+      const commit = (sha: string, path: string, previousPath?: string) => ({
+        commit: { sha, author: "A", authorEmail: "a@x", timestamp: 1, body: "chore", parents: ["p"] },
+        changedFiles: [previousPath ? { path, previousPath } : { path }],
+      });
+      const rename = commit("r", "src/a.ts", "src/old.ts");
+      const preRename = commit("m", "src/old.ts");
+      const log = [rename, preRename];
+      const discovery = {
+        commitsForFiles: vi.fn(async (paths: string[]) =>
+          log.filter((e) => e.changedFiles.some((r) => paths.includes(r.path))),
+        ),
+        getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
+      };
+      const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
+      const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+
+      await provider.buildChunkSignals("/repo", chunkMap, {
+        churnWalkThread: walkThread,
+        commitDiscovery: discovery,
+        skipCache: true,
+      } as never);
+
+      expect(walkThread.walk).toHaveBeenCalledWith(expect.objectContaining({ commitEntries: [rename, preRename] }));
+    });
   });
 });
