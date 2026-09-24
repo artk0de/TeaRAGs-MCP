@@ -1614,6 +1614,29 @@ describe("swift walker — a closure spelled through a typealias", () => {
     expect(configure.acceptsBlock).toBe(true);
     expect(count.acceptsBlock).toBe(false);
   });
+
+  /**
+   * bd tea-rags-mcp-y99pg.36 — `@autoclosure` wraps the argument EXPRESSION in
+   * a closure; a closure literal written there is the value, not the body. So
+   * `validate { … }` cannot land on Alamofire's `validate(contentType:
+   * @escaping @Sendable @autoclosure () -> S)`, and the label stays required.
+   */
+  it("does not let a trailing closure land on an `@autoclosure` parameter", () => {
+    const src = [
+      "func validate<S: Sequence>(contentType types: @escaping @Sendable @autoclosure () -> S) -> Self { self }",
+      "func check(_ condition: @autoclosure () -> Bool) {}",
+      "",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "validate", scope: [], startLine: 1, endLine: 1 },
+      { symbolId: "check", scope: [], startLine: 2, endLine: 2 },
+    ];
+    const [validate, check] = extract(src, chunks).chunks;
+    expect(validate.kwargs).toEqual({ required: ["contentType"], optional: [], hasSplat: false });
+    expect(validate.acceptsBlock).toBe(false);
+    expect(check.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(check.acceptsBlock).toBe(false);
+  });
 });
 
 describe("swift walker — parameter modifiers and metatypes (bd tea-rags-mcp-y99pg.12)", () => {

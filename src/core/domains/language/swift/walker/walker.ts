@@ -1354,20 +1354,21 @@ const SWIFT_NON_CLOSURE_TYPES: ReadonlySet<string> = new Set([
 
 /**
  * Whether a parameter can take a closure: `yes` for a function type or an
- * `@escaping` / `@autoclosure` / `@Sendable` one (only a closure carries
- * those), `no` for a type that is provably not a function — an array,
+ * `@escaping` / `@Sendable` one (only a closure carries those), `no` for an
+ * `@autoclosure` one and for a type that is provably not a function — an array,
  * dictionary, real tuple or metatype, a protocol-constrained generic
  * parameter (a function type conforms to no protocol), or a common value
  * type — and `maybe` for any other name, which may be a closure typealias.
  */
 function swiftClosureCapability(parameter: AstNode, fn: AstNode): "yes" | "no" | "maybe" {
+  const modifiers = parameter.children.filter((c) => c.type === "type_modifiers" || c.type === "parameter_modifiers");
+  // `@autoclosure` wraps the argument EXPRESSION; a closure literal written
+  // there is the value itself, so no trailing closure lands on it — checked
+  // first, since its spelled type IS a function type (bd tea-rags-mcp-y99pg.36).
+  if (modifiers.some((c) => /@autoclosure\b/.test(c.text))) return "no";
   const typeNode = swiftParameterTypeNode(parameter);
   if (swiftFunctionTypeNode(typeNode) !== null) return "yes";
-  const attributed = parameter.children.some(
-    (c) =>
-      (c.type === "type_modifiers" || c.type === "parameter_modifiers") &&
-      /@(escaping|autoclosure|Sendable)\b/.test(c.text),
-  );
+  const attributed = modifiers.some((c) => /@(escaping|Sendable)\b/.test(c.text));
   if (attributed) return "yes";
   let bare = typeNode;
   while (bare?.type === "optional_type") bare = bare.namedChildren[0] ?? null;
