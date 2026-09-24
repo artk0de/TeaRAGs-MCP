@@ -193,6 +193,7 @@ import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescrip
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { symbolDefinitionsOf } from "../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectDependencyManifestSources, readDeclaredDependencies } from "../src/core/infra/dependency-manifests.js";
@@ -1598,15 +1599,13 @@ export function extractFile(
   }
 }
 
-/** `SymbolDefinition`s for a file, matching what the production sink upserts. */
+/**
+ * `SymbolDefinition`s for a file — production's own builder, so the call
+ * signatures (`arity`, `kwargs`, `acceptsBlock`) the narrowers read reach the
+ * offline symbol table exactly as they reach `cg_symbols`.
+ */
 export function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
-  return extraction.chunks.map((chunk) => ({
-    symbolId: chunk.symbolId,
-    fqName: chunk.symbolId,
-    shortName: lastSegment(chunk.symbolId),
-    relPath: extraction.relPath,
-    scope: chunk.scope,
-  }));
+  return symbolDefinitionsOf(extraction);
 }
 
 interface RunCounters {
