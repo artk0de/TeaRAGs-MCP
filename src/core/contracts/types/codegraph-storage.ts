@@ -185,7 +185,9 @@ export interface GraphDbClient {
    * `cg_ambiguous_fanout` aggregates whose `member` matches the target's
    * member segment — call sites whose over-cap candidate set plausibly
    * contained the target — WITHOUT materializing the suppressed edges.
-   * Ordered by (sourceSymbolId, callExpression); `limit` defaults to 50.
+   * Ordered by (sourceSymbolId, sourceRelPath, callExpression) — a namesake
+   * caller in another file is its own aggregate (migration 027); `limit`
+   * defaults to 50.
    * Empty `member` always returns [] (aggregates never record one).
    */
   getAmbiguousCallersByMember: (member: string, limit?: number) => Promise<AmbiguousCallerSite[]>;
