@@ -1,6 +1,7 @@
 import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../core/api/public/dto/collection.js";
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
+import type { LanguageCapability } from "../../core/api/public/index.js";
 import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason, PrimeRegistryEntry } from "./types.js";
 
@@ -130,6 +131,17 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
     lines.push(...formatLanguageSection(languages, primaries));
   }
 
+  const capabilityLines = formatLanguageCapabilitySection(
+    languages,
+    primaries,
+    data.languageCapabilities,
+    data.status.codegraphResolve,
+  );
+  if (capabilityLines.length > 0) {
+    lines.push("");
+    lines.push(...capabilityLines);
+  }
+
   for (const language of thresholdLanguages) {
     lines.push("");
     lines.push(...formatThresholdsSection(language, signals[language]));
@@ -232,6 +244,79 @@ function formatLanguageSection(languages: string[], primaries: string[]): string
     `primary: ${primaries.join(", ")} · also: ${rest.join(", ")}`,
     "→ for non-primary languages, call `get_index_metrics` for their labelMap",
   ];
+}
+
+/**
+ * `## Language capability` (bd tea-rags-mcp-xip6g) — the per-index projection
+ * of the static language-compatibility matrix: one line per language THIS index
+ * holds, its ceiling tiers read from the descriptors, paired with the realized
+ * resolve rate where the index measured one. The cascade rule owns what a tier
+ * means and how to act on a low rate; this section owns only which tiers and
+ * rates apply here. Unmeasured languages with identical tiers share one line —
+ * the digest is read every session.
+ */
+function formatLanguageCapabilitySection(
+  languages: readonly string[],
+  primaries: readonly string[],
+  capabilities: ReadonlyMap<string, LanguageCapability> | undefined,
+  resolve: CodegraphResolve | undefined,
+): string[] {
+  if (!capabilities) return [];
+  const rates = realizedResolveRates(primaries, resolve);
+  const rows: { languages: string[]; tiers: string; rate?: number }[] = [];
+  for (const language of languages) {
+    const capability = capabilities.get(language);
+    if (!capability) continue;
+    const tiers = formatCapabilityTiers(capability);
+    // A rate on a language with no call graph would be another language's number.
+    const rate = capability.codegraph.tier === "none" ? undefined : rates.get(language);
+    const shared = rate === undefined ? rows.find((row) => row.rate === undefined && row.tiers === tiers) : undefined;
+    if (shared) {
+      shared.languages.push(language);
+    } else {
+      rows.push({ languages: [language], tiers, rate });
+    }
+  }
+  if (rows.length === 0) return [];
+  return [
+    "## Language capability — ceiling tier · realized resolve",
+    ...rows.map(
+      (row) =>
+        `${row.languages.join(", ")}: ${row.tiers}${row.rate === undefined ? "" : ` · resolve ${roundTwo(row.rate)}`}`,
+    ),
+  ];
+}
+
+function formatCapabilityTiers(capability: LanguageCapability): string {
+  const { tier } = capability.codegraph;
+  const codegraph =
+    typeof tier === "string"
+      ? tier
+      : Object.entries(tier)
+          .map(([typing, typingTier]) => `${typing} ${typingTier}`)
+          .join(" / ");
+  return `ast ${capability.ast.tier} · tests ${capability.tests.tier} · codegraph ${codegraph}`;
+}
+
+/**
+ * Realized recall per language. `summarizeCodegraphResolve` drops `byLanguage`
+ * when a single language survives its share cut, so an unsplit rate belongs to
+ * the index's one primary language; with several primaries it cannot be
+ * attributed and is left to `## Codegraph resolve` alone.
+ */
+function realizedResolveRates(
+  primaries: readonly string[],
+  resolve: CodegraphResolve | undefined,
+): Map<string, number> {
+  const rates = new Map<string, number>();
+  if (!resolve) return rates;
+  const byLanguage = resolve.byLanguage ?? [];
+  for (const row of byLanguage) rates.set(row.language, row.inProjectEdgeRecall);
+  const [primary] = primaries;
+  if (byLanguage.length === 0 && primaries.length === 1 && primary !== undefined) {
+    rates.set(primary, resolve.inProjectEdgeRecall);
+  }
+  return rates;
 }
 
 function formatThresholdsSection(
