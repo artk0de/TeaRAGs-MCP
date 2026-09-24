@@ -35,7 +35,7 @@ interface SwiftTypeDeclarationSets {
   /** typeId → method → its closure's parameter types; `null` where declarations disagree. */
   readonly closureParameters: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[] | null>>;
   /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
-  readonly enumCases: ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>;
+  readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -87,7 +87,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const generics = new Map<string, readonly string[]>();
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
   const closureParameters = new Map<string, Map<string, readonly (string | null)[] | null>>();
-  const enumCases = new Map<string, Readonly<Record<string, readonly (string | null)[]>>>();
+  const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
   for (const relPath of Object.keys(channel).sort()) {
@@ -101,7 +101,12 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       mergeFieldArguments(fieldArguments, fact);
       mergeClosureParameters(closureParameters, fact);
       // An enum's cases live in its own declaration; Swift lets no extension add one.
-      if (fact.enumCasePayloads !== undefined && !fact.reopens) enumCases.set(fact.typeId, fact.enumCasePayloads);
+      if (fact.enumCasePayloads !== undefined && !fact.reopens) {
+        const byFile =
+          enumCases.get(fact.typeId) ?? new Map<string, Readonly<Record<string, readonly (string | null)[]>>>();
+        byFile.set(relPath, fact.enumCasePayloads);
+        enumCases.set(fact.typeId, byFile);
+      }
       if (fact.conforms === undefined) continue;
       const list = conforms.get(fact.typeId) ?? [];
       for (const name of fact.conforms) if (!list.includes(name)) list.push(name);
@@ -198,7 +203,7 @@ export function swiftSugarAliases(typeId: string, ctx: CallContext): readonly st
 
 /**
  * The nominal type enum `typeId` declares for payload slot `index` of its
- * case `caseName`, or undefined (bd tea-rags-mcp-y99pg.16).
+ * case `caseName`, or undefined (bd tea-rags-mcp-y99pg.16, .17).
  */
 export function swiftEnumCasePayloadType(
   typeId: string,
@@ -206,7 +211,11 @@ export function swiftEnumCasePayloadType(
   index: number,
   ctx: CallContext,
 ): string | undefined {
-  const cases = setsFor(ctx)?.enumCases.get(typeId);
+  // A `private enum` is file-scoped, so two files may each declare one of a
+  // name: the caller's own file wins, and otherwise only a lone declaration
+  // answers.
+  const byFile = setsFor(ctx)?.enumCases.get(typeId);
+  const cases = byFile?.get(ctx.callerFile) ?? (byFile?.size === 1 ? [...byFile.values()][0] : undefined);
   if (cases === undefined || !Object.hasOwn(cases, caseName)) return undefined;
   return cases[caseName][index] ?? undefined;
 }

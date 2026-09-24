@@ -634,18 +634,24 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
     expect(bindings?.list?.[0].type).toBe("Array");
   });
 
-  it("declines a Set, a dictionary and a tuple pattern", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.17): a `(k, v)` pattern over a
+  // DICTIONARY now binds its key and value types; a Set and a tuple pattern
+  // over anything else still bind nothing.
+  it("declines a Set and a tuple pattern over a non-dictionary; binds a dictionary's key and value", () => {
     const src = [
-      "func go(s: Set<Thing>, d: [String: Foo]) {",
+      "func go(s: Set<Thing>, d: [String: Foo], xs: [Thing]) {",
       "  for x in s { x.touch() }",
       "  for (k, v) in d { v.use() }",
+      "  for (i, t) in xs.enumerated() { t.touch() }",
       "}",
       "",
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
     expect(bindings?.x).toBeUndefined();
-    expect(bindings?.k).toBeUndefined();
-    expect(bindings?.v).toBeUndefined();
+    expect(bindings?.k?.[0].type).toBe("String");
+    expect(bindings?.v?.[0].type).toBe("Foo");
+    expect(bindings?.i).toBeUndefined();
+    expect(bindings?.t).toBeUndefined();
   });
 
   it("scopes the loop variable to the loop body", () => {
@@ -1643,5 +1649,45 @@ describe("swift walker — enum case payload bindings (bd tea-rags-mcp-y99pg.16)
     expect(bindings.error).toEqual([
       { line: 6, callee: "unit", enumPayload: { caseName: "failed", index: 0 }, scopeEndLine: 7 },
     ]);
+  });
+});
+
+describe("swift walker — collection constructions and dictionary iteration (bd tea-rags-mcp-y99pg.17)", () => {
+  it("types an `[T]()` construction as an Array of T, so a for-in over it binds T", () => {
+    const src = [
+      "final class ExampleGroup {",
+      "  private var childUnits = [ExampleUnit]()",
+      "  func walk() {",
+      "    for unit in childUnits {",
+      "      unit.describe()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "childUnits", 2)).toBe("Array");
+    expect(typeAt(src, "unit", 5)).toBe("ExampleUnit");
+  });
+
+  it("binds a dictionary for-in's key and value names from the dictionary's declared types", () => {
+    const src = [
+      "final class World {",
+      "  private var specs: [String: ExampleGroup] = [:]",
+      "  func all() {",
+      "    for (_, group) in specs {",
+      "      group.walkDownExamples()",
+      "    }",
+      "    let named = [String: Example]()",
+      "    for (name, example) in named {",
+      "      example.run(name)",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "group", 5)).toBe("ExampleGroup");
+    expect(typeAt(src, "named", 8)).toBe("Dictionary");
+    expect(typeAt(src, "example", 9)).toBe("Example");
+    expect(typeAt(src, "name", 9)).toBe("String");
   });
 });

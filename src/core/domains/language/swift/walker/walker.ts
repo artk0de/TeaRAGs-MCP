@@ -707,6 +707,11 @@ export function normalizeSwiftReceiver(text: string): string {
 interface SwiftTypeFact {
   readonly nominal: string | null;
   readonly element: string | null;
+  /**
+   * A `Dictionary`'s key and value nominals, for a `for (key, value) in`
+   * over it (bd tea-rags-mcp-y99pg.17). Absent on every other fact.
+   */
+  readonly entry?: readonly [string | null, string | null];
 }
 
 const NO_TYPE: SwiftTypeFact = { nominal: null, element: null };
@@ -1514,16 +1519,25 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         return;
       }
       case "for_statement": {
-        const name = singleIdentifierPatternName(node.childForFieldName("item"));
-        if (!name) return;
+        const item = node.childForFieldName("item");
+        const name = singleIdentifierPatternName(item);
+        const pair = name ? null : swiftTuplePatternNames(item);
+        if (!name && !pair) return;
         const site = siteOf(node);
         const collection = swiftExpressionFact(
           node.childForFieldName("collection"),
           { evidence, bindingsByName, site },
           0,
         );
-        if (!collection.element) return;
-        record(name, { nominal: collection.element, element: null }, site, swiftThenBlockEndLine(node));
+        const scopeEnd = swiftThenBlockEndLine(node);
+        if (name && collection.element) record(name, { nominal: collection.element, element: null }, site, scopeEnd);
+        // `for (key, value) in dictionary` (bd tea-rags-mcp-y99pg.17).
+        if (pair && collection.entry) {
+          pair.forEach((slotName, i) => {
+            const nominal = collection.entry?.[i] ?? null;
+            if (slotName !== null && nominal !== null) record(slotName, { nominal, element: null }, site, scopeEnd);
+          });
+        }
         break;
       }
       // `switch unit { case .group(let g): … }` — each payload name is bound
@@ -1629,6 +1643,21 @@ function swiftEnumCasePayloadNames(
   return out;
 }
 
+/**
+ * The two names of a `(a, b)` for-in pattern, `null` for a `_` slot; null
+ * for any other pattern shape.
+ */
+function swiftTuplePatternNames(item: AstNode | null): [string | null, string | null] | null {
+  if (!item || item.children[0]?.type !== "(") return null;
+  const slots = item.namedChildren.filter((c) => c.type === "pattern");
+  if (slots.length !== 2 || slots.length !== item.namedChildCount) return null;
+  const names = slots.map((slot) => {
+    const only = slot.namedChildCount === 1 ? slot.namedChildren[0] : null;
+    return only?.type === "simple_identifier" ? only.text : null;
+  });
+  return [names[0], names[1]];
+}
+
 /** One `let x` / `var x` clause of a `guard` / `if` / `while` condition list. */
 interface SwiftOptionalBindingClause {
   readonly name: string;
@@ -1699,7 +1728,8 @@ function constructedTypeFact(value: AstNode | null): SwiftTypeFact {
   if (value?.type === "constructor_expression") return swiftConstructedGenericFact(value);
   if (value?.type !== "call_expression") return NO_TYPE;
   const callee = value.namedChildren.find((c) => c.type !== "call_suffix");
-  if (callee?.type !== "simple_identifier") return NO_TYPE;
+  if (!callee) return NO_TYPE;
+  if (callee.type !== "simple_identifier") return swiftCollectionConstructionFact(callee) ?? NO_TYPE;
   return /^_*[A-Z]/.test(callee.text) ? { nominal: callee.text, element: null } : NO_TYPE;
 }
 
@@ -1778,7 +1808,15 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   if (typeNode.type === "array_type") {
     return { nominal: "Array", element: swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal };
   }
-  if (typeNode.type === "dictionary_type") return { nominal: "Dictionary", element: null };
+  if (typeNode.type === "dictionary_type") {
+    // Positionally, for the materialization hazard `swiftTypeNodeAfter` documents.
+    const [key, value] = typeNode.namedChildren;
+    return {
+      nominal: "Dictionary",
+      element: null,
+      entry: [swiftTypeFactOf(key ?? null).nominal, swiftTypeFactOf(value ?? null).nominal],
+    };
+  }
   // `any P` and `some P` both dispatch a member call on P's requirement.
   if (typeNode.type === "existential_type" || typeNode.type === "opaque_type") {
     return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
@@ -1973,6 +2011,10 @@ function swiftCallResultFact(node: AstNode, scope: SwiftTypeScope, depth: number
   if (callee.type === "simple_identifier" && /^_*[A-Z]/.test(callee.text)) {
     return { nominal: callee.text, element: null };
   }
+  // `[T]()` / `[K: V]()` construct an empty collection of the named types
+  // (bd tea-rags-mcp-y99pg.17); a literal holding values is no type name.
+  const collection = swiftCollectionConstructionFact(callee);
+  if (collection) return collection;
   if (callee.type === "navigation_expression") {
     const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
     const target = callee.childForFieldName("target");
@@ -1994,6 +2036,26 @@ function enclosingSwiftFunctionKey(node: AstNode): number {
   }
   return -1;
 }
+
+/**
+ * The collection an `[T]()` / `[K: V]()` callee constructs, or null when the
+ * literal holds anything but type names. Read positionally: the literal's
+ * `element` / `key` / `value` fields are not relied on.
+ */
+function swiftCollectionConstructionFact(callee: AstNode): SwiftTypeFact | null {
+  const names = callee.namedChildren;
+  if (!names.every((n) => n.type === "simple_identifier" && SWIFT_TYPE_NAME_TEXT.test(n.text))) return null;
+  if (callee.type === "array_literal" && names.length === 1) {
+    return { nominal: "Array", element: names[0].text };
+  }
+  if (callee.type === "dictionary_literal" && names.length === 2) {
+    return { nominal: "Dictionary", element: null, entry: [names[0].text, names[1].text] };
+  }
+  return null;
+}
+
+/** A spelled type name: UpperCamelCase, leading underscores allowed. */
+const SWIFT_TYPE_NAME_TEXT = /^_*[A-Z]/;
 
 /** `[T]` properties that read one element. */
 const SWIFT_ELEMENT_PROPERTIES: ReadonlySet<string> = new Set(["first", "last"]);

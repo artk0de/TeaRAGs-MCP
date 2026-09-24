@@ -2525,3 +2525,58 @@ describe("SwiftCallResolver — enum case payload bindings (bd tea-rags-mcp-y99p
     expect(target).toBeNull();
   });
 });
+
+describe("SwiftCallResolver — file-private enum namesakes (bd tea-rags-mcp-y99pg.17)", () => {
+  const t = table({
+    "Sources/ExampleGroup.swift": [
+      { symbolId: "ExampleGroup", scope: [] },
+      { symbolId: "ExampleGroup#walkDownExamples", scope: ["ExampleGroup"] },
+      { symbolId: "ExampleUnit", scope: [] },
+    ],
+    "Sources/AsyncExampleGroup.swift": [
+      { symbolId: "AsyncExampleGroup", scope: [] },
+      { symbolId: "AsyncExampleGroup#walkDownExamples", scope: ["AsyncExampleGroup"] },
+      { symbolId: "ExampleUnit", scope: [] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/ExampleGroup.swift": [
+      { typeId: "ExampleGroup", reopens: false },
+      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["ExampleGroup"] } },
+    ],
+    "Sources/AsyncExampleGroup.swift": [
+      { typeId: "AsyncExampleGroup", reopens: false },
+      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["AsyncExampleGroup"] } },
+    ],
+  };
+  const site = (callerFile: string, callerScope: string[]) =>
+    ctx({
+      callerFile,
+      callerScope,
+      symbolTable: t,
+      typeDeclarations,
+      localBindings: { unit: [{ line: 3, type: "ExampleUnit" }] },
+      callResultBindings: {
+        exampleGroup: [{ line: 5, callee: "unit", enumPayload: { caseName: "group", index: 0 }, scopeEndLine: 6 }],
+      },
+    });
+
+  it("reads the payload off the enum the caller's own file declares", () => {
+    const resolver = new SwiftCallResolver();
+    const call6 = call("exampleGroup", "walkDownExamples", 6);
+    expect(
+      resolver.resolve(call6, site("Sources/AsyncExampleGroup.swift", ["AsyncExampleGroup", "walk"]))?.targetSymbolId,
+    ).toBe("AsyncExampleGroup#walkDownExamples");
+    expect(resolver.resolve(call6, site("Sources/ExampleGroup.swift", ["ExampleGroup", "walk"]))?.targetSymbolId).toBe(
+      "ExampleGroup#walkDownExamples",
+    );
+  });
+
+  it("types nothing from a third file when two files declare the enum", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("exampleGroup", "walkDownExamples", 6),
+      site("Sources/World.swift", ["World", "all"]),
+    );
+    expect(target).toBeNull();
+  });
+});
