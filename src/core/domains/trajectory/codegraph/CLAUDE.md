@@ -71,12 +71,12 @@
   `codegraph.chunk.fanOut = 543` against a `god-method` threshold of 67, and the
   `decomposition` preset spent result slots on it (bd tea-rags-mcp-xtdkq). The
   derived tables follow the same identity (bd tea-rags-mcp-4g9ga, migration
-  027): `streamAdjacency("method")` yields `fileScopedSymbolKey` vertices, so
+  028): `streamAdjacency("method")` yields `fileScopedSymbolKey` vertices, so
   Tarjan and PageRank never see a bare id, `cg_symbols_metrics` is keyed
   `(rel_path, symbol_id)`, and `cg_symbols_cycles` stores each method member's
   own `member_rel_path` — which `find_cycles` renders as `memberLocations` and
   matches `pathPattern` against, never a name-to-file resolution. A row with
-  `rel_path = ''` is one 027 carried over from the merged era; readers fan that
+  `rel_path = ''` is one 028 carried over from the merged era; readers fan that
   rank out to every namesake until the next recompute rewrites it.
 
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
@@ -99,7 +99,7 @@
   wholesale recomputes and do self-correct — except after a deletion, which only
   prunes them (`pruneDerivedForDeletedFiles`, called by `handleDeletedPaths`
   before the base rows go) and marks them stale in `cg_derived_stale` (migration
-  028); the next finalize with no run sink recomputes, and a no-change reindex
+  029); the next finalize with no run sink recomputes, and a no-change reindex
   drives one through `runFinalizeOnly` (bd tea-rags-mcp-dy852). Why: no amount
   of incremental reindexing heals a partial graph, because the files carrying
   the stale edges have not changed — meanwhile every `fanIn` / `instability` /

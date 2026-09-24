@@ -17,7 +17,7 @@
  *
  * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
  */
-export const SQL_028_CG_DERIVED_STALE = `
+export const SQL_029_CG_DERIVED_STALE = `
 CREATE TABLE IF NOT EXISTS cg_derived_stale (
   marker     VARCHAR PRIMARY KEY,
   marked_at  TIMESTAMP NOT NULL DEFAULT current_timestamp

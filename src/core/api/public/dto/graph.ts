@@ -110,7 +110,7 @@ export interface CycleResult {
    * Method scope only — per member, index-aligned with `members`: its symbolId
    * and the file that declares it. Tells namesakes apart (two `init` in one Go
    * package, every top-level `main`), which the bare `members` entry cannot.
-   * `relativePath` is `""` for a cycle not yet recomputed since migration 027.
+   * `relativePath` is `""` for a cycle not yet recomputed since migration 028.
    */
   memberLocations?: CycleMemberLocation[];
   /** Convenience — member count (always >= 2). */

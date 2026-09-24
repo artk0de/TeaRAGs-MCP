@@ -17,7 +17,7 @@
  * is unique per file, so the method adjacency is keyed by
  * `fileScopedSymbolKey(relPath, symbolId)` and `replaceCycles` /
  * `replacePageRanks` split that key back into the `(rel_path, symbol_id)` the
- * tables are keyed by (migration 027). The composite key never leaves the
+ * tables are keyed by (migration 028). The composite key never leaves the
  * stream → algorithm → persist loop; readers see the two columns.
  */
 
@@ -43,14 +43,14 @@ import type { DuckDbGraphSession } from "./graph-session.js";
  * OWN declaring file off the row, never a name resolution — resolving the bare
  * id `init` back to files answers every file declaring an `init`, which kept a
  * namesake's unrelated cycle under a pattern that names only one of them (bd
- * tea-rags-mcp-4g9ga). A row carried over by migration 027 has no file yet and
+ * tea-rags-mcp-4g9ga). A row carried over by migration 028 has no file yet and
  * matches no pattern until the next recompute rewrites it.
  */
 function memberPaths(entry: CycleEntry): string[] {
   return entry.memberLocations ? entry.memberLocations.map((m) => m.relativePath) : entry.members;
 }
 
-/** `rel_path` of a derived row carried over by migration 027 — its file is unknown. */
+/** `rel_path` of a derived row carried over by migration 028 — its file is unknown. */
 const UNKNOWN_REL_PATH = "";
 
 /** Vertex id of a method-scope node: the declaration, not the bare name. */
@@ -255,7 +255,7 @@ export class DuckDbGraphAnalyticsStore {
   /**
    * Replace every rank. Keys are method-scope vertex ids, split into
    * `(rel_path, symbol_id)`; a bare-id key lands under the unknown (`""`) file,
-   * which readers fan out to every namesake — the pre-027 merged semantics.
+   * which readers fan out to every namesake — the pre-028 merged semantics.
    */
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
     return this.session.transaction(async () => {
@@ -320,7 +320,7 @@ export class DuckDbGraphAnalyticsStore {
 
   /**
    * The PageRank of one declaration. With `relPath`: the rank stored for that
-   * file, else a rank carried without a file (migration 027), else 0. Without
+   * file, else a rank carried without a file (migration 028), else 0. Without
    * it the bare id is ambiguous across namesakes, so the highest rank any
    * declaration of that name holds is returned. 0 when nothing is ranked.
    */

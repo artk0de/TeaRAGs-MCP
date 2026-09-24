@@ -22,7 +22,7 @@
  * carries the per-file number leaves every namesake permanently "moved".
  *
  * `page_rank` joins on `(rel_path, symbol_id)` like the fan (bd
- * tea-rags-mcp-4g9ga, migration 027), falling back to a rank 027 carried over
+ * tea-rags-mcp-4g9ga, migration 028), falling back to a rank 028 carried over
  * with no file (`rel_path = ''`) — the value `getChunkSignalsBulk` writes for
  * such a symbol, so the migration alone names nothing as moved.
  *

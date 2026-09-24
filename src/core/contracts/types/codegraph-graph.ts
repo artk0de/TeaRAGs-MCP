@@ -94,7 +94,7 @@ export interface CycleEntry {
    * index-aligned with `members` (bd tea-rags-mcp-4g9ga). A symbolId is unique
    * per FILE, so the bare `members` entry cannot tell two namesakes apart; this
    * is the member's identity. `relativePath` is `""` only for a row carried over
-   * by migration 027 and not yet recomputed.
+   * by migration 028 and not yet recomputed.
    */
   memberLocations?: CycleMemberLocation[];
 }

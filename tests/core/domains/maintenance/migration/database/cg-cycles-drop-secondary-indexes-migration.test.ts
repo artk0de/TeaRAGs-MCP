@@ -65,11 +65,11 @@ describe("018 cg_symbols_cycles drops its secondary indexes", () => {
   it("drops the indexes an already-provisioned database is carrying, without touching its rows", async () => {
     // Exactly what an existing install looks like: every migration up to 017
     // applied, so 003's two indexes are present and populated.
-    // 027 (bd tea-rags-mcp-4g9ga) rebuilds the table, so it is held back too,
-    // and the rows are seeded in the pre-027 column shape the adapter no longer
+    // 028 (bd tea-rags-mcp-4g9ga) rebuilds the table, so it is held back too,
+    // and the rows are seeded in the pre-028 column shape the adapter no longer
     // writes.
     const legacy = DATABASE_MIGRATIONS.filter(
-      (m) => m.filename !== MIGRATION && m.filename !== "027-cg-derived-file-scoped-key.sql",
+      (m) => m.filename !== MIGRATION && m.filename !== "028-cg-derived-file-scoped-key.sql",
     );
     await runMigrations(db, legacy);
     expect(await indexNames()).toEqual(

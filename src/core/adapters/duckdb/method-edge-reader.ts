@@ -340,13 +340,13 @@ export class DuckDbMethodEdgeReader {
    *
    * PageRank is per declaration too (bd tea-rags-mcp-4g9ga): the rank is
    * computed over the file-scoped adjacency `streamAdjacency("method")` yields
-   * and `cg_symbols_metrics` is keyed `(rel_path, symbol_id)` (migration 027).
-   * The one merged value left is a rank 027 carried over with no file, which is
+   * and `cg_symbols_metrics` is keyed `(rel_path, symbol_id)` (migration 028).
+   * The one merged value left is a rank 028 carried over with no file, which is
    * fanned out to every declaring file until the next recompute replaces it.
    */
   async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
     const out = new Map<FileScopedSymbolId, ChunkGraphSignals>();
-    /** Every file-scoped entry a bare symbolId has, for the carried-over (pre-027) pageRank fan-out. */
+    /** Every file-scoped entry a bare symbolId has, for the carried-over (pre-028) pageRank fan-out. */
     const keysBySymbolId = new Map<SymbolId, FileScopedSymbolId[]>();
     const entryFor = (relPath: RelPath, symbolId: SymbolId): ChunkGraphSignals => {
       const key = fileScopedSymbolKey({ relPath, symbolId });
@@ -382,7 +382,7 @@ export class DuckDbMethodEdgeReader {
       decl_path: string | null;
     }>(
       // A rank is keyed by the declaration it was computed for. `rel_path = ''`
-      // is a rank migration 027 carried over from the merged-node era with no
+      // is a rank migration 028 carried over from the merged-node era with no
       // file to name: it still goes to every declaring file, exactly as before,
       // until the next recompute replaces it with per-file rows. Those rows
       // come first so a file-scoped rank for the same id is applied last.

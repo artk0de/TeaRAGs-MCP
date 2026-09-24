@@ -21,7 +21,7 @@
  * recomputes, so carrying rows over only bridges the gap until the next
  * finalize rewrites them. A carried method-scope member and a carried rank have
  * no file to name, so they get `''` — the same "unknown file" spelling
- * `parseFileScopedSymbolKey` uses. Readers treat a `''` rank as the pre-027
+ * `parseFileScopedSymbolKey` uses. Readers treat a `''` rank as the pre-028
  * merged value and fan it out to every namesake, which is exactly what they
  * served before, so the migration alone moves no payload value. A carried
  * `''` method member matches no `find_cycles` pathPattern until that finalize.
@@ -32,7 +32,7 @@
  *
  * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
  */
-export const SQL_027_CG_DERIVED_FILE_SCOPED_KEY = `
+export const SQL_028_CG_DERIVED_FILE_SCOPED_KEY = `
 CREATE TABLE IF NOT EXISTS cg_symbols_cycles_v2 (
   cycle_id         INTEGER NOT NULL,
   scope            VARCHAR NOT NULL,
