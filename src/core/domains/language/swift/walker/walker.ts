@@ -131,6 +131,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../contracts/types/language.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { swiftTypeFieldKey } from "../type-field-address.js";
 
@@ -181,8 +182,59 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   }
   const classExtends = collectSwiftClassExtends(root);
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
+  const structuredReturnTypes = collectSwiftStructuredReturnTypes(root, input.chunks);
+  if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
   return out;
 }
+
+/**
+ * Every `func` this file declares with a usable return type, keyed by the
+ * callee's OWN composed symbolId (`Store#load`, `Store.make`,
+ * `Store.Inner#child`, `load~2` for a second overload) — the run-global
+ * `structuredReturnTypes` channel (bd tea-rags-mcp-kkwg3).
+ *
+ * The resolver reads it one way only: it first resolves a call hop to the
+ * declaration the call lands on — own type, then superclass — and then asks
+ * what THAT symbol returns. So the key must be the symbolId the chunk carries,
+ * overload suffix included, and it is taken from the chunk collected at the
+ * declaration's own start line rather than recomposed here: two spellings of
+ * one id are exactly the drift `symbolid-convention.md` exists to prevent.
+ *
+ * The value is read by the same {@link swiftDeclaredReturnFact} the file-local
+ * call-result typing reads, so the two can never disagree about what a
+ * signature says — including what it declines (`Void`, `Self`, a generic
+ * parameter, an `[T]` return, which types no member).
+ */
+function collectSwiftStructuredReturnTypes(
+  root: AstNode,
+  chunks: readonly { symbolId: string; startLine: number }[],
+): Record<string, TypeRef> {
+  const idsByLine = new Map<number, string[]>();
+  for (const chunk of chunks) {
+    const ids = idsByLine.get(chunk.startLine);
+    if (ids) ids.push(chunk.symbolId);
+    else idsByLine.set(chunk.startLine, [chunk.symbolId]);
+  }
+  const out: Record<string, TypeRef> = {};
+  walk(root, (node) => {
+    if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
+    const name = node.childForFieldName("name")?.text;
+    const nominal = name === undefined ? null : (swiftDeclaredReturnFact(node)?.nominal ?? null);
+    if (name === undefined || nominal === null) return;
+    const symbolId = idsByLine.get(node.startPosition.row + 1)?.find((id) => composedIdNames(id, name));
+    if (symbolId !== undefined) out[symbolId] = { form: "instance", name: nominal };
+  });
+  return out;
+}
+
+/** Whether a composed id's final segment is `name`, an overload suffix aside. */
+function composedIdNames(symbolId: string, name: string): boolean {
+  const base = symbolId.replace(OVERLOAD_SUFFIX, "");
+  return base === name || base.endsWith(`#${name}`) || base.endsWith(`.${name}`);
+}
+
+/** The suffix `collectSymbols` appends to the 2nd and later declaration of one composed id. */
+const OVERLOAD_SUFFIX = /~\d+$/;
 
 /**
  * The declaration keywords `class_declaration` covers. tree-sitter-swift gives

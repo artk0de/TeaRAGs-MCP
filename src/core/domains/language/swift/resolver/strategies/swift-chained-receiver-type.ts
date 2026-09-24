@@ -20,24 +20,22 @@ import { resolveSwiftBoundTypeMember, type SwiftResolverConfig } from "./shared.
  * which is exactly the shape `classFieldTypes` already holds the evidence for
  * and which no single-hop pass can reach.
  *
- * ## Scope: FIELD chains, because that is what the walker publishes
+ * ## Scope: field AND call hops
  *
- * The fold's ports (`../swift-receiver-type-ports.ts`) read two channels and no
- * others: `localBindings` for the head, the field channels for every link. A
- * link that is a METHOD call is untyped — the Swift walker keeps its declared
- * return types file-locally and publishes neither `functionReturnTypes` nor
- * `structuredReturnTypes` — so `a.makeThing().run()` still emits nothing.
- * Publishing them was built and measured and bought zero edges on Alamofire and
- * Quick; the ports docblock records why.
+ * The fold's ports (`../swift-receiver-type-ports.ts`) read `localBindings`
+ * for the head, the field channels for a property link, and the run-global
+ * `structuredReturnTypes` for a METHOD link — so `a.makeThing().run()` is typed
+ * by what `makeThing` is declared to return (bd tea-rags-mcp-kkwg3).
  *
- * ## Only DOTTED receivers, so nothing single-hop moves
+ * ## DOTTED receivers, and heads that are not a value name
  *
- * The entry condition is a dot in the receiver, not typedness. A receiver with
- * no dot is left entirely to the three single-hop passes that already own it —
+ * The entry condition is a dot in the receiver, or a head that spells its own
+ * type — a parenthesised cast `(x as T)` or a collection literal `[a, b]`
+ * (bd tea-rags-mcp-ll93g) — not typedness. A plain identifier with no dot is
+ * left entirely to the three single-hop passes that already own it —
  * `localBinding`, `storedPropertyType` and `scopedTypeReceiver` — even though
  * the fold could type it. Taking those would re-answer resolved calls through
- * a different route for no gain, and this increment is measured on the chained
- * receivers alone.
+ * a different route for no gain.
  *
  * ## Chain index 3: ahead of `storedPropertyType`, behind everything else
  *
@@ -77,6 +75,9 @@ import { resolveSwiftBoundTypeMember, type SwiftResolverConfig } from "./shared.
  * this type" is the only honest form of that statement here, and it is already
  * what `resolveSwiftBoundTypeMember` says.
  */
+/** A plain value name — the single-hop passes' receiver, never this one's. */
+const SWIFT_IDENTIFIER_RECEIVER = /^[A-Za-z_$][\w$]*$/;
+
 export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "chainedReceiverType";
 
@@ -89,7 +90,7 @@ export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolR
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const { receiver } = call;
-    if (!receiver?.includes(".")) return CONTINUE;
+    if (!receiver || (!receiver.includes(".") && SWIFT_IDENTIFIER_RECEIVER.test(receiver))) return CONTINUE;
 
     const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
     if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;

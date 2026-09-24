@@ -1143,6 +1143,109 @@ describe("SwiftCallResolver — super", () => {
   });
 });
 
+describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags-mcp-kkwg3, ll93g)", () => {
+  const t = table({
+    "Sources/Provider.swift": [{ symbolId: "Provider#request", scope: ["Provider"] }],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#didFail", scope: ["Request"] },
+    ],
+    "Sources/Upload.swift": [{ symbolId: "Upload", scope: [] }],
+  });
+
+  it("types a CALL hop by the callee's published return type", () => {
+    // `provider.request(for: task.id).didFail()` — the dot inside the argument
+    // list belongs to the argument, not to the chain.
+    const target = new SwiftCallResolver().resolve(
+      call("provider.request(for: task.id)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        localBindings: { provider: [{ line: 5, type: "Provider" }] },
+        structuredReturnTypes: { "Provider#request": { form: "instance", name: "Request" } },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Request.swift", targetSymbolId: "Request#didFail" });
+  });
+
+  it("reads the return type of the method the call ACTUALLY lands on, inherited ones included", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("upload.request(for: x)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        classExtends: { Upload: "Provider" },
+        localBindings: { upload: [{ line: 5, type: "Upload" }] },
+        structuredReturnTypes: { "Provider#request": { form: "instance", name: "Request" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#didFail");
+  });
+
+  it("emits nothing for a call hop whose callee publishes no return type", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("provider.request(for: x)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        localBindings: { provider: [{ line: 5, type: "Provider" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("types a PARENTHESISED CAST head by the type it names", () => {
+    for (const receiver of ["(value as Request)", "(value as? Request)", "(value as! Request)"]) {
+      const target = new SwiftCallResolver().resolve(
+        call(receiver, "didFail"),
+        ctx({ callerFile: "Sources/Delegate.swift", symbolTable: t }),
+      );
+      expect(target?.targetSymbolId).toBe("Request#didFail");
+    }
+  });
+
+  it("threads a cast head through a further hop", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("(value as Provider).request(for: x)", "didFail"),
+      ctx({
+        callerFile: "Sources/Delegate.swift",
+        symbolTable: t,
+        structuredReturnTypes: { "Provider#request": { form: "instance", name: "Request" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#didFail");
+  });
+
+  it("types an ARRAY or DICTIONARY literal head as the collection it builds", () => {
+    // Swift spells `[a, b]` an `Array` and `[k: v]` a `Dictionary`; a member
+    // only the project's own `extension Array` declares is then reachable.
+    const withExtensions = table({
+      "Sources/Array+Ext.swift": [{ symbolId: "Array#joinedWithAmpersands", scope: ["Array"] }],
+      "Sources/Dictionary+Ext.swift": [{ symbolId: "Dictionary#merged", scope: ["Dictionary"] }],
+    });
+    const array = new SwiftCallResolver().resolve(
+      call("[first, second]", "joinedWithAmpersands"),
+      ctx({ callerFile: "Sources/Encoder.swift", symbolTable: withExtensions }),
+    );
+    expect(array?.targetSymbolId).toBe("Array#joinedWithAmpersands");
+    const dictionary = new SwiftCallResolver().resolve(
+      call('["a": 1]', "merged"),
+      ctx({ callerFile: "Sources/Encoder.swift", symbolTable: withExtensions }),
+    );
+    expect(dictionary?.targetSymbolId).toBe("Dictionary#merged");
+  });
+
+  it("types a collection cast as the collection, and DROPs a member the project never declares on it", () => {
+    // `(allHeaderFields as [String: String]).map` is a `Dictionary.map` — the
+    // standard library's, which no project symbol answers.
+    const target = new SwiftCallResolver().resolve(
+      call("(value as [String: String])", "map"),
+      ctx({ callerFile: "Sources/Delegate.swift", symbolTable: t }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
 describe("SwiftCallResolver — a member INHERITED from the superclass", () => {
   // `DataRequest: Request` — `resume()` / `cancel()` live on `Request`, and a
   // receiver typed `DataRequest` (a local, a stored property, `self`) dispatches
