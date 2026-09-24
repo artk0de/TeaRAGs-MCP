@@ -994,6 +994,26 @@ export interface LanguageCapability {
    * registry stamp copies `versions` verbatim, and a scope is not a version.
    */
   chunkSetBumpScopes?: ChunkSetBumpScopes;
+  /**
+   * How this language cases an identifier in each role — the community style
+   * guide's convention, a static fact read by the naming lexicon. Per role the
+   * FIRST casing is canonical (the one a name is rendered in); any others are
+   * accepted spellings. Absent only for a language without identifiers
+   * (markdown); `tests/navigator-enumerations.test.ts` derives that it is
+   * declared by exactly the languages whose walker publishes
+   * `identifierDeclarations`. Sigils and predicate / bang suffixes are not
+   * casing — the lexicon strips them before classifying.
+   */
+  naming?: IdentifierNamingConvention;
   /** README prose extras (humans only). */
   notes?: string;
 }
+
+/** An identifier's letter-case shape: `snake_case`, `camelCase`, `PascalCase`, `SCREAMING_SNAKE`. */
+export type IdentifierCasing = "snake" | "camel" | "pascal" | "screamingSnake";
+
+/** The role an identifier plays, as far as a language's casing convention distinguishes it. */
+export type IdentifierRole = "type" | "module" | "method" | "param" | "local" | "field" | "constant";
+
+/** Accepted casings per {@link IdentifierRole}, the first canonical — see {@link LanguageCapability.naming}. */
+export type IdentifierNamingConvention = Readonly<Record<IdentifierRole, readonly IdentifierCasing[]>>;

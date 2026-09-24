@@ -26,4 +26,16 @@ export const capability: LanguageCapability = {
   // of `Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T>` or a
   // slice `&[T]` names its element, so a walker-6 row types `items` as `Vec`.
   versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
+  // functions, methods, locals and fields snake_case, `const` / `static`
+  // SCREAMING_SNAKE_CASE.
+  naming: {
+    type: ["pascal"],
+    module: ["snake"],
+    method: ["snake"],
+    param: ["snake"],
+    local: ["snake"],
+    field: ["snake"],
+    constant: ["screamingSnake"],
+  },
 };

@@ -255,6 +255,18 @@ describe("identifier declarations", () => {
     expect(composing.length).toBeGreaterThan(0);
     expect(await languagesPublishingIdentifierDeclarations()).toEqual(composing);
   });
+
+  // bd tea-rags-mcp-4p3sb.18 — a language whose walker declares identifiers
+  // must say how it cases them, and only such a language may.
+  it("are published by exactly the languages whose capability declares a naming convention", async () => {
+    const capabilities = new LanguageFactory().capabilities();
+    const declaringNaming = [...capabilities.values()]
+      .filter((capability) => capability.naming !== undefined)
+      .map((capability) => capability.language)
+      .sort();
+    expect(declaringNaming.length).toBeGreaterThan(0);
+    expect(await languagesPublishingIdentifierDeclarations()).toEqual(declaringNaming);
+  });
 });
 
 describe("domain navigators", () => {

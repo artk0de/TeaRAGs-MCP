@@ -34,4 +34,19 @@ export const capability: LanguageCapability = {
   // composite-literal types) for the naming lexicon. Rows written by walker 6
   // carry none, so only the recompute adds them.
   versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // Effective Go: MixedCaps everywhere, never underscores. The first letter's
+  // case is Go's EXPORT marker, not a style choice, so every package-level role
+  // (type, method, field, constant) accepts both — canonical by role: types
+  // exported (pascal), members and constants unexported (camel). Parameters and
+  // locals cannot be exported. A package name is a single lowercase word;
+  // `snake` is the nearest casing (a single lowercase word classifies as it).
+  naming: {
+    type: ["pascal", "camel"],
+    module: ["snake"],
+    method: ["camel", "pascal"],
+    param: ["camel"],
+    local: ["camel"],
+    field: ["camel", "pascal"],
+    constant: ["camel", "pascal"],
+  },
 };

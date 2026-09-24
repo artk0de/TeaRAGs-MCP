@@ -26,4 +26,18 @@ export const capability: LanguageCapability = {
   // of `List / Set / Collection / Iterable / Optional / Stream<T>` names its
   // element, so a walker-7 row types `docs` as `List`.
   versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // Google Java Style / Oracle conventions: classes and interfaces
+  // UpperCamelCase, methods / parameters / locals / non-constant fields
+  // lowerCamelCase, `static final` constants CONSTANT_CASE. A package name is
+  // all-lowercase dotted words without underscores; `snake` is the nearest
+  // casing (a single lowercase word classifies as it).
+  naming: {
+    type: ["pascal"],
+    module: ["snake"],
+    method: ["camel"],
+    param: ["camel"],
+    local: ["camel"],
+    field: ["camel"],
+    constant: ["screamingSnake"],
+  },
 };
