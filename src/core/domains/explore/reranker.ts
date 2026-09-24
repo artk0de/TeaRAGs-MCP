@@ -89,6 +89,13 @@ export class Reranker {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
   private readonly signalKeyMap: Map<string, string>;
   private readonly payloadSignals: PayloadSignalDescriptor[];
+  /**
+   * Overlay level of every FLAT (dotless) payload signal, as its descriptor
+   * declares it: `level: "file"` → file, anything else → chunk. A flat key
+   * carries no `.file.` / `.chunk.` segment, so the path cannot say where it
+   * belongs (bd tea-rags-mcp-llmc0).
+   */
+  private readonly flatSignalLevels: Map<string, "file" | "chunk">;
   private collectionStats?: CollectionSignalStats;
   private collectionName?: string;
   /** Opaque marker of the stats revision held, supplied by whoever loaded it. */
@@ -115,6 +122,11 @@ export class Reranker {
     }
     this.payloadSignals = payloadSignals;
     this.signalKeyMap = buildSignalKeyMap(payloadSignals);
+    this.flatSignalLevels = new Map(
+      payloadSignals
+        .filter((ps) => !ps.key.includes("."))
+        .map((ps) => [ps.key, ps.level === "file" ? "file" : "chunk"] as const),
+    );
   }
 
   /** Whether collection-level stats are currently loaded. */
@@ -642,7 +654,16 @@ export class Reranker {
           // `chunk.codegraph.chunk.pageRank`, which matches no signalKeyMap
           // entry and no payload path, so the signal drops out of the overlay
           // with no error to notice.
-          const source = isLevelQualifiedPayloadKey(field) ? field : `chunk.${field}`;
+          // A flat key (`methodLines`) — declared flat, or matching no
+          // level-relative `chunk.<field>` entry — is its own payload path; its
+          // level comes from `overlayLevelOf`, not from a prefix.
+          const levelRelative = `chunk.${field}`;
+          const source =
+            isLevelQualifiedPayloadKey(field) ||
+            this.flatSignalLevels.has(field) ||
+            !this.signalKeyMap.has(levelRelative)
+              ? field
+              : levelRelative;
           this.extractRawSource(result, source, rawFile, rawChunk, nowSec);
         }
       }
@@ -669,10 +690,13 @@ export class Reranker {
     this.applyLabelResolution(rawFile, "file", result.payload, language, chunkType, relativePath, nowSec);
     this.applyLabelResolution(rawChunk, "chunk", result.payload, language, chunkType, relativePath, nowSec);
 
+    // A file-level hit is reduced to file scope (`BaseExploreStrategy#shapeFileLevel`),
+    // so a value measured on its representative chunk must not surface in the
+    // overlay either — whichever mask bucket named it.
     return {
       preset: presetName,
       ...(Object.keys(rawFile).length > 0 ? { file: rawFile } : {}),
-      ...(Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
+      ...(!skipChunk && Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
     };
   }
 
@@ -975,10 +999,21 @@ export class Reranker {
   }
 
   /**
+   * Overlay level of a resolved payload path. A nested path names its level
+   * (`git.chunk.commitCount` → chunk, anything without `.chunk.` → file). A
+   * flat path cannot, so its descriptor's declared level decides; an
+   * undeclared flat key defaults to chunk scope, the same default
+   * `fileScopeOf` applies when it reduces a file-level hit.
+   */
+  private overlayLevelOf(fullPath: string): "file" | "chunk" {
+    if (!fullPath.includes(".")) return this.flatSignalLevels.get(fullPath) ?? "chunk";
+    return fullPath.includes(".chunk.") ? "chunk" : "file";
+  }
+
+  /**
    * Extract a raw source value from payload into the correct level (file/chunk).
    * Uses signalKeyMap to resolve short source names to full payload paths.
-   * Determines file vs chunk level from the resolved path (paths containing
-   * ".chunk." go to rawChunk, everything else to rawFile).
+   * Determines file vs chunk level via `overlayLevelOf`.
    *
    * Age paths (`<level>.ageDays` mask entries, `<level>.lastModifiedAt`
    * custom-weight sources) resolve through the age capability: the overlay
@@ -1011,7 +1046,7 @@ export class Reranker {
 
     const segments = fullPath.split(".");
     const field = segments[segments.length - 1];
-    if (fullPath.includes(".chunk.")) {
+    if (this.overlayLevelOf(fullPath) === "chunk") {
       rawChunk[field] = val;
     } else {
       rawFile[field] = val;

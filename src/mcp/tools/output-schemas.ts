@@ -21,37 +21,27 @@ const RankingOverlaySchema = z.object({
     .describe("Chunk-level signals keyed by bare field name: {value,label} when labelled, else the raw value"),
 });
 
-const GitMetadataSchema = z
-  .object({
-    recentDominantAuthor: z.string().optional(),
-    authors: z.array(z.string()).optional(),
-    commitCount: z.number().optional(),
-    ageDays: z.number().optional(),
-    lastModifiedAt: z.string().optional(),
-    firstCreatedAt: z.string().optional(),
-    taskIds: z.array(z.string()).optional(),
-    blameDominantAuthor: z.string().optional().describe("Live-line owner from git blame HEAD"),
-    blameDominantAuthorPct: z.number().optional().describe("Percentage of live lines owned by blameDominantAuthor"),
-    blameAuthors: z.array(z.string()).optional().describe("Distinct authors of live lines (top-N)"),
-    blameContributorCount: z.number().optional().describe("Distinct authors of live lines"),
-  })
-  .passthrough();
+/**
+ * The chunk payload. Its keys depend on the index's enrichments, on `metaOnly`
+ * and on `fields`, and find_symbol adds synthetic ones — so no key is declared
+ * and every key passes through.
+ */
+const SearchResultPayloadSchema = z
+  .object({})
+  .passthrough()
+  .describe(
+    "Chunk payload: relativePath, startLine, endLine, language, chunkType, symbolId, name, content " +
+      "(omitted when metaOnly=true), trajectory signals under git.{file,chunk}.* / codegraph.*, " +
+      "plus find_symbol's chunkCount / mergedChunkIds. Raw values only — labels live on rankingOverlay.",
+  );
 
-const SearchResultItemSchema = z
-  .object({
-    id: z.union([z.string(), z.number()]).optional().describe("Chunk ID"),
-    score: z.number().describe("Relevance score"),
-    relativePath: z.string().optional().describe("File path relative to codebase root"),
-    startLine: z.number().optional().describe("Start line in file"),
-    endLine: z.number().optional().describe("End line in file"),
-    language: z.string().optional().describe("Programming language"),
-    chunkType: z.string().optional().describe("Chunk type: function, class, interface, block"),
-    name: z.string().optional().describe("Symbol name (function/class name)"),
-    content: z.string().optional().describe("Code content (omitted when metaOnly=true)"),
-    git: GitMetadataSchema.optional().describe("Git metadata (when indexed with git enrichment)"),
-    rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
-  })
-  .passthrough();
+/** Mirrors SearchResult (api/public/dto/explore.ts) — the only item shape search tools return. */
+const SearchResultItemSchema = z.object({
+  id: z.union([z.string(), z.number()]).describe("Chunk ID"),
+  score: z.number().describe("Relevance score"),
+  payload: SearchResultPayloadSchema.optional(),
+  rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
+});
 
 const SearchConfidenceSchema = z.object({
   value: z.number().describe("0-1: score magnitude vs this collection's own similarity scale + path clustering"),

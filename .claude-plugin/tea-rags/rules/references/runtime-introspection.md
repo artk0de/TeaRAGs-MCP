@@ -143,8 +143,10 @@ Every reranked search result carries `rankingOverlay` — metaOnly included:
 ```
 
 - Keys = preset `overlayMask` fields (custom weights → each weight's source
-  fields), bare field name, grouped by level. Flat structural signals
-  (`methodLines`, `imports`) sit under `file`.
+  fields), bare field name, grouped by level. Flat structural signals sit under
+  the level they describe: file-wide ones (`imports`, `moduleLines`) under
+  `file`, per-method ones (`methodLines`, `methodDensity`) under `chunk`. A
+  `level: "file"` result carries no `chunk` block.
 - `{value,label}` when signal has labels (resolved via `signal-labels`
   resource), else raw value.
 - Labels live ONLY here. Payload = raw values at filter-key paths, metaOnly or

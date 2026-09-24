@@ -31,10 +31,10 @@ describe("rank_chunks scoring fixes", () => {
     // With fix, only chunkSize+chunkDensity contribute, scores ~0.49 for methodLines=200/bound=500
     expect(ranked[0].score).toBeGreaterThan(0.4);
 
-    // Overlay should use preset's file mask
+    // Overlay should use preset's mask; methodLines is chunk-scoped
     expect(ranked[0].rankingOverlay?.preset).toBe("decomposition");
     expect(ranked[0].rankingOverlay).not.toHaveProperty("derived");
-    expect(ranked[0].rankingOverlay?.file?.methodLines).toBeGreaterThan(0);
+    expect(ranked[0].rankingOverlay?.chunk?.methodLines).toBeGreaterThan(0);
   });
 
   it("scores large methods near 1.0 when similarity is excluded", async () => {
@@ -49,9 +49,9 @@ describe("rank_chunks scoring fixes", () => {
 });
 
 describe("overlay raw values visibility", () => {
-  it("overlay includes file.methodLines when decomposition mask is applied", async () => {
+  it("overlay includes chunk.methodLines when decomposition mask is applied", async () => {
     // This tests the formatSearchResults metaOnly path
-    // When overlay has file signals, it should be included
+    // When overlay has chunk signals, it should be included
     const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
     const results = [{ score: 0, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }];
@@ -65,8 +65,8 @@ describe("overlay raw values visibility", () => {
     const overlay = ranked[0].rankingOverlay;
     expect(overlay).toBeDefined();
     expect(overlay).not.toHaveProperty("derived");
-    expect(overlay?.file).toBeDefined();
-    expect(overlay?.file?.methodLines).toBeGreaterThan(0);
+    expect(overlay?.chunk).toBeDefined();
+    expect(overlay?.chunk?.methodLines).toBeGreaterThan(0);
   });
 });
 

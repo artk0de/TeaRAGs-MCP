@@ -46,12 +46,14 @@ describe("composite decomposition", () => {
   it("keeps fanIn and pageRank out of the score and in the overlay", () => {
     expect(preset.weights).not.toHaveProperty("chunkFanIn");
     expect(preset.weights).not.toHaveProperty("pageRank");
+    // methodLines measures the method, so it rides the chunk mask (bd tea-rags-mcp-llmc0).
     expect(preset.overlayMask.chunk).toEqual([
+      "methodLines",
       "codegraph.chunk.fanOut",
       "codegraph.chunk.fanIn",
       "codegraph.chunk.pageRank",
     ]);
-    expect(preset.overlayMask.file).toEqual(["methodLines", "codegraph.file.transitiveImpact"]);
+    expect(preset.overlayMask.file).toEqual(["codegraph.file.transitiveImpact"]);
   });
 
   it("overrides the static variant when codegraph is registered", () => {
