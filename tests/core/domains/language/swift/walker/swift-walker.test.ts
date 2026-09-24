@@ -1720,3 +1720,96 @@ describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)
     expect(fact?.functionAliasReturns).toEqual({ Handler: "DataRequest" });
   });
 });
+
+describe("swift walker — protocol compositions (bd tea-rags-mcp-y99pg.28)", () => {
+  it("types a composition of one protocol and marker protocols as that protocol", () => {
+    const src = [
+      "func receive<S>(subscriber: S) where S: Subscriber & Sendable {",
+      "  subscriber.receive(1)",
+      "}",
+      "func take<T: AnyObject & Monitor>(monitor: T, both: any Monitor & Logger, any: any Sendable & Monitor) {",
+      "  monitor.log()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "subscriber", 2)).toBe("Subscriber");
+    expect(typeAt(src, "monitor", 5)).toBe("Monitor");
+    expect(typeAt(src, "any", 5)).toBe("Monitor");
+  });
+
+  it("types nothing for a composition of two protocols", () => {
+    const src = ["func take(both: any Monitor & Logger) {", "  both.log()", "}", ""].join("\n");
+    expect(typeAt(src, "both", 2)).toBeUndefined();
+  });
+});
+
+describe("swift walker — literal-initialized locals (bd tea-rags-mcp-y99pg.27)", () => {
+  const src = [
+    "func go() {",
+    '  var components = ["$ curl -v"]',
+    '  let name = "x"',
+    "  let things = [Thing(), Thing()]",
+    '  let mixed = [Thing(), "y"]',
+    "  let empty = []",
+    '  components.append("-X")',
+    "  let head = things.first",
+    "  let other = mixed.first",
+    "}",
+    "",
+  ].join("\n");
+
+  it("types a string literal as String", () => {
+    expect(typeAt(src, "name", 7)).toBe("String");
+  });
+
+  it("types a non-empty array literal as Array of its elements' common type", () => {
+    expect(typeAt(src, "components", 7)).toBe("Array");
+    expect(typeAt(src, "things", 7)).toBe("Array");
+    expect(typeAt(src, "mixed", 7)).toBe("Array");
+    expect(typeAt(src, "head", 10)).toBe("Thing");
+    expect(typeAt(src, "other", 10)).toBeUndefined();
+  });
+
+  it("types nothing for an empty literal", () => {
+    expect(typeAt(src, "empty", 7)).toBeUndefined();
+  });
+});
+
+describe("swift walker — construction-initialized field arguments (bd tea-rags-mcp-y99pg.26)", () => {
+  const src = [
+    "final class Protected<Value> {",
+    "  init(_ value: Value) {}",
+    "  init(label: String) {}",
+    "}",
+    "final class DataRequest {",
+    "  private let dataMutableState = Protected(DataMutableState())",
+    "  let validators = Protected<[@Sendable () -> Void]>([])",
+    '  let named = Protected(label: "x")',
+    "  let plain = Helper()",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes the generic arguments an explicitly specialised construction spells", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "DataRequest");
+      expect(fact?.fieldTypeArguments).toEqual({ validators: ["Array"] });
+    }
+  });
+
+  it("publishes an unspecialised construction's argument labels and types", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "DataRequest");
+      expect(fact?.fieldConstructions).toEqual({
+        dataMutableState: { type: "Protected", arguments: [{ label: null, type: "DataMutableState" }] },
+      });
+    }
+  });
+
+  it("publishes which generic parameter each initializer parameter binds", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "Protected");
+      expect(fact?.genericInitializers).toEqual([{ labels: [null], binds: ["Value"] }]);
+    }
+  });
+});

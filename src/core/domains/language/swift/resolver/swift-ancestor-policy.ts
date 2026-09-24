@@ -1,7 +1,7 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
-import { SWIFT_SDK_CONFORMANCES } from "./swift-sdk-types.js";
+import { swiftSdkVocabulary, type SwiftSdkType } from "../vocabulary/sdk-vocabulary.js";
 import { swiftConformances, swiftDeclaringFiles, swiftSugarAliases } from "./swift-type-declarations.js";
 
 /**
@@ -61,19 +61,21 @@ export const SWIFT_ANCESTOR_POLICY: AncestorLinearizationPolicy<CallContext> = {
  *
  * Classes come first: a class's own members and its superclass chain are
  * found before any protocol default, which is how Swift itself prefers a
- * concrete implementation over an extension's. An SDK type's standard-library
- * conformances come last ({@link SWIFT_SDK_CONFORMANCES}, bd
- * tea-rags-mcp-y99pg.19): the index holds no declaration of `Array`, so
- * nothing else says an `[T]` reaches `extension Collection`.
+ * concrete implementation over an extension's. An SDK type's superclass and
+ * conformances come from the generated SDK substrate (bd tea-rags-mcp-y99pg.19,
+ * .24): the index holds no declaration of `Array` or `OutputStream`, so
+ * nothing else says an `[T]` reaches `extension Collection` or an
+ * `OutputStream` reaches `extension Stream`.
  */
 export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext> = {
   order(classKey, ctx, recurse, insertable) {
-    const base = identifierEntry(ctx.classExtends, classKey);
+    const sdk = sdkSupertypes(classKey, ctx);
+    const base = identifierEntry(ctx.classExtends, classKey) ?? sdk?.superclass;
     const order = base === undefined || base === classKey ? [classKey] : [classKey, ...recurse(base)];
     // `extension [HTTPHeader]` re-opens Array under its sugar spelling, and
     // its members compose under that spelling (bd tea-rags-mcp-y99pg.14).
     for (const alias of swiftSugarAliases(classKey, ctx)) if (!order.includes(alias)) order.push(alias);
-    for (const protocol of [...swiftConformances(classKey, ctx), ...sdkConformances(classKey, ctx)]) {
+    for (const protocol of [...swiftConformances(classKey, ctx), ...(sdk?.conformances ?? [])]) {
       if (protocol === classKey) continue;
       order.push(...insertable(protocol, [order]));
     }
@@ -81,9 +83,13 @@ export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext
   },
 };
 
-/** The SDK's conformances of `classKey` — none for a type the project declares itself. */
-function sdkConformances(classKey: string, ctx: CallContext): readonly string[] {
+/**
+ * The SDK's superclass and conformances of `classKey`, from the generated
+ * substrate (bd tea-rags-mcp-y99pg.24) — none for a type the project declares
+ * itself, whose own clause is the whole truth.
+ */
+function sdkSupertypes(classKey: string, ctx: CallContext): SwiftSdkType | undefined {
   const declared = swiftDeclaringFiles(classKey, ctx);
-  if (declared !== undefined && declared.size > 0) return [];
-  return SWIFT_SDK_CONFORMANCES.get(classKey) ?? [];
+  if (declared !== undefined && declared.size > 0) return undefined;
+  return swiftSdkVocabulary().type(classKey);
 }

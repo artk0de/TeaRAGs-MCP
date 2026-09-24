@@ -798,9 +798,20 @@ export interface LanguageFactoryDescriptor {
  * nothing to name — `nil.foo` reaches no in-project definition, so the RESOLVER
  * drops nil arms before dispatch while the fact keeps stating them. Build and
  * compare these through `domains/language/kernel/type-ref.ts`, never by hand.
+ *
+ * `args` are a nominal's generic ARGUMENTS, positionally — `Set<Request>` is
+ * `{ form: "instance", name: "Set", args: [instance(Request)] }`. Optional and
+ * set only by a resolver that substitutes generic parameters (Swift's SDK
+ * substrate, bd tea-rags-mcp-y99pg.25); absent means "unknown", never
+ * "none", so a consumer that ignores it reads the nominal exactly as before.
+ * `upperBound` marks a type known only as a BOUND of the value's type — a
+ * generic parameter nothing binds, read as its constraint (`Failure` as
+ * `Error`): members found on it are callable, but the value's own type may
+ * declare members it does not, so it proves nothing about what the value
+ * CANNOT reach.
  */
 export type TypeRef =
-  | { form: "class" | "instance"; name: string }
+  | { form: "class" | "instance"; name: string; args?: readonly TypeRef[]; upperBound?: true }
   | { form: "union"; members: TypeRef[] }
   | { form: "container"; element: TypeRef }
   | { form: "nil" };

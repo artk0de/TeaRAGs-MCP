@@ -17,7 +17,12 @@
  * gave before the channel existed.
  */
 
-import type { CallContext, TypeDeclarationFact } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  GenericInitializerFact,
+  SwiftFieldConstruction,
+  TypeDeclarationFact,
+} from "../../../../contracts/types/codegraph.js";
 import { splitAtBracketDepthZero } from "../../kernel/receiver-type-propagation.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 
@@ -80,6 +85,43 @@ function sameClosureTypes(a: readonly (string | null)[] | null, b: readonly (str
   return a.every((type, i) => type === b[i]);
 }
 
+/**
+ * The generic arguments an unspecialised construction binds (bd
+ * tea-rags-mcp-y99pg.26): `Protected(State())` runs the initializer whose labels
+ * are the call's, and each parameter that initializer types as a generic
+ * parameter binds it to that argument's constructed type. The constructed type
+ * is read lexically from the owner outward, as Swift names a nested type.
+ * Undefined when no initializer takes the labels, when two that do bind
+ * differently, or when nothing is bound.
+ */
+function constructionTypeArguments(
+  owner: string,
+  construction: SwiftFieldConstruction,
+  generics: ReadonlyMap<string, readonly string[]>,
+  initializers: ReadonlyMap<string, readonly GenericInitializerFact[]>,
+): readonly (string | null)[] | undefined {
+  const scopes = owner.split(".");
+  let typeId: string | undefined;
+  for (let depth = scopes.length; depth >= 0 && typeId === undefined; depth--) {
+    const candidate = [...scopes.slice(0, depth), construction.type].join(".");
+    if (generics.has(candidate)) typeId = candidate;
+  }
+  if (typeId === undefined) return undefined;
+  const parameters = generics.get(typeId) ?? [];
+  const labels = construction.arguments.map((arg) => arg.label);
+  let bound: (string | null)[] | undefined;
+  for (const init of initializers.get(typeId) ?? []) {
+    if (init.labels.length !== labels.length || !init.labels.every((label, i) => label === labels[i])) continue;
+    const next = parameters.map((parameter) => {
+      const at = init.binds.indexOf(parameter);
+      return at === -1 ? null : (construction.arguments[at]?.type ?? null);
+    });
+    if (bound !== undefined && !sameClosureTypes(bound, next)) return undefined;
+    bound = next;
+  }
+  return bound?.some((type) => type !== null) ? bound : undefined;
+}
+
 function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const channel = ctx.typeDeclarations;
   if (channel === undefined) return undefined;
@@ -94,6 +136,8 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const spellings = new Map<string, string[]>();
   const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
+  const initializers = new Map<string, GenericInitializerFact[]>();
+  const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
   for (const relPath of Object.keys(channel).sort()) {
@@ -105,6 +149,12 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         generics.set(fact.typeId, fact.genericParameters);
       }
       mergeFieldArguments(fieldArguments, fact);
+      if (fact.genericInitializers !== undefined) {
+        initializers.set(fact.typeId, [...(initializers.get(fact.typeId) ?? []), ...fact.genericInitializers]);
+      }
+      for (const [field, construction] of Object.entries(fact.fieldConstructions ?? {})) {
+        constructions.push({ owner: fact.typeId, field, construction });
+      }
       mergeClosureParameters(closureParameters, fact);
       if (fact.functionAliasReturns !== undefined && !functionAliases.has(fact.typeId)) {
         functionAliases.set(fact.typeId, fact.functionAliasReturns);
@@ -126,6 +176,14 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       for (const name of fact.conforms) if (!list.includes(name)) list.push(name);
       conforms.set(fact.typeId, list);
     }
+  }
+  for (const { owner, field, construction } of constructions) {
+    const fields = fieldArguments.get(owner) ?? new Map<string, readonly (string | null)[]>();
+    if (fields.has(field)) continue;
+    const bound = constructionTypeArguments(owner, construction, generics, initializers);
+    if (bound === undefined) continue;
+    fields.set(field, bound);
+    fieldArguments.set(owner, fields);
   }
   const fresh = {
     declaring,

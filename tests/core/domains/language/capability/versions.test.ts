@@ -281,6 +281,22 @@ describe("seeded support versions", () => {
       // index built by walker 34 lacks them.
       // swift walker 36: `functionAliasReturns` is new channel content, so an index
       // built by walker 35 types no stored-closure call head.
+      // swift walker 37: SDK facts come from the generated symbol-graph
+      // substrate and member lookup walks SDK superclass chains, so an index
+      // built by walker 36 lacks the edges into project extensions of an SDK
+      // superclass and persisted a denominator the hand-written lists drew.
+      // swift walker 38: SDK member hops, closure parameters and construction
+      // heads are typed from the substrate, so an index built by walker 37 lacks
+      // those edges and charges their SDK sites as misses.
+      // swift walker 39: `fieldConstructions` and `genericInitializers` are new
+      // channel content, so an index built by walker 38 types no closure
+      // parameter of a construction-initialized generic field.
+      // swift walker 40: string and array literals bind their default types,
+      // so an index built by walker 39 charges a literal-bound local's SDK
+      // calls as misses.
+      // swift walker 41: a protocol composition types as its one non-marker
+      // protocol, so an index built by walker 40 leaves `S: Subscriber &
+      // Sendable` values untyped.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -315,7 +331,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 36],
+        ["swift", 41],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

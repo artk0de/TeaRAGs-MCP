@@ -384,6 +384,25 @@ export interface TypeDeclarationFact {
    */
   readonly fieldTypeArguments?: Readonly<Record<string, readonly (string | null)[]>>;
   /**
+   * Stored properties this declaration initializes with an UNSPECIALISED
+   * construction and no annotation, by property name: `let state =
+   * Protected(State())` → `{ state: { type: "Protected", arguments: [{ label:
+   * null, type: "State" }] } }` — each argument's label and the nominal it
+   * constructs, `null` where it constructs none. What the constructed type's
+   * {@link genericInitializers} bind its generic arguments from (bd
+   * tea-rags-mcp-y99pg.26). Absent when no such property has an argument of
+   * known type.
+   */
+  readonly fieldConstructions?: Readonly<Record<string, SwiftFieldConstruction>>;
+  /**
+   * A generic type's initializers that take a parameter typed exactly as one
+   * of its {@link genericParameters}: each one's argument labels in order
+   * (`null` for `_`) and, per position, the generic parameter it binds or
+   * `null` — `init(_ value: Value)` → `{ labels: [null], binds: ["Value"] }`
+   * (bd tea-rags-mcp-y99pg.26). Absent when none does.
+   */
+  readonly genericInitializers?: readonly GenericInitializerFact[];
+  /**
    * For each method taking ONE function-typed parameter, the types that
    * function's parameters are declared with, by method name:
    * `func write<U>(_ closure: (inout Value) throws -> U)` → `{ write: ["Value"] }`.
@@ -414,6 +433,22 @@ export interface TypeDeclarationFact {
    * yields (bd tea-rags-mcp-y99pg.22). Absent when none.
    */
   readonly functionAliasReturns?: Readonly<Record<string, string>>;
+}
+
+/** A stored property's initializing construction (`TypeDeclarationFact.fieldConstructions`). */
+export interface SwiftFieldConstruction {
+  /** The constructed type as written, generic arguments absent. */
+  readonly type: string;
+  /** Each argument's label (`null` when unlabelled) and the nominal it constructs (`null` when none). */
+  readonly arguments: readonly { readonly label: string | null; readonly type: string | null }[];
+}
+
+/** One initializer of a generic type (`TypeDeclarationFact.genericInitializers`). */
+export interface GenericInitializerFact {
+  /** Argument labels in order, `null` for an unlabelled parameter. */
+  readonly labels: readonly (string | null)[];
+  /** Per position, the type's generic parameter that parameter is typed as, or `null`. */
+  readonly binds: readonly (string | null)[];
 }
 
 /**
