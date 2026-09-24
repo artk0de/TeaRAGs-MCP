@@ -6,7 +6,7 @@
     },
     "walker": {
       "version": 2,
-      "digest": "sha256:62442a714578fada82e4a6e0b6c1f5011b1b1359e5eb9d5b95d99154e34509b9"
+      "digest": "sha256:7d6c00f8ba7dc86b4e89fcd70d0084a7501bdf1704c878fd203c5e06bff2665b"
     }
   },
   "bash": {
@@ -49,8 +49,8 @@
   },
   "python": {
     "walker": {
-      "version": 8,
-      "digest": "sha256:0b48d8e4716094a72ce17af300281c220a02d85ca98c9f90c3c17ea917b4c7a6"
+      "version": 9,
+      "digest": "sha256:d4ed32945d122f661faa7429b4db370925a2badc0f259804a5a40e72e35e6547"
     }
   },
   "ruby": {
@@ -75,8 +75,8 @@
       "digest": "sha256:2d801131eaa3bebb86fb6b3481840872199418de5e26eb01dc2935e22ddf67bb"
     },
     "walker": {
-      "version": 6,
-      "digest": "sha256:12303ea736853e5a57b56fb131cf726e0ecd8f4ac5ccaa5a9711b783f20a2eec"
+      "version": 10,
+      "digest": "sha256:c4faaffe5ebb76fd71ce6e98e0826d28b2982a20243275263e3574e09959fdff"
     }
   },
   "typescript": {
@@ -85,8 +85,8 @@
       "digest": "sha256:57d21b8afefe46d8216e1343bacb65f1055e2d7bf37987cc24ff3f2df1718718"
     },
     "walker": {
-      "version": 11,
-      "digest": "sha256:dd9876644b8e5163e5f30848d69f7c7e4a4a9ff35fd8cbd3328393a09332c8f3"
+      "version": 12,
+      "digest": "sha256:74b17ecd3da23c4c246ba7f8a55e67f9e4e518f3f22cd00e88eabb68a7e15c65"
     }
   }
 }

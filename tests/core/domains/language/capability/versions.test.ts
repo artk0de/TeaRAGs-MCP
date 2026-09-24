@@ -121,7 +121,9 @@ describe("seeded support versions", () => {
       // python walker 8: bd tea-rags-mcp-z99hp scoped the ancestor linearizer
       // the same way — by the identity of `classAncestors` rather than by the
       // pooled table — so rows written by walker 7 can carry edges resolved on
-      // an MRO merged from a previous run's base lists.
+      // an MRO merged from a previous run's base lists; python walker 9: bd
+      // tea-rags-mcp-pbwd added dict-table dispatch — `dispatchTables`,
+      // `callbackParams` and tagged `CallRef.dispatch` sites walker 8 never wrote.
       // ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
@@ -198,7 +200,20 @@ describe("seeded support versions", () => {
       // is how Swift 5.7+ spells protocol-typed storage and which walker 5
       // typed to nothing, and widens `storedPropertyType` to the cross-file
       // field union plus the superclass chain — so an index built by walker 5
-      // holds no fact about any `any`-annotated parameter, local or property.
+      // holds no fact about any `any`-annotated parameter, local or property;
+      // walker 7 hands a TYPE chunk's own calls (computed properties,
+      // subscripts, `deinit`, stored-property initializers) the type as
+      // `callerScope` via the kernel's opt-in `bodyScope`, and reads the
+      // enclosing type as a qualified scope prefix rather than the last segment,
+      // so an index built by walker 6 holds none of the type-body edges;
+      // walker 8 resolves a member INHERITED from the superclass for every
+      // typed receiver and for `self` / bare calls, so an index built by
+      // walker 7 holds no edge into an inherited member; walker 9 publishes
+      // declared return types run-global and types a call hop, a cast head and
+      // a collection-literal head, so an index built by walker 8 carries no
+      // return type and no edge off a call hop; walker 10 qualifies a short
+      // type name to the nested type it denotes, so an index built by walker 9
+      // holds no edge into a nested type's member reached by its short name.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -210,16 +225,20 @@ describe("seeded support versions", () => {
       // dispatch (`dispatchTables`, `CallRef.dispatch`, `callbackParams`,
       // `dispatchArgs`), so an index built by walker 3 holds none of the
       // caller→candidate edges `H[k]()` / `T[k].f()` sites now fan out to.
+      // typescript walker 12: bd tea-rags-mcp-v0207 adds the annotated-factory
+      // hop to the owner rule, so an index built by walker 11 holds file-only
+      // edges where a member declared on a same-file type the factory's return
+      // annotation names now pins the factory's own member.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 11],
+        ["typescript", 12],
         ["javascript", 4],
-        ["python", 8],
+        ["python", 9],
         ["ruby", 5],
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 6],
+        ["swift", 10],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

@@ -3,23 +3,26 @@
  * (`kernel/receiver-type-propagation.ts`) — what lets `self.session.adapter`
  * and `World.sharedWorld` carry a type into the member lookup.
  *
- * The channels are the only two the Swift walker publishes about types:
+ * The channels are the three the Swift walker publishes about types:
  * per-chunk `localBindings` (a typed parameter, an annotated `let`, a CapWords
- * initializer) and the field types it publishes under BOTH addresses — the
+ * initializer), the field types it publishes under BOTH addresses — the
  * per-file `classFieldTypes` and the run-global `classFieldTypesByClassKey` —
- * both read through the one {@link SwiftMemberTypeLookup} the resolver owns.
- * There is deliberately no third:
+ * both read through the one {@link SwiftMemberTypeLookup} the resolver owns,
+ * and the run-global `structuredReturnTypes` (bd tea-rags-mcp-kkwg3):
  *
- *   - **No return-type channel.** The walker collects declared returns while it
- *     walks (`collectSwiftFileTypeEvidence`) and spends them typing locals, but
- *     it publishes neither `functionReturnTypes` nor `structuredReturnTypes`,
- *     so `a.makeThing().run()` is untyped here. Publishing them was built and
- *     MEASURED on Alamofire and Quick and bought ZERO edges: every chained call
- *     either lands on a Foundation / Combine / stdlib type the index never
- *     declares, or starts from a head no channel keys (a bare call, a trailing
- *     closure, a cast). The channel is worth revisiting on a corpus whose
- *     chained calls stay inside the project; it is not worth a payload key
- *     here.
+ *   - **A CALL hop is typed by what its callee RETURNS.**
+ *     `stateProvider.request(for: task).didFailTask()` resolves `request` to
+ *     the declaration the call lands on — own type, then superclass, exactly as
+ *     a call there would — and reads that symbol's published return. A first
+ *     build of this channel measured ZERO edges and shipped nothing; it pays
+ *     now because the two things it waited on landed first — a Swift grammar
+ *     that parses the files these chains live in, and inherited-member
+ *     dispatch. The hop split is the bracket-aware one
+ *     (`splitReceiverHops`), because an argument list carries its own dots
+ *     (`request(for: task.id)`), and a plain `split(".")` shreds it.
+ *   - **A cast or a literal head names its own type** (bd tea-rags-mcp-ll93g):
+ *     `(headers as HTTPHeaders).map`, `[a, b].joinedWithAmpersands`. See
+ *     {@link swiftLiteralHeadType}.
  *   - **No module-alias seed.** `seedHead` answers `undefined` outright. A head
  *     Swift can type is a value, `self` / `Self`, or a type name, and each of
  *     the three is a complete answer on its own — none of them needs to consume
@@ -36,7 +39,12 @@
 
 import { resolveLocalBindingType, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
-import type { ReceiverTypePorts } from "../../kernel/receiver-type-propagation.js";
+import {
+  splitAtBracketDepthZero,
+  splitReceiverHops,
+  type ReceiverTypePorts,
+} from "../../kernel/receiver-type-propagation.js";
+import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
@@ -93,8 +101,8 @@ function swiftHeadType(
   ctx: CallContext,
   members: SwiftMemberTypeLookup,
 ): TypeRef | undefined {
-  if (!SWIFT_IDENTIFIER.test(head)) return undefined;
-  const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+  if (!SWIFT_IDENTIFIER.test(head)) return swiftLiteralHeadType(head);
+  const enclosing = swiftSelfTypeName(ctx);
   if (head === "self" || head === "Self") {
     if (enclosing === undefined) return undefined;
     return { form: head === "self" ? "instance" : "class", name: enclosing };
@@ -111,6 +119,48 @@ function swiftHeadType(
 
   if (isSwiftTypeName(head) && lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
   return undefined;
+}
+
+/** `(expr as T)`, `(expr as? T)`, `(expr as! T)` — `normalizeSwiftReceiver` may already have dropped the `?` / `!`. */
+const SWIFT_CAST_HEAD = /^\(([\s\S]+)\s+as[?!]?\s+([\s\S]+)\)$/;
+
+/**
+ * The type a head that is not a VALUE NAME spells out itself — the receiver
+ * shapes the kernel's plain split shredded and no channel keyed (bd
+ * tea-rags-mcp-ll93g):
+ *
+ *   - a parenthesised CAST names its target type right there:
+ *     `(allHeaderFields as [String: String]).map` is a `Dictionary`;
+ *   - an array literal `[a, b]` is an `Array`, a dictionary literal `[k: v]`
+ *     (or `[:]`) a `Dictionary` — Swift's own names for the two, which is what
+ *     a project `extension Array { … }` composes its members under.
+ *
+ * Everything else — a trailing-closure head (`Result { … }`), a call head, a
+ * key path — answers `undefined`, which is the one answer that cannot be wrong.
+ */
+function swiftLiteralHeadType(head: string): TypeRef | undefined {
+  const cast = SWIFT_CAST_HEAD.exec(head);
+  const literal = head.startsWith("[") && head.endsWith("]") ? head : undefined;
+  const typeText = cast ? cast[2].trim() : literal;
+  if (typeText === undefined) return undefined;
+  const name = swiftTypeTextName(typeText);
+  return name === undefined ? undefined : { form: "instance", name };
+}
+
+/**
+ * The nominal a type (or collection literal) TEXT names: `Foo`, `Foo?`,
+ * `Foo<Bar>`, `any Foo`, `Outer.Inner`; `[T]` → `Array`, `[K: V]` →
+ * `Dictionary`. The colon test runs at bracket depth 1, so `[[String: Int]]`
+ * stays an `Array`.
+ */
+function swiftTypeTextName(text: string): string | undefined {
+  const trimmed = text.replace(/^any\s+/, "").replace(/[?!]+$/, "");
+  if (trimmed.startsWith("[")) {
+    if (!trimmed.endsWith("]")) return undefined;
+    return splitAtBracketDepthZero(trimmed.slice(1, -1), ":").length > 1 ? "Dictionary" : "Array";
+  }
+  const nominal = trimmed.replace(/<[\s\S]*>$/, "");
+  return /^[A-Z][\w.]*$/.test(nominal) ? nominal : undefined;
 }
 
 /**
@@ -132,8 +182,14 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
       // the same property map. Accessing a property always yields a VALUE, so
       // the hop's own form is `instance` either way.
       const fieldType = members.typeOfProperty(recv.name, member, ctx);
-      return fieldType === undefined ? undefined : { form: "instance", name: fieldType };
+      if (fieldType !== undefined) return { form: "instance", name: fieldType };
+      // Not a property: a METHOD hop, typed by what the declaration the call
+      // lands on returns. Strict: an ambiguous callee types nothing.
+      const callee = members.memberOn(recv.name, member, ctx, "strict")?.targetSymbolId;
+      return callee ? ctx.structuredReturnTypes?.[callee] : undefined;
     },
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
+    // An argument list carries its own dots (`request(for: task.id)`).
+    splitReceiverHops,
   });
 }

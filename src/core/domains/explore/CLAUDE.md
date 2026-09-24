@@ -22,8 +22,17 @@
   `DocChunkGrouper.group` hand-list every field (`DocChunkGrouper.mergeSection`
   spreads its head window instead); `fileGit()`/`fileCodegraph()` exist because
   `codegraph` was lost this way (tea-rags-mcp-0am0), and `DocChunkGrouper` still
-  copies `git` only. Why: a new payload namespace vanishes from find_symbol and
-  every `level: "file"` result, with no type error to catch it.
+  copies `git` only. Why: a new payload namespace vanishes from find_symbol with
+  no type error to catch it.
+- **A `level: "file"` hit is reduced to file scope AFTER ranking, never
+  before.** `FileLevelGrouper` keeps the top chunk per file with its full
+  payload; `BaseExploreStrategy#shapeFileLevel` then applies
+  `chunk-grouping/file-scope.ts#reduceToFileScope`, whose keep-set `fileScopeOf`
+  derives from the payload signal descriptors (flat keys declaring
+  `level: "file"`, plus every namespace minus its `chunk` branches). Why: rerank
+  reads chunk signals for alpha-blending and `language`/`chunkType` for overlay
+  labels — stripping first silently changes ranking; and an undeclared flat key
+  is dropped from file hits by design.
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has

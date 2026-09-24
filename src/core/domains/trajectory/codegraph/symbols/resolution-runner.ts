@@ -14,11 +14,12 @@
  * `trajectory/** -> domains/language/**`).
  */
 
-import type {
-  CallContext,
-  FileExtraction,
-  GlobalSymbolTable,
-  GraphEdges,
+import {
+  chunkCallerScope,
+  type CallContext,
+  type FileExtraction,
+  type GlobalSymbolTable,
+  type GraphEdges,
 } from "../../../../contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor, LanguageSymbolResolver } from "../../../../contracts/types/language.js";
 import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
@@ -528,7 +529,7 @@ export class CallEdgeResolutionRunner {
       // (bd tea-rags-mcp-w205u) — see {@link resolverInputChannels}.
       ...resolverInputChannels(inputs),
       callerFile: extraction.relPath,
-      callerScope: chunk.scope,
+      callerScope: chunkCallerScope(chunk),
       callerSymbolId: chunk.symbolId,
       imports: extraction.imports,
       symbolTable,

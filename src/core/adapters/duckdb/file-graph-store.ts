@@ -74,8 +74,10 @@ const METHOD_EDGE_KEYS = [
 const METHOD_EDGE_VALUES = ["target_symbol_id", "edge_kind", "confidence"] as const;
 const INHERITANCE_KEYS = ["source_fq_name", "source_rel_path", "ancestor_fq_name", "kind"] as const;
 const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"] as const;
-const FANOUT_KEYS = ["source_symbol_id", "call_expression"] as const;
-const FANOUT_VALUES = ["source_rel_path", "member", "candidate_count"] as const;
+// Migration 027 (bd tea-rags-mcp-n9bmd): `source_rel_path` joined the key, so a
+// namesake caller's aggregate in another file is a distinct row, not a collision.
+const FANOUT_KEYS = ["source_symbol_id", "source_rel_path", "call_expression"] as const;
+const FANOUT_VALUES = ["member", "candidate_count"] as const;
 
 export class DuckDbFileGraphStore {
   constructor(private readonly session: DuckDbGraphSession) {}
@@ -190,9 +192,11 @@ export class DuckDbFileGraphStore {
       }
       // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki) — a
       // fan-out resolved away must not survive the re-walk, and a repeated
-      // (source, call_expression) is aggregate-existence, not occurrence count.
+      // (source, file, call_expression) is aggregate-existence, not occurrence
+      // count. The file is part of the key (migration 027): a SymbolId is
+      // unique per file, so a namesake caller elsewhere is its own aggregate.
       for (const a of edges.ambiguousFanouts ?? []) {
-        fanoutRows.push([a.sourceSymbolId, a.callExpression, node.relPath, a.member, a.candidateCount]);
+        fanoutRows.push([a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount]);
       }
       // The pass-1 slice, keyed by the NODE's path rather than the slice's own,
       // so the row can only ever land under the file being written.

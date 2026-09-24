@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEnclosingTypeMemberInFile, type SwiftResolverConfig } from "./shared.js";
+import { lookupSelfTypeMemberInFile, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * `self.member()` and `Self.member()` — an explicit member of the enclosing
@@ -26,7 +26,7 @@ export class SwiftSelfMemberSymbolResolutionStrategy implements SymbolResolution
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== "self" && call.receiver !== "Self") return CONTINUE;
-    const sameFileHit = lookupEnclosingTypeMemberInFile(call.member, ctx);
+    const sameFileHit = lookupSelfTypeMemberInFile(call.member, ctx);
     return sameFileHit ? resolved(sameFileHit) : CONTINUE;
   }
 }

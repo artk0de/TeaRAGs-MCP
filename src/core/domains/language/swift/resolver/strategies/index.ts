@@ -8,9 +8,12 @@ export { SwiftEnclosingBareCallSymbolResolutionStrategy } from "./swift-enclosin
 export { SwiftExtensionScopeMemberSymbolResolutionStrategy } from "./swift-extension-scope-member.js";
 export { SwiftGlobalShortNameSymbolResolutionStrategy } from "./swift-global-short-name.js";
 export {
-  lookupEnclosingTypeMemberInFile,
+  lookupLexicalMemberInFile,
+  lookupSelfTypeMemberInFile,
   lookupSwiftTypeMember,
   resolveSwiftBoundTypeMember,
   SWIFT_PSEUDO_RECEIVERS,
+  swiftEnclosingTypeIds,
+  swiftSelfTypeName,
   type SwiftResolverConfig,
 } from "./shared.js";

@@ -317,6 +317,11 @@ export interface CollectedSymbolRange {
   startLine: number;
   endLine: number;
   scope: string[];
+  /**
+   * The caller scope of this declaration's OWN calls, present only when its
+   * `nameOf` result set `opensSelfScope`. See `ChunkExtraction.bodyScope`.
+   */
+  bodyScope?: string[];
 }
 
 /**

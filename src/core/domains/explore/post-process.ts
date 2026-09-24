@@ -231,7 +231,8 @@ export function filterMetaOnly(
   essentialTrajectoryFields: string[],
 ): Record<string, unknown>[] {
   return results.map((r) => {
-    const meta: Record<string, unknown> = { score: r.score };
+    // The score stays on the hit — a payload copy duplicated it (bd tea-rags-mcp-947xf).
+    const meta: Record<string, unknown> = {};
     for (const signal of payloadSignals) {
       if (r.payload?.[signal.key] !== undefined) {
         meta[signal.key] = r.payload[signal.key];
@@ -276,16 +277,6 @@ export function filterMetaOnly(
     const codegraph = r.payload?.codegraph;
     if (codegraph && typeof codegraph === "object") {
       meta.codegraph = codegraph;
-    }
-
-    // Preserve the file-level members outline (tea-rags-mcp-zrma). It is
-    // synthesized by FileLevelGrouper rather than declared in payloadSignals,
-    // so the rebuild above drops it — and rank_chunks defaults to
-    // metaOnly=true, which is precisely where knowing WHAT matched inside a
-    // file (not just that something did) saves the caller a second query.
-    const members = r.payload?.members;
-    if (typeof members === "string") {
-      meta.members = members;
     }
 
     return meta;

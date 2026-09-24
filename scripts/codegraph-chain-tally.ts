@@ -67,6 +67,7 @@ import { extname, join, resolve as resolvePath, sep } from "node:path";
 
 import { deferred } from "../src/core/contracts/resolution.js";
 import {
+  chunkCallerScope,
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
@@ -562,7 +563,7 @@ function buildCallContext(
     projectRoot,
     instantiatedTypes: channels.instantiatedTypes,
     callerFile: extraction.relPath,
-    callerScope: chunk.scope,
+    callerScope: chunkCallerScope(chunk),
     callerSymbolId: chunk.symbolId,
     imports: extraction.imports,
     symbolTable,

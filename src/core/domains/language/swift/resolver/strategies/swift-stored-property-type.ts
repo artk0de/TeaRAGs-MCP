@@ -1,7 +1,12 @@
 import { CONTINUE, DROP } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolverConfig } from "./shared.js";
+import {
+  resolveSwiftBoundTypeMember,
+  SWIFT_PSEUDO_RECEIVERS,
+  swiftSelfTypeName,
+  type SwiftResolverConfig,
+} from "./shared.js";
 
 /**
  * A call on a STORED PROPERTY of the enclosing type, resolved through the
@@ -44,16 +49,17 @@ export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolRe
   constructor(private readonly cfg: SwiftResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver || ctx.callerScope.length === 0) return CONTINUE;
+    if (!call.receiver) return CONTINUE;
+    const enclosing = swiftSelfTypeName(ctx);
+    if (enclosing === undefined) return CONTINUE;
     const explicitSelf = call.receiver.startsWith("self.");
     const property = explicitSelf ? call.receiver.slice("self.".length) : call.receiver;
     // Chained access carries no single type — decline both spellings.
     if (property.includes(".")) return CONTINUE;
     if (!explicitSelf && SWIFT_PSEUDO_RECEIVERS.has(property)) return CONTINUE;
 
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     const typeName = this.cfg.memberTypes.typeOfProperty(enclosing, property, ctx);
     if (!typeName) return explicitSelf ? DROP : CONTINUE;
-    return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg.mode);
+    return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg);
   }
 }

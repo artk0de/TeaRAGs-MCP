@@ -58,13 +58,13 @@ describe("detectScope", () => {
 describe("getDefaultTestPaths", () => {
   it("returns ruby-specific paths for ruby", () => {
     const paths = getDefaultTestPaths("ruby");
-    expect(paths).toContain("spec/**");
-    expect(paths).toContain("test/**");
+    expect(paths).toContain("**/spec/**");
+    expect(paths).toContain("**/test/**");
   });
 
   it("returns typescript-specific paths for typescript", () => {
     const paths = getDefaultTestPaths("typescript");
-    expect(paths).toContain("__tests__/**");
+    expect(paths).toContain("**/__tests__/**");
   });
 
   it("gives TypeScript's ESM / CJS module formats the TypeScript test suffixes (bd tea-rags-mcp-1y13c)", () => {
@@ -94,6 +94,31 @@ describe("getDefaultTestPaths", () => {
         expect(isTestPath(relPath, language), `${language} ${relPath}`).toBe(true);
       }
     }
+  });
+
+  it("derives every classifier language's test paths from TEST_PATTERNS_BY_LANGUAGE (bd tea-rags-mcp-jl3ff)", () => {
+    // One table answers "is this path a test file in language X" for both the
+    // file classifier and scope detection: the shared directory conventions
+    // plus the language's own suffixes. A hand copy here drifted to
+    // root-anchored globs and disagreed with the classifier on nested layouts.
+    const { common, ...byLanguage } = TEST_PATTERNS_BY_LANGUAGE;
+    for (const [language, suffixes] of Object.entries(byLanguage)) {
+      expect(getDefaultTestPaths(language), language).toEqual([...common, ...suffixes]);
+    }
+  });
+
+  it("flags nested test directories and suffix-named specs the classifier calls tests (bd tea-rags-mcp-jl3ff)", () => {
+    // Rails engines / monorepo layouts: the classifier enriched these as tests
+    // while scope detection dropped their signals into the SOURCE bucket.
+    expect(isTestPath("engines/billing/spec/models/user_spec.rb", "ruby")).toBe(true);
+    expect(isTestPath("lib/foo_spec.rb", "ruby")).toBe(true);
+    expect(isTestPath("packages/api/tests/test_views.py", "python")).toBe(true);
+    expect(isTestPath("packages/web/__tests__/app.ts", "typescript")).toBe(true);
+    expect(isTestPath("lib/foo.rb", "ruby")).toBe(false);
+  });
+
+  it("falls back to the language-agnostic test directories for an unknown language", () => {
+    expect(getDefaultTestPaths("brainfuck")).toEqual([...TEST_PATTERNS_BY_LANGUAGE.common]);
   });
 
   it("returns fallback paths for unknown language", () => {

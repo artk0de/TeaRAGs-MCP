@@ -54,4 +54,37 @@ describe("CollectionRegistry worktree provenance", () => {
     expect(reg.findWorktree("x")?.collectionName).toBe("code_wt");
     expect(reg.findWorktree("missing")).toBeNull();
   });
+
+  // The prescribed lifecycle is `worktree create` → `index-codebase --project
+  // <clone>`, and every index run re-records the entry without provenance. A
+  // wiped `worktreeOf` hides the clone from `worktree list` (so the teardown
+  // backstop never sees it) and makes `worktree remove` refuse it
+  // (bd tea-rags-mcp-ghk1f).
+  it("keeps worktree provenance across a pipeline re-record of the clone", () => {
+    reg.record(baseEntry("code_main", "/repo"));
+    reg.record(baseEntry("code_wt", "/repo/.wt/x"));
+    reg.setWorktreeProvenance("code_wt", "code_main", "x");
+
+    reg.record({ ...baseEntry("code_wt", "/repo/.wt/x"), chunksCount: 42 });
+
+    expect(reg.findWorktree("x")?.collectionName).toBe("code_wt");
+    expect(reg.listWorktrees().map((e) => [e.collectionName, e.worktreeOf, e.chunksCount])).toEqual([
+      ["code_wt", "code_main", 42],
+    ]);
+  });
+
+  it("never grants provenance to an ordinary project on re-record", () => {
+    reg.record(baseEntry("code_main", "/repo"));
+    reg.record(baseEntry("code_main", "/repo"));
+    expect(reg.listWorktrees()).toEqual([]);
+  });
+
+  it("survives a fresh process reading the re-recorded registry", () => {
+    reg.record(baseEntry("code_wt", "/repo/.wt/x"));
+    reg.setWorktreeProvenance("code_wt", "code_main", "x");
+    const pipelineProcess = new CollectionRegistry(dir);
+    pipelineProcess.record(baseEntry("code_wt", "/repo/.wt/x"));
+
+    expect(new CollectionRegistry(dir).findWorktree("x")?.worktreeOf).toBe("code_main");
+  });
 });

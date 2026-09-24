@@ -245,7 +245,7 @@ export class DuckDbMethodEdgeReader {
   /**
    * Lazy ambiguous-group expansion read (bd tea-rags-mcp-f2jsb A4). Selects
    * the `cg_ambiguous_fanout` aggregates whose `member` equals the target's
-   * member segment — uses the migration-013 member index. The suppressed
+   * member segment — uses the `member` index (013, recreated by 027). The suppressed
    * edges are NEVER materialized; consumers see the aggregate + its
    * candidateCount. `limit` is INLINED (not bound) for the same reason as
    * `getTransitiveImpact`'s depth: bindParams binds every value via
@@ -266,7 +266,7 @@ export class DuckDbMethodEdgeReader {
       `SELECT source_symbol_id AS "sourceSymbolId", source_rel_path AS "sourceRelPath",
               call_expression AS "callExpression", candidate_count AS "candidateCount"
          FROM cg_ambiguous_fanout WHERE member = ?
-        ORDER BY source_symbol_id, call_expression
+        ORDER BY source_symbol_id, source_rel_path, call_expression
         LIMIT ${safeLimit}`,
       [member],
     );

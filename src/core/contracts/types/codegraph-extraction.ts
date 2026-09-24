@@ -436,6 +436,15 @@ export interface ChunkExtraction {
   symbolId: SymbolId;
   /** Lexical scope chain enclosing this chunk, e.g. `["Acme", "Auth", "User"]`. */
   scope: string[];
+  /**
+   * The scope this chunk's OWN calls run in, when it is not `scope` — a TYPE
+   * chunk, whose declaration sits in its parent's scope while a computed
+   * property or a stored-property initializer in its body runs inside the type
+   * (bd tea-rags-mcp-3ievc). Absent for every other chunk, and for every chunk
+   * of a language whose `nameOf` never sets `opensSelfScope`. Read it through
+   * {@link chunkCallerScope}, never directly.
+   */
+  bodyScope?: string[];
   calls: CallRef[];
   /** 1-based start line of the chunk in the source file. Optional so
    *  walkers that don't track line info keep working. */

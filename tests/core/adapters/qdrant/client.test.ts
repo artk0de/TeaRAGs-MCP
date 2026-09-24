@@ -8,12 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 import {
+  QdrantInvalidQueryParameterError,
   QdrantOperationError,
   QdrantOptimizationInProgressError,
   QdrantStartingError,
   QdrantUnavailableError,
 } from "../../../../src/core/adapters/qdrant/errors.js";
-import { InvalidQueryError } from "../../../../src/core/domains/explore/errors.js";
 
 // TurboQuant rescore params injected into every dense search path so quantized
 // candidates are re-scored on the stored float vectors (keeps baseline recall).
@@ -1485,11 +1485,11 @@ describe("QdrantManager", () => {
       expect(mockClient.query.mock.calls[0][1].query).toEqual({ rrf: { weights: [1, 0] } });
     });
 
-    it("rejects invalid semanticWeight with InvalidQueryError", async () => {
+    it("rejects invalid semanticWeight with QdrantInvalidQueryParameterError", async () => {
       for (const invalid of [Number.NaN, Infinity, -0.1, 1.1, -Infinity]) {
         await expect(
           manager.hybridSearch("test-collection", denseVector, sparseVector, 20, undefined, invalid),
-        ).rejects.toThrow(InvalidQueryError);
+        ).rejects.toThrow(QdrantInvalidQueryParameterError);
       }
       expect(mockClient.query).not.toHaveBeenCalled();
     });
