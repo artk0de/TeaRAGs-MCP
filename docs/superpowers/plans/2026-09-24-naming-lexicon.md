@@ -370,7 +370,11 @@ this list.
 - Append
   `createIdentifierDeclarationFacetPass(<LANG>_IDENTIFIER_DECLARATION_SYNTAX)`
   as the LAST entry of `<LANG>_EXTRACTION_PASSES` in `<lang>/walker/passes.ts`.
-- Bump `versions.walker` by 1 in `<lang>/capability.ts`.
+- Bump `versions.walker` by 1 in `<lang>/capability.ts`, then
+  `npm run pin:lang-versions` (the `version-pins.test.ts` guard digests the
+  language + kernel sources; see `.claude/rules/index-format-versions.md` for
+  the commit-body `Versions:` line). Check whether `kernel/capability.ts`
+  `sharedVersions.walker` must move too — the rule file decides.
 - Test
   `tests/core/domains/language/<lang>/walker/identifier-declarations.test.ts`
   through the COMPOSED walker, like
@@ -940,6 +944,58 @@ Edits (English, match the file's terse register):
 - [ ] Steps: edit → `npx prettier --write` on the file → markdownlint (if
       available) → commit
       `docs(plugin): DDG naming lexicon step and symbol-risk verify`.
+
+#### Task 10b: DDG eval cases
+
+**Files:** `.claude-plugin/.benchmarks/data-driven-generation/evals.json`,
+`.claude-plugin/.benchmarks/data-driven-generation/benchmark.md`
+
+The suite (15 cases, last run 2026-04-21) predates this change. Cases that pin
+behaviour this plan removes on purpose are superseded, not silently deleted:
+
+- eval-11 / eval-13 / eval-14 (identifier-existence check in VERIFY) → set
+  `"status": "superseded"` with `"supersededBy"` naming the new case and
+  `"reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers"`.
+- Any other case whose expectation contradicts the current SKILL.md (check
+  eval-6 template weights against the Step 2 delegation to
+  `extract-project-patterns`) gets the same treatment, reason stated.
+
+New cases (neutral user framing, no rule vocabulary in the prompt, same `mustDo`
+/ `mustNotDo` / `failureMode` shape as the existing ones):
+
+1. `naming-type-misfit`: Ruby, taxdome-like context; a new method loads a
+   `TaxAutomationDocument`. mustDo: one `get_naming_lexicon` call in Step 5 with
+   `types` and planned `names`; local named after the lexicon's dominant name;
+   finder named `find_<snake type>`. mustNotDo: `row` or an invented term.
+2. `naming-concept-new-term`: CREATE of a service whose concept exists in the
+   project under another term. mustDo: `concept` passed as a description (not
+   the draft name), `language` set, project term adopted. mustNotDo: draft name
+   inside `concept`.
+3. `naming-concept-backedge`: concept mode returns a holder REUSE did not find.
+   mustDo: back to Step 4, gate that holder. mustNotDo: rename and write a
+   sibling.
+4. `naming-new-term-justified`: genuinely new concept. mustDo: new term with a
+   one-line justification. mustNotDo: force-fit an unrelated project term.
+5. `naming-codegraph-off`: prime lacks `codegraph.symbols`. mustDo:
+   `semantic_search` with the step-5 concept parameters. mustNotDo: call
+   `get_naming_lexicon`.
+6. `verify-symbol-risk`: generated code calls a symbol whose chunk `bugFixRate`
+   is critical. mustDo: `find_symbol(rerank: "criticalPath", metaOnly: true)` on
+   called symbols (≤ 5), defensive call, pinned-test check. mustNotDo:
+   per-identifier existence sweep; `dangerous` while codegraph is on.
+7. `verify-central-modified`: MODIFY of a symbol labelled `pageRank` critical.
+   mustDo: Step 8 `get_callers`.
+8. `naming-modify-scope`: MODIFY / hotfix. mustDo: lexicon with the symbol's
+   signature types only, `names` = new locals only, no `concept`.
+
+- [ ] Write the cases and supersede markers; validate the JSON parses.
+- [ ] Run the suite with `Skill(optimize-skill)` (with-rule vs baseline,
+      parallel subagents) on the reworked SKILL.md; append a `runs[]` entry
+      (date, pass counts, delta, failureMap) and a dated section in
+      `benchmark.md`. Target: with-rule 100% on active cases. A failing new case
+      → fix SKILL.md wording and re-run, at most 3 iterations, each recorded.
+- [ ] Commit
+      `docs(plugin): DDG eval cases for naming lexicon and symbol-risk verify`.
 
 ---
 
