@@ -41,6 +41,16 @@ import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunk
 import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
+import {
+  collectPythonCallbackParams,
+  collectPythonDispatchBindings,
+  collectPythonDispatchTables,
+  createPythonDispatchScope,
+  pythonCallbackParamsBySymbol,
+  pythonDispatchArgs,
+  pythonDispatchRefOf,
+  type PythonDispatchScope,
+} from "./passes/python-dispatch-tables.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -99,9 +109,20 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // once per chunk: netbox's `dcim/tests/test_filtersets.py` (7.7k lines, 620
   // chunks) paid 620 full traversals and 14.1 s in that one function.
   const localBindingSites: PythonLocalBindingSite[] = [];
+  // bd tea-rags-mcp-pbwd — dict-table dispatch. The tables and the gate set are
+  // read off the module's direct children BEFORE the descent, because the call
+  // collector needs the gate while it walks. With no table and no `from` import
+  // nothing can dispatch through a subscript, and the facet costs that one
+  // top-level scan.
+  const dispatchTables = collectPythonDispatchTables(root);
+  const dispatchScope = createPythonDispatchScope(root, dispatchTables);
+  const dispatch = dispatchScope.tableNames.size > 0 ? dispatchScope : null;
+  const callbackParamSites = new Map<number, Set<number>>();
   const flatVisitors: PythonNodeVisitor[] = [
     collectPythonImports(scan),
-    collectPythonCalls(calls),
+    ...(dispatch === null ? [] : [collectPythonDispatchBindings(dispatch)]),
+    collectPythonCalls(calls, dispatch),
+    collectPythonCallbackParams(callbackParamSites),
     collectPythonDecoratorCalls(decoratorCalls),
     collectPythonClassExtends(classExtends),
     collectPythonClassFieldTypes(classFieldTypes),
@@ -213,6 +234,9 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     fileScope: [],
   };
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
+  if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
+  const callbackParams = pythonCallbackParamsBySymbol(callbackParamSites, input.chunks);
+  if (Object.keys(callbackParams).length > 0) out.callbackParams = callbackParams;
   if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
@@ -1160,12 +1184,30 @@ function normalizePythonReceiverText(node: AstNode): string {
   return args === null || args.namedChildren.length === 0 ? "super" : node.text;
 }
 
-function collectPythonCalls(out: CallRef[]): PythonNodeVisitor {
+function collectPythonCalls(out: CallRef[], dispatch: PythonDispatchScope | null): PythonNodeVisitor {
   return (node) => {
     if (node.type !== "call") return;
     const fn = node.childForFieldName("function");
     if (!fn) return;
     const startLine = node.startPosition.row + 1;
+    // bd tea-rags-mcp-pbwd — the callee IS a candidate set (`T[k](…)`,
+    // `T.get(k)(…)`, `T[k]["w"](…)`, a bound local). The runner fans it out and
+    // skips the exact chain, so receiver / member are best-effort only.
+    const dispatchRef = dispatch === null ? null : pythonDispatchRefOf(fn, dispatch);
+    if (dispatchRef !== null) {
+      out.push({
+        callText: node.text,
+        receiver: null,
+        member: dispatchRef.field ?? dispatchRef.table,
+        startLine,
+        dispatch: dispatchRef,
+        ...pythonCallShape(node),
+      });
+      return;
+    }
+    // A candidate set passed positionally feeds the callback-param join.
+    const dispatchArgs = dispatch === null ? [] : pythonDispatchArgs(node, dispatch);
+    const withDispatchArgs = dispatchArgs.length > 0 ? { dispatchArgs } : {};
     if (fn.type === "attribute") {
       // `obj.method(...)` — receiver = object's leftmost identifier,
       // member = property text. For chained accesses like `a.b.c()`,
@@ -1181,10 +1223,18 @@ function collectPythonCalls(out: CallRef[]): PythonNodeVisitor {
         member: attr.text,
         startLine,
         ...pythonCallShape(node),
+        ...withDispatchArgs,
       });
     } else {
       // Bare call like `foo(...)`.
-      out.push({ callText: node.text, receiver: null, member: fn.text, startLine, ...pythonCallShape(node) });
+      out.push({
+        callText: node.text,
+        receiver: null,
+        member: fn.text,
+        startLine,
+        ...pythonCallShape(node),
+        ...withDispatchArgs,
+      });
     }
   };
 }
