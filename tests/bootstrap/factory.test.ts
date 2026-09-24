@@ -244,6 +244,21 @@ describe("createAppContext", () => {
     }
   });
 
+  it("cleanup releases once however many shutdown paths call it (bd tea-rags-mcp-e6cpu)", async () => {
+    // Under stdio the signal handler and the stdin-close shutdown both reach
+    // ctx.cleanup; the second call must not re-release anything.
+    const stop = vi.fn();
+    const startWatching = vi.spyOn(CollectionRegistry.prototype, "startWatching").mockReturnValue(stop);
+    try {
+      const ctx = await createAppContext(makeConfig());
+      ctx.cleanup?.();
+      ctx.cleanup?.();
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally {
+      startWatching.mockRestore();
+    }
+  });
+
   it("cleanup kills the git children an in-process enrichment left running (bd tea-rags-mcp-w26dc)", async () => {
     // MCP index_codebase runs enrichment inside the server and git inline, so
     // git is a direct child of the server; SIGTERM/SIGINT route to ctx.cleanup

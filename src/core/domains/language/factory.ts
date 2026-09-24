@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+
 import { DEFAULT_AMBIGUOUS_RESOLVE_MODE, type AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
 import type {
   LanguageCapability,
@@ -8,7 +10,7 @@ import type { SignalFloors } from "../../contracts/types/trajectory.js";
 import { BashLanguage } from "./bash/index.js";
 import { signalFloors as bashSignalFloors } from "./bash/signal-floors.js";
 import { nativeLanguageCapabilities } from "./capability/native.js";
-import { UnsupportedLanguageError } from "./errors.js";
+import { GrammarPackageNotInstalledError, UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
 import { signalFloors as goSignalFloors } from "./go/signal-floors.js";
 import { JavaLanguage } from "./java/index.js";
@@ -51,6 +53,22 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
+ * Whether an npm package resolves from this module — the factory's default
+ * grammar check. Only a missing package reads as "not installed": any other
+ * resolution failure (a broken `exports` map, say) means the package IS there,
+ * and the grammar load itself reports what is wrong with it.
+ */
+const resolveFromFactory = createRequire(import.meta.url);
+function isPackageResolvable(packageName: string): boolean {
+  try {
+    resolveFromFactory.resolve(packageName);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND";
+  }
+}
+
+/**
  * Real `LanguageFactoryDescriptor`. `create(lang)` ENCAPSULATES construction — it builds
  * the native `domains/language/<lang>` provider itself (`new RubyLanguage(mode)`,
  * …), applying the configured ambiguous-resolve `mode`, rather than reading one
@@ -82,6 +100,11 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    */
   private readonly repoRoot: string;
   private readonly cache = new Map<string, LanguageProvider>();
+  /**
+   * bd tea-rags-mcp-e2pu7 — whether a grammar package is installed. Checked in
+   * `create` against the built provider's `kernel.grammarPackage`.
+   */
+  private readonly isGrammarPackageInstalled: (packageName: string) => boolean;
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
@@ -91,17 +114,36 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    *   project-root-relative configuration (TypeScript's tsconfig today), used
    *   when a resolve arrives with no `CallContext.projectRoot`. Defaults to
    *   `process.cwd()`, which is what every caller got before it existed.
+   * @param options.isGrammarPackageInstalled Grammar-package check. Defaults to
+   *   resolving the package from this module; tests substitute a fake.
    */
-  constructor(options: { ambiguousResolveMode?: AmbiguousResolveMode; repoRoot?: string } = {}) {
+  constructor(
+    options: {
+      ambiguousResolveMode?: AmbiguousResolveMode;
+      repoRoot?: string;
+      isGrammarPackageInstalled?: (packageName: string) => boolean;
+    } = {},
+  ) {
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
     this.repoRoot = options.repoRoot ?? process.cwd();
+    this.isGrammarPackageInstalled = options.isGrammarPackageInstalled ?? isPackageResolvable;
   }
 
+  /**
+   * Build (or return the cached) provider for `lang`. Throws
+   * `GrammarPackageNotInstalledError` when the provider's grammar package does
+   * not resolve — nothing is cached then, so a call after `npm install`
+   * re-checks — and `UnsupportedLanguageError` for an unknown language.
+   */
   create(lang: string): LanguageProvider {
     const cached = this.cache.get(lang);
     if (cached) return cached;
 
     const provider = this.build(lang);
+    const { grammarPackage } = provider.kernel;
+    if (grammarPackage !== undefined && !this.isGrammarPackageInstalled(grammarPackage)) {
+      throw new GrammarPackageNotInstalledError(lang, grammarPackage);
+    }
     this.cache.set(lang, provider);
     return provider;
   }

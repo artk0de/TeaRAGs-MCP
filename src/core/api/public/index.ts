@@ -18,6 +18,16 @@ export type { App, AppDeps } from "./app.js";
 // The one runtime symbol among them: the recompute-path predicate both
 // `IndexingOps#run` and the CLI index worker branch on.
 export { isEnrichmentRecompute } from "./dto/index.js";
+
+// ── Codegraph resolve rate — miss definition + rendering rule ─────────
+// `tea-rags prime` renders the per-receiver-kind rows of the resolve DTO with
+// the same empty-denominator rule the chain-tally harness uses (bd qodqg).
+export {
+  EMPTY_RESOLVE_DENOMINATOR_MARKER,
+  formatResolveRateCell,
+  resolveRateMiss,
+} from "../../contracts/resolve-rate.js";
+export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve-rate.js";
 export type {
   // Explore DTOs
   CollectionRef,

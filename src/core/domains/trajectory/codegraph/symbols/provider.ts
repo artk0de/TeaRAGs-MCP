@@ -610,7 +610,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const sink = this.asExtractionSink(options?.collectionName);
     for (const relPath of targetRelPaths) {
       try {
-        await sink.write(this.extractOneFile(root, relPath));
+        await sink.write(await this.extractOneFile(root, relPath));
       } catch (err) {
         // One bad file must not take down the build; the sink buffers per file
         // and resolves on finish, so the graph stays consistent.
@@ -671,7 +671,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // calls tallied per spill, jittering resolveSuccessRate with batch composition.
       if (extracted.has(relPath)) continue;
       try {
-        await sink.write(this.extractOneFile(root, relPath));
+        await sink.write(await this.extractOneFile(root, relPath));
         extracted.add(relPath);
       } catch (err) {
         if (process.env.DEBUG === "true") {
@@ -729,7 +729,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       if (!this.fileExtractor.isExtractable(relPath)) continue;
       const startedAtMs = Date.now();
       try {
-        const extraction = this.fileExtractor.parse(root, relPath);
+        const extraction = await this.fileExtractor.parse(root, relPath);
         const language = extraction.language || "unknown";
         const total = (pass1ByLanguage[language] ??= { ms: 0, files: 0 });
         total.ms += Date.now() - startedAtMs;
@@ -1079,7 +1079,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /** Parse + walk one file from disk, recording its pass-1 time (`CodegraphFileExtractor#extract`). */
-  private extractOneFile(root: string, relPath: string): FileExtraction {
+  private async extractOneFile(root: string, relPath: string): Promise<FileExtraction> {
     return this.fileExtractor.extract(root, relPath);
   }
 

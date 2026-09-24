@@ -944,6 +944,53 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     expect(out.indexOf("selfMember")).toBeLessThan(out.indexOf("constant"));
   });
 
+  // bd tea-rags-mcp-qodqg — a kind whose every site was excluded (here: no
+  // in-project def) has an empty rate denominator. summarizeCodegraphResolve
+  // reports its rate as 0, which reads as "resolved none of what it tried";
+  // the row must say "nothing to score" instead, with the counters kept.
+  it("renders a receiver-kind row with an empty rate denominator as the marker, not a rate", () => {
+    const out = formatPrime(
+      {
+        path: "/p",
+        status: indexed({
+          codegraphResolve: {
+            resolveSuccessRate: 0.96,
+            callsAttempted: 136,
+            callsResolved: 125,
+            callsExternalSkipped: 0,
+            byReceiverKind: [
+              {
+                receiverKind: "selfMember",
+                attempted: 130,
+                resolved: 125,
+                externalSkipped: 0,
+                resolveSuccessRate: 125 / 130,
+              },
+              {
+                receiverKind: "index",
+                attempted: 6,
+                resolved: 0,
+                externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 6,
+                callsCoreAmbiguous: 0,
+                resolveSuccessRate: 0,
+              },
+            ],
+          },
+        }),
+        metrics: monolingualMetricsFixture(),
+        drift: null,
+        update: null,
+      },
+      undefined,
+      DEBUG,
+    );
+    expect(out).toContain("index —  0/6");
+    expect(out).not.toContain("index 0 0/6");
+    expect(out).toContain("selfMember 0.96 125/130");
+  });
+
   // bd tea-rags-mcp-4vg1i — the aggregate warning says HOW MANY entry calls
   // stopped at a shared template; only the per-kind suffix says which bucket
   // carries them, which is what makes the number actionable (and what proves

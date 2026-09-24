@@ -191,6 +191,7 @@ import type {
 } from "../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescript/walker/walker.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
+import { loadCodegraphGrammarSync } from "../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
@@ -1576,7 +1577,7 @@ export function extractFile(
   try {
     const code = readFileSync(join(repoRoot, relPath), "utf8");
     const parser = new Parser();
-    parser.setLanguage(config.loadParser());
+    parser.setLanguage(loadCodegraphGrammarSync(factory, extensionOf(relPath)));
     const nativeRoot = parser.parse(code).rootNode;
     // The production fast path (bd tea-rags-mcp-1v12o.2.4), mirrored here because
     // the tally measures THIS function: a harness that materialized what

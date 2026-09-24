@@ -1,7 +1,7 @@
 import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../core/api/public/dto/collection.js";
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
-import type { LanguageCapability } from "../../core/api/public/index.js";
+import { formatResolveRateCell, resolveRateMiss, type LanguageCapability } from "../../core/api/public/index.js";
 import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason, PrimeRegistryEntry } from "./types.js";
 
@@ -711,7 +711,25 @@ function formatResolveBreakdown(resolve: CodegraphResolve): string[] {
  * on which bucket holds it.
  */
 function formatResolveKind(k: CodegraphResolveKindRow): string {
-  const base = `${k.receiverKind} ${roundTwo(k.resolveSuccessRate)} ${k.resolved}/${k.attempted}`;
+  // bd tea-rags-mcp-qodqg — a bucket whose every site was excluded from the
+  // rate has an empty denominator; the DTO reports its rate as 0, which would
+  // read as "resolved none of what it tried". The shared cell renders it as
+  // the "nothing to score" marker, counters kept.
+  const miss = resolveRateMiss({
+    attempted: k.attempted,
+    resolved: k.resolved,
+    externalSkipped: k.externalSkipped,
+    unresolvable: k.unresolvable,
+    noInProjectDef: k.callsNoInProjectDef,
+    coreAmbiguous: k.callsCoreAmbiguous,
+  });
+  const cell = formatResolveRateCell({
+    rate: k.resolveSuccessRate,
+    denominator: k.resolved + miss,
+    counters: `${k.resolved}/${k.attempted}`,
+    renderRate: (rate) => `${roundTwo(rate)}`,
+  });
+  const base = `${k.receiverKind} ${cell}`;
   const unnarrowed = k.callsUnnarrowedTemplate ?? 0;
   return unnarrowed > 0 ? `${base} · ${unnarrowed} unnarrowed` : base;
 }
