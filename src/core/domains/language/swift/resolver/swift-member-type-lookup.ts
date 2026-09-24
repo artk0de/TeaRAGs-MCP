@@ -50,6 +50,7 @@ import type {
   CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   createAncestorLinearizer,
   findMemberInAncestorChain,
@@ -58,6 +59,7 @@ import {
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
 import {
+  lookupSwiftOverloads,
   lookupSwiftTypeMember,
   qualifySwiftTypeName,
   qualifySwiftTypeNameWithin,
@@ -218,6 +220,43 @@ export class SwiftMemberTypeLookup {
     );
   }
 
+  /**
+   * What a call of `member` on a `typeName` value returns (bd
+   * tea-rags-mcp-kkwg3, y99pg.18): the declared return of the declaration the
+   * call lands on, else — for an overload set the hop cannot pick among,
+   * having no argument labels — the return EVERY overload of the nearest
+   * declaring type agrees on (`validate(statusCode:)`, `validate(contentType:)`
+   * and `validate()` all return `Self`). A `-> Self` return is the
+   * receiver's own type, substituted here so the marker never leaves this
+   * method.
+   */
+  memberReturnType(typeName: string, member: string, ctx: CallContext): TypeRef | undefined {
+    const callee = this.memberOn(typeName, member, ctx, "strict")?.targetSymbolId;
+    const returned = callee
+      ? identifierEntry(ctx.structuredReturnTypes, callee)
+      : this.agreedReturn(typeName, member, ctx);
+    return returned?.form === "instance" && returned.name === SWIFT_SELF_RETURN
+      ? { form: "instance", name: typeName }
+      : returned;
+  }
+
+  private agreedReturn(typeName: string, member: string, ctx: CallContext): TypeRef | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const overloads = [
+        ...lookupSwiftOverloads(ctx, `${typeId}#${member}`),
+        ...lookupSwiftOverloads(ctx, `${typeId}.${member}`),
+      ];
+      return overloads.length > 0 ? { overloads } : null;
+    });
+    const overloads = scan.target?.overloads;
+    if (overloads === undefined) return undefined;
+    const returns = overloads.map((def) => identifierEntry(ctx.structuredReturnTypes, def.symbolId));
+    const [first] = returns;
+    if (first === undefined) return undefined;
+    return returns.every((r) => r !== undefined && sameTypeRef(r, first)) ? first : undefined;
+  }
+
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {
     const hit = this.linearizers.get(ctx.runScope, ctx);
     if (hit !== undefined) return hit;
@@ -226,6 +265,15 @@ export class SwiftMemberTypeLookup {
     return fresh;
   }
 }
+
+/** Two declared returns name the same nominal — only the forms Swift publishes ever agree. */
+function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
+  if ((a.form !== "instance" && a.form !== "class") || (b.form !== "instance" && b.form !== "class")) return false;
+  return a.form === b.form && a.name === b.name;
+}
+
+/** The `structuredReturnTypes` marker the walker publishes for `-> Self` (bd tea-rags-mcp-y99pg.18). */
+const SWIFT_SELF_RETURN = "Self";
 
 /** Whether `typeName` declares `member` in either spelling — one the call fits, given one — whatever the cardinality. */
 function declaresMember(typeName: string, member: string, ctx: CallContext, call?: CallRef): boolean {

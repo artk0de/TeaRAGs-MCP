@@ -440,7 +440,7 @@ function collectSwiftStructuredReturnTypes(
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
     const name = node.childForFieldName("name")?.text;
-    const nominal = name === undefined ? null : (swiftDeclaredReturnFact(node)?.nominal ?? null);
+    const nominal = name === undefined ? null : (swiftDeclaredReturnFact(node)?.nominal ?? swiftSelfReturnMarker(node));
     if (name === undefined || nominal === null) return;
     const symbolId = idsByLine.get(node.startPosition.row + 1)?.find((id) => composedIdNames(id, name));
     if (symbolId !== undefined) out[symbolId] = { form: "instance", name: nominal };
@@ -719,10 +719,15 @@ const NO_TYPE: SwiftTypeFact = { nominal: null, element: null };
 /** Names a binding must never be recorded under — each is claimed by a chain pass of its own. */
 const SWIFT_PSEUDO_BINDING_NAMES: ReadonlySet<string> = new Set(["self", "Self", "super"]);
 
+/** The `structuredReturnTypes` marker a `-> Self` return publishes (bd tea-rags-mcp-y99pg.18). */
+const SWIFT_SELF_RETURN = "Self";
+
 /**
  * Return types that name nothing the symbol table can hold. `Self` is the
- * conforming type, unknowable at the declaration; the other four are universal
- * or empty and carry no member a call could land on.
+ * conforming type, unknowable at the declaration (the run-global channel
+ * publishes it as {@link SWIFT_SELF_RETURN} for the resolver to substitute);
+ * the other four are universal or empty and carry no member a call could land
+ * on.
  */
 const SWIFT_UNUSABLE_RETURN_TYPES: ReadonlySet<string> = new Set(["Self", "Any", "AnyObject", "Never", "Void"]);
 
@@ -1355,6 +1360,18 @@ function swiftDeclaredReturnFact(node: AstNode): SwiftTypeFact | null {
   const named = fact.nominal ?? fact.element;
   if (!named) return null;
   return SWIFT_UNUSABLE_RETURN_TYPES.has(named) ? null : fact;
+}
+
+/**
+ * `SWIFT_SELF_RETURN` for a `func` declared `-> Self`, else null (bd
+ * tea-rags-mcp-y99pg.18). Published as a MARKER, never as the declaring type:
+ * `Self` is the RECEIVER's type, which only the resolver's fold knows —
+ * `dataRequest.configured()` on a method `Request` declares returns a
+ * `DataRequest`.
+ */
+function swiftSelfReturnMarker(node: AstNode): string | null {
+  const declared = swiftTypeFactOf(swiftTypeNodeAfter(node, "->")).nominal;
+  return declared === SWIFT_SELF_RETURN ? SWIFT_SELF_RETURN : null;
 }
 
 /** Whether `name` is one of the declaration's own generic parameters (`func decode<T>() -> T`). */

@@ -176,7 +176,7 @@ export function swiftMemberCandidates(ctx: CallContext, id: string, call?: CallR
 }
 
 /** `id` and every same-file overload `id~N` of it — the suffixes are contiguous per file. */
-function lookupSwiftOverloads(ctx: CallContext, id: string): SymbolDefinition[] {
+export function lookupSwiftOverloads(ctx: CallContext, id: string): SymbolDefinition[] {
   const out = lookupSwiftSymbols(ctx, id);
   for (let n = 2; n <= SWIFT_MAX_OVERLOADS; n++) {
     const more = lookupSwiftSymbols(ctx, `${id}~${n}`);

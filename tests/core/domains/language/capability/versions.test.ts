@@ -270,6 +270,8 @@ describe("seeded support versions", () => {
       // channel content, so an index built by walker 29 types no payload name.
       // swift walker 31: collection constructions and dictionary for-in tuples now
       // bind, so an index built by walker 30 types neither.
+      // swift walker 32: `-> Self` returns are published, so an index built by
+      // walker 31 types no chain through one.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -304,7 +306,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 31],
+        ["swift", 32],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

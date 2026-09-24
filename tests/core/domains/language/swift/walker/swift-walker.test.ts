@@ -1024,7 +1024,13 @@ describe("swift walker — declared return types published run-global (bd tea-ra
     ].join("\n");
     // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): `d` returns an Array, which
     // a member call on its result dispatches on; it used to publish nothing.
-    expect(publishedReturns(src)).toEqual({ "Store#d": { form: "instance", name: "Array" } });
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.18): `b` publishes the `Self`
+    // MARKER, which the resolver substitutes with the receiver's type; it used
+    // to publish nothing.
+    expect(publishedReturns(src)).toEqual({
+      "Store#b": { form: "instance", name: "Self" },
+      "Store#d": { form: "instance", name: "Array" },
+    });
   });
 });
 

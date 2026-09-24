@@ -19,16 +19,19 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { SwiftCallResolver } from "../../../../../../src/core/domains/language/swift/resolver/swift-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-function table(rows: Record<string, { symbolId: string; scope: string[] }[]>): InMemoryGlobalSymbolTable {
+function table(
+  rows: Record<string, ({ symbolId: string; scope: string[] } & Partial<SymbolDefinition>)[]>,
+): InMemoryGlobalSymbolTable {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of Object.entries(rows)) {
     t.upsertFile(
       relPath,
       defs.map((d) => ({
+        ...d,
         symbolId: d.symbolId,
         fqName: d.symbolId,
         // Production keys the table with `lastSegment`, which strips the `~N`
@@ -2578,5 +2581,84 @@ describe("SwiftCallResolver — file-private enum namesakes (bd tea-rags-mcp-y99
       site("Sources/World.swift", ["World", "all"]),
     );
     expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — `-> Self` returns and implicit-self call heads (bd tea-rags-mcp-y99pg.18)", () => {
+  const t = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#configured", scope: ["Request"] },
+      { symbolId: "DataRequest", scope: [] },
+      { symbolId: "DataRequest#resume", scope: ["DataRequest"] },
+    ],
+    "Sources/Validation.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      {
+        symbolId: "DataRequest#validate",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["statusCode"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+      {
+        symbolId: "DataRequest#validate~2",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["contentType"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+      {
+        symbolId: "DataRequest#validate~3",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: [], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+    ],
+  });
+  const base = {
+    symbolTable: t,
+    typeDeclarations: {
+      "Sources/Request.swift": [
+        { typeId: "Request", reopens: false },
+        { typeId: "DataRequest", reopens: false, conforms: ["Request"] },
+      ],
+      "Sources/Validation.swift": [{ typeId: "DataRequest", reopens: true }],
+    },
+    classExtends: { DataRequest: "Request" },
+    structuredReturnTypes: {
+      "Request#configured": { form: "instance" as const, name: "Self" },
+      "DataRequest#validate": { form: "instance" as const, name: "Self" },
+      "DataRequest#validate~2": { form: "instance" as const, name: "Self" },
+      "DataRequest#validate~3": { form: "instance" as const, name: "Self" },
+    },
+  };
+
+  it("types an implicit-self call head by the overloads' agreed `Self` return", () => {
+    const site = {
+      ...call("validate(statusCode: acceptableStatusCodes)", "validate", 12),
+      argCount: 0,
+      kwargKeys: ["contentType"],
+      passesBlock: false,
+    };
+    const target = new SwiftCallResolver().resolve(
+      site,
+      ctx({ ...base, callerFile: "Sources/Validation.swift", callerScope: ["DataRequest", "validate"] }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#validate~2");
+  });
+
+  it("substitutes `Self` with the receiver's type, not the declaring type", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request.configured()", "resume", 8),
+      ctx({
+        ...base,
+        callerFile: "Sources/Session.swift",
+        callerScope: ["Session", "run"],
+        localBindings: { request: [{ line: 7, type: "DataRequest" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#resume");
   });
 });

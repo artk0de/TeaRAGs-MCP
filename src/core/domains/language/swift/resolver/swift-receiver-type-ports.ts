@@ -123,8 +123,10 @@ function swiftHeadType(
   members: SwiftMemberTypeLookup,
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
-  if (!SWIFT_IDENTIFIER.test(head)) return swiftLiteralHeadType(head);
   const enclosing = swiftSelfTypeName(ctx);
+  if (!SWIFT_IDENTIFIER.test(head)) {
+    return swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ?? swiftLiteralHeadType(head);
+  }
   if (head === "self" || head === "Self") {
     if (enclosing === undefined) return undefined;
     return { form: head === "self" ? "instance" : "class", name: enclosing };
@@ -141,6 +143,39 @@ function swiftHeadType(
 
   if (isSwiftTypeName(head) && lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
   return undefined;
+}
+
+/**
+ * `validate(statusCode: codes)` as a chain head (bd tea-rags-mcp-y99pg.18): a
+ * bare call inside a type is a call of the enclosing type's own method —
+ * Swift's `self` is implicit — typed by what that method returns. A head a
+ * local names (a closure value) is not a method call.
+ */
+function swiftImplicitSelfCallHeadType(
+  head: string,
+  atLine: number,
+  ctx: CallContext,
+  enclosing: string | undefined,
+  members: SwiftMemberTypeLookup,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  if (enclosing === undefined) return undefined;
+  const open = head.indexOf("(");
+  const name = open > 0 ? head.slice(0, open) : "";
+  if (!SWIFT_IDENTIFIER.test(name) || name.startsWith("$") || !head.endsWith(")")) return undefined;
+  if (closingParenIndex(head, open) !== head.length - 1) return undefined;
+  if (swiftLocalValueType(name, atLine, ctx, ports, members) !== undefined) return undefined;
+  return members.memberReturnType(enclosing, name, ctx);
+}
+
+/** The index of the `)` closing the `(` at `open`, or -1. */
+function closingParenIndex(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "(") depth++;
+    else if (text[i] === ")" && --depth === 0) return i;
+  }
+  return -1;
 }
 
 /** `(expr as T)`, `(expr as? T)`, `(expr as! T)` — `normalizeSwiftReceiver` may already have dropped the `?` / `!`. */
@@ -209,8 +244,8 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
       if (fieldType !== undefined) return { form: "instance", name: fieldType };
       // Not a property: a METHOD hop, typed by what the declaration the call
       // lands on returns. Strict: an ambiguous callee types nothing.
-      const callee = members.memberOn(recv.name, member, ctx, "strict")?.targetSymbolId;
-      if (callee) return identifierEntry(ctx.structuredReturnTypes, callee);
+      const returned = members.memberReturnType(recv.name, member, ctx);
+      if (returned) return returned;
       // `NotificationCenter.default`: a type's own singleton, by convention.
       if (recv.form === "class" && SWIFT_SINGLETON_PROPERTIES.has(member)) return { form: "instance", name: recv.name };
       return undefined;
