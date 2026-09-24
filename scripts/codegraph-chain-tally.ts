@@ -44,9 +44,11 @@
  *     `lost` must be 0.
  *
  * `--kind-stats` is orthogonal to the three: it recomputes the per-receiver-kind
- * counters `cg_run_stats` persists — through `classifyResolveMiss`, the decision
- * the production runner tallies — so a DENOMINATOR change is measurable without
- * a reindex, next to the edge counts that must not move (bd tea-rags-mcp-1v12o.3).
+ * counters `cg_run_stats` persists — folding the production runner's own per-site
+ * verdict (`CallEdgeResolutionRunner#callSiteVerdicts`) with its own
+ * `tallyCallSiteVerdict`, dispatch-table sites and the `dispatchArgs` join
+ * included — so a DENOMINATOR change is measurable without a reindex, next to
+ * the edge counts that must not move (bd tea-rags-mcp-1v12o.3 / c6xuu).
  *
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
@@ -72,6 +74,7 @@ import {
   type CallContext,
   type CallRef,
   type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
@@ -95,15 +98,11 @@ import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js"
 import { collectSchemaColumnSources } from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { absorbPass1FileState } from "../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import {
-  classifyReceiverKind,
-  RECEIVER_KINDS,
-  type ReceiverKind,
-} from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { RECEIVER_KINDS, type ReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import {
   CallEdgeResolutionRunner,
-  classifyResolveMiss,
-  type ResolvableCallSite,
+  tallyCallSiteVerdict,
+  type CallSiteVerdict,
 } from "../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import {
   CodegraphRunState,
@@ -318,13 +317,34 @@ export interface CallSiteRow {
   /** `fan.length` for `single` / `fan`, `candidateCount` for `ambiguous`, 0 for `none`. */
   fanSize: number;
   /**
-   * The answer PRODUCTION books: the dispatch layer's single target when it
-   * pinned one, else the exact chain's, and null where a fan or an over-cap
-   * decision left production with no 1:1 edge. `baseline` deliberately stays
-   * the EXACT chain — the A/B this script exists for is a chain instrument, and
-   * folding a fan into it would make a real drift invisible (Step 7).
+   * A dispatch-table site (`CallRef.dispatch`). Production never runs the exact
+   * chain on it, so `baseline` / `variant` are null and the chain A/B skips it;
+   * `runnerEdges` and the kind stats still carry what production books there.
+   */
+  dispatchTable: boolean;
+  /**
+   * Every method edge PRODUCTION pushes for this site, straight off the runner's
+   * verdict (bd tea-rags-mcp-c6xuu): a dispatch-table fan, the additive
+   * `dispatchArgs` join (callee edge plus callee-sourced fan), a cone — all of it.
+   */
+  runnerEdges: MethodEdge[];
+  /**
+   * The answer PRODUCTION books when it is a single 1:1 edge — `runnerEdges`'
+   * only target — and null where a fan, a join, an over-cap decision or a
+   * decline left it none. `baseline` deliberately stays the EXACT chain — the
+   * A/B this script exists for is a chain instrument, and folding a fan into it
+   * would make a real drift invisible (Step 7).
    */
   runnerAnswer: SymbolResolutionTarget | null;
+}
+
+type MethodEdge = GraphEdges["methodEdges"][number];
+
+/** {@link CallSiteRow.runnerAnswer} off the runner's verdict. */
+function runnerAnswerOf(verdict: CallSiteVerdict): SymbolResolutionTarget | null {
+  if (verdict.edges.length !== 1) return null;
+  const [{ targetRelPath, targetSymbolId }] = verdict.edges;
+  return { targetRelPath, targetSymbolId };
 }
 
 export interface DiffTally {
@@ -455,7 +475,12 @@ export interface RunResult {
   codegraphExcluded: number;
   parseFailures: number;
   symbols: number;
-  dispatchSkipped: number;
+  /**
+   * Dispatch-table sites (`CallRef.dispatch`). Resolved and counted as
+   * production resolves and counts them; only the chain A/B leaves them out,
+   * because production never runs the exact chain on one (bd c6xuu).
+   */
+  dispatchTableSites: number;
   /** Rebuilt baseline disagreeing with the production resolver. MUST be 0. */
   chainDrift: number;
   /** Did this run consult the dispatch layer at all (bd tea-rags-mcp-w205u)? */
@@ -480,9 +505,10 @@ export interface RunResult {
   timing?: ChainTallyTiming;
   /**
    * `--kind-stats`: the per-receiver-kind counters `cg_run_stats` persists,
-   * recomputed OFFLINE (bd tea-rags-mcp-1v12o.3). The buckets come from
-   * `classifyResolveMiss` — production's own decision, not a copy — so a
-   * denominator change is measurable without a reindex.
+   * recomputed OFFLINE (bd tea-rags-mcp-1v12o.3). Every counter comes from the
+   * runner's own per-site verdict folded by its own `tallyCallSiteVerdict` —
+   * production's decision, not a copy — so a denominator change is measurable
+   * without a reindex (bd tea-rags-mcp-c6xuu).
    */
   kindStats?: Record<ReceiverKind, ReceiverKindTally>;
   /** Under `--kind-stats`: a few `missWithInProjectDef` sites per kind, for diagnosis. */
@@ -522,48 +548,24 @@ function emptyKindSamples(): Record<ReceiverKind, string[]> {
 }
 
 /**
- * One call site's contribution to the offline per-kind run stats. Mirrors
- * `CallEdgeResolutionRunner#resolveMethodEdges`'s tally block — the SAME
- * `classifyResolveMiss` production calls, so the buckets cannot drift.
+ * One call site's contribution to the offline per-kind run stats: the runner's
+ * own verdict folded by the runner's own `tallyCallSiteVerdict`, so no bucket,
+ * outcome or gate can drift (bd tea-rags-mcp-c6xuu). The harness adds only the
+ * residual-miss samples, which production has no counter for.
  */
 function tallyKindStats(
   stats: Record<ReceiverKind, ReceiverKindTally>,
   samples: Record<ReceiverKind, string[]>,
-  site: {
-    call: CallRef;
-    ctx: CallContext;
-    /** The chunk's bindings AFTER barrier parameter seeding — what the runner classifies by. */
-    localBindings: ResolvableCallSite["localBindings"];
-    resolver: Parameters<typeof classifyResolveMiss>[2];
-    symbolTable: InMemoryGlobalSymbolTable;
-    relPath: string;
-    resolved: boolean;
-    ambiguous: boolean;
-  },
+  site: { call: CallRef; verdict: CallSiteVerdict; relPath: string },
 ): void {
-  const kind = classifyReceiverKind(site.call, site.localBindings);
-  const row = stats[kind];
-  row.attempted += 1;
-  if (site.ambiguous) {
-    row.ambiguousFanout += 1;
-    return;
-  }
-  if (site.resolved) {
-    row.resolved += 1;
-    return;
-  }
-  const bucket = classifyResolveMiss(site.call, site.ctx, site.resolver, site.symbolTable);
-  if (bucket === "missWithInProjectDef") {
-    if (samples[kind].length < KIND_SAMPLE_CAP) {
-      // The RECEIVER and the member, never `callText` — a multi-line call would
-      // break one sample across as many lines and make the block ungreppable.
-      samples[kind].push(
-        `${site.relPath}:${site.call.startLine} ${String(site.call.receiver)}.${site.call.member}`.replace(/\s+/g, " "),
-      );
-    }
-    return;
-  }
-  row[bucket] += 1;
+  const { verdict, call } = site;
+  tallyCallSiteVerdict(stats, verdict);
+  if (verdict.missBucket !== "missWithInProjectDef") return;
+  const kindSamples = samples[verdict.receiverKind];
+  if (kindSamples.length >= KIND_SAMPLE_CAP) return;
+  // The RECEIVER and the member, never `callText` — a multi-line call would
+  // break one sample across as many lines and make the block ungreppable.
+  kindSamples.push(`${site.relPath}:${call.startLine} ${String(call.receiver)}.${call.member}`.replace(/\s+/g, " "));
 }
 
 export async function run(
@@ -661,7 +663,7 @@ export async function run(
   const rows: CallSiteRow[] = [];
   const kindStats = opts.kindStats === true ? emptyReceiverKindTally() : null;
   const kindSamples = opts.kindStats === true ? emptyKindSamples() : null;
-  let dispatchSkipped = 0;
+  let dispatchTableSites = 0;
   let chainDrift = 0;
   let singleSites = 0;
   let fanSites = 0;
@@ -676,18 +678,26 @@ export async function run(
 
   for (const extraction of scored) {
     // Every call site with the context the production runner resolves it
-    // against — built BY the runner, so no channel can be threaded differently.
-    for (const { call, ctx, localBindings } of runner.callSiteContexts(extraction, symbolTable)) {
-      if (call.dispatch !== undefined) {
-        dispatchSkipped++;
-        continue;
-      }
+    // against AND the verdict it reaches there — both built BY the runner, so
+    // no channel can be threaded, and no site routed or counted, differently.
+    for (const { call, ctx, verdict } of runner.callSiteVerdicts(extraction, symbolTable)) {
+      // A dispatch-table site never reaches the exact chain in production — the
+      // runner fans it out through `resolveDispatch` and counts it like any
+      // other site. It is kept, with its production edges and its counters, but
+      // it has no chain answer for the A/B to score (bd tea-rags-mcp-c6xuu).
+      const dispatchTable = call.dispatch !== undefined;
+      if (dispatchTable) dispatchTableSites++;
       // --time-only asks production directly. There is no rebuilt chain to
       // drift FROM, so `chainDrift` stays 0 and the report says the check did
       // not run — it must never read as "0 drift, verified".
-      const baseline =
-        baselineChain === null ? production.resolve(call, ctx) : resolveViaChain(baselineChain, call, ctx);
-      if (baselineChain !== null && !sameTarget(baseline, production.resolve(call, ctx))) chainDrift++;
+      const baseline = dispatchTable
+        ? null
+        : baselineChain === null
+          ? production.resolve(call, ctx)
+          : resolveViaChain(baselineChain, call, ctx);
+      if (!dispatchTable && baselineChain !== null && !sameTarget(baseline, production.resolve(call, ctx))) {
+        chainDrift++;
+      }
       const fan = dispatch ? scoreFan(production, call, ctx) : NO_FAN;
       if (fan.kind === "single") singleSites++;
       else if (fan.kind === "fan") {
@@ -701,25 +711,16 @@ export async function run(
         receiver: call.receiver,
         member: call.member,
         baseline,
-        variant: variantChain ? resolveViaChain(variantChain, call, ctx) : baseline,
+        variant: variantChain && !dispatchTable ? resolveViaChain(variantChain, call, ctx) : baseline,
         baselineTargetInProject: baseline !== null && corpusFiles.has(baseline.targetRelPath),
         dispatchOutcome: fan.kind,
         fanSize: fan.fanSize,
-        runnerAnswer: fan.kind === "single" ? fan.single : fan.kind === "none" ? baseline : null,
+        dispatchTable,
+        runnerEdges: verdict.edges,
+        runnerAnswer: runnerAnswerOf(verdict),
       });
       if (kindStats !== null && kindSamples !== null) {
-        tallyKindStats(kindStats, kindSamples, {
-          call,
-          ctx,
-          localBindings,
-          resolver: production,
-          symbolTable,
-          relPath: extraction.relPath,
-          // The runner books a fan or a single as RESOLVED (it pushed edges);
-          // only `ambiguous` and a declining chain reach miss classification.
-          resolved: fan.kind === "single" || fan.kind === "fan" || (fan.kind === "none" && baseline !== null),
-          ambiguous: fan.kind === "ambiguous",
-        });
+        tallyKindStats(kindStats, kindSamples, { call, verdict, relPath: extraction.relPath });
       }
     }
   }
@@ -745,7 +746,7 @@ export async function run(
     codegraphExcluded: selection.codegraphExcluded,
     parseFailures,
     symbols: symbolTable.size(),
-    dispatchSkipped,
+    dispatchTableSites,
     chainDrift,
     dispatch,
     singleSites,
@@ -802,15 +803,19 @@ async function main(): Promise<void> {
     timing: opts.timing,
     kindStats: opts.kindStats,
   });
-  const baseline = tallyChainOutput(result.rows.map((r) => r.baseline));
-  const variant = tallyChainOutput(result.rows.map((r) => r.variant));
-  const { tally, changed } = diffRows(result.rows);
+  // The chain A/B scores only the sites production runs the exact chain on; a
+  // dispatch-table site has no chain answer to count as "unresolved".
+  const chainRows = result.rows.filter((r) => !r.dispatchTable);
+  const baseline = tallyChainOutput(chainRows.map((r) => r.baseline));
+  const variant = tallyChainOutput(chainRows.map((r) => r.variant));
+  const { tally, changed } = diffRows(chainRows);
 
   const out: string[] = [
     `CORPUS ${opts.corpus} · lang ${opts.lang}`,
     `  ${result.files} scored files (+${result.symbolTableOnlyFiles} symbol-table only), ${result.symbols} symbols,` +
       ` ${result.rows.length} call sites` +
-      ` (parse failures ${result.parseFailures}, dispatch skipped ${result.dispatchSkipped})`,
+      ` (parse failures ${result.parseFailures}, dispatch-table sites ${result.dispatchTableSites}` +
+      ` — counted, not chain-scored)`,
     `  excluded as production excludes them: ${result.ingestIgnored} by .gitignore and friends · ` +
       `${result.codegraphExcluded} generated/test/non-app`,
     `  chain drift vs production resolver: ${result.chainDrift}${result.chainDrift === 0 ? "" : "  ← REBUILD IS STALE, numbers void"}`,

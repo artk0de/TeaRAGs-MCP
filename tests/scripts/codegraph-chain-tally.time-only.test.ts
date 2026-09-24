@@ -163,6 +163,63 @@ describe("formatKindStatsBlock — empty denominator", () => {
 });
 
 /**
+ * What production books for `lang` over `corpus`: its method edges and its
+ * per-kind counters. The provider's pass-1 seam and pass-2 runner — the
+ * extraction sink's `absorbPass1FileState` per walked file, `seal` at the
+ * barrier, `CallEdgeResolutionRunner#resolve` per file of `lang`.
+ */
+async function productionRun(
+  corpus: string,
+  lang: string,
+): Promise<{
+  answers: string[];
+  /** Every method edge WITH its source, so a callee-sourced join edge is told apart. */
+  sourcedAnswers: string[];
+  kinds: Record<ReceiverKind, ReceiverKindTally>;
+}> {
+  const factory = new LanguageFactory({ repoRoot: corpus });
+  const composer = new DefaultSymbolIdComposer();
+  const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
+  state.bindProjectRoot(corpus);
+  state.loadGemfile(corpus);
+  state.loadDeclaredDependencies(corpus);
+  state.loadSchemaSnapshots(corpus);
+  const table = new InMemoryGlobalSymbolTable();
+  const selection = await collectSourceFiles(
+    corpus,
+    corpus,
+    await buildCorpusExclusionFilter(corpus, factory),
+    Object.keys(CODEGRAPH_LANGUAGES),
+  );
+  const extractions: FileExtraction[] = [];
+  for (const relPath of selection.kept) {
+    const extraction = extractFile(corpus, relPath, composer, factory, state.declaredDependencies);
+    if (extraction === null) continue;
+    absorbPass1FileState(state, table, extraction, buildSymbolDefs(extraction), "own");
+    extractions.push(extraction);
+  }
+  await state.seal(async () => table);
+  const runner = new CallEdgeResolutionRunner(factory, state);
+  runner.prepareResolvePass();
+  const answers: string[] = [];
+  const sourcedAnswers: string[] = [];
+  for (const extraction of extractions) {
+    if (extraction.language !== lang) continue;
+    for (const edge of runner.resolve(extraction, table).methodEdges) {
+      answers.push(`${extraction.relPath} ${edge.callExpression} -> ${edge.targetRelPath}#${edge.targetSymbolId}`);
+      sourcedAnswers.push(
+        `${extraction.relPath} ${edge.callExpression} ${edge.sourceSymbolId} -> ${edge.targetRelPath}#${edge.targetSymbolId}`,
+      );
+    }
+  }
+  return {
+    answers: answers.sort(),
+    sourcedAnswers: sourcedAnswers.sort(),
+    kinds: languageKindTally(state.stats, lang),
+  };
+}
+
+/**
  * bd tea-rags-mcp-pkfi7 — the harness must resolve a polyglot corpus exactly as
  * the production runner does. Production partitions the run-global class-name
  * maps, the return-type maps and the CHA hierarchy by language FAMILY (bd
@@ -262,45 +319,6 @@ describe("codegraph-chain-tally polyglot parity with the production runner (pkfi
     rmSync(corpus, { recursive: true, force: true });
   });
 
-  /** What production books for `lang`: its method edges and its per-kind counters. */
-  async function productionRun(lang: string): Promise<{
-    answers: string[];
-    kinds: Record<ReceiverKind, ReceiverKindTally>;
-  }> {
-    const factory = new LanguageFactory({ repoRoot: corpus });
-    const composer = new DefaultSymbolIdComposer();
-    const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
-    state.bindProjectRoot(corpus);
-    state.loadGemfile(corpus);
-    state.loadDeclaredDependencies(corpus);
-    state.loadSchemaSnapshots(corpus);
-    const table = new InMemoryGlobalSymbolTable();
-    const selection = await collectSourceFiles(
-      corpus,
-      corpus,
-      await buildCorpusExclusionFilter(corpus, factory),
-      Object.keys(CODEGRAPH_LANGUAGES),
-    );
-    const extractions: FileExtraction[] = [];
-    for (const relPath of selection.kept) {
-      const extraction = extractFile(corpus, relPath, composer, factory, state.declaredDependencies);
-      if (extraction === null) continue;
-      absorbPass1FileState(state, table, extraction, buildSymbolDefs(extraction), "own");
-      extractions.push(extraction);
-    }
-    await state.seal(async () => table);
-    const runner = new CallEdgeResolutionRunner(factory, state);
-    runner.prepareResolvePass();
-    const answers: string[] = [];
-    for (const extraction of extractions) {
-      if (extraction.language !== lang) continue;
-      for (const edge of runner.resolve(extraction, table).methodEdges) {
-        answers.push(`${extraction.relPath} ${edge.callExpression} -> ${edge.targetRelPath}#${edge.targetSymbolId}`);
-      }
-    }
-    return { answers: answers.sort(), kinds: languageKindTally(state.stats, lang) };
-  }
-
   it.each(["ruby", "go", "typescript"])(
     "books the same %s edges and receiver-kind counters as the production runner",
     async (lang) => {
@@ -308,7 +326,7 @@ describe("codegraph-chain-tally polyglot parity with the production runner (pkfi
         timeOnly: true,
         kindStats: true,
       });
-      const reference = await productionRun(lang);
+      const reference = await productionRun(corpus, lang);
 
       expect(harness.fanSites).toBe(0);
       const answers = harness.rows
@@ -323,4 +341,131 @@ describe("codegraph-chain-tally polyglot parity with the production runner (pkfi
     },
     60_000,
   );
+});
+
+/**
+ * bd tea-rags-mcp-c6xuu — the three counting paths pkfi7 left the harness
+ * short of. Production resolves a dispatch-table site (`CallRef.dispatch`,
+ * which the Python dict-table walker emits, bd pbwd) through `resolveDispatch`
+ * and counts it in `attempted`; it replays the additive `dispatchArgs` join
+ * (the callee edge PLUS the callee-sourced fan); and it counts a constant
+ * receiver that lands on a shared self-dispatch entry as `unnarrowedTemplate`.
+ * The harness must book all three exactly as the runner does.
+ */
+describe("codegraph-chain-tally dispatch-table parity with the production runner (c6xuu)", () => {
+  let corpus: string;
+
+  function write(relPath: string, content: string): void {
+    const absolute = join(corpus, relPath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content, "utf8");
+  }
+
+  beforeAll(() => {
+    corpus = mkdtempSync(join(tmpdir(), "chain-tally-dispatch-"));
+    write(
+      "app/handlers.py",
+      [
+        "def on_a(x):",
+        "    return x",
+        "",
+        "",
+        "def on_b(x):",
+        "    return x",
+        "",
+        "",
+        'HANDLERS = {"a": on_a, "b": on_b}',
+        "",
+        "",
+        "def route(kind, x):",
+        "    return HANDLERS[kind](x)",
+        "",
+        "",
+        "def route_a(x):",
+        '    return HANDLERS["a"](x)',
+        "",
+        "",
+        "def apply(cb, x):",
+        "    return cb(x)",
+        "",
+        "",
+        "def run(kind, x):",
+        "    return apply(HANDLERS[kind], x)",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "app/service.rb",
+      [
+        "class Service",
+        "  def self.call(*args)",
+        "    new(*args).call",
+        "  end",
+        "",
+        "  def call",
+        "    nil",
+        "  end",
+        "end",
+        "",
+        "class Report < Service",
+        "  def call",
+        "    1",
+        "  end",
+        "end",
+        "",
+        "class Caller",
+        "  def go",
+        "    Service.call",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  afterAll(() => {
+    rmSync(corpus, { recursive: true, force: true });
+  });
+
+  it.each(["python", "ruby"])(
+    "books the same %s edges and receiver-kind counters as the production runner",
+    async (lang) => {
+      const harness = await run(corpus, lang, null, Number.MAX_SAFE_INTEGER, true, true, {
+        timeOnly: true,
+        kindStats: true,
+      });
+      const reference = await productionRun(corpus, lang);
+
+      const answers = harness.rows
+        .flatMap((row) =>
+          row.runnerEdges.map(
+            (edge) =>
+              `${row.relPath} ${edge.callExpression} ${edge.sourceSymbolId} -> ${edge.targetRelPath}#${edge.targetSymbolId}`,
+          ),
+        )
+        .sort();
+      expect(answers).toEqual(reference.sourcedAnswers);
+      expect(harness.kindStats).toEqual(reference.kinds);
+    },
+    60_000,
+  );
+
+  it("exercises every path the fixture exists for", async () => {
+    const python = await run(corpus, "python", null, Number.MAX_SAFE_INTEGER, true, true, {
+      timeOnly: true,
+      kindStats: true,
+    });
+    // Dispatch-table sites are resolved and counted, never skipped.
+    expect(python.dispatchTableSites).toBeGreaterThan(0);
+    const tableRows = python.rows.filter((row) => row.dispatchTable);
+    expect(tableRows).toHaveLength(python.dispatchTableSites);
+    expect(tableRows.every((row) => row.runnerEdges.length > 0)).toBe(true);
+    // The additive join: `apply(HANDLERS[kind], x)` books the callee edge AND the
+    // callee-sourced fan over the table.
+    const join = python.rows.find((row) => row.callText.startsWith("apply("));
+    expect(join?.runnerEdges.length).toBeGreaterThan(1);
+
+    const ruby = await productionRun(corpus, "ruby");
+    expect(ruby.kinds.constant.unnarrowedTemplate).toBeGreaterThan(0);
+  }, 60_000);
 });
