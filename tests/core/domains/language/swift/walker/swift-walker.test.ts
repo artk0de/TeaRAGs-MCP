@@ -1129,7 +1129,12 @@ describe("swift walker — typeDeclarations", () => {
     ].join("\n");
     expect(extractMaterialized(src).typeDeclarations).toEqual([
       { typeId: "Outer.Inner", reopens: true },
-      { typeId: "Array", reopens: true },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): a re-opening now publishes its `where` clause.
+      {
+        typeId: "Array",
+        reopens: true,
+        whereClause: { startLine: 2, endLine: 2, sameType: { Element: "Header" } },
+      },
       // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
       { typeId: "Box", reopens: false, conforms: ["Base"], genericParameters: ["T"] },
     ]);
@@ -1908,6 +1913,78 @@ describe("swift walker — a generic-argument extension's spelled id (bd tea-rag
     expect(extract(src).typeDeclarations).toEqual([
       { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
     ]);
+  });
+});
+
+describe("swift walker — `self` in an extension of an array type iterates its element (bd tea-rags-mcp-y99pg)", () => {
+  const cases = [
+    ["an array-spelled extension", "extension [Evaluator] {"],
+    ["an `Array where Element ==` extension", "extension Array where Element == Evaluator {"],
+  ] as const;
+  for (const [label, header] of cases) {
+    it(`types \`for x in self\` by the element in ${label}`, () => {
+      const src = [header, "  func run() {", "    for e in self {", "      e.evaluate()", "    }", "  }", "}", ""].join(
+        "\n",
+      );
+      expect(typeAt(src, "e", 4)).toBe("Evaluator");
+      expect(resolveLocalBindingType(extractMaterialized(src).chunks[0].localBindings, "e", 4)).toBe("Evaluator");
+    });
+  }
+
+  it("types nothing for `self` in an extension of a non-array type", () => {
+    const src = [
+      "extension Box where Element == Evaluator {",
+      "  func run() {",
+      "    for e in self { e.go() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "e", 3)).toBeUndefined();
+  });
+});
+
+describe("swift walker — generic-typed fields and extension `where` clauses (bd tea-rags-mcp-y99pg.34)", () => {
+  const src = [
+    "final class Protected<Value> {",
+    "  private var value: Value",
+    "  var backup: Value?",
+    "  let count: Int",
+    "}",
+    "extension Protected where Value == Request.MutableState {",
+    "  func go() { value.state.run() }",
+    "}",
+    "extension Box where Item: Bundle, Other == [Cert] {",
+    "}",
+    "extension Plain {}",
+    "",
+  ].join("\n");
+  const expected = [
+    {
+      typeId: "Protected",
+      reopens: false,
+      genericParameters: ["Value"],
+      genericFieldParameters: { value: "Value", backup: "Value" },
+    },
+    {
+      typeId: "Protected",
+      reopens: true,
+      whereClause: { startLine: 6, endLine: 8, sameType: { Value: "Request.MutableState" } },
+    },
+    {
+      typeId: "Box",
+      reopens: true,
+      whereClause: { startLine: 9, endLine: 10, sameType: { Other: "[Cert]" }, bounds: { Item: "Bundle" } },
+    },
+    { typeId: "Plain", reopens: true },
+  ];
+
+  it("publishes which fields a generic parameter types, and each re-opening's where clause", () => {
+    expect(extract(src).typeDeclarations).toEqual(expected);
+  });
+
+  it("publishes the same facts off the MATERIALIZED tree", () => {
+    expect(extractMaterialized(src).typeDeclarations).toEqual(expected);
   });
 });
 

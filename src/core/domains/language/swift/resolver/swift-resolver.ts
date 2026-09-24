@@ -150,6 +150,15 @@ import { isSwiftTypeDeclarationId, isSwiftTypeName, stripSwiftOverloadSuffix } f
  */
 const SWIFT_DYNAMIC_LOOKUP_TYPES: ReadonlySet<string> = new Set(["AnyObject", "AnyClass"]);
 
+/**
+ * The nominal a call's receiver denotes, and whether the value is known only by
+ * that nominal as a CLASS bound — it may then be any subclass of it.
+ */
+interface SwiftReceiverTypeName {
+  readonly name: string;
+  readonly classBound: boolean;
+}
+
 /** Whether a definition is the type id of a type the run proves the project only re-opens. */
 function isReopenedOnlyTypeId(symbolId: string, ctx: CallContext): boolean {
   return isSwiftTypeDeclarationId(symbolId) && isSwiftReopenedOnlyType(stripSwiftOverloadSuffix(symbolId), ctx);
@@ -277,8 +286,9 @@ export class SwiftCallResolver implements CallResolver {
    */
   private receiverMayReach(call: CallRef, ctx: CallContext, defs: readonly SymbolDefinition[]): boolean {
     if (ctx.typeDeclarations === undefined) return true;
-    const typeName = this.receiverTypeName(call, ctx);
-    if (typeName === undefined) return true;
+    const receiver = this.receiverType(call, ctx);
+    if (receiver === undefined) return true;
+    const typeName = receiver.name;
     const reach = this.memberTypes.memberReach(typeName, call.member, ctx);
     // Declared on the hierarchy — unless no project overload takes the call's
     // labels and the SDK declares the member there too (bd tea-rags-mcp-y99pg.25).
@@ -291,6 +301,9 @@ export class SwiftCallResolver implements CallResolver {
       if (def.scope.length === 0) continue;
       const owner = def.scope.join(".");
       if (reach.types.has(owner)) return true;
+      // A value known by a class bound may be any subclass of it, and a
+      // subclass must name its superclass: a def on one is reachable.
+      if (receiver.classBound && this.memberTypes.lookupOrder(owner, ctx).includes(typeName)) return true;
       const declaring = swiftDeclaringFiles(owner, ctx);
       // The run says nothing about the owner: nothing is proven.
       if (declaring === undefined) return true;
@@ -321,25 +334,33 @@ export class SwiftCallResolver implements CallResolver {
    * generated SDK substrate declares the name (bd tea-rags-mcp-y99pg.24). A receiver typed `AnyObject` / `AnyClass`
    * types nothing: see {@link SWIFT_DYNAMIC_LOOKUP_TYPES}.
    */
-  private receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {
+  private receiverType(call: CallRef, ctx: CallContext): SwiftReceiverTypeName | undefined {
     const { receiver } = call;
     if (receiver === null) return undefined;
     if (receiver === "super") {
       // `super` names the superclass the enclosing type's clause states first.
       const enclosing = swiftSelfTypeName(ctx);
-      return enclosing === undefined ? undefined : identifierEntry(ctx.classExtends, enclosing);
+      const superclass = enclosing === undefined ? undefined : identifierEntry(ctx.classExtends, enclosing);
+      return superclass === undefined ? undefined : { name: superclass, classBound: false };
     }
     const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
     if (type !== undefined) {
       if (type.form !== "class" && type.form !== "instance") return undefined;
-      // A type known only as a bound proves nothing about what the value cannot reach (bd tea-rags-mcp-y99pg.25).
-      if (type.upperBound === true) return undefined;
-      return SWIFT_DYNAMIC_LOOKUP_TYPES.has(type.name) ? undefined : type.name;
+      if (SWIFT_DYNAMIC_LOOKUP_TYPES.has(type.name)) return undefined;
+      if (type.upperBound !== true) return { name: type.name, classBound: false };
+      // A type known only as a bound proves nothing about what the value
+      // cannot reach (bd tea-rags-mcp-y99pg.25) — unless the bound is an SDK
+      // CLASS: every subtype of a class names it in its own clause, so the
+      // project's candidates are on record (bd tea-rags-mcp-y99pg.34). A
+      // protocol's are not: an enum conforms to `Hashable` without saying so.
+      return this.sdk.type(type.name)?.kind === "class" ? { name: type.name, classBound: true } : undefined;
     }
     // An SDK type spelled as the receiver: only a type the SDK substrate
     // declares, which the project neither declares nor binds as a local.
     if (!isSwiftTypeName(receiver) || !this.sdk.hasType(receiver)) return undefined;
     if ((swiftDeclaringFiles(receiver, ctx)?.size ?? 0) > 0) return undefined;
-    return resolveLocalBinding(ctx.localBindings, receiver, call.startLine) === undefined ? receiver : undefined;
+    return resolveLocalBinding(ctx.localBindings, receiver, call.startLine) === undefined
+      ? { name: receiver, classBound: false }
+      : undefined;
   }
 }

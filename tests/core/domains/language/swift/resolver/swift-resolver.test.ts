@@ -489,9 +489,11 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
 
   it("refuses a chain longer than the hop cap rather than half-walking it", () => {
     // Every link below is typed, so only the cap can decline this receiver.
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): the cap moved from three
+    // links to five, so the refused chain carries six (was `self.a.b.c.d`).
     const t = table({ "Sources/E.swift": [{ symbolId: "E#go", scope: ["E"] }] });
     const target = new SwiftCallResolver().resolve(
-      call("self.a.b.c.d", "go"),
+      call("self.a.b.c.d.e.f", "go"),
       ctx({
         callerFile: "Sources/Store.swift",
         callerScope: ["Store"],
@@ -500,7 +502,9 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
           Store: { a: "A" },
           A: { b: "B" },
           B: { c: "C" },
-          C: { d: "E" },
+          C: { d: "D" },
+          D: { e: "F" },
+          F: { f: "E" },
         },
       }),
     );
@@ -3031,6 +3035,13 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
   });
 
+  it("types a FIVE-link chain of SDK links (bd tea-rags-mcp-y99pg.34)", () => {
+    // Alamofire's default User-Agent: `…first?.split(separator: "/").last.map(String.init)` —
+    // `split` returns `[Substring]`, `last` a `Substring`; `map` is the SDK's, never `Request#map`.
+    const site = call('ProcessInfo.processInfo.arguments.first.split(separator: "/").last', "map", 6);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
+  });
+
   it("types an implicit-self property and call head the SDK declares on the enclosing type", () => {
     const resolver = new SwiftCallResolver();
     const inRequest = context({ callerScope: ["URLRequest", "headers"] });
@@ -3492,5 +3503,146 @@ describe("SwiftCallResolver — a closure parameter declared with generic argume
   it("types nothing through a closure parameter published without its arguments", () => {
     const target = new SwiftCallResolver().resolve(call("adaptedRequest", "validate", 12), context("Result"));
     expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a constrained extension binds the extended type's generic parameters (bd tea-rags-mcp-y99pg.34)", () => {
+  const t = table({
+    "Sources/Protected.swift": [
+      { symbolId: "Protected", scope: [] },
+      { symbolId: "Protected#attemptToTransitionTo", scope: ["Protected"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request.MutableState", scope: ["Request"] },
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+    "Sources/Other.swift": [
+      { symbolId: "Other", scope: [] },
+      { symbolId: "Other#canTransitionTo", scope: ["Other"] },
+    ],
+    "Sources/AlamofireExtended.swift": [{ symbolId: "AlamofireExtension", scope: [] }],
+    "Sources/Response.swift": [
+      { symbolId: "DataResponse", scope: [] },
+      { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Protected.swift": [
+      { typeId: "Protected", reopens: false, genericParameters: ["Value"], genericFieldParameters: { value: "Value" } },
+      {
+        typeId: "Protected",
+        reopens: true,
+        whereClause: { startLine: 9, endLine: 15, sameType: { Value: "Request.MutableState" } },
+      },
+    ],
+    "Sources/Request.swift": [
+      { typeId: "Request", reopens: false },
+      { typeId: "Request.MutableState", reopens: false },
+      { typeId: "Request.State", reopens: false },
+    ],
+    "Sources/Other.swift": [{ typeId: "Other", reopens: false }],
+    "Sources/Response.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/AlamofireExtended.swift": [
+      {
+        typeId: "AlamofireExtension",
+        reopens: false,
+        genericParameters: ["ExtendedType"],
+        genericFieldParameters: { type: "ExtendedType" },
+      },
+    ],
+    "Sources/Certificates.swift": [
+      {
+        typeId: "AlamofireExtension",
+        reopens: true,
+        whereClause: { startLine: 1, endLine: 5, sameType: { ExtendedType: "[SecCertificate]" } },
+      },
+    ],
+  };
+  const protectedContext = ctx({
+    callerFile: "Sources/Protected.swift",
+    callerScope: ["Protected"],
+    symbolTable: t,
+    typeDeclarations,
+    classFieldTypes: { MutableState: { state: "State" } },
+  });
+
+  it("types a generic-typed stored property by the clause's same-type binding", () => {
+    // `value.state.canTransitionTo(state)` inside `extension Protected where Value == Request.MutableState`.
+    const target = new SwiftCallResolver().resolve(call("value.state", "canTransitionTo", 11), protectedContext);
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("binds nothing outside the lines the clause scopes", () => {
+    expect(new SwiftCallResolver().resolve(call("value.state", "canTransitionTo", 30), protectedContext)).toBeNull();
+  });
+
+  it("proves an SDK member on a same-type-bound SDK value is not in the project", () => {
+    // `type.map { … }` inside `extension AlamofireExtension where ExtendedType == [SecCertificate]`.
+    const context = ctx({
+      callerFile: "Sources/Certificates.swift",
+      callerScope: ["AlamofireExtension"],
+      symbolTable: t,
+      typeDeclarations,
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("type", "map", 3), context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("type", "map", 20), context)).toBe(true);
+  });
+
+  describe("a value known only by a CLASS bound", () => {
+    // `type.paths(forResourcesOfType:inDirectory:)` inside `extension
+    // AlamofireExtension where ExtendedType: Bundle`, beside the project's own
+    // `AlamofireExtension.paths(forResourcesOfTypes:)`.
+    const bounded = (bound: string, extra: Record<string, { symbolId: string; scope: string[] }[]> = {}) => {
+      const symbolTable = table({
+        "Sources/AlamofireExtended.swift": [
+          { symbolId: "AlamofireExtension", scope: [] },
+          { symbolId: "AlamofireExtension#paths", scope: ["AlamofireExtension"] },
+        ],
+        ...extra,
+      });
+      const declarations: Record<string, { typeId: string; reopens: boolean; conforms?: string[] }[]> = {};
+      for (const [relPath, defs] of Object.entries(extra)) {
+        declarations[relPath] = defs
+          .filter((d) => d.scope.length === 0)
+          .map((d) => ({ typeId: d.symbolId, reopens: false, conforms: [bound] }));
+      }
+      return ctx({
+        callerFile: "Sources/Bundle.swift",
+        callerScope: ["AlamofireExtension"],
+        symbolTable,
+        typeDeclarations: {
+          ...declarations,
+          "Sources/AlamofireExtended.swift": typeDeclarations["Sources/AlamofireExtended.swift"],
+          "Sources/Bundle.swift": [
+            {
+              typeId: "AlamofireExtension",
+              reopens: true,
+              whereClause: { startLine: 1, endLine: 9, bounds: { ExtendedType: bound } },
+            },
+          ],
+        },
+      });
+    };
+
+    it("proves external a member only a project type outside the bound's hierarchy declares", () => {
+      expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), bounded("Bundle"))).toBe(false);
+    });
+
+    it("keeps the denominator when a project subclass of the bound declares the member", () => {
+      const withSubclass = bounded("Bundle", {
+        "Sources/AppBundle.swift": [
+          { symbolId: "AppBundle", scope: [] },
+          { symbolId: "AppBundle#paths", scope: ["AppBundle"] },
+        ],
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), withSubclass)).toBe(true);
+    });
+
+    it("keeps the denominator under a PROTOCOL bound, whose conformers need not say so", () => {
+      expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), bounded("Hashable"))).toBe(true);
+    });
   });
 });

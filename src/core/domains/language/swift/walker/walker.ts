@@ -141,6 +141,7 @@ import type {
   KwargSignature,
   LocalBinding,
   SwiftFieldConstruction,
+  SwiftWhereClauseFact,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
@@ -242,8 +243,14 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     }
     const conforms = swiftInheritedTypeNames(node);
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
-    const { fieldTypeArguments, fieldConstructions, memberClosureParameters, genericInitializers } =
-      swiftGenericMemberFacts(node, genericParameters);
+    const {
+      fieldTypeArguments,
+      fieldConstructions,
+      memberClosureParameters,
+      genericInitializers,
+      genericFieldParameters,
+    } = swiftGenericMemberFacts(node, genericParameters);
+    const whereClause = kind === "extension" ? swiftWhereClauseFact(node) : undefined;
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     const functionAliasReturns = swiftFunctionAliasReturns(node);
     // `extension Collection<String>` composes its members under the name as
@@ -262,9 +269,52 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(enumCasePayloads ? { enumCasePayloads } : {}),
       ...(spelledAs === undefined ? {} : { spelledAs }),
       ...(functionAliasReturns ? { functionAliasReturns } : {}),
+      ...(genericFieldParameters ? { genericFieldParameters } : {}),
+      ...(whereClause ? { whereClause } : {}),
     });
   });
   return out;
+}
+
+/**
+ * A re-opening's `where` clause with the lines it scopes (bd
+ * tea-rags-mcp-y99pg.34): each same-type requirement's type as written, each
+ * conformance or superclass requirement's nominal. Read positionally — the
+ * constrained name first, the type last — for the materialization hazard
+ * {@link swiftTypeNodeAfter} documents. Undefined when the clause states
+ * neither.
+ */
+function swiftWhereClauseFact(node: AstNode): SwiftWhereClauseFact | undefined {
+  const sameType = createIdentifierRecord<string>();
+  const bounds = createIdentifierRecord<string>();
+  let anySameType = false;
+  let anyBound = false;
+  for (const clause of node.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      for (const requirement of constraint.namedChildren) {
+        const name = requirement.namedChildren[0]?.text.trim();
+        const type = requirement.namedChildren[requirement.namedChildCount - 1];
+        if (!name || !type || requirement.namedChildCount < 2 || Object.hasOwn(sameType, name)) continue;
+        if (requirement.type === "equality_constraint") {
+          sameType[name] = type.text.trim();
+          anySameType = true;
+        } else if (requirement.type === "inheritance_constraint" && !Object.hasOwn(bounds, name)) {
+          const { nominal } = swiftTypeFactOf(type);
+          if (nominal === null) continue;
+          bounds[name] = nominal;
+          anyBound = true;
+        }
+      }
+    }
+  }
+  if (!anySameType && !anyBound) return undefined;
+  return {
+    startLine: node.startPosition.row + 1,
+    endLine: node.endPosition.row + 1,
+    ...(anySameType ? { sameType } : {}),
+    ...(anyBound ? { bounds } : {}),
+  };
 }
 
 /**
@@ -347,10 +397,13 @@ function swiftGenericMemberFacts(
   fieldConstructions?: Record<string, SwiftFieldConstruction>;
   memberClosureParameters?: Record<string, (string | null)[] | null>;
   genericInitializers?: GenericInitializerFact[];
+  genericFieldParameters?: Record<string, string>;
 } {
   const body = node.childForFieldName("body");
   if (!body) return {};
   const fields = createIdentifierRecord<(string | null)[]>();
+  const genericFields = createIdentifierRecord<string>();
+  let anyGenericField = false;
   const constructions = createIdentifierRecord<SwiftFieldConstruction>();
   const closures = createIdentifierRecord<(string | null)[] | null>();
   const initializers: GenericInitializerFact[] = [];
@@ -369,6 +422,13 @@ function swiftGenericMemberFacts(
         : value?.type === "constructor_expression"
           ? (value.namedChildren.find((c) => c.type === "user_type") ?? null)
           : null;
+      // `var value: Value` / `Value?` — typed by whatever a receiver binds the parameter to (bd tea-rags-mcp-y99pg.34).
+      const unwrapped = typeNode?.type === "optional_type" ? (typeNode.namedChildren[0] ?? null) : typeNode;
+      if (unwrapped?.type === "user_type" && genericParameters.includes(unwrapped.text.trim())) {
+        genericFields[name] = unwrapped.text.trim();
+        anyGenericField = true;
+        continue;
+      }
       const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
       if (args) {
         fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
@@ -400,6 +460,7 @@ function swiftGenericMemberFacts(
     ...(anyConstruction ? { fieldConstructions: constructions } : {}),
     ...(anyClosure ? { memberClosureParameters: closures } : {}),
     ...(initializers.length > 0 ? { genericInitializers: initializers } : {}),
+    ...(anyGenericField ? { genericFieldParameters: genericFields } : {}),
   };
 }
 
@@ -2194,7 +2255,7 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
     case "postfix_expression":
       return swiftExpressionFact(node.namedChildren[0] ?? null, scope, depth + 1);
     case "self_expression":
-      return { nominal: scope.site.enclosingType, element: null };
+      return { nominal: scope.site.enclosingType, element: enclosingSwiftSelfElement(node) };
     case "simple_identifier":
       return node.text === "Self"
         ? { nominal: scope.site.enclosingType, element: null }
@@ -2442,6 +2503,33 @@ function enclosingSwiftClosureEndLine(node: AstNode): number | undefined {
     if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return undefined;
   }
   return undefined;
+}
+
+/**
+ * The element `self` iterates as inside an extension of an ARRAY type:
+ * `extension [ServerTrustEvaluating]` or `extension Array where Element ==
+ * ServerTrustEvaluating` — so `for evaluator in self` types `evaluator` (bd
+ * tea-rags-mcp-y99pg). Any other enclosing type answers null. The `where`
+ * clause is read positionally: the constrained name first, the type last.
+ */
+function enclosingSwiftSelfElement(node: AstNode): string | null {
+  let declaration: AstNode | null = node.parent;
+  while (declaration && declaration.type !== "class_declaration" && declaration.type !== "protocol_declaration") {
+    declaration = declaration.parent;
+  }
+  if (declaration?.type !== "class_declaration" || swiftTypeDeclarationKind(declaration) !== "extension") return null;
+  const name = declaration.childForFieldName("name");
+  if (name?.type === "array_type") return swiftTypeFactOf(name).element;
+  if (name?.type !== "user_type" || name.text.trim() !== "Array") return null;
+  for (const clause of declaration.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      const equality = constraint.namedChildren.find((c) => c.type === "equality_constraint");
+      if (equality?.namedChildren[0]?.text !== "Element") continue;
+      return swiftTypeFactOf(equality.namedChildren[equality.namedChildCount - 1]).nominal;
+    }
+  }
+  return null;
 }
 
 /** Short name of the nearest enclosing nominal type, as `classFieldTypes` keys it. */

@@ -435,6 +435,31 @@ export interface TypeDeclarationFact {
    * yields (bd tea-rags-mcp-y99pg.22). Absent when none.
    */
   readonly functionAliasReturns?: Readonly<Record<string, string>>;
+  /**
+   * Stored properties whose declared type IS one of {@link genericParameters},
+   * by property name: `var value: Value` inside `Protected<Value>` →
+   * `{ value: "Value" }` — what a receiver's generic arguments substitute (bd
+   * tea-rags-mcp-y99pg.34). Absent when none is.
+   */
+  readonly genericFieldParameters?: Readonly<Record<string, string>>;
+  /**
+   * A re-opening's `where` clause and the lines it scopes (bd
+   * tea-rags-mcp-y99pg.34): inside `extension Protected where Value ==
+   * Request.MutableState`, `self` is a `Protected<Request.MutableState>`.
+   * Absent on a declaration without one.
+   */
+  readonly whereClause?: SwiftWhereClauseFact;
+}
+
+/** A constrained re-opening's `where` clause (`TypeDeclarationFact.whereClause`). */
+export interface SwiftWhereClauseFact {
+  /** 1-based first and last line of the re-opening the clause scopes. */
+  readonly startLine: number;
+  readonly endLine: number;
+  /** Same-type requirements, type text as written: `Value == Request.MutableState` → `{ Value: "Request.MutableState" }`. */
+  readonly sameType?: Readonly<Record<string, string>>;
+  /** Conformance / superclass requirements, the nominal named: `ExtendedType: Bundle` → `{ ExtendedType: "Bundle" }`. */
+  readonly bounds?: Readonly<Record<string, string>>;
 }
 
 /** A stored property's initializing construction (`TypeDeclarationFact.fieldConstructions`). */

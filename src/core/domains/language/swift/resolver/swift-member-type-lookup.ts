@@ -58,7 +58,7 @@ import {
   type AncestorLinearizer,
 } from "../../kernel/index.js";
 import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
-import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
+import { parseSwiftTypeText, swiftSpelledNominal, type SwiftTypeExpr } from "../vocabulary/swift-type-text.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
 import { SwiftModuleValueIndex } from "./swift-module-values.js";
 import { SwiftSdkMemberTypes, type SwiftNominalTypeRef } from "./swift-sdk-member-types.js";
@@ -71,8 +71,10 @@ import {
 } from "./swift-symbol-lookup.js";
 import {
   swiftFieldTypeArguments,
+  swiftGenericFieldParameter,
   swiftGenericParameters,
   swiftMemberClosureParameters,
+  swiftWhereClauseAt,
 } from "./swift-type-declarations.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
 
@@ -212,6 +214,79 @@ export class SwiftMemberTypeLookup {
         : null;
     });
     return scan.target?.target ?? null;
+  }
+
+  /**
+   * `self` inside `typeName` at `atLine` of the caller's file, with the
+   * generic arguments a constrained extension there binds (bd
+   * tea-rags-mcp-y99pg.34): inside `extension Protected where Value ==
+   * Request.MutableState`, `self` is a `Protected<Request.MutableState>`. A
+   * conformance or superclass requirement binds its parameter as a bound
+   * (`ExtendedType: Bundle`). Arguments attach only when the clause binds every
+   * parameter, the shape a generic argument list always has.
+   */
+  selfType(typeName: string, atLine: number, ctx: CallContext): SwiftNominalTypeRef {
+    const self: SwiftNominalTypeRef = { form: "instance", name: typeName };
+    const typeId = qualifySwiftTypeName(typeName, ctx);
+    const clause = swiftWhereClauseAt(typeId, ctx.callerFile, atLine, ctx);
+    const parameters = swiftGenericParameters(typeId, ctx);
+    if (clause === undefined || parameters.length === 0) return self;
+    const args: TypeRef[] = [];
+    for (const parameter of parameters) {
+      const sameType = clause.sameType?.[parameter];
+      const bound = clause.bounds?.[parameter];
+      const arg: TypeRef | undefined =
+        sameType !== undefined
+          ? this.typeOfSpelling(parseSwiftTypeText(sameType), ctx)
+          : bound !== undefined
+            ? { form: "instance", name: qualifySwiftTypeName(bound, ctx), upperBound: true }
+            : undefined;
+      if (arg === undefined) return self;
+      args.push(arg);
+    }
+    return { ...self, args };
+  }
+
+  /**
+   * The type of the stored property `member` on `receiver` when its
+   * declaration types it as one of the receiver type's generic parameters —
+   * that parameter's argument on the receiver, or undefined (bd
+   * tea-rags-mcp-y99pg.34).
+   */
+  genericFieldType(receiver: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+    if ((receiver.form !== "instance" && receiver.form !== "class") || receiver.args === undefined) return undefined;
+    const typeId = qualifySwiftTypeName(receiver.name, ctx);
+    const parameter = swiftGenericFieldParameter(typeId, member, ctx);
+    if (parameter === undefined) return undefined;
+    const slot = swiftGenericParameters(typeId, ctx).indexOf(parameter);
+    return slot === -1 ? undefined : receiver.args[slot];
+  }
+
+  /** A type spelling written at file scope, as a value type: optionals collapse, `[T]` is `Array<T>`. */
+  private typeOfSpelling(expr: SwiftTypeExpr | undefined, ctx: CallContext): TypeRef | undefined {
+    if (expr === undefined) return undefined;
+    switch (expr.kind) {
+      case "optional":
+        return this.typeOfSpelling(expr.wrapped, ctx);
+      case "array": {
+        const element = this.typeOfSpelling(expr.element, ctx);
+        return element === undefined
+          ? { form: "instance", name: "Array" }
+          : { form: "instance", name: "Array", args: [element] };
+      }
+      case "nominal": {
+        const args = expr.args.map((arg) => this.typeOfSpelling(arg, ctx));
+        const name = qualifySwiftTypeName(expr.path, ctx);
+        return args.length === 0 || args.some((arg) => arg === undefined)
+          ? { form: "instance", name }
+          : { form: "instance", name, args: args as TypeRef[] };
+      }
+      case "dictionary":
+      case "function":
+      case "tuple":
+      case "metatype":
+        return undefined;
+    }
   }
 
   /**

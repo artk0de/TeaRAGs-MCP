@@ -359,6 +359,18 @@ describe("seeded support versions", () => {
       // swift walker 47: y99pg.29 merged with y99pg.30 / .31 — a bare call an
       // enclosing type's SDK supertype declares leaves the denominator, and no
       // earlier walker's index holds both branches' extraction whole.
+      // swift walker 48: bd tea-rags-mcp-y99pg.34 — `self` in an array-type
+      // extension iterates as its element, so an index built by walker 47 holds
+      // no binding for `for x in self` there.
+      // swift walker 49: bd tea-rags-mcp-y99pg.34 — `genericFieldParameters` and
+      // `whereClause` are new channel content, so an index built by walker 48
+      // cannot type a generic-typed property inside a constrained extension.
+      // swift walker 50: bd tea-rags-mcp-y99pg.34 — a receiver known by an SDK
+      // class bound leaves the denominator for a member no subclass declares, so
+      // an index built by walker 49 still charges those sites as misses.
+      // swift walker 51: bd tea-rags-mcp-y99pg.34 — the chain fold's hop cap
+      // moves from three links to five, so an index built by walker 50 leaves a
+      // four- or five-link receiver untyped.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
@@ -368,7 +380,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 50],
+        ["swift", 54],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
