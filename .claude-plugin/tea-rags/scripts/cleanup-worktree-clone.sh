@@ -31,6 +31,12 @@ fi
 # Reconciling registry vs filesystem is path-based, so it needs no parsing of
 # the command's path argument and catches both `worktree remove` and the
 # `branch -D` after a worktree was already removed.
+#
+# Contract: each row is `WorktreeInfo` (src/core/contracts/types/worktree.ts) —
+# `.path` is the clone's absolute worktree directory, `.worktreeName` the
+# argument `worktree remove` takes. A row without `.path` is skipped: an
+# unknown location is not proof the worktree is gone. Pinned against the real
+# CLI output by tests/cli/commands/worktree.test.ts.
 tea-rags worktree list --json 2>/dev/null | jq -c '.[]?' 2>/dev/null | while IFS= read -r entry; do
   p=$(printf '%s' "$entry" | jq -r '.path // empty')
   n=$(printf '%s' "$entry" | jq -r '.worktreeName // empty')
