@@ -194,7 +194,7 @@ The right column shows what runs under the hood.
   and Ruby at a high tier, plus an architecture report of Stable Dependencies
   violations (`get_architecture_report`)
 - 🧠 **Agent skills** — the plugin routes every question to the right tools and
-  presets on its own; 14 ready-made workflows (`explore`, `bug-hunt`,
+  presets on its own; 15 ready-made workflows (`explore`, `bug-hunt`,
   `risk-assessment`, `data-driven-generation`, `mr-review`, …) plus
   [`dinopowers`](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/#dinopowers--wrappers-over-superpowers),
   10 wrappers that feed index signals into
