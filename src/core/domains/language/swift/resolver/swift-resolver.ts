@@ -127,6 +127,7 @@ import {
   SwiftLocalBindingSymbolResolutionStrategy,
   SwiftModuleValueSymbolResolutionStrategy,
   SwiftScopedTypeReceiverSymbolResolutionStrategy,
+  swiftSelfDelegationCaller,
   SwiftSelfMemberSymbolResolutionStrategy,
   SwiftStoredPropertyTypeSymbolResolutionStrategy,
   SwiftSuperSymbolResolutionStrategy,
@@ -292,7 +293,11 @@ export class SwiftCallResolver implements CallResolver {
     const reach = this.memberTypes.memberReach(typeName, call.member, ctx);
     // Declared on the hierarchy — unless no project overload takes the call's
     // labels and the SDK declares the member there too (bd tea-rags-mcp-y99pg.25).
-    if (reach.declared) return !this.memberTypes.runsSdkOverload(typeName, call, ctx);
+    // The calling initializer of a `self.init(…)` delegation is no such
+    // overload (bd tea-rags-mcp-y99pg.36).
+    if (reach.declared) {
+      return !this.memberTypes.runsSdkOverload(typeName, call, ctx, swiftSelfDelegationCaller(call, ctx));
+    }
     // A project type has initializers it never spells (`super.init()` on a
     // class that declares none inherits its superclass's): the type itself is
     // the in-project target.

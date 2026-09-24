@@ -1983,6 +1983,72 @@ describe("SwiftCallResolver — argument-label overload selection", () => {
   });
 });
 
+/**
+ * bd tea-rags-mcp-y99pg.36 — an initializer that delegates to ITSELF never
+ * terminates, so `self.init(…)` inside `init` X never names X. Alamofire's
+ * `extension OperationQueue { convenience init(qualityOfService: … = .default,
+ * …) { self.init() } }` delegates to Foundation's `init()`, which the index
+ * does not hold: the only project fit is the caller, and that is no target.
+ */
+describe("SwiftCallResolver — `self.init` never delegates to the calling initializer", () => {
+  const optionalOnly = (labels: string[]) => ({
+    arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+    kwargs: { required: [], optional: labels, hasSplat: false },
+    acceptsBlock: false,
+  });
+  function initTable(defs: ({ symbolId: string } & ReturnType<typeof optionalOnly>)[]): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile(
+      "Source/OperationQueue+Alamofire.swift",
+      defs.map((d) => ({
+        ...d,
+        fqName: d.symbolId,
+        shortName: "init",
+        relPath: "Source/OperationQueue+Alamofire.swift",
+        scope: ["OperationQueue"],
+      })),
+    );
+    return t;
+  }
+  const selfInit = { ...call("self", "init", 42), argCount: 0, kwargKeys: [], passesBlock: false };
+  const inExtension = (symbolTable: InMemoryGlobalSymbolTable, callerSymbolId: string) =>
+    ctx({
+      callerFile: "Source/OperationQueue+Alamofire.swift",
+      callerScope: ["OperationQueue"],
+      callerSymbolId,
+      symbolTable,
+      typeDeclarations: { "Source/OperationQueue+Alamofire.swift": [{ typeId: "OperationQueue", reopens: true }] },
+    });
+
+  it("emits nothing when the calling initializer is the only project fit", () => {
+    const t = initTable([{ symbolId: "OperationQueue#init", ...optionalOnly(["qualityOfService", "name"]) }]);
+    expect(new SwiftCallResolver().resolve(selfInit, inExtension(t, "OperationQueue#init"))).toBeNull();
+  });
+
+  it("lands on another overload the call fits rather than on the caller", () => {
+    const t = initTable([
+      { symbolId: "OperationQueue#init", ...optionalOnly(["qualityOfService", "name"]) },
+      { symbolId: "OperationQueue#init~2", ...optionalOnly([]) },
+    ]);
+    expect(new SwiftCallResolver().resolve(selfInit, inExtension(t, "OperationQueue#init"))).toEqual({
+      targetRelPath: "Source/OperationQueue+Alamofire.swift",
+      targetSymbolId: "OperationQueue#init~2",
+    });
+  });
+
+  it("charges no in-project miss when the SDK declares the initializer the delegation runs", () => {
+    const t = initTable([{ symbolId: "OperationQueue#init", ...optionalOnly(["qualityOfService", "name"]) }]);
+    expect(new SwiftCallResolver().hasInProjectDefinition(selfInit, inExtension(t, "OperationQueue#init"))).toBe(false);
+  });
+
+  it("still resolves `self.init(…)` from any other member of the type", () => {
+    const t = initTable([{ symbolId: "OperationQueue#init", ...optionalOnly(["qualityOfService", "name"]) }]);
+    expect(new SwiftCallResolver().resolve(selfInit, inExtension(t, "OperationQueue.make"))?.targetSymbolId).toBe(
+      "OperationQueue#init",
+    );
+  });
+});
+
 describe("SwiftCallResolver — a trailing closure stands in for one possible-closure requirement", () => {
   it("resolves `world.configure { … }` onto `configure(_ closure: QuickConfigurer)`", () => {
     const t = new InMemoryGlobalSymbolTable();

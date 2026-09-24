@@ -360,10 +360,18 @@ export class SwiftMemberTypeLookup {
    * project overload there takes the call's argument labels, and the SDK
    * declares the member on the same hierarchy — `self.init(url:cachePolicy:)`
    * inside `extension URLRequest` beside a project `init(_:method:headers:)`.
+   *
+   * `excludeSymbolId` is a declaration that cannot be the target however well
+   * the call fits it — the calling initializer of a `self.init(…)` delegation
+   * (bd tea-rags-mcp-y99pg.36).
    */
-  runsSdkOverload(typeName: string, call: CallRef, ctx: CallContext): boolean {
+  runsSdkOverload(typeName: string, call: CallRef, ctx: CallContext, excludeSymbolId?: string): boolean {
     const { order } = this.linearizerFor(ctx).linearize(typeName);
-    if (order.some((candidate) => declaresMember(qualifySwiftTypeName(candidate, ctx), call.member, ctx, call))) {
+    if (
+      order.some((candidate) =>
+        declaresMember(qualifySwiftTypeName(candidate, ctx), call.member, ctx, call, excludeSymbolId),
+      )
+    ) {
       return false;
     }
     return this.sdkDeclaresMember(typeName, call.member, ctx);
@@ -454,9 +462,16 @@ function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
 const SWIFT_SELF_RETURN = "Self";
 
 /** Whether `typeName` declares `member` in either spelling — one the call fits, given one — whatever the cardinality. */
-function declaresMember(typeName: string, member: string, ctx: CallContext, call?: CallRef): boolean {
-  return (
-    swiftMemberCandidates(ctx, `${typeName}#${member}`, call).length > 0 ||
-    swiftMemberCandidates(ctx, `${typeName}.${member}`, call).length > 0
+function declaresMember(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+  excludeSymbolId?: string,
+): boolean {
+  return [`${typeName}#${member}`, `${typeName}.${member}`].some((id) =>
+    swiftMemberCandidates(ctx, id, call).some(
+      (def) => def.symbolId !== excludeSymbolId || def.relPath !== ctx.callerFile,
+    ),
   );
 }
