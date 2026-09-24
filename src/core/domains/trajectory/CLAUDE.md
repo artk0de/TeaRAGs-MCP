@@ -236,12 +236,14 @@ carry their own navigators.
   (`StaticPayloadBuilder#buildPayload`), so a condition written `isTest = false`
   matches nothing; `{ op: "eq", value: true, occur: "must_not" }` is the only
   working form. Indexes built before bd tea-rags-mcp-9ty5z carry the old
-  filename-only flag until `--force`; `testFile: "exclude"` bridges them with a
-  `must_not` on `codegraph.symbols.file.skippedAs = "test"`
-  (`static/filters.ts`), while the `production` / `coreLogic` presets still read
-  `isTest` alone. Why: two classifiers answering "is this a test" disagreed, and
-  every churn-weighted preset ranked shared `__helpers__` fixtures as
-  production.
+  filename-only flag until `--force`. The query path bridges them: "exclude
+  tests" has one owner, `static/test-exclusion.ts`, whose conditions add a
+  `must_not` on `codegraph.symbols.file.skippedAs = "test"`. Both
+  `testFile: "exclude"` and the filter-preset compiler emit them; the compiler
+  expands every `isTest` `must_not` condition, so a new test-excluding preset is
+  covered with no extra wiring. Why: two classifiers answering "is this a test"
+  disagreed, and every churn-weighted preset ranked shared `__helpers__`
+  fixtures as production.
 
 ## See also
 

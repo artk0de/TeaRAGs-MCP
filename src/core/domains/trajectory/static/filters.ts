@@ -1,5 +1,6 @@
 import { globToTextFilter } from "../../../adapters/qdrant/filters/glob.js";
 import type { FilterDescriptor } from "../../../contracts/types/provider.js";
+import { TEST_EXCLUSION_FILTER_CONDITIONS } from "./test-exclusion.js";
 
 export const staticFilters: FilterDescriptor[] = [
   {
@@ -46,19 +47,9 @@ export const staticFilters: FilterDescriptor[] = [
     type: "string",
     toCondition: (value: unknown) => {
       if (value === "only") return { must: [{ key: "isTest", match: { value: true } }] };
-      // `codegraph.symbols.file.skippedAs = "test"` is a bridge (bd
-      // tea-rags-mcp-9ty5z): indexes built before `isTest` became path-aware
-      // lack it on test-root support files, which the codegraph policy already
-      // stamped. A `must_not` on an absent key excludes nothing, so a
-      // codegraph-disabled index is unaffected. Drop once indexes are rebuilt.
-      if (value === "exclude") {
-        return {
-          must_not: [
-            { key: "isTest", match: { value: true } },
-            { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
-          ],
-        };
-      }
+      // Shared with the filter-preset compiler, codegraph bridge included (bd
+      // tea-rags-mcp-9ty5z).
+      if (value === "exclude") return { must_not: [...TEST_EXCLUSION_FILTER_CONDITIONS] };
       return {};
     },
   },
