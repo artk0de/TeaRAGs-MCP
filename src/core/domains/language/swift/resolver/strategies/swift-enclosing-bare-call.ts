@@ -22,7 +22,7 @@ export class SwiftEnclosingBareCallSymbolResolutionStrategy implements SymbolRes
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null || ctx.callerScope.length === 0) return CONTINUE;
-    const sameFileHit = lookupLexicalMemberInFile(call.member, ctx);
+    const sameFileHit = lookupLexicalMemberInFile(call.member, ctx, call);
     return sameFileHit ? resolved(sameFileHit) : CONTINUE;
   }
 }

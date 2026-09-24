@@ -26,7 +26,7 @@ export class SwiftSelfMemberSymbolResolutionStrategy implements SymbolResolution
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== "self" && call.receiver !== "Self") return CONTINUE;
-    const sameFileHit = lookupSelfTypeMemberInFile(call.member, ctx);
+    const sameFileHit = lookupSelfTypeMemberInFile(call.member, ctx, call);
     return sameFileHit ? resolved(sameFileHit) : CONTINUE;
   }
 }

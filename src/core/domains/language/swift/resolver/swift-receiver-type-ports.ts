@@ -38,16 +38,22 @@
  */
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import { resolveLocalBindingType, type CallContext } from "../../../../contracts/types/codegraph.js";
+import {
+  resolveLocalBinding,
+  type CallContext,
+  type CallResultBinding,
+} from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
+  propagateReceiverType,
   splitAtBracketDepthZero,
   splitReceiverHops,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
-import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
+import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
-import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
+import { lookupSwiftSymbols, qualifySwiftTypeNameWithin } from "./swift-symbol-lookup.js";
+import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
 /**
@@ -68,8 +74,22 @@ import { isSwiftTypeName } from "./swift-type-name.js";
  */
 const SWIFT_CHAIN_MAX_HOPS = 3;
 
-/** A bare Swift identifier — the only head shape any channel here can key on. */
-const SWIFT_IDENTIFIER = /^[A-Za-z_]\w*$/;
+/**
+ * Static properties that, by the Swift API Design Guidelines' naming of
+ * shared instances, hold an instance of the type they are read off:
+ * `NotificationCenter.default`, `URLSession.shared`, `DispatchQueue.main`,
+ * `Locale.current`, `UserDefaults.standard` (bd tea-rags-mcp-y99pg.5).
+ *
+ * Read only where nothing the project declares answers first — a declared
+ * property of that name is typed by its declaration, and a type the project
+ * does not declare or extend never seeds a chain at all — so this types the
+ * SDK singletons whose members the project adds in extensions, and nothing
+ * else.
+ */
+const SWIFT_SINGLETON_PROPERTIES: ReadonlySet<string> = new Set(["default", "shared", "main", "current", "standard"]);
+
+/** A bare Swift identifier or a closure's implicit `$n` parameter — the only head shapes any channel here can key on. */
+const SWIFT_IDENTIFIER = /^(?:[A-Za-z_]\w*|\$\d+)$/;
 
 /**
  * The type a chain HEAD denotes. Four arms, in Swift's own lookup order:
@@ -97,29 +117,110 @@ const SWIFT_IDENTIFIER = /^[A-Za-z_]\w*$/;
  * segments that would only produce a wrong lookup.
  */
 function swiftHeadType(
-  head: string,
+  written: string,
   atLine: number,
   ctx: CallContext,
   members: SwiftMemberTypeLookup,
+  ports: ReceiverTypePorts,
 ): TypeRef | undefined {
-  if (!SWIFT_IDENTIFIER.test(head)) return swiftLiteralHeadType(head);
+  // `try` / `await` mark the expression, not its type (bd tea-rags-mcp-y99pg.20).
+  const head = written.replace(SWIFT_EFFECT_PREFIX, "");
   const enclosing = swiftSelfTypeName(ctx);
+  if (!SWIFT_IDENTIFIER.test(head)) {
+    return swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ?? swiftLiteralHeadType(head);
+  }
   if (head === "self" || head === "Self") {
     if (enclosing === undefined) return undefined;
     return { form: head === "self" ? "instance" : "class", name: enclosing };
   }
   if (head === "super") return undefined;
 
-  const bound = resolveLocalBindingType(ctx.localBindings, head, atLine);
-  if (bound !== undefined) return { form: "instance", name: bound };
+  const local = swiftLocalValueType(head, atLine, ctx, ports, members);
+  if (local !== undefined) return { form: "instance", name: local };
 
   if (enclosing !== undefined) {
     const fieldType = members.typeOfProperty(enclosing, head, ctx);
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
   }
 
-  if (isSwiftTypeName(head) && lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
+  if (!isSwiftTypeName(head)) return undefined;
+  // A type nested in an enclosing type shadows a top-level namesake — Swift's
+  // lexical lookup, innermost first (bd tea-rags-mcp-y99pg.20).
+  for (const scope of swiftEnclosingTypeIds(ctx)) {
+    for (const candidate of [`${scope}.${head}`, scope.endsWith(`.${head}`) ? scope : null]) {
+      if (candidate !== null && lookupSwiftSymbols(ctx, candidate).length > 0) {
+        return { form: "class", name: candidate };
+      }
+    }
+  }
+  if (lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
   return undefined;
+}
+
+/** `try` / `try?` / `try!` / `await`, possibly stacked, ahead of a chain head. */
+const SWIFT_EFFECT_PREFIX = /^(?:(?:try[?!]?|await)\s+)+/;
+
+/**
+ * `validate(statusCode: codes)` as a chain head (bd tea-rags-mcp-y99pg.18): a
+ * bare call inside a type is a call of the enclosing type's own method —
+ * Swift's `self` is implicit — typed by what that method returns. A head a
+ * local names (a closure value) is not a method call.
+ */
+function swiftImplicitSelfCallHeadType(
+  head: string,
+  atLine: number,
+  ctx: CallContext,
+  enclosing: string | undefined,
+  members: SwiftMemberTypeLookup,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  if (enclosing === undefined) return undefined;
+  const name = swiftCallHeadCallee(head);
+  if (name === undefined || name.startsWith("$")) return undefined;
+  if (swiftLocalValueType(name, atLine, ctx, ports, members) !== undefined) return undefined;
+  const method = members.memberReturnType(enclosing, name, ctx);
+  if (method !== undefined) return method;
+  // A stored CLOSURE called in place: `responseHandler { … }` on a
+  // `responseHandler: Handler` whose alias is a function type returns what
+  // that function type returns (bd tea-rags-mcp-y99pg.22).
+  const property = members.typeOfProperty(enclosing, name, ctx);
+  if (property === undefined) return undefined;
+  const scopes = swiftEnclosingTypeIds(ctx);
+  const alias = swiftFunctionAliasReturn(property, scopes, ctx);
+  if (alias === undefined) return undefined;
+  return { form: "instance", name: qualifySwiftTypeNameWithin(alias.returned, alias.declaredIn, ctx) };
+}
+
+/**
+ * The callee of a head that is ONE call — `name(…)`, `name { … }` or
+ * `name(…) { … }`, the argument list or trailing closure running to the end
+ * of the head — or undefined.
+ */
+function swiftCallHeadCallee(head: string): string | undefined {
+  const open = head.search(/[({]/);
+  const name = open > 0 ? head.slice(0, open).trim() : "";
+  if (!SWIFT_IDENTIFIER.test(name)) return undefined;
+  let end = open;
+  while (end < head.length) {
+    const close = closingBracketIndex(head, end);
+    if (close === -1) return undefined;
+    if (close === head.length - 1) return name;
+    end = close + 1;
+    while (end < head.length && /\s/.test(head[end])) end++;
+    if (head[end] !== "{") return undefined;
+  }
+  return undefined;
+}
+
+/** The index of the bracket closing the `(` or `{` at `open`, or -1. */
+function closingBracketIndex(text: string, open: number): number {
+  const [opener, closer] = text[open] === "{" ? ["{", "}"] : ["(", ")"];
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === opener) depth++;
+    else if (text[i] === closer && --depth === 0) return i;
+  }
+  return -1;
 }
 
 /** `(expr as T)`, `(expr as? T)`, `(expr as! T)` — `normalizeSwiftReceiver` may already have dropped the `?` / `!`. */
@@ -161,7 +262,7 @@ function swiftTypeTextName(text: string): string | undefined {
     return splitAtBracketDepthZero(trimmed.slice(1, -1), ":").length > 1 ? "Dictionary" : "Array";
   }
   const nominal = trimmed.replace(/<[\s\S]*>$/, "");
-  return /^[A-Z][\w.]*$/.test(nominal) ? nominal : undefined;
+  return /^_*[A-Z][\w.]*$/.test(nominal) ? nominal : undefined;
 }
 
 /**
@@ -170,9 +271,11 @@ function swiftTypeTextName(text: string): string | undefined {
  * `propagateReceiverType`.
  */
 export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): ReceiverTypePorts {
-  return Object.freeze({
+  // Self-referential: a head bound to a value chain is typed by folding that
+  // chain through these same ports.
+  const ports: ReceiverTypePorts = Object.freeze({
     singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
-      swiftHeadType(receiver, atLine, ctx, members),
+      swiftHeadType(receiver, atLine, ctx, members, ports),
     // See the module docblock: a Swift chain head is a complete answer on its
     // own, so there is nothing for a seed to consume the first link for.
     seedHead: (): undefined => undefined,
@@ -186,11 +289,123 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
       if (fieldType !== undefined) return { form: "instance", name: fieldType };
       // Not a property: a METHOD hop, typed by what the declaration the call
       // lands on returns. Strict: an ambiguous callee types nothing.
-      const callee = members.memberOn(recv.name, member, ctx, "strict")?.targetSymbolId;
-      return callee ? identifierEntry(ctx.structuredReturnTypes, callee) : undefined;
+      const returned = members.memberReturnType(recv.name, member, ctx);
+      if (returned) return returned;
+      // `NotificationCenter.default`: a type's own singleton, by convention.
+      if (recv.form === "class" && SWIFT_SINGLETON_PROPERTIES.has(member)) return { form: "instance", name: recv.name };
+      return undefined;
     },
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
     // An argument list carries its own dots (`request(for: task.id)`).
     splitReceiverHops,
   });
+  return ports;
+}
+
+/**
+ * The type a LOCAL value name holds at `atLine`, or `undefined`.
+ *
+ * Two channels, the more recent declaration winning: `localBindings`, which
+ * the walker typed, and `callResultBindings`, the SPELLING of a right-hand
+ * side whose links live in other files (bd tea-rags-mcp-y99pg.6), folded here
+ * through `ports` with the whole run in scope. The spelling is folded at its
+ * own line and a spelling is only visible STRICTLY below its line, so
+ * `var request = request.adapted()` reads the `request` declared above it,
+ * and every nested fold moves to an earlier line — the recursion terminates.
+ *
+ * A spelling that folds to nothing answers `undefined`, exactly as an
+ * unrecorded local did before the channel existed, and the callers keep their
+ * fallbacks. Swift scoping says such a local SHADOWS a same-named property;
+ * dropping on it was measured and cost correct edges
+ * (`let example = wrapper.example` beside a stored `example`), because a local
+ * named after a property overwhelmingly holds the property's type.
+ */
+export function swiftLocalValueType(
+  name: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  members: SwiftMemberTypeLookup,
+): string | undefined {
+  const typed = resolveLocalBinding(ctx.localBindings, name, atLine);
+  let spelled: CallResultBinding | undefined;
+  for (const binding of identifierEntry(ctx.callResultBindings, name) ?? []) {
+    if (!swiftBindingVisible(binding, name, atLine)) continue;
+    if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
+    if (spelled === undefined || binding.line > spelled.line) spelled = binding;
+  }
+  if (spelled === undefined || (typed !== undefined && typed.line >= spelled.line)) return typed?.type;
+  if (spelled.closureParameter !== undefined) {
+    return swiftClosureParameterType(spelled.callee, spelled.closureParameter, spelled.line, ctx, ports, members);
+  }
+  const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
+  if (folded?.form !== "instance") return undefined;
+  // `case .group(let g)`: the subject's enum says what the slot carries (bd tea-rags-mcp-y99pg.16).
+  if (spelled.enumPayload !== undefined) {
+    return swiftEnumCasePayloadType(folded.name, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
+  }
+  return folded.name;
+}
+
+/**
+ * Whether a spelling binding is in scope at `atLine`. A call result is visible
+ * strictly below its line (`var request = request.adapted()` reads the outer
+ * `request`). A closure's `$n` parameter is visible on the line that opens the
+ * closure too — `mutableState.write { $0.update() }` — since nothing on that
+ * line outside the closure can name `$n`. A NAMED closure parameter is not:
+ * `mutableState.write { mutableState in` names the receiver on the very line
+ * the parameter shadows it, and a line cannot tell the two apart.
+ */
+function swiftBindingVisible(binding: CallResultBinding, name: string, atLine: number): boolean {
+  const inclusive = binding.closureParameter !== undefined && name.startsWith("$");
+  return inclusive ? binding.line <= atLine : binding.line < atLine;
+}
+
+/**
+ * The type of the `index`-th parameter of a closure passed to `callee` on
+ * `line` (bd tea-rags-mcp-y99pg.13) — what the callee's declaration says the
+ * closure takes: a concrete type as written, or one of the declaring type's
+ * generic parameters bound by the receiver's type arguments
+ * (`mutableState.write { … }` on `mutableState: Protected<MutableState>`
+ * with `write(_: (inout Value) -> U)` → `MutableState`).
+ *
+ * The receiver is folded one line ABOVE the closure: its parameters are in
+ * scope on their own line, and `mutableState.write { mutableState in` names
+ * the receiver and the parameter alike. Type arguments are read only for a
+ * receiver that is a stored property of the enclosing type (`field`,
+ * `self.field`), the one place a generic argument is declared where the index
+ * can see it; any other receiver types a generic slot as nothing.
+ */
+function swiftClosureParameterType(
+  callee: string,
+  index: number,
+  line: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  members: SwiftMemberTypeLookup,
+): string | undefined {
+  const cut = callee.lastIndexOf(".");
+  if (cut <= 0) return undefined;
+  const receiver = callee.slice(0, cut);
+  const foldLine = line - 1;
+  const type = propagateReceiverType(receiver, foldLine, ctx, ports);
+  if (type === undefined || (type.form !== "instance" && type.form !== "class")) return undefined;
+  const signature = members.closureParameterTypes(type.name, callee.slice(cut + 1), ctx);
+  const declared = signature?.types?.[index];
+  if (!signature || declared === null || declared === undefined) return undefined;
+  const slot = signature.genericParameters.indexOf(declared);
+  if (slot === -1) return declared;
+  const field = receiver.startsWith("self.") ? receiver.slice("self.".length) : receiver;
+  if (!SWIFT_IDENTIFIER.test(field) || field === "self") return undefined;
+  const enclosing = swiftSelfTypeName(ctx);
+  if (enclosing === undefined) return undefined;
+  // A bare receiver may be a LOCAL shadowing the property, whose type
+  // arguments are not the property's. A binding of the property's own type is
+  // the property itself: a call attributed to its type's chunk (a `deinit`,
+  // an initializer the chunker does not split out) sees it as a binding.
+  if (field === receiver) {
+    const local = swiftLocalValueType(field, foldLine, ctx, ports, members);
+    if (local !== undefined && local !== members.typeOfProperty(enclosing, field, ctx)) return undefined;
+  }
+  return members.fieldTypeArguments(enclosing, field, ctx)?.[slot] ?? undefined;
 }

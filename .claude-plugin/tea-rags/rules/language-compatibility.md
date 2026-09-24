@@ -28,7 +28,7 @@ here. Per-project realized numbers live in **prime**, never in this file.
 | **Rust**               | **full** · tree-sitter                            | **medium** · generic AST (#[test] attrs not preserved)                                                                                                                                  | **moderate**                                             |
 | **Ruby**               | **full** · tree-sitter                            | **high** · RSpec scope chunker (parent setup injected)                                                                                                                                  | untyped **high** · YARD **maximum** · RBS/Sorbet **TBD** |
 | **Bash**               | **full** · tree-sitter                            | **low** · generic AST (bats/shunit not recognized)                                                                                                                                      | **minimal**                                              |
-| **Swift**              | **full** · tree-sitter                            | **high** · XCTest + swift-testing recognition (test cases, setUp/tearDown, @Test/@Suite) plus Quick/Nimble DSL scope chunking (per-scenario chunks with ancestor beforeEach spliced in) | **moderate**                                             |
+| **Swift**              | **full** · tree-sitter                            | **high** · XCTest + swift-testing recognition (test cases, setUp/tearDown, @Test/@Suite) plus Quick/Nimble DSL scope chunking (per-scenario chunks with ancestor beforeEach spliced in) | **high**                                                 |
 | **Markdown**           | **full** · MarkdownChunker (ToC + smart chunking) | **N/A** · doc-only                                                                                                                                                                      | **none**                                                 |
 | **sql / jsonc / json** | **none** · CharacterChunker                       | **none**                                                                                                                                                                                | **none**                                                 |
 
@@ -203,7 +203,7 @@ conclude absence from a graph the index says is incomplete.
   accessors + naming-convention receiver typing for bare and @ivar receivers
   (subtype-gated)
 - **Bash** — function-call extraction only, no dispatch
-- **Swift** — 9-strategy chain + super over the superclass chain + implicit-self
-  and chained field typing + extension-scope and nested-type receivers; no
-  import narrowing
+- **Swift** — 9-strategy chain + super and inherited members over the superclass
+  chain + implicit-self and chained field typing + return-typed call hops +
+  extension-scope and nested-type receivers; no import narrowing
 - **Markdown** — no call graph

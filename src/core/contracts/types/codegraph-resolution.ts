@@ -13,7 +13,14 @@
  */
 
 import type { DispatchFanoutOutcome, DispatchTableDef } from "./codegraph-dispatch.js";
-import type { CallRef, ChunkExtraction, FileExtraction, ImportRef, ModuleReexport } from "./codegraph-extraction.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  ModuleReexport,
+  TypeDeclarationFact,
+} from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
@@ -311,6 +318,14 @@ export interface CallContext {
    * twins ambiguous — the pre-channel answer.
    */
   buildConstraintsByFile?: Readonly<Record<string, string>>;
+  /**
+   * `FileExtraction.typeDeclarations` collected RUN-GLOBAL, keyed by the relPath
+   * that declares each list (bd tea-rags-mcp-y99pg.1). Replaced on a re-walk, and
+   * hydrated from the pass-1 slice for every file a run did not walk. Absent on
+   * a run whose walker never wrote it, which reads exactly as before the channel
+   * existed: every declaration of a type counts as the type.
+   */
+  typeDeclarations?: Readonly<Record<string, readonly TypeDeclarationFact[]>>;
   /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker

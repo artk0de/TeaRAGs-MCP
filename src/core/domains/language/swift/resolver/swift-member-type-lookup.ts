@@ -26,10 +26,13 @@
  * Swift declares stored properties on a base class and uses them from
  * subclasses constantly — `self.eventMonitor` is declared on `Request` and
  * called from `DataRequest`. The walk reuses the driver and the policy `super`
- * already walks (`kernel/ancestor-walk.ts`, {@link SWIFT_ANCESTOR_POLICY})
+ * already walks (`kernel/ancestor-walk.ts`, `SWIFT_ANCESTOR_POLICY`)
  * rather than re-deriving the order, so the passes can never disagree about
  * what a class's superclass is. A class with no `classExtends` entry linearizes
- * to itself alone, which is exactly the own-type read this generalises.
+ * to itself alone, which is exactly the own-type read this generalises. After the superclass
+ * chain the walk reaches every protocol the type conforms to
+ * ({@link SWIFT_MEMBER_LOOKUP_POLICY}), since a requirement and a protocol
+ * extension's default are members of every conforming type.
  *
  * Built ONCE per resolver and handed to every pass that needs it: the
  * linearizer memo and the field union are per-run state, and a second instance
@@ -44,28 +47,70 @@ import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
   AmbiguousResolveMode,
   CallContext,
+  CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   createAncestorLinearizer,
   findMemberInAncestorChain,
   type AncestorLinearizer,
 } from "../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
-import { SWIFT_ANCESTOR_POLICY } from "./swift-ancestor-policy.js";
-import { lookupSwiftSymbols, lookupSwiftTypeMember, qualifySwiftTypeName } from "./swift-symbol-lookup.js";
+import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
+import {
+  lookupSwiftOverloads,
+  lookupSwiftTypeMember,
+  qualifySwiftTypeName,
+  qualifySwiftTypeNameWithin,
+  swiftMemberCandidates,
+} from "./swift-symbol-lookup.js";
+import {
+  swiftFieldTypeArguments,
+  swiftGenericParameters,
+  swiftMemberClosureParameters,
+} from "./swift-type-declarations.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
+
+/** A method's closure signature, as its declaring type states it. */
+export interface SwiftClosureSignature {
+  /** The closure's parameter types; `null` for the whole list when declarations disagree. */
+  readonly types: readonly (string | null)[] | null;
+  /** The declaring type's generic parameters, which entries of `types` may name. */
+  readonly genericParameters: readonly string[];
+  /** The declaring type, from which a nominal entry is qualified. */
+  readonly ownerTypeId: string;
+}
+
+/** What a member lookup on one type can reach: see {@link SwiftMemberTypeLookup#memberReach}. */
+export interface SwiftMemberReach {
+  /** Whether a type the lookup reads declares the member at all. */
+  readonly declared: boolean;
+  /** The types the lookup reads, as written and as qualified. */
+  readonly types: ReadonlySet<string>;
+}
 
 export class SwiftMemberTypeLookup {
   private readonly linearizers = new RunScopedMemo<CallContext, AncestorLinearizer<CallContext>>();
   private readonly fields = new SwiftTypeFieldIndex();
 
-  /** The declared type of the property `member` on `typeName` or a superclass. */
+  /**
+   * The declared type of the property `member` on `typeName` or a superclass,
+   * qualified from the type that DECLARES the property.
+   *
+   * A property's type is written inside its declaring type, and Swift resolves
+   * that spelling from there outward: `var state: State` inside
+   * `Request.MutableState` names `Request.State`, whichever file or subclass
+   * later reads `mutableState.state`. The caller's own scope is the wrong place
+   * to start — a `DownloadRequest` caller encloses no `State` at all — so the
+   * lexical walk starts at the owner ({@link qualifySwiftTypeNameWithin}).
+   */
   typeOfProperty(typeName: string, member: string, ctx: CallContext): string | undefined {
     const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) =>
       this.propertyTypeOn(candidate, member, ctx),
     );
-    return scan.target ?? undefined;
+    if (scan.target === null || scan.definingClassKey === null) return undefined;
+    return qualifySwiftTypeNameWithin(scan.target, qualifySwiftTypeName(scan.definingClassKey, ctx), ctx);
   }
 
   /**
@@ -81,43 +126,159 @@ export class SwiftMemberTypeLookup {
    * when the strict gate then finds that declaration ambiguous (two files each
    * composing `DataRequest#resume`). Falling through to `Request#resume` there
    * would answer with the one declaration the source provably does not call.
+   *
+   * Given the CALL, "declares" means declares an overload the call's argument
+   * labels fit (bd tea-rags-mcp-y99pg.7): Swift resolves an overload over the
+   * whole hierarchy, so `uploadProgress(queue:closure:)` on a `DataRequest`
+   * passes the subclass's `uploadProgress(bufferingPolicy:)` for `Request`'s.
    */
   memberOn(
     typeName: string,
     member: string,
     ctx: CallContext,
     mode: AmbiguousResolveMode,
+    call?: CallRef,
   ): SymbolResolutionTarget | null {
     const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
       // The chain's keys are type names as WRITTEN; members compose under the
       // qualified id (`qualifySwiftTypeName`).
       const typeId = qualifySwiftTypeName(candidate, ctx);
-      return declaresMember(typeId, member, ctx) ? { target: lookupSwiftTypeMember(typeId, member, ctx, mode) } : null;
+      return declaresMember(typeId, member, ctx, call)
+        ? { target: lookupSwiftTypeMember(typeId, member, ctx, mode, call) }
+        : null;
     });
     return scan.target?.target ?? null;
   }
 
+  /**
+   * The generic arguments the property `field` of `typeName` (or of the
+   * nearest ancestor declaring it) is declared with, each qualified from that
+   * declaring type — `["Request.MutableState"]` for `mutableState:
+   * Protected<MutableState>` inside `Request` (bd tea-rags-mcp-y99pg.13).
+   */
+  fieldTypeArguments(typeName: string, field: string, ctx: CallContext): readonly (string | null)[] | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const args = swiftFieldTypeArguments(typeId, field, ctx);
+      return args === undefined
+        ? null
+        : args.map((arg) => (arg === null ? null : qualifySwiftTypeNameWithin(arg, typeId, ctx)));
+    });
+    return scan.target ?? undefined;
+  }
+
+  /**
+   * The declared parameter types of the closure `typeName`'s method `member`
+   * takes, found up the member-lookup chain, with the generic parameters of
+   * the type that DECLARES the method (bd tea-rags-mcp-y99pg.13).
+   */
+  closureParameterTypes(typeName: string, member: string, ctx: CallContext): SwiftClosureSignature | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const types = swiftMemberClosureParameters(typeId, member, ctx);
+      if (types === undefined) return null;
+      return { types, genericParameters: swiftGenericParameters(typeId, ctx), ownerTypeId: typeId };
+    });
+    return scan.target ?? undefined;
+  }
+
+  /**
+   * Every type a member lookup on `typeName` reads — the type itself, its
+   * superclass chain and the conformances the project names for any of them —
+   * each in both the spelling the chain keys it by and its qualified id, and
+   * whether any of them declares `member` in any overload (bd
+   * tea-rags-mcp-y99pg.11).
+   *
+   * The denominator question, not the resolution one: a call ARGUMENT that
+   * fits no overload is still a call on a member the project declares, so no
+   * call narrows the answer here.
+   */
+  memberReach(typeName: string, member: string, ctx: CallContext): SwiftMemberReach {
+    const { order } = this.linearizerFor(ctx).linearize(typeName);
+    const types = new Set<string>();
+    let declared = false;
+    for (const candidate of order) {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      types.add(candidate);
+      types.add(typeId);
+      if (!declared && declaresMember(typeId, member, ctx)) declared = true;
+    }
+    return { declared, types };
+  }
+
+  /**
+   * The field channels key a type by its OWN name (`MutableState`), the name
+   * its declaration spells; a qualified receiver (`Request.MutableState`) reads
+   * them under its last segment.
+   */
   private propertyTypeOn(typeName: string, member: string, ctx: CallContext): string | null {
+    const key = typeName.slice(typeName.lastIndexOf(".") + 1);
     return (
-      identifierEntry(identifierEntry(ctx.classFieldTypes, typeName), member) ??
-      this.fields.fieldsOf(typeName, ctx)?.[member] ??
+      identifierEntry(identifierEntry(ctx.classFieldTypes, key), member) ??
+      identifierEntry(this.fields.fieldsOf(key, ctx), member) ??
       null
     );
+  }
+
+  /**
+   * What a call of `member` on a `typeName` value returns (bd
+   * tea-rags-mcp-kkwg3, y99pg.18): the declared return of the declaration the
+   * call lands on, else — for an overload set the hop cannot pick among,
+   * having no argument labels — the return EVERY overload of the nearest
+   * declaring type agrees on (`validate(statusCode:)`, `validate(contentType:)`
+   * and `validate()` all return `Self`). A `-> Self` return is the
+   * receiver's own type, substituted here so the marker never leaves this
+   * method.
+   */
+  memberReturnType(typeName: string, member: string, ctx: CallContext): TypeRef | undefined {
+    const callee = this.memberOn(typeName, member, ctx, "strict")?.targetSymbolId;
+    const returned = callee
+      ? identifierEntry(ctx.structuredReturnTypes, callee)
+      : this.agreedReturn(typeName, member, ctx);
+    return returned?.form === "instance" && returned.name === SWIFT_SELF_RETURN
+      ? { form: "instance", name: typeName }
+      : returned;
+  }
+
+  private agreedReturn(typeName: string, member: string, ctx: CallContext): TypeRef | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const overloads = [
+        ...lookupSwiftOverloads(ctx, `${typeId}#${member}`),
+        ...lookupSwiftOverloads(ctx, `${typeId}.${member}`),
+      ];
+      return overloads.length > 0 ? { overloads } : null;
+    });
+    const overloads = scan.target?.overloads;
+    if (overloads === undefined) return undefined;
+    const returns = overloads.map((def) => identifierEntry(ctx.structuredReturnTypes, def.symbolId));
+    const [first] = returns;
+    if (first === undefined) return undefined;
+    return returns.every((r) => r !== undefined && sameTypeRef(r, first)) ? first : undefined;
   }
 
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {
     const hit = this.linearizers.get(ctx.runScope, ctx);
     if (hit !== undefined) return hit;
-    const fresh = createAncestorLinearizer(ctx, SWIFT_ANCESTOR_POLICY);
+    const fresh = createAncestorLinearizer(ctx, SWIFT_MEMBER_LOOKUP_POLICY);
     this.linearizers.set(ctx.runScope, ctx, fresh);
     return fresh;
   }
 }
 
-/** Whether `typeName` declares `member` in either spelling, whatever the cardinality. */
-function declaresMember(typeName: string, member: string, ctx: CallContext): boolean {
+/** Two declared returns name the same nominal — only the forms Swift publishes ever agree. */
+function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
+  if ((a.form !== "instance" && a.form !== "class") || (b.form !== "instance" && b.form !== "class")) return false;
+  return a.form === b.form && a.name === b.name;
+}
+
+/** The `structuredReturnTypes` marker the walker publishes for `-> Self` (bd tea-rags-mcp-y99pg.18). */
+const SWIFT_SELF_RETURN = "Self";
+
+/** Whether `typeName` declares `member` in either spelling — one the call fits, given one — whatever the cardinality. */
+function declaresMember(typeName: string, member: string, ctx: CallContext, call?: CallRef): boolean {
   return (
-    lookupSwiftSymbols(ctx, `${typeName}#${member}`).length > 0 ||
-    lookupSwiftSymbols(ctx, `${typeName}.${member}`).length > 0
+    swiftMemberCandidates(ctx, `${typeName}#${member}`, call).length > 0 ||
+    swiftMemberCandidates(ctx, `${typeName}.${member}`, call).length > 0
   );
 }

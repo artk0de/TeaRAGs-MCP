@@ -1,6 +1,8 @@
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
+import { SWIFT_SDK_CONFORMANCES } from "./swift-sdk-types.js";
+import { swiftConformances, swiftDeclaringFiles, swiftSugarAliases } from "./swift-type-declarations.js";
 
 /**
  * Swift's answer to the kernel's linearization question, and it is the SHORTEST
@@ -43,3 +45,45 @@ export const SWIFT_ANCESTOR_POLICY: AncestorLinearizationPolicy<CallContext> = {
     return [classKey, ...recurse(base)];
   },
 };
+
+/**
+ * The order an ORDINARY member lookup walks — `SWIFT_ANCESTOR_POLICY`'s
+ * superclass chain, then every protocol the type conforms to, each followed by
+ * the protocols it refines (bd tea-rags-mcp-y99pg.4).
+ *
+ * A protocol requirement, and the default a protocol extension provides, are
+ * reachable from every conforming type; `super` reaches neither, which is why
+ * this is a second policy and not a widening of the first. Swift declares
+ * conformances in extensions as often as on the type — `extension SecTrust:
+ * AlamofireExtended {}` is the whole reason `trust.af` exists — so they are
+ * read from the run-global `typeDeclarations` channel, which lists them for
+ * every declaration of a type, re-openings included.
+ *
+ * Classes come first: a class's own members and its superclass chain are
+ * found before any protocol default, which is how Swift itself prefers a
+ * concrete implementation over an extension's. An SDK type's standard-library
+ * conformances come last ({@link SWIFT_SDK_CONFORMANCES}, bd
+ * tea-rags-mcp-y99pg.19): the index holds no declaration of `Array`, so
+ * nothing else says an `[T]` reaches `extension Collection`.
+ */
+export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext> = {
+  order(classKey, ctx, recurse, insertable) {
+    const base = identifierEntry(ctx.classExtends, classKey);
+    const order = base === undefined || base === classKey ? [classKey] : [classKey, ...recurse(base)];
+    // `extension [HTTPHeader]` re-opens Array under its sugar spelling, and
+    // its members compose under that spelling (bd tea-rags-mcp-y99pg.14).
+    for (const alias of swiftSugarAliases(classKey, ctx)) if (!order.includes(alias)) order.push(alias);
+    for (const protocol of [...swiftConformances(classKey, ctx), ...sdkConformances(classKey, ctx)]) {
+      if (protocol === classKey) continue;
+      order.push(...insertable(protocol, [order]));
+    }
+    return order;
+  },
+};
+
+/** The SDK's conformances of `classKey` — none for a type the project declares itself. */
+function sdkConformances(classKey: string, ctx: CallContext): readonly string[] {
+  const declared = swiftDeclaringFiles(classKey, ctx);
+  if (declared !== undefined && declared.size > 0) return [];
+  return SWIFT_SDK_CONFORMANCES.get(classKey) ?? [];
+}

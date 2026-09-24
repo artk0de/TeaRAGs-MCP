@@ -60,6 +60,6 @@ export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolRe
 
     const typeName = this.cfg.memberTypes.typeOfProperty(enclosing, property, ctx);
     if (!typeName) return explicitSelf ? DROP : CONTINUE;
-    return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg);
+    return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg, call);
   }
 }

@@ -85,17 +85,21 @@
  *
  * ## What is deliberately NOT bound
  *
- * - `[Thing]` and `[String: Foo]` annotations bind NOTHING for the annotated
- *   NAME. `LocalBinding.type` is a bare string with no container slot, so
- *   binding the element type would type the ARRAY as a `Thing` and pin
+ * - A `[Thing]` annotation never binds the annotated NAME as a `Thing`.
+ *   `LocalBinding.type` is a bare string with no container slot, so binding
+ *   the element type would type the ARRAY as a `Thing` and pin
  *   `xs.append(_:)` to `Thing#append` — the Python lesson
  *   (`domains/language/CLAUDE.md`, "Python publishes type facts on THREE
- *   channels"), reached here through a different grammar. The element type is
- *   held in {@link SwiftTypeFact}'s own slot, which only `for x in xs` reads
- *   and which nothing emits, so the invariant is structural rather than a rule
- *   someone has to remember. A `Set<Foo>` / `[String: Foo]` element is NOT
- *   read: `swiftTypeFactOf` reduces a generic to its base name, and a
- *   dictionary iterates as a tuple the single-name pattern rejects anyway.
+ *   channels"), reached here through a different grammar. It binds `Array`
+ *   (and `[String: Foo]` binds `Dictionary`), the standard-library types those
+ *   spellings ARE, so a call reaches the project's `extension Array where
+ *   Element == Header` (bd tea-rags-mcp-y99pg.14; until then they bound
+ *   nothing). The element type is held in {@link SwiftTypeFact}'s own slot,
+ *   which only `for x in xs` and the element accessors read and which
+ *   nothing emits, so the invariant is structural rather than a rule someone
+ *   has to remember. A `Set<Foo>` / `[String: Foo]` element is NOT read:
+ *   `swiftTypeFactOf` reduces a generic to its base name, and a dictionary
+ *   iterates as a tuple the single-name pattern rejects anyway.
  * - A non-CapWords initializer whose callee this file does NOT declare
  *   (`let t = makeThing()`) binds nothing — its return type is unknowable here
  *   and recording the FUNCTION name as a type fabricates a `makeThing#member`
@@ -126,11 +130,15 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
+  AritySignature,
   CallRef,
+  CallResultBinding,
   ChunkExtraction,
   FileExtraction,
   ImportRef,
+  KwargSignature,
   LocalBinding,
+  TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
@@ -151,6 +159,7 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   const evidence = collectSwiftFileTypeEvidence(root);
   const bindingOwnership = assignBindingsToInnermostChunks(collectSwiftTypedBindings(root, evidence), input.chunks);
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const signatures = collectSwiftCallableSignatures(root, input.chunks);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -161,8 +170,17 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
     };
     // A type chunk's own calls run inside the type (`swiftNameOf` opts in).
     if (c.bodyScope !== undefined) chunk.bodyScope = c.bodyScope;
+    const signature = signatures.get(chunkIndex);
+    if (signature) {
+      chunk.arity = signature.arity;
+      chunk.kwargs = signature.kwargs;
+      chunk.acceptsBlock = signature.acceptsBlock;
+    }
     const bindings = bindingOwnership.get(chunkIndex);
-    if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
+    if (bindings && Object.keys(bindings.localBindings).length > 0) chunk.localBindings = bindings.localBindings;
+    if (bindings && Object.keys(bindings.callResultBindings).length > 0) {
+      chunk.callResultBindings = bindings.callResultBindings;
+    }
     return chunk;
   });
   const out: FileExtraction = {
@@ -185,6 +203,238 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   const structuredReturnTypes = collectSwiftStructuredReturnTypes(root, input.chunks);
   if (Object.keys(structuredReturnTypes).length > 0) out.structuredReturnTypes = structuredReturnTypes;
+  const typeDeclarations = collectSwiftTypeDeclarations(root);
+  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
+  return out;
+}
+
+/**
+ * Every type declaration of the file, in source order — the
+ * `typeDeclarations` channel (bd tea-rags-mcp-y99pg.1).
+ *
+ * tree-sitter-swift parses `extension T` as the same `class_declaration` node a
+ * `class T` is, and the symbol id both compose is `T`, so the keyword is the
+ * only evidence of which one a node is. A declaration's id is its own name
+ * under every enclosing declaration — an extension's included, since a type
+ * nested in `extension Encoder` composes as `Encoder.Container` — and an
+ * extension's own id is its name AS WRITTEN: Swift only lets an extension sit
+ * at file scope, so that path is already qualified from the module.
+ *
+ * `conforms` lists every inheritance specifier, superclass and protocols
+ * alike, because the clause marks neither; {@link collectSwiftClassExtends}
+ * is where the superclass is told apart for `super`.
+ */
+function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
+  const out: TypeDeclarationFact[] = [];
+  walk(root, (node) => {
+    const kind = swiftTypeDeclarationKind(node);
+    if (kind === null) return;
+    const name = swiftTypeNameText(node.childForFieldName("name")?.text);
+    if (name === undefined) return;
+    const enclosing: string[] = [];
+    for (let current = node.parent; current; current = current.parent) {
+      if (swiftTypeDeclarationKind(current) === null) continue;
+      const outer = swiftTypeNameText(current.childForFieldName("name")?.text);
+      if (outer !== undefined) enclosing.unshift(outer);
+    }
+    const conforms = swiftInheritedTypeNames(node);
+    const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
+    const { fieldTypeArguments, memberClosureParameters } = swiftGenericMemberFacts(node, genericParameters);
+    const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
+    const functionAliasReturns = swiftFunctionAliasReturns(node);
+    // `extension Collection<String>` composes its members under the name as
+    // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
+    const written = node.childForFieldName("name")?.text.trim();
+    const spelledAs = kind === "extension" && written !== undefined && written !== name ? written : undefined;
+    out.push({
+      typeId: [...enclosing, name].join("."),
+      reopens: kind === "extension",
+      ...(conforms.length > 0 ? { conforms } : {}),
+      ...(genericParameters.length > 0 ? { genericParameters } : {}),
+      ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
+      ...(memberClosureParameters ? { memberClosureParameters } : {}),
+      ...(enumCasePayloads ? { enumCasePayloads } : {}),
+      ...(spelledAs === undefined ? {} : { spelledAs }),
+      ...(functionAliasReturns ? { functionAliasReturns } : {}),
+    });
+  });
+  return out;
+}
+
+/**
+ * What each function-typed `typealias` a type body declares returns (bd
+ * tea-rags-mcp-y99pg.22): `typealias Handler = (Callback) -> DataRequest` →
+ * `Handler: "DataRequest"`. Read positionally, past `=` and then `->`.
+ */
+function swiftFunctionAliasReturns(node: AstNode): Record<string, string> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const out = createIdentifierRecord<string>();
+  let any = false;
+  for (const member of body.namedChildren) {
+    if (member.type !== "typealias_declaration") continue;
+    const alias = member.namedChildren.find((c) => c.type === "type_identifier")?.text;
+    const aliased = swiftTypeNodeAfter(member, "=");
+    if (alias === undefined || aliased?.type !== "function_type") continue;
+    const returned = swiftTypeFactOf(swiftTypeNodeAfter(aliased, "->")).nominal;
+    if (returned === null || SWIFT_UNUSABLE_RETURN_TYPES.has(returned)) continue;
+    out[alias] = returned;
+    any = true;
+  }
+  return any ? out : undefined;
+}
+
+/**
+ * An enum's payload-carrying cases, each slot's nominal type in position
+ * order (bd tea-rags-mcp-y99pg.16). One `case a(X), b(Y)` entry declares
+ * several cases, each name followed by its own parameter list. Slots are read
+ * positionally — a slot's label is the `simple_identifier` beside it, never a
+ * type — for the materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftEnumCasePayloads(node: AstNode): Record<string, (string | null)[]> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const cases = createIdentifierRecord<(string | null)[]>();
+  let any = false;
+  for (const entry of body.namedChildren) {
+    if (entry.type !== "enum_entry") continue;
+    let caseName: string | null = null;
+    for (const child of entry.namedChildren) {
+      if (child.type === "simple_identifier") caseName = child.text;
+      else if (child.type === "enum_type_parameters" && caseName !== null) {
+        cases[caseName] = child.namedChildren
+          .filter((slot) => slot.type !== "simple_identifier" && slot.type !== "comment")
+          .map((slot) => swiftTypeFactOf(slot).nominal);
+        any = true;
+      }
+    }
+  }
+  return any ? cases : undefined;
+}
+
+/** A declaration's own generic parameter names: `class Protected<Value>` → `["Value"]`. */
+function swiftTypeParameterNames(node: AstNode): string[] {
+  const list = node.children.find((c) => c.type === "type_parameters");
+  if (!list) return [];
+  const names: string[] = [];
+  for (const parameter of list.namedChildren) {
+    if (parameter.type !== "type_parameter") continue;
+    const identifier = parameter.namedChildren.find((c) => c.type === "type_identifier");
+    if (identifier) names.push(identifier.text);
+  }
+  return names;
+}
+
+/**
+ * What a type body says that a USE of the type in another file needs in
+ * order to type a closure parameter (bd tea-rags-mcp-y99pg.13): the generic
+ * arguments its stored properties are declared with, and the parameter types
+ * of the one closure each of its methods takes. Both are read positionally —
+ * `type_arguments` and `tuple_type_item` children, never fields — for the
+ * materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftGenericMemberFacts(
+  node: AstNode,
+  genericParameters: readonly string[],
+): {
+  fieldTypeArguments?: Record<string, (string | null)[]>;
+  memberClosureParameters?: Record<string, (string | null)[] | null>;
+} {
+  const body = node.childForFieldName("body");
+  if (!body) return {};
+  const fields = createIdentifierRecord<(string | null)[]>();
+  const closures = createIdentifierRecord<(string | null)[] | null>();
+  let anyField = false;
+  let anyClosure = false;
+  for (const member of body.children) {
+    if (member.type === "property_declaration") {
+      const name = singleIdentifierPatternName(member.childForFieldName("name"));
+      const annotation = member.children.find((c) => c.type === "type_annotation");
+      const typeNode = annotation ? swiftTypeNodeAfter(annotation, ":") : null;
+      const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
+      if (!name || !args) continue;
+      fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
+      anyField = true;
+      continue;
+    }
+    if (member.type !== "function_declaration" && member.type !== "protocol_function_declaration") continue;
+    const name = member.childForFieldName("name")?.text;
+    const types = name ? swiftClosureParameterTypeNames(member, genericParameters) : undefined;
+    if (!name || types === undefined) continue;
+    anyClosure = true;
+    if (!Object.hasOwn(closures, name)) closures[name] = types;
+    else if (!sameSwiftTypeNames(closures[name], types)) closures[name] = null;
+  }
+  return {
+    ...(anyField ? { fieldTypeArguments: fields } : {}),
+    ...(anyClosure ? { memberClosureParameters: closures } : {}),
+  };
+}
+
+/** Whether two overloads state the same closure parameter types; `null` (poisoned) equals nothing. */
+function sameSwiftTypeNames(a: readonly (string | null)[] | null, b: readonly (string | null)[] | null): boolean {
+  if (a === null) return false;
+  if (b === null) return false;
+  return a.length === b.length && a.every((name, i) => name === b[i]);
+}
+
+/**
+ * The declared parameter types of the ONE function-typed parameter `fn`
+ * takes — `undefined` when it takes none, `null` when it takes two or more.
+ * A name the enclosing type declares as a generic parameter is kept as that
+ * name, to be bound by a receiver's type arguments; a method's own generic
+ * parameter reads as its constraint, or nothing.
+ */
+function swiftClosureParameterTypeNames(
+  fn: AstNode,
+  genericParameters: readonly string[],
+): (string | null)[] | null | undefined {
+  let found: (string | null)[] | null | undefined;
+  for (const parameter of fn.children) {
+    if (parameter.type !== "parameter") continue;
+    const functionType = swiftFunctionTypeNode(swiftParameterTypeNode(parameter));
+    if (!functionType) continue;
+    if (found !== undefined) return null;
+    const params = functionType.children.find((c) => c.type === "tuple_type");
+    const types: (string | null)[] = [];
+    for (const item of params?.namedChildren ?? []) {
+      if (item.type !== "tuple_type_item") continue;
+      const typeNode = item.namedChildren[item.namedChildCount - 1] ?? null;
+      const written = typeNode?.type === "user_type" ? typeNode.text : undefined;
+      if (written !== undefined && genericParameters.includes(written)) types.push(written);
+      else types.push(swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal);
+    }
+    found = types;
+  }
+  return found;
+}
+
+/** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
+function swiftTypeDeclarationKind(node: AstNode): string | null {
+  if (node.type === "protocol_declaration") return "protocol";
+  if (node.type !== "class_declaration") return null;
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child === null || child.isNamed) continue;
+    if (child.type === "extension" || SWIFT_TYPE_DECLARATION_KEYWORDS.has(child.type)) return child.type;
+  }
+  return null;
+}
+
+/** A declared or extended type's name with any generic argument list dropped (`Box<T>` → `Box`). */
+function swiftTypeNameText(text: string | undefined): string | undefined {
+  const name = text?.split("<")[0]?.trim();
+  return name !== undefined && name.length > 0 ? name : undefined;
+}
+
+/** Every inheritance specifier's type name, generic arguments dropped, in clause order. */
+function swiftInheritedTypeNames(node: AstNode): string[] {
+  const out: string[] = [];
+  for (const child of node.namedChildren) {
+    if (child.type !== "inheritance_specifier") continue;
+    const name = swiftTypeNameText(child.text);
+    if (name !== undefined) out.push(name);
+  }
   return out;
 }
 
@@ -220,10 +470,42 @@ function collectSwiftStructuredReturnTypes(
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
     const name = node.childForFieldName("name")?.text;
-    const nominal = name === undefined ? null : (swiftDeclaredReturnFact(node)?.nominal ?? null);
+    const nominal = name === undefined ? null : (swiftDeclaredReturnFact(node)?.nominal ?? swiftSelfReturnMarker(node));
     if (name === undefined || nominal === null) return;
     const symbolId = idsByLine.get(node.startPosition.row + 1)?.find((id) => composedIdNames(id, name));
     if (symbolId !== undefined) out[symbolId] = { form: "instance", name: nominal };
+  });
+  return out;
+}
+
+/**
+ * chunk index → the argument-label signature of the `func` / `init` that chunk
+ * IS, matched the way {@link collectSwiftStructuredReturnTypes} matches a
+ * declaration to its chunk: same start line, final id segment naming it.
+ */
+function collectSwiftCallableSignatures(
+  root: AstNode,
+  chunks: readonly { symbolId: string; startLine: number }[],
+): Map<number, SwiftCallableSignature> {
+  const indicesByLine = new Map<number, number[]>();
+  chunks.forEach((chunk, index) => {
+    const at = indicesByLine.get(chunk.startLine);
+    if (at) at.push(index);
+    else indicesByLine.set(chunk.startLine, [index]);
+  });
+  const out = new Map<number, SwiftCallableSignature>();
+  walk(root, (node) => {
+    if (
+      node.type !== "function_declaration" &&
+      node.type !== "protocol_function_declaration" &&
+      node.type !== "init_declaration"
+    ) {
+      return;
+    }
+    const name = node.type === "init_declaration" ? "init" : node.childForFieldName("name")?.text;
+    if (name === undefined) return;
+    const index = indicesByLine.get(node.startPosition.row + 1)?.find((i) => composedIdNames(chunks[i].symbolId, name));
+    if (index !== undefined && !out.has(index)) out.set(index, swiftCallableSignature(node));
   });
   return out;
 }
@@ -343,6 +625,21 @@ function stripImportKeywords(text: string): string {
 function collectSwiftCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
+    // `Protected<[T]>(…)`: a construction the grammar does not call a call.
+    if (node.type === "constructor_expression") {
+      const name = swiftConstructedGenericFact(node).nominal;
+      const constructorSuffix = node.children.find((c) => c.type === "constructor_suffix");
+      if (name && !name.includes(".")) {
+        out.push({
+          callText: node.text,
+          receiver: null,
+          member: name,
+          startLine: node.startPosition.row + 1,
+          ...(constructorSuffix ? swiftCallArguments(constructorSuffix) : {}),
+        });
+      }
+      return;
+    }
     if (node.type !== "call_expression") return;
     const suffix = node.children.find((c) => c.type === "call_suffix");
     // Bracketed suffix = subscript read (`items[i]`, `dict["k"]`), not a call.
@@ -350,8 +647,11 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     const callee = node.namedChildren.find((c) => c !== suffix);
     if (!callee) return;
     const startLine = node.startPosition.row + 1;
+    const signature = swiftCallArguments(suffix);
     if (callee.type === "simple_identifier") {
-      out.push({ callText: node.text, receiver: null, member: callee.text, startLine });
+      // Invoking a closure VALUE calls no declared symbol (bd tea-rags-mcp-y99pg.8).
+      if (node.children.some((c) => c.type === "?") || isSwiftLocalValueName(callee.text, node)) return;
+      out.push({ callText: node.text, receiver: null, member: callee.text, startLine, ...signature });
       return;
     }
     if (callee.type !== "navigation_expression") return;
@@ -363,9 +663,54 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
       receiver: normalizeSwiftReceiver(target.text),
       member: member.text,
       startLine,
+      ...signature,
     });
   });
   return out;
+}
+
+/**
+ * Whether `name`, at `at`, names a VALUE the enclosing code declares — a
+ * parameter of an enclosing function or closure, or a `let` / `var` an
+ * enclosing block declares ABOVE `at` — rather than a function. Swift resolves
+ * a bare name to the innermost declaration, so such a `name(...)` invokes the
+ * value and calls no declared symbol. The walk stops at the enclosing type: a
+ * stored property of closure type is indistinguishable from a method by name
+ * here, and only the optional-call form (`name?(…)`) says which it is.
+ */
+function isSwiftLocalValueName(name: string, at: AstNode): boolean {
+  const line = at.startPosition.row;
+  for (let current = at.parent; current; current = current.parent) {
+    if (current.type === "class_declaration" || current.type === "protocol_declaration") return false;
+    if (SWIFT_FUNCTION_LIKE_NODES.has(current.type) && declaresSwiftParameter(current, name)) return true;
+    if (current.type === "lambda_literal") {
+      const params = swiftLambdaParameters(current) ?? [];
+      if (params.some((p) => p.childForFieldName("name")?.text === name)) return true;
+    }
+    if (current.type === "statements") {
+      for (const statement of current.children) {
+        if (statement.startPosition.row >= line) break;
+        if (
+          statement.type === "property_declaration" &&
+          singleIdentifierPatternName(statement.childForFieldName("name")) === name
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** Whether a function-like declaration takes a parameter whose INTERNAL name is `name`. */
+function declaresSwiftParameter(fn: AstNode, name: string): boolean {
+  return fn.children.some((parameter) => {
+    if (parameter.type !== "parameter") return false;
+    const colon = parameter.children.findIndex((c) => c.type === ":");
+    const names = parameter.children.slice(0, colon === -1 ? undefined : colon);
+    const internal = names.filter((c) => c.type === "simple_identifier").pop();
+    return internal?.text === name;
+  });
 }
 
 /**
@@ -387,11 +732,16 @@ export function normalizeSwiftReceiver(text: string): string {
  * nothing else — and exists so `for x in xs` can type `x` without ever letting
  * `xs` be typed as a `T`. Keeping them apart is what makes the container rule
  * structural: a caller that wants a receiver type reads `nominal` and gets
- * `null` for an array, whatever the element is.
+ * `Array` for an array, whatever the element is.
  */
 interface SwiftTypeFact {
   readonly nominal: string | null;
   readonly element: string | null;
+  /**
+   * A `Dictionary`'s key and value nominals, for a `for (key, value) in`
+   * over it (bd tea-rags-mcp-y99pg.17). Absent on every other fact.
+   */
+  readonly entry?: readonly [string | null, string | null];
 }
 
 const NO_TYPE: SwiftTypeFact = { nominal: null, element: null };
@@ -399,10 +749,15 @@ const NO_TYPE: SwiftTypeFact = { nominal: null, element: null };
 /** Names a binding must never be recorded under — each is claimed by a chain pass of its own. */
 const SWIFT_PSEUDO_BINDING_NAMES: ReadonlySet<string> = new Set(["self", "Self", "super"]);
 
+/** The `structuredReturnTypes` marker a `-> Self` return publishes (bd tea-rags-mcp-y99pg.18). */
+const SWIFT_SELF_RETURN = "Self";
+
 /**
  * Return types that name nothing the symbol table can hold. `Self` is the
- * conforming type, unknowable at the declaration; the other four are universal
- * or empty and carry no member a call could land on.
+ * conforming type, unknowable at the declaration (the run-global channel
+ * publishes it as {@link SWIFT_SELF_RETURN} for the resolver to substitute);
+ * the other four are universal or empty and carry no member a call could land
+ * on.
  */
 const SWIFT_UNUSABLE_RETURN_TYPES: ReadonlySet<string> = new Set(["Self", "Any", "AnyObject", "Never", "Void"]);
 
@@ -450,7 +805,56 @@ interface SwiftFileTypeEvidence {
    * that coordinate disagree and the name is therefore unusable.
    */
   readonly returnTypes: Map<string, SwiftTypeFact | null>;
+  /**
+   * `returnKey(owner, funcName) → positional parameter facts` of the ONE
+   * function-typed parameter that declaration takes — what a closure passed to
+   * it binds `$0`, `$1`, … or its named parameters to (bd
+   * tea-rags-mcp-y99pg.3). `null` where two declarations of the coordinate
+   * disagree, or where one declaration takes two function-typed parameters and
+   * which one a closure lands on is a label question.
+   */
+  readonly closureParameters: Map<string, readonly SwiftTypeFact[] | null>;
+  /**
+   * `returnKey(owner, funcName) → the argument` whose `Type.self` value names
+   * what a generic return is (`as type: R.Type` → `-> R`), `null` where two
+   * declarations disagree. Read before `returnTypes`, which holds only the
+   * return's constraint.
+   */
+  readonly metatypeReturns: Map<string, SwiftMetatypeSlot | null>;
 }
+
+/** Which argument of a call binds a generic return: by label, or by position when unlabelled. */
+interface SwiftMetatypeSlot {
+  readonly label: string | null;
+  readonly index: number;
+}
+
+/**
+ * Sequence methods whose closure receives the ELEMENT — one parameter, or two
+ * for the comparators. Read only off an `element` fact, which only an `[T]`
+ * type produces, so a project type's own namesake method is never re-read as a
+ * collection's.
+ */
+const SWIFT_ELEMENT_CLOSURE_ARITY: ReadonlyMap<string, number> = new Map([
+  ["forEach", 1],
+  ["map", 1],
+  ["compactMap", 1],
+  ["flatMap", 1],
+  ["filter", 1],
+  ["first", 1],
+  ["last", 1],
+  ["contains", 1],
+  ["allSatisfy", 1],
+  ["firstIndex", 1],
+  ["lastIndex", 1],
+  ["drop", 1],
+  ["prefix", 1],
+  ["removeAll", 1],
+  ["sorted", 2],
+  ["sort", 2],
+  ["min", 2],
+  ["max", 2],
+]);
 
 /** Key a declared return under its owning type (`null` = top level) plus its name. */
 function returnKey(owner: string | null, name: string): string {
@@ -475,6 +879,8 @@ function returnKey(owner: string | null, name: string): string {
 function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
   const propertyTypes = new Map<string, Map<string, SwiftTypeFact>>();
   const returnTypes = new Map<string, SwiftTypeFact | null>();
+  const closureParameters = new Map<string, readonly SwiftTypeFact[] | null>();
+  const metatypeReturns = new Map<string, SwiftMetatypeSlot | null>();
   walk(root, (node) => {
     if (node.type === "class_declaration" || node.type === "protocol_declaration") {
       collectSwiftPropertyTypes(node, propertyTypes);
@@ -483,15 +889,418 @@ function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
     if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
     const name = node.childForFieldName("name")?.text;
     if (!name) return;
+    const key = returnKey(enclosingSwiftTypeName(node), name);
+    const closure = swiftClosureParameterFacts(node);
+    if (closure !== undefined) {
+      const seen = closureParameters.get(key);
+      if (seen === undefined) closureParameters.set(key, closure);
+      else if (!sameSwiftFacts(seen, closure)) closureParameters.set(key, null);
+    }
+    const slot = swiftMetatypeReturnSlot(node);
+    if (slot !== undefined) {
+      const seen = metatypeReturns.get(key);
+      if (seen === undefined) metatypeReturns.set(key, slot);
+      else if (seen?.label !== slot.label || seen.index !== slot.index) metatypeReturns.set(key, null);
+    }
     const fact = swiftDeclaredReturnFact(node);
     if (!fact) return;
-    const key = returnKey(enclosingSwiftTypeName(node), name);
     const previous = returnTypes.get(key);
     if (previous === undefined) returnTypes.set(key, fact);
     // `previous === null` is the poisoned marker, and optional access keeps it poisoned.
     else if (previous?.nominal !== fact.nominal || previous?.element !== fact.element) returnTypes.set(key, null);
   });
-  return { propertyTypes, returnTypes };
+  return { propertyTypes, returnTypes, closureParameters, metatypeReturns };
+}
+
+/** Whether two positional fact lists state the same types; `null` (poisoned) equals nothing. */
+function sameSwiftFacts(a: readonly SwiftTypeFact[] | null, b: readonly SwiftTypeFact[] | null): boolean {
+  if (a === null || b === null) return false;
+  if (a.length !== b.length) return false;
+  return a.every((fact, i) => fact.nominal === b[i].nominal && fact.element === b[i].element);
+}
+
+/**
+ * The positional parameter facts of the ONE function-typed parameter a
+ * declaration takes: `undefined` when it takes none, `null` when it takes two
+ * or more. A name that is a generic parameter of the declaration or of its
+ * enclosing type (`(inout Value) -> U` on `Protected<Value>`) proves nothing —
+ * it is bound per use, not declared.
+ */
+function swiftClosureParameterFacts(fn: AstNode): readonly SwiftTypeFact[] | null | undefined {
+  let found: readonly SwiftTypeFact[] | null | undefined;
+  for (const parameter of fn.children) {
+    if (parameter.type !== "parameter") continue;
+    const functionType = swiftFunctionTypeNode(swiftParameterTypeNode(parameter));
+    if (!functionType) continue;
+    if (found !== undefined) return null;
+    const params = functionType.children.find((c) => c.type === "tuple_type");
+    const facts: SwiftTypeFact[] = [];
+    for (const item of params?.namedChildren ?? []) {
+      if (item.type !== "tuple_type_item") continue;
+      facts.push(swiftGenericResolvedFact(swiftTypeFactOf(item.namedChildren[item.namedChildCount - 1] ?? null), fn));
+    }
+    found = facts;
+  }
+  return found;
+}
+
+/**
+ * Where a generic return is bound by a METATYPE argument —
+ * `func request<R: Request>(for: …, as type: R.Type) -> R?` returns whatever
+ * type the `as:` argument names. The slot is the argument's label, or its
+ * position when the parameter has none; `undefined` when the return is not
+ * the declaration's own generic parameter or no parameter carries `R.Type`.
+ */
+function swiftMetatypeReturnSlot(fn: AstNode): SwiftMetatypeSlot | undefined {
+  const returned = swiftTypeFactOf(swiftTypeNodeAfter(fn, "->")).nominal;
+  if (!returned || !declaresSwiftTypeParameter(fn, returned)) return undefined;
+  let index = 0;
+  for (const parameter of fn.children) {
+    if (parameter.type !== "parameter") continue;
+    if (swiftParameterTypeNode(parameter)?.text === `${returned}.Type`) {
+      const names = parameter.children.filter((c) => c.type === "simple_identifier").map((c) => c.text);
+      const label = names.length > 1 ? names[0] : (names[0] ?? "_");
+      return { label: label === "_" ? null : label, index };
+    }
+    index += 1;
+  }
+  return undefined;
+}
+
+/**
+ * The type a call's metatype argument names — `DataRequest` for
+ * `request(for: task, as: DataRequest.self)` — or null when the argument is
+ * not a `Type.self` literal.
+ */
+function swiftMetatypeArgumentType(suffix: AstNode, slot: SwiftMetatypeSlot): string | null {
+  const args = suffix.children.find((c) => c.type === "value_arguments")?.namedChildren ?? [];
+  const values = args.filter((a) => a.type === "value_argument");
+  const labelOf = (arg: AstNode): string | null =>
+    arg.children.find((c) => c.type === "value_argument_label")?.text ?? null;
+  const arg = slot.label === null ? values[slot.index] : values.find((a) => labelOf(a) === slot.label);
+  const value = arg?.namedChildren[arg.namedChildCount - 1];
+  if (value?.type !== "navigation_expression") return null;
+  if (value.childForFieldName("suffix")?.childForFieldName("suffix")?.text !== "self") return null;
+  const typeText = value.childForFieldName("target")?.text;
+  return typeText !== undefined && /^_*[A-Z][\w.]*$/.test(typeText) ? typeText : null;
+}
+
+/** Declarations whose `type_parameters` and `where` clause scope a generic name over their subtree. */
+const SWIFT_GENERIC_SCOPES: ReadonlySet<string> = new Set([
+  "function_declaration",
+  "protocol_function_declaration",
+  "init_declaration",
+  "subscript_declaration",
+  "class_declaration",
+]);
+
+/**
+ * What a generic parameter NAME stands for at `at`: `undefined` when no
+ * enclosing declaration declares it (so it is a real type name), else the
+ * nominal of its conformance constraint — inline (`<R: Request>`) or in a
+ * `where` clause (`where T: Authenticator`) — or null when unconstrained.
+ *
+ * A call on a value of a constrained generic type dispatches on the
+ * constraint's requirement, which is the declaration the typechecker binds, so
+ * the constraint IS the receiver type for member lookup. The nearest declaring
+ * scope wins, which is Swift's own shadowing.
+ */
+function swiftGenericConstraint(name: string, at: AstNode): string | null | undefined {
+  for (let current: AstNode | null = at; current; current = current.parent) {
+    if (!SWIFT_GENERIC_SCOPES.has(current.type)) continue;
+    const declared = current.children
+      .find((c) => c.type === "type_parameters")
+      ?.namedChildren.find((p) => p.type === "type_parameter" && p.namedChildren[0]?.text === name);
+    if (!declared) continue;
+    if (declared.namedChildCount > 1) return swiftTypeFactOf(declared.namedChildren[1]).nominal;
+    for (const clause of current.children) {
+      if (clause.type !== "type_constraints") continue;
+      for (const constraint of clause.namedChildren) {
+        const inheritance = constraint.namedChildren.find((c) => c.type === "inheritance_constraint");
+        if (inheritance?.namedChildren[0]?.text !== name) continue;
+        return swiftTypeFactOf(inheritance.namedChildren[inheritance.namedChildCount - 1]).nominal;
+      }
+    }
+    return null;
+  }
+  return undefined;
+}
+
+/**
+ * A fact with every generic parameter name replaced by its constraint
+ * ({@link swiftGenericConstraint}). A member of a generic parameter
+ * (`Serializer.SerializedObject`, an associated type) proves nothing.
+ */
+function swiftGenericResolvedFact(fact: SwiftTypeFact, at: AstNode): SwiftTypeFact {
+  const resolve = (name: string | null): string | null => {
+    if (name === null) return null;
+    const head = name.split(".")[0];
+    const constraint = swiftGenericConstraint(head, at);
+    if (constraint === undefined) return name;
+    return head === name ? constraint : null;
+  };
+  const nominal = resolve(fact.nominal);
+  const element = resolve(fact.element);
+  return nominal === fact.nominal && element === fact.element ? fact : { nominal, element };
+}
+
+/**
+ * The evidence a CALL reads from a table keyed by {@link returnKey}, in
+ * Swift's lookup order: a bare callee on the enclosing type, then at the top
+ * level; a qualified one on whatever its receiver types to.
+ */
+function swiftCalleeEvidence<T>(
+  callee: AstNode,
+  table: ReadonlyMap<string, T>,
+  scope: SwiftTypeScope,
+  depth: number,
+): T | undefined {
+  if (callee.type === "simple_identifier") {
+    const own = table.get(returnKey(scope.site.enclosingType, callee.text));
+    return own !== undefined ? own : table.get(returnKey(null, callee.text));
+  }
+  if (callee.type !== "navigation_expression") return undefined;
+  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
+  const owner = swiftReceiverTypeName(callee.childForFieldName("target"), scope, depth);
+  return member && owner ? table.get(returnKey(owner, member.text)) : undefined;
+}
+
+/**
+ * The type node of a `parameter`, past any `type_modifiers` (`@escaping`,
+ * `@Sendable`) — which tree-sitter-swift places between the `:` and the type.
+ */
+function swiftParameterTypeNode(parameter: AstNode): AstNode | null {
+  const at = parameter.children.findIndex((c) => c.type === ":");
+  if (at === -1) return null;
+  for (let i = at + 1; i < parameter.children.length; i++) {
+    const child = parameter.children[i];
+    // `@escaping` alone parses as `parameter_modifiers`, with `@Sendable` as `type_modifiers`.
+    if (child.type !== "type_modifiers" && child.type !== "parameter_modifiers") return child;
+  }
+  return null;
+}
+
+/** A callable's argument-label signature, in the shape `SymbolDefinition` persists. */
+interface SwiftCallableSignature {
+  readonly arity: AritySignature;
+  readonly kwargs: KwargSignature;
+  readonly acceptsBlock: boolean;
+}
+
+/**
+ * The argument-label signature of a `func` / `init` (bd tea-rags-mcp-y99pg.7),
+ * mapped onto the kernel's call-compatibility axes: a LABELLED parameter is a
+ * keyword (`kwargs`), an unlabelled (`_`) one a positional slot (`arity`), and
+ * whether a trailing closure can land on it (`acceptsBlock`).
+ *
+ * Whether a parameter can take a closure is three-valued
+ * ({@link swiftClosureCapability}), because a closure type is very often
+ * spelled through a typealias (`closure: @escaping ProgressHandler`,
+ * `_ closure: QuickConfigurer`) that no file-local read can expand. A PROVEN
+ * closure parameter is never required on either axis — a trailing closure may
+ * satisfy it without its label or its position — and neither is a defaulted
+ * or variadic one. A POSSIBLE one stays required, and the resolver lets a
+ * trailing closure stand in for one missing requirement. `acceptsBlock` is
+ * false only when no parameter can take a closure. A single parameter name is
+ * both label and local name, which is Swift's rule for every declaration here.
+ */
+function swiftCallableSignature(fn: AstNode): SwiftCallableSignature {
+  const required: string[] = [];
+  const optional: string[] = [];
+  let minRequired = 0;
+  let maxPositional = 0;
+  let hasSplat = false;
+  let acceptsBlock = false;
+  fn.children.forEach((parameter, i) => {
+    if (parameter.type !== "parameter") return;
+    const colon = parameter.children.findIndex((c) => c.type === ":");
+    const names = parameter.children
+      .slice(0, colon === -1 ? undefined : colon)
+      .filter((c) => c.type === "simple_identifier")
+      .map((c) => c.text);
+    const label = names[0] === "_" ? null : (names[0] ?? null);
+    const capability = swiftClosureCapability(parameter, fn);
+    const variadic = parameter.children.some((c) => c.type === "...");
+    const defaulted = fn.children[i + 1]?.type === "=";
+    const mandatory = capability !== "yes" && !variadic && !defaulted;
+    if (capability !== "no") acceptsBlock = true;
+    if (label !== null) {
+      (mandatory ? required : optional).push(label);
+      return;
+    }
+    maxPositional += 1;
+    if (variadic) hasSplat = true;
+    if (mandatory) minRequired += 1;
+  });
+  return {
+    arity: { minRequired, maxPositional, hasSplat },
+    kwargs: { required, optional, hasSplat: false },
+    acceptsBlock,
+  };
+}
+
+/** Value types a closure is never spelled as — the common non-closure parameter types. */
+const SWIFT_NON_CLOSURE_TYPES: ReadonlySet<string> = new Set([
+  "String",
+  "Substring",
+  "Character",
+  "Int",
+  "Int8",
+  "Int16",
+  "Int32",
+  "Int64",
+  "UInt",
+  "UInt8",
+  "UInt16",
+  "UInt32",
+  "UInt64",
+  "Double",
+  "Float",
+  "CGFloat",
+  "Bool",
+  "Data",
+  "Date",
+  "URL",
+  "UUID",
+  "TimeInterval",
+  "DispatchQueue",
+  "OperationQueue",
+]);
+
+/**
+ * Whether a parameter can take a closure: `yes` for a function type or an
+ * `@escaping` / `@autoclosure` / `@Sendable` one (only a closure carries
+ * those), `no` for a type that is provably not a function — an array,
+ * dictionary, real tuple or metatype, a protocol-constrained generic
+ * parameter (a function type conforms to no protocol), or a common value
+ * type — and `maybe` for any other name, which may be a closure typealias.
+ */
+function swiftClosureCapability(parameter: AstNode, fn: AstNode): "yes" | "no" | "maybe" {
+  const typeNode = swiftParameterTypeNode(parameter);
+  if (swiftFunctionTypeNode(typeNode) !== null) return "yes";
+  const attributed = parameter.children.some(
+    (c) =>
+      (c.type === "type_modifiers" || c.type === "parameter_modifiers") &&
+      /@(escaping|autoclosure|Sendable)\b/.test(c.text),
+  );
+  if (attributed) return "yes";
+  let bare = typeNode;
+  while (bare?.type === "optional_type") bare = bare.namedChildren[0] ?? null;
+  if (!bare) return "maybe";
+  if (bare.type === "array_type" || bare.type === "dictionary_type" || bare.type === "metatype") return "no";
+  if (bare.type === "tuple_type" && parenthesizedSwiftTypeNode(bare) === null) return "no";
+  if (bare.type !== "user_type") return "maybe";
+  const name = bare.text.replace(/<[\s\S]*$/, "");
+  if (name.endsWith(".Type") || SWIFT_NON_CLOSURE_TYPES.has(name)) return "no";
+  const constraint = swiftGenericConstraint(name, fn);
+  return constraint !== undefined && constraint !== null ? "no" : "maybe";
+}
+
+/**
+ * What a call writes, on the same axes: its labels, its unlabelled argument
+ * count and whether a trailing closure follows the parentheses.
+ */
+function swiftCallArguments(suffix: AstNode): Pick<CallRef, "argCount" | "kwargKeys" | "passesBlock"> {
+  const args = suffix.children.find((c) => c.type === "value_arguments")?.namedChildren ?? [];
+  const kwargKeys: string[] = [];
+  let argCount = 0;
+  for (const arg of args) {
+    if (arg.type !== "value_argument") continue;
+    const label = arg.children.find((c) => c.type === "value_argument_label")?.text;
+    if (label === undefined) argCount += 1;
+    else kwargKeys.push(label);
+  }
+  return { argCount, kwargKeys, passesBlock: suffix.children.some((c) => c.type === "lambda_literal") };
+}
+
+/** A `function_type` node, looking through `?` and parentheses: `((T) -> Void)?`. */
+function swiftFunctionTypeNode(typeNode: AstNode | null): AstNode | null {
+  if (!typeNode) return null;
+  if (typeNode.type === "function_type") return typeNode;
+  if (typeNode.type === "optional_type") return swiftFunctionTypeNode(typeNode.namedChildren[0] ?? null);
+  if (typeNode.type === "tuple_type") return swiftFunctionTypeNode(parenthesizedSwiftTypeNode(typeNode));
+  return null;
+}
+
+/**
+ * The positional facts a closure literal's parameters take from the call it
+ * is an argument of — trailing or parenthesized — or null when nothing proves
+ * them.
+ *
+ * Two sources, both declarations: the callee's ONE function-typed parameter
+ * when this file declares the callee (same lookup order as
+ * {@link swiftCallResultFact}), and the ELEMENT of an `[T]` receiver for a
+ * sequence method (`xs.forEach { $0… }`).
+ */
+function swiftClosureArgumentFacts(lambda: AstNode, scope: SwiftTypeScope): readonly SwiftTypeFact[] | null {
+  let suffix = lambda.parent;
+  if (suffix?.type === "value_argument") suffix = suffix.parent?.parent ?? null;
+  if (suffix?.type !== "call_suffix") return null;
+  const call = suffix.parent;
+  if (call?.type !== "call_expression") return null;
+  const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
+  if (!callee) return null;
+  if (callee.type === "navigation_expression") {
+    const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+    const target = callee.childForFieldName("target");
+    const element = target ? swiftExpressionFact(target, scope, 0).element : null;
+    const arity = member === undefined ? undefined : SWIFT_ELEMENT_CLOSURE_ARITY.get(member);
+    if (element && arity !== undefined) {
+      return Array.from({ length: arity }, () => ({ nominal: element, element: null }));
+    }
+  }
+  return swiftCalleeEvidence(callee, scope.evidence.closureParameters, scope, 0) ?? null;
+}
+
+/**
+ * The SPELLING of the member a closure literal is passed to — `mutableState.write`
+ * for `mutableState.write { … }` — or undefined when the callee is not a member
+ * access on a value chain the resolver can fold.
+ */
+function swiftClosureCalleeSpelling(lambda: AstNode): string | undefined {
+  let suffix = lambda.parent;
+  if (suffix?.type === "value_argument") suffix = suffix.parent?.parent ?? null;
+  if (suffix?.type !== "call_suffix") return undefined;
+  const call = suffix.parent;
+  if (call?.type !== "call_expression") return undefined;
+  const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
+  if (callee?.type !== "navigation_expression") return undefined;
+  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+  const target = swiftValueChainSpelling(callee.childForFieldName("target"));
+  return member && target ? `${target}.${member}` : undefined;
+}
+
+/** How many `$n` parameters a closure's own body reads: one past the highest `n`. */
+function swiftImplicitParameterCount(lambda: AstNode): number {
+  let count = 0;
+  for (const match of lambda.text.matchAll(/\$(\d+)/g)) count = Math.max(count, Number(match[1]) + 1);
+  return count;
+}
+
+/** The `lambda_parameter` nodes a closure literal names, or null when it uses `$0`-style ones. */
+function swiftLambdaParameters(lambda: AstNode): AstNode[] | null {
+  const signature = lambda.children.find((c) => c.type === "lambda_function_type");
+  if (!signature) return null;
+  const list = signature.children.find((c) => c.type === "lambda_function_type_parameters");
+  return list ? list.children.filter((c) => c.type === "lambda_parameter") : [];
+}
+
+/**
+ * Whether a closure body nests an implicit-parameter closure. Such a closure
+ * re-binds `$0` for its own body, and one this walker cannot type would
+ * otherwise see the OUTER `$0`'s type, since a binding here is scoped by line.
+ */
+function nestsImplicitParameterClosure(lambda: AstNode): boolean {
+  let nested = false;
+  const visit = (node: AstNode): void => {
+    for (const child of node.children) {
+      if (nested) return;
+      if (child.type === "lambda_literal" && swiftLambdaParameters(child) === null) nested = true;
+      else visit(child);
+    }
+  };
+  visit(lambda);
+  return nested;
 }
 
 /** One nominal type body's `propertyName → fact` entries, merged into the file map. */
@@ -500,8 +1309,11 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, Map<string, 
   const body = node.childForFieldName("body");
   if (!name || !body) return;
   for (const member of body.children) {
-    if (member.type !== "property_declaration") continue;
-    const fieldName = singleIdentifierPatternName(member.childForFieldName("name"));
+    if (member.type !== "property_declaration" && member.type !== "protocol_property_declaration") continue;
+    const fieldName =
+      member.type === "property_declaration"
+        ? singleIdentifierPatternName(member.childForFieldName("name"))
+        : protocolRequirementName(member);
     const fact = swiftDeclaredPropertyFact(member);
     if (!fieldName || (!fact.nominal && !fact.element)) continue;
     let fields = into.get(name.text);
@@ -511,6 +1323,17 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, Map<string, 
     }
     if (!fields.has(fieldName)) fields.set(fieldName, fact);
   }
+}
+
+/**
+ * The name a protocol property requirement (`var manager: Manager { get }`)
+ * declares. Its `pattern` carries the `var` keyword's binding pattern BESIDE
+ * the name, so the one-identifier read a stored property uses finds nothing.
+ */
+function protocolRequirementName(requirement: AstNode): string | null {
+  const pattern = requirement.children.find((c) => c.type === "pattern");
+  const names = pattern?.namedChildren.filter((c) => c.type === "simple_identifier") ?? [];
+  return names.length === 1 ? names[0].text : null;
 }
 
 /**
@@ -557,16 +1380,28 @@ function swiftClassFieldTypesByClassKey(
  * Swift writes its return types, so this is a read rather than the terminal-
  * expression fold `kernel/return-inference.ts` performs for Ruby and Python.
  * The two gates are what keep the read honest: a universal / empty type
- * (`Any`, `Void`, `Self`) has no member to land on, and the function's OWN
- * generic parameter is a name that exists only inside the signature —
- * recording `T` would fabricate a `T#member` target at every call site.
+ * (`Any`, `Void`, `Self`) has no member to land on, and a generic parameter
+ * is a name that exists only inside the signature — recording `T` would
+ * fabricate a `T#member` target at every call site, so it reads as its
+ * constraint, or as nothing when it has none (bd tea-rags-mcp-y99pg.6).
  */
 function swiftDeclaredReturnFact(node: AstNode): SwiftTypeFact | null {
-  const fact = swiftTypeFactOf(swiftTypeNodeAfter(node, "->"));
+  const fact = swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(node, "->")), node);
   const named = fact.nominal ?? fact.element;
   if (!named) return null;
-  if (SWIFT_UNUSABLE_RETURN_TYPES.has(named)) return null;
-  return declaresSwiftTypeParameter(node, named) ? null : fact;
+  return SWIFT_UNUSABLE_RETURN_TYPES.has(named) ? null : fact;
+}
+
+/**
+ * `SWIFT_SELF_RETURN` for a `func` declared `-> Self`, else null (bd
+ * tea-rags-mcp-y99pg.18). Published as a MARKER, never as the declaring type:
+ * `Self` is the RECEIVER's type, which only the resolver's fold knows —
+ * `dataRequest.configured()` on a method `Request` declares returns a
+ * `DataRequest`.
+ */
+function swiftSelfReturnMarker(node: AstNode): string | null {
+  const declared = swiftTypeFactOf(swiftTypeNodeAfter(node, "->")).nominal;
+  return declared === SWIFT_SELF_RETURN ? SWIFT_SELF_RETURN : null;
 }
 
 /** Whether `name` is one of the declaration's own generic parameters (`func decode<T>() -> T`). */
@@ -596,6 +1431,23 @@ interface SwiftScopedBinding {
   readonly functionKey: number;
   /** 1-based last line the binding is visible on; absent ⇒ visible to the end of its chunk. */
   readonly scopeEndLine?: number;
+  /**
+   * The right-hand side's SPELLING when this file cannot type it — a value
+   * chain whose links live in other files (bd tea-rags-mcp-y99pg.6). Emitted as
+   * a `callResultBindings` entry for the resolver to fold; inside the walker the
+   * binding types nothing but still SHADOWS a same-named property.
+   */
+  readonly valueChain?: string;
+  /**
+   * Set when `valueChain` is the CALLEE a closure is passed to and this
+   * binding is that closure's N-th parameter (bd tea-rags-mcp-y99pg.13).
+   */
+  readonly closureParameter?: number;
+  /**
+   * Set when `valueChain` is a switch SUBJECT and this binding is payload
+   * slot `index` of its case `caseName` (bd tea-rags-mcp-y99pg.16).
+   */
+  readonly enumPayload?: { readonly caseName: string; readonly index: number };
 }
 
 /** Where a right-hand side is being typed — the coordinates every lookup is relative to. */
@@ -641,27 +1493,46 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     functionKey: enclosingSwiftFunctionKey(node),
     enclosingType: enclosingSwiftTypeName(node),
   });
-  const record = (name: string, fact: SwiftTypeFact, site: SwiftBindingSite, scopeEndLine?: number): void => {
+  const record = (
+    name: string,
+    fact: SwiftTypeFact,
+    site: SwiftBindingSite,
+    scopeEndLine?: number,
+    valueChain?: string,
+    closureParameter?: number,
+    enumPayload?: { readonly caseName: string; readonly index: number },
+  ): void => {
     if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
-    if (!fact.nominal && !fact.element) return;
+    if (!fact.nominal && !fact.element && valueChain === undefined) return;
     const binding: SwiftScopedBinding = {
       name,
       fact,
       line: site.line,
       functionKey: site.functionKey,
       scopeEndLine,
+      valueChain,
+      ...(closureParameter === undefined ? {} : { closureParameter }),
+      ...(enumPayload === undefined ? {} : { enumPayload }),
     };
     collected.push(binding);
     const sameName = bindingsByName.get(name);
     if (sameName) sameName.push(binding);
     else bindingsByName.set(name, [binding]);
   };
+  // A local only: a type-level property's initializer is not a scope a
+  // receiver is read in.
+  const deferredSpelling = (fact: SwiftTypeFact, value: AstNode | null, site: SwiftBindingSite): string | undefined =>
+    fact.nominal || fact.element || site.functionKey === -1 ? undefined : (swiftValueChainSpelling(value) ?? undefined);
   walk(root, (node) => {
     switch (node.type) {
       case "parameter":
       case "lambda_parameter": {
         const name = node.childForFieldName("name");
-        if (name) record(name.text, swiftTypeFactOf(swiftTypeNodeAfter(node, ":")), siteOf(node));
+        if (name) {
+          // Past `inout` / `@escaping`, which sit between the colon and the type.
+          const declared = swiftTypeFactOf(swiftParameterTypeNode(node));
+          record(name.text, swiftGenericResolvedFact(declared, node), siteOf(node));
+        }
         return;
       }
       case "property_declaration": {
@@ -669,10 +1540,9 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         if (!name) return;
         const site = siteOf(node);
         const declared = swiftDeclaredPropertyFact(node);
-        const fact = declared.nominal
-          ? declared
-          : swiftExpressionFact(node.childForFieldName("value"), { evidence, bindingsByName, site }, 0);
-        record(name, fact, site);
+        const value = node.childForFieldName("value");
+        const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
+        record(name, fact, site, enclosingSwiftClosureEndLine(node), deferredSpelling(fact, value, site));
         return;
       }
       case "guard_statement":
@@ -682,7 +1552,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
           node.type === "guard_statement" ? enclosingSwiftBlockEndLine(node) : swiftThenBlockEndLine(node);
         for (const clause of swiftOptionalBindingClauses(node)) {
           const site = siteOf(node);
-          const annotated = swiftTypeFactOf(clause.annotation);
+          const annotated = swiftGenericResolvedFact(swiftTypeFactOf(clause.annotation), node);
           const annotatedOrInferred =
             annotated.nominal || annotated.element
               ? annotated
@@ -690,21 +1560,95 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
           // Unwrapping `[T]?` yields `[T]`, so the element slot survives the
           // unwrap — the array still binds no receiver, and a `for` over the
           // unwrapped name still types its item.
-          record(clause.name, annotatedOrInferred, site, scopeEndLine);
+          const spelling = deferredSpelling(annotatedOrInferred, clause.value, site);
+          record(clause.name, annotatedOrInferred, site, scopeEndLine, spelling);
         }
         return;
       }
       case "for_statement": {
-        const name = singleIdentifierPatternName(node.childForFieldName("item"));
-        if (!name) return;
+        const item = node.childForFieldName("item");
+        const name = singleIdentifierPatternName(item);
+        const pair = name ? null : swiftTuplePatternNames(item);
+        if (!name && !pair) return;
         const site = siteOf(node);
         const collection = swiftExpressionFact(
           node.childForFieldName("collection"),
           { evidence, bindingsByName, site },
           0,
         );
-        if (!collection.element) return;
-        record(name, { nominal: collection.element, element: null }, site, swiftThenBlockEndLine(node));
+        const scopeEnd = swiftThenBlockEndLine(node);
+        if (name && collection.element) record(name, { nominal: collection.element, element: null }, site, scopeEnd);
+        // `for (key, value) in dictionary` (bd tea-rags-mcp-y99pg.17).
+        if (pair && collection.entry) {
+          pair.forEach((slotName, i) => {
+            const nominal = collection.entry?.[i] ?? null;
+            if (slotName !== null && nominal !== null) record(slotName, { nominal, element: null }, site, scopeEnd);
+          });
+        }
+        break;
+      }
+      // `switch unit { case .group(let g): … }` — each payload name is bound
+      // to its case's slot on the subject's enum, which another file
+      // declares (bd tea-rags-mcp-y99pg.16).
+      case "switch_statement": {
+        const subject = swiftValueChainSpelling(
+          node.childForFieldName("expr") ?? node.namedChildren.find((c) => c.type !== "switch_entry") ?? null,
+        );
+        if (subject === null) return;
+        for (const entry of node.namedChildren) {
+          if (entry.type !== "switch_entry") continue;
+          const patterns = entry.namedChildren.filter((c) => c.type === "switch_pattern");
+          if (patterns.length !== 1) continue;
+          const site = siteOf(entry);
+          // The entry and its `statements` run on to the next `case`; the last
+          // statement is where the scope ends.
+          let last = entry.namedChildren[entry.namedChildCount - 1];
+          while (last.type === "statements" && last.namedChildCount > 0) {
+            last = last.namedChildren[last.namedChildCount - 1];
+          }
+          const endLine = last.endPosition.row + 1;
+          for (const payload of swiftEnumCasePayloadNames(patterns[0])) {
+            record(payload.name, NO_TYPE, site, endLine, subject, undefined, payload.slot);
+          }
+        }
+        return;
+      }
+      // `catch { error… }` — a clause with no pattern binds `error: any Error`
+      // for its own block (bd tea-rags-mcp-y99pg.10).
+      case "catch_block": {
+        if (node.namedChildren.some((c) => c.type !== "catch_keyword" && c.type !== "statements")) return;
+        const body = node.namedChildren.find((c) => c.type === "statements");
+        if (!body) return;
+        record("error", { nominal: "Error", element: null }, siteOf(body), node.endPosition.row + 1);
+        return;
+      }
+      case "lambda_literal": {
+        const site = siteOf(node);
+        const facts = swiftClosureArgumentFacts(node, { evidence, bindingsByName, site });
+        // No declaration in this file types the closure: hand its callee to
+        // the resolver, which reads the callee's closure signature run-wide
+        // (bd tea-rags-mcp-y99pg.13).
+        const callee = facts ? undefined : swiftClosureCalleeSpelling(node);
+        if (!facts && callee === undefined) return;
+        const endLine = node.endPosition.row + 1;
+        const bind = (name: string, i: number): void => {
+          if (facts) {
+            if (i < facts.length) record(name, facts[i], site, endLine);
+          } else record(name, NO_TYPE, site, endLine, callee, i);
+        };
+        const named = swiftLambdaParameters(node);
+        if (named === null) {
+          if (nestsImplicitParameterClosure(node)) return;
+          const count = facts ? facts.length : swiftImplicitParameterCount(node);
+          for (let i = 0; i < count; i++) bind(`$${i}`, i);
+          return;
+        }
+        named.forEach((parameter, i) => {
+          const name = parameter.childForFieldName("name")?.text;
+          // An annotated parameter is typed by its own `lambda_parameter` arm.
+          if (!name || name === "_" || parameter.children.some((c) => c.type === ":")) return;
+          bind(name, i);
+        });
         break;
       }
       default:
@@ -712,6 +1656,53 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     }
   });
   return collected;
+}
+
+/**
+ * The names a `.caseName(let a, _)` / `let .caseName(a, _)` switch pattern
+ * binds, each with its payload slot (bd tea-rags-mcp-y99pg.16). Any other
+ * pattern shape — a qualified case, a nested pattern, a labelled slot — binds
+ * nothing here.
+ */
+function swiftEnumCasePayloadNames(
+  switchPattern: AstNode,
+): { name: string; slot: { caseName: string; index: number } }[] {
+  const pattern = switchPattern.namedChildren.find((c) => c.type === "pattern");
+  if (!pattern) return [];
+  const { children } = pattern;
+  const outerLet = children[0]?.type === "value_binding_pattern" && children[0].namedChildCount <= 1;
+  const dot = children.findIndex((c) => c.type === ".");
+  const caseNode = dot === -1 ? undefined : children[dot + 1];
+  if (dot !== (outerLet ? 1 : 0) || caseNode?.type !== "simple_identifier") return [];
+  const out: { name: string; slot: { caseName: string; index: number } }[] = [];
+  children
+    .filter((c) => c.type === "pattern")
+    .forEach((slot, index) => {
+      const named = slot.namedChildren;
+      let name: string | undefined;
+      if (named.length === 2 && named[0].type === "value_binding_pattern" && named[1].type === "simple_identifier") {
+        name = named[1].text;
+      } else if (outerLet && named.length === 1 && named[0].type === "simple_identifier") {
+        name = named[0].text;
+      }
+      if (name !== undefined && name !== "_") out.push({ name, slot: { caseName: caseNode.text, index } });
+    });
+  return out;
+}
+
+/**
+ * The two names of a `(a, b)` for-in pattern, `null` for a `_` slot; null
+ * for any other pattern shape.
+ */
+function swiftTuplePatternNames(item: AstNode | null): [string | null, string | null] | null {
+  if (!item || item.children[0]?.type !== "(") return null;
+  const slots = item.namedChildren.filter((c) => c.type === "pattern");
+  if (slots.length !== 2 || slots.length !== item.namedChildCount) return null;
+  const names = slots.map((slot) => {
+    const only = slot.namedChildCount === 1 ? slot.namedChildren[0] : null;
+    return only?.type === "simple_identifier" ? only.text : null;
+  });
+  return [names[0], names[1]];
 }
 
 /** One `let x` / `var x` clause of a `guard` / `if` / `while` condition list. */
@@ -766,7 +1757,7 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
  */
 function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
   const annotation = node.children.find((c) => c.type === "type_annotation");
-  if (annotation) return swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":"));
+  if (annotation) return swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":")), node);
   return constructedTypeFact(node.childForFieldName("value"));
 }
 
@@ -781,10 +1772,23 @@ function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
  * `isCapWordsConstructor`.
  */
 function constructedTypeFact(value: AstNode | null): SwiftTypeFact {
+  if (value?.type === "constructor_expression") return swiftConstructedGenericFact(value);
   if (value?.type !== "call_expression") return NO_TYPE;
   const callee = value.namedChildren.find((c) => c.type !== "call_suffix");
-  if (callee?.type !== "simple_identifier") return NO_TYPE;
-  return /^[A-Z]/.test(callee.text) ? { nominal: callee.text, element: null } : NO_TYPE;
+  if (!callee) return NO_TYPE;
+  if (callee.type !== "simple_identifier") return swiftCollectionConstructionFact(callee) ?? NO_TYPE;
+  return /^_*[A-Z]/.test(callee.text) ? { nominal: callee.text, element: null } : NO_TYPE;
+}
+
+/**
+ * `Protected<[T]>(…)` — tree-sitter-swift parses an explicitly specialised
+ * construction as a `constructor_expression` over a `user_type`, not a call —
+ * types as the generic's nominal (bd tea-rags-mcp-y99pg.10).
+ */
+function swiftConstructedGenericFact(node: AstNode): SwiftTypeFact {
+  const constructed = node.namedChildren.find((c) => c.type === "user_type") ?? null;
+  const fact = swiftTypeFactOf(constructed);
+  return fact.nominal && /^_*[A-Z]/.test(fact.nominal) ? fact : NO_TYPE;
 }
 
 /** A `pattern` node's identifier when it binds exactly one name; null for tuple / destructuring patterns. */
@@ -837,24 +1841,41 @@ function swiftTypeNodeAfter(node: AstNode, separator: string): AstNode | null {
  *     a PARENTHESIZED type, and the parentheses are required around an
  *     existential before `?`. A tuple with two or more items proves nothing,
  *     because no member dispatches on a tuple.
- *   - `array_type` — `[Foo]` → ELEMENT `Foo` and no nominal. An Array is not a
- *     Foo; see the container note in the file docblock.
- *   - anything else, notably `dictionary_type` / `function_type` /
- *     `opaque_type`, and a `tuple_type` that is a real tuple — nothing.
+ *   - `array_type` — `[Foo]` → nominal `Array`, ELEMENT `Foo`. An Array is not
+ *     a Foo; see the container note in the file docblock.
+ *   - `dictionary_type` — `[K: V]` → nominal `Dictionary`, no element.
+ *   - anything else, notably `function_type`, and a `tuple_type` that is a
+ *     real tuple — nothing.
  */
+const SWIFT_METATYPE_SUFFIX = /\.(?:Type|Protocol)$/;
+
 function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
   if (!typeNode) return NO_TYPE;
   if (typeNode.type === "optional_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
   if (typeNode.type === "array_type") {
-    const element = swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal;
-    return element ? { nominal: null, element } : NO_TYPE;
+    return { nominal: "Array", element: swiftTypeFactOf(typeNode.namedChildren[0] ?? null).nominal };
   }
-  if (typeNode.type === "existential_type") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
+  if (typeNode.type === "dictionary_type") {
+    // Positionally, for the materialization hazard `swiftTypeNodeAfter` documents.
+    const [key, value] = typeNode.namedChildren;
+    return {
+      nominal: "Dictionary",
+      element: null,
+      entry: [swiftTypeFactOf(key ?? null).nominal, swiftTypeFactOf(value ?? null).nominal],
+    };
+  }
+  // `any P` and `some P` both dispatch a member call on P's requirement.
+  if (typeNode.type === "existential_type" || typeNode.type === "opaque_type") {
+    return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
+  }
   if (typeNode.type === "tuple_type") return swiftTypeFactOf(parenthesizedSwiftTypeNode(typeNode));
+  if (typeNode.type === "metatype") return swiftTypeFactOf(typeNode.namedChildren[0] ?? null);
   if (typeNode.type !== "user_type") return NO_TYPE;
   const raw = typeNode.text;
   const generics = raw.indexOf("<");
-  const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim();
+  // `Foo.Type` / `Foo.Protocol` is Foo's metatype: a member read off it is one
+  // of Foo's static members, which compose under Foo (bd tea-rags-mcp-y99pg.12).
+  const bare = (generics === -1 ? raw : raw.slice(0, generics)).trim().replace(SWIFT_METATYPE_SUFFIX, "");
   return bare.length > 0 ? { nominal: bare, element: null } : NO_TYPE;
 }
 
@@ -906,14 +1927,70 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
         : swiftIdentifierFact(node.text, scope);
     case "navigation_expression": {
       const member = node.childForFieldName("suffix")?.childForFieldName("suffix");
+      if (!member) return NO_TYPE;
+      const element = swiftElementAccess(
+        node.childForFieldName("target"),
+        member.text,
+        SWIFT_ELEMENT_PROPERTIES,
+        scope,
+        depth,
+      );
+      if (element) return element;
       const owner = swiftReceiverTypeName(node.childForFieldName("target"), scope, depth);
-      if (!member || !owner) return NO_TYPE;
+      if (!owner) return NO_TYPE;
       return scope.evidence.propertyTypes.get(owner)?.get(member.text) ?? NO_TYPE;
     }
     case "call_expression":
       return swiftCallResultFact(node, scope, depth);
+    case "constructor_expression":
+      return swiftConstructedGenericFact(node);
+    // `x as? Foo` / `x as! Foo` / `x as Foo` — the cast names its type.
+    case "as_expression":
+      return swiftTypeFactOf(node.namedChildren[node.namedChildCount - 1] ?? null);
+    // `a ?? b` — the left operand, unwrapped; the right one where it proves nothing.
+    case "nil_coalescing_expression": {
+      const left = swiftExpressionFact(node.namedChildren[0] ?? null, scope, depth + 1);
+      if (left.nominal || left.element) return left;
+      return swiftExpressionFact(node.namedChildren[node.namedChildCount - 1] ?? null, scope, depth + 1);
+    }
     default:
       return NO_TYPE;
+  }
+}
+
+/**
+ * The SPELLING of a value chain the resolver can fold — `self`, a value or
+ * type name, then `.member` and `.method(…)` links — with `try` / `await`,
+ * optional chaining, force unwraps and call arguments stripped, and `a ?? b`
+ * read as `a`. Null for anything else, a chain headed by a bare call included:
+ * the fold types a head by name, and `make()` is no name.
+ */
+function swiftValueChainSpelling(node: AstNode | null, depth = 0): string | null {
+  if (!node || depth > SWIFT_MAX_TYPE_HOPS + 2) return null;
+  switch (node.type) {
+    case "try_expression":
+    case "await_expression":
+      return swiftValueChainSpelling(node.namedChildren[node.namedChildCount - 1] ?? null, depth + 1);
+    case "postfix_expression":
+    case "nil_coalescing_expression":
+      return swiftValueChainSpelling(node.namedChildren[0] ?? null, depth + 1);
+    case "self_expression":
+      return "self";
+    case "simple_identifier":
+      return node.text;
+    case "navigation_expression": {
+      const member = node.childForFieldName("suffix")?.childForFieldName("suffix");
+      const target = swiftValueChainSpelling(node.childForFieldName("target"), depth + 1);
+      return member?.type === "simple_identifier" && target !== null ? `${target}.${member.text}` : null;
+    }
+    case "call_expression": {
+      const suffix = node.children.find((c) => c.type === "call_suffix");
+      if (!suffix || suffix.children.some((c) => c.type !== "value_arguments")) return null;
+      const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
+      return callee?.type === "navigation_expression" ? swiftValueChainSpelling(callee, depth + 1) : null;
+    }
+    default:
+      return null;
   }
 }
 
@@ -956,7 +2033,7 @@ function swiftReceiverTypeName(node: AstNode | null, scope: SwiftTypeScope, dept
   if (node.type === "simple_identifier" && node.text !== "Self") {
     const fact = swiftIdentifierFact(node.text, scope);
     if (fact.nominal) return fact.nominal;
-    return /^[A-Z]/.test(node.text) ? node.text : null;
+    return /^_*[A-Z]/.test(node.text) ? node.text : null;
   }
   return swiftExpressionFact(node, scope, depth + 1).nominal;
 }
@@ -978,17 +2055,25 @@ function swiftCallResultFact(node: AstNode, scope: SwiftTypeScope, depth: number
   if (!suffix || suffix.text.startsWith("[")) return NO_TYPE;
   const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
   if (!callee) return NO_TYPE;
-  if (callee.type === "simple_identifier") {
-    if (/^[A-Z]/.test(callee.text)) return { nominal: callee.text, element: null };
-    const own = scope.evidence.returnTypes.get(returnKey(scope.site.enclosingType, callee.text));
-    if (own !== undefined) return own ?? NO_TYPE;
-    return scope.evidence.returnTypes.get(returnKey(null, callee.text)) ?? NO_TYPE;
+  if (callee.type === "simple_identifier" && /^_*[A-Z]/.test(callee.text)) {
+    return { nominal: callee.text, element: null };
   }
-  if (callee.type !== "navigation_expression") return NO_TYPE;
-  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
-  const owner = swiftReceiverTypeName(callee.childForFieldName("target"), scope, depth);
-  if (!member || !owner) return NO_TYPE;
-  return scope.evidence.returnTypes.get(returnKey(owner, member.text)) ?? NO_TYPE;
+  // `[T]()` / `[K: V]()` construct an empty collection of the named types
+  // (bd tea-rags-mcp-y99pg.17); a literal holding values is no type name.
+  const collection = swiftCollectionConstructionFact(callee);
+  if (collection) return collection;
+  if (callee.type === "navigation_expression") {
+    const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+    const target = callee.childForFieldName("target");
+    const element = member ? swiftElementAccess(target, member, SWIFT_ELEMENT_METHODS, scope, depth) : null;
+    if (element) return element;
+  }
+  // A generic return bound by a `Type.self` argument names its type at the
+  // call; the declared return holds only its constraint.
+  const slot = swiftCalleeEvidence(callee, scope.evidence.metatypeReturns, scope, depth);
+  const bound = slot ? swiftMetatypeArgumentType(suffix, slot) : null;
+  if (bound !== null) return { nominal: bound, element: null };
+  return swiftCalleeEvidence(callee, scope.evidence.returnTypes, scope, depth) ?? NO_TYPE;
 }
 
 /** `startIndex` of the nearest enclosing function-like declaration; `-1` at type / file level. */
@@ -997,6 +2082,72 @@ function enclosingSwiftFunctionKey(node: AstNode): number {
     if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return current.startIndex;
   }
   return -1;
+}
+
+/**
+ * The collection an `[T]()` / `[K: V]()` callee constructs, or null when the
+ * literal holds anything but type names. Read positionally: the literal's
+ * `element` / `key` / `value` fields are not relied on.
+ */
+function swiftCollectionConstructionFact(callee: AstNode): SwiftTypeFact | null {
+  const names = callee.namedChildren;
+  if (!names.every((n) => n.type === "simple_identifier" && SWIFT_TYPE_NAME_TEXT.test(n.text))) return null;
+  if (callee.type === "array_literal" && names.length === 1) {
+    return { nominal: "Array", element: names[0].text };
+  }
+  if (callee.type === "dictionary_literal" && names.length === 2) {
+    return { nominal: "Dictionary", element: null, entry: [names[0].text, names[1].text] };
+  }
+  return null;
+}
+
+/** A spelled type name: UpperCamelCase, leading underscores allowed. */
+const SWIFT_TYPE_NAME_TEXT = /^_*[A-Z]/;
+
+/** `[T]` properties that read one element. */
+const SWIFT_ELEMENT_PROPERTIES: ReadonlySet<string> = new Set(["first", "last"]);
+
+/** `[T]` methods that return one element (optional or not). */
+const SWIFT_ELEMENT_METHODS: ReadonlySet<string> = new Set([
+  "removeFirst",
+  "removeLast",
+  "popLast",
+  "randomElement",
+  "first",
+  "last",
+  "min",
+  "max",
+]);
+
+/**
+ * The element an accessor reads off an `[T]` value — `xs.first`,
+ * `xs.removeFirst()` — or null. Keyed on the `element` slot, which only an
+ * array type produces, so a project type's own `first` is never read this way.
+ */
+function swiftElementAccess(
+  target: AstNode | null,
+  member: string,
+  accessors: ReadonlySet<string>,
+  scope: SwiftTypeScope,
+  depth: number,
+): SwiftTypeFact | null {
+  if (!target || !accessors.has(member)) return null;
+  const { element } = swiftExpressionFact(target, scope, depth + 1);
+  return element ? { nominal: element, element: null } : null;
+}
+
+/**
+ * 1-based last line of the closure a declaration sits in, when its nearest
+ * scope is a closure rather than a function: a `let` inside `{ … }` is gone at
+ * the brace, and without the bound a sibling closure's same-named local would
+ * type this one's reads. `undefined` outside any closure.
+ */
+function enclosingSwiftClosureEndLine(node: AstNode): number | undefined {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "lambda_literal") return current.endPosition.row + 1;
+    if (SWIFT_FUNCTION_LIKE_NODES.has(current.type)) return undefined;
+  }
+  return undefined;
 }
 
 /** Short name of the nearest enclosing nominal type, as `classFieldTypes` keys it. */
@@ -1052,10 +2203,10 @@ function swiftThenBlockEndLine(node: AstNode): number | undefined {
 function assignBindingsToInnermostChunks(
   bindings: readonly SwiftScopedBinding[],
   chunks: { startLine: number; endLine: number; scope: string[] }[],
-): Map<number, Record<string, LocalBinding[]>> {
-  const out = new Map<number, Record<string, LocalBinding[]>>();
+): Map<number, SwiftChunkBindings> {
+  const out = new Map<number, SwiftChunkBindings>();
   for (const binding of bindings) {
-    if (!binding.fact.nominal) continue;
+    if (!binding.fact.nominal && binding.valueChain === undefined) continue;
     let bestIdx = -1;
     let bestSpan = Number.POSITIVE_INFINITY;
     let bestDepth = -1;
@@ -1073,14 +2224,31 @@ function assignBindingsToInnermostChunks(
     if (bestIdx === -1) continue;
     let bucket = out.get(bestIdx);
     if (!bucket) {
-      bucket = createIdentifierRecord();
+      bucket = { localBindings: createIdentifierRecord(), callResultBindings: createIdentifierRecord() };
       out.set(bestIdx, bucket);
     }
-    const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal };
-    if (binding.scopeEndLine !== undefined) emitted.scopeEndLine = binding.scopeEndLine;
-    (bucket[binding.name] ??= []).push(emitted);
+    const scoped = binding.scopeEndLine === undefined ? {} : { scopeEndLine: binding.scopeEndLine };
+    if (binding.fact.nominal) {
+      const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal, ...scoped };
+      (bucket.localBindings[binding.name] ??= []).push(emitted);
+    } else if (binding.valueChain !== undefined) {
+      const emitted: CallResultBinding = {
+        line: binding.line,
+        callee: binding.valueChain,
+        ...(binding.closureParameter === undefined ? {} : { closureParameter: binding.closureParameter }),
+        ...(binding.enumPayload === undefined ? {} : { enumPayload: binding.enumPayload }),
+        ...scoped,
+      };
+      (bucket.callResultBindings[binding.name] ??= []).push(emitted);
+    }
   }
   return out;
+}
+
+/** One chunk's share of the file's bindings, in the two channels a chunk carries them in. */
+interface SwiftChunkBindings {
+  readonly localBindings: Record<string, LocalBinding[]>;
+  readonly callResultBindings: Record<string, CallResultBinding[]>;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {

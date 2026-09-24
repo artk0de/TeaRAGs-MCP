@@ -75,7 +75,7 @@ import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import { drainCrossPassInputSpill, persistRunResolveStats, readCodegraphFileOverlays } from "./run-finalize.js";
 import { CodegraphRunState } from "./run-state.js";
-import { lastSegment } from "./symbol-name.js";
+import { symbolDefinitionsOf } from "./symbol-definitions.js";
 
 /**
  * Relocated collaborators, re-exported for import stability: the symbols barrel,
@@ -465,25 +465,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `acceptExtraction`'s eager buffer so the two node-write paths cannot drift.
    */
   private buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
-    return extraction.chunks.map((c) => ({
-      symbolId: c.symbolId,
-      fqName: c.symbolId,
-      shortName: lastSegment(c.symbolId),
-      relPath: extraction.relPath,
-      scope: c.scope,
-      // Thread walker-captured arity + visibility into SymbolDefinition (bd xlnub)
-      ...(c.arity !== undefined ? { arity: c.arity } : {}),
-      ...(c.visibility !== undefined ? { visibility: c.visibility } : {}),
-      // Thread walker-captured kwarg signature + block-acceptance (bd d9o7o)
-      ...(c.kwargs !== undefined ? { kwargs: c.kwargs } : {}),
-      ...(c.acceptsBlock !== undefined ? { acceptsBlock: c.acceptsBlock } : {}),
-      // Abstract-stub marker (bd tea-rags-mcp-bcdfe) — set only when true, so the
-      // self-dispatch probe can tell a declaration from a concrete definition.
-      ...(c.isAbstractStub === true ? { isAbstractStub: true } : {}),
-      // The symbol's AST range, persisted so the payload healer maps chunks to
-      // owners by the same rule the deferred pass uses (bd tea-rags-mcp-9i2ow).
-      ...(c.startLine !== undefined && c.endLine !== undefined ? { startLine: c.startLine, endLine: c.endLine } : {}),
-    }));
+    return symbolDefinitionsOf(extraction);
   }
 
   /**

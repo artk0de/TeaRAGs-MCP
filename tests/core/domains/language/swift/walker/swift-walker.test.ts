@@ -228,14 +228,15 @@ describe("extractFromSwiftFile — localBindings", () => {
     expect(r.chunks[0].localBindings?.s?.[0].type).toBe("Set");
   });
 
-  it("binds NOTHING for an array or dictionary annotation", () => {
-    // A `[Thing]` is an Array, not a Thing. `LocalBinding.type` is a bare
-    // string with no container slot, so binding the ELEMENT type here would
-    // pin `xs.append(...)` to `Thing#append`.
+  it("binds an array annotation as Array and a dictionary one as Dictionary", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): this used to bind NOTHING.
+    // A `[Thing]` is an Array, not a Thing — binding the ELEMENT would pin
+    // `xs.append(...)` to `Thing#append` — and it IS an Array, whose project
+    // extensions (`extension Array where Element == Header`) a call can reach.
     const src = ["func go(xs: [Thing], d: [String: Foo]) {", "  xs.append(y)", "}", ""].join("\n");
     const r = extract(src);
-    expect(r.chunks[0].localBindings?.xs).toBeUndefined();
-    expect(r.chunks[0].localBindings?.d).toBeUndefined();
+    expect(r.chunks[0].localBindings?.xs?.[0].type).toBe("Array");
+    expect(r.chunks[0].localBindings?.d?.[0].type).toBe("Dictionary");
   });
 
   it("attributes a parameter binding to the method chunk, not the enclosing type chunk", () => {
@@ -562,22 +563,23 @@ describe("extractFromSwiftFile — call-result locals typed by a same-file decla
     expect(extract(src).chunks[0].localBindings?.x?.[0].type).toBe("Invoice");
   });
 
-  it("binds NOTHING for an array-returning function", () => {
-    // Same invariant as an array annotation: the local is an Array, not a
-    // Thing, and `LocalBinding.type` has no container slot to say so.
+  it("binds an array-returning function's result as Array", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14), as for an annotation: the
+    // local is an Array, not a Thing; it used to bind nothing.
     const src = ["func all() -> [Thing] { [] }", "func go() {", "  let xs = all()", "  xs.append(y)", "}", ""].join(
       "\n",
     );
-    expect(extract(src).chunks[0].localBindings?.xs).toBeUndefined();
+    expect(extract(src).chunks[0].localBindings?.xs?.[0].type).toBe("Array");
   });
 });
 
 describe("extractFromSwiftFile — `for x in` element typing", () => {
-  it("types the loop variable from an array-annotated parameter, and still binds NOTHING for the array", () => {
+  it("types the loop variable from an array-annotated parameter, and the array as Array", () => {
     const src = ["func go(xs: [Thing]) {", "  for x in xs {", "    x.touch()", "  }", "}", ""].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
     expect(bindings?.x?.[0].type).toBe("Thing");
-    expect(bindings?.xs).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): was undefined.
+    expect(bindings?.xs?.[0].type).toBe("Array");
   });
 
   it("types the loop variable from an array-typed stored property", () => {
@@ -594,7 +596,8 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
     ].join("\n");
     const r = extract(src);
     expect(r.chunks[0].localBindings?.item?.[0].type).toBe("Thing");
-    expect(r.classFieldTypes?.Store?.items).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): was undefined.
+    expect(r.classFieldTypes?.Store?.items).toBe("Array");
   });
 
   it("types the loop variable from an array-returning same-file function", () => {
@@ -612,8 +615,8 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
 
   it("types the loop variable through a `guard let` that unwraps an optional array", () => {
     // Unwrapping `[Thing]?` yields `[Thing]`, so the unwrapped name carries the
-    // ELEMENT and still no nominal of its own — the loop reads one, the
-    // container rule keeps the other empty.
+    // ELEMENT for the loop and is itself an Array (INVARIANT CHANGED, bd
+    // tea-rags-mcp-y99pg.14: it used to bind nothing).
     const src = [
       "class Store {",
       "  var items: [Thing]?",
@@ -628,21 +631,27 @@ describe("extractFromSwiftFile — `for x in` element typing", () => {
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
     expect(bindings?.x?.[0].type).toBe("Thing");
-    expect(bindings?.list).toBeUndefined();
+    expect(bindings?.list?.[0].type).toBe("Array");
   });
 
-  it("declines a Set, a dictionary and a tuple pattern", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.17): a `(k, v)` pattern over a
+  // DICTIONARY now binds its key and value types; a Set and a tuple pattern
+  // over anything else still bind nothing.
+  it("declines a Set and a tuple pattern over a non-dictionary; binds a dictionary's key and value", () => {
     const src = [
-      "func go(s: Set<Thing>, d: [String: Foo]) {",
+      "func go(s: Set<Thing>, d: [String: Foo], xs: [Thing]) {",
       "  for x in s { x.touch() }",
       "  for (k, v) in d { v.use() }",
+      "  for (i, t) in xs.enumerated() { t.touch() }",
       "}",
       "",
     ].join("\n");
     const bindings = extract(src).chunks[0].localBindings;
     expect(bindings?.x).toBeUndefined();
-    expect(bindings?.k).toBeUndefined();
-    expect(bindings?.v).toBeUndefined();
+    expect(bindings?.k?.[0].type).toBe("String");
+    expect(bindings?.v?.[0].type).toBe("Foo");
+    expect(bindings?.i).toBeUndefined();
+    expect(bindings?.t).toBeUndefined();
   });
 
   it("scopes the loop variable to the loop body", () => {
@@ -674,9 +683,10 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     expect(r.classFieldTypes?.Worker?.queue).toBe("Queue");
   });
 
-  it("does NOT record an array-typed or untyped literal property", () => {
+  it("records an array-typed property as Array and still no untyped literal property", () => {
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): `items` used to be dropped.
     const src = ["class Store {", "  var items: [Thing] = []", "  var counter = 0", "}", ""].join("\n");
-    expect(extract(src).classFieldTypes?.Store).toBeUndefined();
+    expect(extract(src).classFieldTypes?.Store).toEqual({ items: "Array" });
   });
 
   it("leaves classFieldTypes absent when no type declares a typed stored property", () => {
@@ -1012,7 +1022,15 @@ describe("swift walker — declared return types published run-global (bd tea-ra
       "}",
       "",
     ].join("\n");
-    expect(publishedReturns(src)).toBeUndefined();
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): `d` returns an Array, which
+    // a member call on its result dispatches on; it used to publish nothing.
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.18): `b` publishes the `Self`
+    // MARKER, which the resolver substitutes with the receiver's type; it used
+    // to publish nothing.
+    expect(publishedReturns(src)).toEqual({
+      "Store#b": { form: "instance", name: "Self" },
+      "Store#d": { form: "instance", name: "Array" },
+    });
   });
 });
 
@@ -1057,5 +1075,648 @@ describe("swift walker — a type chunk's own calls run with the type as `self` 
     const method = extractWithKernelChunks(src).chunks.find((c) => c.symbolId === "Invoice#compute");
     expect(method?.scope).toEqual(["Invoice"]);
     expect(method).not.toHaveProperty("bodyScope");
+  });
+});
+
+/**
+ * `typeDeclarations` — which file DECLARES a type and which only re-opens it
+ * (bd tea-rags-mcp-y99pg.1). tree-sitter-swift parses `extension T` as the same
+ * `class_declaration` node `class T` is, and both compose the id `T`, so the
+ * keyword is the only evidence of which one a node is.
+ */
+describe("swift walker — typeDeclarations", () => {
+  it("records a type's own declaration and its conformances", () => {
+    const extraction = extractMaterialized("final class Session: NSObject, Sendable {\n  func run() {}\n}\n");
+    expect(extraction.typeDeclarations).toEqual([
+      { typeId: "Session", reopens: false, conforms: ["NSObject", "Sendable"] },
+    ]);
+  });
+
+  it("marks an extension as a re-opening and keeps the conformances it adds", () => {
+    const extraction = extractMaterialized("extension SecTrust: AlamofireExtended {}\n");
+    expect(extraction.typeDeclarations).toEqual([
+      { typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] },
+    ]);
+  });
+
+  it("composes a nested declaration under every enclosing type, an extension's included", () => {
+    const src = [
+      "struct Request {",
+      "  enum State { case idle }",
+      "}",
+      "extension Encoder {",
+      "  final class Container {}",
+      "}",
+      "",
+    ].join("\n");
+    expect(extractMaterialized(src).typeDeclarations).toEqual([
+      { typeId: "Request", reopens: false },
+      { typeId: "Request.State", reopens: false },
+      { typeId: "Encoder", reopens: true },
+      { typeId: "Encoder.Container", reopens: false },
+    ]);
+  });
+
+  it("reads an extension of a nested type by its written path and drops generic arguments", () => {
+    const src = [
+      "extension Outer.Inner {}",
+      "extension Array where Element == Header {}",
+      "class Box<T>: Base<T> {}",
+      "",
+    ].join("\n");
+    expect(extractMaterialized(src).typeDeclarations).toEqual([
+      { typeId: "Outer.Inner", reopens: true },
+      { typeId: "Array", reopens: true },
+      // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
+      { typeId: "Box", reopens: false, conforms: ["Base"], genericParameters: ["T"] },
+    ]);
+  });
+
+  it("records a protocol as a declaration of its own", () => {
+    expect(extractMaterialized("protocol Monitor: AnyObject {\n  func tick()\n}\n").typeDeclarations).toEqual([
+      { typeId: "Monitor", reopens: false, conforms: ["AnyObject"] },
+    ]);
+  });
+
+  it("publishes nothing for a file that declares no type", () => {
+    expect(extractMaterialized("func free() {}\n").typeDeclarations).toBeUndefined();
+  });
+});
+
+/**
+ * A closure's parameters take their types from the parameter the closure is
+ * passed to (bd tea-rags-mcp-y99pg.3): `performEvent { $0.urlSession(...) }`
+ * types `$0` from `func performEvent(_ event: @escaping (any EventMonitor) ->
+ * Void)`, and `xs.forEach { $0.touch() }` from the element of an `[Thing]`.
+ */
+describe("swift walker — closure parameters typed by the parameter they are passed to", () => {
+  const monitorSrc = [
+    "final class Composite {",
+    "  func performEvent(_ event: @Sendable @escaping (any Monitor) -> Void) {}",
+    "  func go() {",
+    "    performEvent { $0.tick() }",
+    "    performEvent { m in",
+    "      m.tick()",
+    "    }",
+    "    $0.gone()",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("types `$0` of a trailing closure from the callee's function-typed parameter", () => {
+    expect(typeAt(monitorSrc, "$0", 4)).toBe("Monitor");
+  });
+
+  it("types a named closure parameter the same way", () => {
+    expect(typeAt(monitorSrc, "m", 6)).toBe("Monitor");
+  });
+
+  it("scopes a closure parameter to the closure body", () => {
+    expect(typeAt(monitorSrc, "$0", 8)).toBeUndefined();
+  });
+
+  it("reads the same facts off the materialized tree", () => {
+    const bindings = extractMaterialized(monitorSrc).chunks[0].localBindings;
+    expect(bindings?.$0?.[0].type).toBe("Monitor");
+    expect(bindings?.m?.[0].type).toBe("Monitor");
+  });
+
+  it("types a closure passed to a top-level function as its last argument", () => {
+    const src = [
+      "func visit(_ n: Int, _ body: (Thing, Int) -> Void) {}",
+      "func go() {",
+      "  visit(3, { $0.touch() })",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 3)).toBe("Thing");
+    expect(typeAt(src, "$1", 3)).toBe("Int");
+  });
+
+  it("types the closure of a sequence method from the receiver's element", () => {
+    const src = [
+      "func go(xs: [Thing]) {",
+      "  xs.forEach { $0.touch() }",
+      "  _ = xs.map { t in t.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 2)).toBe("Thing");
+    expect(typeAt(src, "t", 3)).toBe("Thing");
+  });
+
+  it("declines a callee with more than one function-typed parameter", () => {
+    const src = [
+      "func run(_ a: (Thing) -> Void, _ b: (Other) -> Void) {}",
+      "func go() {",
+      "  run({ _ in }) { $0.touch() }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 3)).toBeUndefined();
+  });
+
+  it("binds no `$0` in a closure that nests an implicit-parameter closure it cannot type", () => {
+    const src = [
+      "func each(_ body: (Thing) -> Void) {}",
+      "func go() {",
+      "  each {",
+      "    unknown { $0.other() }",
+      "    $0.touch()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "$0", 4)).toBeUndefined();
+  });
+
+  it("types no closure passed to a callee this file does not declare", () => {
+    const src = ["func go() {", "  unknown { $0.touch() }", "}", ""].join("\n");
+    expect(typeAt(src, "$0", 2)).toBeUndefined();
+  });
+});
+
+/**
+ * A generic parameter is not a type the index can hold: `responseSerializer:
+ * Serializer` where `<Serializer: DataResponseSerializerProtocol>` dispatches on
+ * the protocol, and `func request<R: Request>(for: …, as type: R.Type) -> R?`
+ * returns whatever type the `as:` argument names (bd tea-rags-mcp-y99pg.6).
+ */
+describe("swift walker — generic parameters read through their constraints", () => {
+  it("types a parameter declared with a constrained generic parameter as the constraint", () => {
+    const src = [
+      "func go<Serializer: ResponseSerializer>(serializer: Serializer) {",
+      "  serializer.serialize()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "serializer", 2)).toBe("ResponseSerializer");
+  });
+
+  it("reads a `where` clause constraint on the enclosing type for a stored property", () => {
+    const src = [
+      "final class Interceptor<AuthenticatorType>: Base where AuthenticatorType: Authenticator {",
+      "  let authenticator: AuthenticatorType",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).classFieldTypes?.Interceptor?.authenticator).toBe("Authenticator");
+  });
+
+  it("binds nothing for an unconstrained generic parameter", () => {
+    const src = ["func go<T>(value: T) {", "  value.use()", "}", ""].join("\n");
+    expect(typeAt(src, "value", 2)).toBeUndefined();
+  });
+
+  it("types an opaque `some P` parameter as the protocol", () => {
+    const src = ["func go(value: some Encoder) {", "  value.use()", "}", ""].join("\n");
+    expect(typeAt(src, "value", 2)).toBe("Encoder");
+  });
+
+  it("types a call-result local from the metatype argument a generic return is bound by", () => {
+    const src = [
+      "final class Delegate {",
+      "  func request<R: Request>(for task: Int, as type: R.Type) -> R? { nil }",
+      "  func go() {",
+      "    if let request = request(for: 1, as: DataRequest.self) {",
+      "      request.didReceive()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "request", 5)).toBe("DataRequest");
+  });
+
+  it("falls back to the constraint when the metatype argument is not a `.self` literal", () => {
+    const src = [
+      "final class Delegate {",
+      "  func request<R: Request>(for task: Int, as type: R.Type) -> R? { nil }",
+      "  func go(kind: Request.Type) {",
+      "    guard let request = request(for: 1, as: kind) else { return }",
+      "    request.didReceive()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "request", 5)).toBe("Request");
+  });
+});
+
+/**
+ * A local whose right-hand side is a value chain this file cannot type — its
+ * links live in other files — is recorded by SPELLING in `callResultBindings`
+ * for the resolver to fold with the whole symbol table in scope (bd
+ * tea-rags-mcp-y99pg.6). A cast types its local outright.
+ */
+describe("swift walker — locals typed later: value-chain spellings and casts", () => {
+  it("records an untyped chain local by its spelling, sugar and arguments stripped", () => {
+    const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
+    const chunk = extract(src).chunks[0];
+    expect(chunk.callResultBindings?.e).toEqual([{ line: 2, callee: "sp.mgr.eval" }]);
+    expect(chunk.localBindings?.e).toBeUndefined();
+  });
+
+  it("records the left operand of `??`, scoped to an `if let` body", () => {
+    const src = [
+      "func go() {",
+      "  if let r = sp?.req(for: t)?.handler ?? sp?.handler {",
+      "    r.run()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).chunks[0].callResultBindings?.r).toEqual([
+      { line: 2, callee: "sp.req.handler", scopeEndLine: 4 },
+    ]);
+  });
+
+  it("types a cast local by the cast's target type", () => {
+    const src = ["func go() {", "  let c = x as? Foo", "  c?.run()", "}", ""].join("\n");
+    expect(typeAt(src, "c", 3)).toBe("Foo");
+  });
+
+  it("records no spelling for a chain headed by a bare call", () => {
+    const src = ["func go() {", "  let n = make().value", "  n.run()", "}", ""].join("\n");
+    expect(extract(src).chunks[0].callResultBindings).toBeUndefined();
+  });
+
+  it("reads the same spelling off the materialized tree", () => {
+    const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
+    expect(extractMaterialized(src).chunks[0].callResultBindings?.e?.[0].callee).toBe("sp.mgr.eval");
+  });
+});
+
+describe("swift walker — a local declared in a closure ends with the closure", () => {
+  it("keeps a closure's local out of the lines after its closing brace", () => {
+    const src = [
+      "func go() {",
+      "  run {",
+      "    let helper = Helper()",
+      "    helper.use()",
+      "  }",
+      "  helper.gone()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "helper", 4)).toBe("Helper");
+    expect(typeAt(src, "helper", 6)).toBeUndefined();
+  });
+});
+
+/**
+ * Invoking a closure VALUE is not a call to a declared symbol (bd
+ * tea-rags-mcp-y99pg.8): `stream(event)` on a `stream:` parameter,
+ * `perform()` on a local closure, `requestDidFinish?(request)` on an optional
+ * closure property. Emitting them hands the terminal short-name pass a name
+ * whose namesake function is never the target.
+ */
+describe("swift walker — invocations of closure values are not calls", () => {
+  const callees = (src: string): string[] => extract(src).chunks[0].calls.map((c) => c.member);
+
+  it("emits no call for a parameter invoked as a function", () => {
+    expect(callees("func go(stream: (Int) -> Void) {\n  stream(2)\n  helper()\n}\n")).toEqual(["helper"]);
+  });
+
+  it("emits no call for an optional call", () => {
+    expect(callees("func go() {\n  requestDidFinish?(1)\n}\n")).toEqual([]);
+  });
+
+  it("emits no call for a local closure or a closure parameter", () => {
+    const src = [
+      "func go() {",
+      "  let perform = { 1 }",
+      "  perform()",
+      "  run { handler in",
+      "    handler()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(callees(src)).toEqual(["run"]);
+  });
+
+  it("keeps a call whose name is only declared AFTER it, or in another function", () => {
+    const src = [
+      "func other(helper: () -> Void) {}",
+      "func go() {",
+      "  helper()",
+      "  let helper = { 1 }",
+      "}",
+      "",
+    ].join("\n");
+    expect(callees(src)).toEqual(["helper"]);
+  });
+});
+
+describe("swift walker — protocol property requirements publish their types", () => {
+  it("types a `var x: T { get }` requirement like a stored property", () => {
+    const src = [
+      "protocol StateProvider {",
+      "  var serverTrustManager: ServerTrustManager? { get }",
+      "  var monitor: (any EventMonitor)? { get set }",
+      "}",
+      "",
+    ].join("\n");
+    expect(extract(src).classFieldTypes?.StateProvider).toEqual({
+      serverTrustManager: "ServerTrustManager",
+      monitor: "EventMonitor",
+    });
+  });
+
+  it("reads the same requirement off the materialized tree", () => {
+    const src = ["protocol StateProvider {", "  var manager: Manager { get }", "}", ""].join("\n");
+    expect(extractMaterialized(src).classFieldTypes?.StateProvider?.manager).toBe("Manager");
+  });
+});
+
+describe("swift walker — an array's element accessors return the element", () => {
+  it("types a local bound to `removeFirst()` / `first` of an `[T]`", () => {
+    const src = [
+      "func go(adapters: [any RequestAdapter]) {",
+      "  var pending = adapters",
+      "  let adapter = pending.removeFirst()",
+      "  adapter.adapt()",
+      "  if let head = adapters.first {",
+      "    head.adapt()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "adapter", 4)).toBe("RequestAdapter");
+    expect(typeAt(src, "head", 6)).toBe("RequestAdapter");
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.14): the array itself is an Array.
+    expect(typeAt(src, "pending", 4)).toBe("Array");
+  });
+});
+
+describe("swift walker — generic constructions and the implicit `catch` binding", () => {
+  it("types a generic construction `Protected<[T]>(…)` as its nominal, and records it as a call", () => {
+    const src = [
+      "final class Request {",
+      "  let validators = Protected<[() -> Void]>([])",
+      "  func go() {",
+      "    let local = Box<Int>(1)",
+      "    local.open()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extract(src);
+    expect(r.classFieldTypes?.Request?.validators).toBe("Protected");
+    expect(typeAt(src, "local", 5)).toBe("Box");
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(expect.arrayContaining(["Protected", "Box"]));
+  });
+
+  it("binds `error` as `Error` inside a `catch` block without a pattern, and only there", () => {
+    const src = [
+      "func go() {",
+      "  do {",
+      "    try run()",
+      "  } catch {",
+      "    error.report()",
+      "  }",
+      "  error.gone()",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "error", 5)).toBe("Error");
+    expect(typeAt(src, "error", 7)).toBeUndefined();
+  });
+});
+
+/**
+ * Argument labels on both sides (bd tea-rags-mcp-y99pg.7): a declaration
+ * publishes its labelled parameters as `kwargs`, its unlabelled ones as
+ * `arity` and whether it takes a closure as `acceptsBlock`; a call publishes
+ * the labels it writes, its unlabelled argument count and whether it passes a
+ * trailing closure.
+ */
+describe("swift walker — argument-label signatures", () => {
+  it("publishes a declaration's labels, positional arity and closure acceptance on its chunk", () => {
+    const src = [
+      "func validate(statusCode: Int, _ x: Int = 0, _ rest: Int..., completion: @escaping () -> Void) {}",
+      "",
+    ].join("\n");
+    const chunk = extract(src, [{ symbolId: "validate", scope: [], startLine: 1, endLine: 1 }]).chunks[0];
+    expect(chunk.kwargs).toEqual({ required: ["statusCode"], optional: ["completion"], hasSplat: false });
+    expect(chunk.arity).toEqual({ minRequired: 0, maxPositional: 2, hasSplat: true });
+    expect(chunk.acceptsBlock).toBe(true);
+  });
+
+  it("publishes an initializer's signature, and a closure-free one as not accepting a block", () => {
+    const src = ["struct Box {", "  init(url: URL, _ n: Int) {}", "}", ""].join("\n");
+    const chunks = [
+      { symbolId: "Box", scope: [], startLine: 1, endLine: 3 },
+      { symbolId: "Box#init", scope: ["Box"], startLine: 2, endLine: 2 },
+    ];
+    const chunk = extract(src, chunks).chunks[1];
+    expect(chunk.kwargs).toEqual({ required: ["url"], optional: [], hasSplat: false });
+    expect(chunk.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(chunk.acceptsBlock).toBe(false);
+  });
+
+  it("records a call's labels, unlabelled count and trailing closure", () => {
+    const src = ["func go() {", "  validate(statusCode: 1) { }", "  run(1, x: 2)", "}", ""].join("\n");
+    const { calls } = extract(src).chunks[0];
+    expect(calls.find((c) => c.member === "validate")).toMatchObject({
+      argCount: 0,
+      kwargKeys: ["statusCode"],
+      passesBlock: true,
+    });
+    expect(calls.find((c) => c.member === "run")).toMatchObject({ argCount: 1, kwargKeys: ["x"], passesBlock: false });
+  });
+});
+
+describe("swift walker — a closure spelled through a typealias", () => {
+  it("counts an `@escaping` alias as a closure and an unmarked alias as a possible one", () => {
+    const src = [
+      "func progress(queue: DispatchQueue = .main, closure: @escaping ProgressHandler) {}",
+      "func configure(_ closure: QuickConfigurer) {}",
+      "func count(of items: [Item]) {}",
+      "",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "progress", scope: [], startLine: 1, endLine: 1 },
+      { symbolId: "configure", scope: [], startLine: 2, endLine: 2 },
+      { symbolId: "count", scope: [], startLine: 3, endLine: 3 },
+    ];
+    const [progress, configure, count] = extract(src, chunks).chunks;
+    expect(progress.kwargs).toEqual({ required: [], optional: ["queue", "closure"], hasSplat: false });
+    expect(progress.acceptsBlock).toBe(true);
+    expect(configure.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(configure.acceptsBlock).toBe(true);
+    expect(count.acceptsBlock).toBe(false);
+  });
+});
+
+describe("swift walker — parameter modifiers and metatypes (bd tea-rags-mcp-y99pg.12)", () => {
+  it("types an inout parameter by the type after its modifier", () => {
+    const src = ["func handle(insideLock state: inout MutableState) {", "  state.update()", "}", ""].join("\n");
+    expect(typeAt(src, "state", 2)).toBe("MutableState");
+    expect(resolveLocalBindingType(extractMaterialized(src).chunks[0].localBindings, "state", 2)).toBe("MutableState");
+  });
+
+  it("types a metatype parameter by the type it is the metatype of", () => {
+    const src = ["func make(_ type: EmptyResponse.Type, of kind: Kind.Type?) {", "  type.emptyValue()", "}", ""].join(
+      "\n",
+    );
+    expect(typeAt(src, "type", 2)).toBe("EmptyResponse");
+    expect(typeAt(src, "kind", 2)).toBe("Kind");
+  });
+});
+
+describe("swift walker — generic closure parameters across files (bd tea-rags-mcp-y99pg.13)", () => {
+  it("publishes a generic type's parameters, closure signatures and generic field arguments", () => {
+    const src = [
+      "final class Protected<Value> {",
+      "  func read<U>(_ closure: (Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func write<U>(_ closure: (inout Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func withState(perform: (Request.State) -> Void) {}",
+      "}",
+      "final class Request {",
+      "  let mutableState: Protected<MutableState>",
+      "}",
+      "",
+    ].join("\n");
+    const facts = extract(src).typeDeclarations ?? [];
+    const protectedFact = facts.find((f) => f.typeId === "Protected");
+    expect(protectedFact?.genericParameters).toEqual(["Value"]);
+    expect(protectedFact?.memberClosureParameters).toEqual({
+      read: ["Value"],
+      write: ["Value"],
+      withState: ["Request.State"],
+    });
+    expect(facts.find((f) => f.typeId === "Request")?.fieldTypeArguments).toEqual({
+      mutableState: ["MutableState"],
+    });
+  });
+
+  it("binds a closure's parameters to the callee they are passed to when no declaration here types them", () => {
+    const src = [
+      "final class Request {",
+      "  func run() {",
+      "    mutableState.write { mutableState in",
+      "      mutableState.state.canTransitionTo(.resumed)",
+      "    }",
+      "    mutableState.write { $0.updateCredential(1) }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.mutableState).toEqual([
+      { line: 3, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 5 },
+    ]);
+    expect(bindings.$0).toEqual([{ line: 6, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 6 }]);
+  });
+});
+
+describe("swift walker — enum case payload bindings (bd tea-rags-mcp-y99pg.16)", () => {
+  it("publishes each enum case's payload types in position order", () => {
+    const src = [
+      "enum ExampleUnit {",
+      "  case example(Example)",
+      "  case group(ExampleGroup, count: Int)",
+      "  case failed(any Error)",
+      "  case empty",
+      "}",
+      "",
+    ].join("\n");
+    const fact = (extract(src).typeDeclarations ?? []).find((f) => f.typeId === "ExampleUnit");
+    expect(fact?.enumCasePayloads).toEqual({
+      example: ["Example"],
+      group: ["ExampleGroup", "Int"],
+      failed: ["Error"],
+    });
+  });
+
+  it("binds a switch case's payload names to the subject they destructure", () => {
+    const src = [
+      "final class Group {",
+      "  func walk() {",
+      "    switch unit {",
+      "    case .group(let exampleGroup, _):",
+      "      exampleGroup.walkDownExamples()",
+      "    case let .failed(error):",
+      "      error.asAFError()",
+      "    case .empty:",
+      "      break",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.exampleGroup).toEqual([
+      { line: 4, callee: "unit", enumPayload: { caseName: "group", index: 0 }, scopeEndLine: 5 },
+    ]);
+    expect(bindings.error).toEqual([
+      { line: 6, callee: "unit", enumPayload: { caseName: "failed", index: 0 }, scopeEndLine: 7 },
+    ]);
+  });
+});
+
+describe("swift walker — collection constructions and dictionary iteration (bd tea-rags-mcp-y99pg.17)", () => {
+  it("types an `[T]()` construction as an Array of T, so a for-in over it binds T", () => {
+    const src = [
+      "final class ExampleGroup {",
+      "  private var childUnits = [ExampleUnit]()",
+      "  func walk() {",
+      "    for unit in childUnits {",
+      "      unit.describe()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "childUnits", 2)).toBe("Array");
+    expect(typeAt(src, "unit", 5)).toBe("ExampleUnit");
+  });
+
+  it("binds a dictionary for-in's key and value names from the dictionary's declared types", () => {
+    const src = [
+      "final class World {",
+      "  private var specs: [String: ExampleGroup] = [:]",
+      "  func all() {",
+      "    for (_, group) in specs {",
+      "      group.walkDownExamples()",
+      "    }",
+      "    let named = [String: Example]()",
+      "    for (name, example) in named {",
+      "      example.run(name)",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(typeAt(src, "group", 5)).toBe("ExampleGroup");
+    expect(typeAt(src, "named", 8)).toBe("Dictionary");
+    expect(typeAt(src, "example", 9)).toBe("Example");
+    expect(typeAt(src, "name", 9)).toBe("String");
+  });
+});
+
+describe("swift walker — a generic-argument extension's spelled id (bd tea-rags-mcp-y99pg.19)", () => {
+  it("publishes the id its members compose under beside the bare type id", () => {
+    const src = ["extension Collection<String> {", '  func qualityEncoded() -> String { "" }', "}", ""].join("\n");
+    expect(extract(src).typeDeclarations).toEqual([
+      { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
+    ]);
+  });
+});
+
+describe("swift walker — function typealias returns (bd tea-rags-mcp-y99pg.22)", () => {
+  it("publishes what a function-typed alias declared in a type returns", () => {
+    const src = [
+      "struct DataResponsePublisher {",
+      "  private typealias Handler = (@escaping @Sendable (_ response: Int) -> Void) -> DataRequest",
+      "  typealias Output = Int",
+      "}",
+      "",
+    ].join("\n");
+    const fact = (extract(src).typeDeclarations ?? []).find((f) => f.typeId === "DataResponsePublisher");
+    expect(fact?.functionAliasReturns).toEqual({ Handler: "DataRequest" });
   });
 });

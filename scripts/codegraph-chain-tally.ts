@@ -78,6 +78,7 @@ import {
   type InheritanceEdgeRow,
   type ModuleReexport,
   type SymbolResolutionTarget,
+  type TypeDeclarationFact,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
   SymbolResolutionOutcome,
@@ -449,6 +450,8 @@ interface RunGlobalTypeChannels {
   moduleReexports: Record<string, readonly ModuleReexport[]>;
   /** `relPath` → its `//go:build` expression, Go's build-tag twin tie-breaker (e6xx). */
   buildConstraintsByFile: Record<string, string>;
+  /** `relPath` → the type declarations it carries, primary vs re-opening (y99pg.1). */
+  typeDeclarations: Record<string, readonly TypeDeclarationFact[]>;
   /**
    * Inheritance rows and instantiated types, the two channels the CHA cone
    * reads (bd tea-rags-mcp-o17v2 / pffv, wired here by w205u/E4.0.3). Without
@@ -475,6 +478,7 @@ function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExt
   if (extraction.buildConstraint !== undefined) {
     channels.buildConstraintsByFile[extraction.relPath] = extraction.buildConstraint;
   }
+  if (extraction.typeDeclarations) channels.typeDeclarations[extraction.relPath] = extraction.typeDeclarations;
   // `() => null` mirrors the extraction sink: the cone reads ancestors by
   // fqName, and pass 1's table cannot bind symbol ids yet anyway.
   channels.inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
@@ -584,6 +588,7 @@ function buildCallContext(
     classFieldCallResults: channels.classFieldCallResults,
     moduleReexports: channels.moduleReexports,
     buildConstraintsByFile: channels.buildConstraintsByFile,
+    typeDeclarations: channels.typeDeclarations,
     // LAST, so the Ruby leg's run-global `classFieldTypes` wins over the
     // per-file one above. `{}` for every other language, which is what keeps
     // the python/java context byte-identical to the pre-E6 one.
@@ -778,6 +783,7 @@ export async function run(
     classFieldCallResults: {},
     moduleReexports: {},
     buildConstraintsByFile: {},
+    typeDeclarations: {},
     inheritanceRows: [],
     instantiatedTypes: new Set<string>(),
   };

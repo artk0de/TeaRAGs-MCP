@@ -40,7 +40,7 @@ export class SwiftExtensionScopeMemberSymbolResolutionStrategy implements Symbol
     const enclosingTypes = swiftEnclosingTypeIds(ctx);
     const searched = call.receiver === null ? enclosingTypes : enclosingTypes.slice(0, 1);
     for (const typeId of searched) {
-      const hit = this.cfg.memberTypes.memberOn(typeId, call.member, ctx, this.cfg.mode);
+      const hit = this.cfg.memberTypes.memberOn(typeId, call.member, ctx, this.cfg.mode, call);
       if (hit) return resolved(hit);
     }
     return CONTINUE;

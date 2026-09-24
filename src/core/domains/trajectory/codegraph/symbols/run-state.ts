@@ -31,6 +31,7 @@ import type {
   ResolveRunScope,
   ResolveRunStatsRow,
   SymbolDefinition,
+  TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import type {
   DependencyManifestSource,
@@ -485,6 +486,14 @@ export class CodegraphRunState {
   buildConstraintsByFile: Record<string, string> = createIdentifierRecord();
 
   /**
+   * Per-run `FileExtraction.typeDeclarations`, keyed by the relPath that declares
+   * each list (bd tea-rags-mcp-y99pg.1). Same grain and lifecycle as
+   * `moduleReexports`: the list is the file's whole truth about its type
+   * declarations, so a re-walk REPLACES it and a walk that finds none deletes it.
+   */
+  typeDeclarations: Record<string, readonly TypeDeclarationFact[]> = createIdentifierRecord();
+
+  /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table NAME
    * (bd tea-rags-mcp-n0zj); several files may declare one name, and the resolver
    * disambiguates by the caller's import map. Re-walking a file replaces its own
@@ -754,6 +763,14 @@ export class CodegraphRunState {
     buildConstraintsByFile: (slice) => {
       if (slice.buildConstraint !== undefined && !(slice.relPath in this.buildConstraintsByFile)) {
         this.buildConstraintsByFile[slice.relPath] = slice.buildConstraint;
+      }
+    },
+    // Batch-wins on the DECLARING relPath, as `moduleReexports` (bd
+    // tea-rags-mcp-y99pg.1). No `markContributed`: the runner hands the map to
+    // pass-2 unconditionally.
+    typeDeclarations: (slice) => {
+      if (slice.typeDeclarations !== undefined && !(slice.relPath in this.typeDeclarations)) {
+        this.typeDeclarations[slice.relPath] = slice.typeDeclarations;
       }
     },
   };
@@ -1071,6 +1088,7 @@ export class CodegraphRunState {
       this.classFieldCallResults = createIdentifierRecord();
       this.moduleReexports = createIdentifierRecord();
       this.buildConstraintsByFile = createIdentifierRecord();
+      this.typeDeclarations = createIdentifierRecord();
       this.structuredReturnTypes = createIdentifierRecord();
       this.dispatchTables = createIdentifierRecord();
       this.callbackParams = createIdentifierRecord();
@@ -1259,6 +1277,7 @@ export class CodegraphRunState {
     this.classFieldCallResults = createIdentifierRecord();
     this.moduleReexports = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
+    this.typeDeclarations = createIdentifierRecord();
     this.structuredReturnTypes = createIdentifierRecord();
     this.dispatchTables = createIdentifierRecord();
     this.callbackParams = createIdentifierRecord();
@@ -1303,6 +1322,7 @@ export class CodegraphRunState {
     this.classFieldCallResults = createIdentifierRecord();
     this.moduleReexports = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
+    this.typeDeclarations = createIdentifierRecord();
     this.structuredReturnTypes = createIdentifierRecord();
     this.dispatchTables = createIdentifierRecord();
     this.callbackParams = createIdentifierRecord();
@@ -1428,6 +1448,13 @@ export class CodegraphRunState {
       this.buildConstraintsByFile[extraction.relPath] = extraction.buildConstraint;
     } else if (extraction.relPath in this.buildConstraintsByFile) {
       delete this.buildConstraintsByFile[extraction.relPath];
+    }
+    // The file's type declarations under its own path (bd tea-rags-mcp-y99pg.1):
+    // replaced on a re-walk, and dropped when the file no longer declares a type.
+    if (extraction.typeDeclarations !== undefined && extraction.typeDeclarations.length > 0) {
+      this.typeDeclarations[extraction.relPath] = extraction.typeDeclarations;
+    } else if (extraction.relPath in this.typeDeclarations) {
+      delete this.typeDeclarations[extraction.relPath];
     }
     // Program-wide instantiation set for the cone resolver's RTA pruning (bd
     // tea-rags-mcp-pffv), regardless of which file instantiates the type.

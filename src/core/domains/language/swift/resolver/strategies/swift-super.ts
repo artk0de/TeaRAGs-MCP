@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
@@ -8,6 +9,7 @@ import {
 } from "../../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../../kernel/run-scoped-memo.js";
 import { SWIFT_ANCESTOR_POLICY } from "../swift-ancestor-policy.js";
+import { lookupSwiftSymbols, qualifySwiftTypeName } from "../swift-symbol-lookup.js";
 import { lookupSwiftTypeMember, swiftSelfTypeName, type SwiftResolverConfig } from "./shared.js";
 
 /**
@@ -62,10 +64,28 @@ export class SwiftSuperSymbolResolutionStrategy implements SymbolResolutionStrat
     const scan = findMemberInAncestorChain(
       enclosing,
       this.linearizerFor(ctx),
-      (candidate) => lookupSwiftTypeMember(candidate, call.member, ctx, this.cfg.mode),
+      (candidate) => lookupSwiftTypeMember(candidate, call.member, ctx, this.cfg.mode, call),
       { startAfter: true },
     );
-    return scan.target === null ? DROP : resolved(scan.target);
+    if (scan.target !== null) return resolved(scan.target);
+    return call.member === "init" ? this.implicitInitializer(enclosing, ctx) : DROP;
+  }
+
+  /**
+   * `super.init()` when no class of the project chain declares an initializer
+   * (bd tea-rags-mcp-y99pg.21): the one that runs is the superclass's IMPLICIT
+   * initializer, which the typechecker places on the superclass itself. The
+   * edge lands on the superclass's type symbol, as a construction of a project
+   * type that declares no initializer does. A superclass the project does not
+   * declare (`NSObject`) is the SDK's initializer, and emits nothing.
+   */
+  private implicitInitializer(enclosing: string, ctx: CallContext): SymbolResolutionOutcome {
+    const base = identifierEntry(ctx.classExtends, enclosing);
+    if (base === undefined || base === enclosing) return DROP;
+    const typeId = qualifySwiftTypeName(base, ctx);
+    const [declaration] = lookupSwiftSymbols(ctx, typeId);
+    if (declaration === undefined) return DROP;
+    return resolved({ targetRelPath: declaration.relPath, targetSymbolId: typeId });
   }
 
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {

@@ -76,7 +76,7 @@
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-ruby": "^0.23.1",
     "tree-sitter-rust": "^0.24.0",
-    "tree-sitter-swift": "^0.7.1",
+    "tree-sitter-swift": "npm:@artk0de/tree-sitter-swift@0.7.3-prebuild.1",
     "tree-sitter-typescript": "^0.23.2",
     "@duckdb/node-api": "^1.5.3-r.1",
     "@modelcontextprotocol/sdk": "^1.28.0",

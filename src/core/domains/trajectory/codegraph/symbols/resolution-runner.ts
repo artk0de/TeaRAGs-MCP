@@ -61,6 +61,7 @@ export interface ResolverInputs {
   classFieldCallResults: CallContext["classFieldCallResults"];
   moduleReexports: CallContext["moduleReexports"];
   buildConstraintsByFile: CallContext["buildConstraintsByFile"];
+  typeDeclarations: CallContext["typeDeclarations"];
   /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
   runScope: NonNullable<CallContext["runScope"]>;
 }
@@ -108,6 +109,9 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // bd tea-rags-mcp-e6xx — Go's build-tag twin tie-breaker. Empty ⇒ twins stay
     // ambiguous, the pre-channel answer.
     buildConstraintsByFile: inputs.buildConstraintsByFile,
+    // bd tea-rags-mcp-y99pg.1 — which files DECLARE a type and which only
+    // re-open it. Empty ⇒ every declaration counts as the type, as before.
+    typeDeclarations: inputs.typeDeclarations,
     // bd tea-rags-mcp-39xca.6 — resolver memos scope their entries to this
     // token rather than to the pooled symbol table's identity.
     runScope: inputs.runScope,
@@ -337,6 +341,9 @@ export class CallEdgeResolutionRunner {
       // Run-global for the same reason: a twin's constraint lives in ANOTHER
       // file of the package (bd tea-rags-mcp-e6xx).
       buildConstraintsByFile: state.buildConstraintsByFile,
+      // Run-global for the same reason: a type's declaration and its re-openings
+      // live in files the caller does not own (bd tea-rags-mcp-y99pg.1).
+      typeDeclarations: state.typeDeclarations,
       runScope: state.runScope,
     };
   }

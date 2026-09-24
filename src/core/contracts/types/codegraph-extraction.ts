@@ -336,6 +336,84 @@ export interface FileExtraction {
    * build constraints.
    */
   buildConstraint?: string;
+  /**
+   * Every TYPE declaration the file carries, the primary declaration and the
+   * re-openings alike, in source order (bd tea-rags-mcp-y99pg.1).
+   *
+   * A symbol id cannot say which file holds a type's own declaration: Swift's
+   * `extension Request` composes exactly the id `class Request` does, so a type
+   * re-opened across files reads as ambiguous, and a type the project only
+   * EXTENDS (`extension JSONDecoder`) reads as one it declares. This is the fact
+   * both questions need. Undefined for a file declaring no type, and for
+   * languages whose walkers do not collect it.
+   */
+  typeDeclarations?: readonly TypeDeclarationFact[];
+}
+
+/**
+ * One type declaration a file carries (`FileExtraction.typeDeclarations`).
+ */
+export interface TypeDeclarationFact {
+  /** The type's composed id, nesting included: `Request`, `Request.State`. */
+  readonly typeId: string;
+  /**
+   * `true` for a RE-OPENING — a declaration that adds members to a type
+   * declared elsewhere (Swift `extension`) — and `false` for the type's own
+   * declaration. A type with re-openings only is not the project's type.
+   */
+  readonly reopens: boolean;
+  /**
+   * The supertypes this declaration names — superclass and protocols alike, in
+   * clause order, generic arguments dropped (`Base<T>` → `Base`). A re-opening
+   * lists the conformances IT adds (`extension SecTrust: AlamofireExtended`).
+   * Absent when the declaration names none.
+   */
+  readonly conforms?: readonly string[];
+  /**
+   * The type's own generic parameter names, in order (`Protected<Value>` →
+   * `["Value"]`) — the positions {@link fieldTypeArguments} and
+   * {@link memberClosureParameters} are read against (bd
+   * tea-rags-mcp-y99pg.13). Absent on a non-generic type and on re-openings.
+   */
+  readonly genericParameters?: readonly string[];
+  /**
+   * Stored properties this declaration types with generic arguments, by
+   * property name: `let mutableState: Protected<MutableState>` →
+   * `{ mutableState: ["MutableState"] }`. Each argument is the nominal its type
+   * text names, `null` where it names none. Absent when no property has any.
+   */
+  readonly fieldTypeArguments?: Readonly<Record<string, readonly (string | null)[]>>;
+  /**
+   * For each method taking ONE function-typed parameter, the types that
+   * function's parameters are declared with, by method name:
+   * `func write<U>(_ closure: (inout Value) throws -> U)` → `{ write: ["Value"] }`.
+   * An entry is a nominal, one of {@link genericParameters} (bound per receiver
+   * by its type arguments), or `null`. A method whose overloads disagree maps
+   * to `null`. Absent when no method takes a closure.
+   */
+  readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;
+  /**
+   * An enum's cases that carry a payload, by case name, each payload slot's
+   * nominal type in position order (`case group(ExampleGroup, count: Int)` →
+   * `group: ["ExampleGroup", "Int"]`, `null` for a slot no nominal names) —
+   * what a `case .group(let g)` pattern in another file binds `g` to (bd
+   * tea-rags-mcp-y99pg.16). Absent when no case carries a payload.
+   */
+  readonly enumCasePayloads?: Readonly<Record<string, readonly (string | null)[]>>;
+  /**
+   * The id this declaration's members compose under when it differs from
+   * {@link typeId}: `extension Collection<String>` composes
+   * `Collection<String>#qualityEncoded` while its typeId is `Collection` (bd
+   * tea-rags-mcp-y99pg.19). Absent when the two agree.
+   */
+  readonly spelledAs?: string;
+  /**
+   * The return type of each FUNCTION-typed alias this declaration's body
+   * declares: `typealias Handler = (Callback) -> DataRequest` →
+   * `Handler: "DataRequest"` — what calling a stored closure of that alias
+   * yields (bd tea-rags-mcp-y99pg.22). Absent when none.
+   */
+  readonly functionAliasReturns?: Readonly<Record<string, string>>;
 }
 
 /**

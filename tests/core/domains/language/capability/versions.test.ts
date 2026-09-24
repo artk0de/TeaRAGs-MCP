@@ -214,6 +214,73 @@ describe("seeded support versions", () => {
       // return type and no edge off a call hop; walker 10 qualifies a short
       // type name to the nested type it denotes, so an index built by walker 9
       // holds no edge into a nested type's member reached by its short name.
+      // swift walker 11 (with chunking 4): the grammar moves from
+      // tree-sitter-swift 0.7.1 to 0.7.3, which parses files 0.7.1 left as
+      // ERROR nodes, so an index built by walker 10 holds parse-error ids and
+      // none of the edges out of those files.
+      // swift walker 12: a property's type is qualified from its declaring type
+      // outward, so an index built by walker 11 holds no edge through a field typed
+      // by a nested type of the field's owner.
+      // swift walker 13: the walker publishes `typeDeclarations` (declaration vs
+      // re-opening), so an index built by walker 12 still lands constructions of a
+      // Foundation type on the project's extension of it and leaves a type re-opened
+      // across files ambiguous.
+      // swift walker 14: member lookup reaches protocol members through conformances,
+      // so an index built by walker 13 misses `trust.af.*` and every other member a
+      // protocol or its extension provides.
+      // swift walker 15: closure parameters (`$0`, named) are typed from the
+      // function-typed parameter they are passed to, so an index built by walker 14
+      // misses every call on a closure parameter.
+      // swift walker 16: generic parameters read as their constraints and a
+      // metatype-bound generic return as the named type, so an index built by walker
+      // 15 misses every call on a generic-typed value.
+      // swift walker 17: locals bound to an untypable value chain are published by
+      // spelling in `callResultBindings`, so an index built by walker 16 misses every
+      // call on such a local.
+      // swift walker 18: a type's conventional singleton types as the type, so an
+      // index built by walker 17 misses calls through `NotificationCenter.default`.
+      // swift walker 19: closure-value invocations are no longer calls, so an index
+      // built by walker 18 keeps edges from `stream(...)` / `handler?(...)` to
+      // namesake methods.
+      // swift walker 20: protocol property requirements publish their types and
+      // `[T]` element accessors type as the element, so an index built by walker 19
+      // misses calls through them.
+      // swift walker 21: underscore-prefixed type names read as types and a type
+      // receiver resolves at module scope, so an index built by walker 20 misses
+      // calls on explicit type receivers.
+      // swift walker 22: specialised constructions are call sites and type their
+      // binding, and `catch` binds `error`, so an index built by walker 21 misses
+      // both.
+      // swift walker 23: definitions carry argument-label signatures and call sites
+      // their labels, so an index built by walker 22 targets the first overload.
+      // swift walker 25: inout and metatype parameters bind their type, so an index
+      // built by walker 24 has no edge for a call on either.
+      // swift walker 26: generic closure parameters bind through the callee's
+      // declaration, so an index built by walker 25 leaves every such closure
+      // parameter untyped.
+      // swift walker 27: the codegraph resolve-rate denominator excludes typed
+      // receivers whose member no reachable type declares, so a rate a walker-26
+      // run persisted is lower than this build reports.
+      // swift walker 28: array and dictionary values bind Array / Dictionary, so an
+      // index built by walker 27 has no edge into any project Array extension.
+      // swift walker 29: extension-initializer constructions and bare names shadowed
+      // by an unrelated nested type now resolve, so an index built by walker 28 lacks
+      // those edges.
+      // swift walker 30: enum case payloads and switch-case payload bindings are new
+      // channel content, so an index built by walker 29 types no payload name.
+      // swift walker 31: collection constructions and dictionary for-in tuples now
+      // bind, so an index built by walker 30 types neither.
+      // swift walker 32: `-> Self` returns are published, so an index built by
+      // walker 31 types no chain through one.
+      // swift walker 33: `spelledAs` is new channel content, so an index built by
+      // walker 32 reaches no generic-argument extension.
+      // swift walker 34: resolver-side chain-head reads changed which edges exist,
+      // so an index built by walker 33 lacks the `try`-headed and nested-type-headed
+      // edges.
+      // swift walker 35: implicit-initializer `super.init()` edges are new, so an
+      // index built by walker 34 lacks them.
+      // swift walker 36: `functionAliasReturns` is new channel content, so an index
+      // built by walker 35 types no stored-closure call head.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -236,6 +303,9 @@ describe("seeded support versions", () => {
       // used to hit `Object.prototype` and throw, so the whole FILE dropped out
       // of the graph (9 of commons-lang's) — an index built by the previous
       // walker holds no row for any such file until the recompute rewrites it.
+      // swift walker 24: that fix merged onto swift walker 23, which had moved
+      // independently (bd tea-rags-mcp-y99pg), so neither parent's index holds
+      // the merged extraction.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 13],
@@ -245,7 +315,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 11],
+        ["swift", 36],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
@@ -257,9 +327,12 @@ describe("seeded support versions", () => {
       // XCTest and swift-testing members, so `.swift` test files now emit
       // `test` / `test_setup` chunks, and `detectScope` switches the project
       // from path-based to chunkType-based test accounting once they appear.
+      // swift chunking 3 added the Quick scope chunker; chunking 4 is the
+      // grammar bump to 0.7.3 — files 0.7.1 failed to parse now split at real
+      // symbol boundaries, so the chunk set moves.
       const CHUNKING_BUMPED = new Map([
         ["javascript", 2],
-        ["swift", 3],
+        ["swift", 4],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

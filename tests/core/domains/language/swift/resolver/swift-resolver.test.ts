@@ -19,16 +19,19 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { SwiftCallResolver } from "../../../../../../src/core/domains/language/swift/resolver/swift-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-function table(rows: Record<string, { symbolId: string; scope: string[] }[]>): InMemoryGlobalSymbolTable {
+function table(
+  rows: Record<string, ({ symbolId: string; scope: string[] } & Partial<SymbolDefinition>)[]>,
+): InMemoryGlobalSymbolTable {
   const t = new InMemoryGlobalSymbolTable();
   for (const [relPath, defs] of Object.entries(rows)) {
     t.upsertFile(
       relPath,
       defs.map((d) => ({
+        ...d,
         symbolId: d.symbolId,
         fqName: d.symbolId,
         // Production keys the table with `lastSegment`, which strips the `~N`
@@ -1294,6 +1297,57 @@ describe("SwiftCallResolver — a SHORT type name reaches its NESTED declaration
     expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
   });
 
+  // A FIELD's type is written inside the type that declares the field, so Swift
+  // resolves it from THERE outward — not from wherever the call happens to sit.
+  // `mutableState.state` called in `DownloadRequest` reads `state: State`
+  // written in `Request.MutableState`, which means `Request.State` even though
+  // no scope of the caller mentions `Request`.
+  const nestedFieldTable = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request.MutableState", scope: ["Request"] },
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+    "Sources/Socket.swift": [
+      { symbolId: "Socket.State", scope: ["Socket"] },
+      { symbolId: "Socket.State#canTransitionTo", scope: ["Socket", "State"] },
+    ],
+    "Sources/Download.swift": [{ symbolId: "DownloadRequest#cancel", scope: ["DownloadRequest"] }],
+  });
+  const nestedFieldFacts = {
+    "Sources/Request.swift::Request": { mutableState: "MutableState" },
+    "Sources/Request.swift::MutableState": { state: "State" },
+  };
+
+  it("qualifies a field's type from the type that DECLARES the field, not from the caller", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("mutableState.state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Download.swift",
+        callerScope: ["DownloadRequest"],
+        symbolTable: nestedFieldTable,
+        classExtends: { DownloadRequest: "Request" },
+        classFieldTypesByClassKey: nestedFieldFacts,
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("types a subclass's implicit-self field hop by hop through the base's nested types", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("self.mutableState.state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Download.swift",
+        callerScope: ["DownloadRequest"],
+        symbolTable: nestedFieldTable,
+        classExtends: { DownloadRequest: "Request" },
+        classFieldTypesByClassKey: nestedFieldFacts,
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
   it("stays silent when several nested namesakes exist and none encloses the caller", () => {
     const target = new SwiftCallResolver().resolve(
       call("state", "canTransitionTo"),
@@ -1422,5 +1476,1361 @@ describe("SwiftCallResolver — a member INHERITED from the superclass", () => {
       }),
     );
     expect(target).toBeNull();
+  });
+});
+
+/**
+ * `typeDeclarations` (bd tea-rags-mcp-y99pg.1) — which file DECLARES a type and
+ * which only re-opens it. Both compose the same id, so without this fact a type
+ * extended in another file reads as ambiguous, and a type the project only
+ * extends reads as one it declares.
+ */
+describe("SwiftCallResolver — a type's declaration versus its re-openings", () => {
+  const reopened = table({
+    "Sources/World.swift": [{ symbolId: "World", scope: [] }],
+    "Sources/World+DSL.swift": [{ symbolId: "World", scope: [] }],
+    "Sources/Spec.swift": [{ symbolId: "Spec#run", scope: ["Spec"] }],
+  });
+  const reopenedFacts = {
+    "Sources/World.swift": [{ typeId: "World", reopens: false }],
+    "Sources/World+DSL.swift": [{ typeId: "World", reopens: true }],
+  };
+
+  it("lands a construction of a type re-opened in another file on the file that declares it", () => {
+    const target = new SwiftCallResolver().resolve(
+      call(null, "World"),
+      ctx({
+        callerFile: "Sources/Spec.swift",
+        callerScope: ["Spec"],
+        symbolTable: reopened,
+        typeDeclarations: reopenedFacts,
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/World.swift", targetSymbolId: "World" });
+  });
+
+  it("keeps the cross-file ambiguity when no run published the fact", () => {
+    const target = new SwiftCallResolver().resolve(
+      call(null, "World"),
+      ctx({ callerFile: "Sources/Spec.swift", callerScope: ["Spec"], symbolTable: reopened }),
+    );
+    expect(target).toBeNull();
+  });
+
+  const extendedOnly = table({
+    "Sources/JSONDecoder+Alamofire.swift": [{ symbolId: "JSONDecoder", scope: [] }],
+    "Sources/Request.swift": [{ symbolId: "Request#decode", scope: ["Request"] }],
+  });
+  const extendedOnlyFacts = {
+    "Sources/JSONDecoder+Alamofire.swift": [{ typeId: "JSONDecoder", reopens: true, conforms: ["DataDecoder"] }],
+  };
+
+  it("emits no edge for a construction of a type the project only extends", () => {
+    const resolver = new SwiftCallResolver();
+    const site = call(null, "JSONDecoder");
+    const context = ctx({
+      callerFile: "Sources/Request.swift",
+      callerScope: ["Request"],
+      symbolTable: extendedOnly,
+      typeDeclarations: extendedOnlyFacts,
+    });
+    expect(resolver.resolve(site, context)).toBeNull();
+    // The SDK's initializer is what runs — nothing in the project defines it.
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(false);
+  });
+
+  it("keeps the edge and the denominator when an extension declares an initializer", () => {
+    const withInit = table({
+      "Sources/URLRequest+Alamofire.swift": [
+        { symbolId: "URLRequest", scope: [] },
+        { symbolId: "URLRequest#init", scope: ["URLRequest"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session#request", scope: ["Session"] }],
+    });
+    const resolver = new SwiftCallResolver();
+    const site = call(null, "URLRequest");
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: withInit,
+      typeDeclarations: { "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }] },
+    });
+    // Which initializer runs is an argument-label question; a call carrying
+    // no label evidence keeps the edge into the extension that declares one
+    // (label-narrowed below, bd tea-rags-mcp-y99pg.15).
+    expect(resolver.resolve(site, context)).toEqual({
+      targetRelPath: "Sources/URLRequest+Alamofire.swift",
+      targetSymbolId: "URLRequest",
+    });
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(true);
+  });
+});
+
+/**
+ * Conformances (bd tea-rags-mcp-y99pg.4) — a member a PROTOCOL declares, or a
+ * protocol extension provides, is reachable from every type conforming to it,
+ * and Swift declares conformances in extensions as often as on the type:
+ * `extension SecTrust: AlamofireExtended {}` is what makes `trust.af` exist.
+ */
+describe("SwiftCallResolver — members reached through protocol conformances", () => {
+  const afTable = table({
+    "Sources/AlamofireExtended.swift": [
+      { symbolId: "AlamofireExtension", scope: [] },
+      { symbolId: "AlamofireExtended", scope: [] },
+    ],
+    "Sources/ServerTrust.swift": [
+      { symbolId: "SecTrust", scope: [] },
+      { symbolId: "AlamofireExtension#performValidation", scope: ["AlamofireExtension"] },
+      { symbolId: "Evaluator#evaluate", scope: ["Evaluator"] },
+    ],
+  });
+  const afDeclarations = {
+    "Sources/AlamofireExtended.swift": [
+      { typeId: "AlamofireExtension", reopens: false },
+      { typeId: "AlamofireExtended", reopens: false },
+      { typeId: "AlamofireExtended", reopens: true },
+    ],
+    "Sources/ServerTrust.swift": [
+      { typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] },
+      { typeId: "AlamofireExtension", reopens: true },
+    ],
+  };
+
+  it("types a property a protocol extension provides to a type that conforms in an extension", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("trust.af", "performValidation"),
+      ctx({
+        callerFile: "Sources/ServerTrust.swift",
+        callerScope: ["Evaluator"],
+        symbolTable: afTable,
+        typeDeclarations: afDeclarations,
+        localBindings: { trust: [{ line: 5, type: "SecTrust" }] },
+        classFieldTypesByClassKey: {
+          "Sources/AlamofireExtended.swift::AlamofireExtended": { af: "AlamofireExtension" },
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("AlamofireExtension#performValidation");
+  });
+
+  const monitorTable = table({
+    "Sources/Monitor.swift": [
+      { symbolId: "Monitor", scope: [] },
+      { symbolId: "Monitor#tick", scope: ["Monitor"] },
+    ],
+    "Sources/Clock.swift": [
+      { symbolId: "Clock", scope: [] },
+      { symbolId: "Clock#run", scope: ["Clock"] },
+      { symbolId: "Base", scope: [] },
+    ],
+  });
+  const monitorDeclarations = {
+    "Sources/Monitor.swift": [
+      { typeId: "Monitor", reopens: false },
+      { typeId: "Monitor", reopens: true },
+    ],
+    "Sources/Clock.swift": [
+      { typeId: "Clock", reopens: false, conforms: ["Base", "Monitor"] },
+      { typeId: "Base", reopens: false },
+    ],
+  };
+
+  it("dispatches a typed receiver's call to the protocol member its type conforms to", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("clock", "tick"),
+      ctx({
+        callerFile: "Sources/Clock.swift",
+        callerScope: ["Clock"],
+        symbolTable: monitorTable,
+        typeDeclarations: monitorDeclarations,
+        classExtends: { Clock: "Base" },
+        localBindings: { clock: [{ line: 5, type: "Clock" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Monitor#tick");
+  });
+
+  it("never sends `super` into a protocol — only the superclass chain answers it", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("super", "tick"),
+      ctx({
+        callerFile: "Sources/Clock.swift",
+        callerScope: ["Clock"],
+        symbolTable: monitorTable,
+        typeDeclarations: monitorDeclarations,
+        classExtends: { Clock: "Base" },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+/**
+ * A local recorded by its right-hand side's SPELLING (`callResultBindings`) is
+ * typed by folding that spelling as a receiver chain (bd tea-rags-mcp-y99pg.6).
+ */
+describe("SwiftCallResolver — locals bound to a value chain", () => {
+  const t = table({
+    "Sources/Manager.swift": [
+      { symbolId: "Manager", scope: [] },
+      { symbolId: "Manager#evaluator", scope: ["Manager"] },
+    ],
+    "Sources/Evaluating.swift": [
+      { symbolId: "Evaluating", scope: [] },
+      { symbolId: "Evaluating#evaluate", scope: ["Evaluating"] },
+    ],
+    "Sources/Delegate.swift": [
+      { symbolId: "Delegate", scope: [] },
+      { symbolId: "Delegate#evaluate", scope: ["Delegate"] },
+    ],
+  });
+  const base = {
+    callerFile: "Sources/Delegate.swift",
+    callerScope: ["Delegate", "go"],
+    symbolTable: t,
+    localBindings: { manager: [{ line: 2, type: "Manager" }] },
+    structuredReturnTypes: { "Manager#evaluator": { form: "instance" as const, name: "Evaluating" } },
+  };
+
+  it("folds the spelling to type a bare receiver", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator", "evaluate", 6),
+      ctx({ ...base, callResultBindings: { evaluator: [{ line: 5, callee: "manager.evaluator" }] } }),
+    );
+    expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
+  });
+
+  it("folds it for the head of a dotted receiver too", () => {
+    const tt = table({
+      "Sources/Evaluating.swift": [
+        { symbolId: "Evaluating", scope: [] },
+        { symbolId: "Policy", scope: [] },
+        { symbolId: "Policy#check", scope: ["Policy"] },
+      ],
+      "Sources/Manager.swift": [{ symbolId: "Manager#evaluator", scope: ["Manager"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator.policy", "check", 6),
+      ctx({
+        ...base,
+        symbolTable: tt,
+        classFieldTypesByClassKey: { "Sources/Evaluating.swift::Evaluating": { policy: "Policy" } },
+        callResultBindings: { evaluator: [{ line: 5, callee: "manager.evaluator" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Policy#check");
+  });
+
+  it("never lets a local's own right-hand side read the local it binds", () => {
+    // `var manager = manager.evaluator` — the right-hand side names the
+    // PARAMETER above, not the local being declared.
+    const target = new SwiftCallResolver().resolve(
+      call("manager", "evaluate", 6),
+      ctx({ ...base, callResultBindings: { manager: [{ line: 5, callee: "manager.evaluator" }] } }),
+    );
+    expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
+  });
+
+  it("a later typed binding shadows an earlier spelling", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator", "evaluate", 8),
+      ctx({
+        ...base,
+        localBindings: { ...base.localBindings, evaluator: [{ line: 7, type: "Delegate" }] },
+        callResultBindings: { evaluator: [{ line: 5, callee: "manager.evaluator" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Delegate#evaluate");
+  });
+
+  it("a spelling it cannot fold leaves the receiver to the passes after it, as an unrecorded local did", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("evaluator", "evaluate", 6),
+      ctx({
+        ...base,
+        classFieldTypes: { Delegate: { evaluator: "Evaluating" } },
+        callResultBindings: { evaluator: [{ line: 5, callee: "unknown.thing" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Evaluating#evaluate");
+  });
+});
+
+/**
+ * `NotificationCenter.default`, `DispatchQueue.main`, `URLSession.shared` — a
+ * type's own singleton, named by Swift's API convention, is an instance of the
+ * type, and a project extension of that type is where its calls land
+ * (bd tea-rags-mcp-y99pg.5).
+ */
+describe("SwiftCallResolver — a type's conventional singleton", () => {
+  const t = table({
+    "Sources/Notifications.swift": [
+      { symbolId: "NotificationCenter", scope: [] },
+      { symbolId: "NotificationCenter#postNotification", scope: ["NotificationCenter"] },
+    ],
+    "Sources/Config.swift": [
+      { symbolId: "Config", scope: [] },
+      { symbolId: "Settings", scope: [] },
+      { symbolId: "Settings#reload", scope: ["Settings"] },
+      { symbolId: "Config#reload", scope: ["Config"] },
+    ],
+  });
+  const declarations = {
+    "Sources/Notifications.swift": [{ typeId: "NotificationCenter", reopens: true }],
+    "Sources/Config.swift": [
+      { typeId: "Config", reopens: false },
+      { typeId: "Settings", reopens: false },
+    ],
+  };
+
+  it("types `Type.default` as the type itself", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("NotificationCenter.default", "postNotification"),
+      ctx({ callerFile: "Sources/Request.swift", symbolTable: t, typeDeclarations: declarations }),
+    );
+    expect(target?.targetSymbolId).toBe("NotificationCenter#postNotification");
+  });
+
+  it("reads a declared property of that name instead, when the project declares one", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("Config.shared", "reload"),
+      ctx({
+        callerFile: "Sources/Request.swift",
+        symbolTable: t,
+        typeDeclarations: declarations,
+        classFieldTypesByClassKey: { "Sources/Config.swift::Config": { shared: "Settings" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Settings#reload");
+  });
+
+  it("reads no singleton off an instance", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("config.shared", "reload"),
+      ctx({
+        callerFile: "Sources/Request.swift",
+        symbolTable: t,
+        typeDeclarations: declarations,
+        localBindings: { config: [{ line: 5, type: "Config" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+/**
+ * `_URLEncodedFormEncoder` is a TYPE: Swift's convention marks an internal
+ * type with a leading underscore, and the UpperCamelCase test must read past
+ * it (bd tea-rags-mcp-y99pg.9).
+ */
+describe("SwiftCallResolver — underscore-prefixed type names", () => {
+  const t = table({
+    "Sources/Encoder.swift": [
+      { symbolId: "_Encoder", scope: [] },
+      { symbolId: "_Encoder~2", scope: [] },
+      { symbolId: "_Encoder.Inner", scope: ["_Encoder"] },
+      { symbolId: "Outer", scope: [] },
+      { symbolId: "Outer.Inner", scope: ["Outer"] },
+    ],
+  });
+
+  it("collapses a same-file re-opening of an underscore-prefixed type for a construction", () => {
+    const target = new SwiftCallResolver().resolve(
+      call(null, "_Encoder"),
+      ctx({ callerFile: "Sources/Other.swift", symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("_Encoder");
+  });
+
+  it("constructs a nested type through its underscore-prefixed outer type", () => {
+    const outer = new SwiftCallResolver().resolve(
+      call("Outer", "Inner"),
+      ctx({ callerFile: "Sources/Other.swift", symbolTable: t }),
+    );
+    const underscored = new SwiftCallResolver().resolve(
+      call("_Encoder", "Inner"),
+      ctx({ callerFile: "Sources/Other.swift", symbolTable: t }),
+    );
+    expect(outer?.targetSymbolId).toBe("Outer.Inner");
+    expect(underscored?.targetSymbolId).toBe("_Encoder.Inner");
+  });
+});
+
+/**
+ * Argument labels select among overloads (bd tea-rags-mcp-y99pg.7). A Swift
+ * call names its labels and whether it passes a trailing closure; a declaration
+ * that cannot accept them is not the target, however near it sits.
+ */
+describe("SwiftCallResolver — argument-label overload selection", () => {
+  type Def = {
+    symbolId: string;
+    scope: string[];
+    arity?: { minRequired: number; maxPositional: number; hasSplat: boolean };
+    kwargs?: { required: string[]; optional: string[]; hasSplat: boolean };
+    acceptsBlock?: boolean;
+  };
+  function signedTable(rows: Record<string, Def[]>): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    for (const [relPath, defs] of Object.entries(rows)) {
+      t.upsertFile(
+        relPath,
+        defs.map((d) => ({
+          ...d,
+          fqName: d.symbolId,
+          shortName: (d.symbolId.split(/[#.]/).pop() ?? d.symbolId).replace(/~\d+$/, ""),
+          relPath,
+        })),
+      );
+    }
+    return t;
+  }
+  const none = { minRequired: 0, maxPositional: 0, hasSplat: false };
+  const noLabels = { required: [], optional: [], hasSplat: false };
+  const t = signedTable({
+    "Sources/Validation.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      {
+        symbolId: "DataRequest#validate",
+        scope: ["DataRequest"],
+        arity: none,
+        kwargs: { required: ["statusCode"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+      {
+        symbolId: "DataRequest#validate~2",
+        scope: ["DataRequest"],
+        arity: none,
+        kwargs: noLabels,
+        acceptsBlock: false,
+      },
+    ],
+    "Sources/DataRequest.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      {
+        symbolId: "DataRequest#validate",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 1, hasSplat: false },
+        kwargs: noLabels,
+        acceptsBlock: true,
+      },
+    ],
+  });
+  const declarations = {
+    "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+    "Sources/Validation.swift": [{ typeId: "DataRequest", reopens: true }],
+  };
+  const inValidation = {
+    callerFile: "Sources/Validation.swift",
+    callerScope: ["DataRequest", "validate"],
+    symbolTable: t,
+    typeDeclarations: declarations,
+  };
+
+  it("passes over a same-file overload that cannot take a trailing closure", () => {
+    const target = new SwiftCallResolver().resolve(
+      { ...call(null, "validate"), argCount: 0, kwargKeys: [], passesBlock: true },
+      ctx(inValidation),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/DataRequest.swift", targetSymbolId: "DataRequest#validate" });
+  });
+
+  it("lands on the overload whose labels the call writes", () => {
+    const labelled = new SwiftCallResolver().resolve(
+      { ...call("self", "validate"), argCount: 0, kwargKeys: ["statusCode"], passesBlock: false },
+      ctx(inValidation),
+    );
+    const bare = new SwiftCallResolver().resolve(
+      { ...call(null, "validate"), argCount: 0, kwargKeys: [], passesBlock: false },
+      ctx(inValidation),
+    );
+    expect(labelled?.targetSymbolId).toBe("DataRequest#validate");
+    expect(labelled?.targetRelPath).toBe("Sources/Validation.swift");
+    expect(bare?.targetSymbolId).toBe("DataRequest#validate~2");
+  });
+
+  it("keeps the nearest declaration when the call carries no signature evidence", () => {
+    const target = new SwiftCallResolver().resolve(call(null, "validate"), ctx(inValidation));
+    expect(target?.targetRelPath).toBe("Sources/Validation.swift");
+  });
+
+  it("emits nothing when no declaration accepts the call's labels", () => {
+    const notes = signedTable({
+      "Sources/Notifications.swift": [
+        { symbolId: "Notification", scope: [] },
+        {
+          symbolId: "Notification#init",
+          scope: ["Notification"],
+          arity: none,
+          kwargs: { required: ["name", "request"], optional: [], hasSplat: false },
+          acceptsBlock: false,
+        },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      { ...call("self", "init"), argCount: 0, kwargKeys: ["name", "object", "userInfo"], passesBlock: false },
+      ctx({
+        callerFile: "Sources/Notifications.swift",
+        callerScope: ["Notification", "init"],
+        symbolTable: notes,
+        typeDeclarations: { "Sources/Notifications.swift": [{ typeId: "Notification", reopens: true }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a trailing closure stands in for one possible-closure requirement", () => {
+  it("resolves `world.configure { … }` onto `configure(_ closure: QuickConfigurer)`", () => {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("Sources/World.swift", [
+      { symbolId: "World", fqName: "World", shortName: "World", relPath: "Sources/World.swift", scope: [] },
+      {
+        symbolId: "World#configure",
+        fqName: "World#configure",
+        shortName: "configure",
+        relPath: "Sources/World.swift",
+        scope: ["World"],
+        arity: { minRequired: 1, maxPositional: 1, hasSplat: false },
+        kwargs: { required: [], optional: [], hasSplat: false },
+        acceptsBlock: true,
+      },
+    ]);
+    const base = {
+      callerFile: "Sources/Config.swift",
+      symbolTable: t,
+      localBindings: { world: [{ line: 5, type: "World" }] },
+    };
+    const closure = new SwiftCallResolver().resolve(
+      { ...call("world", "configure"), argCount: 0, kwargKeys: [], passesBlock: true },
+      ctx(base),
+    );
+    const empty = new SwiftCallResolver().resolve(
+      { ...call("world", "configure"), argCount: 0, kwargKeys: [], passesBlock: false },
+      ctx(base),
+    );
+    expect(closure?.targetSymbolId).toBe("World#configure");
+    expect(empty).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — closure parameters typed by a generic callee in another file", () => {
+  const t = table({
+    "Sources/Protected.swift": [
+      { symbolId: "Protected", scope: [] },
+      { symbolId: "Protected#write", scope: ["Protected"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request.MutableState", scope: ["Request"] },
+      { symbolId: "Request.MutableState#updateCredential", scope: ["Request", "MutableState"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Protected.swift": [
+      {
+        typeId: "Protected",
+        reopens: false,
+        genericParameters: ["Value"],
+        memberClosureParameters: { write: ["Value"] },
+      },
+    ],
+    "Sources/Request.swift": [
+      { typeId: "Request", reopens: false, fieldTypeArguments: { mutableState: ["MutableState"] } },
+      { typeId: "Request.MutableState", reopens: false },
+    ],
+  };
+  const base = {
+    callerFile: "Sources/Request.swift",
+    callerScope: ["Request"],
+    symbolTable: t,
+    typeDeclarations,
+    classFieldTypes: { Request: { mutableState: "Protected" } },
+  };
+
+  it("types a named closure parameter from the receiver's generic argument", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("mutableState", "updateCredential", 11),
+      ctx({
+        ...base,
+        callResultBindings: {
+          mutableState: [{ line: 10, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 12 }],
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.MutableState#updateCredential");
+  });
+
+  it("types `$0` on the line that opens the closure", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("$0", "updateCredential", 11),
+      ctx({
+        ...base,
+        callResultBindings: {
+          $0: [{ line: 11, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 11 }],
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.MutableState#updateCredential");
+  });
+
+  it("types nothing when the receiver's field declares no type arguments", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("mutableState", "updateCredential", 11),
+      ctx({
+        ...base,
+        typeDeclarations: { ...typeDeclarations, "Sources/Request.swift": [{ typeId: "Request", reopens: false }] },
+        callResultBindings: {
+          mutableState: [{ line: 10, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 12 }],
+        },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a stored property seen as a binding still lends its type arguments", () => {
+  it("types the closure parameter when the receiver's binding is the property's own type", () => {
+    const t = table({
+      "Sources/Protected.swift": [
+        { symbolId: "Protected", scope: [] },
+        { symbolId: "Protected#write", scope: ["Protected"] },
+      ],
+      "Sources/Retrier.swift": [
+        { symbolId: "Retrier", scope: [] },
+        { symbolId: "Retrier.State", scope: ["Retrier"] },
+        { symbolId: "Retrier.State#cleanup", scope: ["Retrier", "State"] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/Retrier.swift",
+      callerScope: ["Retrier"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/Protected.swift": [
+          {
+            typeId: "Protected",
+            reopens: false,
+            genericParameters: ["Value"],
+            memberClosureParameters: { write: ["Value"] },
+          },
+        ],
+        "Sources/Retrier.swift": [
+          { typeId: "Retrier", reopens: false, fieldTypeArguments: { state: ["State"] } },
+          { typeId: "Retrier.State", reopens: false },
+        ],
+      },
+      classFieldTypes: { Retrier: { state: "Protected" } },
+      // A `deinit` is not chunked, so its calls see the property as a binding.
+      localBindings: { state: [{ line: 3, type: "Protected" }] },
+      callResultBindings: { state: [{ line: 10, callee: "state.write", closureParameter: 0, scopeEndLine: 12 }] },
+    });
+    expect(new SwiftCallResolver().resolve(call("state", "cleanup", 11), context)?.targetSymbolId).toBe(
+      "Retrier.State#cleanup",
+    );
+  });
+});
+
+/**
+ * The miss classifier's denominator question for a RECEIVER call (bd
+ * tea-rags-mcp-y99pg.11): Swift is statically typed, so once the receiver's
+ * type is known, the only declarations a call can reach are that type's own,
+ * its ancestors' and conformances', and a project extension of a protocol the
+ * SDK may make it conform to. A project member of the same name anywhere else
+ * is a namesake, not a definition this call has.
+ */
+describe("SwiftCallResolver — in-project definition of a typed receiver's member", () => {
+  const sdkReceiverTable = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#resume", scope: ["Request"] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+    ],
+    "Sources/MultipartFormData.swift": [
+      { symbolId: "MultipartFormData", scope: [] },
+      { symbolId: "MultipartFormData#append", scope: ["MultipartFormData"] },
+    ],
+    "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+  });
+  const declarations = {
+    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+    "Sources/MultipartFormData.swift": [{ typeId: "MultipartFormData", reopens: false }],
+    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+  };
+
+  it("answers false for an SDK-typed local whose member only a project namesake declares", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+      localBindings: { task: [{ line: 5, type: "URLSessionTask" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("task", "resume"), context)).toBeNull();
+    expect(resolver.hasInProjectDefinition(call("task", "resume"), context)).toBe(false);
+  });
+
+  it("keeps the denominator for an undeclared UpperCamelCase receiver, which may be a global value", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+    });
+    // `let AF = Session.default` — nothing the index publishes types it.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("AF", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator for a receiver typed AnyObject, where lookup is dynamic", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+      localBindings: { target: [{ line: 5, type: "AnyObject" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator when the typed receiver's own hierarchy declares the member", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+      localBindings: { request: [{ line: 5, type: "Request" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("request", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator when a project extension of an SDK protocol declares the member", () => {
+    const withProtocolExtension = table({
+      "Sources/Collection+Alamofire.swift": [
+        { symbolId: "Collection", scope: [] },
+        { symbolId: "Collection#resume", scope: ["Collection"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+    });
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: withProtocolExtension,
+      typeDeclarations: {
+        "Sources/Collection+Alamofire.swift": [{ typeId: "Collection", reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+      },
+      localBindings: { tasks: [{ line: 5, type: "Array" }] },
+    });
+    // `Array: Collection` is the SDK's fact, not the project's — it cannot be
+    // ruled out, so the site stays a miss the chain is charged for.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("tasks", "resume"), context)).toBe(true);
+  });
+
+  it("keeps the denominator for a receiver it cannot type", () => {
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: sdkReceiverTable,
+      typeDeclarations: declarations,
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("$0", "append"), context)).toBe(true);
+  });
+
+  it("answers false for a construction whose labels no extension initializer declares", () => {
+    const withInit = table({
+      "Sources/Result+Alamofire.swift": [
+        { symbolId: "Result", scope: [] },
+        { symbolId: "Result#init", scope: ["Result"] },
+      ],
+      "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+    });
+    withInit.upsertFile("Sources/Result+Alamofire.swift", [
+      {
+        symbolId: "Result",
+        fqName: "Result",
+        shortName: "Result",
+        relPath: "Sources/Result+Alamofire.swift",
+        scope: [],
+      },
+      {
+        symbolId: "Result#init",
+        fqName: "Result#init",
+        shortName: "init",
+        relPath: "Sources/Result+Alamofire.swift",
+        scope: ["Result"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["value", "error"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+    ]);
+    const context = ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: withInit,
+      typeDeclarations: {
+        "Sources/Result+Alamofire.swift": [{ typeId: "Result", reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    const catching = { ...call(null, "Result"), argCount: 0, kwargKeys: [], passesBlock: true };
+    const valueError = { ...call(null, "Result"), argCount: 0, kwargKeys: ["value", "error"], passesBlock: false };
+    expect(resolver.hasInProjectDefinition(catching, context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(valueError, context)).toBe(true);
+  });
+});
+
+describe("SwiftCallResolver — in-project definition of an SDK type receiver and of super", () => {
+  const t = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#data", scope: ["Request"] },
+      { symbolId: "Request#run", scope: ["Request"] },
+    ],
+    "Sources/Spec.swift": [
+      { symbolId: "Spec", scope: [] },
+      { symbolId: "Spec#recordFailure", scope: ["Spec"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+    "Sources/Spec.swift": [{ typeId: "Spec", reopens: false, conforms: ["XCTestCase"] }],
+  };
+
+  it("answers false for a member read off an SDK type the vocabulary names", () => {
+    const context = ctx({
+      callerFile: "Sources/Request.swift",
+      callerScope: ["Request"],
+      symbolTable: t,
+      typeDeclarations,
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("JSONSerialization", "data"), context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("MainActor", "run"), context)).toBe(false);
+  });
+
+  it("answers false for super when the SDK superclass is where the member lives", () => {
+    const context = ctx({
+      callerFile: "Sources/Spec.swift",
+      callerScope: ["Spec"],
+      symbolTable: t,
+      typeDeclarations,
+      classExtends: { Spec: "XCTestCase" },
+    });
+    // `Spec#recordFailure` is the override calling up, not the target.
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("super", "recordFailure"), context)).toBe(false);
+  });
+});
+
+describe("SwiftCallResolver — an implicit initializer of a project type stays in the denominator", () => {
+  it("keeps super.init() on a project superclass that declares no initializer", () => {
+    const t = table({
+      "Sources/World.swift": [
+        { symbolId: "WrapperBase", scope: [] },
+        { symbolId: "Wrapper", scope: [] },
+        { symbolId: "Other#init", scope: ["Other"] },
+        { symbolId: "Other", scope: [] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/World.swift",
+      callerScope: ["Wrapper"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/World.swift": [
+          { typeId: "WrapperBase", reopens: false, conforms: ["NSObject"] },
+          { typeId: "Wrapper", reopens: false, conforms: ["WrapperBase"] },
+          { typeId: "Other", reopens: false },
+        ],
+      },
+      classExtends: { Wrapper: "WrapperBase", WrapperBase: "NSObject" },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("super", "init"), context)).toBe(true);
+  });
+});
+
+describe("SwiftCallResolver — an Array receiver reaches `extension [T]` (bd tea-rags-mcp-y99pg.14)", () => {
+  it("resolves onto a member declared under the array sugar spelling", () => {
+    const t = table({
+      "Sources/HTTPHeaders.swift": [
+        { symbolId: "HTTPHeaders", scope: [] },
+        { symbolId: "[HTTPHeader]", scope: [] },
+        { symbolId: "[HTTPHeader]#index", scope: ["[HTTPHeader]"] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/HTTPHeaders.swift",
+      callerScope: ["HTTPHeaders"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [
+          { typeId: "HTTPHeaders", reopens: false },
+          { typeId: "[HTTPHeader]", reopens: true },
+        ],
+      },
+      localBindings: { headers: [{ line: 5, type: "Array" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("headers", "index"), context)?.targetSymbolId).toBe("[HTTPHeader]#index");
+    expect(resolver.hasInProjectDefinition(call("headers", "sort"), context)).toBe(false);
+  });
+});
+
+describe("SwiftCallResolver — a construction picks the extension whose initializer its labels fit", () => {
+  function reopenedTwice(): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    const def = (relPath: string, symbolId: string, scope: string[], extra: object = {}) => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: (symbolId.split(/[#.]/).pop() ?? symbolId).replace(/~\d+$/, ""),
+      relPath,
+      scope,
+      ...extra,
+    });
+    t.upsertFile("Sources/URLConvertible.swift", [
+      def("Sources/URLConvertible.swift", "URLRequest", []),
+      def("Sources/URLConvertible.swift", "URLRequest#init", ["URLRequest"], {
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["url", "method"], optional: ["headers"], hasSplat: false },
+        acceptsBlock: false,
+      }),
+    ]);
+    t.upsertFile("Sources/URLRequest+Alamofire.swift", [
+      def("Sources/URLRequest+Alamofire.swift", "URLRequest", []),
+      def("Sources/URLRequest+Alamofire.swift", "URLRequest#validate", ["URLRequest"]),
+    ]);
+    return t;
+  }
+  const typeDeclarations = {
+    "Sources/URLConvertible.swift": [{ typeId: "URLRequest", reopens: true }],
+    "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
+  };
+
+  it("resolves into the file whose extension declares the fitting initializer", () => {
+    const context = ctx({ callerFile: "Sources/Session.swift", symbolTable: reopenedTwice(), typeDeclarations });
+    const site = {
+      ...call(null, "URLRequest"),
+      argCount: 0,
+      kwargKeys: ["url", "method", "headers"],
+      passesBlock: false,
+    };
+    expect(new SwiftCallResolver().resolve(site, context)).toEqual({
+      targetRelPath: "Sources/URLConvertible.swift",
+      targetSymbolId: "URLRequest",
+    });
+  });
+
+  it("emits nothing when no extension initializer takes the labels — the SDK's runs", () => {
+    const context = ctx({ callerFile: "Sources/Session.swift", symbolTable: reopenedTwice(), typeDeclarations });
+    const site = { ...call(null, "URLRequest"), argCount: 0, kwargKeys: ["url"], passesBlock: false };
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(site, context)).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(false);
+  });
+});
+
+describe("SwiftCallResolver — a bare construction does not see another type's nested namesake", () => {
+  const nested = table({
+    "Sources/Result+Alamofire.swift": [
+      { symbolId: "Result", scope: [] },
+      { symbolId: "Result#init", scope: ["Result"] },
+    ],
+    "Sources/OfflineRetrier.swift": [
+      { symbolId: "PathMonitor", scope: [] },
+      { symbolId: "PathMonitor.Result", scope: ["PathMonitor"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Result+Alamofire.swift": [{ typeId: "Result", reopens: true }],
+    "Sources/OfflineRetrier.swift": [
+      { typeId: "PathMonitor", reopens: false },
+      { typeId: "PathMonitor.Result", reopens: false },
+    ],
+  };
+
+  it("reaches the project's Result extension from outside PathMonitor", () => {
+    const context = ctx({
+      callerFile: "Sources/WebSocketRequest.swift",
+      callerScope: ["WebSocketRequest", "send"],
+      symbolTable: nested,
+      typeDeclarations,
+    });
+    expect(new SwiftCallResolver().resolve(call(null, "Result"), context)).toEqual({
+      targetRelPath: "Sources/Result+Alamofire.swift",
+      targetSymbolId: "Result",
+    });
+  });
+
+  it("still sees the nested type from inside its container", () => {
+    const context = ctx({
+      callerFile: "Sources/OfflineRetrier.swift",
+      callerScope: ["PathMonitor", "startListening"],
+      symbolTable: nested,
+      typeDeclarations,
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call(null, "Result"), context)).toBe(true);
+  });
+});
+
+describe("SwiftCallResolver — enum case payload bindings (bd tea-rags-mcp-y99pg.16)", () => {
+  const t = table({
+    "Sources/ExampleGroup.swift": [
+      { symbolId: "ExampleGroup", scope: [] },
+      { symbolId: "ExampleGroup#walkDownExamples", scope: ["ExampleGroup"] },
+      { symbolId: "ExampleUnit", scope: [] },
+    ],
+    "Sources/AsyncExampleGroup.swift": [
+      { symbolId: "AsyncExampleGroup", scope: [] },
+      { symbolId: "AsyncExampleGroup#walkDownExamples", scope: ["AsyncExampleGroup"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/ExampleGroup.swift": [
+      { typeId: "ExampleGroup", reopens: false },
+      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["ExampleGroup"], example: ["Example"] } },
+    ],
+    "Sources/AsyncExampleGroup.swift": [{ typeId: "AsyncExampleGroup", reopens: false }],
+  };
+  const base = {
+    callerFile: "Sources/ExampleGroup.swift",
+    callerScope: ["ExampleGroup", "walkDownExamples"],
+    symbolTable: t,
+    typeDeclarations,
+    localBindings: { unit: [{ line: 3, type: "ExampleUnit" }] },
+  };
+
+  it("types a payload name by the case the subject's enum declares", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("exampleGroup", "walkDownExamples", 6),
+      ctx({
+        ...base,
+        callResultBindings: {
+          exampleGroup: [{ line: 5, callee: "unit", enumPayload: { caseName: "group", index: 0 }, scopeEndLine: 6 }],
+        },
+      }),
+    );
+    expect(target).toEqual({
+      targetRelPath: "Sources/ExampleGroup.swift",
+      targetSymbolId: "ExampleGroup#walkDownExamples",
+    });
+  });
+
+  it("types nothing for a case the enum does not declare", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("exampleGroup", "walkDownExamples", 6),
+      ctx({
+        ...base,
+        callResultBindings: {
+          exampleGroup: [{ line: 5, callee: "unit", enumPayload: { caseName: "nested", index: 0 }, scopeEndLine: 6 }],
+        },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — file-private enum namesakes (bd tea-rags-mcp-y99pg.17)", () => {
+  const t = table({
+    "Sources/ExampleGroup.swift": [
+      { symbolId: "ExampleGroup", scope: [] },
+      { symbolId: "ExampleGroup#walkDownExamples", scope: ["ExampleGroup"] },
+      { symbolId: "ExampleUnit", scope: [] },
+    ],
+    "Sources/AsyncExampleGroup.swift": [
+      { symbolId: "AsyncExampleGroup", scope: [] },
+      { symbolId: "AsyncExampleGroup#walkDownExamples", scope: ["AsyncExampleGroup"] },
+      { symbolId: "ExampleUnit", scope: [] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/ExampleGroup.swift": [
+      { typeId: "ExampleGroup", reopens: false },
+      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["ExampleGroup"] } },
+    ],
+    "Sources/AsyncExampleGroup.swift": [
+      { typeId: "AsyncExampleGroup", reopens: false },
+      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["AsyncExampleGroup"] } },
+    ],
+  };
+  const site = (callerFile: string, callerScope: string[]) =>
+    ctx({
+      callerFile,
+      callerScope,
+      symbolTable: t,
+      typeDeclarations,
+      localBindings: { unit: [{ line: 3, type: "ExampleUnit" }] },
+      callResultBindings: {
+        exampleGroup: [{ line: 5, callee: "unit", enumPayload: { caseName: "group", index: 0 }, scopeEndLine: 6 }],
+      },
+    });
+
+  it("reads the payload off the enum the caller's own file declares", () => {
+    const resolver = new SwiftCallResolver();
+    const call6 = call("exampleGroup", "walkDownExamples", 6);
+    expect(
+      resolver.resolve(call6, site("Sources/AsyncExampleGroup.swift", ["AsyncExampleGroup", "walk"]))?.targetSymbolId,
+    ).toBe("AsyncExampleGroup#walkDownExamples");
+    expect(resolver.resolve(call6, site("Sources/ExampleGroup.swift", ["ExampleGroup", "walk"]))?.targetSymbolId).toBe(
+      "ExampleGroup#walkDownExamples",
+    );
+  });
+
+  it("types nothing from a third file when two files declare the enum", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("exampleGroup", "walkDownExamples", 6),
+      site("Sources/World.swift", ["World", "all"]),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — `-> Self` returns and implicit-self call heads (bd tea-rags-mcp-y99pg.18)", () => {
+  const t = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#configured", scope: ["Request"] },
+      { symbolId: "DataRequest", scope: [] },
+      { symbolId: "DataRequest#resume", scope: ["DataRequest"] },
+    ],
+    "Sources/Validation.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      {
+        symbolId: "DataRequest#validate",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["statusCode"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+      {
+        symbolId: "DataRequest#validate~2",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["contentType"], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+      {
+        symbolId: "DataRequest#validate~3",
+        scope: ["DataRequest"],
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: [], optional: [], hasSplat: false },
+        acceptsBlock: false,
+      },
+    ],
+  });
+  const base = {
+    symbolTable: t,
+    typeDeclarations: {
+      "Sources/Request.swift": [
+        { typeId: "Request", reopens: false },
+        { typeId: "DataRequest", reopens: false, conforms: ["Request"] },
+      ],
+      "Sources/Validation.swift": [{ typeId: "DataRequest", reopens: true }],
+    },
+    classExtends: { DataRequest: "Request" },
+    structuredReturnTypes: {
+      "Request#configured": { form: "instance" as const, name: "Self" },
+      "DataRequest#validate": { form: "instance" as const, name: "Self" },
+      "DataRequest#validate~2": { form: "instance" as const, name: "Self" },
+      "DataRequest#validate~3": { form: "instance" as const, name: "Self" },
+    },
+  };
+
+  it("types an implicit-self call head by the overloads' agreed `Self` return", () => {
+    const site = {
+      ...call("validate(statusCode: acceptableStatusCodes)", "validate", 12),
+      argCount: 0,
+      kwargKeys: ["contentType"],
+      passesBlock: false,
+    };
+    const target = new SwiftCallResolver().resolve(
+      site,
+      ctx({ ...base, callerFile: "Sources/Validation.swift", callerScope: ["DataRequest", "validate"] }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#validate~2");
+  });
+
+  it("substitutes `Self` with the receiver's type, not the declaring type", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request.configured()", "resume", 8),
+      ctx({
+        ...base,
+        callerFile: "Sources/Session.swift",
+        callerScope: ["Session", "run"],
+        localBindings: { request: [{ line: 7, type: "DataRequest" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#resume");
+  });
+});
+
+describe("SwiftCallResolver — standard-library conformances of SDK collections (bd tea-rags-mcp-y99pg.19)", () => {
+  const t = table({
+    "Sources/HTTPHeaders.swift": [
+      { symbolId: "HTTPHeaders", scope: [] },
+      { symbolId: "Collection", scope: [] },
+      { symbolId: "Collection#qualityEncoded", scope: ["Collection"] },
+      { symbolId: "Sequence", scope: [] },
+      { symbolId: "Sequence#joinedPairs", scope: ["Sequence"] },
+    ],
+  });
+  const context = (type: string) =>
+    ctx({
+      callerFile: "Sources/HTTPHeaders.swift",
+      callerScope: ["HTTPHeaders", "make"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [
+          { typeId: "HTTPHeaders", reopens: false },
+          { typeId: "Collection", reopens: true },
+          { typeId: "Sequence", reopens: true },
+        ],
+      },
+      localBindings: { encodings: [{ line: 3, type }] },
+    });
+
+  it("reaches a `Collection` extension from an Array receiver", () => {
+    expect(
+      new SwiftCallResolver().resolve(call("encodings", "qualityEncoded", 4), context("Array"))?.targetSymbolId,
+    ).toBe("Collection#qualityEncoded");
+  });
+
+  it("reaches a `Sequence` extension from a Collection-typed receiver through its refinement", () => {
+    expect(
+      new SwiftCallResolver().resolve(call("encodings", "joinedPairs", 4), context("Collection"))?.targetSymbolId,
+    ).toBe("Sequence#joinedPairs");
+  });
+
+  it("reaches neither from a type the SDK does not make a collection", () => {
+    expect(new SwiftCallResolver().resolve(call("encodings", "qualityEncoded", 4), context("URL"))).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a generic-argument extension's spelled id (bd tea-rags-mcp-y99pg.19)", () => {
+  it("reaches members composed under `Collection<String>` from an Array receiver", () => {
+    const t = table({
+      "Sources/HTTPHeaders.swift": [
+        { symbolId: "HTTPHeaders", scope: [] },
+        { symbolId: "Collection<String>", scope: [] },
+        { symbolId: "Collection<String>#qualityEncoded", scope: ["Collection<String>"] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/HTTPHeaders.swift",
+      callerScope: ["HTTPHeaders", "make"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/HTTPHeaders.swift": [
+          { typeId: "HTTPHeaders", reopens: false },
+          { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
+        ],
+      },
+      localBindings: { encodings: [{ line: 3, type: "Array" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("encodings", "qualityEncoded", 4), context)?.targetSymbolId).toBe(
+      "Collection<String>#qualityEncoded",
+    );
+    expect(resolver.hasInProjectDefinition(call("encodings", "qualityEncoded", 4), context)).toBe(true);
+  });
+});
+
+describe("SwiftCallResolver — `try` call heads and nested type heads (bd tea-rags-mcp-y99pg.20)", () => {
+  it("types a `try`-prefixed implicit-self call head", () => {
+    const t = table({
+      "Sources/Box.swift": [
+        { symbolId: "Box", scope: [] },
+        { symbolId: "Box#make", scope: ["Box"] },
+        { symbolId: "Widget", scope: [] },
+        { symbolId: "Widget#run", scope: ["Widget"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("try make(policy: policy)", "run", 5),
+      ctx({
+        callerFile: "Sources/Box.swift",
+        callerScope: ["Box", "go"],
+        symbolTable: t,
+        structuredReturnTypes: { "Box#make": { form: "instance", name: "Widget" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Widget#run");
+  });
+
+  it("types a chain head naming a type nested in an enclosing type", () => {
+    const t = table({
+      "Sources/Encoder.swift": [
+        { symbolId: "Encoder", scope: [] },
+        { symbolId: "Encoder.DateEncoding", scope: ["Encoder"] },
+        { symbolId: "Encoder.DateEncoding#read", scope: ["Encoder", "DateEncoding"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("DateEncoding.shared", "read", 5),
+      ctx({ callerFile: "Sources/Encoder.swift", callerScope: ["Encoder", "DateEncoding", "encode"], symbolTable: t }),
+    );
+    expect(target?.targetSymbolId).toBe("Encoder.DateEncoding#read");
+  });
+});
+
+describe("SwiftCallResolver — `super.init()` into a superclass with an implicit initializer (bd tea-rags-mcp-y99pg.21)", () => {
+  const t = table({
+    "Sources/World.swift": [
+      { symbolId: "_ExampleWrapperBase", scope: [] },
+      { symbolId: "ExampleWrapper", scope: [] },
+      { symbolId: "ExampleWrapper#init", scope: ["ExampleWrapper"] },
+    ],
+  });
+  const base = {
+    callerFile: "Sources/World.swift",
+    callerScope: ["ExampleWrapper", "init"],
+    symbolTable: t,
+  };
+
+  it("lands on the superclass it initializes when the project declares no initializer of it", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("super", "init", 9),
+      ctx({ ...base, classExtends: { ExampleWrapper: "_ExampleWrapperBase" } }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/World.swift", targetSymbolId: "_ExampleWrapperBase" });
+  });
+
+  it("emits nothing when the superclass is not the project's", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("super", "init", 9),
+      ctx({ ...base, classExtends: { ExampleWrapper: "NSObject" } }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a stored closure of a function typealias as a chain head (bd tea-rags-mcp-y99pg.22)", () => {
+  it("types `responseHandler { … }` by what its alias's function type returns", () => {
+    const t = table({
+      "Sources/Combine.swift": [
+        { symbolId: "DataResponsePublisher", scope: [] },
+        { symbolId: "DataResponsePublisher.Inner", scope: ["DataResponsePublisher"] },
+      ],
+      "Sources/DataRequest.swift": [
+        { symbolId: "DataRequest", scope: [] },
+        { symbolId: "DataRequest#resume", scope: ["DataRequest"] },
+      ],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("responseHandler { response in\n  _ = downstream.receive(response)\n}", "resume", 12),
+      ctx({
+        callerFile: "Sources/Combine.swift",
+        callerScope: ["DataResponsePublisher", "Inner", "request"],
+        symbolTable: t,
+        typeDeclarations: {
+          "Sources/Combine.swift": [
+            { typeId: "DataResponsePublisher", reopens: false, functionAliasReturns: { Handler: "DataRequest" } },
+            { typeId: "DataResponsePublisher.Inner", reopens: false },
+          ],
+          "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+        },
+        classFieldTypes: { Inner: { responseHandler: "Handler" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#resume");
   });
 });
