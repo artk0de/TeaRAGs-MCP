@@ -91,7 +91,33 @@ export interface FacadeLeakArchitectureViolation {
   evidence: FacadeLeakViolationEvidence;
 }
 
-export type LeakingAbstractionArchitectureViolation = FacadeLeakArchitectureViolation;
+/**
+ * Which privacy convention a `conventionPrivacy` leak broke:
+ * `python-underscore` = a `_name` member used from another package directory,
+ * `ruby-send-private` = `send(:name)` into a private / protected method from
+ * outside its class.
+ */
+export type ConventionPrivacyRule = "python-underscore" | "ruby-send-private";
+
+/** Why a method edge is a convention-privacy leak (bd tea-rags-mcp-r8hme.1). */
+export interface ConventionPrivacyViolationEvidence {
+  sourceSymbolId: string;
+  targetSymbolId: string;
+  rule: ConventionPrivacyRule;
+}
+
+/** A member private only by convention, reached from where the convention forbids. */
+export interface ConventionPrivacyArchitectureViolation {
+  detector: "leakingAbstraction";
+  kind: "conventionPrivacy";
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  evidence: ConventionPrivacyViolationEvidence;
+}
+
+export type LeakingAbstractionArchitectureViolation =
+  | FacadeLeakArchitectureViolation
+  | ConventionPrivacyArchitectureViolation;
 
 export type ArchitectureViolation = StableDependencyArchitectureViolation | LeakingAbstractionArchitectureViolation;
 
@@ -184,11 +210,17 @@ export interface LeakingAbstractionReportSummary {
   edgeCount: number;
   /** In-scope edges entering an active module from outside it. */
   judgedEdgeCount: number;
-  /** Total violations, before `limit`. */
+  /** Total violations of both kinds (facade leaks + convention privacy), before `limit`. */
   violationCount: number;
   /** Total root causes (modules with a violation), before `limit`. */
   rootCauseCount: number;
-  violationsByKind: { bypass: number; internalReach: number };
+  violationsByKind: { bypass: number; internalReach: number; conventionPrivacy: number };
+  /** The convention-privacy half: method edges into non-public members of Python / Ruby. */
+  conventionPrivacy: {
+    /** Candidate method edges read (targets private / protected / `_`-named). */
+    candidateEdgeCount: number;
+    violationsByRule: { pythonUnderscore: number; rubySendPrivate: number };
+  };
   /** Candidate modules: directories with an entry file, plus Go packages. */
   moduleCount: number;
   activeModuleCount: number;

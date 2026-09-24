@@ -15,13 +15,16 @@
 
 import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
 import {
+  CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
+  detectConventionPrivacyLeaks,
   detectLeakingAbstractions,
   detectStableDependencyViolations,
   FACADE_MODULE_EXCLUSION_REASONS,
   NO_SYMBOL_ENDPOINT_REASON,
   PRIVATE_COLLABORATOR_REASON,
+  type ConventionPrivacyReport,
   type FacadeModuleAssessment,
   type LeakingAbstractionReport,
   type StableDependenciesReport,
@@ -48,18 +51,22 @@ export class ArchitectureReportOps {
    * at `limit`; the summaries keep the totals.
    */
   async build(
-    graphDb: Pick<GraphDbClient, "readFileDependencyGraph">,
+    graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges">,
     request: ArchitectureReportScope,
   ): Promise<GetArchitectureReportResponse> {
     const graph = await graphDb.readFileDependencyGraph();
     const sdp = detectStableDependencyViolations(graph, { sourcePathPattern: request.pathPattern });
     const leaks = detectLeakingAbstractions(graph, { sourcePathPattern: request.pathPattern });
+    const privacy = detectConventionPrivacyLeaks(
+      await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]),
+      { sourcePathPattern: request.pathPattern },
+    );
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
-      summary: { stableDependencies: summarise(sdp), leakingAbstraction: summariseLeaks(leaks, limit) },
+      summary: { stableDependencies: summarise(sdp), leakingAbstraction: summariseLeaks(leaks, privacy, limit) },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit)],
-      violations: [...sdpViolations(sdp, limit), ...leakViolations(leaks, limit)],
+      violations: [...sdpViolations(sdp, limit), ...leakViolations(leaks, privacy, limit)],
     };
   }
 
@@ -87,7 +94,11 @@ export class ArchitectureReportOps {
           },
           exclusionReasons: EXCLUSION_REASONS,
         },
-        leakingAbstraction: summariseLeaks(detectLeakingAbstractions({ files: [], edges: [] }), 0),
+        leakingAbstraction: summariseLeaks(
+          detectLeakingAbstractions({ files: [], edges: [] }),
+          detectConventionPrivacyLeaks([]),
+          0,
+        ),
       },
       rootCauses: [],
       violations: [],
@@ -148,7 +159,11 @@ function sdpViolations(report: StableDependenciesReport, limit: number): Archite
   );
 }
 
-function summariseLeaks(report: LeakingAbstractionReport, limit: number): LeakingAbstractionReportSummary {
+function summariseLeaks(
+  report: LeakingAbstractionReport,
+  privacy: ConventionPrivacyReport,
+  limit: number,
+): LeakingAbstractionReportSummary {
   const { summary } = report;
   const notAdopted = report.modules
     .filter((m) => m.status === "facade-not-adopted")
@@ -162,9 +177,13 @@ function summariseLeaks(report: LeakingAbstractionReport, limit: number): Leakin
     minExternalImporters: summary.minExternalImporters,
     edgeCount: summary.edgeCount,
     judgedEdgeCount: summary.judgedEdgeCount,
-    violationCount: summary.violationCount,
+    violationCount: summary.violationCount + privacy.summary.violationCount,
     rootCauseCount: report.rootCauses.length,
-    violationsByKind: { ...summary.violationsByKind },
+    violationsByKind: { ...summary.violationsByKind, conventionPrivacy: privacy.summary.violationCount },
+    conventionPrivacy: {
+      candidateEdgeCount: privacy.summary.candidateEdgeCount,
+      violationsByRule: { ...privacy.summary.violationsByRule },
+    },
     moduleCount: summary.moduleCount,
     activeModuleCount: summary.activeModuleCount,
     excludedModules: { ...summary.excludedModules },
@@ -206,8 +225,12 @@ function leakRootCauses(report: LeakingAbstractionReport, limit: number): Archit
   );
 }
 
-function leakViolations(report: LeakingAbstractionReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map(
+function leakViolations(
+  report: LeakingAbstractionReport,
+  privacy: ConventionPrivacyReport,
+  limit: number,
+): ArchitectureViolation[] {
+  const facadeLeaks = report.violations.map(
     (v): ArchitectureViolation => ({
       detector: "leakingAbstraction",
       kind: v.kind,
@@ -223,6 +246,17 @@ function leakViolations(report: LeakingAbstractionReport, limit: number): Archit
       },
     }),
   );
+  const privacyLeaks = privacy.violations.map(
+    (v): ArchitectureViolation => ({
+      detector: "leakingAbstraction",
+      kind: "conventionPrivacy",
+      sourceRelPath: v.sourceRelPath,
+      targetRelPath: v.targetRelPath,
+      evidence: { sourceSymbolId: v.sourceSymbolId, targetSymbolId: v.targetSymbolId, rule: v.rule },
+    }),
+  );
+  // One detector, one cap: facade leaks first, then convention-privacy leaks.
+  return [...facadeLeaks, ...privacyLeaks].slice(0, limit);
 }
 
 /** Locale-independent, so the order is the same on every machine. */

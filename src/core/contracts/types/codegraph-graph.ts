@@ -79,6 +79,26 @@ export interface FileDependencyGraph {
 }
 
 /**
+ * One resolved method edge into a member whose name or declaration marks it
+ * non-public — declared `private` / `protected`, or named with a leading
+ * underscore (bd tea-rags-mcp-r8hme.1). Which of those is a convention-privacy
+ * leak is the boundary diagnostics' call; this is only the candidate set.
+ */
+export interface NonPublicMemberEdge {
+  sourceRelPath: RelPath;
+  sourceSymbolId: SymbolId;
+  targetRelPath: RelPath;
+  targetSymbolId: SymbolId;
+  targetShortName: string;
+  /** `cg_symbols.visibility` of the target; `null` when the walker records none. */
+  targetVisibility: string | null;
+  /** `cg_symbols_files.language` of the target's declaring file. */
+  targetLanguage: string;
+  /** The call as written (`callText`) — for a Ruby `send(:x)` unwrap, the `send` call itself. */
+  callExpression: string;
+}
+
+/**
  * One file edge as the per-file import reads return it: the
  * {@link FileDependencyEdge} plus the import text the walker recorded
  * (`null` for a legacy row that carries none).

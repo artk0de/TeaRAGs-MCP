@@ -97,6 +97,10 @@ export const DAEMON_OPS = [
   // Whole file dependency graph for the architecture report (bd tea-rags-mcp-94hd9).
   // REQUIRED, not legacy-tolerated: an empty graph would read as "no violations".
   "readFileDependencyGraph",
+  // Method edges into non-public members for the convention-privacy check
+  // (bd tea-rags-mcp-r8hme.1). REQUIRED, not legacy-tolerated: an empty answer
+  // would read as "no convention-privacy leaks".
+  "readNonPublicMemberEdges",
   // One file's importers / imports for file-scope get_callers / get_callees
   // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "nothing imports this file".
@@ -131,6 +135,7 @@ export interface DaemonRequest {
   params:
     | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
     | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
+    | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports

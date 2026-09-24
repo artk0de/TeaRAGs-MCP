@@ -742,3 +742,38 @@ describe("DaemonGraphDbClient — getSymbolVisibilities (bd tea-rags-mcp-sqqkz)"
     });
   });
 });
+
+describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hme.1)", () => {
+  it("proxies the convention-privacy candidate read through the daemon socket with the languages", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const rows = [
+      {
+        sourceRelPath: "app/a.py",
+        sourceSymbolId: "run",
+        targetRelPath: "pkg/b.py",
+        targetSymbolId: "B#_x",
+        targetShortName: "_x",
+        targetVisibility: null,
+        targetLanguage: "python",
+        callExpression: "b._x()",
+      },
+    ];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readNonPublicMemberEdges" ? rows : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.readNonPublicMemberEdges(["python", "ruby"]);
+    await client.close();
+
+    expect(result).toEqual(rows);
+    expect(seen.find((r) => r.op === "readNonPublicMemberEdges")?.params).toMatchObject({
+      collection: "code_x_v1",
+      languages: ["python", "ruby"],
+    });
+  });
+});

@@ -251,7 +251,8 @@ export function registerCodegraphTools(
         "by unstable target, cycleWithDependents = target references own dependents. leakingAbstraction: " +
         "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
         "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
-        "bypass = facade re-exports target, internal-reach = it does not; rootCauses per module. Summary " +
+        "bypass = facade re-exports target, internal-reach = it does not, conventionPrivacy = Python _name " +
+        "used from other package or Ruby send(:private) from outside its class; rootCauses per module. Summary " +
         "counts exclusions with named reasons. Diagnosis, not prescription.",
       inputSchema: GetArchitectureReportInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },

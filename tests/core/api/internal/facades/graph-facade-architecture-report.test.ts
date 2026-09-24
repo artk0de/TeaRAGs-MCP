@@ -24,6 +24,7 @@ describe("GraphFacade#getArchitectureReport", () => {
   it("reads the file dependency graph through the pool reader of the resolved collection and closes it", async () => {
     const graphDb = {
       readFileDependencyGraph: vi.fn().mockResolvedValue({ files: [], edges: [] }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
       close: vi.fn().mockResolvedValue(undefined),
     };
     const { pool, acquireReader } = readerPool(graphDb);

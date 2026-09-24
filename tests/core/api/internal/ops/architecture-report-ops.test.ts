@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
-import type { FileDependencyGraph } from "../../../../../src/core/contracts/types/codegraph.js";
+import type { FileDependencyGraph, NonPublicMemberEdge } from "../../../../../src/core/contracts/types/codegraph.js";
 
 function file(relPath: string) {
   return { relPath, language: "typescript", symbolCount: 1 };
@@ -42,8 +42,11 @@ function graph(): FileDependencyGraph {
   return { files, edges };
 }
 
-function graphDb(g: FileDependencyGraph = graph()) {
-  return { readFileDependencyGraph: vi.fn().mockResolvedValue(g) };
+function graphDb(g: FileDependencyGraph = graph(), nonPublicEdges: NonPublicMemberEdge[] = []) {
+  return {
+    readFileDependencyGraph: vi.fn().mockResolvedValue(g),
+    readNonPublicMemberEdges: vi.fn().mockResolvedValue(nonPublicEdges),
+  };
 }
 
 describe("ArchitectureReportOps#build", () => {
@@ -293,6 +296,42 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
 
     expect(report.violations.filter((v) => v.detector === "leakingAbstraction")).toHaveLength(1);
     expect(report.summary.leakingAbstraction.violationCount).toBe(2);
+  });
+});
+
+describe("ArchitectureReportOps#build — conventionPrivacy (bd tea-rags-mcp-r8hme.1)", () => {
+  const underscoreEdge: NonPublicMemberEdge = {
+    sourceRelPath: "app/views.py",
+    sourceSymbolId: "render",
+    targetRelPath: "pkg/repo.py",
+    targetSymbolId: "Repo#_load",
+    targetShortName: "_load",
+    targetVisibility: null,
+    targetLanguage: "python",
+    callExpression: "repo._load()",
+  };
+
+  it("asks only for the convention-privacy languages and reports each leak with symbol evidence", async () => {
+    const db = graphDb(facadeGraph(), [underscoreEdge]);
+    const report = await new ArchitectureReportOps().build(db, {});
+
+    expect(db.readNonPublicMemberEdges).toHaveBeenCalledWith(["python", "ruby"]);
+    expect(
+      report.violations.filter((v) => v.detector === "leakingAbstraction" && v.kind === "conventionPrivacy"),
+    ).toEqual([
+      {
+        detector: "leakingAbstraction",
+        kind: "conventionPrivacy",
+        sourceRelPath: "app/views.py",
+        targetRelPath: "pkg/repo.py",
+        evidence: { sourceSymbolId: "render", targetSymbolId: "Repo#_load", rule: "python-underscore" },
+      },
+    ]);
+    expect(report.summary.leakingAbstraction).toMatchObject({
+      violationCount: 3,
+      violationsByKind: { bypass: 1, internalReach: 1, conventionPrivacy: 1 },
+      conventionPrivacy: { candidateEdgeCount: 1, violationsByRule: { pythonUnderscore: 1, rubySendPrivate: 0 } },
+    });
   });
 });
 

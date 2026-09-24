@@ -28,6 +28,7 @@ import {
   type CycleScope,
   type FileDependencyGraph,
   type FileImportLookup,
+  type NonPublicMemberEdge,
   type RelPath,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
@@ -145,6 +146,48 @@ export class DuckDbGraphAnalyticsStore {
         callWeight: Number(r.call_weight),
       })),
     };
+  }
+
+  /**
+   * Resolved method edges into members declared `private` / `protected` or
+   * named with a leading underscore, whose declaring file is one of
+   * `languages` (bd tea-rags-mcp-r8hme.1). The name / visibility test only
+   * narrows the candidate set; which edge is a convention-privacy leak is the
+   * boundary diagnostics' call.
+   */
+  async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
+    if (languages.length === 0) return [];
+    const rows = await this.session.queryAll<{
+      source_rel_path: string;
+      source_symbol_id: string;
+      target_rel_path: string;
+      target_symbol_id: string;
+      short_name: string;
+      visibility: string | null;
+      language: string;
+      call_expression: string;
+    }>(
+      `SELECT m.source_rel_path, m.source_symbol_id, m.target_rel_path, m.target_symbol_id,
+              s.short_name, s.visibility, f.language, m.call_expression
+       FROM cg_symbols_edges_method m
+       JOIN cg_symbols s ON s.rel_path = m.target_rel_path AND s.symbol_id = m.target_symbol_id
+       JOIN cg_symbols_files f ON f.rel_path = m.target_rel_path
+       WHERE m.target_symbol_id IS NOT NULL
+         AND f.language IN (${languages.map(() => "?").join(", ")})
+         AND (s.visibility IN ('private', 'protected') OR starts_with(s.short_name, '_'))
+       ORDER BY m.source_rel_path, m.source_symbol_id, m.target_rel_path, m.target_symbol_id`,
+      [...languages],
+    );
+    return rows.map((r) => ({
+      sourceRelPath: r.source_rel_path,
+      sourceSymbolId: r.source_symbol_id,
+      targetRelPath: r.target_rel_path,
+      targetSymbolId: r.target_symbol_id,
+      targetShortName: r.short_name,
+      targetVisibility: r.visibility,
+      targetLanguage: r.language,
+      callExpression: r.call_expression,
+    }));
   }
 
   /** The files importing `relPath` (bd tea-rags-mcp-gfvr8). */

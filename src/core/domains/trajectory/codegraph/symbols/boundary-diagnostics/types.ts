@@ -253,3 +253,39 @@ export interface LeakingAbstractionReport {
   modules: FacadeModuleAssessment[];
   summary: LeakingAbstractionSummary;
 }
+
+/**
+ * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1):
+ * `python-underscore` — a `_name` member used from another package directory;
+ * `ruby-send-private` — `send(:name)` into a private / protected method from
+ * outside its class.
+ */
+export type ConventionPrivacyRule = "python-underscore" | "ruby-send-private";
+
+export interface ConventionPrivacyOptions {
+  /** Picomatch glob: judge only edges whose SOURCE file matches. */
+  sourcePathPattern?: string;
+}
+
+/** One method edge that reaches a convention-private member from outside. */
+export interface ConventionPrivacyViolation {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  sourceSymbolId: string;
+  targetSymbolId: string;
+  rule: ConventionPrivacyRule;
+}
+
+export interface ConventionPrivacySummary {
+  /** Candidate edges read (method edges into non-public members). */
+  candidateEdgeCount: number;
+  violationCount: number;
+  violationsByRule: { pythonUnderscore: number; rubySendPrivate: number };
+  scope?: StableDependenciesScope;
+}
+
+export interface ConventionPrivacyReport {
+  /** By source file, source symbol, then target. */
+  violations: ConventionPrivacyViolation[];
+  summary: ConventionPrivacySummary;
+}

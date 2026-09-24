@@ -5,7 +5,8 @@
  * boundary is judged only where the importers themselves adopted the facade:
  * adoption = facade importers / (facade importers + deep importers) over the
  * distinct external importing files, a file doing both counting as deep.
- * Active iff adoption >= 0.5 and at least 3 external importers. A violation is
+ * Active iff at least 3 external importers, adoption > 0.5 and adoption at or
+ * above the adaptive (Otsu) threshold over all such modules. A violation is
  * an edge from outside an active module into one of its non-entry files,
  * attributed to the innermost such module; `bypass` when the facade itself
  * imports the target (re-exports it), `internal-reach` otherwise.

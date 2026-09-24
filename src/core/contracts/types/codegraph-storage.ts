@@ -25,6 +25,7 @@ import type {
   FileResolveStatsWrite,
   GraphEdges,
   GraphFileNode,
+  NonPublicMemberEdge,
   ResolveRunStatsRow,
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
@@ -555,6 +556,15 @@ export interface GraphDbClient {
    * an edge to an unwalked file still moves its source's instability.
    */
   readFileDependencyGraph: () => Promise<FileDependencyGraph>;
+
+  /**
+   * Resolved method edges whose target is declared `private` / `protected` or
+   * named with a leading underscore, restricted to targets declared in a file
+   * of one of `languages` — the candidate set the convention-privacy check of
+   * `get_architecture_report` judges (bd tea-rags-mcp-r8hme.1). An empty
+   * `languages` reads nothing.
+   */
+  readNonPublicMemberEdges: (languages: readonly string[]) => Promise<NonPublicMemberEdge[]>;
 
   /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files

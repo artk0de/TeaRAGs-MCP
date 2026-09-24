@@ -131,6 +131,18 @@ Evidence per line: `moduleDir` (innermost active module leaked past),
 `facadeRelPath`, `adoption`, facade/deep importer counts, `callWeight` (0 =
 type/const-only import).
 
+`kind: "conventionPrivacy"` — privacy compiler does not enforce, broken anyway.
+Evidence `sourceSymbolId`, `targetSymbolId`, `rule`:
+
+| `rule`              | Meaning                                                                    |
+| ------------------- | -------------------------------------------------------------------------- |
+| `python-underscore` | `_name` member (not dunder) called from other package directory            |
+| `ruby-send-private` | `send`/`public_send`/`__send__(:name)` into private/protected, other class |
+
+Counts: `summary.leakingAbstraction.conventionPrivacy` (`candidateEdgeCount`,
+`violationsByRule`). No module root cause — list per symbol pair. Candidates
+come from resolved method edges only: unresolved call → not judged.
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:

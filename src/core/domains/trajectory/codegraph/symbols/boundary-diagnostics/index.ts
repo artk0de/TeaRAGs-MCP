@@ -1,3 +1,4 @@
+export { CONVENTION_PRIVACY_LANGUAGES, detectConventionPrivacyLeaks } from "./convention-privacy.js";
 export { classifyDirectoryRelation } from "./directory-relation.js";
 export { computeFileInstabilities } from "./file-instability.js";
 export {
@@ -19,6 +20,11 @@ export {
   PRIVATE_COLLABORATOR_REASON,
 } from "./stable-dependencies.js";
 export type {
+  ConventionPrivacyOptions,
+  ConventionPrivacyReport,
+  ConventionPrivacyRule,
+  ConventionPrivacySummary,
+  ConventionPrivacyViolation,
   DependencyDirectoryRelation,
   FacadeAdoption,
   FacadeLeakKind,
