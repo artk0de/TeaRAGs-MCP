@@ -60,13 +60,35 @@ export const capability: LanguageCapability = {
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.
   naming: {
-    type: ["pascal"],
-    module: ["pascal"],
-    method: ["snake"],
-    param: ["snake"],
-    local: ["snake"],
-    field: ["snake"],
-    constant: ["screamingSnake", "pascal"],
+    casing: {
+      type: ["pascal"],
+      module: ["pascal"],
+      method: ["snake"],
+      param: ["snake"],
+      local: ["snake"],
+      field: ["snake"],
+      constant: ["screamingSnake", "pascal"],
+    },
+    // Core classes, plus the YARD spellings (`Boolean`, `nil`, `void`) the YARD type source emits.
+    nonConceptTypes: [
+      "String",
+      "Integer",
+      "Float",
+      "Numeric",
+      "Symbol",
+      "Hash",
+      "Array",
+      "Set",
+      "NilClass",
+      "TrueClass",
+      "FalseClass",
+      "Object",
+      "BasicObject",
+      "Proc",
+      "Boolean",
+      "nil",
+      "void",
+    ],
   },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",

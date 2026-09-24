@@ -92,11 +92,220 @@ const EXPECTED_NAMING: Record<string, Record<IdentifierRole, readonly Identifier
   },
 };
 
+/**
+ * Each language's non-concept types — primitives, top types, and the wrapper /
+ * utility types that name a container rather than a domain concept — spelled
+ * exactly as the language writes them (bd tea-rags-mcp-4p3sb.10). The naming
+ * lexicon excludes them from `byType` and judges a draft typed with one as
+ * untyped. Single-letter generics (`T`) are a universal rule the lexicon owns;
+ * they are not listed here.
+ */
+const EXPECTED_NON_CONCEPT_TYPES: Record<string, readonly string[]> = {
+  // Core classes plus the YARD spellings (`Boolean`, `nil`, `void`) Ruby type sources emit.
+  ruby: [
+    "String",
+    "Integer",
+    "Float",
+    "Numeric",
+    "Symbol",
+    "Hash",
+    "Array",
+    "Set",
+    "NilClass",
+    "TrueClass",
+    "FalseClass",
+    "Object",
+    "BasicObject",
+    "Proc",
+    "Boolean",
+    "nil",
+    "void",
+  ],
+  python: [
+    "str",
+    "int",
+    "float",
+    "complex",
+    "bool",
+    "bytes",
+    "bytearray",
+    "dict",
+    "list",
+    "set",
+    "frozenset",
+    "tuple",
+    "type",
+    "object",
+    "None",
+    "Any",
+    "Optional",
+    "Union",
+    "Callable",
+    "Dict",
+    "List",
+    "Set",
+    "Tuple",
+  ],
+  // Promise and the utility types wrap a concept rather than name one.
+  typescript: [
+    "string",
+    "number",
+    "boolean",
+    "bigint",
+    "symbol",
+    "unknown",
+    "any",
+    "object",
+    "void",
+    "never",
+    "undefined",
+    "null",
+    "String",
+    "Number",
+    "Boolean",
+    "Object",
+    "Function",
+    "Array",
+    "ReadonlyArray",
+    "Map",
+    "Set",
+    "Promise",
+    "Record",
+    "Partial",
+    "Required",
+    "Readonly",
+    "Pick",
+    "Omit",
+  ],
+  // JavaScript types come from constructors only (`new Map()`), so only built-in constructors appear.
+  javascript: [
+    "undefined",
+    "null",
+    "String",
+    "Number",
+    "Boolean",
+    "BigInt",
+    "Symbol",
+    "Object",
+    "Function",
+    "Array",
+    "Map",
+    "Set",
+    "Promise",
+  ],
+  go: [
+    "string",
+    "int",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uintptr",
+    "float32",
+    "float64",
+    "complex64",
+    "complex128",
+    "bool",
+    "byte",
+    "rune",
+    "error",
+    "any",
+    "interface{}",
+  ],
+  // Maps keep their head through collection unwrapping, so the map heads are listed.
+  java: [
+    "String",
+    "int",
+    "long",
+    "short",
+    "byte",
+    "char",
+    "float",
+    "double",
+    "boolean",
+    "void",
+    "var",
+    "Object",
+    "Integer",
+    "Long",
+    "Short",
+    "Byte",
+    "Character",
+    "Float",
+    "Double",
+    "Boolean",
+    "Void",
+    "Map",
+    "HashMap",
+  ],
+  rust: [
+    "String",
+    "str",
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+    "f32",
+    "f64",
+    "bool",
+    "char",
+    "Self",
+    "HashMap",
+    "BTreeMap",
+  ],
+  swift: [
+    "String",
+    "Int",
+    "Int8",
+    "Int16",
+    "Int32",
+    "Int64",
+    "UInt",
+    "UInt8",
+    "UInt16",
+    "UInt32",
+    "UInt64",
+    "Double",
+    "Float",
+    "Bool",
+    "Character",
+    "Any",
+    "AnyObject",
+    "Void",
+    "Self",
+    "Dictionary",
+  ],
+  // Bash has no type annotations.
+  bash: [],
+};
+
 describe("LanguageCapability.naming", () => {
   const capabilities = new LanguageFactory().capabilities();
 
   it.each(Object.entries(EXPECTED_NAMING))("%s declares its community casing per role", (language, expected) => {
-    expect(capabilities.get(language)?.naming).toEqual(expected);
+    expect(capabilities.get(language)?.naming?.casing).toEqual(expected);
+  });
+
+  it.each(Object.entries(EXPECTED_NON_CONCEPT_TYPES))("%s declares its non-concept types", (language, expected) => {
+    expect(capabilities.get(language)?.naming?.nonConceptTypes).toEqual(expected);
+  });
+
+  it("pins the non-concept types of every language declaring a naming convention", () => {
+    const declaring = [...capabilities].filter(([, capability]) => capability.naming !== undefined);
+    expect(declaring.map(([language]) => language).sort()).toEqual(Object.keys(EXPECTED_NON_CONCEPT_TYPES).sort());
   });
 
   it("is absent for a language without identifiers", () => {

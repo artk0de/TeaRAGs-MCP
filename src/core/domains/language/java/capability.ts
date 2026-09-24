@@ -32,12 +32,41 @@ export const capability: LanguageCapability = {
   // all-lowercase dotted words without underscores; `snake` is the nearest
   // casing (a single lowercase word classifies as it).
   naming: {
-    type: ["pascal"],
-    module: ["snake"],
-    method: ["camel"],
-    param: ["camel"],
-    local: ["camel"],
-    field: ["camel"],
-    constant: ["screamingSnake"],
+    casing: {
+      type: ["pascal"],
+      module: ["snake"],
+      method: ["camel"],
+      param: ["camel"],
+      local: ["camel"],
+      field: ["camel"],
+      constant: ["screamingSnake"],
+    },
+    // Primitives, their boxes, `Object`, `var`; maps keep their head through
+    // collection unwrapping, so the map heads are listed too.
+    nonConceptTypes: [
+      "String",
+      "int",
+      "long",
+      "short",
+      "byte",
+      "char",
+      "float",
+      "double",
+      "boolean",
+      "void",
+      "var",
+      "Object",
+      "Integer",
+      "Long",
+      "Short",
+      "Byte",
+      "Character",
+      "Float",
+      "Double",
+      "Boolean",
+      "Void",
+      "Map",
+      "HashMap",
+    ],
   },
 };

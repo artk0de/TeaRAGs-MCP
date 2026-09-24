@@ -18,12 +18,16 @@ export const capability: LanguageCapability = {
   // types, modules or fields; those roles take the variable casing so the
   // record stays total.
   naming: {
-    type: ["snake"],
-    module: ["snake"],
-    method: ["snake"],
-    param: ["snake"],
-    local: ["snake"],
-    field: ["snake"],
-    constant: ["screamingSnake"],
+    casing: {
+      type: ["snake"],
+      module: ["snake"],
+      method: ["snake"],
+      param: ["snake"],
+      local: ["snake"],
+      field: ["snake"],
+      constant: ["screamingSnake"],
+    },
+    // Bash has no type annotations, so no type name ever reaches the lexicon.
+    nonConceptTypes: [],
   },
 };

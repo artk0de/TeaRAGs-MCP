@@ -995,10 +995,11 @@ export interface LanguageCapability {
    */
   chunkSetBumpScopes?: ChunkSetBumpScopes;
   /**
-   * How this language cases an identifier in each role — the community style
-   * guide's convention, a static fact read by the naming lexicon. Per role the
-   * FIRST casing is canonical (the one a name is rendered in); any others are
-   * accepted spellings. Absent only for a language without identifiers
+   * This language's static naming facts, read by the naming lexicon: how it
+   * cases an identifier in each role (the community style guide's convention;
+   * per role the FIRST casing is canonical, the one a name is rendered in, any
+   * others are accepted spellings) and which of its type names carry no domain
+   * concept (primitives, top types, wrapper / utility types). Absent only for a language without identifiers
    * (markdown); `tests/navigator-enumerations.test.ts` derives that it is
    * declared by exactly the languages whose walker publishes
    * `identifierDeclarations`. Sigils and predicate / bang suffixes are not
@@ -1015,5 +1016,19 @@ export type IdentifierCasing = "snake" | "camel" | "pascal" | "screamingSnake";
 /** The role an identifier plays, as far as a language's casing convention distinguishes it. */
 export type IdentifierRole = "type" | "module" | "method" | "param" | "local" | "field" | "constant";
 
-/** Accepted casings per {@link IdentifierRole}, the first canonical — see {@link LanguageCapability.naming}. */
-export type IdentifierNamingConvention = Readonly<Record<IdentifierRole, readonly IdentifierCasing[]>>;
+/**
+ * A language's static naming facts, read by the naming lexicon — see
+ * {@link LanguageCapability.naming}.
+ */
+export interface IdentifierNamingConvention {
+  /** Accepted casings per {@link IdentifierRole}; the FIRST is canonical (the one a name is rendered in). */
+  readonly casing: Readonly<Record<IdentifierRole, readonly IdentifierCasing[]>>;
+  /**
+   * Type names that carry no domain concept in this language — primitives, top
+   * types, and wrapper / utility types (`Promise`, `Record`) — spelled exactly as
+   * the language writes them; matched exactly, no case folding. The lexicon
+   * excludes them from `byType` and judges a draft typed with one as untyped.
+   * Single-letter generics (`T`) are a universal rule the lexicon owns, not listed.
+   */
+  readonly nonConceptTypes: readonly string[];
+}
