@@ -26,10 +26,13 @@
  * Swift declares stored properties on a base class and uses them from
  * subclasses constantly — `self.eventMonitor` is declared on `Request` and
  * called from `DataRequest`. The walk reuses the driver and the policy `super`
- * already walks (`kernel/ancestor-walk.ts`, {@link SWIFT_ANCESTOR_POLICY})
+ * already walks (`kernel/ancestor-walk.ts`, `SWIFT_ANCESTOR_POLICY`)
  * rather than re-deriving the order, so the passes can never disagree about
  * what a class's superclass is. A class with no `classExtends` entry linearizes
- * to itself alone, which is exactly the own-type read this generalises.
+ * to itself alone, which is exactly the own-type read this generalises. After the superclass
+ * chain the walk reaches every protocol the type conforms to
+ * ({@link SWIFT_MEMBER_LOOKUP_POLICY}), since a requirement and a protocol
+ * extension's default are members of every conforming type.
  *
  * Built ONCE per resolver and handed to every pass that needs it: the
  * linearizer memo and the field union are per-run state, and a second instance
@@ -51,7 +54,7 @@ import {
   type AncestorLinearizer,
 } from "../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
-import { SWIFT_ANCESTOR_POLICY } from "./swift-ancestor-policy.js";
+import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
 import {
   lookupSwiftSymbols,
   lookupSwiftTypeMember,
@@ -125,7 +128,7 @@ export class SwiftMemberTypeLookup {
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {
     const hit = this.linearizers.get(ctx.runScope, ctx);
     if (hit !== undefined) return hit;
-    const fresh = createAncestorLinearizer(ctx, SWIFT_ANCESTOR_POLICY);
+    const fresh = createAncestorLinearizer(ctx, SWIFT_MEMBER_LOOKUP_POLICY);
     this.linearizers.set(ctx.runScope, ctx, fresh);
     return fresh;
   }

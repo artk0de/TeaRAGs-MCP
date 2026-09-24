@@ -1561,3 +1561,102 @@ describe("SwiftCallResolver — a type's declaration versus its re-openings", ()
     expect(resolver.hasInProjectDefinition(site, context)).toBe(true);
   });
 });
+
+/**
+ * Conformances (bd tea-rags-mcp-y99pg.4) — a member a PROTOCOL declares, or a
+ * protocol extension provides, is reachable from every type conforming to it,
+ * and Swift declares conformances in extensions as often as on the type:
+ * `extension SecTrust: AlamofireExtended {}` is what makes `trust.af` exist.
+ */
+describe("SwiftCallResolver — members reached through protocol conformances", () => {
+  const afTable = table({
+    "Sources/AlamofireExtended.swift": [
+      { symbolId: "AlamofireExtension", scope: [] },
+      { symbolId: "AlamofireExtended", scope: [] },
+    ],
+    "Sources/ServerTrust.swift": [
+      { symbolId: "SecTrust", scope: [] },
+      { symbolId: "AlamofireExtension#performValidation", scope: ["AlamofireExtension"] },
+      { symbolId: "Evaluator#evaluate", scope: ["Evaluator"] },
+    ],
+  });
+  const afDeclarations = {
+    "Sources/AlamofireExtended.swift": [
+      { typeId: "AlamofireExtension", reopens: false },
+      { typeId: "AlamofireExtended", reopens: false },
+      { typeId: "AlamofireExtended", reopens: true },
+    ],
+    "Sources/ServerTrust.swift": [
+      { typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] },
+      { typeId: "AlamofireExtension", reopens: true },
+    ],
+  };
+
+  it("types a property a protocol extension provides to a type that conforms in an extension", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("trust.af", "performValidation"),
+      ctx({
+        callerFile: "Sources/ServerTrust.swift",
+        callerScope: ["Evaluator"],
+        symbolTable: afTable,
+        typeDeclarations: afDeclarations,
+        localBindings: { trust: [{ line: 5, type: "SecTrust" }] },
+        classFieldTypesByClassKey: {
+          "Sources/AlamofireExtended.swift::AlamofireExtended": { af: "AlamofireExtension" },
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("AlamofireExtension#performValidation");
+  });
+
+  const monitorTable = table({
+    "Sources/Monitor.swift": [
+      { symbolId: "Monitor", scope: [] },
+      { symbolId: "Monitor#tick", scope: ["Monitor"] },
+    ],
+    "Sources/Clock.swift": [
+      { symbolId: "Clock", scope: [] },
+      { symbolId: "Clock#run", scope: ["Clock"] },
+      { symbolId: "Base", scope: [] },
+    ],
+  });
+  const monitorDeclarations = {
+    "Sources/Monitor.swift": [
+      { typeId: "Monitor", reopens: false },
+      { typeId: "Monitor", reopens: true },
+    ],
+    "Sources/Clock.swift": [
+      { typeId: "Clock", reopens: false, conforms: ["Base", "Monitor"] },
+      { typeId: "Base", reopens: false },
+    ],
+  };
+
+  it("dispatches a typed receiver's call to the protocol member its type conforms to", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("clock", "tick"),
+      ctx({
+        callerFile: "Sources/Clock.swift",
+        callerScope: ["Clock"],
+        symbolTable: monitorTable,
+        typeDeclarations: monitorDeclarations,
+        classExtends: { Clock: "Base" },
+        localBindings: { clock: [{ line: 5, type: "Clock" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Monitor#tick");
+  });
+
+  it("never sends `super` into a protocol — only the superclass chain answers it", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("super", "tick"),
+      ctx({
+        callerFile: "Sources/Clock.swift",
+        callerScope: ["Clock"],
+        symbolTable: monitorTable,
+        typeDeclarations: monitorDeclarations,
+        classExtends: { Clock: "Base" },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});

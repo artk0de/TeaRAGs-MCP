@@ -223,6 +223,9 @@ describe("seeded support versions", () => {
       // re-opening), so an index built by walker 12 still lands constructions of a
       // Foundation type on the project's extension of it and leaves a type re-opened
       // across files ambiguous.
+      // swift walker 14: member lookup reaches protocol members through conformances,
+      // so an index built by walker 13 misses `trust.af.*` and every other member a
+      // protocol or its extension provides.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -239,7 +242,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 13],
+        ["swift", 14],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

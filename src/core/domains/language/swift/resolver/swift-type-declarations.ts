@@ -25,6 +25,8 @@ interface SwiftTypeDeclarationSets {
   readonly declaring: ReadonlyMap<string, ReadonlySet<string>>;
   /** typeId → the files re-opening it. */
   readonly reopening: ReadonlyMap<string, ReadonlySet<string>>;
+  /** typeId → every supertype any declaration of it names, in first-seen order. */
+  readonly conforms: ReadonlyMap<string, readonly string[]>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -42,12 +44,21 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   if (hit !== undefined) return hit;
   const declaring = new Map<string, Set<string>>();
   const reopening = new Map<string, Set<string>>();
-  for (const [relPath, facts] of Object.entries(channel)) {
+  const conforms = new Map<string, string[]>();
+  // Sorted, so which file's clause comes first is a property of the project
+  // rather than of the order this run walked it in.
+  for (const relPath of Object.keys(channel).sort()) {
     // Swift declarations only, as every lookup here (`swift-symbol-lookup.ts`).
     if (!relPath.endsWith(".swift")) continue;
-    for (const fact of facts) add(fact.reopens ? reopening : declaring, fact.typeId, relPath);
+    for (const fact of channel[relPath]) {
+      add(fact.reopens ? reopening : declaring, fact.typeId, relPath);
+      if (fact.conforms === undefined) continue;
+      const list = conforms.get(fact.typeId) ?? [];
+      for (const name of fact.conforms) if (!list.includes(name)) list.push(name);
+      conforms.set(fact.typeId, list);
+    }
   }
-  const fresh = { declaring, reopening };
+  const fresh = { declaring, reopening, conforms };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
 }
@@ -78,4 +89,12 @@ export function isSwiftReopenedOnlyType(typeId: string, ctx: CallContext): boole
  */
 export function swiftExtensionDeclaresInit(typeId: string, lookup: (symbolId: string) => readonly unknown[]): boolean {
   return lookup(`${typeId}#init`).length > 0 || lookup(`${typeId}.init`).length > 0;
+}
+
+/**
+ * Every supertype any declaration of `typeId` names — its own clause and each
+ * re-opening's — or none when the run publishes no channel.
+ */
+export function swiftConformances(typeId: string, ctx: CallContext): readonly string[] {
+  return setsFor(ctx)?.conforms.get(typeId) ?? [];
 }

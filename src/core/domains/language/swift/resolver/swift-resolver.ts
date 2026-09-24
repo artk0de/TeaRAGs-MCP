@@ -69,8 +69,9 @@
  * Raising it further is a typing problem, not a chain problem. The walker's
  * declared return types now reach the fold (`structuredReturnTypes`, bd
  * tea-rags-mcp-kkwg3), so a METHOD link is typed where the callee declares its
- * return; recording protocol conformances for an MRO is the increment still
- * open on top of this, not a gap in it.
+ * return, and member lookup walks every protocol a type conforms to after
+ * its superclass chain (`SWIFT_MEMBER_LOOKUP_POLICY`, bd
+ * tea-rags-mcp-y99pg.4).
  *
  * ## Where a TYPE NAME still does not resolve
  *

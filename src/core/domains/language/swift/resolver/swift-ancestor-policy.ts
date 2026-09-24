@@ -1,5 +1,6 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
+import { swiftConformances } from "./swift-type-declarations.js";
 
 /**
  * Swift's answer to the kernel's linearization question, and it is the SHORTEST
@@ -40,5 +41,34 @@ export const SWIFT_ANCESTOR_POLICY: AncestorLinearizationPolicy<CallContext> = {
     // before it allocates.
     if (base === undefined || base === classKey) return [classKey];
     return [classKey, ...recurse(base)];
+  },
+};
+
+/**
+ * The order an ORDINARY member lookup walks — `SWIFT_ANCESTOR_POLICY`'s
+ * superclass chain, then every protocol the type conforms to, each followed by
+ * the protocols it refines (bd tea-rags-mcp-y99pg.4).
+ *
+ * A protocol requirement, and the default a protocol extension provides, are
+ * reachable from every conforming type; `super` reaches neither, which is why
+ * this is a second policy and not a widening of the first. Swift declares
+ * conformances in extensions as often as on the type — `extension SecTrust:
+ * AlamofireExtended {}` is the whole reason `trust.af` exists — so they are
+ * read from the run-global `typeDeclarations` channel, which lists them for
+ * every declaration of a type, re-openings included.
+ *
+ * Classes come first: a class's own members and its superclass chain are
+ * found before any protocol default, which is how Swift itself prefers a
+ * concrete implementation over an extension's.
+ */
+export const SWIFT_MEMBER_LOOKUP_POLICY: AncestorLinearizationPolicy<CallContext> = {
+  order(classKey, ctx, recurse, insertable) {
+    const base = ctx.classExtends?.[classKey];
+    const order = base === undefined || base === classKey ? [classKey] : [classKey, ...recurse(base)];
+    for (const protocol of swiftConformances(classKey, ctx)) {
+      if (protocol === classKey) continue;
+      order.push(...insertable(protocol, [order]));
+    }
+    return order;
   },
 };
