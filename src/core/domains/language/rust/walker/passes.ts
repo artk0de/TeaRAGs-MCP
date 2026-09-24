@@ -4,6 +4,9 @@
  *
  *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — `pub` vs module-private
  *      on `ChunkExtraction.visibility`, which the monolith never fills.
+ *   2. identifier declarations (bd tea-rags-mcp-4p3sb.5) — params, `let`
+ *      locals and struct fields with their syntactic type, for the naming
+ *      lexicon.
  *
  * A new Rust extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -12,11 +15,13 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { rustDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { RUST_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { rustTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   rustDeclaredVisibilityFacetPass,
   rustTypeAbstractnessFacetPass,
+  createIdentifierDeclarationFacetPass(RUST_IDENTIFIER_DECLARATION_SYNTAX),
 ];

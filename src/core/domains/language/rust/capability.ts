@@ -18,5 +18,9 @@ export const capability: LanguageCapability = {
   // walker 4: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — `pub` vs module-private (trait members public) — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
-  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
+  // walker 5: bd tea-rags-mcp-4p3sb.5 — the walker publishes
+  // `identifierDeclarations` (params, `let` locals, struct fields; annotation,
+  // struct-literal and `X::new` types) for the naming lexicon. Rows written by
+  // walker 4 carry none, so only the recompute adds them.
+  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
 };
