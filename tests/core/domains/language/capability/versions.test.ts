@@ -348,6 +348,8 @@ describe("seeded support versions", () => {
       // misses.
       // swift walker 45: an initializer publishes its closure parameters, so an
       // index built by walker 44 leaves a construction's closure parameters untyped.
+      // swift walker 46: a bare call an enclosing type's SDK supertype declares
+      // leaves the denominator, so an index built by walker 45 charges it as a miss.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 14],
@@ -357,7 +359,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 45],
+        ["swift", 46],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

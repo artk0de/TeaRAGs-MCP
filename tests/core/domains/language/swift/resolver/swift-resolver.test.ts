@@ -3239,6 +3239,38 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context("AsyncStream"))).toBe(false);
   });
 
+  it("proves external a bare call the enclosing type's SDK conformance declares", () => {
+    // `map(\.result)` inside `struct DataResponsePublisher: Publisher` is
+    // `self.map` — Combine's `Publisher.map` — never `DataResponse#map`.
+    const withPublisher = table({
+      "Sources/Combine.swift": [
+        { symbolId: "DataResponsePublisher", scope: [] },
+        { symbolId: "DataResponsePublisher#result", scope: ["DataResponsePublisher"] },
+      ],
+      "Sources/Response.swift": [
+        { symbolId: "DataResponse", scope: [] },
+        { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+      ],
+    });
+    const within = (callerScope: string[], conforms: string[]): CallContext =>
+      ctx({
+        callerFile: "Sources/Combine.swift",
+        callerScope,
+        symbolTable: withPublisher,
+        typeDeclarations: {
+          "Sources/Combine.swift": [{ typeId: "DataResponsePublisher", reopens: false, conforms }],
+          "Sources/Response.swift": [{ typeId: "DataResponse", reopens: false }],
+        },
+      });
+    const resolver = new SwiftCallResolver();
+    const site = call(null, "map", 11);
+    expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], ["Publisher"]))).toBe(
+      false,
+    );
+    // No SDK supertype declaring `map`: the bare name may still be the project's.
+    expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], []))).toBe(true);
+  });
+
   it("types nothing for a bare callee neither the enclosing type nor the SDK declares", () => {
     const site = call("continuation", "finish", 11);
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context("makeStream"))).toBe(true);

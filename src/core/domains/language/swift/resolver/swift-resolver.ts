@@ -219,6 +219,19 @@ export class SwiftCallResolver implements CallResolver {
   private bareNameMayReach(call: CallRef, ctx: CallContext): boolean {
     const defs = lookupSwiftBareNameDefinitions(ctx, call.member);
     if (defs.length === 0) return false;
+    // Swift's `self` is implicit: inside a type whose hierarchy the SDK
+    // declares the member on and the project does not, the bare name IS that
+    // member, shadowing every project namesake on another type or at module
+    // scope — `map(\.result)` inside a `Publisher` (bd tea-rags-mcp-y99pg.29).
+    const enclosing = swiftSelfTypeName(ctx);
+    if (
+      enclosing !== undefined &&
+      ctx.typeDeclarations !== undefined &&
+      !this.memberTypes.memberReach(enclosing, call.member, ctx).declared &&
+      this.memberTypes.sdkDeclaresMember(enclosing, call.member, ctx)
+    ) {
+      return false;
+    }
     // A construction of a type the project only EXTENDS runs an SDK
     // initializer unless an extension declares one the call's argument
     // labels fit (bd tea-rags-mcp-y99pg.1, .11): `Result { try … }` runs
