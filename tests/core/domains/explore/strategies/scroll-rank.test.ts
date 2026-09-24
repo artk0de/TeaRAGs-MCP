@@ -190,10 +190,10 @@ describe("ScrollRankStrategy", () => {
     expect(paths).toContain("src/b.ts");
   });
 
-  // tea-rags-mcp-zrma: rank_chunks defaults to metaOnly=true, and metaOnly
-  // rebuilds the payload from payloadSignals — the synthetic outline has to
-  // survive that projection or the feature is invisible on this tool.
-  it("attaches a members outline at file level and keeps it through metaOnly", async () => {
+  // bd tea-rags-mcp-947xf / mwq0k: rank_chunks defaults to metaOnly=true; the
+  // file hit carries no members outline, no chunk-scoped fields (methodLines
+  // is a per-method value) and no payload copy of the top-level score.
+  it("returns a file hit with no members, no chunk-scoped fields and no payload.score", async () => {
     const qdrant = {
       scrollOrdered: vi.fn().mockResolvedValue([
         {
@@ -215,7 +215,18 @@ describe("ScrollRankStrategy", () => {
       ensurePayloadIndex: vi.fn().mockResolvedValue(true),
     } as unknown as QdrantManager;
 
-    const strategy = createStrategy(qdrant, undefined);
+    const relativePathSignal: PayloadSignalDescriptor = {
+      key: "relativePath",
+      type: "string",
+      description: "path",
+      level: "file",
+    };
+    const strategy = new ScrollRankStrategy(
+      qdrant,
+      createMockReranker(),
+      [METHOD_LINES_SIGNAL, relativePathSignal],
+      [],
+    );
 
     const results = await strategy.execute({
       collectionName: "test_col",
@@ -224,7 +235,9 @@ describe("ScrollRankStrategy", () => {
       limit: 10,
     });
 
-    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+    expect(results).toHaveLength(1);
+    expect(typeof results[0].score).toBe("number");
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
 
   it("adaptively fetches more chunks when first batch has too few unique files", async () => {

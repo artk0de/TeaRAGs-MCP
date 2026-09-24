@@ -12,11 +12,10 @@ import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /**
- * Hits collected per file so the file-level result can carry an outline of what
- * matched. One hit per group leaves nothing to aggregate; three matches the
- * file-level overfetch HybridSearchStrategy already pays.
+ * Hits collected per file. The file-level result is the top hit alone — the
+ * collapsed hits are not surfaced (bd tea-rags-mcp-947xf) — so one per group.
  */
-const FILE_GROUP_SIZE = 3;
+const FILE_GROUP_SIZE = 1;
 
 export class VectorSearchStrategy extends BaseExploreStrategy {
   readonly type = "vector" as const;

@@ -310,6 +310,15 @@ export interface PayloadSignalDescriptor {
   stats?: SignalStatsRequest;
   /** Include in metaOnly results even without overlay mask. Default: false. */
   essential?: boolean;
+  /**
+   * Granularity the value describes — meaningful for FLAT keys only; a nested
+   * key names its level in its path (`git.file.*`, `git.chunk.*`). `"file"`
+   * marks a property of the whole file, identical on every chunk of it
+   * (`language`, `imports`, `moduleLines`). `level: "file"` search results
+   * keep only these flat keys: a file hit is one representative chunk, and
+   * everything else on it describes that chunk, not the file. Default: chunk.
+   */
+  level?: SignalLevel;
 }
 
 /**

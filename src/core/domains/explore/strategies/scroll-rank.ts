@@ -189,6 +189,9 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
     processed = processed.slice(0, originalCtx.limit || 10);
 
+    // Ranked inside rankChunks already — file scope is response shaping.
+    processed = this.shapeFileLevel(processed, originalCtx);
+
     const metaOnly = originalCtx.metaOnly !== false;
     if (metaOnly) {
       return this.applyMetaOnly(processed);
