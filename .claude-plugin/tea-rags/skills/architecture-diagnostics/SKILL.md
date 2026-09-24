@@ -122,10 +122,17 @@ external importers AND adoption > 0.5 AND adoption ≥ adaptive cut.
 `rootCauses` with `detector: "leakingAbstraction"` = one per module:
 `violationCount`, `bypassCount`, `internalReachCount`, `sources`. Read first.
 
-| `kind`           | Meaning                                                          | Fix direction                                   |
-| ---------------- | ---------------------------------------------------------------- | ----------------------------------------------- |
-| `bypass`         | facade itself imports target — importer could use facade, didn't | switch import to facade                         |
-| `internal-reach` | facade does not import target — importer reaches unoffered code  | export it via facade OR question the dependency |
+| `kind`           | Meaning                                                               | Fix direction                                   |
+| ---------------- | --------------------------------------------------------------------- | ----------------------------------------------- |
+| `bypass`         | facade exposes all importer takes — importer could use facade, didn't | switch import to facade                         |
+| `internal-reach` | facade does not expose it — importer reaches unoffered code           | export it via facade OR question the dependency |
+
+Kind decided by NAMES when index recorded them (`evidence.importedNames`):
+facade exposes = names it re-exports (`export {a} from`, `export *` = all;
+`__init__.py` also exposes what it imports). Any name not exposed →
+`internal-reach`, listed in `evidence.nonExportedNames`. No names on either edge
+(pre-names index, side-effect import) → file rule: facade imports target =
+`bypass`. `importedNames` absent → kind is file-level, say so.
 
 Evidence per line: `moduleDir` (innermost active module leaked past),
 `facadeRelPath`, `adoption`, facade/deep importer counts, `callWeight` (0 =

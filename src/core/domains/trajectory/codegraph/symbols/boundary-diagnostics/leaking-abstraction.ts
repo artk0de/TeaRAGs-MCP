@@ -1,4 +1,4 @@
-import type { FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { otsuSplit } from "./otsu-split.js";
 import type {
@@ -124,9 +124,9 @@ interface ModuleCandidate {
  *
  * A VIOLATION is an edge `src → x` where `x` lies inside an active module,
  * `src` outside it, and `x` is not that module's entry. Each edge is reported
- * once, against the INNERMOST module it qualifies for. Its kind is `bypass`
- * when the module's entry file itself has a file edge to `x` (the facade
- * re-exports or uses it), `internal-reach` otherwise.
+ * once, against the INNERMOST module it qualifies for. Its kind is decided by
+ * {@link classifyFacadeLeak}: by the export names both edges carry when they
+ * do, by whether the entry file has an edge to `x` at all otherwise.
  *
  * Diagnosis, not prescription: a violation says the importer walked past a
  * surface its peers use, not how the module should be drawn.
@@ -141,7 +141,7 @@ export function detectLeakingAbstractions(
       ? { sourcePathPattern: options.sourcePathPattern, outOfScopeEdgeCount: 0 }
       : undefined;
   const candidates = collectModuleCandidates(graph);
-  const edgeKeys = new Set(graph.edges.map((e) => edgeKey(e.sourceRelPath, e.targetRelPath)));
+  const edgesByKey = new Map(graph.edges.map((e) => [edgeKey(e.sourceRelPath, e.targetRelPath), e]));
 
   for (const edge of graph.edges) {
     if (edge.sourceRelPath === edge.targetRelPath) continue;
@@ -177,9 +177,8 @@ export function detectLeakingAbstractions(
       judged = true;
       if (module.entries.has(edge.targetRelPath)) continue;
       const facadeRelPath = assessment.facadeRelPath as RelPath;
-      const reExported = [...module.entries].some((entry) => edgeKeys.has(edgeKey(entry, edge.targetRelPath)));
       violations.push({
-        kind: reExported ? "bypass" : "internal-reach",
+        ...classifyFacadeLeak(edge, module.entries, edgesByKey),
         sourceRelPath: edge.sourceRelPath,
         targetRelPath: edge.targetRelPath,
         moduleDir: module.moduleDir,
@@ -221,6 +220,62 @@ export function detectLeakingAbstractions(
       ...(scope ? { scope } : {}),
     },
   };
+}
+
+/** Name of the whole-module import / re-export on a file edge. */
+const WHOLE_MODULE_EXPORT_NAME = "*";
+
+/** Entry files whose imported names ARE the module's exports (Python has no re-export syntax). */
+const IMPORTS_ARE_EXPORTS_ENTRY_NAMES: ReadonlySet<string> = new Set(MODULE_ENTRY_FILE_NAMES.python);
+
+type FacadeLeakClassification = Pick<FacadeLeakViolation, "kind" | "importedNames" | "nonExportedNames">;
+
+/** Every name an edge takes from its target, imported or forwarded; `undefined` when none was recorded. */
+function namesTakenBy(edge: FileDependencyEdge): string[] | undefined {
+  const names = [...(edge.importedExportNames ?? []), ...(edge.reexportedExportNames ?? [])];
+  return names.length > 0 ? [...new Set(names)] : undefined;
+}
+
+/**
+ * Kind of a deep edge into a module's non-entry file `x` (bd tea-rags-mcp-r8hme.2).
+ *
+ * With names on BOTH sides — the deep edge's, and the entry file's edge to `x`
+ * — it is `bypass` when the facade exposes every name the deep import takes
+ * (or exposes all of `x`), `internal-reach` when it does not, listing the names
+ * it does not. The facade exposes what it re-exports; a Python `__init__.py`
+ * also exposes what it imports. An entry file with no edge to `x` exposes
+ * nothing of it. Where either side recorded no names the file-level rule
+ * stands: `bypass` iff the entry file has an edge to `x`.
+ */
+function classifyFacadeLeak(
+  edge: FileDependencyEdge,
+  entries: ReadonlySet<RelPath>,
+  edgesByKey: ReadonlyMap<string, FileDependencyEdge>,
+): FacadeLeakClassification {
+  const importedNames = namesTakenBy(edge);
+  const named = importedNames ? { importedNames } : {};
+  const facadeEdges = [...entries]
+    .map((entry) => ({ entry, facadeEdge: edgesByKey.get(edgeKey(entry, edge.targetRelPath)) }))
+    .filter((f): f is { entry: RelPath; facadeEdge: FileDependencyEdge } => f.facadeEdge !== undefined);
+  if (facadeEdges.length === 0) {
+    return { kind: "internal-reach", ...named, ...(importedNames ? { nonExportedNames: importedNames } : {}) };
+  }
+  const exposed = new Set<string>();
+  let facadeNamesRecorded = false;
+  for (const { entry, facadeEdge } of facadeEdges) {
+    if (facadeEdge.importedExportNames || facadeEdge.reexportedExportNames) facadeNamesRecorded = true;
+    for (const name of facadeEdge.reexportedExportNames ?? []) exposed.add(name);
+    if (IMPORTS_ARE_EXPORTS_ENTRY_NAMES.has(baseName(entry))) {
+      for (const name of facadeEdge.importedExportNames ?? []) exposed.add(name);
+    }
+  }
+  if (!importedNames || !facadeNamesRecorded || exposed.has(WHOLE_MODULE_EXPORT_NAME)) {
+    return { kind: "bypass", ...named };
+  }
+  const nonExportedNames = importedNames.filter((name) => !exposed.has(name));
+  return nonExportedNames.length === 0
+    ? { kind: "bypass", ...named }
+    : { kind: "internal-reach", ...named, nonExportedNames };
 }
 
 /** Group `violations` by module — see {@link FacadeLeakRootCause}. */

@@ -243,6 +243,8 @@ function leakViolations(
         facadeImporterCount: v.facadeImporterCount,
         deepImporterCount: v.deepImporterCount,
         callWeight: v.callWeight,
+        ...(v.importedNames ? { importedNames: v.importedNames } : {}),
+        ...(v.nonExportedNames ? { nonExportedNames: v.nonExportedNames } : {}),
       },
     }),
   );

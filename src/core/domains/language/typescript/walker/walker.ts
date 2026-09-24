@@ -29,6 +29,12 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import {
+  esmImportExportNames,
+  esmReexportExportNames,
+  exportNamesField,
+  moduleCallExportNames,
+} from "../../shared/ecmascript-export-names.js";
 
 export interface ExtractInput {
   tree: MaterializedTree;
@@ -222,7 +228,11 @@ function collectEsmImport(node: AstNode, out: ImportRef[]): void {
   // side-effect imports have no `import_clause` → undefined.
   // bd tea-rags-mcp-w65s7 — each named specifier ALSO records the member it
   // reaches, which is the half an alias throws away.
-  const ref: ImportRef = { importText: stringLiteralText(src), startLine: node.startPosition.row + 1 };
+  const ref: ImportRef = {
+    importText: stringLiteralText(src),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("importedExportNames", esmImportExportNames(node)),
+  };
   applyModuleBindings(ref, collectImportedBindings(node));
   out.push(ref);
 }
@@ -261,7 +271,13 @@ function collectReexport(node: AstNode, out: ImportRef[]): void {
   const src = node.childForFieldName("source");
   if (src?.type !== "string") return;
   if (hasTypeOnlyModifier(node, "export")) return;
-  out.push({ importText: stringLiteralText(src), startLine: node.startPosition.row + 1 });
+  // bd tea-rags-mcp-r8hme.2 — the names it FORWARDS are recorded on their own
+  // channel; `importedNames` stays empty for the reason above.
+  out.push({
+    importText: stringLiteralText(src),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("reexportedExportNames", esmReexportExportNames(node)),
+  });
 }
 
 /**
@@ -279,7 +295,11 @@ function collectRequire(node: AstNode, out: ImportRef[]): void {
   if (callee?.type !== "identifier" || callee.text !== "require") return;
   const first = node.childForFieldName("arguments")?.namedChildren[0];
   if (first?.type !== "string") return;
-  const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
+  const ref: ImportRef = {
+    importText: stringLiteralText(first),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("importedExportNames", moduleCallExportNames(node)),
+  };
   applyModuleBindings(ref, moduleCallBindings(node));
   out.push(ref);
 }
@@ -309,7 +329,11 @@ function collectDynamicImport(node: AstNode, out: ImportRef[]): void {
   if (isTypePositionCall(node)) return;
   const first = node.childForFieldName("arguments")?.namedChildren[0];
   if (first?.type !== "string") return;
-  const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
+  const ref: ImportRef = {
+    importText: stringLiteralText(first),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("importedExportNames", moduleCallExportNames(node)),
+  };
   applyModuleBindings(ref, moduleCallBindings(node));
   out.push(ref);
 }

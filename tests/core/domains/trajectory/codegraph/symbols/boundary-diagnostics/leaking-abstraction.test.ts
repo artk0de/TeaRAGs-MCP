@@ -361,3 +361,135 @@ describe("detectLeakingAbstractions (bd tea-rags-mcp-jetrd)", () => {
     expect(report.violations).toEqual([]);
   });
 });
+
+/**
+ * bd tea-rags-mcp-r8hme.2 — with export names on the edges, the kind is decided
+ * by WHAT the deep import takes: `bypass` when the facade re-exports every name
+ * (or re-exports the whole target), `internal-reach` when at least one name is
+ * not re-exported, listing those names. An edge whose names were never
+ * recorded keeps the file-level rule.
+ */
+describe("detectLeakingAbstractions — export names (bd tea-rags-mcp-r8hme.2)", () => {
+  function named(
+    sourceRelPath: string,
+    targetRelPath: string,
+    names: { imported?: string[]; reexported?: string[] },
+  ): FileDependencyEdge {
+    return {
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 0,
+      ...(names.imported ? { importedExportNames: names.imported } : {}),
+      ...(names.reexported ? { reexportedExportNames: names.reexported } : {}),
+    };
+  }
+
+  /**
+   * `lib/m/` (TypeScript): the facade re-exports `x` from `a.ts`, all of
+   * `b.ts`, and only IMPORTS `helper` from `c.ts`. Ten facade importers and six
+   * deep ones → adoption 10 / 16, active under the majority rule.
+   * `pkg/p/` (Python): `__init__.py` imports `A` from `a.py`, which is what the
+   * package exposes. Four facade importers, two deep → 4 / 6, active.
+   */
+  function namesFixture(): FileDependencyGraph {
+    const facadeUsers = Array.from({ length: 10 }, (_, i) => `app/f${i}.ts`);
+    const pyUsers = ["svc/q0.py", "svc/q1.py", "svc/q2.py", "svc/q3.py"];
+    return {
+      files: [
+        ...["index.ts", "a.ts", "b.ts", "c.ts", "e.ts"].map((f) => walked(`lib/m/${f}`)),
+        walked("pkg/p/__init__.py", "python"),
+        walked("pkg/p/a.py", "python"),
+        ...facadeUsers.map((f) => walked(f)),
+        ...["d1", "d2", "d3", "d4", "d5", "d6"].map((d) => walked(`app/${d}.ts`)),
+        ...pyUsers.map((f) => walked(f, "python")),
+        walked("svc/deep1.py", "python"),
+        walked("svc/deep2.py", "python"),
+      ],
+      edges: [
+        named("lib/m/index.ts", "lib/m/a.ts", { reexported: ["x"] }),
+        named("lib/m/index.ts", "lib/m/b.ts", { reexported: ["*"] }),
+        named("lib/m/index.ts", "lib/m/c.ts", { imported: ["helper"] }),
+        ...facadeUsers.map((f) => named(f, "lib/m/index.ts", { imported: ["x"] })),
+        named("app/d1.ts", "lib/m/a.ts", { imported: ["x"] }),
+        named("app/d2.ts", "lib/m/a.ts", { imported: ["x", "y"] }),
+        named("app/d3.ts", "lib/m/b.ts", { imported: ["anything"] }),
+        named("app/d4.ts", "lib/m/c.ts", { imported: ["helper"] }),
+        named("app/d5.ts", "lib/m/a.ts", {}),
+        named("app/d6.ts", "lib/m/e.ts", { imported: ["z"] }),
+        named("pkg/p/__init__.py", "pkg/p/a.py", { imported: ["A"] }),
+        ...pyUsers.map((f) => named(f, "pkg/p/__init__.py", { imported: ["A"] })),
+        named("svc/deep1.py", "pkg/p/a.py", { imported: ["A"] }),
+        named("svc/deep2.py", "pkg/p/a.py", { imported: ["A", "_B"] }),
+      ],
+    };
+  }
+
+  function kindOf(report: ReturnType<typeof detectLeakingAbstractions>, source: string) {
+    const v = report.violations.find((x) => x.sourceRelPath === source);
+    return v && { kind: v.kind, importedNames: v.importedNames, nonExportedNames: v.nonExportedNames };
+  }
+
+  it("calls a deep import of only re-exported names a bypass", () => {
+    const report = detectLeakingAbstractions(namesFixture());
+    expect(kindOf(report, "app/d1.ts")).toEqual({ kind: "bypass", importedNames: ["x"], nonExportedNames: undefined });
+    expect(kindOf(report, "app/d3.ts")).toEqual({
+      kind: "bypass",
+      importedNames: ["anything"],
+      nonExportedNames: undefined,
+    });
+  });
+
+  it("calls a deep import of any name the facade does not re-export an internal reach, naming it", () => {
+    const report = detectLeakingAbstractions(namesFixture());
+    expect(kindOf(report, "app/d2.ts")).toEqual({
+      kind: "internal-reach",
+      importedNames: ["x", "y"],
+      nonExportedNames: ["y"],
+    });
+    // The facade imports `helper` but does not re-export it: the file-level rule
+    // would have said bypass.
+    expect(kindOf(report, "app/d4.ts")).toEqual({
+      kind: "internal-reach",
+      importedNames: ["helper"],
+      nonExportedNames: ["helper"],
+    });
+    expect(kindOf(report, "app/d6.ts")).toEqual({
+      kind: "internal-reach",
+      importedNames: ["z"],
+      nonExportedNames: ["z"],
+    });
+  });
+
+  it("keeps the file-level rule for an edge whose names were never recorded", () => {
+    const report = detectLeakingAbstractions(namesFixture());
+    expect(kindOf(report, "app/d5.ts")).toEqual({
+      kind: "bypass",
+      importedNames: undefined,
+      nonExportedNames: undefined,
+    });
+  });
+
+  it("reads a Python package's imported names as what its __init__.py exposes", () => {
+    const report = detectLeakingAbstractions(namesFixture());
+    expect(kindOf(report, "svc/deep1.py")).toEqual({
+      kind: "bypass",
+      importedNames: ["A"],
+      nonExportedNames: undefined,
+    });
+    expect(kindOf(report, "svc/deep2.py")).toEqual({
+      kind: "internal-reach",
+      importedNames: ["A", "_B"],
+      nonExportedNames: ["_B"],
+    });
+  });
+
+  it("falls back to the file-level rule when the facade edge carries no names", () => {
+    const g = namesFixture();
+    g.edges = g.edges.map((e) =>
+      e.sourceRelPath === "lib/m/index.ts" && e.targetRelPath === "lib/m/c.ts"
+        ? edge(e.sourceRelPath, e.targetRelPath)
+        : e,
+    );
+    expect(kindOf(detectLeakingAbstractions(g), "app/d4.ts")?.kind).toBe("bypass");
+  });
+});

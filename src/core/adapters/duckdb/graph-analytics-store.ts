@@ -33,6 +33,7 @@ import {
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
+import { decodeFileEdgeExportNames } from "./file-edge-export-names-codec.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
@@ -127,8 +128,11 @@ export class DuckDbGraphAnalyticsStore {
       source_rel_path: string;
       target_rel_path: string;
       call_weight: number | string;
+      imported_export_names: string | null;
+      reexported_export_names: string | null;
     }>(
-      `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight
+      `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight,
+              e.imported_export_names, e.reexported_export_names
        FROM cg_symbols_edges_file e
        LEFT JOIN (
          SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
@@ -140,11 +144,18 @@ export class DuckDbGraphAnalyticsStore {
     );
     return {
       files: fileRows.map((r) => ({ relPath: r.rel_path, language: r.language, symbolCount: Number(r.symbol_count) })),
-      edges: edgeRows.map((r) => ({
-        sourceRelPath: r.source_rel_path,
-        targetRelPath: r.target_rel_path,
-        callWeight: Number(r.call_weight),
-      })),
+      edges: edgeRows.map((r) => {
+        // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.
+        const imported = decodeFileEdgeExportNames(r.imported_export_names);
+        const reexported = decodeFileEdgeExportNames(r.reexported_export_names);
+        return {
+          sourceRelPath: r.source_rel_path,
+          targetRelPath: r.target_rel_path,
+          callWeight: Number(r.call_weight),
+          ...(imported ? { importedExportNames: imported } : {}),
+          ...(reexported ? { reexportedExportNames: reexported } : {}),
+        };
+      }),
     };
   }
 

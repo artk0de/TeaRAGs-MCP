@@ -33,6 +33,7 @@ import type {
   ImportRef,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { esmImportExportNames, exportNamesField, moduleCallExportNames } from "../../shared/ecmascript-export-names.js";
 import {
   bindJsDispatchLocals,
   collectJsCallbackParams,
@@ -108,7 +109,11 @@ function collectJsImports(root: AstNode): ImportRef[] {
       const src = node.children.find((c) => c.type === "string");
       if (!src) return;
       const text = src.text.replace(/^["']|["']$/g, "");
-      out.push({ importText: text, startLine: node.startPosition.row + 1 });
+      out.push({
+        importText: text,
+        startLine: node.startPosition.row + 1,
+        ...exportNamesField("importedExportNames", esmImportExportNames(node)),
+      });
       return;
     }
     // CommonJS `require('./foo')` + dynamic `import('./foo')`. Both are
@@ -124,7 +129,11 @@ function collectJsImports(root: AstNode): ImportRef[] {
       const stringArg = args.namedChildren.find((c) => c.type === "string");
       if (!stringArg) return;
       const text = stringArg.text.replace(/^["']|["']$/g, "");
-      out.push({ importText: text, startLine: node.startPosition.row + 1 });
+      out.push({
+        importText: text,
+        startLine: node.startPosition.row + 1,
+        ...exportNamesField("importedExportNames", moduleCallExportNames(node)),
+      });
     }
   });
   return out;

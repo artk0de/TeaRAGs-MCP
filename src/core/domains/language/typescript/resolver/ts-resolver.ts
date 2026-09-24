@@ -92,6 +92,7 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
+import { importFileEdge } from "../../import-file-edges.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import {
@@ -558,7 +559,7 @@ export class TSCallResolver implements CallResolver {
     const fileEdges: GraphEdges["fileEdges"] = [];
     for (const imp of extraction.imports) {
       const targetRelPath = mapImportToFile(imp.importText, extraction.relPath, this.tsOptions, this.fileExists);
-      if (targetRelPath) fileEdges.push({ targetRelPath, importText: imp.importText });
+      if (targetRelPath) fileEdges.push(importFileEdge(targetRelPath, imp));
     }
     return fileEdges;
   }

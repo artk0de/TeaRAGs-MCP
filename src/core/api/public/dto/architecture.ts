@@ -80,6 +80,13 @@ export interface FacadeLeakViolationEvidence {
   deepImporterCount: number;
   /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
   callWeight: number;
+  /**
+   * Names the import takes from the target (`default`; `*` = whole module).
+   * Present when the index recorded them — the kind is then decided by names.
+   */
+  importedNames?: string[];
+  /** `internal-reach` decided by names: the imported names the facade does not expose. */
+  nonExportedNames?: string[];
 }
 
 /** A file outside a module importing one of its non-entry files while its peers use the facade. */

@@ -200,6 +200,13 @@ export interface FacadeLeakViolation extends FacadeAdoption {
   facadeRelPath: RelPath;
   /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
   callWeight: number;
+  /**
+   * Names the deep import takes from the target (`default`, `*` = whole module),
+   * when the walk recorded them (bd tea-rags-mcp-r8hme.2); absent otherwise.
+   */
+  importedNames?: string[];
+  /** For a names-decided `internal-reach`: the imported names the facade does not expose. */
+  nonExportedNames?: string[];
 }
 
 export interface LeakingAbstractionOptions {

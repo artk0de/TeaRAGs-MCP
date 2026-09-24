@@ -297,6 +297,27 @@ describe("ArchitectureReportOps#build — leakingAbstraction (bd tea-rags-mcp-je
     expect(report.violations.filter((v) => v.detector === "leakingAbstraction")).toHaveLength(1);
     expect(report.summary.leakingAbstraction.violationCount).toBe(2);
   });
+
+  it("carries the imported and non-exported names as evidence when the edges record them (bd tea-rags-mcp-r8hme.2)", async () => {
+    const g = facadeGraph();
+    g.edges = g.edges.map((e) => {
+      if (e.sourceRelPath === "mod/index.ts") return { ...e, reexportedExportNames: ["Shown"] };
+      if (e.sourceRelPath === "ext/e.ts") return { ...e, importedExportNames: ["Shown", "hidden"] };
+      return e;
+    });
+    const report = await new ArchitectureReportOps().build(graphDb(g), {});
+
+    const leak = report.violations.find((v) => v.detector === "leakingAbstraction" && v.sourceRelPath === "ext/e.ts");
+    expect(leak).toMatchObject({
+      kind: "internal-reach",
+      evidence: { importedNames: ["Shown", "hidden"], nonExportedNames: ["hidden"] },
+    });
+    const unnamed = report.violations.find(
+      (v) => v.detector === "leakingAbstraction" && v.sourceRelPath === "ext/d.ts",
+    );
+    expect(unnamed?.evidence).not.toHaveProperty("importedNames");
+    expect(unnamed?.evidence).not.toHaveProperty("nonExportedNames");
+  });
 });
 
 describe("ArchitectureReportOps#build — conventionPrivacy (bd tea-rags-mcp-r8hme.1)", () => {

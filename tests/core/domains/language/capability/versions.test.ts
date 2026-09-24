@@ -72,7 +72,10 @@ describe("resolveLanguageCodeVersions", () => {
     // one chunk-owner rule for every writer of codegraph chunk signals.
     // walker 3: bd tea-rags-mcp-nbf8q — run-global class-name maps per family.
     // walker 4: bd tea-rags-mcp-qea83 — return-type maps and hierarchy per family.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 4, codegraphSchema: 2 });
+    // walker 5: bd tea-rags-mcp-r8hme.2 — export names on
+    // `cg_symbols_edges_file` (migration 030), carried by the shared import→file
+    // engine and unioned by the runner's per-target dedupe.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 5, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -82,7 +85,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(4);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(5);
   });
 });
 
@@ -359,11 +362,16 @@ describe("seeded support versions", () => {
       // swift walker 47: y99pg.29 merged with y99pg.30 / .31 — a bare call an
       // enclosing type's SDK supertype declares leaves the denominator, and no
       // earlier walker's index holds both branches' extraction whole.
+      // typescript walker 16, javascript walker 7, python walker 14: bd
+      // tea-rags-mcp-r8hme.2 records the export names every import takes (and,
+      // for typescript, every re-export forwards) on the persisted file edge, so
+      // an index built by the previous walker carries no names and the facade
+      // check falls back to its file-level rule there.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 15],
-        ["javascript", 6],
-        ["python", 13],
+        ["typescript", 16],
+        ["javascript", 7],
+        ["python", 14],
         ["ruby", 8],
         ["java", 5],
         ["rust", 4],
