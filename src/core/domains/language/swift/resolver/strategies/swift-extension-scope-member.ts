@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupSwiftTypeMember, swiftEnclosingTypeIds, type SwiftResolverConfig } from "./shared.js";
+import { swiftEnclosingTypeIds, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * The enclosing type's member declared in ANOTHER file — the pass Swift needs
@@ -18,9 +18,12 @@ import { lookupSwiftTypeMember, swiftEnclosingTypeIds, type SwiftResolverConfig 
  *
  * It sits AFTER both same-file passes so a file-local declaration always wins,
  * and it answers `self` / `Self` receivers and bare calls alike — the two
- * spellings of "a member of the type I am inside". `lookupSwiftTypeMember`
- * applies the ambiguous-resolve mode, so two files declaring the same
- * `Invoice#format` produce no edge rather than a coin flip.
+ * spellings of "a member of the type I am inside". It is also where a member
+ * INHERITED from the superclass is found (`SwiftMemberTypeLookup#memberOn`):
+ * `Request#cancel` called as `cancel()` inside `DataRequest` is declared in
+ * neither the caller's file nor the caller's type. The lookup applies the
+ * ambiguous-resolve mode, so two files declaring the same `Invoice#format`
+ * produce no edge rather than a coin flip — and no fall-through to a base.
  *
  * On a miss, continue: a bare call may still be a free function, which the
  * terminal pass answers.
@@ -37,7 +40,7 @@ export class SwiftExtensionScopeMemberSymbolResolutionStrategy implements Symbol
     const enclosingTypes = swiftEnclosingTypeIds(ctx);
     const searched = call.receiver === null ? enclosingTypes : enclosingTypes.slice(0, 1);
     for (const typeId of searched) {
-      const hit = lookupSwiftTypeMember(typeId, call.member, ctx, this.cfg.mode);
+      const hit = this.cfg.memberTypes.memberOn(typeId, call.member, ctx, this.cfg.mode);
       if (hit) return resolved(hit);
     }
     return CONTINUE;

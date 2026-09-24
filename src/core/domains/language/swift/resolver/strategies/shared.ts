@@ -15,16 +15,17 @@
  */
 
 import { DROP, resolved } from "../../../../../contracts/resolution.js";
-import {
-  pickSingleCandidate,
-  type AmbiguousResolveMode,
-  type CallContext,
-  type SymbolResolutionTarget,
+import type {
+  AmbiguousResolveMode,
+  CallContext,
+  SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
 import type { SwiftMemberTypeLookup } from "../swift-member-type-lookup.js";
-import { lookupSwiftSymbols } from "../swift-symbol-lookup.js";
+import { lookupSwiftSymbols, lookupSwiftTypeMember } from "../swift-symbol-lookup.js";
 import { isSwiftTypeName } from "../swift-type-name.js";
+
+export { lookupSwiftTypeMember };
 
 export interface SwiftResolverConfig {
   mode: AmbiguousResolveMode;
@@ -48,26 +49,10 @@ export interface SwiftResolverConfig {
 export const SWIFT_PSEUDO_RECEIVERS: ReadonlySet<string> = new Set(["self", "Self", "super"]);
 
 /**
- * Resolve `<typeName>#<member>` (instance) then `<typeName>.<member>` (static /
- * class) over Swift declarations. Instance first because Swift's type members
- * are overwhelmingly instance-level and a static namesake is the rarer shape.
- */
-export function lookupSwiftTypeMember(
-  typeName: string,
-  member: string,
-  ctx: CallContext,
-  mode: AmbiguousResolveMode,
-): SymbolResolutionTarget | null {
-  const instanceHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}#${member}`), mode);
-  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-  const staticHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}.${member}`), mode);
-  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-  return null;
-}
-
-/**
  * A receiver whose type the walker PROVED (a typed parameter, an annotated
- * `let`, a stored property) resolves against that type or emits nothing.
+ * `let`, a stored property) resolves against that type — its own member, else
+ * the nearest superclass's (`SwiftMemberTypeLookup#memberOn`) — or emits
+ * nothing.
  *
  * Java's equivalent (`resolveByLocalType`) falls back to a type-qualified
  * best-effort target for a receiver whose type is not a project symbol, which
@@ -84,9 +69,9 @@ export function resolveSwiftBoundTypeMember(
   typeName: string,
   member: string,
   ctx: CallContext,
-  mode: AmbiguousResolveMode,
+  cfg: SwiftResolverConfig,
 ): SymbolResolutionOutcome {
-  const hit = lookupSwiftTypeMember(typeName, member, ctx, mode);
+  const hit = cfg.memberTypes.memberOn(typeName, member, ctx, cfg.mode);
   return hit ? resolved(hit) : DROP;
 }
 

@@ -12,6 +12,23 @@ export const capability: LanguageCapability = {
     tier: "moderate",
     tech: "9-strategy chain + super over the superclass chain + implicit-self and chained field typing + extension-scope and nested-type receivers; no import narrowing",
   },
+  // walker 8: a member INHERITED from the superclass resolves. Every pass that
+  // proves a receiver's type — a local, a stored property, a chained field, a
+  // scoped type name, and `self` / a bare call through the extension-scope
+  // pass — looked the member up on that type ALONE, so `request.resume()` on a
+  // `DataRequest` dropped: `resume` lives on `Request`. They now share one walk
+  // (`SwiftMemberTypeLookup#memberOn`), the superclass chain `super` and the
+  // field lookup already use, stopping at the first class that declares the
+  // member at all so an ambiguous own declaration never falls through to a
+  // base. A class whose first inheritance specifier is a PROTOCOL walks into it
+  // too, which lands on the protocol extension's default implementation —
+  // `lock.around` on an `UnfairLock: Lock` reaches `Lock#around`, which is the
+  // body that runs. Measured TOTAL 0.546 -> 0.563 (820 -> 845 of 1501,
+  // Alamofire; selfMember 0.556 -> 0.741, dynamic 0.184 -> 0.206), Quick
+  // unmoved at 0.523: 25 edges gained, none lost, all into `Request#…` and
+  // each checked against the subclass for an override. Under grammar 0.7.3,
+  // 0.673 -> 0.698 and selfMember 1.000 on both corpora. So an index built by
+  // walker 7 holds no edge into an inherited member.
   // walker 7: a TYPE chunk's own calls now run inside the type. Swift chunks
   // neither a computed property, a subscript, a `deinit` nor a stored-property
   // initializer, so their calls land on the type's own chunk — whose `scope`
@@ -100,7 +117,7 @@ export const capability: LanguageCapability = {
   // adds the Quick scope chunker, which MOVES THE CHUNK SET — one giant `spec`
   // chunk becomes N scenario chunks with new ids and ranges — so the drift hint
   // must route `--force`, not `--force-enrichments`.
-  versions: { chunking: 3, walker: 7, codegraphSchema: 2 },
+  versions: { chunking: 3, walker: 8, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

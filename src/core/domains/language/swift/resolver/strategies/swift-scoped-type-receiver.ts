@@ -80,7 +80,7 @@ export class SwiftScopedTypeReceiverSymbolResolutionStrategy implements SymbolRe
     for (let depth = ctx.callerScope.length; depth > 0; depth--) {
       const qualified = [...ctx.callerScope.slice(0, depth), receiver].join(SWIFT_SCOPE_SEPARATOR);
       if (lookupSwiftSymbols(ctx, qualified).length === 0) continue;
-      return resolveSwiftBoundTypeMember(qualified, call.member, ctx, this.cfg.mode);
+      return resolveSwiftBoundTypeMember(qualified, call.member, ctx, this.cfg);
     }
     return CONTINUE;
   }

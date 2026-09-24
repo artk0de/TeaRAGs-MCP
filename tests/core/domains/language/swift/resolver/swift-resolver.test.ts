@@ -1142,3 +1142,97 @@ describe("SwiftCallResolver — super", () => {
     expect(target).toBeNull();
   });
 });
+
+describe("SwiftCallResolver — a member INHERITED from the superclass", () => {
+  // `DataRequest: Request` — `resume()` / `cancel()` live on `Request`, and a
+  // receiver typed `DataRequest` (a local, a stored property, `self`) dispatches
+  // there statically unless the subclass overrides.
+  const hierarchy = {
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#resume", scope: ["Request"] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+    ],
+    "Sources/DataRequest.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      { symbolId: "DataRequest#cancel", scope: ["DataRequest"] },
+    ],
+  };
+  const classExtends = { DataRequest: "Request" };
+
+  it("resolves a call on a LOCAL of the subclass type to the superclass's member", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("req", "resume"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        symbolTable: table(hierarchy),
+        classExtends,
+        localBindings: { req: [{ line: 5, type: "DataRequest" }] },
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Request.swift", targetSymbolId: "Request#resume" });
+  });
+
+  it("lets the subclass's OWN override win over the inherited member", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("req", "cancel"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        symbolTable: table(hierarchy),
+        classExtends,
+        localBindings: { req: [{ line: 5, type: "DataRequest" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#cancel");
+  });
+
+  it("resolves a STORED PROPERTY of the subclass type to the superclass's member", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request", "resume"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        callerScope: ["DataTask"],
+        symbolTable: table(hierarchy),
+        classExtends,
+        classFieldTypes: { DataTask: { request: "DataRequest" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#resume");
+  });
+
+  it("resolves `self.member()` and a bare call inside the subclass to the inherited member", () => {
+    for (const receiver of ["self", null]) {
+      const target = new SwiftCallResolver().resolve(
+        call(receiver, "resume"),
+        ctx({
+          callerFile: "Sources/DataRequest.swift",
+          callerScope: ["DataRequest"],
+          symbolTable: table(hierarchy),
+          classExtends,
+        }),
+      );
+      expect(target?.targetSymbolId).toBe("Request#resume");
+    }
+  });
+
+  it("does NOT fall through to the superclass when the subclass's own member is AMBIGUOUS", () => {
+    // Two files declaring `DataRequest#resume` is a cross-file ambiguity the
+    // strict gate drops; answering with `Request#resume` instead would pick the
+    // one declaration the source provably does NOT call.
+    const t = table({
+      ...hierarchy,
+      "Sources/A.swift": [{ symbolId: "DataRequest#resume", scope: ["DataRequest"] }],
+      "Sources/B.swift": [{ symbolId: "DataRequest#resume", scope: ["DataRequest"] }],
+    });
+    const target = new SwiftCallResolver().resolve(
+      call("req", "resume"),
+      ctx({
+        callerFile: "Sources/Task.swift",
+        symbolTable: t,
+        classExtends,
+        localBindings: { req: [{ line: 5, type: "DataRequest" }] },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});

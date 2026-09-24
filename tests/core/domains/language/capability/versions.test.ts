@@ -203,7 +203,10 @@ describe("seeded support versions", () => {
       // subscripts, `deinit`, stored-property initializers) the type as
       // `callerScope` via the kernel's opt-in `bodyScope`, and reads the
       // enclosing type as a qualified scope prefix rather than the last segment,
-      // so an index built by walker 6 holds none of the type-body edges.
+      // so an index built by walker 6 holds none of the type-body edges;
+      // walker 8 resolves a member INHERITED from the superclass for every
+      // typed receiver and for `self` / bare calls, so an index built by
+      // walker 7 holds no edge into an inherited member.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -220,7 +223,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 7],
+        ["swift", 8],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

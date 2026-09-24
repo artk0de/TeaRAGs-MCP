@@ -93,6 +93,6 @@ export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolR
 
     const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
     if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
-    return resolveSwiftBoundTypeMember(type.name, call.member, ctx, this.cfg.mode);
+    return resolveSwiftBoundTypeMember(type.name, call.member, ctx, this.cfg);
   }
 }

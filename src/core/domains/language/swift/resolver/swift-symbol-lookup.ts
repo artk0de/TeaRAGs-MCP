@@ -21,7 +21,14 @@
  * declarations of ONE re-opened Swift type back into one candidate.
  */
 
-import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../../../contracts/types/codegraph.js";
+import {
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type SymbolDefinition,
+  type SymbolLookupOptions,
+  type SymbolResolutionTarget,
+} from "../../../../contracts/types/codegraph.js";
 import { hasSwiftOverloadSuffix, isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "./swift-type-name.js";
 
 const SWIFT_SOURCE_EXTENSION = ".swift";
@@ -86,4 +93,22 @@ function collapseReopenedTypeDeclarations(defs: SymbolDefinition[]): SymbolDefin
     const base = stripSwiftOverloadSuffix(def.symbolId);
     return !defs.some((other) => other.symbolId === base && other.relPath === def.relPath);
   });
+}
+
+/**
+ * Resolve `<typeName>#<member>` (instance) then `<typeName>.<member>` (static /
+ * class) over Swift declarations. Instance first because Swift's type members
+ * are overwhelmingly instance-level and a static namesake is the rarer shape.
+ */
+export function lookupSwiftTypeMember(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const instanceHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}#${member}`), mode);
+  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
+  const staticHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}.${member}`), mode);
+  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+  return null;
 }
