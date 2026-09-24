@@ -27,6 +27,12 @@ export interface StableDependenciesOptions {
    * `codegraph.file.instability` declares.
    */
   minConnectionCount?: number;
+  /**
+   * Judge an edge whose source is its target's sole importer
+   * (`PRIVATE_COLLABORATOR_REASON`). Default `false`: such an edge is counted
+   * under `StableDependenciesExclusionCounts.privateCollaborators` instead.
+   */
+  judgePrivateCollaborators?: boolean;
 }
 
 /** One dependency that runs from a more stable file to a less stable one. */
@@ -61,6 +67,13 @@ export interface StableDependenciesExclusionCounts {
   noSymbolEndpoints: number;
   /** An endpoint's connectionCount is below `minConnectionCount`. */
   lowConnectionCount: number;
+  /**
+   * The source is the target's sole importer (`PRIVATE_COLLABORATOR_REASON`):
+   * the target's instability reaches no other dependent, so the SDP premise has
+   * nobody to protect. Checked last, so it counts only edges that would
+   * otherwise have been judged.
+   */
+  privateCollaborators: number;
 }
 
 export interface StableDependenciesSummary {
@@ -81,9 +94,32 @@ export interface NoSymbolEndpointFile {
   excludedEdgeCount: number;
 }
 
+/**
+ * Every violation into one unstable target, as one finding: a target with many
+ * stable dependents is one defect showing up once per dependent.
+ */
+export interface StableDependencyRootCause {
+  targetRelPath: RelPath;
+  targetInstability: number;
+  /** Violations whose target this is — the stable dependents affected. The severity. */
+  violationCount: number;
+  /** The largest `instabilityDelta` among them. */
+  maxInstabilityDelta: number;
+  /** Sources of those violations, by path. */
+  sources: RelPath[];
+  /**
+   * The target has an edge back to at least one of its violating sources: its
+   * instability comes, at least partly, from referencing its own dependents
+   * (a base class naming its subclasses, a concern naming its includers).
+   */
+  cycleWithDependents: boolean;
+}
+
 export interface StableDependenciesReport {
   /** Most severe first: delta, then call weight, then path. */
   violations: StableDependencyViolation[];
+  /** `violations` grouped by target: most violations first, then max delta, then path. */
+  rootCauses: StableDependencyRootCause[];
   summary: StableDependenciesSummary;
   /**
    * Every file that took at least one edge out under `noSymbolEndpoints`, most

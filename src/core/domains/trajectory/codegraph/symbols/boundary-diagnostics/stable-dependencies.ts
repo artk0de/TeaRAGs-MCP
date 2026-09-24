@@ -6,6 +6,7 @@ import type {
   StableDependenciesExclusionCounts,
   StableDependenciesOptions,
   StableDependenciesReport,
+  StableDependencyRootCause,
   StableDependencyViolation,
 } from "./types.js";
 
@@ -17,6 +18,12 @@ export const DEFAULT_SDP_TOLERANCE = 0.2;
  * catches, named for a report: not only re-export barrels.
  */
 export const NO_SYMBOL_ENDPOINT_REASON = "no-symbol endpoint: barrel, type-only or object-literal module";
+
+/**
+ * What the private-collaborator exclusion
+ * (`StableDependenciesExclusionCounts.privateCollaborators`) catches, named for a report.
+ */
+export const PRIVATE_COLLABORATOR_REASON = "private collaborator: source is the target's sole importer";
 
 /**
  * Default `StableDependenciesOptions.minConnectionCount`: the static
@@ -66,7 +73,18 @@ const NO_EDGES: MartinInstability = { instability: 0, connectionCount: 0 };
  *    276 of 1102 files and 891 of 2314 edges. Whether those belong is the SDP
  *    premise review's decision, so the report names every file it excluded
  *    (`noSymbolEndpointFiles`) instead of changing the criterion here;
- * 4. either endpoint's connectionCount is below `minConnectionCount`.
+ * 4. either endpoint's connectionCount is below `minConnectionCount`;
+ * 5. the source is the target's SOLE importer (`PRIVATE_COLLABORATOR_REASON`):
+ *    no other file, walked or not, has an edge into the target (a self-edge
+ *    is no import). The premise is that a volatile dependency destabilises
+ *    its dependents; with one dependent, the target is that file's private
+ *    collaborator — a worker delegating to its own service, a component to
+ *    its private child — and its instability is the source's own business.
+ *    On taxdome (bd tea-rags-mcp-er6mu) 209 of 415 violations were this shape,
+ *    ~25 of a 26 sample noise. `judgePrivateCollaborators` opts back in.
+ *
+ * Violations are also grouped by target into `rootCauses` (see
+ * {@link StableDependencyRootCause}).
  *
  * Test files are not filtered here because they never reach the graph: the
  * codegraph exclusion filter keeps them out unconditionally.
@@ -81,15 +99,18 @@ export function detectStableDependencyViolations(
 ): StableDependenciesReport {
   const tolerance = options.tolerance ?? DEFAULT_SDP_TOLERANCE;
   const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
+  const judgePrivateCollaborators = options.judgePrivateCollaborators ?? false;
   const instabilities = computeFileInstabilities(graph);
   const walkedFiles = new Set<RelPath>(graph.files.map((f) => f.relPath));
   const noSymbolFiles = findNoSymbolFiles(graph);
+  const importers = collectImporters(graph);
   const excludedByNoSymbolFile = new Map<RelPath, number>();
   const excluded: StableDependenciesExclusionCounts = {
     selfEdges: 0,
     unwalkedEndpoints: 0,
     noSymbolEndpoints: 0,
     lowConnectionCount: 0,
+    privateCollaborators: 0,
   };
   const violations: StableDependencyViolation[] = [];
   let consideredEdgeCount = 0;
@@ -110,6 +131,8 @@ export function detectStableDependencyViolations(
       }
     } else if (source.connectionCount < minConnectionCount || target.connectionCount < minConnectionCount) {
       excluded.lowConnectionCount++;
+    } else if (!judgePrivateCollaborators && isSoleImporter(importers, edge.sourceRelPath, edge.targetRelPath)) {
+      excluded.privateCollaborators++;
     } else {
       consideredEdgeCount++;
       const instabilityDelta = target.instability - source.instability;
@@ -132,6 +155,7 @@ export function detectStableDependencyViolations(
   violations.sort(bySeverity);
   return {
     violations,
+    rootCauses: groupRootCauses(violations, graph),
     summary: {
       tolerance,
       minConnectionCount,
@@ -144,6 +168,62 @@ export function detectStableDependencyViolations(
       .map(([relPath, excludedEdgeCount]) => ({ relPath, excludedEdgeCount }))
       .sort((a, b) => b.excludedEdgeCount - a.excludedEdgeCount || compareCodePoints(a.relPath, b.relPath)),
   };
+}
+
+/** Distinct importing files per target; a self-edge is no import. */
+function collectImporters(graph: FileDependencyGraph): Map<RelPath, Set<RelPath>> {
+  const importers = new Map<RelPath, Set<RelPath>>();
+  for (const edge of graph.edges) {
+    if (edge.sourceRelPath === edge.targetRelPath) continue;
+    let sources = importers.get(edge.targetRelPath);
+    if (!sources) importers.set(edge.targetRelPath, (sources = new Set()));
+    sources.add(edge.sourceRelPath);
+  }
+  return importers;
+}
+
+function isSoleImporter(importers: Map<RelPath, Set<RelPath>>, source: RelPath, target: RelPath): boolean {
+  const sources = importers.get(target);
+  return sources?.size === 1 && sources.has(source);
+}
+
+/** Group `violations` (already severity-ordered) by target — see {@link StableDependencyRootCause}. */
+function groupRootCauses(
+  violations: readonly StableDependencyViolation[],
+  graph: FileDependencyGraph,
+): StableDependencyRootCause[] {
+  const byTarget = new Map<RelPath, StableDependencyViolation[]>();
+  for (const v of violations) {
+    const group = byTarget.get(v.targetRelPath);
+    if (group) group.push(v);
+    else byTarget.set(v.targetRelPath, [v]);
+  }
+  const outgoing = new Map<RelPath, Set<RelPath>>();
+  for (const edge of graph.edges) {
+    if (!byTarget.has(edge.sourceRelPath)) continue;
+    let targets = outgoing.get(edge.sourceRelPath);
+    if (!targets) outgoing.set(edge.sourceRelPath, (targets = new Set()));
+    targets.add(edge.targetRelPath);
+  }
+  const rootCauses: StableDependencyRootCause[] = [];
+  for (const [targetRelPath, group] of byTarget) {
+    const sources = [...new Set(group.map((v) => v.sourceRelPath))].sort(compareCodePoints);
+    const referenced = outgoing.get(targetRelPath);
+    rootCauses.push({
+      targetRelPath,
+      targetInstability: group[0].targetInstability,
+      violationCount: group.length,
+      maxInstabilityDelta: Math.max(...group.map((v) => v.instabilityDelta)),
+      sources,
+      cycleWithDependents: referenced !== undefined && sources.some((s) => referenced.has(s)),
+    });
+  }
+  return rootCauses.sort(
+    (a, b) =>
+      b.violationCount - a.violationCount ||
+      b.maxInstabilityDelta - a.maxInstabilityDelta ||
+      compareCodePoints(a.targetRelPath, b.targetRelPath),
+  );
 }
 
 /** Walked files that define no symbol and carry no outgoing call. */
