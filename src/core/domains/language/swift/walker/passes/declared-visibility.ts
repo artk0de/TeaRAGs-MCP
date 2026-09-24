@@ -32,7 +32,7 @@ import { swiftNameOf } from "../name-of.js";
 
 const FILE_BOUNDED_LEVELS: ReadonlySet<string> = new Set(["private", "fileprivate"]);
 
-function swiftVisibility(node: AstNode): DeclaredVisibility {
+export function swiftVisibility(node: AstNode): DeclaredVisibility {
   const modifiers = node.children.find((c) => c.type === "modifiers");
   const fileBounded = modifiers?.children.some(
     (c) => c.type === "visibility_modifier" && FILE_BOUNDED_LEVELS.has(c.text),

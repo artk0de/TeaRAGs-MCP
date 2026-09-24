@@ -32,17 +32,22 @@
  *   5. scopedTypeReceiver   — `Nested.X()` → a type nested in the caller's own
  *                             scope, by its SHORT name. Last of the receiver
  *                             passes, so a local (1) and a property (4) both
- *                             shadow it; the passes below answer no
+ *                             shadow it.
+ *   6. moduleValue          — `AF.X()` → the type of a MODULE-LEVEL value
+ *                             (`let AF = Session.default`), declared in any
+ *                             file (bd tea-rags-mcp-y99pg.30). Last of the
+ *                             receiver passes because module scope is the
+ *                             outermost one; the passes below answer no
  *                             receiver-bearing call at all.
- *   6. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
+ *   7. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
  *                             terminal pass so a common name cannot misroute a
  *                             call that never left its type.
- *   7. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
+ *   8. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
  *                             file. The pass Swift needs and the others do not:
  *                             a type is routinely split across extensions in
  *                             several files, so both same-file passes miss by
  *                             construction on a conformance extension.
- *   8. globalShortName      — terminal, BARE CALLS ONLY.
+ *   9. globalShortName      — terminal, BARE CALLS ONLY.
  *
  * ## There is deliberately no import-receiver pass
  *
@@ -120,6 +125,7 @@ import {
   SwiftExtensionScopeMemberSymbolResolutionStrategy,
   SwiftGlobalShortNameSymbolResolutionStrategy,
   SwiftLocalBindingSymbolResolutionStrategy,
+  SwiftModuleValueSymbolResolutionStrategy,
   SwiftScopedTypeReceiverSymbolResolutionStrategy,
   SwiftSelfMemberSymbolResolutionStrategy,
   SwiftStoredPropertyTypeSymbolResolutionStrategy,
@@ -178,6 +184,7 @@ export class SwiftCallResolver implements CallResolver {
       new SwiftChainedReceiverTypeSymbolResolutionStrategy(cfg),
       new SwiftStoredPropertyTypeSymbolResolutionStrategy(cfg),
       new SwiftScopedTypeReceiverSymbolResolutionStrategy(cfg),
+      new SwiftModuleValueSymbolResolutionStrategy(cfg),
       new SwiftEnclosingBareCallSymbolResolutionStrategy(cfg),
       new SwiftExtensionScopeMemberSymbolResolutionStrategy(cfg),
       new SwiftGlobalShortNameSymbolResolutionStrategy(cfg),
@@ -293,11 +300,12 @@ export class SwiftCallResolver implements CallResolver {
 
   /**
    * The nominal a call's receiver denotes: the superclass for `super`, else
-   * the chain's own fold. An UpperCamelCase receiver nothing in the project
-   * declares is usually an SDK type, but it may as well be a global value the
-   * index has no channel for (Alamofire's `let AF = Session.default`, whose
-   * `AF.request` IS a project call), so it types one only when the generated
-   * SDK substrate declares the name (bd tea-rags-mcp-y99pg.24). A receiver typed `AnyObject` / `AnyClass`
+   * the chain's own fold — which types a module-level value
+   * (Alamofire's `let AF = Session.default`) where the walker published one
+   * (bd tea-rags-mcp-y99pg.30). An UpperCamelCase receiver nothing in the
+   * project declares is usually an SDK type, but it may as well be a global
+   * value an older index has no channel for, so it types one only when the
+   * generated SDK substrate declares the name (bd tea-rags-mcp-y99pg.24). A receiver typed `AnyObject` / `AnyClass`
    * types nothing: see {@link SWIFT_DYNAMIC_LOOKUP_TYPES}.
    */
   private receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {

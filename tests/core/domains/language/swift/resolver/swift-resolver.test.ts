@@ -3149,3 +3149,121 @@ describe("SwiftCallResolver — a construction-initialized field's generic argum
     expect(new SwiftCallResolver().resolve(call("state", "reset", 11), context("value"))).toBeNull();
   });
 });
+
+/**
+ * A MODULE-LEVEL value (bd tea-rags-mcp-y99pg.30): `public let AF =
+ * Session.default` at file scope is visible to every file of the module, and
+ * `AF.request(…)` is a project call. The walker publishes such a value under
+ * the module-scope key `<relPath>::` — typed on `classFieldTypesByClassKey`
+ * where the declaration spells its type, by SPELLING on
+ * `classFieldCallResults` where only the resolver can fold it.
+ */
+describe("SwiftCallResolver — module-level values (bd tea-rags-mcp-y99pg.30)", () => {
+  const t = table({
+    "Sources/Session.swift": [
+      { symbolId: "Session", scope: [] },
+      { symbolId: "Session#request", scope: ["Session"] },
+    ],
+    "Sources/DataRequest.swift": [
+      { symbolId: "DataRequest", scope: [] },
+      { symbolId: "DataRequest#responseDecodable", scope: ["DataRequest"] },
+    ],
+    "Sources/Store.swift": [
+      { symbolId: "Store", scope: [] },
+      { symbolId: "Store#save", scope: ["Store"] },
+      { symbolId: "Other", scope: [] },
+      { symbolId: "Other#request", scope: ["Other"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+    "Sources/DataRequest.swift": [{ typeId: "DataRequest", reopens: false }],
+    "Sources/Store.swift": [
+      { typeId: "Store", reopens: false },
+      { typeId: "Other", reopens: false },
+    ],
+  };
+  const spelled = { "Sources/Alamofire.swift::": { AF: "Session.default" } };
+
+  it("types a module value by folding its spelling in module scope", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("AF", "request"),
+      ctx({
+        callerFile: "Example/Master.swift",
+        callerScope: ["Master", "prepare"],
+        symbolTable: t,
+        typeDeclarations,
+        classFieldCallResults: spelled,
+      }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/Session.swift", targetSymbolId: "Session#request" });
+  });
+
+  it("types a module value its declaration types", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("sharedStore", "save"),
+      ctx({
+        callerFile: "Sources/Caller.swift",
+        symbolTable: t,
+        typeDeclarations,
+        classFieldTypesByClassKey: { "Sources/Globals.swift::": { sharedStore: "Store" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Store#save");
+  });
+
+  it("types a module value as the HEAD of a chain", () => {
+    const target = new SwiftCallResolver().resolve(
+      call('AF.request("https://x")', "responseDecodable"),
+      ctx({
+        callerFile: "Example/Networking.swift",
+        callerScope: ["Networking", "perform"],
+        symbolTable: t,
+        typeDeclarations,
+        classFieldCallResults: spelled,
+        structuredReturnTypes: { "Session#request": { form: "instance", name: "DataRequest" } },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("DataRequest#responseDecodable");
+  });
+
+  it("lets a local of the same name shadow the module value", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("AF", "request"),
+      ctx({
+        callerFile: "Example/Master.swift",
+        symbolTable: t,
+        typeDeclarations,
+        classFieldCallResults: spelled,
+        localBindings: { AF: [{ line: 5, type: "Other" }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Other#request");
+  });
+
+  it("types nothing when two files declare a module value of that name", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("AF", "request"),
+      ctx({
+        callerFile: "Example/Master.swift",
+        symbolTable: t,
+        typeDeclarations,
+        classFieldCallResults: { ...spelled, "Sources/Other.swift::": { AF: "Other.shared" } },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("keeps a module-value receiver in the denominator only for its own type's members", () => {
+    const context = ctx({
+      callerFile: "Example/Master.swift",
+      symbolTable: t,
+      typeDeclarations,
+      classFieldTypesByClassKey: { "Sources/Globals.swift::": { sharedStore: "Store" } },
+    });
+    const resolver = new SwiftCallResolver();
+    // `Other#request` is a namesake: a `Store` cannot reach it.
+    expect(resolver.hasInProjectDefinition(call("sharedStore", "request"), context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("sharedStore", "save"), context)).toBe(true);
+  });
+});

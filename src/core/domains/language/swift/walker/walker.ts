@@ -1822,6 +1822,32 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
   return out;
 }
 
+/** What a module-level value declaration states about the value (bd tea-rags-mcp-y99pg.30). */
+export interface SwiftModuleValueFact {
+  readonly name: string;
+  /** The nominal the declaration spells — an annotation or a CapWords construction. */
+  readonly type?: string;
+  /** Else the right-hand side's value-chain spelling, for the resolver to fold. */
+  readonly spelling?: string;
+}
+
+/**
+ * What a FILE-SCOPE `property_declaration` publishes as a module value, or
+ * null: a single bound name, typed by the same narrow rule a stored property
+ * is ({@link swiftDeclaredPropertyFact}), else spelled by the rule a local's
+ * cross-file right-hand side is ({@link swiftValueChainSpelling}). The caller
+ * owns which nodes are file-scope and which access levels leave the file.
+ */
+export function swiftModuleValueOf(node: AstNode): SwiftModuleValueFact | null {
+  if (node.type !== "property_declaration") return null;
+  const name = singleIdentifierPatternName(node.childForFieldName("name"));
+  if (name === null || SWIFT_PSEUDO_BINDING_NAMES.has(name)) return null;
+  const declared = swiftDeclaredPropertyFact(node);
+  if (declared.nominal) return { name, type: declared.nominal };
+  const spelling = swiftValueChainSpelling(node.childForFieldName("value"));
+  return spelling === null ? null : { name, spelling };
+}
+
 /**
  * The type a `property_declaration` DECLARES, or nothing. Annotation first; on
  * its absence, a CapWords initializer call.

@@ -338,6 +338,9 @@ describe("seeded support versions", () => {
       // java 5, swift 43: bd tea-rags-mcp-ezm9o matches the PascalCase test
       // suffixes case-sensitively, so `Latest.java` / `Latest.swift` enter a
       // graph an index built by the previous walker excluded them from.
+      // swift walker 44: bd tea-rags-mcp-y99pg.30 publishes module-level values
+      // and types receivers naming them, so an index built by walker 43 holds
+      // no edge off `AF.request(…)`.
       // ruby walker 8: bd tea-rags-mcp-nbf8q item 4 caps Ruby's dynamic fan-out
       // at RUBY's own defs-per-member p99, not the polyglot corpus one (taxdome:
       // 19, not 16), so an index built by walker 7 reports as `ambiguous` the
@@ -351,7 +354,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 43],
+        ["swift", 44],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
