@@ -10,10 +10,17 @@ export const capability: LanguageCapability = {
   },
   codegraph: {
     tier: "high",
-    tech: "9-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope and nested-type receivers; no import narrowing",
+    tech: "10-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope, nested-type and module-level-value receivers; no import narrowing",
     summary:
-      "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
+      "10-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type and module-value receivers; no import narrowing",
   },
+  // walker 45: a module-level value (`public let AF = Session.default`) is
+  // published run-global under the module-scope key `<relPath>::` — typed on
+  // `classFieldTypesByClassKey`, else by spelling on `classFieldCallResults`
+  // — and a receiver naming it types by it, through a new `moduleValue` pass
+  // and the chain fold's head (bd tea-rags-mcp-y99pg.30). Measured: Alamofire
+  // TOTAL 0.974 -> 0.980 (1241/1274 -> 1248/1274), Quick unchanged 0.997;
+  // edges +7 / -0, all `AF.*` in the example apps; oracle WRONG unchanged.
   // walker 41: a protocol composition (`Subscriber & Sendable`, `any Sendable &
   // Monitor`) types as its one non-marker protocol; two real protocols type
   // nothing (bd tea-rags-mcp-y99pg.28). Measured: Alamofire TOTAL 0.971 ->
@@ -442,7 +449,7 @@ export const capability: LanguageCapability = {
   // (bd tea-rags-mcp-y99pg.31). Measured: Alamofire TOTAL 0.974 -> 0.976
   // (1241/1274 -> 1243/1273), Quick unchanged 0.997; edges +2 / -0, one SDK
   // site (`DateFormatter.string`) proved external, WRONG unchanged.
-  versions: { chunking: 4, walker: 44, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 45, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

@@ -63,17 +63,17 @@ const SWIFT_SCOPE_SEPARATOR = ".";
  *     with a nested type is still a property access, and that pass's explicit-
  *     `self` DROP must not be reopened here.
  *
- * It steals nothing from the passes below it: `enclosingBareCall` (6) and
- * `globalShortName` (8) answer `call.receiver === null` only, and
- * `extensionScopeMember` (7) answers only `null` / `self` / `Self`. Every one
- * of those declines a receiver-bearing call, so this pass could sit anywhere
- * from 5 to 8 with identical behaviour today — index 5 is the one whose
- * ARGUMENT is stable, since it keeps "receiver passes first, in falling order
- * of evidence; bare-call passes after" true, and it stays correct if a pass
- * below ever grows a receiver arm.
+ * It steals nothing from the passes below it: `moduleValue` (6) answers a
+ * receiver no visible project type names, `enclosingBareCall` (7) and
+ * `globalShortName` (9) answer `call.receiver === null` only, and
+ * `extensionScopeMember` (8) answers only `null` / `self` / `Self`. Index 5
+ * is the one whose ARGUMENT is stable, since it keeps "receiver passes first,
+ * in falling order of evidence; bare-call passes after" true, and it stays
+ * correct if a pass below ever grows a receiver arm.
  *
  * On a receiver that names no declared type in any enclosing scope: CONTINUE.
- * It could still be a module, a global, or a type the index does not hold.
+ * It could still be a module-level value (`moduleValue`, bd
+ * tea-rags-mcp-y99pg.30), or a type the index does not hold.
  */
 export class SwiftScopedTypeReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "scopedTypeReceiver";
