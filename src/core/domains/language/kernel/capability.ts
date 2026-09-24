@@ -16,6 +16,13 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * (2c321ba26) after every existing index stamped its languages at walker 1 —
  * edges moved for every language and no per-language number said so.
  *
+ * walker 3: the resolution runner hands each file the run-global
+ * `classAncestors` / `classPrependedAncestors` / `classExtends` and include-by
+ * index of its own language FAMILY (bd tea-rags-mcp-nbf8q). One bare-name map
+ * let a TypeScript `Error` answer `super`, the MRO and the include-by index for
+ * a Ruby `Error`, so any polyglot index can hold edges resolved on another
+ * language's hierarchy, whichever language the caller was.
+ *
  * codegraphSchema 2: `cg_symbols` gained `start_line` / `end_line` (migration
  * 024) and every writer of `codegraph.symbols.chunk.*` now maps a chunk to its
  * owner through one rule (bd tea-rags-mcp-9i2ow). Payload already on disk was
@@ -25,6 +32,6 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  */
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 1,
-  walker: 2,
+  walker: 3,
   codegraphSchema: 2,
 };

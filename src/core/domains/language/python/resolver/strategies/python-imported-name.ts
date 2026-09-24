@@ -12,6 +12,7 @@ import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
   findPythonImportBinding,
+  lookupPythonSymbols,
   lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
   pythonClassKey,
@@ -480,7 +481,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // OWN `importedBindings` are not reachable from a `CallContext` — see the
     // helper's docblock — so declaration lookup is the mechanism, and it covers
     // `from .columns import *` for free.
-    const origin = reexportOriginFile(member, moduleFile, ctx, this.cfg.mode);
+    const origin = reexportOriginFile(member, moduleFile, ctx, this.cfg.mode, lookupPythonSymbols);
     if (!origin) return null;
     const hopped = pickSingleCandidate(
       ctx.symbolTable.lookup(member).filter((def) => def.relPath === origin),
@@ -521,7 +522,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   private declaringFile(importedName: string, mappedFile: string, ctx: CallContext): string | null {
     const declaredHere = lookupPythonSymbolsByShortName(ctx, importedName).some((def) => def.relPath === mappedFile);
     if (declaredHere) return mappedFile;
-    return reexportOriginFile(importedName, mappedFile, ctx, this.cfg.mode);
+    return reexportOriginFile(importedName, mappedFile, ctx, this.cfg.mode, lookupPythonSymbols);
   }
 
   /**

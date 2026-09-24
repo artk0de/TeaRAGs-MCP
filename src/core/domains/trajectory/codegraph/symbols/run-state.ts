@@ -48,6 +48,7 @@ import {
   type KnownTargetParamTypes,
 } from "./call-arg-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { LanguageFamilyRecord } from "./language-family-record.js";
 import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
@@ -267,6 +268,31 @@ export function buildIncludedBy(
 }
 
 /**
+ * {@link buildIncludedBy} per language family (bd tea-rags-mcp-nbf8q): a family
+ * contributing only prepends still gets its index, and no family's index names
+ * another family's class.
+ */
+const EMPTY_ANCESTRY: Readonly<Record<string, readonly string[]>> =
+  Object.freeze(createIdentifierRecord<readonly string[]>());
+
+function buildIncludedByPerFamily(
+  ancestors: LanguageFamilyRecord<readonly string[]>,
+  prepended: LanguageFamilyRecord<readonly string[]>,
+): LanguageFamilyRecord<string[]> {
+  const families = new Set<string>();
+  for (const [family] of ancestors.families()) families.add(family);
+  for (const [family] of prepended.families()) families.add(family);
+  const out = new LanguageFamilyRecord<string[]>();
+  for (const family of families) {
+    out.setFamily(
+      family,
+      buildIncludedBy(ancestors.peekFamily(family) ?? EMPTY_ANCESTRY, prepended.peekFamily(family) ?? EMPTY_ANCESTRY),
+    );
+  }
+  return out;
+}
+
+/**
  * The run-global maps whose NON-EMPTINESS pass-2 tests per file, to decide
  * between the run-global fact and the calling file's own (bd tea-rags-mcp-8zwl9).
  * `instantiatedTypes` is absent: a `Set` already answers `.size` in O(1).
@@ -368,10 +394,24 @@ export class CodegraphRunState {
 
   /**
    * Per-run aggregation of `FileExtraction.classAncestors` across every file
-   * walked in pass-1, keyed by class: a variable's bound type is usually declared
-   * in a DIFFERENT file than the caller, so per-file ancestor maps are insufficient.
+   * walked in pass-1, keyed by class WITHIN a language family (bd
+   * tea-rags-mcp-nbf8q): a variable's bound type is usually declared in a
+   * DIFFERENT file than the caller, so per-file ancestor maps are insufficient,
+   * and a bare class name is shared across languages, so one run-wide record
+   * let a TypeScript `Error` answer for a Ruby one. Pass-2 reads
+   * {@link ancestorsFor}; {@link ancestors} is the all-family view.
    */
-  ancestors: Record<string, readonly string[]> = createIdentifierRecord();
+  private ancestorsByFamily = new LanguageFamilyRecord<readonly string[]>();
+
+  /** The all-family view of {@link ancestorsByFamily} — never a resolver input (see `LanguageFamilyRecord#view`). */
+  get ancestors(): Record<string, readonly string[]> {
+    return this.ancestorsByFamily.view();
+  }
+
+  /** `language`'s family partition of the run-global ancestor map — stable identity for the run. */
+  ancestorsFor(language: string): Record<string, readonly string[]> {
+    return this.ancestorsByFamily.forLanguage(language);
+  }
 
   /**
    * Per-run set of FQs declared COMPACT (`class A::B::C`), aggregated from
@@ -383,25 +423,58 @@ export class CodegraphRunState {
 
   /**
    * Per-run aggregation of `FileExtraction.classPrependedAncestors` (bd
-   * tea-rags-mcp-3jvn). Same lifecycle as `ancestors`; walked BEFORE the bound
-   * class itself so prepended modules' methods shadow the class's own.
+   * tea-rags-mcp-3jvn). Same lifecycle and family partitioning as `ancestors`;
+   * walked BEFORE the bound class itself so prepended modules' methods shadow
+   * the class's own.
    */
-  prependedAncestors: Record<string, readonly string[]> = createIdentifierRecord();
+  private prependedAncestorsByFamily = new LanguageFamilyRecord<readonly string[]>();
+
+  /** The all-family view of {@link prependedAncestorsByFamily} — never a resolver input. */
+  get prependedAncestors(): Record<string, readonly string[]> {
+    return this.prependedAncestorsByFamily.view();
+  }
+
+  /** `language`'s family partition of the run-global prepended-ancestor map. */
+  prependedAncestorsFor(language: string): Record<string, readonly string[]> {
+    return this.prependedAncestorsByFamily.forLanguage(language);
+  }
 
   /**
-   * Reverse include-by index built ONCE from the frozen ancestor + prepended maps
-   * at the barrier, not per file — `buildIncludedBy` has an inner O(n²) scan. Pass-2
-   * reads it only when BOTH resolver ancestor inputs ARE the run-global maps; the
-   * per-file fallback (single-file / test mode) still computes fresh.
+   * Reverse include-by index built ONCE per family from the frozen ancestor +
+   * prepended partitions at the barrier, not per file — `buildIncludedBy` has an
+   * inner O(n²) scan. Pass-2 reads it only when BOTH resolver ancestor inputs ARE
+   * the family's run-global partitions; the per-file fallback (single-file / test
+   * mode) still computes fresh.
    */
-  includedBy: Record<string, string[]> = createIdentifierRecord();
+  private includedByFamily = new LanguageFamilyRecord<string[]>();
+
+  /** The all-family view of the include-by index — never a resolver input. */
+  get includedBy(): Record<string, string[]> {
+    return this.includedByFamily.view();
+  }
+
+  /** `language`'s family include-by index, as built at the barrier. */
+  includedByFor(language: string): Record<string, string[]> {
+    return this.includedByFamily.forLanguage(language);
+  }
 
   /**
    * Per-run aggregation of `FileExtraction.classExtends` (bd tea-rags-mcp-d29r):
    * single-inheritance parent map merged across files, so `super()` routes to the
-   * parent regardless of which file declares it.
+   * parent regardless of which file declares it. Partitioned by language family
+   * like `ancestors` (bd tea-rags-mcp-nbf8q).
    */
-  classExtends: Record<string, string> = createIdentifierRecord();
+  private classExtendsByFamily = new LanguageFamilyRecord<string>();
+
+  /** The all-family view of {@link classExtendsByFamily} — never a resolver input. */
+  get classExtends(): Record<string, string> {
+    return this.classExtendsByFamily.view();
+  }
+
+  /** `language`'s family partition of the run-global single-inheritance map. */
+  classExtendsFor(language: string): Record<string, string> {
+    return this.classExtendsByFamily.forLanguage(language);
+  }
 
   /**
    * Per-run aggregation of `FileExtraction.classSchemaTables` (bd
@@ -669,26 +742,23 @@ export class CodegraphRunState {
   private readonly pass1Hydrators: {
     readonly [M in HydratedRunGlobalMapField]: (slice: Pass1AggregateSlice) => void;
   } = {
+    // The three class-name maps hydrate into the SLICE's language family (bd
+    // tea-rags-mcp-nbf8q), so batch-wins is judged within a family: a walked
+    // Ruby `Error` outranks a persisted Ruby one and never a TypeScript one.
     ancestors: (slice) => {
-      for (const [k, v] of Object.entries(slice.classAncestors ?? {})) {
-        if (k in this.ancestors) continue;
-        this.ancestors[k] = v;
-        this.markContributed("ancestors");
-      }
+      this.mergeIntoFamily(this.ancestorsByFamily, slice.language, slice.classAncestors, "ancestors", "keep");
     },
     prependedAncestors: (slice) => {
-      for (const [k, v] of Object.entries(slice.classPrependedAncestors ?? {})) {
-        if (k in this.prependedAncestors) continue;
-        this.prependedAncestors[k] = v;
-        this.markContributed("prependedAncestors");
-      }
+      this.mergeIntoFamily(
+        this.prependedAncestorsByFamily,
+        slice.language,
+        slice.classPrependedAncestors,
+        "prependedAncestors",
+        "keep",
+      );
     },
     classExtends: (slice) => {
-      for (const [k, v] of Object.entries(slice.classExtends ?? {})) {
-        if (k in this.classExtends) continue;
-        this.classExtends[k] = v;
-        this.markContributed("classExtends");
-      }
+      this.mergeIntoFamily(this.classExtendsByFamily, slice.language, slice.classExtends, "classExtends", "keep");
     },
     compactClasses: (slice) => {
       for (const fq of slice.compactDeclaredClasses ?? []) this.compactClasses.add(fq);
@@ -790,6 +860,30 @@ export class CodegraphRunState {
   }
 
   /**
+   * Fold one file's class-name map into `language`'s family partition (bd
+   * tea-rags-mcp-nbf8q). `"overwrite"` is pass-1's last-write-wins, `"keep"` the
+   * barrier hydration's batch-wins. A file contributing no entry creates no
+   * partition, so a single-language run keeps exactly one.
+   */
+  private mergeIntoFamily<V>(
+    store: LanguageFamilyRecord<V>,
+    language: string,
+    source: Readonly<Record<string, V>> | undefined,
+    name: RunGlobalMapName,
+    onExisting: "overwrite" | "keep",
+  ): void {
+    if (source === undefined) return;
+    const entries = Object.entries(source);
+    if (entries.length === 0) return;
+    const partition = store.forLanguage(language);
+    for (const [k, v] of entries) {
+      if (onExisting === "keep" && Object.hasOwn(partition, k)) continue;
+      partition[k] = v;
+      this.markContributed(name);
+    }
+  }
+
+  /**
    * Forget contributions for the maps a reset seam just emptied. Defaults to all
    * six; the seams clear DIFFERENT field sets — `drainMetrics`'s real-run branch
    * keeps four maps alive, and a flag cleared there would send pass-2 to the
@@ -872,12 +966,17 @@ export class CodegraphRunState {
     for (const source of this.schemaColumnSources) {
       const snapshot = identifierEntry(this.schemaSnapshots, source.schemaRelPath);
       if (snapshot === undefined) continue;
-      const models = collectSchemaColumnModels({
-        classAncestors: this.ancestors,
-        declaredTables: this.schemaTables,
-        modelBaseClasses: source.modelBaseClasses,
-        symbolTable,
-      });
+      // Per family (bd tea-rags-mcp-nbf8q): a model's ancestry is walked inside
+      // the namespace that declared it, so a namesake in another language can
+      // neither hide a model nor lend it a base.
+      const models = [...this.ancestorsByFamily.families()].flatMap(([, classAncestors]) =>
+        collectSchemaColumnModels({
+          classAncestors,
+          declaredTables: this.schemaTables,
+          modelBaseClasses: source.modelBaseClasses,
+          symbolTable,
+        }),
+      );
       const {
         definitions: synthesized,
         returnTypes: synthesizedTypes,
@@ -967,7 +1066,7 @@ export class CodegraphRunState {
       await this.hydratePersistedPass1Aggregates(loadPersistedPass1Aggregates);
     }
     this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
-    this.includedBy = buildIncludedBy(this.ancestors, this.prependedAncestors);
+    this.includedByFamily = buildIncludedByPerFamily(this.ancestorsByFamily, this.prependedAncestorsByFamily);
     // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo): only here are the
     // ancestry map (which classes are models) and the `self.table_name` overrides
     // both complete. The column VALUE types are held back and merged LAST (below).
@@ -998,8 +1097,7 @@ export class CodegraphRunState {
         [...this.selfInstantiatingClassMethods, ...Object.keys(this.selfDispatchTemplates)],
         this.structuredReturnTypes,
         selfDispatchProbe.relatedConcreteTypes,
-        (typeName) =>
-          symbolTable.lookup(typeName).length > 0 || identifierEntry(this.ancestors, typeName) !== undefined,
+        (typeName) => symbolTable.lookup(typeName).length > 0 || this.ancestorsByFamily.hasInAnyFamily(typeName),
       );
       for (const [key, ref] of Object.entries(entryReturnTypes)) {
         this.structuredReturnTypes[key] = ref;
@@ -1069,15 +1167,15 @@ export class CodegraphRunState {
     } = this.stats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.stats = createEmptyRunStats();
-      this.ancestors = createIdentifierRecord();
+      this.ancestorsByFamily = new LanguageFamilyRecord();
       this.compactClasses = new Set();
       this.gemfileContent = undefined;
       this.gemfileLoaded = false;
       this.declaredDependencies = undefined;
       this.declaredDependenciesLoaded = false;
       this.projectRoot = undefined;
-      this.prependedAncestors = createIdentifierRecord();
-      this.classExtends = createIdentifierRecord();
+      this.prependedAncestorsByFamily = new LanguageFamilyRecord();
+      this.classExtendsByFamily = new LanguageFamilyRecord();
       this.schemaTables = createIdentifierRecord();
       this.schemaSnapshots = createIdentifierRecord();
       this.schemaSnapshotsLoaded = false;
@@ -1150,7 +1248,7 @@ export class CodegraphRunState {
       );
     }
     this.stats = createEmptyRunStats();
-    this.ancestors = createIdentifierRecord();
+    this.ancestorsByFamily = new LanguageFamilyRecord();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1159,7 +1257,7 @@ export class CodegraphRunState {
     this.projectRoot = undefined;
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
-    this.prependedAncestors = createIdentifierRecord();
+    this.prependedAncestorsByFamily = new LanguageFamilyRecord();
     // ONLY these two: the real-run branch deliberately leaves classExtends,
     // returnTypes, ivarTypes and structuredReturnTypes standing, and clearing
     // their flags here would send pass-2 to the per-file fallback while the
@@ -1251,7 +1349,7 @@ export class CodegraphRunState {
    * `drainMetrics` owns read-and-clear of the tally.
    */
   clearForNextRun(): void {
-    this.ancestors = createIdentifierRecord();
+    this.ancestorsByFamily = new LanguageFamilyRecord();
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
     this.mirroredRelPaths.clear();
@@ -1264,9 +1362,9 @@ export class CodegraphRunState {
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
     this.beginRunScope();
-    this.prependedAncestors = createIdentifierRecord();
-    this.includedBy = createIdentifierRecord();
-    this.classExtends = createIdentifierRecord();
+    this.prependedAncestorsByFamily = new LanguageFamilyRecord();
+    this.includedByFamily = new LanguageFamilyRecord();
+    this.classExtendsByFamily = new LanguageFamilyRecord();
     this.schemaTables = createIdentifierRecord();
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
@@ -1297,7 +1395,7 @@ export class CodegraphRunState {
    * `provider-run-reset-seams.test.ts`.
    */
   clearAll(): void {
-    this.ancestors = createIdentifierRecord();
+    this.ancestorsByFamily = new LanguageFamilyRecord();
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
     this.mirroredRelPaths.clear();
@@ -1310,8 +1408,8 @@ export class CodegraphRunState {
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
     this.beginRunScope();
-    this.prependedAncestors = createIdentifierRecord();
-    this.classExtends = createIdentifierRecord();
+    this.prependedAncestorsByFamily = new LanguageFamilyRecord();
+    this.classExtendsByFamily = new LanguageFamilyRecord();
     this.schemaTables = createIdentifierRecord();
     this.schemaSnapshots = createIdentifierRecord();
     this.schemaSnapshotsLoaded = false;
@@ -1365,27 +1463,20 @@ export class CodegraphRunState {
       if (relPaths === undefined) this.extractedRelPathsByLanguage.set(extraction.language, [extraction.relPath]);
       else relPaths.push(extraction.relPath);
     }
-    if (extraction.classAncestors) {
-      for (const [k, v] of Object.entries(extraction.classAncestors)) {
-        this.ancestors[k] = v;
-        this.markContributed("ancestors");
-      }
-    }
+    // Class-name maps land in the file's language FAMILY (bd tea-rags-mcp-nbf8q).
+    const { language } = extraction;
+    this.mergeIntoFamily(this.ancestorsByFamily, language, extraction.classAncestors, "ancestors", "overwrite");
     if (extraction.compactDeclaredClasses) {
       for (const fq of extraction.compactDeclaredClasses) this.compactClasses.add(fq);
     }
-    if (extraction.classPrependedAncestors) {
-      for (const [k, v] of Object.entries(extraction.classPrependedAncestors)) {
-        this.prependedAncestors[k] = v;
-        this.markContributed("prependedAncestors");
-      }
-    }
-    if (extraction.classExtends) {
-      for (const [k, v] of Object.entries(extraction.classExtends)) {
-        this.classExtends[k] = v;
-        this.markContributed("classExtends");
-      }
-    }
+    this.mergeIntoFamily(
+      this.prependedAncestorsByFamily,
+      language,
+      extraction.classPrependedAncestors,
+      "prependedAncestors",
+      "overwrite",
+    );
+    this.mergeIntoFamily(this.classExtendsByFamily, language, extraction.classExtends, "classExtends", "overwrite");
     // Explicit ORM table overrides (`self.table_name`), run-global so the barrier's
     // schema-column pre-pass sees every declaration (bd tea-rags-mcp-8l5fo).
     if (extraction.classSchemaTables) {

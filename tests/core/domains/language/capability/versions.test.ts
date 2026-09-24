@@ -70,7 +70,8 @@ describe("resolveLanguageCodeVersions", () => {
 
     // codegraphSchema 2: bd tea-rags-mcp-9i2ow — cg_symbols line ranges and the
     // one chunk-owner rule for every writer of codegraph chunk signals.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 2, codegraphSchema: 2 });
+    // walker 3: bd tea-rags-mcp-nbf8q — run-global class-name maps per family.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 3, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -80,7 +81,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(2);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(3);
   });
 });
 
@@ -322,17 +323,23 @@ describe("seeded support versions", () => {
       // swift walker 24: that fix merged onto swift walker 23, which had moved
       // independently (bd tea-rags-mcp-y99pg), so neither parent's index holds
       // the merged extraction.
-      // typescript 14, javascript 6, python 11, java 4, rust 4, go 6, swift 42 (37 on its branch, merged onto 41):
+      // typescript 14, javascript 6, java 4, rust 4, go 6, swift 42 (37 on its branch, merged onto 41):
       // bd tea-rags-mcp-jwjyr.1 records each language's DECLARED visibility on
       // `ChunkExtraction.visibility` (ruby already did), so an index built by
       // the previous walker holds a NULL `cg_symbols.visibility` for every
       // symbol of these languages until the recompute rewrites it.
+      // python walker 11 / 12, ruby walker 7: bd tea-rags-mcp-nbf8q gives the
+      // package re-export hop a Python-only lookup, and both facades answer
+      // `hasInProjectDefinition` from their own files, so a miss whose only
+      // namesake is another language's moves out of the charged bucket.
+      // python 13: jwjyr.1 (11) and nbf8q (11, 12) bumped from 10 on separate
+      // branches and were merged.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 14],
         ["javascript", 6],
-        ["python", 11],
-        ["ruby", 6],
+        ["python", 13],
+        ["ruby", 7],
         ["java", 4],
         ["rust", 4],
         ["go", 6],

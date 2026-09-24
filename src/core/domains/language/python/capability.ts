@@ -53,5 +53,16 @@ export const capability: LanguageCapability = {
   // walker 11: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — a name-mangled `__name` method as private — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
-  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
+  // walker 11 (on its own branch): bd tea-rags-mcp-nbf8q — the package re-export hop
+  // (`reexportOriginFile`) asks a Python-only lookup. A namesake another
+  // language declares no longer makes the hop ambiguous or lands a Python
+  // import on a `.ts` file, so imported-name, module-member and ancestor-base
+  // edges move on polyglot repos.
+  // walker 12: bd tea-rags-mcp-nbf8q — the facade answers
+  // `hasInProjectDefinition` from Python files only, so a miss whose only
+  // namesake is a `.ts` / `.rb` declaration books as `noInProjectDef` instead of
+  // `missWithInProjectDef`. No edge moves; the persisted resolve rate does.
+  // walker 13: the two branches above bumped 10 -> 11 independently and were
+  // merged, so neither parent's index holds the merged extraction.
+  versions: { chunking: 1, walker: 13, codegraphSchema: 2 },
 };

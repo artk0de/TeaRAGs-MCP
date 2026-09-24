@@ -62,7 +62,12 @@ import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { CONE_MAX_DEFAULT, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
+import {
+  CONE_MAX_DEFAULT,
+  lookupPythonSymbolsByShortName,
+  PythonConeTypeLocator,
+  type ResolverConfig,
+} from "./strategies/index.js";
 
 /** Parse `CODEGRAPH_PY_CONE_MAX`; fall back to the Python default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -225,5 +230,17 @@ export class PythonCallResolver implements CallResolver {
    */
   targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
     return this.external.targetsCoreAmbiguousMember(call, ctx);
+  }
+
+  /**
+   * Whether a PYTHON file declares the member — the miss classifier's
+   * denominator question (bd tea-rags-mcp-nbf8q). The chain only ever lands on
+   * Python files (`lookupPythonSymbolsByShortName`, bd tea-rags-mcp-w205u), so
+   * a namesake only a `.ts` / `.rb` file declares is no edge this call can
+   * have; the runner's unfiltered fallback charged it as
+   * `missWithInProjectDef` anyway.
+   */
+  hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
+    return lookupPythonSymbolsByShortName(ctx, call.member).length > 0;
   }
 }

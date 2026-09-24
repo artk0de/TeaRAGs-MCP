@@ -39,7 +39,7 @@ const PIN_TEST = "navigator-enumerations.test.ts";
  */
 const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> = {
   diagnostics: ["typescript"],
-  hasInProjectDefinition: ["javascript", "swift", "typescript"],
+  hasInProjectDefinition: ["javascript", "python", "ruby", "swift", "typescript"],
   prepareResolvePass: ["go", "typescript"],
   resolveFileEdges: ["javascript", "python", "ruby", "typescript"],
   targetsCoreAmbiguousMember: ["python", "ruby"],

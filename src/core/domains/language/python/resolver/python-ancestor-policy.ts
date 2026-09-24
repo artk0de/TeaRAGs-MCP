@@ -67,6 +67,7 @@ import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
+  lookupPythonSymbols,
   lookupPythonSymbolsByShortName,
   parsePythonClassKey,
   pythonClassKey,
@@ -243,7 +244,7 @@ function resolveOneBaseSpelling(
   if (moduleFile === null) return UNKNOWN_BASE;
   const direct = classKeyIn(className, moduleFile, ctx);
   if (direct.kind === "project") return direct;
-  const origin = reexportOriginFile(className, moduleFile, ctx, mode);
+  const origin = reexportOriginFile(className, moduleFile, ctx, mode, lookupPythonSymbols);
   return origin === null ? UNKNOWN_BASE : classKeyIn(className, origin, ctx);
 }
 
