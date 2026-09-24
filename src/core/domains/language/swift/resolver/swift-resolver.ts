@@ -128,7 +128,11 @@ import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { createSwiftReceiverTypePorts } from "./swift-receiver-type-ports.js";
 import { SWIFT_SDK_TYPE_NAMES } from "./swift-sdk-types.js";
-import { lookupSwiftSymbolsByShortName, swiftMemberCandidates } from "./swift-symbol-lookup.js";
+import {
+  lookupSwiftBareNameDefinitions,
+  lookupSwiftSymbolsByShortName,
+  swiftMemberCandidates,
+} from "./swift-symbol-lookup.js";
 import { isSwiftReopenedOnlyType, swiftDeclaringFiles, swiftExtensionDeclaresInit } from "./swift-type-declarations.js";
 import { isSwiftTypeDeclarationId, mayBeSwiftSdkProtocol, stripSwiftOverloadSuffix } from "./swift-type-name.js";
 
@@ -199,22 +203,32 @@ export class SwiftCallResolver implements CallResolver {
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
     const defs = lookupSwiftSymbolsByShortName(ctx, call.member);
     if (defs.length === 0) return false;
-    if (call.receiver === null) {
-      // A construction of a type the project only EXTENDS runs an SDK
-      // initializer unless an extension declares one the call's argument
-      // labels fit (bd tea-rags-mcp-y99pg.1, .11): `Result { try … }` runs
-      // the standard library's `init(catching:)` beside a project
-      // `init(value:error:)`.
-      if (defs.every((def) => isReopenedOnlyTypeId(def.symbolId, ctx))) {
-        return defs.some((def) =>
-          swiftExtensionDeclaresInit(stripSwiftOverloadSuffix(def.symbolId), (id) =>
-            swiftMemberCandidates(ctx, id, call),
-          ),
-        );
-      }
-      return true;
-    }
+    if (call.receiver === null) return this.bareNameMayReach(call, ctx);
     return this.receiverMayReach(call, ctx, defs);
+  }
+
+  /**
+   * Whether a BARE call can reach a project declaration. A nested type whose
+   * container does not enclose the caller is invisible to the unqualified
+   * name (bd tea-rags-mcp-y99pg.15) — `Result(value:error:)` outside
+   * `PathMonitor` names the standard library's `Result`.
+   */
+  private bareNameMayReach(call: CallRef, ctx: CallContext): boolean {
+    const defs = lookupSwiftBareNameDefinitions(ctx, call.member);
+    if (defs.length === 0) return false;
+    // A construction of a type the project only EXTENDS runs an SDK
+    // initializer unless an extension declares one the call's argument
+    // labels fit (bd tea-rags-mcp-y99pg.1, .11): `Result { try … }` runs
+    // the standard library's `init(catching:)` beside a project
+    // `init(value:error:)`.
+    if (defs.every((def) => isReopenedOnlyTypeId(def.symbolId, ctx))) {
+      return defs.some((def) =>
+        swiftExtensionDeclaresInit(stripSwiftOverloadSuffix(def.symbolId), (id) =>
+          swiftMemberCandidates(ctx, id, call),
+        ),
+      );
+    }
+    return true;
   }
 
   /**

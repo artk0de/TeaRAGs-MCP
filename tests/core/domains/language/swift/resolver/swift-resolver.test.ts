@@ -1552,8 +1552,9 @@ describe("SwiftCallResolver — a type's declaration versus its re-openings", ()
       symbolTable: withInit,
       typeDeclarations: { "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }] },
     });
-    // Which initializer runs is an argument-label question; until labels are
-    // read, the extension that declares one keeps the edge it had before.
+    // Which initializer runs is an argument-label question; a call carrying
+    // no label evidence keeps the edge into the extension that declares one
+    // (label-narrowed below, bd tea-rags-mcp-y99pg.15).
     expect(resolver.resolve(site, context)).toEqual({
       targetRelPath: "Sources/URLRequest+Alamofire.swift",
       targetSymbolId: "URLRequest",
@@ -2369,5 +2370,101 @@ describe("SwiftCallResolver — an Array receiver reaches `extension [T]` (bd te
     const resolver = new SwiftCallResolver();
     expect(resolver.resolve(call("headers", "index"), context)?.targetSymbolId).toBe("[HTTPHeader]#index");
     expect(resolver.hasInProjectDefinition(call("headers", "sort"), context)).toBe(false);
+  });
+});
+
+describe("SwiftCallResolver — a construction picks the extension whose initializer its labels fit", () => {
+  function reopenedTwice(): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    const def = (relPath: string, symbolId: string, scope: string[], extra: object = {}) => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: (symbolId.split(/[#.]/).pop() ?? symbolId).replace(/~\d+$/, ""),
+      relPath,
+      scope,
+      ...extra,
+    });
+    t.upsertFile("Sources/URLConvertible.swift", [
+      def("Sources/URLConvertible.swift", "URLRequest", []),
+      def("Sources/URLConvertible.swift", "URLRequest#init", ["URLRequest"], {
+        arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+        kwargs: { required: ["url", "method"], optional: ["headers"], hasSplat: false },
+        acceptsBlock: false,
+      }),
+    ]);
+    t.upsertFile("Sources/URLRequest+Alamofire.swift", [
+      def("Sources/URLRequest+Alamofire.swift", "URLRequest", []),
+      def("Sources/URLRequest+Alamofire.swift", "URLRequest#validate", ["URLRequest"]),
+    ]);
+    return t;
+  }
+  const typeDeclarations = {
+    "Sources/URLConvertible.swift": [{ typeId: "URLRequest", reopens: true }],
+    "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
+  };
+
+  it("resolves into the file whose extension declares the fitting initializer", () => {
+    const context = ctx({ callerFile: "Sources/Session.swift", symbolTable: reopenedTwice(), typeDeclarations });
+    const site = {
+      ...call(null, "URLRequest"),
+      argCount: 0,
+      kwargKeys: ["url", "method", "headers"],
+      passesBlock: false,
+    };
+    expect(new SwiftCallResolver().resolve(site, context)).toEqual({
+      targetRelPath: "Sources/URLConvertible.swift",
+      targetSymbolId: "URLRequest",
+    });
+  });
+
+  it("emits nothing when no extension initializer takes the labels — the SDK's runs", () => {
+    const context = ctx({ callerFile: "Sources/Session.swift", symbolTable: reopenedTwice(), typeDeclarations });
+    const site = { ...call(null, "URLRequest"), argCount: 0, kwargKeys: ["url"], passesBlock: false };
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(site, context)).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(false);
+  });
+});
+
+describe("SwiftCallResolver — a bare construction does not see another type's nested namesake", () => {
+  const nested = table({
+    "Sources/Result+Alamofire.swift": [
+      { symbolId: "Result", scope: [] },
+      { symbolId: "Result#init", scope: ["Result"] },
+    ],
+    "Sources/OfflineRetrier.swift": [
+      { symbolId: "PathMonitor", scope: [] },
+      { symbolId: "PathMonitor.Result", scope: ["PathMonitor"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Result+Alamofire.swift": [{ typeId: "Result", reopens: true }],
+    "Sources/OfflineRetrier.swift": [
+      { typeId: "PathMonitor", reopens: false },
+      { typeId: "PathMonitor.Result", reopens: false },
+    ],
+  };
+
+  it("reaches the project's Result extension from outside PathMonitor", () => {
+    const context = ctx({
+      callerFile: "Sources/WebSocketRequest.swift",
+      callerScope: ["WebSocketRequest", "send"],
+      symbolTable: nested,
+      typeDeclarations,
+    });
+    expect(new SwiftCallResolver().resolve(call(null, "Result"), context)).toEqual({
+      targetRelPath: "Sources/Result+Alamofire.swift",
+      targetSymbolId: "Result",
+    });
+  });
+
+  it("still sees the nested type from inside its container", () => {
+    const context = ctx({
+      callerFile: "Sources/OfflineRetrier.swift",
+      callerScope: ["PathMonitor", "startListening"],
+      symbolTable: nested,
+      typeDeclarations,
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call(null, "Result"), context)).toBe(true);
   });
 });

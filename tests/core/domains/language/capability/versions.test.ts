@@ -263,6 +263,9 @@ describe("seeded support versions", () => {
       // run persisted is lower than this build reports.
       // swift walker 28: array and dictionary values bind Array / Dictionary, so an
       // index built by walker 27 has no edge into any project Array extension.
+      // swift walker 29: extension-initializer constructions and bare names shadowed
+      // by an unrelated nested type now resolve, so an index built by walker 28 lacks
+      // those edges.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -297,7 +300,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 28],
+        ["swift", 29],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

@@ -63,6 +63,28 @@ export function lookupSwiftSymbolsByShortName(
 }
 
 /**
+ * The declarations an UNQUALIFIED name can denote at the call site
+ * (bd tea-rags-mcp-y99pg.15): the short-name hits minus every NESTED type
+ * whose container does not enclose the caller. Swift resolves a bare `Result`
+ * lexically, so `PathMonitor.Result` is invisible from `WebSocketRequest` and
+ * the name there is the standard library's `Result` — which the project may
+ * extend. Members and top-level declarations are kept as they were.
+ */
+export function lookupSwiftBareNameDefinitions(ctx: CallContext, name: string): SymbolDefinition[] {
+  const enclosing = swiftEnclosingTypeIds(ctx);
+  return lookupSwiftSymbolsByShortName(ctx, name).filter((def) => nestedTypeVisible(def.symbolId, enclosing));
+}
+
+function nestedTypeVisible(symbolId: string, enclosing: readonly string[]): boolean {
+  if (!isSwiftTypeDeclarationId(symbolId)) return true;
+  const base = stripSwiftOverloadSuffix(symbolId);
+  const cut = base.lastIndexOf(".");
+  if (cut < 0) return true;
+  const container = base.slice(0, cut);
+  return enclosing.some((id) => id === container || id.startsWith(`${container}.`));
+}
+
+/**
  * Drop the re-openings of a type re-opened ACROSS files (bd tea-rags-mcp-y99pg.1).
  *
  * `World.swift` declares `World` and `World+DSL.swift` extends it: both compose
