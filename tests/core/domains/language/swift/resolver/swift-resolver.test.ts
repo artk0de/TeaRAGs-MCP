@@ -3502,3 +3502,69 @@ describe("SwiftCallResolver — a protocol extension's `where Self` constraints 
     expect(new SwiftCallResolver().resolve(call(null, "other", 25), within)?.targetSymbolId).toBe("Download#other");
   });
 });
+
+/**
+ * `$result` on a property-wrapped stored property (bd tea-rags-mcp-y99pg.33)
+ * is the wrapper's `projectedValue` — Swift synthesizes it only when the
+ * outermost wrapper declares one. `@Published var result` projects a
+ * `Published<Value>.Publisher`, so `$result.compactMap(\.self).map { … }` is
+ * Combine's `Publisher.map`, and a project `map` on an unrelated type is a
+ * namesake the site can never reach.
+ */
+describe("SwiftCallResolver — a property wrapper's projected value `$name` (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/DataResponse.swift": [
+      { symbolId: "DataResponse", scope: [] },
+      { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+    ],
+    "Sources/Guarded.swift": [
+      { symbolId: "Guarded", scope: [] },
+      { symbolId: "GuardedProjection", scope: [] },
+      { symbolId: "GuardedProjection#reset", scope: ["GuardedProjection"] },
+      { symbolId: "GuardedProjection#map", scope: ["GuardedProjection"] },
+    ],
+    "Example/Networking.swift": [
+      { symbolId: "Networking", scope: [] },
+      { symbolId: "Networking#init", scope: ["Networking"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/DataResponse.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/Guarded.swift": [
+      { typeId: "Guarded", reopens: false },
+      { typeId: "GuardedProjection", reopens: false },
+    ],
+    "Example/Networking.swift": [
+      {
+        typeId: "Networking",
+        reopens: false,
+        propertyAttributeTypes: { result: ["Published"], state: ["Guarded"], level: ["MainActor"] },
+      },
+    ],
+  };
+  const within = ctx({
+    callerFile: "Example/Networking.swift",
+    callerScope: ["Networking", "init"],
+    symbolTable: t,
+    typeDeclarations,
+    classFieldTypesByClassKey: {
+      "Sources/Guarded.swift::Guarded": { wrappedValue: "State", projectedValue: "GuardedProjection" },
+    },
+  });
+
+  it("types `$name` as an SDK wrapper's projected value, proving Combine's `map` external", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("$result\n    .compactMap(\\.self)", "map"), within)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("self.$result", "map"), within)).toBe(false);
+  });
+
+  it("types `$name` as a project wrapper's projected value, and resolves on it", () => {
+    expect(new SwiftCallResolver().resolve(call("$state", "reset"), within)?.targetSymbolId).toBe(
+      "GuardedProjection#reset",
+    );
+  });
+
+  it("types nothing through an attribute that is not a property wrapper", () => {
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("$level", "map"), within)).toBe(true);
+  });
+});

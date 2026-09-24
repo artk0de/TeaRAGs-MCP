@@ -44,6 +44,8 @@ interface SwiftTypeDeclarationSets {
   readonly functionAliases: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
   readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
+  /** typeId → property → its attribute types, the wrapper candidates (bd tea-rags-mcp-y99pg.33). */
+  readonly propertyAttributes: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -135,6 +137,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const spellings = new Map<string, string[]>();
   const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
+  const propertyAttributes = new Map<string, Map<string, readonly string[]>>();
   const initializers = new Map<string, GenericInitializerFact[]>();
   const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
   // Sorted, so which file's clause comes first is a property of the project
@@ -155,6 +158,11 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         constructions.push({ owner: fact.typeId, field, construction });
       }
       mergeClosureParameters(closureParameters, fact);
+      for (const [field, types] of Object.entries(fact.propertyAttributeTypes ?? {})) {
+        const fields = propertyAttributes.get(fact.typeId) ?? new Map<string, readonly string[]>();
+        if (!fields.has(field)) fields.set(field, types);
+        propertyAttributes.set(fact.typeId, fields);
+      }
       if (fact.functionAliasReturns !== undefined && !functionAliases.has(fact.typeId)) {
         functionAliases.set(fact.typeId, fact.functionAliasReturns);
       }
@@ -194,6 +202,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     spellings,
     functionAliases,
     enumCases,
+    propertyAttributes,
   };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
@@ -322,6 +331,15 @@ export function swiftFunctionAliasReturn(
     if (table !== undefined && Object.hasOwn(table, alias)) return { returned: table[alias], declaredIn: scope };
   }
   return undefined;
+}
+
+/**
+ * The attribute types the property `field` of `typeId` is declared with, in
+ * source order — its wrapper candidates (bd tea-rags-mcp-y99pg.33). Empty
+ * when it carries none or the channel is absent.
+ */
+export function swiftPropertyAttributeTypes(typeId: string, field: string, ctx: CallContext): readonly string[] {
+  return setsFor(ctx)?.propertyAttributes.get(typeId)?.get(field) ?? [];
 }
 
 /**

@@ -1956,3 +1956,27 @@ describe("swift walker — a protocol extension's `where Self` constraints (bd t
     }
   });
 });
+
+describe("swift walker — property attribute types, the candidates for a property wrapper (bd tea-rags-mcp-y99pg.33)", () => {
+  const src = [
+    "final class Networking: ObservableObject {",
+    "  @Published var result: Result<A, E>?",
+    '  @Published var message = "No response."',
+    "  @MainActor @Clamped(max: 3) var level: Int = 1",
+    "  @objc var plain: Int = 0",
+    "  var bare: Int = 0",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes each stored property's UpperCamelCase attribute types in source order", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "Networking");
+      expect(fact?.propertyAttributeTypes).toEqual({
+        result: ["Published"],
+        message: ["Published"],
+        level: ["MainActor", "Clamped"],
+      });
+    }
+  });
+});

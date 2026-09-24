@@ -247,6 +247,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     const functionAliasReturns = swiftFunctionAliasReturns(node);
     const selfConstraints = kind === "extension" ? swiftSelfConstraints(node) : undefined;
+    const propertyAttributeTypes = swiftPropertyAttributeTypes(node);
     // `extension Collection<String>` composes its members under the name as
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
@@ -264,9 +265,41 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(spelledAs === undefined ? {} : { spelledAs }),
       ...(functionAliasReturns ? { functionAliasReturns } : {}),
       ...(selfConstraints ? { selfConstraints } : {}),
+      ...(propertyAttributeTypes ? { propertyAttributeTypes } : {}),
     });
   });
   return out;
+}
+
+/**
+ * The UpperCamelCase attribute types each property of a type body carries, in
+ * source order (bd tea-rags-mcp-y99pg.33): `@Published var result` →
+ * `{ result: ["Published"] }`. Which of them is the property's wrapper — the
+ * type `$result` projects through — is the resolver's question: `@MainActor`
+ * is spelled the same way and wraps nothing. A lowercase attribute
+ * (`@objc`, `@available`) is a compiler attribute, never a type.
+ */
+function swiftPropertyAttributeTypes(node: AstNode): Record<string, string[]> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const out = createIdentifierRecord<string[]>();
+  let any = false;
+  for (const member of body.children) {
+    if (member.type !== "property_declaration") continue;
+    const name = singleIdentifierPatternName(member.childForFieldName("name"));
+    const modifiers = member.children.find((c) => c.type === "modifiers");
+    if (!name || !modifiers) continue;
+    const types: string[] = [];
+    for (const attribute of modifiers.namedChildren) {
+      if (attribute.type !== "attribute") continue;
+      const { nominal } = swiftTypeFactOf(attribute.namedChildren.find((c) => c.type === "user_type") ?? null);
+      if (nominal !== null && /^_*[A-Z]/.test(nominal)) types.push(nominal);
+    }
+    if (types.length === 0) continue;
+    out[name] = types;
+    any = true;
+  }
+  return any ? out : undefined;
 }
 
 /**

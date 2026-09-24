@@ -75,8 +75,12 @@ import { resolveSwiftBoundTypeMember, type SwiftResolverConfig } from "./shared.
  * this type" is the only honest form of that statement here, and it is already
  * what `resolveSwiftBoundTypeMember` says.
  */
-/** A plain value name — the single-hop passes' receiver, never this one's. */
-const SWIFT_IDENTIFIER_RECEIVER = /^[A-Za-z_$][\w$]*$/;
+/**
+ * A plain value name — the single-hop passes' receiver, never this one's. A
+ * wrapper's projection `$name` is not one: it names no binding, and only the
+ * fold types it (bd tea-rags-mcp-y99pg.33).
+ */
+const SWIFT_IDENTIFIER_RECEIVER = /^(?!\$[A-Za-z_])[A-Za-z_$][\w$]*$/;
 
 export class SwiftChainedReceiverTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "chainedReceiverType";

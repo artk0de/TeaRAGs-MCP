@@ -97,6 +97,26 @@ const SWIFT_SINGLETON_PROPERTIES: ReadonlySet<string> = new Set(["default", "sha
 /** A bare Swift identifier or a closure's implicit `$n` parameter — the only head shapes any channel here can key on. */
 const SWIFT_IDENTIFIER = /^(?:[A-Za-z_]\w*|\$\d+)$/;
 
+/** `$name` — a property wrapper's projected value, the property's name captured (bd tea-rags-mcp-y99pg.33). */
+const SWIFT_PROJECTED_VALUE = /^\$([A-Za-z_]\w*)$/;
+
+/**
+ * What `$field` on a value of `owner` denotes (bd tea-rags-mcp-y99pg.33): the
+ * `projectedValue` of the property's wrapper, which Swift synthesizes
+ * `$field` from — `Published<Value>.Publisher` for `@Published`. A property
+ * with no wrapper, or a wrapper that projects nothing, types nothing.
+ */
+function swiftProjectedValueType(
+  owner: Extract<TypeRef, { form: "class" | "instance" }>,
+  field: string,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const wrapper = members.propertyWrapperOf(owner.name, field, ctx);
+  if (wrapper === undefined) return undefined;
+  return boundedBy(owner, swiftMemberHopType({ form: "instance", name: wrapper }, "projectedValue", ctx, members));
+}
+
 /**
  * The type a chain HEAD denotes. Six arms, in Swift's own lookup order:
  *
@@ -132,9 +152,17 @@ function swiftHeadType(
   members: SwiftMemberTypeLookup,
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
-  // `try` / `await` mark the expression, not its type (bd tea-rags-mcp-y99pg.20).
-  const head = written.replace(SWIFT_EFFECT_PREFIX, "");
+  // `try` / `await` mark the expression, not its type (bd tea-rags-mcp-y99pg.20);
+  // a head a chain continues on the next line carries that line break.
+  const head = written.replace(SWIFT_EFFECT_PREFIX, "").trim();
   const enclosing = swiftSelfTypeName(ctx);
+  // `$result`: the enclosing type's own property, projected (bd tea-rags-mcp-y99pg.33).
+  const projected = SWIFT_PROJECTED_VALUE.exec(head);
+  if (projected !== null) {
+    return enclosing === undefined
+      ? undefined
+      : swiftProjectedValueType({ form: "instance", name: enclosing }, projected[1], ctx, members);
+  }
   if (!SWIFT_IDENTIFIER.test(head)) {
     return (
       swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ??
@@ -390,6 +418,9 @@ function swiftMemberHopType(
   members: SwiftMemberTypeLookup,
 ): TypeRef | undefined {
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
+  // `self.$result` / `model.$result`: the property's wrapper, projected (bd tea-rags-mcp-y99pg.33).
+  const projected = SWIFT_PROJECTED_VALUE.exec(member.trim());
+  if (projected !== null) return swiftProjectedValueType(recv, projected[1], ctx, members);
   // The field channel records no staticness, so the receiver's form does
   // not select a channel here — a `class` head and an `instance` head read
   // the same property map. Accessing a property always yields a VALUE, so

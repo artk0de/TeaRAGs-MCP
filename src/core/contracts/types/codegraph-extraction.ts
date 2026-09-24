@@ -442,6 +442,15 @@ export interface TypeDeclarationFact {
    * constraints. Absent when the clause constrains nothing about `Self`.
    */
   readonly selfConstraints?: SelfConstraintFact;
+  /**
+   * The UpperCamelCase attribute types each stored property of this
+   * declaration carries, in source order: `@Published var result` →
+   * `{ result: ["Published"] }`. The candidates for the property's WRAPPER —
+   * which one is (if any) is a question about the attribute's type, answered
+   * at resolve time — and so for what `$result` projects (bd
+   * tea-rags-mcp-y99pg.33). Absent when no property carries one.
+   */
+  readonly propertyAttributeTypes?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */

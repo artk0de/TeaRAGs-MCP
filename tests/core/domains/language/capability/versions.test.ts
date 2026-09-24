@@ -362,6 +362,8 @@ describe("seeded support versions", () => {
       // swift walker 48: bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries
       // an extension's `where Self` constraints, so a walker-47 index cannot
       // resolve an implicit-self call to the constraint's member.
+      // swift walker 49: bd tea-rags-mcp-y99pg.33 — property attribute types
+      // reach `typeDeclarations`, so a walker-48 index cannot type `$name`.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 15],
@@ -371,7 +373,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 48],
+        ["swift", 49],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

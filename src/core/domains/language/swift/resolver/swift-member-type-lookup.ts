@@ -73,6 +73,7 @@ import {
   swiftFieldTypeArguments,
   swiftGenericParameters,
   swiftMemberClosureParameters,
+  swiftPropertyAttributeTypes,
 } from "./swift-type-declarations.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
 
@@ -232,6 +233,27 @@ export class SwiftMemberTypeLookup {
   }
 
   /**
+   * The property WRAPPER of `typeName`'s (or the nearest ancestor's) property
+   * `field` (bd tea-rags-mcp-y99pg.33): the first of its attribute types that
+   * is one — a type declaring `wrappedValue` or `projectedValue`, in the
+   * project or the SDK. Swift applies wrappers outermost first in written
+   * order, so the first such attribute is the one `$field` projects through;
+   * `@MainActor`, spelled the same way, declares neither and is skipped.
+   */
+  propertyWrapperOf(typeName: string, field: string, ctx: CallContext): string | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const attributes = swiftPropertyAttributeTypes(qualifySwiftTypeName(candidate, ctx), field, ctx);
+      return attributes.length === 0 ? null : { attributes };
+    });
+    return scan.target?.attributes.find((attribute) =>
+      SWIFT_WRAPPER_MEMBERS.some(
+        (member) =>
+          this.typeOfProperty(attribute, member, ctx) !== undefined || this.sdkDeclaresMember(attribute, member, ctx),
+      ),
+    );
+  }
+
+  /**
    * The declared parameter types of the closure `typeName`'s method `member`
    * takes, found up the member-lookup chain, with the generic parameters of
    * the type that DECLARES the method (bd tea-rags-mcp-y99pg.13).
@@ -374,6 +396,9 @@ function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
   if ((a.form !== "instance" && a.form !== "class") || (b.form !== "instance" && b.form !== "class")) return false;
   return a.form === b.form && a.name === b.name;
 }
+
+/** The members that make a type a property wrapper: Swift requires `wrappedValue`, and `$x` reads `projectedValue`. */
+const SWIFT_WRAPPER_MEMBERS: readonly string[] = ["wrappedValue", "projectedValue"];
 
 /** The `structuredReturnTypes` marker the walker publishes for `-> Self` (bd tea-rags-mcp-y99pg.18). */
 const SWIFT_SELF_RETURN = "Self";
