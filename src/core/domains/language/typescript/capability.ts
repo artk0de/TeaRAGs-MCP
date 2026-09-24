@@ -105,5 +105,9 @@ export const capability: LanguageCapability = {
   // walker 14: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — a class member's declared access level (`private` / `protected` / `#name`) — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
-  versions: { chunking: 1, walker: 14, codegraphSchema: 2 },
+  // walker 15: bd tea-rags-mcp-g7h1y. A `.call` / `.apply` / `.bind` the walker
+  // unwraps carries the literal invoker as `functionInvokerSite`, and the
+  // resolver keeps the member edge (`QdrantConnection#call`) when the receiver's
+  // declared type declares that member. Function receivers unwrap as before.
+  versions: { chunking: 1, walker: 15, codegraphSchema: 2 },
 };

@@ -5,6 +5,9 @@
  *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — `private` /
  *      `fileprivate` vs everything wider on `ChunkExtraction.visibility`, which
  *      the monolith never fills.
+ *   2. module-level values (bd tea-rags-mcp-y99pg.30) — a file-scope `let` /
+ *      `var` under the module-scope key of the two run-global field channels,
+ *      which the monolith fills only for types.
  *
  * A new Swift extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express
@@ -15,5 +18,9 @@
 
 import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { swiftDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { swiftModuleValuesFacetPass } from "./passes/module-values.js";
 
-export const SWIFT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [swiftDeclaredVisibilityFacetPass];
+export const SWIFT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  swiftDeclaredVisibilityFacetPass,
+  swiftModuleValuesFacetPass,
+];

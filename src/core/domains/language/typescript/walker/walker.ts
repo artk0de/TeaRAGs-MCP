@@ -769,6 +769,14 @@ export const FUNCTION_INVOKER_MEMBERS = new Set(["call", "apply", "bind"]);
  * `getFn().call(x)`) there is nothing to unwrap TO: keep the literal edge and
  * tag it `dynamicSend`, so the site is accounted as statically undeterminable
  * rather than counted as a resolution miss — Ruby's "dynamic" branch exactly.
+ *
+ * The unwrap is decided on SYNTAX, and syntax cannot tell `fn.call(obj)` from
+ * `this.connection.call(fn)` on an object whose class declares `call` (bd
+ * tea-rags-mcp-g7h1y). This walker sees one file and no types, so it does not
+ * decide: the unwrapped ref carries the literal invoker as
+ * `functionInvokerSite`, and the resolver — which holds the receiver's declared
+ * type and the symbol table — keeps the literal member when that type declares
+ * it. Still one ref, so still one edge.
  */
 function emitFunctionInvokerUnwrap(node: AstNode, callee: AstNode, startLine: number, out: CallRef[]): boolean {
   if (callee.type !== "member_expression") return false;
@@ -778,7 +786,13 @@ function emitFunctionInvokerUnwrap(node: AstNode, callee: AstNode, startLine: nu
   const invoked = calleeToCallShape(obj);
   out.push(
     invoked
-      ? { callText: node.text, receiver: invoked.receiver, member: invoked.member, startLine }
+      ? {
+          callText: node.text,
+          receiver: invoked.receiver,
+          member: invoked.member,
+          startLine,
+          functionInvokerSite: { receiver: obj.text, member: prop.text },
+        }
       : { callText: node.text, receiver: obj.text, member: prop.text, startLine, dynamicSend: true },
   );
   return true;

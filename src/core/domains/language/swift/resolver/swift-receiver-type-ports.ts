@@ -56,6 +56,7 @@ import { boundedBy } from "./swift-sdk-member-types.js";
 import {
   lookupSwiftSymbols,
   lookupSwiftSymbolsByShortName,
+  qualifySwiftTypeName,
   qualifySwiftTypeNameWithin,
 } from "./swift-symbol-lookup.js";
 import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
@@ -97,7 +98,7 @@ const SWIFT_SINGLETON_PROPERTIES: ReadonlySet<string> = new Set(["default", "sha
 const SWIFT_IDENTIFIER = /^(?:[A-Za-z_]\w*|\$\d+)$/;
 
 /**
- * The type a chain HEAD denotes. Four arms, in Swift's own lookup order:
+ * The type a chain HEAD denotes. Six arms, in Swift's own lookup order:
  *
  *   1. `self` / `Self` — the enclosing type, as an instance and as the type
  *      itself. `super` is deliberately NOT here: `super.<field>` is the same
@@ -109,11 +110,14 @@ const SWIFT_IDENTIFIER = /^(?:[A-Za-z_]\w*|\$\d+)$/;
  *      language's scoping rule and not a preference.
  *   3. A stored property of the enclosing type. Swift's `self` is implicit, so
  *      a bare head is a property access wherever it is not a local.
- *   4. A type the project or the SDK substrate DECLARES, named in
- *      UpperCamelCase — the `World.sharedWorld` / `Locale.preferredLanguages`
- *      spelling. Both halves are required: the name test is Swift's API Design
- *      Guidelines (`swift-type-name.ts`), and the declaration probe is what
- *      keeps a global value (`let AF = Session.default`) from reading as a type.
+ *   4. A type the PROJECT declares, named in UpperCamelCase — the
+ *      `World.sharedWorld` spelling. Both halves are required: the name test is
+ *      Swift's API Design Guidelines (`swift-type-name.ts`), and the
+ *      declaration probe is what keeps a global value from reading as a type.
+ *   5. A MODULE-LEVEL value (`let AF = Session.default`, bd
+ *      tea-rags-mcp-y99pg.30) — module scope is the outermost one, and a
+ *      module's own declaration shadows an imported type.
+ *   6. A type the SDK substrate declares — `Locale.preferredLanguages`.
  *
  * A head that is not a bare identifier answers only as one of the shapes that
  * spell their own type: an implicit-self call, a cast, a collection or string
@@ -158,20 +162,56 @@ function swiftHeadType(
     if (sdkProperty !== undefined) return sdkProperty;
   }
 
-  if (!isSwiftTypeName(head)) return undefined;
-  // A type nested in an enclosing type shadows a top-level namesake — Swift's
-  // lexical lookup, innermost first (bd tea-rags-mcp-y99pg.20).
+  const projectType = swiftVisibleProjectType(head, ctx);
+  if (projectType !== undefined) return projectType;
+  // A module-level value: past every nearer scope, and ahead of the SDK's
+  // types, which an own declaration shadows (bd tea-rags-mcp-y99pg.30).
+  const moduleValue = swiftModuleValueReceiverType(head, atLine, ctx, members, ports);
+  if (moduleValue !== undefined) return moduleValue;
+  // A type the SDK declares — `Locale.preferredLanguages` (bd tea-rags-mcp-y99pg.25).
+  if (isSwiftTypeName(head) && members.isSdkType(head)) return { form: "class", name: head };
+  return undefined;
+}
+
+/**
+ * A project type `name` denotes from the caller's scope, as a `class`
+ * reference: a type nested in an enclosing type shadows a top-level namesake —
+ * Swift's lexical lookup, innermost first (bd tea-rags-mcp-y99pg.20).
+ */
+function swiftVisibleProjectType(name: string, ctx: CallContext): TypeRef | undefined {
+  if (!isSwiftTypeName(name)) return undefined;
   for (const scope of swiftEnclosingTypeIds(ctx)) {
-    for (const candidate of [`${scope}.${head}`, scope.endsWith(`.${head}`) ? scope : null]) {
+    for (const candidate of [`${scope}.${name}`, scope.endsWith(`.${name}`) ? scope : null]) {
       if (candidate !== null && lookupSwiftSymbols(ctx, candidate).length > 0) {
         return { form: "class", name: candidate };
       }
     }
   }
-  if (lookupSwiftSymbols(ctx, head).length > 0) return { form: "class", name: head };
-  // A type the SDK declares — `Locale.preferredLanguages` (bd tea-rags-mcp-y99pg.25).
-  if (members.isSdkType(head)) return { form: "class", name: head };
-  return undefined;
+  return lookupSwiftSymbols(ctx, name).length > 0 ? { form: "class", name } : undefined;
+}
+
+/**
+ * The type a single-identifier receiver holds as a MODULE-LEVEL value (bd
+ * tea-rags-mcp-y99pg.30) — only when nothing nearer names it: a local in scope
+ * at `atLine` (typed or not — Swift's shadowing does not depend on what the
+ * index could type), a stored property of the enclosing type, or a project
+ * type visible from the caller.
+ */
+export function swiftModuleValueReceiverType(
+  name: string,
+  atLine: number,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  if (resolveLocalBinding(ctx.localBindings, name, atLine) !== undefined) return undefined;
+  for (const binding of identifierEntry(ctx.callResultBindings, name) ?? []) {
+    if (swiftBindingVisible(binding, name, atLine) && (binding.scopeEndLine ?? atLine) >= atLine) return undefined;
+  }
+  const enclosing = swiftSelfTypeName(ctx);
+  if (enclosing !== undefined && members.typeOfProperty(enclosing, name, ctx) !== undefined) return undefined;
+  if (swiftVisibleProjectType(name, ctx) !== undefined) return undefined;
+  return members.moduleValues.typeOf(name, ctx, ports);
 }
 
 /**
@@ -428,8 +468,12 @@ function swiftLocalValueTypeRef(
   const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
   if (folded?.form !== "instance") return undefined;
   // `case .group(let g)`: the subject's enum says what the slot carries (bd tea-rags-mcp-y99pg.16).
+  // The cases are published under the enum's QUALIFIED id, and a `self`
+  // subject folds to the enclosing type's short name — `switch self` inside
+  // `URLEncodedFormEncoder.DateEncoding` (bd tea-rags-mcp-y99pg.31).
   if (spelled.enumPayload !== undefined) {
-    const payload = swiftEnumCasePayloadType(folded.name, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
+    const enumId = qualifySwiftTypeName(folded.name, ctx);
+    const payload = swiftEnumCasePayloadType(enumId, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
     return payload === undefined ? undefined : { form: "instance", name: payload };
   }
   return folded;

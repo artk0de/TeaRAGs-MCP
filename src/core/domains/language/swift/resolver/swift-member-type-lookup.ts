@@ -60,6 +60,7 @@ import {
 import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
 import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
+import { SwiftModuleValueIndex } from "./swift-module-values.js";
 import { SwiftSdkMemberTypes, type SwiftNominalTypeRef } from "./swift-sdk-member-types.js";
 import {
   lookupSwiftOverloads,
@@ -96,6 +97,8 @@ export interface SwiftMemberReach {
 export class SwiftMemberTypeLookup {
   private readonly linearizers = new RunScopedMemo<CallContext, AncestorLinearizer<CallContext>>();
   private readonly fields = new SwiftTypeFieldIndex();
+  /** Module-level values, read through the same per-run memos (bd tea-rags-mcp-y99pg.30). */
+  readonly moduleValues = new SwiftModuleValueIndex();
   private readonly sdkMembers: SwiftSdkMemberTypes;
 
   /**

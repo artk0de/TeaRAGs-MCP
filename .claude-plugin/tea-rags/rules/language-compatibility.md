@@ -203,7 +203,8 @@ conclude absence from a graph the index says is incomplete.
   accessors + naming-convention receiver typing for bare and @ivar receivers
   (subtype-gated)
 - **Bash** — function-call extraction only, no dispatch
-- **Swift** — 9-strategy chain + super and inherited members over the superclass
-  chain + implicit-self and chained field typing + return-typed call hops +
-  extension-scope and nested-type receivers; no import narrowing
+- **Swift** — 10-strategy chain + super and inherited members over the
+  superclass chain + implicit-self and chained field typing + return-typed call
+  hops + extension-scope, nested-type and module-level-value receivers; no
+  import narrowing
 - **Markdown** — no call graph

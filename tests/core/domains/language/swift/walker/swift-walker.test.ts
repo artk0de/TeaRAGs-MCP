@@ -1677,6 +1677,58 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     expect(bindings.first).toBeUndefined();
     expect(bindings.second).toEqual([{ line: 5, callee: "handle", closureParameter: 0, scopeEndLine: 7 }]);
   });
+
+  it("binds a property observer's implicit and named parameters to the property's type (bd tea-rags-mcp-y99pg.31)", () => {
+    const src = [
+      "final class DetailViewController {",
+      "  var request: Request? {",
+      "    didSet {",
+      "      oldValue?.cancel()",
+      "    }",
+      "    willSet { newValue?.resume() }",
+      "  }",
+      "  var task: Task {",
+      "    didSet(previous) { previous.cancel() }",
+      "  }",
+      "  var untyped = make() {",
+      "    didSet { oldValue.cancel() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const bindings = out.chunks[0].localBindings;
+      expect(resolveLocalBindingType(bindings, "oldValue", 4)).toBe("Request");
+      expect(resolveLocalBindingType(bindings, "newValue", 6)).toBe("Request");
+      expect(resolveLocalBindingType(bindings, "previous", 9)).toBe("Task");
+      // Scoped to its own clause: nothing below it reads the observer's value.
+      expect(resolveLocalBindingType(bindings, "oldValue", 12)).toBeUndefined();
+    }
+  });
+
+  it("spells a closure's callee through a construction head, the one value chain that starts with a call (bd tea-rags-mcp-y99pg.31)", () => {
+    const src = [
+      "final class DataStreamRequest {",
+      "  func parse() {",
+      "    let result = Result { try serializer.serialize(data) }",
+      "      .mapError { $0.asAFError(or: .failed) }",
+      "    make(1).then { $0.run() }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const bindings = out.chunks[0].callResultBindings ?? {};
+      expect(bindings.$0).toEqual([
+        {
+          line: 4,
+          callee: "Result { try serializer.serialize(data) }.mapError",
+          closureParameter: 0,
+          scopeEndLine: 4,
+        },
+      ]);
+    }
+  });
 });
 
 describe("swift walker — enum case payload bindings (bd tea-rags-mcp-y99pg.16)", () => {

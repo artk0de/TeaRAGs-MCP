@@ -32,6 +32,7 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
@@ -831,6 +832,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     return (await this.call("findSymbolChunk", { symbolId })) as SymbolChunkLocation | null;
+  }
+
+  async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    return (await this.call("getSymbolVisibilities", { symbolIds: [...symbolIds] })) as SymbolVisibilityRow[];
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

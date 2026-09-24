@@ -16,7 +16,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
-import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
+import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { FilterLevel } from "../../../contracts/types/provider.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
@@ -78,6 +78,11 @@ export interface ExploreOpsDeps {
   modelGuard?: EmbeddingModelGuard;
   /** Optional — present when codegraph is wired (bootstrap adapts GraphFacade). */
   chunkResolver?: SymbolChunkResolver;
+  /**
+   * Optional — present when codegraph is wired. Declared visibility for
+   * find_symbol outline lines (bd tea-rags-mcp-sqqkz); absent → undecorated.
+   */
+  visibilityResolver?: SymbolVisibilityResolver;
   /**
    * Per-language structural-signal floors from the composition root. Reaches
    * `IndexMetricsQuery` so `get_index_metrics` and prime render the same
@@ -144,6 +149,7 @@ export class ExploreOps {
   private readonly indexMetricsQuery?: IndexMetricsQuery;
   private readonly recomputeService?: StatsRecomputeService;
   private readonly chunkResolver?: SymbolChunkResolver;
+  private readonly visibilityResolver?: SymbolVisibilityResolver;
   private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
 
   constructor(deps: ExploreOpsDeps) {
@@ -158,6 +164,7 @@ export class ExploreOps {
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
     this.chunkResolver = deps.chunkResolver;
+    this.visibilityResolver = deps.visibilityResolver;
     this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
     this.vectorStrategy = createExploreStrategy(
       "vector",
@@ -430,10 +437,14 @@ export class ExploreOps {
 
   private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {
     if (request.relativePath) {
-      return new FileOutlineStrategy(this.qdrant, this.reranker, this.payloadSignals, this.essentialKeys, {
-        relativePath: request.relativePath,
-        language: request.language,
-      });
+      return new FileOutlineStrategy(
+        this.qdrant,
+        this.reranker,
+        this.payloadSignals,
+        this.essentialKeys,
+        { relativePath: request.relativePath, language: request.language },
+        this.visibilityResolver,
+      );
     }
     return new SymbolSearchStrategy(
       this.qdrant,
@@ -447,6 +458,7 @@ export class ExploreOps {
         pathPattern: request.pathPattern,
       },
       this.chunkResolver,
+      this.visibilityResolver,
     );
   }
 

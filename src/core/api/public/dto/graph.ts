@@ -9,7 +9,7 @@
  * them with a typed `CollectionNotProvidedError`.
  */
 
-import type { CycleScope, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
+import type { CycleScope, DeclaredSymbolVisibility, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 
 export interface GetCallersRequest {
@@ -37,7 +37,18 @@ export interface GetCallersRequest {
   includeAmbiguous?: boolean;
 }
 
-export interface CallerResult {
+/**
+ * Declared visibility on graph-tool entries (bd tea-rags-mcp-sqqkz), read from
+ * `cg_symbols.visibility`. OMITTED when unknown — the walker recorded none, the
+ * symbol is not in the graph, or codegraph could not be read. Never `null`,
+ * never a default of `public`: a missing field reads as "unknown".
+ */
+export interface DeclaredVisibilityField {
+  visibility?: DeclaredSymbolVisibility;
+}
+
+/** One caller; `visibility` is the CALLER symbol's own. */
+export interface CallerResult extends DeclaredVisibilityField {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
@@ -103,6 +114,11 @@ export interface FileImportsResponse extends FileScopeResponseBase {
 }
 
 export interface SymbolCallersResponse {
+  /**
+   * The QUERIED symbol's declared visibility — present only when every
+   * definition of the symbolId (namesakes included) states the same level.
+   */
+  visibility?: DeclaredSymbolVisibility;
   callers: CallerResult[];
   /**
    * Present ONLY when the request set `includeAmbiguous: true` AND the target
@@ -130,7 +146,8 @@ export interface GetCalleesRequest {
   limit?: number;
 }
 
-export interface CalleeResult {
+/** One callee; `visibility` is the TARGET symbol's own (never set on a file-only edge). */
+export interface CalleeResult extends DeclaredVisibilityField {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
@@ -224,7 +241,7 @@ export interface TracePathRequest {
   maxPaths?: number;
 }
 
-export interface PathStep {
+export interface PathStep extends DeclaredVisibilityField {
   /** Class#method (instance) / Class.method (static) / functionName. */
   symbolId: SymbolId;
   relativePath: RelPath;

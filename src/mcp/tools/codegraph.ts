@@ -172,6 +172,8 @@ export function registerCodegraphTools(
       title: "Get Callers",
       description:
         "Return symbols that invoke given symbolId. Backed by codegraph DuckDB. " +
+        "Top-level visibility = queried symbol's declared level; each caller carries its own " +
+        "(private|protected|public; absent = unknown). " +
         "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
         "MAY reach target among candidateCount candidates; not materialized as edges). " +
         "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
@@ -201,6 +203,7 @@ export function registerCodegraphTools(
       title: "Get Callees",
       description:
         "Return symbols invoked by given symbolId. Backed by codegraph DuckDB. " +
+        "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
         "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
         "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
         "unknown file → empty imports + message.",
@@ -263,7 +266,8 @@ export function registerCodegraphTools(
       description:
         "Trace all simple call paths from one symbol to another, in execution order. " +
         "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
-        "with git/churn overlay and sort paths most-dangerous first. Backed by codegraph DuckDB.",
+        "with git/churn overlay and sort paths most-dangerous first. Steps carry declared visibility " +
+        "when known (absent = unknown). Backed by codegraph DuckDB.",
       inputSchema: buildTracePathInputShape(schemaBuilder),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },

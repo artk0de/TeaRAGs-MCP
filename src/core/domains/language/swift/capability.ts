@@ -10,10 +10,17 @@ export const capability: LanguageCapability = {
   },
   codegraph: {
     tier: "high",
-    tech: "9-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope and nested-type receivers; no import narrowing",
+    tech: "10-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope, nested-type and module-level-value receivers; no import narrowing",
     summary:
-      "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
+      "10-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type and module-value receivers; no import narrowing",
   },
+  // walker 45: a module-level value (`public let AF = Session.default`) is
+  // published run-global under the module-scope key `<relPath>::` — typed on
+  // `classFieldTypesByClassKey`, else by spelling on `classFieldCallResults`
+  // — and a receiver naming it types by it, through a new `moduleValue` pass
+  // and the chain fold's head (bd tea-rags-mcp-y99pg.30). Measured: Alamofire
+  // TOTAL 0.974 -> 0.980 (1241/1274 -> 1248/1274), Quick unchanged 0.997;
+  // edges +7 / -0, all `AF.*` in the example apps; oracle WRONG unchanged.
   // walker 41: a protocol composition (`Subscriber & Sendable`, `any Sendable &
   // Monitor`) types as its one non-marker protocol; two real protocols type
   // nothing (bd tea-rags-mcp-y99pg.28). Measured: Alamofire TOTAL 0.971 ->
@@ -435,25 +442,29 @@ export const capability: LanguageCapability = {
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
   // walker 43: bd tea-rags-mcp-ezm9o — `*Test(s).swift` match case-sensitively,
   // so `Latest.swift` enters the graph; the reasoning is java/capability.ts's.
-  // walker 44: a closure passed to a BARE callee binds its parameters by that
-  // callee (`withCheckedContinuation { continuation in`), read off the
-  // enclosing type's method or the SDK's module-level function, and only a
-  // call's LAST closure is bound (bd tea-rags-mcp-y99pg.29). Measured:
-  // Alamofire TOTAL 0.974 -> 0.976 (1241/1274 -> 1241/1271), Quick unchanged;
-  // edges +0 / -0, 3 SDK `CheckedContinuation.resume` sites proved external.
-  // walker 45: a closure passed to a CONSTRUCTION binds its parameters by the
-  // constructed type's initializer — the project's `init` (now published on
-  // `memberClosureParameters`) or the SDK's — and a function-typed parameter
-  // taking nothing no longer competes for a closure that names one
-  // (bd tea-rags-mcp-y99pg.29). Measured: Alamofire TOTAL 0.976 -> 0.979
-  // (1241/1271 -> 1241/1268), Quick unchanged; edges +0 / -0, 3 SDK
-  // `AsyncStream.Continuation.finish` sites proved external.
-  // walker 46: the resolve-rate denominator stops charging a BARE call inside a
-  // type whose hierarchy the SDK declares the member on and the project does
-  // not — implicit `self.map` inside a `Publisher` (bd tea-rags-mcp-y99pg.29).
-  // Measured: Alamofire TOTAL 0.979 -> 0.980 (1241/1268 -> 1241/1266), Quick
-  // unchanged; edges +0 / -0, 2 Combine `Publisher.map` sites proved external.
-  versions: { chunking: 4, walker: 46, codegraphSchema: 2 },
+  // walker 44: a property observer's `oldValue` / `newValue` binds the
+  // property's declared type; a closure passed off a construction head
+  // (`Result { … }.mapError { $0 … }`) spells its callee through it; a
+  // `switch self` payload inside a NESTED enum reads the qualified enum's cases
+  // (bd tea-rags-mcp-y99pg.31). Measured: Alamofire TOTAL 0.974 -> 0.976
+  // (1241/1274 -> 1243/1273), Quick unchanged 0.997; edges +2 / -0, one SDK
+  // site (`DateFormatter.string`) proved external, WRONG unchanged.
+  // walker 46: bd tea-rags-mcp-y99pg.29 (built on its own branch as 44 and 45,
+  // merged onto 45). A closure passed to a BARE callee binds its parameters by
+  // that callee (`withCheckedContinuation { continuation in`), read off the
+  // enclosing type's method or the SDK's module-level function; a closure passed
+  // to a CONSTRUCTION binds them by the constructed type's initializer — the
+  // project's `init` (now published on `memberClosureParameters`) or the
+  // SDK's; only a call's LAST closure is bound, and a function-typed parameter
+  // taking nothing no longer competes for a closure that names one. Measured
+  // on its branch: Alamofire TOTAL 0.974 -> 0.979 (1241/1274 -> 1241/1268),
+  // Quick unchanged; edges +0 / -0, 6 SDK continuation sites proved external.
+  // walker 47: bd tea-rags-mcp-y99pg.29 (46 on its branch) plus the merge with
+  // y99pg.30 / .31 — the resolve-rate denominator stops charging a BARE call
+  // inside a type whose hierarchy the SDK declares the member on and the
+  // project does not (implicit `self.map` inside a `Publisher`); an index
+  // built by any earlier walker holds neither branch's extraction whole.
+  versions: { chunking: 4, walker: 47, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

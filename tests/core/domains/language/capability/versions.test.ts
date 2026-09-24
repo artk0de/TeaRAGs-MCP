@@ -338,28 +338,37 @@ describe("seeded support versions", () => {
       // java 5, swift 43: bd tea-rags-mcp-ezm9o matches the PascalCase test
       // suffixes case-sensitively, so `Latest.java` / `Latest.swift` enter a
       // graph an index built by the previous walker excluded them from.
+      // swift walker 45: bd tea-rags-mcp-y99pg.30 publishes module-level values
+      // and types receivers naming them, so an index built by walker 44 holds
+      // no edge off `AF.request(…)`.
       // ruby walker 8: bd tea-rags-mcp-nbf8q item 4 caps Ruby's dynamic fan-out
       // at RUBY's own defs-per-member p99, not the polyglot corpus one (taxdome:
       // 19, not 16), so an index built by walker 7 reports as `ambiguous` the
       // 17–19-survivor fans this one materializes as edges.
-      // swift walker 44: a closure passed to a bare callee binds its parameters
-      // by that callee (bd tea-rags-mcp-y99pg.29), so an index built by walker
-      // 43 charges `withCheckedContinuation { continuation in … }` SDK calls as
-      // misses.
-      // swift walker 45: an initializer publishes its closure parameters, so an
-      // index built by walker 44 leaves a construction's closure parameters untyped.
-      // swift walker 46: a bare call an enclosing type's SDK supertype declares
-      // leaves the denominator, so an index built by walker 45 charges it as a miss.
+      // swift walker 44: property-observer parameters, construction-head closure
+      // callees and nested-enum `switch self` payloads bind (bd
+      // tea-rags-mcp-y99pg.31), so an index built by walker 43 lacks those edges
+      // and charges an SDK payload's calls as misses.
+      // typescript walker 15: bd tea-rags-mcp-g7h1y keeps the member edge of a
+      // `.call` / `.apply` / `.bind` whose receiver's declared type declares
+      // that member (`this.connection.call(fn)` → `QdrantConnection#call`).
+      // swift walker 46: bd tea-rags-mcp-y99pg.29 — a closure passed to a bare
+      // callee or a construction binds its parameters by that callee's (or the
+      // initializer's) closure parameter, so an index built by walker 45 charges
+      // `withCheckedContinuation { continuation in … }` SDK calls as misses.
+      // swift walker 47: y99pg.29 merged with y99pg.30 / .31 — a bare call an
+      // enclosing type's SDK supertype declares leaves the denominator, and no
+      // earlier walker's index holds both branches' extraction whole.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 14],
+        ["typescript", 15],
         ["javascript", 6],
         ["python", 13],
         ["ruby", 8],
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 46],
+        ["swift", 47],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

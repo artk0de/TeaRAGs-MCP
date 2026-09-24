@@ -26,7 +26,12 @@
 
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { RelPath, SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
+import type {
+  RelPath,
+  SymbolChunkLocation,
+  SymbolId,
+  SymbolVisibilityRow,
+} from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
@@ -42,6 +47,7 @@ import type {
 } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
 import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
 
 export interface GraphFacadeDeps {
@@ -172,7 +178,10 @@ export class GraphFacade {
       req,
       async (handle) => {
         const edges = await handle.graphDb.getCallers(symbolId);
-        const callers = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        const visible = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        // Declared visibility of the queried symbol and every caller, one
+        // batched read (bd tea-rags-mcp-sqqkz); unknown levels leave the field out.
+        const { queried, callers } = await decorateCallers(handle.graphDb, symbolId, visible);
         // Lazy ambiguous expansion (bd f2jsb A4) — opt-in only, and only when
         // the target has a member segment (text after the last `#` or `.`,
         // per symbolid-convention; splitMethodSymbol is the adapter's own
@@ -180,9 +189,10 @@ export class GraphFacade {
         // was persisted under). Bare symbols skip the lookup; the DEFAULT
         // (flag absent) response stays byte-identical to the pre-flag shape.
         const member = req.includeAmbiguous ? splitMethodSymbol(symbolId)?.member : undefined;
-        if (member === undefined) return { callers };
+        if (member === undefined) return { ...queried, callers };
         const sites = await handle.graphDb.getAmbiguousCallersByMember(member);
         return {
+          ...queried,
           callers,
           ambiguousCallers: sites.map((s) => ({
             sourceSymbolId: s.sourceSymbolId,
@@ -211,7 +221,8 @@ export class GraphFacade {
       req,
       async (handle) => {
         const edges = await handle.graphDb.getCallees(symbolId);
-        return { callees: edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT) };
+        const visible = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        return { callees: await decorateCallees(handle.graphDb, visible) };
       },
       { callees: [] },
     );
@@ -219,6 +230,16 @@ export class GraphFacade {
 
   async resolveSymbolChunk(addr: GraphAddressing, symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null);
+  }
+
+  /**
+   * Raw declared-visibility rows for the find_symbol outline (bd
+   * tea-rags-mcp-sqqkz). Keeps `withReadHandle`'s contract — throws when a graph
+   * exists but cannot be read, `[]` when there is none — and leaves degrading to
+   * the caller, which owns whether a missing decoration is acceptable.
+   */
+  async getSymbolVisibilities(addr: GraphAddressing, symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    return this.withReadHandle(addr, async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds), []);
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {

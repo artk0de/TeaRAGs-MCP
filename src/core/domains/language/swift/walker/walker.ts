@@ -1365,7 +1365,8 @@ function swiftClosureCalleeSpelling(lambda: AstNode): string | undefined {
   if (callee?.type === "simple_identifier") return callee.text;
   if (callee?.type !== "navigation_expression") return undefined;
   const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
-  const target = swiftValueChainSpelling(callee.childForFieldName("target"));
+  const targetNode = callee.childForFieldName("target");
+  const target = swiftValueChainSpelling(targetNode) ?? swiftConstructionSpelling(targetNode);
   return member && target ? `${target}.${member}` : undefined;
 }
 
@@ -1382,6 +1383,21 @@ function lastClosureArgument(suffix: AstNode): AstNode | undefined {
     }
   }
   return last;
+}
+
+/**
+ * A construction written as a closure's receiver — `Result { try … }` in
+ * `Result { try … }.mapError { $0 … }` — spelled WHOLE, arguments and all,
+ * since the resolver types a construction head by the type it names and the
+ * generic arguments it spells (bd tea-rags-mcp-y99pg.31). Only an
+ * UpperCamelCase callee is a construction; `make(1).then { … }` is a call
+ * whose value no spelling here can carry.
+ */
+function swiftConstructionSpelling(node: AstNode | null): string | undefined {
+  if (node?.type !== "call_expression") return undefined;
+  const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
+  if (callee?.type !== "simple_identifier" || !/^_*[A-Z]/.test(callee.text)) return undefined;
+  return node.text;
 }
 
 /** How many `$n` parameters a closure's own body reads: one past the highest `n`. */
@@ -1657,6 +1673,14 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const value = node.childForFieldName("value");
         const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
         record(name, fact, site, enclosingSwiftClosureEndLine(node), deferredSpelling(fact, value, site));
+        // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
+        // parameter is a value of the property's DECLARED type, for the
+        // clause's own body (bd tea-rags-mcp-y99pg.31).
+        if (declared.nominal) {
+          for (const clause of swiftPropertyObserverClauses(node)) {
+            record(clause.name, declared, siteOf(clause.node), clause.node.endPosition.row + 1);
+          }
+        }
         return;
       }
       case "guard_statement":
@@ -1804,6 +1828,30 @@ function swiftEnumCasePayloadNames(
   return out;
 }
 
+/** The parameter name each observer clause the language gives it when the clause names none. */
+const SWIFT_OBSERVER_DEFAULT_PARAMETER: Readonly<Record<string, string>> = {
+  didset_clause: "oldValue",
+  willset_clause: "newValue",
+};
+
+/**
+ * A property's `didSet` / `willSet` clauses, each with the name its parameter
+ * goes by — the one the clause spells (`didSet(previous)`), else the
+ * language's implicit `oldValue` / `newValue`.
+ */
+function swiftPropertyObserverClauses(property: AstNode): { name: string; node: AstNode }[] {
+  const block = property.namedChildren.find((c) => c.type === "willset_didset_block");
+  if (!block) return [];
+  const out: { name: string; node: AstNode }[] = [];
+  for (const clause of block.namedChildren) {
+    const implicit = SWIFT_OBSERVER_DEFAULT_PARAMETER[clause.type];
+    if (implicit === undefined) continue;
+    const spelled = clause.namedChildren.find((c) => c.type === "simple_identifier")?.text;
+    out.push({ name: spelled ?? implicit, node: clause });
+  }
+  return out;
+}
+
 /**
  * The two names of a `(a, b)` for-in pattern, `null` for a `_` slot; null
  * for any other pattern shape.
@@ -1858,6 +1906,32 @@ function swiftOptionalBindingClauses(node: AstNode): SwiftOptionalBindingClause[
     out.push({ name: nameNode.text, annotation, value });
   }
   return out;
+}
+
+/** What a module-level value declaration states about the value (bd tea-rags-mcp-y99pg.30). */
+export interface SwiftModuleValueFact {
+  readonly name: string;
+  /** The nominal the declaration spells — an annotation or a CapWords construction. */
+  readonly type?: string;
+  /** Else the right-hand side's value-chain spelling, for the resolver to fold. */
+  readonly spelling?: string;
+}
+
+/**
+ * What a FILE-SCOPE `property_declaration` publishes as a module value, or
+ * null: a single bound name, typed by the same narrow rule a stored property
+ * is ({@link swiftDeclaredPropertyFact}), else spelled by the rule a local's
+ * cross-file right-hand side is ({@link swiftValueChainSpelling}). The caller
+ * owns which nodes are file-scope and which access levels leave the file.
+ */
+export function swiftModuleValueOf(node: AstNode): SwiftModuleValueFact | null {
+  if (node.type !== "property_declaration") return null;
+  const name = singleIdentifierPatternName(node.childForFieldName("name"));
+  if (name === null || SWIFT_PSEUDO_BINDING_NAMES.has(name)) return null;
+  const declared = swiftDeclaredPropertyFact(node);
+  if (declared.nominal) return { name, type: declared.nominal };
+  const spelling = swiftValueChainSpelling(node.childForFieldName("value"));
+  return spelling === null ? null : { name, spelling };
 }
 
 /**
