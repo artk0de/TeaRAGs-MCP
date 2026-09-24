@@ -23,6 +23,13 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * a Ruby `Error`, so any polyglot index can hold edges resolved on another
  * language's hierarchy, whichever language the caller was.
  *
+ * walker 4: the runner also hands each file its family's `functionReturnTypes`,
+ * `structuredReturnTypes` and CHA hierarchy view (bd tea-rags-mcp-qea83). A Go
+ * method `get` typed a Ruby `get`'s result, a Python `Store#load` answered for
+ * a Ruby one, and a TypeScript `Error`'s subclasses joined a Ruby `Error`'s
+ * cone. Bumped past an unreleased 3 because an index a worktree build already
+ * stamped at 3 still holds those edges.
+ *
  * codegraphSchema 2: `cg_symbols` gained `start_line` / `end_line` (migration
  * 024) and every writer of `codegraph.symbols.chunk.*` now maps a chunk to its
  * owner through one rule (bd tea-rags-mcp-9i2ow). Payload already on disk was
@@ -32,6 +39,6 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  */
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 1,
-  walker: 3,
+  walker: 4,
   codegraphSchema: 2,
 };

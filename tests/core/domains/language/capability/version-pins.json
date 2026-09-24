@@ -5,8 +5,8 @@
       "digest": "sha256:4c3f70c3fdb24361c1dbc47157e3aaf253df8aea539fb96990a764b038b341d6"
     },
     "walker": {
-      "version": 3,
-      "digest": "sha256:76c32b961a40c13b80a16db2f404c062ee966277e7a656b6b0909cf0943a440d"
+      "version": 4,
+      "digest": "sha256:76f89b31e4abbc96b1fa78797d658553e86725ffb56e00e81033ce987efea176"
     }
   },
   "bash": {

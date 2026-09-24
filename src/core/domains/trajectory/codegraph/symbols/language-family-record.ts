@@ -22,7 +22,11 @@ import { createIdentifierRecord } from "../../../../contracts/identifier-record.
 
 const ECMASCRIPT_FAMILY = "ecmascript";
 
-/** The family whose class namespace `language`'s walker writes into. */
+/**
+ * The family whose class namespace `language`'s walker writes into. Idempotent
+ * on a family id, so a caller holding a family (the barrier's per-family schema
+ * column types) may pass it wherever a language is expected.
+ */
 export function languageFamilyOf(language: string): string {
   return language === "typescript" || language === "javascript" ? ECMASCRIPT_FAMILY : language;
 }

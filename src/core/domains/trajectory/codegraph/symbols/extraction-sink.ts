@@ -47,7 +47,7 @@ import { CodegraphMetricsError, CodegraphSpillIoError } from "../../errors.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import type { SymbolNodeFlushQueue } from "./node-flush.js";
 import type { CodegraphRunState } from "./run-state.js";
-import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
+import { extractSelfDispatchMethods, SELF_DISPATCH_LANGUAGE } from "./self-dispatch-discovery.js";
 
 export interface CodegraphSinkDeps {
   /** Resolve the in-memory symbol table for the active collection. */
@@ -200,7 +200,7 @@ export function createCodegraphExtractionSink(
     // consumes the discovered map is Ruby.
     deps.runState.absorb(
       extraction,
-      extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
+      extraction.language === SELF_DISPATCH_LANGUAGE ? extractSelfDispatchMethods(extraction.chunks) : [],
       role,
     );
     // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
@@ -208,8 +208,11 @@ export function createCodegraphExtractionSink(
     // CHA cone resolver. Resolving ancestor symbol_ids against the now-partial
     // table is unnecessary here — the cone reads by fqName — so pass a null
     // resolver and let the per-file persist (pass-2) own symbol_id binding.
-    const inheritanceRows = normalizeInheritanceEdges(extraction, () => null);
-    if (inheritanceRows.length > 0) deps.runState.inheritanceRows.push(...inheritanceRows);
+    // Rows land in the file's language family (bd tea-rags-mcp-qea83).
+    deps.runState.absorbInheritanceRows(
+      extraction.language,
+      normalizeInheritanceEdges(extraction, () => null),
+    );
   };
 
   return {
