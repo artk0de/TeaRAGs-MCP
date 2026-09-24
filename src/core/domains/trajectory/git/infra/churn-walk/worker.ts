@@ -19,12 +19,13 @@
  * WalkCommitDiscovery adapter — the walk code path stays identical to inline.
  */
 
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 
 import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
 import type { VcsGitAdapter } from "../../../../../adapters/vcs/git/adapter.js";
 import type { BlameLine, BlobBatchReader, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
 import { CommitDiffMemo } from "../../../../../infra/commit-diff-memo.js";
+import { adoptGitExecutable } from "../../../../../infra/git-executable.js";
 import { Semaphore } from "../../../../../infra/semaphore.js";
 import { buildChunkChurnMapUncached } from "../chunk-reader.js";
 import type { ChunkChurnWalkStats, WalkCommitDiscovery } from "../walk-commits.js";
@@ -35,7 +36,12 @@ import type {
   ChunkChurnWalkOutcome,
   ChurnWalkThreadRequest,
   ChurnWalkThreadResponse,
+  ChurnWalkWorkerData,
 } from "./protocol.js";
+
+// Follow the spawning thread's git-binary decision instead of re-probing.
+const startupData = workerData as Partial<ChurnWalkWorkerData> | null;
+if (typeof startupData?.gitExecutable === "string") adoptGitExecutable(startupData.gitExecutable);
 
 /** Worker-owned run-scoped adapters, one per repoRoot — built IN-THREAD from
  *  the job's structured-clone-safe kind (worker-DI: instances never cross

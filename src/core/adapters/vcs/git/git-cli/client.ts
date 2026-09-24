@@ -10,6 +10,7 @@
 
 import { execFile, execFileSync, spawn, type ExecFileOptions } from "node:child_process";
 
+import { resolveGitExecutable } from "../../../../infra/git-executable.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type {
   BlameLine,
@@ -85,7 +86,7 @@ const BULK_LOG_STALL_FLOOR_MS = 600_000;
  * long-but-streaming log completes; a hung spawn is reaped.
  */
 export async function execFileForPathspec(repoRoot: string, args: string[], timeoutMs: number): Promise<string> {
-  return execWithStallGuard("git", args, {
+  return execWithStallGuard(resolveGitExecutable(), args, {
     cwd: repoRoot,
     stallTimeoutMs: Math.max(timeoutMs, BULK_LOG_STALL_FLOOR_MS),
   });
@@ -102,14 +103,14 @@ export function buildCliArgs(sinceDate?: Date): string[] {
 
 /** Resolve HEAD SHA via CLI `git rev-parse HEAD`. */
 export async function getHead(repoRoot: string): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
+  const { stdout } = await execFileAsync(resolveGitExecutable(), ["rev-parse", "HEAD"], { cwd: repoRoot });
   return stdout.trim();
 }
 
 /** Resolve git repo root from a path. Returns absolutePath if not a git repo. */
 export function resolveRepoRoot(absolutePath: string): string {
   try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    return execFileSync(resolveGitExecutable(), ["rev-parse", "--show-toplevel"], {
       cwd: absolutePath,
       encoding: "utf-8",
     }).trim();
@@ -133,7 +134,7 @@ export async function buildViaCli(
   timeoutMs?: number,
 ): Promise<Map<string, FileChurnData>> {
   const args = buildCliArgs(sinceDate);
-  const stdout = await execWithStallGuard("git", args, {
+  const stdout = await execWithStallGuard(resolveGitExecutable(), args, {
     cwd: repoRoot,
     stallTimeoutMs: Math.max(timeoutMs ?? 60_000, BULK_LOG_STALL_FLOOR_MS),
   });
@@ -160,7 +161,7 @@ export async function buildViaCliForPaths(
     const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
 
     try {
-      const { stdout } = await execFileAsync("git", args, {
+      const { stdout } = await execFileAsync(resolveGitExecutable(), args, {
         cwd: repoRoot,
         maxBuffer: Infinity,
         timeout: timeoutMs,
@@ -194,7 +195,7 @@ export async function buildViaCliForPaths(
  */
 export async function readBlobAsString(repoRoot: string, commitOid: string, filepath: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", ["cat-file", "blob", `${commitOid}:${filepath}`], {
+    const { stdout } = await execFileAsync(resolveGitExecutable(), ["cat-file", "blob", `${commitOid}:${filepath}`], {
       cwd: repoRoot,
       encoding: "utf8",
       maxBuffer: 256 * 1024 * 1024,
@@ -281,7 +282,10 @@ export function createCatFileBatch(repoRoot: string): CatFileBatchReader {
   // skipped, empty chunk map, pathspec returned nothing) never forks git.
   const ensureChild = (): NonNullable<typeof child> => {
     if (child) return child;
-    const c = spawn("git", ["cat-file", "--batch"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
+    const c = spawn(resolveGitExecutable(), ["cat-file", "--batch"], {
+      cwd: repoRoot,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
     trackGitChildProcess(c);
     c.stdout?.on("data", onData);
     c.stdin?.on("error", (err) => {
@@ -399,7 +403,10 @@ export function createCatFileBatchCheck(repoRoot: string): CatFileBatchCheckRead
   // Spawn lazily on the first check — a run that resolves no OIDs never forks git.
   const ensureChild = (): NonNullable<typeof child> => {
     if (child) return child;
-    const c = spawn("git", ["cat-file", "--batch-check"], { cwd: repoRoot, stdio: ["pipe", "pipe", "ignore"] });
+    const c = spawn(resolveGitExecutable(), ["cat-file", "--batch-check"], {
+      cwd: repoRoot,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
     trackGitChildProcess(c);
     c.stdout?.on("data", onData);
     c.stdin?.on("error", (err) => {
@@ -543,7 +550,9 @@ export async function readCommitFileNumstat(
  */
 export async function isAncestor(repoRoot: string, ancestor: string, descendant: string): Promise<boolean> {
   try {
-    await execFileAsync("git", ["merge-base", "--is-ancestor", ancestor, descendant], { cwd: repoRoot });
+    await execFileAsync(resolveGitExecutable(), ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd: repoRoot,
+    });
     return true;
   } catch {
     return false;
@@ -654,7 +663,7 @@ export async function getCommitsByPathspec(
  */
 export async function blameFile(repoRoot: string, filePath: string, timeoutMs?: number): Promise<BlameLine[]> {
   try {
-    const { stdout } = await execFileAsync("git", ["blame", "--porcelain", "HEAD", "--", filePath], {
+    const { stdout } = await execFileAsync(resolveGitExecutable(), ["blame", "--porcelain", "HEAD", "--", filePath], {
       cwd: repoRoot,
       maxBuffer: Infinity,
       timeout: timeoutMs,
@@ -677,7 +686,7 @@ export async function blameFile(repoRoot: string, filePath: string, timeoutMs?: 
  */
 export async function writeCommitGraph(repoRoot: string, timeoutMs?: number): Promise<void> {
   try {
-    await execFileAsync("git", ["commit-graph", "write", "--reachable", "--changed-paths"], {
+    await execFileAsync(resolveGitExecutable(), ["commit-graph", "write", "--reachable", "--changed-paths"], {
       cwd: repoRoot,
       timeout: timeoutMs,
     });
