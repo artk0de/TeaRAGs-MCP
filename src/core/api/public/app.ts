@@ -24,6 +24,7 @@ import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { GraphFacade } from "../internal/facades/graph-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
+import { ArchitectureReportOps } from "../internal/ops/architecture-report-ops.js";
 import { CollectionOps } from "../internal/ops/collection-ops.js";
 import { DocumentMetadataSchemaCompiler } from "../internal/ops/document-metadata-schema.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
@@ -42,6 +43,8 @@ import type {
   FindCyclesResponse,
   FindSimilarRequest,
   FindSymbolRequest,
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
   GetCalleesRequest,
   GetCalleesResponse,
   GetCallersRequest,
@@ -145,6 +148,8 @@ export interface App {
   getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;
   getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
   findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
+  /** Architecture diagnostics (bd tea-rags-mcp-94hd9) — Stable Dependencies violations, root causes, exclusions. */
+  getArchitectureReport: (request: GetArchitectureReportRequest) => Promise<GetArchitectureReportResponse>;
   tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
@@ -341,6 +346,8 @@ export function createApp(deps: AppDeps): App {
     getCallers: async (req) => (deps.graphFacade ? deps.graphFacade.getCallers(req) : { callers: [] }),
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
+    getArchitectureReport: async (req) =>
+      deps.graphFacade ? deps.graphFacade.getArchitectureReport(req) : ArchitectureReportOps.empty(req),
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source

@@ -19,6 +19,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileDependencyGraph,
   FileGraphMetrics,
   FileResolveStatsWrite,
   GraphEdges,
@@ -489,6 +490,15 @@ export interface GraphDbClient {
    * pre-bucketing into `Map<string, string[]>`.
    */
   listAdjacency: (scope: CycleScope) => Promise<Map<string, string[]>>;
+
+  /**
+   * The persisted file dependency graph, whole: every walked file with its
+   * symbol count, and every `cg_symbols_edges_file` row with the resolved call
+   * weight across it. The boundary diagnostics judge it
+   * (`get_architecture_report`, bd tea-rags-mcp-94hd9); no filter here, because
+   * an edge to an unwalked file still moves its source's instability.
+   */
+  readFileDependencyGraph: () => Promise<FileDependencyGraph>;
 
   /**
    * Stream the adjacency for `scope` one `[source, target]` pair at a

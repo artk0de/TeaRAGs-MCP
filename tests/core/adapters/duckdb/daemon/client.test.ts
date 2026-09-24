@@ -658,3 +658,27 @@ describe("DaemonGraphDbClient", () => {
     expect(received.map((s) => s.relPath)).toEqual(symbols.map((s) => s.relPath));
   });
 });
+
+describe("DaemonGraphDbClient — readFileDependencyGraph (bd tea-rags-mcp-94hd9)", () => {
+  it("proxies the whole-graph read through the daemon socket", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const graph = {
+      files: [{ relPath: "a.ts", language: "typescript", symbolCount: 1 }],
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", callWeight: 2 }],
+    };
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readFileDependencyGraph" ? graph : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.readFileDependencyGraph();
+    await client.close();
+
+    expect(result).toEqual(graph);
+    expect(seen.find((r) => r.op === "readFileDependencyGraph")?.params).toMatchObject({ collection: "code_x_v1" });
+  });
+});

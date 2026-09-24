@@ -79,6 +79,21 @@ export type {
   PathTraceResult,
 } from "./graph.js";
 
+export type {
+  // Architecture diagnostics (get_architecture_report)
+  ArchitectureDirectoryRelation,
+  ArchitectureReportSummary,
+  ArchitectureRootCause,
+  ArchitectureViolation,
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
+  StableDependenciesExclusionSummary,
+  StableDependenciesReportSummary,
+  StableDependencyArchitectureRootCause,
+  StableDependencyArchitectureViolation,
+  StableDependencyViolationEvidence,
+} from "./architecture.js";
+
 export { projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";
 

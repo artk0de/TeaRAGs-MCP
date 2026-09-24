@@ -784,3 +784,43 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-94hd9: get_architecture_report reads the whole file dependency
+// graph through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — readFileDependencyGraph", () => {
+  it("is a read op that returns the walked files and file edges", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_fdg_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+
+    const res = await server.handle({ id: 3, op: "readFileDependencyGraph", params: { collection: c } });
+
+    expect(DAEMON_OP_COMMANDS.readFileDependencyGraph.access).toBe("read");
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual({
+      files: [
+        { relPath: "a.ts", language: "typescript", symbolCount: 0 },
+        { relPath: "b.ts", language: "typescript", symbolCount: 0 },
+      ],
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", callWeight: 0 }],
+    });
+    await pool.closeAll();
+  });
+});

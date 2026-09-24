@@ -5,6 +5,7 @@ export {
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,
   NO_SYMBOL_ENDPOINT_REASON,
+  PRIVATE_COLLABORATOR_REASON,
 } from "./stable-dependencies.js";
 export type {
   DependencyDirectoryRelation,
@@ -12,6 +13,8 @@ export type {
   StableDependenciesExclusionCounts,
   StableDependenciesOptions,
   StableDependenciesReport,
+  StableDependenciesScope,
   StableDependenciesSummary,
+  StableDependencyRootCause,
   StableDependencyViolation,
 } from "./types.js";

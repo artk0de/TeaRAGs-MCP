@@ -61,6 +61,11 @@ export type {
   // Registry DTOs
   StaleProjectEntry,
   StaleProjectPruneReport,
+  // Architecture diagnostics DTOs
+  ArchitectureRootCause,
+  ArchitectureViolation,
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
 } from "./dto/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────

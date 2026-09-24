@@ -255,6 +255,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // The adapter returns a `Map<string, string[]>`; serialise as entries
   // so it survives JSON framing (the client rebuilds the Map).
   listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope as CycleScope)).entries()]),
+  // Plain arrays on the wire — nothing to rebuild on the client.
+  readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
   hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
   getPageRank: read(async (graphDb, p) =>
     graphDb.getPageRank(p.symbolId as SymbolId, p.relPath as RelPath | undefined),

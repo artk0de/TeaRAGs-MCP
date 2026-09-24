@@ -178,10 +178,11 @@ already in hand.
 
 Requires codegraph. **Availability signal:** prime digest's `## Enrichment`
 section lists `codegraph.symbols` when codegraph active. When that line absent
-the four graph tools (`get_callers`, `get_callees`, `find_cycles`, `trace_path`)
-are **not registered** — never appear in tool list. Off-signal is an _absent
-tool_, not an empty result; check prime first rather than calling a tool to
-discover it's missing. Precedence — start cheap, escalate only if needed:
+the graph tools (`get_callers`, `get_callees`, `find_cycles`, `trace_path`,
+`get_architecture_report`) are **not registered** — never appear in tool list.
+Off-signal is an _absent tool_, not an empty result; check prime first rather
+than calling a tool to discover it's missing. Precedence — start cheap, escalate
+only if needed:
 
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
    Default for impact & dependency questions; instant, no traversal.
@@ -207,6 +208,7 @@ a non-graph substitute — never read an absent/empty graph tool as positive fac
 | who calls / X calls | `hybrid_search` (exact-name recall) + `find_symbol` — name-match, NOT edge truth         |
 | call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"  |
 | cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"    |
+| layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"         |
 | architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable              |
 | entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed |
 
@@ -259,6 +261,7 @@ Intent matches a skill? (check FIRST — skills handle tool selection internally
 ├─ Bug hunting ("why does X fail") → /tea-rags:bug-hunt
 ├─ Code generation/modification → /tea-rags:data-driven-generation
 ├─ Risk/health assessment → /tea-rags:risk-assessment
+├─ Layout / dependency direction / SDP → /tea-rags:architecture-diagnostics
 ├─ Filter shape beyond pathPattern → /tea-rags:filter-building
 ├─ Pick rerank preset / build custom weights → /tea-rags:analytics-rerank
 └─ No skill matches → direct tool selection below

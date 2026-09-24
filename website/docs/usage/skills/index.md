@@ -10,7 +10,7 @@ _when_ and _how_ to use trajectory signals. Instead of writing long system
 prompts or manually composing rerank presets, you install the plugin and your
 agent learns the workflow.
 
-There are **8 user-invocable skills** grouped into 5 categories, plus 6 internal
+There are **9 user-invocable skills** grouped into 5 categories, plus 6 internal
 skills that other skills call on your agent's behalf.
 
 ## Investigation
@@ -51,6 +51,21 @@ resolves intent-based scopes before ranking.
 
 Use when asked to evaluate risks, find problematic areas, or identify zones
 needing attention. Not for specific bug symptoms — use `bug-hunt` instead.
+
+### `/tea-rags:architecture-diagnostics [scope]`
+
+**Is the code laid out correctly?** A different question from
+`risk-assessment`'s "is it dangerous to touch". The skill calls
+`get_architecture_report` and reads the result root cause first: violations of
+the Stable Dependencies Principle (a stable file depending on a less stable
+one) are grouped by the unstable target, so one base class that names its own
+subclasses shows up as one finding rather than one per subclass. Every line
+carries its evidence: both instabilities, the delta, the support behind them,
+the call weight across the edge and the directory relation.
+
+Edges the detector did not judge are counted, not hidden. The most common is a
+private collaborator: the source is the only file importing the target, so the
+target's instability reaches nobody else. Requires codegraph.
 
 ## Generation
 
