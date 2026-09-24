@@ -8,6 +8,8 @@
  *   2. module-level values (bd tea-rags-mcp-y99pg.30) — a file-scope `let` /
  *      `var` under the module-scope key of the two run-global field channels,
  *      which the monolith fills only for types.
+ *   3. identifier declarations (bd tea-rags-mcp-4p3sb.6) — params, locals and
+ *      stored properties with their syntactic type, for the naming lexicon.
  *
  * A new Swift extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express
@@ -16,8 +18,9 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { swiftDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { SWIFT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { swiftModuleValuesFacetPass } from "./passes/module-values.js";
 import { swiftTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
@@ -25,4 +28,5 @@ export const SWIFT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   swiftDeclaredVisibilityFacetPass,
   swiftModuleValuesFacetPass,
   swiftTypeAbstractnessFacetPass,
+  createIdentifierDeclarationFacetPass(SWIFT_IDENTIFIER_DECLARATION_SYNTAX),
 ];

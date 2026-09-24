@@ -18,5 +18,9 @@ export const capability: LanguageCapability = {
   // enter the graph they were excluded from, and lose `skippedAs: "test"`.
   // `payload.isTest` moves too but is chunker-owned static payload, which only
   // `--force` rewrites; not bumping `chunking` for a false-positive repair.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-4p3sb.6 — the walker publishes
+  // `identifierDeclarations` (params, locals, fields; annotation and `new X()`
+  // types) for the naming lexicon. Rows written by walker 5 carry none, so only
+  // the recompute adds them.
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

@@ -8,5 +8,9 @@ export const capability: LanguageCapability = {
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // chunking 2: bd tea-rags-mcp-lyo4p — a top-level `command` chunk no longer
   // takes its callee's name as its symbolId.
-  versions: { chunking: 2, walker: 1, codegraphSchema: 2 },
+  // walker 2: bd tea-rags-mcp-4p3sb.6 — the walker publishes
+  // `identifierDeclarations` (a function's assignments, `local` / `declare`
+  // names, loop variables) for the naming lexicon. Rows written by walker 1
+  // carry none, so only the recompute adds them.
+  versions: { chunking: 2, walker: 2, codegraphSchema: 2 },
 };

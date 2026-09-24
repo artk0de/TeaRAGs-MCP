@@ -30,7 +30,14 @@
  * INVARIANT CHANGED (bd tea-rags-mcp-r8hme.8): every language with types gained
  * the type-abstractness census facet, so "plus its facets" now includes the
  * file's `typeAbstractness` — each fixture declares one concrete type and no
- * abstraction. Bash declares no types and keeps identity.
+ * abstraction. Bash declares no types, so it gains no census.
+ *
+ * Bash, the last member, left the identity set when it gained the
+ * identifier-declaration facet (bd tea-rags-mcp-4p3sb.6). Every language here
+ * now carries that facet too; each fixture declares no parameter or local
+ * inside a symbol, so the facet adds no channel and the pinned merge is
+ * unchanged. The identity branch stays for a language that joins with an empty
+ * pass list.
  */
 
 import Parser from "tree-sitter";
@@ -65,7 +72,7 @@ interface LanguageCase {
   readonly code: string;
   readonly passes: readonly ExtractionFacetPass[];
   readonly native: (input: WalkInput) => FileExtraction;
-  /** symbolId → the `visibility` the declared-visibility facet adds. Absent ⇒ no pass, identity holds. */
+  /** symbolId → the `visibility` the declared-visibility facet adds. Absent ⇒ no visibility facet. */
   readonly visibilityFacet?: Readonly<Record<string, string>>;
 }
 
@@ -162,7 +169,7 @@ describe("native walkers composed through the extraction pass-runner", () => {
   for (const testCase of CASES) {
     const { language, passes, native, visibilityFacet } = testCase;
 
-    if (visibilityFacet === undefined) {
+    if (passes.length === 0) {
       it(`${language}: the composer returns the native extraction BY IDENTITY under its own pass list`, () => {
         const input = inputs.get(language) as WalkInput;
         const sentinel = native(input);
@@ -171,12 +178,15 @@ describe("native walkers composed through the extraction pass-runner", () => {
         expect(composed.walk(input)).toBe(sentinel);
       });
     } else {
-      it(`${language}: the composer merges the declared-visibility facet onto the native extraction and nothing else`, () => {
+      it(`${language}: the composer merges its facets onto the native extraction and nothing else`, () => {
         const input = inputs.get(language) as WalkInput;
         const sentinel = native(input);
         const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
-        expect(composed.walk(input)).toEqual({ ...withVisibility(sentinel, visibilityFacet), ...ONE_CONCRETE_TYPE });
+        expect(composed.walk(input)).toEqual({
+          ...withVisibility(sentinel, visibilityFacet ?? {}),
+          ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
+        });
       });
     }
 

@@ -20,13 +20,15 @@
  * invisible in production while a unit test driving the bare resolver passes
  * (bd tea-rags-mcp-x9qsh).
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import Parser from "tree-sitter";
 import { describe, expect, it } from "vitest";
 
 import type { LanguageSymbolResolver } from "../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../src/core/domains/language/factory.js";
+import { materializeTree } from "../src/core/infra/materialize.js";
 import { navigators, REPO_ROOT } from "./navigator-files.js";
 
 /** This file, as a navigator must cite it. */
@@ -118,6 +120,67 @@ function parkSites(): string[] {
     .sort();
 }
 
+/**
+ * One function declaring one local, per language with a walker — the probe
+ * {@link languagesPublishingIdentifierDeclarations} walks. A language gaining a
+ * walker without an entry here fails the derivation instead of dropping out of
+ * the set.
+ */
+const DECLARATION_PROBES: Readonly<Record<string, { readonly relPath: string; readonly code: string }>> = {
+  bash: { relPath: "probe.sh", code: "f() {\n  x=1\n}\n" },
+  go: { relPath: "probe.go", code: "package p\n\nfunc f() {\n\tx := 1\n\t_ = x\n}\n" },
+  java: { relPath: "Probe.java", code: "class Probe {\n  void f() {\n    int x = 1;\n  }\n}\n" },
+  javascript: { relPath: "probe.js", code: "function f() {\n  const x = 1;\n}\n" },
+  python: { relPath: "probe.py", code: "def f():\n    x = 1\n" },
+  ruby: { relPath: "probe.rb", code: "def f\n  x = 1\nend\n" },
+  rust: { relPath: "probe.rs", code: "fn f() {\n    let x = 1;\n}\n" },
+  swift: { relPath: "Probe.swift", code: "func f() {\n  let x = 1\n}\n" },
+  typescript: { relPath: "probe.ts", code: "function f() {\n  const x = 1;\n}\n" },
+};
+
+/** Languages whose `<lang>/index.ts` composes its walker over a `<LANG>_EXTRACTION_PASSES` list. */
+function languagesComposingExtractionPasses(): string[] {
+  const root = join(REPO_ROOT, "src/core/domains/language");
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((language) => {
+      const facade = join(root, language, "index.ts");
+      return existsSync(facade) && /\bpasses:\s*[A-Z]+_EXTRACTION_PASSES\b/.test(readFileSync(facade, "utf8"));
+    })
+    .sort();
+}
+
+/**
+ * Languages whose FACADE walker publishes `identifierDeclarations` — read off
+ * the composed walker's output on a materialized probe, the input production
+ * hands it, since a composed walker does not expose its pass list.
+ */
+async function languagesPublishingIdentifierDeclarations(): Promise<string[]> {
+  const factory = new LanguageFactory();
+  const publishing: string[] = [];
+  for (const language of factory.supported()) {
+    const { kernel, walker } = factory.create(language);
+    if (walker === undefined) continue;
+    const probe = DECLARATION_PROBES[language];
+    if (probe === undefined) throw new Error(`no identifier-declaration probe for ${language}`);
+    const mod = await kernel.loadModule();
+    const parser = new Parser();
+    parser.setLanguage((kernel.extractLanguage?.(mod ?? {}) ?? mod) as Parser.Language);
+    const extraction = walker.walk({
+      tree: { rootNode: materializeTree(parser.parse(probe.code).rootNode, probe.code) },
+      code: probe.code,
+      relPath: probe.relPath,
+      language,
+      chunks: [{ symbolId: "f", startLine: 1, endLine: probe.code.split("\n").length, scope: [] }],
+    });
+    if ((extraction.identifierDeclarations ?? []).some((declaration) => declaration.name === "x")) {
+      publishing.push(language);
+    }
+  }
+  return publishing.sort();
+}
+
 /** Source with comments blanked, so a docblock naming a helper is not a call to it. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
@@ -183,6 +246,14 @@ describe("LanguageSymbolResolver capability sets", () => {
 describe("resolver deferral", () => {
   it("parks a candidate at exactly the pinned strategies", () => {
     expect(parkSites()).toEqual([...PINNED_PARK_SITES]);
+  });
+});
+
+describe("identifier declarations", () => {
+  it("are published by the facade walker of every language that composes an extraction pass list", async () => {
+    const composing = languagesComposingExtractionPasses();
+    expect(composing.length).toBeGreaterThan(0);
+    expect(await languagesPublishingIdentifierDeclarations()).toEqual(composing);
   });
 });
 

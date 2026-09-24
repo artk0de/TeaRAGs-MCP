@@ -130,7 +130,6 @@ export class SwiftLanguage implements LanguageProvider {
   readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromSwiftFile(input),
     nameOf: (node) => swiftNameOf(node),
-    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
     passes: SWIFT_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;

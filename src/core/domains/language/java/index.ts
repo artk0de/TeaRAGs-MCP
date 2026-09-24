@@ -106,7 +106,6 @@ export class JavaLanguage implements LanguageProvider {
   readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromJavaFile(input),
     nameOf: (node) => javaNameOf(node),
-    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
     passes: JAVA_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;

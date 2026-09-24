@@ -5,6 +5,8 @@
  *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — `private` / `protected`
  *      / `public` on `ChunkExtraction.visibility`, which the monolith never
  *      fills; package-private stays unrecorded.
+ *   2. identifier declarations (bd tea-rags-mcp-4p3sb.6) — params, locals and
+ *      fields with their syntactic type, for the naming lexicon.
  *
  * A new Java extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -13,11 +15,13 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { javaDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { JAVA_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { javaTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const JAVA_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   javaDeclaredVisibilityFacetPass,
   javaTypeAbstractnessFacetPass,
+  createIdentifierDeclarationFacetPass(JAVA_IDENTIFIER_DECLARATION_SYNTAX),
 ];

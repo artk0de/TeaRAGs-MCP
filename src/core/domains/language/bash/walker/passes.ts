@@ -1,8 +1,11 @@
 /**
- * Bash's ordered extraction passes — EMPTY, which is what makes Bash a plugin
- * host without moving a byte of its output: `composeExtractionWalker` runs
- * `extractFromBashFile` and, finding no passes, hands that result back BY
- * IDENTITY (bd tea-rags-mcp-zhetx, E1 seam 0).
+ * Bash's ordered extraction passes. The monolith `extractFromBashFile` runs
+ * first (bd tea-rags-mcp-zhetx, E1 seam 0); each facet below folds in after it.
+ *
+ *   1. identifier declarations (bd tea-rags-mcp-4p3sb.6) — the variables a
+ *      function declares, untyped, for the naming lexicon. Until this facet the
+ *      list was empty and the composer handed the monolith's result back by
+ *      identity.
  *
  * A new Bash extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -11,6 +14,9 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
+import { BASH_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 
-export const BASH_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
+export const BASH_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  createIdentifierDeclarationFacetPass(BASH_IDENTIFIER_DECLARATION_SYNTAX),
+];
