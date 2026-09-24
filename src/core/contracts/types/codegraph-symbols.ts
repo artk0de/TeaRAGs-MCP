@@ -294,6 +294,24 @@ export interface KwargSignature {
   hasSplat: boolean;
 }
 
+/**
+ * A definition's DECLARED access level, as `cg_symbols.visibility` persists it.
+ * The same word means different reach per language (Go `private` is
+ * package-private, Swift `private` is file-scoped) — see
+ * `ChunkExtraction.visibility`.
+ */
+export type DeclaredSymbolVisibility = "public" | "private" | "protected";
+
+/**
+ * One `cg_symbols` definition's declared visibility (bd tea-rags-mcp-sqqkz).
+ * `null` = the walker recorded none — UNKNOWN, never a default of public.
+ */
+export interface SymbolVisibilityRow {
+  relPath: RelPath;
+  symbolId: SymbolId;
+  visibility: DeclaredSymbolVisibility | null;
+}
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;
@@ -303,7 +321,7 @@ export interface SymbolDefinition {
   arity?: AritySignature;
   /** Declared access level, threaded from `ChunkExtraction.visibility` — whose
    *  doc owns what `"private"` means per language. */
-  visibility?: "public" | "private" | "protected";
+  visibility?: DeclaredSymbolVisibility;
   /** Keyword-arg signature of this method definition (bd d9o7o). Undefined for
    *  non-method chunks / methods with no kwargs. */
   kwargs?: KwargSignature;

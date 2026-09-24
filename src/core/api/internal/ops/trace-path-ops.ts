@@ -43,8 +43,10 @@ import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
+import { lookupDeclaredVisibility } from "./declared-visibility-lookup.js";
 
 const DEFAULT_MAX_DEPTH = 8;
 const DEFAULT_MAX_PATHS = 10;
@@ -108,7 +110,9 @@ export class TracePathOps {
     //    1. expand the frontier from EVERY from-candidate.
     let from: EndpointCandidates;
     let to: EndpointCandidates;
-    let adjacency: Map<FileScopedSymbolId, FileScopedSymbolId[]>;
+    let paths: FileScopedSymbolId[][];
+    let truncated: boolean;
+    let visibility: DeclaredVisibilityIndex;
     try {
       ({ from, to } = await this.resolveEndpoints(handle, req));
       if (from.refs.length === 0 || to.refs.length === 0) {
@@ -117,14 +121,20 @@ export class TracePathOps {
         // caller can correct the request rather than guess.
         return this.withNamesakes({ paths: [], truncated: false }, from, to);
       }
-      adjacency = await this.buildBoundedAdjacency(handle, from.refs, maxDepth);
+      const adjacency = await this.buildBoundedAdjacency(handle, from.refs, maxDepth);
+      // 2. Enumerate simple paths over the partial map (pure), once per
+      //    candidate pair under one shared budget.
+      ({ paths, truncated } = this.enumerateAcrossCandidates(adjacency, from.refs, to.refs, maxDepth, maxPaths));
+      // Declared visibility of the path nodes (bd tea-rags-mcp-sqqkz) — one
+      // batched read, while the handle is still open; an empty index on failure.
+      visibility = await lookupDeclaredVisibility(
+        handle.graphDb,
+        paths.flat().map((key) => parseFileScopedSymbolKey(key).symbolId),
+      );
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
 
-    // 2. Enumerate simple paths over the partial map (pure), once per candidate
-    //    pair under one shared budget.
-    const { paths, truncated } = this.enumerateAcrossCandidates(adjacency, from.refs, to.refs, maxDepth, maxPaths);
     if (paths.length === 0) return this.withNamesakes({ paths: [], truncated }, from, to);
 
     // 3. Hydrate every step symbol from Qdrant (one scroll for the whole union).
@@ -152,7 +162,7 @@ export class TracePathOps {
 
     // 5. Assemble TracedPath per enumerated path. With danger, sort by
     //    aggregateDanger desc; without, keep enumeration order.
-    const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, dangerByNode));
+    const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, visibility, dangerByNode));
     if (dangerByNode) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
     return this.withNamesakes({ paths: traced, truncated }, from, to);
   }
@@ -282,6 +292,7 @@ export class TracePathOps {
   private assemble(
     path: FileScopedSymbolId[],
     byNode: Map<FileScopedSymbolId, HydratedChunk>,
+    visibility: DeclaredVisibilityIndex,
     dangerByNode?: Map<FileScopedSymbolId, StepDanger>,
   ): TracedPath {
     const steps: PathStep[] = path.map((node) => {
@@ -296,6 +307,9 @@ export class TracePathOps {
         startLine: (payload.startLine as number) ?? 0,
         endLine: (payload.endLine as number) ?? 0,
       };
+      // Omitted, never null, when the graph states no level (bd tea-rags-mcp-sqqkz).
+      const level = visibility.at(ref.relPath, ref.symbolId);
+      if (level !== undefined) step.visibility = level;
       const overlay = dangerByNode?.get(node)?.overlay;
       if (overlay) step.dangerOverlay = overlay;
       return step;

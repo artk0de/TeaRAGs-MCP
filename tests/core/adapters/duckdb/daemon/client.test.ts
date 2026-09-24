@@ -715,3 +715,30 @@ describe("DaemonGraphDbClient — getFileImporters / getFileImports (bd tea-rags
     });
   });
 });
+
+describe("DaemonGraphDbClient — getSymbolVisibilities (bd tea-rags-mcp-sqqkz)", () => {
+  it("proxies the batched visibility read through the daemon socket with the symbolIds", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const rows = [
+      { relPath: "a.ts", symbolId: "A#x", visibility: "private" },
+      { relPath: "a.ts", symbolId: "A#y", visibility: null },
+    ];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "getSymbolVisibilities" ? rows : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.getSymbolVisibilities(["A#x", "A#y"]);
+    await client.close();
+
+    expect(result).toEqual(rows);
+    expect(seen.find((r) => r.op === "getSymbolVisibilities")?.params).toMatchObject({
+      collection: "code_x_v1",
+      symbolIds: ["A#x", "A#y"],
+    });
+  });
+});

@@ -35,6 +35,7 @@ import type {
   RelPath,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
 } from "./codegraph-symbols.js";
 
 /**
@@ -112,6 +113,16 @@ export interface PersistedSymbolLineRanges {
  */
 export interface SymbolChunkResolver {
   resolveSymbolChunk: (collectionName: string, symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+}
+
+/**
+ * The read seam the find_symbol outline uses to show each member's DECLARED
+ * visibility (bd tea-rags-mcp-sqqkz) — one batched read per outline response.
+ * May throw when the graph exists but cannot be read; the outline degrades to
+ * its undecorated form. Absent when codegraph is disabled.
+ */
+export interface SymbolVisibilityResolver {
+  resolveSymbolVisibilities: (collectionName: string, symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
 }
 
 /**
@@ -459,6 +470,14 @@ export interface GraphDbClient {
    * find_symbol codegraph fallback (0rskm) and promotable to primary (q383b).
    */
   findSymbolChunk: (symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+
+  /**
+   * Declared visibility of every `cg_symbols` definition whose symbolId is in
+   * `symbolIds` — namesakes in other files included, so the caller joins by
+   * (relPath, symbolId). A NULL column is returned as `null` (unknown); an id
+   * with no definition is absent. One batched read (bd tea-rags-mcp-sqqkz).
+   */
+  getSymbolVisibilities: (symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
 
   /**
    * Each requested file's persisted symbol ranges (bd tea-rags-mcp-9i2ow) — the

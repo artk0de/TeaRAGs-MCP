@@ -865,3 +865,38 @@ describe("CodegraphDaemonServer.handle — getFileImporters / getFileImports", (
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-sqqkz: the declared-visibility decoration reads cg_symbols
+// through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — getSymbolVisibilities", () => {
+  it("is a read op answering the definitions' declared visibility, NULL as null", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_vis_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "a.ts",
+        definitions: [
+          { symbolId: "A#x", fqName: "A#x", shortName: "x", relPath: "a.ts", scope: [], visibility: "private" },
+          { symbolId: "A#y", fqName: "A#y", shortName: "y", relPath: "a.ts", scope: [] },
+        ],
+      },
+    });
+
+    const res = await server.handle({
+      id: 2,
+      op: "getSymbolVisibilities",
+      params: { collection: c, symbolIds: ["A#x", "A#y"] },
+    });
+
+    expect(DAEMON_OP_COMMANDS.getSymbolVisibilities.access).toBe("read");
+    const rows = (res as { result: { symbolId: string }[] }).result;
+    expect([...rows].sort((a, b) => a.symbolId.localeCompare(b.symbolId))).toEqual([
+      { relPath: "a.ts", symbolId: "A#x", visibility: "private" },
+      { relPath: "a.ts", symbolId: "A#y", visibility: null },
+    ]);
+    await pool.closeAll();
+  });
+});

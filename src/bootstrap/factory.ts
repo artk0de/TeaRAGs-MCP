@@ -36,7 +36,7 @@ import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
 import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
-import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
+import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
@@ -1218,6 +1218,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
+    visibilityResolver: createSymbolVisibilityResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
     // The frame of `get_index_metrics`' enrichment health: the providers the
     // composition runs, not the ones the last run happened to touch
@@ -1333,5 +1334,18 @@ export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChun
   return {
     resolveSymbolChunk: async (collectionName, symbolId) =>
       graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+  };
+}
+
+/**
+ * Same bridge for the find_symbol outline's declared-visibility read (bd
+ * tea-rags-mcp-sqqkz). Undefined when codegraph is disabled → the outline
+ * renders undecorated.
+ */
+export function createSymbolVisibilityResolver(graphFacade?: GraphFacade): SymbolVisibilityResolver | undefined {
+  if (!graphFacade) return undefined;
+  return {
+    resolveSymbolVisibilities: async (collectionName, symbolIds) =>
+      graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
   };
 }

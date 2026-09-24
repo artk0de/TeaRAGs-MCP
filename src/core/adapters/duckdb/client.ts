@@ -60,6 +60,7 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
 } from "../../contracts/types/codegraph.js";
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
@@ -271,6 +272,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     return this.symbols.findSymbolChunk(symbolId);
+  }
+
+  async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    return this.symbols.getSymbolVisibilities(symbolIds);
   }
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {

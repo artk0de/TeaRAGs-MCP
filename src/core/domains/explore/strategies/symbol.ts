@@ -56,9 +56,14 @@ import {
   symbolIdLastSegment,
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
-import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
+import type {
+  SymbolChunkLocation,
+  SymbolChunkResolver,
+  SymbolVisibilityResolver,
+} from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
@@ -89,6 +94,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     private readonly registry: TrajectoryFilterBuilder,
     private readonly input: SymbolSearchInput,
     private readonly chunkResolver?: SymbolChunkResolver,
+    private readonly visibilityResolver?: SymbolVisibilityResolver,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
@@ -126,7 +132,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       ? filterByExactSymbolId(allChunks, this.input.symbol)
       : filterByLastSegment(allChunks, this.input.symbol);
 
-    const resolved = resolveSymbols(filtered, this.input.symbol, ctx.metaOnly) as ExploreResult[];
+    // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
+    // metaOnly strips the outline text, so there is nothing to decorate.
+    const resolved = (await renderWithDeclaredVisibility(
+      (visibilityOf) => resolveSymbols(filtered, this.input.symbol, ctx.metaOnly, visibilityOf),
+      ctx.metaOnly ? undefined : this.visibilityResolver,
+      ctx.collectionName,
+    )) as ExploreResult[];
     if (resolved.length > 0) return resolved;
 
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
