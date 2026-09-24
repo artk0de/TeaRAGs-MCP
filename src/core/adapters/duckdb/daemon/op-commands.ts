@@ -7,6 +7,8 @@ import type {
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
+  IdentifierBoundCallee,
+  IdentifierReplaceEntry,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -215,6 +217,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // The file swap happens inside the pooled client's session: the pool entry,
   // its symbol table and every socket stay as they are.
   compactStorage: { access: "write", run: async (graphDb) => graphDb.compactStorage() },
+  // bd tea-rags-mcp-4p3sb.8 — the naming lexicon's per-file identifier rows.
+  replaceIdentifiersBulk: write(async (graphDb, p) =>
+    graphDb.replaceIdentifiersBulk(p.entries as IdentifierReplaceEntry[]),
+  ),
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
@@ -227,6 +233,25 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   ),
   findSymbolChunk: read(async (graphDb, p) => graphDb.findSymbolChunk(p.symbolId as SymbolId)),
   getSymbolVisibilities: read(async (graphDb, p) => graphDb.getSymbolVisibilities(p.symbolIds as SymbolId[])),
+  // Naming-lexicon reads over cg_identifiers (bd tea-rags-mcp-4p3sb.8).
+  aggregateIdentifiersByType: read(async (graphDb, p) =>
+    graphDb.aggregateIdentifiersByType({
+      types: p.types as string[],
+      pathPrefixes: p.pathPrefixes as string[] | undefined,
+    }),
+  ),
+  aggregateIdentifiersByCallee: read(async (graphDb, p) =>
+    graphDb.aggregateIdentifiersByCallee({
+      callees: p.callees as IdentifierBoundCallee[],
+      pathPrefixes: p.pathPrefixes as string[] | undefined,
+    }),
+  ),
+  anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
+  identifierNameTypes: read(async (graphDb, p) => graphDb.identifierNameTypes(p.names as string[])),
+  existingSymbolShortNames: read(async (graphDb, p) => graphDb.existingSymbolShortNames(p.names as string[])),
+  countIdentifiers: read(async (graphDb, p) =>
+    graphDb.countIdentifiers({ types: p.types as string[], pathPrefixes: p.pathPrefixes as string[] | undefined }),
+  ),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),

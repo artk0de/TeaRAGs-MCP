@@ -6,6 +6,8 @@ import type {
   FileScopedSymbolRef,
   GraphEdges,
   GraphFileNode,
+  IdentifierBoundCallee,
+  IdentifierReplaceEntry,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -72,6 +74,9 @@ export const DAEMON_OPS = [
   // enough of it is dead (bd tea-rags-mcp-dvzdm). A WRITE: admitted in write
   // order, and the swap happens inside the daemon, which owns the file.
   "compactStorage",
+  // Per-file replace of the naming lexicon's identifier rows (bd
+  // tea-rags-mcp-4p3sb.8). REQUIRED: an older daemon is restarted at handshake.
+  "replaceIdentifiersBulk",
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
@@ -129,6 +134,14 @@ export const DAEMON_OPS = [
   // Read half of the drift pair (bd tea-rags-mcp-a2ddb). Plain arrays on the
   // wire — no Map, so no entries() dance on either side.
   "diffSymbolSignals",
+  // Naming-lexicon reads over cg_identifiers (bd tea-rags-mcp-4p3sb.8). REQUIRED
+  // like getSymbolVisibilities: an empty answer would read as "no such names".
+  "aggregateIdentifiersByType",
+  "aggregateIdentifiersByCallee",
+  "anchorIdentifierTypes",
+  "identifierNameTypes",
+  "existingSymbolShortNames",
+  "countIdentifiers",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   "getSupertypes",
   "getSubtypes",
@@ -159,7 +172,7 @@ export interface DaemonRequest {
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
     | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
-    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths | getSymbolVisibilities
+    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths | getSymbolVisibilities | anchorIdentifierTypes
     | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
@@ -167,7 +180,11 @@ export interface DaemonRequest {
     | { collection: string; snapshot: TemporalCochangeSnapshot } // replaceTemporalCochange
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
-    | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes
+    | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes
+    | { collection: string; entries: IdentifierReplaceEntry[] } // replaceIdentifiersBulk
+    | { collection: string; types: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByType | countIdentifiers
+    | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[] } // aggregateIdentifiersByCallee
+    | { collection: string; names: string[] }; // identifierNameTypes | existingSymbolShortNames
 }
 
 /**

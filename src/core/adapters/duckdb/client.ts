@@ -23,6 +23,7 @@
  * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
  * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
+ * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -32,6 +33,7 @@
 
 import type {
   AmbiguousCallerSite,
+  AnchorIdentifierTypeRow,
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
@@ -53,6 +55,12 @@ import type {
   GraphEdges,
   GraphFileNode,
   HierarchySnapshot,
+  IdentifierCalleeAggregateRow,
+  IdentifierCalleeScopeQuery,
+  IdentifierNameTypeRow,
+  IdentifierReplaceEntry,
+  IdentifierTypeAggregateRow,
+  IdentifierTypeScopeQuery,
   InheritanceEdge,
   NonPublicMemberEdge,
   PersistedSymbolLineRanges,
@@ -72,6 +80,7 @@ import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
 import { DuckDbGraphAnalyticsStore } from "./graph-analytics-store.js";
 import { DuckDbGraphSession, type DuckDbGraphSessionOptions, type OpenedDatabaseFile } from "./graph-session.js";
 import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
+import { DuckDbIdentifierStore } from "./identifier-store.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
@@ -105,6 +114,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
+  private readonly identifiers: DuckDbIdentifierStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -117,6 +127,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
+    this.identifiers = new DuckDbIdentifierStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -288,6 +299,36 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbols.getSymbolLineRangesBulk(relPaths);
+  }
+
+  // ── Identifier declarations (naming lexicon) ──
+
+  async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
+    return this.identifiers.replaceIdentifiersBulk(entries);
+  }
+
+  async aggregateIdentifiersByType(q: IdentifierTypeScopeQuery): Promise<IdentifierTypeAggregateRow[]> {
+    return this.identifiers.aggregateIdentifiersByType(q);
+  }
+
+  async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
+    return this.identifiers.aggregateIdentifiersByCallee(q);
+  }
+
+  async anchorIdentifierTypes(symbolIds: readonly SymbolId[]): Promise<AnchorIdentifierTypeRow[]> {
+    return this.identifiers.anchorIdentifierTypes(symbolIds);
+  }
+
+  async identifierNameTypes(names: readonly string[]): Promise<IdentifierNameTypeRow[]> {
+    return this.identifiers.identifierNameTypes(names);
+  }
+
+  async existingSymbolShortNames(names: readonly string[]): Promise<string[]> {
+    return this.identifiers.existingSymbolShortNames(names);
+  }
+
+  async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
+    return this.identifiers.countIdentifiers(q);
   }
 
   // ── Method-edge / chunk-signal reads ──

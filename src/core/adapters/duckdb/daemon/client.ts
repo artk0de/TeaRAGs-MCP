@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 
 import type {
   AmbiguousCallerSite,
+  AnchorIdentifierTypeRow,
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
@@ -24,6 +25,12 @@ import type {
   GraphEdges,
   GraphFileNode,
   HierarchySnapshot,
+  IdentifierCalleeAggregateRow,
+  IdentifierCalleeScopeQuery,
+  IdentifierNameTypeRow,
+  IdentifierReplaceEntry,
+  IdentifierTypeAggregateRow,
+  IdentifierTypeScopeQuery,
   InheritanceEdge,
   NonPublicMemberEdge,
   PersistedSymbolLineRanges,
@@ -840,6 +847,45 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
     return (await this.call("getSymbolVisibilities", { symbolIds: [...symbolIds] })) as SymbolVisibilityRow[];
+  }
+
+  // ── Identifier declarations (naming lexicon, bd tea-rags-mcp-4p3sb.8) ──
+
+  async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
+    await this.call("replaceIdentifiersBulk", { entries: [...entries] });
+  }
+
+  async aggregateIdentifiersByType(q: IdentifierTypeScopeQuery): Promise<IdentifierTypeAggregateRow[]> {
+    return (await this.call("aggregateIdentifiersByType", {
+      types: [...q.types],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as IdentifierTypeAggregateRow[];
+  }
+
+  async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
+    return (await this.call("aggregateIdentifiersByCallee", {
+      callees: [...q.callees],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as IdentifierCalleeAggregateRow[];
+  }
+
+  async anchorIdentifierTypes(symbolIds: readonly SymbolId[]): Promise<AnchorIdentifierTypeRow[]> {
+    return (await this.call("anchorIdentifierTypes", { symbolIds: [...symbolIds] })) as AnchorIdentifierTypeRow[];
+  }
+
+  async identifierNameTypes(names: readonly string[]): Promise<IdentifierNameTypeRow[]> {
+    return (await this.call("identifierNameTypes", { names: [...names] })) as IdentifierNameTypeRow[];
+  }
+
+  async existingSymbolShortNames(names: readonly string[]): Promise<string[]> {
+    return (await this.call("existingSymbolShortNames", { names: [...names] })) as string[];
+  }
+
+  async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
+    return (await this.call("countIdentifiers", {
+      types: [...q.types],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as number;
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

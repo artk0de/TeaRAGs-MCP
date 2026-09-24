@@ -777,3 +777,52 @@ describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hm
     });
   });
 });
+
+describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)", () => {
+  it("proxies the identifier write and reads through the daemon socket with their params", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const aggregate = [
+      { typeName: "Doc", kind: "local", name: "doc", typeSource: "binding", n: 1, exampleOwner: "A#x" },
+    ];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "aggregateIdentifiersByType") return aggregate;
+      if (r.op === "countIdentifiers") return 3;
+      if (r.op === "existingSymbolShortNames") return ["doc"];
+      if (r.op === "identifierNameTypes" || r.op === "anchorIdentifierTypes") return [];
+      if (r.op === "aggregateIdentifiersByCallee") return [];
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const entries = [
+      { relPath: "a.rb", rows: [{ ownerSymbolId: "A#x", kind: "local" as const, name: "doc", line: 1 }] },
+    ];
+    await client.replaceIdentifiersBulk(entries);
+    const byType = await client.aggregateIdentifiersByType({ types: ["Doc"], pathPrefixes: ["app/"] });
+    const byCallee = await client.aggregateIdentifiersByCallee({ callees: [{ member: "find", receiver: "Doc" }] });
+    const count = await client.countIdentifiers({ types: ["Doc"] });
+    const names = await client.identifierNameTypes(["doc"]);
+    const anchors = await client.anchorIdentifierTypes(["A#x"]);
+    const taken = await client.existingSymbolShortNames(["doc"]);
+    await client.close();
+
+    expect(byType).toEqual(aggregate);
+    expect(byCallee).toEqual([]);
+    expect(count).toBe(3);
+    expect(names).toEqual([]);
+    expect(anchors).toEqual([]);
+    expect(taken).toEqual(["doc"]);
+    const params = (op: string) => seen.find((r) => r.op === op)?.params;
+    expect(params("replaceIdentifiersBulk")).toMatchObject({ collection: "code_x_v1", entries });
+    expect(params("aggregateIdentifiersByType")).toMatchObject({ types: ["Doc"], pathPrefixes: ["app/"] });
+    expect(params("aggregateIdentifiersByCallee")).toMatchObject({ callees: [{ member: "find", receiver: "Doc" }] });
+    expect(params("countIdentifiers")).toMatchObject({ types: ["Doc"] });
+    expect(params("identifierNameTypes")).toMatchObject({ names: ["doc"] });
+    expect(params("anchorIdentifierTypes")).toMatchObject({ symbolIds: ["A#x"] });
+    expect(params("existingSymbolShortNames")).toMatchObject({ names: ["doc"] });
+  });
+});

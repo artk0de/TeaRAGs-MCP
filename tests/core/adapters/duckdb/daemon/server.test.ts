@@ -963,3 +963,71 @@ describe("CodegraphDaemonServer.handle — readNonPublicMemberEdges", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-4p3sb.8: the naming lexicon's identifier table is written and
+// read through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
+  it("replaces a file's identifiers (a write) and answers the aggregates (reads)", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ident_v1";
+    const doc = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2, typeName: "Doc", typeSource: "binding" };
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: { collection: c, entries: [{ relPath: "a.rb", rows: [doc] }] },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "a.rb",
+        definitions: [{ symbolId: "A#doc", fqName: "A#doc", shortName: "doc", relPath: "a.rb", scope: [] }],
+      },
+    });
+
+    const byType = await server.handle({
+      id: 3,
+      op: "aggregateIdentifiersByType",
+      params: { collection: c, types: ["Doc"] },
+    });
+    const count = await server.handle({ id: 4, op: "countIdentifiers", params: { collection: c, types: ["Doc"] } });
+    const names = await server.handle({ id: 5, op: "identifierNameTypes", params: { collection: c, names: ["doc"] } });
+    const anchors = await server.handle({
+      id: 6,
+      op: "anchorIdentifierTypes",
+      params: { collection: c, symbolIds: ["A#run"] },
+    });
+    const taken = await server.handle({
+      id: 7,
+      op: "existingSymbolShortNames",
+      params: { collection: c, names: ["doc", "other"] },
+    });
+    const byCallee = await server.handle({
+      id: 8,
+      op: "aggregateIdentifiersByCallee",
+      params: { collection: c, callees: [{ member: "find" }] },
+    });
+
+    expect(DAEMON_OP_COMMANDS.replaceIdentifiersBulk.access).toBe("write");
+    for (const op of [
+      "aggregateIdentifiersByType",
+      "aggregateIdentifiersByCallee",
+      "anchorIdentifierTypes",
+      "identifierNameTypes",
+      "existingSymbolShortNames",
+      "countIdentifiers",
+    ] as const) {
+      expect(DAEMON_OP_COMMANDS[op].access, op).toBe("read");
+    }
+    expect((byType as { result: unknown }).result).toEqual([
+      { typeName: "Doc", kind: "local", name: "doc", typeSource: "binding", n: 1, exampleOwner: "A#run" },
+    ]);
+    expect((count as { result: unknown }).result).toBe(1);
+    expect((names as { result: unknown }).result).toEqual([{ name: "doc", typeName: "Doc", n: 1 }]);
+    expect((anchors as { result: unknown }).result).toEqual([]);
+    expect((taken as { result: unknown }).result).toEqual(["doc"]);
+    expect((byCallee as { result: unknown }).result).toEqual([]);
+    await pool.closeAll();
+  });
+});

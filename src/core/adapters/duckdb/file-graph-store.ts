@@ -313,6 +313,9 @@ export class DuckDbFileGraphStore {
       // The file's resolve tallies (bd tea-rags-mcp-xpmwg): `getRunStats` sums
       // them per language, so a deleted file's calls must stop counting.
       await this.session.run("DELETE FROM cg_file_resolve_stats WHERE rel_path = ?", [relPath]);
+      // The file's declared identifiers (bd tea-rags-mcp-4p3sb.8) go with it, or
+      // the naming lexicon keeps counting names from a file that is gone.
+      await this.session.run("DELETE FROM cg_identifiers WHERE rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
     });
   }

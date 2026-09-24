@@ -384,10 +384,24 @@ export interface TypeAbstractnessCensus {
 export type IdentifierDeclarationKind = "param" | "local" | "field" | "return";
 
 /**
- * Where a declared identifier's type came from. The pass emits the first two;
- * the rest are joined at sink time from the language's type channels.
+ * Where a declared identifier's type came from. The pass emits `annotation` and
+ * `constructor`; the sink-time row builder joins `binding`, `field-type` and
+ * `return-type` from the language's type channels and derives `finder` from the
+ * bound callee and the language's finder vocabulary. `call-return` is never
+ * persisted: the `cg_identifiers` reads compute it by joining the bound call to
+ * its single exact target's `return` row.
  */
-export type IdentifierTypeSource = "annotation" | "constructor" | "binding" | "field-type" | "return-type";
+export type IdentifierTypeSource =
+  | "annotation"
+  | "constructor"
+  | "binding"
+  | "field-type"
+  | "return-type"
+  | "finder"
+  | "call-return";
+
+/** The type sources a `cg_identifiers` row may carry on disk — every one but the query-time join. */
+export type PersistedIdentifierTypeSource = Exclude<IdentifierTypeSource, "call-return">;
 
 /** One identifier declaration (`FileExtraction.identifierDeclarations`). */
 export interface IdentifierDeclaration {

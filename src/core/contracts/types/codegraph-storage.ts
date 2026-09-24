@@ -12,6 +12,12 @@
  */
 
 import type {
+  IdentifierBoundCallee,
+  IdentifierDeclarationKind,
+  IdentifierTypeSource,
+  PersistedIdentifierTypeSource,
+} from "./codegraph-extraction.js";
+import type {
   AmbiguousCallerSite,
   CalleeEdge,
   CallerEdge,
@@ -74,6 +80,88 @@ export interface BulkFileUpsertEntry {
 export interface SymbolChunkIdJoinEntry {
   relPath: RelPath;
   chunkIds: ReadonlyMap<SymbolId, string>;
+}
+
+/**
+ * One `cg_identifiers` row (bd tea-rags-mcp-4p3sb.8): a declared identifier of
+ * `ownerSymbolId`, with its best-known type and — for a local or field bound to
+ * a call — that call's callee and its `CallRef.callText`
+ * (`boundCallExpression`, the edge table's join key). Built at sink time from a
+ * file's `FileExtraction`; the file is implied by the entry carrying it.
+ */
+export interface IdentifierRow {
+  ownerSymbolId: SymbolId;
+  kind: IdentifierDeclarationKind;
+  name: string;
+  line: number;
+  typeName?: string;
+  typeSource?: PersistedIdentifierTypeSource;
+  boundMember?: string;
+  boundReceiver?: string;
+  boundCallExpression?: string;
+}
+
+/** One file's identifier rows, as consumed by `GraphDbClient.replaceIdentifiersBulk`. */
+export interface IdentifierReplaceEntry {
+  relPath: RelPath;
+  rows: readonly IdentifierRow[];
+}
+
+/**
+ * The scope of an identifier read: the effective types asked for, optionally
+ * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
+ */
+export interface IdentifierTypeScopeQuery {
+  types: readonly string[];
+  pathPrefixes?: readonly string[];
+}
+
+/**
+ * Callees asked for by `GraphDbClient.aggregateIdentifiersByCallee`. A callee
+ * without `receiver` matches the member under ANY receiver, receiverless
+ * included.
+ */
+export interface IdentifierCalleeScopeQuery {
+  callees: readonly IdentifierBoundCallee[];
+  pathPrefixes?: readonly string[];
+}
+
+/**
+ * One (type, kind, name, typeSource) group of the type aggregate. `typeSource`
+ * is `call-return` for a row the query typed through its bound call's single
+ * exact target. `exampleOwner` is the smallest owner symbolId of the group.
+ */
+export interface IdentifierTypeAggregateRow {
+  typeName: string;
+  kind: IdentifierDeclarationKind;
+  name: string;
+  typeSource: IdentifierTypeSource;
+  n: number;
+  exampleOwner: SymbolId;
+}
+
+/** One (callee, kind, name) group of the callee aggregate; `receiver` is null for a receiverless call. */
+export interface IdentifierCalleeAggregateRow {
+  member: string;
+  receiver: string | null;
+  kind: IdentifierDeclarationKind;
+  name: string;
+  n: number;
+  exampleOwner: SymbolId;
+}
+
+/** A typed `param` / `return` row of an anchor symbol. */
+export interface AnchorIdentifierTypeRow {
+  ownerSymbolId: SymbolId;
+  kind: "param" | "return";
+  typeName: string;
+}
+
+/** How many rows bind `name` to `typeName` (null: untyped even after the call-return join). */
+export interface IdentifierNameTypeRow {
+  name: string;
+  typeName: string | null;
+  n: number;
 }
 
 /**
@@ -497,6 +585,42 @@ export interface GraphDbClient {
    * Callers bound the set themselves — one call is one IPC frame on the daemon.
    */
   getSymbolLineRangesBulk: (relPaths: readonly RelPath[]) => Promise<Map<RelPath, PersistedSymbolLineRanges>>;
+
+  // ── Identifier declarations (naming lexicon, bd tea-rags-mcp-4p3sb.8) ──
+
+  /**
+   * Make `cg_identifiers` EQUAL each entry's rows for every file the entries
+   * name, in one transaction; last-wins per relPath, and an entry with no rows
+   * clears its file. A file no entry names is untouched. Empty entries is a
+   * no-op.
+   */
+  replaceIdentifiersBulk: (entries: readonly IdentifierReplaceEntry[]) => Promise<void>;
+
+  /**
+   * Rows whose EFFECTIVE type is in `q.types`, grouped by (type, kind, name,
+   * typeSource) and counted. The effective type of an untyped row bound to a
+   * call is its callee's `return` type when the call has exactly one `exact`
+   * edge — reported as `typeSource: "call-return"`. Empty `types` reads nothing.
+   */
+  aggregateIdentifiersByType: (q: IdentifierTypeScopeQuery) => Promise<IdentifierTypeAggregateRow[]>;
+
+  /**
+   * Rows bound to one of `q.callees`, grouped by (member, receiver, kind, name)
+   * and counted — typed or not. Empty `callees` reads nothing.
+   */
+  aggregateIdentifiersByCallee: (q: IdentifierCalleeScopeQuery) => Promise<IdentifierCalleeAggregateRow[]>;
+
+  /** The typed `param` and `return` rows of the given owner symbols. */
+  anchorIdentifierTypes: (symbolIds: readonly SymbolId[]) => Promise<AnchorIdentifierTypeRow[]>;
+
+  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped). */
+  identifierNameTypes: (names: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
+
+  /** Collision: the given names that are already a `cg_symbols.short_name`. */
+  existingSymbolShortNames: (names: readonly string[]) => Promise<string[]>;
+
+  /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
+  countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 
