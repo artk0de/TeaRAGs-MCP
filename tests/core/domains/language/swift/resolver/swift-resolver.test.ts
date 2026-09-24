@@ -1294,6 +1294,57 @@ describe("SwiftCallResolver — a SHORT type name reaches its NESTED declaration
     expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
   });
 
+  // A FIELD's type is written inside the type that declares the field, so Swift
+  // resolves it from THERE outward — not from wherever the call happens to sit.
+  // `mutableState.state` called in `DownloadRequest` reads `state: State`
+  // written in `Request.MutableState`, which means `Request.State` even though
+  // no scope of the caller mentions `Request`.
+  const nestedFieldTable = table({
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request.MutableState", scope: ["Request"] },
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+    "Sources/Socket.swift": [
+      { symbolId: "Socket.State", scope: ["Socket"] },
+      { symbolId: "Socket.State#canTransitionTo", scope: ["Socket", "State"] },
+    ],
+    "Sources/Download.swift": [{ symbolId: "DownloadRequest#cancel", scope: ["DownloadRequest"] }],
+  });
+  const nestedFieldFacts = {
+    "Sources/Request.swift::Request": { mutableState: "MutableState" },
+    "Sources/Request.swift::MutableState": { state: "State" },
+  };
+
+  it("qualifies a field's type from the type that DECLARES the field, not from the caller", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("mutableState.state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Download.swift",
+        callerScope: ["DownloadRequest"],
+        symbolTable: nestedFieldTable,
+        classExtends: { DownloadRequest: "Request" },
+        classFieldTypesByClassKey: nestedFieldFacts,
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("types a subclass's implicit-self field hop by hop through the base's nested types", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("self.mutableState.state", "canTransitionTo"),
+      ctx({
+        callerFile: "Sources/Download.swift",
+        callerScope: ["DownloadRequest"],
+        symbolTable: nestedFieldTable,
+        classExtends: { DownloadRequest: "Request" },
+        classFieldTypesByClassKey: nestedFieldFacts,
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
   it("stays silent when several nested namesakes exist and none encloses the caller", () => {
     const target = new SwiftCallResolver().resolve(
       call("state", "canTransitionTo"),

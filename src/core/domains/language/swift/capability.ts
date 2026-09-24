@@ -14,6 +14,18 @@ export const capability: LanguageCapability = {
     summary:
       "9-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type receivers; no import narrowing",
   },
+  // walker 12: a property's type is qualified from the type that DECLARES the
+  // property, not from the caller. `var dataEncoding: DataEncoding` written inside
+  // `URLEncodedFormEncoder` names `URLEncodedFormEncoder.DataEncoding`, and a
+  // `_URLEncodedFormEncoder` method reading it encloses no such type, so the old
+  // caller-scope qualification found nothing. `SwiftMemberTypeLookup#typeOfProperty`
+  // now hands the defining class to `qualifySwiftTypeNameWithin`, which walks
+  // Swift's lexical lookup from that owner outward before falling back. Measured
+  // (swiftc -dump-ast oracle, grammar 0.7.3): Alamofire TOTAL 0.706 -> 0.712
+  // (1062 -> 1071 of 1505; dynamic 0.485 -> 0.505, chain 0.223 -> 0.231), Quick
+  // unmoved; 9 edges gained, every one the typechecker's own target, 0 lost. So an
+  // index built by walker 11 holds no edge through a field typed by a nested type
+  // of the field's owner.
   // tree-sitter-swift 0.7.1 -> 0.7.3 (walker 11, chunking 4). Upstream tagged
   // 0.7.3 but never published it to npm, so it ships as our own N-API prebuild
   // package `@artk0de/tree-sitter-swift@0.7.3-prebuild.1`, built from the
@@ -185,7 +197,7 @@ export const capability: LanguageCapability = {
   // must route `--force`, not `--force-enrichments`.
   // chunking 4: the grammar bump above — files 0.7.1 could not parse now
   // chunk at real symbol boundaries, so the chunk set moves again.
-  versions: { chunking: 4, walker: 11, codegraphSchema: 2 },
+  versions: { chunking: 4, walker: 12, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

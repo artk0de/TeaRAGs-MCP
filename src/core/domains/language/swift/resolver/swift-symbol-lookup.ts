@@ -154,3 +154,23 @@ export function qualifySwiftTypeName(typeName: string, ctx: CallContext): string
   }
   return typeName;
 }
+
+/**
+ * The composed id a type name WRITTEN INSIDE `owner` denotes: Swift's lexical
+ * lookup from that declaration outward — `<owner>.<name>`, then each enclosing
+ * type of `owner` in turn — before {@link qualifySwiftTypeName}'s module-level
+ * and caller-scope reading.
+ *
+ * `owner` is the qualified id of the type whose declaration spelled the name
+ * (the type declaring a property, for a property's type). The innermost match
+ * wins, as it does in Swift: a `State` nested in `Request` shadows a top-level
+ * `State` for everything written inside `Request`.
+ */
+export function qualifySwiftTypeNameWithin(typeName: string, owner: string, ctx: CallContext): string {
+  for (let scope = owner; scope.length > 0; scope = scope.slice(0, Math.max(0, scope.lastIndexOf(".")))) {
+    const qualified = `${scope}.${typeName}`;
+    if (lookupSwiftSymbols(ctx, qualified).length > 0) return qualified;
+    if (!scope.includes(".")) break;
+  }
+  return qualifySwiftTypeName(typeName, ctx);
+}

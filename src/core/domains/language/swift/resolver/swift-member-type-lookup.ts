@@ -52,19 +52,35 @@ import {
 } from "../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { SWIFT_ANCESTOR_POLICY } from "./swift-ancestor-policy.js";
-import { lookupSwiftSymbols, lookupSwiftTypeMember, qualifySwiftTypeName } from "./swift-symbol-lookup.js";
+import {
+  lookupSwiftSymbols,
+  lookupSwiftTypeMember,
+  qualifySwiftTypeName,
+  qualifySwiftTypeNameWithin,
+} from "./swift-symbol-lookup.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
 
 export class SwiftMemberTypeLookup {
   private readonly linearizers = new RunScopedMemo<CallContext, AncestorLinearizer<CallContext>>();
   private readonly fields = new SwiftTypeFieldIndex();
 
-  /** The declared type of the property `member` on `typeName` or a superclass. */
+  /**
+   * The declared type of the property `member` on `typeName` or a superclass,
+   * qualified from the type that DECLARES the property.
+   *
+   * A property's type is written inside its declaring type, and Swift resolves
+   * that spelling from there outward: `var state: State` inside
+   * `Request.MutableState` names `Request.State`, whichever file or subclass
+   * later reads `mutableState.state`. The caller's own scope is the wrong place
+   * to start — a `DownloadRequest` caller encloses no `State` at all — so the
+   * lexical walk starts at the owner ({@link qualifySwiftTypeNameWithin}).
+   */
   typeOfProperty(typeName: string, member: string, ctx: CallContext): string | undefined {
     const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) =>
       this.propertyTypeOn(candidate, member, ctx),
     );
-    return scan.target ?? undefined;
+    if (scan.target === null || scan.definingClassKey === null) return undefined;
+    return qualifySwiftTypeNameWithin(scan.target, qualifySwiftTypeName(scan.definingClassKey, ctx), ctx);
   }
 
   /**
@@ -96,8 +112,14 @@ export class SwiftMemberTypeLookup {
     return scan.target?.target ?? null;
   }
 
+  /**
+   * The field channels key a type by its OWN name (`MutableState`), the name
+   * its declaration spells; a qualified receiver (`Request.MutableState`) reads
+   * them under its last segment.
+   */
   private propertyTypeOn(typeName: string, member: string, ctx: CallContext): string | null {
-    return ctx.classFieldTypes?.[typeName]?.[member] ?? this.fields.fieldsOf(typeName, ctx)?.[member] ?? null;
+    const key = typeName.slice(typeName.lastIndexOf(".") + 1);
+    return ctx.classFieldTypes?.[key]?.[member] ?? this.fields.fieldsOf(key, ctx)?.[member] ?? null;
   }
 
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {

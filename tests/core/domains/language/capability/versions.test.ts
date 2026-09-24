@@ -216,6 +216,9 @@ describe("seeded support versions", () => {
       // tree-sitter-swift 0.7.1 to 0.7.3, which parses files 0.7.1 left as
       // ERROR nodes, so an index built by walker 10 holds parse-error ids and
       // none of the edges out of those files.
+      // swift walker 12: a property's type is qualified from its declaring type
+      // outward, so an index built by walker 11 holds no edge through a field typed
+      // by a nested type of the field's owner.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -232,7 +235,7 @@ describe("seeded support versions", () => {
         ["java", 2],
         ["rust", 2],
         ["go", 4],
-        ["swift", 11],
+        ["swift", 12],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
