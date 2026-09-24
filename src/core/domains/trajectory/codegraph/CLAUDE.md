@@ -96,11 +96,15 @@
   `cg_symbols_inheritance` and `cg_ambiguous_fanout` (plus its `rel_path` slice
   of `cg_pass1_aggregates`) against the rows the walk produced, so only
   genuinely obsolete rows are deleted; derived tables (cycles, metrics) are
-  wholesale recomputes and do self-correct. Why: no amount of incremental
-  reindexing heals a partial graph, because the files carrying the stale edges
-  have not changed — meanwhile every `fanIn` / `instability` / `pageRank`
-  written comes off that graph, and `find_cycles` keeps reporting cycles the
-  source dropped weeks ago.
+  wholesale recomputes and do self-correct — except after a deletion, which only
+  prunes them (`pruneDerivedForDeletedFiles`, called by `handleDeletedPaths`
+  before the base rows go) and marks them stale in `cg_derived_stale` (migration
+  028); the next finalize with no run sink recomputes, and a no-change reindex
+  drives one through `runFinalizeOnly` (bd tea-rags-mcp-dy852). Why: no amount
+  of incremental reindexing heals a partial graph, because the files carrying
+  the stale edges have not changed — meanwhile every `fanIn` / `instability` /
+  `pageRank` written comes off that graph, and `find_cycles` keeps reporting
+  cycles the source dropped weeks ago.
 
 - **A pooled graph client is valid only while its path still names the file it
   opened, and closing one never checkpoints.** `GraphDbClientPool#acquire` — the

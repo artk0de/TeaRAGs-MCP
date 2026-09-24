@@ -791,6 +791,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("removeSymbolsForFile", { relPath });
   }
 
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    await this.call("pruneDerivedForDeletedFiles", { relPaths: [...relPaths] });
+  }
+
+  async hasStaleDerivedTables(): Promise<boolean> {
+    return (await this.call("hasStaleDerivedTables", {})) as boolean;
+  }
+
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
     await this.call("upsertSymbols", { relPath, definitions });
   }

@@ -265,7 +265,57 @@ export class DuckDbGraphAnalyticsStore {
         return [relPath, symbolId, String(rank)];
       });
       await this.session.insertBatched("cg_symbols_metrics", ["rel_path", "symbol_id", "page_rank"], rows);
+      // The last write of every full recompute: the derived tables describe the
+      // current graph again (bd tea-rags-mcp-dy852).
+      await this.session.exec("DELETE FROM cg_derived_stale");
     });
+  }
+
+  /**
+   * Cheap derived-table prune for deleted files (bd tea-rags-mcp-dy852), in
+   * place of the whole-graph recompute a deletion-only reindex does not run:
+   * drop every cycle (either scope) with a member in a deleted file, drop the
+   * deleted files' ranks, and mark the rest stale — every remaining rank was
+   * computed over a graph that still held the deleted nodes. The next full
+   * recompute clears the mark (`replacePageRanks`).
+   *
+   * Must run BEFORE the files' base rows are removed: only a path
+   * `cg_symbols_files` still knows marks the tables stale, so deleting a file
+   * the graph never walked (a README) costs the next run nothing.
+   */
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    const unique = [...new Set(relPaths)];
+    if (unique.length === 0) return;
+    const placeholders = unique.map(() => "?").join(", ");
+    await this.session.transaction(async () => {
+      const walked = await this.session.queryAll<{ n: number | bigint }>(
+        `SELECT COUNT(*) AS n FROM cg_symbols_files WHERE rel_path IN (${placeholders})`,
+        unique,
+      );
+      // Bounded by the repository's cycle membership (tens of rows on this
+      // project's own index), so the touched cycles are named here and each one
+      // deleted by its key.
+      const touched = await this.session.queryAll<{ scope: string; cycle_id: number | bigint }>(
+        `SELECT DISTINCT scope, cycle_id FROM cg_symbols_cycles WHERE member_rel_path IN (${placeholders})`,
+        unique,
+      );
+      for (const { scope, cycle_id } of touched) {
+        await this.session.run("DELETE FROM cg_symbols_cycles WHERE scope = ? AND cycle_id = ?", [
+          scope,
+          Number(cycle_id),
+        ]);
+      }
+      await this.session.run(`DELETE FROM cg_symbols_metrics WHERE rel_path IN (${placeholders})`, unique);
+      if (Number(walked[0]?.n ?? 0) > 0) {
+        await this.session.exec("INSERT OR IGNORE INTO cg_derived_stale (marker) VALUES ('derived')");
+      }
+    });
+  }
+
+  /** Whether a deletion pruned the derived tables since the last full recompute. */
+  async hasStaleDerivedTables(): Promise<boolean> {
+    const rows = await this.session.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_derived_stale");
+    return Number(rows[0]?.n ?? 0) > 0;
   }
 
   /**

@@ -427,6 +427,30 @@ export class EnrichmentCoordinator {
   }
 
   /**
+   * Whether any provider's derived state was pruned by a deletion and not yet
+   * recomputed (bd tea-rags-mcp-dy852) — the other reason, besides a repair, a
+   * reindex with nothing to chunk still owes `runFinalizeOnly`. A provider whose
+   * store cannot be read counts as not stale.
+   */
+  async hasStaleDerivedState(collectionName: PhysicalCollectionName): Promise<boolean> {
+    for (const provider of this.providers) {
+      if (!provider.hasStaleDerivedState) continue;
+      try {
+        if (await provider.hasStaleDerivedState(collectionName)) return true;
+      } catch (err) {
+        // An unreadable store must not turn every later no-op reindex into a
+        // finalize; the run that can reach it again asks again.
+        pipelineLog.enrichmentPhase("STALE_DERIVED_READ_FAILED", {
+          provider: provider.key,
+          collection: collectionName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return false;
+  }
+
+  /**
    * Drive the completion sequence for a pass that never opened a chunk pipeline
    * (bd tea-rags-mcp-gvw8h).
    *
@@ -436,7 +460,8 @@ export class EnrichmentCoordinator {
    * let it settle. Steps keyed off stored chunks read an empty map and no-op —
    * except a recovery handoff, whose chunks are seeded and computed.
    *
-   * Callers gate this on the repair having found work. An untouched repository
+   * Callers gate this on the repair having found work, or on a provider's
+   * derived state being stale (`hasStaleDerivedState`). An untouched repository
    * must not pay for a completion pass it has no use for.
    */
   async runFinalizeOnly(

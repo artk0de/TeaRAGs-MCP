@@ -344,6 +344,20 @@ export interface GraphDbClient {
   /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
   removeSymbolsForFile: (relPath: RelPath) => Promise<void>;
 
+  /**
+   * Cheap derived-table prune for deleted files (bd tea-rags-mcp-dy852):
+   * drop every cycle with a member in one of `relPaths` and those files'
+   * PageRank rows, and mark the derived tables stale when any path was a
+   * walked file. Called by `handleDeletedPaths` BEFORE the base rows go.
+   */
+  pruneDerivedForDeletedFiles: (relPaths: readonly RelPath[]) => Promise<void>;
+
+  /**
+   * Whether a deletion pruned the derived tables since the last full cycles +
+   * PageRank recompute, which clears the mark.
+   */
+  hasStaleDerivedTables: () => Promise<boolean>;
+
   /** Bulk read for bootstrap hydration. Returns every persisted symbol
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */

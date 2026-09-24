@@ -438,6 +438,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     if (paths.length === 0) return;
     const { graphDb, symbolTable } = await this.getStore(options?.collectionName);
     const perColl = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
+    // The derived tables (cycles, PageRank) are whole-graph recomputes this
+    // hook does not pay for — a deletion-only reindex exists to stay cheap.
+    // Prune what the deletion invalidated and mark the rest stale; the next
+    // finalize recomputes (bd tea-rags-mcp-dy852). BEFORE the base rows go:
+    // only a file `cg_symbols_files` still knows marks the tables stale.
+    await graphDb.pruneDerivedForDeletedFiles(paths);
     for (const relPath of paths) {
       // `removeFile` clears edges AND cg_symbols rows; `removeSymbolsForFile` is
       // idempotent for symbol-only callers, so calling both is safe.
@@ -446,6 +452,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       symbolTable.removeFile(relPath);
       perColl?.delete(relPath);
     }
+  }
+
+  /** Whether a deletion pruned cycles / PageRank since their last recompute (bd tea-rags-mcp-dy852). */
+  async hasStaleDerivedState(collectionName?: PhysicalCollectionName): Promise<boolean> {
+    return (await this.getStore(collectionName)).graphDb.hasStaleDerivedTables();
   }
 
   /**
@@ -964,6 +975,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // and PageRank wait for the completion owner's `readBack`.
       if (sink) await sink.finish(partitioned ? { recomputeMetrics: false } : undefined);
       const { graphDb } = await this.getStore(options?.collectionName);
+      // No sink = this run walked no codegraph file, so nothing recomputed
+      // cycles / PageRank — which a prior deletion may have left pruned but
+      // stale (bd tea-rags-mcp-dy852). Recompute here; `runFinalizeOnly`
+      // reaches this seam too. A partition leaves it to `readBack`.
+      if (!sink && !partitioned && (await graphDb.hasStaleDerivedTables())) {
+        await recomputeCodegraphMetricsBestEffort(async () =>
+          this.recomputeGraphMetricsStreaming(options?.collectionName),
+        );
+      }
       if (!partitioned) {
         const paths =
           options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];

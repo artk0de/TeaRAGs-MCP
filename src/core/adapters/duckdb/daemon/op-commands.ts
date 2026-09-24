@@ -168,6 +168,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges)),
   removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath as RelPath)),
   removeSymbolsForFile: write(async (graphDb, p) => graphDb.removeSymbolsForFile(p.relPath as RelPath)),
+  pruneDerivedForDeletedFiles: write(async (graphDb, p) =>
+    graphDb.pruneDerivedForDeletedFiles(p.relPaths as RelPath[]),
+  ),
   upsertSymbols: write(async (graphDb, p) =>
     graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]),
   ),
@@ -252,6 +255,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // The adapter returns a `Map<string, string[]>`; serialise as entries
   // so it survives JSON framing (the client rebuilds the Map).
   listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope as CycleScope)).entries()]),
+  hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
   getPageRank: read(async (graphDb, p) =>
     graphDb.getPageRank(p.symbolId as SymbolId, p.relPath as RelPath | undefined),
   ),

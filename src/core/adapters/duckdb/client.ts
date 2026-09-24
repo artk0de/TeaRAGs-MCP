@@ -359,6 +359,14 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.analytics.replacePageRanks(ranks);
   }
 
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.analytics.pruneDerivedForDeletedFiles(relPaths);
+  }
+
+  async hasStaleDerivedTables(): Promise<boolean> {
+    return this.analytics.hasStaleDerivedTables();
+  }
+
   async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
     return this.analytics.getPageRank(symbolId, relPath);
   }
