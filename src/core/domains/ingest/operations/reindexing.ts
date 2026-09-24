@@ -350,6 +350,18 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         steps: statsResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
+
+    // After the schema pipeline, so its own indexes already exist: creates the
+    // declared payload indexes an existing collection lacks and names the
+    // undeclared ones (bd tea-rags-mcp-mimq0). A clean collection costs one read.
+    const payloadIndexResult = await migrator.run("payloadIndexes");
+    if (payloadIndexResult.steps.length > 0) {
+      pipelineLog.reindexPhase("payload_index_reconcile", {
+        fromVersion: payloadIndexResult.fromVersion,
+        toVersion: payloadIndexResult.toVersion,
+        steps: payloadIndexResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
+      });
+    }
   }
 
   private async checkForCheckpoint(synchronizer: ParallelFileSynchronizer): Promise<boolean> {
