@@ -745,6 +745,15 @@ export class Reranker {
       const descriptor = this.payloadSignals.find((ps) => ps.key === fullKey);
       if (!descriptor?.stats?.labels) continue;
 
+      // The read half of `stats.coSignalClass`: a class member left the sample,
+      // so no band describes it — it reads the class name, and needs no
+      // percentile, hence no per-language stats either.
+      const classLabel = this.coSignalClassLabel(descriptor, siblingValues);
+      if (classLabel !== undefined) {
+        overlay[field] = { value, label: classLabel };
+        continue;
+      }
+
       // Age branch: label bands derive from the timestamp stats, inverted at
       // query time — not from the ageDays stamp's own (frozen) percentiles.
       const age = this.ageCapabilities().get(`${level}.${field}`);
@@ -835,6 +844,22 @@ export class Reranker {
     });
     const signalStats = scope === "test" ? scopedStats.test : scopedStats.source;
     return signalStats?.percentiles ? signalStats : undefined;
+  }
+
+  /**
+   * The class label this point reads when it belongs to the signal's declared
+   * `stats.coSignalClass` — the read half of the sampler dropping class
+   * members. The co-signal is read out of the same level-scoped sibling map the
+   * support gate uses; a missing co-signal is not membership, matching the
+   * sampler, which kept such a unit in the sample.
+   */
+  private coSignalClassLabel(
+    descriptor: PayloadSignalDescriptor,
+    siblingValues: Record<string, number>,
+  ): string | undefined {
+    const cls = descriptor.stats?.coSignalClass;
+    if (!cls) return undefined;
+    return siblingValues[cls.coSignal] === cls.equals ? cls.label : undefined;
   }
 
   /**
