@@ -157,6 +157,16 @@ export interface CallResultBinding {
    * the chunk. ABSENT means visible to the end of the chunk.
    */
   readonly scopeEndLine?: number;
+  /**
+   * Set when the binding is NOT the call's result but the 0-based N-th
+   * parameter of a closure passed to `callee` (bd tea-rags-mcp-y99pg.13):
+   * `state.write { state in … }` binds `state` to parameter 0 of the closure
+   * `write` declares, whose type only the callee's declaration — often in
+   * another file — says. Visible from its own line, since a closure's
+   * parameters are in scope on the line that opens it. ABSENT on every
+   * call-result binding.
+   */
+  readonly closureParameter?: number;
 }
 
 /**

@@ -27,6 +27,12 @@ interface SwiftTypeDeclarationSets {
   readonly reopening: ReadonlyMap<string, ReadonlySet<string>>;
   /** typeId → every supertype any declaration of it names, in first-seen order. */
   readonly conforms: ReadonlyMap<string, readonly string[]>;
+  /** typeId → its own generic parameter names (bd tea-rags-mcp-y99pg.13). */
+  readonly generics: ReadonlyMap<string, readonly string[]>;
+  /** typeId → property → the generic arguments its declared type carries. */
+  readonly fieldArguments: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[]>>;
+  /** typeId → method → its closure's parameter types; `null` where declarations disagree. */
+  readonly closureParameters: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[] | null>>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -37,6 +43,36 @@ function add(into: Map<string, Set<string>>, typeId: string, relPath: string): v
   else into.set(typeId, new Set([relPath]));
 }
 
+function mergeFieldArguments(
+  into: Map<string, Map<string, readonly (string | null)[]>>,
+  fact: TypeDeclarationFact,
+): void {
+  if (fact.fieldTypeArguments === undefined) return;
+  const fields = into.get(fact.typeId) ?? new Map<string, readonly (string | null)[]>();
+  for (const [field, args] of Object.entries(fact.fieldTypeArguments)) if (!fields.has(field)) fields.set(field, args);
+  into.set(fact.typeId, fields);
+}
+
+/** Two declarations of one method that disagree on its closure's parameter types poison the entry to `null`. */
+function mergeClosureParameters(
+  into: Map<string, Map<string, readonly (string | null)[] | null>>,
+  fact: TypeDeclarationFact,
+): void {
+  if (fact.memberClosureParameters === undefined) return;
+  const members = into.get(fact.typeId) ?? new Map<string, readonly (string | null)[] | null>();
+  for (const [member, types] of Object.entries(fact.memberClosureParameters)) {
+    if (!members.has(member)) members.set(member, types);
+    else if (!sameClosureTypes(members.get(member) ?? null, types)) members.set(member, null);
+  }
+  into.set(fact.typeId, members);
+}
+
+function sameClosureTypes(a: readonly (string | null)[] | null, b: readonly (string | null)[] | null): boolean {
+  if (a === null || b === null) return false;
+  if (a.length !== b.length) return false;
+  return a.every((type, i) => type === b[i]);
+}
+
 function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const channel = ctx.typeDeclarations;
   if (channel === undefined) return undefined;
@@ -45,6 +81,9 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const declaring = new Map<string, Set<string>>();
   const reopening = new Map<string, Set<string>>();
   const conforms = new Map<string, string[]>();
+  const generics = new Map<string, readonly string[]>();
+  const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
+  const closureParameters = new Map<string, Map<string, readonly (string | null)[] | null>>();
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
   for (const relPath of Object.keys(channel).sort()) {
@@ -52,13 +91,18 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     if (!relPath.endsWith(".swift")) continue;
     for (const fact of channel[relPath]) {
       add(fact.reopens ? reopening : declaring, fact.typeId, relPath);
+      if (fact.genericParameters !== undefined && !generics.has(fact.typeId)) {
+        generics.set(fact.typeId, fact.genericParameters);
+      }
+      mergeFieldArguments(fieldArguments, fact);
+      mergeClosureParameters(closureParameters, fact);
       if (fact.conforms === undefined) continue;
       const list = conforms.get(fact.typeId) ?? [];
       for (const name of fact.conforms) if (!list.includes(name)) list.push(name);
       conforms.set(fact.typeId, list);
     }
   }
-  const fresh = { declaring, reopening, conforms };
+  const fresh = { declaring, reopening, conforms, generics, fieldArguments, closureParameters };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
 }
@@ -97,4 +141,31 @@ export function swiftExtensionDeclaresInit(typeId: string, lookup: (symbolId: st
  */
 export function swiftConformances(typeId: string, ctx: CallContext): readonly string[] {
   return setsFor(ctx)?.conforms.get(typeId) ?? [];
+}
+
+/** `typeId`'s own generic parameter names, or none (bd tea-rags-mcp-y99pg.13). */
+export function swiftGenericParameters(typeId: string, ctx: CallContext): readonly string[] {
+  return setsFor(ctx)?.generics.get(typeId) ?? [];
+}
+
+/** The generic arguments `typeId` declares its property `field` with, or undefined. */
+export function swiftFieldTypeArguments(
+  typeId: string,
+  field: string,
+  ctx: CallContext,
+): readonly (string | null)[] | undefined {
+  return setsFor(ctx)?.fieldArguments.get(typeId)?.get(field);
+}
+
+/**
+ * The parameter types of the closure `typeId`'s method `member` takes —
+ * `undefined` when no declaration of it takes one, `null` when declarations
+ * disagree.
+ */
+export function swiftMemberClosureParameters(
+  typeId: string,
+  member: string,
+  ctx: CallContext,
+): readonly (string | null)[] | null | undefined {
+  return setsFor(ctx)?.closureParameters.get(typeId)?.get(member);
 }

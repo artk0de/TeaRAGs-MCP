@@ -369,6 +369,29 @@ export interface TypeDeclarationFact {
    * Absent when the declaration names none.
    */
   readonly conforms?: readonly string[];
+  /**
+   * The type's own generic parameter names, in order (`Protected<Value>` →
+   * `["Value"]`) — the positions {@link fieldTypeArguments} and
+   * {@link memberClosureParameters} are read against (bd
+   * tea-rags-mcp-y99pg.13). Absent on a non-generic type and on re-openings.
+   */
+  readonly genericParameters?: readonly string[];
+  /**
+   * Stored properties this declaration types with generic arguments, by
+   * property name: `let mutableState: Protected<MutableState>` →
+   * `{ mutableState: ["MutableState"] }`. Each argument is the nominal its type
+   * text names, `null` where it names none. Absent when no property has any.
+   */
+  readonly fieldTypeArguments?: Readonly<Record<string, readonly (string | null)[]>>;
+  /**
+   * For each method taking ONE function-typed parameter, the types that
+   * function's parameters are declared with, by method name:
+   * `func write<U>(_ closure: (inout Value) throws -> U)` → `{ write: ["Value"] }`.
+   * An entry is a nominal, one of {@link genericParameters} (bound per receiver
+   * by its type arguments), or `null`. A method whose overloads disagree maps
+   * to `null`. Absent when no method takes a closure.
+   */
+  readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;
 }
 
 /**

@@ -2008,3 +2008,120 @@ describe("SwiftCallResolver — a trailing closure stands in for one possible-cl
     expect(empty).toBeNull();
   });
 });
+
+describe("SwiftCallResolver — closure parameters typed by a generic callee in another file", () => {
+  const t = table({
+    "Sources/Protected.swift": [
+      { symbolId: "Protected", scope: [] },
+      { symbolId: "Protected#write", scope: ["Protected"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request.MutableState", scope: ["Request"] },
+      { symbolId: "Request.MutableState#updateCredential", scope: ["Request", "MutableState"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Protected.swift": [
+      {
+        typeId: "Protected",
+        reopens: false,
+        genericParameters: ["Value"],
+        memberClosureParameters: { write: ["Value"] },
+      },
+    ],
+    "Sources/Request.swift": [
+      { typeId: "Request", reopens: false, fieldTypeArguments: { mutableState: ["MutableState"] } },
+      { typeId: "Request.MutableState", reopens: false },
+    ],
+  };
+  const base = {
+    callerFile: "Sources/Request.swift",
+    callerScope: ["Request"],
+    symbolTable: t,
+    typeDeclarations,
+    classFieldTypes: { Request: { mutableState: "Protected" } },
+  };
+
+  it("types a named closure parameter from the receiver's generic argument", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("mutableState", "updateCredential", 11),
+      ctx({
+        ...base,
+        callResultBindings: {
+          mutableState: [{ line: 10, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 12 }],
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.MutableState#updateCredential");
+  });
+
+  it("types `$0` on the line that opens the closure", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("$0", "updateCredential", 11),
+      ctx({
+        ...base,
+        callResultBindings: {
+          $0: [{ line: 11, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 11 }],
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request.MutableState#updateCredential");
+  });
+
+  it("types nothing when the receiver's field declares no type arguments", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("mutableState", "updateCredential", 11),
+      ctx({
+        ...base,
+        typeDeclarations: { ...typeDeclarations, "Sources/Request.swift": [{ typeId: "Request", reopens: false }] },
+        callResultBindings: {
+          mutableState: [{ line: 10, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 12 }],
+        },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});
+
+describe("SwiftCallResolver — a stored property seen as a binding still lends its type arguments", () => {
+  it("types the closure parameter when the receiver's binding is the property's own type", () => {
+    const t = table({
+      "Sources/Protected.swift": [
+        { symbolId: "Protected", scope: [] },
+        { symbolId: "Protected#write", scope: ["Protected"] },
+      ],
+      "Sources/Retrier.swift": [
+        { symbolId: "Retrier", scope: [] },
+        { symbolId: "Retrier.State", scope: ["Retrier"] },
+        { symbolId: "Retrier.State#cleanup", scope: ["Retrier", "State"] },
+      ],
+    });
+    const context = ctx({
+      callerFile: "Sources/Retrier.swift",
+      callerScope: ["Retrier"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/Protected.swift": [
+          {
+            typeId: "Protected",
+            reopens: false,
+            genericParameters: ["Value"],
+            memberClosureParameters: { write: ["Value"] },
+          },
+        ],
+        "Sources/Retrier.swift": [
+          { typeId: "Retrier", reopens: false, fieldTypeArguments: { state: ["State"] } },
+          { typeId: "Retrier.State", reopens: false },
+        ],
+      },
+      classFieldTypes: { Retrier: { state: "Protected" } },
+      // A `deinit` is not chunked, so its calls see the property as a binding.
+      localBindings: { state: [{ line: 3, type: "Protected" }] },
+      callResultBindings: { state: [{ line: 10, callee: "state.write", closureParameter: 0, scopeEndLine: 12 }] },
+    });
+    expect(new SwiftCallResolver().resolve(call("state", "cleanup", 11), context)?.targetSymbolId).toBe(
+      "Retrier.State#cleanup",
+    );
+  });
+});

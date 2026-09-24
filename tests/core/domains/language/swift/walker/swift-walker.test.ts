@@ -1109,7 +1109,8 @@ describe("swift walker — typeDeclarations", () => {
     expect(extractMaterialized(src).typeDeclarations).toEqual([
       { typeId: "Outer.Inner", reopens: true },
       { typeId: "Array", reopens: true },
-      { typeId: "Box", reopens: false, conforms: ["Base"] },
+      // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
+      { typeId: "Box", reopens: false, conforms: ["Base"], genericParameters: ["T"] },
     ]);
   });
 
@@ -1544,5 +1545,51 @@ describe("swift walker — parameter modifiers and metatypes (bd tea-rags-mcp-y9
     );
     expect(typeAt(src, "type", 2)).toBe("EmptyResponse");
     expect(typeAt(src, "kind", 2)).toBe("Kind");
+  });
+});
+
+describe("swift walker — generic closure parameters across files (bd tea-rags-mcp-y99pg.13)", () => {
+  it("publishes a generic type's parameters, closure signatures and generic field arguments", () => {
+    const src = [
+      "final class Protected<Value> {",
+      "  func read<U>(_ closure: (Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func write<U>(_ closure: (inout Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func withState(perform: (Request.State) -> Void) {}",
+      "}",
+      "final class Request {",
+      "  let mutableState: Protected<MutableState>",
+      "}",
+      "",
+    ].join("\n");
+    const facts = extract(src).typeDeclarations ?? [];
+    const protectedFact = facts.find((f) => f.typeId === "Protected");
+    expect(protectedFact?.genericParameters).toEqual(["Value"]);
+    expect(protectedFact?.memberClosureParameters).toEqual({
+      read: ["Value"],
+      write: ["Value"],
+      withState: ["Request.State"],
+    });
+    expect(facts.find((f) => f.typeId === "Request")?.fieldTypeArguments).toEqual({
+      mutableState: ["MutableState"],
+    });
+  });
+
+  it("binds a closure's parameters to the callee they are passed to when no declaration here types them", () => {
+    const src = [
+      "final class Request {",
+      "  func run() {",
+      "    mutableState.write { mutableState in",
+      "      mutableState.state.canTransitionTo(.resumed)",
+      "    }",
+      "    mutableState.write { $0.updateCredential(1) }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.mutableState).toEqual([
+      { line: 3, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 5 },
+    ]);
+    expect(bindings.$0).toEqual([{ line: 6, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 6 }]);
   });
 });

@@ -36,7 +36,7 @@ export class SwiftLocalBindingSymbolResolutionStrategy implements SymbolResoluti
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver || SWIFT_PSEUDO_RECEIVERS.has(call.receiver)) return CONTINUE;
-    const boundType = swiftLocalValueType(call.receiver, call.startLine, ctx, this.ports);
+    const boundType = swiftLocalValueType(call.receiver, call.startLine, ctx, this.ports, this.cfg.memberTypes);
     if (boundType === undefined) return CONTINUE;
     return resolveSwiftBoundTypeMember(boundType, call.member, ctx, this.cfg, call);
   }

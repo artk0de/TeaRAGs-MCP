@@ -63,7 +63,22 @@ import {
   qualifySwiftTypeNameWithin,
   swiftMemberCandidates,
 } from "./swift-symbol-lookup.js";
+import {
+  swiftFieldTypeArguments,
+  swiftGenericParameters,
+  swiftMemberClosureParameters,
+} from "./swift-type-declarations.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
+
+/** A method's closure signature, as its declaring type states it. */
+export interface SwiftClosureSignature {
+  /** The closure's parameter types; `null` for the whole list when declarations disagree. */
+  readonly types: readonly (string | null)[] | null;
+  /** The declaring type's generic parameters, which entries of `types` may name. */
+  readonly genericParameters: readonly string[];
+  /** The declaring type, from which a nominal entry is qualified. */
+  readonly ownerTypeId: string;
+}
 
 export class SwiftMemberTypeLookup {
   private readonly linearizers = new RunScopedMemo<CallContext, AncestorLinearizer<CallContext>>();
@@ -123,6 +138,38 @@ export class SwiftMemberTypeLookup {
         : null;
     });
     return scan.target?.target ?? null;
+  }
+
+  /**
+   * The generic arguments the property `field` of `typeName` (or of the
+   * nearest ancestor declaring it) is declared with, each qualified from that
+   * declaring type — `["Request.MutableState"]` for `mutableState:
+   * Protected<MutableState>` inside `Request` (bd tea-rags-mcp-y99pg.13).
+   */
+  fieldTypeArguments(typeName: string, field: string, ctx: CallContext): readonly (string | null)[] | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const args = swiftFieldTypeArguments(typeId, field, ctx);
+      return args === undefined
+        ? null
+        : args.map((arg) => (arg === null ? null : qualifySwiftTypeNameWithin(arg, typeId, ctx)));
+    });
+    return scan.target ?? undefined;
+  }
+
+  /**
+   * The declared parameter types of the closure `typeName`'s method `member`
+   * takes, found up the member-lookup chain, with the generic parameters of
+   * the type that DECLARES the method (bd tea-rags-mcp-y99pg.13).
+   */
+  closureParameterTypes(typeName: string, member: string, ctx: CallContext): SwiftClosureSignature | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const types = swiftMemberClosureParameters(typeId, member, ctx);
+      if (types === undefined) return null;
+      return { types, genericParameters: swiftGenericParameters(typeId, ctx), ownerTypeId: typeId };
+    });
+    return scan.target ?? undefined;
   }
 
   /**

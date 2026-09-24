@@ -234,13 +234,115 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       if (outer !== undefined) enclosing.unshift(outer);
     }
     const conforms = swiftInheritedTypeNames(node);
+    const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
+    const { fieldTypeArguments, memberClosureParameters } = swiftGenericMemberFacts(node, genericParameters);
     out.push({
       typeId: [...enclosing, name].join("."),
       reopens: kind === "extension",
       ...(conforms.length > 0 ? { conforms } : {}),
+      ...(genericParameters.length > 0 ? { genericParameters } : {}),
+      ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
+      ...(memberClosureParameters ? { memberClosureParameters } : {}),
     });
   });
   return out;
+}
+
+/** A declaration's own generic parameter names: `class Protected<Value>` → `["Value"]`. */
+function swiftTypeParameterNames(node: AstNode): string[] {
+  const list = node.children.find((c) => c.type === "type_parameters");
+  if (!list) return [];
+  const names: string[] = [];
+  for (const parameter of list.namedChildren) {
+    if (parameter.type !== "type_parameter") continue;
+    const identifier = parameter.namedChildren.find((c) => c.type === "type_identifier");
+    if (identifier) names.push(identifier.text);
+  }
+  return names;
+}
+
+/**
+ * What a type body says that a USE of the type in another file needs in
+ * order to type a closure parameter (bd tea-rags-mcp-y99pg.13): the generic
+ * arguments its stored properties are declared with, and the parameter types
+ * of the one closure each of its methods takes. Both are read positionally —
+ * `type_arguments` and `tuple_type_item` children, never fields — for the
+ * materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftGenericMemberFacts(
+  node: AstNode,
+  genericParameters: readonly string[],
+): {
+  fieldTypeArguments?: Record<string, (string | null)[]>;
+  memberClosureParameters?: Record<string, (string | null)[] | null>;
+} {
+  const body = node.childForFieldName("body");
+  if (!body) return {};
+  const fields = createIdentifierRecord<(string | null)[]>();
+  const closures = createIdentifierRecord<(string | null)[] | null>();
+  let anyField = false;
+  let anyClosure = false;
+  for (const member of body.children) {
+    if (member.type === "property_declaration") {
+      const name = singleIdentifierPatternName(member.childForFieldName("name"));
+      const annotation = member.children.find((c) => c.type === "type_annotation");
+      const typeNode = annotation ? swiftTypeNodeAfter(annotation, ":") : null;
+      const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
+      if (!name || !args) continue;
+      fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
+      anyField = true;
+      continue;
+    }
+    if (member.type !== "function_declaration" && member.type !== "protocol_function_declaration") continue;
+    const name = member.childForFieldName("name")?.text;
+    const types = name ? swiftClosureParameterTypeNames(member, genericParameters) : undefined;
+    if (!name || types === undefined) continue;
+    anyClosure = true;
+    if (!Object.hasOwn(closures, name)) closures[name] = types;
+    else if (!sameSwiftTypeNames(closures[name], types)) closures[name] = null;
+  }
+  return {
+    ...(anyField ? { fieldTypeArguments: fields } : {}),
+    ...(anyClosure ? { memberClosureParameters: closures } : {}),
+  };
+}
+
+/** Whether two overloads state the same closure parameter types; `null` (poisoned) equals nothing. */
+function sameSwiftTypeNames(a: readonly (string | null)[] | null, b: readonly (string | null)[] | null): boolean {
+  if (a === null) return false;
+  if (b === null) return false;
+  return a.length === b.length && a.every((name, i) => name === b[i]);
+}
+
+/**
+ * The declared parameter types of the ONE function-typed parameter `fn`
+ * takes — `undefined` when it takes none, `null` when it takes two or more.
+ * A name the enclosing type declares as a generic parameter is kept as that
+ * name, to be bound by a receiver's type arguments; a method's own generic
+ * parameter reads as its constraint, or nothing.
+ */
+function swiftClosureParameterTypeNames(
+  fn: AstNode,
+  genericParameters: readonly string[],
+): (string | null)[] | null | undefined {
+  let found: (string | null)[] | null | undefined;
+  for (const parameter of fn.children) {
+    if (parameter.type !== "parameter") continue;
+    const functionType = swiftFunctionTypeNode(swiftParameterTypeNode(parameter));
+    if (!functionType) continue;
+    if (found !== undefined) return null;
+    const params = functionType.children.find((c) => c.type === "tuple_type");
+    const types: (string | null)[] = [];
+    for (const item of params?.namedChildren ?? []) {
+      if (item.type !== "tuple_type_item") continue;
+      const typeNode = item.namedChildren[item.namedChildCount - 1] ?? null;
+      const written = typeNode?.type === "user_type" ? typeNode.text : undefined;
+      if (written !== undefined && genericParameters.includes(written)) types.push(written);
+      else types.push(swiftGenericResolvedFact(swiftTypeFactOf(typeNode), fn).nominal);
+    }
+    found = types;
+  }
+  return found;
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
@@ -1076,6 +1178,31 @@ function swiftClosureArgumentFacts(lambda: AstNode, scope: SwiftTypeScope): read
   return swiftCalleeEvidence(callee, scope.evidence.closureParameters, scope, 0) ?? null;
 }
 
+/**
+ * The SPELLING of the member a closure literal is passed to — `mutableState.write`
+ * for `mutableState.write { … }` — or undefined when the callee is not a member
+ * access on a value chain the resolver can fold.
+ */
+function swiftClosureCalleeSpelling(lambda: AstNode): string | undefined {
+  let suffix = lambda.parent;
+  if (suffix?.type === "value_argument") suffix = suffix.parent?.parent ?? null;
+  if (suffix?.type !== "call_suffix") return undefined;
+  const call = suffix.parent;
+  if (call?.type !== "call_expression") return undefined;
+  const callee = call.namedChildren.find((c) => c.type !== "call_suffix");
+  if (callee?.type !== "navigation_expression") return undefined;
+  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix")?.text;
+  const target = swiftValueChainSpelling(callee.childForFieldName("target"));
+  return member && target ? `${target}.${member}` : undefined;
+}
+
+/** How many `$n` parameters a closure's own body reads: one past the highest `n`. */
+function swiftImplicitParameterCount(lambda: AstNode): number {
+  let count = 0;
+  for (const match of lambda.text.matchAll(/\$(\d+)/g)) count = Math.max(count, Number(match[1]) + 1);
+  return count;
+}
+
 /** The `lambda_parameter` nodes a closure literal names, or null when it uses `$0`-style ones. */
 function swiftLambdaParameters(lambda: AstNode): AstNode[] | null {
   const signature = lambda.children.find((c) => c.type === "lambda_function_type");
@@ -1225,6 +1352,11 @@ interface SwiftScopedBinding {
    * binding types nothing but still SHADOWS a same-named property.
    */
   readonly valueChain?: string;
+  /**
+   * Set when `valueChain` is the CALLEE a closure is passed to and this
+   * binding is that closure's N-th parameter (bd tea-rags-mcp-y99pg.13).
+   */
+  readonly closureParameter?: number;
 }
 
 /** Where a right-hand side is being typed — the coordinates every lookup is relative to. */
@@ -1276,6 +1408,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     site: SwiftBindingSite,
     scopeEndLine?: number,
     valueChain?: string,
+    closureParameter?: number,
   ): void => {
     if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
     if (!fact.nominal && !fact.element && valueChain === undefined) return;
@@ -1286,6 +1419,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       functionKey: site.functionKey,
       scopeEndLine,
       valueChain,
+      ...(closureParameter === undefined ? {} : { closureParameter }),
     };
     collected.push(binding);
     const sameName = bindingsByName.get(name);
@@ -1363,21 +1497,29 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       case "lambda_literal": {
         const site = siteOf(node);
         const facts = swiftClosureArgumentFacts(node, { evidence, bindingsByName, site });
-        if (!facts) return;
+        // No declaration in this file types the closure: hand its callee to
+        // the resolver, which reads the callee's closure signature run-wide
+        // (bd tea-rags-mcp-y99pg.13).
+        const callee = facts ? undefined : swiftClosureCalleeSpelling(node);
+        if (!facts && callee === undefined) return;
         const endLine = node.endPosition.row + 1;
+        const bind = (name: string, i: number): void => {
+          if (facts) {
+            if (i < facts.length) record(name, facts[i], site, endLine);
+          } else record(name, NO_TYPE, site, endLine, callee, i);
+        };
         const named = swiftLambdaParameters(node);
         if (named === null) {
           if (nestsImplicitParameterClosure(node)) return;
-          facts.forEach((fact, i) => {
-            record(`$${i}`, fact, site, endLine);
-          });
+          const count = facts ? facts.length : swiftImplicitParameterCount(node);
+          for (let i = 0; i < count; i++) bind(`$${i}`, i);
           return;
         }
         named.forEach((parameter, i) => {
           const name = parameter.childForFieldName("name")?.text;
           // An annotated parameter is typed by its own `lambda_parameter` arm.
-          if (!name || name === "_" || i >= facts.length || parameter.children.some((c) => c.type === ":")) return;
-          record(name, facts[i], site, endLine);
+          if (!name || name === "_" || parameter.children.some((c) => c.type === ":")) return;
+          bind(name, i);
         });
         break;
       }
@@ -1881,7 +2023,12 @@ function assignBindingsToInnermostChunks(
       const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal, ...scoped };
       (bucket.localBindings[binding.name] ??= []).push(emitted);
     } else if (binding.valueChain !== undefined) {
-      const emitted: CallResultBinding = { line: binding.line, callee: binding.valueChain, ...scoped };
+      const emitted: CallResultBinding = {
+        line: binding.line,
+        callee: binding.valueChain,
+        ...(binding.closureParameter === undefined ? {} : { closureParameter: binding.closureParameter }),
+        ...scoped,
+      };
       (bucket.callResultBindings[binding.name] ??= []).push(emitted);
     }
   }

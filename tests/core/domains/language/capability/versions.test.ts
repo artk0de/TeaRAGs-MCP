@@ -255,6 +255,9 @@ describe("seeded support versions", () => {
       // their labels, so an index built by walker 22 targets the first overload.
       // swift walker 25: inout and metatype parameters bind their type, so an index
       // built by walker 24 has no edge for a call on either.
+      // swift walker 26: generic closure parameters bind through the callee's
+      // declaration, so an index built by walker 25 leaves every such closure
+      // parameter untyped.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -289,7 +292,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 25],
+        ["swift", 26],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
