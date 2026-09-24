@@ -435,7 +435,14 @@ export const capability: LanguageCapability = {
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
   // walker 43: bd tea-rags-mcp-ezm9o — `*Test(s).swift` match case-sensitively,
   // so `Latest.swift` enters the graph; the reasoning is java/capability.ts's.
-  versions: { chunking: 4, walker: 43, codegraphSchema: 2 },
+  // walker 44: a property observer's `oldValue` / `newValue` binds the
+  // property's declared type; a closure passed off a construction head
+  // (`Result { … }.mapError { $0 … }`) spells its callee through it; a
+  // `switch self` payload inside a NESTED enum reads the qualified enum's cases
+  // (bd tea-rags-mcp-y99pg.31). Measured: Alamofire TOTAL 0.974 -> 0.976
+  // (1241/1274 -> 1243/1273), Quick unchanged 0.997; edges +2 / -0, one SDK
+  // site (`DateFormatter.string`) proved external, WRONG unchanged.
+  versions: { chunking: 4, walker: 44, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };

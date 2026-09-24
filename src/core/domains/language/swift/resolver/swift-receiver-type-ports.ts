@@ -53,7 +53,7 @@ import {
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { boundedBy } from "./swift-sdk-member-types.js";
-import { lookupSwiftSymbols, qualifySwiftTypeNameWithin } from "./swift-symbol-lookup.js";
+import { lookupSwiftSymbols, qualifySwiftTypeName, qualifySwiftTypeNameWithin } from "./swift-symbol-lookup.js";
 import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
@@ -424,8 +424,12 @@ function swiftLocalValueTypeRef(
   const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
   if (folded?.form !== "instance") return undefined;
   // `case .group(let g)`: the subject's enum says what the slot carries (bd tea-rags-mcp-y99pg.16).
+  // The cases are published under the enum's QUALIFIED id, and a `self`
+  // subject folds to the enclosing type's short name — `switch self` inside
+  // `URLEncodedFormEncoder.DateEncoding` (bd tea-rags-mcp-y99pg.31).
   if (spelled.enumPayload !== undefined) {
-    const payload = swiftEnumCasePayloadType(folded.name, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
+    const enumId = qualifySwiftTypeName(folded.name, ctx);
+    const payload = swiftEnumCasePayloadType(enumId, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
     return payload === undefined ? undefined : { form: "instance", name: payload };
   }
   return folded;
