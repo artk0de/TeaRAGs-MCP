@@ -205,6 +205,11 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // bd tea-rags-mcp-a2ddb — the baseline the next run's drift diff reads. A
   // write, so it goes through the governed handle like every other one.
   refreshSymbolSignalsPrev: write(async (graphDb) => graphDb.refreshSymbolSignalsPrev()),
+  // bd tea-rags-mcp-dvzdm — a write (admitted in order, governed) that answers
+  // with its outcome instead of the `null` ack, so the run can log what it did.
+  // The file swap happens inside the pooled client's session: the pool entry,
+  // its symbol table and every socket stay as they are.
+  compactStorage: { access: "write", run: async (graphDb) => graphDb.compactStorage() },
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──

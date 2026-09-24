@@ -107,11 +107,13 @@
   cycles the source dropped weeks ago.
 
 - **A pooled graph client is valid only while its path still names the file it
-  opened, and closing one never checkpoints.** `GraphDbClientPool#acquire` — the
-  daemon's per-op path through `CodegraphDaemonServer#handle` — and
-  `GraphDbClientPool#peek` compare the path's `dev`/`ino` with what
-  `openCollection` recorded. A missing or replaced file retires the client in
-  order: close awaited, `onCollectionClientClosed` announced (the daemon wires
+  holds open, and closing one never checkpoints.** `GraphDbClientPool#acquire` —
+  the daemon's per-op path through `CodegraphDaemonServer#handle` — and
+  `GraphDbClientPool#peek` compare the path's `dev`/`ino` with
+  `DuckDbGraphClient#openedDatabaseFile`, which the session sets on every open
+  and on a storage compaction's swap (see the next invariant). A missing or
+  replaced file retires the client in order: close awaited,
+  `onCollectionClientClosed` announced (the daemon wires
   `DaemonMemoryGovernor#forgetCollection`), then
   `CodegraphDbFiles#discardOrphanedWal` and a fresh open through
   `writablePathFor`. `peek` reports such a client absent and leaves it to the
@@ -125,6 +127,27 @@
   running query leaves that query unsettled forever. Not covered: an op already
   in flight on the old client when the file is replaced can still write into the
   successor's WAL.
+
+- **Every `cg_*` table keeps the rows it deletes, so a wholesale rewrite
+  RECREATES its table and the file is compacted by copy.** DuckDB 1.5.3 vacuums
+  deletes at checkpoint only for tables with no index, and every `cg_*` table
+  has a PRIMARY KEY: a `DELETE` + re-INSERT keeps the old generation in the file
+  for good (measured on a scratch copy: nine generations after eight rewrites;
+  taxdome's graph reached 1.22 GB for 287 MB of live data, bd
+  tea-rags-mcp-dvzdm). A writer that replaces a whole table calls
+  `DuckDbGraphSession#recreateEmptyTable` inside its transaction — it rebuilds
+  the table and its indexes from the catalog's own DDL; `CREATE OR REPLACE … AS`
+  would drop the key. The per-file diffed tables cannot do that, so
+  `CompletionRunner#runCodegraphStorageCompaction` asks the store, after the
+  heal, to compact itself: `DuckDbGraphSession#compactDatabaseFile` measures
+  (`shouldCompactCodegraphStorage`: ≥64 MiB and stored row versions ≥2× live),
+  then `COPY FROM DATABASE` into `<file>.compact-tmp`, verifies it, and renames
+  it over the path under the session's write queue and call gate. The client,
+  its pool entry and the daemon's sockets stay; the op is legacy-tolerated, so
+  an older daemon is never drained for it. Why: an in-place rebuild frees the
+  blocks but never shrinks the file (1.34 GB after rebuilding taxdome's tables),
+  and a pool that snapshotted the inode at open would retire the compacted
+  client as "replaced".
 
 - **`cg_symbol_signals_prev` / `cg_file_signals_prev` (migration 023) are
   refreshed AFTER a successful payload heal, not by the finalizer.** The pair is

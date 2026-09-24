@@ -10,6 +10,7 @@ import type {
   ChunkGraphSignals,
   CodegraphPass1FileAggregates,
   CodegraphSignalDrift,
+  CodegraphStorageCompactionOutcome,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -61,6 +62,7 @@ const LEGACY_TOLERATED_OP_LIST = [
   "getSymbolLineRangesBulk",
   "diffSymbolSignals",
   "refreshSymbolSignalsPrev",
+  "compactStorage",
   "ping",
 ] as const satisfies readonly DaemonOp[];
 
@@ -83,6 +85,9 @@ type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  *   moved" would be worse: such a daemon has no `cg_symbol_signals_prev`, so the
  *   heal would rewrite the corpus on every run and never converge.
  * - `refreshSymbolSignalsPrev` — that daemon has no baseline table to refresh.
+ * - `compactStorage` — "not compacted": the file stays as large as it was, the
+ *   pre-dvzdm behaviour. Requiring it would drain a daemon other sessions are
+ *   using for the sake of disk space.
  * - `ping` — the liveness probe (bd tea-rags-mcp-f924y). An older daemon's
  *   "unknown daemon op" answer is itself the proof of life the probe asks for.
  *
@@ -838,6 +843,19 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async checkpoint(): Promise<void> {
     await this.call("checkpoint", {});
+  }
+
+  /**
+   * Compact the collection's graph file daemon-side (bd tea-rags-mcp-dvzdm). A
+   * tolerated legacy op: a daemon that predates it leaves the file as it is.
+   */
+  async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
+    return this.callTolerated<CodegraphStorageCompactionOutcome>(
+      "compactStorage",
+      {},
+      (result) => result as CodegraphStorageCompactionOutcome,
+      () => ({ kind: "skipped", reason: "unsupported" }),
+    );
   }
 
   async rebuildEdgeFileTargetIndex(): Promise<void> {
