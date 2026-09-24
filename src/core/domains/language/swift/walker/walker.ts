@@ -143,6 +143,7 @@ import type {
   SwiftFieldConstruction,
   SwiftWhereClauseFact,
   TypeDeclarationFact,
+  TypeDeclarationKind,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
@@ -260,6 +261,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     out.push({
       typeId: [...enclosing, name].join("."),
       reopens: kind === "extension",
+      ...(kind === "extension" ? {} : { declarationKind: kind }),
       ...(conforms.length > 0 ? { conforms } : {}),
       ...(genericParameters.length > 0 ? { genericParameters } : {}),
       ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
@@ -595,13 +597,15 @@ function swiftSpelledWithArguments(
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
-function swiftTypeDeclarationKind(node: AstNode): string | null {
+function swiftTypeDeclarationKind(node: AstNode): TypeDeclarationKind | "extension" | null {
   if (node.type === "protocol_declaration") return "protocol";
   if (node.type !== "class_declaration") return null;
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (child === null || child.isNamed) continue;
-    if (child.type === "extension" || SWIFT_TYPE_DECLARATION_KEYWORDS.has(child.type)) return child.type;
+    if (child.type === "extension") return "extension";
+    const keyword = SWIFT_TYPE_DECLARATION_KEYWORDS.get(child.type);
+    if (keyword !== undefined) return keyword;
   }
   return null;
 }
@@ -711,7 +715,9 @@ const OVERLOAD_SUFFIX = /~\d+$/;
  * an `enum` conform to protocols, and Swift forbids an `actor` from inheriting
  * at all.
  */
-const SWIFT_TYPE_DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(["class", "struct", "enum", "actor"]);
+const SWIFT_TYPE_DECLARATION_KEYWORDS: ReadonlyMap<string, TypeDeclarationKind> = new Map(
+  (["class", "struct", "enum", "actor"] as const).map((keyword) => [keyword, keyword]),
+);
 
 /**
  * `className → superclass`, for the `super` pass alone.

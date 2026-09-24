@@ -350,6 +350,9 @@ export interface FileExtraction {
   typeDeclarations?: readonly TypeDeclarationFact[];
 }
 
+/** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */
+export type TypeDeclarationKind = "class" | "struct" | "enum" | "actor" | "protocol";
+
 /**
  * One type declaration a file carries (`FileExtraction.typeDeclarations`).
  */
@@ -362,6 +365,15 @@ export interface TypeDeclarationFact {
    * declaration. A type with re-openings only is not the project's type.
    */
   readonly reopens: boolean;
+  /**
+   * The keyword of the type's OWN declaration — `class`, `struct`, `enum`,
+   * `actor` or `protocol` (bd tea-rags-mcp-y99pg.35). What a consumer reads it
+   * for is what the kind can hold: only a class carries an implementation the
+   * Objective-C runtime dispatches a selector to. Absent on a re-opening, and
+   * on a fact written before the walker published it — a consumer treats that
+   * as "any kind".
+   */
+  readonly declarationKind?: TypeDeclarationKind;
   /**
    * The supertypes this declaration names — superclass and protocols alike, in
    * clause order, generic arguments dropped (`Base<T>` → `Base`). A re-opening

@@ -3646,3 +3646,213 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
     });
   });
 });
+
+/**
+ * A call on an `AnyObject` / `AnyClass` value is Objective-C dynamic lookup:
+ * the runtime sends the selector to whatever class the value is, so the only
+ * project Swift code it can land on is a method a CLASS implements. A member
+ * every Swift declaration of which sits on a protocol, a struct or an enum —
+ * or at module scope — has no such implementation in the project, and the
+ * site leaves the denominator (bd tea-rags-mcp-y99pg.35). Quick's
+ * `(specClass as AnyClass).buildExamplesIfNeeded()` reaches the Objective-C
+ * `+[QuickSpec buildExamplesIfNeeded]` through a requirement of the `@objc`
+ * protocol `_QuickSpecInternal`, which nothing in Swift conforms to.
+ */
+describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyClass (bd tea-rags-mcp-y99pg.35)", () => {
+  const rows = {
+    "Sources/QuickTestObservation.swift": [
+      { symbolId: "_QuickSpecInternal", scope: [] },
+      { symbolId: "_QuickSpecInternal.buildExamplesIfNeeded", scope: ["_QuickSpecInternal"] },
+      { symbolId: "QuickTestObservation", scope: [] },
+      { symbolId: "QuickTestObservation#buildAllExamplesIfNeeded", scope: ["QuickTestObservation"] },
+    ],
+    "Sources/Values.swift": [
+      { symbolId: "Point", scope: [] },
+      { symbolId: "Point#reset", scope: ["Point"] },
+      { symbolId: "Mode", scope: [] },
+      { symbolId: "Mode#reset", scope: ["Mode"] },
+      { symbolId: "reset", scope: [] },
+    ],
+  };
+  const declarations = {
+    "Sources/QuickTestObservation.swift": [
+      { typeId: "_QuickSpecInternal", reopens: false, declarationKind: "protocol" as const },
+      { typeId: "QuickTestObservation", reopens: false, declarationKind: "class" as const, conforms: ["NSObject"] },
+    ],
+    "Sources/Values.swift": [
+      { typeId: "Point", reopens: false, declarationKind: "struct" as const },
+      { typeId: "Mode", reopens: false, declarationKind: "enum" as const },
+    ],
+  };
+  const at = (over: Partial<CallContext> = {}): CallContext =>
+    ctx({
+      callerFile: "Sources/QuickTestObservation.swift",
+      callerScope: ["QuickTestObservation", "buildAllExamplesIfNeeded"],
+      symbolTable: table(rows),
+      typeDeclarations: declarations,
+      ...over,
+    });
+
+  it("answers false for a cast to AnyClass whose member only an @objc protocol requirement declares", () => {
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(site, at())).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, at())).toBe(false);
+  });
+
+  it("answers false for an AnyObject local whose member only structs, enums and free functions declare", () => {
+    const context = at({ localBindings: { target: [{ line: 5, type: "AnyObject" }] } });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "reset"), context)).toBe(false);
+  });
+
+  it("keeps the denominator when a project class declares the member", () => {
+    const withClass = table({
+      ...rows,
+      "Sources/Spec.swift": [
+        { symbolId: "Spec", scope: [] },
+        { symbolId: "Spec.buildExamplesIfNeeded", scope: ["Spec"] },
+      ],
+    });
+    const context = at({
+      symbolTable: withClass,
+      typeDeclarations: {
+        ...declarations,
+        "Sources/Spec.swift": [{ typeId: "Spec", reopens: false, declarationKind: "class" }],
+      },
+    });
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+  });
+
+  it("keeps the denominator when an extension of a type the project does not declare holds the member", () => {
+    // `extension NSObject { @objc func reset() }` — an Objective-C class the
+    // project re-opens is exactly where a dynamic-lookup target may live.
+    const withExtension = table({
+      ...rows,
+      "Sources/NSObject+Reset.swift": [
+        { symbolId: "NSObject", scope: [] },
+        { symbolId: "NSObject#reset", scope: ["NSObject"] },
+      ],
+    });
+    const context = at({
+      symbolTable: withExtension,
+      typeDeclarations: {
+        ...declarations,
+        "Sources/NSObject+Reset.swift": [{ typeId: "NSObject", reopens: true }],
+      },
+      localBindings: { target: [{ line: 5, type: "AnyObject" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "reset"), context)).toBe(true);
+  });
+
+  it("keeps the denominator when the index recorded no declaration kind for the owner", () => {
+    const context = at({
+      typeDeclarations: {
+        ...declarations,
+        "Sources/QuickTestObservation.swift": [{ typeId: "_QuickSpecInternal", reopens: false }],
+      },
+    });
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+  });
+
+  it("keeps the denominator when any declaration of the owner's name is a class", () => {
+    const context = at({
+      typeDeclarations: {
+        ...declarations,
+        "Sources/Other/Point.swift": [{ typeId: "Point", reopens: false, declarationKind: "class" }],
+      },
+      localBindings: { target: [{ line: 5, type: "AnyObject" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "reset"), context)).toBe(true);
+  });
+
+  describe("a cast sends the selector to the OPERAND's class", () => {
+    // Quick's own shape: `AsyncSpec` implements `buildExamplesIfNeeded` as a
+    // class method, but `specClass` is a `QuickSpec.Type`, and `AsyncSpec` is
+    // neither an ancestor nor a subclass of `QuickSpec`.
+    const withSpecs = (extra: Record<string, { symbolId: string; scope: string[] }[]> = {}) =>
+      table({
+        ...rows,
+        "Sources/QuickSpec.swift": [
+          { symbolId: "QuickSpec", scope: [] },
+          { symbolId: "QuickSpec.spec", scope: ["QuickSpec"] },
+        ],
+        "Sources/Async/AsyncSpec.swift": [
+          { symbolId: "AsyncSpec", scope: [] },
+          { symbolId: "AsyncSpec.buildExamplesIfNeeded", scope: ["AsyncSpec"] },
+        ],
+        ...extra,
+      });
+    const specDeclarations = {
+      ...declarations,
+      "Sources/QuickSpec.swift": [
+        { typeId: "QuickSpec", reopens: false, declarationKind: "class" as const, conforms: ["QuickSpecBase"] },
+      ],
+      "Sources/Async/AsyncSpec.swift": [
+        { typeId: "AsyncSpec", reopens: false, declarationKind: "class" as const, conforms: ["AsyncSpecBase"] },
+      ],
+    };
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    const bound = { specClass: [{ line: 31, type: "QuickSpec" }] };
+
+    it("answers false when the only implementing class is outside the operand's lineage", () => {
+      const context = at({ symbolTable: withSpecs(), typeDeclarations: specDeclarations, localBindings: bound });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(false);
+    });
+
+    it("keeps the denominator when the operand is untyped", () => {
+      const context = at({ symbolTable: withSpecs(), typeDeclarations: specDeclarations });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+
+    it("keeps the denominator when a subclass of the operand's class implements the selector", () => {
+      const context = at({
+        symbolTable: withSpecs({
+          "Tests/FunctionalSpec.swift": [
+            { symbolId: "FunctionalSpec", scope: [] },
+            { symbolId: "FunctionalSpec.buildExamplesIfNeeded", scope: ["FunctionalSpec"] },
+          ],
+        }),
+        typeDeclarations: {
+          ...specDeclarations,
+          "Tests/FunctionalSpec.swift": [
+            { typeId: "FunctionalSpec", reopens: false, declarationKind: "class", conforms: ["QuickSpec"] },
+          ],
+        },
+        localBindings: bound,
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+
+    it("keeps the denominator when an ancestor of the operand's class implements the selector", () => {
+      const context = at({
+        symbolTable: withSpecs(),
+        typeDeclarations: {
+          ...specDeclarations,
+          "Sources/QuickSpec.swift": [
+            { typeId: "QuickSpec", reopens: false, declarationKind: "class", conforms: ["AsyncSpec"] },
+          ],
+        },
+        localBindings: bound,
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+
+    it("keeps the denominator when the operand's type is a protocol, whose conformers need not say so", () => {
+      const context = at({
+        symbolTable: withSpecs(),
+        typeDeclarations: specDeclarations,
+        localBindings: { specClass: [{ line: 31, type: "_QuickSpecInternal" }] },
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+  });
+
+  it("leaves a receiver typed by a project protocol to the typed rule", () => {
+    // Not dynamic lookup: a `_QuickSpecInternal.Type` value dispatches the
+    // requirement statically, and the requirement IS the project target.
+    const context = at({ localBindings: { spec: [{ line: 5, type: "_QuickSpecInternal" }] } });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("spec", "buildExamplesIfNeeded"), context)).toBe(true);
+  });
+});

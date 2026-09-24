@@ -326,6 +326,17 @@ const SWIFT_STRING_LITERAL_HEAD = /^(#*)"[\s\S]*"\1$/;
 const SWIFT_CAST_HEAD = /^\(([\s\S]+)\s+as[?!]?\s+([\s\S]+)\)$/;
 
 /**
+ * The operand of a parenthesised cast head — `specClass` in
+ * `(specClass as AnyClass)` — or `undefined` for any other head. A cast
+ * changes the static type only: the value, and so the class the runtime
+ * dispatches on, is the operand's (bd tea-rags-mcp-y99pg.35).
+ */
+export function swiftCastOperand(head: string): string | undefined {
+  const cast = SWIFT_CAST_HEAD.exec(head);
+  return cast ? cast[1].trim() : undefined;
+}
+
+/**
  * The type a head that is not a VALUE NAME spells out itself — the receiver
  * shapes the kernel's plain split shredded and no channel keyed (bd
  * tea-rags-mcp-ll93g):

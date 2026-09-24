@@ -374,6 +374,10 @@ describe("seeded support versions", () => {
       // swift walker 54: bd tea-rags-mcp-y99pg.34 — the chain fold's hop cap
       // moves from three links to five, so an index built by walker 50 leaves a
       // four- or five-link receiver untyped.
+      // swift walker 60: bd tea-rags-mcp-y99pg.35 — `declarationKind` is new
+      // `typeDeclarations` content, and an Objective-C dynamic-lookup call no
+      // project class can implement leaves the denominator, so an index built
+      // by an earlier walker still charges it as a miss.
       // typescript walker 16, javascript walker 7, python walker 14: bd
       // tea-rags-mcp-r8hme.2 records the export names every import takes (and,
       // for typescript, every re-export forwards) on the persisted file edge, so
@@ -388,7 +392,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 54],
+        ["swift", 60],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
