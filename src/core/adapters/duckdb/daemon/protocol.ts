@@ -97,6 +97,11 @@ export const DAEMON_OPS = [
   // Whole file dependency graph for the architecture report (bd tea-rags-mcp-94hd9).
   // REQUIRED, not legacy-tolerated: an empty graph would read as "no violations".
   "readFileDependencyGraph",
+  // One file's importers / imports for file-scope get_callers / get_callees
+  // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
+  // would read as "nothing imports this file".
+  "getFileImporters",
+  "getFileImports",
   "hasStaleDerivedTables",
   "getPageRank",
   "findSymbolChunk",
@@ -124,7 +129,7 @@ export interface DaemonRequest {
     | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
-    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
+    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk

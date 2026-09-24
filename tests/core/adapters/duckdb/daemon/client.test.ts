@@ -682,3 +682,36 @@ describe("DaemonGraphDbClient — readFileDependencyGraph (bd tea-rags-mcp-94hd9
     expect(seen.find((r) => r.op === "readFileDependencyGraph")?.params).toMatchObject({ collection: "code_x_v1" });
   });
 });
+
+describe("DaemonGraphDbClient — getFileImporters / getFileImports (bd tea-rags-mcp-gfvr8)", () => {
+  it("proxies both per-file reads through the daemon socket with the relPath", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const lookup = {
+      fileKnown: true,
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", importText: "./b", callWeight: 1 }],
+    };
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "getFileImporters" || r.op === "getFileImports" ? lookup : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const importers = await client.getFileImporters("b.ts");
+    const imports = await client.getFileImports("a.ts");
+    await client.close();
+
+    expect(importers).toEqual(lookup);
+    expect(imports).toEqual(lookup);
+    expect(seen.find((r) => r.op === "getFileImporters")?.params).toMatchObject({
+      collection: "code_x_v1",
+      relPath: "b.ts",
+    });
+    expect(seen.find((r) => r.op === "getFileImports")?.params).toMatchObject({
+      collection: "code_x_v1",
+      relPath: "a.ts",
+    });
+  });
+});

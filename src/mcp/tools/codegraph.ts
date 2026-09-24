@@ -59,8 +59,18 @@ function collectionPathFields() {
 
 const GetCallersInputShape = {
   ...collectionPathFields(),
-  symbolId: z.string().describe("Target symbol id (e.g. Foo.bar)"),
-  limit: z.number().int().positive().max(500).optional().describe("Max caller edges (default 50)"),
+  symbolId: z
+    .string()
+    .optional()
+    .describe("Target symbol id (e.g. Foo.bar). Provide exactly one of 'symbolId' / 'relativePath'."),
+  relativePath: z
+    .string()
+    .optional()
+    .describe(
+      "Target FILE, repo-relative (e.g. src/core/app.ts) — file scope: returns the files importing it. " +
+        "Provide exactly one of 'symbolId' / 'relativePath'.",
+    ),
+  limit: z.number().int().positive().max(500).optional().describe("Max caller edges / importer files (default 50)"),
   includeAmbiguous: z
     .boolean()
     .optional()
@@ -73,8 +83,18 @@ const GetCallersInputShape = {
 
 const GetCalleesInputShape = {
   ...collectionPathFields(),
-  symbolId: z.string().describe("Source symbol id (e.g. main)"),
-  limit: z.number().int().positive().max(500).optional().describe("Max callee edges (default 50)"),
+  symbolId: z
+    .string()
+    .optional()
+    .describe("Source symbol id (e.g. main). Provide exactly one of 'symbolId' / 'relativePath'."),
+  relativePath: z
+    .string()
+    .optional()
+    .describe(
+      "Source FILE, repo-relative (e.g. src/core/app.ts) — file scope: returns the files it imports. " +
+        "Provide exactly one of 'symbolId' / 'relativePath'.",
+    ),
+  limit: z.number().int().positive().max(500).optional().describe("Max callee edges / imported files (default 50)"),
 };
 
 const FindCyclesInputShape = {
@@ -176,12 +196,23 @@ export function registerCodegraphTools(
       description:
         "Return symbols that invoke given symbolId. Backed by codegraph DuckDB. " +
         "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
-        "MAY reach target among candidateCount candidates; not materialized as edges).",
+        "MAY reach target among candidateCount candidates; not materialized as edges). " +
+        "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
+        "files that import it, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+        "unknown file → empty importers + message.",
       inputSchema: GetCallersInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, symbolId, limit, includeAmbiguous }) => {
-      const response = await app.getCallers({ project, collection, path, symbolId, limit, includeAmbiguous });
+    async ({ project, collection, path, symbolId, relativePath, limit, includeAmbiguous }) => {
+      const response = await app.getCallers({
+        project,
+        collection,
+        path,
+        symbolId,
+        relativePath,
+        limit,
+        includeAmbiguous,
+      });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
@@ -191,12 +222,16 @@ export function registerCodegraphTools(
     "get_callees",
     {
       title: "Get Callees",
-      description: "Return symbols invoked by given symbolId. Backed by codegraph DuckDB.",
+      description:
+        "Return symbols invoked by given symbolId. Backed by codegraph DuckDB. " +
+        "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
+        "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+        "unknown file → empty imports + message.",
       inputSchema: GetCalleesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, symbolId, limit }) => {
-      const response = await app.getCallees({ project, collection, path, symbolId, limit });
+    async ({ project, collection, path, symbolId, relativePath, limit }) => {
+      const response = await app.getCallees({ project, collection, path, symbolId, relativePath, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );

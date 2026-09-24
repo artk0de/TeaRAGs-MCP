@@ -26,10 +26,11 @@
 
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
+import type { RelPath, SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
 import type {
   FindCyclesRequest,
@@ -41,6 +42,7 @@ import type {
 } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
 import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
@@ -77,8 +79,27 @@ interface GraphAddressing {
   path?: string;
 }
 
+type GraphTarget = { kind: "symbol"; symbolId: SymbolId } | { kind: "file"; relativePath: RelPath };
+
+/**
+ * `get_callers` / `get_callees` take a symbol OR a file (bd tea-rags-mcp-gfvr8)
+ * — exactly one. Both or neither is a request error, raised before any
+ * collection is resolved.
+ */
+function graphTarget(req: { symbolId?: SymbolId; relativePath?: string }): GraphTarget {
+  const hasSymbol = req.symbolId !== undefined && req.symbolId !== "";
+  const hasFile = req.relativePath !== undefined && req.relativePath !== "";
+  if (hasSymbol && hasFile) {
+    throw new InvalidParameterError("relativePath", "pass either symbolId or relativePath, not both");
+  }
+  if (hasFile) return { kind: "file", relativePath: normalizeRelativePath(req.relativePath as string) };
+  if (hasSymbol) return { kind: "symbol", symbolId: req.symbolId as SymbolId };
+  throw new MissingArgumentError(["symbolId or relativePath"]);
+}
+
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
+  private readonly fileImports = new FileImportOps();
 
   constructor(private readonly deps: GraphFacadeDeps) {}
 
@@ -134,10 +155,23 @@ export class GraphFacade {
   }
 
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
+    const target = graphTarget(req);
+    if (target.kind === "file") {
+      if (req.includeAmbiguous) {
+        throw new InvalidParameterError("includeAmbiguous", "applies to a symbolId target only, not to relativePath");
+      }
+      const limit = req.limit ?? DEFAULT_LIMIT;
+      return this.withReadHandle(
+        req,
+        async (handle) => this.fileImports.importers(handle.graphDb, target.relativePath, limit),
+        FileImportOps.emptyImporters(target.relativePath),
+      );
+    }
+    const { symbolId } = target;
     return this.withReadHandle(
       req,
       async (handle) => {
-        const edges = await handle.graphDb.getCallers(req.symbolId);
+        const edges = await handle.graphDb.getCallers(symbolId);
         const callers = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
         // Lazy ambiguous expansion (bd f2jsb A4) — opt-in only, and only when
         // the target has a member segment (text after the last `#` or `.`,
@@ -145,7 +179,7 @@ export class GraphFacade {
         // parser, so the lookup key matches what cg_ambiguous_fanout.member
         // was persisted under). Bare symbols skip the lookup; the DEFAULT
         // (flag absent) response stays byte-identical to the pre-flag shape.
-        const member = req.includeAmbiguous ? splitMethodSymbol(req.symbolId)?.member : undefined;
+        const member = req.includeAmbiguous ? splitMethodSymbol(symbolId)?.member : undefined;
         if (member === undefined) return { callers };
         const sites = await handle.graphDb.getAmbiguousCallersByMember(member);
         return {
@@ -163,10 +197,20 @@ export class GraphFacade {
   }
 
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
+    const target = graphTarget(req);
+    if (target.kind === "file") {
+      const limit = req.limit ?? DEFAULT_LIMIT;
+      return this.withReadHandle(
+        req,
+        async (handle) => this.fileImports.imports(handle.graphDb, target.relativePath, limit),
+        FileImportOps.emptyImports(target.relativePath),
+      );
+    }
+    const { symbolId } = target;
     return this.withReadHandle(
       req,
       async (handle) => {
-        const edges = await handle.graphDb.getCallees(req.symbolId);
+        const edges = await handle.graphDb.getCallees(symbolId);
         return { callees: edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT) };
       },
       { callees: [] },

@@ -222,3 +222,54 @@ describe("get_architecture_report", () => {
     expect(JSON.parse(result.content[0].text)).toEqual(report);
   });
 });
+
+// bd tea-rags-mcp-gfvr8 — get_callers / get_callees at FILE scope.
+describe("get_callers / get_callees — file scope", () => {
+  function registered(tool: "get_callers" | "get_callees") {
+    const register = vi.fn();
+    const app = makeApp(true);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === tool);
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    return { app, config, handler };
+  }
+
+  for (const tool of ["get_callers", "get_callees"] as const) {
+    it(`${tool} schema accepts relativePath without symbolId, and symbolId without relativePath`, () => {
+      const schema = z.object(registered(tool).config.inputSchema);
+      expect(schema.safeParse({ project: "p", relativePath: "src/a.ts" }).success).toBe(true);
+      expect(schema.safeParse({ project: "p", symbolId: "A#b" }).success).toBe(true);
+    });
+
+    it(`${tool} description documents the file-scope answer`, () => {
+      const { description } = registered(tool).config;
+      expect(description).toMatch(/relativePath/);
+      expect(description).toMatch(/import/);
+    });
+  }
+
+  it("get_callers handler forwards relativePath into app.getCallers", async () => {
+    const { app, handler } = registered("get_callers");
+    (app.getCallers as ReturnType<typeof vi.fn>).mockResolvedValue({
+      relativePath: "src/a.ts",
+      importers: [],
+      total: 0,
+    });
+
+    await handler({ project: "p", relativePath: "src/a.ts", limit: 5 });
+
+    expect(app.getCallers).toHaveBeenCalledWith(
+      expect.objectContaining({ project: "p", relativePath: "src/a.ts", limit: 5 }),
+    );
+  });
+
+  it("get_callees handler forwards relativePath into app.getCallees", async () => {
+    const { app, handler } = registered("get_callees");
+    (app.getCallees as ReturnType<typeof vi.fn>).mockResolvedValue({ relativePath: "src/a.ts", imports: [], total: 0 });
+
+    await handler({ project: "p", relativePath: "src/a.ts" });
+
+    expect(app.getCallees).toHaveBeenCalledWith(expect.objectContaining({ project: "p", relativePath: "src/a.ts" }));
+  });
+});

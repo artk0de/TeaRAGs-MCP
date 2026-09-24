@@ -27,6 +27,7 @@ import {
   type CycleEntry,
   type CycleScope,
   type FileDependencyGraph,
+  type FileImportLookup,
   type RelPath,
   type SymbolId,
 } from "../../contracts/types/codegraph.js";
@@ -141,6 +142,60 @@ export class DuckDbGraphAnalyticsStore {
       edges: edgeRows.map((r) => ({
         sourceRelPath: r.source_rel_path,
         targetRelPath: r.target_rel_path,
+        callWeight: Number(r.call_weight),
+      })),
+    };
+  }
+
+  /** The files importing `relPath` (bd tea-rags-mcp-gfvr8). */
+  async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
+    return this.readFileImportEdges(relPath, "target_rel_path");
+  }
+
+  /** The files `relPath` imports (bd tea-rags-mcp-gfvr8). */
+  async getFileImports(relPath: RelPath): Promise<FileImportLookup> {
+    return this.readFileImportEdges(relPath, "source_rel_path");
+  }
+
+  /**
+   * One file's `cg_symbols_edges_file` rows on one side, weighted exactly like
+   * `readFileDependencyGraph`'s edges — the same method-edge aggregate, only
+   * restricted to the rows the file anchors, so a single-file lookup never
+   * aggregates the whole method table. `anchor` is one of two column literals
+   * chosen by the caller, never user input, so it is inlined; the path is bound.
+   */
+  private async readFileImportEdges(
+    relPath: RelPath,
+    anchor: "source_rel_path" | "target_rel_path",
+  ): Promise<FileImportLookup> {
+    const edgeRows = await this.session.queryAll<{
+      source_rel_path: string;
+      target_rel_path: string;
+      import_text: string | null;
+      call_weight: number | string;
+    }>(
+      `SELECT e.source_rel_path, e.target_rel_path, e.import_text, COALESCE(c.call_weight, 0) AS call_weight
+       FROM cg_symbols_edges_file e
+       LEFT JOIN (
+         SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
+         FROM cg_symbols_edges_method
+         WHERE target_symbol_id IS NOT NULL AND ${anchor} = ?
+         GROUP BY source_rel_path, target_rel_path
+       ) c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
+       WHERE e.${anchor} = ?
+       ORDER BY e.source_rel_path, e.target_rel_path`,
+      [relPath, relPath],
+    );
+    const known = await this.session.queryAll<{ n: number | string }>(
+      "SELECT COUNT(*) AS n FROM cg_symbols_files WHERE rel_path = ?",
+      [relPath],
+    );
+    return {
+      fileKnown: Number(known[0]?.n ?? 0) > 0,
+      edges: edgeRows.map((r) => ({
+        sourceRelPath: r.source_rel_path,
+        targetRelPath: r.target_rel_path,
+        importText: r.import_text,
         callWeight: Number(r.call_weight),
       })),
     };

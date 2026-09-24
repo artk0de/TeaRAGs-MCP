@@ -19,7 +19,14 @@ export interface GetCallersRequest {
   collection?: string;
   /** Filesystem path to the indexed codebase — backward-compat fallback. */
   path?: string;
-  symbolId: SymbolId;
+  /** Target symbol. Exactly one of `symbolId` / `relativePath` is required. */
+  symbolId?: SymbolId;
+  /**
+   * Target FILE (repo-relative) — switches the answer to file scope: the files
+   * importing it, read from the file edge table (bd tea-rags-mcp-gfvr8).
+   * Exactly one of `symbolId` / `relativePath` is required.
+   */
+  relativePath?: RelPath;
   limit?: number;
   /**
    * Opt-in lazy ambiguous expansion (bd tea-rags-mcp-f2jsb A4): also fetch
@@ -49,7 +56,53 @@ export interface AmbiguousCallerResult {
   candidateCount: number;
 }
 
-export interface GetCallersResponse {
+/**
+ * `get_callers` / `get_callees` answer: symbol scope when the request named a
+ * `symbolId`, file scope when it named a `relativePath`.
+ */
+export type GetCallersResponse = SymbolCallersResponse | FileImportersResponse;
+export type GetCalleesResponse = SymbolCalleesResponse | FileImportsResponse;
+
+/**
+ * One file on the other end of a file edge (bd tea-rags-mcp-gfvr8): an importer
+ * for `get_callers`, an imported file for `get_callees`.
+ */
+export interface FileImportResult {
+  relativePath: RelPath;
+  /** The import text the walker recorded; null on a row that carries none. */
+  importText: string | null;
+  /**
+   * Confidence-weighted count of the resolved calls crossing this import —
+   * 0 when the dependency carries no resolved call (a type, a constant, a
+   * re-export). Results are ordered by it, heaviest first.
+   */
+  callWeight: number;
+}
+
+interface FileScopeResponseBase {
+  /** The file the request named, normalised (a leading `./` stripped). */
+  relativePath: RelPath;
+  /** Edge count before `limit` was applied. */
+  total: number;
+  /**
+   * Present when the codegraph has no such file — the path is not
+   * repo-relative, has a typo, or its language is not walked. An empty list on
+   * a known file carries no message: nothing imports it (or it imports nothing).
+   */
+  message?: string;
+}
+
+/** File-scope `get_callers`: the files importing `relativePath`. */
+export interface FileImportersResponse extends FileScopeResponseBase {
+  importers: FileImportResult[];
+}
+
+/** File-scope `get_callees`: the files `relativePath` imports. */
+export interface FileImportsResponse extends FileScopeResponseBase {
+  imports: FileImportResult[];
+}
+
+export interface SymbolCallersResponse {
   callers: CallerResult[];
   /**
    * Present ONLY when the request set `includeAmbiguous: true` AND the target
@@ -67,7 +120,13 @@ export interface GetCalleesRequest {
   collection?: string;
   /** Filesystem path to the indexed codebase — backward-compat fallback. */
   path?: string;
-  symbolId: SymbolId;
+  /** Source symbol. Exactly one of `symbolId` / `relativePath` is required. */
+  symbolId?: SymbolId;
+  /**
+   * Source FILE (repo-relative) — switches the answer to file scope: the files
+   * it imports (bd tea-rags-mcp-gfvr8).
+   */
+  relativePath?: RelPath;
   limit?: number;
 }
 
@@ -77,7 +136,7 @@ export interface CalleeResult {
   callExpression: string;
 }
 
-export interface GetCalleesResponse {
+export interface SymbolCalleesResponse {
   callees: CalleeResult[];
 }
 

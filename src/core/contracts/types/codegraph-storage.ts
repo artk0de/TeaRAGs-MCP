@@ -21,6 +21,7 @@ import type {
   EdgeKindCount,
   FileDependencyGraph,
   FileGraphMetrics,
+  FileImportLookup,
   FileResolveStatsWrite,
   GraphEdges,
   GraphFileNode,
@@ -535,6 +536,19 @@ export interface GraphDbClient {
    * an edge to an unwalked file still moves its source's instability.
    */
   readFileDependencyGraph: () => Promise<FileDependencyGraph>;
+
+  /**
+   * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files
+   * importing it — each weighted like {@link readFileDependencyGraph}'s edges.
+   * File-scope `get_callers` reads it (bd tea-rags-mcp-gfvr8).
+   */
+  getFileImporters: (relPath: RelPath) => Promise<FileImportLookup>;
+
+  /**
+   * The `cg_symbols_edges_file` rows whose SOURCE is `relPath` — the files it
+   * imports. File-scope `get_callees` reads it (bd tea-rags-mcp-gfvr8).
+   */
+  getFileImports: (relPath: RelPath) => Promise<FileImportLookup>;
 
   /**
    * Stream the adjacency for `scope` one `[source, target]` pair at a
