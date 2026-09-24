@@ -1,5 +1,5 @@
 // src/bootstrap/factory.ts
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -416,7 +416,9 @@ export function buildCodegraphDaemonSpawnEnv(
 /**
  * Lazily spawn the codegraph daemon process when it is not already alive. The
  * spawn is single-flighted across processes via `DaemonLock` on the lock file —
- * mirrors the Qdrant embedded-daemon cold-spawn guard. The daemon binary is the
+ * mirrors the Qdrant embedded-daemon cold-spawn guard. The lock is held past the `spawn` call until
+ * the child is observable (bd tea-rags-mcp-imgjx, `holdSpawnLockUntilObservable`),
+ * and the daemon itself refuses to run as a second owner of its key directory. The daemon binary is the
  * built `entry.js` next to this module; resolved via `import.meta.url` so it
  * works identically under `src/` (ts-node) and `build/` (shipped JS).
  *
@@ -441,6 +443,7 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
   mkdirSync(paths.buildDir, { recursive: true });
   const lock = codegraphDaemonLock.acquire(paths.lockFile);
   if (!lock) return; // another process is spawning; it will own the daemon
+  let child: ChildProcess | undefined;
   try {
     if (isCodegraphDaemonAlive(paths)) return;
     // Build-keyed spawn hygiene (bd tea-rags-mcp-42hno): key directories of
@@ -459,7 +462,7 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
     // own copy once the child owns it.
     const logFd = openDaemonLogFd(paths);
     try {
-      const child = spawn(process.execPath, [entryPath], {
+      child = spawn(process.execPath, [entryPath], {
         detached: true,
         stdio: ["ignore", logFd, logFd],
         env: buildCodegraphDaemonSpawnEnv(settings),
@@ -471,8 +474,48 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
   } catch {
     /* best-effort: fall back to in-process write path */
   } finally {
-    codegraphDaemonLock.release(lock.fd);
+    // A child that exists keeps the spawn lock until it is observable (bd
+    // tea-rags-mcp-imgjx); no child (spawn threw, or produced no pid) has
+    // nothing to wait for.
+    if (child?.pid === undefined) codegraphDaemonLock.release(lock.fd);
+    else holdSpawnLockUntilObservable(paths, lock.fd, child);
   }
+}
+
+/** Upper bound on how long a spawner holds the spawn lock for its child's startup. */
+export const CODEGRAPH_DAEMON_SPAWN_OBSERVE_TIMEOUT_MS = 10_000;
+const CODEGRAPH_DAEMON_SPAWN_OBSERVE_POLL_MS = 25;
+
+/**
+ * Keep the spawn lock until the just-spawned daemon is observable — its pid
+ * file names a live pid — or the child exits, bounded by
+ * `CODEGRAPH_DAEMON_SPAWN_OBSERVE_TIMEOUT_MS` (bd tea-rags-mcp-imgjx).
+ *
+ * Releasing right after `spawn` left a window of a whole daemon startup in
+ * which the pid file did not exist yet: a second ensure in this process (the
+ * index run's keep-alive guard, the pool's respawn hook, a second pool) or in
+ * another one passed the alive check and spawned a twin. While the lock is held
+ * every other ensure takes its "another spawner owns it" branch — the lock file
+ * names this live process, so no other process treats it as abandoned. The
+ * wait is asynchronous and `unref`'d: callers are never blocked (their daemon
+ * client's bounded connect retry absorbs the startup) and a process exiting
+ * mid-wait leaves a lock whose dead pid the next spawner reclaims.
+ */
+function holdSpawnLockUntilObservable(paths: CodegraphDaemonPaths, lockFd: number, child: ChildProcess): void {
+  const deadline = Date.now() + CODEGRAPH_DAEMON_SPAWN_OBSERVE_TIMEOUT_MS;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    clearInterval(poll);
+    child.off("exit", release);
+    codegraphDaemonLock.release(lockFd);
+  };
+  const poll = setInterval(() => {
+    if (isCodegraphDaemonAlive(paths) || Date.now() >= deadline) release();
+  }, CODEGRAPH_DAEMON_SPAWN_OBSERVE_POLL_MS);
+  poll.unref();
+  child.once("exit", release);
 }
 
 /**
