@@ -144,7 +144,8 @@ function swiftHeadType(
   }
   if (head === "self" || head === "Self") {
     if (enclosing === undefined) return undefined;
-    return { form: head === "self" ? "instance" : "class", name: enclosing };
+    // `self` carries what a constrained extension binds (bd tea-rags-mcp-y99pg.34).
+    return head === "self" ? members.selfType(enclosing, atLine, ctx) : { form: "class", name: enclosing };
   }
   if (head === "super") return undefined;
 
@@ -156,6 +157,9 @@ function swiftHeadType(
     if (fieldType !== undefined) {
       return swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(enclosing, head, ctx));
     }
+    // A property typed as a generic parameter a constrained extension binds (bd tea-rags-mcp-y99pg.34).
+    const bound = members.genericFieldType(members.selfType(enclosing, atLine, ctx), head, ctx);
+    if (bound !== undefined) return bound;
     // An implicit-self property the SDK declares on the enclosing type —
     // `allHTTPHeaderFields` inside `extension URLRequest` (bd tea-rags-mcp-y99pg.25).
     const sdkProperty = members.sdkMemberType({ form: "instance", name: enclosing }, head, ctx);
@@ -398,6 +402,9 @@ function swiftMemberHopType(
   if (fieldType !== undefined) {
     return swiftTypeRefWithArguments(fieldType, members.fieldTypeArguments(recv.name, member, ctx));
   }
+  // A property typed as a generic parameter: the receiver's argument for it (bd tea-rags-mcp-y99pg.34).
+  const generic = members.genericFieldType(recv, member, ctx);
+  if (generic !== undefined) return generic;
   // Not a property: a METHOD hop, typed by what the declaration the call
   // lands on returns. Strict: an ambiguous callee types nothing.
   const returned = members.memberReturnType(recv.name, member, ctx);

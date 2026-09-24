@@ -3440,3 +3440,89 @@ describe("SwiftCallResolver — module-level values (bd tea-rags-mcp-y99pg.30)",
     expect(resolver.hasInProjectDefinition(call("sharedStore", "save"), context)).toBe(true);
   });
 });
+
+describe("SwiftCallResolver — a constrained extension binds the extended type's generic parameters (bd tea-rags-mcp-y99pg.34)", () => {
+  const t = table({
+    "Sources/Protected.swift": [
+      { symbolId: "Protected", scope: [] },
+      { symbolId: "Protected#attemptToTransitionTo", scope: ["Protected"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request.MutableState", scope: ["Request"] },
+      { symbolId: "Request.State", scope: ["Request"] },
+      { symbolId: "Request.State#canTransitionTo", scope: ["Request", "State"] },
+    ],
+    "Sources/Other.swift": [
+      { symbolId: "Other", scope: [] },
+      { symbolId: "Other#canTransitionTo", scope: ["Other"] },
+    ],
+    "Sources/AlamofireExtended.swift": [{ symbolId: "AlamofireExtension", scope: [] }],
+    "Sources/Response.swift": [
+      { symbolId: "DataResponse", scope: [] },
+      { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/Protected.swift": [
+      { typeId: "Protected", reopens: false, genericParameters: ["Value"], genericFieldParameters: { value: "Value" } },
+      {
+        typeId: "Protected",
+        reopens: true,
+        whereClause: { startLine: 9, endLine: 15, sameType: { Value: "Request.MutableState" } },
+      },
+    ],
+    "Sources/Request.swift": [
+      { typeId: "Request", reopens: false },
+      { typeId: "Request.MutableState", reopens: false },
+      { typeId: "Request.State", reopens: false },
+    ],
+    "Sources/Other.swift": [{ typeId: "Other", reopens: false }],
+    "Sources/Response.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/AlamofireExtended.swift": [
+      {
+        typeId: "AlamofireExtension",
+        reopens: false,
+        genericParameters: ["ExtendedType"],
+        genericFieldParameters: { type: "ExtendedType" },
+      },
+    ],
+    "Sources/Certificates.swift": [
+      {
+        typeId: "AlamofireExtension",
+        reopens: true,
+        whereClause: { startLine: 1, endLine: 5, sameType: { ExtendedType: "[SecCertificate]" } },
+      },
+    ],
+  };
+  const protectedContext = ctx({
+    callerFile: "Sources/Protected.swift",
+    callerScope: ["Protected"],
+    symbolTable: t,
+    typeDeclarations,
+    classFieldTypes: { MutableState: { state: "State" } },
+  });
+
+  it("types a generic-typed stored property by the clause's same-type binding", () => {
+    // `value.state.canTransitionTo(state)` inside `extension Protected where Value == Request.MutableState`.
+    const target = new SwiftCallResolver().resolve(call("value.state", "canTransitionTo", 11), protectedContext);
+    expect(target?.targetSymbolId).toBe("Request.State#canTransitionTo");
+  });
+
+  it("binds nothing outside the lines the clause scopes", () => {
+    expect(new SwiftCallResolver().resolve(call("value.state", "canTransitionTo", 30), protectedContext)).toBeNull();
+  });
+
+  it("proves an SDK member on a same-type-bound SDK value is not in the project", () => {
+    // `type.map { … }` inside `extension AlamofireExtension where ExtendedType == [SecCertificate]`.
+    const context = ctx({
+      callerFile: "Sources/Certificates.swift",
+      callerScope: ["AlamofireExtension"],
+      symbolTable: t,
+      typeDeclarations,
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("type", "map", 3), context)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("type", "map", 20), context)).toBe(true);
+  });
+});
