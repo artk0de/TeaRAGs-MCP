@@ -489,9 +489,11 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
 
   it("refuses a chain longer than the hop cap rather than half-walking it", () => {
     // Every link below is typed, so only the cap can decline this receiver.
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): the cap moved from three
+    // links to five, so the refused chain carries six (was `self.a.b.c.d`).
     const t = table({ "Sources/E.swift": [{ symbolId: "E#go", scope: ["E"] }] });
     const target = new SwiftCallResolver().resolve(
-      call("self.a.b.c.d", "go"),
+      call("self.a.b.c.d.e.f", "go"),
       ctx({
         callerFile: "Sources/Store.swift",
         callerScope: ["Store"],
@@ -500,7 +502,9 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
           Store: { a: "A" },
           A: { b: "B" },
           B: { c: "C" },
-          C: { d: "E" },
+          C: { d: "D" },
+          D: { e: "F" },
+          F: { f: "E" },
         },
       }),
     );
@@ -3028,6 +3032,13 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
   it("types a chain of SDK links", () => {
     // `ProcessInfo` → `processInfo: ProcessInfo` → `arguments: [String]` → `first: String`.
     const site = call("ProcessInfo.processInfo.arguments.first", "append", 6);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
+  });
+
+  it("types a FIVE-link chain of SDK links (bd tea-rags-mcp-y99pg.34)", () => {
+    // Alamofire's default User-Agent: `…first?.split(separator: "/").last.map(String.init)` —
+    // `split` returns `[Substring]`, `last` a `Substring`; `map` is the SDK's, never `Request#map`.
+    const site = call('ProcessInfo.processInfo.arguments.first.split(separator: "/").last', "map", 6);
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
   });
 

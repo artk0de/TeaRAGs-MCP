@@ -483,7 +483,12 @@ export const capability: LanguageCapability = {
   // denominator. Alamofire TOTAL 0.991 -> 0.991 (1252/1264 -> 1252/1263),
   // Quick unchanged, WRONG 8 -> 8; edges +0 / -0; `type.paths` on a `Bundle`
   // proved external (swiftc: Bundle.paths(forResourcesOfType:inDirectory:)).
-  versions: { chunking: 4, walker: 50, codegraphSchema: 2 },
+  // walker 51: bd tea-rags-mcp-y99pg.34 — the receiver fold's hop cap moves
+  // from three links to five, so a five-link chain of SDK links is typed.
+  // Alamofire TOTAL 0.991 -> 0.992 (1252/1263 -> 1252/1262), Quick unchanged,
+  // WRONG 8 -> 8; edges +0 / -0; HTTPHeaders.swift:383 `….last.map` proved an
+  // SDK member (swiftc: Optional.map).
+  versions: { chunking: 4, walker: 51, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };
