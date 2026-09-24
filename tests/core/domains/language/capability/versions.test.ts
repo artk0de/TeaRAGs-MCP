@@ -285,6 +285,9 @@ describe("seeded support versions", () => {
       // substrate and member lookup walks SDK superclass chains, so an index
       // built by walker 36 lacks the edges into project extensions of an SDK
       // superclass and persisted a denominator the hand-written lists drew.
+      // swift walker 38: SDK member hops, closure parameters and construction
+      // heads are typed from the substrate, so an index built by walker 37 lacks
+      // those edges and charges their SDK sites as misses.
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
@@ -319,7 +322,7 @@ describe("seeded support versions", () => {
         ["java", 3],
         ["rust", 3],
         ["go", 5],
-        ["swift", 37],
+        ["swift", 38],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

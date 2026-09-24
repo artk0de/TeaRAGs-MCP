@@ -57,7 +57,10 @@ import {
   type AncestorLinearizer,
 } from "../../kernel/ancestor-walk.js";
 import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
+import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
+import { SwiftSdkMemberTypes, type SwiftNominalTypeRef } from "./swift-sdk-member-types.js";
 import {
   lookupSwiftOverloads,
   lookupSwiftTypeMember,
@@ -93,6 +96,49 @@ export interface SwiftMemberReach {
 export class SwiftMemberTypeLookup {
   private readonly linearizers = new RunScopedMemo<CallContext, AncestorLinearizer<CallContext>>();
   private readonly fields = new SwiftTypeFieldIndex();
+  private readonly sdkMembers: SwiftSdkMemberTypes;
+
+  /**
+   * @param sdk The SDK substrate, the second declaration source a lookup
+   *   reads — after the project, and only for a member the project declares
+   *   on none of the receiver's types (bd tea-rags-mcp-y99pg.25).
+   */
+  constructor(private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary()) {
+    this.sdkMembers = new SwiftSdkMemberTypes(sdk);
+  }
+
+  /** Whether the SDK substrate declares a type of this path. */
+  isSdkType(typeName: string): boolean {
+    return this.sdk.hasType(typeName);
+  }
+
+  /**
+   * What `receiver.member` denotes by the SDK's declaration — only when no
+   * type on the receiver's lookup order declares `member` in the project,
+   * whose own answer (or silence) always wins.
+   */
+  sdkMemberType(receiver: SwiftNominalTypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+    if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
+    const sdk = this.sdkView(receiver, ctx);
+    return this.sdkMembers.memberType(sdk.receiver, member, sdk.order);
+  }
+
+  /** The SDK-declared type of the `index`-th parameter of the closure `receiver.member` takes, on the same terms. */
+  sdkClosureParameterType(
+    receiver: SwiftNominalTypeRef,
+    member: string,
+    index: number,
+    ctx: CallContext,
+  ): TypeRef | undefined {
+    if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
+    const sdk = this.sdkView(receiver, ctx);
+    return this.sdkMembers.closureParameterType(sdk.receiver, member, index, sdk.order);
+  }
+
+  /** The instance an SDK construction `T(…)` / `T { … }` spelled `typeText` builds. */
+  sdkConstructionType(typeText: string): SwiftNominalTypeRef | undefined {
+    return this.sdkMembers.constructionType(typeText);
+  }
 
   /**
    * The declared type of the property `member` on `typeName` or a superclass,
@@ -193,6 +239,15 @@ export class SwiftMemberTypeLookup {
    * fits no overload is still a call on a member the project declares, so no
    * call narrows the answer here.
    */
+  /**
+   * The types a member lookup on `typeName` reads, in order, as the chain
+   * keys them — for a reader of ANOTHER declaration source (the SDK
+   * substrate, bd tea-rags-mcp-y99pg.25) that must walk the same order.
+   */
+  lookupOrder(typeName: string, ctx: CallContext): readonly string[] {
+    return this.linearizerFor(ctx).linearize(typeName).order;
+  }
+
   memberReach(typeName: string, member: string, ctx: CallContext): SwiftMemberReach {
     const { order } = this.linearizerFor(ctx).linearize(typeName);
     const types = new Set<string>();
@@ -204,6 +259,37 @@ export class SwiftMemberTypeLookup {
       if (!declared && declaresMember(typeId, member, ctx)) declared = true;
     }
     return { declared, types };
+  }
+
+  /**
+   * Whether `call` provably runs an SDK overload although the project declares
+   * its member on the receiver's hierarchy (bd tea-rags-mcp-y99pg.25): no
+   * project overload there takes the call's argument labels, and the SDK
+   * declares the member on the same hierarchy — `self.init(url:cachePolicy:)`
+   * inside `extension URLRequest` beside a project `init(_:method:headers:)`.
+   */
+  runsSdkOverload(typeName: string, call: CallRef, ctx: CallContext): boolean {
+    const { order } = this.linearizerFor(ctx).linearize(typeName);
+    if (order.some((candidate) => declaresMember(qualifySwiftTypeName(candidate, ctx), call.member, ctx, call))) {
+      return false;
+    }
+    const sdk = this.sdkView({ form: "instance", name: typeName }, ctx);
+    return sdk.order.some((candidate) => this.sdk.ownMembers(candidate, call.member).length > 0);
+  }
+
+  /**
+   * A receiver as the SDK names it, with the lookup order its SDK members are
+   * found along: an extension's spelled id (`Collection<String>`,
+   * `[HTTPHeader]`) reads as the nominal it re-opens.
+   */
+  private sdkView(
+    receiver: SwiftNominalTypeRef,
+    ctx: CallContext,
+  ): { readonly receiver: SwiftNominalTypeRef; readonly order: readonly string[] } {
+    const nominal = swiftSpelledNominal(receiver.name);
+    if (nominal === receiver.name) return { receiver, order: this.lookupOrder(receiver.name, ctx) };
+    const order = [...new Set([...this.lookupOrder(receiver.name, ctx), ...this.lookupOrder(nominal, ctx)])];
+    return { receiver: { ...receiver, name: nominal }, order };
   }
 
   /**

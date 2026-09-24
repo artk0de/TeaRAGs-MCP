@@ -2913,3 +2913,186 @@ describe("SwiftCallResolver — the generated SDK substrate (bd tea-rags-mcp-y99
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context({}))).toBe(false);
   });
 });
+
+describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd tea-rags-mcp-y99pg.25)", () => {
+  const t = table({
+    "Sources/AFError.swift": [
+      { symbolId: "AFError", scope: [] },
+      { symbolId: "Error", scope: [] },
+      { symbolId: "Error#asAFError", scope: ["Error"] },
+    ],
+    "Sources/HTTPHeaders.swift": [
+      { symbolId: "HTTPHeaders", scope: [] },
+      { symbolId: "Collection<String>", scope: [] },
+      { symbolId: "Collection<String>#qualityEncoded", scope: ["Collection<String>"] },
+      { symbolId: "String", scope: [] },
+      { symbolId: "String#indentingNewlines", scope: ["String"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+      { symbolId: "Request#append", scope: ["Request"] },
+      { symbolId: "Request#map", scope: ["Request"] },
+    ],
+    "Sources/Session.swift": [{ symbolId: "Session", scope: [] }],
+  });
+  const typeDeclarations = {
+    "Sources/AFError.swift": [
+      { typeId: "AFError", reopens: false },
+      { typeId: "Error", reopens: true },
+    ],
+    "Sources/HTTPHeaders.swift": [
+      { typeId: "HTTPHeaders", reopens: false },
+      { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
+      { typeId: "String", reopens: true },
+    ],
+    "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+    "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+  };
+  const context = (over: Partial<CallContext> = {}): CallContext =>
+    ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session", "go"],
+      symbolTable: t,
+      typeDeclarations,
+      ...over,
+    });
+
+  it("types an SDK static property and an SDK method's associated-type return along a chain", () => {
+    // `Locale.preferredLanguages` is `[String]`; `prefix(_:)` returns
+    // `Self.SubSequence`, which `Array` aliases to `ArraySlice<Element>`.
+    const target = new SwiftCallResolver().resolve(
+      call("Locale.preferredLanguages.prefix(6)", "qualityEncoded", 6),
+      context(),
+    );
+    expect(target?.targetSymbolId).toBe("Collection<String>#qualityEncoded");
+  });
+
+  it("types a construction head of an SDK type and an SDK method's return", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespaces)", "indentingNewlines", 6),
+      context(),
+    );
+    expect(target?.targetSymbolId).toBe("String#indentingNewlines");
+  });
+
+  it("types a string-literal head as a String", () => {
+    const target = new SwiftCallResolver().resolve(call('"\\(headers.sorted())"', "indentingNewlines", 6), context());
+    expect(target?.targetSymbolId).toBe("String#indentingNewlines");
+  });
+
+  it("types an SDK closure's parameter by an unbound generic parameter's constraint", () => {
+    // `Result { … }.mapError { $0 … }`: the closure takes `Failure`, which
+    // nothing binds here and which every `Result` constrains to `Error`.
+    const target = new SwiftCallResolver().resolve(
+      call("$0", "asAFError", 7),
+      context({
+        callResultBindings: {
+          $0: [{ line: 7, callee: "Result { try serializer.serialize(data) }.mapError", closureParameter: 0 }],
+        },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Error#asAFError");
+  });
+
+  it("reads an optional through Optional's own members", () => {
+    // `error.map { $0.asAFError() }` on an `Error?` the walker collapsed to `Error`.
+    const target = new SwiftCallResolver().resolve(
+      call("$0", "asAFError", 7),
+      context({
+        localBindings: { error: [{ line: 3, type: "Error" }] },
+        callResultBindings: { $0: [{ line: 7, callee: "error.map", closureParameter: 0 }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Error#asAFError");
+  });
+
+  it("binds an SDK generic's parameter by the receiver's generic argument", () => {
+    // `requests.forEach { $0.cancel() }` on a `requests: [Request]` field.
+    const target = new SwiftCallResolver().resolve(
+      call("$0", "cancel", 7),
+      context({
+        classFieldTypes: { Session: { requests: "Array" } },
+        typeDeclarations: {
+          ...typeDeclarations,
+          "Sources/Session.swift": [
+            { typeId: "Session", reopens: false, fieldTypeArguments: { requests: ["Request"] } },
+          ],
+        },
+        callResultBindings: { $0: [{ line: 7, callee: "requests.forEach", closureParameter: 0 }] },
+      }),
+    );
+    expect(target?.targetSymbolId).toBe("Request#cancel");
+  });
+
+  it("types a chain of SDK links", () => {
+    // `ProcessInfo` → `processInfo: ProcessInfo` → `arguments: [String]` → `first: String`.
+    const site = call("ProcessInfo.processInfo.arguments.first", "append", 6);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
+  });
+
+  it("types an implicit-self property and call head the SDK declares on the enclosing type", () => {
+    const resolver = new SwiftCallResolver();
+    const inRequest = context({ callerScope: ["URLRequest", "headers"] });
+    expect(resolver.hasInProjectDefinition(call("httpBody", "append", 6), inRequest)).toBe(false);
+    const inCollection = context({ callerScope: ["Collection<String>", "qualityEncoded"] });
+    expect(resolver.hasInProjectDefinition(call("enumerated()", "map", 6), inCollection)).toBe(false);
+  });
+
+  it("proves external a call whose labels fit no project overload of a member the SDK declares too", () => {
+    const withInit = table({ "Sources/Session.swift": [{ symbolId: "Session", scope: [] }] });
+    withInit.upsertFile("Sources/URLRequest+Alamofire.swift", [
+      {
+        symbolId: "URLRequest",
+        fqName: "URLRequest",
+        shortName: "URLRequest",
+        relPath: "Sources/URLRequest+Alamofire.swift",
+        scope: [],
+      },
+      {
+        symbolId: "URLRequest#init",
+        fqName: "URLRequest#init",
+        shortName: "init",
+        relPath: "Sources/URLRequest+Alamofire.swift",
+        scope: ["URLRequest"],
+        arity: { minRequired: 1, maxPositional: 1, hasSplat: false },
+        kwargs: { required: ["method"], optional: ["headers"], hasSplat: false },
+        acceptsBlock: false,
+      },
+    ]);
+    const within = ctx({
+      callerFile: "Sources/URLRequest+Alamofire.swift",
+      callerScope: ["URLRequest", "init"],
+      symbolTable: withInit,
+      typeDeclarations: {
+        "Sources/URLRequest+Alamofire.swift": [{ typeId: "URLRequest", reopens: true }],
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    const sdkInit = { ...call("self", "init", 6), argCount: 0, kwargKeys: ["url", "cachePolicy"], passesBlock: false };
+    const projectInit = { ...call("self", "init", 6), argCount: 1, kwargKeys: ["method"], passesBlock: false };
+    expect(resolver.hasInProjectDefinition(sdkInit, within)).toBe(false);
+    expect(resolver.hasInProjectDefinition(projectInit, within)).toBe(true);
+  });
+
+  it("keeps the denominator for a value known only by its generic parameter's constraint", () => {
+    // `requests.forEach { $0.cancel() }` on a `Set` whose element nothing
+    // states: `$0` is some `Hashable`, which may well be a `Request`.
+    const site = call("$0", "cancel", 7);
+    const within = context({
+      localBindings: { requests: [{ line: 3, type: "Set" }] },
+      callResultBindings: { $0: [{ line: 7, callee: "requests.forEach", closureParameter: 0 }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, within)).toBe(true);
+  });
+
+  it("proves external a call on an SDK-typed chain whose member only a project namesake declares", () => {
+    // `components.percentEncodedQuery.append` — a `String?` — never reaches `Request#append`.
+    const site = call("components.percentEncodedQuery", "append", 6);
+    const within = context({ localBindings: { components: [{ line: 3, type: "URLComponents" }] } });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(site, within)).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, within)).toBe(false);
+  });
+});

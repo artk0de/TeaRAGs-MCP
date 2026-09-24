@@ -260,7 +260,9 @@ export class SwiftCallResolver implements CallResolver {
     const typeName = this.receiverTypeName(call, ctx);
     if (typeName === undefined) return true;
     const reach = this.memberTypes.memberReach(typeName, call.member, ctx);
-    if (reach.declared) return true;
+    // Declared on the hierarchy — unless no project overload takes the call's
+    // labels and the SDK declares the member there too (bd tea-rags-mcp-y99pg.25).
+    if (reach.declared) return !this.memberTypes.runsSdkOverload(typeName, call, ctx);
     // A project type has initializers it never spells (`super.init()` on a
     // class that declares none inherits its superclass's): the type itself is
     // the in-project target.
@@ -309,6 +311,8 @@ export class SwiftCallResolver implements CallResolver {
     const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
     if (type !== undefined) {
       if (type.form !== "class" && type.form !== "instance") return undefined;
+      // A type known only as a bound proves nothing about what the value cannot reach (bd tea-rags-mcp-y99pg.25).
+      if (type.upperBound === true) return undefined;
       return SWIFT_DYNAMIC_LOOKUP_TYPES.has(type.name) ? undefined : type.name;
     }
     // An SDK type spelled as the receiver: only a type the SDK substrate
