@@ -33,6 +33,15 @@
   reads chunk signals for alpha-blending and `language`/`chunkType` for overlay
   labels — stripping first silently changes ranking; and an undeclared flat key
   is dropped from file hits by design.
+- **metaOnly places each overlay value in the namespace that OWNS it.**
+  `post-process.ts#mergeOverlayIntoOwners` (behind `filterMetaOnly` and
+  `applyEssentialSignalsToOverlay`) resolves a bare overlay field through
+  `buildSignalKeyMap` to its descriptor and writes the labelled value at that
+  key's physical path; a flat (static) owner is skipped because the raw value
+  already sits at the payload root, an unowned field is dropped. Why: one
+  preset's `overlayMask` spans trajectories, and merging the whole overlay into
+  `git.*` put `imports` and `fanIn` under the history block (bd
+  tea-rags-mcp-rtjrn).
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has
