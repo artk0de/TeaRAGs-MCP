@@ -1,13 +1,23 @@
 {
   "skill": "tea-rags:data-driven-generation",
   "skillPath": ".claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md",
-  "objective": "Agent correctly runs data-driven generation workflow — prerequisites check (explore first if no area context), Step 1 STRATEGY selection via hard rules ladder, Step 2 TEMPLATE with exact proven weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05} + quality gate rejections, Step 3 STYLE via dominantAuthorPct, Step 5 VERIFY identifiers (find_symbol, never skip), Step 6 IMPACT with exact weights {imports:0.5, churn:0.3, ownership:0.2}. Eval prompts use neutral user framing (no rule vocabulary leakage).",
+  "objective": "Agent runs the data-driven generation workflow as SKILL.md prescribes — prerequisites (explore first), Step 0 MODE, Step 1 STRATEGY hard rules + custom-strategy discovery, Step 2 TEMPLATE via extract-project-patterns and its quality gate, Step 5 STYLE blame-owner table plus ONE get_naming_lexicon call (project names reused, new term only for a new concept, convention read from shapes; semantic_search concept fallback when codegraph is off), Step 7 VERIFY symbol risks via find_symbol(criticalPath) + N-th-way + tests-at-risk (no identifier-existence sweep), Step 8 IMPACT. Eval prompts use neutral user framing (no rule vocabulary leakage). Cases with status 'superseded' are kept as history and not scored.",
   "runs": [
     {
       "date": "2026-04-21",
       "iteration": 0,
-      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
-      "withoutRule": { "pass": 3, "fail": 12, "total": 15, "passRate": "20%" },
+      "withRule": {
+        "pass": 15,
+        "fail": 0,
+        "total": 15,
+        "passRate": "100%"
+      },
+      "withoutRule": {
+        "pass": 3,
+        "fail": 12,
+        "total": 15,
+        "passRate": "20%"
+      },
       "delta": "+80pp",
       "failureMap": {
         "eval-1 (prerequisites)": "baseline starts with semantic_search instead of invoking /tea-rags:explore as formal step",
@@ -117,7 +127,10 @@
           "Skip the template step"
         ]
       },
-      "failureMode": "Agent uses wrong weights or skips template"
+      "failureMode": "Agent uses wrong weights or skips template",
+      "status": "superseded",
+      "supersededBy": "extract-project-patterns/evals.json",
+      "reason": "Step 2 TEMPLATE delegates to tea-rags:extract-project-patterns, which owns the battleTested/production filter cascade and the quality gate; DDG no longer carries custom template weights"
     },
     {
       "id": "eval-7",
@@ -192,7 +205,10 @@
           "Claim complete without identifier verification"
         ]
       },
-      "failureMode": "Agent skips identifier verification"
+      "failureMode": "Agent skips identifier verification",
+      "status": "superseded",
+      "supersededBy": "verify-symbol-risk",
+      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers"
     },
     {
       "id": "eval-12",
@@ -214,7 +230,10 @@
           "Skip impact step"
         ]
       },
-      "failureMode": "Agent uses wrong weights — breaks dinopowers compatibility"
+      "failureMode": "Agent uses wrong weights — breaks dinopowers compatibility",
+      "status": "superseded",
+      "supersededBy": "codegraph-impact/benchmark.md (impact-on-blastradius, impact-off-fallback)",
+      "reason": "Step 8 IMPACT uses the blastRadius preset when codegraph is on; the custom {imports:0.5, churn:0.3, ownership:0.2} weights are the codegraph-off fallback only (b65a TR4), so 'named preset' is no longer a failure"
     },
     {
       "id": "eval-13",
@@ -231,7 +250,10 @@
           "Skip Step 5 even for hotfix"
         ]
       },
-      "failureMode": "Agent over-engineers hotfix flow or skips Step 5"
+      "failureMode": "Agent over-engineers hotfix flow or skips Step 5",
+      "status": "superseded",
+      "supersededBy": "naming-modify-scope",
+      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers"
     },
     {
       "id": "eval-14",
@@ -247,7 +269,10 @@
           "Skip Step 5"
         ]
       },
-      "failureMode": "Agent tries to template-match nonexistent code"
+      "failureMode": "Agent tries to template-match nonexistent code",
+      "status": "superseded",
+      "supersededBy": "verify-symbol-risk",
+      "reason": "Step 7 identifier check removed (naming-lexicon spec); specs catch hallucinated identifiers"
     },
     {
       "id": "eval-15",
@@ -265,6 +290,230 @@
         ]
       },
       "failureMode": "Agent misses project-specific strategies"
+    },
+    {
+      "id": "naming-type-misfit",
+      "category": "step5-lexicon-type-known-local",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Ruby project (taxdome-like). Area: app/services/tax_preparation/. Target model TaxAutomationDocument; project code elsewhere writes `tax_automation_document = find_tax_automation_document!(id)`.",
+      "prompt": "Добавь в TaxPreparation::EnvelopeSync метод, который по id грузит документ автоматизации и помечает его синхронизированным. Черновик у меня такой: `row = find_vendor_envelope(id)`.",
+      "expected": {
+        "mustDo": [
+          "Exactly one get_naming_lexicon call in Step 5, before generating, with types including TaxAutomationDocument, language ruby, and names carrying the drafts (row as local, find_vendor_envelope as return) with their type",
+          "Name the local after the lexicon's dominant local name for the type (tax_automation_document)",
+          "Name the finder by the project's return shape (find_tax_automation_document!), not an invented term"
+        ],
+        "mustNotDo": [
+          "Keep `row` or any role-free local for a value of known type when the lexicon is EXACT-dominant",
+          "Introduce the term vendor_envelope",
+          "Put the draft name into `concept`"
+        ]
+      },
+      "failureMode": "Agent keeps its own ontology (row / vendor_envelope) — the canonical taxdome failure"
+    },
+    {
+      "id": "naming-second-binding-qualifier",
+      "category": "step5-lexicon-qualified",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Ruby. Lexicon for TaxAutomationDocument: local shapes EXACT 0.7, QUALIFIED 0.25 (e.g. tax_automation_document_ignored, tax_automation_document_previous).",
+      "prompt": "В том же методе нужно сравнить текущий документ автоматизации с предыдущей версией (тоже TaxAutomationDocument). Как назвать обе переменные?",
+      "expected": {
+        "mustDo": [
+          "First binding keeps the EXACT name tax_automation_document",
+          "Second binding of the same type in one scope = EXACT + qualifier suffix (e.g. tax_automation_document_previous), following the QUALIFIED shape"
+        ],
+        "mustNotDo": [
+          "Name the second binding `old`, `other`, `doc2` or another role-free word",
+          "Rename the first binding"
+        ]
+      },
+      "failureMode": "Agent does not see that the project disambiguates same-type bindings by a qualifier suffix"
+    },
+    {
+      "id": "naming-callee-derived-untyped",
+      "category": "step5-lexicon-bycallee",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Ruby. The value comes from `load_engagement_letter!(client_id)`; its return type is not known to the index. Lexicon byCallee for member load_engagement_letter!: locals [engagement_letter n=31], shapes CALLEE_DERIVED 0.9.",
+      "prompt": "Допиши в контроллер: взять письмо через load_engagement_letter!(client_id) и отправить клиенту.",
+      "expected": {
+        "mustDo": [
+          "Pass the draft in names with callee { member: load_engagement_letter! } since the type is unknown",
+          "Read byCallee and name the local engagement_letter (callee minus verb prefix and bang)"
+        ],
+        "mustNotDo": [
+          "Invent a type for the lexicon call",
+          "Name the local `letter`, `result` or `data`"
+        ]
+      },
+      "failureMode": "Agent treats an untyped call-bound local as free-form instead of using the CALLEE_DERIVED convention"
+    },
+    {
+      "id": "naming-concept-new-term",
+      "category": "step5-lexicon-concept-mode",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Ruby. CREATE of a new service. The project already calls this concept \"organizer\" (TaxPreparation::Organizers::*), the user says \"questionnaire\".",
+      "prompt": "Создай сервис, который собирает у клиента ответы на анкету перед подготовкой декларации. Назови как-нибудь типа QuestionnaireCollector.",
+      "expected": {
+        "mustDo": [
+          "concept passed as a DESCRIPTION of what the service does, language set to ruby",
+          "names includes the draft QuestionnaireCollector",
+          "On NEW_TERM with topTerms containing organizer, adopt the project term (Organizer...) and say why"
+        ],
+        "mustNotDo": [
+          "Put QuestionnaireCollector (the draft name) inside `concept`",
+          "Omit `language` with concept"
+        ]
+      },
+      "failureMode": "Agent queries by its own draft name and gets its own lexical neighbours back"
+    },
+    {
+      "id": "naming-concept-backedge",
+      "category": "step5-lexicon-backedge-step4",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Concept mode returned holder TaxPreparation::Organizers::Reminder#deliver (score 0.91) — a sender of organizer reminders; Step 4 REUSE found nothing.",
+      "prompt": "Нужен сервис, который шлёт клиенту напоминание заполнить анкету. Лексикон уже вызван, вот ответ.",
+      "expected": {
+        "mustDo": [
+          "Recognize the holder already does what is about to be written → back to Step 4 REUSE",
+          "Run the Step 4 gate on that holder (locality / fanIn) and import or extend it"
+        ],
+        "mustNotDo": [
+          "Rename the draft to the project term and write a sibling service"
+        ]
+      },
+      "failureMode": "Agent treats a missed reuse as a naming issue and writes the N-th way"
+    },
+    {
+      "id": "naming-new-term-justified",
+      "category": "step6-new-term",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). TypeScript. New module for a concept absent from the project: rate-limit token buckets. Lexicon concept terms: [request_handler, collection, provider, schema, chunk] — none about throttling.",
+      "prompt": "Добавь ограничение частоты запросов к embeddings-провайдеру: token bucket на провайдера.",
+      "expected": {
+        "mustDo": [
+          "Conclude the concept is new; keep a new term (e.g. TokenBucket / RateLimiter)",
+          "Emit one line in the output: NEW_TERM <term> — why no project term denotes it"
+        ],
+        "mustNotDo": [
+          "Force-fit an unrelated project term (provider, chunk, collection) onto the concept"
+        ]
+      },
+      "failureMode": "Agent over-applies reuse and names a new concept with an unrelated project word"
+    },
+    {
+      "id": "naming-conforms",
+      "category": "step5-lexicon-conforms",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Ruby. Draft local `client_account = ClientAccount.find(id)`. Lexicon names[]: client_account → CONFORMS, evidence n=412.",
+      "prompt": "Добавь метод архивации аккаунта клиента: найти по id и выставить archived_at.",
+      "expected": {
+        "mustDo": [
+          "Keep the draft name client_account unchanged",
+          "Proceed to GENERATE without extra naming rounds"
+        ],
+        "mustNotDo": [
+          "Rename a CONFORMS name",
+          "Call get_naming_lexicon a second time for the same drafts"
+        ]
+      },
+      "failureMode": "Agent churns names that already fit the project"
+    },
+    {
+      "id": "naming-free-dominant-role",
+      "category": "step5-lexicon-free-shape",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Go project. Lexicon for type *sql.DB: local/param shapes FREE 0.85 (names: db, conn, store), EXACT 0.05. Draft param: sqlDB.",
+      "prompt": "Добавь функцию миграции, которая принимает подключение к базе и применяет pending миграции.",
+      "expected": {
+        "mustDo": [
+          "Read FREE-dominant as 'this project names by role'",
+          "Pick the param name from byType kinds.param (db)"
+        ],
+        "mustNotDo": [
+          "Force an EXACT type-derived name (sqlDB / sqlDb) against the distribution"
+        ]
+      },
+      "failureMode": "Agent applies the EXACT rule literally instead of the project's induced convention"
+    },
+    {
+      "id": "naming-camelcase-language",
+      "category": "step5-lexicon-casing",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). TypeScript project (tea-rags). Lexicon for GraphDbClient: param names [client n=40, graphDb n=12], shapes TAIL 0.6, FREE 0.3. Draft: graph_db_client.",
+      "prompt": "Добавь в ops-класс метод, который принимает клиент графа и считает количество идентификаторов.",
+      "expected": {
+        "mustDo": [
+          "Render names in the casing the lexicon rows show (camelCase)",
+          "Use the dominant TAIL name `client` for the param"
+        ],
+        "mustNotDo": [
+          "Emit snake_case identifiers in TypeScript",
+          "Keep graph_db_client"
+        ]
+      },
+      "failureMode": "Agent carries snake_case habits into a camelCase language"
+    },
+    {
+      "id": "naming-codegraph-off",
+      "category": "step5-lexicon-fallback",
+      "context": "Prime `## Enrichment` lacks codegraph.symbols — get_naming_lexicon is not registered. Python project; CREATE of a new service.",
+      "prompt": "Создай сервис, который пересчитывает остатки на складе после возврата товара.",
+      "expected": {
+        "mustDo": [
+          "Concept part only: semantic_search with query = description of the concept, language python, pathPattern L2 (widen to project under 5 hits), filter presets production, limit 30, metaOnly",
+          "Split holders' symbolIds/paths into words and take the recurring project term",
+          "Name values after how the template's code names the same types"
+        ],
+        "mustNotDo": [
+          "Call get_naming_lexicon",
+          "Skip naming because the tool is absent"
+        ]
+      },
+      "failureMode": "Agent calls an unregistered tool or drops the naming step entirely"
+    },
+    {
+      "id": "naming-modify-scope",
+      "category": "step5-lexicon-modify-hotfix",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Ruby. Hotfix at app/services/billing/invoice_sync.rb:88 (Billing::InvoiceSync#call). The fix introduces one new local holding an Invoice.",
+      "prompt": "Хотфикс: в Billing::InvoiceSync#call на строке 88 падает на nil — нужно перезагрузить инвойс перед отправкой. Почини.",
+      "expected": {
+        "mustDo": [
+          "Skip STRATEGY and the blame part of STYLE (hotfix)",
+          "One get_naming_lexicon call: types = the symbol's signature/local types (Invoice), anchors = the symbol, names = only the new local",
+          "Step 7 VERIFY still runs (symbol risks on called symbols)"
+        ],
+        "mustNotDo": [
+          "Pass `concept` for a hotfix",
+          "Run a per-identifier find_symbol existence sweep"
+        ]
+      },
+      "failureMode": "Agent either skips naming for a hotfix that introduces a name, or over-scopes it with concept mode"
+    },
+    {
+      "id": "verify-symbol-risk",
+      "category": "step7-symbol-risks",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Generated code calls Billing::Gateway#charge and Billing::Ledger#post. find_symbol(criticalPath) on Gateway#charge: rankingOverlay.chunk.bugFixRate label critical.",
+      "prompt": "Код сгенерирован, тесты зелёные. Финализируй.",
+      "expected": {
+        "mustDo": [
+          "find_symbol(symbol, rerank: criticalPath, metaOnly: true) on the called symbols, ≤ 5, most central first",
+          "Read rankingOverlay.chunk.<field>.label",
+          "Call Gateway#charge defensively and confirm a test pins the relied-on scenario (else report unpinned)",
+          "N-th-way self-check (find_similar) still runs"
+        ],
+        "mustNotDo": [
+          "Per-identifier find_symbol / ripgrep existence sweep",
+          "Use rerank dangerous while codegraph is on"
+        ]
+      },
+      "failureMode": "Agent spends tokens on existence checks and misses the risk of the symbols it touches"
+    },
+    {
+      "id": "verify-central-modified",
+      "category": "step7-central-changed-symbol",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). MODIFY of Codegraph::Resolver#resolve; criticalPath overlay: chunk.pageRank label critical, chunk.fanIn central.",
+      "prompt": "Поменял сигнатуру resolve — добавил опциональный аргумент. Что дальше перед коммитом?",
+      "expected": {
+        "mustDo": [
+          "Treat pageRank critical / fanIn central as a Step 8 trigger: get_callers on the modified symbol",
+          "tests-at-risk for the MODIFY"
+        ],
+        "mustNotDo": [
+          "Stop at the import-proxy blast radius for a changed central symbol"
+        ]
+      },
+      "failureMode": "Agent ignores centrality of the changed symbol"
     }
   ]
 }
