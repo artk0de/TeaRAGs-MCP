@@ -392,6 +392,14 @@ export interface TypeDeclarationFact {
    * to `null`. Absent when no method takes a closure.
    */
   readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;
+  /**
+   * An enum's cases that carry a payload, by case name, each payload slot's
+   * nominal type in position order (`case group(ExampleGroup, count: Int)` →
+   * `group: ["ExampleGroup", "Int"]`, `null` for a slot no nominal names) —
+   * what a `case .group(let g)` pattern in another file binds `g` to (bd
+   * tea-rags-mcp-y99pg.16). Absent when no case carries a payload.
+   */
+  readonly enumCasePayloads?: Readonly<Record<string, readonly (string | null)[]>>;
 }
 
 /**

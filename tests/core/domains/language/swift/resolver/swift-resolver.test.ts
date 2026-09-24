@@ -2468,3 +2468,60 @@ describe("SwiftCallResolver — a bare construction does not see another type's 
     expect(new SwiftCallResolver().hasInProjectDefinition(call(null, "Result"), context)).toBe(true);
   });
 });
+
+describe("SwiftCallResolver — enum case payload bindings (bd tea-rags-mcp-y99pg.16)", () => {
+  const t = table({
+    "Sources/ExampleGroup.swift": [
+      { symbolId: "ExampleGroup", scope: [] },
+      { symbolId: "ExampleGroup#walkDownExamples", scope: ["ExampleGroup"] },
+      { symbolId: "ExampleUnit", scope: [] },
+    ],
+    "Sources/AsyncExampleGroup.swift": [
+      { symbolId: "AsyncExampleGroup", scope: [] },
+      { symbolId: "AsyncExampleGroup#walkDownExamples", scope: ["AsyncExampleGroup"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/ExampleGroup.swift": [
+      { typeId: "ExampleGroup", reopens: false },
+      { typeId: "ExampleUnit", reopens: false, enumCasePayloads: { group: ["ExampleGroup"], example: ["Example"] } },
+    ],
+    "Sources/AsyncExampleGroup.swift": [{ typeId: "AsyncExampleGroup", reopens: false }],
+  };
+  const base = {
+    callerFile: "Sources/ExampleGroup.swift",
+    callerScope: ["ExampleGroup", "walkDownExamples"],
+    symbolTable: t,
+    typeDeclarations,
+    localBindings: { unit: [{ line: 3, type: "ExampleUnit" }] },
+  };
+
+  it("types a payload name by the case the subject's enum declares", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("exampleGroup", "walkDownExamples", 6),
+      ctx({
+        ...base,
+        callResultBindings: {
+          exampleGroup: [{ line: 5, callee: "unit", enumPayload: { caseName: "group", index: 0 }, scopeEndLine: 6 }],
+        },
+      }),
+    );
+    expect(target).toEqual({
+      targetRelPath: "Sources/ExampleGroup.swift",
+      targetSymbolId: "ExampleGroup#walkDownExamples",
+    });
+  });
+
+  it("types nothing for a case the enum does not declare", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("exampleGroup", "walkDownExamples", 6),
+      ctx({
+        ...base,
+        callResultBindings: {
+          exampleGroup: [{ line: 5, callee: "unit", enumPayload: { caseName: "nested", index: 0 }, scopeEndLine: 6 }],
+        },
+      }),
+    );
+    expect(target).toBeNull();
+  });
+});

@@ -240,6 +240,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const conforms = swiftInheritedTypeNames(node);
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
     const { fieldTypeArguments, memberClosureParameters } = swiftGenericMemberFacts(node, genericParameters);
+    const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     out.push({
       typeId: [...enclosing, name].join("."),
       reopens: kind === "extension",
@@ -247,9 +248,38 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(genericParameters.length > 0 ? { genericParameters } : {}),
       ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
       ...(memberClosureParameters ? { memberClosureParameters } : {}),
+      ...(enumCasePayloads ? { enumCasePayloads } : {}),
     });
   });
   return out;
+}
+
+/**
+ * An enum's payload-carrying cases, each slot's nominal type in position
+ * order (bd tea-rags-mcp-y99pg.16). One `case a(X), b(Y)` entry declares
+ * several cases, each name followed by its own parameter list. Slots are read
+ * positionally — a slot's label is the `simple_identifier` beside it, never a
+ * type — for the materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftEnumCasePayloads(node: AstNode): Record<string, (string | null)[]> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const cases = createIdentifierRecord<(string | null)[]>();
+  let any = false;
+  for (const entry of body.namedChildren) {
+    if (entry.type !== "enum_entry") continue;
+    let caseName: string | null = null;
+    for (const child of entry.namedChildren) {
+      if (child.type === "simple_identifier") caseName = child.text;
+      else if (child.type === "enum_type_parameters" && caseName !== null) {
+        cases[caseName] = child.namedChildren
+          .filter((slot) => slot.type !== "simple_identifier" && slot.type !== "comment")
+          .map((slot) => swiftTypeFactOf(slot).nominal);
+        any = true;
+      }
+    }
+  }
+  return any ? cases : undefined;
 }
 
 /** A declaration's own generic parameter names: `class Protected<Value>` → `["Value"]`. */
@@ -1361,6 +1391,11 @@ interface SwiftScopedBinding {
    * binding is that closure's N-th parameter (bd tea-rags-mcp-y99pg.13).
    */
   readonly closureParameter?: number;
+  /**
+   * Set when `valueChain` is a switch SUBJECT and this binding is payload
+   * slot `index` of its case `caseName` (bd tea-rags-mcp-y99pg.16).
+   */
+  readonly enumPayload?: { readonly caseName: string; readonly index: number };
 }
 
 /** Where a right-hand side is being typed — the coordinates every lookup is relative to. */
@@ -1413,6 +1448,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     scopeEndLine?: number,
     valueChain?: string,
     closureParameter?: number,
+    enumPayload?: { readonly caseName: string; readonly index: number },
   ): void => {
     if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
     if (!fact.nominal && !fact.element && valueChain === undefined) return;
@@ -1424,6 +1460,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       scopeEndLine,
       valueChain,
       ...(closureParameter === undefined ? {} : { closureParameter }),
+      ...(enumPayload === undefined ? {} : { enumPayload }),
     };
     collected.push(binding);
     const sameName = bindingsByName.get(name);
@@ -1489,6 +1526,32 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         record(name, { nominal: collection.element, element: null }, site, swiftThenBlockEndLine(node));
         break;
       }
+      // `switch unit { case .group(let g): … }` — each payload name is bound
+      // to its case's slot on the subject's enum, which another file
+      // declares (bd tea-rags-mcp-y99pg.16).
+      case "switch_statement": {
+        const subject = swiftValueChainSpelling(
+          node.childForFieldName("expr") ?? node.namedChildren.find((c) => c.type !== "switch_entry") ?? null,
+        );
+        if (subject === null) return;
+        for (const entry of node.namedChildren) {
+          if (entry.type !== "switch_entry") continue;
+          const patterns = entry.namedChildren.filter((c) => c.type === "switch_pattern");
+          if (patterns.length !== 1) continue;
+          const site = siteOf(entry);
+          // The entry and its `statements` run on to the next `case`; the last
+          // statement is where the scope ends.
+          let last = entry.namedChildren[entry.namedChildCount - 1];
+          while (last.type === "statements" && last.namedChildCount > 0) {
+            last = last.namedChildren[last.namedChildCount - 1];
+          }
+          const endLine = last.endPosition.row + 1;
+          for (const payload of swiftEnumCasePayloadNames(patterns[0])) {
+            record(payload.name, NO_TYPE, site, endLine, subject, undefined, payload.slot);
+          }
+        }
+        return;
+      }
       // `catch { error… }` — a clause with no pattern binds `error: any Error`
       // for its own block (bd tea-rags-mcp-y99pg.10).
       case "catch_block": {
@@ -1532,6 +1595,38 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     }
   });
   return collected;
+}
+
+/**
+ * The names a `.caseName(let a, _)` / `let .caseName(a, _)` switch pattern
+ * binds, each with its payload slot (bd tea-rags-mcp-y99pg.16). Any other
+ * pattern shape — a qualified case, a nested pattern, a labelled slot — binds
+ * nothing here.
+ */
+function swiftEnumCasePayloadNames(
+  switchPattern: AstNode,
+): { name: string; slot: { caseName: string; index: number } }[] {
+  const pattern = switchPattern.namedChildren.find((c) => c.type === "pattern");
+  if (!pattern) return [];
+  const { children } = pattern;
+  const outerLet = children[0]?.type === "value_binding_pattern" && children[0].namedChildCount <= 1;
+  const dot = children.findIndex((c) => c.type === ".");
+  const caseNode = dot === -1 ? undefined : children[dot + 1];
+  if (dot !== (outerLet ? 1 : 0) || caseNode?.type !== "simple_identifier") return [];
+  const out: { name: string; slot: { caseName: string; index: number } }[] = [];
+  children
+    .filter((c) => c.type === "pattern")
+    .forEach((slot, index) => {
+      const named = slot.namedChildren;
+      let name: string | undefined;
+      if (named.length === 2 && named[0].type === "value_binding_pattern" && named[1].type === "simple_identifier") {
+        name = named[1].text;
+      } else if (outerLet && named.length === 1 && named[0].type === "simple_identifier") {
+        name = named[0].text;
+      }
+      if (name !== undefined && name !== "_") out.push({ name, slot: { caseName: caseNode.text, index } });
+    });
+  return out;
 }
 
 /** One `let x` / `var x` clause of a `guard` / `if` / `while` condition list. */
@@ -2032,6 +2127,7 @@ function assignBindingsToInnermostChunks(
         line: binding.line,
         callee: binding.valueChain,
         ...(binding.closureParameter === undefined ? {} : { closureParameter: binding.closureParameter }),
+        ...(binding.enumPayload === undefined ? {} : { enumPayload: binding.enumPayload }),
         ...scoped,
       };
       (bucket.callResultBindings[binding.name] ??= []).push(emitted);

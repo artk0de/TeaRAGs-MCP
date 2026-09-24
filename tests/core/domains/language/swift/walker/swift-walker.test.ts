@@ -1600,3 +1600,48 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     expect(bindings.$0).toEqual([{ line: 6, callee: "mutableState.write", closureParameter: 0, scopeEndLine: 6 }]);
   });
 });
+
+describe("swift walker — enum case payload bindings (bd tea-rags-mcp-y99pg.16)", () => {
+  it("publishes each enum case's payload types in position order", () => {
+    const src = [
+      "enum ExampleUnit {",
+      "  case example(Example)",
+      "  case group(ExampleGroup, count: Int)",
+      "  case failed(any Error)",
+      "  case empty",
+      "}",
+      "",
+    ].join("\n");
+    const fact = (extract(src).typeDeclarations ?? []).find((f) => f.typeId === "ExampleUnit");
+    expect(fact?.enumCasePayloads).toEqual({
+      example: ["Example"],
+      group: ["ExampleGroup", "Int"],
+      failed: ["Error"],
+    });
+  });
+
+  it("binds a switch case's payload names to the subject they destructure", () => {
+    const src = [
+      "final class Group {",
+      "  func walk() {",
+      "    switch unit {",
+      "    case .group(let exampleGroup, _):",
+      "      exampleGroup.walkDownExamples()",
+      "    case let .failed(error):",
+      "      error.asAFError()",
+      "    case .empty:",
+      "      break",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = extract(src).chunks[0].callResultBindings ?? {};
+    expect(bindings.exampleGroup).toEqual([
+      { line: 4, callee: "unit", enumPayload: { caseName: "group", index: 0 }, scopeEndLine: 5 },
+    ]);
+    expect(bindings.error).toEqual([
+      { line: 6, callee: "unit", enumPayload: { caseName: "failed", index: 0 }, scopeEndLine: 7 },
+    ]);
+  });
+});

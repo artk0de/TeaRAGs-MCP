@@ -34,6 +34,8 @@ interface SwiftTypeDeclarationSets {
   readonly fieldArguments: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[]>>;
   /** typeId → method → its closure's parameter types; `null` where declarations disagree. */
   readonly closureParameters: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[] | null>>;
+  /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
+  readonly enumCases: ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>;
 }
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
@@ -85,6 +87,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const generics = new Map<string, readonly string[]>();
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
   const closureParameters = new Map<string, Map<string, readonly (string | null)[] | null>>();
+  const enumCases = new Map<string, Readonly<Record<string, readonly (string | null)[]>>>();
   // Sorted, so which file's clause comes first is a property of the project
   // rather than of the order this run walked it in.
   for (const relPath of Object.keys(channel).sort()) {
@@ -97,13 +100,15 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
       }
       mergeFieldArguments(fieldArguments, fact);
       mergeClosureParameters(closureParameters, fact);
+      // An enum's cases live in its own declaration; Swift lets no extension add one.
+      if (fact.enumCasePayloads !== undefined && !fact.reopens) enumCases.set(fact.typeId, fact.enumCasePayloads);
       if (fact.conforms === undefined) continue;
       const list = conforms.get(fact.typeId) ?? [];
       for (const name of fact.conforms) if (!list.includes(name)) list.push(name);
       conforms.set(fact.typeId, list);
     }
   }
-  const fresh = { declaring, reopening, conforms, generics, fieldArguments, closureParameters };
+  const fresh = { declaring, reopening, conforms, generics, fieldArguments, closureParameters, enumCases };
   memo.set(ctx.runScope, channel, fresh);
   return fresh;
 }
@@ -189,4 +194,19 @@ export function swiftSugarAliases(typeId: string, ctx: CallContext): readonly st
     if (isDictionary === (typeId === "Dictionary")) aliases.push(id);
   }
   return aliases;
+}
+
+/**
+ * The nominal type enum `typeId` declares for payload slot `index` of its
+ * case `caseName`, or undefined (bd tea-rags-mcp-y99pg.16).
+ */
+export function swiftEnumCasePayloadType(
+  typeId: string,
+  caseName: string,
+  index: number,
+  ctx: CallContext,
+): string | undefined {
+  const cases = setsFor(ctx)?.enumCases.get(typeId);
+  if (cases === undefined || !Object.hasOwn(cases, caseName)) return undefined;
+  return cases[caseName][index] ?? undefined;
 }

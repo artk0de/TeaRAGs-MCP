@@ -167,6 +167,14 @@ export interface CallResultBinding {
    * call-result binding.
    */
   readonly closureParameter?: number;
+  /**
+   * Set when the binding is the `index`-th payload slot of enum case
+   * `caseName`, destructured from the value `callee` spells — the switch
+   * SUBJECT rather than a callee (bd tea-rags-mcp-y99pg.16):
+   * `switch unit { case .group(let g): … }` binds `g` to what the enum of
+   * `unit`'s type declares `group` to carry. ABSENT on every other binding.
+   */
+  readonly enumPayload?: { readonly caseName: string; readonly index: number };
 }
 
 /**

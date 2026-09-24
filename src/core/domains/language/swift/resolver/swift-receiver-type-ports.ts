@@ -53,6 +53,7 @@ import {
 import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import { lookupSwiftSymbols } from "./swift-symbol-lookup.js";
+import { swiftEnumCasePayloadType } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
 /**
@@ -258,7 +259,12 @@ export function swiftLocalValueType(
     return swiftClosureParameterType(spelled.callee, spelled.closureParameter, spelled.line, ctx, ports, members);
   }
   const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
-  return folded?.form === "instance" ? folded.name : undefined;
+  if (folded?.form !== "instance") return undefined;
+  // `case .group(let g)`: the subject's enum says what the slot carries (bd tea-rags-mcp-y99pg.16).
+  if (spelled.enumPayload !== undefined) {
+    return swiftEnumCasePayloadType(folded.name, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
+  }
+  return folded.name;
 }
 
 /**
