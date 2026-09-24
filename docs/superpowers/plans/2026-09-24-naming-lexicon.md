@@ -990,14 +990,17 @@ export interface NamingLexiconResult {
   request; handler forwards to `app.getNamingLexicon`; absent without codegraph
   — covered by the gating test).
 
-Tool description (verbatim):
+Tool description (verbatim — COMPACT, call contract only; when-to-call is
+selection policy and lives in the search cascade, Task 12):
 
-> How THIS project names things. Type mode: for value types (`types`) or symbols
-> (`anchors`) returns the names the project gives such values per kind (local /
-> param / field / return) and the naming shapes that dominate. Concept mode
-> (`concept` + `language`): terms the project uses for a described concept.
-> `names`: verdict per draft name — CONFORMS, MISFIT (with the project's name),
-> NEW_TERM (with the project's terms). Call before naming new code.
+> Project naming vocabulary from the codegraph. `types`/`anchors` → names per
+> kind + dominant shape; `names[]` → CONFORMS | MISFIT{suggestion} |
+> NEW_TERM{topTerms}; `concept`+`language` → project terms for a description.
+
+Each zod field gets a ≤ 1-line `.describe()`; enums (`kind`) are enumerated by
+the schema, not by prose. No examples in the schema — examples live in skills.
+Budget: description ≤ 300 chars, whole tool schema ≤ 1.5 KB serialized (a test
+asserts both, so later edits cannot bloat it).
 
 - [ ] Steps: failing tool test → implement wiring → `npx vitest run tests/mcp`
       green → commit `feat(mcp): get_naming_lexicon tool`.
@@ -1087,6 +1090,41 @@ New cases (neutral user framing, no rule vocabulary in the prompt, same `mustDo`
       `docs(plugin): DDG eval cases for naming lexicon and symbol-risk verify`.
 
 ---
+
+### Task 12: Teach the other skills + search cascade (user request 2026-09-25)
+
+User: "остальные скиллы научить работать с новыми функциями, описывать компактно
+mcp схему". Placement per `.claude/rules/plugin-guidance-layers.md`:
+
+- **Search cascade** (`.claude-plugin/tea-rags/rules/search-cascade.md`): one
+  decision-tree row — intent "what does this project call X / how are values of
+  type T named / is this name right" → `get_naming_lexicon`; prohibited pattern:
+  grepping for names or `semantic_search` on a draft name to judge naming.
+  Codegraph off → the concept fallback DDG Step 5 documents. Check
+  `scripts/inject-rules.sh --count` against declared parts.
+- **Skills** — every skill where a name is CREATED or JUDGED gets the lexicon,
+  described compactly: ONE line with the call shape
+  (`get_naming_lexicon(types|anchors|names|concept+language)`) and what to read
+  from the answer for that skill — never a copy of the schema. Candidates (the
+  implementer confirms each by reading the skill; skip with a reason when a
+  skill never names or judges names):
+  - `tea-rags:mr-review` — a naming dimension: new identifiers in the diff
+    judged via `names[]` (MISFIT/NEW_TERM surface as review findings).
+  - `tea-rags:refactoring-scan` — rename candidates: identifiers whose shape is
+    MISFIT against a dominant convention.
+  - `tea-rags:extract-project-patterns` — naming convention as part of a pattern
+    (dominant shapes per kind).
+  - `tea-rags:explore` — vocabulary questions route to the tool.
+  - `dinopowers:brainstorming` / `dinopowers:writing-plans` — names proposed for
+    new symbols in a design or plan go through `names[]` / `concept` before the
+    plan fixes them.
+  - `dinopowers:requesting-code-review` / `receiving-code-review` — naming
+    comments resolved against the lexicon, not taste.
+- Eval cases: one per changed skill in its benchmark `evals.json`, static
+  validation only; runs join Task 10b's deferred run.
+- Plugin bumps: tea-rags and dinopowers, minor each.
+- Commit
+  `docs(plugin): skills use the naming lexicon (tea-rags-mcp-4p3sb.<new>)`.
 
 ### Task 11: Gates
 
