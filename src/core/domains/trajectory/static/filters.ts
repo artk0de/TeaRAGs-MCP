@@ -2,6 +2,9 @@ import { globToTextFilter } from "../../../adapters/qdrant/filters/glob.js";
 import type { FilterDescriptor } from "../../../contracts/types/provider.js";
 import { TEST_EXCLUSION_FILTER_CONDITIONS } from "./test-exclusion.js";
 
+/** The tri-state an inclusion filter (`documentation`, `testFile`) accepts. */
+const INCLUSION_FILTER_VALUES = ["only", "exclude", "include"] as const;
+
 export const staticFilters: FilterDescriptor[] = [
   {
     param: "language",
@@ -35,6 +38,7 @@ export const staticFilters: FilterDescriptor[] = [
     param: "documentation",
     description: "Documentation filter: 'only' | 'exclude' | 'include'",
     type: "string",
+    values: INCLUSION_FILTER_VALUES,
     toCondition: (value: unknown) => {
       if (value === "only") return { must: [{ key: "isDocumentation", match: { value: true } }] };
       if (value === "exclude") return { must_not: [{ key: "isDocumentation", match: { value: true } }] };
@@ -45,6 +49,7 @@ export const staticFilters: FilterDescriptor[] = [
     param: "testFile",
     description: "Test file filter: 'only' | 'exclude' | 'include'",
     type: "string",
+    values: INCLUSION_FILTER_VALUES,
     toCondition: (value: unknown) => {
       if (value === "only") return { must: [{ key: "isTest", match: { value: true } }] };
       // Shared with the filter-preset compiler, codegraph bridge included (bd

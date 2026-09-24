@@ -321,8 +321,9 @@ export class SchemaManager {
       indexes.push(path);
     }
 
-    // Create the trajectory-declared indexes (rank_chunks order-by fields) the
-    // composition root passed in, skipping any this class already created.
+    // Create the trajectory-declared indexes (rank_chunks order-by fields and
+    // filter keys) the composition root passed in, skipping any this class
+    // already created.
     for (const [path, schema] of this.declaredIndexes) {
       if (indexes.includes(path)) continue;
       await this.qdrant.createPayloadIndex(collectionName, path, schema);

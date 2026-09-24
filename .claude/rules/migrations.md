@@ -112,9 +112,12 @@ against the DuckDB client, on graph open.
 `payloadIndexes` (bd tea-rags-mcp-mimq0) reconciles every run against
 `declaredPayloadIndexSet` (`api/internal/composition.ts`): it CREATES a declared
 index the collection lacks and NAMES — never drops — one nothing declares. A
-field rank_chunks can order by is declared by that derivation, so a new derived
-signal source needs no migration; a new FILTER-only index still takes the
-`schema` route below, and removing an index is still a `schema` drop.
+field rank_chunks can order by, and a key a typed filter or a filter preset can
+condition on (bd tea-rags-mcp-18xh5, learned by running the builders —
+`filterPayloadKeys`), are declared by that derivation, so a new derived signal
+source, typed filter or filter preset needs no migration. A filter descriptor
+whose `toCondition` branches on an enumeration must declare its `values`, or the
+probe learns nothing from it. Removing an index is still a `schema` drop.
 
 ### Deriving the version from data, not from a declaration
 
