@@ -1120,8 +1120,8 @@ describe("StatusModule", () => {
       expect(langs).toEqual(["ruby", "typescript"]);
     });
 
-    // Exercises resolveRate(0, ...) branch: attempted === 0 → return 0.
-    it("returns resolveSuccessRate=0 and empty breakdown when all rows have attempted=0", async () => {
+    // Exercises the empty-denominator branch: nothing scored → null, not 0 (bd qodqg).
+    it("returns resolveSuccessRate=null and empty breakdown when all rows have attempted=0", async () => {
       await createTestFile(codebaseDir, "zero.ts", "export const Z = 0;\n");
       await ingest.indexCodebase(codebaseDir);
 
@@ -1140,7 +1140,7 @@ describe("StatusModule", () => {
       const status = await ingest.getIndexStatus(codebaseDir);
 
       expect(status.codegraphResolve).toBeDefined();
-      expect(status.codegraphResolve!.resolveSuccessRate).toBe(0);
+      expect(status.codegraphResolve!.resolveSuccessRate).toBeNull();
       expect(status.codegraphResolve!.byLanguage).toBeUndefined();
     });
   });

@@ -27,6 +27,10 @@ describe("formatResolveRateCell", () => {
     }
   });
 
+  it("renders the marker for a null rate — the DTO's empty-denominator value", () => {
+    expect(formatResolveRateCell({ rate: null, denominator: 0, counters: "0/6", renderRate: fixed3 })).toBe("—  0/6");
+  });
+
   it("renders the rate through the caller's formatter when anything was scored", () => {
     expect(formatResolveRateCell({ rate: 0, denominator: 3, counters: "0/3", renderRate: fixed3 })).toBe("0.000 0/3");
     expect(formatResolveRateCell({ rate: 1, denominator: 4, counters: "4/4", renderRate: fixed3 })).toBe("1.000 4/4");

@@ -712,9 +712,8 @@ function formatResolveBreakdown(resolve: CodegraphResolve): string[] {
  */
 function formatResolveKind(k: CodegraphResolveKindRow): string {
   // bd tea-rags-mcp-qodqg — a bucket whose every site was excluded from the
-  // rate has an empty denominator; the DTO reports its rate as 0, which would
-  // read as "resolved none of what it tried". The shared cell renders it as
-  // the "nothing to score" marker, counters kept.
+  // rate has an empty denominator; the DTO reports its rate as null. The shared
+  // cell renders it as the "nothing to score" marker, counters kept.
   const miss = resolveRateMiss({
     attempted: k.attempted,
     resolved: k.resolved,

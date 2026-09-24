@@ -946,8 +946,8 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
 
   // bd tea-rags-mcp-qodqg — a kind whose every site was excluded (here: no
   // in-project def) has an empty rate denominator. summarizeCodegraphResolve
-  // reports its rate as 0, which reads as "resolved none of what it tried";
-  // the row must say "nothing to score" instead, with the counters kept.
+  // reports its rate as null; the row must say "nothing to score", never a
+  // number, with the counters kept.
   it("renders a receiver-kind row with an empty rate denominator as the marker, not a rate", () => {
     const out = formatPrime(
       {
@@ -974,7 +974,7 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
                 unresolvable: 0,
                 callsNoInProjectDef: 6,
                 callsCoreAmbiguous: 0,
-                resolveSuccessRate: 0,
+                resolveSuccessRate: null,
               },
             ],
           },

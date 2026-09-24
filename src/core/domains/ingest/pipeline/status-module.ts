@@ -79,15 +79,17 @@ function missWithInProjectDef(t: ResolveTally): number {
 }
 
 /**
- * `resolved / max(1, attempted − <every excluded bucket>)`; 0 when nothing
- * attempted. cai0.2 (Option A): the denominator excludes calls whose member has
- * no in-project def — they can never resolve to an in-project symbol, so they
- * are not resolver failures — making this rate equal to {@link edgeRecall}
- * (inProjectEdgeRecall) by construction. 83cl7 adds core homonyms on the same
- * grounds.
+ * `resolved / (resolved + missWithInProjectDef)`; `null` when that denominator
+ * is empty — nothing was scored, which is neither a perfect nor a failed rate
+ * (bd tea-rags-mcp-qodqg). cai0.2 (Option A): the denominator excludes calls
+ * whose member has no in-project def — they can never resolve to an in-project
+ * symbol, so they are not resolver failures — making this rate equal to
+ * {@link edgeRecall} (inProjectEdgeRecall) whenever anything was scored. 83cl7
+ * adds core homonyms on the same grounds.
  */
-function resolveRate(t: ResolveTally): number {
-  return t.attempted === 0 ? 0 : t.resolved / Math.max(1, t.resolved + missWithInProjectDef(t));
+function resolveRate(t: ResolveTally): number | null {
+  const denominator = t.resolved + missWithInProjectDef(t);
+  return denominator === 0 ? null : t.resolved / denominator;
 }
 
 /**
