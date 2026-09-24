@@ -172,7 +172,9 @@ class outline, file outline, doc TOC carries id (`Class#method`, `Class.method`,
 `doc:<hash>`). Content needed → `find_symbol(symbol: <that id verbatim>)`, one
 call per chapter, parallel for several. Never answer from outline as if it held
 bodies. Never `Read` file or grep saved tool-output dump to find a member — ids
-already in hand.
+already in hand. Member line may end in declared visibility —
+`Class#helper (private)` (see "Declared visibility" below); suffix not part of
+id — drop before drilling.
 
 ### Graph navigation — get_callers / get_callees / trace_path
 
@@ -203,6 +205,15 @@ only if needed:
    when both endpoints unambiguous). Narrow with `fromPath` / `toPath` — exact
    relativePath, take it from a prior search result. Wrong path → `paths: []` +
    `namesakes` listing real candidates: disambiguation cue, NOT absence-of-path.
+
+**Declared visibility.** `get_callees` targets, `get_callers` callers (+ queried
+symbol as top-level `visibility`), `trace_path` steps, find_symbol outline lines
+carry DECLARED level when codegraph knows it. `private` → callers confined to
+declaring class (Go: package, Swift: file) — local blast radius; `protected` →
+class + subclasses; `public` → run `get_callers` for blast radius.
+TS/Java/Swift/Rust/Go: compiler-enforced. Ruby (`send`), Python (`_x`
+convention, only `__x` marked): hint, not guarantee. **Missing field = unknown**
+— never read as public.
 
 **When codegraph is off** (no `codegraph.symbols` in prime), route by intent to
 a non-graph substitute — never read an absent/empty graph tool as positive fact

@@ -31,6 +31,10 @@ overlay read: rankingOverlay.file.fanIn / transitiveImpact / isHub,
               payload.codegraph.symbols.{file,chunk}.* (pageRank there)
 severity: chunk.fanIn frequent+ OR file.isHub → major "hub edit" (cite caller
           list + fanIn label); else observation
+visibility: get_callers top-level `visibility` = changed symbol's declared
+          level. private → ripple confined to declaring class (compiler-enforced
+          in TS/Java/Swift/Rust/Go; Ruby/Python only a hint); public/absent →
+          ripple = full caller list. Absent = unknown, never assume private
 ```
 
 Codegraph OFF — degrade, do not skip:
