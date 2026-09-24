@@ -208,6 +208,7 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
           .sort()
           .join("+");
   const atoms = [...new Set(stats.structuralAtoms ?? [])].sort((a, b) => a - b);
+  const { coSignalClass } = stats;
 
   // Sorted and fully spelled out: the string is compared, so a reordering of
   // the declaration must not read as a change, and an added property must.
@@ -216,7 +217,9 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
   // on disk was written without it, and a signal that declares no atoms samples
   // exactly what it sampled before — spelling out `atoms=*` would still move
   // that signal's stamp, so every signal of every existing index would report
-  // drift for a recompute that cannot change a single digit.
+  // drift for a recompute that cannot change a single digit. `coClass=` follows
+  // the same rule, and carries only what decides membership — the class label
+  // is read-side and samples nothing.
   return [
     `p=${[...percentiles].sort((a, b) => a - b).join(".")}`,
     `chunkTypes=${chunkTypes}`,
@@ -225,6 +228,7 @@ function describeOneSamplingContract(stats: SignalStatsRequest): string {
     `sourceOnly=${stats.sourceScopeOnly === true}`,
     `minSupport=${stats.minSupportPercentile ?? "*"}`,
     ...(atoms.length > 0 ? [`atoms=${atoms.join("+")}`] : []),
+    ...(coSignalClass ? [`coClass=${coSignalClass.coSignal}=${coSignalClass.equals}`] : []),
     `mean=${stats.mean === true}`,
     `stddev=${stats.stddev === true}`,
   ].join(" ");

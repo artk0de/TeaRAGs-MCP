@@ -1796,3 +1796,109 @@ describe("structural atoms leave the percentile sample (structuralAtoms)", () =>
     expect(a.max).toBe(0.4);
   });
 });
+
+describe("co-signal class members leave the percentile sample (coSignalClass)", () => {
+  /**
+   * A file with one recent contributor reads recentDominantAuthorPct 100 by
+   * construction: dominance over a single author is class membership, not a
+   * position on the scale. On this project's own index 72% of files sat on
+   * that value and pinned all four bands on 100 (bd tea-rags-mcp-od098).
+   */
+  const classDeclared: PayloadSignalDescriptor = {
+    key: "git.file.recentDominantAuthorPct",
+    type: "number",
+    description: "dominance",
+    stats: {
+      labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" },
+      dedupeByFile: true,
+      coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+    },
+  };
+  /** The identical values without the class — the control. */
+  const control: PayloadSignalDescriptor = {
+    key: "git.file.dominanceControl",
+    type: "number",
+    description: "control carrying the identical values",
+    stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" }, dedupeByFile: true },
+  };
+
+  const SHARED: [number, number][] = [
+    [50, 2],
+    [60, 2],
+    [67, 3],
+    [75, 4],
+    [55, 2],
+    [80, 5],
+    [40, 3],
+    [90, 2],
+    [70, 3],
+    [65, 2],
+    [85, 4],
+    [58, 2],
+  ];
+  const SOLO: [number, number][] = Array.from({ length: 30 }, () => [100, 1]);
+
+  function filePoints(rows: [number, number | undefined][], opts: { tag: string; test?: boolean }) {
+    return rows.map(([pct, contributors], i) => ({
+      payload: {
+        language: "typescript",
+        chunkType: opts.test ? "test" : "function",
+        isDocumentation: false,
+        relativePath: opts.test ? `tests/${opts.tag}${i}.test.ts` : `src/${opts.tag}${i}.ts`,
+        git: {
+          file: {
+            recentDominantAuthorPct: pct,
+            dominanceControl: pct,
+            ...(contributors === undefined ? {} : { recentContributorCount: contributors }),
+          },
+        },
+      },
+    }));
+  }
+
+  function corpus() {
+    return [
+      ...filePoints(SHARED, { tag: "shared" }),
+      ...filePoints(SOLO, { tag: "solo" }),
+      ...filePoints(SHARED, { tag: "tShared", test: true }),
+      ...filePoints(SOLO, { tag: "tSolo", test: true }),
+    ];
+  }
+
+  it("samples only the files outside the class in the global bucket, while the control keeps them", () => {
+    const stats = computeCollectionStats(corpus(), [classDeclared, control], ALL_ACCS);
+    const gated = stats.perSignal.get("git.file.recentDominantAuthorPct")!;
+    const kept = stats.perSignal.get("git.file.dominanceControl")!;
+
+    expect(kept.count).toBe(SHARED.length + SOLO.length);
+    expect(kept.percentiles[50]).toBe(100);
+    expect(gated.count).toBe(SHARED.length);
+    expect(gated.max).toBe(90);
+    expect(gated.percentiles[95]).toBeLessThan(100);
+  });
+
+  it("samples only the files outside the class in the per-language source and test buckets", () => {
+    const stats = computeCollectionStats(corpus(), [classDeclared], ALL_ACCS);
+    const scoped = stats.perLanguage.get("typescript")!.get("git.file.recentDominantAuthorPct")!;
+
+    expect(scoped.source.count).toBe(SHARED.length);
+    expect(scoped.test!.count).toBe(SHARED.length);
+    expect(scoped.test!.max).toBe(90);
+  });
+
+  it("keeps a unit whose co-signal is missing, since it cannot be shown to belong to the class", () => {
+    const rows: [number, number | undefined][] = [...SHARED, [100, undefined]];
+    const stats = computeCollectionStats(filePoints(rows, { tag: "m" }), [classDeclared], ALL_ACCS);
+
+    expect(stats.perSignal.get("git.file.recentDominantAuthorPct")!.count).toBe(SHARED.length + 1);
+  });
+
+  it("leaves a signal that declares no class byte-identical", () => {
+    const withClass = computeCollectionStats(corpus(), [classDeclared, control], ALL_ACCS);
+    const withoutClass = computeCollectionStats(corpus(), [control], ALL_ACCS);
+
+    expect(withClass.perSignal.get("git.file.dominanceControl")).toEqual(
+      withoutClass.perSignal.get("git.file.dominanceControl"),
+    );
+  });
+});

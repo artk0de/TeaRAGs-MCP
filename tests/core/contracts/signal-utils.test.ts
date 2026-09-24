@@ -162,4 +162,53 @@ describe("describeStatsSamplingContract", () => {
 
     expect(empty).toEqual(none);
   });
+
+  // A co-signal class leaves the sample (bd tea-rags-mcp-od098), so the
+  // percentiles on disk describe a different population once it is declared.
+  it("moves when a signal starts excluding a co-signal class", () => {
+    const before = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })]);
+    const after = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+      }),
+    ]);
+
+    expect(after["git.file.bugFixRate"]).not.toBe(before["git.file.bugFixRate"]);
+  });
+
+  it("moves again when the class membership value changes", () => {
+    const one = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+      }),
+    ]);
+    const two = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 2, label: "solo" },
+      }),
+    ]);
+
+    expect(two["git.file.bugFixRate"]).not.toBe(one["git.file.bugFixRate"]);
+  });
+
+  // The class label is a read-side name; renaming it samples the same units.
+  it("does not move when only the class label is renamed", () => {
+    const solo = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+      }),
+    ]);
+    const single = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "single" },
+      }),
+    ]);
+
+    expect(single).toEqual(solo);
+  });
 });

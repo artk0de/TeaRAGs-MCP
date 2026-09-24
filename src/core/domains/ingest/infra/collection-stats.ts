@@ -70,6 +70,8 @@ function admitsChunkType(filter: string | readonly string[], pointChunkType: unk
  * Negative values are rejected either way: no signal here has a meaningful one.
  * A value equal to one of `stats.structuralAtoms` is rejected after the zero
  * rule, so an atom leaves the sample even when zeros are valid observations.
+ * A member of the declared `stats.coSignalClass` — its co-signal sibling equals
+ * the class value — is rejected the same way; the reranker labels it by name.
  *
  * `dedupe` is supplied for signals declaring `stats.dedupeByFile`: the token
  * identifies (bucket, signal, file), so each distinct file contributes at most
@@ -90,6 +92,7 @@ function admittedSignalValue(
   if (typeof val !== "number") return undefined;
   if (!(signal.stats?.zeroIsValidObservation ? val >= 0 : val > 0)) return undefined;
   if (signal.stats?.structuralAtoms?.includes(val)) return undefined;
+  if (isCoSignalClassMember(point, signal)) return undefined;
   if (dedupe) {
     if (dedupe.seen.has(dedupe.token)) return undefined;
     dedupe.seen.add(dedupe.token);
@@ -117,10 +120,25 @@ function tryPushSignalValue(
  * when no support is declared.
  */
 function supportKeyFor(signal: PayloadSignalDescriptor): string | undefined {
-  const support = signal.stats?.confidence?.support;
-  if (!support) return undefined;
+  return siblingKeyFor(signal, signal.stats?.confidence?.support);
+}
+
+/** Full payload key of a bare sibling name at the signal's own namespace and scope. */
+function siblingKeyFor(signal: PayloadSignalDescriptor, sibling: string | undefined): string | undefined {
+  if (!sibling) return undefined;
   const m = /^(git|codegraph)\.(file|chunk)\./.exec(signal.key);
-  return m ? `${m[1]}.${m[2]}.${support}` : undefined;
+  return m ? `${m[1]}.${m[2]}.${sibling}` : undefined;
+}
+
+/**
+ * Whether this point belongs to the signal's declared `stats.coSignalClass`.
+ * A missing co-signal answers no: the unit cannot be shown to be a member.
+ */
+function isCoSignalClassMember(point: { payload: Record<string, unknown> }, signal: PayloadSignalDescriptor): boolean {
+  const cls = signal.stats?.coSignalClass;
+  if (!cls) return false;
+  const key = siblingKeyFor(signal, cls.coSignal);
+  return key !== undefined && readPayloadPath(point.payload, key) === cls.equals;
 }
 
 /** Pre-pass: count test chunks per language for scope detection. */
@@ -759,6 +777,7 @@ function buildDistributions(
  * - Skips missing/non-numeric/negative values, and zeros unless the signal
  *   declares `stats.zeroIsValidObservation`
  * - Skips values the signal declares as `stats.structuralAtoms`
+ * - Skips members of the signal's `stats.coSignalClass`
  * - Computes only what's declared: percentiles, mean, stddev
  * - Returns empty perSignal map for signals with no valid values
  */

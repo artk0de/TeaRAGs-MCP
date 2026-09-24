@@ -133,6 +133,18 @@ carry their own navigators.
   It is part of `describeStatsSamplingContract` as a term written ONLY when
   declared, so every signal without atoms keeps the stamp an existing index
   already carries and reports no drift.
+- **A class a SIBLING names leaves the sample through `stats.coSignalClass`, and
+  reads the class label instead of a band.** Where the value an atom would name
+  is defined by another signal — one recent contributor makes
+  `recentDominantAuthorPct` 100 by construction — declaring the atom would still
+  grade it on the interior ladder, above p95, and call a one-author file a
+  `silo`. The class is resolved on both halves from the co-signal:
+  `admittedSignalValue` drops the member, and `Reranker#applyLabelResolution`
+  labels it before any stats lookup, so it is labeled even in a language with no
+  `perLanguage` entry. A missing co-signal is not membership. Same
+  written-only-when-declared stamp term as the atoms; the label is read-side and
+  not part of it. Measured cost and the before/after ladder live in the
+  descriptor comment and bd tea-rags-mcp-od098.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys
