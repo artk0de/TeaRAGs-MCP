@@ -983,7 +983,11 @@ const SWIFT_FUNCTION_LIKE_NODES: ReadonlySet<string> = new Set([
  * is also exactly what `classFieldTypes` publishes.
  */
 interface SwiftFileTypeEvidence {
-  /** `typeName → propertyName → fact`, the fact-valued source of `classFieldTypes`. */
+  /**
+   * `typeName → propertyName → fact`, the fact-valued source of
+   * `classFieldTypes`, keyed by nesting path AND by short name
+   * ({@link swiftPropertyTypeViews}).
+   */
   readonly propertyTypes: Map<string, Map<string, SwiftTypeFact>>;
   /**
    * `returnKey(owner, funcName) → fact`, or `null` where two declarations of
@@ -1062,13 +1066,13 @@ function returnKey(owner: string | null, name: string): string {
  * other. A coordinate two declarations disagree on is poisoned to `null`.
  */
 function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
-  const propertyTypes = new Map<string, Map<string, SwiftTypeFact>>();
+  const propertyTypesByPath = new Map<string, SwiftTypePropertyFacts>();
   const returnTypes = new Map<string, SwiftTypeFact | null>();
   const closureParameters = new Map<string, readonly SwiftTypeFact[] | null>();
   const metatypeReturns = new Map<string, SwiftMetatypeSlot | null>();
   walk(root, (node) => {
     if (node.type === "class_declaration" || node.type === "protocol_declaration") {
-      collectSwiftPropertyTypes(node, propertyTypes);
+      collectSwiftPropertyTypes(node, propertyTypesByPath);
       return;
     }
     if (node.type !== "function_declaration" && node.type !== "protocol_function_declaration") return;
@@ -1094,7 +1098,12 @@ function collectSwiftFileTypeEvidence(root: AstNode): SwiftFileTypeEvidence {
     // `previous === null` is the poisoned marker, and optional access keeps it poisoned.
     else if (previous?.nominal !== fact.nominal || previous?.element !== fact.element) returnTypes.set(key, null);
   });
-  return { propertyTypes, returnTypes, closureParameters, metatypeReturns };
+  return {
+    propertyTypes: swiftPropertyTypeViews(propertyTypesByPath),
+    returnTypes,
+    closureParameters,
+    metatypeReturns,
+  };
 }
 
 /** Whether two positional fact lists state the same types; `null` (poisoned) equals nothing. */
@@ -1538,11 +1547,24 @@ function nestsImplicitParameterClosure(lambda: AstNode): boolean {
   return nested;
 }
 
-/** One nominal type body's `propertyName → fact` entries, merged into the file map. */
-function collectSwiftPropertyTypes(node: AstNode, into: Map<string, Map<string, SwiftTypeFact>>): void {
+/** One type declaration's property facts, under the path it is nested at. */
+interface SwiftTypePropertyFacts {
+  /** The declaration's own name text — what the short-name view keys it by. */
+  readonly name: string;
+  readonly fields: Map<string, SwiftTypeFact>;
+}
+
+/**
+ * One nominal type body's `propertyName → fact` entries, merged into the file
+ * map under its NESTING PATH (`DownloadResponsePublisher.Inner`) — the
+ * enclosing types' names outward-in, then its own. A same-path re-opening (a
+ * same-file extension) merges into the same entry, first writer kept.
+ */
+function collectSwiftPropertyTypes(node: AstNode, into: Map<string, SwiftTypePropertyFacts>): void {
   const name = node.childForFieldName("name");
   const body = node.childForFieldName("body");
   if (!name || !body) return;
+  const path = swiftNestingPath(node);
   for (const member of body.children) {
     if (member.type !== "property_declaration" && member.type !== "protocol_property_declaration") continue;
     const fieldName =
@@ -1551,13 +1573,76 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, Map<string, 
         : protocolRequirementName(member);
     const fact = swiftDeclaredPropertyFact(member);
     if (!fieldName || (!fact.nominal && !fact.element)) continue;
-    let fields = into.get(name.text);
-    if (!fields) {
-      fields = new Map<string, SwiftTypeFact>();
-      into.set(name.text, fields);
+    let entry = into.get(path);
+    if (!entry) {
+      entry = { name: name.text, fields: new Map<string, SwiftTypeFact>() };
+      into.set(path, entry);
     }
-    if (!fields.has(fieldName)) fields.set(fieldName, fact);
+    if (!entry.fields.has(fieldName)) entry.fields.set(fieldName, fact);
   }
+}
+
+/**
+ * The file's property facts keyed BOTH ways a reader asks (bd
+ * tea-rags-mcp-y99pg.36): by nesting path, and by the short name text every
+ * pre-path reader — and every type-name spelling a receiver fold produces —
+ * keys a type by.
+ *
+ * A short name several nested types share (Alamofire's Combine.swift nests an
+ * `Inner` in each of three publishers) used to take the first body's fields,
+ * so `request` typed `DataRequest` inside `DownloadResponsePublisher.Inner`.
+ * The short entry is now:
+ *
+ *   - a declaration whose path IS its name (top-level, or an extension
+ *     spelled `extension A.B`) speaks for it alone — nothing nested under a
+ *     namesake reaches it;
+ *   - otherwise the nested namesakes' union, keeping only the fields every
+ *     namesake declaring them agrees on. A disagreement names no type, and a
+ *     reader that can tell the namesakes apart reads the path key instead.
+ */
+function swiftPropertyTypeViews(
+  byPath: ReadonlyMap<string, SwiftTypePropertyFacts>,
+): Map<string, Map<string, SwiftTypeFact>> {
+  const out = new Map<string, Map<string, SwiftTypeFact>>();
+  const pathsByName = new Map<string, string[]>();
+  for (const [path, entry] of byPath) {
+    out.set(path, entry.fields);
+    const paths = pathsByName.get(entry.name) ?? [];
+    paths.push(path);
+    pathsByName.set(entry.name, paths);
+  }
+  for (const [name, paths] of pathsByName) {
+    if (out.has(name)) continue;
+    const merged = new Map<string, SwiftTypeFact>();
+    const poisoned = new Set<string>();
+    for (const path of paths) {
+      for (const [field, fact] of byPath.get(path)?.fields ?? []) {
+        const seen = merged.get(field);
+        if (seen === undefined) merged.set(field, fact);
+        else if (seen.nominal !== fact.nominal || seen.element !== fact.element) poisoned.add(field);
+      }
+    }
+    for (const field of poisoned) merged.delete(field);
+    if (merged.size > 0) out.set(name, merged);
+  }
+  return out;
+}
+
+/** A type declaration's nesting path: the enclosing types' names outward-in, then its own. */
+function swiftNestingPath(declaration: AstNode): string {
+  const own = declaration.childForFieldName("name")?.text ?? "";
+  const outer = enclosingSwiftTypePath(declaration);
+  return outer === null ? own : `${outer}.${own}`;
+}
+
+/** The nesting path of the type declaration enclosing `node`, or null at file scope. */
+function enclosingSwiftTypePath(node: AstNode): string | null {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "class_declaration" || current.type === "protocol_declaration") {
+      return current.childForFieldName("name") ? swiftNestingPath(current) : null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1690,6 +1775,8 @@ interface SwiftBindingSite {
   readonly line: number;
   readonly functionKey: number;
   readonly enclosingType: string | null;
+  /** The enclosing type's nesting path — what tells same-named nested types apart. */
+  readonly enclosingTypePath: string | null;
 }
 
 /**
@@ -1727,6 +1814,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     line: node.startPosition.row + 1,
     functionKey: enclosingSwiftFunctionKey(node),
     enclosingType: enclosingSwiftTypeName(node),
+    enclosingTypePath: enclosingSwiftTypePath(node),
   });
   const record = (
     name: string,
@@ -2274,7 +2362,7 @@ function swiftExpressionFact(node: AstNode | null, scope: SwiftTypeScope, depth:
       if (element) return element;
       const owner = swiftReceiverTypeName(node.childForFieldName("target"), scope, depth);
       if (!owner) return NO_TYPE;
-      return scope.evidence.propertyTypes.get(owner)?.get(member.text) ?? NO_TYPE;
+      return swiftPropertyFact(owner, member.text, scope);
     }
     case "call_expression":
       return swiftCallResultFact(node, scope, depth);
@@ -2372,7 +2460,22 @@ function swiftIdentifierFact(name: string, scope: SwiftTypeScope): SwiftTypeFact
   }
   if (best) return best.fact;
   const owner = scope.site.enclosingType;
-  return (owner ? scope.evidence.propertyTypes.get(owner)?.get(name) : undefined) ?? NO_TYPE;
+  return owner ? swiftPropertyFact(owner, name, scope) : NO_TYPE;
+}
+
+/**
+ * The fact of property `name` on the type `owner` names. The enclosing type's
+ * own name reads its NESTING PATH first — Swift resolves that name lexically,
+ * so inside `DownloadResponsePublisher.Inner` an `Inner` is that type and not
+ * a namesake nested elsewhere (bd tea-rags-mcp-y99pg.36).
+ */
+function swiftPropertyFact(owner: string, name: string, scope: SwiftTypeScope): SwiftTypeFact {
+  const path = owner === scope.site.enclosingType ? scope.site.enclosingTypePath : null;
+  return (
+    (path ? scope.evidence.propertyTypes.get(path)?.get(name) : undefined) ??
+    scope.evidence.propertyTypes.get(owner)?.get(name) ??
+    NO_TYPE
+  );
 }
 
 /**

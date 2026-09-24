@@ -152,6 +152,42 @@ describe("SwiftCallResolver — selfMember", () => {
   });
 });
 
+/**
+ * bd tea-rags-mcp-y99pg.36 — same-named nested types in one file. The walker
+ * publishes each under its nesting path, and the short name keeps only what
+ * every namesake agrees on; the enclosing type's fields are read by path.
+ */
+describe("SwiftCallResolver — a nested type's fields beside a same-named namesake", () => {
+  const t = table({
+    "Source/Core/Request.swift": [{ symbolId: "Request#cancel", scope: ["Request"] }],
+    "Source/Core/DownloadRequest.swift": [{ symbolId: "DownloadRequest#cancel", scope: ["DownloadRequest"] }],
+    "Source/Features/Combine.swift": [
+      { symbolId: "DataResponsePublisher.Inner", scope: ["DataResponsePublisher"] },
+      { symbolId: "DownloadResponsePublisher.Inner", scope: ["DownloadResponsePublisher"] },
+    ],
+  });
+  const fields = {
+    "DataResponsePublisher.Inner": { request: "DataRequest" },
+    "DownloadResponsePublisher.Inner": { request: "DownloadRequest" },
+  };
+
+  it("types an implicit-self property through the enclosing type's nesting path", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request", "cancel", 486),
+      ctx({
+        callerFile: "Source/Features/Combine.swift",
+        callerScope: ["DownloadResponsePublisher", "Inner"],
+        symbolTable: t,
+        classFieldTypes: fields,
+      }),
+    );
+    expect(target).toEqual({
+      targetRelPath: "Source/Core/DownloadRequest.swift",
+      targetSymbolId: "DownloadRequest#cancel",
+    });
+  });
+});
+
 describe("SwiftCallResolver — storedPropertyType", () => {
   it("resolves `self.field.member()` through the field's declared type", () => {
     const t = table({ "Sources/Database.swift": [{ symbolId: "Database#write", scope: ["Database"] }] });
