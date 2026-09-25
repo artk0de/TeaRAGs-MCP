@@ -72,6 +72,56 @@ describe("extractConceptTerms", () => {
     expect(extractConceptTerms(HOLDERS, 3)).toHaveLength(3);
   });
 
+  describe("directory segments are not concept terms (tea-rags-mcp-4p3sb)", () => {
+    const STATS_HOLDERS = [
+      {
+        symbolId: "SignalValuesAccumulator#result",
+        relativePath: "src/core/domains/ingest/infra/signal-values-accumulator.ts",
+        score: 3.1,
+      },
+      {
+        symbolId: "computePerSignalStats#part1",
+        relativePath: "src/core/domains/ingest/infra/collection-stats.ts",
+        score: 3.0,
+      },
+      {
+        symbolId: "CollectionSignalStats",
+        relativePath: "src/core/contracts/types/trajectory.ts",
+        score: 2.9,
+      },
+      {
+        symbolId: "IndexMetricsQuery#buildSignalMetrics#part1",
+        relativePath: "src/core/domains/explore/queries/index-metrics.ts",
+        score: 2.8,
+      },
+      {
+        symbolId: "collectMissingPercentilesGrouped",
+        relativePath: "src/core/infra/stats-cache.ts",
+        score: 2.7,
+      },
+    ];
+
+    it("never yields a word or n-gram read off a holder's directory path", () => {
+      const terms = extractConceptTerms(STATS_HOLDERS, 100).map((t) => t.term);
+      for (const noise of ["core", "domain", "ingest", "infra", "core_domain", "core_domain_ingest", "domain_ingest"]) {
+        expect(terms).not.toContain(noise);
+      }
+    });
+
+    it("ranks identifier words on top", () => {
+      const terms = extractConceptTerms(STATS_HOLDERS).map((t) => t.term);
+      expect(terms[0]).toBe("signal");
+      expect(terms.slice(0, 4)).toEqual(expect.arrayContaining(["signal", "stat"]));
+      const all = extractConceptTerms(STATS_HOLDERS, 100).map((t) => t.term);
+      expect(all).toEqual(expect.arrayContaining(["collection", "percentile"]));
+    });
+
+    it("drops the chunker's #partN split suffix", () => {
+      const terms = extractConceptTerms(STATS_HOLDERS, 100).map((t) => t.term);
+      expect(terms.filter((term) => /part\d/.test(term))).toEqual([]);
+    });
+  });
+
   it("returns nothing for no holders", () => {
     expect(extractConceptTerms([])).toEqual([]);
   });
