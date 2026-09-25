@@ -7,6 +7,7 @@
  */
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { RechunkFileSelector } from "../../../contracts/types/rechunk.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
@@ -28,6 +29,7 @@ import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.
 import { QuarantineStore } from "../sync/index.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
+import { selectRechunkWorkSet } from "./rechunk-work-set.js";
 import { resolvePhysicalCollection } from "./version-resolver.js";
 
 interface ReindexContext {
@@ -117,6 +119,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
        * run's deferred-pass semantics rather than a pre-walk approximation.
        */
       deferredChunkHandoff?: DeferredChunkRecoveryHandoff;
+      /**
+       * Scoped force (bd tea-rags-mcp-j4oww): every indexed file this selector
+       * picks joins the work set as a MODIFIED file and is re-chunked in place.
+       */
+      rechunk?: RechunkFileSelector;
     },
   ): Promise<ChangeStats> {
     const startTime = Date.now();
@@ -151,6 +158,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     try {
       const ctx = await this.prepareReindexContext(absolutePath, collectionName);
+      if (overrides?.rechunk) {
+        stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
+      }
       const resumeFromCheckpoint = await this.checkForCheckpoint(ctx.synchronizer);
 
       this.reportScanProgress(progressCallback, resumeFromCheckpoint);
@@ -371,6 +381,35 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       return true;
     }
     return false;
+  }
+
+  // ── Scoped force ─────────────────────────────────────────
+
+  /**
+   * Turn a scoped force's selector into snapshot entries marked stale, so the
+   * change detection below reports those files as MODIFIED and the ordinary
+   * modified-file path re-chunks them: points deleted by path, new chunks
+   * embedded and upserted, codegraph rows replaced by the walker's
+   * DELETE+INSERT, enrichment run for their chunks only. Nothing outside the
+   * selection is touched and no new collection is built.
+   *
+   * The marks are persisted BEFORE any point is deleted — that is the crash
+   * safety. A run that dies after this leaves the files stale on disk, so the
+   * next run of any kind, auto-update included, re-chunks them; a delete that
+   * fails keeps its stale mark through `retainPrevious`. Returns how many
+   * indexed files the selector picked.
+   */
+  private async invalidateRechunkWorkSet(ctx: ReindexContext, selector: RechunkFileSelector): Promise<number> {
+    const base = ctx.absolutePath;
+    const scannedFiles = ctx.currentFiles.map((f) => (f.startsWith(base) ? f.slice(base.length + 1) : f));
+    const workSet = selectRechunkWorkSet({
+      selector,
+      scannedFiles,
+      indexedFiles: ctx.synchronizer.getSnapshotPaths(),
+    });
+    await ctx.synchronizer.invalidateEntries(workSet);
+    pipelineLog.reindexPhase("RECHUNK_SCOPED", { files: workSet.length, selector });
+    return workSet.length;
   }
 
   // ── Change detection ─────────────────────────────────────

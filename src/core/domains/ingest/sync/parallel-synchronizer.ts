@@ -31,6 +31,9 @@ export { parallelLimit };
 /** Default max concurrent I/O operations to prevent filesystem saturation */
 const DEFAULT_IO_CONCURRENCY = 50;
 
+/** Hash stored on an entry {@link ParallelFileSynchronizer.invalidateEntries} marked stale; never a SHA-256. */
+const INVALIDATED_SNAPSHOT_HASH = "invalidated:rechunk";
+
 /**
  * Checkpoint data for resumable indexing
  */
@@ -219,6 +222,45 @@ export class ParallelFileSynchronizer {
       hashes.set(path, meta.hash);
     }
     return hashes;
+  }
+
+  /**
+   * Relative paths the loaded snapshot lists — the files the index holds.
+   * Empty before `initialize`.
+   */
+  getSnapshotPaths(): Set<string> {
+    return new Set(this.previousSnapshot?.files.keys() ?? []);
+  }
+
+  /**
+   * Mark snapshot entries stale ON DISK so every later `detectChanges` reports
+   * them as modified until a run re-ingests them (bd tea-rags-mcp-j4oww).
+   *
+   * This is what makes a scoped force crash-safe: the forced files' content is
+   * unchanged, so without it a run that died after deleting their points would
+   * leave a snapshot calling them unchanged, and no later run would ever put
+   * their chunks back. Zeroing `mtime` forces the slow path (re-hash from disk);
+   * the sentinel hash can never equal a SHA-256, so the re-hash reads as a
+   * change. Zeroing the hash alone would do nothing — the fast path reuses the
+   * cached hash (`.claude/rules/migrations.md`). The in-memory snapshot is
+   * updated too, so this run's own `detectChanges` and `retainPrevious` see the
+   * stale entries. Returns how many entries were marked.
+   */
+  async invalidateEntries(paths: Iterable<string>): Promise<number> {
+    if (!this.previousSnapshot) return 0;
+    const files = new Map(this.previousSnapshot.files);
+    let marked = 0;
+    for (const path of paths) {
+      const previous = files.get(path);
+      if (!previous) continue;
+      files.set(path, { ...previous, mtime: 0, hash: INVALIDATED_SNAPSHOT_HASH });
+      marked++;
+    }
+    if (marked === 0) return 0;
+    const { aliasVersion } = this.previousSnapshot;
+    await this.snapshotManager.save(this.codebasePath, files, aliasVersion !== 0 ? { aliasVersion } : undefined);
+    this.previousSnapshot = { ...this.previousSnapshot, files };
+    return marked;
   }
 
   /**
