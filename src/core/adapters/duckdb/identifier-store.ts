@@ -68,7 +68,7 @@ const IDENTIFIER_IN_LIST_CHUNK = 200;
 const SHAPE_SAMPLE_SEED = 42;
 
 /** A predicate fragment and its positional binds. */
-interface SqlPredicate {
+export interface SqlPredicate {
   sql: string;
   params: unknown[];
 }
@@ -86,7 +86,7 @@ function chunked<T>(values: readonly T[]): T[][] {
 }
 
 /** `rel_path` under any of `prefixes`, each matched as a literal (LIKE wildcards escaped). */
-function pathPrefixPredicate(prefixes: readonly string[] | undefined): SqlPredicate {
+export function pathPrefixPredicate(prefixes: readonly string[] | undefined): SqlPredicate {
   if (prefixes === undefined || prefixes.length === 0) return { sql: "TRUE", params: [] };
   return {
     sql: `(${prefixes.map(() => "rel_path LIKE ? ESCAPE '\\'").join(" OR ")})`,
@@ -138,7 +138,7 @@ function fileFingerprint(rowFingerprints: string[]): string {
  * method defined in two files) type nothing. A target whose `return` rows
  * disagree on the type types nothing either.
  */
-function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
+export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
   return {
     sql: `WITH scoped AS (
         SELECT * FROM cg_identifiers WHERE ${scope.sql}
@@ -167,7 +167,7 @@ function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
         HAVING count(DISTINCT type_name) = 1
       ),
       resolved AS (
-        SELECT s.rel_path, s.owner_symbol_id, s.kind, s.name,
+        SELECT s.rel_path, s.owner_symbol_id, s.kind, s.name, s.line,
                COALESCE(s.type_name, r.type_name) AS type_name,
                CASE
                  WHEN s.type_name IS NOT NULL THEN s.type_source

@@ -1063,3 +1063,55 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-4p3sb.20: the ontology audit is a read proxied through the daemon.
+describe("CodegraphDaemonServer.handle — readOntologyReport", () => {
+  it("is a read and answers the audit over the daemon's connection", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_onto_v1";
+    const row = (name: string, line: number) => ({
+      ownerSymbolId: "A#run",
+      kind: "local",
+      name,
+      line,
+      typeName: "Doc",
+      typeSource: "binding",
+    });
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: { collection: c, entries: [{ relPath: "a.rb", rows: [row("doc", 1), row("doc", 2), row("paper", 3)] }] },
+    });
+
+    const res = await server.handle({
+      id: 2,
+      op: "readOntologyReport",
+      params: {
+        collection: c,
+        query: {
+          nonConceptTypes: [],
+          sections: ["synonyms"],
+          limit: 5,
+          thresholds: {
+            minSupport: 3,
+            synonymDominantShareCeiling: 0.8,
+            genericMinTypes: 5,
+            genericMaxTopTypeShare: 0.5,
+            homonymMinTypeRows: 2,
+            homonymMinTypeShare: 0.1,
+            outlierMinDominantShare: 0.5,
+            confidenceSupport: 20,
+            namesPerItem: 6,
+            groupPool: 20,
+          },
+        },
+      },
+    });
+
+    expect(DAEMON_OP_COMMANDS.readOntologyReport.access).toBe("read");
+    const { result } = res as { result: { evidenceRows: number; synonyms: { typeName: string; n: number }[] } };
+    expect(result.evidenceRows).toBe(3);
+    expect(result.synonyms.map((s) => [s.typeName, s.n])).toEqual([["Doc", 3]]);
+    await pool.closeAll();
+  });
+});

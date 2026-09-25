@@ -39,6 +39,8 @@ import type {
   IdentifierTypeScopeQuery,
   InheritanceEdge,
   NonPublicMemberEdge,
+  OntologyReportQuery,
+  OntologyReportRows,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -912,6 +914,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
       limit: q.limit,
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
     })) as IdentifierShapeSampleRow[];
+  }
+
+  async readOntologyReport(q: OntologyReportQuery): Promise<OntologyReportRows> {
+    return (await this.call("readOntologyReport", { query: q })) as OntologyReportRows;
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

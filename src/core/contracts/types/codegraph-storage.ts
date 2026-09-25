@@ -219,6 +219,150 @@ export interface IdentifierShapeSampleRow {
   n: number;
 }
 
+// ── Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20) ──
+
+/** A section of the project-wide naming ontology audit ({@link GraphDbClient.readOntologyReport}). */
+export type OntologyReportSection = "synonyms" | "homonyms" | "outliers" | "collisions";
+
+/** How a declared name collides with a symbol the graph already holds. */
+export type OntologyCollisionRule =
+  /** A typed value named after a type-like symbol that is neither its type nor related to it by inheritance. */
+  | "namesOtherType"
+  /** A local named like an instance method of its owner's class. */
+  | "shadowsMethod";
+
+/**
+ * Type names that carry no domain concept, for the files with any of
+ * `extensions` (`.rb`) — one entry per language, from its naming descriptor.
+ */
+export interface OntologyNonConceptTypes {
+  extensions: readonly string[];
+  typeNames: readonly string[];
+}
+
+/** The judging thresholds of {@link OntologyReportQuery}; policy, owned by the caller. */
+export interface OntologyReportThresholds {
+  /** Rows a (type, kind) group or a name needs before it is judged at all. */
+  minSupport: number;
+  /** Synonyms: a group whose top name holds at least this share of its rows is consistent. */
+  synonymDominantShareCeiling: number;
+  /** Generic name: bound to at least this many distinct concept types… */
+  genericMinTypes: number;
+  /** …none of which holds this share of the name's rows. */
+  genericMaxTopTypeShare: number;
+  /** Homonyms: a type counts for a name when it holds at least this many rows… */
+  homonymMinTypeRows: number;
+  /** …and at least this share of the name's rows. */
+  homonymMinTypeShare: number;
+  /** Outliers: a group is a convention when its top name holds at least this share. */
+  outlierMinDominantShare: number;
+  /** `k` of the `(n/k)^2` confidence the sections rank by. */
+  confidenceSupport: number;
+  /** Names returned per synonym / outlier group, types per homonym. */
+  namesPerItem: number;
+  /**
+   * Candidate (type, kind) groups read for synonyms and outliers, before the
+   * caller's plural merge and shape judgement narrow them to `limit`.
+   */
+  groupPool: number;
+}
+
+/**
+ * Scope and policy of one ontology read. Rows count as evidence only when their
+ * EFFECTIVE type (persisted or `call-return`) is a concept type — not a
+ * `nonConceptTypes` entry of the row's language, not a single capital letter —
+ * and their kind is `param`, `local` or `field`. A name bound to many unrelated
+ * types project-wide is generic (thresholds) and is judged nowhere.
+ */
+export interface OntologyReportQuery {
+  /** Literal `rel_path` prefixes; empty / absent = the whole project. */
+  pathPrefixes?: readonly string[];
+  /** File extensions (`.rb`, lowercase) a row's file must carry — the language filter. */
+  extensions?: readonly string[];
+  nonConceptTypes: readonly OntologyNonConceptTypes[];
+  sections: readonly OntologyReportSection[];
+  /** Items per section (collisions: per rule). */
+  limit: number;
+  thresholds: OntologyReportThresholds;
+}
+
+/** Where one example row of an ontology finding sits. */
+export interface OntologyLocationRow {
+  relPath: RelPath;
+  line: number;
+  ownerSymbolId: SymbolId;
+}
+
+/** Rows behind a finding per effective type source; `untyped` only for `shadowsMethod` collisions. */
+export type OntologyEvidenceCounts = Partial<Record<IdentifierTypeSource | "untyped", number>>;
+
+/** One name of a group with its row count and the example row. */
+export interface OntologyNameCountRow {
+  name: string;
+  n: number;
+  example: OntologyLocationRow;
+}
+
+/** A (type, kind) group: its names, most frequent first, capped at `namesPerItem`. */
+export interface OntologyTypeGroupRow {
+  typeName: string;
+  kind: Exclude<IdentifierDeclarationKind, "return">;
+  n: number;
+  distinctNames: number;
+  /** Share of the group's rows its top name holds. */
+  dominantShare: number;
+  /** Shannon entropy of the name distribution over ALL names, normalised by `ln(distinctNames)` to 0..1. */
+  entropy: number;
+  names: OntologyNameCountRow[];
+  evidence: OntologyEvidenceCounts;
+}
+
+/** A name bound to two or more concept types, each with non-trivial support. */
+export interface OntologyHomonymRow {
+  name: string;
+  n: number;
+  /** Share of the name's rows its most frequent type holds. */
+  topTypeShare: number;
+  types: { typeName: string; n: number; example: OntologyLocationRow }[];
+  evidence: OntologyEvidenceCounts;
+}
+
+/** A declared name that collides with a symbol short name. */
+export interface OntologyCollisionRow {
+  rule: OntologyCollisionRule;
+  name: string;
+  /** The collided symbol: a type-like short name (`namesOtherType`) or the method's symbolId (`shadowsMethod`). */
+  symbol: string;
+  /** The declared type — always set for `namesOtherType`, absent for `shadowsMethod`. */
+  typeName?: string;
+  n: number;
+  example: OntologyLocationRow;
+  evidence: OntologyEvidenceCounts;
+}
+
+/** A name the generic filter removed from every section. */
+export interface OntologyGenericNameRow {
+  name: string;
+  typeCount: number;
+  n: number;
+}
+
+/** What {@link GraphDbClient.readOntologyReport} read; a section is present only when requested. */
+export interface OntologyReportRows {
+  /** Whole-table counts, unscoped — `identifierRows: 0` beside `symbolRows > 0` is an index predating the table. */
+  totals: { identifierRows: number; symbolRows: number };
+  /** Concept-typed, non-generic rows of the scope — the evidence every section draws from. */
+  evidenceRows: number;
+  genericNameCount: number;
+  /** The most frequent generic names, capped at `limit`. */
+  genericNames: OntologyGenericNameRow[];
+  synonyms?: OntologyTypeGroupRow[];
+  homonyms?: OntologyHomonymRow[];
+  /** Candidate groups (a dominant name exists); the caller judges shapes. */
+  outlierGroups?: OntologyTypeGroupRow[];
+  collisions?: OntologyCollisionRow[];
+}
+
 /**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
  * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
@@ -694,6 +838,14 @@ export interface GraphDbClient {
    * call-return join: the sample measures how the project names what it binds.
    */
   sampleIdentifierShapes: (q: IdentifierShapeSampleQuery) => Promise<IdentifierShapeSampleRow[]>;
+
+  /**
+   * The project-wide naming ontology audit (bd tea-rags-mcp-4p3sb.20): every
+   * requested section aggregated in DuckDB, one query per section, each item
+   * with its counts and one example row. See {@link OntologyReportQuery} for
+   * what counts as evidence. Throws when `cg_identifiers` does not exist.
+   */
+  readOntologyReport: (q: OntologyReportQuery) => Promise<OntologyReportRows>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

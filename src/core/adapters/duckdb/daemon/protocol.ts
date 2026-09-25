@@ -8,6 +8,7 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -145,6 +146,9 @@ export const DAEMON_OPS = [
   "aggregateIdentifiersByName",
   "identifierLanguageCounts",
   "sampleIdentifierShapes",
+  // Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20). REQUIRED for
+  // the same reason: an older daemon's empty answer would read as a clean project.
+  "readOntologyReport",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   "getSupertypes",
   "getSubtypes",
@@ -190,7 +194,8 @@ export interface DaemonRequest {
     | { collection: string; names: string[] } // identifierNameTypes | existingSymbolShortNames
     | { collection: string; names: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByName
     | { collection: string; pathPrefixes?: string[] } // identifierLanguageCounts
-    | { collection: string; limit: number; pathPrefixes?: string[] }; // sampleIdentifierShapes
+    | { collection: string; limit: number; pathPrefixes?: string[] } // sampleIdentifierShapes
+    | { collection: string; query: OntologyReportQuery }; // readOntologyReport
 }
 
 /**

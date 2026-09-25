@@ -24,6 +24,7 @@
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
  * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
  * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
+ * | `DuckDbOntologyReportStore`  | `cg_identifiers` ontology audit reads           |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -69,6 +70,8 @@ import type {
   IdentifierTypeScopeQuery,
   InheritanceEdge,
   NonPublicMemberEdge,
+  OntologyReportQuery,
+  OntologyReportRows,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -88,6 +91,7 @@ import { DuckDbGraphSession, type DuckDbGraphSessionOptions, type OpenedDatabase
 import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbIdentifierStore } from "./identifier-store.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
+import { DuckDbOntologyReportStore } from "./ontology-report-store.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
@@ -121,6 +125,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly signalDrift: DuckDbSignalDriftStore;
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
   private readonly identifiers: DuckDbIdentifierStore;
+  private readonly ontology: DuckDbOntologyReportStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -134,6 +139,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
     this.identifiers = new DuckDbIdentifierStore(this.session);
+    this.ontology = new DuckDbOntologyReportStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -347,6 +353,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
     return this.identifiers.sampleIdentifierShapes(q);
+  }
+
+  async readOntologyReport(q: OntologyReportQuery): Promise<OntologyReportRows> {
+    return this.ontology.readOntologyReport(q);
   }
 
   // ── Method-edge / chunk-signal reads ──

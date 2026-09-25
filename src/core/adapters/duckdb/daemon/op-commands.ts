@@ -9,6 +9,7 @@ import type {
   GraphFileNode,
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
+  OntologyReportQuery,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -265,6 +266,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   sampleIdentifierShapes: read(async (graphDb, p) =>
     graphDb.sampleIdentifierShapes({ limit: p.limit as number, pathPrefixes: p.pathPrefixes as string[] | undefined }),
   ),
+  // Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20).
+  readOntologyReport: read(async (graphDb, p) => graphDb.readOntologyReport(p.query as OntologyReportQuery)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),
