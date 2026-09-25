@@ -466,16 +466,45 @@ export class EnrichmentCoordinator {
    * Every declaring provider is asked once, in order, on its main-thread
    * instance (like `hasStaleDerivedState`). One that throws is logged and never
    * fails the reindex, and the next one still runs.
+   *
+   * A run that DID finalize reaches the same work through `completeRun` (bd
+   * tea-rags-mcp-vtuu4), never through the provider's finalize.
    */
   async runCollectionCompletion(absolutePath: string, collectionName: PhysicalCollectionName): Promise<void> {
-    for (const provider of this.providers) {
+    await this.completeCollectionOf(this.providers, absolutePath, collectionName);
+  }
+
+  /**
+   * Ask each of `providers` for its whole-collection work, on the MAIN thread.
+   * Best-effort per provider: a throw is logged and the next one still runs.
+   *
+   * Each call reports its wall clock and main-thread heap delta as
+   * `COLLECTION_COMPLETION` (bd tea-rags-mcp-vtuu4) — codegraph's co-change
+   * build loads months of history and builds pair maps here, and this line is
+   * how a live run shows what that costs.
+   */
+  private async completeCollectionOf(
+    providers: readonly EnrichmentProvider[],
+    absolutePath: string,
+    collectionName: PhysicalCollectionName,
+  ): Promise<void> {
+    for (const provider of providers) {
       if (!provider.completeCollection) continue;
+      const startedAt = Date.now();
+      const heapUsedBefore = process.memoryUsage().heapUsed;
       try {
         await provider.completeCollection(provider.resolveRoot(absolutePath), { collectionName });
       } catch (err) {
         process.stderr.write(
           `[tea-rags] ${provider.key} collection completion failed: ${err instanceof Error ? err.message : String(err)}\n`,
         );
+      } finally {
+        pipelineLog.enrichmentPhase("COLLECTION_COMPLETION", {
+          provider: provider.key,
+          collection: collectionName,
+          durationMs: Date.now() - startedAt,
+          heapUsedDeltaBytes: process.memoryUsage().heapUsed - heapUsedBefore,
+        });
       }
     }
   }
@@ -1187,6 +1216,15 @@ export class EnrichmentCoordinator {
       // are swallowed inside the executor: release MUST NOT regress a good run.
       const providers = Array.from(run.contexts.values()).map((ctx) => ctx.provider);
       await this.executor.releaseRun(providers, run.handle);
+      // The run's whole-collection work (bd tea-rags-mcp-vtuu4): on the MAIN
+      // thread, once, after every provider finished writing and the executor
+      // released the worker's run state — the codegraph worker's whole-project
+      // `ts.Program` included. It used to run inside the codegraph finalize, in
+      // the worker, beside that Program, and the co-change build on top of it
+      // ran a 17k-file TypeScript repository's worker out of heap right after
+      // the file finalize. Only the run's own providers: a recompute that did
+      // not open codegraph owes it nothing, as its finalize never ran either.
+      await this.completeCollectionOf(providers, run.handle.absolutePath, collectionName);
       run.resolveDone(metrics);
       return metrics;
     } catch (error) {

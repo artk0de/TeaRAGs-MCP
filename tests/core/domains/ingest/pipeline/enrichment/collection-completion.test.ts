@@ -82,3 +82,116 @@ describe("EnrichmentCoordinator.runCollectionCompletion (bd tea-rags-mcp-l1ot.2)
     }
   });
 });
+
+/**
+ * A run's own completion (bd tea-rags-mcp-vtuu4). The co-change build used to
+ * run from the codegraph finalize, i.e. INSIDE the enrichment worker, on top of
+ * the whole-project `ts.Program` that worker still held — and on a 17k-file
+ * TypeScript repository it pushed the worker past `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`
+ * right after the file finalize, losing every codegraph signal of the run.
+ *
+ * It now runs on the MAIN thread, through the same `completeCollection` seam a
+ * reindex that finalized nothing uses, once the run's completion sequence has
+ * settled and the executor has released the run's worker state.
+ *
+ * Invariants under test:
+ *   - every run that reaches its completion asks each of ITS providers'
+ *     `completeCollection` exactly once, after the provider's finalize and after
+ *     the executor released the run;
+ *   - a provider the run did not open is not asked (a `--force-enrichments git`
+ *     recompute never touches the graph provider).
+ */
+describe("EnrichmentCoordinator — a run's collection completion runs on the main thread (bd tea-rags-mcp-vtuu4)", () => {
+  /** One stored chunk, so a recompute has something to walk and opens its run. */
+  function qdrantStub(): Record<string, unknown> {
+    return {
+      scrollFiltered: vi
+        .fn()
+        .mockResolvedValue([{ id: "c1", payload: { relativePath: "src/a.ts", startLine: 1, endLine: 10 } }]),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      countPoints: vi.fn().mockResolvedValue(0),
+      getPoint: vi.fn().mockResolvedValue(null),
+      upsertPoints: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function orderedExecutor(order: string[]) {
+    return {
+      runFileBatch: vi.fn().mockResolvedValue(new Map()),
+      runFileSignalsStreaming: vi.fn().mockResolvedValue(new Map()),
+      runChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      runChunkBatch: vi.fn().mockResolvedValue(new Map()),
+      runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
+      runFinalize: vi.fn(async (provider: { key: string }) => {
+        order.push(`finalize:${provider.key}`);
+        return new Map();
+      }),
+      releaseRun: vi.fn(async () => {
+        order.push("release");
+      }),
+    } as never;
+  }
+
+  function graphProvider(order: string[]) {
+    const completeCollection = vi.fn(async (root: string) => {
+      order.push(`complete:${root}`);
+    });
+    return {
+      provider: makeProvider("codegraph.symbols", {
+        finalizeSignals: vi.fn().mockResolvedValue(new Map()),
+        defersChunkEnrichment: true,
+        completeCollection,
+      }),
+      completeCollection,
+    };
+  }
+
+  it("a finalize-only run completes the collection once, after the finalize and the release", async () => {
+    const order: string[] = [];
+    const graph = graphProvider(order);
+    const coordinator = new EnrichmentCoordinator(
+      qdrantStub() as never,
+      [graph.provider],
+      undefined,
+      orderedExecutor(order),
+    );
+
+    await coordinator.runFinalizeOnly("/repo", "code_x_v3" as never);
+
+    expect(graph.completeCollection).toHaveBeenCalledTimes(1);
+    expect(graph.completeCollection).toHaveBeenCalledWith("/repo/effective", { collectionName: "code_x_v3" });
+    expect(order).toEqual(["finalize:codegraph.symbols", "release", "complete:/repo/effective"]);
+  });
+
+  it("a whole-corpus recompute of the graph provider completes the collection once", async () => {
+    const order: string[] = [];
+    const graph = graphProvider(order);
+    const coordinator = new EnrichmentCoordinator(
+      qdrantStub() as never,
+      [graph.provider],
+      undefined,
+      orderedExecutor(order),
+    );
+
+    await coordinator.recomputeEnrichments("code_x_v3" as never, "/repo", ["codegraph"], ["typescript"]);
+
+    expect(graph.completeCollection).toHaveBeenCalledTimes(1);
+    expect(order.indexOf("complete:/repo/effective")).toBeGreaterThan(order.indexOf("finalize:codegraph.symbols"));
+  });
+
+  it("a recompute that did not open the graph provider does not ask it", async () => {
+    const order: string[] = [];
+    const graph = graphProvider(order);
+    const coordinator = new EnrichmentCoordinator(
+      qdrantStub() as never,
+      [makeProvider("git"), graph.provider],
+      undefined,
+      orderedExecutor(order),
+    );
+
+    await coordinator.recomputeEnrichments("code_x_v3" as never, "/repo", ["git"], []);
+
+    expect(graph.completeCollection).not.toHaveBeenCalled();
+  });
+});

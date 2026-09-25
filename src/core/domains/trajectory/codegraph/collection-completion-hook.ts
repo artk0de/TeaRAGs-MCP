@@ -3,18 +3,18 @@
  * other than symbols rebuilds its tables at the end of an enrichment run
  * (bd tea-rags-mcp-x4rpp).
  *
- * The symbols provider owns the codegraph family's one run lifecycle: the
- * pinned worker, the DuckDB write handle, and the point where a collection's
- * graph is whole (`CodegraphEnrichmentProvider#finalizeSignals`, or the
- * completion owner's `readBack` under language affinity). A sub-graph that
- * derives its tables from the collection as a whole — not per file, and without
- * a payload of its own yet — plugs in here instead of registering a second
- * enrichment provider, which would stamp a marker onto every point of every
- * index for no payload.
- *
- * A reindex that opens no enrichment run (deletion-only, nothing to chunk)
- * reaches the same hooks through `CodegraphEnrichmentProvider#completeCollection`
- * (bd tea-rags-mcp-l1ot.2), so a hook must be cheap when its inputs did not move.
+ * The symbols provider owns the codegraph family's one run lifecycle and runs
+ * the hooks through ONE seam, `CodegraphEnrichmentProvider#completeCollection`,
+ * on its main-thread instance: after an enrichment run settled and the worker
+ * released its run state (`EnrichmentCoordinator#completeRun`), or from a
+ * reindex that opened no enrichment run — deletion-only, nothing to chunk (bd
+ * tea-rags-mcp-l1ot.2) — so a hook must be cheap when its inputs did not move.
+ * Never from the worker's finalize (bd tea-rags-mcp-vtuu4): a hook allocating
+ * beside the whole-project `ts.Program` ran a large repository's enrichment
+ * worker out of heap. A sub-graph that derives its tables from the collection
+ * as a whole — not per file, and without a payload of its own yet — plugs in
+ * here instead of registering a second enrichment provider, which would stamp a
+ * marker onto every point of every index for no payload.
  *
  * Hooks run best-effort, after the symbol graph's own metrics: a hook that
  * throws is logged and never fails the run.

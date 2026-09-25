@@ -3,17 +3,22 @@
  * (bd tea-rags-mcp-l1ot.2).
  *
  * Codegraph rebuilds its co-change sub-graph (`cg_temporal_*`) at collection
- * completion. A run that opens an enrichment run reaches it through the
- * provider's finalize (`EnrichmentExecutor#runFinalize`); a run that takes one
- * of `ReindexPipeline#reindexChanges`'s early returns — only deletions, or
- * nothing to chunk — opens no run, and used to reach nothing: live on a clone
- * of pixelclocktiles, a committed `git rm` left the deleted file's 78 pairs and
- * the old HEAD in `cg_temporal_meta`. Such a run now asks
- * `EnrichmentProvider#completeCollection` instead.
+ * completion, and always through ONE seam — `EnrichmentProvider#completeCollection`
+ * on the main-thread instance. A run that opens an enrichment run asks it once
+ * its completion sequence settled, i.e. after the provider's finalize
+ * (`EnrichmentExecutor#runFinalize`) — never from inside that finalize, which
+ * executes in the enrichment worker beside the whole-project `ts.Program` (bd
+ * tea-rags-mcp-vtuu4: the co-change build on top of it ran a 17k-file worker out
+ * of heap). A run that takes one of `ReindexPipeline#reindexChanges`'s early
+ * returns — only deletions, or nothing to chunk — opens no run, and used to
+ * reach nothing: live on a clone of pixelclocktiles, a committed `git rm` left
+ * the deleted file's 78 pairs and the old HEAD in `cg_temporal_meta`. Such a
+ * run asks the same seam directly.
  *
- * The contract pinned here, per path: the collection-completion work runs, and
- * through exactly one of the two seams — a finalize that already ran it is not
- * followed by a second ask.
+ * The contract pinned here, per path: the collection-completion work runs
+ * exactly once per run, after that run's finalize when it has one — a run
+ * whose repair finalize completed the collection is not followed by a second
+ * ask.
  *
  * MCP `index_codebase` and the auto-updater both enter through
  * `App.indexCodebase` → `IngestFacade#indexCodebase`, the entry every case below
@@ -66,7 +71,7 @@ vi.mock("tree-sitter-typescript", () => ({ default: { typescript: {}, tsx: {} } 
 
 const GRAPH_KEY = "codegraph.symbols";
 
-/** Which seam carried each collection completion of the graph provider, in order. */
+/** The graph provider's finalizes and collection completions, in order. */
 const completions: ("finalize" | "completeCollection")[] = [];
 /** What the fake graph store "persisted": content hashes of the last extraction, like the real rows. */
 const persistedHashes = new Map<string, string>();
@@ -168,21 +173,28 @@ describe("collection completion on every index-run path (bd tea-rags-mcp-l1ot.2)
     await ingest.whenEnrichmentComplete();
   }
 
-  it("first index — through the finalize", async () => {
-    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual(["finalize"]);
-  });
-
-  it("--force — through the finalize", async () => {
-    await indexed();
-    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir, { forceReindex: true }))).toEqual([
+  it("first index — once, after the finalize", async () => {
+    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual([
       "finalize",
+      "completeCollection",
     ]);
   });
 
-  it("incremental with a changed file — through the finalize", async () => {
+  it("--force — once, after the finalize", async () => {
+    await indexed();
+    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir, { forceReindex: true }))).toEqual([
+      "finalize",
+      "completeCollection",
+    ]);
+  });
+
+  it("incremental with a changed file — once, after the finalize", async () => {
     await indexed();
     await createTestFile(codebaseDir, "util.ts", sourceOf("changed"));
-    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual(["finalize"]);
+    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual([
+      "finalize",
+      "completeCollection",
+    ]);
   });
 
   it("incremental delete-only — through completeCollection", async () => {
@@ -196,17 +208,20 @@ describe("collection completion on every index-run path (bd tea-rags-mcp-l1ot.2)
     expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual(["completeCollection"]);
   });
 
-  it("incremental whose drift repair finalized — through that finalize, not a second ask", async () => {
+  it("incremental whose drift repair finalized — once, after that finalize, not a second ask", async () => {
     await indexed();
     persistedHashes.set("util.ts", "drifted");
-    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual(["finalize"]);
+    expect(await completionsOf(async () => ingest.indexCodebase(codebaseDir))).toEqual([
+      "finalize",
+      "completeCollection",
+    ]);
   });
 
-  it("--force-enrichments of the graph provider — sync leg asks, the recompute's finalize rebuilds", async () => {
+  it("--force-enrichments of the graph provider — sync leg asks, the recompute completes after its finalize", async () => {
     await indexed();
     expect(
       await completionsOf(async () => ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"] })),
-    ).toEqual(["completeCollection", "finalize"]);
+    ).toEqual(["completeCollection", "finalize", "completeCollection"]);
   });
 
   it("--force-enrichments of another provider only — the sync leg still asks the graph provider", async () => {
@@ -216,11 +231,11 @@ describe("collection completion on every index-run path (bd tea-rags-mcp-l1ot.2)
     ]);
   });
 
-  it("scoped --force selecting files — through the finalize of the in-place re-chunk", async () => {
+  it("scoped --force selecting files — once, after the finalize of the in-place re-chunk", async () => {
     await indexed();
     expect(
       await completionsOf(async () => ingest.indexCodebase(codebaseDir, { forceReindex: true, pathPattern: "app.ts" })),
-    ).toEqual(["finalize"]);
+    ).toEqual(["finalize", "completeCollection"]);
   });
 
   it("scoped --force selecting nothing — through completeCollection", async () => {

@@ -4,11 +4,14 @@
  * tables once per run, at the point the collection's graph is whole.
  *
  * Invariants under test:
- *   - a single-worker finalize runs every hook once, with the project root and
- *     the collection's graph DB;
- *   - under language affinity only the completion owner's `readBack` runs them —
- *     never a partition's `resolve`, never a non-owner's `readBack`;
- *   - a hook that throws is logged and does not fail the finalize.
+ *   - NO finalize stage runs them (bd tea-rags-mcp-vtuu4): `finalizeSignals`
+ *     executes inside the enrichment worker, beside the whole-project
+ *     `ts.Program`, and the co-change build on top of it pushed a 17k-file
+ *     repository's worker past its heap ceiling. Neither a single-worker
+ *     finalize nor any stage of a partitioned one (`resolve`, a non-owner's or
+ *     the completion owner's `readBack`) may call a hook;
+ *   - `completeCollection` — the main-thread seam — runs every hook once;
+ *   - a hook that throws is logged and does not fail the call.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -55,47 +58,26 @@ function makeProvider(graphDb: Record<string, unknown>, hooks: CodegraphCollecti
   });
 }
 
-describe("CodegraphEnrichmentProvider collection-completion hooks (bd tea-rags-mcp-x4rpp)", () => {
-  it("runs every hook once at a single-worker finalize", async () => {
-    const graphDb = stubGraphDb();
+describe("CodegraphEnrichmentProvider finalize never runs collection-completion hooks (bd tea-rags-mcp-vtuu4)", () => {
+  it("a single-worker finalize runs no hook", async () => {
     const first = recordingHook("first");
     const second = recordingHook("second");
 
-    await makeProvider(graphDb, [first, second]).finalizeSignals("/repo/project", { paths: [] });
+    await makeProvider(stubGraphDb(), [first, second]).finalizeSignals("/repo/project", { paths: [] });
 
-    expect(first.calls).toEqual([{ projectRoot: "/repo/project", graphDb }]);
-    expect(second.calls).toHaveLength(1);
+    expect(first.calls).toHaveLength(0);
+    expect(second.calls).toHaveLength(0);
   });
 
-  it("runs hooks only at the completion owner's readBack under language affinity", async () => {
+  it("no stage of a partitioned finalize runs a hook — the completion owner's readBack included", async () => {
     const hook = recordingHook();
     const provider = makeProvider(stubGraphDb(), [hook]);
 
     await provider.finalizeSignals("/repo", { paths: [], finalizeStage: "resolve" });
     await provider.finalizeSignals("/repo", { paths: [], finalizeStage: "readBack" });
-    expect(hook.calls).toHaveLength(0);
-
     await provider.finalizeSignals("/repo", { paths: [], finalizeStage: "readBack", ownsCollectionCompletion: true });
-    expect(hook.calls).toHaveLength(1);
-  });
 
-  it("logs a failing hook and still finishes the finalize", async () => {
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const failing: CodegraphCollectionCompletionHook = {
-      name: "failing",
-      onCollectionComplete: async () => {
-        throw new Error("git unavailable");
-      },
-    };
-    const after = recordingHook();
-
-    await expect(
-      makeProvider(stubGraphDb(), [failing, after]).finalizeSignals("/repo", { paths: [] }),
-    ).resolves.toBeInstanceOf(Map);
-
-    expect(after.calls).toHaveLength(1);
-    expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toContain("failing");
-    stderr.mockRestore();
+    expect(hook.calls).toHaveLength(0);
   });
 });
 
