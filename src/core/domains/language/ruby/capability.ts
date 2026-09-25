@@ -50,7 +50,7 @@ export const capability: LanguageCapability = {
   // one: taxdome 19, not 16. Fans of 17–19 survivors a walker-7 index recorded as
   // `ambiguous` become edges. Bumped past an unreleased 7 because a worktree
   // build may already have stamped an index at it.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

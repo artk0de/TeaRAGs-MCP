@@ -5,7 +5,7 @@
       "digest": "sha256:c85d51691270490457722ac9fd48ef10c8331c824db4fe23915f4418b5e018a4"
     },
     "walker": {
-      "version": 6,
+      "version": 5,
       "digest": "sha256:22586999572a1d16f351a93c9d7c2ac13fba4df8f43a01b0813dbb2ed0f49870"
     }
   },
@@ -21,13 +21,13 @@
       "digest": "sha256:b27a367c9390c6a73806fe5a23e8cd45552c0de52ffe9755ed71bd5ec86965b9"
     },
     "walker": {
-      "version": 7,
+      "version": 6,
       "digest": "sha256:1d8dbb5cdcc14e4916da07ac76e6ab4ce739506df8354cc2991a21e53b60d6ea"
     }
   },
   "java": {
     "walker": {
-      "version": 6,
+      "version": 5,
       "digest": "sha256:fefe5f385c315f3f30b2e43657a1f395d1f42d17dcf0277fc03052437e8ac1f0"
     }
   },
@@ -37,7 +37,7 @@
       "digest": "sha256:495b161ee98d9098d28f7a9fe9c9d08cbe4f9d81cf84644c2d8d81f53a179063"
     },
     "walker": {
-      "version": 8,
+      "version": 7,
       "digest": "sha256:d1e578d6e4d4dd84f8b618dc980609ad7d7780e45330ebbbef3017cfea6648a7"
     }
   },
@@ -49,7 +49,7 @@
   },
   "python": {
     "walker": {
-      "version": 15,
+      "version": 14,
       "digest": "sha256:66a3081091e769b1a8510b85b2de83b3372750f784b1d7d5b5f6deffd9e45dc5"
     }
   },
@@ -59,13 +59,13 @@
       "digest": "sha256:52e347a4d1425629adbe6f907c04d00b01f9fb4703e5196b07a04b3e4859887b"
     },
     "walker": {
-      "version": 9,
+      "version": 8,
       "digest": "sha256:b5d0b5777c65c06291a298a1b8a1b8fc3acc76354ccc768d3f80643a51dac2dc"
     }
   },
   "rust": {
     "walker": {
-      "version": 5,
+      "version": 4,
       "digest": "sha256:c557eb4a721a50434643e156f0a3adb7e00fad56cc6f4fc40775503d05dead09"
     }
   },
@@ -75,7 +75,7 @@
       "digest": "sha256:2d801131eaa3bebb86fb6b3481840872199418de5e26eb01dc2935e22ddf67bb"
     },
     "walker": {
-      "version": 65,
+      "version": 64,
       "digest": "sha256:fbbe3fac2ea0623e0282a94e572971ebbdc048da710e41c86e42d84a8d2c79d5"
     }
   },
@@ -85,7 +85,7 @@
       "digest": "sha256:5e801f96284747b9efa8080c0a164fbf207f6f853dd3fbde9b5085beecc350fb"
     },
     "walker": {
-      "version": 17,
+      "version": 16,
       "digest": "sha256:3feaed34d463eef98f0c67214ce68e79103fb1e70ba084f208c6246236351fd5"
     }
   }

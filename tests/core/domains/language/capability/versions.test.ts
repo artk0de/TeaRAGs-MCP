@@ -78,13 +78,13 @@ describe("resolveLanguageCodeVersions", () => {
     // walker 5: bd tea-rags-mcp-r8hme.2 — export names on
     // `cg_symbols_edges_file` (migration 030), carried by the shared import→file
     // engine and unioned by the runner's per-target dedupe.
-    // walker 6: bd tea-rags-mcp-r8hme.8 — the kernel's type-abstractness census
-    // pass, persisted on `cg_symbols_files` (migration 032).
+    // bd tea-rags-mcp-r8hme.8's type-abstractness census pass ships under the
+    // same walker 5 (one bump per release) and only re-pins the digest.
     // chunking 2: bd tea-rags-mcp-y5vx4 — oversized symbols split on statement
     // boundaries into `#part1..N` with context prefixes; markdown and the
     // character fallback cut between blocks / syntax-neutral units. Same bump:
     // bd tea-rags-mcp-msv3l — test files chunked by example.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 6, codegraphSchema: 2 });
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 5, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -94,7 +94,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(6);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(5);
   });
 });
 
@@ -417,20 +417,18 @@ describe("seeded support versions", () => {
       // is recorded as its sequence's element, and `typeDeclarations` names the
       // methods returning their closure's result, so a walker-63 index cannot
       // type `for request in mutableState.read(\.activeRequests)`.
-      // typescript 17, javascript 8, python 15, ruby 9, java 6, rust 5, go 7,
-      // swift 65: bd tea-rags-mcp-r8hme.8 — every walker emits a per-file
-      // type-abstractness census, so an index built by the previous walker
-      // carries none and the main-sequence detector reports it `unmeasured`.
+      // bd tea-rags-mcp-r8hme.8's per-file type-abstractness census ships under
+      // each language's existing release bump below (re-pinned, not bumped).
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 17],
-        ["javascript", 8],
-        ["python", 15],
-        ["ruby", 9],
-        ["java", 6],
-        ["rust", 5],
-        ["go", 7],
-        ["swift", 65],
+        ["typescript", 16],
+        ["javascript", 7],
+        ["python", 14],
+        ["ruby", 8],
+        ["java", 5],
+        ["rust", 4],
+        ["go", 6],
+        ["swift", 64],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

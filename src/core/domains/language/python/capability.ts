@@ -68,5 +68,5 @@ export const capability: LanguageCapability = {
   // takes from the module (`importedExportNames`: the imported spelling, `*`
   // for a star import or `import m`), persisted on the file edge (migration
   // 030). No edge moves.
-  versions: { chunking: 1, walker: 15, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 14, codegraphSchema: 2 },
 };

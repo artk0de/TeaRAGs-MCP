@@ -47,12 +47,13 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * walker bump already routes every index to that same whole-collection
  * recompute, and a second axis would name the same remedy twice.
  *
- * walker 6: every language's walker emits a type-abstractness census
- * (abstract / concrete type declarations per file, bd tea-rags-mcp-r8hme.8),
- * persisted on `cg_symbols_files` (migration 032) for the main-sequence
- * detector. No symbol or edge moves; only a walk fills the columns, and until
- * then the detector reports those components `unmeasured`. `codegraphSchema`
- * stays at 2 for the same reason as walker 5.
+ * The type-abstractness census (bd tea-rags-mcp-r8hme.8) — every language's
+ * walker counts abstract / concrete type declarations per file, persisted on
+ * `cg_symbols_files` (migration 032) for the main-sequence detector — ships
+ * under this release's walker 5 and re-pins the digests without bumping
+ * again. Only a walk fills the columns; until the release's
+ * `--force-enrichments codegraph` runs, the detector reports those components
+ * `unmeasured`.
  *
  * chunking 2 is this release's ONE chunking bump, shared by two changes:
  *   - an oversized symbol is cut on its statement boundaries into
@@ -71,7 +72,7 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  */
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 2,
-  walker: 6,
+  walker: 5,
   codegraphSchema: 2,
 };
 

@@ -118,5 +118,5 @@ export const capability: LanguageCapability = {
   // the names it forwards (`reexportedExportNames`), persisted on the file edge
   // (migration 030) for the facade check. No edge moves; the names fill only on
   // `--force-enrichments codegraph`.
-  versions: { chunking: 1, walker: 17, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 16, codegraphSchema: 2 },
 };
