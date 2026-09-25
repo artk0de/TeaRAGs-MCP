@@ -35,8 +35,8 @@ export type WalkCommitDiffHunk = CommitDiffHunk;
 /**
  * Duck type for the run-scoped (commitSha, filePath) → hunks memo — matches
  * infra/commit-diff-memo.ts CommitDiffMemo (bd tea-rags-mcp-7gnre). An empty
- * array is a valid memoized value (root commit / identical or empty blobs /
- * patch failure); `undefined` means never computed.
+ * array is a valid memoized value (identical or empty blobs / patch failure);
+ * `undefined` means never computed.
  */
 export type WalkCommitDiffMemo = CommitDiffMemoPort;
 
@@ -306,23 +306,22 @@ async function collectHunksPerFile(
 
     let hunks = diffMemo?.get(commit.sha, filePath);
     if (hunks === undefined) {
-      if (parentOid === null) {
-        // Root commit: nothing to diff — memoize the empty result so later
-        // walks short-circuit on the memo too.
-        diffMemo?.set(commit.sha, filePath, []);
-        return;
-      }
-
       // A rename commit's file exists at the parent under its OLD name only, so
       // the parent side MUST be read there (bd tea-rags-mcp-0dwsn). Reading it
       // at the post-rename path returns "" and structuredPatch then reports one
       // hunk spanning the whole file, crediting the rename to EVERY chunk —
       // the over-count that mirrors the under-count this fix removes.
+      //
+      // A root commit has no parent: its side is the empty tree, so the commit
+      // ADDS every line it holds — what `git log -L` credits it with, and what
+      // a non-root commit adding a file already gets (its parent blob reads
+      // ""). Skipping it dropped the creating commit of every file born in the
+      // root commit (bd tea-rags-mcp-z8w16).
       const [oldContent, newContent] = await Promise.all([
-        blobReader.read(parentOid, changed.previousPath ?? filePath),
+        parentOid === null ? "" : blobReader.read(parentOid, changed.previousPath ?? filePath),
         blobReader.read(commit.sha, filePath),
       ]);
-      out.blobReads += 2;
+      out.blobReads += parentOid === null ? 1 : 2;
 
       if (!oldContent && !newContent) {
         out.skippedEmptyBlobs++;
@@ -381,7 +380,8 @@ async function collectHunksPerFile(
       // from `%P` by the git log parsers and validated by the discovery store,
       // so no per-commit `git rev-parse <sha>^` spawn (bd tea-rags-mcp-iqpuu;
       // ~3900 spawns/run removed). Root commit (parents [] or absent — the
-      // optional chain covers loose test fixtures) → null → nothing to diff.
+      // optional chain covers loose test fixtures) → null → diffed against
+      // the empty tree.
       const parentOid = entry.commit.parents?.[0] ?? null;
 
       await Promise.all(

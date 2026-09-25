@@ -65,7 +65,12 @@ their own navigators.
   the column raw is the opposite failure: nothing matches, the commit is dropped
   before any blob read, and every chunk publishes `commitCount: 0`. For a
   pre-rename commit `path` itself is the old name; the alias map above resolves
-  it, and both blob reads stay at the path that commit used.
+  it, and both blob reads stay at the path that commit used. A root commit has
+  no parent side at all: it is diffed against `""`, the same add a non-root
+  creating commit gets. Skipping it (the old "nothing to diff") dropped the
+  creating commit of every file born in the repo's first commit, which read as a
+  rename bug on a renamed file whose control had a non-root creation (bd
+  tea-rags-mcp-z8w16).
 
 ## Gotchas
 
