@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmbeddingModelMismatchError } from "../../../../src/core/adapters/embeddings/errors.js";
+import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { EmbeddingModelGuard } from "../../../../src/core/adapters/qdrant/embedding-model-guard.js";
 import { EMBEDDING_CANARY_TEXT, INDEXING_METADATA_ID } from "../../../../src/core/contracts/constants.js";
 
@@ -437,6 +438,89 @@ describe("EmbeddingModelGuard canary", () => {
     expect(embed).toHaveBeenCalledTimes(2);
     expect(qdrant.marker("c").canary).toEqual({ text: EMBEDDING_CANARY_TEXT, vector: V });
     consoleError.mockRestore();
+  });
+
+  describe("provider down after a spent recovery wait (bd tea-rags-mcp-umatc)", () => {
+    // The provider already waited EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS
+    // out on the canary embed. A caller that embeds next would wait it out
+    // again, so the outage reaches that caller instead of being swallowed.
+    const waitedOut = () => new OllamaUnavailableError("http://127.0.0.1:59999", undefined, undefined, 10_000);
+
+    it("reaches a caller that embeds next, on the read path", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const outage = waitedOut();
+      const embed = vi.fn().mockRejectedValue(outage);
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      await expect(guard.ensureMatch("c", { failOnProviderOutage: true })).rejects.toBe(outage);
+      expect(embed).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
+
+    it("reaches a caller that embeds next, on the create path, and the marker is still created", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker(null);
+      const outage = waitedOut();
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed: vi.fn().mockRejectedValue(outage) } as never);
+
+      await expect(guard.ensureMatch("c", { failOnProviderOutage: true })).rejects.toBe(outage);
+      expect(qdrant.marker("c")).toMatchObject({ embeddingModel: "m" });
+      expect(qdrant.marker("c").canary).toBeUndefined();
+      consoleError.mockRestore();
+    });
+
+    it("never blocks a caller that does not embed", async () => {
+      // find_symbol / rank_chunks read the index without a query embed; a down
+      // provider must not take them down with it.
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, {
+        embed: vi.fn().mockRejectedValue(waitedOut()),
+      } as never);
+
+      await expect(guard.ensureMatch("c")).resolves.toBeUndefined();
+      consoleError.mockRestore();
+    });
+
+    it("an embed failure without a spent wait never blocks, even a caller that embeds next", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, {
+        embed: vi.fn().mockRejectedValue(new OllamaUnavailableError("http://127.0.0.1:59999")),
+      } as never);
+
+      await expect(guard.ensureMatch("c", { failOnProviderOutage: true })).resolves.toBeUndefined();
+      consoleError.mockRestore();
+    });
+
+    it("reaches every caller that embeds next and joined the same in-flight check", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const qdrant = fakeQdrantWithMarker({
+        embeddingModel: "m",
+        canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+      });
+      const outage = waitedOut();
+      const embed = vi.fn().mockRejectedValue(outage);
+      const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+      const reader = guard.ensureMatch("c");
+      const embedder = guard.ensureMatch("c", { failOnProviderOutage: true });
+
+      await expect(reader).resolves.toBeUndefined();
+      await expect(embedder).rejects.toBe(outage);
+      expect(embed).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
   });
 
   it("invalidateAll drops every collection, not just the last one", async () => {

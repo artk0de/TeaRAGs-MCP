@@ -24,6 +24,7 @@
  * A refused sibling hands over to the next; every refusal is reported.
  */
 
+import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
@@ -165,8 +166,12 @@ export class WorktreeSeedOps {
     }
 
     try {
-      await this.deps.modelGuard?.ensureMatch(candidate.collectionName);
+      await this.deps.modelGuard?.ensureMatch(candidate.collectionName, { failOnProviderOutage: true });
     } catch (error) {
+      // A provider that is down is not this sibling's fault: every candidate
+      // and the index run behind them would wait its recovery budget out again,
+      // so the run fails here, once (bd tea-rags-mcp-umatc).
+      if (isProviderRecoveryWaitSpent(error)) throw error;
       return { reason: "embedding-model", detail: messageOf(error) };
     }
 

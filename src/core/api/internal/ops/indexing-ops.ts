@@ -10,7 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import { OllamaUnavailableError } from "../../../adapters/embeddings/ollama/errors.js";
+import { isProviderRecoveryWaitSpent } from "../../../adapters/embeddings/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
@@ -786,8 +786,11 @@ export class IndexingOps {
     // Model guard before health check — the guard compares the stored model
     // NAME first, with no embed, so a wrong name is reported here rather than
     // as the health check's confusing embed() failure. It may embed the canary
-    // afterwards, but only once the name already matched.
-    await this.modelGuard?.ensureMatch(collectionName);
+    // afterwards, but only once the name already matched. A canary embed that
+    // found the provider down after its recovery wait fails the run here: the
+    // health check would only wait the same budget out again (bd
+    // tea-rags-mcp-umatc).
+    await this.modelGuard?.ensureMatch(collectionName, { failOnProviderOutage: true });
     await this.checkEmbeddingHealth();
 
     const overrides = await this.syncChunkingOverrides(collectionName);
@@ -1310,7 +1313,7 @@ export class IndexingOps {
           // the budget by the attempt count (bd tea-rags-mcp-umatc). The retry
           // loop exists for a probe starved of an event-loop tick, which fails
           // at once and reports no wait.
-          if (error instanceof OllamaUnavailableError && error.recoveryWaitMs > 0) throw error;
+          if (isProviderRecoveryWaitSpent(error)) throw error;
           lastError = error;
           if (attempt < attempts) {
             await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
