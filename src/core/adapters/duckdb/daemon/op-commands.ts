@@ -11,6 +11,7 @@ import type {
   ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
+  TemporalCochangeSnapshot,
 } from "../../../contracts/types/codegraph.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { GraphDbClientPool } from "../pool.js";
@@ -195,6 +196,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // Ranks ride the wire as `[symbolId, rank][]` entries (a Map cannot
   // JSON-serialise) — rebuild the Map before delegating to the adapter.
   replacePageRanks: write(async (graphDb, p) => graphDb.replacePageRanks(new Map(p.ranks as [string, number][]))),
+  // Plain arrays on the wire — the snapshot is JSON-shaped already.
+  replaceTemporalCochange: write(async (graphDb, p) =>
+    graphDb.replaceTemporalCochange(p.snapshot as TemporalCochangeSnapshot),
+  ),
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
@@ -264,6 +269,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // Plain arrays on the wire — nothing to rebuild on the client.
   readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
   readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
+  readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
+  readTemporalCochangeGraph: read(async (graphDb) => graphDb.readTemporalCochangeGraph()),
   // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
   getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
   getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),

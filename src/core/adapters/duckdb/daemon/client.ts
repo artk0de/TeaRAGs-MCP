@@ -34,6 +34,9 @@ import type {
   SymbolDefinition,
   SymbolId,
   SymbolVisibilityRow,
+  TemporalCochangeBuildMeta,
+  TemporalCochangeGraph,
+  TemporalCochangeSnapshot,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
@@ -1097,6 +1100,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
     return (await this.call("readNonPublicMemberEdges", { languages: [...languages] })) as NonPublicMemberEdge[];
+  }
+
+  async replaceTemporalCochange(snapshot: TemporalCochangeSnapshot): Promise<void> {
+    await this.call("replaceTemporalCochange", { snapshot });
+  }
+
+  async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
+    return (await this.call("readTemporalCochangeMeta", {})) as TemporalCochangeBuildMeta | null;
+  }
+
+  async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
+    return (await this.call("readTemporalCochangeGraph", {})) as TemporalCochangeGraph;
   }
 
   async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {

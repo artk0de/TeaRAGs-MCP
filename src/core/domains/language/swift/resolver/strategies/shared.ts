@@ -97,6 +97,16 @@ export function resolveSwiftBoundTypeMember(
 }
 
 /**
+ * The calling initializer of a `self.init(…)` delegation, which is never its
+ * target: an initializer delegating to ITSELF never terminates, so the
+ * typechecker picked another overload (bd tea-rags-mcp-y99pg.36). Undefined
+ * for every other call, and where the run did not record the caller.
+ */
+export function swiftSelfDelegationCaller(call: CallRef, ctx: CallContext): string | undefined {
+  return call.receiver === "self" && call.member === "init" ? ctx.callerSymbolId : undefined;
+}
+
+/**
  * Look up `<typeId>#<member>` then `<typeId>.<member>`, constrained to the
  * caller's OWN file — and, given the call, to an overload its argument labels
  * fit (bd tea-rags-mcp-y99pg.7), so a same-file declaration the call cannot
@@ -107,9 +117,12 @@ function lookupTypeMemberInCallerFile(
   member: string,
   ctx: CallContext,
   call?: CallRef,
+  excludeSymbolId?: string,
 ): SymbolResolutionTarget | null {
   for (const id of [`${typeId}#${member}`, `${typeId}.${member}`]) {
-    const hit = swiftMemberCandidates(ctx, id, call).find((def) => def.relPath === ctx.callerFile);
+    const hit = swiftMemberCandidates(ctx, id, call).find(
+      (def) => def.relPath === ctx.callerFile && def.symbolId !== excludeSymbolId,
+    );
     if (hit) return { targetRelPath: hit.relPath, targetSymbolId: hit.symbolId };
   }
   return null;
@@ -129,14 +142,19 @@ function lookupTypeMemberInCallerFile(
  * neither form is declared in the file; the caller then continues down the
  * chain to the extension-scope pass, which is where a Swift type split across
  * files is answered.
+ *
+ * `excludeSymbolId` names one declaration that is never the answer — the
+ * calling initializer, for a `self.init(…)` delegation (bd
+ * tea-rags-mcp-y99pg.36).
  */
 export function lookupSelfTypeMemberInFile(
   member: string,
   ctx: CallContext,
   call?: CallRef,
+  excludeSymbolId?: string,
 ): SymbolResolutionTarget | null {
   const selfType = swiftEnclosingTypeIds(ctx)[0];
-  return selfType === undefined ? null : lookupTypeMemberInCallerFile(selfType, member, ctx, call);
+  return selfType === undefined ? null : lookupTypeMemberInCallerFile(selfType, member, ctx, call, excludeSymbolId);
 }
 
 /**

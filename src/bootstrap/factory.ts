@@ -65,6 +65,7 @@ import {
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
   type CodegraphDeps,
   type CodegraphWorkerConfig,
+  type TemporalCochangeConfig,
 } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { setDebug } from "../core/infra/runtime.js";
@@ -802,6 +803,20 @@ export function wireCodegraph(
   // the executor's affinity routing — left undefined here (provider built
   // before any collection is pinned). The daemon socket is always set: the
   // worker connects to the SAME multi-client daemon that owns the RW lock.
+  // Temporal co-change build (bd tea-rags-mcp-x4rpp): reads the SAME history the
+  // git trajectory walks — its window, session rule, adapter and timeout — so the
+  // two share one persisted discovery snapshot instead of evicting each other's.
+  // Git history off ⇒ no build; the trajectory still registers, empty.
+  const { trajectoryGit } = zodConfig;
+  const temporal: TemporalCochangeConfig | undefined = trajectoryGit?.enabled
+    ? {
+        windowMonths: trajectoryGit.chunkMaxAgeMonths,
+        sessionGapMinutes: trajectoryGit.squashAwareSessions ? trajectoryGit.sessionGapMinutes : null,
+        vcsAdapter: zodConfig.vcs?.adapter ?? "git",
+        gitTimeoutMs: trajectoryGit.chunkTimeoutMs,
+      }
+    : undefined;
+
   const codegraphWorkerConfig: CodegraphWorkerConfig = {
     languageModulePath: LANGUAGE_MODULE_PATH,
     migrationsModulePath: DATABASE_MIGRATIONS_MODULE_URL,
@@ -811,6 +826,7 @@ export function wireCodegraph(
     dbMemoryLimit: codegraph.dbMemoryLimit,
     dbThreads: codegraph.dbThreads,
     ambiguousResolveMode: ambiguousMode,
+    ...(temporal ? { temporal } : {}),
   };
   const workerDescriptor: WorkerEnrichmentDescriptor = {
     providerModulePath: CODEGRAPH_PROVIDER_MODULE_PATH,
@@ -842,6 +858,7 @@ export function wireCodegraph(
     // instance at construction time.
     exclusion: { customPatterns: codegraph.customExcludePatterns ?? [] },
     workerDescriptor,
+    ...(temporal ? { temporal } : {}),
   };
   const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
 

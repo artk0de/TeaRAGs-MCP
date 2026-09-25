@@ -374,6 +374,15 @@ describe("seeded support versions", () => {
       // swift walker 54: bd tea-rags-mcp-y99pg.34 — the chain fold's hop cap
       // moves from three links to five, so an index built by walker 50 leaves a
       // four- or five-link receiver untyped.
+      // swift walker 61: bd tea-rags-mcp-y99pg.36 — an `@autoclosure` parameter
+      // no longer accepts a trailing closure, so an index built by walker 60
+      // lands `validate { … }` on `validate(contentType:)`.
+      // swift walker 62: bd tea-rags-mcp-y99pg.36 — `self.init(…)` never lands
+      // on the calling initializer, so an index built by walker 61 keeps an
+      // edge from `OperationQueue#init` to itself.
+      // swift walker 63: bd tea-rags-mcp-y99pg.36 — nested types' fields are
+      // published under their nesting path, so an index built by walker 62 lets
+      // the first same-named nested type type every namesake's properties.
       // typescript walker 16, javascript walker 7, python walker 14: bd
       // tea-rags-mcp-r8hme.2 records the export names every import takes (and,
       // for typescript, every re-export forwards) on the persisted file edge, so
@@ -394,6 +403,11 @@ describe("seeded support versions", () => {
       // `typeDeclarations` content, and an Objective-C dynamic-lookup call no
       // project class can implement leaves the denominator, so an index built
       // by an earlier walker still charges it as a miss.
+      // swift walker 64: bd tea-rags-mcp-y99pg.37 — a call's lone key-path
+      // argument stays in the value spelling, a `for` item over an untyped local
+      // is recorded as its sequence's element, and `typeDeclarations` names the
+      // methods returning their closure's result, so a walker-63 index cannot
+      // type `for request in mutableState.read(\.activeRequests)`.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],
@@ -403,7 +417,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 60],
+        ["swift", 64],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

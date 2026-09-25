@@ -17,7 +17,13 @@ export {
   resolveFacadeAdoptionThreshold,
   type FacadeAdoptionThresholdPolicy,
 } from "./leaking-abstraction.js";
-export { otsuSplit, type OtsuSplit } from "./otsu-split.js";
+export {
+  otsuSplit,
+  resolveMajorityFlooredOtsuThreshold,
+  type MajorityFlooredOtsuOptions,
+  type MajorityFlooredOtsuThreshold,
+  type OtsuSplit,
+} from "./otsu-split.js";
 export {
   excludeNonProductionFiles,
   NON_PRODUCTION_REASON,

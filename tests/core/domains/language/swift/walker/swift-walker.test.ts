@@ -692,6 +692,43 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     expect(extract(src).classFieldTypes?.Store).toEqual({ items: "Array" });
   });
 
+  /**
+   * bd tea-rags-mcp-y99pg.36 — Alamofire's Combine.swift nests a private
+   * `Inner` in each of three publishers, each holding a `request` of a
+   * different type. Keyed by the short name alone, the first `Inner` spoke for
+   * all three and `request.cancel()` in `DownloadResponsePublisher.Inner` went
+   * to `Request#cancel` through a `DataRequest`.
+   */
+  it("keys a nested type's fields by its nesting path, and drops a short-name field the namesakes disagree on", () => {
+    const src = [
+      "struct DataPublisher {",
+      "  final class Inner {",
+      "    let request: DataRequest",
+      "    let queue: DispatchQueue",
+      "  }",
+      "}",
+      "struct DownloadPublisher {",
+      "  final class Inner {",
+      "    let request: DownloadRequest",
+      "    let queue: DispatchQueue",
+      "    func cancel() {",
+      "      let r = request",
+      "      r.cancel()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extract(src);
+    expect(r.classFieldTypes?.["DataPublisher.Inner"]).toEqual({ request: "DataRequest", queue: "DispatchQueue" });
+    expect(r.classFieldTypes?.["DownloadPublisher.Inner"]).toEqual({
+      request: "DownloadRequest",
+      queue: "DispatchQueue",
+    });
+    expect(r.classFieldTypes?.Inner).toEqual({ queue: "DispatchQueue" });
+    expect(typeAt(src, "r", 13)).toBe("DownloadRequest");
+  });
+
   it("leaves classFieldTypes absent when no type declares a typed stored property", () => {
     const src = ["class Store {", "  func go() {}", "}", ""].join("\n");
     expect(extract(src).classFieldTypes).toBeUndefined();
@@ -1642,6 +1679,29 @@ describe("swift walker — a closure spelled through a typealias", () => {
     expect(configure.acceptsBlock).toBe(true);
     expect(count.acceptsBlock).toBe(false);
   });
+
+  /**
+   * bd tea-rags-mcp-y99pg.36 — `@autoclosure` wraps the argument EXPRESSION in
+   * a closure; a closure literal written there is the value, not the body. So
+   * `validate { … }` cannot land on Alamofire's `validate(contentType:
+   * @escaping @Sendable @autoclosure () -> S)`, and the label stays required.
+   */
+  it("does not let a trailing closure land on an `@autoclosure` parameter", () => {
+    const src = [
+      "func validate<S: Sequence>(contentType types: @escaping @Sendable @autoclosure () -> S) -> Self { self }",
+      "func check(_ condition: @autoclosure () -> Bool) {}",
+      "",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "validate", scope: [], startLine: 1, endLine: 1 },
+      { symbolId: "check", scope: [], startLine: 2, endLine: 2 },
+    ];
+    const [validate, check] = extract(src, chunks).chunks;
+    expect(validate.kwargs).toEqual({ required: ["contentType"], optional: [], hasSplat: false });
+    expect(validate.acceptsBlock).toBe(false);
+    expect(check.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(check.acceptsBlock).toBe(false);
+  });
 });
 
 describe("swift walker — parameter modifiers and metatypes (bd tea-rags-mcp-y99pg.12)", () => {
@@ -2268,6 +2328,68 @@ describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99
         expect.objectContaining({ receiver: "obj", writtenReceiver: "obj?", member: "maybe" }),
       );
       expect(calls.find((c) => c.member === "run")?.writtenReceiver).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * `let requests = mutableState.read(\.activeRequests)` then
+ * `for request in requests` (Alamofire `Session`, bd tea-rags-mcp-y99pg.37):
+ * the key path is the one argument a generic method's return depends on, so
+ * the spelling keeps it; the loop item is recorded as an ELEMENT of the
+ * spelled sequence, and the generic method says its return is its closure's.
+ */
+describe("swift walker — key-path arguments and for-in over a spelled sequence", () => {
+  const src = [
+    "final class Session {",
+    "  func go() {",
+    "    let requests = mutableState.read(\\.activeRequests)",
+    "    for request in requests where !request.isFinished {",
+    "      request.finish()",
+    "    }",
+    "    let other = mutableState.read(label: \\.activeRequests)",
+    "    let all = mutableState.read(\\.self)",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("spells a lone unlabeled key-path argument and strips any other", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const bindings = out.chunks[0].callResultBindings ?? {};
+      expect(bindings.requests).toEqual([{ line: 3, callee: "mutableState.read(\\.activeRequests)" }]);
+      expect(bindings.other).toEqual([{ line: 7, callee: "mutableState.read" }]);
+      expect(bindings.all).toEqual([{ line: 8, callee: "mutableState.read(\\.self)" }]);
+    }
+  });
+
+  it("records a for-in item over an untyped local as an element of its spelling", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      expect(out.chunks[0].callResultBindings?.request).toEqual([
+        { line: 4, callee: "requests", sequenceElement: true, scopeEndLine: 6 },
+      ]);
+    }
+  });
+
+  it("records no element spelling when the walker already types the item", () => {
+    const typed = ["func go(xs: [Thing]) {", "  for x in xs {", "    x.run()", "  }", "}", ""].join("\n");
+    expect(extract(typed).chunks[0].callResultBindings?.x).toBeUndefined();
+  });
+
+  it("publishes the generic methods whose return is their closure's result", () => {
+    const decl = [
+      "final class Protected<Value> {",
+      "  func read<U>(_ closure: (Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func write<U>(_ closure: (inout Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func write(_ value: Value) {}",
+      "  func map<U>(_ closure: (Value) -> U) -> [U] { [] }",
+      "  func around<T>(_ closure: () throws -> T) rethrows -> T { fatalError() }",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(decl), extractMaterialized(decl)]) {
+      // `write` has an overload that is not one; `map` wraps U; `around`'s closure takes no value.
+      expect(out.typeDeclarations?.find((f) => f.typeId === "Protected")?.closureResultMembers).toEqual(["read"]);
     }
   });
 });

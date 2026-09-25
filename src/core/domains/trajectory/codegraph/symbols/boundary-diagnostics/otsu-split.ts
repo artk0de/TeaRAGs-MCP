@@ -1,11 +1,14 @@
 /**
  * Otsu's 1-D split: the cut that best separates a sample into two classes.
  *
- * Pure arithmetic with one consumer today (the leaking-abstraction detector's
- * adaptive adoption threshold, bd tea-rags-mcp-jetrd). It lives beside that
- * consumer rather than in `core/infra/`, whose criterion is "needed by at
- * least two layers" (`.claude/rules/domain-boundaries.md`); it has no import
- * of its own, so moving it there when a second layer needs it is a file move.
+ * Pure arithmetic with two consumers, both boundary detectors of the codegraph
+ * trajectory: the leaking-abstraction detector's adaptive adoption threshold
+ * (bd tea-rags-mcp-jetrd) and the temporal silent-coupling detector's
+ * strength threshold (bd tea-rags-mcp-b4dcz), which reaches it through this
+ * directory's barrel. It stays in the codegraph domain rather than
+ * `core/infra/`, whose criterion is "needed by at least two layers"
+ * (`.claude/rules/domain-boundaries.md`); it has no import of its own, so
+ * moving it there when a second layer needs it is a file move.
  */
 
 /** The best two-class cut of a sample. */
@@ -60,5 +63,53 @@ export function otsuSplit(values: readonly number[]): OtsuSplit | null {
     lowerValue,
     upperValue,
     separability: between / totalVariance,
+  };
+}
+
+/**
+ * A threshold drawn from the population it judges, never below a fixed floor:
+ * Otsu's cut when the population is large and varied enough to trust one, the
+ * floor alone otherwise, and under either method a value at or below the floor
+ * is never admitted.
+ */
+export interface MajorityFlooredOtsuThreshold {
+  method: "otsu" | "majority";
+  /** The Otsu cut when `method` is `otsu`; the floor otherwise. */
+  threshold: number;
+  /** η of the Otsu cut; absent under `majority`. */
+  separability?: number;
+  /** Whether a value clears the threshold — `>= threshold` AND strictly `> majority`. */
+  admits: (value: number) => boolean;
+}
+
+export interface MajorityFlooredOtsuOptions {
+  /** The floor; a value must be STRICTLY above it. */
+  majority: number;
+  /** Smallest population Otsu's split is trusted on. */
+  minPopulation: number;
+}
+
+/**
+ * Resolve the threshold over `population`: {@link otsuSplit} when it holds at
+ * least `minPopulation` values and two distinct ones, the strict `majority`
+ * otherwise. The floor holds under both: Otsu can only raise the bar, because
+ * a population with its gap below the floor would otherwise admit values the
+ * floor exists to refuse.
+ */
+export function resolveMajorityFlooredOtsuThreshold(
+  population: readonly number[],
+  options: MajorityFlooredOtsuOptions,
+): MajorityFlooredOtsuThreshold {
+  const { majority, minPopulation } = options;
+  const aboveMajority = (value: number) => value > majority;
+  const split = population.length >= minPopulation ? otsuSplit(population) : null;
+  if (split === null) {
+    return { method: "majority", threshold: majority, admits: aboveMajority };
+  }
+  return {
+    method: "otsu",
+    threshold: split.threshold,
+    separability: split.separability,
+    admits: (value) => value >= split.threshold && aboveMajority(value),
   };
 }

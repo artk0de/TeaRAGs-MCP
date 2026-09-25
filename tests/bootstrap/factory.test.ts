@@ -409,4 +409,30 @@ describe("wireCodegraph", () => {
     expect(descriptor?.languageAffinity?.partitionByExtension[".tsx"]).toBe("typescript");
     expect(descriptor?.languageAffinity?.partitionByExtension[".rb"]).toBe("ruby");
   });
+
+  // bd tea-rags-mcp-x4rpp: the temporal co-change build reads the SAME history
+  // window, session rule, adapter and timeout as the git trajectory, on both the
+  // main-thread provider and the pinned worker — and nothing when git is off.
+  it("derives the co-change build config from the git trajectory's settings", () => {
+    const withGit = {
+      ...zodConfigWithCodegraph(),
+      trajectoryGit: {
+        enabled: true,
+        chunkMaxAgeMonths: 6,
+        chunkTimeoutMs: 120_000,
+        squashAwareSessions: true,
+        sessionGapMinutes: 45,
+      },
+      vcs: { adapter: "git" },
+    } as unknown as ReturnType<typeof getZodConfig>;
+    const expected = { windowMonths: 6, sessionGapMinutes: 45, vcsAdapter: "git", gitTimeoutMs: 120_000 };
+
+    const ctx = wireCodegraph(makeConfig(), withGit);
+
+    expect(ctx?.deps.temporal).toEqual(expected);
+    expect((ctx?.deps.workerDescriptor?.serializableConfig as { temporal?: unknown }).temporal).toEqual(expected);
+
+    const gitOff = { ...withGit, trajectoryGit: { ...withGit.trajectoryGit, enabled: false } } as typeof withGit;
+    expect(wireCodegraph(makeConfig(), gitOff)?.deps.temporal).toBeUndefined();
+  });
 });

@@ -6,7 +6,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ArchitectureReportOps } from "../../../../../src/core/api/internal/ops/architecture-report-ops.js";
-import type { FileDependencyGraph, NonPublicMemberEdge } from "../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  FileDependencyGraph,
+  NonPublicMemberEdge,
+  TemporalCochangeEdgeWithLinkage,
+  TemporalCochangeGraph,
+} from "../../../../../src/core/contracts/types/codegraph.js";
 
 function file(relPath: string) {
   return { relPath, language: "typescript", symbolCount: 1 };
@@ -47,10 +52,15 @@ function graph(): FileDependencyGraph {
   return { files, edges };
 }
 
-function graphDb(g: FileDependencyGraph = graph(), nonPublicEdges: NonPublicMemberEdge[] = []) {
+function graphDb(
+  g: FileDependencyGraph = graph(),
+  nonPublicEdges: NonPublicMemberEdge[] = [],
+  cochange: TemporalCochangeGraph = { meta: null, edges: [] },
+) {
   return {
     readFileDependencyGraph: vi.fn().mockResolvedValue(g),
     readNonPublicMemberEdges: vi.fn().mockResolvedValue(nonPublicEdges),
+    readTemporalCochangeGraph: vi.fn().mockResolvedValue(cochange),
   };
 }
 
@@ -377,7 +387,138 @@ describe("ArchitectureReportOps#build — conventionPrivacy (bd tea-rags-mcp-r8h
   });
 });
 
+/**
+ * Silent coupling (bd tea-rags-mcp-b4dcz): `lib/hub.ts` and `app/s1.ts`
+ * co-change 10 times out of 10 with no edge between them; `lib/hub.ts` and
+ * `web/s2.ts` just as reliably, but an import joins them; `docs/guide.md` and
+ * `app/s1.ts` are documentation-coupled and never judged.
+ */
+/**
+ * The walked files the silent-coupling pairs below name. The component SDP
+ * fixture `graph()` (bd tea-rags-mcp-r8hme.7) no longer contains them, and a
+ * co-change endpoint the structural graph never walked is excluded, so these
+ * tests keep the graph they were written against.
+ */
+function silentCouplingGraph(): FileDependencyGraph {
+  const files = [file("lib/hub.ts"), file("app/s1.ts"), file("web/s2.ts"), file("app/private.ts")];
+  const edges: FileDependencyGraph["edges"] = [];
+  const add = (sourceRelPath: string, targetRelPath: string, callWeight = 1) => {
+    edges.push({ sourceRelPath, targetRelPath, callWeight });
+  };
+  for (const s of ["app/s1.ts", "web/s2.ts"]) {
+    add(s, "lib/hub.ts", 2);
+    for (let i = 1; i <= 5; i++) {
+      files.push(file(`${s}.in${i}.ts`));
+      add(`${s}.in${i}.ts`, s);
+    }
+  }
+  add("lib/hub.ts", "app/s1.ts");
+  add("app/s1.ts", "app/private.ts");
+  for (let i = 1; i <= 4; i++) {
+    files.push(file(`vendor/h${i}.ts`), file(`vendor/p${i}.ts`));
+    add("lib/hub.ts", `vendor/h${i}.ts`);
+    add("app/private.ts", `vendor/p${i}.ts`);
+  }
+  return { files, edges };
+}
+
+function cochangeGraph(): TemporalCochangeGraph {
+  const pair = (relPathA: string, relPathB: string, structurallyLinked: boolean): TemporalCochangeEdgeWithLinkage => ({
+    relPathA,
+    relPathB,
+    support: 10,
+    confidenceAB: 1,
+    confidenceBA: 1,
+    lift: 8,
+    lastCoChangeAt: 1_700_000_000,
+    sampleCommits: ["c2", "c1"],
+    structurallyLinked,
+  });
+  return {
+    meta: {
+      head: "abc123",
+      fingerprint: "fp",
+      builtAt: 1_700_000_100,
+      windowSince: 1_690_000_000,
+      commitCount: 120,
+      bundleCount: 100,
+      admittedBundleCount: 96,
+      maxFilesPerBundle: 18,
+      minSupport: 2,
+      maxPartnersPerFile: 20,
+      sessionGapMinutes: 30,
+    },
+    edges: [
+      pair("app/s1.ts", "lib/hub.ts", false),
+      pair("lib/hub.ts", "web/s2.ts", true),
+      pair("app/s1.ts", "docs/guide.md", false),
+    ],
+  };
+}
+
+describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)", () => {
+  it("reports a strong unlinked co-change pair after the other detectors, with its evidence", async () => {
+    const db = graphDb(silentCouplingGraph(), [], cochangeGraph());
+    const report = await new ArchitectureReportOps().build(db, {});
+
+    expect(db.readTemporalCochangeGraph).toHaveBeenCalledTimes(1);
+    const silent = report.violations.filter((v) => v.detector === "silentCoupling");
+    expect(silent).toEqual([
+      {
+        detector: "silentCoupling",
+        sourceRelPath: "app/s1.ts",
+        targetRelPath: "lib/hub.ts",
+        evidence: {
+          support: 10,
+          confidenceAB: 1,
+          confidenceBA: 1,
+          lift: 8,
+          strength: expect.closeTo(1 / (1 + 1.96 ** 2 / 10), 12),
+          lastCoChangeAt: 1_700_000_000,
+          sampleCommits: ["c2", "c1"],
+          structuralVisibility: "both-walked",
+          directoryRelation: "disjoint",
+        },
+      },
+    ]);
+    expect(report.violations.at(-1)?.detector).toBe("silentCoupling");
+  });
+
+  it("summarises the build, the adaptive cut and the exclusions, documentation included", async () => {
+    const summary = (await new ArchitectureReportOps().build(graphDb(silentCouplingGraph(), [], cochangeGraph()), {}))
+      .summary.silentCoupling;
+
+    expect(summary).toMatchObject({
+      built: true,
+      build: { head: "abc123", commitCount: 120, sessionGapMinutes: 30 },
+      pairCount: 3,
+      candidateCount: 2,
+      strongCount: 2,
+      strongLinkedCount: 1,
+      violationCount: 1,
+      strengthThreshold: 0.5,
+      strengthThresholdMethod: "majority",
+      excluded: { documentationEndpoints: 1 },
+    });
+    expect(summary.exclusionReasons.noSymbolEndpoints).toMatch(/no-symbol endpoint/);
+  });
+
+  it("says the co-change graph is not built rather than reporting a clean history", async () => {
+    const summary = (await new ArchitectureReportOps().build(graphDb(), {})).summary.silentCoupling;
+
+    expect(summary.built).toBe(false);
+    expect(summary.pairCount).toBe(0);
+  });
+});
+
 describe("ArchitectureReportOps.empty", () => {
+  it("reports an unbuilt silent-coupling summary too", () => {
+    const summary = ArchitectureReportOps.empty({}).summary.silentCoupling;
+
+    expect(summary.built).toBe(false);
+    expect(summary.violationCount).toBe(0);
+  });
+
   it("reports an empty leaking-abstraction summary too", () => {
     const summary = ArchitectureReportOps.empty({}).summary.leakingAbstraction;
 

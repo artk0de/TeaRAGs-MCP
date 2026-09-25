@@ -33,6 +33,7 @@ import { SQL_027_CG_AMBIGUOUS_FANOUT_SOURCE_PATH_PK } from "./027-cg-ambiguous-f
 import { SQL_028_CG_DERIVED_FILE_SCOPED_KEY } from "./028-cg-derived-file-scoped-key.js";
 import { SQL_029_CG_DERIVED_STALE } from "./029-cg-derived-stale.js";
 import { SQL_030_CG_FILE_EDGE_EXPORT_NAMES } from "./030-cg-file-edge-export-names.js";
+import { SQL_031_CG_TEMPORAL_INIT } from "./031-cg-temporal-init.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -70,4 +71,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "028-cg-derived-file-scoped-key.sql", sql: SQL_028_CG_DERIVED_FILE_SCOPED_KEY },
   { filename: "029-cg-derived-stale.sql", sql: SQL_029_CG_DERIVED_STALE },
   { filename: "030-cg-file-edge-export-names.sql", sql: SQL_030_CG_FILE_EDGE_EXPORT_NAMES },
+  { filename: "031-cg-temporal-init.sql", sql: SQL_031_CG_TEMPORAL_INIT },
 ];
