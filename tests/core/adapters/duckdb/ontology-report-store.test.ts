@@ -51,6 +51,13 @@ function query(partial: Partial<OntologyReportQuery> = {}): OntologyReportQuery 
   };
 }
 
+/** `result`'s five types in the fixture, as the generic-name pool carries them for the ops layer to judge. */
+const RESULT_TYPES = ["TypeA", "TypeB", "TypeC", "TypeD", "TypeE"].map((typeName) => ({
+  typeName,
+  n: 2,
+  relPath: "app/services/generic.rb",
+}));
+
 function rows(count: number, row: Omit<IdentifierRow, "line">, firstLine = 1): IdentifierRow[] {
   return Array.from({ length: count }, (_, i) => ({ ...row, line: firstLine + i }));
 }
@@ -144,7 +151,7 @@ describe("DuckDbGraphClient#readOntologyReport", () => {
   it("reports whole-table totals and the generic names it filtered", async () => {
     const report = await db.readOntologyReport(query());
     expect(report.totals).toEqual({ identifierRows: 56, symbolRows: 3 });
-    expect(report.genericNames).toEqual([{ name: "result", typeCount: 5, n: 10 }]);
+    expect(report.genericNames).toEqual([{ name: "result", typeCount: 5, n: 10, types: RESULT_TYPES }]);
     expect(report.genericNameCount).toBe(1);
     // 7 tax + 23 billing + 3 web; generic, String, T and the untyped local are not evidence.
     expect(report.evidenceRows).toBe(33);
@@ -243,7 +250,7 @@ describe("DuckDbGraphClient#readOntologyReport", () => {
     expect(inside.evidenceRows).toBe(2);
 
     const genericScope = await db.readOntologyReport(query({ pathPrefixes: ["app/services/generic"] }));
-    expect(genericScope.genericNames).toEqual([{ name: "result", typeCount: 5, n: 10 }]);
+    expect(genericScope.genericNames).toEqual([{ name: "result", typeCount: 5, n: 10, types: RESULT_TYPES }]);
     expect(genericScope.evidenceRows).toBe(0);
 
     const tsOnly = await db.readOntologyReport(query({ extensions: [".ts"] }));
@@ -368,6 +375,82 @@ describe("DuckDbGraphClient#readOntologyReport", () => {
     ]);
     const { homonyms } = await db.readOntologyReport(query({ sections: ["homonyms"], limit: 1 }));
     expect(homonyms?.map((h) => h.name).sort()).toEqual(["entry", "record"]);
+  });
+
+  it("reads every generic candidate uncapped, each with its types, for the ops layer to judge", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "app/forms/forms.rb",
+        rows: ["ActionForm", "ClientForm", "InvoiceForm", "TaskForm", "UserForm", "Crm::ContactForm"].flatMap((t, i) =>
+          rows(i === 0 ? 4 : 3, typed("form", t), 10 * (i + 1)),
+        ),
+      },
+    ]);
+    const report = await db.readOntologyReport(query({ limit: 1 }));
+    expect(report.genericNames.map((g) => g.name)).toEqual(["form", "result"]);
+    expect(report.genericNameCount).toBe(2);
+    const [form] = report.genericNames;
+    expect(form).toMatchObject({ name: "form", typeCount: 6, n: 19 });
+    expect(form.types[0]).toEqual({ typeName: "ActionForm", n: 4, relPath: "app/forms/forms.rb" });
+    expect(form.types.map((t) => t.typeName)).toEqual([
+      "ActionForm",
+      "ClientForm",
+      "Crm::ContactForm",
+      "InvoiceForm",
+      "TaskForm",
+      "UserForm",
+    ]);
+  });
+
+  it("collisions: a SCREAMING constant is no type; a class, and an acronym class with members, still are", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "app/services/pricing.rb",
+        rows: [
+          ...rows(1, typed("group", "GettingPaid::PricingGroup"), 1),
+          ...rows(1, typed("status", "GettingPaid::PricingGroup"), 2),
+          ...rows(1, typed("connection", "Net::Socket"), 3),
+          ...rows(1, typed("uri", "Web::Address"), 4),
+          ...rows(1, typed("tag", "Label"), 5),
+        ],
+      },
+    ]);
+    const sym = (symbolId: string, relPath: string) => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: symbolId.split(/::|#|\./).pop() ?? symbolId,
+      relPath,
+      scope: [],
+    });
+    await db.upsertSymbols("app/models/pricing_group.rb", [
+      sym("GettingPaid::PricingGroup", "app/models/pricing_group.rb"),
+      sym("GettingPaid::PricingGroup::GROUP", "app/models/pricing_group.rb"),
+      sym("GettingPaid::PricingGroup::STATUS", "app/models/pricing_group.rb"),
+    ]);
+    await db.upsertSymbols("app/models/connection.rb", [sym("Connection", "app/models/connection.rb")]);
+    // Acronym class known by its member.
+    await db.upsertSymbols("lib/uri.rb", [sym("URI", "lib/uri.rb"), sym("URI.parse", "lib/uri.rb")]);
+    // Acronym class with no member, known by its inheritance edge.
+    await db.upsertSymbols("lib/tag.rb", [sym("TAG", "lib/tag.rb")]);
+    await db.run(
+      `INSERT INTO cg_symbols_inheritance (source_fq_name, source_rel_path, ancestor_fq_name, kind, ordinal)
+       VALUES ('TAG', 'lib/tag.rb', 'Base', 'superclass', 0)`,
+    );
+    // A class `Status` beside the constant `STATUS`: the collision names the class.
+    await db.upsertSymbols("app/models/status.rb", [sym("Status", "app/models/status.rb")]);
+
+    const { collisions } = await db.readOntologyReport(query({ sections: ["collisions"] }));
+    const namesOtherType = (collisions ?? [])
+      .filter((c) => c.rule === "namesOtherType")
+      .map((c) => [c.name, c.symbol])
+      .sort();
+    expect(namesOtherType).toEqual([
+      ["connection", "Connection"],
+      ["invoice", "Invoice"],
+      ["status", "Status"],
+      ["tag", "TAG"],
+      ["uri", "URI"],
+    ]);
   });
 
   it("an empty table yields empty sections and zero counts", async () => {

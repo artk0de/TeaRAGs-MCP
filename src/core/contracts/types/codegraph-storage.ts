@@ -117,11 +117,32 @@ export interface IdentifierTypeScopeQuery {
 }
 
 /**
+ * Opt-in on an identifier aggregate: split every group by its file language
+ * (`cg_symbols_files.language`) and report it per row as `language`. A reader
+ * that cases each row in its own language (a mixed Ruby + TypeScript project)
+ * asks for it; without it rows carry no `language` key.
+ */
+export interface IdentifierLanguageGroupingQuery {
+  groupByLanguage?: boolean;
+}
+
+/** {@link IdentifierTypeScopeQuery} for the type aggregate, which may group by file language. */
+export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, IdentifierLanguageGroupingQuery {}
+
+/**
+ * The file language of an aggregate row read with `groupByLanguage`: null for a
+ * file with no `cg_symbols_files` row; absent when the read did not group.
+ */
+export interface IdentifierLanguageGroupedRow {
+  language?: string | null;
+}
+
+/**
  * Callees asked for by `GraphDbClient.aggregateIdentifiersByCallee`. A callee
  * without `receiver` matches the member under ANY receiver, receiverless
  * included.
  */
-export interface IdentifierCalleeScopeQuery {
+export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery {
   callees: readonly IdentifierBoundCallee[];
   pathPrefixes?: readonly string[];
 }
@@ -131,7 +152,7 @@ export interface IdentifierCalleeScopeQuery {
  * is `call-return` for a row the query typed through its bound call's single
  * exact target. `exampleOwner` is the smallest owner symbolId of the group.
  */
-export interface IdentifierTypeAggregateRow {
+export interface IdentifierTypeAggregateRow extends IdentifierLanguageGroupedRow {
   typeName: string;
   kind: IdentifierDeclarationKind;
   name: string;
@@ -146,7 +167,7 @@ export interface IdentifierTypeAggregateRow {
  * type (a `finder` row carries its receiver constant) and is absent for untyped
  * rows — the callee path answers for values the type path cannot name.
  */
-export interface IdentifierCalleeAggregateRow {
+export interface IdentifierCalleeAggregateRow extends IdentifierLanguageGroupedRow {
   member: string;
   receiver: string | null;
   kind: IdentifierDeclarationKind;
@@ -176,7 +197,7 @@ export interface IdentifierScopeQuery {
 }
 
 /** Names asked for by `GraphDbClient.aggregateIdentifiersByName`, scoped like {@link IdentifierScopeQuery}. */
-export interface IdentifierNameScopeQuery extends IdentifierScopeQuery {
+export interface IdentifierNameScopeQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
   names: readonly string[];
 }
 
@@ -185,7 +206,7 @@ export interface IdentifierNameScopeQuery extends IdentifierScopeQuery {
  * null for rows untyped even after the call-return join — the rows the naming
  * lexicon's `name-inferred` stage may type.
  */
-export interface IdentifierNameKindTypeRow {
+export interface IdentifierNameKindTypeRow extends IdentifierLanguageGroupedRow {
   name: string;
   kind: IdentifierDeclarationKind;
   typeName: string | null;
@@ -209,7 +230,7 @@ export interface IdentifierLanguageCountRow {
 }
 
 /** A bounded sample of the scope's evidence-carrying rows (`GraphDbClient.sampleIdentifierShapes`). */
-export interface IdentifierShapeSampleQuery extends IdentifierScopeQuery {
+export interface IdentifierShapeSampleQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
   /** Reservoir size in rows; a scope with fewer rows is read whole. */
   limit: number;
 }
@@ -219,7 +240,7 @@ export interface IdentifierShapeSampleQuery extends IdentifierScopeQuery {
  * sampled row carries a persisted type or a bound callee — a row with neither
  * can only classify as a role name, so it is not evidence of a convention.
  */
-export interface IdentifierShapeSampleRow {
+export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
   kind: IdentifierDeclarationKind;
   name: string;
   typeName: string | null;
@@ -350,11 +371,25 @@ export interface OntologyCollisionRow {
   evidence: OntologyEvidenceCounts;
 }
 
-/** A name the generic filter removed from every section. */
+/** One type a generic-name candidate is bound to; `relPath` is an example file, for the language casing. */
+export interface OntologyGenericNameTypeRow {
+  typeName: string;
+  n: number;
+  relPath: string;
+}
+
+/**
+ * A name the generic filter removed from every section — generic by type count
+ * alone. A candidate: the ops layer drops the types the name spells (`form`
+ * over `ActionForm`, `ClientForm`) and keeps it only when the unrelated types
+ * still make it generic.
+ */
 export interface OntologyGenericNameRow {
   name: string;
   typeCount: number;
   n: number;
+  /** Every type the name is bound to, largest first. */
+  types: OntologyGenericNameTypeRow[];
 }
 
 /** What {@link GraphDbClient.readOntologyReport} read; a section is present only when requested. */
@@ -363,8 +398,9 @@ export interface OntologyReportRows {
   totals: { identifierRows: number; symbolRows: number };
   /** Concept-typed, non-generic rows of the scope — the evidence every section draws from. */
   evidenceRows: number;
+  /** Names the generic filter removed — `genericNames.length`. */
   genericNameCount: number;
-  /** The most frequent generic names, capped at `limit`. */
+  /** Every name the generic filter removed, most frequent first, uncapped: the caller judges and caps them. */
   genericNames: OntologyGenericNameRow[];
   synonyms?: OntologyTypeGroupRow[];
   /** Candidate names (up to `groupPool`, every qualifying type); the caller judges and caps them. */
@@ -812,7 +848,7 @@ export interface GraphDbClient {
    * call is its callee's `return` type when the call has exactly one `exact`
    * edge — reported as `typeSource: "call-return"`. Empty `types` reads nothing.
    */
-  aggregateIdentifiersByType: (q: IdentifierTypeScopeQuery) => Promise<IdentifierTypeAggregateRow[]>;
+  aggregateIdentifiersByType: (q: IdentifierTypeAggregateQuery) => Promise<IdentifierTypeAggregateRow[]>;
 
   /**
    * Rows bound to one of `q.callees`, grouped by (member, receiver, kind, name)

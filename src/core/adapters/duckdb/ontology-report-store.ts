@@ -23,7 +23,10 @@
  *     derived, so `result` / `data` / `item` drop out without a hardcoded list.
  *     Judged over the same scoped rows as every section: the summary reports
  *     the names generic IN the scope, and a name generic elsewhere but bound to
- *     one type here is evidence here;
+ *     one type here is evidence here. Generic by type count alone: the summary
+ *     hands each name over with its types, and the ops layer — which owns the
+ *     naming-shape classifier — drops the types the name spells (a type family's
+ *     role word, `form` over `*Form`) before it reports the name as generic;
  *   - `evidence` — `concept_all` with the generic names removed.
  *
  * `name-inferred` types are never evidence: they are a query-time statistic of
@@ -69,6 +72,17 @@ const EXTENSION_SQL = `lower(regexp_extract(rel_path, '\\.[^./]+$'))`;
 const BARE_NAME_SQL = `regexp_replace(name, '^(@@|@|\\$)', '')`;
 /** A single `_` then a letter: the unused-binding marker (`_ctx`); a dunder (`__init__`) does not match. */
 const UNUSED_MARKER_SQL = `regexp_matches(name, '^_[A-Za-z]')`;
+/**
+ * A short name in capitals, digits and `_` only, with at least two letters:
+ * `GROUP`, `MAX_SIZE`, and equally the acronym class `URI`. `cg_symbols`
+ * records no symbol kind, so spelling alone cannot tell a value constant from
+ * an acronym type — {@link DuckDbOntologyReportStore#readCollisions} settles it
+ * structurally. The SCREAMING_SNAKE rule of the identifier-row builder
+ * (`isValueConstantName`, trajectory codegraph) needs an underscore and so
+ * misses the single-word constant; it is not importable here either.
+ */
+const ALL_CAPS_SQL = (column: string) =>
+  `(regexp_full_match(${column}, '[A-Z0-9_]+') AND length(regexp_replace(${column}, '[^A-Z]', '', 'g')) >= 2)`;
 /** Deterministic example-row order: first file, first line, first owner. */
 const EXAMPLE_KEY_SQL = `rel_path || ':' || lpad(CAST(line AS VARCHAR), 10, '0') || ':' || owner_symbol_id`;
 const EXAMPLE_COLUMNS_SQL = `arg_min(rel_path, ${EXAMPLE_KEY_SQL}) AS ex_path,
@@ -233,18 +247,36 @@ export class DuckDbOntologyReportStore {
   ): Promise<Pick<OntologyReportRows, "evidenceRows" | "genericNameCount" | "genericNames">> {
     const base = ontologyBaseCte(q);
     const [row] = await this.session.queryAll<Row>(
-      `${base.sql}
+      `${base.sql},
+       generic_types AS (
+         SELECT name, type_name, count(*) AS n, arg_min(rel_path, ${EXAMPLE_KEY_SQL}) AS ex_path
+           FROM concept_all
+          WHERE name IN (SELECT name FROM generic)
+          GROUP BY name, type_name
+       ),
+       generic_pool AS (
+         SELECT g.name, g.type_count, g.n,
+                list({'typeName': t.type_name, 'n': CAST(t.n AS INTEGER), 'relPath': t.ex_path}
+                     ORDER BY t.n DESC, t.type_name) AS types
+           FROM generic g JOIN generic_types t USING (name)
+          GROUP BY g.name, g.type_count, g.n
+       )
        SELECT (SELECT count(*) FROM evidence) AS evidence_rows,
               (SELECT count(*) FROM generic) AS generic_count,
-              (SELECT list({'name': name, 'typeCount': CAST(type_count AS INTEGER), 'n': CAST(n AS INTEGER)}
-                           ORDER BY n DESC, name)
-                 FROM (SELECT * FROM generic ORDER BY n DESC, name LIMIT ${int(q.limit)})) AS generic_names`,
+              (SELECT list({'name': name, 'typeCount': CAST(type_count AS INTEGER), 'n': CAST(n AS INTEGER),
+                            'types': types} ORDER BY n DESC, name)
+                 FROM generic_pool) AS generic_names`,
       base.params,
     );
     const genericNames: OntologyGenericNameRow[] = ((row?.generic_names as Row[] | null) ?? []).map((g) => ({
       name: g.name as string,
       typeCount: count(g.typeCount),
       n: count(g.n),
+      types: ((g.types as Row[] | null) ?? []).map((t) => ({
+        typeName: t.typeName as string,
+        n: count(t.n),
+        relPath: t.relPath as string,
+      })),
     }));
     return {
       evidenceRows: count(row?.evidence_rows),
@@ -370,7 +402,10 @@ export class DuckDbOntologyReportStore {
    *     dropped and case folded, equals a type-like symbol short name
    *     (capitalised, not a method id) that is NOT its own type's last segment
    *     and not an ancestor or descendant of it (`cg_symbols_inheritance`, by
-   *     last segment): a `Payment` called `invoice` while class `Invoice` exists;
+   *     last segment): a `Payment` called `invoice` while class `Invoice` exists.
+   *     An all-caps short name (`GROUP`) is a value constant, not a type, unless
+   *     the graph shows it is one — it owns a member symbol (`URI.parse`) or
+   *     takes part in an inheritance edge — since `cg_symbols` records no kind;
    *   - `shadowsMethod` — a local named like an instance method of its owner's
    *     class (`Report#render` declaring `title` beside `Report#title`); typed
    *     or not, since the collision is with the name, not the value.
@@ -382,11 +417,18 @@ export class DuckDbOntologyReportStore {
     const lastSegment = (column: string) => `regexp_extract(${column}, '([^:.#]+)$', 1)`;
     const rows = await this.session.queryAll<Row>(
       `${base.sql},
+       symbol_owners AS (
+         SELECT DISTINCT regexp_extract(symbol_id, '^(.+)(#|\\.|::)[^#.:]+$', 1) AS owner_id FROM cg_symbols
+       ),
        type_symbols AS (
-         SELECT lower(short_name) AS key, min(short_name) AS short_name
-           FROM cg_symbols
-          WHERE regexp_matches(short_name, '^[A-Z]') AND NOT contains(symbol_id, '#')
-          GROUP BY lower(short_name)
+         SELECT lower(s.short_name) AS key, min(s.short_name) AS short_name
+           FROM cg_symbols s
+          WHERE regexp_matches(s.short_name, '^[A-Z]') AND NOT contains(s.symbol_id, '#')
+            AND NOT (${ALL_CAPS_SQL("s.short_name")}
+                     AND s.symbol_id NOT IN (SELECT owner_id FROM symbol_owners)
+                     AND s.fq_name NOT IN (SELECT source_fq_name FROM cg_symbols_inheritance)
+                     AND s.fq_name NOT IN (SELECT ancestor_fq_name FROM cg_symbols_inheritance))
+          GROUP BY lower(s.short_name)
        ),
        names_other_type AS (
          SELECT 'namesOtherType' AS rule, e.name, ts.short_name AS symbol, e.type_name,

@@ -6,6 +6,7 @@ import {
   isNonConceptType,
   isWeakerNamingShape,
   shapeDistribution,
+  spellsTypeName,
 } from "../../../../../src/core/domains/explore/naming-lexicon/shapes.js";
 
 const TYPE = "TaxPreparation::TaxAutomationDocument";
@@ -224,6 +225,17 @@ describe("shapeDistribution", () => {
       { shape: "FREE", share: 0.25 },
     ]);
   });
+
+  it("a row's own casing overrides the context (a row from another language's file)", () => {
+    const d = shapeDistribution(
+      [
+        { name: "taxAutomationDocument", n: 1, casing: "camel" },
+        { name: "tax_automation_document", n: 1 },
+      ],
+      { typeName: TYPE, kind: "local", casing: "snake" },
+    );
+    expect(d.shares).toEqual([{ shape: "EXACT", share: 1 }]);
+  });
 });
 
 /** The language's list arrives from the descriptor (`naming.nonConceptTypes`); the lexicon only matches it. */
@@ -264,5 +276,16 @@ describe("isWeakerNamingShape", () => {
     expect(isWeakerNamingShape("VERB_TYPE", "CALLEE_DERIVED")).toBe(false);
     expect(isWeakerNamingShape("CALLEE_DERIVED", "VERB_TYPE")).toBe(false);
     expect(isWeakerNamingShape("FREE", "FREE")).toBe(false);
+  });
+});
+
+describe("spellsTypeName", () => {
+  it("EXACT, QUALIFIED and TAIL spell the type's own words; the rest do not", () => {
+    expect(spellsTypeName("EXACT")).toBe(true);
+    expect(spellsTypeName("QUALIFIED")).toBe(true);
+    expect(spellsTypeName("TAIL")).toBe(true);
+    expect(spellsTypeName("VERB_TYPE")).toBe(false);
+    expect(spellsTypeName("CALLEE_DERIVED")).toBe(false);
+    expect(spellsTypeName("FREE")).toBe(false);
   });
 });

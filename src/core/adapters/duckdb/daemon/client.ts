@@ -35,6 +35,7 @@ import type {
   IdentifierReplaceEntry,
   IdentifierShapeSampleQuery,
   IdentifierShapeSampleRow,
+  IdentifierTypeAggregateQuery,
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
@@ -863,10 +864,11 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("replaceIdentifiersBulk", { entries: [...entries] });
   }
 
-  async aggregateIdentifiersByType(q: IdentifierTypeScopeQuery): Promise<IdentifierTypeAggregateRow[]> {
+  async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     return (await this.call("aggregateIdentifiersByType", {
       types: [...q.types],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
     })) as IdentifierTypeAggregateRow[];
   }
 
@@ -874,6 +876,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("aggregateIdentifiersByCallee", {
       callees: [...q.callees],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
     })) as IdentifierCalleeAggregateRow[];
   }
 
@@ -900,6 +903,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("aggregateIdentifiersByName", {
       names: [...q.names],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
     })) as IdentifierNameKindTypeRow[];
   }
 
@@ -914,6 +918,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("sampleIdentifierShapes", {
       limit: q.limit,
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
     })) as IdentifierShapeSampleRow[];
   }
 

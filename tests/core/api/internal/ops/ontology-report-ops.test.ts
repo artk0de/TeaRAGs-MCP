@@ -57,8 +57,30 @@ function rows(partial: Partial<OntologyReportRows> = {}): OntologyReportRows {
     totals: { identifierRows: 100, symbolRows: 10 },
     evidenceRows: 80,
     genericNameCount: 1,
-    genericNames: [{ name: "result", typeCount: 9, n: 30 }],
+    genericNames: [
+      {
+        name: "result",
+        typeCount: 9,
+        n: 30,
+        // Nine unrelated types, 3×4 + 6×3 rows: generic as read.
+        types: ["TypeA", "TypeB", "TypeC", "TypeD", "TypeE", "TypeF", "TypeG", "TypeH", "TypeI"].map((typeName, i) => ({
+          typeName,
+          n: i < 3 ? 4 : 3,
+          relPath: "app/x.rb",
+        })),
+      },
+    ],
     ...partial,
+  };
+}
+
+/** A pooled generic-name candidate: the name and every `[typeName, n, relPath]` it is bound to. */
+function genericCandidate(name: string, types: [string, number, string][]) {
+  return {
+    name,
+    typeCount: types.length,
+    n: types.reduce((s, [, n]) => s + n, 0),
+    types: types.map(([typeName, n, relPath]) => ({ typeName, n, relPath })),
   };
 }
 
@@ -463,6 +485,101 @@ function homonym(name: string, types: [typeName: string, n: number, relPath: str
 }
 
 describe("OntologyReportOps#report — live false positives", () => {
+  it("genericNames: a type family's role word (`form` over many `*Form` classes) is not generic", async () => {
+    const forms = ["ActionForm", "ClientForm", "InvoiceForm", "TaskForm", "UserForm", "Crm::ContactForm"];
+    const { ops } = makeOps(async () =>
+      rows({
+        genericNameCount: 1,
+        genericNames: [
+          genericCandidate(
+            "form",
+            forms.map((f, i) => [f, 10 + i, "app/forms/x.rb"]),
+          ),
+        ],
+      }),
+    );
+    const res = await ops.report({ collection: "code_x" });
+    expect(res.summary.genericNames).toEqual([]);
+    expect(res.summary.genericNameCount).toBe(0);
+  });
+
+  it("genericNames: counts only the types the name does not spell; generic when those still clear the bar", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        genericNames: [
+          genericCandidate("actor", [
+            ["Actor", 9, "app/a.rb"], // EXACT
+            ["Workflow::ProjectActor", 7, "app/b.rb"], // TAIL
+            ["System", 3, "app/c.rb"],
+            ["Owner", 3, "app/d.rb"],
+            ["Crm::User", 2, "app/e.rb"],
+            ["Account", 2, "app/f.rb"],
+            ["Team", 2, "app/g.rb"],
+          ]),
+          // Five types, two of them spelled (`Client`, `Billing::Client`): the
+          // three unrelated ones fall below genericMinTypes. A HEAD word
+          // (`ClientAccount`) is not a spelling.
+          genericCandidate("client", [
+            ["Client", 6, "app/a.rb"],
+            ["Crm::ClientAccount", 3, "app/b.rb"],
+            ["Billing::Client", 3, "app/c.rb"],
+            ["Account", 2, "app/d.rb"],
+            ["Contact", 2, "app/e.rb"],
+          ]),
+          genericCandidate("result", [
+            ["TypeA", 2, "app/a.rb"],
+            ["TypeB", 2, "app/a.rb"],
+            ["TypeC", 2, "app/a.rb"],
+            ["TypeD", 2, "app/a.rb"],
+            ["TypeE", 2, "app/a.rb"],
+          ]),
+        ],
+        genericNameCount: 3,
+      }),
+    );
+    const res = await ops.report({ collection: "code_x" });
+    expect(res.summary.genericNames).toEqual([
+      { name: "actor", typeCount: 5, n: 12 },
+      { name: "result", typeCount: 5, n: 10 },
+    ]);
+    expect(res.summary.genericNameCount).toBe(2);
+  });
+
+  it("genericNames: capped at limit AFTER the drop, and the count is of the names still generic", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        genericNames: [
+          // The largest candidate, but EXACT for its dominant type in the TypeScript file.
+          genericCandidate("docNode", [
+            ["DocNode", 6, "src/a.ts"],
+            ["Alpha", 3, "src/a.ts"],
+            ["Beta", 3, "src/a.ts"],
+            ["Gamma", 3, "src/a.ts"],
+            ["Delta", 3, "src/a.ts"],
+          ]),
+          genericCandidate("data", [
+            ["TypeA", 3, "app/a.rb"],
+            ["TypeB", 3, "app/a.rb"],
+            ["TypeC", 3, "app/a.rb"],
+            ["TypeD", 3, "app/a.rb"],
+            ["TypeE", 3, "app/a.rb"],
+          ]),
+          genericCandidate("item", [
+            ["TypeA", 2, "app/a.rb"],
+            ["TypeB", 2, "app/a.rb"],
+            ["TypeC", 2, "app/a.rb"],
+            ["TypeD", 2, "app/a.rb"],
+            ["TypeE", 2, "app/a.rb"],
+          ]),
+        ],
+        genericNameCount: 3,
+      }),
+    );
+    const res = await ops.report({ collection: "code_x", limit: 1 });
+    expect(res.summary.genericNames).toEqual([{ name: "data", typeCount: 5, n: 15 }]);
+    expect(res.summary.genericNameCount).toBe(2);
+  });
+
   it("homonyms: a role word every type ends in, each a different class, is not a homonym", async () => {
     const { ops } = makeOps(async () =>
       rows({

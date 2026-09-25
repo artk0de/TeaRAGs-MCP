@@ -588,4 +588,77 @@ describe("NamingLexiconOps", () => {
       expect(result.language).toBe("ruby");
     });
   });
+
+  // Live taxdome: `types: ["TaxAutomationDocument"]` with no language and no
+  // pathPattern answered in the project's dominant language (TypeScript) and
+  // judged the Ruby rows in camelCase — `tax_automation_documents` came out FREE.
+  describe("evidence rows are cased in their own file language", () => {
+    beforeEach(async () => {
+      const tsRows = (i: number) => [0, 1, 2, 3].map((j) => local(`Widget${i}#render${j}`, "vendorEnvelope"));
+      await write(
+        [0, 1, 2, 3, 4].map((i) => ({ relPath: `app/javascript/widget_${i}.ts`, rows: tsRows(i) })),
+        "typescript",
+      );
+    });
+
+    it("a type whose rows are all Ruby answers in ruby, its snake_case rows EXACT", async () => {
+      await write([
+        {
+          relPath: "app/models/firm.rb",
+          rows: [
+            {
+              ownerSymbolId: "Firm#tax_automation_documents",
+              kind: "return",
+              name: "tax_automation_documents",
+              line: 4,
+              typeName: DOC,
+              typeSource: "return-type",
+            },
+            local("Firm#sync", "tax_automation_document", { typeName: DOC, typeSource: "binding" }),
+          ],
+        },
+      ]);
+      const result = await ops.getNamingLexicon({ collection: "c", types: [DOC] });
+      expect(result.language).toBe("ruby");
+      expect(result.byType[0].shapes.return).toEqual([{ shape: "EXACT", share: 1 }]);
+      expect(result.byType[0].shapes.local).toEqual([{ shape: "EXACT", share: 1 }]);
+    });
+
+    it("one type with a TypeScript and a Ruby row: each is EXACT in its own casing", async () => {
+      await write(
+        [
+          {
+            relPath: "app/javascript/doc_panel.ts",
+            rows: [local("DocPanel#render", "taxAutomationDocument", { typeName: DOC, typeSource: "annotation" })],
+          },
+        ],
+        "typescript",
+      );
+      await write([
+        {
+          relPath: "app/services/doc_sync.rb",
+          rows: [local("DocSync#call", "tax_automation_document", { typeName: DOC, typeSource: "binding" })],
+        },
+      ]);
+      const result = await ops.getNamingLexicon({ collection: "c", types: [DOC] });
+      expect(result.byType[0].shapes.local).toEqual([{ shape: "EXACT", share: 1 }]);
+    });
+
+    it("a Ruby draft typed with a Ruby-only type is judged in ruby casing", async () => {
+      await write([
+        {
+          relPath: "app/services/doc_sync.rb",
+          rows: [0, 1, 2].map((i) =>
+            local(`DocSync${i}#call`, "tax_automation_document", { typeName: DOC, typeSource: "binding" }),
+          ),
+        },
+      ]);
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        names: [{ name: "tax_automation_document", type: DOC }],
+      });
+      expect(result.language).toBe("ruby");
+      expect(result.names[0].verdict).toBe("CONFORMS");
+    });
+  });
 });

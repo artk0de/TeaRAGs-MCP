@@ -16,12 +16,15 @@
  *      parent directory, then the project. Support = rows of the asked types
  *      (`countIdentifiers`), else rows bound to the drafts' callees, else all
  *      rows in scope.
- *   2. Language. The request's, else the dominant file language of the
- *      REQUESTED pattern (literal prefix + pinned extension), not of the
- *      widened scope; the pinned extension project-wide, then the project,
- *      only when that pattern holds no rows (so up to three reads). Its
- *      descriptor supplies the canonical casing per role and the non-concept
- *      types, which leave `byType`.
+ *   2. Language — the one the answer (and the drafts) are written in. The
+ *      request's; else, given a `pathPattern`, the dominant file language of the
+ *      REQUESTED pattern (literal prefix + pinned extension), not of the widened
+ *      scope — the pinned extension project-wide, then the project, only when
+ *      that pattern holds no rows (so up to three reads); else, with no
+ *      pattern, the dominant file language of the evidence rows the request
+ *      names (asked / anchor / draft types and draft callees, weighted by n);
+ *      else the project's. Its descriptor supplies the drafts' casing per role
+ *      and the non-concept types, which leave `byType`.
  *   3. byType. The type aggregate (persisted sources + the store's call-return
  *      join), then the `name-inferred` stage computed here and never written: a
  *      name typed ≥ 3 times in scope with one type holding ≥ 80% of those rows
@@ -33,6 +36,13 @@
  *   6. Names. The project shape prior (a bounded sample) and return verbs
  *      license fallbacks; homonymy and collision are evidence; the verdict is
  *      `judgeDraftName`.
+ *
+ * Every evidence row (byType, byCallee, the shape prior's sample) is read split
+ * by its file language and classified in THAT language's casing — a mixed Ruby
+ * + TypeScript project holds `tax_automation_document` and
+ * `taxAutomationDocument` for one type, and both are EXACT. A row whose language
+ * has no descriptor takes the casing most observed names are written in; a row
+ * whose file has no language, the answer's casing.
  *
  * An index whose graph has files but whose identifier table is empty predates
  * migration 033 → `driftWarning` naming the reindex, not a silent empty answer.
@@ -144,7 +154,14 @@ interface LexiconTypeRow {
   typeSource: NamingLexiconEvidenceSource;
   n: number;
   exampleOwner: string;
+  /** The row's file language (null: its file has no language row). */
+  language?: string | null;
+  /** The casing the row is classified in — its own language's, see {@link rowCasingResolver}. */
+  casing?: IdentifierCasing;
 }
+
+/** One byCallee row with the casing it is classified in. */
+type LexiconCalleeRow = IdentifierCalleeAggregateRow & { casing?: IdentifierCasing };
 
 /** The scope the answer was read from, and what its support stage already read. */
 interface ResolvedScope {
@@ -155,6 +172,9 @@ interface ResolvedScope {
 
 /** Casing per declaration kind: a `return` row names a method. */
 type KindCasing = (kind: IdentifierDeclarationKind) => IdentifierCasing;
+
+/** Casing of one evidence row: its own file language's role casing. */
+type RowCasing = (row: { kind: IdentifierDeclarationKind; language?: string | null }) => IdentifierCasing;
 
 const KIND_ROLE: Record<IdentifierDeclarationKind, IdentifierRole> = {
   param: "param",
@@ -211,8 +231,21 @@ export class NamingLexiconOps {
     const scope = await resolveScope(graphDb, literalPrefix(req.pathPattern), supportTypes, draftCallees);
     const pathPrefixes = scope.prefix === "" ? undefined : [scope.prefix];
 
+    // byCallee's rows do not depend on the language, so they are read first: they may decide it.
+    const storedCalleeRows =
+      draftCallees.length === 0
+        ? []
+        : (scope.calleeRows ??
+          (await graphDb.aggregateIdentifiersByCallee({ callees: draftCallees, pathPrefixes, groupByLanguage: true })));
+
     let { language } = req;
     let projectLanguages: IdentifierLanguageCountRow[] | undefined;
+    // With no language and no pattern, the rows the request names decide it — read them first.
+    let askedTypeRows: LexiconTypeRow[] | undefined;
+    if (language === undefined && !req.pathPattern) {
+      askedTypeRows = await readTypeRows(graphDb, askedTypes, pathPrefixes);
+      language = dominantRowLanguage([...askedTypeRows, ...storedCalleeRows]);
+    }
     if (language === undefined) {
       const decided = await requestedLanguageCounts(graphDb, req.pathPattern);
       projectLanguages = decided.projectCounts;
@@ -226,17 +259,21 @@ export class NamingLexiconOps {
         ? NAMING_LEXICON_DRIFT_WARNING
         : undefined;
 
-    // 3. byType (store aggregate + name-inferred).
+    // 3. byType (store aggregate + name-inferred), over the concept types only.
     const types = askedTypes.filter((t) => !isNonConceptType(t, nonConceptTypes));
-    const typeRows = await readTypeRows(graphDb, types, pathPrefixes);
+    const storedTypeRows =
+      askedTypeRows !== undefined && types.length === askedTypes.length
+        ? askedTypeRows
+        : await readTypeRows(graphDb, types, pathPrefixes);
+
+    // Casing: the answer's language for drafts, each row's own language for evidence.
+    const observed = [...storedTypeRows, ...storedCalleeRows];
+    const casingFor = kindCasing(convention, observed);
+    const rowCasing = rowCasingResolver(this.deps.namingConventions, casingFor, kindCasing(undefined, observed));
+    const typeRows = storedTypeRows.map((row) => ({ ...row, casing: rowCasing(row) }));
+    const calleeRows = storedCalleeRows.map((row) => ({ ...row, casing: rowCasing(row) }));
 
     // 4. byCallee.
-    const calleeRows =
-      draftCallees.length === 0
-        ? []
-        : (scope.calleeRows ?? (await graphDb.aggregateIdentifiersByCallee({ callees: draftCallees, pathPrefixes })));
-
-    const casingFor = kindCasing(convention, [...typeRows, ...calleeRows]);
     const byType = buildTypeEntries(types, typeRows, casingFor);
     const byCallee = draftCallees.map((callee) => buildCalleeEntry(callee, calleeRows, casingFor));
 
@@ -260,6 +297,7 @@ export class NamingLexiconOps {
             typeRows,
             calleeRows,
             casingFor,
+            rowCasing,
             nonConceptTypes,
             conceptTerms,
             pathPrefixes,
@@ -377,7 +415,7 @@ async function supportAt(
   const pathPrefixes = prefix === "" ? undefined : [prefix];
   if (types.length > 0) return { prefix, support: await graphDb.countIdentifiers({ types, pathPrefixes }) };
   if (callees.length > 0) {
-    const calleeRows = await graphDb.aggregateIdentifiersByCallee({ callees, pathPrefixes });
+    const calleeRows = await graphDb.aggregateIdentifiersByCallee({ callees, pathPrefixes, groupByLanguage: true });
     return { prefix, support: sum(calleeRows), calleeRows };
   }
   return { prefix, support: sum(await graphDb.identifierLanguageCounts({ pathPrefixes })) };
@@ -450,9 +488,9 @@ async function readTypeRows(
   pathPrefixes: string[] | undefined,
 ): Promise<LexiconTypeRow[]> {
   if (types.length === 0) return [];
-  const stored: LexiconTypeRow[] = (await graphDb.aggregateIdentifiersByType({ types, pathPrefixes })).map(
-    (row: IdentifierTypeAggregateRow) => ({ ...row }),
-  );
+  const stored: LexiconTypeRow[] = (
+    await graphDb.aggregateIdentifiersByType({ types, pathPrefixes, groupByLanguage: true })
+  ).map((row: IdentifierTypeAggregateRow) => ({ ...row }));
   if (stored.length === 0) return stored;
   return [...stored, ...(await nameInferredRows(graphDb, stored, new Set(types), pathPrefixes))];
 }
@@ -471,6 +509,7 @@ async function nameInferredRows(
   const byName = await graphDb.aggregateIdentifiersByName({
     names: unique(typeRows.map((r) => r.name)),
     pathPrefixes,
+    groupByLanguage: true,
   });
   const typedByName = new Map<string, Map<string, number>>();
   for (const row of byName) {
@@ -491,6 +530,7 @@ async function nameInferredRows(
       typeSource: "name-inferred",
       n: row.n,
       exampleOwner: row.exampleOwner,
+      ...(row.language !== undefined ? { language: row.language } : {}),
     });
   }
   return inferred;
@@ -567,7 +607,7 @@ function matchesCallee(row: IdentifierCalleeAggregateRow, callee: IdentifierBoun
 
 function buildCalleeEntry(
   callee: IdentifierBoundCallee,
-  rows: readonly IdentifierCalleeAggregateRow[],
+  rows: readonly LexiconCalleeRow[],
   casingFor: KindCasing,
 ): NamingLexiconCalleeEntry {
   const calleeRows = rows.filter((r) => matchesCallee(r, callee));
@@ -582,8 +622,9 @@ function buildCalleeEntry(
 
 interface DraftJudgementContext {
   typeRows: readonly LexiconTypeRow[];
-  calleeRows: readonly IdentifierCalleeAggregateRow[];
+  calleeRows: readonly LexiconCalleeRow[];
   casingFor: KindCasing;
+  rowCasing: RowCasing;
   nonConceptTypes: readonly string[];
   conceptTerms?: ConceptTerm[];
   pathPrefixes: string[] | undefined;
@@ -598,9 +639,13 @@ async function judgeDrafts(
   const [homonyms, collisions, sample] = await Promise.all([
     graphDb.identifierNameTypes(draftNames),
     graphDb.existingSymbolShortNames(draftNames),
-    graphDb.sampleIdentifierShapes({ pathPrefixes: ctx.pathPrefixes, limit: SHAPE_PRIOR_SAMPLE }),
+    graphDb.sampleIdentifierShapes({
+      pathPrefixes: ctx.pathPrefixes,
+      limit: SHAPE_PRIOR_SAMPLE,
+      groupByLanguage: true,
+    }),
   ]);
-  const prior = projectShapePrior(sample, ctx.casingFor);
+  const prior = projectShapePrior(sample, ctx.casingFor, ctx.rowCasing);
   const taken = new Set(collisions);
 
   return drafts.map((draft) => {
@@ -635,27 +680,25 @@ async function judgeDrafts(
   });
 }
 
-/** The draft type's rows merged per (kind, name) across type sources. */
+/** The draft type's rows merged per (kind, name, casing) across type sources and file languages. */
 function byTypeRowsFor(typeName: string, rows: readonly LexiconTypeRow[]): NamingByTypeRow[] {
   const merged = new Map<string, NamingByTypeRow>();
   for (const row of rows) {
     if (row.typeName !== typeName) continue;
-    const key = `${row.kind}\u0000${row.name}`;
+    const key = `${row.kind}\u0000${row.name}\u0000${row.casing ?? ""}`;
     const prev = merged.get(key);
     merged.set(key, {
       kind: row.kind,
       name: row.name,
       n: (prev?.n ?? 0) + row.n,
       exampleOwner: prev && prev.exampleOwner < row.exampleOwner ? prev.exampleOwner : row.exampleOwner,
+      ...(row.casing !== undefined ? { casing: row.casing } : {}),
     });
   }
   return [...merged.values()];
 }
 
-function byCalleeRowsFor(
-  callee: IdentifierBoundCallee,
-  rows: readonly IdentifierCalleeAggregateRow[],
-): NamingByCalleeRow[] {
+function byCalleeRowsFor(callee: IdentifierBoundCallee, rows: readonly LexiconCalleeRow[]): NamingByCalleeRow[] {
   return rows
     .filter((r) => matchesCallee(r, callee))
     .map((r) => ({
@@ -668,17 +711,19 @@ function byCalleeRowsFor(
       n: r.n,
       exampleOwner: r.exampleOwner,
       ...(r.typeName !== undefined ? { typeName: r.typeName } : {}),
+      ...(r.casing !== undefined ? { casing: r.casing } : {}),
     }));
 }
 
 /**
  * The project prior over a bounded sample of the scope's evidence-carrying
- * rows: shape shares per kind (each kind in its role's casing) and the verbs
- * of its `VERB_TYPE` returns.
+ * rows: shape shares per kind (each row in its own file language's role
+ * casing) and the verbs of its `VERB_TYPE` returns.
  */
 function projectShapePrior(
   sample: Awaited<ReturnType<IdentifierReader["sampleIdentifierShapes"]>>,
   casingFor: KindCasing,
+  rowCasing: RowCasing,
 ): {
   shapes: Partial<Record<IdentifierDeclarationKind, NamingShapeDistribution>>;
   returnVerbs: NamingReturnVerbShare[];
@@ -688,6 +733,7 @@ function projectShapePrior(
     kind: r.kind,
     name: r.name,
     n: r.n,
+    casing: rowCasing(r),
     ...(r.typeName !== null ? { typeName: r.typeName } : {}),
     ...(r.boundMember !== null
       ? { callee: { member: r.boundMember, ...(r.boundReceiver !== null ? { receiver: r.boundReceiver } : {}) } }
@@ -736,6 +782,38 @@ function kindCasing(
     if (n > bestN) [best, bestN] = [casing, n];
   }
   return () => best;
+}
+
+/**
+ * The casing an evidence row is classified in: the role casing of its OWN file
+ * language's descriptor — the mechanism `OntologyReportOps#casingFor` applies
+ * per row. A language with no descriptor → `observedCasing` (the casing most
+ * observed names are written in); a file with no language → `answerCasing`,
+ * the answer's own.
+ */
+function rowCasingResolver(
+  conventions: ReadonlyMap<string, IdentifierNamingConvention>,
+  answerCasing: KindCasing,
+  observedCasing: KindCasing,
+): RowCasing {
+  return ({ kind, language }) => {
+    if (language === undefined || language === null) return answerCasing(kind);
+    const convention = conventions.get(language);
+    return convention ? (convention.casing[KIND_ROLE[kind]][0] ?? FALLBACK_CASING) : observedCasing(kind);
+  };
+}
+
+/** The file language most evidence rows come from, weighted by `n`; ties → alphabetical. */
+function dominantRowLanguage(rows: readonly { language?: string | null; n: number }[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.language) counts.set(row.language, (counts.get(row.language) ?? 0) + row.n);
+  }
+  let best: [string, number] | undefined;
+  for (const entry of counts) {
+    if (!best || entry[1] > best[1] || (entry[1] === best[1] && entry[0] < best[0])) best = entry;
+  }
+  return best?.[0];
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────

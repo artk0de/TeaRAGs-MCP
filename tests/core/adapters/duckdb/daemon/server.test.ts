@@ -1086,6 +1086,44 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
     expect((ts as { result: unknown }).result).toEqual([]);
     await pool.closeAll();
   });
+
+  it("applies groupByLanguage on the type, callee, name and sample reads", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ident_by_language_v1";
+    const doc = {
+      ownerSymbolId: "A#run",
+      kind: "local",
+      name: "doc",
+      line: 2,
+      typeName: "Doc",
+      typeSource: "binding",
+      boundMember: "find",
+      boundReceiver: "Doc",
+    };
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: { collection: c, entries: [{ relPath: "a.rb", rows: [doc] }] },
+    });
+    const reads = [
+      { op: "aggregateIdentifiersByType", params: { collection: c, types: ["Doc"], groupByLanguage: true } },
+      {
+        op: "aggregateIdentifiersByCallee",
+        params: { collection: c, callees: [{ member: "find" }], groupByLanguage: true },
+      },
+      { op: "aggregateIdentifiersByName", params: { collection: c, names: ["doc"], groupByLanguage: true } },
+      { op: "sampleIdentifierShapes", params: { collection: c, limit: 10, groupByLanguage: true } },
+    ] as const;
+    let id = 2;
+    for (const read of reads) {
+      const response = await server.handle({ id: id++, op: read.op, params: read.params });
+      // a.rb has no cg_symbols_files row here, so its language reads as null.
+      expect((response as { result: { language?: unknown }[] }).result, read.op).toEqual([
+        expect.objectContaining({ language: null }),
+      ]);
+    }
+    await pool.closeAll();
+  });
 });
 
 // bd tea-rags-mcp-4p3sb.20: the ontology audit is a read proxied through the daemon.

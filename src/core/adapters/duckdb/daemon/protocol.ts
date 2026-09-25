@@ -189,12 +189,12 @@ export interface DaemonRequest {
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes
     | { collection: string; entries: IdentifierReplaceEntry[] } // replaceIdentifiersBulk
-    | { collection: string; types: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByType | countIdentifiers
-    | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[] } // aggregateIdentifiersByCallee
+    | { collection: string; types: string[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByType | countIdentifiers
+    | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByCallee
     | { collection: string; names: string[] } // identifierNameTypes | existingSymbolShortNames
-    | { collection: string; names: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByName
+    | { collection: string; names: string[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByName
     | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[] } // identifierLanguageCounts
-    | { collection: string; limit: number; pathPrefixes?: string[] } // sampleIdentifierShapes
+    | { collection: string; limit: number; pathPrefixes?: string[]; groupByLanguage?: boolean } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery }; // readOntologyReport
 }
 

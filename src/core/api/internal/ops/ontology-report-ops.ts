@@ -16,7 +16,9 @@
  *   - `synonymDominantShareCeiling` 0.8 — a type whose top name holds 80% of its
  *     rows is consistent; the share the lexicon's name inference trusts;
  *   - generic = bound to ≥ 5 types, none holding half of the name's rows — a
- *     name that denotes nothing in particular (`result`, `data`, `item`);
+ *     name that denotes nothing in particular (`result`, `data`, `item`). The
+ *     summary counts only the types the name does not spell: a role word over
+ *     a type family (`form` over `*Form`) denotes something precise;
  *   - homonym types need ≥ 2 rows and ≥ 10% of the name's rows — one stray
  *     binding is noise, not a second meaning;
  *   - a synonym's dominant name needs ≥ 2 rows ({@link SYNONYM_MIN_DOMINANT_ROWS});
@@ -29,6 +31,7 @@
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
   OntologyEvidenceCounts,
+  OntologyGenericNameRow,
   OntologyLocationRow,
   OntologyNameCountRow,
   OntologyReportQuery,
@@ -46,6 +49,7 @@ import {
   isWeakerNamingShape,
   mergeUnqualifiedTypeSpellings,
   singularizeIdentifierWord,
+  spellsTypeName,
   splitIdentifierWords,
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
@@ -64,6 +68,7 @@ import type {
   OntologyNameCount,
   OntologyOutlier,
   OntologyReportSectionName,
+  OntologyReportSummary,
   OntologySynonym,
   OntologyValueKind,
 } from "../../public/dto/ontology.js";
@@ -96,6 +101,9 @@ export const ONTOLOGY_REPORT_THRESHOLDS: Omit<OntologyReportThresholds, "groupPo
 };
 
 const ALL_SECTIONS: readonly OntologyReportSectionName[] = ["synonyms", "homonyms", "outliers", "collisions"];
+
+/** One judged generic name of the summary. */
+type OntologyGenericName = OntologyReportSummary["genericNames"][number];
 
 /** Glob metacharacters that end a pathPattern's literal prefix. */
 const GLOB_META = /[*?{[]/;
@@ -261,12 +269,13 @@ export class OntologyReportOps {
 
   private shape(req: GetOntologyReportRequest, rows: OntologyReportRows): GetOntologyReportResponse {
     const limit = Math.min(MAX_ONTOLOGY_REPORT_LIMIT, Math.max(1, req.limit ?? DEFAULT_ONTOLOGY_REPORT_LIMIT));
+    const genericNames = this.genericNames(rows.genericNames);
     const response: GetOntologyReportResponse = {
       scope: scopeOf(req),
       summary: {
         evidenceRows: rows.evidenceRows,
-        genericNameCount: rows.genericNameCount,
-        genericNames: rows.genericNames.map((g) => ({ ...g })),
+        genericNameCount: genericNames.length,
+        genericNames: genericNames.slice(0, limit),
       },
     };
     if (rows.synonyms) response.synonyms = this.synonyms(rows.synonyms, limit);
@@ -298,6 +307,39 @@ export class OntologyReportOps {
       shape: classifyNamingShape({ name: item.name, kind, casing, typeName }),
       example: location(item.example),
     };
+  }
+
+  /**
+   * Re-judges the generic-name candidates: a type the name spells
+   * ({@link spellsTypeName} — EXACT, QUALIFIED or TAIL in the casing of the
+   * type row's file language) says nothing about the name being generic, so it
+   * is dropped — `form` bound to 729 `*Form` classes is the role word of a type
+   * family, the case the homonyms section drops by the same judgement. The name
+   * stays generic only when its remaining types still clear the generic bar
+   * (`genericMinTypes`, none holding `genericMaxTopTypeShare`); `typeCount` and
+   * `n` count those types alone. Most frequent first, uncapped.
+   */
+  private genericNames(candidates: readonly OntologyGenericNameRow[]): OntologyGenericName[] {
+    const t = ONTOLOGY_REPORT_THRESHOLDS;
+    const judged: OntologyGenericName[] = [];
+    for (const candidate of candidates) {
+      const unrelated = candidate.types.filter(
+        (type) =>
+          !spellsTypeName(
+            classifyNamingShape({
+              name: candidate.name,
+              kind: "local",
+              casing: this.casingFor(type.relPath, "local", candidate.name),
+              typeName: type.typeName,
+            }),
+          ),
+      );
+      const n = unrelated.reduce((s, type) => s + type.n, 0);
+      const top = unrelated.reduce((max, type) => Math.max(max, type.n), 0);
+      if (unrelated.length < t.genericMinTypes || top >= t.genericMaxTopTypeShare * n) continue;
+      judged.push({ name: candidate.name, typeCount: unrelated.length, n });
+    }
+    return judged.sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
   }
 
   /**

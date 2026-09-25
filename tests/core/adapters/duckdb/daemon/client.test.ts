@@ -871,6 +871,31 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
       pathSuffixes: [".rb"],
     });
   });
+
+  it("forwards groupByLanguage on the type, callee, name and sample reads", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return [];
+    });
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.aggregateIdentifiersByType({ types: ["Doc"], groupByLanguage: true });
+    await client.aggregateIdentifiersByCallee({ callees: [{ member: "find" }], groupByLanguage: true });
+    await client.aggregateIdentifiersByName({ names: ["doc"], groupByLanguage: true });
+    await client.sampleIdentifierShapes({ limit: 5, groupByLanguage: true });
+    await client.close();
+    for (const op of [
+      "aggregateIdentifiersByType",
+      "aggregateIdentifiersByCallee",
+      "aggregateIdentifiersByName",
+      "sampleIdentifierShapes",
+    ]) {
+      expect(seen.find((r) => r.op === op)?.params, op).toMatchObject({ groupByLanguage: true });
+    }
+  });
 });
 
 describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)", () => {

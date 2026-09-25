@@ -450,6 +450,117 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
       const bounded = await db.sampleIdentifierShapes({ limit: 1 });
       expect(bounded.reduce((sum, r) => sum + r.n, 0)).toBe(1);
     });
+
+    // A mixed-language project cases each row in its own file's language.
+    describe("groupByLanguage splits each group by file language and reports it per row", () => {
+      beforeEach(async () => {
+        await db.replaceIdentifiersBulk([
+          {
+            relPath: "vendor/c.kt",
+            rows: [row({ ownerSymbolId: "C#one", name: "doc", typeName: "Doc", typeSource: "annotation" })],
+          },
+        ]);
+      });
+
+      it("aggregateIdentifiersByType", async () => {
+        const rows = await db.aggregateIdentifiersByType({ types: ["Doc"], groupByLanguage: true });
+        expect([...rows].sort((x, y) => String(x.language).localeCompare(String(y.language)))).toEqual([
+          {
+            typeName: "Doc",
+            kind: "local",
+            name: "doc",
+            typeSource: "annotation",
+            n: 1,
+            exampleOwner: "C#one",
+            language: null,
+          },
+          {
+            typeName: "Doc",
+            kind: "local",
+            name: "doc",
+            typeSource: "binding",
+            n: 1,
+            exampleOwner: "A#one",
+            language: "ruby",
+          },
+          {
+            typeName: "Doc",
+            kind: "local",
+            name: "doc",
+            typeSource: "annotation",
+            n: 1,
+            exampleOwner: "B#one",
+            language: "typescript",
+          },
+        ]);
+      });
+
+      it("aggregateIdentifiersByCallee", async () => {
+        expect(
+          await db.aggregateIdentifiersByCallee({
+            callees: [{ member: "find", receiver: "Doc" }],
+            groupByLanguage: true,
+          }),
+        ).toEqual([
+          {
+            member: "find",
+            receiver: "Doc",
+            kind: "local",
+            name: "row",
+            n: 1,
+            exampleOwner: "A#four",
+            language: "ruby",
+          },
+        ]);
+      });
+
+      it("aggregateIdentifiersByName", async () => {
+        const rows = await db.aggregateIdentifiersByName({ names: ["doc"], groupByLanguage: true });
+        expect(rows.filter((r) => r.typeName === "Doc" && r.kind === "local")).toEqual(
+          expect.arrayContaining([
+            { name: "doc", kind: "local", typeName: "Doc", n: 1, exampleOwner: "A#one", language: "ruby" },
+            { name: "doc", kind: "local", typeName: "Doc", n: 1, exampleOwner: "B#one", language: "typescript" },
+            { name: "doc", kind: "local", typeName: "Doc", n: 1, exampleOwner: "C#one", language: null },
+          ]),
+        );
+        expect(rows.filter((r) => r.typeName === "Doc" && r.kind === "local")).toHaveLength(3);
+      });
+
+      it("sampleIdentifierShapes", async () => {
+        const sample = await db.sampleIdentifierShapes({ limit: 100, groupByLanguage: true });
+        expect(sample).toEqual(
+          expect.arrayContaining([
+            {
+              kind: "local",
+              name: "doc",
+              typeName: "Doc",
+              boundMember: null,
+              boundReceiver: null,
+              n: 1,
+              language: "ruby",
+            },
+            {
+              kind: "local",
+              name: "doc",
+              typeName: "Doc",
+              boundMember: null,
+              boundReceiver: null,
+              n: 1,
+              language: "typescript",
+            },
+            {
+              kind: "local",
+              name: "doc",
+              typeName: "Doc",
+              boundMember: null,
+              boundReceiver: null,
+              n: 1,
+              language: null,
+            },
+          ]),
+        );
+      });
+    });
   });
 
   it("an empty replace batch leaves stored rows alone, and a count over no types is zero", async () => {

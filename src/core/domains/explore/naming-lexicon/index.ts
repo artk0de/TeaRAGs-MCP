@@ -22,6 +22,7 @@ export {
   isWeakerNamingShape,
   matchesTypeWords,
   shapeDistribution,
+  spellsTypeName,
 } from "./shapes.js";
 export type {
   NamingShape,

@@ -34,6 +34,8 @@ export interface NamingByTypeRow {
   name: string;
   n: number;
   exampleOwner: string;
+  /** The casing of the row's own file language, when it differs from the draft's. */
+  casing?: IdentifierCasing;
 }
 
 /** One `byCallee` aggregate row: a name bound to a call of `receiver.member` `n` times. */
@@ -46,6 +48,8 @@ export interface NamingByCalleeRow {
   exampleOwner: string;
   /** The row's recovered type (e.g. `finder`), when it has one. */
   typeName?: string;
+  /** The casing of the row's own file language, when it differs from the draft's. */
+  casing?: IdentifierCasing;
 }
 
 /** A verb's share of the project's `VERB_TYPE` returns (`find` in `find_x`). */

@@ -57,6 +57,15 @@ export function isWeakerNamingShape(shape: NamingShape, than: NamingShape): bool
   return NAMING_SHAPE_STRENGTH[shape] < NAMING_SHAPE_STRENGTH[than];
 }
 
+/**
+ * True when `shape` spells the type's own words — EXACT, QUALIFIED or TAIL. A
+ * name spelling the type it is bound to says what that value is; VERB_TYPE (a
+ * method name), CALLEE_DERIVED and FREE do not.
+ */
+export function spellsTypeName(shape: NamingShape): boolean {
+  return shape === "EXACT" || shape === "QUALIFIED" || shape === "TAIL";
+}
+
 /** Verb words that prefix a finder / factory name: `find_x`, `getX`, `build_x`. */
 export const NAMING_VERB_PREFIXES: readonly string[] = [
   "find",
@@ -197,12 +206,17 @@ export interface NamingShapeDistribution {
   confidence: number;
 }
 
-/** One aggregated name with its occurrence count; its own type / callee override the context's. */
+/**
+ * One aggregated name with its occurrence count; its own type / callee / casing
+ * override the context's. A row carries its own casing when it comes from a file
+ * whose language differs from the one the context is cased in.
+ */
 export interface NamingShapeRow {
   name: string;
   n: number;
   typeName?: string;
   callee?: IdentifierBoundCallee;
+  casing?: IdentifierCasing;
 }
 
 /** What a row set shares: its kind and casing, and optionally a type or callee. */
@@ -223,6 +237,7 @@ export function shapeDistribution(
       name: row.name,
       typeName: row.typeName ?? context.typeName,
       callee: row.callee ?? context.callee,
+      casing: row.casing ?? context.casing,
     });
     counts.set(shape, (counts.get(shape) ?? 0) + row.n);
     n += row.n;

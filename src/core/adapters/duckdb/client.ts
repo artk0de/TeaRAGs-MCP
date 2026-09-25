@@ -66,6 +66,7 @@ import type {
   IdentifierReplaceEntry,
   IdentifierShapeSampleQuery,
   IdentifierShapeSampleRow,
+  IdentifierTypeAggregateQuery,
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
@@ -319,7 +320,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.identifiers.replaceIdentifiersBulk(entries);
   }
 
-  async aggregateIdentifiersByType(q: IdentifierTypeScopeQuery): Promise<IdentifierTypeAggregateRow[]> {
+  async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     return this.identifiers.aggregateIdentifiersByType(q);
   }
 

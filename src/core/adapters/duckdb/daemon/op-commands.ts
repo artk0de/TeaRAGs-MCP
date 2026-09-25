@@ -239,12 +239,14 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.aggregateIdentifiersByType({
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),
   aggregateIdentifiersByCallee: read(async (graphDb, p) =>
     graphDb.aggregateIdentifiersByCallee({
       callees: p.callees as IdentifierBoundCallee[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),
   anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
@@ -258,6 +260,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.aggregateIdentifiersByName({
       names: p.names as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),
   identifierLanguageCounts: read(async (graphDb, p) =>
@@ -267,7 +270,11 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     }),
   ),
   sampleIdentifierShapes: read(async (graphDb, p) =>
-    graphDb.sampleIdentifierShapes({ limit: p.limit as number, pathPrefixes: p.pathPrefixes as string[] | undefined }),
+    graphDb.sampleIdentifierShapes({
+      limit: p.limit as number,
+      pathPrefixes: p.pathPrefixes as string[] | undefined,
+      groupByLanguage: p.groupByLanguage as boolean | undefined,
+    }),
   ),
   // Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20).
   readOntologyReport: read(async (graphDb, p) => graphDb.readOntologyReport(p.query as OntologyReportQuery)),

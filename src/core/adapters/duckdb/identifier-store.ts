@@ -35,6 +35,7 @@ import type {
   IdentifierRow,
   IdentifierShapeSampleQuery,
   IdentifierShapeSampleRow,
+  IdentifierTypeAggregateQuery,
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   IdentifierTypeSource,
@@ -92,6 +93,38 @@ export function pathPrefixPredicate(prefixes: readonly string[] | undefined): Sq
     sql: `(${prefixes.map(() => "rel_path LIKE ? ESCAPE '\\'").join(" OR ")})`,
     params: prefixes.map((p) => `${escapeLikeLiteral(p)}%`),
   };
+}
+
+/**
+ * The SQL pieces that split an aggregate by file language (`groupByLanguage`):
+ * `from` wraps a row source carrying `rel_path` with its `cg_symbols_files`
+ * language as `file_language` (null for a file with no files row); `column` is
+ * appended to the SELECT, GROUP BY and ORDER BY lists. Not grouping → the source
+ * as-is and empty pieces, so the ungrouped read is byte-identical.
+ */
+interface FileLanguageGrouping {
+  from: string;
+  column: string;
+  order: string;
+}
+
+function fileLanguageGrouping(source: string, grouped: boolean | undefined): FileLanguageGrouping {
+  if (grouped !== true) return { from: source, column: "", order: "" };
+  return {
+    from: `(SELECT g.*, f.language AS file_language
+              FROM ${source} g
+              LEFT JOIN cg_symbols_files f ON f.rel_path = g.rel_path)`,
+    column: ", file_language",
+    order: ", file_language NULLS LAST",
+  };
+}
+
+/** The row's `language` key when the read grouped by it; nothing otherwise. */
+function languageField(
+  grouped: boolean | undefined,
+  row: { file_language?: string | null },
+): { language?: string | null } {
+  return grouped === true ? { language: row.file_language ?? null } : {};
 }
 
 /** `rel_path` ends in any of `suffixes`; `TRUE` when none is given. `%` / `_` in a suffix match literally. */
@@ -237,9 +270,10 @@ export class DuckDbIdentifierStore {
     });
   }
 
-  async aggregateIdentifiersByType(q: IdentifierTypeScopeQuery): Promise<IdentifierTypeAggregateRow[]> {
+  async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     if (q.types.length === 0) return [];
     const cte = resolvedIdentifiersCte(pathPrefixPredicate(q.pathPrefixes));
+    const lang = fileLanguageGrouping("resolved", q.groupByLanguage);
     const rows = await this.session.queryAll<{
       type_name: string;
       kind: string;
@@ -247,13 +281,14 @@ export class DuckDbIdentifierStore {
       type_source: string;
       n: number | string;
       example_owner: string;
+      file_language?: string | null;
     }>(
       `${cte.sql}
-       SELECT type_name, kind, name, type_source, count(*) AS n, min(owner_symbol_id) AS example_owner
-         FROM resolved
+       SELECT type_name, kind, name, type_source, count(*) AS n, min(owner_symbol_id) AS example_owner${lang.column}
+         FROM ${lang.from}
         WHERE type_name IN (${placeholders(q.types)})
-        GROUP BY type_name, kind, name, type_source
-        ORDER BY n DESC, type_name, kind, name, type_source`,
+        GROUP BY type_name, kind, name, type_source${lang.column}
+        ORDER BY n DESC, type_name, kind, name, type_source${lang.order}`,
       [...cte.params, ...q.types],
     );
     return rows.map((r) => ({
@@ -263,6 +298,7 @@ export class DuckDbIdentifierStore {
       typeSource: r.type_source as IdentifierTypeSource,
       n: Number(r.n),
       exampleOwner: r.example_owner,
+      ...languageField(q.groupByLanguage, r),
     }));
   }
 
@@ -289,6 +325,7 @@ export class DuckDbIdentifierStore {
         return "(bound_member = ? AND bound_receiver = ?)";
       })
       .join(" OR ");
+    const lang = fileLanguageGrouping("cg_identifiers", q.groupByLanguage);
     const rows = await this.session.queryAll<{
       bound_member: string;
       bound_receiver: string | null;
@@ -297,13 +334,14 @@ export class DuckDbIdentifierStore {
       type_name: string | null;
       n: number | string;
       example_owner: string;
+      file_language?: string | null;
     }>(
       `SELECT bound_member, bound_receiver, kind, name, type_name, count(*) AS n,
-              min(owner_symbol_id) AS example_owner
-         FROM cg_identifiers
+              min(owner_symbol_id) AS example_owner${lang.column}
+         FROM ${lang.from}
         WHERE ${scope.sql} AND (${calleeSql})
-        GROUP BY bound_member, bound_receiver, kind, name, type_name
-        ORDER BY n DESC, bound_member, bound_receiver NULLS FIRST, kind, name, type_name NULLS FIRST`,
+        GROUP BY bound_member, bound_receiver, kind, name, type_name${lang.column}
+        ORDER BY n DESC, bound_member, bound_receiver NULLS FIRST, kind, name, type_name NULLS FIRST${lang.order}`,
       [...scope.params, ...calleeParams],
     );
     return rows.map((r) => ({
@@ -314,6 +352,7 @@ export class DuckDbIdentifierStore {
       n: Number(r.n),
       exampleOwner: r.example_owner,
       ...(r.type_name === null ? {} : { typeName: r.type_name }),
+      ...languageField(q.groupByLanguage, r),
     }));
   }
 
@@ -359,18 +398,20 @@ export class DuckDbIdentifierStore {
         sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
         params: [...chunk, ...scope.params],
       });
+      const lang = fileLanguageGrouping("resolved", q.groupByLanguage);
       const rows = await this.session.queryAll<{
         name: string;
         kind: string;
         type_name: string | null;
         n: number | string;
         example_owner: string;
+        file_language?: string | null;
       }>(
         `${cte.sql}
-         SELECT name, kind, type_name, count(*) AS n, min(owner_symbol_id) AS example_owner
-           FROM resolved
-          GROUP BY name, kind, type_name
-          ORDER BY name, kind, type_name NULLS LAST`,
+         SELECT name, kind, type_name, count(*) AS n, min(owner_symbol_id) AS example_owner${lang.column}
+           FROM ${lang.from}
+          GROUP BY name, kind, type_name${lang.column}
+          ORDER BY name, kind, type_name NULLS LAST${lang.order}`,
         cte.params,
       );
       for (const r of rows) {
@@ -380,6 +421,7 @@ export class DuckDbIdentifierStore {
           typeName: r.type_name,
           n: Number(r.n),
           exampleOwner: r.example_owner,
+          ...languageField(q.groupByLanguage, r),
         });
       }
     }
@@ -405,6 +447,15 @@ export class DuckDbIdentifierStore {
     // The reservoir size is inlined: DuckDB takes no bind parameter there. It is
     // coerced to a positive integer first, so no caller value reaches the SQL text.
     const limit = Math.max(1, Math.floor(Number(q.limit) || 1));
+    // The file language joins AFTER sampling, so the join meets only the sampled rows.
+    const sampled = `(
+           SELECT * FROM (
+             SELECT kind, name, type_name, bound_member, bound_receiver${q.groupByLanguage === true ? ", rel_path" : ""}
+               FROM cg_identifiers
+              WHERE ${scope.sql} AND (type_name IS NOT NULL OR bound_member IS NOT NULL)
+           ) USING SAMPLE reservoir(${limit} ROWS) REPEATABLE (${SHAPE_SAMPLE_SEED})
+         )`;
+    const lang = fileLanguageGrouping(sampled, q.groupByLanguage);
     const rows = await this.session.queryAll<{
       kind: string;
       name: string;
@@ -412,16 +463,12 @@ export class DuckDbIdentifierStore {
       bound_member: string | null;
       bound_receiver: string | null;
       n: number | string;
+      file_language?: string | null;
     }>(
-      `SELECT kind, name, type_name, bound_member, bound_receiver, count(*) AS n
-         FROM (
-           SELECT * FROM (
-             SELECT kind, name, type_name, bound_member, bound_receiver FROM cg_identifiers
-              WHERE ${scope.sql} AND (type_name IS NOT NULL OR bound_member IS NOT NULL)
-           ) USING SAMPLE reservoir(${limit} ROWS) REPEATABLE (${SHAPE_SAMPLE_SEED})
-         )
-        GROUP BY kind, name, type_name, bound_member, bound_receiver
-        ORDER BY n DESC, kind, name`,
+      `SELECT kind, name, type_name, bound_member, bound_receiver, count(*) AS n${lang.column}
+         FROM ${lang.from}
+        GROUP BY kind, name, type_name, bound_member, bound_receiver${lang.column}
+        ORDER BY n DESC, kind, name${lang.order}`,
       scope.params,
     );
     return rows.map((r) => ({
@@ -431,6 +478,7 @@ export class DuckDbIdentifierStore {
       boundMember: r.bound_member,
       boundReceiver: r.bound_receiver,
       n: Number(r.n),
+      ...languageField(q.groupByLanguage, r),
     }));
   }
 
