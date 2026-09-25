@@ -169,12 +169,13 @@ import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 import ts from "typescript";
 
-import type {
-  CallContext,
-  CallRef,
-  FileExtraction,
-  RelPath,
-  SymbolDefinition,
+import {
+  chunkCallerScope,
+  type CallContext,
+  type CallRef,
+  type FileExtraction,
+  type RelPath,
+  type SymbolDefinition,
 } from "../src/core/contracts/types/codegraph.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
@@ -190,12 +191,15 @@ import type {
 } from "../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescript/walker/walker.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
+import { loadCodegraphGrammarSync } from "../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { symbolDefinitionsOf } from "../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectDependencyManifestSources, readDeclaredDependencies } from "../src/core/infra/dependency-manifests.js";
 import { fileIsInertForExtraction } from "../src/core/infra/extraction-fast-path.js";
+import type { PathFilter } from "../src/core/infra/file-classification/index.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 import {
   DECLARATION_FILE_SUFFIXES,
@@ -924,6 +928,9 @@ function constructorShortName(expression: ts.LeftHandSideExpression): string | n
  * what an edge points at and what production's JSX pass asks for too.
  */
 function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: CallRef): OracleQueryResult {
+  const invokerMember = queryFunctionInvokerMember(handle, cache, call);
+  if (invokerMember !== null) return invokerMember;
+
   const node = locateCallLike(handle.sourceFile, call);
   if (node === null) return queryValueReference(handle, cache, call);
 
@@ -935,6 +942,37 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
   const categories = classifyTypeFeatures(node, checker, signature, declaration);
 
   return placeDeclaration(declaration, cache, categories);
+}
+
+/**
+ * The checker's answer for an unwrapped `.call` / `.apply` / `.bind` site read
+ * as the MEMBER call it is written as, or `null` when that reading is not the
+ * truth (bd tea-rags-mcp-g7h1y).
+ *
+ * The walker keeps the literal invoker on `functionInvokerSite` because the
+ * unwrap is only right for a function receiver; `this.connection.call(fn)` on
+ * a class declaring `call` is an ordinary member call. The checker settles it
+ * from the invoker's own signature: an in-project declaration means the
+ * receiver's type declares the member, so that IS the ground truth. Anything
+ * else — `Function.prototype.call` in `lib.es5.d.ts`, no declaration at all —
+ * is the function-receiver case, left to {@link queryValueReference} exactly as
+ * before.
+ */
+export function queryFunctionInvokerMember(
+  handle: TSProgramHandle,
+  cache: TSProgramCache,
+  call: CallRef,
+): OracleQueryResult | null {
+  const site = call.functionInvokerSite;
+  if (site === undefined) return null;
+  const node = findCallExpression(handle.sourceFile, call.startLine, site.member);
+  if (node === null) return null;
+
+  const { checker } = handle;
+  const signature = checker.getResolvedSignature(node);
+  const declaration = signature?.declaration ?? declarationViaSymbol(node, checker);
+  const result = placeDeclaration(declaration, cache, classifyTypeFeatures(node, checker, signature, declaration));
+  return result.outcome.kind === "inProject" ? result : null;
 }
 
 /**
@@ -1397,7 +1435,7 @@ interface CorpusExclusionFilter {
   /** `.gitignore` and friends plus the ingest baseline — production never indexes these at all. */
   ingest: Ignore;
   /** Generated + test + per-language non-app globs — indexed for search, but no codegraph nodes. */
-  codegraph: Ignore;
+  codegraph: PathFilter;
 }
 
 /**
@@ -1575,7 +1613,7 @@ export function extractFile(
   try {
     const code = readFileSync(join(repoRoot, relPath), "utf8");
     const parser = new Parser();
-    parser.setLanguage(config.loadParser());
+    parser.setLanguage(loadCodegraphGrammarSync(factory, extensionOf(relPath)));
     const nativeRoot = parser.parse(code).rootNode;
     // The production fast path (bd tea-rags-mcp-1v12o.2.4), mirrored here because
     // the tally measures THIS function: a harness that materialized what
@@ -1597,15 +1635,13 @@ export function extractFile(
   }
 }
 
-/** `SymbolDefinition`s for a file, matching what the production sink upserts. */
+/**
+ * `SymbolDefinition`s for a file — production's own builder, so the call
+ * signatures (`arity`, `kwargs`, `acceptsBlock`) the narrowers read reach the
+ * offline symbol table exactly as they reach `cg_symbols`.
+ */
 export function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
-  return extraction.chunks.map((chunk) => ({
-    symbolId: chunk.symbolId,
-    fqName: chunk.symbolId,
-    shortName: lastSegment(chunk.symbolId),
-    relPath: extraction.relPath,
-    scope: chunk.scope,
-  }));
+  return symbolDefinitionsOf(extraction);
 }
 
 interface RunCounters {
@@ -1787,7 +1823,7 @@ export function buildCallContext(
 ): CallContext {
   return {
     callerFile: extraction.relPath,
-    callerScope: chunk.scope,
+    callerScope: chunkCallerScope(chunk),
     callerSymbolId: chunk.symbolId,
     imports: extraction.imports,
     symbolTable,

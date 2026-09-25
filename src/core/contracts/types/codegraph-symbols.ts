@@ -146,6 +146,20 @@ export interface NamedSymbol {
    * bd tea-rags-mcp-d1f8 this-resolve.
    */
   absolute?: boolean;
+  /**
+   * When `true`, the declaration is a TYPE whose own body executes with the
+   * type as its enclosing scope, so `collectSymbols` stamps the range with a
+   * `bodyScope` — its scope extended by its own name — and the resolution
+   * runner hands that, not `scope`, to the chunk's calls as `callerScope`.
+   *
+   * `scope` cannot carry it: it is also the DECLARATION's lexical scope, which
+   * the symbol table keys member lookups on, and for a type chunk the two
+   * differ — `struct Invoice` is declared at top level (`[]`) while a computed
+   * property or a stored-property initializer inside it runs as `Invoice`
+   * (bd tea-rags-mcp-3ievc). Opt-in per nameOf: a language that leaves it unset
+   * keeps every range, and every caller scope, byte-identical.
+   */
+  opensSelfScope?: boolean;
 }
 
 /**
@@ -280,6 +294,24 @@ export interface KwargSignature {
   hasSplat: boolean;
 }
 
+/**
+ * A definition's DECLARED access level, as `cg_symbols.visibility` persists it.
+ * The same word means different reach per language (Go `private` is
+ * package-private, Swift `private` is file-scoped) — see
+ * `ChunkExtraction.visibility`.
+ */
+export type DeclaredSymbolVisibility = "public" | "private" | "protected";
+
+/**
+ * One `cg_symbols` definition's declared visibility (bd tea-rags-mcp-sqqkz).
+ * `null` = the walker recorded none — UNKNOWN, never a default of public.
+ */
+export interface SymbolVisibilityRow {
+  relPath: RelPath;
+  symbolId: SymbolId;
+  visibility: DeclaredSymbolVisibility | null;
+}
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;
@@ -287,7 +319,9 @@ export interface SymbolDefinition {
   relPath: RelPath;
   scope: string[];
   arity?: AritySignature;
-  visibility?: "public" | "private" | "protected";
+  /** Declared access level, threaded from `ChunkExtraction.visibility` — whose
+   *  doc owns what `"private"` means per language. */
+  visibility?: DeclaredSymbolVisibility;
   /** Keyword-arg signature of this method definition (bd d9o7o). Undefined for
    *  non-method chunks / methods with no kwargs. */
   kwargs?: KwargSignature;

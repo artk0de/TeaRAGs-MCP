@@ -45,6 +45,14 @@ export abstract class VcsGitAdapter implements VcsAdapter {
   ): Promise<CommitFileNumstat[]>;
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
   abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
+  /** Every path `commitOid`'s tree tracks, repo-relative. Untracked and ignored files are not in it. */
+  abstract listTreePaths(commitOid: string, timeoutMs?: number): Promise<string[]>;
+  /**
+   * HEAD paths the working tree no longer has — deleted, removed from the
+   * index, or the old side of an uncommitted rename. Edited files are not
+   * listed. With `listTreePaths(HEAD)` it defines the LIVE tracked set.
+   */
+  abstract listWorktreeDeletions(timeoutMs?: number): Promise<string[]>;
 
   /** One-time pre-enrichment warmup — write the commit-graph (+ changed-path
    *  Bloom filters) to accelerate every `git log` / `git blame` this run.
@@ -63,6 +71,17 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * Per-batch failures are swallowed — absent paths simply yield no entries.
    */
   abstract readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>>;
+  /**
+   * Full-history per-commit numstat scoped to `paths` (ONE pathspec log, log
+   * order, no `--since`, no internal batching — the caller owns arg limits).
+   * A pathspec restricts rename detection to the paths it names, so a commit
+   * that renamed a named path in from an unnamed one (or out to one) would
+   * report a plain add (or delete). Every commit that adds or deletes a named
+   * path is therefore re-read WITHOUT the pathspec, and its rows touching a
+   * named path — on either side of a rename — carry `previousPath` exactly as
+   * a repo-wide log reports them.
+   */
+  abstract readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]>;
   /** Persistent batch blob reader — caller owns the lifecycle (`close()` at walk end). */
   abstract createBlobBatchReader(): BlobBatchReader;
   /** Persistent batch `<rev>` → OID resolver — caller owns the lifecycle. */

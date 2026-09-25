@@ -145,6 +145,41 @@
       ],
       "must_include": ["tea-rags:data-driven-generation", "semantic_search"],
       "failure_mode": "Russian language confuses agent OR agent does style copy manually without data-driven skill"
+    },
+    {
+      "id": "E11",
+      "category": "modify-mode (if8jz)",
+      "prompt": "Plan Task 4: 'Fix the off-by-one in `Paginator#nextOffset` in src/core/paging/paginator.ts — offset must be page*size, not (page+1)*size.' Guard came back SAFE. What runs between the guard and your first Edit?",
+      "expected": [
+        "Step 5 row Modification (behavior change of an EXISTING symbol in place)",
+        "Skill(tea-rags:data-driven-generation) BEFORE the Edit — DDG classifies MODIFY",
+        "MODIFY duties named: tests-at-risk (tea-rags:tests-as-context) + get_callers on Paginator#nextOffset",
+        "Step 4.5 proven-template lookup skipped (MODIFY skips TEMPLATE)"
+      ],
+      "must_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Agent treats a bug fix as 'Modification only → skip Step 5' and edits in-context without callers / tests-at-risk"
+    },
+    {
+      "id": "E12",
+      "category": "modify-mode (if8jz)",
+      "prompt": "Plan Task 5: 'Change `RetryPolicy#shouldRetry` to stop retrying on 4xx responses' (existing method). Guard: CAUTION, user confirmed. What runs before the first Edit?",
+      "expected": [
+        "Skill(tea-rags:data-driven-generation) (MODIFY) — callers of shouldRetry relying on old retry contract surface before commit",
+        "Then chain into superpowers:executing-plans / dinopowers:test-driven-development"
+      ],
+      "must_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Agent skips DDG because 'no new code is generated'"
+    },
+    {
+      "id": "E13",
+      "category": "control-trivial-text (if8jz)",
+      "prompt": "Plan Task 7: 'Reword the log message in src/core/ingest/runner.ts from \"starting\" to \"starting ingest run\"'. Tools?",
+      "expected": [
+        "Trivial row — text-only change, no behavior change",
+        "NO data-driven-generation; direct Edit"
+      ],
+      "must_not_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Modification row over-triggers on a log-message text swap"
     }
   ]
 }

@@ -1798,3 +1798,21 @@ describe("TSCallResolver .tsx import resolution (bd tea-rags-mcp-f3zcy)", () => 
     expect(edges).toEqual([{ targetRelPath: "src/bar.ts", importText: "./bar" }]);
   });
 });
+
+describe("TSCallResolver.resolveFileEdges — export names (bd tea-rags-mcp-r8hme.2)", () => {
+  it("carries the import's export names onto the edge it maps", () => {
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+    const imports = [
+      { importText: "./bar", startLine: 1, importedExportNames: ["default", "baz"] },
+      { importText: "./qux", startLine: 2, reexportedExportNames: ["*"] },
+    ];
+    const edges = resolver.resolveFileEdges?.(
+      { relPath: "src/main.ts", language: "typescript", imports, chunks: [], fileScope: [] },
+      { callerFile: "src/main.ts", callerScope: [], imports, symbolTable: new InMemoryGlobalSymbolTable() },
+    );
+    expect(edges).toEqual([
+      { targetRelPath: "src/bar.ts", importText: "./bar", importedExportNames: ["default", "baz"] },
+      { targetRelPath: "src/qux.ts", importText: "./qux", reexportedExportNames: ["*"] },
+    ]);
+  });
+});

@@ -19,6 +19,11 @@ import type { WorkerEnrichmentDescriptor } from "../../../contracts/types/provid
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
 import type { CodegraphExclusionOptions } from "./exclusion.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
+import {
+  createTemporalCochangeHooks,
+  createTemporalTrajectory,
+  type TemporalCochangeConfig,
+} from "./temporal/index.js";
 
 /**
  * Codegraph wiring deps — the trajectory family relies on a
@@ -75,12 +80,19 @@ export interface CodegraphDeps {
    * fallback). bd tea-rags-mcp-dz7f.
    */
   workerDescriptor?: WorkerEnrichmentDescriptor;
+  /**
+   * Co-change build config for the temporal sub-graph (bd tea-rags-mcp-x4rpp),
+   * derived by bootstrap from the git trajectory's own settings. Absent (git
+   * history off, tests) ⇒ the temporal trajectory registers but builds nothing.
+   */
+  temporal?: TemporalCochangeConfig;
 }
 
 /**
  * Returns the array of L2 trajectories that belong to the codegraph
- * family. Slice 1: SymbolsTrajectory only. Slice 5+ appends Temporal,
- * etc.
+ * family: SymbolsTrajectory, and the temporal co-change sub-graph (Slice 5,
+ * bd tea-rags-mcp-x4rpp), whose tables the symbols provider rebuilds through
+ * the family's collection-completion hook.
  *
  * `languageFactory` is injected by the composition root (`composition.ts`)
  * rather than carried on `CodegraphDeps` (which `bootstrap/factory.ts`
@@ -90,10 +102,19 @@ export interface CodegraphDeps {
 export function createCodegraphTrajectories(
   deps: CodegraphDeps & { languageFactory: LanguageFactoryDescriptor },
 ): Trajectory[] {
-  return [createSymbolsTrajectory(deps)];
+  const { temporal, ...symbolsDeps } = deps;
+  return [
+    createSymbolsTrajectory({ ...symbolsDeps, collectionCompletionHooks: createTemporalCochangeHooks(temporal) }),
+    createTemporalTrajectory(),
+  ];
 }
 
 export { createSymbolsTrajectory } from "./symbols/index.js";
+export * from "./temporal/index.js";
+export type {
+  CodegraphCollectionCompletionContext,
+  CodegraphCollectionCompletionHook,
+} from "./collection-completion-hook.js";
 export { CODEGRAPH_LANGUAGE_BY_EXTENSION, CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./symbols/index.js";
 export { buildCodegraphExclusionFilter, CODEGRAPH_TEST_PATTERNS } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";

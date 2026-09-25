@@ -21,7 +21,10 @@ export function registerDocumentTools(server: McpServer, deps: { app: App; regis
     "add_documents",
     {
       title: "Add Documents",
-      description: "Add documents to collection. Auto-embed via configured embedding provider.",
+      description:
+        "Add documents to collection. Auto-embed via configured embedding provider. " +
+        "Typed collection (created with schema): every document's metadata is validated first; " +
+        "one violation rejects the whole batch.",
       inputSchema: schemas.AddDocumentsSchema,
       // Not read-only (writes points) and not idempotent: re-adding the same
       // documents re-embeds and appends rather than no-op'ing.

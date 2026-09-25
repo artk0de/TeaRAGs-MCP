@@ -20,6 +20,7 @@
  * top level.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
@@ -29,7 +30,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { goImportBoundName, goImportNameClaims, goImportsByClaimedName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 import { goFunctionReturnTypesKey, goPackageDirOf, goQualifiedTypeName } from "../type-name.js";
@@ -145,7 +146,7 @@ function collectGoFunctionReturnTypes(
   imports: readonly ImportRef[],
   packageDir: string,
 ): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = createIdentifierRecord();
   const qualifiers = goImportPathsByBoundName(imports);
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
@@ -513,8 +514,8 @@ function collectGoLocalBindingsForChunk(
   endLine: number,
   shadowedNames: ReadonlySet<string>,
 ): { types: Record<string, LocalBinding[]>; calls: Record<string, CallResultBinding[]> } {
-  const bindings: Record<string, LocalBinding[]> = {};
-  const callBindings: Record<string, CallResultBinding[]> = {};
+  const bindings: Record<string, LocalBinding[]> = createIdentifierRecord();
+  const callBindings: Record<string, CallResultBinding[]> = createIdentifierRecord();
   // Find the function/method declaration node whose span matches the
   // chunk's [startLine, endLine] range. Tree-sitter rows are 0-indexed;
   // we use the start row as the match anchor (chunks are anchored at

@@ -26,5 +26,8 @@ export const capability: LanguageCapability = {
   // walker 4: bd tea-rags-mcp-fov8f — every spec of a grouped `type ( ... )`
   // declaration emits (the walk kept only the first spec's symbol); indexed Go
   // projects need `--force-enrichments codegraph`.
-  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
+  // visibility on `ChunkExtraction.visibility` — exported vs package-private — persisted in
+  // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

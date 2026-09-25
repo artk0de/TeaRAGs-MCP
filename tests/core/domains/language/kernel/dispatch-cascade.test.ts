@@ -86,4 +86,19 @@ describe("buildDispatchCascade", () => {
     expect(survivors(cascade, call("m", '"s"'), candidates).map((c) => c.symbolId)).toEqual(["String#m"]);
     expect(survivors(cascade, call("m", "obj"), candidates)).toHaveLength(2);
   });
+
+  // bd tea-rags-mcp-jwjyr.1 — the visibility access rule is language data, not
+  // kernel semantics: the injected policy decides, the cascade keeps its shape.
+  it("threads an injected visibility access policy into the VisibilityNarrower, same position", () => {
+    const cascade = buildDispatchCascade({ visibilityAccess: { canReach: () => true } });
+    expect(cascade.map((n) => n.constructor.name)).toEqual([
+      "ArityNarrower",
+      "KwargNarrower",
+      "VisibilityNarrower",
+      "BlockNarrower",
+    ]);
+    const priv = { ...def("String#m"), visibility: "private" as const };
+    expect(survivors(cascade, call("m"), [priv])).toHaveLength(1);
+    expect(survivors(buildDispatchCascade(), call("m"), [priv])).toHaveLength(0);
+  });
 });

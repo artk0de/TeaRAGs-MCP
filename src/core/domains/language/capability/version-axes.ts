@@ -1,4 +1,4 @@
-import { SHARED_LANGUAGE } from "../kernel/capability.js";
+import { SHARED_LANGUAGE } from "../kernel/index.js";
 
 /** The two axes a digest can stand behind; `codegraphSchema` stays hand-judged. */
 export type PinnedVersionAxis = "chunking" | "walker";
@@ -39,6 +39,8 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       `${CHUNKER_ROOT}/tree-sitter.ts`,
       `${CHUNKER_ROOT}/markdown-chunker.ts`,
       `${CHUNKER_ROOT}/character.ts`,
+      `${CHUNKER_ROOT}/nesting-line-splitter.ts`,
+      `${CHUNKER_ROOT}/ast-symbol-splitter.ts`,
       `${CHUNKER_ROOT}/config.ts`,
       `${CHUNKER_ROOT}/materialize.ts`,
       `${CHUNKER_ROOT}/symbol-mass.ts`,

@@ -2,6 +2,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 
 import type { CommandModule } from "yargs";
 
+import { createColorizer, type Colorizer } from "../infra/color.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { formatForCli } from "../update-check/format.js";
@@ -38,11 +39,11 @@ export async function runUpdateCommand(depsOverride?: Partial<RunUpdateDeps>): P
 
   switch (status.kind) {
     case "up-to-date":
-      process.stdout.write(`${formatForCli(status)}\n`);
+      process.stdout.write(`${formatForCli(status, createColorizer())}\n`);
       deps.exit(0);
       return;
     case "unavailable":
-      process.stderr.write(`${formatForCli(status)}\n`);
+      process.stderr.write(`${formatForCli(status, stderrColorizer())}\n`);
       deps.exit(1);
       return;
     case "available":
@@ -50,8 +51,14 @@ export async function runUpdateCommand(depsOverride?: Partial<RunUpdateDeps>): P
   }
 }
 
+/** Colors for stderr lines — gated on stderr's own TTY, not stdout's. */
+function stderrColorizer(): Colorizer {
+  return createColorizer({ isTTY: Boolean(process.stderr.isTTY) });
+}
+
 function runNpmInstall(status: Extract<UpdateStatus, { kind: "available" }>, deps: RunUpdateDeps): void {
-  process.stdout.write(`Updating tea-rags ${status.current} → ${status.latest}...\n`);
+  const c = createColorizer();
+  process.stdout.write(`Updating tea-rags ${status.current} → ${c.bold(c.ok(status.latest))}...\n`);
   // Force postinstall to run even if user's ~/.npmrc has ignore-scripts=true.
   // tea-rags' postinstall (scripts/postinstall.js) is required for proper setup.
   const child = deps.spawn("npm", ["install", "-g", "tea-rags@latest"], {
@@ -61,11 +68,13 @@ function runNpmInstall(status: Extract<UpdateStatus, { kind: "available" }>, dep
 
   child.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT" || /ENOENT|not found/i.test(err.message)) {
-      process.stderr.write("npm not found in PATH. Install Node.js or update tea-rags manually.\n");
+      process.stderr.write(
+        `${stderrColorizer().alert("npm not found in PATH. Install Node.js or update tea-rags manually.")}\n`,
+      );
       deps.exit(127);
       return;
     }
-    process.stderr.write(`Failed to spawn npm: ${err.message}\n`);
+    process.stderr.write(`${stderrColorizer().alert(`Failed to spawn npm: ${err.message}`)}\n`);
     deps.exit(1);
   });
 

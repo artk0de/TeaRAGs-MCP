@@ -52,7 +52,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { pythonKernel } from "./kernel.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";
@@ -138,6 +138,11 @@ export class PythonLanguage implements LanguageProvider {
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
       targetsCoreAmbiguousMember: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false,
+      // The miss classifier's `noInProjectDef` gate, asked of Python files only
+      // (bd tea-rags-mcp-nbf8q). Forwarded explicitly: the runner reads this
+      // facade, never the resolver behind it (bd tea-rags-mcp-x9qsh).
+      hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
     };
   }
 }

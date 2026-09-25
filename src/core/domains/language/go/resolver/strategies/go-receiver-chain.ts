@@ -1,7 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
+import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/index.js";
 import { goProjectTypeOfRefName } from "../go-project-type.js";
 import { createGoReceiverTypePorts, goBareCallHead } from "../receiver-type-ports.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";

@@ -29,7 +29,11 @@
  * `class_declaration` (class / struct / enum / extension / actor — one node
  * type, the keyword is an anonymous child) and `protocol_declaration` are scope
  * containers (`descendsInto: true`), composed with the `.` `scopeSeparator` the
- * kernel declares.
+ * kernel declares. Both also set `opensSelfScope`: Swift chunks neither a
+ * computed property nor a stored-property initializer, so their calls land on
+ * the TYPE chunk, and they run with the type as `self` — the kernel stamps the
+ * chunk's `bodyScope` so `selfMember`, `storedPropertyType` and the chain fold
+ * see the enclosing type there too (bd tea-rags-mcp-3ievc).
  *
  * Not named here, matching the tier-1 chunker's scope: `property_declaration`,
  * `subscript_declaration` (whose `name` field points at the RETURN type),
@@ -39,12 +43,12 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { methodKindFromClassify } from "../../kernel/method-kind.js";
+import { methodKindFromClassify } from "../../kernel/index.js";
 
 export function swiftNameOf(node: AstNode): NamedSymbol | null {
   if (node.type === "class_declaration" || node.type === "protocol_declaration") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: true };
+    if (id) return { name: id.text, descendsInto: true, opensSelfScope: true };
   }
   if (node.type === "function_declaration" || node.type === "protocol_function_declaration") {
     const id = node.childForFieldName("name");

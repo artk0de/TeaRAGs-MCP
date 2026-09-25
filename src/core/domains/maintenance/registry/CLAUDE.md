@@ -2,28 +2,27 @@
 
 ## Invariants
 
-- **Only `name`, `autoUpdate` and `languageVersions` survive a pipeline
-  `record()` — everything else is overwritten.** `CollectionRegistry#record`
-  replaces the entry with whatever the caller passed and re-attaches exactly
-  those three from the existing one. Every other CLI-managed field must be
-  supplied by the caller or it is erased. `languageVersions` is sticky for a
-  sharper reason than the other two: it CLAIMS a language layer was rebuilt
-  corpus-wide, so only the run that rebuilt it may advance it
+- **Only `name`, `autoUpdate`, `languageVersions` and the worktree provenance
+  pair survive a pipeline `record()` — everything else is overwritten.**
+  `CollectionRegistry#record` replaces the entry with whatever the caller passed
+  and re-attaches exactly those from the existing one. Every other CLI-managed
+  field must be supplied by the caller or it is erased. `languageVersions` is
+  sticky for a sharper reason than the others: it CLAIMS a language layer was
+  rebuilt corpus-wide, so only the run that rebuilt it may advance it
   (`#stampLanguageVersions`, called from `IndexingOps` because that is the only
   layer that knows the run mode). Every run calls `record()`, incremental ones
   included — carrying the stamp there would have auto-update silently clearing
-  the reindex hint it exists to raise. `worktreeOf` / `worktreeName` ARE part of
-  `RecordEntryInput` (`contracts/types/registry.ts`, an
-  `Omit<CollectionEntry, "name" | "autoUpdate">`), but
-  `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
-  never passes them, and nothing re-sets provenance after an index run — the
-  only writer is `CollectionRegistry#setWorktreeProvenance`, called once at
-  clone time. Why: reindexing a worktree clone wipes its provenance;
-  `CollectionRegistry#findWorktree` then misses it,
-  `tea-rags worktree remove <name>` throws `WorktreeNotFoundError`, and the
-  plugin cleanup hook's registry-vs-filesystem sweep skips the entry — silently,
-  with no error anywhere. Any new field set outside the pipeline must be added
-  to the sticky preserve list here.
+  the reindex hint it exists to raise. `worktreeOf` / `worktreeName` are kept
+  only when the caller omits `worktreeOf` and the existing entry has it — the
+  only writer is `CollectionRegistry#setWorktreeProvenance`, once at clone time,
+  and `BaseIndexingPipeline#recordRegistryEntry`
+  (`domains/ingest/pipeline/base.ts`) never passes them. Why: the prescribed
+  lifecycle indexes a clone right after `worktree create`; before the pair was
+  sticky that first run wiped it, `CollectionRegistry#findWorktree` missed the
+  clone, `tea-rags worktree remove <name>` threw `WorktreeNotFoundError`, and
+  the plugin cleanup hook's sweep never saw it — silently (bd
+  tea-rags-mcp-ghk1f). Any new field set outside the pipeline must be added to
+  the sticky preserve list here.
 
 ## Mechanics
 

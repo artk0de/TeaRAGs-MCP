@@ -55,7 +55,7 @@ export interface FileDependencyGraphFile {
  * One file → file dependency: a `cg_symbols_edges_file` row, the edge set
  * `codegraph.file.fanIn` / `fanOut` / `instability` are counted over.
  */
-export interface FileDependencyEdge {
+export interface FileDependencyEdge extends FileEdgeExportNames {
   sourceRelPath: RelPath;
   targetRelPath: RelPath;
   /**
@@ -78,14 +78,73 @@ export interface FileDependencyGraph {
   edges: FileDependencyEdge[];
 }
 
+/**
+ * One resolved method edge into a member whose name or declaration marks it
+ * non-public — declared `private` / `protected`, or named with a leading
+ * underscore (bd tea-rags-mcp-r8hme.1). Which of those is a convention-privacy
+ * leak is the boundary diagnostics' call; this is only the candidate set.
+ */
+export interface NonPublicMemberEdge {
+  sourceRelPath: RelPath;
+  sourceSymbolId: SymbolId;
+  targetRelPath: RelPath;
+  targetSymbolId: SymbolId;
+  targetShortName: string;
+  /** `cg_symbols.visibility` of the target; `null` when the walker records none. */
+  targetVisibility: string | null;
+  /** `cg_symbols_files.language` of the target's declaring file. */
+  targetLanguage: string;
+  /** The call as written (`callText`) — for a Ruby `send(:x)` unwrap, the `send` call itself. */
+  callExpression: string;
+}
+
+/**
+ * One file edge as the per-file import reads return it: the
+ * {@link FileDependencyEdge} plus the import text the walker recorded
+ * (`null` for a legacy row that carries none).
+ */
+export interface FileImportEdge extends FileDependencyEdge {
+  importText: string | null;
+}
+
+/**
+ * One file's import edges in one direction (bd tea-rags-mcp-gfvr8) — the
+ * files importing it, or the files it imports. `fileKnown` says whether the
+ * walk extracted the file (`cg_symbols_files`), so an empty `edges` on a known
+ * file ("nothing imports it") stays distinguishable from a path the graph has
+ * never seen. An unwalked file can still carry edges: an import of a file the
+ * walk skipped is a real row that counts toward its source's fanOut.
+ */
+export interface FileImportLookup {
+  fileKnown: boolean;
+  edges: FileImportEdge[];
+}
+
 export type CycleScope = "file" | "method";
 
 export interface CycleEntry {
   /** Numeric id assigned at recompute time; stable within a single recompute, NOT across recomputes. */
   cycleId: number;
   scope: CycleScope;
-  /** Members in walk order (the order returned by Tarjan's pop sequence). */
+  /**
+   * Members in walk order (the order returned by Tarjan's pop sequence): a
+   * relPath per member in the file scope, a bare symbolId in the method scope.
+   */
   members: string[];
+  /**
+   * Method scope only — each member's symbolId with the file that declares it,
+   * index-aligned with `members` (bd tea-rags-mcp-4g9ga). A symbolId is unique
+   * per FILE, so the bare `members` entry cannot tell two namesakes apart; this
+   * is the member's identity. `relativePath` is `""` only for a row carried over
+   * by migration 028 and not yet recomputed.
+   */
+  memberLocations?: CycleMemberLocation[];
+}
+
+/** One method-scope cycle member, addressed by `(relativePath, symbolId)`. */
+export interface CycleMemberLocation {
+  symbolId: SymbolId;
+  relativePath: RelPath;
 }
 
 export interface GraphFileNode {
@@ -254,8 +313,21 @@ export interface FileResolveStatsWrite {
   completeLanguages: string[];
 }
 
+/**
+ * The names a file edge takes from, and forwards out of, its target's export
+ * surface (bd tea-rags-mcp-r8hme.2) — the union over every import statement the
+ * edge stands for. Each list is absent when no statement recorded one, so
+ * "not recorded" never reads as "names nothing".
+ */
+export interface FileEdgeExportNames {
+  /** {@link ImportRef.importedExportNames}, unioned per edge. */
+  importedExportNames?: string[];
+  /** {@link ImportRef.reexportedExportNames}, unioned per edge. */
+  reexportedExportNames?: string[];
+}
+
 export interface GraphEdges {
-  fileEdges: { targetRelPath: RelPath; importText: string | null }[];
+  fileEdges: ({ targetRelPath: RelPath; importText: string | null } & FileEdgeExportNames)[];
   methodEdges: {
     sourceSymbolId: SymbolId;
     targetSymbolId: SymbolId | null;

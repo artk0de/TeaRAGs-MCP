@@ -57,7 +57,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { javaKernel } from "./kernel.js";
 import { JavaCallResolver } from "./resolver/index.js";
 import { javaNameOf } from "./walker/name-of.js";

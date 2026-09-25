@@ -19,10 +19,13 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileDependencyGraph,
   FileGraphMetrics,
+  FileImportLookup,
   FileResolveStatsWrite,
   GraphEdges,
   GraphFileNode,
+  NonPublicMemberEdge,
   ResolveRunStatsRow,
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
@@ -33,7 +36,13 @@ import type {
   RelPath,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
 } from "./codegraph-symbols.js";
+import type {
+  TemporalCochangeBuildMeta,
+  TemporalCochangeGraph,
+  TemporalCochangeSnapshot,
+} from "./codegraph-temporal.js";
 
 /**
  * One file's worth of symbol definitions, as consumed by
@@ -113,6 +122,16 @@ export interface SymbolChunkResolver {
 }
 
 /**
+ * The read seam the find_symbol outline uses to show each member's DECLARED
+ * visibility (bd tea-rags-mcp-sqqkz) — one batched read per outline response.
+ * May throw when the graph exists but cannot be read; the outline degrades to
+ * its undecorated form. Absent when codegraph is disabled.
+ */
+export interface SymbolVisibilityResolver {
+  resolveSymbolVisibilities: (collectionName: string, symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
+}
+
+/**
  * One symbol whose derived codegraph signals moved since the previous run's
  * baseline (bd tea-rags-mcp-a2ddb). Carries the FILE as well as the symbol
  * because the payload is addressed per file's Qdrant points — a bare
@@ -139,6 +158,42 @@ export interface CodegraphSignalDrift {
   symbols: ChangedSymbolSignal[];
   files: ChangedFileSignal[];
 }
+
+/**
+ * Size of a graph store as the compaction decision reads it (bd
+ * tea-rags-mcp-dvzdm): the rows every table answers to `count(*)`, the row
+ * versions its storage still holds (live plus deleted-but-unreclaimed), and the
+ * file's bytes on disk.
+ */
+export interface CodegraphStorageFootprint {
+  liveRows: number;
+  storedRows: number;
+  fileBytes: number;
+}
+
+/**
+ * How one {@link GraphDbClient.compactStorage} call settled. Plain data, so it
+ * survives the daemon's JSON round trip.
+ *
+ * - `belowThreshold` — the store is small, or mostly live rows; nothing to gain.
+ * - `streamOpen` — a stream was reading the file on its own connection; the
+ *   next run tries again.
+ * - `unsupported` — a daemon from a build that predates the operation.
+ */
+export type CodegraphStorageCompactionOutcome =
+  | {
+      readonly kind: "skipped";
+      readonly reason: "belowThreshold" | "streamOpen" | "unsupported";
+      readonly footprint?: CodegraphStorageFootprint;
+    }
+  | {
+      readonly kind: "compacted";
+      readonly bytesBefore: number;
+      readonly bytesAfter: number;
+      readonly liveRows: number;
+      readonly storedRows: number;
+      readonly durationMs: number;
+    };
 
 /**
  * Driver-agnostic graph DB client.
@@ -185,7 +240,9 @@ export interface GraphDbClient {
    * `cg_ambiguous_fanout` aggregates whose `member` matches the target's
    * member segment — call sites whose over-cap candidate set plausibly
    * contained the target — WITHOUT materializing the suppressed edges.
-   * Ordered by (sourceSymbolId, callExpression); `limit` defaults to 50.
+   * Ordered by (sourceSymbolId, sourceRelPath, callExpression) — a namesake
+   * caller in another file is its own aggregate (migration 027); `limit`
+   * defaults to 50.
    * Empty `member` always returns [] (aggregates never record one).
    */
   getAmbiguousCallersByMember: (member: string, limit?: number) => Promise<AmbiguousCallerSite[]>;
@@ -230,16 +287,25 @@ export interface GraphDbClient {
   getCallSiteCount: (symbolId: SymbolId) => Promise<number>;
   /**
    * Bulk read-back of `{ fanIn, fanOut, pageRank }` for EVERY symbol in the
-   * graph — the set-based replacement for the per-chunk
-   * `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop in
-   * `buildChunkSignals` (the deferred-chunk tail). Three GROUP-BY / scan queries
-   * instead of `3 × chunkCount` point queries. Values are byte-identical to the
-   * per-symbol getters — same confidence-weighted `SUM(COALESCE(confidence,1.0))`
-   * with 2-decimal `roundEdgeWeightSum`, same `Number()`/0 pageRank default — and
-   * a symbol absent from the map reads as `{ 0, 0, 0 }` (matching the getters,
-   * which each return 0 on no rows).
+   * graph, keyed by {@link fileScopedSymbolKey} — the set-based replacement for
+   * the per-chunk `getCalledByCount` + `getCallSiteCount` + `getPageRank` loop
+   * in `buildChunkSignals` (the deferred-chunk tail). Three GROUP-BY / scan
+   * queries instead of `3 × chunkCount` point queries. A symbol absent from the
+   * map reads as `{ 0, 0, 0 }` (matching the getters, which each return 0 on no
+   * rows).
+   *
+   * The key is `(relPath, symbolId)` and NOT the bare symbolId, because a
+   * symbolId is unique per file: the bare form merged every top-level namesake
+   * into one node and stamped the union of their edges on each (bd
+   * tea-rags-mcp-xtdkq, same defect class as the migration-020 primary key).
+   * The per-symbol getters above still answer the merged number and have no
+   * production caller left; do not reintroduce one.
+   *
+   * `pageRank` is the residual: it is stored per bare symbol_id and computed
+   * over an adjacency of bare ids, so every namesake shares one rank and the
+   * bulk read hands each declaration that same value.
    */
-  getChunkSignalsBulk: () => Promise<Map<SymbolId, ChunkGraphSignals>>;
+  getChunkSignalsBulk: () => Promise<Map<FileScopedSymbolId, ChunkGraphSignals>>;
 
   // ── Class hierarchy (bd tea-rags-mcp-f10y) ──
   /** Direct ancestors of a type (forward), ordered by declaration ordinal. */
@@ -335,6 +401,20 @@ export interface GraphDbClient {
   /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
   removeSymbolsForFile: (relPath: RelPath) => Promise<void>;
 
+  /**
+   * Cheap derived-table prune for deleted files (bd tea-rags-mcp-dy852):
+   * drop every cycle with a member in one of `relPaths` and those files'
+   * PageRank rows, and mark the derived tables stale when any path was a
+   * walked file. Called by `handleDeletedPaths` BEFORE the base rows go.
+   */
+  pruneDerivedForDeletedFiles: (relPaths: readonly RelPath[]) => Promise<void>;
+
+  /**
+   * Whether a deletion pruned the derived tables since the last full cycles +
+   * PageRank recompute, which clears the mark.
+   */
+  hasStaleDerivedTables: () => Promise<boolean>;
+
   /** Bulk read for bootstrap hydration. Returns every persisted symbol
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */
@@ -396,6 +476,14 @@ export interface GraphDbClient {
    * find_symbol codegraph fallback (0rskm) and promotable to primary (q383b).
    */
   findSymbolChunk: (symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+
+  /**
+   * Declared visibility of every `cg_symbols` definition whose symbolId is in
+   * `symbolIds` — namesakes in other files included, so the caller joins by
+   * (relPath, symbolId). A NULL column is returned as `null` (unknown); an id
+   * with no definition is absent. One batched read (bd tea-rags-mcp-sqqkz).
+   */
+  getSymbolVisibilities: (symbolIds: readonly SymbolId[]) => Promise<SymbolVisibilityRow[]>;
 
   /**
    * Each requested file's persisted symbol ranges (bd tea-rags-mcp-9i2ow) — the
@@ -466,11 +554,67 @@ export interface GraphDbClient {
   listAdjacency: (scope: CycleScope) => Promise<Map<string, string[]>>;
 
   /**
+   * The persisted file dependency graph, whole: every walked file with its
+   * symbol count, and every `cg_symbols_edges_file` row with the resolved call
+   * weight across it. The boundary diagnostics judge it
+   * (`get_architecture_report`, bd tea-rags-mcp-94hd9); no filter here, because
+   * an edge to an unwalked file still moves its source's instability.
+   */
+  readFileDependencyGraph: () => Promise<FileDependencyGraph>;
+
+  /**
+   * Resolved method edges whose target is declared `private` / `protected` or
+   * named with a leading underscore, restricted to targets declared in a file
+   * of one of `languages` — the candidate set the convention-privacy check of
+   * `get_architecture_report` judges (bd tea-rags-mcp-r8hme.1). An empty
+   * `languages` reads nothing.
+   */
+  readNonPublicMemberEdges: (languages: readonly string[]) => Promise<NonPublicMemberEdge[]>;
+
+  // ── Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp) ──
+
+  /**
+   * Replace `cg_temporal_files` / `cg_temporal_edges_cochange` /
+   * `cg_temporal_meta` with one build, atomically. Wholesale: nothing of the
+   * previous build survives.
+   */
+  replaceTemporalCochange: (snapshot: TemporalCochangeSnapshot) => Promise<void>;
+
+  /** Provenance of the persisted co-change build; `null` before the first one. */
+  readTemporalCochangeMeta: () => Promise<TemporalCochangeBuildMeta | null>;
+
+  /**
+   * Every persisted co-change pair, flagged with whether a file edge or a
+   * resolved method edge joins its endpoints in either direction — the input of
+   * the silent-coupling detector (`get_architecture_report`, bd
+   * tea-rags-mcp-b4dcz).
+   */
+  readTemporalCochangeGraph: () => Promise<TemporalCochangeGraph>;
+
+  /**
+   * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files
+   * importing it — each weighted like {@link readFileDependencyGraph}'s edges.
+   * File-scope `get_callers` reads it (bd tea-rags-mcp-gfvr8).
+   */
+  getFileImporters: (relPath: RelPath) => Promise<FileImportLookup>;
+
+  /**
+   * The `cg_symbols_edges_file` rows whose SOURCE is `relPath` — the files it
+   * imports. File-scope `get_callees` reads it (bd tea-rags-mcp-gfvr8).
+   */
+  getFileImports: (relPath: RelPath) => Promise<FileImportLookup>;
+
+  /**
    * Stream the adjacency for `scope` one `[source, target]` pair at a
    * time. Slice 2 hot-path replacement for `listAdjacency` — gives the
    * domain layer freedom to bucket into a compact id-keyed structure
    * (e.g. `Map<number, number[]>` with a separate id-table) instead of
    * paying the string-keyed `Map<string, string[]>` overhead twice.
+   *
+   * Vertices are relPaths in the file scope and `FileScopedSymbolId`s
+   * (`fileScopedSymbolKey`) in the method scope — never bare symbolIds, which
+   * name every namesake at once (bd tea-rags-mcp-4g9ga). `listAdjacency`
+   * uses the same identity.
    *
    * Method scope also yields the per-edge dispatch confidence as an
    * optional third element (bd tea-rags-mcp-s5ato; legacy NULL rows
@@ -489,11 +633,24 @@ export interface GraphDbClient {
   checkpoint: () => Promise<void>;
 
   /**
+   * Rewrite the store without the dead row versions it keeps, when enough of
+   * it is dead to be worth the cost (bd tea-rags-mcp-dvzdm). The call is safe
+   * to issue after every run: below the threshold it only measures.
+   *
+   * Concurrent calls on the same store wait for it rather than fail, and the
+   * client stays usable afterwards. A failure leaves the previous store intact
+   * and is reported as a typed error; nothing is lost by retrying on a later run.
+   */
+  compactStorage: () => Promise<CodegraphStorageCompactionOutcome>;
+
+  /**
    * Atomically replace the cycles table for `scope` with the supplied
    * SCC list. Domain runs Tarjan; adapter persists the result.
    * Each inner array is one SCC's members in walk order; cycle_id is
    * assigned by the adapter using the array index. Single-node SCCs
-   * are caller-filtered.
+   * are caller-filtered. Method-scope members are the vertex ids
+   * `streamAdjacency` yields (`FileScopedSymbolId`); the adapter splits
+   * them back into the member's file and symbolId.
    */
   replaceCycles: (scope: CycleScope, sccs: readonly (readonly string[])[]) => Promise<void>;
 
@@ -501,18 +658,22 @@ export interface GraphDbClient {
 
   /**
    * Atomically replace the per-symbol PageRank table with the supplied
-   * ranks. Domain runs the iterative algorithm; adapter persists.
+   * ranks, keyed by the method-scope vertex ids `streamAdjacency` yields.
+   * Domain runs the iterative algorithm; adapter persists.
    * Empty input wipes the table — useful after a force-reindex when
    * the method graph is fully rebuilt.
    */
   replacePageRanks: (ranks: ReadonlyMap<string, number>) => Promise<void>;
 
   /**
-   * Look up the PageRank of a single symbol. Returns 0 when the symbol
-   * is unknown or the metrics table hasn't been populated yet — both
+   * Look up the PageRank of a single declaration. Ranks are keyed by
+   * `(relPath, symbolId)` (bd tea-rags-mcp-4g9ga): with `relPath` the rank of
+   * that file's declaration; without it the bare id is ambiguous across
+   * namesakes and the highest rank among them is returned. Returns 0 when the
+   * symbol is unknown or the metrics table hasn't been populated yet — both
    * cases are treated as "rank-irrelevant".
    */
-  getPageRank: (symbolId: SymbolId) => Promise<number>;
+  getPageRank: (symbolId: SymbolId, relPath?: RelPath) => Promise<number>;
 
   /**
    * Symbols and files whose derived signals (`fanIn` / `fanOut` / `pageRank`,

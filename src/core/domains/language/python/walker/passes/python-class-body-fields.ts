@@ -37,6 +37,7 @@
  * reason: there is no evidence at all behind the name.
  */
 
+import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { ImportRef } from "../../../../../contracts/types/codegraph.js";
 
@@ -154,8 +155,8 @@ export function collectPythonClassBodyFieldTypes(
     declared: collectDeclaredClassNames(root),
     importBound: collectImportBoundNames(imports),
   };
-  const byShortName: Record<string, Record<string, string>> = {};
-  const byClassKey: Record<string, Record<string, string>> = {};
+  const byShortName: Record<string, Record<string, string>> = createIdentifierRecord();
+  const byClassKey: Record<string, Record<string, string>> = createIdentifierRecord();
 
   const visit = (node: AstNode, scope: readonly string[]): void => {
     const isContainer = node.type === "class_definition" || node.type === "function_definition";

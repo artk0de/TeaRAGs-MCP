@@ -10,6 +10,7 @@ describe("static filter presets", () => {
     expect(compileFilterPreset(byName("production"), undefined, "chunk")).toEqual({
       must_not: [
         { key: "isTest", match: { value: true } },
+        { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
         { key: "isDocumentation", match: { value: true } },
         { key: "chunkType", match: { value: "block" } },
       ],

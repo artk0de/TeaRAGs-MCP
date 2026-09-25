@@ -183,8 +183,9 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
       seen.add(`${source}->${target}`);
     }
     expect(seen.size).toBe(N);
-    expect(seen.has("S0->T0")).toBe(true);
-    expect(seen.has(`S${N - 1}->T${N - 1}`)).toBe(true);
+    // Method vertices are file-scoped since bd tea-rags-mcp-4g9ga.
+    expect(seen.has("a.ts|S0->b.ts|T0")).toBe(true);
+    expect(seen.has(`a.ts|S${N - 1}->b.ts|T${N - 1}`)).toBe(true);
   });
 
   it("init only mkdirs spillDir — does NOT wipe existing files in it", async () => {
@@ -308,7 +309,7 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
     expect(pairs.length).toBe(1);
     // Method scope carries the per-edge confidence as third element
     // (bd tea-rags-mcp-s5ato); upsertFile defaults omitted confidence to 1.
-    expect(pairs[0]).toEqual(["A.x", "B.y", 1]);
+    expect(pairs[0]).toEqual(["src/a.ts|A.x", "src/b.ts|B.y", 1]);
   });
 
   // bd tea-rags-mcp-s5ato — method-scope adjacency carries edge confidence
@@ -342,8 +343,8 @@ describe("DuckDbGraphClient — slice 2 streaming primitives", () => {
     }
     expect(triples).toEqual(
       expect.arrayContaining([
-        ["A#run", "B#x", 1],
-        ["A#run", "C#y", 0.25],
+        ["src/a.ts|A#run", "src/b.ts|B#x", 1],
+        ["src/a.ts|A#run", "src/c.ts|C#y", 0.25],
       ]),
     );
   });

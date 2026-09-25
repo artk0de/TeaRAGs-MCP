@@ -1,7 +1,7 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupEnclosingTypeMemberInFile, type SwiftResolverConfig } from "./shared.js";
+import { lookupSelfTypeMemberInFile, swiftSelfDelegationCaller, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * `self.member()` and `Self.member()` — an explicit member of the enclosing
@@ -26,7 +26,15 @@ export class SwiftSelfMemberSymbolResolutionStrategy implements SymbolResolution
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== "self" && call.receiver !== "Self") return CONTINUE;
-    const sameFileHit = lookupEnclosingTypeMemberInFile(call.member, ctx);
-    return sameFileHit ? resolved(sameFileHit) : CONTINUE;
+    const delegatingFrom = swiftSelfDelegationCaller(call, ctx);
+    const sameFileHit = lookupSelfTypeMemberInFile(call.member, ctx, call, delegatingFrom);
+    if (sameFileHit) return resolved(sameFileHit);
+    // An initializer delegating to ITSELF never terminates, so when the calling
+    // initializer is the only fit the typechecker picked an overload the index
+    // does not hold — an SDK one (`self.init()` inside `extension
+    // OperationQueue`). DROP, not CONTINUE: every later pass would land on the
+    // caller again (bd tea-rags-mcp-y99pg.36).
+    if (delegatingFrom !== undefined && lookupSelfTypeMemberInFile(call.member, ctx, call) !== null) return DROP;
+    return CONTINUE;
   }
 }

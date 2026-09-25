@@ -34,6 +34,7 @@
  * | getCommitsInRange      | DELEGATED → GitCliAdapter (`git log --since from..to --numstat`)           |
  * | getCommitsByPathspec   | DELEGATED → GitCliAdapter (`git log --since --numstat -- <paths>`)         |
  * | readCommitFileNumstat  | DELEGATED → GitCliAdapter (`git log [--since] [from..to] --numstat`, per-file +/- kept) |
+ * | readCommitFileNumstatForPaths | DELEGATED → GitCliAdapter (pathspec numstat + unrestricted re-read of add/delete commits) |
  *
  * `timeoutMs` is forwarded on the DELEGATED ops (blame + history) — each bounds
  * a real child process. The pure in-process lookups (getHead, isAncestor,
@@ -137,6 +138,15 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.writeCommitGraph(timeoutMs);
   }
 
+  /** Delegated: a whole-tree walk plus an index/working-tree diff, one spawn each. */
+  async listTreePaths(commitOid: string, timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.listTreePaths(commitOid, timeoutMs);
+  }
+
+  async listWorktreeDeletions(timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.listWorktreeDeletions(timeoutMs);
+  }
+
   async getCommitsByPathspec(
     sinceDate: Date,
     filePaths: string[],
@@ -147,6 +157,10 @@ export class EsGitAdapter extends VcsGitAdapter {
 
   async readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>> {
     return this.cliHistory.readNumstatLogForPaths(paths, timeoutMs);
+  }
+
+  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]> {
+    return this.cliHistory.readCommitFileNumstatForPaths(paths, timeoutMs);
   }
 
   createBlobBatchReader(): BlobBatchReader {

@@ -116,6 +116,20 @@ describe("extractSelfDispatchMethods", () => {
     expect(extractSelfDispatchMethods(chunks)).toEqual([]);
   });
 
+  it("marks a method whose body calls `super` into its own member as super-delegating", () => {
+    const chunks: ChunkExtraction[] = [
+      chunk("Tech::KindOfAsyncWorkflowService#call", ["Tech", "KindOfAsyncWorkflowService"], [["<super>", "call"]]),
+    ];
+    expect(extractSelfDispatchMethods(chunks)).toEqual([
+      {
+        symbolId: "Tech::KindOfAsyncWorkflowService#call",
+        enclosingType: "Tech::KindOfAsyncWorkflowService",
+        selfHookCandidates: [],
+        superDelegates: true,
+      },
+    ]);
+  });
+
   it("skips type-body chunks (DSL macros) — only method-shaped symbolIds are templates", () => {
     const chunks: ChunkExtraction[] = [
       chunk(

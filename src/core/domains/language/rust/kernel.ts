@@ -38,6 +38,7 @@ interface TreeSitterLanguageModule {
 
 export const rustKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-rust"),
+  grammarPackage: "tree-sitter-rust",
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: "::",
   scopeContainerTypes: ["impl_item", "trait_item", "mod_item"],

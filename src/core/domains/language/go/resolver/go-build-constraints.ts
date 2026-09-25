@@ -47,6 +47,7 @@
 
 import { posix } from "node:path";
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 
 /** The GOOS / GOARCH a build is for. */
@@ -253,7 +254,7 @@ export function preferGoDefaultBuild(
   const packageDir = posix.dirname(candidates[0].relPath);
   if (candidates.some((def) => posix.dirname(def.relPath) !== packageDir)) return candidates;
   const buildsByDefault = (relPath: string): boolean | undefined =>
-    goFileBuildsByDefault(relPath, ctx.buildConstraintsByFile?.[relPath], context);
+    goFileBuildsByDefault(relPath, identifierEntry(ctx.buildConstraintsByFile, relPath), context);
   const builds = candidates.map((def) => buildsByDefault(def.relPath));
   if (builds.includes(undefined) && buildsByDefault(ctx.callerFile) === false) return candidates;
   const kept = candidates.filter((_, index) => builds[index] !== false);

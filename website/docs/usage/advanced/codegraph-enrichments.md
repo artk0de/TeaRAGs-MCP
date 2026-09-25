@@ -130,14 +130,15 @@ this reason.
 
 ## MCP Tools
 
-When codegraph is enabled, three graph-query tools become available (they read
-the pre-computed DuckDB graph directly — no embedding, sub-millisecond):
+When codegraph is enabled, these graph-query tools become available (they read
+the pre-computed DuckDB graph directly — no embedding):
 
 | Tool          | Returns                                                                              |
 | ------------- | ----------------------------------------------------------------------------------- |
 | `get_callers` | Symbols that **invoke** the given `symbolId` (who depends on this)                   |
 | `get_callees` | Symbols **invoked by** the given `symbolId` (what this depends on)                   |
 | `find_cycles` | Strongly-connected components (cycles ≥ 2) in the import graph (`scope: "file"`) or call graph (`scope: "method"`) |
+| `get_architecture_report` | Architecture violations with per-line evidence. Today: Stable Dependencies Principle — a stable file depending on a less stable one, grouped into root causes by unstable target. Optional `pathPattern` scopes the judged edges by source file |
 
 These pair naturally with [`find_symbol`](/usage/advanced/mcp-tools), which
 resolves a name to a `symbolId` using the same `Class#method` (instance) /
@@ -148,6 +149,7 @@ resolves a name to a `symbolId` using the same `Class#method` (instance) /
 <AiQuery>What would break if I change this function? Show me its callers</AiQuery>
 <AiQuery>Find the architectural hubs in this codebase</AiQuery>
 <AiQuery>Are there any circular imports between modules?</AiQuery>
+<AiQuery>Is this codebase laid out correctly? Which modules depend on less stable ones?</AiQuery>
 <AiQuery>Show me entry-point files nothing else imports from</AiQuery>
 <AiQuery>What does this service depend on transitively?</AiQuery>
 

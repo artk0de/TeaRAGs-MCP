@@ -17,11 +17,12 @@
  * provider's finalize pass does) and every later call is a map lookup.
  */
 
-import type {
-  ChunkGraphSignals,
-  GraphDbClient,
-  PersistedSymbolLineRanges,
-  SymbolId,
+import {
+  fileScopedSymbolKey,
+  type ChunkGraphSignals,
+  type FileScopedSymbolId,
+  type GraphDbClient,
+  type PersistedSymbolLineRanges,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { ChunkSignalOverlay } from "../../../contracts/types/provider.js";
@@ -154,10 +155,19 @@ function createSignalBuilders(
     | Promise<{ metrics: Map<string, { fanIn: number; fanOut: number; transitiveImpact: number }>; fanInP95: number }>
     | undefined;
   let chunkPass:
-    | Promise<{ signals: Map<SymbolId, ChunkGraphSignals>; ranges: Map<string, PersistedSymbolLineRanges> }>
+    | Promise<{
+        signals: Map<FileScopedSymbolId, ChunkGraphSignals>;
+        ranges: Map<string, PersistedSymbolLineRanges>;
+      }>
     | undefined;
-  /** Owner → the signals its settlement computed, read back by `buildChunkSignals`. */
-  const settledSignals = new Map<SymbolId, ChunkSignalOverlay>();
+  /**
+   * `(file, owner)` → the signals its settlement computed, read back by
+   * `buildChunkSignals`. File-scoped for the same reason the bulk read is (bd
+   * tea-rags-mcp-xtdkq): keyed by the bare owner, two files whose chunks settle
+   * onto a namesake `main` overwrite each other inside one heal pass, and the
+   * second file's numbers are written onto the first file's points.
+   */
+  const settledSignals = new Map<FileScopedSymbolId, ChunkSignalOverlay>();
 
   const loadPersistedRanges = async (): Promise<Map<string, PersistedSymbolLineRanges>> => {
     const ranges = new Map<string, PersistedSymbolLineRanges>();
@@ -169,7 +179,7 @@ function createSignalBuilders(
   };
 
   const loadChunkSettlementInputs = async (): Promise<{
-    signals: Map<SymbolId, ChunkGraphSignals>;
+    signals: Map<FileScopedSymbolId, ChunkGraphSignals>;
     ranges: Map<string, PersistedSymbolLineRanges>;
   }> => {
     const signals = await graphDb.getChunkSignalsBulk();
@@ -198,7 +208,8 @@ function createSignalBuilders(
       const { metrics, fanInP95 } = await filePass;
       return buildCodegraphFileSignals(metrics.get(relPath) ?? ZERO_FILE_METRICS, fanInP95);
     },
-    buildChunkSignals: async (_relPath, symbolId) => Promise.resolve(settledSignals.get(symbolId) ?? null),
+    buildChunkSignals: async (relPath, symbolId) =>
+      Promise.resolve(settledSignals.get(fileScopedSymbolKey({ relPath, symbolId })) ?? null),
     // Persisted ranges, not the walk's: the heal runs outside any walk. A point
     // with no line span, a file whose rows predate migration 024, or one the
     // graph holds no row for is UNSETTLED — never the anchor owner the heal used
@@ -211,6 +222,7 @@ function createSignalBuilders(
         return undefined;
       }
       const settlement = settleCodegraphChunkSignals(
+        relPath,
         persistedRangeSource(ranges.get(relPath)),
         [{ chunkId: HEALED_POINT, startLine: chunk.startLine, endLine: chunk.endLine, symbolId: chunk.symbolId }],
         signals,
@@ -219,7 +231,7 @@ function createSignalBuilders(
       if (settlement.kind !== "signals") return undefined;
       const settled = settlement.chunks.get(HEALED_POINT);
       if (settled?.kind !== "owned") return undefined;
-      settledSignals.set(settled.owner, settled.signals);
+      settledSignals.set(fileScopedSymbolKey({ relPath, symbolId: settled.owner }), settled.signals);
       return settled.owner;
     },
   };

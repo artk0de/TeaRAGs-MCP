@@ -171,9 +171,9 @@ For multi-codebase setups — see [Collections](./collections) for the full guid
 
 | Tool | Purpose |
 |------|---------|
-| `create_collection` | Create a new vector collection manually (rare — `index_codebase` creates them) |
+| `create_collection` | Create a new vector collection manually (rare — `index_codebase` creates them). Optional `schema` makes it [typed](./collections#typed-collections) |
 | `list_collections` | List all Qdrant collections on the server |
-| `get_collection_info` | Inspect one collection: vector size, point count, distance metric |
+| `get_collection_info` | Inspect one collection: vector size, point count, distance metric, and `schema` for a typed collection |
 | `delete_collection` | Delete a collection by name (alternative to `clear_index`) |
 
 ## Document Operations
@@ -183,7 +183,7 @@ ad-hoc experiments or augmenting an existing index.
 
 | Tool | Purpose |
 |------|---------|
-| `add_documents` | Add documents to a collection. Auto-embedded via the configured provider |
+| `add_documents` | Add documents to a collection. Auto-embedded via the configured provider. On a typed collection, metadata is validated first and one violation rejects the whole batch |
 | `delete_documents` | Delete specific documents by ID |
 
 Under normal usage, documents flow through `index_codebase` (chunking + embedding

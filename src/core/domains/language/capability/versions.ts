@@ -18,7 +18,7 @@
 import { createRequire } from "node:module";
 
 import type { LanguageCapability, LanguageCodeVersions } from "../../../contracts/types/language.js";
-import { SHARED_LANGUAGE, sharedVersions } from "../kernel/capability.js";
+import { SHARED_LANGUAGE, sharedVersions } from "../kernel/index.js";
 
 /** Reads an installed package's declared version. Injected so tests never touch `node_modules`. */
 export type GrammarVersionReader = (packageName: string) => string | undefined;

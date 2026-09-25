@@ -17,6 +17,8 @@
  *      ← `DeferredChunkPassOutcome` → `CodegraphHealStepOutcome`
  *  8. markChunkFinal per ctx ← `CodegraphHealStepOutcome`
  *  9. re-fire stats callback if backfill wrote overlays
+ * 10. codegraph storage compaction, after the run's last graph write (the
+ *     heal's baseline refresh) ← `CodegraphHealStepOutcome` (bd tea-rags-mcp-dvzdm)
  *
  * A step that throws does not leave the run without a verdict: before the
  * original error is rethrown, every level whose terminal marker this run has
@@ -25,7 +27,10 @@
  * is `CompletionTerminalMarkerProgress`, returned by steps 4 and 8.
  */
 
-import type { CodegraphPass1FileAggregates } from "../../../../contracts/types/codegraph.js";
+import type {
+  CodegraphPass1FileAggregates,
+  CodegraphStorageCompactionOutcome,
+} from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentMetrics } from "../../../../types.js";
@@ -51,7 +56,30 @@ export interface CompletionRunnerDeps {
    * codegraph is disabled — the step is then skipped entirely, not stubbed.
    */
   codegraphHeal?: CodegraphPayloadHealRunner;
+  /**
+   * Reclaims the dead row versions the run's graph writes left in the
+   * collection's graph file (bd tea-rags-mcp-dvzdm). Wired exactly when
+   * `codegraphHeal` is; undefined skips the step.
+   */
+  codegraphCompaction?: CodegraphStorageCompactionRunner;
 }
+
+/**
+ * Compacts one collection's graph store when enough of it is dead. Built by the
+ * composition root over the graph client, which owns the file and decides
+ * whether it is worth it — the runner only says when.
+ */
+export interface CodegraphStorageCompactionRunner {
+  run: (coll: PhysicalCollectionName) => Promise<CodegraphStorageCompactionOutcome>;
+}
+
+/** How the codegraph storage compaction (step 10) settled. Best-effort, like the heal. */
+export type CodegraphCompactionStepOutcome =
+  /** No compaction runner wired, or the run carried no codegraph (its heal did not apply). */
+  | { readonly kind: "notApplicable" }
+  | { readonly kind: "settled"; readonly outcome: CodegraphStorageCompactionOutcome }
+  /** The store was left as it was; the next run tries again. */
+  | { readonly kind: "failed"; readonly error: string };
 
 /**
  * Reader for the per-provider, per-level "unenriched chunks" count persisted
@@ -273,6 +301,12 @@ export class CompletionRunner {
         await chunkPhase.fireOnComplete(coll);
       }
 
+      // 10. codegraph storage compaction — after every graph write of the run,
+      //     the heal's baseline refresh last. After the terminal markers too: it
+      //     changes no payload, and a multi-second file rewrite on a large graph
+      //     must not hold the run's verdict back. Times itself when it applies.
+      await this.runCodegraphStorageCompaction(coll, codegraphHeal);
+
       pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
       return metrics;
     } catch (error) {
@@ -450,6 +484,39 @@ export class CompletionRunner {
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_FAILED", { collection: coll, error });
+        return { kind: "failed", error };
+      }
+    });
+  }
+
+  /**
+   * Step 10 — let the graph store reclaim the dead row versions this run's
+   * writes left behind (bd tea-rags-mcp-dvzdm). The store measures itself and
+   * compacts only past its threshold, so a small project pays one catalog read.
+   *
+   * Applies exactly when the heal did: the heal runs whenever the run carried
+   * the codegraph, whether it then healed, found nothing, or failed — and a
+   * failed heal does not make the file any smaller.
+   *
+   * Best-effort: a compaction that throws left the previous file in place, so
+   * the run completes and the next run retries.
+   */
+  async runCodegraphStorageCompaction(
+    coll: PhysicalCollectionName,
+    codegraphHeal: CodegraphHealStepOutcome,
+  ): Promise<CodegraphCompactionStepOutcome> {
+    const compaction = this.deps.codegraphCompaction;
+    if (!compaction || codegraphHeal.kind === "notApplicable") return { kind: "notApplicable" };
+    return this.timedStep("codegraphCompaction", async (): Promise<CodegraphCompactionStepOutcome> => {
+      try {
+        const outcome = await compaction.run(coll);
+        if (outcome.kind === "compacted") {
+          pipelineLog.enrichmentPhase("CODEGRAPH_STORAGE_COMPACTED", { collection: coll, ...outcome });
+        }
+        return { kind: "settled", outcome };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        pipelineLog.enrichmentPhase("CODEGRAPH_STORAGE_COMPACTION_FAILED", { collection: coll, error });
         return { kind: "failed", error };
       }
     });

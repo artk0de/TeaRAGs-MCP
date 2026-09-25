@@ -33,7 +33,9 @@ async function main() {
     await startHttpServer({ config, ctx, promptsConfig });
   } else {
     const server = createConfiguredServer(ctx, promptsConfig);
-    await startStdioServer(server);
+    // bd tea-rags-mcp-e6cpu — stdin closing (or SIGTERM/SIGINT) releases
+    // resources and then exits; the listeners above only release.
+    await startStdioServer(server, { cleanup: ctx.cleanup });
 
     // Send deprecation warnings via MCP logging (visible to client)
     if (deprecations.length > 0) {

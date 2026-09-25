@@ -1,7 +1,7 @@
 /**
  * GraphFacade — thin orchestrator over the per-collection
  * `GraphDbClientPool` for the MCP graph tools (`get_callers`,
- * `get_callees`, `find_cycles`).
+ * `get_callees`, `find_cycles`, `get_architecture_report`).
  *
  * Per `.claude/rules/facade-discipline.md` the facade only validates
  * input and delegates. The body is intentionally tiny — when result
@@ -26,10 +26,17 @@
 
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
-import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
+import type {
+  RelPath,
+  SymbolChunkLocation,
+  SymbolId,
+  SymbolVisibilityRow,
+} from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { InvalidParameterError, MissingArgumentError } from "../../errors.js";
+import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,
@@ -39,6 +46,9 @@ import type {
   GetCallersResponse,
 } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
+import { ArchitectureReportOps } from "../ops/architecture-report-ops.js";
+import { decorateCallees, decorateCallers } from "../ops/declared-visibility-lookup.js";
+import { FileImportOps, normalizeRelativePath } from "../ops/file-import-ops.js";
 
 export interface GraphFacadeDeps {
   pool: GraphDbClientPool;
@@ -75,7 +85,28 @@ interface GraphAddressing {
   path?: string;
 }
 
+type GraphTarget = { kind: "symbol"; symbolId: SymbolId } | { kind: "file"; relativePath: RelPath };
+
+/**
+ * `get_callers` / `get_callees` take a symbol OR a file (bd tea-rags-mcp-gfvr8)
+ * — exactly one. Both or neither is a request error, raised before any
+ * collection is resolved.
+ */
+function graphTarget(req: { symbolId?: SymbolId; relativePath?: string }): GraphTarget {
+  const hasSymbol = req.symbolId !== undefined && req.symbolId !== "";
+  const hasFile = req.relativePath !== undefined && req.relativePath !== "";
+  if (hasSymbol && hasFile) {
+    throw new InvalidParameterError("relativePath", "pass either symbolId or relativePath, not both");
+  }
+  if (hasFile) return { kind: "file", relativePath: normalizeRelativePath(req.relativePath as string) };
+  if (hasSymbol) return { kind: "symbol", symbolId: req.symbolId as SymbolId };
+  throw new MissingArgumentError(["symbolId or relativePath"]);
+}
+
 export class GraphFacade {
+  private readonly architectureReport = new ArchitectureReportOps();
+  private readonly fileImports = new FileImportOps();
+
   constructor(private readonly deps: GraphFacadeDeps) {}
 
   /**
@@ -130,21 +161,38 @@ export class GraphFacade {
   }
 
   async getCallers(req: GetCallersRequest): Promise<GetCallersResponse> {
+    const target = graphTarget(req);
+    if (target.kind === "file") {
+      if (req.includeAmbiguous) {
+        throw new InvalidParameterError("includeAmbiguous", "applies to a symbolId target only, not to relativePath");
+      }
+      const limit = req.limit ?? DEFAULT_LIMIT;
+      return this.withReadHandle(
+        req,
+        async (handle) => this.fileImports.importers(handle.graphDb, target.relativePath, limit),
+        FileImportOps.emptyImporters(target.relativePath),
+      );
+    }
+    const { symbolId } = target;
     return this.withReadHandle(
       req,
       async (handle) => {
-        const edges = await handle.graphDb.getCallers(req.symbolId);
-        const callers = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        const edges = await handle.graphDb.getCallers(symbolId);
+        const visible = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        // Declared visibility of the queried symbol and every caller, one
+        // batched read (bd tea-rags-mcp-sqqkz); unknown levels leave the field out.
+        const { queried, callers } = await decorateCallers(handle.graphDb, symbolId, visible);
         // Lazy ambiguous expansion (bd f2jsb A4) — opt-in only, and only when
         // the target has a member segment (text after the last `#` or `.`,
         // per symbolid-convention; splitMethodSymbol is the adapter's own
         // parser, so the lookup key matches what cg_ambiguous_fanout.member
         // was persisted under). Bare symbols skip the lookup; the DEFAULT
         // (flag absent) response stays byte-identical to the pre-flag shape.
-        const member = req.includeAmbiguous ? splitMethodSymbol(req.symbolId)?.member : undefined;
-        if (member === undefined) return { callers };
+        const member = req.includeAmbiguous ? splitMethodSymbol(symbolId)?.member : undefined;
+        if (member === undefined) return { ...queried, callers };
         const sites = await handle.graphDb.getAmbiguousCallersByMember(member);
         return {
+          ...queried,
           callers,
           ambiguousCallers: sites.map((s) => ({
             sourceSymbolId: s.sourceSymbolId,
@@ -159,11 +207,22 @@ export class GraphFacade {
   }
 
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
+    const target = graphTarget(req);
+    if (target.kind === "file") {
+      const limit = req.limit ?? DEFAULT_LIMIT;
+      return this.withReadHandle(
+        req,
+        async (handle) => this.fileImports.imports(handle.graphDb, target.relativePath, limit),
+        FileImportOps.emptyImports(target.relativePath),
+      );
+    }
+    const { symbolId } = target;
     return this.withReadHandle(
       req,
       async (handle) => {
-        const edges = await handle.graphDb.getCallees(req.symbolId);
-        return { callees: edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT) };
+        const edges = await handle.graphDb.getCallees(symbolId);
+        const visible = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        return { callees: await decorateCallees(handle.graphDb, visible) };
       },
       { callees: [] },
     );
@@ -171,6 +230,24 @@ export class GraphFacade {
 
   async resolveSymbolChunk(addr: GraphAddressing, symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
     return this.withReadHandle(addr, async (handle) => handle.graphDb.findSymbolChunk(symbolId), null);
+  }
+
+  /**
+   * Raw declared-visibility rows for the find_symbol outline (bd
+   * tea-rags-mcp-sqqkz). Keeps `withReadHandle`'s contract — throws when a graph
+   * exists but cannot be read, `[]` when there is none — and leaves degrading to
+   * the caller, which owns whether a missing decoration is acceptable.
+   */
+  async getSymbolVisibilities(addr: GraphAddressing, symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    return this.withReadHandle(addr, async (handle) => handle.graphDb.getSymbolVisibilities(symbolIds), []);
+  }
+
+  async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
+    return this.withReadHandle(
+      req,
+      async (handle) => this.architectureReport.build(handle.graphDb, req),
+      ArchitectureReportOps.empty(req),
+    );
   }
 
   async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
@@ -183,6 +260,7 @@ export class GraphFacade {
             cycleId: e.cycleId,
             scope: e.scope,
             members: e.members,
+            ...(e.memberLocations ? { memberLocations: e.memberLocations } : {}),
             length: e.members.length,
           })),
         };
