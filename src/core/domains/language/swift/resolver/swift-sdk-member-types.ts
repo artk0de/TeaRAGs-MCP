@@ -14,12 +14,16 @@
  *     `URLRequest`);
  *   - `Self` by the receiver, and `Self.X` by the receiver's member alias or
  *     generic parameter `X` (`Set<Request>`'s `Self.Element` → `Request`,
- *     `Array.SubSequence` → `ArraySlice<Element>`);
+ *     `Array.SubSequence` → `ArraySlice<Element>`) — on a PROJECT conformer,
+ *     by the member typealias its own declaration states (bd
+ *     tea-rags-mcp-y99pg.33);
  *   - a generic parameter nothing binds, by its constraint — the protocol every
  *     value of it is (`Result`'s `Failure: Error` → `Error`) — marked
  *     `upperBound`: the constraint's members are callable on the value, but its
  *     own type may add more, so the denominator must not read it as proof;
- *   - an optional by what it wraps, the collapse every receiver gets.
+ *   - an optional by what it wraps, the collapse every NORMALIZED receiver
+ *     gets — the fold over a receiver as written keeps it an `Optional`
+ *     (`keepsOptionals`, bd tea-rags-mcp-y99pg.33).
  *
  * A result it cannot build answers `undefined`, and so does a member whose
  * overloads disagree on it: the fold stops there, which is the answer that
@@ -33,10 +37,21 @@ import { parseSwiftTypeText, type SwiftTypeExpr } from "../vocabulary/swift-type
 /** A nominal receiver: the only form an SDK member is looked up on. */
 export type SwiftNominalTypeRef = Extract<TypeRef, { form: "class" | "instance" }>;
 
-/** A found SDK member: the receiver it was found for (possibly promoted to `Optional`) and its shapes. */
-interface SwiftSdkMemberFound {
+/**
+ * A project receiver's member typealiases, alias name → the type it names
+ * (bd tea-rags-mcp-y99pg.33): what `Self.<alias>` means on that receiver.
+ */
+export type SwiftSelfAliases = ReadonlyMap<string, TypeRef>;
+
+/** What one SDK member's types are substituted against: the receiver, the declaring type, `Self`'s aliases. */
+interface SwiftSdkSubstitutionScope {
   readonly receiver: SwiftNominalTypeRef;
   readonly owner: SwiftSdkType;
+  readonly selfAliases?: SwiftSelfAliases;
+}
+
+/** A found SDK member: the receiver it was found for (possibly promoted to `Optional`) and its shapes. */
+interface SwiftSdkMemberFound extends SwiftSdkSubstitutionScope {
   readonly shapes: readonly SwiftSdkMember[];
 }
 
@@ -44,7 +59,16 @@ interface SwiftSdkMemberFound {
 type SwiftTypeBindings = ReadonlyMap<string, TypeRef | undefined>;
 
 export class SwiftSdkMemberTypes {
-  constructor(private readonly sdk: SwiftSdkVocabulary) {}
+  /**
+   * @param keepsOptionals Whether a declared `T?` stays an `Optional` of `T`
+   *   (bd tea-rags-mcp-y99pg.33) — for a reader that knows where the source
+   *   unwraps it — instead of collapsing to `T`, which is every other reader's
+   *   view.
+   */
+  constructor(
+    private readonly sdk: SwiftSdkVocabulary,
+    private readonly keepsOptionals = false,
+  ) {}
 
   /**
    * The type of `receiver.member` when an SDK type on `order` (the receiver's
@@ -53,8 +77,13 @@ export class SwiftSdkMemberTypes {
    * `class` receiver, instance members an `instance` one; an enum case is a
    * value of its own type.
    */
-  memberType(receiver: SwiftNominalTypeRef, member: string, order: readonly string[]): TypeRef | undefined {
-    const found = this.find(receiver, member, order);
+  memberType(
+    receiver: SwiftNominalTypeRef,
+    member: string,
+    order: readonly string[],
+    selfAliases?: SwiftSelfAliases,
+  ): TypeRef | undefined {
+    const found = this.find(receiver, member, order, selfAliases);
     if (found === undefined) return undefined;
     const shapes = found.shapes.filter(
       (shape) => shape.kind !== "init" && shape.isStatic === (found.receiver.form === "class"),
@@ -64,7 +93,7 @@ export class SwiftSdkMemberTypes {
       if (shape.kind === "case") return boundedBy(found.receiver, { form: "instance", name: found.owner.path });
       // A hop's value is USED, so a `Void` overload is not the one called.
       if (shape.returns === null) continue;
-      const type = this.typeOfText(shape.returns, found.receiver, found.owner, shape);
+      const type = this.typeOfText(shape.returns, found, shape);
       if (type === undefined) return undefined;
       if (agreed !== undefined && !sameNominal(agreed, type)) return undefined;
       agreed ??= type;
@@ -82,10 +111,11 @@ export class SwiftSdkMemberTypes {
     member: string,
     index: number,
     order: readonly string[],
+    selfAliases?: SwiftSelfAliases,
   ): TypeRef | undefined {
-    const found = this.find(receiver, member, order);
+    const found = this.find(receiver, member, order, selfAliases);
     if (found === undefined) return undefined;
-    return boundedBy(found.receiver, this.agreedClosureParameter(found.shapes, index, found.receiver, found.owner));
+    return boundedBy(found.receiver, this.agreedClosureParameter(found.shapes, index, found));
   }
 
   /**
@@ -95,15 +125,14 @@ export class SwiftSdkMemberTypes {
    * generic parameters are in scope, each bound by its constraint.
    */
   functionClosureParameterType(name: string, index: number): TypeRef | undefined {
-    return this.agreedClosureParameter(this.sdk.globalFunctions(name), index, undefined, undefined);
+    return this.agreedClosureParameter(this.sdk.globalFunctions(name), index, undefined);
   }
 
   /** The `index`-th parameter type of the last closure every shape taking one agrees on. */
   private agreedClosureParameter(
     shapes: readonly SwiftSdkMember[],
     index: number,
-    receiver: SwiftNominalTypeRef | undefined,
-    owner: SwiftSdkType | undefined,
+    found: SwiftSdkSubstitutionScope | undefined,
   ): TypeRef | undefined {
     let agreed: TypeRef | undefined;
     for (const shape of shapes) {
@@ -112,7 +141,7 @@ export class SwiftSdkMemberTypes {
       const parsed = parseSwiftTypeText(closure);
       const fn = parsed?.kind === "optional" ? parsed.wrapped : parsed;
       if (fn?.kind !== "function" || index >= fn.params.length) continue;
-      const type = this.typeOf(fn.params[index], receiver, owner, shape);
+      const type = this.typeOf(fn.params[index], found, shape);
       if (type === undefined) return undefined;
       if (agreed !== undefined && !sameNominal(agreed, type)) return undefined;
       agreed ??= type;
@@ -127,7 +156,7 @@ export class SwiftSdkMemberTypes {
   constructionType(typeText: string): SwiftNominalTypeRef | undefined {
     const parsed = parseSwiftTypeText(typeText);
     if (parsed?.kind !== "nominal" || !this.sdk.hasType(parsed.path)) return undefined;
-    const args = parsed.args.map((arg) => this.typeOf(arg, undefined, undefined, undefined));
+    const args = parsed.args.map((arg) => this.typeOf(arg, undefined, undefined));
     return withArgs({ form: "instance", name: parsed.path }, args);
   }
 
@@ -141,11 +170,12 @@ export class SwiftSdkMemberTypes {
     receiver: SwiftNominalTypeRef,
     member: string,
     order: readonly string[],
+    selfAliases: SwiftSelfAliases | undefined,
   ): SwiftSdkMemberFound | undefined {
     for (const candidate of order) {
       const shapes = this.sdk.ownMembers(candidate, member);
       const owner = this.sdk.type(candidate);
-      if (shapes.length > 0 && owner !== undefined) return { receiver, owner, shapes };
+      if (shapes.length > 0 && owner !== undefined) return { receiver, owner, shapes, selfAliases };
     }
     if (receiver.form !== "instance") return undefined;
     const optional = this.sdk.findMember("Optional", member);
@@ -157,36 +187,34 @@ export class SwiftSdkMemberTypes {
     };
   }
 
-  private typeOfText(
-    text: string,
-    receiver: SwiftNominalTypeRef,
-    owner: SwiftSdkType,
-    shape: SwiftSdkMember,
-  ): TypeRef | undefined {
+  private typeOfText(text: string, found: SwiftSdkSubstitutionScope, shape: SwiftSdkMember): TypeRef | undefined {
     const parsed = parseSwiftTypeText(text);
-    return parsed === undefined ? undefined : this.typeOf(parsed, receiver, owner, shape);
+    return parsed === undefined ? undefined : this.typeOf(parsed, found, shape);
   }
 
   /** A parsed SDK type, substituted for one receiver, declaring type and member shape. */
   private typeOf(
     expr: SwiftTypeExpr,
-    receiver: SwiftNominalTypeRef | undefined,
-    owner: SwiftSdkType | undefined,
+    found: SwiftSdkSubstitutionScope | undefined,
     shape: SwiftSdkMember | undefined,
   ): TypeRef | undefined {
-    const bindings = this.bindingsOf(receiver, owner, shape);
-    return this.substitute(expr, bindings, receiver, 0);
+    const bindings = this.bindingsOf(found?.receiver, found?.owner, shape, found?.selfAliases);
+    return this.substitute(expr, bindings, found?.receiver, 0);
   }
 
   /**
    * What each generic parameter in scope of a member denotes: the declaring
    * type's own, bound by the receiver's arguments when the receiver IS that
-   * type, else by its constraint; the member's own, by theirs.
+   * type, else by its constraint; the member's own, by theirs. A PROJECT
+   * receiver's own member typealiases bind `Self.X` (bd tea-rags-mcp-y99pg.33):
+   * the substrate knows nothing of the conformer, so they are its only
+   * statement of what an associated type is on it.
    */
   private bindingsOf(
     receiver: SwiftNominalTypeRef | undefined,
     owner: SwiftSdkType | undefined,
     shape: SwiftSdkMember | undefined,
+    selfAliases: SwiftSelfAliases | undefined,
   ): SwiftTypeBindings {
     const bindings = new Map<string, TypeRef | undefined>();
     if (owner !== undefined) {
@@ -198,6 +226,7 @@ export class SwiftSdkMemberTypes {
     for (const [name, constraint] of shape?.genericParameters ?? []) {
       bindings.set(name, this.constraintType(constraint ?? undefined));
     }
+    for (const [name, type] of selfAliases ?? []) bindings.set(`Self.${name}`, type);
     return bindings;
   }
 
@@ -215,8 +244,10 @@ export class SwiftSdkMemberTypes {
   ): TypeRef | undefined {
     if (depth > SWIFT_SDK_SUBSTITUTION_DEPTH) return undefined;
     switch (expr.kind) {
-      case "optional":
-        return this.substitute(expr.wrapped, bindings, receiver, depth + 1);
+      case "optional": {
+        const wrapped = this.substitute(expr.wrapped, bindings, receiver, depth + 1);
+        return this.keepsOptionals ? withArgs({ form: "instance", name: "Optional" }, [wrapped]) : wrapped;
+      }
       case "array":
         return withArgs({ form: "instance", name: "Array" }, [
           this.substitute(expr.element, bindings, receiver, depth + 1),
@@ -247,6 +278,7 @@ export class SwiftSdkMemberTypes {
     const { path } = expr;
     if (path === "Self") return receiver === undefined ? undefined : { ...receiver, form: "instance" };
     if (path.startsWith("Self.")) {
+      if (bindings.has(path)) return bindings.get(path);
       return receiver === undefined ? undefined : this.associatedType(receiver, path.slice("Self.".length), depth);
     }
     if (bindings.has(path)) return bindings.get(path);
@@ -271,7 +303,7 @@ export class SwiftSdkMemberTypes {
     if (alias === undefined) return undefined;
     const parsed = parseSwiftTypeText(alias.text);
     if (parsed === undefined) return undefined;
-    return this.substitute(parsed, this.bindingsOf(receiver, alias.owner, undefined), receiver, depth + 1);
+    return this.substitute(parsed, this.bindingsOf(receiver, alias.owner, undefined, undefined), receiver, depth + 1);
   }
 }
 

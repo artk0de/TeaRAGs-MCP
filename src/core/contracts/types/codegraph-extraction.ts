@@ -350,6 +350,9 @@ export interface FileExtraction {
   typeDeclarations?: readonly TypeDeclarationFact[];
 }
 
+/** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */
+export type TypeDeclarationKind = "class" | "struct" | "enum" | "actor" | "protocol";
+
 /**
  * One type declaration a file carries (`FileExtraction.typeDeclarations`).
  */
@@ -362,6 +365,15 @@ export interface TypeDeclarationFact {
    * declaration. A type with re-openings only is not the project's type.
    */
   readonly reopens: boolean;
+  /**
+   * The keyword of the type's OWN declaration — `class`, `struct`, `enum`,
+   * `actor` or `protocol` (bd tea-rags-mcp-y99pg.35). What a consumer reads it
+   * for is what the kind can hold: only a class carries an implementation the
+   * Objective-C runtime dispatches a selector to. Absent on a re-opening, and
+   * on a fact written before the walker published it — a consumer treats that
+   * as "any kind".
+   */
+  readonly declarationKind?: TypeDeclarationKind;
   /**
    * The supertypes this declaration names — superclass and protocols alike, in
    * clause order, generic arguments dropped (`Base<T>` → `Base`). A re-opening
@@ -436,6 +448,41 @@ export interface TypeDeclarationFact {
    */
   readonly functionAliasReturns?: Readonly<Record<string, string>>;
   /**
+   * What a re-opening's `where` clause says `Self` is inside its body:
+   * `extension Download where Self: DataSerializer` → `types: ["DataSerializer"]`
+   * (a `Self == X` constraint names `X` the same way), with the declaration's
+   * 1-indexed line span — the constraint holds inside THIS body only, and a
+   * file routinely re-opens one protocol several times under different
+   * constraints. Absent when the clause constrains nothing about `Self`.
+   */
+  readonly selfConstraints?: SelfConstraintFact;
+  /**
+   * The UpperCamelCase attribute types each stored property of this
+   * declaration carries, in source order: `@Published var result` →
+   * `{ result: ["Published"] }`. The candidates for the property's WRAPPER —
+   * which one is (if any) is a question about the attribute's type, answered
+   * at resolve time — and so for what `$result` projects (bd
+   * tea-rags-mcp-y99pg.33). Absent when no property carries one.
+   */
+  readonly propertyAttributeTypes?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The properties this declaration declares OPTIONAL (`let error: AFError?`),
+   * in source order — the ones whose value is an `Optional` of the type the
+   * field channels publish for them (bd tea-rags-mcp-y99pg.33). Absent when
+   * none is.
+   */
+  readonly optionalProperties?: readonly string[];
+  /**
+   * The member typealiases this declaration's body declares, each to the
+   * nominal path it aliases (`typealias Output = DataStreamRequest.Stream<…>`
+   * → `{ Output: "DataStreamRequest.Stream" }`). How a type satisfies an
+   * associated type of a protocol it conforms to, and so what `Self.Output`
+   * in that protocol's members means on it (bd tea-rags-mcp-y99pg.33). An
+   * alias of a function, tuple, optional or metatype is left out. Absent when
+   * none is nominal.
+   */
+  readonly memberTypeAliases?: Readonly<Record<string, string>>;
+  /**
    * Stored properties whose declared type IS one of {@link genericParameters},
    * by property name: `var value: Value` inside `Protected<Value>` →
    * `{ value: "Value" }` — what a receiver's generic arguments substitute (bd
@@ -460,6 +507,14 @@ export interface SwiftWhereClauseFact {
   readonly sameType?: Readonly<Record<string, string>>;
   /** Conformance / superclass requirements, the nominal named: `ExtendedType: Bundle` → `{ ExtendedType: "Bundle" }`. */
   readonly bounds?: Readonly<Record<string, string>>;
+}
+
+/** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */
+export interface SelfConstraintFact {
+  /** The nominals `Self` conforms to or equals, in clause order. */
+  readonly types: readonly string[];
+  readonly startLine: number;
+  readonly endLine: number;
 }
 
 /** A stored property's initializing construction (`TypeDeclarationFact.fieldConstructions`). */
@@ -731,6 +786,15 @@ export interface CallRef {
    *  name otherwise. */
   member: string;
   startLine: number;
+  /**
+   * The receiver exactly as the source spells it, where a language's
+   * `receiver` normalizes sugar away: Swift strips optional chaining and
+   * force unwraps (`a?.b!` → `a.b`) so the receiver matches the names
+   * bindings are keyed by, and only this text still says which links read a
+   * member off an `Optional` and which off what it wraps (bd
+   * tea-rags-mcp-y99pg.33). Absent when identical to `receiver`.
+   */
+  writtenReceiver?: string;
   /**
    * Present when this call dispatches through a lookup table
    * (bd tea-rags-mcp-n0zj). The resolver expands it to fan-out edges over

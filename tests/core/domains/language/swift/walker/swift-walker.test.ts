@@ -1091,7 +1091,8 @@ describe("swift walker — typeDeclarations", () => {
   it("records a type's own declaration and its conformances", () => {
     const extraction = extractMaterialized("final class Session: NSObject, Sendable {\n  func run() {}\n}\n");
     expect(extraction.typeDeclarations).toEqual([
-      { typeId: "Session", reopens: false, conforms: ["NSObject", "Sendable"] },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Session", reopens: false, declarationKind: "class", conforms: ["NSObject", "Sendable"] },
     ]);
   });
 
@@ -1113,10 +1114,11 @@ describe("swift walker — typeDeclarations", () => {
       "",
     ].join("\n");
     expect(extractMaterialized(src).typeDeclarations).toEqual([
-      { typeId: "Request", reopens: false },
-      { typeId: "Request.State", reopens: false },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Request", reopens: false, declarationKind: "struct" },
+      { typeId: "Request.State", reopens: false, declarationKind: "enum" },
       { typeId: "Encoder", reopens: true },
-      { typeId: "Encoder.Container", reopens: false },
+      { typeId: "Encoder.Container", reopens: false, declarationKind: "class" },
     ]);
   });
 
@@ -1136,18 +1138,44 @@ describe("swift walker — typeDeclarations", () => {
         whereClause: { startLine: 2, endLine: 2, sameType: { Element: "Header" } },
       },
       // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
-      { typeId: "Box", reopens: false, conforms: ["Base"], genericParameters: ["T"] },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Box", reopens: false, declarationKind: "class", conforms: ["Base"], genericParameters: ["T"] },
     ]);
   });
 
   it("records a protocol as a declaration of its own", () => {
     expect(extractMaterialized("protocol Monitor: AnyObject {\n  func tick()\n}\n").typeDeclarations).toEqual([
-      { typeId: "Monitor", reopens: false, conforms: ["AnyObject"] },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Monitor", reopens: false, declarationKind: "protocol", conforms: ["AnyObject"] },
     ]);
   });
 
   it("publishes nothing for a file that declares no type", () => {
     expect(extractMaterialized("func free() {}\n").typeDeclarations).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-y99pg.35: the keyword says whether a type can hold an
+  // implementation the Objective-C runtime dispatches to — only a class can.
+  it("records each own declaration's keyword, and none on a re-opening", () => {
+    const src = [
+      "class A {}",
+      "struct B {}",
+      "enum C { case x }",
+      "actor D {}",
+      "@objc protocol E { static func build() }",
+      "extension A {}",
+      "",
+    ].join("\n");
+    for (const facts of [extract(src).typeDeclarations ?? [], extractMaterialized(src).typeDeclarations ?? []]) {
+      expect(facts.map((f) => [f.typeId, f.reopens, f.declarationKind])).toEqual([
+        ["A", false, "class"],
+        ["B", false, "struct"],
+        ["C", false, "enum"],
+        ["D", false, "actor"],
+        ["E", false, "protocol"],
+        ["A", true, undefined],
+      ]);
+    }
   });
 });
 
@@ -1963,8 +1991,12 @@ describe("swift walker — generic-typed fields and extension `where` clauses (b
     {
       typeId: "Protected",
       reopens: false,
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      declarationKind: "class",
       genericParameters: ["Value"],
       genericFieldParameters: { value: "Value", backup: "Value" },
+      // `backup: Value?` is also an optional property (bd tea-rags-mcp-y99pg.33).
+      optionalProperties: ["backup"],
     },
     {
       typeId: "Protected",
@@ -2091,6 +2123,151 @@ describe("swift walker — construction-initialized field arguments (bd tea-rags
     for (const out of [extract(src), extractMaterialized(src)]) {
       const fact = out.typeDeclarations?.find((f) => f.typeId === "Protected");
       expect(fact?.genericInitializers).toEqual([{ labels: [null], binds: ["Value"] }]);
+    }
+  });
+});
+
+describe("swift walker — a protocol extension's `where Self` constraints (bd tea-rags-mcp-y99pg.33)", () => {
+  const src = [
+    "extension Download where Self: DataSerializer {",
+    "  func serializeDownload() {",
+    "    serialize()",
+    "  }",
+    "}",
+    "extension Download where Self == URLSerializer, Value: Equatable {",
+    "}",
+    "extension Protected where Value: Equatable {",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes the types a `Self` constraint names, with the extension's line span", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      // The same clause also reaches `whereClause` (bd tea-rags-mcp-y99pg.34);
+      // this pins only the `Self` reading.
+      const selfFacts = out.typeDeclarations?.map(({ typeId, reopens, selfConstraints }) => ({
+        typeId,
+        reopens,
+        ...(selfConstraints ? { selfConstraints } : {}),
+      }));
+      expect(selfFacts).toEqual([
+        { typeId: "Download", reopens: true, selfConstraints: { types: ["DataSerializer"], startLine: 1, endLine: 5 } },
+        { typeId: "Download", reopens: true, selfConstraints: { types: ["URLSerializer"], startLine: 6, endLine: 7 } },
+        { typeId: "Protected", reopens: true },
+      ]);
+    }
+  });
+});
+
+describe("swift walker — property attribute types, the candidates for a property wrapper (bd tea-rags-mcp-y99pg.33)", () => {
+  const src = [
+    "final class Networking: ObservableObject {",
+    "  @Published var result: Result<A, E>?",
+    '  @Published var message = "No response."',
+    "  @MainActor @Clamped(max: 3) var level: Int = 1",
+    "  @objc var plain: Int = 0",
+    "  var bare: Int = 0",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes each stored property's UpperCamelCase attribute types in source order", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "Networking");
+      expect(fact?.propertyAttributeTypes).toEqual({
+        result: ["Published"],
+        message: ["Published"],
+        level: ["MainActor", "Clamped"],
+      });
+    }
+  });
+});
+
+/**
+ * A type's member typealias is how it satisfies an associated type of a
+ * protocol it conforms to (bd tea-rags-mcp-y99pg.33): `typealias Output = …`
+ * inside a `Publisher` is what every `Self.Output` Combine declares means.
+ */
+describe("swift walker — member type aliases (bd tea-rags-mcp-y99pg.33)", () => {
+  const src = [
+    "public struct DataStreamPublisher<Value>: Publisher {",
+    "  public typealias Output = DataStreamRequest.Stream<Value, AFError>",
+    "  public typealias Failure = Never",
+    "  private typealias Handler = (@escaping Handler<Value>) -> DataStreamRequest",
+    "  typealias Maybe = Int?",
+    "}",
+    "",
+  ].join("\n");
+
+  it("publishes each nominal alias of a type body by its nominal path", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "DataStreamPublisher");
+      expect(fact?.memberTypeAliases).toEqual({ Output: "DataStreamRequest.Stream", Failure: "Never" });
+    }
+  });
+});
+
+/**
+ * `T?` is `Optional<T>` (bd tea-rags-mcp-y99pg.33). `response.map(\.statusCode)`
+ * on a `response: HTTPURLResponse?` is `Optional.map`, and only the
+ * source's `?` / `!` says whether a member is read off the optional or off
+ * what it wraps — so the walker keeps both facts next to the ones it
+ * already published (the `type` string, the normalized receiver) instead
+ * of in place of them.
+ */
+describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99pg.33)", () => {
+  it("marks a binding DECLARED `T?` as an Optional of T, and nothing else", () => {
+    const src = [
+      "func go(response: HTTPURLResponse?, plain: Foo, forced: Bar!) {",
+      "  var local: Baz? = nil",
+      "  if let response {",
+      "    response.run()",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const bindings = out.chunks[0].localBindings ?? {};
+      expect(bindings.response?.[0]).toMatchObject({
+        type: "HTTPURLResponse",
+        typeRef: { form: "instance", name: "Optional", args: [{ form: "instance", name: "HTTPURLResponse" }] },
+      });
+      expect(bindings.local?.[0].typeRef).toEqual({
+        form: "instance",
+        name: "Optional",
+        args: [{ form: "instance", name: "Baz" }],
+      });
+      // The `if let` re-binding is the unwrapped value.
+      expect(bindings.response?.[1]).toMatchObject({ type: "HTTPURLResponse" });
+      expect(bindings.response?.[1].typeRef).toBeUndefined();
+      expect(bindings.plain?.[0].typeRef).toBeUndefined();
+    }
+  });
+
+  it("publishes the properties a type declares optional", () => {
+    const src = [
+      "struct Completion {",
+      "  let request: URLRequest?",
+      "  let error: AFError?",
+      "  let metrics: Metrics",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const fact = out.typeDeclarations?.find((f) => f.typeId === "Completion");
+      expect(fact?.optionalProperties).toEqual(["request", "error"]);
+    }
+  });
+
+  it("keeps the receiver as written beside the normalized one when unwrap sugar was stripped", () => {
+    const src = ["func go() {", "  a?.b!.c()", "  obj?.maybe()", "  plain.run()", "}", ""].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      expect(calls).toContainEqual(expect.objectContaining({ receiver: "a.b", writtenReceiver: "a?.b!", member: "c" }));
+      expect(calls).toContainEqual(
+        expect.objectContaining({ receiver: "obj", writtenReceiver: "obj?", member: "maybe" }),
+      );
+      expect(calls.find((c) => c.member === "run")?.writtenReceiver).toBeUndefined();
     }
   });
 });

@@ -3452,6 +3452,276 @@ describe("SwiftCallResolver — module-level values (bd tea-rags-mcp-y99pg.30)",
   });
 });
 
+/**
+ * `extension Download where Self: DataSerializer` (bd tea-rags-mcp-y99pg.33):
+ * inside that body `Self` conforms to BOTH protocols, so a bare
+ * `serialize(…)` is `DataSerializer`'s requirement — Alamofire's
+ * `serializeDownload` default. Only the extension carrying the constraint
+ * sees it: a sibling extension of the same protocol in the same file does not.
+ */
+describe("SwiftCallResolver — a protocol extension's `where Self` constraints (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/ResponseSerialization.swift": [
+      { symbolId: "DataSerializer", scope: [] },
+      { symbolId: "DataSerializer#serialize", scope: ["DataSerializer"] },
+      { symbolId: "Download", scope: [] },
+      { symbolId: "Download#serializeDownload", scope: ["Download"] },
+      { symbolId: "Download#other", scope: ["Download"] },
+    ],
+    // A namesake on an unrelated type: the short name alone is ambiguous.
+    "Sources/StringSerializer.swift": [
+      { symbolId: "StringSerializer", scope: [] },
+      { symbolId: "StringSerializer#serialize", scope: ["StringSerializer"] },
+    ],
+  });
+  const within = ctx({
+    callerFile: "Sources/ResponseSerialization.swift",
+    callerScope: ["Download", "serializeDownload"],
+    symbolTable: t,
+    typeDeclarations: {
+      "Sources/ResponseSerialization.swift": [
+        { typeId: "DataSerializer", reopens: false },
+        { typeId: "Download", reopens: false },
+        {
+          typeId: "Download",
+          reopens: true,
+          selfConstraints: { types: ["DataSerializer"], startLine: 20, endLine: 30 },
+        },
+        { typeId: "Download", reopens: true },
+      ],
+    },
+  });
+
+  it("resolves a bare call to the constraint's member inside the constrained extension", () => {
+    expect(new SwiftCallResolver().resolve(call(null, "serialize", 25), within)).toEqual({
+      targetRelPath: "Sources/ResponseSerialization.swift",
+      targetSymbolId: "DataSerializer#serialize",
+    });
+  });
+
+  it("resolves `self.` the same way", () => {
+    expect(new SwiftCallResolver().resolve(call("self", "serialize", 25), within)?.targetSymbolId).toBe(
+      "DataSerializer#serialize",
+    );
+  });
+
+  it("does not lend the constraint to a line outside that extension", () => {
+    expect(new SwiftCallResolver().resolve(call(null, "serialize", 40), within)).toBeNull();
+  });
+
+  it("still prefers the extended protocol's own member", () => {
+    expect(new SwiftCallResolver().resolve(call(null, "other", 25), within)?.targetSymbolId).toBe("Download#other");
+  });
+});
+
+/**
+ * `$result` on a property-wrapped stored property (bd tea-rags-mcp-y99pg.33)
+ * is the wrapper's `projectedValue` — Swift synthesizes it only when the
+ * outermost wrapper declares one. `@Published var result` projects a
+ * `Published<Value>.Publisher`, so `$result.compactMap(\.self).map { … }` is
+ * Combine's `Publisher.map`, and a project `map` on an unrelated type is a
+ * namesake the site can never reach.
+ */
+describe("SwiftCallResolver — a property wrapper's projected value `$name` (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/DataResponse.swift": [
+      { symbolId: "DataResponse", scope: [] },
+      { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+    ],
+    "Sources/Guarded.swift": [
+      { symbolId: "Guarded", scope: [] },
+      { symbolId: "GuardedProjection", scope: [] },
+      { symbolId: "GuardedProjection#reset", scope: ["GuardedProjection"] },
+      { symbolId: "GuardedProjection#map", scope: ["GuardedProjection"] },
+    ],
+    "Example/Networking.swift": [
+      { symbolId: "Networking", scope: [] },
+      { symbolId: "Networking#init", scope: ["Networking"] },
+    ],
+  });
+  const typeDeclarations = {
+    "Sources/DataResponse.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/Guarded.swift": [
+      { typeId: "Guarded", reopens: false },
+      { typeId: "GuardedProjection", reopens: false },
+    ],
+    "Example/Networking.swift": [
+      {
+        typeId: "Networking",
+        reopens: false,
+        propertyAttributeTypes: { result: ["Published"], state: ["Guarded"], level: ["MainActor"] },
+      },
+    ],
+  };
+  const within = ctx({
+    callerFile: "Example/Networking.swift",
+    callerScope: ["Networking", "init"],
+    symbolTable: t,
+    typeDeclarations,
+    classFieldTypesByClassKey: {
+      "Sources/Guarded.swift::Guarded": { wrappedValue: "State", projectedValue: "GuardedProjection" },
+    },
+  });
+
+  it("types `$name` as an SDK wrapper's projected value, proving Combine's `map` external", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("$result\n    .compactMap(\\.self)", "map"), within)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("self.$result", "map"), within)).toBe(false);
+  });
+
+  it("types `$name` as a project wrapper's projected value, and resolves on it", () => {
+    expect(new SwiftCallResolver().resolve(call("$state", "reset"), within)?.targetSymbolId).toBe(
+      "GuardedProjection#reset",
+    );
+  });
+
+  it("types nothing through an attribute that is not a property wrapper", () => {
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("$level", "map"), within)).toBe(true);
+  });
+});
+
+/**
+ * `T?` is `Optional<T>` (bd tea-rags-mcp-y99pg.33). A member written straight
+ * on an optional — no `?` / `!` between them — is `Optional`'s own: Alamofire's
+ * `response.map(\.statusCode).map { … }` on an `HTTPURLResponse?` runs
+ * `Optional.map` twice, and a project `map` on another type is a namesake.
+ * Behind `?` / `!` the member is the wrapped type's. A member `Optional` does
+ * not declare is read off the wrapped type either way, which is where a value
+ * the index believes optional but the source unwrapped some other way lands.
+ */
+describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/DataResponse.swift": [
+      { symbolId: "DataResponse", scope: [] },
+      { symbolId: "DataResponse#map", scope: ["DataResponse"] },
+    ],
+    "Sources/Box.swift": [
+      { symbolId: "Box", scope: [] },
+      { symbolId: "Box#map", scope: ["Box"] },
+      { symbolId: "Box#open", scope: ["Box"] },
+    ],
+    "Sources/Completion.swift": [{ symbolId: "Completion", scope: [] }],
+  });
+  const typeDeclarations = {
+    "Sources/DataResponse.swift": [{ typeId: "DataResponse", reopens: false }],
+    "Sources/Box.swift": [{ typeId: "Box", reopens: false }],
+    "Sources/Completion.swift": [{ typeId: "Completion", reopens: false, optionalProperties: ["error", "box"] }],
+  };
+  const optional = (name: string) => ({
+    form: "instance" as const,
+    name: "Optional",
+    args: [{ form: "instance" as const, name }],
+  });
+  const within = ctx({
+    callerFile: "Sources/Serializer.swift",
+    callerScope: ["Serializer", "run"],
+    symbolTable: t,
+    typeDeclarations,
+    localBindings: {
+      response: [{ line: 5, type: "HTTPURLResponse", typeRef: optional("HTTPURLResponse") }],
+      request: [{ line: 5, type: "URLRequest", typeRef: optional("URLRequest") }],
+      box: [{ line: 5, type: "Box", typeRef: optional("Box") }],
+      completion: [{ line: 5, type: "Completion" }],
+    },
+    classFieldTypesByClassKey: { "Sources/Completion.swift::Completion": { error: "AFError", box: "Box" } },
+  });
+  const written = (receiver: string, writtenReceiver: string, member: string) => ({
+    ...call(receiver, member),
+    writtenReceiver,
+  });
+
+  it("reads a member written straight on an optional off `Optional`", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("response.map(\\.statusCode)", "map"), within)).toBe(false);
+    expect(
+      resolver.hasInProjectDefinition(
+        call("request.flatMap(\\.httpMethod)\n  .flatMap(HTTPMethod.init)", "map"),
+        within,
+      ),
+    ).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("box", "map"), within)).toBe(false);
+    expect(resolver.resolve(call("box", "map"), within)).toBeNull();
+  });
+
+  it("reads a member behind `?` / `!` off the wrapped type", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(written("box", "box?", "map"), within)?.targetSymbolId).toBe("Box#map");
+    expect(resolver.resolve(written("box", "box!", "map"), within)?.targetSymbolId).toBe("Box#map");
+  });
+
+  it("reads a member `Optional` does not declare off the wrapped type", () => {
+    expect(new SwiftCallResolver().resolve(call("box", "open"), within)?.targetSymbolId).toBe("Box#open");
+  });
+
+  it("types a property declared optional as an Optional", () => {
+    const resolver = new SwiftCallResolver();
+    // `completion.box` is a `Box?`: `.map` on it is `Optional.map`, never `Box#map`.
+    expect(resolver.hasInProjectDefinition(call("completion.box", "map"), within)).toBe(false);
+    expect(resolver.resolve(written("completion.box", "completion.box?", "map"), within)?.targetSymbolId).toBe(
+      "Box#map",
+    );
+  });
+});
+
+/**
+ * `compactMap { stream in … }` inside `struct DataStreamPublisher: Publisher`
+ * is Combine's `Publisher.compactMap`, whose closure takes `Self.Output` —
+ * and on this conformer `Output` is what its own `typealias Output = …`
+ * names (bd tea-rags-mcp-y99pg.33).
+ */
+describe("SwiftCallResolver — a conformer's member typealias binds `Self.X` (bd tea-rags-mcp-y99pg.33)", () => {
+  const t = table({
+    "Sources/Combine.swift": [
+      { symbolId: "DataStreamPublisher", scope: [] },
+      { symbolId: "DataStreamPublisher#result", scope: ["DataStreamPublisher"] },
+    ],
+    "Sources/DataStreamRequest.swift": [
+      { symbolId: "DataStreamRequest", scope: [] },
+      { symbolId: "DataStreamRequest.Stream", scope: ["DataStreamRequest"] },
+      { symbolId: "DataStreamRequest.Stream#cancel", scope: ["DataStreamRequest", "Stream"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#cancel", scope: ["Request"] },
+    ],
+  });
+  const within = (memberTypeAliases?: Record<string, string>): CallContext =>
+    ctx({
+      callerFile: "Sources/Combine.swift",
+      callerScope: ["DataStreamPublisher", "result"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/Combine.swift": [
+          {
+            typeId: "DataStreamPublisher",
+            reopens: false,
+            conforms: ["Publisher"],
+            genericParameters: ["Value"],
+            ...(memberTypeAliases ? { memberTypeAliases } : {}),
+          },
+        ],
+        "Sources/DataStreamRequest.swift": [
+          { typeId: "DataStreamRequest", reopens: false },
+          { typeId: "DataStreamRequest.Stream", reopens: false, genericParameters: ["Success", "Failure"] },
+        ],
+        "Sources/Request.swift": [{ typeId: "Request", reopens: false }],
+      },
+      callResultBindings: { stream: [{ line: 10, callee: "compactMap", closureParameter: 0, scopeEndLine: 12 }] },
+    });
+
+  it("types the SDK closure's `Self.Output` parameter by the conformer's alias", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("stream", "cancel", 11),
+      within({ Output: "DataStreamRequest.Stream" }),
+    );
+    expect(target?.targetSymbolId).toBe("DataStreamRequest.Stream#cancel");
+  });
+
+  it("types nothing when the conformer declares no such alias", () => {
+    expect(new SwiftCallResolver().resolve(call("stream", "cancel", 11), within())).toBeNull();
+  });
+});
+
 describe("SwiftCallResolver — a closure parameter declared with generic arguments (bd tea-rags-mcp-y99pg.32)", () => {
   // Session.swift: `guard let adapter = adapter(for: request)`, then
   // `adapter.adapt(initialRequest, using: state) { result in
@@ -3644,5 +3914,215 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
     it("keeps the denominator under a PROTOCOL bound, whose conformers need not say so", () => {
       expect(new SwiftCallResolver().hasInProjectDefinition(call("type", "paths", 3), bounded("Hashable"))).toBe(true);
     });
+  });
+});
+
+/**
+ * A call on an `AnyObject` / `AnyClass` value is Objective-C dynamic lookup:
+ * the runtime sends the selector to whatever class the value is, so the only
+ * project Swift code it can land on is a method a CLASS implements. A member
+ * every Swift declaration of which sits on a protocol, a struct or an enum —
+ * or at module scope — has no such implementation in the project, and the
+ * site leaves the denominator (bd tea-rags-mcp-y99pg.35). Quick's
+ * `(specClass as AnyClass).buildExamplesIfNeeded()` reaches the Objective-C
+ * `+[QuickSpec buildExamplesIfNeeded]` through a requirement of the `@objc`
+ * protocol `_QuickSpecInternal`, which nothing in Swift conforms to.
+ */
+describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyClass (bd tea-rags-mcp-y99pg.35)", () => {
+  const rows = {
+    "Sources/QuickTestObservation.swift": [
+      { symbolId: "_QuickSpecInternal", scope: [] },
+      { symbolId: "_QuickSpecInternal.buildExamplesIfNeeded", scope: ["_QuickSpecInternal"] },
+      { symbolId: "QuickTestObservation", scope: [] },
+      { symbolId: "QuickTestObservation#buildAllExamplesIfNeeded", scope: ["QuickTestObservation"] },
+    ],
+    "Sources/Values.swift": [
+      { symbolId: "Point", scope: [] },
+      { symbolId: "Point#reset", scope: ["Point"] },
+      { symbolId: "Mode", scope: [] },
+      { symbolId: "Mode#reset", scope: ["Mode"] },
+      { symbolId: "reset", scope: [] },
+    ],
+  };
+  const declarations = {
+    "Sources/QuickTestObservation.swift": [
+      { typeId: "_QuickSpecInternal", reopens: false, declarationKind: "protocol" as const },
+      { typeId: "QuickTestObservation", reopens: false, declarationKind: "class" as const, conforms: ["NSObject"] },
+    ],
+    "Sources/Values.swift": [
+      { typeId: "Point", reopens: false, declarationKind: "struct" as const },
+      { typeId: "Mode", reopens: false, declarationKind: "enum" as const },
+    ],
+  };
+  const at = (over: Partial<CallContext> = {}): CallContext =>
+    ctx({
+      callerFile: "Sources/QuickTestObservation.swift",
+      callerScope: ["QuickTestObservation", "buildAllExamplesIfNeeded"],
+      symbolTable: table(rows),
+      typeDeclarations: declarations,
+      ...over,
+    });
+
+  it("answers false for a cast to AnyClass whose member only an @objc protocol requirement declares", () => {
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(site, at())).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, at())).toBe(false);
+  });
+
+  it("answers false for an AnyObject local whose member only structs, enums and free functions declare", () => {
+    const context = at({ localBindings: { target: [{ line: 5, type: "AnyObject" }] } });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "reset"), context)).toBe(false);
+  });
+
+  it("keeps the denominator when a project class declares the member", () => {
+    const withClass = table({
+      ...rows,
+      "Sources/Spec.swift": [
+        { symbolId: "Spec", scope: [] },
+        { symbolId: "Spec.buildExamplesIfNeeded", scope: ["Spec"] },
+      ],
+    });
+    const context = at({
+      symbolTable: withClass,
+      typeDeclarations: {
+        ...declarations,
+        "Sources/Spec.swift": [{ typeId: "Spec", reopens: false, declarationKind: "class" }],
+      },
+    });
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+  });
+
+  it("keeps the denominator when an extension of a type the project does not declare holds the member", () => {
+    // `extension NSObject { @objc func reset() }` — an Objective-C class the
+    // project re-opens is exactly where a dynamic-lookup target may live.
+    const withExtension = table({
+      ...rows,
+      "Sources/NSObject+Reset.swift": [
+        { symbolId: "NSObject", scope: [] },
+        { symbolId: "NSObject#reset", scope: ["NSObject"] },
+      ],
+    });
+    const context = at({
+      symbolTable: withExtension,
+      typeDeclarations: {
+        ...declarations,
+        "Sources/NSObject+Reset.swift": [{ typeId: "NSObject", reopens: true }],
+      },
+      localBindings: { target: [{ line: 5, type: "AnyObject" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "reset"), context)).toBe(true);
+  });
+
+  it("keeps the denominator when the index recorded no declaration kind for the owner", () => {
+    const context = at({
+      typeDeclarations: {
+        ...declarations,
+        "Sources/QuickTestObservation.swift": [{ typeId: "_QuickSpecInternal", reopens: false }],
+      },
+    });
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+  });
+
+  it("keeps the denominator when any declaration of the owner's name is a class", () => {
+    const context = at({
+      typeDeclarations: {
+        ...declarations,
+        "Sources/Other/Point.swift": [{ typeId: "Point", reopens: false, declarationKind: "class" }],
+      },
+      localBindings: { target: [{ line: 5, type: "AnyObject" }] },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("target", "reset"), context)).toBe(true);
+  });
+
+  describe("a cast sends the selector to the OPERAND's class", () => {
+    // Quick's own shape: `AsyncSpec` implements `buildExamplesIfNeeded` as a
+    // class method, but `specClass` is a `QuickSpec.Type`, and `AsyncSpec` is
+    // neither an ancestor nor a subclass of `QuickSpec`.
+    const withSpecs = (extra: Record<string, { symbolId: string; scope: string[] }[]> = {}) =>
+      table({
+        ...rows,
+        "Sources/QuickSpec.swift": [
+          { symbolId: "QuickSpec", scope: [] },
+          { symbolId: "QuickSpec.spec", scope: ["QuickSpec"] },
+        ],
+        "Sources/Async/AsyncSpec.swift": [
+          { symbolId: "AsyncSpec", scope: [] },
+          { symbolId: "AsyncSpec.buildExamplesIfNeeded", scope: ["AsyncSpec"] },
+        ],
+        ...extra,
+      });
+    const specDeclarations = {
+      ...declarations,
+      "Sources/QuickSpec.swift": [
+        { typeId: "QuickSpec", reopens: false, declarationKind: "class" as const, conforms: ["QuickSpecBase"] },
+      ],
+      "Sources/Async/AsyncSpec.swift": [
+        { typeId: "AsyncSpec", reopens: false, declarationKind: "class" as const, conforms: ["AsyncSpecBase"] },
+      ],
+    };
+    const site = call("(specClass as AnyClass)", "buildExamplesIfNeeded", 33);
+    const bound = { specClass: [{ line: 31, type: "QuickSpec" }] };
+
+    it("answers false when the only implementing class is outside the operand's lineage", () => {
+      const context = at({ symbolTable: withSpecs(), typeDeclarations: specDeclarations, localBindings: bound });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(false);
+    });
+
+    it("keeps the denominator when the operand is untyped", () => {
+      const context = at({ symbolTable: withSpecs(), typeDeclarations: specDeclarations });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+
+    it("keeps the denominator when a subclass of the operand's class implements the selector", () => {
+      const context = at({
+        symbolTable: withSpecs({
+          "Tests/FunctionalSpec.swift": [
+            { symbolId: "FunctionalSpec", scope: [] },
+            { symbolId: "FunctionalSpec.buildExamplesIfNeeded", scope: ["FunctionalSpec"] },
+          ],
+        }),
+        typeDeclarations: {
+          ...specDeclarations,
+          "Tests/FunctionalSpec.swift": [
+            { typeId: "FunctionalSpec", reopens: false, declarationKind: "class", conforms: ["QuickSpec"] },
+          ],
+        },
+        localBindings: bound,
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+
+    it("keeps the denominator when an ancestor of the operand's class implements the selector", () => {
+      const context = at({
+        symbolTable: withSpecs(),
+        typeDeclarations: {
+          ...specDeclarations,
+          "Sources/QuickSpec.swift": [
+            { typeId: "QuickSpec", reopens: false, declarationKind: "class", conforms: ["AsyncSpec"] },
+          ],
+        },
+        localBindings: bound,
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+
+    it("keeps the denominator when the operand's type is a protocol, whose conformers need not say so", () => {
+      const context = at({
+        symbolTable: withSpecs(),
+        typeDeclarations: specDeclarations,
+        localBindings: { specClass: [{ line: 31, type: "_QuickSpecInternal" }] },
+      });
+      expect(new SwiftCallResolver().hasInProjectDefinition(site, context)).toBe(true);
+    });
+  });
+
+  it("leaves a receiver typed by a project protocol to the typed rule", () => {
+    // Not dynamic lookup: a `_QuickSpecInternal.Type` value dispatches the
+    // requirement statically, and the requirement IS the project target.
+    const context = at({ localBindings: { spec: [{ line: 5, type: "_QuickSpecInternal" }] } });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("spec", "buildExamplesIfNeeded"), context)).toBe(true);
   });
 });

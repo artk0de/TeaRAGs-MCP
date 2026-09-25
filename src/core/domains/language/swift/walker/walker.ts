@@ -140,9 +140,11 @@ import type {
   ImportRef,
   KwargSignature,
   LocalBinding,
+  SelfConstraintFact,
   SwiftFieldConstruction,
   SwiftWhereClauseFact,
   TypeDeclarationFact,
+  TypeDeclarationKind,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
@@ -253,6 +255,10 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     const whereClause = kind === "extension" ? swiftWhereClauseFact(node) : undefined;
     const enumCasePayloads = kind === "enum" ? swiftEnumCasePayloads(node) : undefined;
     const functionAliasReturns = swiftFunctionAliasReturns(node);
+    const selfConstraints = kind === "extension" ? swiftSelfConstraints(node) : undefined;
+    const propertyAttributeTypes = swiftPropertyAttributeTypes(node);
+    const optionalProperties = swiftOptionalPropertyNames(node);
+    const memberTypeAliases = swiftMemberTypeAliases(node);
     // `extension Collection<String>` composes its members under the name as
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
@@ -260,6 +266,7 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     out.push({
       typeId: [...enclosing, name].join("."),
       reopens: kind === "extension",
+      ...(kind === "extension" ? {} : { declarationKind: kind }),
       ...(conforms.length > 0 ? { conforms } : {}),
       ...(genericParameters.length > 0 ? { genericParameters } : {}),
       ...(fieldTypeArguments ? { fieldTypeArguments } : {}),
@@ -269,11 +276,110 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(enumCasePayloads ? { enumCasePayloads } : {}),
       ...(spelledAs === undefined ? {} : { spelledAs }),
       ...(functionAliasReturns ? { functionAliasReturns } : {}),
+      ...(selfConstraints ? { selfConstraints } : {}),
+      ...(propertyAttributeTypes ? { propertyAttributeTypes } : {}),
+      ...(optionalProperties.length > 0 ? { optionalProperties } : {}),
+      ...(memberTypeAliases ? { memberTypeAliases } : {}),
       ...(genericFieldParameters ? { genericFieldParameters } : {}),
       ...(whereClause ? { whereClause } : {}),
     });
   });
   return out;
+}
+
+/**
+ * The nominal member typealiases of a type body (bd tea-rags-mcp-y99pg.33):
+ * `typealias Output = DataStreamRequest.Stream<Value, AFError>` →
+ * `{ Output: "DataStreamRequest.Stream" }`. Only a plain nominal alias is
+ * kept — an optional, a metatype or a function type is not the nominal a
+ * `Self.Output` member dispatches on. The aliased type is read positionally
+ * for the materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftMemberTypeAliases(node: AstNode): Record<string, string> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const out = createIdentifierRecord<string>();
+  let any = false;
+  for (const member of body.namedChildren) {
+    if (member.type !== "typealias_declaration") continue;
+    const alias = member.namedChildren.find((c) => c.type === "type_identifier")?.text;
+    const aliased = swiftTypeNodeAfter(member, "=");
+    if (alias === undefined || aliased?.type !== "user_type") continue;
+    const { nominal } = swiftTypeFactOf(aliased);
+    if (nominal === null) continue;
+    out[alias] = nominal;
+    any = true;
+  }
+  return any ? out : undefined;
+}
+
+/** The properties a type body annotates `T?` (bd tea-rags-mcp-y99pg.33), in source order. */
+function swiftOptionalPropertyNames(node: AstNode): string[] {
+  const body = node.childForFieldName("body");
+  const out: string[] = [];
+  for (const member of body?.children ?? []) {
+    if (member.type !== "property_declaration" || !swiftDeclaresOptional(member)) continue;
+    const name = singleIdentifierPatternName(member.childForFieldName("name"));
+    if (name && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/**
+ * The UpperCamelCase attribute types each property of a type body carries, in
+ * source order (bd tea-rags-mcp-y99pg.33): `@Published var result` →
+ * `{ result: ["Published"] }`. Which of them is the property's wrapper — the
+ * type `$result` projects through — is the resolver's question: `@MainActor`
+ * is spelled the same way and wraps nothing. A lowercase attribute
+ * (`@objc`, `@available`) is a compiler attribute, never a type.
+ */
+function swiftPropertyAttributeTypes(node: AstNode): Record<string, string[]> | undefined {
+  const body = node.childForFieldName("body");
+  if (!body) return undefined;
+  const out = createIdentifierRecord<string[]>();
+  let any = false;
+  for (const member of body.children) {
+    if (member.type !== "property_declaration") continue;
+    const name = singleIdentifierPatternName(member.childForFieldName("name"));
+    const modifiers = member.children.find((c) => c.type === "modifiers");
+    if (!name || !modifiers) continue;
+    const types: string[] = [];
+    for (const attribute of modifiers.namedChildren) {
+      if (attribute.type !== "attribute") continue;
+      const { nominal } = swiftTypeFactOf(attribute.namedChildren.find((c) => c.type === "user_type") ?? null);
+      if (nominal !== null && /^_*[A-Z]/.test(nominal)) types.push(nominal);
+    }
+    if (types.length === 0) continue;
+    out[name] = types;
+    any = true;
+  }
+  return any ? out : undefined;
+}
+
+/**
+ * What an extension's `where` clause says `Self` is (bd tea-rags-mcp-y99pg.33):
+ * `extension Download where Self: DataSerializer` — inside that body `Self`
+ * conforms to `DataSerializer` too, so an implicit-self call reaches its
+ * requirements. `Self == X` names `X` the same way. A constraint on any other
+ * name (`where Value: Equatable`) says nothing about `Self`. Each constraint
+ * is read positionally — subject first, constraining type last — for the
+ * materialization hazard {@link swiftTypeNodeAfter} documents.
+ */
+function swiftSelfConstraints(node: AstNode): SelfConstraintFact | undefined {
+  const types: string[] = [];
+  for (const clause of node.children) {
+    if (clause.type !== "type_constraints") continue;
+    for (const constraint of clause.namedChildren) {
+      const relation = constraint.namedChildren.find(
+        (c) => c.type === "inheritance_constraint" || c.type === "equality_constraint",
+      );
+      if (relation?.namedChildren[0]?.text !== "Self") continue;
+      const { nominal } = swiftTypeFactOf(relation.namedChildren[relation.namedChildCount - 1]);
+      if (nominal !== null && !types.includes(nominal)) types.push(nominal);
+    }
+  }
+  if (types.length === 0) return undefined;
+  return { types, startLine: node.startPosition.row + 1, endLine: node.endPosition.row + 1 };
 }
 
 /**
@@ -595,13 +701,15 @@ function swiftSpelledWithArguments(
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
-function swiftTypeDeclarationKind(node: AstNode): string | null {
+function swiftTypeDeclarationKind(node: AstNode): TypeDeclarationKind | "extension" | null {
   if (node.type === "protocol_declaration") return "protocol";
   if (node.type !== "class_declaration") return null;
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (child === null || child.isNamed) continue;
-    if (child.type === "extension" || SWIFT_TYPE_DECLARATION_KEYWORDS.has(child.type)) return child.type;
+    if (child.type === "extension") return "extension";
+    const keyword = SWIFT_TYPE_DECLARATION_KEYWORDS.get(child.type);
+    if (keyword !== undefined) return keyword;
   }
   return null;
 }
@@ -711,7 +819,9 @@ const OVERLOAD_SUFFIX = /~\d+$/;
  * an `enum` conform to protocols, and Swift forbids an `actor` from inheriting
  * at all.
  */
-const SWIFT_TYPE_DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(["class", "struct", "enum", "actor"]);
+const SWIFT_TYPE_DECLARATION_KEYWORDS: ReadonlyMap<string, TypeDeclarationKind> = new Map(
+  (["class", "struct", "enum", "actor"] as const).map((keyword) => [keyword, keyword]),
+);
 
 /**
  * `className → superclass`, for the `super` pass alone.
@@ -843,9 +953,13 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     const target = callee.childForFieldName("target");
     const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
     if (!target || !member) return;
+    const receiver = normalizeSwiftReceiver(target.text);
+    // `a?.c()` puts its `?` beside the target, not inside it (bd tea-rags-mcp-y99pg.33).
+    const written = callee.children.some((c) => c.type === "?") ? `${target.text}?` : target.text;
     out.push({
       callText: node.text,
-      receiver: normalizeSwiftReceiver(target.text),
+      receiver,
+      ...(written === receiver ? {} : { writtenReceiver: written }),
       member: member.text,
       startLine,
       ...signature,
@@ -1682,6 +1796,13 @@ interface SwiftScopedBinding {
    * slot `index` of its case `caseName` (bd tea-rags-mcp-y99pg.16).
    */
   readonly enumPayload?: { readonly caseName: string; readonly index: number };
+  /**
+   * Set when the binding's own declaration spells its type `T?` — a
+   * parameter or an annotated `let` / `var` — so its value is an `Optional`
+   * of `fact.nominal` (bd tea-rags-mcp-y99pg.33). Never inferred: an
+   * `if let` re-binding is the unwrapped value.
+   */
+  readonly optional?: true;
 }
 
 /** Where a right-hand side is being typed — the coordinates every lookup is relative to. */
@@ -1735,6 +1856,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
     valueChain?: string,
     closureParameter?: number,
     enumPayload?: { readonly caseName: string; readonly index: number },
+    optional?: boolean,
   ): void => {
     if (SWIFT_PSEUDO_BINDING_NAMES.has(name)) return;
     if (!fact.nominal && !fact.element && valueChain === undefined) return;
@@ -1747,6 +1869,7 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
       valueChain,
       ...(closureParameter === undefined ? {} : { closureParameter }),
       ...(enumPayload === undefined ? {} : { enumPayload }),
+      ...(optional === true ? { optional: true as const } : {}),
     };
     collected.push(binding);
     const sameName = bindingsByName.get(name);
@@ -1764,8 +1887,19 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const name = node.childForFieldName("name");
         if (name) {
           // Past `inout` / `@escaping`, which sit between the colon and the type.
-          const declared = swiftTypeFactOf(swiftParameterTypeNode(node));
-          record(name.text, swiftGenericResolvedFact(declared, node), siteOf(node));
+          const typeNode = swiftParameterTypeNode(node);
+          const declared = swiftTypeFactOf(typeNode);
+          const optional = typeNode?.type === "optional_type";
+          record(
+            name.text,
+            swiftGenericResolvedFact(declared, node),
+            siteOf(node),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            optional,
+          );
         }
         return;
       }
@@ -1776,7 +1910,16 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const declared = swiftDeclaredPropertyFact(node);
         const value = node.childForFieldName("value");
         const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
-        record(name, fact, site, enclosingSwiftClosureEndLine(node), deferredSpelling(fact, value, site));
+        record(
+          name,
+          fact,
+          site,
+          enclosingSwiftClosureEndLine(node),
+          deferredSpelling(fact, value, site),
+          undefined,
+          undefined,
+          declared.nominal !== null && swiftDeclaresOptional(node),
+        );
         // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
         // parameter is a value of the property's DECLARED type, for the
         // clause's own body (bd tea-rags-mcp-y99pg.31).
@@ -2052,6 +2195,16 @@ export function swiftModuleValueOf(node: AstNode): SwiftModuleValueFact | null {
  * {@link swiftExpressionFact} when this is silent; a type-level property does
  * not, because the property map is that walk's input.
  */
+/**
+ * Whether a `property_declaration` ANNOTATES its type as `T?` (bd
+ * tea-rags-mcp-y99pg.33). `T!` is not: an implicitly unwrapped value reads its
+ * members off `T`. Read positionally, as every type position here is.
+ */
+function swiftDeclaresOptional(node: AstNode): boolean {
+  const annotation = node.children.find((c) => c.type === "type_annotation");
+  return annotation !== undefined && swiftTypeNodeAfter(annotation, ":")?.type === "optional_type";
+}
+
 function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
   const annotation = node.children.find((c) => c.type === "type_annotation");
   if (annotation) return swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":")), node);
@@ -2611,7 +2764,22 @@ function assignBindingsToInnermostChunks(
     }
     const scoped = binding.scopeEndLine === undefined ? {} : { scopeEndLine: binding.scopeEndLine };
     if (binding.fact.nominal) {
-      const emitted: LocalBinding = { line: binding.line, type: binding.fact.nominal, ...scoped };
+      const emitted: LocalBinding = {
+        line: binding.line,
+        type: binding.fact.nominal,
+        ...scoped,
+        // `T?` keeps `type: T` for every reader that wants the wrapped type,
+        // and says what the value IS beside it (bd tea-rags-mcp-y99pg.33).
+        ...(binding.optional === true
+          ? {
+              typeRef: {
+                form: "instance" as const,
+                name: "Optional",
+                args: [{ form: "instance" as const, name: binding.fact.nominal }],
+              },
+            }
+          : {}),
+      };
       (bucket.localBindings[binding.name] ??= []).push(emitted);
     } else if (binding.valueChain !== undefined) {
       const emitted: CallResultBinding = {

@@ -23,6 +23,7 @@ import type {
   SwiftFieldConstruction,
   SwiftWhereClauseFact,
   TypeDeclarationFact,
+  TypeDeclarationKind,
 } from "../../../../contracts/types/codegraph.js";
 import { RunScopedMemo, splitAtBracketDepthZero } from "../../kernel/index.js";
 
@@ -31,6 +32,8 @@ interface SwiftTypeDeclarationSets {
   readonly declaring: ReadonlyMap<string, ReadonlySet<string>>;
   /** typeId → the files re-opening it. */
   readonly reopening: ReadonlyMap<string, ReadonlySet<string>>;
+  /** typeId → the keyword of each own declaration; `null` for one whose fact recorded none (bd tea-rags-mcp-y99pg.35). */
+  readonly kinds: ReadonlyMap<string, ReadonlySet<TypeDeclarationKind | null>>;
   /** typeId → every supertype any declaration of it names, in first-seen order. */
   readonly conforms: ReadonlyMap<string, readonly string[]>;
   /** typeId → its own generic parameter names (bd tea-rags-mcp-y99pg.13). */
@@ -45,6 +48,12 @@ interface SwiftTypeDeclarationSets {
   readonly functionAliases: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
   readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
+  /** typeId → property → its attribute types, the wrapper candidates (bd tea-rags-mcp-y99pg.33). */
+  readonly propertyAttributes: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
+  /** typeId → the properties any declaration of it annotates `T?` (bd tea-rags-mcp-y99pg.33). */
+  readonly optionalProperties: ReadonlyMap<string, ReadonlySet<string>>;
+  /** typeId → member typealias → the nominal it aliases, first declaration wins (bd tea-rags-mcp-y99pg.33). */
+  readonly memberTypeAliases: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** typeId → stored property → the generic parameter it is typed as (bd tea-rags-mcp-y99pg.34). */
   readonly genericFields: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** relPath → the constrained re-openings it holds, each with its `where` clause (bd tea-rags-mcp-y99pg.34). */
@@ -133,6 +142,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   if (hit !== undefined) return hit;
   const declaring = new Map<string, Set<string>>();
   const reopening = new Map<string, Set<string>>();
+  const kinds = new Map<string, Set<TypeDeclarationKind | null>>();
   const conforms = new Map<string, string[]>();
   const generics = new Map<string, readonly string[]>();
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
@@ -140,6 +150,9 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const spellings = new Map<string, string[]>();
   const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
+  const propertyAttributes = new Map<string, Map<string, readonly string[]>>();
+  const optionalProperties = new Map<string, Set<string>>();
+  const memberTypeAliases = new Map<string, Map<string, string>>();
   const initializers = new Map<string, GenericInitializerFact[]>();
   const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
   const genericFields = new Map<string, Readonly<Record<string, string>>>();
@@ -151,6 +164,11 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     if (!relPath.endsWith(".swift")) continue;
     for (const fact of channel[relPath]) {
       add(fact.reopens ? reopening : declaring, fact.typeId, relPath);
+      if (!fact.reopens) {
+        const own = kinds.get(fact.typeId) ?? new Set<TypeDeclarationKind | null>();
+        own.add(fact.declarationKind ?? null);
+        kinds.set(fact.typeId, own);
+      }
       if (fact.genericParameters !== undefined && !generics.has(fact.typeId)) {
         generics.set(fact.typeId, fact.genericParameters);
       }
@@ -171,6 +189,17 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         constructions.push({ owner: fact.typeId, field, construction });
       }
       mergeClosureParameters(closureParameters, fact);
+      for (const field of fact.optionalProperties ?? []) add(optionalProperties, fact.typeId, field);
+      for (const [field, types] of Object.entries(fact.propertyAttributeTypes ?? {})) {
+        const fields = propertyAttributes.get(fact.typeId) ?? new Map<string, readonly string[]>();
+        if (!fields.has(field)) fields.set(field, types);
+        propertyAttributes.set(fact.typeId, fields);
+      }
+      for (const [alias, aliased] of Object.entries(fact.memberTypeAliases ?? {})) {
+        const aliases = memberTypeAliases.get(fact.typeId) ?? new Map<string, string>();
+        if (!aliases.has(alias)) aliases.set(alias, aliased);
+        memberTypeAliases.set(fact.typeId, aliases);
+      }
       if (fact.functionAliasReturns !== undefined && !functionAliases.has(fact.typeId)) {
         functionAliases.set(fact.typeId, fact.functionAliasReturns);
       }
@@ -203,6 +232,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const fresh = {
     declaring,
     reopening,
+    kinds,
     conforms,
     generics,
     fieldArguments,
@@ -210,6 +240,9 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     spellings,
     functionAliases,
     enumCases,
+    propertyAttributes,
+    optionalProperties,
+    memberTypeAliases,
     genericFields,
     whereClauses,
   };
@@ -228,6 +261,20 @@ export function swiftDeclaringFiles(typeId: string, ctx: CallContext): ReadonlyS
   const declaring = sets.declaring.get(typeId);
   if (declaring !== undefined) return declaring;
   return sets.reopening.has(typeId) ? new Set<string>() : undefined;
+}
+
+/**
+ * The keyword of every declaration of `typeId` the project holds — `null` for
+ * one an older index recorded without it — or `undefined` when the project
+ * declares no type of that id, or the run publishes no channel (bd
+ * tea-rags-mcp-y99pg.35). More than one member means namesake types in several
+ * targets, each a declaration of its own.
+ */
+export function swiftDeclarationKinds(
+  typeId: string,
+  ctx: CallContext,
+): ReadonlySet<TypeDeclarationKind | null> | undefined {
+  return setsFor(ctx)?.kinds.get(typeId);
 }
 
 /** Whether the run PROVES `typeId` is a type the project re-opens but never declares. */
@@ -363,4 +410,44 @@ export function swiftFunctionAliasReturn(
     if (table !== undefined && Object.hasOwn(table, alias)) return { returned: table[alias], declaredIn: scope };
   }
   return undefined;
+}
+
+/**
+ * The attribute types the property `field` of `typeId` is declared with, in
+ * source order — its wrapper candidates (bd tea-rags-mcp-y99pg.33). Empty
+ * when it carries none or the channel is absent.
+ */
+export function swiftPropertyAttributeTypes(typeId: string, field: string, ctx: CallContext): readonly string[] {
+  return setsFor(ctx)?.propertyAttributes.get(typeId)?.get(field) ?? [];
+}
+
+/**
+ * The member typealiases the declarations of `typeId` declare, each to the
+ * nominal it names as spelled (bd tea-rags-mcp-y99pg.33): `typealias Output =
+ * DataStreamRequest.Stream<…>` → `Output` → `DataStreamRequest.Stream`.
+ * Undefined when none does or the channel is absent.
+ */
+export function swiftMemberTypeAliases(typeId: string, ctx: CallContext): ReadonlyMap<string, string> | undefined {
+  return setsFor(ctx)?.memberTypeAliases.get(typeId);
+}
+
+/** Whether a declaration of `typeId` annotates its property `field` as `T?` (bd tea-rags-mcp-y99pg.33). */
+export function swiftIsOptionalProperty(typeId: string, field: string, ctx: CallContext): boolean {
+  return setsFor(ctx)?.optionalProperties.get(typeId)?.has(field) ?? false;
+}
+
+/**
+ * The types `Self` is constrained to at `line` of the caller's file, inside a
+ * re-opening of `typeId` whose `where` clause names them (bd
+ * tea-rags-mcp-y99pg.33): `extension Download where Self: DataSerializer`. Read
+ * from the caller's own file only — the constraint holds inside that body and
+ * nowhere else. Empty when no such re-opening spans the line.
+ */
+export function swiftSelfConstraintsAt(typeId: string, line: number, ctx: CallContext): readonly string[] {
+  for (const fact of ctx.typeDeclarations?.[ctx.callerFile] ?? []) {
+    const constraint = fact.selfConstraints;
+    if (fact.typeId !== typeId || constraint === undefined) continue;
+    if (line >= constraint.startLine && line <= constraint.endLine) return constraint.types;
+  }
+  return [];
 }
