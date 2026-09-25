@@ -540,7 +540,13 @@ function swiftGenericMemberFacts(
         anyGenericField = true;
         continue;
       }
-      const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
+      // `[K: V]` / `[T]` spell `Dictionary<K, V>` / `Array<T>`'s arguments (bd tea-rags-mcp-y99pg.39).
+      const args =
+        typeNode?.type === "user_type"
+          ? typeNode.children.find((c) => c.type === "type_arguments")
+          : typeNode?.type === "array_type" || typeNode?.type === "dictionary_type"
+            ? typeNode
+            : null;
       if (args) {
         fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
         anyField = true;

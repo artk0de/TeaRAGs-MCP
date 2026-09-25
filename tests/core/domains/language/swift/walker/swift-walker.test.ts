@@ -1793,6 +1793,26 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     });
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `timers.removeValue(forKey: key)?.cancel()` on
+  // `timers: [TileKey: Task<Void, Never>]`: the sugar spells `Dictionary`'s
+  // arguments exactly as `Dictionary<TileKey, Task<…>>` would.
+  it("publishes the arguments of an array- or dictionary-sugared field", () => {
+    const src = [
+      "final class Model {",
+      "  private var timers: [TileKey: Task<Void, Never>] = [:]",
+      "  var names: [String] = []",
+      "  var maybe: [String]? = nil",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      expect(out.typeDeclarations?.find((f) => f.typeId === "Model")?.fieldTypeArguments).toEqual({
+        timers: ["TileKey", "Task"],
+        names: ["String"],
+      });
+    }
+  });
+
   // `adapter.adapt(…) { result in let r = try result.get() }` in another file
   // needs `Result`'s arguments to type `get()` (bd tea-rags-mcp-y99pg.32).
   it("publishes a closure parameter's concrete generic arguments with its nominal", () => {
