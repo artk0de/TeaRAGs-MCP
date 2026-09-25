@@ -40,6 +40,7 @@ import { CodegraphEnrichmentProvider } from "./symbols/provider.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "./symbols/rerank/derived-signals/index.js";
 import { CODEGRAPH_SYMBOLS_PRESETS } from "./symbols/rerank/presets/index.js";
 import { InMemoryGlobalSymbolTable } from "./symbols/symbol-table.js";
+import { createTemporalCochangeHooks, type TemporalCochangeConfig } from "./temporal/index.js";
 
 /**
  * Structured-clone-safe configuration the worker thread reads to rebuild a
@@ -114,6 +115,12 @@ export interface CodegraphWorkerConfig {
    * provider's resolver with the SAME mode as the main thread.
    */
   ambiguousResolveMode?: AmbiguousResolveMode;
+  /**
+   * Co-change build config for the temporal sub-graph (bd tea-rags-mcp-x4rpp) —
+   * plain data, so the pinned worker rebuilds the SAME completion hook the
+   * main-thread provider carries. Absent ⇒ no co-change build.
+   */
+  temporal?: TemporalCochangeConfig;
 }
 
 /**
@@ -216,6 +223,7 @@ export async function createCodegraphEnrichmentProvider(
       derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
       presets: CODEGRAPH_SYMBOLS_PRESETS,
       exclusion: { customPatterns: config.customExcludePatterns ?? [] },
+      collectionCompletionHooks: createTemporalCochangeHooks(config.temporal),
     },
     descriptor,
   );

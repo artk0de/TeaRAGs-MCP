@@ -38,6 +38,11 @@ import type {
   SymbolId,
   SymbolVisibilityRow,
 } from "./codegraph-symbols.js";
+import type {
+  TemporalCochangeBuildMeta,
+  TemporalCochangeGraph,
+  TemporalCochangeSnapshot,
+} from "./codegraph-temporal.js";
 
 /**
  * One file's worth of symbol definitions, as consumed by
@@ -565,6 +570,26 @@ export interface GraphDbClient {
    * `languages` reads nothing.
    */
   readNonPublicMemberEdges: (languages: readonly string[]) => Promise<NonPublicMemberEdge[]>;
+
+  // ── Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp) ──
+
+  /**
+   * Replace `cg_temporal_files` / `cg_temporal_edges_cochange` /
+   * `cg_temporal_meta` with one build, atomically. Wholesale: nothing of the
+   * previous build survives.
+   */
+  replaceTemporalCochange: (snapshot: TemporalCochangeSnapshot) => Promise<void>;
+
+  /** Provenance of the persisted co-change build; `null` before the first one. */
+  readTemporalCochangeMeta: () => Promise<TemporalCochangeBuildMeta | null>;
+
+  /**
+   * Every persisted co-change pair, flagged with whether a file edge or a
+   * resolved method edge joins its endpoints in either direction — the input of
+   * the silent-coupling detector (`get_architecture_report`, bd
+   * tea-rags-mcp-b4dcz).
+   */
+  readTemporalCochangeGraph: () => Promise<TemporalCochangeGraph>;
 
   /**
    * The `cg_symbols_edges_file` rows whose TARGET is `relPath` — the files

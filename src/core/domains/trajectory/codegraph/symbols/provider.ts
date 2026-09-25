@@ -56,6 +56,7 @@ import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contract
 import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
 import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import type { CodegraphCollectionCompletionHook } from "../collection-completion-hook.js";
 import {
   buildCodegraphExclusionFilter,
   collectSchemaColumnSources,
@@ -146,6 +147,14 @@ export interface CodegraphProviderDeps {
    * behaves like production without env wiring.
    */
   exclusion?: CodegraphExclusionOptions;
+  /**
+   * Sub-graph builders the family runs once the collection's graph is whole
+   * (bd tea-rags-mcp-x4rpp — the temporal co-change graph). Run best-effort after
+   * the metric recompute: at a single-worker finalize, or at the completion
+   * owner's `readBack` under language affinity. See
+   * `../collection-completion-hook.ts`.
+   */
+  collectionCompletionHooks?: readonly CodegraphCollectionCompletionHook[];
 }
 
 /**
@@ -932,8 +941,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * metric recompute and the read-back, and keeps the owned paths for `readBack`,
    * which the executor issues only once EVERY partition has resolved.
    */
-  finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
-    if (options?.finalizeStage === "readBack") return this.readBackPartition(options);
+  finalizeSignals = async (root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
+    if (options?.finalizeStage === "readBack") return this.readBackPartition(root, options);
     const partitioned = options?.finalizeStage === "resolve";
     const key = this.collectionKey(options?.collectionName);
     const file = new Map<string, FileSignalOverlay>();
@@ -976,6 +985,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // `sink.finish()`, so every resolved call is already counted. A partition
       // persists only its own languages, which the store scopes its writes by.
       await this.recordRunStats(graphDb, options?.runCoverage);
+      if (!partitioned) await this.runCollectionCompletionHooks(root, graphDb);
       // The completion owner reports the run's timings after the recompute —
       // with the resolver block captured NOW, before the run state it is read
       // from is cleared below; any other partition reports here, or its pass-2
@@ -1003,7 +1013,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * partition reads back the file overlays of the files it owns — a file's
    * fan-in may have been written by another partition's pass-2.
    */
-  private async readBackPartition(options: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
+  private async readBackPartition(root: string, options: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options.collectionName);
     const file = new Map<string, FileSignalOverlay>();
     const resolvers = this.resolverDiagnosticsForReadBack.get(key);
@@ -1018,10 +1028,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const paths =
         options.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
       await readCodegraphFileOverlays(graphDb, paths, file);
+      if (options.ownsCollectionCompletion === true) await this.runCollectionCompletionHooks(root, graphDb);
     } finally {
       this.runExtractedPaths.delete(key);
     }
     return file;
+  }
+
+  /**
+   * Run the family's collection-completion hooks (bd tea-rags-mcp-x4rpp) —
+   * best-effort and in order: a hook that throws is logged and the next one
+   * still runs, because a sub-graph that cannot be rebuilt (no git, a transient
+   * daemon error) must not fail the symbol graph's run.
+   */
+  private async runCollectionCompletionHooks(projectRoot: string, graphDb: GraphDbClient): Promise<void> {
+    for (const hook of this.deps.collectionCompletionHooks ?? []) {
+      try {
+        await hook.onCollectionComplete({ projectRoot, graphDb });
+      } catch (err) {
+        process.stderr.write(
+          `[tea-rags] codegraph ${hook.name} failed at collection completion: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
   }
 
   /**

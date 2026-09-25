@@ -22,6 +22,7 @@
  * | `DuckDbHierarchyReader`      | `cg_symbols_inheritance` reads                  |
  * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
+ * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -62,6 +63,9 @@ import type {
   SymbolDefinition,
   SymbolId,
   SymbolVisibilityRow,
+  TemporalCochangeBuildMeta,
+  TemporalCochangeGraph,
+  TemporalCochangeSnapshot,
 } from "../../contracts/types/codegraph.js";
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
@@ -72,6 +76,7 @@ import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
+import { DuckDbTemporalCochangeStore } from "./temporal-cochange-store.js";
 
 // Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
 // here. Per the layering rules in .claude/rules/domain-boundaries.md
@@ -99,6 +104,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly analytics: DuckDbGraphAnalyticsStore;
   private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
+  private readonly temporalCochange: DuckDbTemporalCochangeStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -110,6 +116,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.analytics = new DuckDbGraphAnalyticsStore(this.session);
     this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
+    this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -374,6 +381,20 @@ export class DuckDbGraphClient implements GraphDbClient {
   /** Convention-privacy candidates (bd tea-rags-mcp-r8hme.1); daemon op of the same name. */
   async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
     return this.analytics.readNonPublicMemberEdges(languages);
+  }
+
+  // ── Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp) ──
+
+  async replaceTemporalCochange(snapshot: TemporalCochangeSnapshot): Promise<void> {
+    return this.temporalCochange.replace(snapshot);
+  }
+
+  async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
+    return this.temporalCochange.readMeta();
+  }
+
+  async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
+    return this.temporalCochange.readGraph();
   }
 
   /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */

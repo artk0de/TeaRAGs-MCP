@@ -18,6 +18,56 @@ export interface Session {
 }
 
 /**
+ * Partition items into sessions by (author, time gap), keeping every member.
+ *
+ * The ONE grouping rule behind squash-aware sessions: `groupIntoSessions`
+ * reduces each partition to counts, and the co-change extractor
+ * (`trajectory/codegraph/temporal`) unions the members' changed files into one
+ * bundle. Members are ordered oldest first; sessions by their last member's
+ * timestamp ascending (stable, so equal timestamps keep author-first-seen order).
+ * No merge filtering here — callers decide what a session may contain.
+ *
+ * @param items - Anything carrying a commit (any order)
+ * @param commitOf - Reads the commit an item stands for
+ * @param gapMinutes - Silence threshold; gap >= this starts a new session
+ */
+export function partitionIntoAuthorSessions<T>(
+  items: readonly T[],
+  commitOf: (item: T) => CommitInfo,
+  gapMinutes: number,
+): T[][] {
+  const byAuthor = new Map<string, T[]>();
+  for (const item of items) {
+    const { author } = commitOf(item);
+    const list = byAuthor.get(author);
+    if (list) {
+      list.push(item);
+    } else {
+      byAuthor.set(author, [item]);
+    }
+  }
+
+  const gapSec = gapMinutes * 60;
+  const sessions: T[][] = [];
+  byAuthor.forEach((authorItems) => {
+    authorItems.sort((a, b) => commitOf(a).timestamp - commitOf(b).timestamp);
+    let sessionStart = 0;
+    for (let i = 1; i <= authorItems.length; i++) {
+      const isEnd = i === authorItems.length;
+      const gap = isEnd ? Infinity : commitOf(authorItems[i]).timestamp - commitOf(authorItems[i - 1]).timestamp;
+      if (gap >= gapSec || isEnd) {
+        sessions.push(authorItems.slice(sessionStart, i));
+        sessionStart = i;
+      }
+    }
+  });
+
+  const lastTimestamp = (session: T[]): number => commitOf(session[session.length - 1]).timestamp;
+  sessions.sort((a, b) => lastTimestamp(a) - lastTimestamp(b));
+  return sessions;
+}
+
+/**
  * Group commits into sessions by (author, time gap).
  *
  * @param commits - Raw commit list (any order)
@@ -25,52 +75,14 @@ export interface Session {
  * @returns Sessions sorted by timestamp ascending
  */
 export function groupIntoSessions(commits: CommitInfo[], gapMinutes: number): Session[] {
-  if (commits.length === 0) return [];
-
   // Filter out merge commits
   const filtered = commits.filter((c) => !MERGE_SUBJECT.test(c.body.split("\n")[0]));
-  if (filtered.length === 0) return [];
-
-  // Group by author
-  const byAuthor = new Map<string, CommitInfo[]>();
-  for (const c of filtered) {
-    const list = byAuthor.get(c.author);
-    if (list) {
-      list.push(c);
-    } else {
-      byAuthor.set(c.author, [c]);
-    }
-  }
-
-  const gapSec = gapMinutes * 60;
-  const sessions: Session[] = [];
-
-  byAuthor.forEach((authorCommits, author) => {
-    // Sort by timestamp ascending
-    authorCommits.sort((a, b) => a.timestamp - b.timestamp);
-
-    let sessionStart = 0;
-    for (let i = 1; i <= authorCommits.length; i++) {
-      const isEnd = i === authorCommits.length;
-      const gap = isEnd ? Infinity : authorCommits[i].timestamp - authorCommits[i - 1].timestamp;
-
-      if (gap >= gapSec || isEnd) {
-        const slice = authorCommits.slice(sessionStart, i);
-        sessions.push({
-          author,
-          timestamp: slice[slice.length - 1].timestamp,
-          commitCount: slice.length,
-          isFix: slice.some((c) => isBugFixCommit(c.body)),
-        });
-        sessionStart = i;
-      }
-    }
-  });
-
-  // Sort sessions by timestamp ascending
-  sessions.sort((a, b) => a.timestamp - b.timestamp);
-
-  return sessions;
+  return partitionIntoAuthorSessions(filtered, (c) => c, gapMinutes).map((slice) => ({
+    author: slice[0].author,
+    timestamp: slice[slice.length - 1].timestamp,
+    commitCount: slice.length,
+    isFix: slice.some((c) => isBugFixCommit(c.body)),
+  }));
 }
 
 /** One chunk-level session: its representative timestamp and whether any of its
