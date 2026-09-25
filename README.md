@@ -468,6 +468,7 @@ Throughput per provider and how to choose:
 | `tea-rags tune`           | Auto-tune performance parameters for your hardware                  |
 | `tea-rags update`         | Check for and install a newer version                               |
 | `tea-rags server`         | Start the MCP server                                                |
+| `tea-rags call`           | Run one MCP tool in-process — check the tool surface from a shell   |
 
 ## 🙋 FAQ
 

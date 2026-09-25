@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { CollectionRegistry } from "../core/api/public/index.js";
+import { recallCallToolNames } from "./call/tool-name-cache.js";
 
 /**
  * Subcommands of `projects` where `--name` refers to an EXISTING alias
@@ -51,6 +52,16 @@ export function maybeCompleteProjectName(
   // as the last entry under shell completion, so look one back from the end.
   const last = tokens[tokens.length - 2] ?? "";
 
+  // yargs places the script name as positionals[0] in completion mode.
+  const withoutScriptName = (positionals: readonly string[]): readonly string[] =>
+    positionals[0] === "tea-rags" ? positionals.slice(1) : positionals;
+
+  // `tea-rags call <TAB>` — the tool position right after the command. Names
+  // come from the record the last `call` run left (see tool-name-cache.ts).
+  if (last === "call" && withoutScriptName(parsedPositionals)[0] === "call") {
+    return recallCallToolNames();
+  }
+
   if (last === "--project" || last === "-p") {
     return listProjectNames();
   }
@@ -66,7 +77,7 @@ export function maybeCompleteProjectName(
   if (last === "--name" || last === "-n") {
     // yargs places the script name as positionals[0] in completion mode.
     // Drop it so we can check the real top-level command + subcommand.
-    const cleaned = parsedPositionals[0] === "tea-rags" ? parsedPositionals.slice(1) : parsedPositionals;
+    const cleaned = withoutScriptName(parsedPositionals);
     const [topLevel, sub] = cleaned;
     if (topLevel === "projects" && typeof sub === "string" && NAME_FLAG_EXISTS_SUBCOMMANDS.has(sub)) {
       return listProjectNames();

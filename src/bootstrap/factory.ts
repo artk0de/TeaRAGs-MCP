@@ -1331,7 +1331,23 @@ export function loadPrompts(config: AppConfig): PromptsConfig | null {
   }
 }
 
-export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsConfig | null): McpServer {
+/** Knobs on the one MCP server every entry point builds. */
+export interface ConfiguredServerOptions {
+  /**
+   * Arm the auto-update trigger (hpg2) on search tools. Default `true` — a
+   * long-lived server keeps its projects fresh. The one-shot `tea-rags call`
+   * turns it off: a validation call from a worktree build must not spawn that
+   * build as a detached reindex of the project it just queried
+   * (bd tea-rags-mcp-8vy3o).
+   */
+  autoUpdate?: boolean;
+}
+
+export function createConfiguredServer(
+  ctx: AppContext,
+  promptsConfig: PromptsConfig | null,
+  options: ConfiguredServerOptions = {},
+): McpServer {
   const server = new McpServer({
     name: pkg.name,
     version: pkg.version,
@@ -1343,7 +1359,7 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     healthProbes: ctx.healthProbes,
     // Auto-update trigger (hpg2): fires on search tools, spawns the detached
     // updater when the freshness verdict allows. Config lives in the registry.
-    autoUpdate: buildMcpAutoUpdateTrigger(),
+    ...(options.autoUpdate === false ? {} : { autoUpdate: buildMcpAutoUpdateTrigger() }),
   });
   registerAllResources(server, ctx.app);
   registerAllPrompts(server, promptsConfig);

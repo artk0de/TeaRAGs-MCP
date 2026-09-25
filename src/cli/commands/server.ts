@@ -1,8 +1,7 @@
 import type { CommandModule } from "yargs";
 
-import { getZodConfig, parseAppConfig } from "../../bootstrap/config/index.js";
-import { createAppContext, createConfiguredServer, loadPrompts } from "../../bootstrap/factory.js";
-import { migrateHomeDir } from "../../bootstrap/migrate.js";
+import { createConfiguredServer } from "../../bootstrap/factory.js";
+import { prepareMcpServerRuntime } from "../../bootstrap/server-runtime.js";
 import { startHttpServer } from "../../bootstrap/transport/http.js";
 import { startStdioServer } from "../../bootstrap/transport/stdio.js";
 
@@ -14,21 +13,7 @@ export interface ServerArgs {
  * Run the MCP server. Extracted for testability.
  */
 export async function runServer(args: ServerArgs): Promise<void> {
-  migrateHomeDir();
-
-  const config = parseAppConfig();
-  const zodConfig = getZodConfig();
-  // A server's env is every served project's default, not an override of any
-  // one project's stamped index shape (tea-rags-mcp-o0qsw).
-  const ctx = await createAppContext(config, { ambientEnvRole: "server" });
-  const promptsConfig = loadPrompts(config);
-
-  // Log deprecation warnings
-  const { deprecations } = zodConfig;
-  if (deprecations.length > 0) {
-    const lines = deprecations.map((d) => `  ${d.oldName} -> use ${d.newName}`).join("\n");
-    console.error(`[tea-rags] Deprecated env vars:\n${lines}`);
-  }
+  const { config, ctx, promptsConfig, deprecations } = await prepareMcpServerRuntime();
 
   // Graceful shutdown
   if (ctx.cleanup) {

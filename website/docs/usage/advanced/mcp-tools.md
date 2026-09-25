@@ -221,6 +221,46 @@ The registered alias resolves to the project's path and collection name across
 every search and indexing tool — see [Project Registry](./project-registry)
 for the full guide, file format, and CLI equivalents.
 
+## Calling a Tool from the Shell — `tea-rags call`
+
+`tea-rags call <tool> [params]` runs one tool without an MCP client. It builds
+the same server `tea-rags server` builds — same config, same tool set, same
+input validation, error handling and response formatting — and talks to it over
+an in-process MCP connection. What comes back is what an agent would receive.
+
+Main use: checking a change to the tool surface against a local build, with no
+server reconnect. `node build/cli/index.js call …` runs the checkout you just
+built instead of the globally installed package.
+
+```bash
+tea-rags call find_symbol '{"project":"my-app","symbol":"Reranker#rerank"}'
+echo '{"project":"my-app"}' | tea-rags call get_index_status -   # params from stdin
+tea-rags call hybrid_search '{"project":"my-app","query":"retry"}' --json | jq .structuredContent
+tea-rags call --list                                             # what this config registers
+```
+
+| Flag / exit code | Meaning |
+| ---------------- | ------- |
+| `--json` | Print the whole `CallToolResult` (`content`, `structuredContent`, `isError`) as one JSON document. Nothing else goes to stdout, even under `DEBUG=1`; diagnostics go to stderr |
+| `--list` | Tools this server registers, one per line with a short description |
+| exit `0` | Success |
+| exit `1` | The tool returned an error, the input failed schema validation, or `params` is not a JSON object |
+| exit `2` | Unknown tool (close matches are suggested), or a tool with its own CLI command |
+
+The server's environment is your shell's, so the tool set follows it: codegraph
+tools (`get_callers`, `trace_path`, …) appear only when `CODEGRAPH_ENABLED=true`
+is set, exactly as for `tea-rags server`. To reproduce what your MCP client
+sees, export the same variables its server config sets.
+
+Two differences from a long-running server:
+
+- Search tools never start a [background auto-update](../../operations/auto-update).
+  A check made from a development build must not reindex the project it
+  queries.
+- `index_codebase`, `list_projects`, `register_project` and `unregister_project`
+  are refused with a pointer to `tea-rags index-codebase` / `tea-rags projects`,
+  which already cover them from the shell.
+
 ## Tool → Skill Quick Reference
 
 | Task | Skill | Tools invoked |
