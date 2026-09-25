@@ -187,30 +187,24 @@ describe("shapeDistribution", () => {
   });
 });
 
+/** The language's list arrives from the descriptor (`naming.nonConceptTypes`); the lexicon only matches it. */
 describe("isNonConceptType", () => {
-  it.each([
-    "string",
-    "number",
-    "boolean",
-    "int",
-    "str",
-    "bool",
-    "float",
-    "unknown",
-    "any",
-    "Any",
-    "object",
-    "void",
-    "None",
-    "nil",
-    "T",
-    "K",
-    "",
-  ])("%j is not a concept", (typeName) => {
-    expect(isNonConceptType(typeName)).toBe(true);
+  const RUBY_LIKE = ["String", "Integer", "Hash", "nil"];
+
+  it.each(["String", "Integer", "Hash", "nil", "::String"])("%j is listed, so not a concept", (typeName) => {
+    expect(isNonConceptType(typeName, RUBY_LIKE)).toBe(true);
   });
 
-  it.each(["TaxAutomationDocument", "User", "::System"])("%s is a concept", (typeName) => {
-    expect(isNonConceptType(typeName)).toBe(false);
+  it.each(["T", "K", ""])("%j — single-letter generics and the empty name are never concepts", (typeName) => {
+    expect(isNonConceptType(typeName, [])).toBe(true);
+  });
+
+  it("matches the language's spelling exactly — no case folding", () => {
+    expect(isNonConceptType("string", RUBY_LIKE)).toBe(false);
+    expect(isNonConceptType("String", ["string"])).toBe(false);
+  });
+
+  it.each(["TaxAutomationDocument", "User", "::System", "TT"])("%s is a concept", (typeName) => {
+    expect(isNonConceptType(typeName, RUBY_LIKE)).toBe(false);
   });
 });

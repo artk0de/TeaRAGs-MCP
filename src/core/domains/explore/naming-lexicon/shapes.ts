@@ -58,32 +58,17 @@ export interface NamingShapeInput {
   callee?: IdentifierBoundCallee;
 }
 
-/** Type names that carry no domain concept: primitives, top types, single-letter generics. */
-const NON_CONCEPT_TYPES: ReadonlySet<string> = new Set([
-  "string",
-  "number",
-  "boolean",
-  "int",
-  "str",
-  "bool",
-  "float",
-  "unknown",
-  "any",
-  "Any",
-  "object",
-  "void",
-  "None",
-  "nil",
-]);
-
 /**
- * True for a type name that names no concept — primitives, top types and
- * single-letter generics (`T`, `K`). Such types are recorded but excluded from
- * `byType`, and a draft typed with one is judged as untyped. Case-sensitive.
+ * True for a type name that names no concept. `nonConceptTypes` is the
+ * language's list (`LanguageCapability.naming.nonConceptTypes`, passed in by the
+ * ops layer) and is matched EXACTLY — no case folding, the language's own
+ * spelling decides. Single-letter generics (`T`, `K`) and the empty name are a
+ * universal rule owned here. Such types are recorded but excluded from
+ * `byType`, and a draft typed with one is judged as untyped.
  */
-export function isNonConceptType(typeName: string): boolean {
+export function isNonConceptType(typeName: string, nonConceptTypes: readonly string[]): boolean {
   const bare = typeName.replace(/^::/, "");
-  return bare.length === 0 || NON_CONCEPT_TYPES.has(bare) || /^[A-Z]$/.test(bare);
+  return bare.length === 0 || /^[A-Z]$/.test(bare) || nonConceptTypes.includes(bare);
 }
 
 function sameWords(a: readonly string[], b: readonly string[]): boolean {
@@ -91,7 +76,7 @@ function sameWords(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /** `words` equals `typeWords`, with the last word singular or plural. */
-function matchesTypeWords(words: readonly string[], typeWords: readonly string[]): boolean {
+export function matchesTypeWords(words: readonly string[], typeWords: readonly string[]): boolean {
   if (words.length !== typeWords.length || typeWords.length === 0) return false;
   const last = typeWords.length - 1;
   if (!sameWords(words.slice(0, last), typeWords.slice(0, last))) return false;

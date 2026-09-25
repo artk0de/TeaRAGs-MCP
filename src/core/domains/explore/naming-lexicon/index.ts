@@ -16,6 +16,7 @@ export {
   calleeDerivedWords,
   classifyNamingShape,
   isNonConceptType,
+  matchesTypeWords,
   shapeDistribution,
 } from "./shapes.js";
 export type {
@@ -29,4 +30,10 @@ export type {
 export { extractConceptTerms } from "./terms.js";
 export type { ConceptTerm, ConceptTermHolder } from "./terms.js";
 export { judgeDraftName } from "./verdicts.js";
-export type { DraftNameJudgementInput, NamingByCalleeRow, NamingByTypeRow, NamingVerdict } from "./verdicts.js";
+export type {
+  DraftNameJudgementInput,
+  NamingByCalleeRow,
+  NamingByTypeRow,
+  NamingReturnVerbShare,
+  NamingVerdict,
+} from "./verdicts.js";

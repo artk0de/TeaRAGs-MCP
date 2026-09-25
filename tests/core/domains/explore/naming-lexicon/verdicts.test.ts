@@ -1,10 +1,34 @@
 import { describe, expect, it } from "vitest";
 
 import type { IdentifierCasing } from "../../../../../src/core/contracts/types/language.js";
+import type {
+  NamingShapeDistribution,
+  NamingShapeShare,
+} from "../../../../../src/core/domains/explore/naming-lexicon/shapes.js";
 import { judgeDraftName } from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
 
 const TYPE = "TaxAutomationDocument";
 const OWNER = "TaxPreparation::TaxAutomations::Syncer#call";
+
+/** A project-wide shape prior as the ops layer computes it: shares over `n` rows, confidence (n/20)^2 capped. */
+function shapePrior(shares: NamingShapeShare[], n: number): NamingShapeDistribution {
+  return { shares, n, confidence: Math.min(1, (n / 20) ** 2) };
+}
+const CALLEE_DERIVED_PRIOR = shapePrior(
+  [
+    { shape: "CALLEE_DERIVED", share: 0.7 },
+    { shape: "FREE", share: 0.3 },
+  ],
+  400,
+);
+const FREE_PRIOR = shapePrior(
+  [
+    { shape: "FREE", share: 0.8 },
+    { shape: "CALLEE_DERIVED", share: 0.2 },
+  ],
+  400,
+);
+const VERB_TYPE_PRIOR = shapePrior([{ shape: "VERB_TYPE", share: 1 }], 100);
 
 /** The taxdome conventions in the two casings a caller passes in (snake: Ruby locals, camel: TS locals). */
 const CASINGS: {
@@ -70,7 +94,7 @@ describe.each(CASINGS)("judgeDraftName — typed draft ($casing)", (c) => {
     ).toEqual({ verdict: "MISFIT", suggestion: c.verbType, holder: OWNER });
   });
 
-  it("a return with no return rows (but a known type) gets the default verb form", () => {
+  it("a return with no return rows takes the project's dominant return verb", () => {
     expect(
       judgeDraftName({
         name: c.draftReturn,
@@ -78,11 +102,16 @@ describe.each(CASINGS)("judgeDraftName — typed draft ($casing)", (c) => {
         typeName: TYPE,
         casing: c.casing,
         byTypeRows: [{ kind: "local", name: c.exact, n: 30, exampleOwner: OWNER }],
+        projectShapePrior: { return: VERB_TYPE_PRIOR },
+        projectReturnVerbs: [
+          { verb: "find", share: 0.7 },
+          { verb: "load", share: 0.3 },
+        ],
       }),
     ).toEqual({ verdict: "MISFIT", suggestion: c.defaultReturn });
   });
 
-  it("a VERB_TYPE return with no return rows conforms", () => {
+  it("a return in the project's dominant verb form conforms with no return rows", () => {
     expect(
       judgeDraftName({
         name: c.defaultReturn,
@@ -90,20 +119,146 @@ describe.each(CASINGS)("judgeDraftName — typed draft ($casing)", (c) => {
         typeName: TYPE,
         casing: c.casing,
         byTypeRows: [{ kind: "local", name: c.exact, n: 30, exampleOwner: OWNER }],
+        projectShapePrior: { return: VERB_TYPE_PRIOR },
+        projectReturnVerbs: [{ verb: "find", share: 0.7 }],
       }),
     ).toEqual({ verdict: "CONFORMS" });
   });
 
-  it("CALLEE_DERIVED suggestion when no type is known (find_x! → x)", () => {
+  it("CALLEE_DERIVED suggestion when no type is known and the project names after callees (find_x! → x)", () => {
     expect(
-      judgeDraftName({ name: "row", kind: "local", casing: c.casing, callee: { member: c.calleeMember } }),
+      judgeDraftName({
+        name: "row",
+        kind: "local",
+        casing: c.casing,
+        callee: { member: c.calleeMember },
+        projectShapePrior: { local: CALLEE_DERIVED_PRIOR },
+      }),
     ).toEqual({ verdict: "MISFIT", suggestion: c.exact });
   });
 
-  it("a callee-derived name conforms when no type is known", () => {
+  it("a callee-derived name conforms when no type is known and the project names after callees", () => {
     expect(
-      judgeDraftName({ name: c.exact, kind: "local", casing: c.casing, callee: { member: c.calleeMember } }),
+      judgeDraftName({
+        name: c.exact,
+        kind: "local",
+        casing: c.casing,
+        callee: { member: c.calleeMember },
+        projectShapePrior: { local: CALLEE_DERIVED_PRIOR },
+      }),
     ).toEqual({ verdict: "CONFORMS" });
+  });
+});
+
+/**
+ * The fallbacks above apply a convention only when the project-wide prior shows
+ * it; without that support the verdict is NEW_TERM and carries no suggestion —
+ * the convention is induced from the distribution, never assumed.
+ */
+describe("judgeDraftName — fallbacks need project support", () => {
+  const untypedRow = {
+    name: "row",
+    kind: "local" as const,
+    casing: "snake" as const,
+    callee: { member: "find_tax_automation_document!" },
+  };
+
+  it("no prior → no callee-derived suggestion", () => {
+    expect(judgeDraftName(untypedRow)).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+
+  it("a FREE-dominant prior → no callee-derived suggestion", () => {
+    expect(judgeDraftName({ ...untypedRow, projectShapePrior: { local: FREE_PRIOR } })).toEqual({
+      verdict: "NEW_TERM",
+      topTerms: [],
+    });
+  });
+
+  it("a CALLEE_DERIVED-dominant prior of low confidence → no suggestion", () => {
+    expect(
+      judgeDraftName({
+        ...untypedRow,
+        projectShapePrior: { local: shapePrior([{ shape: "CALLEE_DERIVED", share: 0.9 }], 10) },
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+
+  it("a CALLEE_DERIVED prior for another kind does not support this kind", () => {
+    expect(judgeDraftName({ ...untypedRow, projectShapePrior: { field: CALLEE_DERIVED_PRIOR } })).toEqual({
+      verdict: "NEW_TERM",
+      topTerms: [],
+    });
+  });
+
+  it("an unsupported fallback reports the concept's top terms", () => {
+    const conceptTerms = [{ term: "tax_automation_document", score: 1, holders: [OWNER] }];
+    expect(judgeDraftName({ ...untypedRow, projectShapePrior: { local: FREE_PRIOR }, conceptTerms })).toEqual({
+      verdict: "NEW_TERM",
+      topTerms: ["tax_automation_document"],
+    });
+  });
+
+  it("a return with no return rows and no dominant verb gets no verb suggestion", () => {
+    const typedReturn = {
+      name: "find_vendor_envelope",
+      kind: "return" as const,
+      typeName: TYPE,
+      casing: "snake" as const,
+      byTypeRows: [{ kind: "local" as const, name: "tax_automation_document", n: 30, exampleOwner: OWNER }],
+    };
+    expect(judgeDraftName(typedReturn)).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    expect(
+      judgeDraftName({
+        ...typedReturn,
+        projectShapePrior: { return: VERB_TYPE_PRIOR },
+        projectReturnVerbs: [
+          { verb: "find", share: 0.4 },
+          { verb: "load", share: 0.35 },
+        ],
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    expect(
+      judgeDraftName({
+        ...typedReturn,
+        projectShapePrior: { return: shapePrior([{ shape: "VERB_TYPE", share: 1 }], 5) },
+        projectReturnVerbs: [{ verb: "find", share: 1 }],
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+
+  it("the suggested verb is the project's, not a hardcoded one", () => {
+    expect(
+      judgeDraftName({
+        name: "find_vendor_envelope",
+        kind: "return",
+        typeName: TYPE,
+        casing: "snake",
+        byTypeRows: [{ kind: "local", name: "tax_automation_document", n: 30, exampleOwner: OWNER }],
+        projectShapePrior: { return: VERB_TYPE_PRIOR },
+        projectReturnVerbs: [
+          { verb: "load", share: 0.2 },
+          { verb: "fetch", share: 0.8 },
+        ],
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "fetch_tax_automation_document" });
+  });
+
+  it("an invented callee still yields its derived name — correct lexically", () => {
+    // `x = find_vendor_envelope` in a project that names locals after their
+    // callee: `vendor_envelope` IS the conventional local for that call, so this
+    // function is right to suggest it. Whether `vendor_envelope` is a term the
+    // project knows is not this draft's question — the callee
+    // `find_vendor_envelope` is itself a draft, judged NEW_TERM by the concept
+    // path, and that is where an invented term is caught.
+    expect(
+      judgeDraftName({
+        name: "row",
+        kind: "local",
+        casing: "snake",
+        callee: { member: "find_vendor_envelope" },
+        projectShapePrior: { local: CALLEE_DERIVED_PRIOR },
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "vendor_envelope" });
   });
 });
 
@@ -290,15 +445,28 @@ describe("judgeDraftName — nothing to judge against", () => {
     });
   });
 
-  it("a primitive type is not judged by type", () => {
+  it("a type the language lists as non-concept is not judged by type", () => {
     expect(
       judgeDraftName({
         name: "label",
         typeName: "string",
         casing: "camel",
+        nonConceptTypes: ["string", "number"],
         byTypeRows: [{ kind: "local", name: "name", n: 100, exampleOwner: OWNER }],
       }),
     ).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a type the language does not list is judged by type (no global stop-list)", () => {
+    expect(
+      judgeDraftName({
+        name: "label",
+        typeName: "string",
+        casing: "camel",
+        nonConceptTypes: ["String"],
+        byTypeRows: [{ kind: "local", name: "string", n: 100, exampleOwner: OWNER }],
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "string", holder: OWNER });
   });
 
   it("no type, callee or terms conforms", () => {
