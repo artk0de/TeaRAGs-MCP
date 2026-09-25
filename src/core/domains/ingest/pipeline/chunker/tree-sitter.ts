@@ -82,6 +82,13 @@ interface SplitSymbolIdentity {
    * `startLine` then starts there — the leaf path's `methodStartLines` rule.
    */
   leadingStartRow?: number;
+  /**
+   * The enclosing containers' headers, rendered (`buildHierarchyPrefix`), for
+   * a MEMBER split into parts (bd tea-rags-mcp-jgb5a). Every part opens with
+   * it, exactly as the unsplit member chunk does, and its length comes out of
+   * every part's budget. Absent for a top-level symbol.
+   */
+  hierarchyPrefix?: string;
 }
 
 /**
@@ -523,6 +530,14 @@ export class TreeSitterChunker implements CodeChunker {
    * container lineage stays readable from the base id (`Foo#bar` → `Foo`),
    * which is what the codegraph owner rule and the symbol-mass pass already
    * fold on.
+   *
+   * A MEMBER's parts open with the container hierarchy prefix, exactly as the
+   * unsplit member chunk does (bd tea-rags-mcp-jgb5a), so a part's layout is:
+   * hierarchy prefix → leading comment (`#part1` only) → the splitter's
+   * signature/context prefix → the part's own rows. The prefix is cut out of
+   * the splitter's budget, so every part still fits `maxChunkSize`; a prefix
+   * taking half the budget or more (pathologically long header rows) is
+   * dropped instead, since it would leave the parts no room for code.
    */
   private emitSplitSymbol(
     node: AstNode,
@@ -532,12 +547,18 @@ export class TreeSitterChunker implements CodeChunker {
     language: string,
     chunks: CodeChunk[],
   ): void {
-    const parts = this.symbolSplitter.split(node, code, identity.leadingStartRow);
+    const rawPrefix = identity.hierarchyPrefix ?? "";
+    const hierarchyPrefix = rawPrefix.length * 2 < this.config.maxChunkSize ? rawPrefix : "";
+    const splitter =
+      hierarchyPrefix === ""
+        ? this.symbolSplitter
+        : new AstSymbolSplitter(this.config.maxChunkSize - hierarchyPrefix.length);
+    const parts = splitter.split(node, code, identity.leadingStartRow);
     const methodLines = node.endPosition.row - node.startPosition.row + 1;
     const parentType = identity.parentType ?? this.unwrapDecoratedDefinition(node).type;
     parts.forEach((part, i) => {
       chunks.push({
-        content: part.content,
+        content: `${hierarchyPrefix}${part.content}`,
         startLine: part.startLine,
         endLine: part.endLine,
         metadata: {
@@ -628,7 +649,7 @@ export class TreeSitterChunker implements CodeChunker {
         const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
         if (hasHookChain) {
           for (const result of ctx.bodyChunks) {
-            const bodyContent = `${containerHeader}\n${result.content}`;
+            const bodyContent = `${this.bodyChunkPrefix([], containerHeader, result.content)}${result.content}`;
             chunks.push({
               content: bodyContent,
               startLine: result.startLine,
@@ -1042,6 +1063,22 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
+   * The prefix a hook's body chunk is emitted under: the enclosing hierarchy,
+   * then the container's own header — unless the chunk already opens with the
+   * container's first row. A class-body hook writes that row verbatim
+   * (`export class X extends Y {`, `class Foo < Bar`), and prefixing the
+   * engine's `class X extends Y {` on top of it named the container twice in
+   * every such chunk (bd tea-rags-mcp-4i6ab). The hook's budget reserves the
+   * full prefix either way (`bodyChunkPrefixLength`), so dropping the header
+   * can only shorten a chunk.
+   */
+  private bodyChunkPrefix(hierarchyHeaders: string[], containerHeader: string, content: string): string {
+    const firstRow = content.split("\n", 1)[0].trim();
+    const carriesHeader = firstRow === containerHeader || firstRow.endsWith(` ${containerHeader}`);
+    return `${this.buildHierarchyPrefix(hierarchyHeaders)}${carriesHeader ? "" : `${containerHeader}\n`}`;
+  }
+
+  /**
    * Process child nodes of a container, recursing into nested containers.
    * Handles the child extraction loop with support for arbitrary nesting depth.
    *
@@ -1171,6 +1208,7 @@ export class TreeSitterChunker implements CodeChunker {
         name: childName,
         chunkType: methodChunkType,
         leadingStartRow: this.leadingCommentStartRow(pass.ctx, ci),
+        hierarchyPrefix: this.buildHierarchyPrefix(pass.hierarchyHeaders),
       },
       code,
       filePath,
@@ -1250,7 +1288,10 @@ export class TreeSitterChunker implements CodeChunker {
 
     // Body chunks from hook chain for this nested container
     for (const result of childCtx.bodyChunks) {
-      const bodyContent = `${bodyChunkPrefix}${result.content}`;
+      const bodyContent =
+        hierarchyHeaders.length > 0
+          ? `${this.bodyChunkPrefix(hierarchyHeaders, childHeader, result.content)}${result.content}`
+          : result.content;
       chunks.push({
         content: bodyContent,
         startLine: result.startLine,
@@ -1332,6 +1373,16 @@ export class TreeSitterChunker implements CodeChunker {
     if (hierarchyHeaders.length > 0) {
       const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
       finalContent = `${hierarchyPrefix}${finalContent}`;
+    }
+
+    // bd tea-rags-mcp-jgb5a — a member that fits the budget on its own but not
+    // under its hierarchy prefix and leading comment is split on its statement
+    // boundaries like any oversized member, so every part carries the prefix.
+    // Left as one chunk, the `enforceMaxChunkSize` post-pass line-cut it, and
+    // every part after the first named neither its class nor its signature.
+    if (finalContent.length > this.config.maxChunkSize) {
+      this.emitOversizedChild(childNode, ci, pass);
+      return;
     }
 
     // Python `decorated_definition` wraps a `function_definition` whose

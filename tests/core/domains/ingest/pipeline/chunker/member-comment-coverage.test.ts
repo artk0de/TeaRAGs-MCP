@@ -93,7 +93,11 @@ ${statements(20, "    ")}
       expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*)/));
       const part1 = chunks.find((c) => c.metadata.symbolId === "Reporter#render#part1");
       expect(part1).toBeDefined();
-      expect(part1!.content.trimStart().startsWith("/**")).toBe(true);
+      // bd tea-rags-mcp-jgb5a — the class hierarchy prefix opens every part;
+      // the JSDoc follows it at the head of #part1.
+      const [header, head] = part1!.content.split("\n");
+      expect(header).toBe("class Reporter {");
+      expect(head.trimStart().startsWith("/**")).toBe(true);
       expect(part1!.startLine).toBe(linesMatching(code, /^\s*\/\*\*/)[0]);
       for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
       expectUniqueSymbolIds(chunks);
@@ -198,7 +202,10 @@ end
       expectLinesCovered(code, chunks, linesMatching(code, /^\s*#/));
       const part1 = chunks.find((c) => c.metadata.symbolId === "Reporter#render#part1");
       expect(part1).toBeDefined();
-      expect(part1!.content.trimStart().startsWith("# Renders")).toBe(true);
+      // bd tea-rags-mcp-jgb5a — class hierarchy prefix first, then the comment.
+      const [header, head] = part1!.content.split("\n");
+      expect(header).toBe("class Reporter");
+      expect(head.trimStart().startsWith("# Renders")).toBe(true);
       for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
       expectUniqueSymbolIds(chunks);
     });
