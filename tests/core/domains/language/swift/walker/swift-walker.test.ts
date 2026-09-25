@@ -2355,6 +2355,27 @@ describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99
       expect(calls.find((c) => c.member === "opacity")).toMatchObject({ receiver: ".quaternary" });
     }
   });
+
+  // tree-sitter-swift parses `PixelCanvas.width - font.width(x)` with the
+  // additive expression `PixelCanvas.width - font` as the navigation target;
+  // Swift binds member access and call tighter than any infix operator, so
+  // the receiver is `font` (bd tea-rags-mcp-y99pg.39).
+  it("keeps an infix operator's left operand out of the receiver", () => {
+    const src = [
+      "func go() {",
+      "  let w = PixelCanvas.width - font.measure(text)",
+      "  let x = labelX[index] + glyph.advance(of: c)",
+      "  let y = scale * -curve.slope()",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      expect(calls.find((c) => c.member === "measure")).toMatchObject({ receiver: "font" });
+      expect(calls.find((c) => c.member === "advance")).toMatchObject({ receiver: "glyph" });
+      expect(calls.find((c) => c.member === "slope")).toMatchObject({ receiver: "curve" });
+    }
+  });
 });
 
 /**

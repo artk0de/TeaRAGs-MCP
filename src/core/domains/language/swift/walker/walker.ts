@@ -1059,20 +1059,42 @@ function declaresSwiftParameter(fn: AstNode, name: string): boolean {
  * and the receiver is `kept`. The operator sits on the leftmost spine of the
  * target, however deep (`!a!.b.c()`). An implicit member expression's leading
  * `.` (`.quaternary.opacity(1)`) is part of the receiver and stays.
+ *
+ * The same grammar folds an additive or multiplicative expression into the
+ * target — `PixelCanvas.width - font.width(x)` navigates off
+ * `PixelCanvas.width - font` — where Swift binds the call to the RIGHT
+ * operand alone: the receiver is `font`. Any infix shape found as a target is
+ * such a misbinding (a parenthesised one is a tuple), so the walk takes the
+ * right operand of each, then strips a prefix operator off what is left.
  */
 function swiftReceiverTargetText(target: AstNode): string {
+  const operand = swiftReceiverOperand(target);
+  return operand === target ? target.text : target.text.slice(operand.startIndex - target.startIndex);
+}
+
+/** The node a call's receiver really is, inside the target the grammar handed over — see {@link swiftReceiverTargetText}. */
+function swiftReceiverOperand(target: AstNode): AstNode {
+  // An infix shape keeps its right operand under one of these: `a - b`,
+  // `a...b`, `a ?? b`, `c ? a : b`.
+  const rights = [
+    target.childForFieldName("rhs"),
+    target.childForFieldName("end"),
+    target.childForFieldName("if_nil"),
+    target.childForFieldName("if_false"),
+  ];
+  for (const right of rights) {
+    if (right !== null && right.endIndex === target.endIndex) return swiftReceiverOperand(right);
+  }
   let node: AstNode | null = target;
   while (node !== null && node.startIndex === target.startIndex) {
     if (node.type === "prefix_expression") {
       const operation = node.childForFieldName("operation");
       const operand = node.childForFieldName("target");
-      if (operation !== null && operand !== null && operation.text !== ".") {
-        return target.text.slice(operand.startIndex - target.startIndex);
-      }
+      if (operation !== null && operand !== null && operation.text !== ".") return swiftReceiverOperand(operand);
     }
     node = node.child(0);
   }
-  return target.text;
+  return target;
 }
 
 /**

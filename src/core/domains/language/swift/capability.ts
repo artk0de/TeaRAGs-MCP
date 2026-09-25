@@ -631,6 +631,12 @@ export const capability: LanguageCapability = {
   // 326/387), edges +7 / -0 (project `extension View` members at the end of
   // modifier chains); Alamofire 1256/1256 and Quick 375/375 unchanged, edges
   // +0 / -0, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, infix operand): the grammar folds
+  // an additive or multiplicative expression into a call's target
+  // (`PixelCanvas.width - font.width(x)` navigates off `… - font`); the
+  // receiver is the right operand. Measured: pixelclocktiles TOTAL 0.956 ->
+  // 0.957 (3113/3257 -> 3116/3255), edges +3 / -0; Alamofire 1256/1256 and
+  // Quick 375/375 unchanged, oracle WRONG 0.
   versions: { chunking: 4, walker: 64, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
