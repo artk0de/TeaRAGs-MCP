@@ -165,11 +165,13 @@ describe("file-graph writer — file-only method edges persist (rtp6v)", () => {
     expect(await db.getCalledByCount("Handler#on")).toBe(1);
     expect(await db.getCallSiteCount("Caller#run")).toBe(2);
 
-    // The bulk projection must agree with the per-symbol getters and must not
-    // grow a null-keyed entry from the file-only row.
+    // The bulk projection must agree with the per-symbol getters (no namesakes
+    // here, so the file-scoped key carries the same numbers — bd
+    // tea-rags-mcp-xtdkq) and must not grow a null-keyed entry from the
+    // file-only row.
     const bulk = await db.getChunkSignalsBulk();
     expect(bulk.has(null as unknown as string)).toBe(false);
-    expect(bulk.get("Caller#run")).toMatchObject({ fanIn: 0, fanOut: 2 });
-    expect(bulk.get("Handler#on")).toMatchObject({ fanIn: 1, fanOut: 0 });
+    expect(bulk.get("src/caller.ts|Caller#run")).toMatchObject({ fanIn: 0, fanOut: 2 });
+    expect(bulk.get("src/handler.ts|Handler#on")).toMatchObject({ fanIn: 1, fanOut: 0 });
   });
 });

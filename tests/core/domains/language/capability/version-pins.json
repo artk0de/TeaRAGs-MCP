@@ -1,8 +1,8 @@
 {
   "*": {
     "chunking": {
-      "version": 1,
-      "digest": "sha256:4c3f70c3fdb24361c1dbc47157e3aaf253df8aea539fb96990a764b038b341d6"
+      "version": 2,
+      "digest": "sha256:ef49cee0515ee7e6ba723f1d347d9799820675f364be87de195325fccd8f580e"
     },
     "walker": {
       "version": 2,
@@ -59,8 +59,8 @@
       "digest": "sha256:cb67c386aaebfa16bea36f9588254101ff2e473e4f666661d793fbb5804d3104"
     },
     "walker": {
-      "version": 4,
-      "digest": "sha256:15befccea87c57b77d1556f63ac325b9e088e8b11aba53d9daae78e1ce1dbda4"
+      "version": 5,
+      "digest": "sha256:06a15697dac48a43d52b75b0ad1fe0c623565bf84973630f40cf01a6a0f4702b"
     }
   },
   "rust": {

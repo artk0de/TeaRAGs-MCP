@@ -33,6 +33,10 @@ export function buildOverview(): string {
   moved past what the index was built with — new payload fields, or a newer
   grammar / walker for a language it holds. It names the one command that
   repairs it. Surface it to the user; do NOT auto-trigger a reindex.
+- A search that named a rerank preset can come back with \`presetFilterNotice\` — that
+  preset's DEFAULT filter (most: production = no tests/docs/block) narrowed the set and
+  you never wrote it. It names the preset, the payload keys the default constrains, and
+  the param that clears it. Read it before concluding the corpus lacks the code.
 - Every reranked result carries \`rankingOverlay.derived\` + \`rankingOverlay.raw.{file,chunk}\`
   explaining the score (normalized derived signals + raw values with labels).
   Read tea-rags://schema/signal-labels for the label resolution algorithm.

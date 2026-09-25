@@ -35,6 +35,7 @@ import type {
   SelfDispatchMethodDecl,
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { isSuperReceiver } from "./receiver-kind.js";
 
 /**
  * One method's self-reach: the members it invokes on `self`, normalized to bare
@@ -128,35 +129,91 @@ function isSelfReceiver(receiver: string | null): boolean {
 }
 
 /**
- * A method-shaped symbolId (`Type#m` / `Type.m` / `Ns::Type.m`). Excludes
- * type-body chunks (`Type` / `Ns::Type`) whose bare calls are DSL macros, not
- * self-dispatch templates — `::` is the namespace separator, so only `#` / `.`
- * denote a method.
- */
-function isMethodSymbolId(symbolId: string): boolean {
-  return symbolId.includes("#") || symbolId.includes(".");
-}
-
-/**
  * Per-method self-dispatch candidates from a file's method chunks: each method
  * that self-calls (`H` / `self.H` / `self.new.H` / `self.class.new.H`) one or
- * more members, deduped and normalized to bare names. Type-body chunks are
- * skipped (only methods can be templates). `enclosingType` is the chunk's lexical
- * scope joined — the FQ of the declaring class/module.
+ * more members, deduped and normalized to bare names, or that calls `super`
+ * into its own member (`superDelegates`, read by
+ * {@link propagateSuperDelegatingTemplates}). Type-body chunks (`Type` /
+ * `Ns::Type`, no `#` / `.` method separator) are skipped: their bare calls are
+ * DSL macros, and only methods can be templates. `enclosingType` is the
+ * chunk's lexical scope joined — the FQ of the declaring class/module.
  */
 export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): SelfDispatchMethod[] {
   const methods: SelfDispatchMethod[] = [];
   for (const chunk of chunks) {
-    if (!isMethodSymbolId(chunk.symbolId)) continue;
+    const split = splitMethodSymbolId(chunk.symbolId);
+    if (split === null) continue;
     const hooks = new Set<string>();
+    let superDelegates = false;
     for (const call of chunk.calls) {
       if (isSelfReceiver(call.receiver)) hooks.add(call.member);
+      else if (isSuperReceiver(call.receiver) && call.member === split.member) superDelegates = true;
     }
-    if (hooks.size > 0) {
-      methods.push({ symbolId: chunk.symbolId, enclosingType: chunk.scope.join("::"), selfHookCandidates: [...hooks] });
+    if (hooks.size > 0 || superDelegates) {
+      methods.push({
+        symbolId: chunk.symbolId,
+        enclosingType: chunk.scope.join("::"),
+        selfHookCandidates: [...hooks],
+        ...(superDelegates ? { superDelegates: true as const } : {}),
+      });
     }
   }
   return methods;
+}
+
+/**
+ * Extend the folded `templateSymbolId → hook` map with the overrides that
+ * re-enter a template through `super`.
+ *
+ * `module Tech::KindOfAsyncWorkflowService; include KindOfService; def call;
+ * super; rescue …; end` sits between every async workflow and
+ * `KindOfService#call`. Its own body reaches no hook on `self`, so the
+ * discovery never names it — yet `super` runs `KindOfService#call` on the SAME
+ * `self`, which then calls `perform`. The override reaches exactly the hook
+ * its ancestor template reaches. Left out of the map, the entry strategy's
+ * class→instance bridge lands on this override and cannot narrow past it, so
+ * every `Workflow.call(...)` piles onto the one mixin method.
+ *
+ * An override inherits a hook when all of these hold:
+ *   - its body calls `super` into its own member (`superDelegates`);
+ *   - an ancestor's same-form `Ancestor#m` / `Ancestor.m` is already a template;
+ *   - every such ancestor template agrees on ONE hook — two hooks are a fan-out
+ *     the single-target entry strategy cannot express, as in
+ *     {@link foldSelfDispatchTemplates};
+ *   - the overriding type does not concretely define the hook itself (then the
+ *     hook is not abstract there, and `self.perform` is no dispatch at all).
+ * Iterated to a fixpoint so a chain of overrides resolves whatever the order of
+ * `methods`. Returns a new map; the input is not mutated.
+ */
+export function propagateSuperDelegatingTemplates(
+  methods: readonly SelfDispatchMethod[],
+  templates: Readonly<Record<string, string>>,
+  probe: SelfDispatchProbe,
+  ancestorsOf: (type: string) => readonly string[],
+): Record<string, string> {
+  const result: Record<string, string> = { ...templates };
+  const pending = methods.filter((m) => m.superDelegates === true && !(m.symbolId in result));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const method of pending) {
+      if (method.symbolId in result) continue;
+      const split = splitMethodSymbolId(method.symbolId);
+      if (split === null) continue;
+      const separator = split.classForm ? "." : "#";
+      const hooks = new Set<string>();
+      for (const ancestor of ancestorsOf(method.enclosingType)) {
+        const hook = result[`${ancestor}${separator}${split.member}`];
+        if (hook !== undefined) hooks.add(hook);
+      }
+      if (hooks.size !== 1) continue;
+      const [hook] = hooks;
+      if (probe.definesConcretely(method.enclosingType, hook)) continue;
+      result[method.symbolId] = hook;
+      changed = true;
+    }
+  }
+  return result;
 }
 
 /**
@@ -218,6 +275,20 @@ export function buildSelfDispatchProbe(
       return related;
     },
   };
+}
+
+/**
+ * The `ancestorsOf` lookup {@link propagateSuperDelegatingTemplates} folds over:
+ * transitive ancestors across the same four wiring channels the probe's
+ * `relatedConcreteTypes` walks downward. Empty when no hierarchy is present.
+ */
+export function selfDispatchAncestors(hierarchy: HierarchyView | undefined): (type: string) => readonly string[] {
+  return (type) =>
+    hierarchy === undefined
+      ? []
+      : hierarchy
+          .getAncestors(type, { kinds: SELF_DISPATCH_CHANNELS, transitive: true })
+          .map((edge) => edge.ancestorFqName);
 }
 
 /**

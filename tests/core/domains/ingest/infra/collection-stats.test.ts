@@ -1637,3 +1637,162 @@ describe("support-gated percentile sampling (minSupportPercentile)", () => {
     expect(gated.percentiles[50]).not.toBe(control.percentiles[50]);
   });
 });
+
+describe("structural atoms leave the percentile sample (structuralAtoms)", () => {
+  /**
+   * Martin instability reads exactly 1 for every file with `fanIn` 0 and exactly
+   * 0 for every file with `fanOut` 0, at any support. Those are class
+   * memberships (pure source / pure sink), not positions on the scale, so they
+   * must not decide where the bands sit. Measured on this project's own index,
+   * typescript source: with the 1 atom in the sample p95 IS 1 (n731); interior
+   * only (0 < I < 1) p95 is 0.889 (n678).
+   */
+  const atomDeclared: PayloadSignalDescriptor = {
+    key: "codegraph.file.instability",
+    type: "number",
+    description: "instability",
+    stats: { labels: { p50: "stable", p75: "mixed", p95: "unstable" }, dedupeByFile: true, structuralAtoms: [0, 1] },
+  };
+  /** Identical values on the identical points, no atoms — the control. */
+  const control: PayloadSignalDescriptor = {
+    key: "codegraph.file.fanOutRatioControl",
+    type: "number",
+    description: "control carrying the identical values",
+    stats: {
+      labels: { p50: "stable", p75: "mixed", p95: "unstable" },
+      dedupeByFile: true,
+      zeroIsValidObservation: true,
+    },
+  };
+
+  const INTERIOR = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.25, 0.35, 0.45, 0.55];
+  const ATOMS = [1, 1, 1, 1, 0, 0, 0, 0];
+
+  function filePoints(values: number[], opts: { tag: string; test?: boolean; connectionCount?: number[] }) {
+    return values.map((value, i) => ({
+      payload: {
+        language: "typescript",
+        chunkType: opts.test ? "test" : "function",
+        isDocumentation: false,
+        relativePath: opts.test ? `tests/${opts.tag}${i}.test.ts` : `src/${opts.tag}${i}.ts`,
+        codegraph: {
+          symbols: {
+            file: {
+              instability: value,
+              fanOutRatioControl: value,
+              connectionCount: opts.connectionCount?.[i] ?? 10,
+            },
+          },
+        },
+      },
+    }));
+  }
+
+  function corpus() {
+    return [
+      ...filePoints(INTERIOR, { tag: "src" }),
+      ...filePoints(ATOMS, { tag: "srcAtom" }),
+      ...filePoints(INTERIOR, { tag: "t", test: true }),
+      ...filePoints(ATOMS, { tag: "tAtom", test: true }),
+    ];
+  }
+
+  it("drops a declared atom from the global bucket, while the control keeps it", () => {
+    const stats = computeCollectionStats(corpus(), [atomDeclared, control], ALL_ACCS);
+    const atoms = stats.perSignal.get("codegraph.file.instability")!;
+    const kept = stats.perSignal.get("codegraph.file.fanOutRatioControl")!;
+
+    expect(atoms.count).toBe(INTERIOR.length);
+    expect(atoms.min).toBe(0.2);
+    expect(atoms.max).toBe(0.9);
+    expect(kept.count).toBe(INTERIOR.length + ATOMS.length);
+    expect(kept.percentiles[95]).toBe(1);
+    expect(atoms.percentiles[95]).toBeLessThan(1);
+  });
+
+  it("drops a declared atom from the per-language source and test buckets", () => {
+    const stats = computeCollectionStats(corpus(), [atomDeclared, control], ALL_ACCS);
+    const scoped = stats.perLanguage.get("typescript")!.get("codegraph.file.instability")!;
+
+    expect(scoped.source.count).toBe(INTERIOR.length);
+    expect(scoped.source.max).toBe(0.9);
+    expect(scoped.test!.count).toBe(INTERIOR.length);
+    expect(scoped.test!.min).toBe(0.2);
+    expect(scoped.test!.max).toBe(0.9);
+  });
+
+  it("drops 0 as an atom even when the signal declares zero a valid observation", () => {
+    const zeroValidAtom: PayloadSignalDescriptor = {
+      ...atomDeclared,
+      stats: { ...atomDeclared.stats, zeroIsValidObservation: true },
+    };
+    const stats = computeCollectionStats(corpus(), [zeroValidAtom], ALL_ACCS);
+
+    expect(stats.perSignal.get("codegraph.file.instability")!.min).toBe(0.2);
+  });
+
+  it("leaves a signal that declares no atoms byte-identical", () => {
+    const withAtoms = computeCollectionStats(corpus(), [atomDeclared, control], ALL_ACCS);
+    const withoutAtoms = computeCollectionStats(corpus(), [control], ALL_ACCS);
+
+    expect(withAtoms.perSignal.get("codegraph.file.fanOutRatioControl")).toEqual(
+      withoutAtoms.perSignal.get("codegraph.file.fanOutRatioControl"),
+    );
+    expect(withAtoms.perLanguage.get("typescript")!.get("codegraph.file.fanOutRatioControl")).toEqual(
+      withoutAtoms.perLanguage.get("typescript")!.get("codegraph.file.fanOutRatioControl"),
+    );
+  });
+
+  it("counts a many-chunk interior file once and a many-chunk atom file not at all", () => {
+    const manyChunks = [
+      ...filePoints(INTERIOR, { tag: "src" }),
+      // Three chunks of one interior file and three of one atom file.
+      ...[0, 1, 2].map(() => filePoints([0.65], { tag: "big" })[0]),
+      ...[0, 1, 2].map(() => filePoints([1], { tag: "entry" })[0]),
+    ];
+    const stats = computeCollectionStats(manyChunks, [atomDeclared], ALL_ACCS);
+
+    expect(stats.perSignal.get("codegraph.file.instability")!.count).toBe(INTERIOR.length + 1);
+  });
+
+  /**
+   * The support gate resolves its floor from the SUPPORT's distribution, which
+   * atoms of the gated signal do not touch; the atom rule then removes a
+   * well-observed atom the floor would have admitted.
+   */
+  it("composes with minSupportPercentile: the floor is unmoved, and a well-observed atom still leaves", () => {
+    const gatedAtom: PayloadSignalDescriptor = {
+      ...atomDeclared,
+      stats: { ...atomDeclared.stats, minSupportPercentile: 75, confidence: { support: "connectionCount" } },
+    };
+    const gatedOnly: PayloadSignalDescriptor = {
+      ...gatedAtom,
+      stats: { ...gatedAtom.stats, structuralAtoms: undefined },
+    };
+    const support: PayloadSignalDescriptor = {
+      key: "codegraph.file.connectionCount",
+      type: "number",
+      description: "fanIn + fanOut",
+      stats: { labels: { p25: "sparse", p50: "typical", p75: "busy", p95: "hub" }, dedupeByFile: true },
+    };
+    // Twelve thin files and four well-observed ones; two of the well-observed
+    // ones sit on the atom.
+    const points = [
+      ...filePoints(INTERIOR, { tag: "thin", connectionCount: INTERIOR.map(() => 1) }),
+      ...filePoints([0.3, 0.4, 1, 0], { tag: "wide", connectionCount: [20, 22, 24, 26] }),
+    ];
+
+    const withAtoms = computeCollectionStats(points, [gatedAtom, support], ALL_ACCS);
+    const withoutAtoms = computeCollectionStats(points, [gatedOnly, support], ALL_ACCS);
+    const a = withAtoms.perSignal.get("codegraph.file.instability")!;
+    const b = withoutAtoms.perSignal.get("codegraph.file.instability")!;
+
+    expect(a.supportFloor).toBe(b.supportFloor);
+    expect(a.supportFloor).toBe(withAtoms.perSignal.get("codegraph.file.connectionCount")!.percentiles[75]);
+    // Without atoms the floor admits 0.3, 0.4 and the 1 atom (0 is dropped by
+    // the default zero rule); with atoms only the interior survives.
+    expect(b.max).toBe(1);
+    expect(a.count).toBe(b.count - 1);
+    expect(a.max).toBe(0.4);
+  });
+});

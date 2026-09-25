@@ -357,6 +357,30 @@ function levelField() {
   };
 }
 
+/**
+ * Shared payload allow-list. Every tool that returns payload-bearing results
+ * accepts it, so an agent never has to remember which one does
+ * (bd tea-rags-mcp-l2lix).
+ */
+function fieldsField() {
+  return {
+    fields: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Payload allow-list: dot-paths kept in each result's payload, e.g. " +
+          "['relativePath', 'git.file.commitCount']. Applied server-side before " +
+          "serialization, so it cuts response size rather than just hiding fields. " +
+          "Nesting matters — signals live under git.{file,chunk}.* and " +
+          "codegraph.symbols.{file,chunk}.*; read tea-rags://schema/signals for the paths. " +
+          "EXACT list: nothing is added back, relativePath included. " +
+          "Omitted → the full payload (today's behaviour). Note metaOnly is a different " +
+          "axis — it drops the chunk BODY and keeps every signal. " +
+          "A path no result carried comes back on fieldsWarning instead of failing.",
+      ),
+  };
+}
+
 /** Shared pagination + meta fields for search results. */
 function paginationFields(metaOnlyDefault?: boolean) {
   return {
@@ -383,6 +407,7 @@ function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeA
     rerank: rerankSchema
       .optional()
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    ...fieldsField(),
     ...paginationFields(),
   };
 }
@@ -435,6 +460,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Glob pattern for filtering by file path (client-side via picomatch). " +
           "Examples: 'src/core/domains/ingest/**', '**/*.ts'",
       ),
+    ...fieldsField(),
     ...paginationFields(true),
     offset: z.coerce
       .number()
@@ -477,6 +503,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
+    ...fieldsField(),
     ...paginationFields(),
   };
 
@@ -516,6 +543,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Reranking preset or {custom: weights} — attaches ranking overlay with git signals. " +
           "See tea-rags://schema/presets for details.",
       ),
+    ...fieldsField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 50)"),
     offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
   };

@@ -59,6 +59,7 @@ import {
 import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { isTestExampleChunk, splitFragmentBase } from "../chunk-grouping/code.js";
 import { applyEssentialSignalsToOverlay } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
@@ -290,7 +291,11 @@ function filterByExactSymbolId(
     // FQN (e.g. `Foo::Bar`) or just the local class name (e.g. `Bar`),
     // depending on language. Accept both forms.
     if (parentSymbolId === fqn || parentSymbolId === containerName) return true;
-    return false;
+    // A `#partN` window of an oversized test example names the EXAMPLE as its
+    // parent, not the scope; it stands for an example of the queried scope
+    // when its base id extends the scope id (bd tea-rags-mcp-msv3l).
+    const base = isTestExampleChunk(c) ? splitFragmentBase(c.payload) : undefined;
+    return base?.startsWith(`${fqn}.`) === true;
   });
 }
 

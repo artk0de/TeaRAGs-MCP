@@ -31,7 +31,12 @@ export const capability: LanguageCapability = {
   // file's pass-1 slice and hydrated at the barrier. Rows written earlier do not carry them,
   // and only a re-walk can backfill them, so the recompute is what makes incremental runs see
   // the overrides.
-  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
+  // walker 5: a `Const.call` entry whose delegated `#call` is overridden below the
+  // delegating class method now lands on that override, and a `super`-delegating
+  // override inherits its ancestor template's hook (persisted as `superDelegates` in
+  // the pass-1 slice). Edges that sat on the shared `KindOfService.call` node move,
+  // and rows written earlier carry no `superDelegates`, so only the recompute moves them.
+  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

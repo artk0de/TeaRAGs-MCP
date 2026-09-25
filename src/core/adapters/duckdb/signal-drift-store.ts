@@ -13,11 +13,17 @@
  * The two halves are deliberately NOT symmetrical, because the two signals are
  * not: chunk fan is the confidence-weighted `SUM(COALESCE(confidence, 1.0))`
  * that `getChunkSignalsBulk` writes into the payload (bd tea-rags-mcp-s5ato),
- * keyed by `symbol_id` ALONE; file fan is a plain COUNT over
- * `cg_symbols_edges_file`, keyed by path. Diffing anything but the expression
- * the payload is built from produces a diff that is right about edges and wrong
- * about signals — an edge COUNT, for instance, misses a dispatch-confidence
- * change that moves fanIn from 1 to 0.25.
+ * grouped by `(rel_path, symbol_id)` exactly as that read is (bd
+ * tea-rags-mcp-xtdkq); file fan is a plain COUNT over `cg_symbols_edges_file`,
+ * keyed by path. Diffing anything but the expression the payload is built from
+ * produces a diff that is right about edges and wrong about signals — an edge
+ * COUNT, for instance, misses a dispatch-confidence change that moves fanIn
+ * from 1 to 0.25, and grouping the fan on the bare symbolId while the payload
+ * carries the per-file number leaves every namesake permanently "moved".
+ *
+ * `page_rank` is the one column still joined on the bare `symbol_id`, because
+ * `cg_symbols_metrics` has no other key — see `getChunkSignalsBulk` for why
+ * that rank is shared by every namesake.
  *
  * Who drives the refresh, and why `transitiveImpact` / `isHub` sit outside the
  * comparison: `src/core/domains/trajectory/codegraph/CLAUDE.md`.
@@ -44,14 +50,16 @@ import type { DuckDbGraphSession } from "./graph-session.js";
  */
 const CURRENT_SYMBOL_SIGNALS = `
   WITH fi AS (
-    SELECT target_symbol_id AS symbol_id, round(SUM(COALESCE(confidence, 1.0)), 2) AS fan_in
+    SELECT target_rel_path AS rel_path, target_symbol_id AS symbol_id,
+           round(SUM(COALESCE(confidence, 1.0)), 2) AS fan_in
     FROM cg_symbols_edges_method
     WHERE target_symbol_id IS NOT NULL
-    GROUP BY 1
+    GROUP BY 1, 2
   ), fo AS (
-    SELECT source_symbol_id AS symbol_id, round(SUM(COALESCE(confidence, 1.0)), 2) AS fan_out
+    SELECT source_rel_path AS rel_path, source_symbol_id AS symbol_id,
+           round(SUM(COALESCE(confidence, 1.0)), 2) AS fan_out
     FROM cg_symbols_edges_method
-    GROUP BY 1
+    GROUP BY 1, 2
   ), cur AS (
     SELECT s.rel_path,
            s.symbol_id,
@@ -60,8 +68,8 @@ const CURRENT_SYMBOL_SIGNALS = `
            COALESCE(fo.fan_out, 0)  AS fan_out,
            COALESCE(m.page_rank, 0) AS page_rank
     FROM cg_symbols s
-    LEFT JOIN fi ON fi.symbol_id = s.symbol_id
-    LEFT JOIN fo ON fo.symbol_id = s.symbol_id
+    LEFT JOIN fi ON fi.rel_path = s.rel_path AND fi.symbol_id = s.symbol_id
+    LEFT JOIN fo ON fo.rel_path = s.rel_path AND fo.symbol_id = s.symbol_id
     LEFT JOIN cg_symbols_metrics m ON m.symbol_id = s.symbol_id
   )`;
 

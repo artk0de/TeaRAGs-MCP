@@ -70,7 +70,8 @@ describe("resolveLanguageCodeVersions", () => {
 
     // codegraphSchema 2: bd tea-rags-mcp-9i2ow — cg_symbols line ranges and the
     // one chunk-owner rule for every writer of codegraph chunk signals.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 2, codegraphSchema: 2 });
+    // chunking 2: bd tea-rags-mcp-msv3l — test files chunked by example.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 2, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -202,12 +203,16 @@ describe("seeded support versions", () => {
       // ruby walker 4: `module_function` now emits the static symbolId form
       // alongside the instance one, so an index built by walker 3 holds none of
       // the `M.foo` → `M#foo` edges this one emits for module functions.
+      // ruby walker 5: a `Const.call` entry lands on a `#call` override below the
+      // delegator, and a `super`-delegating override inherits its ancestor
+      // template's hook (`superDelegates` in the pass-1 slice), so an index built
+      // by walker 4 holds those entries on the shared `KindOfService.call` node.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 11],
         ["javascript", 3],
         ["python", 8],
-        ["ruby", 4],
+        ["ruby", 5],
         ["java", 2],
         ["rust", 2],
         ["go", 4],

@@ -23,11 +23,15 @@ import {
   IndexDriftReporter,
 } from "../../../../../src/core/domains/maintenance/drift/report.js";
 
-/** The shared stamp every index carried before the chunk-owner rule landed. */
-const STAMPED_BEFORE_CHUNK_OWNER = { chunking: 1, walker: 2, codegraphSchema: 1 };
-
 describe("sharedVersions after the chunk-owner rule (bd tea-rags-mcp-9i2ow)", () => {
   const current = resolveLanguageCodeVersions(new LanguageFactory().capabilities(), () => undefined);
+  /**
+   * An index stamped before the chunk-owner rule landed, current on every other
+   * shared axis — so the codegraphSchema step is the ONLY drift under test. A
+   * later bump of another axis (chunking 2, bd tea-rags-mcp-msv3l) moves with
+   * the current stamp instead of leaking into this assertion.
+   */
+  const STAMPED_BEFORE_CHUNK_OWNER = { ...current.get(SHARED_LANGUAGE)!, codegraphSchema: 1 };
 
   it("an index stamped before it reports the shared codegraph schema and nothing else shared", () => {
     const drifts = LanguageVersionDriftMonitor.detectDrift(

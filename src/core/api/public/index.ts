@@ -28,6 +28,7 @@ export type {
   ExploreCodeRequest,
   SearchResult,
   ExploreResponse,
+  PresetFilterNotice,
   SignalDescriptor,
   PresetDescriptors,
   // Ingest DTOs
