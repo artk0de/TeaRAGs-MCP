@@ -308,11 +308,12 @@ describe("testDslFilterHook", () => {
       expect(result).toBe(false);
     });
 
-    it("rejects call where callee is a call_expression (test.each([...])(...) outermost)", () => {
-      // The outermost call_expression in `test.each([...])('name', fn)` is
-      // the (name, fn) invocation whose callee is `test.each([...])` —
-      // itself a call_expression, NOT identifier/member_expression. v1
-      // does not handle this chained shape.
+    // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): a parametrized example /
+    // container is DSL. The outermost call_expression in
+    // `test.each([...])('name', fn)` is the (name, fn) invocation whose callee
+    // is the parametrizer call `test.each([...])`; the filter sees through it
+    // to `test` (was rejected as an unsupported chained shape).
+    it("accepts call where callee is a parametrizer call_expression (test.each([...])(...) outermost)", () => {
       const code = "test.each([[1]])('cases', () => {})";
       const tree = parseTs(code);
       // Pick the outermost (top-level statement) call_expression
@@ -323,7 +324,18 @@ describe("testDslFilterHook", () => {
       expect(calleeType).toBe("call_expression");
 
       const result = testDslFilterHook.filterNode!(outermost!, code, "tests/foo.test.ts");
-      expect(result).toBe(false);
+      expect(result).toBe(true);
+    });
+
+    it("rejects call whose callee is a non-parametrizer call (makeSuite()(...) outermost)", () => {
+      for (const code of ["makeSuite()('cases', () => {})", "describe.helper([[1]])('cases', () => {})"]) {
+        const tree = parseTs(code);
+        const stmt = tree.rootNode.namedChildren.find((c) => c.type === "expression_statement");
+        const outermost = stmt?.namedChildren.find((c) => c.type === "call_expression");
+        expect(outermost!.childForFieldName("function")?.type).toBe("call_expression");
+
+        expect(testDslFilterHook.filterNode!(outermost!, code, "tests/foo.test.ts"), code).toBe(false);
+      }
     });
   });
 
