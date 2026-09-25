@@ -94,6 +94,10 @@ describe("jsTestDslFilterHook filterNode", () => {
 
 // ── buildScopeTree ───────────────────────────────────────────────────
 
+// INVARIANT CHANGED (bd tea-rags-mcp-dppnr): buildScopeTree returns the
+// language-neutral `TestScope` of contracts/types/chunker.ts. A leaf is
+// `children.length === 0` (was `isLeaf`) and a scope's own examples are
+// `examples` (was `ownItBlocks`); the tree each case builds is unchanged.
 describe("buildScopeTree", () => {
   it("builds a single leaf scope from describe with only it blocks", () => {
     const code = `describe('User', () => {
@@ -111,9 +115,8 @@ describe("buildScopeTree", () => {
     const scope = buildScopeTree(node, code);
 
     expect(scope.name).toBe("describe 'User'");
-    expect(scope.isLeaf).toBe(true);
-    expect(scope.ownItBlocks).toHaveLength(2);
     expect(scope.children).toHaveLength(0);
+    expect(scope.examples).toHaveLength(2);
     expect(scope.setupLines).toHaveLength(0);
   });
 
@@ -136,12 +139,12 @@ describe("buildScopeTree", () => {
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
+    expect(scope.children.length).toBeGreaterThan(0);
     expect(scope.children).toHaveLength(2);
     expect(scope.children[0].name).toBe("describe 'when admin'");
-    expect(scope.children[0].isLeaf).toBe(true);
+    expect(scope.children[0].children).toHaveLength(0);
     expect(scope.children[1].name).toBe("describe 'when guest'");
-    expect(scope.children[1].isLeaf).toBe(true);
+    expect(scope.children[1].children).toHaveLength(0);
   });
 
   it("collects setup lines (beforeEach, beforeAll) at each level", () => {
@@ -189,8 +192,8 @@ describe("buildScopeTree", () => {
 
     expect(scope.children).toHaveLength(1);
     const focused = scope.children[0];
-    expect(focused.isLeaf).toBe(true);
-    expect(focused.ownItBlocks).toHaveLength(2);
+    expect(focused.children).toHaveLength(0);
+    expect(focused.examples).toHaveLength(2);
   });
 
   it("handles function-expression callbacks (Jest/Mocha idiom)", () => {
@@ -204,7 +207,7 @@ describe("buildScopeTree", () => {
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.ownItBlocks).toHaveLength(1);
+    expect(scope.examples).toHaveLength(1);
   });
 });
 
@@ -226,14 +229,15 @@ describe("produceScopeChunks", () => {
 
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].chunkType).toBe("test");
+    // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): the unit is the example — a
+    // leaf with two its yields two test chunks, each parented by its scope id.
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map((c) => c.chunkType)).toEqual(["test", "test"]);
     expect(chunks[0].content).toContain("validates name");
-    expect(chunks[0].content).toContain("validates email");
-    expect(chunks[0].parentSymbolId).toBe("User");
+    expect(chunks[1].content).toContain("validates email");
+    expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'", "User.describe 'User'"]);
   });
 
   it("injects parent setup into leaf chunks (scope preserved)", () => {
@@ -251,8 +255,7 @@ describe("produceScopeChunks", () => {
 
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].chunkType).toBe("test");
@@ -276,13 +279,16 @@ describe("produceScopeChunks", () => {
 
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
+    // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): 3-level example id
+    // TopLevelName.scopeName.exampleName, parented by the scope id.
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].symbolId).toBe("User.describe 'when admin'");
-    expect(chunks[0].parentSymbolId).toBe("User");
-    expect(chunks[0].name).toBe("describe 'when admin'");
+    expect(chunks[0].symbolId).toBe(
+      "User.describe 'when admin'.it 'has permissions for managing all system resources globally'",
+    );
+    expect(chunks[0].parentSymbolId).toBe("User.describe 'when admin'");
+    expect(chunks[0].name).toBe("it 'has permissions for managing all system resources globally'");
   });
 
   it("produces no chunks for empty describe block", () => {
@@ -290,8 +296,7 @@ describe("produceScopeChunks", () => {
 
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(0);
   });
@@ -313,14 +318,20 @@ ${longBody}    });
 
     const tree = parseJs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, { maxChunkSize: 300 });
+    const chunks = produceScopeChunks(node, code, { maxChunkSize: 300 });
 
+    // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): the three per-it chunks no
+    // longer share the scope id — each is addressed by its own example id.
     expect(chunks.length).toBe(3);
     for (const chunk of chunks) {
       expect(chunk.chunkType).toBe("test");
-      expect(chunk.symbolId).toBe("User.describe 'validations'");
+      expect(chunk.parentSymbolId).toBe("User.describe 'validations'");
     }
+    expect(chunks.map((c) => c.symbolId)).toEqual([
+      "User.describe 'validations'.it 'validates name'",
+      "User.describe 'validations'.it 'validates email'",
+      "User.describe 'validations'.it 'validates phone'",
+    ]);
   });
 });
 

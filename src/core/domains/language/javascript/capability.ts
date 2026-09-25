@@ -12,7 +12,11 @@ export const capability: LanguageCapability = {
       { name: "JsChunkClassifier", short: "module/class split" },
     ],
   },
-  tests: { tier: "high", detection: "*.test.js / *.spec.jsx", tech: "testScopeChunker (describe/it scopes)" },
+  tests: {
+    tier: "high",
+    detection: "*.test.js / *.spec.jsx",
+    tech: "testScopeChunker (describe/it scopes, one addressable chunk per example)",
+  },
   codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
   // chunking 2: bd tea-rags-mcp-1etj8 — `jsTestDslFilterHook` +
   // `jsTestScopeChunkerHook` composed into the hook chain and

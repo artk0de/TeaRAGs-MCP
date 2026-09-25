@@ -111,6 +111,7 @@ language stays legal; two is an enumeration.
 | `domains/explore/strategies/`         | per-strategy post-processing contracts                                               |
 | `domains/language/`                   | resolver-chain ordering, local bindings, deferral economics                          |
 | `domains/language/python/`            | persisted importText shape, single-hop receiver arms, MRO member lookup, chain order |
+| `domains/language/javascript/`        | JS test outline by example: the hand-kept mirror of the TypeScript test hooks        |
 | `domains/language/ruby/`              | Ruby walker/resolver/DSL specifics                                                   |
 | `domains/language/typescript/`        | Vitest/Jest test outline by example: scope-tree reading, names, parametrizers        |
 | `domains/maintenance/`                | schema drift, migrations, freshness                                                  |

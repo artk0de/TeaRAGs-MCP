@@ -50,23 +50,34 @@ describe("getCallName classification edges", () => {
     expect(getCallName(call, code)).toBe("it");
   });
 
-  // Documented v1 limitation (.claude/rules/test-spec-chunking.md): the
-  // outermost callee of `test.each([...])(...)` is itself a call_expression,
-  // so no DSL method name is readable and the call is rejected.
-  it("returns null for chained-call DSL whose callee is itself a call (test.each)", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): the outermost callee of
+  // `test.each([...])(...)` is the parametrizer call `test.each([...])`, and
+  // getCallName sees through it to `test` (was null — a documented v1
+  // limitation). A callee that is any other call stays unreadable.
+  it("reads the DSL name through a parametrizer callee (test.each), not through any other call", () => {
     const code = `test.each([1, 2])('handles case %d with a meaningful assertion body', () => {});`;
     const call = findFirstCall(parseJs(code));
 
-    expect(getCallName(call, code)).toBeNull();
+    expect(getCallName(call, code)).toBe("test");
+
+    const other = `makeSuite()('handles case %d with a meaningful assertion body', () => {});`;
+    expect(getCallName(findFirstCall(parseJs(other)), other)).toBeNull();
   });
 });
 
 describe("jsTestDslFilterHook filterNode classification edges", () => {
-  it("rejects a call in a test file when no DSL method name is readable (test.each)", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-dppnr): a parametrized example is DSL
+  // and accepted; a call whose callee is a non-parametrizer call is still
+  // rejected because no DSL method name is readable.
+  it("accepts a parametrized call (test.each) and rejects one with no readable DSL name (makeSuite()(...))", () => {
     const code = `test.each([1, 2])('handles case %d with a meaningful assertion body', () => {});`;
     const call = findFirstCall(parseJs(code));
 
-    expect(jsTestDslFilterHook.filterNode?.(call as never, code, "tests/user.test.js")).toBe(false);
+    expect(jsTestDslFilterHook.filterNode?.(call as never, code, "tests/user.test.js")).toBe(true);
+
+    const other = `makeSuite()('handles case %d with a meaningful assertion body', () => {});`;
+    const otherCall = findFirstCall(parseJs(other));
+    expect(jsTestDslFilterHook.filterNode?.(otherCall as never, other, "tests/user.test.js")).toBe(false);
   });
 
   it("accepts a chained member-expression DSL call (it.skip) in a test file", () => {
