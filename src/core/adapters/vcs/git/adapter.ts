@@ -63,6 +63,17 @@ export abstract class VcsGitAdapter implements VcsAdapter {
    * Per-batch failures are swallowed — absent paths simply yield no entries.
    */
   abstract readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>>;
+  /**
+   * Full-history per-commit numstat scoped to `paths` (ONE pathspec log, log
+   * order, no `--since`, no internal batching — the caller owns arg limits).
+   * A pathspec restricts rename detection to the paths it names, so a commit
+   * that renamed a named path in from an unnamed one (or out to one) would
+   * report a plain add (or delete). Every commit that adds or deletes a named
+   * path is therefore re-read WITHOUT the pathspec, and its rows touching a
+   * named path — on either side of a rename — carry `previousPath` exactly as
+   * a repo-wide log reports them.
+   */
+  abstract readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]>;
   /** Persistent batch blob reader — caller owns the lifecycle (`close()` at walk end). */
   abstract createBlobBatchReader(): BlobBatchReader;
   /** Persistent batch `<rev>` → OID resolver — caller owns the lifecycle. */

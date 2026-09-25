@@ -59,7 +59,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { bashKernel } from "./kernel.js";
 import { BashCallResolver } from "./resolver/index.js";
 import { bashNameOf } from "./walker/name-of.js";

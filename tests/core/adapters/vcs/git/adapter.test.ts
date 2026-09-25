@@ -21,6 +21,7 @@ class StubGitAdapter extends VcsGitAdapter {
   blameFile = async (): Promise<BlameLine[]> => [];
   getCommitsByPathspec = async (): Promise<CommitWithChangedFiles[]> => [];
   readNumstatLogForPaths = async (): Promise<Map<string, FileChurnData>> => new Map();
+  readCommitFileNumstatForPaths = async (): Promise<CommitFileNumstat[]> => [];
   createBlobBatchReader = (): BlobBatchReader => ({ read: async () => "", close: async () => {} });
   createOidBatchResolver = (): OidBatchResolver => ({ check: async () => null, close: async () => {} });
 }

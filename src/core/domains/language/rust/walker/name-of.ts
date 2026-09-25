@@ -25,7 +25,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { methodKindFromClassify } from "../../kernel/method-kind.js";
+import { methodKindFromClassify } from "../../kernel/index.js";
 
 export function rustNameOf(node: AstNode): NamedSymbol | null {
   if (node.type === "function_item") {

@@ -76,6 +76,10 @@ export function collectSymbols(
         startLine: node.startPosition.row + 1,
         endLine: node.endPosition.row + 1,
         scope,
+        // A type's own body runs INSIDE the type, while `scope` stays the
+        // declaration's (bd tea-rags-mcp-3ievc). Only on opt-in, so a language
+        // whose nameOf never sets the flag gets byte-identical ranges.
+        ...(named.opensSelfScope === true ? { bodyScope: childScope } : {}),
       });
     }
     // Snapshot length BEFORE walking children so we can detect whether

@@ -19,12 +19,20 @@ import { join } from "node:path";
 import Parser from "tree-sitter";
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
+import {
+  chunkCallerScope,
+  type CallContext,
+  type CallRef,
+  type SymbolDefinition,
+} from "../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageProvider } from "../../../../../src/core/contracts/types/language.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 import { collectSymbols } from "../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
-import { CODEGRAPH_LANGUAGES } from "../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
+import {
+  CODEGRAPH_LANGUAGES,
+  loadCodegraphGrammarSync,
+} from "../../../../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { lastSegment } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -33,14 +41,15 @@ const INVOICE = "Sources/Payables/Invoice.swift";
 const LEDGER = "Sources/Payables/Ledger.swift";
 
 const swiftRow = CODEGRAPH_LANGUAGES[".swift"];
-const provider: LanguageProvider = new LanguageFactory().create("swift");
+const factory = new LanguageFactory();
+const provider: LanguageProvider = factory.create("swift");
 const composer = new DefaultSymbolIdComposer();
 
 /** Parse + walk one fixture exactly as `CodegraphFileExtractor.parse` does. */
 function extractFixture(fileName: string, relPath: string) {
   const code = readFileSync(join(FIXTURES, fileName), "utf8");
   const parser = new Parser();
-  parser.setLanguage(swiftRow.loadParser());
+  parser.setLanguage(loadCodegraphGrammarSync(factory, ".swift"));
   const tree = { rootNode: parser.parse(code).rootNode };
   const { walker } = provider;
   if (!walker) throw new Error("swift provider has no walker");
@@ -85,7 +94,7 @@ function resolveCallFrom(callerSymbolId: string, member: string) {
     if (!call) throw new Error(`no call to ${member} inside ${callerSymbolId}`);
     const ctx: CallContext = {
       callerFile: extraction.relPath,
-      callerScope: chunk.scope,
+      callerScope: chunkCallerScope(chunk),
       callerSymbolId: chunk.symbolId,
       imports: extraction.imports,
       symbolTable,
@@ -131,7 +140,9 @@ describe("swift tier 2 — extraction over the real fixtures", () => {
   });
 
   it("records a stored property's declared type under its owning type", () => {
-    expect(classFieldTypes.Ledger?.accounts).toBeUndefined(); // [String: Account] — a dictionary, not an Account
+    // [String: Account] — a Dictionary, not an Account (INVARIANT CHANGED, bd
+    // tea-rags-mcp-y99pg.14: it used to be dropped).
+    expect(classFieldTypes.Ledger?.accounts).toBe("Dictionary");
     expect(classFieldTypes["Ledger.Account"]).toBeUndefined(); // keyed by the type's own short name
     expect(classFieldTypes.Account?.balance).toBe("Decimal");
     expect(classFieldTypes.Invoice?.state).toBe("InvoiceState");

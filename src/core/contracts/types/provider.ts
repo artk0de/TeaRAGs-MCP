@@ -97,6 +97,14 @@ export interface FilterDescriptor {
   description: string;
   /** Parameter type for schema generation */
   type: "string" | "number" | "boolean" | "string[]";
+  /**
+   * The values an ENUMERATED param accepts (`'only' | 'exclude' | 'include'`).
+   * Required when `toCondition` emits a condition only for some values: the
+   * declared payload index set learns a filter's keys by probing `toCondition`
+   * with these (bd tea-rags-mcp-18xh5), and a descriptor that emits nothing
+   * for its probe fails the composition parity test.
+   */
+  values?: readonly unknown[];
   /** Convert user param value to Qdrant filter condition(s) */
   toCondition: (value: unknown, level?: FilterLevel) => FilterConditionResult;
 }
@@ -381,8 +389,11 @@ export interface FileSignalOptions {
    *  populateBlameMap pass with cache hit/miss counters and wall duration;
    *  the file phase binds it to the pipeline debug log ([GitEnrich] BLAME
    *  line + "blame" stage). Never serialized: attached only on inline /
-   *  main-thread dispatch paths (precedent: onWalkStats). */
-  onBlameStats?: (stats: { files: number; hits: number; misses: number; durationMs: number }) => void;
+   *  main-thread dispatch paths (precedent: onWalkStats). `misses` counts
+   *  blames THIS pass dispatched; `joined` counts files served by a blame
+   *  another batch of the same run queued or completed (no new `git blame`).
+   *  files = hits + misses + joined. */
+  onBlameStats?: (stats: { files: number; hits: number; misses: number; joined: number; durationMs: number }) => void;
 }
 
 /**
@@ -681,6 +692,14 @@ export interface EnrichmentProvider {
    * path it never enriched must be a no-op, not an error.
    */
   handleDeletedPaths?: (paths: string[], options?: DeletedPathOptions) => Promise<void>;
+  /**
+   * Optional — whether a deletion left this provider's derived (whole-graph)
+   * state pruned but not recomputed (bd tea-rags-mcp-dy852). A reindex with
+   * nothing else to do asks through `EnrichmentCoordinator#hasStaleDerivedState`
+   * and, when true, drives `runFinalizeOnly` so the provider's finalize
+   * recomputes. Absent ⇒ the provider keeps no such state.
+   */
+  hasStaleDerivedState?: (collectionName?: PhysicalCollectionName) => Promise<boolean>;
   /**
    * Per-file enrichment policy. The coordinator classifies each file once
    * (FileClassification) and asks the provider how much enrichment it wants.

@@ -205,3 +205,145 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
     ]);
   });
 });
+
+/**
+ * `payload_schema` field names of taxdome (`code_27622aef` → `code_27622aef_v13`,
+ * Qdrant 1.18.2), read 2026-09-24 (bd tea-rags-mcp-mimq0): 42 indexes, missing
+ * five that the self-index's rank_chunks history had created on it.
+ */
+const TAXDOME_PAYLOAD_INDEX_FIELDS = [
+  "_type",
+  "chunkType",
+  "codegraph.symbols.chunk.enrichedAt",
+  "codegraph.symbols.chunk.fanIn",
+  "codegraph.symbols.chunk.fanOut",
+  "codegraph.symbols.chunk.pageRank",
+  "codegraph.symbols.chunk.skippedAs",
+  "codegraph.symbols.file.connectionCount",
+  "codegraph.symbols.file.enrichedAt",
+  "codegraph.symbols.file.fanIn",
+  "codegraph.symbols.file.fanOut",
+  "codegraph.symbols.file.instability",
+  "codegraph.symbols.file.isHub",
+  "codegraph.symbols.file.isLeaf",
+  "codegraph.symbols.file.skippedAs",
+  "codegraph.symbols.file.transitiveImpact",
+  "fileExtension",
+  "git.chunk.ageDays",
+  "git.chunk.blameContributorCount",
+  "git.chunk.bugFixRate",
+  "git.chunk.changeDensity",
+  "git.chunk.churnRatio",
+  "git.chunk.churnVolatility",
+  "git.chunk.commitCount",
+  "git.chunk.enrichedAt",
+  "git.chunk.lastModifiedAt",
+  "git.chunk.recencyWeightedFreq",
+  "git.chunk.skippedAs",
+  "git.file.blameContributorCount",
+  "git.file.bugFixRate",
+  "git.file.changeDensity",
+  "git.file.churnVolatility",
+  "git.file.commitCount",
+  "git.file.enrichedAt",
+  "git.file.lastModifiedAt",
+  "git.file.recentAuthors",
+  "git.file.recentDominantAuthorPct",
+  "git.file.skippedAs",
+  "language",
+  "parentSymbolId",
+  "relativePath",
+  "symbolId",
+];
+
+describe("createIngestDependencies — payload index reconcile (bd tea-rags-mcp-mimq0)", () => {
+  let snapshotDir: string;
+
+  beforeEach(() => {
+    snapshotDir = mkdtempSync(join(tmpdir(), "ingest-deps-payload-indexes-"));
+  });
+
+  afterEach(() => {
+    rmSync(snapshotDir, { recursive: true, force: true });
+  });
+
+  /**
+   * taxdome's inventory, held under the PHYSICAL collection only — as Qdrant
+   * stores it. The alias resolves to it through `aliases.listAliases`.
+   */
+  function taxdomeQdrant() {
+    const inventory = new Map<string, Set<string>>([["code_27622aef_v13", new Set(TAXDOME_PAYLOAD_INDEX_FIELDS)]]);
+    return {
+      aliases: {
+        listAliases: vi.fn().mockResolvedValue([{ aliasName: "code_27622aef", collectionName: "code_27622aef_v13" }]),
+      },
+      listPayloadIndexes: vi.fn(async (collection: string) =>
+        [...(inventory.get(collection) ?? [])].map((field) => ({ field, dataType: "float", points: 1 })),
+      ),
+      createPayloadIndex: vi.fn(async (collection: string, field: string) => {
+        inventory.get(collection)?.add(field);
+      }),
+    };
+  }
+
+  function depsFor(qdrant: unknown) {
+    return createIngestDependencies(
+      qdrant as QdrantManager,
+      snapshotDir,
+      {} as PayloadBuilder,
+      undefined,
+      false,
+      undefined,
+    );
+  }
+
+  it("creates the indexes taxdome lacks on the physical collection the alias points at", async () => {
+    const qdrant = taxdomeQdrant();
+
+    await depsFor(qdrant).createMigrator("code_27622aef", "/project").run("payloadIndexes");
+
+    const created = qdrant.createPayloadIndex.mock.calls.map(([, field]) => field);
+    expect(created).toEqual(
+      expect.arrayContaining([
+        "methodLines",
+        "methodDensity",
+        "moduleMethodCount",
+        "git.chunk.relativeChurn",
+        "git.file.recencyWeightedFreq",
+      ]),
+    );
+    expect(created.filter((field) => TAXDOME_PAYLOAD_INDEX_FIELDS.includes(field))).toEqual([]);
+    expect(qdrant.createPayloadIndex.mock.calls.every(([collection]) => collection === "code_27622aef_v13")).toBe(true);
+  });
+
+  it("does nothing on the next run once the collection carries the declared set", async () => {
+    const qdrant = taxdomeQdrant();
+    const deps = depsFor(qdrant);
+
+    await deps.createMigrator("code_27622aef", "/project").run("payloadIndexes");
+    qdrant.createPayloadIndex.mockClear();
+    const second = await deps.createMigrator("code_27622aef", "/project").run("payloadIndexes");
+
+    expect(second.steps).toEqual([]);
+    expect(qdrant.createPayloadIndex).not.toHaveBeenCalled();
+  });
+
+  // A `--force` builds a new `_vN` through initializeSchema, and the reindex
+  // sweep never runs on a fresh collection — without this the rebuilt index
+  // would start with none of the rank_chunks fields again.
+  it("gives a new collection the declared order-by indexes at creation", async () => {
+    const qdrant = {
+      getPoint: vi.fn().mockResolvedValue(null),
+      addPoints: vi.fn().mockResolvedValue(undefined),
+      getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 8, hybridEnabled: false }),
+      createPayloadIndex: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await depsFor(qdrant).createSchemaManager("code_new_v1").initializeSchema("code_new_v1");
+
+    expect(qdrant.createPayloadIndex).toHaveBeenCalledWith("code_new_v1", "methodLines", "float");
+    expect(qdrant.createPayloadIndex).toHaveBeenCalledWith("code_new_v1", "git.file.recentDominantAuthorPct", "float");
+    const fields = qdrant.createPayloadIndex.mock.calls.map(([, field]) => field as string);
+    expect(fields.length).toBe(new Set(fields).size);
+  });
+});

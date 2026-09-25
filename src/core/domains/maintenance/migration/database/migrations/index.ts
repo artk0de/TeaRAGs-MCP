@@ -29,6 +29,10 @@ import { SQL_023_CG_SIGNALS_PREV } from "./023-cg-signals-prev.js";
 import { SQL_024_CG_SYMBOLS_LINE_RANGE } from "./024-cg-symbols-line-range.js";
 import { SQL_025_CG_FILE_RESOLVE_STATS } from "./025-cg-file-resolve-stats.js";
 import { SQL_026_CG_METHOD_EDGES_NULLABLE_TARGET } from "./026-cg-method-edges-nullable-target.js";
+import { SQL_027_CG_AMBIGUOUS_FANOUT_SOURCE_PATH_PK } from "./027-cg-ambiguous-fanout-source-path-pk.js";
+import { SQL_028_CG_DERIVED_FILE_SCOPED_KEY } from "./028-cg-derived-file-scoped-key.js";
+import { SQL_029_CG_DERIVED_STALE } from "./029-cg-derived-stale.js";
+import { SQL_030_CG_FILE_EDGE_EXPORT_NAMES } from "./030-cg-file-edge-export-names.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -62,4 +66,8 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "024-cg-symbols-line-range.sql", sql: SQL_024_CG_SYMBOLS_LINE_RANGE },
   { filename: "025-cg-file-resolve-stats.sql", sql: SQL_025_CG_FILE_RESOLVE_STATS },
   { filename: "026-cg-method-edges-nullable-target.sql", sql: SQL_026_CG_METHOD_EDGES_NULLABLE_TARGET },
+  { filename: "027-cg-ambiguous-fanout-source-path-pk.sql", sql: SQL_027_CG_AMBIGUOUS_FANOUT_SOURCE_PATH_PK },
+  { filename: "028-cg-derived-file-scoped-key.sql", sql: SQL_028_CG_DERIVED_FILE_SCOPED_KEY },
+  { filename: "029-cg-derived-stale.sql", sql: SQL_029_CG_DERIVED_STALE },
+  { filename: "030-cg-file-edge-export-names.sql", sql: SQL_030_CG_FILE_EDGE_EXPORT_NAMES },
 ];

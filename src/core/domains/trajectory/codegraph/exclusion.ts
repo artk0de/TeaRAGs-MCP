@@ -20,10 +20,15 @@
  * project-specific patterns on top.
  */
 
-import ignore, { type Ignore } from "ignore";
+import ignore from "ignore";
 
 import type { LanguageFactoryDescriptor, SchemaColumnAccessorSource } from "../../../contracts/types/language.js";
-import { GENERATED_PATTERNS, TEST_PATTERNS } from "../../../infra/file-classification/index.js";
+import {
+  buildTestPathFilter,
+  GENERATED_PATTERNS,
+  TEST_PATTERNS,
+  type PathFilter,
+} from "../../../infra/file-classification/index.js";
 
 /**
  * Generated / machine-authored files that look like source but never participate
@@ -70,15 +75,21 @@ export interface CodegraphExclusionOptions {
  * no per-language knowledge baked in here. Omitting the factory (tests /
  * fixtures) yields the pre-existing behaviour — no language globs. bd
  * tea-rags-mcp-biwbq.
+ *
+ * Test paths go through the classifier's own `buildTestPathFilter` rather than
+ * this instance: PascalCase suffixes (`*Test.java`) must match case-sensitively
+ * and `ignore` sets case sensitivity per instance (bd tea-rags-mcp-ezm9o). A
+ * separate filter also keeps the test exclusion out of reach of a negated
+ * custom pattern, which is what "unconditional" means.
  */
 export function buildCodegraphExclusionFilter(
   options: CodegraphExclusionOptions,
   languageFactory?: LanguageFactoryDescriptor,
-): Ignore {
+): PathFilter {
   const ig = ignore();
+  const testFilter = buildTestPathFilter();
   // Generated and test files are always excluded — invariants, not configurable.
   ig.add(CODEGRAPH_GENERATED_PATTERNS);
-  ig.add(CODEGRAPH_TEST_PATTERNS);
   // Per-language non-app-code globs, owned by each language provider. Aggregated
   // here so no language-specific pattern leaks into this generic engine.
   if (languageFactory) {
@@ -92,7 +103,7 @@ export function buildCodegraphExclusionFilter(
   if (options.customPatterns.length > 0) {
     ig.add(options.customPatterns);
   }
-  return ig;
+  return { ignores: (relPath) => testFilter.ignores(relPath) || ig.ignores(relPath) };
 }
 
 /**

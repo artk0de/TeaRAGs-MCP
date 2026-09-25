@@ -27,12 +27,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
+import { resolveGitExecutable } from "../../../../../infra/git-executable.js";
 import { ChunkChurnWalkThreadError } from "../../errors.js";
 import type {
   ChunkChurnWalkJobInput,
   ChunkChurnWalkOutcome,
   ChurnWalkThreadRequest,
   ChurnWalkThreadResponse,
+  ChurnWalkWorkerData,
 } from "./protocol.js";
 
 /**
@@ -113,7 +115,8 @@ export class ChunkChurnWalkPool {
     const existing = this.workers[idx];
     if (existing) return existing;
     if (this.closed) throw new ChunkChurnWalkThreadError("walk() after close()");
-    const worker = new Worker(WORKER_PATH);
+    const workerData: ChurnWalkWorkerData = { gitExecutable: resolveGitExecutable() };
+    const worker = new Worker(WORKER_PATH, { workerData });
     worker.on("message", (response: ChurnWalkThreadResponse) => {
       this.onResponse(response);
     });

@@ -15,7 +15,7 @@
  * binding set is a property of the whole enclosing method body.
  */
 
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import { isSameAstNode, type AstNode } from "../../../../contracts/types/ast.js";
 
 /**
  * Whether an `identifier` node sits in a call-position role suitable for
@@ -31,15 +31,15 @@ export function isBareIdentifierCallSite(id: AstNode): boolean {
   if (!parent) return false;
   // Method / singleton_method's own name field — `def foo` not a call.
   if (parent.type === "method" || parent.type === "singleton_method") {
-    if (parent.childForFieldName("name") === id) return false;
+    if (isSameAstNode(parent.childForFieldName("name"), id)) return false;
   }
   // call / method_call own field references — handled by the call branch.
   if (parent.type === "call" || parent.type === "method_call") {
-    if (parent.childForFieldName("method") === id) return false;
-    if (parent.childForFieldName("receiver") === id) return false;
+    if (isSameAstNode(parent.childForFieldName("method"), id)) return false;
+    if (isSameAstNode(parent.childForFieldName("receiver"), id)) return false;
   }
   // Assignment LHS introduces a local. RHS identifier IS a call site.
-  if (parent.type === "assignment" && parent.childForFieldName("left") === id) return false;
+  if (parent.type === "assignment" && isSameAstNode(parent.childForFieldName("left"), id)) return false;
   // `*rest` splat target in a multiple-assignment LHS — the identifier sits under
   // a `rest_assignment`; it is a binding, not a call (bd lawlq.3.7).
   if (parent.type === "rest_assignment") return false;
@@ -48,7 +48,7 @@ export function isBareIdentifierCallSite(id: AstNode): boolean {
   // sometimes omits an explicit object field on this node).
   if (parent.type === "element_reference") {
     const first = parent.namedChildren[0];
-    if (first === id) return false;
+    if (isSameAstNode(first, id)) return false;
   }
   // Parameter declarations of any flavor: `(x, y)`, `(name:)`, `(*splat)`,
   // `(**kw)`, `(&block)`. The grammar wraps optional/keyword/destructured
@@ -65,12 +65,12 @@ export function isBareIdentifierCallSite(id: AstNode): boolean {
     // Only the `name` field is a binding; the `value` (default expression)
     // CAN contain a method call site, so let it fall through to general
     // emission rules.
-    if (parent.childForFieldName("name") === id) return false;
+    if (isSameAstNode(parent.childForFieldName("name"), id)) return false;
   }
   // Rescue exception variable: `rescue StandardError => e`.
   if (parent.type === "exception_variable") return false;
   // `for item in coll` — pattern field is the loop variable.
-  if (parent.type === "for" && parent.childForFieldName("pattern") === id) return false;
+  if (parent.type === "for" && isSameAstNode(parent.childForFieldName("pattern"), id)) return false;
   return true;
 }
 

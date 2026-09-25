@@ -14,8 +14,8 @@ import {
   buildSignalLabelsGuide,
   buildSignalsDoc,
 } from "../../../src/mcp/resources/index.js";
-import { FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS } from "../../../src/mcp/resources/registry.js";
-import { createSearchSchemas } from "../../../src/mcp/tools/schemas.js";
+import { FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS, META_ONLY_CONTRACT } from "../../../src/mcp/resources/registry.js";
+import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
 
 const mockPayloadSignals: PayloadSignalDescriptor[] = [
   {
@@ -114,6 +114,28 @@ describe("Resource builders", () => {
       expect(md).toContain("## Guides");
       expect(md).toContain("tea-rags://schema/search-guide");
       expect(md).toContain("tea-rags://schema/indexing-guide");
+    });
+
+    // Reference prose moved off the inline param hints (bd tea-rags-mcp-ewg2s)
+    // — the overview is now its single owner, so its facts are pinned here.
+    describe("param reference", () => {
+      it("names author among the file-default level-aware filters", () => {
+        expect(buildOverview()).toMatch(/\bauthor[^;.]*: file/);
+      });
+
+      it("states the metaOnly response contract", () => {
+        const md = buildOverview();
+        expect(md).toContain("### metaOnly");
+        expect(md).toContain(META_ONLY_CONTRACT);
+        expect(META_ONLY_CONTRACT).toContain("rankingOverlay");
+      });
+
+      it("states when a rerank preset's default filter is skipped and how to clear it", () => {
+        const md = buildOverview();
+        expect(md).toContain('testFile "only"');
+        expect(md).toContain("{}");
+        expect(md).toContain("presetFilterNotice");
+      });
     });
   });
 
@@ -416,6 +438,7 @@ describe("Resource builders", () => {
     const schemaBuilder = {
       buildRerankSchema: () => z.string(),
       buildFilterSchema: () => z.record(z.string(), z.any()),
+      filterParamNames: () => [...TYPED_FILTER_PARAM_NAMES],
     } as unknown as SchemaBuilder;
     const schemas = createSearchSchemas(schemaBuilder);
     // The tools that spread the typed filter params.

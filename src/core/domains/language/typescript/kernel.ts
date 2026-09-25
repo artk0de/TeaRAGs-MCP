@@ -9,11 +9,10 @@
  *     the module (named export OR `default.typescript`). This is the grammar the
  *     CHUNKER uses for BOTH `.ts` and `.tsx` files (`LANGUAGE_MAP` collapses
  *     both extensions to language "typescript", and `LANGUAGE_DEFINITIONS` is
- *     keyed by name → one config). The codegraph engine, by contrast, loads the
- *     `.tsx` grammar for `.tsx` files via `CODEGRAPH_LANGUAGES[".tsx"].loadParser`
- *     (retained in the legacy map) — see the provider note. So the two-grammar
- *     distinction lives where it always did: chunker → `.typescript` grammar
- *     (this kernel), codegraph → per-extension `loadParser` on the retained map.
+ *     keyed by name → one config) — it calls `extractLanguage` with no
+ *     extension. The codegraph walk passes the file's extension, and `.tsx`
+ *     selects the `.tsx` grammar (bd tea-rags-mcp-e2pu7 moved that choice here
+ *     from a static import in the codegraph extractor).
  *   - `scopeSeparator: "."` — TS/JS namespace join (`namespace A { class B }`
  *     → `A.B`). Methods use `#`/`.` via `SymbolIdComposer`. `.` is also the
  *     composer default, so this matches the unset `LANGUAGE_DEFINITIONS.typescript`
@@ -40,11 +39,16 @@ interface TreeSitterLanguageModule {
 
 export const typescriptKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-typescript"),
-  extractLanguage: (mod: TreeSitterLanguageModule) => {
-    if (typeof mod.default === "object" && mod.default !== null && "typescript" in mod.default) {
-      return (mod.default as Record<string, unknown>).typescript;
+  grammarPackage: "tree-sitter-typescript",
+  // The module ships two grammars. `.tsx` (asked for only by the codegraph walk)
+  // gets `tsx`; everything else — every chunker call, which passes no
+  // extension — gets `typescript`.
+  extractLanguage: (mod: TreeSitterLanguageModule, extension?: string) => {
+    const grammar = extension === ".tsx" ? "tsx" : "typescript";
+    if (typeof mod.default === "object" && mod.default !== null && grammar in mod.default) {
+      return (mod.default as Record<string, unknown>)[grammar];
     }
-    return mod.typescript;
+    return mod[grammar];
   },
   scopeSeparator: ".",
   isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",

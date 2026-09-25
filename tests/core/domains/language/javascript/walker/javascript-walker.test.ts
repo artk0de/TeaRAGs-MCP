@@ -669,3 +669,291 @@ describe("extractFromJavascriptFile — variable_declarator without initializer 
     expect(r.fileScope).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Lookup-table dispatch (bd tea-rags-mcp-hkj8, port of tea-rags-mcp-n0zj) —
+// collectDispatchTables, CallRef.dispatch tagging, callbackParams, dispatchArgs.
+// Mirrors the TypeScript walker's "dispatch tables (n0zj)" block, plus the
+// JavaScript-only shapes: object shorthand entries, CommonJS `require`
+// bindings as table names, and default-valued parameters.
+// ─────────────────────────────────────────────────────────────────────
+describe("extractFromJavascriptFile — dispatch tables (hkj8)", () => {
+  function extract(code: string, chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[]) {
+    return extractFromJavascriptFile({ tree: parse(code), code, relPath: "src/d.js", language: "javascript", chunks });
+  }
+
+  it("collectDispatchTables records S1 wrapper-object entries (key→field→fn)", () => {
+    const code = ["const T = { a: { w: fnA }, b: { w: fnB } };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["T"]?.entries).toEqual({ a: { w: "fnA" }, b: { w: "fnB" } });
+  });
+
+  it("collectDispatchTables records S2 direct-function entries (key→fn)", () => {
+    const code = ["const H = { a: fnA, b: fnB };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["H"]?.entries).toEqual({ a: "fnA", b: "fnB" });
+  });
+
+  it("collectDispatchTables records object-shorthand entries as S2 (`{ get, post }` → key IS the fn)", () => {
+    const code = ["const H = { get, post, del: remove };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["H"]?.entries).toEqual({ get: "get", post: "post", del: "remove" });
+  });
+
+  it("collectDispatchTables records shorthand fields inside an S1 wrapper", () => {
+    const code = ["const T = { a: { run }, b: { run: runB } };", ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["T"]?.entries).toEqual({ a: { run: "run" }, b: { run: "runB" } });
+  });
+
+  it("collectDispatchTables drops inline-arrow / non-identifier values per field", () => {
+    const code = ["const T = { a: { w: () => 1 }, b: { w: fnB } };", ""].join("\n");
+    const e = extract(code, []);
+    // entry a's `w` is an arrow → dropped; entry b's `w` is an identifier → kept.
+    expect(e.dispatchTables?.["T"]?.entries["a"]).toEqual({});
+    expect((e.dispatchTables?.["T"]?.entries["b"] as Record<string, string>)["w"]).toBe("fnB");
+  });
+
+  it("does NOT record a non-const (let / var) table", () => {
+    const e = extract(["let T = { a: { w: fnA } };", "var H = { a: fnA };", ""].join("\n"), []);
+    expect(e.dispatchTables).toBeUndefined();
+  });
+
+  it("does NOT record a const table declared inside a function body (top level only)", () => {
+    const e = extract(["function f() {", "  const H = { a: fnA };", "}", ""].join("\n"), []);
+    expect(e.dispatchTables).toBeUndefined();
+  });
+
+  it("records dispatch table from `export const T = { a: fnA, b: fnB }`", () => {
+    const e = extract(["export const T = { a: fnA, b: fnB };", ""].join("\n"), []);
+    expect(e.dispatchTables?.["T"]?.entries).toEqual({ a: "fnA", b: "fnB" });
+  });
+
+  it("skips an object with no identifier values (pure config, no dispatch entries)", () => {
+    const e = extract(["const CONFIG = { retries: 3, name: 'x', fn: () => 1 };", ""].join("\n"), []);
+    expect(e.dispatchTables).toBeUndefined();
+  });
+
+  it("normalizes quoted string keys in a dispatch table (extension-style keys like '.js')", () => {
+    const code = ['const LANGUAGES = { ".js": { walker: extractJs }, ".rb": { walker: extractRb } };', ""].join("\n");
+    const e = extract(code, []);
+    expect(e.dispatchTables?.["LANGUAGES"]?.entries).toEqual({
+      ".js": { walker: "extractJs" },
+      ".rb": { walker: "extractRb" },
+    });
+  });
+
+  it("tags field-bound dispatch: const f = T[k].w; f(x)", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go(k) {", //                           2
+      "  const f = T[k].w;", //                        3
+      "  f(1);", //                                    4
+      "}", //                                          5
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 5, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "T", field: "w", key: null });
+    expect(call?.receiver).toBeNull();
+    expect(call?.member).toBe("w");
+  });
+
+  it("tags S2 direct subscript call: H[k](x)", () => {
+    const code = [
+      "const H = { a: fnA, b: fnB };", // 1
+      "function go(k) {", //              2
+      "  H[k](1);", //                    3
+      "}", //                             4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "H", field: null, key: null });
+    expect(call?.member).toBe("H");
+  });
+
+  it("tags static string-literal key: T[\"a\"].w(x) → key 'a'", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go() {", //                             2
+      '  T["a"].w(1);', //                              3
+      "}", //                                           4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "T", field: "w", key: "a" });
+  });
+
+  it("tags entry-bound dispatch: const e = T[k]; e.w(x)", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go(k) {", //                           2
+      "  const en = T[k];", //                         3
+      "  en.w(1);", //                                 4
+      "}", //                                          5
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 5, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.dispatch);
+    expect(call?.dispatch).toEqual({ table: "T", field: "w", key: null });
+  });
+
+  it("scopes a dispatch-bound local to its function: a same-named call elsewhere stays a bare call", () => {
+    const code = [
+      "const H = { a: fnA };", // 1
+      "function go(k) {", //      2
+      "  const f = H[k];", //     3
+      "  f(1);", //               4
+      "}", //                     5
+      "function other() {", //    6
+      "  f(2);", //               7
+      "}", //                     8
+      "",
+    ].join("\n");
+    const e = extract(code, [
+      { symbolId: "go", startLine: 2, endLine: 5, scope: [] },
+      { symbolId: "other", startLine: 6, endLine: 8, scope: [] },
+    ]);
+    expect(e.chunks[0].calls.find((c) => c.member === "H")?.dispatch).toEqual({ table: "H", field: null, key: null });
+    expect(e.chunks[1].calls).toEqual([{ callText: "f(2)", receiver: null, member: "f", startLine: 7 }]);
+  });
+
+  it("does NOT tag dispatch when the table name is a non-const local", () => {
+    const code = [
+      "let T = { a: { w: fnA } };", // 1 — let, not const
+      "function go(k) {", //           2
+      "  const f = T[k].w;", //        3
+      "  f(1);", //                    4
+      "}", //                          5
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 5, scope: [] }]);
+    expect(e.chunks[0].calls.some((c) => c.dispatch)).toBe(false);
+  });
+
+  it("does NOT tag a subscript call on an ordinary array/object local", () => {
+    const code = ["function go(arr, i) {", "  arr[i].push(1);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.chunks[0].calls).toEqual([
+      { callText: "arr[i].push(1)", receiver: "arr[i]", member: "push", startLine: 2 },
+    ]);
+  });
+
+  it("tags dispatch on an ES-module imported table name (resolver disambiguates the file)", () => {
+    const code = [
+      "import { HANDLERS } from './handlers.js';", // 1
+      "function go(k) {", //                          2
+      "  HANDLERS[k](1);", //                         3
+      "}", //                                         4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].calls.find((c) => c.dispatch)?.dispatch).toEqual({ table: "HANDLERS", field: null, key: null });
+  });
+
+  it("tags dispatch on a CommonJS-required table name (plain and destructured bindings)", () => {
+    const code = [
+      "const handlers = require('./handlers');", //  1
+      "const { RULES } = require('./rules');", //    2
+      "function go(k) {", //                         3
+      "  handlers[k](1);", //                        4
+      "  RULES[k].create(2);", //                    5
+      "}", //                                        6
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 3, endLine: 6, scope: [] }]);
+    const dispatches = e.chunks[0].calls.filter((c) => c.dispatch).map((c) => c.dispatch);
+    expect(dispatches).toEqual([
+      { table: "handlers", field: null, key: null },
+      { table: "RULES", field: "create", key: null },
+    ]);
+    // The `require` calls themselves stay imports, never calls.
+    expect(e.chunks[0].calls.some((c) => c.member === "require")).toBe(false);
+  });
+
+  it("records callbackParams for a free function invoking its param", () => {
+    const code = ["function run(f) {", "  f(1);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([0]);
+  });
+
+  it("records callbackParams for a method invoking its 2nd param", () => {
+    const code = ["class C {", "  m(a, cb) {", "    cb();", "  }", "}", ""].join("\n");
+    const e = extract(code, [
+      { symbolId: "C", startLine: 1, endLine: 5, scope: [] },
+      { symbolId: "C#m", startLine: 2, endLine: 4, scope: ["C"] },
+    ]);
+    expect(e.callbackParams?.["C#m"]).toEqual([1]);
+  });
+
+  it("records a default-valued param (`cb = noop`) as a callback when invoked", () => {
+    const code = ["function run(a, cb = noop) {", "  cb();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([1]);
+  });
+
+  it("records the single unparenthesized param of an arrow function", () => {
+    const code = ["const run = cb => {", "  cb();", "};", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([0]);
+  });
+
+  it("does NOT record a param that is never invoked", () => {
+    const code = ["function run(f) {", "  use(f);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams).toBeUndefined();
+  });
+
+  it("counts a destructured (non-identifier) param as a position but never as a callback", () => {
+    const code = ["function run({ a, b }, cb) {", "  cb();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([1]);
+  });
+
+  it("sorts callbackParams indices when two params are both invoked", () => {
+    const code = ["function run(b, a) {", "  a();", "  b();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+    expect(e.callbackParams?.["run"]).toEqual([0, 1]);
+  });
+
+  it("emits dispatchArgs when a dispatch candidate-set is passed as an argument", () => {
+    const code = [
+      "const T = { a: { w: fnA }, b: { w: fnB } };", // 1
+      "function go(k) {", //                           2
+      "  collectSymbols(tree, T[k].w, opts);", //      3
+      "}", //                                          4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.member === "collectSymbols");
+    expect(call?.dispatchArgs).toEqual([{ argIndex: 1, candidate: { table: "T", field: "w", key: null } }]);
+  });
+
+  it("emits dispatchArgs on a member call too (receiver/member unchanged)", () => {
+    const code = [
+      "const H = { a: fnA };", // 1
+      "function go(k) {", //      2
+      "  util.apply(H[k]);", //   3
+      "}", //                     4
+      "",
+    ].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 4, scope: [] }]);
+    const call = e.chunks[0].calls.find((c) => c.member === "apply");
+    expect(call).toMatchObject({ receiver: "util", member: "apply" });
+    expect(call?.dispatchArgs).toEqual([{ argIndex: 0, candidate: { table: "H", field: null, key: null } }]);
+  });
+
+  it("leaves a file with no dispatch idiom byte-identical to the pre-dispatch shape", () => {
+    const code = ["function go(x) {", "  x.y(1);", "  z(2);", "  new Foo();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 5, scope: [] }]);
+    expect(e.dispatchTables).toBeUndefined();
+    expect(e.callbackParams).toBeUndefined();
+    expect(e.chunks[0].calls).toEqual([
+      { callText: "x.y(1)", receiver: "x", member: "y", startLine: 2 },
+      { callText: "z(2)", receiver: null, member: "z", startLine: 3 },
+      { callText: "new Foo()", receiver: "Foo", member: "constructor", startLine: 4 },
+    ]);
+  });
+});

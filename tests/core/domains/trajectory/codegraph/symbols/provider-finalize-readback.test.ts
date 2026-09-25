@@ -56,6 +56,9 @@ function makeFanGraphDb(fan: Map<string, { fanIn: number; fanOut: number; impact
       getFanOut: async (relPath: string) => perFileRead(fan.get(relPath)?.fanOut ?? 0),
       getTransitiveImpact: async (relPath: string) => perFileRead(fan.get(relPath)?.impact ?? 0),
       recordRunStats: async () => undefined,
+      // A finalize with no run sink asks whether a deletion left cycles /
+      // PageRank stale (bd tea-rags-mcp-dy852); nothing was deleted here.
+      hasStaleDerivedTables: async () => false,
     },
     bulkRequests: () => requests,
     perFileReads: () => perFile,

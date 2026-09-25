@@ -32,17 +32,22 @@
  *   5. scopedTypeReceiver   — `Nested.X()` → a type nested in the caller's own
  *                             scope, by its SHORT name. Last of the receiver
  *                             passes, so a local (1) and a property (4) both
- *                             shadow it; the passes below answer no
+ *                             shadow it.
+ *   6. moduleValue          — `AF.X()` → the type of a MODULE-LEVEL value
+ *                             (`let AF = Session.default`), declared in any
+ *                             file (bd tea-rags-mcp-y99pg.30). Last of the
+ *                             receiver passes because module scope is the
+ *                             outermost one; the passes below answer no
  *                             receiver-bearing call at all.
- *   6. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
+ *   7. enclosingBareCall    — bare `X()` → enclosing type, same file. Beats the
  *                             terminal pass so a common name cannot misroute a
  *                             call that never left its type.
- *   7. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
+ *   8. extensionScopeMember — `self.X()` / bare `X()` → enclosing type, ANY
  *                             file. The pass Swift needs and the others do not:
  *                             a type is routinely split across extensions in
  *                             several files, so both same-file passes miss by
  *                             construction on a conformance extension.
- *   8. globalShortName      — terminal, BARE CALLS ONLY.
+ *   9. globalShortName      — terminal, BARE CALLS ONLY.
  *
  * ## There is deliberately no import-receiver pass
  *
@@ -60,16 +65,19 @@
  * CapWords initializer, a stored property, or `self`. `chainedReceiverType`
  * threads those facts along a dotted receiver, but it cannot manufacture the
  * ones the walker never wrote — an un-annotated `let` inferred from a
- * function's return type, a closure parameter typed by context, a
- * protocol-typed value's dynamic dispatch, any link that is a METHOD call
+ * function's return type, a closure parameter whose callee this file does
+ * not declare (a same-file callee's function-typed parameter, and the element
+ * of an `[T]` receiver, DO type one — bd tea-rags-mcp-y99pg.3), any link that is a METHOD call
  * rather than a property (`a.makeThing().run()`) — and each of those still
  * emits NO edge. Recall is therefore capped below Java's, where the import
  * table answers a large share of receivers outright.
  *
- * Raising it further is a typing problem, not a chain problem: publishing the
- * walker's declared return types as a channel the fold can read, and recording
- * protocol conformances for an MRO. Both are increments on top of this, not
- * gaps in it.
+ * Raising it further is a typing problem, not a chain problem. The walker's
+ * declared return types now reach the fold (`structuredReturnTypes`, bd
+ * tea-rags-mcp-kkwg3), so a METHOD link is typed where the callee declares its
+ * return, and member lookup walks every protocol a type conforms to after
+ * its superclass chain (`SWIFT_MEMBER_LOOKUP_POLICY`, bd
+ * tea-rags-mcp-y99pg.4).
  *
  * ## Where a TYPE NAME still does not resolve
  *
@@ -78,60 +86,146 @@
  * (`collapseReopenedTypeDeclarations` in `./swift-symbol-lookup.ts`), and a
  * nested type's short-name receiver is re-qualified against the caller's scope
  * (`scopedTypeReceiver`). Both leaned on reading a composed symbolId as a type
- * declaration (`./swift-type-name.ts`); neither needed a contract change. Two
- * relatives of theirs are still open, and both need evidence this chain does
- * not have:
+ * declaration (`./swift-type-name.ts`); neither needed a contract change.
  *
- * 1. **A type re-opened across FILES.** `struct Invoice` in `Invoice.swift` and
- *    `extension Invoice` in `Invoice+Codable.swift` compose the IDENTICAL id
- *    `Invoice` in two files, and nothing in a `SymbolDefinition` says which one
- *    carries the type's own body. The same-file fold deliberately declines it,
- *    so a construction of such a type stays ambiguous and emits no edge.
- *    Closing it needs the container/leaf fact `NamedSymbol.descendsInto`
- *    already holds and `collectSymbols` drops — a kernel and contract change
- *    across all nine languages, not a Swift patch.
- * 2. **A TOP-LEVEL type as an explicit receiver from outside it.**
- *    `Invoice.empty()` written in another type resolves to nothing:
- *    `scopedTypeReceiver` qualifies against the caller's scope only, and the
- *    terminal pass answers bare calls by design. An unqualified global probe is
- *    a precision decision of its own and belongs with a measurement, not a
- *    docblock.
+ * A type re-opened across FILES needed one, and has it: `struct Invoice` in
+ * `Invoice.swift` and `extension Invoice` in `Invoice+Codable.swift` compose
+ * the IDENTICAL id, and nothing in a `SymbolDefinition` says which carries the
+ * type's own body. The walker's run-global `typeDeclarations` channel does (bd
+ * tea-rags-mcp-y99pg.1), so the lookups keep only the declaring file of a type
+ * id, and a construction of a type the project only EXTENDS
+ * (`JSONDecoder()`) emits no edge and leaves the denominator unless an
+ * extension declares an initializer (`./swift-type-declarations.ts`).
+ *
+ * A TOP-LEVEL type as an explicit receiver from outside it (`Invoice.empty()`
+ * written in another type) is answered by `scopedTypeReceiver`'s module-scope
+ * step (bd tea-rags-mcp-y99pg.9), measured on Alamofire and Quick with no
+ * edge the typechecker disputes.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  resolveLocalBinding,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
   type CallResolver,
+  type SymbolDefinition,
   type SymbolResolutionTarget,
+  type TypeDeclarationKind,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { propagateReceiverType, type ReceiverTypePorts } from "../../kernel/index.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
+import { swiftSpelledNominal } from "../vocabulary/swift-type-text.js";
 import {
   SwiftChainedReceiverTypeSymbolResolutionStrategy,
   SwiftEnclosingBareCallSymbolResolutionStrategy,
   SwiftExtensionScopeMemberSymbolResolutionStrategy,
   SwiftGlobalShortNameSymbolResolutionStrategy,
   SwiftLocalBindingSymbolResolutionStrategy,
+  SwiftModuleValueSymbolResolutionStrategy,
   SwiftScopedTypeReceiverSymbolResolutionStrategy,
   SwiftSelfMemberSymbolResolutionStrategy,
   SwiftStoredPropertyTypeSymbolResolutionStrategy,
   SwiftSuperSymbolResolutionStrategy,
   type SwiftResolverConfig,
 } from "./strategies/index.js";
+import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
-import { lookupSwiftSymbolsByShortName } from "./swift-symbol-lookup.js";
+import {
+  createSwiftWrittenReceiverTypePorts,
+  swiftCallReceiverType,
+  swiftCastOperand,
+} from "./swift-receiver-type-ports.js";
+import {
+  lookupSwiftBareNameDefinitions,
+  lookupSwiftSymbolsByShortName,
+  swiftMemberCandidates,
+} from "./swift-symbol-lookup.js";
+import {
+  isSwiftReopenedOnlyType,
+  swiftDeclarationKinds,
+  swiftDeclaringFiles,
+  swiftExtensionDeclaresInit,
+} from "./swift-type-declarations.js";
+import { isSwiftTypeDeclarationId, isSwiftTypeName, stripSwiftOverloadSuffix } from "./swift-type-name.js";
+
+/**
+ * Receiver types on which Swift looks a member up DYNAMICALLY: any `@objc`
+ * method of any class is callable on an `AnyObject` / `AnyClass` value, so a
+ * project method of that name may be the target whatever the type declares.
+ */
+const SWIFT_DYNAMIC_LOOKUP_TYPES: ReadonlySet<string> = new Set(["AnyObject", "AnyClass"]);
+
+/**
+ * Declaration kinds that can hold no implementation the Objective-C runtime
+ * dispatches a selector to (bd tea-rags-mcp-y99pg.35). A struct or an enum is
+ * not an Objective-C class, so none of its members is `@objc`; a protocol
+ * declares requirements, and the default a protocol extension provides may not
+ * be `@objc` either — the implementation of an `@objc` requirement lives on the
+ * CLASS that conforms. A class and an actor may hold one, and stay out.
+ */
+const SWIFT_KINDS_WITHOUT_OBJC_IMPLEMENTATIONS: ReadonlySet<TypeDeclarationKind | null> = new Set<TypeDeclarationKind>([
+  "protocol",
+  "struct",
+  "enum",
+]);
+
+/**
+ * The nominal a call's receiver denotes, and whether the value is known only by
+ * that nominal as a CLASS bound — it may then be any subclass of it.
+ * `dynamicLookup` marks an `AnyObject` / `AnyClass` value, whose members Swift
+ * looks up through the Objective-C runtime rather than on the nominal.
+ */
+interface SwiftReceiverTypeName {
+  readonly name: string;
+  readonly classBound: boolean;
+  readonly dynamicLookup: boolean;
+}
+
+/**
+ * Whether `def` may be the implementation an Objective-C dynamic-lookup call of
+ * its name lands on (bd tea-rags-mcp-y99pg.35). A module-scope function is no
+ * member, so no selector reaches it. A member answers false only when EVERY
+ * declaration of its owner the run holds is a kind that carries no Objective-C
+ * implementation; an owner the project only re-opens (`extension NSObject`), one
+ * the run says nothing about, and one an older index recorded no kind for all
+ * answer true.
+ */
+function mayHoldObjcImplementation(def: SymbolDefinition, ctx: CallContext): boolean {
+  if (def.scope.length === 0) return false;
+  const kinds = swiftDeclarationKinds(def.scope.join("."), ctx);
+  if (kinds === undefined) return true;
+  for (const kind of kinds) if (!SWIFT_KINDS_WITHOUT_OBJC_IMPLEMENTATIONS.has(kind)) return true;
+  return false;
+}
+
+/** Whether a definition is the type id of a type the run proves the project only re-opens. */
+function isReopenedOnlyTypeId(symbolId: string, ctx: CallContext): boolean {
+  return isSwiftTypeDeclarationId(symbolId) && isSwiftReopenedOnlyType(stripSwiftOverloadSuffix(symbolId), ctx);
+}
 
 export class SwiftCallResolver implements CallResolver {
   readonly language = "swift";
   private readonly strategies: SymbolResolutionStrategy[];
+  private readonly memberTypes = new SwiftMemberTypeLookup();
+  /** What the SDK declares (bd tea-rags-mcp-y99pg.24): the generated substrate, shared process-wide. */
+  private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary();
+  /**
+   * The chain's fold over a receiver AS WRITTEN, reused by the denominator
+   * question — unwrap sugar and all, so an `Optional` the source did not
+   * unwrap is typed as one (bd tea-rags-mcp-y99pg.33).
+   */
+  private readonly writtenPorts: ReceiverTypePorts = createSwiftWrittenReceiverTypePorts(this.memberTypes);
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     // ONE lookup for the whole chain: its field union and ancestor linearizers
     // are per-RUN state, and the passes that type a receiver must answer off
     // the same fold.
-    const cfg: SwiftResolverConfig = { mode, memberTypes: new SwiftMemberTypeLookup() };
+    const cfg: SwiftResolverConfig = { mode, memberTypes: this.memberTypes };
     this.strategies = [
       // Index 0, ahead of every typed pass: `super` is the one receiver whose
       // meaning the LANGUAGE fixes, so no pass that infers a type can have a
@@ -147,6 +241,7 @@ export class SwiftCallResolver implements CallResolver {
       new SwiftChainedReceiverTypeSymbolResolutionStrategy(cfg),
       new SwiftStoredPropertyTypeSymbolResolutionStrategy(cfg),
       new SwiftScopedTypeReceiverSymbolResolutionStrategy(cfg),
+      new SwiftModuleValueSymbolResolutionStrategy(cfg),
       new SwiftEnclosingBareCallSymbolResolutionStrategy(cfg),
       new SwiftExtensionScopeMemberSymbolResolutionStrategy(cfg),
       new SwiftGlobalShortNameSymbolResolutionStrategy(cfg),
@@ -158,8 +253,11 @@ export class SwiftCallResolver implements CallResolver {
   }
 
   /**
-   * Whether the project declares ANY Swift symbol by this member name — the
-   * miss classifier's denominator question.
+   * Whether the project declares a Swift symbol this call could land on — the
+   * miss classifier's denominator question. A member name no Swift file
+   * declares answers false; so does a typed receiver whose hierarchy reaches
+   * none of the declarations that do (bd tea-rags-mcp-y99pg.11, see
+   * `receiverMayReach`).
    *
    * Answered explicitly because this resolver's chain is Swift-filtered
    * throughout: the classifier's default falls back to the unfiltered
@@ -170,6 +268,216 @@ export class SwiftCallResolver implements CallResolver {
    * nothing; retrofitting it later would move a published rate.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupSwiftSymbolsByShortName(ctx, call.member).length > 0;
+    const defs = lookupSwiftSymbolsByShortName(ctx, call.member);
+    if (defs.length === 0) return false;
+    if (call.receiver === null) return this.bareNameMayReach(call, ctx);
+    return this.receiverMayReach(call, ctx, defs);
+  }
+
+  /**
+   * Whether a BARE call can reach a project declaration. A nested type whose
+   * container does not enclose the caller is invisible to the unqualified
+   * name (bd tea-rags-mcp-y99pg.15) — `Result(value:error:)` outside
+   * `PathMonitor` names the standard library's `Result`.
+   */
+  private bareNameMayReach(call: CallRef, ctx: CallContext): boolean {
+    const defs = lookupSwiftBareNameDefinitions(ctx, call.member);
+    if (defs.length === 0) return false;
+    // Swift's `self` is implicit: inside a type whose hierarchy the SDK
+    // declares the member on and the project does not, the bare name IS that
+    // member, shadowing every project namesake on another type or at module
+    // scope — `map(\.result)` inside a `Publisher` (bd tea-rags-mcp-y99pg.29).
+    const enclosing = swiftSelfTypeName(ctx);
+    if (
+      enclosing !== undefined &&
+      ctx.typeDeclarations !== undefined &&
+      !this.memberTypes.memberReach(enclosing, call.member, ctx).declared &&
+      this.memberTypes.sdkDeclaresMember(enclosing, call.member, ctx)
+    ) {
+      return false;
+    }
+    // A construction of a type the project only EXTENDS runs an SDK
+    // initializer unless an extension declares one the call's argument
+    // labels fit (bd tea-rags-mcp-y99pg.1, .11): `Result { try … }` runs
+    // the standard library's `init(catching:)` beside a project
+    // `init(value:error:)`.
+    if (defs.every((def) => isReopenedOnlyTypeId(def.symbolId, ctx))) {
+      return defs.some((def) =>
+        swiftExtensionDeclaresInit(stripSwiftOverloadSuffix(def.symbolId), (id) =>
+          swiftMemberCandidates(ctx, id, call),
+        ),
+      );
+    }
+    return true;
+  }
+
+  /**
+   * Whether a RECEIVER call can reach one of the project's `defs` of its
+   * member (bd tea-rags-mcp-y99pg.11).
+   *
+   * Swift is statically typed: a call on a value of type `T` names a member
+   * declared on `T`, on a type `T` inherits from or conforms to, or in an
+   * extension of one of those. Once the receiver's type is known, a project
+   * member of the same name on any OTHER type is a namesake — `task.resume()`
+   * on a `URLSessionTask` runs Foundation's `resume`, whatever `Request`
+   * declares — and the site can never become an in-project edge. The TS
+   * resolver answers the same question with its checker; this one answers it
+   * with the receiver fold the chain already runs, and declines (keeps the
+   * site in the denominator) wherever it cannot prove the world is closed:
+   *
+   *   - a receiver it cannot type;
+   *   - an index with no `typeDeclarations` channel, where "declared" and
+   *     "extended" cannot be told apart;
+   *   - a def on a type the project only extends that the SDK substrate does
+   *     not declare, or reached from a receiver type whose supertypes neither
+   *     the project nor the substrate publishes (bd tea-rags-mcp-y99pg.24).
+   *
+   * A receiver Swift looks members up on DYNAMICALLY is answered by
+   * {@link dynamicLookupMayReach}.
+   */
+  private receiverMayReach(call: CallRef, ctx: CallContext, defs: readonly SymbolDefinition[]): boolean {
+    if (ctx.typeDeclarations === undefined) return true;
+    const receiver = this.receiverType(call, ctx);
+    if (receiver === undefined) return true;
+    if (receiver.dynamicLookup) return this.dynamicLookupMayReach(call, ctx, defs);
+    return this.typedReceiverMayReach(call, ctx, defs, receiver);
+  }
+
+  /**
+   * Whether an Objective-C dynamic-lookup call — a member called on an
+   * `AnyObject` / `AnyClass` value — can reach one of the project's `defs` (bd
+   * tea-rags-mcp-y99pg.35).
+   *
+   * Swift type-checks such a call against every `@objc` member anywhere, and
+   * the runtime sends the selector to the value's class, so the typed rule's
+   * "declared on the receiver's hierarchy" says nothing here. What does hold:
+   *
+   *   1. The implementation that runs is a method of an Objective-C class. A
+   *      def on a protocol, a struct or an enum, or at module scope, is none
+   *      (`mayHoldObjcImplementation`) — the requirement of an `@objc`
+   *      protocol included, whose implementation lives on a conforming class.
+   *   2. A cast changes the static type only. `(specClass as AnyClass)` sends
+   *      the selector to `specClass`'s own class, which is the operand's type
+   *      `T` or a subclass of it — exactly the value the typed rule reads as
+   *      known by the CLASS bound `T`. So once the operand types as a class,
+   *      what is left of the defs is judged by that rule: a def on `T`'s
+   *      hierarchy or on a class naming `T` among its ancestors is reachable,
+   *      one on a project class outside both lines is a namesake.
+   *
+   * A value with no cast operand the fold types as a class keeps every def
+   * step 1 leaves: its class may be any class that implements the selector.
+   */
+  private dynamicLookupMayReach(call: CallRef, ctx: CallContext, defs: readonly SymbolDefinition[]): boolean {
+    const implementations = defs.filter((def) => mayHoldObjcImplementation(def, ctx));
+    if (implementations.length === 0) return false;
+    const operand = this.castOperandClass(call, ctx);
+    if (operand === undefined) return true;
+    return this.typedReceiverMayReach(call, ctx, implementations, {
+      name: operand,
+      classBound: true,
+      dynamicLookup: false,
+    });
+  }
+
+  /**
+   * The CLASS a cast receiver's operand is typed as — `QuickSpec` for
+   * `(specClass as AnyClass)` over `specClass: QuickSpec.Type` — or `undefined`
+   * when the receiver is no cast, or its operand types as no class the project
+   * or the SDK substrate declares as one. A protocol-typed operand does not
+   * qualify: its value's class need not name the protocol.
+   */
+  private castOperandClass(call: CallRef, ctx: CallContext): string | undefined {
+    const operand = call.receiver === null ? undefined : swiftCastOperand(call.receiver);
+    if (operand === undefined) return undefined;
+    const type = propagateReceiverType(operand, call.startLine, ctx, this.writtenPorts);
+    if (type === undefined || (type.form !== "class" && type.form !== "instance")) return undefined;
+    const kinds = swiftDeclarationKinds(type.name, ctx);
+    if (kinds !== undefined) return kinds.size === 1 && kinds.has("class") ? type.name : undefined;
+    return this.sdk.type(type.name)?.kind === "class" ? type.name : undefined;
+  }
+
+  /** The typed rule of {@link receiverMayReach}, for a receiver whose type the fold proved. */
+  private typedReceiverMayReach(
+    call: CallRef,
+    ctx: CallContext,
+    defs: readonly SymbolDefinition[],
+    receiver: SwiftReceiverTypeName,
+  ): boolean {
+    const typeName = receiver.name;
+    const reach = this.memberTypes.memberReach(typeName, call.member, ctx);
+    // Declared on the hierarchy — unless no project overload takes the call's
+    // labels and the SDK declares the member there too (bd tea-rags-mcp-y99pg.25).
+    if (reach.declared) return !this.memberTypes.runsSdkOverload(typeName, call, ctx);
+    // A project type has initializers it never spells (`super.init()` on a
+    // class that declares none inherits its superclass's): the type itself is
+    // the in-project target.
+    if (call.member === "init" && (swiftDeclaringFiles(typeName, ctx)?.size ?? 0) > 0) return true;
+    for (const def of defs) {
+      if (def.scope.length === 0) continue;
+      const owner = def.scope.join(".");
+      if (reach.types.has(owner)) return true;
+      // A value known by a class bound may be any subclass of it, and a
+      // subclass must name its superclass: a def on one is reachable.
+      if (receiver.classBound && this.memberTypes.lookupOrder(owner, ctx).includes(typeName)) return true;
+      const declaring = swiftDeclaringFiles(owner, ctx);
+      // The run says nothing about the owner: nothing is proven.
+      if (declaring === undefined) return true;
+      // A type the project declares, outside the receiver's hierarchy: a namesake.
+      if (declaring.size > 0) continue;
+      // A re-opened SDK type outside the receiver's hierarchy — which the
+      // lookup read through the SDK substrate — is a namesake too (bd
+      // tea-rags-mcp-y99pg.24). Neither a re-opened name the substrate does
+      // not know nor a receiver type whose supertypes nobody publishes proves
+      // anything.
+      if (!this.sdk.hasType(swiftSpelledNominal(owner)) || !this.hierarchyKnown(typeName, ctx)) return true;
+    }
+    return false;
+  }
+
+  /** Whether the project or the SDK substrate declares `typeName`, so its supertypes are on record. */
+  private hierarchyKnown(typeName: string, ctx: CallContext): boolean {
+    return (swiftDeclaringFiles(typeName, ctx)?.size ?? 0) > 0 || this.sdk.hasType(typeName);
+  }
+
+  /**
+   * The nominal a call's receiver denotes: the superclass for `super`, else
+   * the chain's own fold — which types a module-level value
+   * (Alamofire's `let AF = Session.default`) where the walker published one
+   * (bd tea-rags-mcp-y99pg.30). An UpperCamelCase receiver nothing in the
+   * project declares is usually an SDK type, but it may as well be a global
+   * value an older index has no channel for, so it types one only when the
+   * generated SDK substrate declares the name (bd tea-rags-mcp-y99pg.24). A receiver typed `AnyObject` / `AnyClass`
+   * is marked `dynamicLookup`: see {@link SWIFT_DYNAMIC_LOOKUP_TYPES}.
+   */
+  private receiverType(call: CallRef, ctx: CallContext): SwiftReceiverTypeName | undefined {
+    const { receiver } = call;
+    if (receiver === null) return undefined;
+    if (receiver === "super") {
+      // `super` names the superclass the enclosing type's clause states first.
+      const enclosing = swiftSelfTypeName(ctx);
+      const superclass = enclosing === undefined ? undefined : identifierEntry(ctx.classExtends, enclosing);
+      return superclass === undefined ? undefined : { name: superclass, classBound: false, dynamicLookup: false };
+    }
+    const type = swiftCallReceiverType(call, ctx, this.writtenPorts, this.memberTypes);
+    if (type !== undefined) {
+      if (type.form !== "class" && type.form !== "instance") return undefined;
+      if (SWIFT_DYNAMIC_LOOKUP_TYPES.has(type.name)) return { name: type.name, classBound: false, dynamicLookup: true };
+      if (type.upperBound !== true) return { name: type.name, classBound: false, dynamicLookup: false };
+      // A type known only as a bound proves nothing about what the value
+      // cannot reach (bd tea-rags-mcp-y99pg.25) — unless the bound is an SDK
+      // CLASS: every subtype of a class names it in its own clause, so the
+      // project's candidates are on record (bd tea-rags-mcp-y99pg.34). A
+      // protocol's are not: an enum conforms to `Hashable` without saying so.
+      return this.sdk.type(type.name)?.kind === "class"
+        ? { name: type.name, classBound: true, dynamicLookup: false }
+        : undefined;
+    }
+    // An SDK type spelled as the receiver: only a type the SDK substrate
+    // declares, which the project neither declares nor binds as a local.
+    if (!isSwiftTypeName(receiver) || !this.sdk.hasType(receiver)) return undefined;
+    if ((swiftDeclaringFiles(receiver, ctx)?.size ?? 0) > 0) return undefined;
+    return resolveLocalBinding(ctx.localBindings, receiver, call.startLine) === undefined
+      ? { name: receiver, classBound: false, dynamicLookup: false }
+      : undefined;
   }
 }

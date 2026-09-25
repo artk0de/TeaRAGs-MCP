@@ -3,7 +3,8 @@ name: systematic-debugging
 description:
   Debug concrete failure: first run tea-rags:bug-hunt for ranked suspect list
   (bug-prone zones by bugFixRate + churn), feed as prioritized hypothesis space
-  — investigation starts where code history says fragile. Triggers on "debug X",
+  — investigation starts where code history says fragile; ends with Cause / Fix
+  / Prevention report tied to overlay signals. Triggers on "debug X",
   "fix the bug", "why does Y fail", "test fails", "падает", "почему не работает",
   "ошибка в", "стектрейс". NOT for code review or general code-health questions.
   Wraps superpowers:systematic-debugging with tea-rags:bug-hunt suspect ranking.
@@ -167,7 +168,8 @@ block as context. Phrase handoff as:
 
 > "Before forming hypotheses, note these bug-hunt priors: …<block>… Start
 > hypothesis space with prime suspects; escalate to secondary only if primes
-> rule out.
+> rule out. Root cause confirmed → report as Cause / Fix / Prevention block
+> (wrapper Step 5), Prevention driven by suspect overlay signals.
 >
 > Chaining rule reminder: when you (the inner skill) would next invoke
 > `superpowers:test-driven-development` or
@@ -177,6 +179,62 @@ block as context. Phrase handoff as:
 Let `superpowers:systematic-debugging` run its standard hypothesis-form /
 experiment / rule-out cycle. Wrapper does not replace it — it seeds hypothesis
 space.
+
+**Follow-up searches inside the cycle** (callers, definition, where X happens):
+pick tool from `tea-rags/rules/search-cascade.md` Decision Tree — not ad-hoc
+`semantic_search`. State choice in one line before call:
+
+```
+consulting decision tree → <tool> [rerank=<preset>] because <branch that matched>
+```
+
+e.g. `→ hybrid_search because exhaustive usage of identifier StatsCache#load`;
+`→ find_symbol because study known symbol`. Rerank for a follow-up = Step 3.5
+preset table (same lens per situation); bug-hunt weighting stays in bug-hunt.
+
+## Step 5 — Root-cause report: Cause / Fix / Prevention (MANDATORY)
+
+Root cause confirmed (any phase ends with one) → deliver EXACTLY this block.
+Reusable as postmortem note, not ad-hoc patch.
+
+```
+### Root cause — "<symptom>"
+
+**Cause:** <one sentence: what happens at <file>:<line>, why wrong>
+  signals: <level>.<signal>=<label>, … — <what the signal says about the cause>
+
+**Fix:** <file>:<line> — <diff intent>
+
+**Prevention:**
+- <concrete action> — because <level>.<signal>=<label>
+- <regression test: file + what it asserts> — because <signal | mechanism>
+```
+
+Signals = overlay labels ALREADY in conversation (bug-hunt PRESENT, Step 3.5
+`dangerOverlay`). Cause symbol outside suspect list →
+`find_symbol(symbol: <cause>, rerank: "bugHunt", metaOnly: true)` attaches its
+overlay; no other query.
+
+**Signal → Prevention** (every fired row = ≥1 Prevention line citing it):
+
+| Overlay signal (label)                                                                                          | Prevention it demands                                                                                |
+| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `bugFixRate` `critical` / `concerning`                                                                          | Regression test locking the now-fixed invariant BY NAME — this zone re-breaks; test is the lock      |
+| `blameDominantAuthorPct` `silo` / `deep-silo`                                                                   | Knowledge transfer, not only patch: owner reviews fix / pairing on area; record invariant where read |
+| `churnVolatility` `erratic`                                                                                     | Freeze surface: extract interface / narrow contract so next change stops fanning out                 |
+| file `fanIn` `popular`/`hub`, chunk `fanIn` `frequent`/`central`, `transitiveImpact` `systemic`, high `imports` | Defensive validation at coupling point + integration test through call chain (entry → fixed symbol)  |
+| `ageDays` `recent` (chunk)                                                                                      | Review introducing commit(s) (`taskIds`) — same change may have planted siblings; name the commit    |
+| no label fired / signals absent                                                                                 | Prevention from mechanism only (assertion / type / test) — say `no overlay signal fired`             |
+
+Rules:
+
+- **Every line cites its source.** Cause `signals:` line + each Prevention
+  bullet names `<level>.<signal>=<label>` or `mechanism`. Uncited line =
+  rewrite.
+- **Regression test always present** — one bullet names test file + assertion,
+  whatever signals say.
+- Prevention concrete + actionable. "Be careful", "add more tests", "monitor" =
+  invalid.
 
 ## Red Flags — STOP and restart from Step 2
 
@@ -196,6 +254,13 @@ space.
   `superpowers:test-driven-development` /
   `superpowers:verification-before-completion` without redirecting to
   `dinopowers:Y` wrapper → intercept, invoke wrapper instead (see Chaining rule)
+- Root cause found, answer = fix only → add Step 5 block (Cause / Fix /
+  Prevention)
+- Prevention bullet with no `<signal>=<label>` / `mechanism` citation, or
+  suspect overlay showed `deep-silo` / `erratic` / `hub` and Prevention ignores
+  it → rewrite from Signal → Prevention table
+- Follow-up search fired without "consulting decision tree → …" line → state
+  branch, re-pick tool
 
 ## Common Mistakes
 
@@ -210,3 +275,5 @@ space.
 | Hand-walk `get_callers` / `get_callees` from entry to suspect                 | `trace_path(from, to, rerank="bugHunt")` returns the whole chain in one call and danger-ranks the hops.                                                                                                                                                                                                                                                          |
 | Treat an empty `trace_path` result as "tool failed"                           | **When codegraph is on** (prime shows `codegraph.symbols`): empty = no static call path, so the hypothesis that the entry reaches that suspect is structurally false — drop it. **When codegraph is off** `trace_path` is not registered (absent, not empty) — that is NOT evidence; keep the hypothesis and verify via bug-hunt suspects / manual call reading. |
 | Use `rerank="recent"` for an old, always-flaky symptom                        | `recent` ranks the newest-changed hop first — that's for fresh regressions. For long-standing bugs keep `bugHunt`.                                                                                                                                                                                                                                               |
+| Prevention = "be careful here" / "add more tests"                             | Not actionable. Name the invariant, the test file and what it asserts, or the structural change (interface, validation point, review pairing) — each tied to the overlay signal that demanded it.                                                                                                                                                                |
+| Re-rank suspects with custom weights to fill the Cause `signals:` line        | Signals already in conversation from bug-hunt / trace_path. Missing symbol → one `find_symbol(rerank: "bugHunt", metaOnly: true)`. Weighting stays owned by `tea-rags:bug-hunt`.                                                                                                                                                                                 |

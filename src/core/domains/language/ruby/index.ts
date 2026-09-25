@@ -39,7 +39,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueForGemfile } from "./gemfile.js";
@@ -142,6 +142,11 @@ export class RubyLanguage implements LanguageProvider {
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
       targetsCoreAmbiguousMember: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false,
+      // The miss classifier's `noInProjectDef` gate, asked of Ruby files only
+      // (bd tea-rags-mcp-nbf8q). Forwarded explicitly: the runner reads this
+      // facade, never the resolver behind it (bd tea-rags-mcp-x9qsh).
+      hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
     };
   }
 }

@@ -129,6 +129,10 @@ From three result sets, compose compact block (max ~15 lines):
 Cap each section at 3 entries. If a file appears in multiple sections, note
 explicitly (`→ also in Hotspots`) — overlap is strong brainstorming signal. Do
 NOT paste raw JSON. Extract readable `relativePath` + 2-3 key signals per entry.
+Values: `rankingOverlay.{file,chunk}.<field>` (every preset-surfaced signal,
+labelled); metaOnly payload `git.*` holds essentials only (commitCount, ageDays,
+taskIds, blame\*), raw. File-level presets (ownership, architecturalHub) → no
+startLine on the hit.
 
 ## Step 4 — Invoke superpowers:brainstorming
 

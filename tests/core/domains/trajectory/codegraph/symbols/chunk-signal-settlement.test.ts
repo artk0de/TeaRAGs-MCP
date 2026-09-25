@@ -15,7 +15,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ChunkGraphSignals, SymbolLineRange } from "../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  fileScopedSymbolKey,
+  type ChunkGraphSignals,
+  type FileScopedSymbolId,
+  type SymbolLineRange,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   CodegraphChunkSettlementTally,
   settleCodegraphChunkSignals,
@@ -24,6 +29,7 @@ import {
   type CodegraphStoredChunk,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/chunk-signal-settlement.js";
 
+const REL = "src/walker.ts";
 const OUTER = "collectPythonInheritanceEdges";
 const NESTED = "collectPythonInheritanceEdges.walkScope";
 
@@ -32,9 +38,11 @@ const RANGES: SymbolLineRange[] = [
   { symbolId: NESTED, startLine: 257, endLine: 300 },
 ];
 
-const SIGNALS = new Map<string, ChunkGraphSignals>([
-  [OUTER, { fanIn: 1, fanOut: 2, pageRank: 0.1 }],
-  [NESTED, { fanIn: 3, fanOut: 6, pageRank: 0.3 }],
+// Keyed by (file, symbol): a symbolId is unique per file, so the settlement
+// addresses the whole-graph map through `REL` (bd tea-rags-mcp-xtdkq).
+const SIGNALS = new Map<FileScopedSymbolId, ChunkGraphSignals>([
+  [fileScopedSymbolKey({ relPath: REL, symbolId: OUTER }), { fanIn: 1, fanOut: 2, pageRank: 0.1 }],
+  [fileScopedSymbolKey({ relPath: REL, symbolId: NESTED }), { fanIn: 3, fanOut: 6, pageRank: 0.3 }],
 ]);
 
 const CHUNKS: CodegraphStoredChunk[] = [
@@ -48,7 +56,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
     ["walk", { kind: "walk", ranges: RANGES }],
     ["persisted", { kind: "persisted", ranges: RANGES, rowsWithoutRanges: 0 }],
   ])("settles every chunk to the same owner and signals from a %s source", (_label, source) => {
-    const settlement = settleCodegraphChunkSignals(source, CHUNKS, SIGNALS);
+    const settlement = settleCodegraphChunkSignals(REL, source, CHUNKS, SIGNALS);
 
     expect(settlement).toEqual({
       kind: "signals",
@@ -71,7 +79,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
   });
 
   it("keeps an anchored chunk of a walked file with no symbols on its anchor, at zero", () => {
-    const settlement = settleCodegraphChunkSignals({ kind: "walk", ranges: [] }, CHUNKS, SIGNALS);
+    const settlement = settleCodegraphChunkSignals(REL, { kind: "walk", ranges: [] }, CHUNKS, SIGNALS);
 
     expect(toChunkSignalOverlays(settlement, CHUNKS)).toEqual(
       new Map([
@@ -83,7 +91,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
   });
 
   it("leaves a walked file with no line index unsettled instead of stamping it", () => {
-    const settlement = settleCodegraphChunkSignals({ kind: "walk", ranges: undefined }, CHUNKS, SIGNALS);
+    const settlement = settleCodegraphChunkSignals(REL, { kind: "walk", ranges: undefined }, CHUNKS, SIGNALS);
 
     expect(settlement).toEqual({ kind: "unsettled", reason: "walked-file-without-ranges" });
     expect(toChunkSignalOverlays(settlement, CHUNKS)).toEqual(new Map());
@@ -91,6 +99,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
 
   it("leaves pre-migration-024 rows unsettled instead of falling back to anchor owners", () => {
     const settlement = settleCodegraphChunkSignals(
+      REL,
       { kind: "persisted", ranges: [], rowsWithoutRanges: 2 },
       CHUNKS,
       SIGNALS,
@@ -102,6 +111,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
 
   it("leaves a partly ranged file unsettled — the unranged row may be the true owner", () => {
     const settlement = settleCodegraphChunkSignals(
+      REL,
       { kind: "persisted", ranges: [RANGES[0]], rowsWithoutRanges: 1 },
       CHUNKS,
       SIGNALS,
@@ -112,6 +122,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
 
   it("tells a file with no persisted symbol rows apart from one whose rows carry no ranges", () => {
     const settlement = settleCodegraphChunkSignals(
+      REL,
       { kind: "persisted", ranges: [], rowsWithoutRanges: 0 },
       CHUNKS,
       SIGNALS,
@@ -123,7 +134,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
   it.each(["non-extractable-language", "excluded-from-graph"] as const)(
     "settles every chunk without signal values when the graph can never hold the file (%s)",
     (reason) => {
-      const settlement = settleCodegraphChunkSignals({ kind: "none", reason }, CHUNKS, SIGNALS);
+      const settlement = settleCodegraphChunkSignals(REL, { kind: "none", reason }, CHUNKS, SIGNALS);
 
       expect(settlement).toEqual({ kind: "settled-without-signals", reason });
       expect(toChunkSignalOverlays(settlement, CHUNKS)).toEqual(
@@ -140,7 +151,7 @@ describe("settleCodegraphChunkSignals (bd tea-rags-mcp-39xca.2)", () => {
 describe("CodegraphChunkSettlementTally (bd tea-rags-mcp-39xca.2)", () => {
   it("says nothing when every chunk settled", () => {
     const tally = new CodegraphChunkSettlementTally();
-    tally.record("a.ts", settleCodegraphChunkSignals({ kind: "walk", ranges: RANGES }, CHUNKS, SIGNALS), 3);
+    tally.record("a.ts", settleCodegraphChunkSignals(REL, { kind: "walk", ranges: RANGES }, CHUNKS, SIGNALS), 3);
     tally.record("b.json", { kind: "settled-without-signals", reason: "non-extractable-language" }, 2);
 
     expect(tally.unsettledChunks).toBe(0);

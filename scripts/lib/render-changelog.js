@@ -2,6 +2,8 @@
 // Pure renderers consumed by build-changelog-artifacts.js and retro-changelog.js.
 // One JSON source (release-notes.json) → two divergent markdown artifacts.
 
+import { emphasiseChangelogVocabulary } from "./changelog-emphasis.js";
+
 // Fixed product-theme taxonomy. The order here IS the render order; a theme with
 // no items in a release is skipped. Keys match release-notes.json
 // `groups[].theme`. The agent groups commits by user-facing capability (not by
@@ -105,13 +107,23 @@ export function collectContributors(commits, resolvedHandles = {}) {
   });
 }
 
+// The two fields a reader consumes as sentences — a product bullet and an
+// env-var description — are the ONLY places both prose passes run. Mentions are
+// escaped FIRST because that pass inserts backticks and the emphasis pass treats
+// backticks as a wall; reversed, emphasis would land between the `@` and the
+// token and defeat the escape. Raw git data (commit subjects) and hand-written
+// blog prose deliberately get neither.
+function renderDescriptionProse(description) {
+  return emphasiseChangelogVocabulary(escapeMentions(description));
+}
+
 // Product bullets are benefit-framed prose with no inline hash links — full
 // per-commit traceability lives in the Full Commits spoiler (GitHub release) and
 // the compareUrl version header (CHANGELOG). Fixes are their own theme, so no
 // per-item `fix:` prefix. `@`-tokens are escaped so a YARD tag in a description
 // can't autolink into a phantom mention.
 function renderItem(it) {
-  return `* ${escapeMentions(it.description)}`;
+  return `* ${renderDescriptionProse(it.description)}`;
 }
 
 // Render only the themes present in this release, always in taxonomy order.
@@ -130,12 +142,13 @@ function renderGroups(data) {
 
 // Environment-variable additions/changes for this release. Surfaced on BOTH
 // artifacts so a user upgrading sees every new/changed knob with its default.
-// `change` is "new" | "changed". Empty/absent → no section.
+// `change` is "new" | "changed". Empty/absent → no section. Only `description`
+// is prose; `name` and `default` are already code spans and stay that way.
 function renderEnvChanges(data) {
   const envs = data.envChanges || [];
   if (envs.length === 0) return "";
   const rows = envs
-    .map((e) => `* \`${e.name}\` · ${escapeMentions(e.description)} · default: \`${e.default}\` (${e.change})`)
+    .map((e) => `* \`${e.name}\` · ${renderDescriptionProse(e.description)} · default: \`${e.default}\` (${e.change})`)
     .join("\n");
   return `### 🔧 Environment Variables\n\n${rows}`;
 }

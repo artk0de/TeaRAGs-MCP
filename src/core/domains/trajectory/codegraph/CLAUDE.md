@@ -53,6 +53,32 @@
   ran last (bd tea-rags-mcp-9i2ow), and "no ranges" degraded silently into bare
   stamps over 52k taxdome chunks (fxio5) and persisted anchor owners (71n0p). A
   producer that calls the rule without the settlement reintroduces both.
+- **A chunk signal is addressed by `(relPath, symbolId)`; the bare symbolId
+  names every namesake at once.** `DuckDbMethodEdgeReader#getChunkSignalsBulk`
+  groups the method edge table by `target_rel_path, target_symbol_id` /
+  `source_rel_path, source_symbol_id` and keys its map with
+  `fileScopedSymbolKey`, and `settleCodegraphChunkSignals` takes the `relPath`
+  as its first argument for the sole purpose of composing that key — the same
+  scoping `getCalleeEdgesScoped` carries for `trace_path` (bd
+  tea-rags-mcp-oxnvl). `DuckDbSignalDriftStore`'s `CURRENT_SYMBOL_SIGNALS` CTE
+  groups the same way, because the diff has to compare the expression the
+  PAYLOAD is built from; grouping there on the bare id while the payload carries
+  the per-file number leaves every namesake permanently "moved". Why: a
+  `SymbolId` is unique per FILE, so the bare grouping merged every top-level
+  declaration sharing a name into ONE node and wrote the UNION of their edges
+  onto each — measured on this index, `src/index.ts#main`,
+  `src/cli/index-progress/worker.ts#main` and `daemon/entry.ts#main` all carried
+  `codegraph.chunk.fanOut = 543` against a `god-method` threshold of 67, and the
+  `decomposition` preset spent result slots on it (bd tea-rags-mcp-xtdkq). The
+  derived tables follow the same identity (bd tea-rags-mcp-4g9ga, migration
+  028): `streamAdjacency("method")` yields `fileScopedSymbolKey` vertices, so
+  Tarjan and PageRank never see a bare id, `cg_symbols_metrics` is keyed
+  `(rel_path, symbol_id)`, and `cg_symbols_cycles` stores each method member's
+  own `member_rel_path` — which `find_cycles` renders as `memberLocations` and
+  matches `pathPattern` against, never a name-to-file resolution. A row with
+  `rel_path = ''` is one 028 carried over from the merged era; readers fan that
+  rank out to every namesake until the next recompute rewrites it.
+
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** Every `GraphDbClientPool` and
   `CodegraphDbFiles` method that derives a DuckDB path takes a
@@ -70,18 +96,24 @@
   `cg_symbols_inheritance` and `cg_ambiguous_fanout` (plus its `rel_path` slice
   of `cg_pass1_aggregates`) against the rows the walk produced, so only
   genuinely obsolete rows are deleted; derived tables (cycles, metrics) are
-  wholesale recomputes and do self-correct. Why: no amount of incremental
-  reindexing heals a partial graph, because the files carrying the stale edges
-  have not changed — meanwhile every `fanIn` / `instability` / `pageRank`
-  written comes off that graph, and `find_cycles` keeps reporting cycles the
-  source dropped weeks ago.
+  wholesale recomputes and do self-correct — except after a deletion, which only
+  prunes them (`pruneDerivedForDeletedFiles`, called by `handleDeletedPaths`
+  before the base rows go) and marks them stale in `cg_derived_stale` (migration
+  029); the next finalize with no run sink recomputes, and a no-change reindex
+  drives one through `runFinalizeOnly` (bd tea-rags-mcp-dy852). Why: no amount
+  of incremental reindexing heals a partial graph, because the files carrying
+  the stale edges have not changed — meanwhile every `fanIn` / `instability` /
+  `pageRank` written comes off that graph, and `find_cycles` keeps reporting
+  cycles the source dropped weeks ago.
 
 - **A pooled graph client is valid only while its path still names the file it
-  opened, and closing one never checkpoints.** `GraphDbClientPool#acquire` — the
-  daemon's per-op path through `CodegraphDaemonServer#handle` — and
-  `GraphDbClientPool#peek` compare the path's `dev`/`ino` with what
-  `openCollection` recorded. A missing or replaced file retires the client in
-  order: close awaited, `onCollectionClientClosed` announced (the daemon wires
+  holds open, and closing one never checkpoints.** `GraphDbClientPool#acquire` —
+  the daemon's per-op path through `CodegraphDaemonServer#handle` — and
+  `GraphDbClientPool#peek` compare the path's `dev`/`ino` with
+  `DuckDbGraphClient#openedDatabaseFile`, which the session sets on every open
+  and on a storage compaction's swap (see the next invariant). A missing or
+  replaced file retires the client in order: close awaited,
+  `onCollectionClientClosed` announced (the daemon wires
   `DaemonMemoryGovernor#forgetCollection`), then
   `CodegraphDbFiles#discardOrphanedWal` and a fresh open through
   `writablePathFor`. `peek` reports such a client absent and leaves it to the
@@ -95,6 +127,27 @@
   running query leaves that query unsettled forever. Not covered: an op already
   in flight on the old client when the file is replaced can still write into the
   successor's WAL.
+
+- **Every `cg_*` table keeps the rows it deletes, so a wholesale rewrite
+  RECREATES its table and the file is compacted by copy.** DuckDB 1.5.3 vacuums
+  deletes at checkpoint only for tables with no index, and every `cg_*` table
+  has a PRIMARY KEY: a `DELETE` + re-INSERT keeps the old generation in the file
+  for good (measured on a scratch copy: nine generations after eight rewrites;
+  taxdome's graph reached 1.22 GB for 287 MB of live data, bd
+  tea-rags-mcp-dvzdm). A writer that replaces a whole table calls
+  `DuckDbGraphSession#recreateEmptyTable` inside its transaction — it rebuilds
+  the table and its indexes from the catalog's own DDL; `CREATE OR REPLACE … AS`
+  would drop the key. The per-file diffed tables cannot do that, so
+  `CompletionRunner#runCodegraphStorageCompaction` asks the store, after the
+  heal, to compact itself: `DuckDbGraphSession#compactDatabaseFile` measures
+  (`shouldCompactCodegraphStorage`: ≥64 MiB and stored row versions ≥2× live),
+  then `COPY FROM DATABASE` into `<file>.compact-tmp`, verifies it, and renames
+  it over the path under the session's write queue and call gate. The client,
+  its pool entry and the daemon's sockets stay; the op is legacy-tolerated, so
+  an older daemon is never drained for it. Why: an in-place rebuild frees the
+  blocks but never shrinks the file (1.34 GB after rebuilding taxdome's tables),
+  and a pool that snapshotted the inode at open would retire the compacted
+  client as "replaced".
 
 - **`cg_symbol_signals_prev` / `cg_file_signals_prev` (migration 023) are
   refreshed AFTER a successful payload heal, not by the finalizer.** The pair is
@@ -155,6 +208,23 @@
   021 keeps the old behaviour until a `--force-enrichments codegraph` run writes
   the rows — and until then `callsUnnarrowedTemplate` is the only number that
   says so, because every rate on `cg_run_stats` counts these calls as successes.
+
+- **A run-global map keyed by a bare class or method NAME is partitioned by
+  language family, and pass-2 reads the caller's partition, never the view.**
+  `CodegraphRunState` stores ancestors, prepends, `classExtends`, the include-by
+  index, `returnTypes` and `structuredReturnTypes` in a `LanguageFamilyRecord`
+  (`symbols/language-family-record.ts`), and the inheritance rows and hierarchy
+  view per family too; `buildResolverInputs` reads `ancestorsFor(language)` and
+  its siblings, the call-site context `hierarchyViewFor(language)`, while the
+  same-named getters are an all-family view kept for the registry, the
+  flag-parity test and diagnostics. Why: a top-level class's name is bare in
+  most languages, so one record let a TypeScript `Error` answer `super` and the
+  MRO for a Ruby `Error` (bd tea-rags-mcp-nbf8q), and a Go method `get` type a
+  Ruby `get` (bd tea-rags-mcp-qea83). A new name-keyed channel read through a
+  view reintroduces that. A map only one language writes stays run-wide
+  (`schemaTables`, `ivarTypes` — Ruby's) until a second writer appears; a map
+  whose key names the declaring file (`classFieldTypesByClassKey`) needs no
+  partition.
 
 - **Every `ResolverInputs` channel reaches BOTH `CallContext`s the runner
   builds, and one function is what makes that structural.**
@@ -250,6 +320,30 @@
 
 ## Gotchas
 
+- **`codegraph.file.instability` is sampled over the files the graph actually
+  measured, and over its interior only.** The descriptor declares
+  `stats.minSupportPercentile: 75` against its existing `connectionCount`
+  support and `stats.structuralAtoms: [0, 1]`; both mechanisms and the read half
+  belong to `../CLAUDE.md`. The support floor, measured on `code_8b243ffe`
+  typescript source: observed variance of the raw ratio against the
+  pure-binomial floor `mean_i[p(1-p)/n_i]` is 0.79 over all 738 files — at or
+  below 1, so the whole spread is sampling noise around one corpus ratio — then
+  1.20 from n≥3 and 2.36 from the floor the declaration resolves to
+  (`connectionCount` p75 = 5, admitting 306 files). The floor alone did NOT
+  retire the degenerate `unstable ≥1` band, and a higher floor is the wrong
+  lever: instability is `fanOut / (fanIn + fanOut)`, so it reads exactly 1 for
+  every file nothing imports and exactly 0 for every file that imports nothing —
+  facts about a pure source and a pure sink, not thin evidence. 17 of the 306
+  admitted files still read 1, one of them on 33 edges, and p95 stays on the
+  atom at every floor up to n≥8, where it only comes off by thinning the sample
+  to 146. Hence the atoms: on a later measurement (1158 typescript files, 427 at
+  0, 53 at 1) the floor-only sample reads p95 1.000 over 306, interior only
+  0.889 over 678, interior plus floor p75 0.833 / p90 0.889 / p95 0.909
+  over 289. Atoms stay graded, so an entry point still reads `unstable` and a
+  leaf `stable`. Live consequence beyond labels: both gates narrow the GLOBAL
+  bucket, so they move `unstableCore`'s `instability p90` leg (0.9091 → 0.9117
+  from the floor alone; its `connectionCount p50` leg is ungated and stays at
+  3).
 - **A flat `## Codegraph resolve` block in prime is the one-language case, not a
   lost breakdown.** `summarizeCodegraphResolve`
   (`../../ingest/pipeline/status-module.ts`) drops any language under

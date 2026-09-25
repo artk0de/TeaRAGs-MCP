@@ -121,4 +121,94 @@ describe("describeStatsSamplingContract", () => {
 
     expect(describeStatsSamplingContract([signal(stats)])).toEqual(describeStatsSamplingContract([signal(stats)]));
   });
+  // Structural atoms leave the sample, so the percentiles on disk describe a
+  // different population once they are declared.
+  it("moves when a signal starts dropping structural atoms", () => {
+    const before = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })]);
+    const after = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, structuralAtoms: [0, 1] })]);
+
+    expect(after["git.file.bugFixRate"]).not.toBe(before["git.file.bugFixRate"]);
+  });
+
+  it("moves again when the atom set changes", () => {
+    const both = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, structuralAtoms: [0, 1] })]);
+    const one = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, structuralAtoms: [1] })]);
+
+    expect(one["git.file.bugFixRate"]).not.toBe(both["git.file.bugFixRate"]);
+  });
+
+  it("does not move when the atoms are declared in another order", () => {
+    const ordered = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, structuralAtoms: [0, 1] })]);
+    const reversed = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, structuralAtoms: [1, 0] })]);
+
+    expect(reversed).toEqual(ordered);
+  });
+
+  // An existing index's stamp was written without the term. A signal that
+  // declares no atoms samples exactly what it sampled before, so its stamp must
+  // not change either — otherwise every signal on every index reports drift
+  // for a recompute that could not move a single digit.
+  it("leaves the stamp of a signal that declares no atoms unchanged", () => {
+    const stamp = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })])["git.file.bugFixRate"];
+
+    expect(stamp).toBe(
+      "p=50 chunkTypes=* perFile=false zeroCounts=false sourceOnly=false minSupport=* mean=false stddev=false",
+    );
+  });
+
+  it("treats an empty atom set as no atoms", () => {
+    const none = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })]);
+    const empty = describeStatsSamplingContract([signal({ labels: { p50: "healthy" }, structuralAtoms: [] })]);
+
+    expect(empty).toEqual(none);
+  });
+
+  // A co-signal class leaves the sample (bd tea-rags-mcp-od098), so the
+  // percentiles on disk describe a different population once it is declared.
+  it("moves when a signal starts excluding a co-signal class", () => {
+    const before = describeStatsSamplingContract([signal({ labels: { p50: "healthy" } })]);
+    const after = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+      }),
+    ]);
+
+    expect(after["git.file.bugFixRate"]).not.toBe(before["git.file.bugFixRate"]);
+  });
+
+  it("moves again when the class membership value changes", () => {
+    const one = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+      }),
+    ]);
+    const two = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 2, label: "solo" },
+      }),
+    ]);
+
+    expect(two["git.file.bugFixRate"]).not.toBe(one["git.file.bugFixRate"]);
+  });
+
+  // The class label is a read-side name; renaming it samples the same units.
+  it("does not move when only the class label is renamed", () => {
+    const solo = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+      }),
+    ]);
+    const single = describeStatsSamplingContract([
+      signal({
+        labels: { p50: "healthy" },
+        coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "single" },
+      }),
+    ]);
+
+    expect(single).toEqual(solo);
+  });
 });

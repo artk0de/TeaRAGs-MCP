@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
@@ -107,7 +108,7 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
       // Resolve via the classes that include the module, taking the target that is
       // invariant across all of them (consensus → precision 1.0). Skipped after an
       // ambiguous break — that is a genuine same-class collision, not a miss.
-      if (!brokeAmbiguous && ctx.includedBy?.[enclosing]?.length) {
+      if (!brokeAmbiguous && identifierEntry(ctx.includedBy, enclosing)?.length) {
         const consensus = resolveViaIncludingClasses(enclosing, call.member, ctx, this.cfg.mode);
         if (consensus) return resolved(consensus);
       }

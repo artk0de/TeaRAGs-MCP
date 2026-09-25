@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# ─── Type-aware lint, the same invocation CI runs (bd tea-rags-mcp-j1hfd) ─────
+# lint-staged (pre-commit) lints STAGED files one by one, so type-aware rules
+# such as @typescript-eslint/no-unnecessary-type-assertion cannot see the project
+# type graph and never fire there. CI runs `eslint src/ tests/` over the whole
+# project; this hook runs the same `npm run lint` once per push, keeping
+# pre-commit fast while a green push means a green CI Lint step.
+if ! npm run lint; then
+  echo ""
+  echo "============================================"
+  echo "  npm run lint failed — push blocked"
+  echo "============================================"
+  echo ""
+  echo "CI runs the same project-wide, type-aware ESLint and would reject this push."
+  echo "Fix the errors above (do NOT change eslint.config.js, no eslint-disable),"
+  echo "commit the fix, and push again. Reproduce locally with: npm run lint"
+  echo ""
+  exit 1
+fi

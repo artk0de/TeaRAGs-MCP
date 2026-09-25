@@ -22,12 +22,17 @@ import { SnapshotStoreAdapter } from "../../domains/maintenance/migration/adapte
 import { SparseStoreAdapter } from "../../domains/maintenance/migration/adapters/sparse-store-adapter.js";
 import { StatsStoreAdapter } from "../../domains/maintenance/migration/adapters/stats-store-adapter.js";
 import { Migrator } from "../../domains/maintenance/migration/migrator.js";
+import { PayloadIndexMigrator } from "../../domains/maintenance/migration/payload-index-migrator.js";
 import { SchemaMigrator } from "../../domains/maintenance/migration/schema-migrator.js";
 import { SnapshotMigrator } from "../../domains/maintenance/migration/snapshot-migrator.js";
 import { SparseMigrator } from "../../domains/maintenance/migration/sparse-migrator.js";
 import { StatsMigrator } from "../../domains/maintenance/migration/stats-migrator.js";
 import { StatsCache } from "../../infra/stats-cache.js";
-import { fullRegistryPayloadSignalDescriptors, fullRegistryStatsAccumulators } from "./composition.js";
+import {
+  declaredPayloadIndexSet,
+  fullRegistryPayloadSignalDescriptors,
+  fullRegistryStatsAccumulators,
+} from "./composition.js";
 
 export function createIngestDependencies(
   qdrant: QdrantManager,
@@ -51,6 +56,11 @@ export function createIngestDependencies(
     fullRegistrySignals.map((descriptor) => toPhysicalPayloadKey(descriptor.key)),
   );
 
+  // The payload indexes every collection must carry (bd tea-rags-mcp-mimq0):
+  // reconciled onto an existing collection by the `payloadIndexes` sweep, and
+  // created with a new one by initializeSchema — the sweep never runs there.
+  const declaredIndexes = declaredPayloadIndexSet();
+
   return {
     createSchemaManager: (collectionName: string) => {
       const indexStore = new IndexStoreAdapter(qdrant);
@@ -63,7 +73,12 @@ export function createIngestDependencies(
         enrichmentStore,
       );
       const sparseMigrator = new SparseMigrator(collectionName, sparseStore, enableHybrid);
-      return new SchemaManager(qdrant, schemaMigrator.latestVersion, sparseMigrator.latestVersion);
+      return new SchemaManager(
+        qdrant,
+        schemaMigrator.latestVersion,
+        sparseMigrator.latestVersion,
+        declaredIndexes.required,
+      );
     },
     createSynchronizer: (codebasePath, collectionName) =>
       new ParallelFileSynchronizer(
@@ -108,6 +123,7 @@ export function createIngestDependencies(
         ),
         sparse: new SparseMigrator(collectionName, sparseStore, enableHybrid),
         stats: new StatsMigrator(collectionName, statsStore),
+        payloadIndexes: new PayloadIndexMigrator(collectionName, indexStore, declaredIndexes),
       });
     },
     payloadBuilder,

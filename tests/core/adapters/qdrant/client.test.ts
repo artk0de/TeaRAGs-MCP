@@ -8,12 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 import {
+  QdrantInvalidQueryParameterError,
   QdrantOperationError,
   QdrantOptimizationInProgressError,
   QdrantStartingError,
   QdrantUnavailableError,
 } from "../../../../src/core/adapters/qdrant/errors.js";
-import { InvalidQueryError } from "../../../../src/core/domains/explore/errors.js";
 
 // TurboQuant rescore params injected into every dense search path so quantized
 // candidates are re-scored on the stored float vectors (keeps baseline recall).
@@ -238,6 +238,17 @@ describe("QdrantManager", () => {
       );
     });
 
+    it("stores collection metadata in the create request when given", async () => {
+      await manager.createCollection("typed", 384, "Cosine", false, false, false, undefined, {
+        documentMetadataSchema: { type: "object" },
+      });
+
+      expect(mockClient.createCollection).toHaveBeenCalledWith("typed", {
+        vectors: { size: 384, distance: "Cosine" },
+        metadata: { documentMetadataSchema: { type: "object" } },
+      });
+    });
+
     it("should throw CollectionAlreadyExistsError on 409 Conflict", async () => {
       const conflictError = Object.assign(new Error("Conflict"), { status: 409 });
       mockClient.createCollection.mockRejectedValue(conflictError);
@@ -350,6 +361,32 @@ describe("QdrantManager", () => {
         optimizerStatus: "unknown",
         quantization: "none",
       });
+    });
+
+    it("returns the collection metadata when the server reports one", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "typed",
+        points_count: 1,
+        config: {
+          params: { vectors: { size: 384, distance: "Cosine" } },
+          metadata: { documentMetadataSchema: { type: "object" } },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("typed");
+
+      expect(info.metadata).toEqual({ documentMetadataSchema: { type: "object" } });
+    });
+
+    it("leaves metadata absent when the collection has none", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "plain",
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      const info = await manager.getCollectionInfo("plain");
+
+      expect(info).not.toHaveProperty("metadata");
     });
 
     it("should handle missing points_count", async () => {
@@ -1448,11 +1485,11 @@ describe("QdrantManager", () => {
       expect(mockClient.query.mock.calls[0][1].query).toEqual({ rrf: { weights: [1, 0] } });
     });
 
-    it("rejects invalid semanticWeight with InvalidQueryError", async () => {
+    it("rejects invalid semanticWeight with QdrantInvalidQueryParameterError", async () => {
       for (const invalid of [Number.NaN, Infinity, -0.1, 1.1, -Infinity]) {
         await expect(
           manager.hybridSearch("test-collection", denseVector, sparseVector, 20, undefined, invalid),
-        ).rejects.toThrow(InvalidQueryError);
+        ).rejects.toThrow(QdrantInvalidQueryParameterError);
       }
       expect(mockClient.query).not.toHaveBeenCalled();
     });

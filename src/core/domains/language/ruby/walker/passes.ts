@@ -11,6 +11,6 @@
  * the monolith, not here.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
 
 export const RUBY_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];

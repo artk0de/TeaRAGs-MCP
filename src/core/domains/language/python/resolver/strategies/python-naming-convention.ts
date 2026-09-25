@@ -43,8 +43,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { conventionClassNameFor, type NamingConventionPorts } from "../../../kernel/naming-convention.js";
-import { RunScopedMemo } from "../../../kernel/run-scoped-memo.js";
+import { conventionClassNameFor, RunScopedMemo, type NamingConventionPorts } from "../../../kernel/index.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
