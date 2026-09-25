@@ -82,6 +82,41 @@ describe("Go walker — identifier declarations", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
+  it("records each func's FIRST result type as a return of the func's own chunk", () => {
+    const code = [
+      "package p",
+      "func NewSvc() *Svc { return nil }",
+      "func (s *Svc) Load(id string) (*Doc, error) { return nil, nil }",
+      "func (s *Svc) All() (docs []Doc, err error) { return }",
+      "func Client() *http.Client { return nil }",
+      "func (s *Svc) Run() {}",
+      "func Count() map[string]int { return nil }",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "NewSvc", startLine: 2, endLine: 2, scope: [] },
+      { symbolId: "Svc#Load", startLine: 3, endLine: 3, scope: ["Svc"] },
+      { symbolId: "Svc#All", startLine: 4, endLine: 4, scope: ["Svc"] },
+      { symbolId: "Client", startLine: 5, endLine: 5, scope: [] },
+      { symbolId: "Svc#Run", startLine: 6, endLine: 6, scope: ["Svc"] },
+      { symbolId: "Count", startLine: 7, endLine: 7, scope: [] },
+    ]);
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      { name: "NewSvc", kind: "return", line: 2, ownerSymbolId: "NewSvc", typeName: "Svc", typeSource: "annotation" },
+      // `doc, err := s.Load(id)` binds `doc` — the first result — to the call.
+      { name: "Load", kind: "return", line: 3, ownerSymbolId: "Svc#Load", typeName: "Doc", typeSource: "annotation" },
+      { name: "All", kind: "return", line: 4, ownerSymbolId: "Svc#All", typeName: "Doc", typeSource: "annotation" },
+      {
+        name: "Client",
+        kind: "return",
+        line: 5,
+        ownerSymbolId: "Client",
+        typeName: "http.Client",
+        typeSource: "annotation",
+      },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.16 — the row builder finds the CallRef by (startLine, member, receiver).
   it("binds a local / field to the outermost call, as the CallRef the walker emits on that line", () => {
     const code = [

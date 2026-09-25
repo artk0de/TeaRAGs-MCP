@@ -150,11 +150,19 @@ function pythonBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
   return boundCalleeFromCallShape(pythonCalleeMemberReceiver(fn));
 }
 
+/**
+ * `def f(…) -> T:` — the def's return, read like a parameter annotation (bd
+ * tea-rags-mcp-4p3sb.21). An `async def`'s annotation is already what `await
+ * f()` yields, so it needs no unwrapping.
+ */
+const returnRule = fieldRule("function_definition", "return", { name: "name", type: "return_type" });
+
 export const PYTHON_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     { nodeType: "parameters", collect: parameterSites },
     { nodeType: "lambda_parameters", collect: parameterSites },
     assignmentRule,
+    returnRule,
   ],
   annotationTypeName: pythonAnnotationTypeName,
   constructorTypeName: pythonConstructorTypeName,

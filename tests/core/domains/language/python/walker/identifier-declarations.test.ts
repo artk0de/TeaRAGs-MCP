@@ -57,6 +57,39 @@ describe("Python walker — identifier declarations", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
+  it("records each def's return annotation as a return of the def's own chunk", () => {
+    const src = [
+      "class Svc:",
+      "    async def load(self, id) -> Doc:",
+      "        pass",
+      "    def many(self) -> list[Job]:",
+      "        pass",
+      "    @property",
+      "    def repo(self) -> Optional[Repo]:",
+      "        pass",
+      "    def untyped(self) -> None:",
+      "        pass",
+      'def top() -> "Widget":',
+      "    pass",
+    ].join("\n");
+    const declarations = declarationsOf(src, [
+      { symbolId: "Svc", startLine: 1, endLine: 10, scope: [] },
+      { symbolId: "Svc.load", startLine: 2, endLine: 3, scope: ["Svc"] },
+      { symbolId: "Svc.many", startLine: 4, endLine: 5, scope: ["Svc"] },
+      { symbolId: "Svc.repo", startLine: 6, endLine: 8, scope: ["Svc"] },
+      { symbolId: "Svc.untyped", startLine: 9, endLine: 10, scope: ["Svc"] },
+      { symbolId: "top", startLine: 11, endLine: 12, scope: [] },
+    ]);
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      // `async def … -> Doc` already names what `await load()` yields.
+      { name: "load", kind: "return", line: 2, ownerSymbolId: "Svc.load", typeName: "Doc", typeSource: "annotation" },
+      { name: "many", kind: "return", line: 4, ownerSymbolId: "Svc.many", typeName: "Job", typeSource: "annotation" },
+      { name: "repo", kind: "return", line: 7, ownerSymbolId: "Svc.repo", typeName: "Repo", typeSource: "annotation" },
+      { name: "top", kind: "return", line: 11, ownerSymbolId: "top", typeName: "Widget", typeSource: "annotation" },
+    ]);
+  });
+
   it("covers default, typed-default and splat params, annotated locals, qualified constructors", () => {
     const src = [
       "def run(n=1, m: list[Job] = None, *args, **kw):",

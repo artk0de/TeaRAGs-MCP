@@ -144,6 +144,47 @@ describe("Swift walker — identifier declarations", () => {
     }
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
+  it("records each func's return type as a return of the func's own chunk, read positionally", () => {
+    const code = [
+      "final class Store<Value> {",
+      "  func load(id: String) async throws -> Doc { fatalError() }",
+      "  func all() -> [Job] { [] }",
+      "  static func make() -> Self { fatalError() }",
+      "  func decode<T>() -> T { fatalError() }",
+      "  func value() -> Value { fatalError() }",
+      "  func run() -> Void {}",
+      "  func stop() {}",
+      "}",
+      "protocol Api { func copy() -> Self }",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "Store", startLine: 1, endLine: 9, scope: [] },
+      { symbolId: "Store#load", startLine: 2, endLine: 2, scope: ["Store"] },
+      { symbolId: "Store#all", startLine: 3, endLine: 3, scope: ["Store"] },
+      { symbolId: "Store.make", startLine: 4, endLine: 4, scope: ["Store"] },
+      { symbolId: "Store#decode", startLine: 5, endLine: 5, scope: ["Store"] },
+      { symbolId: "Store#value", startLine: 6, endLine: 6, scope: ["Store"] },
+      { symbolId: "Store#run", startLine: 7, endLine: 7, scope: ["Store"] },
+      { symbolId: "Store#stop", startLine: 8, endLine: 8, scope: ["Store"] },
+      { symbolId: "Api", startLine: 10, endLine: 10, scope: [] },
+      { symbolId: "Api#copy", startLine: 10, endLine: 10, scope: ["Api"] },
+    ]);
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      { name: "load", kind: "return", line: 2, ownerSymbolId: "Store#load", typeName: "Doc", typeSource: "annotation" },
+      { name: "all", kind: "return", line: 3, ownerSymbolId: "Store#all", typeName: "Job", typeSource: "annotation" },
+      // `Self` in a type body names the declaring type; a generic parameter and `Void` name none.
+      {
+        name: "make",
+        kind: "return",
+        line: 4,
+        ownerSymbolId: "Store.make",
+        typeName: "Store",
+        typeSource: "annotation",
+      },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.17 — a collection or wrapper names its element; maps keep their head.
   it("unwraps Array<T> / Set<T> / Optional<T> to the element, read positionally", () => {
     const code = [

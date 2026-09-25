@@ -2,8 +2,9 @@
  * Swift's identifier-declaration syntax (bd tea-rags-mcp-4p3sb.6) — what the
  * kernel's `createIdentifierDeclarationFacetPass` reads to publish
  * `identifierDeclarations`: function and closure parameters (the INTERNAL name —
- * `with opts: Options` declares `opts`), `let` / `var` in a body as locals, and
- * stored properties of a type body as fields.
+ * `with opts: Options` declares `opts`), `let` / `var` in a body as locals,
+ * stored properties of a type body as fields, and each func's return type
+ * (`returnSites`).
  *
  * Every read is POSITIONAL. tree-sitter-swift registers `parameter.type` and
  * `type_annotation.type` under `name` as well, and `materializeTree` keeps only
@@ -112,6 +113,9 @@ function swiftUserTypeNominal(userType: AstNode): string | undefined {
  */
 function swiftAnnotationTypeName(node: AstNode): string | undefined {
   switch (node.type) {
+    // A class / struct / enum declaration's own name — what a `-> Self` return reads.
+    case "type_identifier":
+      return node.text;
     case "user_type": {
       const nominal = swiftUserTypeNominal(node);
       if (nominal === undefined || !ELEMENT_NAMING_HEADS.has(nominal.slice(nominal.lastIndexOf(".") + 1))) {
@@ -161,11 +165,53 @@ function swiftBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
   return call === undefined ? undefined : boundCalleeFromCallShape(swiftCallSiteShape(call));
 }
 
+/** Returns that name no type a value could be named after: universal, empty, or uninhabited. */
+const NAMELESS_RETURN_TYPES: ReadonlySet<string> = new Set(["Any", "AnyObject", "Never", "Void"]);
+
+/** The generic parameter names `decl` declares (`<T, U: P>`), read positionally. */
+function typeParameterNames(decl: AstNode | null | undefined): string[] {
+  const parameters = decl?.children.find((child) => child.type === "type_parameters");
+  if (parameters === undefined) return [];
+  return parameters.namedChildren
+    .filter((p) => p.type === "type_parameter")
+    .map((p) => p.namedChildren.find((c) => c.type === "type_identifier")?.text)
+    .filter((name): name is string => name !== undefined);
+}
+
+/**
+ * `func f() -> T` — the func's return, as a `return` of the func itself (bd
+ * tea-rags-mcp-4p3sb.21), the type the node after `->` names; an `async`
+ * func's written type is already what `await` yields. `Self` in a class,
+ * struct, enum or extension body names that declaration — the declaring type,
+ * what `Store.make()` builds; in a protocol it names no type. A generic
+ * parameter (the func's or its type's) and `Void` / `Never` / `Any` name none.
+ */
+function returnSites(node: AstNode): DeclaredIdentifierSite[] {
+  const nameNode = node.childForFieldName("name");
+  if (nameNode === null) return [];
+  const written = nodeAfter(node, "->");
+  const declaring = node.parent && TYPE_BODY_TYPES.has(node.parent.type) ? node.parent.parent : null;
+  const typeName = written === null ? undefined : swiftAnnotationTypeName(written);
+  let typeNode: AstNode | null = written;
+  if (typeName === "Self") {
+    typeNode = declaring?.type === "class_declaration" ? declaring.childForFieldName("name") : null;
+  } else if (
+    typeName === undefined ||
+    NAMELESS_RETURN_TYPES.has(typeName) ||
+    [...typeParameterNames(node), ...typeParameterNames(declaring)].includes(typeName)
+  ) {
+    typeNode = null;
+  }
+  return [{ nameNode, kind: "return", typeNode }];
+}
+
 export const SWIFT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     rule("parameter", parameterSites),
     rule("lambda_parameter", parameterSites),
     rule("property_declaration", propertySites),
+    rule("function_declaration", returnSites),
+    rule("protocol_function_declaration", returnSites),
   ],
   annotationTypeName: swiftAnnotationTypeName,
   constructorTypeName: swiftConstructorTypeName,

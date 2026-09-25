@@ -32,12 +32,13 @@
  * file's `typeAbstractness` — each fixture declares one concrete type and no
  * abstraction. Bash declares no types, so it gains no census.
  *
- * Bash, the last member, left the identity set when it gained the
- * identifier-declaration facet (bd tea-rags-mcp-4p3sb.6). Every language here
- * now carries that facet too; each fixture declares no parameter or local
- * inside a symbol, so the facet adds no channel and the pinned merge is
- * unchanged. The identity branch stays for a language that joins with an empty
- * pass list.
+ * Bash, the last member, left it when it gained the identifier-declaration
+ * facet (bd tea-rags-mcp-4p3sb.6). Every language here now carries that facet
+ * too; each fixture declares no parameter or local inside a symbol. Since bd
+ * tea-rags-mcp-4p3sb.21 a function's return annotation is a `return`
+ * declaration, so a fixture whose method states its return type is pinned as
+ * the merge plus exactly that one declaration (`declarationFacet`). The
+ * identity branch stays for a language that joins with an empty pass list.
  */
 
 import Parser from "tree-sitter";
@@ -74,6 +75,8 @@ interface LanguageCase {
   readonly native: (input: WalkInput) => FileExtraction;
   /** symbolId → the `visibility` the declared-visibility facet adds. Absent ⇒ no visibility facet. */
   readonly visibilityFacet?: Readonly<Record<string, string>>;
+  /** The `identifierDeclarations` the identifier-declaration facet adds. Absent ⇒ none. */
+  readonly declarationFacet?: FileExtraction["identifierDeclarations"];
 }
 
 /** Each fixture declares exactly one concrete type (class / struct) and no abstraction. */
@@ -90,6 +93,19 @@ function withVisibility(native: FileExtraction, facet: Readonly<Record<string, s
   };
 }
 
+/** The extraction with exactly the facet's declarations added; absent adds nothing. */
+function withDeclarations(
+  extraction: FileExtraction,
+  facet: FileExtraction["identifierDeclarations"] | undefined,
+): FileExtraction {
+  return facet === undefined ? extraction : { ...extraction, identifierDeclarations: facet };
+}
+
+/** The one `return` declaration a fixture's `run` method states. */
+function returnOf(ownerSymbolId: string, name: string, line: number, typeName: string) {
+  return [{ name, kind: "return" as const, line, ownerSymbolId, typeName, typeSource: "annotation" as const }];
+}
+
 /**
  * One fixture per language, each carrying an import, a container and a call, so
  * the compared extraction is non-empty on every channel the monolith fills —
@@ -103,6 +119,7 @@ const CASES: readonly LanguageCase[] = [
     passes: TYPESCRIPT_EXTRACTION_PASSES,
     native: extractFromTypescriptFile,
     visibilityFacet: { "Svc#run": "public" },
+    declarationFacet: returnOf("Svc#run", "run", 4, "string"),
   },
   {
     language: "javascript",
@@ -119,6 +136,7 @@ const CASES: readonly LanguageCase[] = [
     passes: JAVA_EXTRACTION_PASSES,
     native: extractFromJavaFile,
     visibilityFacet: { Svc: "public", "Svc#run": "public" },
+    declarationFacet: returnOf("Svc#run", "run", 4, "String"),
   },
   {
     language: "rust",
@@ -127,6 +145,7 @@ const CASES: readonly LanguageCase[] = [
     passes: RUST_EXTRACTION_PASSES,
     native: extractFromRustFile,
     visibilityFacet: { Svc: "public", "Svc#run": "public" },
+    declarationFacet: returnOf("Svc#run", "run", 6, "String"),
   },
   {
     language: "bash",
@@ -167,7 +186,7 @@ describe("native walkers composed through the extraction pass-runner", () => {
   });
 
   for (const testCase of CASES) {
-    const { language, passes, native, visibilityFacet } = testCase;
+    const { language, passes, native, visibilityFacet, declarationFacet } = testCase;
 
     if (passes.length === 0) {
       it(`${language}: the composer returns the native extraction BY IDENTITY under its own pass list`, () => {
@@ -184,7 +203,7 @@ describe("native walkers composed through the extraction pass-runner", () => {
         const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
         expect(composed.walk(input)).toEqual({
-          ...withVisibility(sentinel, visibilityFacet ?? {}),
+          ...withDeclarations(withVisibility(sentinel, visibilityFacet ?? {}), declarationFacet),
           ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
         });
       });
@@ -195,7 +214,7 @@ describe("native walkers composed through the extraction pass-runner", () => {
       const viaFactory = factory.create(language).walker.walk(input);
 
       expect(viaFactory).toEqual({
-        ...withVisibility(native(input), visibilityFacet ?? {}),
+        ...withDeclarations(withVisibility(native(input), visibilityFacet ?? {}), declarationFacet),
         ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
       });
       expect(viaFactory.chunks.length).toBeGreaterThan(0);
@@ -218,6 +237,7 @@ describe("go walker composed through the extraction pass-runner", () => {
   };
   const STRUCT_FACET = { classFieldTypesByClassKey: { "svc.go::Svc": {} } };
   const VISIBILITY_FACET = { Svc: "public", "Svc#Run": "public" };
+  const DECLARATION_FACET = { identifierDeclarations: returnOf("Svc#Run", "Run", 7, "string") };
   let input: WalkInput;
 
   beforeAll(async () => {
@@ -236,6 +256,7 @@ describe("go walker composed through the extraction pass-runner", () => {
       ...withVisibility(sentinel, VISIBILITY_FACET),
       ...STRUCT_FACET,
       ...ONE_CONCRETE_TYPE,
+      ...DECLARATION_FACET,
     });
   });
 
@@ -246,6 +267,7 @@ describe("go walker composed through the extraction pass-runner", () => {
       ...withVisibility(extractFromGoFile(input), VISIBILITY_FACET),
       ...STRUCT_FACET,
       ...ONE_CONCRETE_TYPE,
+      ...DECLARATION_FACET,
     });
     expect(viaFactory.chunks.length).toBeGreaterThan(0);
   });

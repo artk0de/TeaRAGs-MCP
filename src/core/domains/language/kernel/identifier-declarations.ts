@@ -2,7 +2,10 @@
  * The identifier-declaration facet (bd tea-rags-mcp-4p3sb.2) — publishes
  * `FileExtraction.identifierDeclarations` as an extraction PASS
  * (`extraction-passes.ts`, Model A): every parameter, local and field a symbol
- * declares, with the type the syntax states when it states one.
+ * declares, with the type the syntax states when it states one — plus each
+ * function's written return type as a `return` declaration of the function
+ * itself (bd tea-rags-mcp-4p3sb.21), which the query-time call-return join
+ * reads to type a local bound to a call.
  *
  * Which nodes declare what stays language knowledge: each language supplies an
  * {@link IdentifierDeclarationSyntax} — node-type rules, plus how to read a type
@@ -20,14 +23,23 @@ import type {
   FileExtraction,
   IdentifierBoundCallee,
   IdentifierDeclaration,
+  IdentifierDeclarationKind,
 } from "../../../contracts/types/codegraph.js";
 import type { WalkContext } from "../../../contracts/types/language.js";
 import type { ExtractionFacetPass } from "./extraction-passes.js";
+import { symbolIdNames } from "./symbol-id.js";
 
-/** One declared name inside a matched node, with the nodes its type may be read from. */
+/**
+ * One declared name inside a matched node, with the nodes its type may be read from.
+ *
+ * A `return` site is a function's written return type (bd tea-rags-mcp-4p3sb.21):
+ * `nameNode` is the function's name, `typeNode` the annotation the naming-
+ * relevant type is read from. It is kept only when typed and only when a chunk
+ * of the function's own names it — see {@link returnOwnerSymbolId}.
+ */
 export interface DeclaredIdentifierSite {
   nameNode: AstNode;
-  kind: "param" | "local" | "field";
+  kind: IdentifierDeclarationKind;
   /** Written type annotation. */
   typeNode?: AstNode | null;
   /** Initializer, for constructor typing and — on a local / field — the bound callee. */
@@ -66,7 +78,15 @@ const IDENTIFIER_LIKE = /^[@$]{0,2}[A-Za-z_]\w*[!?]?$/;
  * names from literal call sites only, and a field read through a variable is one
  * it cannot check against a grammar's materialization losses.
  */
-export type IdentifierDeclarationField = "name" | "type" | "value" | "pattern" | "left" | "right" | "property";
+export type IdentifierDeclarationField =
+  | "name"
+  | "type"
+  | "value"
+  | "pattern"
+  | "left"
+  | "right"
+  | "property"
+  | "return_type";
 
 function readDeclarationField(node: AstNode, field: IdentifierDeclarationField): AstNode | null {
   switch (field) {
@@ -84,6 +104,8 @@ function readDeclarationField(node: AstNode, field: IdentifierDeclarationField):
       return node.childForFieldName("right");
     case "property":
       return node.childForFieldName("property");
+    case "return_type":
+      return node.childForFieldName("return_type");
   }
 }
 
@@ -131,6 +153,20 @@ export function innermostChunkSymbolId(line: number, chunks: WalkContext["chunks
     }
   }
   return best?.symbolId;
+}
+
+/**
+ * The owner of a `return` site: the innermost chunk containing the function's
+ * name line that NAMES the function (`symbolIdNames`). The call-return join
+ * reads a return row under the symbolId a call edge targets, so a function no
+ * chunk of its own stands for — folded into its class's chunk, say — has no
+ * owner, and the enclosing chunk must never take its return type.
+ */
+function returnOwnerSymbolId(line: number, name: string, chunks: WalkContext["chunks"]): string | undefined {
+  return innermostChunkSymbolId(
+    line,
+    chunks.filter((chunk) => symbolIdNames(chunk.symbolId, name)),
+  );
 }
 
 function typeOf(
@@ -188,8 +224,14 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
             const name = site.nameNode.text;
             if (!IDENTIFIER_LIKE.test(name)) continue;
             const line = site.nameNode.startPosition.row + 1;
-            const ownerSymbolId = innermostChunkSymbolId(line, ctx.chunks);
+            const isReturn = site.kind === "return";
+            const ownerSymbolId = isReturn
+              ? returnOwnerSymbolId(line, name, ctx.chunks)
+              : innermostChunkSymbolId(line, ctx.chunks);
             if (ownerSymbolId === undefined) continue;
+            const type = typeOf(site, syntax);
+            // An unannotated function declares no return: the row would say nothing.
+            if (isReturn && type.typeName === undefined) continue;
             const key = `${ownerSymbolId}\u0000${site.kind}\u0000${name}`;
             if (seen.has(key)) continue;
             seen.add(key);
@@ -198,7 +240,7 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
               kind: site.kind,
               line,
               ownerSymbolId,
-              ...typeOf(site, syntax),
+              ...type,
               ...boundCalleeOf(site, syntax),
             });
           }

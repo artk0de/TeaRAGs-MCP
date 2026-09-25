@@ -181,6 +181,113 @@ describe("buildIdentifierRows", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — a return row for every function whose return type is knowable.
+  describe("return rows from every producer", () => {
+    it("persists a syntactic return declaration as a return-type row", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          language: "typescript",
+          chunks: [chunk({ symbolId: "loadDocument", startLine: 1 })],
+          identifierDeclarations: [
+            decl({
+              name: "loadDocument",
+              kind: "return",
+              line: 2,
+              ownerSymbolId: "loadDocument",
+              typeName: "Document",
+              typeSource: "annotation",
+            }),
+          ],
+        }),
+      );
+      expect(rows).toEqual([
+        {
+          ownerSymbolId: "loadDocument",
+          kind: "return",
+          name: "loadDocument",
+          line: 2,
+          typeName: "Document",
+          typeSource: "return-type",
+        },
+      ]);
+    });
+
+    it("keeps one return row per owner: syntactic, then structured, then the flat channel", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [
+            chunk({ symbolId: "Svc#a", startLine: 1 }),
+            chunk({ symbolId: "Svc#b", startLine: 5 }),
+            chunk({ symbolId: "Svc#c", startLine: 9 }),
+          ],
+          identifierDeclarations: [
+            decl({
+              name: "a",
+              kind: "return",
+              line: 1,
+              ownerSymbolId: "Svc#a",
+              typeName: "A",
+              typeSource: "annotation",
+            }),
+          ],
+          structuredReturnTypes: {
+            "Svc#a": { form: "instance", name: "Structured" },
+            "Svc#b": { form: "instance", name: "B" },
+          },
+          functionReturnTypes: { a: "Flat", b: "Flat", c: "C" },
+        }),
+      );
+      expect(rows.map((r) => [r.ownerSymbolId, r.typeName, r.typeSource])).toEqual([
+        ["Svc#a", "A", "return-type"],
+        ["Svc#b", "B", "return-type"],
+        ["Svc#c", "C", "return-type"],
+      ]);
+    });
+
+    it("maps a flat key — bare or package-qualified — onto the one chunk of the file naming it", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          relPath: "pkg/engine/engine.go",
+          language: "go",
+          chunks: [
+            chunk({ symbolId: "New", startLine: 3 }),
+            chunk({ symbolId: "Engine.Client", startLine: 8 }),
+            chunk({ symbolId: "Engine.Run", startLine: 12 }),
+            chunk({ symbolId: "Other.Run", startLine: 20 }),
+          ],
+          functionReturnTypes: {
+            "pkg/engine::New": "Engine",
+            Client: "net/http.Client",
+            Run: "Result",
+            "pkg/engine::missing": "Ghost",
+          },
+        }),
+      );
+      expect(rows).toEqual([
+        { ownerSymbolId: "New", kind: "return", name: "New", line: 3, typeName: "Engine", typeSource: "return-type" },
+        {
+          ownerSymbolId: "Engine.Client",
+          kind: "return",
+          name: "Client",
+          line: 8,
+          typeName: "http.Client",
+          typeSource: "return-type",
+        },
+      ]);
+    });
+
+    it("names a `::`-scoped owner by its member", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          language: "rust",
+          chunks: [chunk({ symbolId: "Repo::load", startLine: 4 })],
+          structuredReturnTypes: { "Repo::load": { form: "instance", name: "Doc" } },
+        }),
+      );
+      expect(rows[0]).toMatchObject({ ownerSymbolId: "Repo::load", name: "load" });
+    });
+  });
+
   it("strips a leading root-namespace :: from type names", () => {
     const rows = buildIdentifierRows(
       extraction({

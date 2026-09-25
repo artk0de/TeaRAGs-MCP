@@ -25,7 +25,10 @@ export const capability: LanguageCapability = {
   // walker 7: bd tea-rags-mcp-4p3sb.17 — an `identifierDeclarations` annotation
   // of `Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T>` or a
   // slice `&[T]` names its element, so a walker-6 row types `items` as `Vec`.
-  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // fn's return type as a `return` (`Self` as the impl's type), so a walker-7
+  // index has no return row for call-return to join.
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

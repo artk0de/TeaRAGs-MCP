@@ -380,13 +380,19 @@ export interface TypeAbstractnessCensus {
   concreteTypeCount: number;
 }
 
-/** What a declared identifier is to its owning symbol. `return` is a sink-time row, never a pass emission. */
+/**
+ * What a declared identifier is to its owning symbol. `return` is the symbol's
+ * own declared return type: the pass emits it from a syntactic return
+ * annotation, the sink-time row builder from the language's return-type
+ * channels.
+ */
 export type IdentifierDeclarationKind = "param" | "local" | "field" | "return";
 
 /**
  * Where a declared identifier's type came from. The pass emits `annotation` and
  * `constructor`; the sink-time row builder joins `binding`, `field-type` and
- * `return-type` from the language's type channels and derives `finder` from the
+ * `return-type` from the language's type channels (a `return` row always
+ * persists as `return-type`, whichever producer typed it) and derives `finder` from the
  * bound callee and the language's finder vocabulary. `call-return` is never
  * persisted: the `cg_identifiers` reads compute it by joining the bound call to
  * its single exact target's `return` row.
@@ -405,12 +411,17 @@ export type PersistedIdentifierTypeSource = Exclude<IdentifierTypeSource, "call-
 
 /** One identifier declaration (`FileExtraction.identifierDeclarations`). */
 export interface IdentifierDeclaration {
+  /** A `return` declaration's name is the function's own short name. */
   readonly name: string;
-  /** The pass never emits `return` — that row is built at sink time. */
-  readonly kind: Exclude<IdentifierDeclarationKind, "return">;
+  /**
+   * `return` (bd tea-rags-mcp-4p3sb.21): the function's written return
+   * annotation. Always typed — an unannotated function declares no return — and
+   * owned by the chunk that IS the function, never by an enclosing one.
+   */
+  readonly kind: IdentifierDeclarationKind;
   /** 1-based line of the declared name. */
   readonly line: number;
-  /** The innermost chunk containing the declaration. */
+  /** The innermost chunk containing the declaration; for a `return`, the function's own chunk. */
   readonly ownerSymbolId: string;
   readonly typeName?: string;
   readonly typeSource?: Extract<IdentifierTypeSource, "annotation" | "constructor">;

@@ -43,6 +43,7 @@ export interface LanguageIdentifierCensus {
   param: number;
   local: number;
   field: number;
+  return: number;
   typed: number;
   files: number;
   /** The ten most frequent stated types, most frequent first. */
@@ -79,6 +80,7 @@ interface LanguageCounters {
   param: number;
   local: number;
   field: number;
+  return: number;
   typed: number;
   files: number;
   typeNames: Map<string, number>;
@@ -139,6 +141,7 @@ export class IdentifierDeclarationsCensusAccumulator {
         param: c.param,
         local: c.local,
         field: c.field,
+        return: c.return,
         typed: c.typed,
         files: c.files,
         topTypeNames: [...c.typeNames]
@@ -166,7 +169,16 @@ export class IdentifierDeclarationsCensusAccumulator {
   private countersFor(language: string): LanguageCounters {
     let counters = this.byLanguage.get(language);
     if (counters === undefined) {
-      counters = { param: 0, local: 0, field: 0, typed: 0, files: 0, typeNames: new Map(), byTypeSource: new Map() };
+      counters = {
+        param: 0,
+        local: 0,
+        field: 0,
+        return: 0,
+        typed: 0,
+        files: 0,
+        typeNames: new Map(),
+        byTypeSource: new Map(),
+      };
       this.byLanguage.set(language, counters);
     }
     return counters;

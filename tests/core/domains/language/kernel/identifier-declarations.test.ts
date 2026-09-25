@@ -131,6 +131,59 @@ describe("identifier declaration pass", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — a function's declared return type, owned by the function itself.
+  describe("return declarations", () => {
+    const withReturns: IdentifierDeclarationSyntax = {
+      ...syntax,
+      rules: [
+        ...syntax.rules,
+        {
+          nodeType: "method_definition",
+          collect: (node: AstNode) => {
+            const nameNode = node.childForFieldName("name");
+            return nameNode === null
+              ? []
+              : [{ nameNode, kind: "return" as const, typeNode: node.childForFieldName("return_type") }];
+          },
+        },
+      ],
+    };
+    function runReturns(code: string, chunks: WalkContext["chunks"]) {
+      const p = new Parser();
+      p.setLanguage(TS.typescript);
+      return createIdentifierDeclarationFacetPass(withReturns).run(p.parse(code).rootNode, {
+        code,
+        relPath: "a.ts",
+        language: "typescript",
+        chunks,
+      }).identifierDeclarations;
+    }
+
+    it("records a typed return under the chunk that IS the function, named by it", () => {
+      const code = ["class Svc {", "  @memo", "  load(): Doc {", "    return x;", "  }", "}"].join("\n");
+      expect(
+        runReturns(code, [
+          { symbolId: "Svc", startLine: 1, endLine: 6, scope: [] },
+          { symbolId: "Svc#load~2", startLine: 2, endLine: 5, scope: ["Svc"] },
+        ]),
+      ).toEqual([
+        {
+          name: "load",
+          kind: "return",
+          line: 3,
+          ownerSymbolId: "Svc#load~2",
+          typeName: "Doc",
+          typeSource: "annotation",
+        },
+      ]);
+    });
+
+    it("drops an untyped return and a function no chunk of its own names", () => {
+      const code = ["class Svc {", "  load() { return 1; }", "  find(): Doc { return x; }", "}"].join("\n");
+      expect(runReturns(code, [{ symbolId: "Svc", startLine: 1, endLine: 4, scope: [] }])).toBeUndefined();
+    });
+  });
+
   it("innermost chunk: smallest span, deeper scope on tie", () => {
     const c = [
       { symbolId: "A", startLine: 1, endLine: 10, scope: [] },

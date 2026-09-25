@@ -25,7 +25,10 @@ export const capability: LanguageCapability = {
   // walker 8: bd tea-rags-mcp-4p3sb.17 — an `identifierDeclarations` annotation
   // of `List / Set / Collection / Iterable / Optional / Stream<T>` names its
   // element, so a walker-7 row types `docs` as `List`.
-  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // walker 9: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // method's declared return type as a `return`, so a walker-8 index has no
+  // return row for call-return to join.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
   // Google Java Style / Oracle conventions: classes and interfaces
   // UpperCamelCase, methods / parameters / locals / non-constant fields
   // lowerCamelCase, `static final` constants CONSTANT_CASE. A package name is

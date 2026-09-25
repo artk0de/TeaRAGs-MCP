@@ -2,7 +2,7 @@
  * Go's identifier-declaration syntax (bd tea-rags-mcp-4p3sb.5) — what the
  * kernel's `createIdentifierDeclarationFacetPass` reads to publish
  * `identifierDeclarations`: parameters, `:=` / `var` locals, `range` bindings
- * and named struct fields. A method RECEIVER is left out: it is typed by
+ * named struct fields, and each func's first result type (`returnSites`). A method RECEIVER is left out: it is typed by
  * construction and named by Go's one-letter convention, so every method on
  * `Svc` would add an `s Svc` row and drown how the project names a `Svc`
  * parameter everywhere else.
@@ -134,6 +134,25 @@ function goConstructorTypeName(value: AstNode): string | undefined {
   return typeNode ? goDeclarationTypeName(typeNode) : undefined;
 }
 
+/**
+ * `func F() T` / `func (s *S) M() (T, error)` — the func's FIRST result, as a
+ * `return` of the func itself (bd tea-rags-mcp-4p3sb.21). A multi-value call
+ * binds only its first name to the call (`positionalValue`), so the first
+ * result is the type that name holds. Unlike the resolver's
+ * `functionReturnTypes`, which drops multi-value signatures, the lexicon asks
+ * only what the bound name IS.
+ */
+function returnSites(node: AstNode): DeclaredIdentifierSite[] {
+  const nameNode = node.childForFieldName("name");
+  const result = node.childForFieldName("result");
+  if (nameNode === null || result === null) return [];
+  const typeNode =
+    result.type === "parameter_list"
+      ? (childrenOfType(result, "parameter_declaration")[0]?.childForFieldName("type") ?? null)
+      : result;
+  return [{ nameNode, kind: "return", typeNode }];
+}
+
 export const GO_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     rule("parameter_declaration", parameterSites),
@@ -142,6 +161,8 @@ export const GO_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     rule("var_spec", varSpecSites),
     rule("range_clause", rangeClauseSites),
     rule("field_declaration", fieldSites),
+    rule("function_declaration", returnSites),
+    rule("method_declaration", returnSites),
   ],
   annotationTypeName: goDeclarationTypeName,
   constructorTypeName: goConstructorTypeName,

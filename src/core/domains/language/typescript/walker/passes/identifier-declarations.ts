@@ -2,7 +2,10 @@
  * TypeScript's identifier-declaration syntax (bd tea-rags-mcp-4p3sb.4) — what
  * the kernel's `createIdentifierDeclarationFacetPass` reads to publish
  * `identifierDeclarations`: parameters (constructor parameter properties
- * included), `const` / `let` / `var` declarators and class fields.
+ * included), `const` / `let` / `var` declarators and class fields — and each
+ * function's return annotation as a `return` of the function itself (bd
+ * tea-rags-mcp-4p3sb.21), read by the same annotation reader, an async
+ * function's `Promise<T>` naming `T` (see `typescriptReturnTypeNode`).
  *
  * The binding-pattern reader and the `new X()` reading are ECMAScript, not
  * TypeScript, and JavaScript's syntax imports both from here. A destructuring
@@ -160,6 +163,60 @@ function typescriptBoundCallee(value: AstNode): IdentifierBoundCallee | undefine
   return boundCalleeFromCallShape(typescriptCallSiteShape(ecmascriptOutermostCall(value)));
 }
 
+/**
+ * The annotation a function's return declaration is read from. An `async`
+ * function's `Promise<T>` names `T`: the call-return join types `const doc =
+ * await load()` through `load`'s return row and never sees the `await`, and
+ * awaiting is what an async function's callers do. A non-async `Promise<T>`
+ * keeps its head — returned as a value, it is a promise.
+ */
+function typescriptReturnTypeNode(fn: AstNode): AstNode | null {
+  const annotation = fn.childForFieldName("return_type");
+  if (annotation === null) return null;
+  const inner = annotation.type === "type_annotation" ? annotation.namedChild(0) : annotation;
+  const isAsync = fn.children.some((child) => child.type === "async");
+  if (!isAsync || inner?.type !== "generic_type" || inner.childForFieldName("name")?.text !== "Promise") {
+    return namesNoValue(inner) ? null : annotation;
+  }
+  // Positional: the argument list is the `type_arguments` child.
+  const awaited = inner.namedChildren.find((child) => child.type === "type_arguments")?.namedChild(0) ?? null;
+  return namesNoValue(awaited) ? null : awaited;
+}
+
+/** Returns nothing a local could hold: `void`, `never`, `undefined`. */
+const VALUELESS_RETURN_TYPES = new Set(["void", "never", "undefined"]);
+
+function namesNoValue(type: AstNode | null): boolean {
+  return type?.type === "predefined_type" && VALUELESS_RETURN_TYPES.has(type.text);
+}
+
+/** A declaration that names itself: `function f(): T`, `m(): T`, `get(): T;` in an interface. */
+function namedFunctionReturnRule(nodeType: string): IdentifierDeclarationRule {
+  return {
+    nodeType,
+    collect: (node) => {
+      const nameNode = node.childForFieldName("name");
+      return nameNode === null ? [] : [{ nameNode, kind: "return", typeNode: typescriptReturnTypeNode(node) }];
+    },
+  };
+}
+
+/** Function VALUES — named by the declarator or class field that binds them. */
+const FUNCTION_VALUE_TYPES = new Set(["arrow_function", "function_expression", "function", "generator_function"]);
+
+/** `const f = (): T => …` / `load = async (): Promise<T> => …` — the binding names the function. */
+function boundFunctionReturnRule(nodeType: string): IdentifierDeclarationRule {
+  return {
+    nodeType,
+    collect: (node) => {
+      const nameNode = node.childForFieldName("name");
+      const value = node.childForFieldName("value");
+      if (nameNode === null || value === null || !FUNCTION_VALUE_TYPES.has(value.type)) return [];
+      return [{ nameNode, kind: "return", typeNode: typescriptReturnTypeNode(value) }];
+    },
+  };
+}
+
 export const TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     parameterRule("required_parameter"),
@@ -167,6 +224,14 @@ export const TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSynt
     ECMASCRIPT_ARROW_PARAMETER_RULE,
     ECMASCRIPT_VARIABLE_DECLARATOR_RULE,
     fieldRule("public_field_definition", "field", { name: "name", type: "type", value: "value" }),
+    namedFunctionReturnRule("function_declaration"),
+    namedFunctionReturnRule("generator_function_declaration"),
+    namedFunctionReturnRule("function_signature"),
+    namedFunctionReturnRule("method_definition"),
+    namedFunctionReturnRule("method_signature"),
+    namedFunctionReturnRule("abstract_method_signature"),
+    boundFunctionReturnRule("variable_declarator"),
+    boundFunctionReturnRule("public_field_definition"),
   ],
   annotationTypeName: typescriptAnnotationTypeName,
   constructorTypeName: ecmascriptConstructorTypeName,

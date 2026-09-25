@@ -1,8 +1,8 @@
 /**
  * Rust's identifier-declaration syntax (bd tea-rags-mcp-4p3sb.5) — what the
  * kernel's `createIdentifierDeclarationFacetPass` reads to publish
- * `identifierDeclarations`: function and closure parameters, `let` locals and
- * named struct fields. `self` is a `self_parameter`, not a `parameter`: the
+ * `identifierDeclarations`: function and closure parameters, `let` locals,
+ * named struct fields and each fn's return type (see `returnRule`). `self` is a `self_parameter`, not a `parameter`: the
  * language fixes its name, so it says nothing about how this project names
  * things.
  *
@@ -206,12 +206,38 @@ function rustBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
   return call === null ? undefined : boundCalleeFromCallShape(rustCallSiteShape(call));
 }
 
+/** The implementing type of the `impl` block `fn` sits directly in; null outside one (a trait's `Self` is open). */
+function enclosingImplType(fn: AstNode): AstNode | null {
+  const impl = fn.parent?.parent;
+  return impl?.type === "impl_item" ? impl.childForFieldName("type") : null;
+}
+
+/**
+ * `fn f(…) -> T` — the fn's return, as a `return` of the fn itself (bd
+ * tea-rags-mcp-4p3sb.21). An `async fn`'s written type is already what
+ * `.await` yields. A return naming `Self` (`-> Self`, `-> Option<Self>`) names
+ * the impl's type instead — `Svc::with_config(c)` builds a `Svc`, the most
+ * common constructor shape after `new`. A `Result<T, E>` keeps its head, as a
+ * `Result` parameter does: the join cannot see a `?`.
+ */
+const returnRule: IdentifierDeclarationRule = {
+  nodeType: "function_item",
+  collect: (node) => {
+    const nameNode = node.childForFieldName("name");
+    if (nameNode === null) return [];
+    const written = node.childForFieldName("return_type");
+    const typeNode = written !== null && rustAnnotationTypeName(written) === "Self" ? enclosingImplType(node) : written;
+    return [{ nameNode, kind: "return", typeNode }];
+  },
+};
+
 export const RUST_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     parameterRule,
     closureParametersRule,
     letRule,
     fieldRule("field_declaration", "field", { name: "name", type: "type" }),
+    returnRule,
   ],
   annotationTypeName: rustAnnotationTypeName,
   constructorTypeName: rustConstructorTypeName,

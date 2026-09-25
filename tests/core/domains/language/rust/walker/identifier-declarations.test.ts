@@ -164,6 +164,46 @@ describe("Rust walker — identifier declarations", () => {
     }
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
+  it("records each fn's return type as a return of the fn's own chunk; `Self` names the impl's type", () => {
+    const code = [
+      "impl<'a> Svc<'a> {",
+      "    fn with_config(c: Config) -> Self { todo!() }",
+      "    fn load(&self) -> Doc { todo!() }",
+      "    async fn all(&self) -> Vec<Job> { todo!() }",
+      "    fn maybe(&self) -> Option<Self> { None }",
+      "    fn run(&self) {}",
+      "}",
+      "trait Api { fn get(&self) -> Self; }",
+      "fn fetch() -> Result<Doc, Error> { todo!() }",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "Svc", startLine: 1, endLine: 7, scope: [] },
+      { symbolId: "Svc.with_config", startLine: 2, endLine: 2, scope: ["Svc"] },
+      { symbolId: "Svc#load", startLine: 3, endLine: 3, scope: ["Svc"] },
+      { symbolId: "Svc#all", startLine: 4, endLine: 4, scope: ["Svc"] },
+      { symbolId: "Svc#maybe", startLine: 5, endLine: 5, scope: ["Svc"] },
+      { symbolId: "Svc#run", startLine: 6, endLine: 6, scope: ["Svc"] },
+      { symbolId: "Api", startLine: 8, endLine: 8, scope: [] },
+      { symbolId: "fetch", startLine: 9, endLine: 9, scope: [] },
+    ]);
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      {
+        name: "with_config",
+        kind: "return",
+        line: 2,
+        ownerSymbolId: "Svc.with_config",
+        typeName: "Svc",
+        typeSource: "annotation",
+      },
+      { name: "load", kind: "return", line: 3, ownerSymbolId: "Svc#load", typeName: "Doc", typeSource: "annotation" },
+      { name: "all", kind: "return", line: 4, ownerSymbolId: "Svc#all", typeName: "Job", typeSource: "annotation" },
+      { name: "maybe", kind: "return", line: 5, ownerSymbolId: "Svc#maybe", typeName: "Svc", typeSource: "annotation" },
+      // A `Result` keeps its head, as a `Result` parameter does.
+      { name: "fetch", kind: "return", line: 9, ownerSymbolId: "fetch", typeName: "Result", typeSource: "annotation" },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.17 — a collection or wrapper names its element; maps keep their head.
   it("unwraps Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T> and &[T] to the element", () => {
     const code = [

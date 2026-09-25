@@ -2,7 +2,8 @@
  * Java's identifier-declaration syntax (bd tea-rags-mcp-4p3sb.6) — what the
  * kernel's `createIdentifierDeclarationFacetPass` reads to publish
  * `identifierDeclarations`: method, varargs, lambda and catch parameters,
- * local variables (enhanced-for and try-with-resources included) and fields.
+ * local variables (enhanced-for and try-with-resources included) and fields —
+ * and each method's declared return type, read by the same annotation reader.
  *
  * A local / field declaration holds one `variable_declarator` per name, all
  * sharing the declaration's `type`; the grammar repeats the `declarator` field,
@@ -152,6 +153,9 @@ export const JAVA_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     fieldRule("enhanced_for_statement", "local", { name: "name", type: "type" }),
     fieldRule("resource", "local", { name: "name", type: "type", value: "value" }),
     catchParameterRule,
+    // A method's declared return type, as a `return` of the method itself (bd
+    // tea-rags-mcp-4p3sb.21); `void` reads as no type, so it declares nothing.
+    fieldRule("method_declaration", "return", { name: "name", type: "type" }),
   ],
   annotationTypeName: javaAnnotationTypeName,
   constructorTypeName: javaConstructorTypeName,

@@ -140,6 +140,99 @@ describe("TypeScript walker — identifier declarations", () => {
     });
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
+  it("records each function's return annotation as a return of the function's own chunk", () => {
+    const code = [
+      "async function loadDocument(id: string): Promise<Document> { return x; }",
+      "function pending(): Promise<Document> { return x; }",
+      "const make = (): Maker => new Maker();",
+      "const fetchAll = async function (): Promise<Job[]> { return []; };",
+      "function untyped() {}",
+      "export function* ids(): Generator<Id> {}",
+      "class Svc {",
+      "  find(id: string): Doc[] { return []; }",
+      "  load = async (): Promise<Repo> => repo;",
+      "  static build(): Widget { return w; }",
+      "  isDoc(x: unknown): x is Doc { return true; }",
+      "}",
+      "interface Api { get(): Thing; }",
+      "declare function external(): Ext;",
+      "function inline(): Folded { return f; }",
+      "function log(): void {} async function flush(): Promise<void> {} function fail(): never { throw e; }",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "loadDocument", startLine: 1, endLine: 1, scope: [] },
+      { symbolId: "pending", startLine: 2, endLine: 2, scope: [] },
+      { symbolId: "make", startLine: 3, endLine: 3, scope: [] },
+      { symbolId: "fetchAll", startLine: 4, endLine: 4, scope: [] },
+      { symbolId: "untyped", startLine: 5, endLine: 5, scope: [] },
+      { symbolId: "ids", startLine: 6, endLine: 6, scope: [] },
+      { symbolId: "Svc", startLine: 7, endLine: 12, scope: [] },
+      { symbolId: "Svc#find", startLine: 8, endLine: 8, scope: ["Svc"] },
+      { symbolId: "Svc#load", startLine: 9, endLine: 9, scope: ["Svc"] },
+      { symbolId: "Svc.build", startLine: 10, endLine: 10, scope: ["Svc"] },
+      { symbolId: "Svc#isDoc", startLine: 11, endLine: 11, scope: ["Svc"] },
+      { symbolId: "Api", startLine: 13, endLine: 13, scope: [] },
+      { symbolId: "Api#get", startLine: 13, endLine: 13, scope: ["Api"] },
+      { symbolId: "external", startLine: 14, endLine: 14, scope: [] },
+      // `inline` has no chunk of its own: its line belongs to an unrelated chunk.
+      { symbolId: "trailer", startLine: 15, endLine: 15, scope: [] },
+      // `void` / `never` name no value a local could hold: no return.
+      { symbolId: "log", startLine: 16, endLine: 16, scope: [] },
+      { symbolId: "flush", startLine: 16, endLine: 16, scope: [] },
+      { symbolId: "fail", startLine: 16, endLine: 16, scope: [] },
+    ]);
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      // async: `await loadDocument()` is a Document — the join cannot see the `await`.
+      {
+        name: "loadDocument",
+        kind: "return",
+        line: 1,
+        ownerSymbolId: "loadDocument",
+        typeName: "Document",
+        typeSource: "annotation",
+      },
+      // not async: a Promise returned as a value stays a Promise.
+      {
+        name: "pending",
+        kind: "return",
+        line: 2,
+        ownerSymbolId: "pending",
+        typeName: "Promise",
+        typeSource: "annotation",
+      },
+      { name: "make", kind: "return", line: 3, ownerSymbolId: "make", typeName: "Maker", typeSource: "annotation" },
+      {
+        name: "fetchAll",
+        kind: "return",
+        line: 4,
+        ownerSymbolId: "fetchAll",
+        typeName: "Job",
+        typeSource: "annotation",
+      },
+      { name: "ids", kind: "return", line: 6, ownerSymbolId: "ids", typeName: "Generator", typeSource: "annotation" },
+      { name: "find", kind: "return", line: 8, ownerSymbolId: "Svc#find", typeName: "Doc", typeSource: "annotation" },
+      { name: "load", kind: "return", line: 9, ownerSymbolId: "Svc#load", typeName: "Repo", typeSource: "annotation" },
+      {
+        name: "build",
+        kind: "return",
+        line: 10,
+        ownerSymbolId: "Svc.build",
+        typeName: "Widget",
+        typeSource: "annotation",
+      },
+      { name: "get", kind: "return", line: 13, ownerSymbolId: "Api#get", typeName: "Thing", typeSource: "annotation" },
+      {
+        name: "external",
+        kind: "return",
+        line: 14,
+        ownerSymbolId: "external",
+        typeName: "Ext",
+        typeSource: "annotation",
+      },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.16 — the row builder finds the CallRef by (startLine, member, receiver).
   it("binds a local / field to the outermost call, as the CallRef the walker emits on that line", () => {
     const code = [

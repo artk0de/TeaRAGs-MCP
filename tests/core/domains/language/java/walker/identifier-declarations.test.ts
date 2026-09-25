@@ -112,6 +112,40 @@ describe("Java walker — identifier declarations", () => {
     }
   });
 
+  // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
+  it("records each method's declared return type as a return of the method's own chunk", () => {
+    const src = [
+      "class Svc {",
+      "  Document load(String id) { return null; }",
+      "  public static List<Job> jobs() { return null; }",
+      "  void run() {}",
+      "  Svc() {}",
+      "}",
+      "interface Api { Thing get(); }",
+    ].join("\n");
+    const declarations = declarationsOf(src, [
+      { symbolId: "Svc", startLine: 1, endLine: 6, scope: [] },
+      { symbolId: "Svc#load", startLine: 2, endLine: 2, scope: ["Svc"] },
+      { symbolId: "Svc.jobs", startLine: 3, endLine: 3, scope: ["Svc"] },
+      { symbolId: "Svc#run", startLine: 4, endLine: 4, scope: ["Svc"] },
+      { symbolId: "Svc#Svc", startLine: 5, endLine: 5, scope: ["Svc"] },
+      { symbolId: "Api", startLine: 7, endLine: 7, scope: [] },
+      { symbolId: "Api#get", startLine: 7, endLine: 7, scope: ["Api"] },
+    ]);
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      {
+        name: "load",
+        kind: "return",
+        line: 2,
+        ownerSymbolId: "Svc#load",
+        typeName: "Document",
+        typeSource: "annotation",
+      },
+      { name: "jobs", kind: "return", line: 3, ownerSymbolId: "Svc.jobs", typeName: "Job", typeSource: "annotation" },
+      { name: "get", kind: "return", line: 7, ownerSymbolId: "Api#get", typeName: "Thing", typeSource: "annotation" },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.17 — a collection or wrapper names its element; maps keep their head.
   it("unwraps List / Set / Collection / Iterable / Optional / Stream<T> to the element", () => {
     const code = [

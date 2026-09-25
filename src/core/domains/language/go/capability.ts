@@ -33,7 +33,10 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (params, locals, struct fields; annotation and
   // composite-literal types) for the naming lexicon. Rows written by walker 6
   // carry none, so only the recompute adds them.
-  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // walker 9: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // func's FIRST result type as a `return`, so a walker-8 index has no return
+  // row for a multi-value func, which `functionReturnTypes` omits.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
   // Effective Go: MixedCaps everywhere, never underscores. The first letter's
   // case is Go's EXPORT marker, not a style choice, so every package-level role
   // (type, method, field, constant) accepts both — canonical by role: types

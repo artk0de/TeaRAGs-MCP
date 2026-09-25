@@ -15,7 +15,11 @@
  *      constant receiver → that constant.
  *
  * `call-return` is NOT a stage here: the reads join the bound call to its edge
- * at query time. `return` rows come from `structuredReturnTypes`, one per chunk.
+ * at query time — against the TARGET's `return` row, so every language with a
+ * knowable return type must publish one (bd tea-rags-mcp-4p3sb.21). One per
+ * symbol, strongest producer first: the syntactic `return` declaration (the
+ * written annotation), then `structuredReturnTypes`, then the flat
+ * `functionReturnTypes` channel. Every `return` row persists as `return-type`.
  *
  * Invariant: every row is a declaration or a declared return type. A name a
  * naming convention could type but nothing declares yields no row, and no stage
@@ -76,9 +80,9 @@ function singleNominalName(ref: TypeRef): string | undefined {
   return undefined;
 }
 
-/** The member part of a symbolId: after the last `#` or `.`. */
+/** The member part of a symbolId: after the last `#`, `.` or `::`. */
 function memberNameOf(symbolId: string): string {
-  const cut = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."));
+  const cut = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."), symbolId.lastIndexOf(":"));
   return cut < 0 ? symbolId : symbolId.slice(cut + 1);
 }
 
@@ -166,6 +170,8 @@ function recoveredType(
   decl: IdentifierDeclaration,
   finders: ReadonlySet<string> | undefined,
 ): { typeName: string; typeSource: PersistedIdentifierTypeSource } | undefined {
+  // A return declaration IS the function's declared return type, whichever reader produced it.
+  if (decl.kind === "return") return decl.typeName ? { typeName: decl.typeName, typeSource: "return-type" } : undefined;
   if (decl.typeName) return { typeName: decl.typeName, typeSource: decl.typeSource ?? "annotation" };
   if (decl.kind === "field") {
     const fieldType = fieldTypeOf(extraction, chunk, decl.name);
@@ -203,32 +209,84 @@ function declarationRow(
   return row;
 }
 
-function returnRows(extraction: FileExtraction): IdentifierRow[] {
+function channelReturnRow(chunk: ChunkExtraction, typeName: string): IdentifierRow {
+  return {
+    ownerSymbolId: chunk.symbolId,
+    kind: "return",
+    name: memberNameOf(chunk.symbolId),
+    line: chunk.startLine ?? 0,
+    typeName: normalizeTypeName(typeName),
+    typeSource: "return-type",
+  };
+}
+
+/** One row per chunk with a single-name structured return type, skipping owners already typed. */
+function structuredReturnRows(extraction: FileExtraction, typedOwners: Set<string>): IdentifierRow[] {
   const returnTypes = extraction.structuredReturnTypes;
   if (!returnTypes) return [];
   const rows: IdentifierRow[] = [];
-  const seen = new Set<string>();
   for (const chunk of extraction.chunks) {
-    if (seen.has(chunk.symbolId) || !Object.hasOwn(returnTypes, chunk.symbolId)) continue;
-    seen.add(chunk.symbolId);
+    if (typedOwners.has(chunk.symbolId) || !Object.hasOwn(returnTypes, chunk.symbolId)) continue;
     const typeName = singleNominalName(returnTypes[chunk.symbolId]);
     if (!typeName) continue;
-    rows.push({
-      ownerSymbolId: chunk.symbolId,
-      kind: "return",
-      name: memberNameOf(chunk.symbolId),
-      line: chunk.startLine ?? 0,
-      typeName: normalizeTypeName(typeName),
-      typeSource: "return-type",
-    });
+    typedOwners.add(chunk.symbolId);
+    rows.push(channelReturnRow(chunk, typeName));
   }
   return rows;
 }
 
 /**
- * The `cg_identifiers` rows of one file: one per declaration, then one per
- * chunk with a single-name structured return type. `finderVocabulary` supplies
- * the finder stage for the extraction's language; absent, the stage is off.
+ * The member a flat `functionReturnTypes` key names: the key itself (a bare
+ * method name) or what follows its last `::` (a package-qualified function,
+ * `pkg/engine::New`). The walker fills the map from THIS file's declarations
+ * only, so the qualifier needs no check — the file's chunks are the candidates.
+ */
+function flatKeyMember(key: string): string {
+  const cut = key.lastIndexOf("::");
+  return cut < 0 ? key : key.slice(cut + 2);
+}
+
+/** `net/http.Client` → `http.Client`: an import-path qualifier keeps its last element, as a declaration writes it. */
+function flatTypeName(recorded: string): string {
+  return recorded.slice(recorded.lastIndexOf("/") + 1);
+}
+
+/**
+ * One row per `functionReturnTypes` entry whose member names exactly ONE
+ * symbol of the file (chunks split from one symbol count once). The flat channel is
+ * keyed by name, not symbol: two symbols sharing the member leave the entry
+ * unattributable, and a guess would type the wrong function's calls.
+ */
+function flatReturnRows(extraction: FileExtraction, typedOwners: Set<string>): IdentifierRow[] {
+  const returnTypes = extraction.functionReturnTypes;
+  if (!returnTypes) return [];
+  const chunksByMember = new Map<string, ChunkExtraction[]>();
+  for (const chunk of extraction.chunks) {
+    const member = memberNameOf(chunk.symbolId);
+    const list = chunksByMember.get(member);
+    if (list === undefined) chunksByMember.set(member, [chunk]);
+    else if (!list.some((c) => c.symbolId === chunk.symbolId)) list.push(chunk);
+  }
+  const rows: IdentifierRow[] = [];
+  for (const [key, recorded] of Object.entries(returnTypes)) {
+    const candidates = chunksByMember.get(flatKeyMember(key));
+    if (candidates?.length !== 1 || recorded === "") continue;
+    const [chunk] = candidates;
+    if (typedOwners.has(chunk.symbolId)) continue;
+    typedOwners.add(chunk.symbolId);
+    rows.push(channelReturnRow(chunk, flatTypeName(recorded)));
+  }
+  return rows;
+}
+
+/**
+ * The `cg_identifiers` rows of one file: one per declaration — a syntactic
+ * `return` declaration among them — then one `return` row per remaining symbol
+ * with a return type in `structuredReturnTypes`, then in `functionReturnTypes`.
+ * Each symbol gets ONE return row, from the strongest producer: the join reads
+ * a target whose return rows disagree as untyped, so a second row would only
+ * erase the first. `finderVocabulary` supplies the finder stage for the
+ * extraction's language; absent, the stage is off.
  */
 export function buildIdentifierRows(
   extraction: FileExtraction,
@@ -244,5 +302,6 @@ export function buildIdentifierRows(
   const rows = (extraction.identifierDeclarations ?? []).map((decl) =>
     declarationRow(extraction, chunksBySymbol, decl, finders),
   );
-  return [...rows, ...returnRows(extraction)];
+  const typedOwners = new Set(rows.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
+  return [...rows, ...structuredReturnRows(extraction, typedOwners), ...flatReturnRows(extraction, typedOwners)];
 }
