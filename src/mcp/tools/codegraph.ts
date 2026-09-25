@@ -116,6 +116,22 @@ const GetArchitectureReportInputShape = {
 };
 
 /**
+ * `get_ontology_report` input (bd tea-rags-mcp-4p3sb.20). Call contract only —
+ * when to call is the search cascade's job; the budget is pinned by
+ * `ontology-report-tool.test.ts`.
+ */
+const GetOntologyReportInputShape = {
+  ...collectionPathFields(),
+  pathPattern: z.string().optional().describe("Glob scope; its literal prefix filters files. Omit for whole project."),
+  language: z.string().optional().describe("Only this language's files."),
+  sections: z
+    .array(z.enum(["synonyms", "homonyms", "outliers", "collisions"]))
+    .optional()
+    .describe("Sections to compute (default all)."),
+  limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
+};
+
+/**
  * Build the `trace_path` input shape. The `rerank` field is a curated preset
  * ENUM derived from the registry (presets that tag `"trace_path"` in their
  * `tools[]`), NOT a free string — a bad preset is rejected at the MCP boundary
@@ -315,6 +331,32 @@ export function registerCodegraphTools(
     },
     async ({ project, collection, path, pathPattern, limit }) => {
       const response = await app.getArchitectureReport({ project, collection, path, pathPattern, limit });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "get_ontology_report",
+    {
+      title: "Get Ontology Report",
+      description:
+        "Project-wide naming ontology audit from the codegraph. synonyms: one type, many names; " +
+        "homonyms: one name, many types; outliers: names off their type's dominant shape; " +
+        "collisions: names equal to other symbols. Ranked, with counts and an example each.",
+      inputSchema: GetOntologyReportInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, pathPattern, language, sections, limit }) => {
+      const response = await app.getOntologyReport({
+        project,
+        collection,
+        path,
+        pathPattern,
+        language,
+        sections,
+        limit,
+      });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
