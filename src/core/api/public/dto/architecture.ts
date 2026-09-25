@@ -7,7 +7,9 @@
  * groups and the exclusion summary. Every finding names its `detector`:
  * `stableDependencies` (Stable Dependencies Principle) and
  * `leakingAbstraction` (A4, bd tea-rags-mcp-jetrd — imports past a facade the
- * module's importers adopted). Later boundary detectors (epic r8hme) extend the
+ * module's importers adopted) and `silentCoupling` (A2, bd tea-rags-mcp-b4dcz —
+ * files that change together with no structural link, judged over the
+ * codegraph's temporal co-change sub-graph). Later boundary detectors (epic r8hme) extend the
  * `ArchitectureViolation` / `ArchitectureRootCause` unions and
  * `ArchitectureReportSummary`.
  */
@@ -126,7 +128,55 @@ export type LeakingAbstractionArchitectureViolation =
   | FacadeLeakArchitectureViolation
   | ConventionPrivacyArchitectureViolation;
 
-export type ArchitectureViolation = StableDependencyArchitectureViolation | LeakingAbstractionArchitectureViolation;
+/**
+ * How much of a silently coupled pair the structural graph can see:
+ * `both-walked` = both files are walked code, so the missing edge is evidence;
+ * `one-walked` = the other file is not walked (config, data, build script), so
+ * no edge could ever join them.
+ */
+export type SilentCouplingStructuralVisibility = "both-walked" | "one-walked";
+
+/** Why a co-change pair is a silent-coupling violation (bd tea-rags-mcp-b4dcz). */
+export interface SilentCouplingViolationEvidence {
+  /** Change bundles (commits, or author sessions when squash-aware) touching both files. */
+  support: number;
+  /** P(target changes | source changes). */
+  confidenceAB: number;
+  /** P(source changes | target changes). */
+  confidenceBA: number;
+  /** Observed co-change over what independence predicts; always > 1 here. */
+  lift: number;
+  /**
+   * The larger direction's 95% Wilson lower bound on the conditional co-change
+   * rate — how sure the history is that one file's change brings the other's.
+   * The severity.
+   */
+  strength: number;
+  /** Unix seconds of the latest bundle touching both. */
+  lastCoChangeAt: number;
+  /** A few shas that touched both, newest first. */
+  sampleCommits: string[];
+  structuralVisibility: SilentCouplingStructuralVisibility;
+  /** Where the target's directory sits relative to the source's. */
+  directoryRelation: ArchitectureDirectoryRelation;
+}
+
+/**
+ * Two files that change together strongly while no import, re-export or
+ * resolved call joins them. The pair is undirected: `sourceRelPath` is the
+ * lexicographically smaller path.
+ */
+export interface SilentCouplingArchitectureViolation {
+  detector: "silentCoupling";
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  evidence: SilentCouplingViolationEvidence;
+}
+
+export type ArchitectureViolation =
+  | StableDependencyArchitectureViolation
+  | LeakingAbstractionArchitectureViolation
+  | SilentCouplingArchitectureViolation;
 
 /** Every Stable Dependencies violation into one unstable target, as one finding. */
 export interface StableDependencyArchitectureRootCause {
@@ -156,7 +206,21 @@ export interface LeakingAbstractionArchitectureRootCause {
   sources: RelPath[];
 }
 
-export type ArchitectureRootCause = StableDependencyArchitectureRootCause | LeakingAbstractionArchitectureRootCause;
+/** A file silently coupled to two or more partners, as one finding. */
+export interface SilentCouplingArchitectureRootCause {
+  detector: "silentCoupling";
+  relPath: RelPath;
+  /** Silent partners — the severity. */
+  violationCount: number;
+  maxStrength: number;
+  /** Partners, strongest first. */
+  partners: RelPath[];
+}
+
+export type ArchitectureRootCause =
+  | StableDependencyArchitectureRootCause
+  | LeakingAbstractionArchitectureRootCause
+  | SilentCouplingArchitectureRootCause;
 
 /** Edges read but not judged, by the first reason that applied. */
 export interface StableDependenciesExclusionSummary {
@@ -242,9 +306,78 @@ export interface LeakingAbstractionReportSummary {
   outOfScopeEdgeCount?: number;
 }
 
+/** Provenance of the co-change build silent coupling was judged over. */
+export interface SilentCouplingBuildSummary {
+  /** HEAD the history was read at. */
+  head: string;
+  /** Unix seconds. */
+  builtAt: number;
+  /** Unix seconds: the oldest commit the window admitted. */
+  windowSince: number;
+  commitCount: number;
+  /** Change bundles that survived the mass-change cut. */
+  admittedBundleCount: number;
+  /** The adaptive mass-change cut: bigger bundles were dropped as noise. */
+  maxFilesPerBundle: number;
+  /** Support floor a stored pair needed. */
+  minSupport: number;
+  /** Partners kept per file. */
+  maxPartnersPerFile: number;
+  /** Author-session gap bundles were merged over; `null` = per commit. */
+  sessionGapMinutes: number | null;
+}
+
+export interface SilentCouplingReportSummary {
+  /**
+   * `false` when the codegraph has no co-change build yet (git trajectory off,
+   * or no index run since the feature landed) — every count is then 0 and the
+   * absence of violations says nothing.
+   */
+  built: boolean;
+  build?: SilentCouplingBuildSummary;
+  /** Every stored co-change pair read. */
+  pairCount: number;
+  /** Pairs that survived every exclusion — the population the threshold is drawn over. */
+  candidateCount: number;
+  /** Candidates whose strength clears the threshold, linked or not. */
+  strongCount: number;
+  /** Strong candidates the structural graph does link — coupling the code declares. */
+  strongLinkedCount: number;
+  /** Total violations, before `limit`. */
+  violationCount: number;
+  /** Total root causes (files with ≥ 2 silent partners), before `limit`. */
+  rootCauseCount: number;
+  /**
+   * Otsu's split over candidate strengths, or 0.5 under `majority`; either way
+   * a pair is strong only when its strength is also STRICTLY above 0.5.
+   */
+  strengthThreshold: number;
+  /** `otsu` when the population allowed a split (≥ 8 candidates, ≥ 2 distinct values), else `majority`. */
+  strengthThresholdMethod: "otsu" | "majority";
+  /** η of the Otsu cut, 3 decimals; absent under `majority`. */
+  strengthSeparability?: number;
+  /** Pairs read but not judged, by the first reason that applied. */
+  excluded: {
+    testEndpoints: number;
+    generatedEndpoints: number;
+    documentationEndpoints: number;
+    /** Neither file is walked by the codegraph. */
+    unwalkedEndpoints: number;
+    /** See `exclusionReasons.noSymbolEndpoints`. */
+    noSymbolEndpoints: number;
+    /** lift ≤ 1: no more co-change than independence predicts. */
+    nonPositiveLift: number;
+  };
+  /** Human-readable meaning of the exclusion a reader is most likely to question. */
+  exclusionReasons: { noSymbolEndpoints: string };
+  /** Strong unlinked pairs with neither file matching `pathPattern`; present only when scoped. */
+  outOfScopePairCount?: number;
+}
+
 export interface ArchitectureReportSummary {
   stableDependencies: StableDependenciesReportSummary;
   leakingAbstraction: LeakingAbstractionReportSummary;
+  silentCoupling: SilentCouplingReportSummary;
 }
 
 export interface GetArchitectureReportResponse {
@@ -252,8 +385,9 @@ export interface GetArchitectureReportResponse {
   pathPattern?: string;
   summary: ArchitectureReportSummary;
   /**
-   * Read these first. Per detector, `stableDependencies` then
-   * `leakingAbstraction`, each capped at `limit` and ordered most violations first.
+   * Read these first. Per detector, `stableDependencies`, then
+   * `leakingAbstraction`, then `silentCoupling`, each capped at `limit` and
+   * ordered most violations first.
    */
   rootCauses: ArchitectureRootCause[];
   /** Per detector in the same order, each capped at `limit`, most severe first. */

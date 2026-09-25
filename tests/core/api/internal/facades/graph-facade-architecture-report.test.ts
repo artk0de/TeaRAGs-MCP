@@ -25,6 +25,7 @@ describe("GraphFacade#getArchitectureReport", () => {
     const graphDb = {
       readFileDependencyGraph: vi.fn().mockResolvedValue({ files: [], edges: [] }),
       readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
       close: vi.fn().mockResolvedValue(undefined),
     };
     const { pool, acquireReader } = readerPool(graphDb);

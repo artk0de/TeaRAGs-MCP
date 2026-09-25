@@ -9,7 +9,10 @@
  *   - `readTemporalCochangeMeta` is `null` before the first build;
  *   - `readTemporalCochangeGraph` annotates each pair with whether a file edge
  *     OR a resolved method edge joins its endpoints, in either direction — an
- *     unresolved method edge (no target symbol) is not a structural link.
+ *     unresolved method edge (no target symbol) is not a structural link;
+ *   - an import of a barrel links the importer to what the barrel re-exports,
+ *     through a chain of barrels (bd tea-rags-mcp-b4dcz), and to nothing the
+ *     barrel only imports for itself.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -120,5 +123,36 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
       (await db.readTemporalCochangeGraph()).edges.map((e) => [`${e.relPathA}|${e.relPathB}`, e.structurallyLinked]),
     );
     expect(linked).toEqual({ "a.ts|b.ts": true, "c.ts|d.ts": true, "c.ts|e.ts": false, "a.ts|z.yml": false });
+  });
+
+  it("links an importer to what a barrel re-exports, through a chain of barrels, and nothing a barrel merely imports", async () => {
+    // a.ts → idx.ts ⇒ re-exports mid.ts ⇒ re-exports impl.ts; idx.ts also imports helper.ts for itself.
+    await db.upsertFile(
+      { relPath: "a.ts", language: "typescript" },
+      { fileEdges: [{ targetRelPath: "idx.ts", importText: "./idx", importedExportNames: ["Impl"] }], methodEdges: [] },
+    );
+    await db.upsertFile(
+      { relPath: "idx.ts", language: "typescript" },
+      {
+        fileEdges: [
+          { targetRelPath: "mid.ts", importText: "./mid", reexportedExportNames: ["Impl"] },
+          { targetRelPath: "helper.ts", importText: "./helper", importedExportNames: ["h"] },
+        ],
+        methodEdges: [],
+      },
+    );
+    await db.upsertFile(
+      { relPath: "mid.ts", language: "typescript" },
+      {
+        fileEdges: [{ targetRelPath: "impl.ts", importText: "./impl", reexportedExportNames: ["*"] }],
+        methodEdges: [],
+      },
+    );
+    await db.replaceTemporalCochange(snapshot([edge("a.ts", "impl.ts"), edge("a.ts", "helper.ts")]));
+
+    const linked = Object.fromEntries(
+      (await db.readTemporalCochangeGraph()).edges.map((e) => [`${e.relPathA}|${e.relPathB}`, e.structurallyLinked]),
+    );
+    expect(linked).toEqual({ "a.ts|impl.ts": true, "a.ts|helper.ts": false });
   });
 });

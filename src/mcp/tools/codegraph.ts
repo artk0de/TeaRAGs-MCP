@@ -253,7 +253,11 @@ export function registerCodegraphTools(
         "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
         "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +
         "internal-reach = it does not (nonExportedNames), conventionPrivacy = Python _name " +
-        "used from other package or Ruby send(:private) from outside its class; rootCauses per module. Summary " +
+        "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
+        "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
+        "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
+        "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
+        "partners; summary.silentCoupling.built false = no co-change build, not clean. Summary " +
         "counts exclusions with named reasons. Diagnosis, not prescription.",
       inputSchema: GetArchitectureReportInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },

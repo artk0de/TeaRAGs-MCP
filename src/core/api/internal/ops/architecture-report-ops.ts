@@ -3,9 +3,10 @@
  * (bd tea-rags-mcp-94hd9).
  *
  * Reads the whole file dependency graph from a codegraph handle, runs the
- * boundary detectors owned by the codegraph trajectory — Stable Dependencies
- * and leaking abstraction (bd tea-rags-mcp-jetrd) — and shapes the typed
- * report DTO. Lives in `api/internal` because it bridges the trajectory's
+ * boundary detectors owned by the codegraph trajectory — Stable Dependencies,
+ * leaking abstraction (bd tea-rags-mcp-jetrd) and, over the temporal
+ * co-change sub-graph, silent coupling (bd tea-rags-mcp-b4dcz) — and shapes
+ * the typed report DTO. Lives in `api/internal` because it bridges the trajectory's
  * detectors and the public DTO — the one layer allowed to import both.
  *
  * Collection resolution and the READ handle are the caller's
@@ -13,7 +14,10 @@
  * reader `find_cycles` uses), so this class never opens a DuckDB file.
  */
 
-import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
+import { extname } from "node:path";
+
+import type { GraphDbClient, RelPath } from "../../../contracts/types/codegraph.js";
+import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
@@ -29,6 +33,11 @@ import {
   type LeakingAbstractionReport,
   type StableDependenciesReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import {
+  detectSilentCoupling,
+  SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON,
+  type SilentCouplingReport,
+} from "../../../domains/trajectory/codegraph/temporal/index.js";
 import type {
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -36,6 +45,7 @@ import type {
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
   LeakingAbstractionReportSummary,
+  SilentCouplingReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
 
@@ -51,7 +61,7 @@ export class ArchitectureReportOps {
    * at `limit`; the summaries keep the totals.
    */
   async build(
-    graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges">,
+    graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph">,
     request: ArchitectureReportScope,
   ): Promise<GetArchitectureReportResponse> {
     const graph = await graphDb.readFileDependencyGraph();
@@ -61,12 +71,24 @@ export class ArchitectureReportOps {
       await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]),
       { sourcePathPattern: request.pathPattern },
     );
+    const silent = detectSilentCoupling(await graphDb.readTemporalCochangeGraph(), graph.files, {
+      sourcePathPattern: request.pathPattern,
+      isDocumentation: isDocumentationPath,
+    });
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
-      summary: { stableDependencies: summarise(sdp), leakingAbstraction: summariseLeaks(leaks, privacy, limit) },
-      rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit)],
-      violations: [...sdpViolations(sdp, limit), ...leakViolations(leaks, privacy, limit)],
+      summary: {
+        stableDependencies: summarise(sdp),
+        leakingAbstraction: summariseLeaks(leaks, privacy, limit),
+        silentCoupling: summariseSilentCoupling(silent),
+      },
+      rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
+      violations: [
+        ...sdpViolations(sdp, limit),
+        ...leakViolations(leaks, privacy, limit),
+        ...silentViolations(silent, limit),
+      ],
     };
   }
 
@@ -99,6 +121,7 @@ export class ArchitectureReportOps {
           detectConventionPrivacyLeaks([]),
           0,
         ),
+        silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, [])),
       },
       rootCauses: [],
       violations: [],
@@ -259,6 +282,71 @@ function leakViolations(
   );
   // One detector, one cap: facade leaks first, then convention-privacy leaks.
   return [...facadeLeaks, ...privacyLeaks].slice(0, limit);
+}
+
+/**
+ * Documentation by the same language table that sets `isDocumentation` on a
+ * chunk — ingest owns it, and this layer is the one allowed to bridge ingest
+ * and trajectory, so the detector receives the answer instead of the table.
+ */
+function isDocumentationPath(relPath: RelPath): boolean {
+  const language = LANGUAGE_MAP[extname(relPath).toLowerCase()];
+  return language !== undefined && DOCUMENTATION_LANGUAGES.has(language);
+}
+
+function summariseSilentCoupling(report: SilentCouplingReport): SilentCouplingReportSummary {
+  const { summary } = report;
+  return {
+    built: summary.built,
+    ...(summary.build ? { build: { ...summary.build } } : {}),
+    pairCount: summary.pairCount,
+    candidateCount: summary.candidateCount,
+    strongCount: summary.strongCount,
+    strongLinkedCount: summary.strongLinkedCount,
+    violationCount: summary.violationCount,
+    rootCauseCount: summary.rootCauseCount,
+    strengthThreshold: summary.strengthThreshold,
+    strengthThresholdMethod: summary.strengthThresholdMethod,
+    ...(summary.strengthSeparability === undefined
+      ? {}
+      : { strengthSeparability: Math.round(summary.strengthSeparability * 1000) / 1000 }),
+    excluded: { ...summary.excluded },
+    exclusionReasons: { noSymbolEndpoints: SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON },
+    ...(summary.scope ? { outOfScopePairCount: summary.scope.outOfScopePairCount } : {}),
+  };
+}
+
+function silentRootCauses(report: SilentCouplingReport, limit: number): ArchitectureRootCause[] {
+  return report.rootCauses.slice(0, limit).map(
+    (r): ArchitectureRootCause => ({
+      detector: "silentCoupling",
+      relPath: r.relPath,
+      violationCount: r.violationCount,
+      maxStrength: r.maxStrength,
+      partners: r.partners,
+    }),
+  );
+}
+
+function silentViolations(report: SilentCouplingReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map(
+    (v): ArchitectureViolation => ({
+      detector: "silentCoupling",
+      sourceRelPath: v.relPathA,
+      targetRelPath: v.relPathB,
+      evidence: {
+        support: v.support,
+        confidenceAB: v.confidenceAB,
+        confidenceBA: v.confidenceBA,
+        lift: v.lift,
+        strength: v.strength,
+        lastCoChangeAt: v.lastCoChangeAt,
+        sampleCommits: v.sampleCommits,
+        structuralVisibility: v.structuralVisibility,
+        directoryRelation: v.directoryRelation,
+      },
+    }),
+  );
 }
 
 /** Locale-independent, so the order is the same on every machine. */

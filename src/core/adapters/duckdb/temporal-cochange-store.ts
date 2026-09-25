@@ -21,6 +21,12 @@ import type { DuckDbGraphSession } from "./graph-session.js";
 /** `cg_temporal_meta.meta_key` of the co-change build's provenance row. */
 const COCHANGE_META_KEY = "cochange";
 
+/**
+ * Longest barrel chain `readGraph` follows. A cap, not a depth anyone expects:
+ * it is what makes the recursion terminate on a re-export cycle.
+ */
+const REEXPORT_CHAIN_LIMIT = 8;
+
 const EDGE_COLUMNS = [
   "rel_path_a",
   "rel_path_b",
@@ -144,14 +150,40 @@ export class DuckDbTemporalCochangeStore {
    * direction. Method edges count on their own: 41% of this project's
    * cross-file call pairs have no file edge (see `readFileDependencyGraph`), and
    * a call is a structural link whatever the import graph says.
+   *
+   * An import of a barrel also links the importer to every file the barrel
+   * RE-EXPORTS, through a chain of barrels (bd tea-rags-mcp-b4dcz): importing
+   * `index.ts` that forwards `impl.ts` loads `impl.ts`, and on the self-index
+   * 90 stored pairs are joined only that way. What a barrel merely imports for
+   * itself is not forwarded. The closure is taken over re-export edges alone
+   * (the barrel graph, small) and joined only for importers that have a
+   * co-change row, so its cost does not grow with the whole import graph.
+   *
+   * Type-only imports are not file edges (the walker records runtime
+   * dependencies only), so a pair joined by nothing but `import type` reads as
+   * unlinked here.
    */
   async readGraph(): Promise<TemporalCochangeGraph> {
     const meta = await this.readMeta();
     const rows = await this.session.queryAll<EdgeRow>(
-      `WITH links AS (
+      `WITH RECURSIVE reexport_reach(barrel, target, depth) AS (
+         SELECT source_rel_path, target_rel_path, 1 FROM cg_symbols_edges_file
+         WHERE reexported_export_names IS NOT NULL
+         UNION
+         SELECT r.barrel, e.target_rel_path, r.depth + 1
+         FROM reexport_reach r
+         JOIN cg_symbols_edges_file e ON e.source_rel_path = r.target AND e.reexported_export_names IS NOT NULL
+         WHERE r.depth < ${REEXPORT_CHAIN_LIMIT}
+       ),
+       links AS (
          SELECT source_rel_path AS x, target_rel_path AS y FROM cg_symbols_edges_file
          UNION
          SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL
+         UNION
+         SELECT f.source_rel_path, r.target
+         FROM cg_symbols_edges_file f
+         JOIN reexport_reach r ON r.barrel = f.target_rel_path
+         WHERE f.source_rel_path IN (SELECT rel_path FROM cg_temporal_files)
        ),
        undirected AS (
          SELECT DISTINCT LEAST(x, y) AS a, GREATEST(x, y) AS b FROM links WHERE x <> y

@@ -1,6 +1,6 @@
 import type { FileDependencyEdge, FileDependencyGraph, RelPath } from "../../../../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
-import { otsuSplit } from "./otsu-split.js";
+import { resolveMajorityFlooredOtsuThreshold, type MajorityFlooredOtsuThreshold } from "./otsu-split.js";
 import type {
   FacadeLeakKind,
   FacadeLeakRootCause,
@@ -42,36 +42,21 @@ export const FACADE_OTSU_MIN_POPULATION = 8;
  * values of the modules themselves rather than fixed, because how much of a
  * codebase goes through its facades is a property of that codebase.
  */
-export interface FacadeAdoptionThresholdPolicy {
-  method: "otsu" | "majority";
-  /** The Otsu cut when `method` is `otsu`; {@link FACADE_ADOPTION_MAJORITY} otherwise. */
-  threshold: number;
-  /** η of the Otsu cut; absent under `majority`. */
-  separability?: number;
-  /** Whether an adoption value clears the threshold — `>= threshold` AND `> majority`. */
-  admits: (adoption: number) => boolean;
-}
+export type FacadeAdoptionThresholdPolicy = MajorityFlooredOtsuThreshold;
 
 /**
  * Resolve the adoption threshold over `population` — the adoption of every
  * candidate module meeting {@link FACADE_MIN_EXTERNAL_IMPORTERS}. Otsu's split
- * ({@link otsuSplit}) when the population holds at least
+ * (via {@link resolveMajorityFlooredOtsuThreshold}) when the population holds at least
  * {@link FACADE_OTSU_MIN_POPULATION} values and two distinct ones, the strict
  * majority otherwise. Under either method a value at or below
  * {@link FACADE_ADOPTION_MAJORITY} is never admitted.
  */
 export function resolveFacadeAdoptionThreshold(population: readonly number[]): FacadeAdoptionThresholdPolicy {
-  const aboveMajority = (adoption: number) => adoption > FACADE_ADOPTION_MAJORITY;
-  const split = population.length >= FACADE_OTSU_MIN_POPULATION ? otsuSplit(population) : null;
-  if (split === null) {
-    return { method: "majority", threshold: FACADE_ADOPTION_MAJORITY, admits: aboveMajority };
-  }
-  return {
-    method: "otsu",
-    threshold: split.threshold,
-    separability: split.separability,
-    admits: (adoption) => adoption >= split.threshold && aboveMajority(adoption),
-  };
+  return resolveMajorityFlooredOtsuThreshold(population, {
+    majority: FACADE_ADOPTION_MAJORITY,
+    minPopulation: FACADE_OTSU_MIN_POPULATION,
+  });
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   FACADE_OTSU_MIN_POPULATION,
   otsuSplit,
   resolveFacadeAdoptionThreshold,
+  resolveMajorityFlooredOtsuThreshold,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 describe("otsuSplit", () => {
@@ -92,5 +93,40 @@ describe("resolveFacadeAdoptionThreshold", () => {
     expect(policy.threshold).toBeCloseTo(0.25, 12);
     expect(policy.admits(0.5)).toBe(false);
     expect(policy.admits(0.6)).toBe(true);
+  });
+});
+
+/**
+ * The majority-floored Otsu policy on its own (bd tea-rags-mcp-b4dcz): the
+ * facade adoption threshold and the silent-coupling strength threshold are
+ * the same rule over different populations, so the rule is parameterised by
+ * the floor and the population size Otsu is trusted on.
+ */
+describe("resolveMajorityFlooredOtsuThreshold", () => {
+  const options = { majority: 0.5, minPopulation: 4 };
+
+  it("falls back to the strict majority below the minimum population", () => {
+    const policy = resolveMajorityFlooredOtsuThreshold([0.1, 0.9, 0.95], options);
+
+    expect(policy).toMatchObject({ method: "majority", threshold: 0.5 });
+    expect(policy.separability).toBeUndefined();
+    expect(policy.admits(0.5)).toBe(false);
+    expect(policy.admits(0.51)).toBe(true);
+  });
+
+  it("raises the cut to Otsu's split when the population's own gap sits above the floor", () => {
+    const policy = resolveMajorityFlooredOtsuThreshold([0.55, 0.56, 0.9, 0.92], options);
+
+    expect(policy.method).toBe("otsu");
+    expect(policy.threshold).toBeCloseTo(0.73, 12);
+    expect(policy.admits(0.56)).toBe(false);
+    expect(policy.admits(0.9)).toBe(true);
+  });
+
+  it("never admits a value at or below the floor, whatever Otsu says", () => {
+    const policy = resolveMajorityFlooredOtsuThreshold([0.1, 0.12, 0.4, 0.45], options);
+
+    expect(policy.method).toBe("otsu");
+    expect(policy.admits(0.45)).toBe(false);
   });
 });
