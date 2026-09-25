@@ -426,6 +426,18 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
       expect(await db.identifierLanguageCounts({ pathPrefixes: ["nowhere/"] })).toEqual([]);
     });
 
+    it("identifierLanguageCounts narrows to rel_paths ending in any of `pathSuffixes`, with the prefix", async () => {
+      expect(await db.identifierLanguageCounts({ pathSuffixes: [".ts"] })).toEqual([{ language: "typescript", n: 1 }]);
+      expect(await db.identifierLanguageCounts({ pathSuffixes: [".rb", ".ts"] })).toEqual([
+        { language: "ruby", n: 5 },
+        { language: "typescript", n: 1 },
+      ]);
+      expect(await db.identifierLanguageCounts({ pathPrefixes: ["app/"], pathSuffixes: [".ts"] })).toEqual([]);
+      // `%` and `_` in a suffix match literally.
+      expect(await db.identifierLanguageCounts({ pathSuffixes: ["_ts"] })).toEqual([]);
+      expect(await db.identifierLanguageCounts({ pathSuffixes: [] })).toHaveLength(2);
+    });
+
     it("sampleIdentifierShapes reads only rows carrying a persisted type or a bound callee", async () => {
       const sample = await db.sampleIdentifierShapes({ pathPrefixes: ["app/"], limit: 100 });
       expect(sample).toHaveLength(2);

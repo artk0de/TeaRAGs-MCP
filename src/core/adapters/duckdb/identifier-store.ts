@@ -26,13 +26,13 @@ import type {
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
   IdentifierDeclarationKind,
+  IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
   IdentifierNameKindTypeRow,
   IdentifierNameScopeQuery,
   IdentifierNameTypeRow,
   IdentifierReplaceEntry,
   IdentifierRow,
-  IdentifierScopeQuery,
   IdentifierShapeSampleQuery,
   IdentifierShapeSampleRow,
   IdentifierTypeAggregateRow,
@@ -91,6 +91,15 @@ export function pathPrefixPredicate(prefixes: readonly string[] | undefined): Sq
   return {
     sql: `(${prefixes.map(() => "rel_path LIKE ? ESCAPE '\\'").join(" OR ")})`,
     params: prefixes.map((p) => `${escapeLikeLiteral(p)}%`),
+  };
+}
+
+/** `rel_path` ends in any of `suffixes`; `TRUE` when none is given. `%` / `_` in a suffix match literally. */
+function pathSuffixPredicate(suffixes: readonly string[] | undefined): SqlPredicate {
+  if (suffixes === undefined || suffixes.length === 0) return { sql: "TRUE", params: [] };
+  return {
+    sql: `(${suffixes.map(() => "rel_path LIKE ? ESCAPE '\\'").join(" OR ")})`,
+    params: suffixes.map((s) => `%${escapeLikeLiteral(s)}`),
   };
 }
 
@@ -377,15 +386,16 @@ export class DuckDbIdentifierStore {
     return out;
   }
 
-  async identifierLanguageCounts(q: IdentifierScopeQuery): Promise<IdentifierLanguageCountRow[]> {
+  async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
     const scope = pathPrefixPredicate(q.pathPrefixes);
+    const suffix = pathSuffixPredicate(q.pathSuffixes);
     const rows = await this.session.queryAll<{ language: string | null; n: number | string }>(
       `SELECT f.language, count(*) AS n
-         FROM (SELECT rel_path FROM cg_identifiers WHERE ${scope.sql}) i
+         FROM (SELECT rel_path FROM cg_identifiers WHERE ${scope.sql} AND ${suffix.sql}) i
          LEFT JOIN cg_symbols_files f ON f.rel_path = i.rel_path
         GROUP BY f.language
         ORDER BY n DESC, f.language NULLS LAST`,
-      scope.params,
+      [...scope.params, ...suffix.params],
     );
     return rows.map((r) => ({ language: r.language, n: Number(r.n) }));
   }

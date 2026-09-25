@@ -27,12 +27,12 @@ import type {
   HierarchySnapshot,
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
   IdentifierNameKindTypeRow,
   IdentifierNameScopeQuery,
   IdentifierNameTypeRow,
   IdentifierReplaceEntry,
-  IdentifierScopeQuery,
   IdentifierShapeSampleQuery,
   IdentifierShapeSampleRow,
   IdentifierTypeAggregateRow,
@@ -903,9 +903,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     })) as IdentifierNameKindTypeRow[];
   }
 
-  async identifierLanguageCounts(q: IdentifierScopeQuery): Promise<IdentifierLanguageCountRow[]> {
+  async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
     return (await this.call("identifierLanguageCounts", {
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      pathSuffixes: q.pathSuffixes === undefined ? undefined : [...q.pathSuffixes],
     })) as IdentifierLanguageCountRow[];
   }
 

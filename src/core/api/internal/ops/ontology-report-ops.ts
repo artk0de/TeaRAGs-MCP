@@ -19,7 +19,9 @@
  *     name that denotes nothing in particular (`result`, `data`, `item`);
  *   - homonym types need ≥ 2 rows and ≥ 10% of the name's rows — one stray
  *     binding is noise, not a second meaning;
- *   - outliers need a convention: the top name holds ≥ 50% of the group;
+ *   - a synonym's dominant name needs ≥ 2 rows ({@link SYNONYM_MIN_DOMINANT_ROWS});
+ *   - outliers need a convention: the top name holds ≥ 50% of the group; a
+ *     name EXACT for its type is never an outlier;
  *   - confidence `min(1, (n/20)^2)`, the lexicon's quadratic dampening.
  */
 
@@ -39,6 +41,8 @@ import type { IdentifierCasing, IdentifierNamingConvention } from "../../../cont
 import {
   classifyNamingShape,
   detectIdentifierCasing,
+  isTypeFamilyRoleName,
+  mergeUnqualifiedTypeSpellings,
   singularizeIdentifierWord,
   splitIdentifierWords,
   type NamingShape,
@@ -67,8 +71,14 @@ import { resolveCollection } from "../collection-resolver.js";
 export const DEFAULT_ONTOLOGY_REPORT_LIMIT = 20;
 /** Hard cap on `limit`, whatever the caller asks. */
 export const MAX_ONTOLOGY_REPORT_LIMIT = 100;
-/** Candidate groups read per returned synonym / outlier item. */
+/** Candidate groups read per returned synonym / outlier / homonym item. */
 const GROUP_POOL_FACTOR = 4;
+/**
+ * A synonym entry's dominant name must occur at least this often. A type whose
+ * every name occurs once (`ChunkingHook` → `rspecFilterHook`, `goHook`, …) is a
+ * set of distinct singleton instances, each named for itself — no convention.
+ */
+const SYNONYM_MIN_DOMINANT_ROWS = 2;
 
 /** The judging thresholds — see the module doc for why each value. `groupPool` is derived from `limit`. */
 export const ONTOLOGY_REPORT_THRESHOLDS: Omit<OntologyReportThresholds, "groupPool"> = {
@@ -258,7 +268,7 @@ export class OntologyReportOps {
       },
     };
     if (rows.synonyms) response.synonyms = this.synonyms(rows.synonyms, limit);
-    if (rows.homonyms) response.homonyms = this.homonyms(rows.homonyms);
+    if (rows.homonyms) response.homonyms = this.homonyms(rows.homonyms, limit);
     if (rows.outlierGroups) response.outliers = this.outliers(rows.outlierGroups, limit);
     if (rows.collisions) response.collisions = this.collisions(rows.collisions);
     if (rows.totals.identifierRows === 0 && rows.totals.symbolRows > 0) {
@@ -307,6 +317,7 @@ export class OntologyReportOps {
         buckets.set(key, bucket);
       }
       const top = [...buckets.values()].sort((a, b) => b.n - a.n)[0];
+      if (top.n < SYNONYM_MIN_DOMINANT_ROWS) continue;
       const dominantShare = top.n / group.n;
       if (dominantShare >= t.synonymDominantShareCeiling) continue;
       const casing = this.casingFor(top.names[0].example.relPath, group.kind, top.names[0].name);
@@ -335,13 +346,18 @@ export class OntologyReportOps {
       .map(({ score: _score, ...synonym }) => synonym);
   }
 
-  private homonyms(rows: NonNullable<OntologyReportRows["homonyms"]>): OntologyHomonym[] {
-    return rows.map((row) => ({
-      name: row.name,
-      n: row.n,
-      confidence: confidence(row.n, ONTOLOGY_REPORT_THRESHOLDS.confidenceSupport),
-      topTypeShare: row.topTypeShare,
-      types: row.types.map((type) => ({
+  /**
+   * Re-judges the pooled homonym candidates: an unqualified spelling folds into
+   * the qualified type it names (`Document` into `TaxPreparation::Document`), and
+   * a name that is the role word of a type family (`state` for `ClientState`,
+   * `RunState`) is dropped. The rest re-rank by `(1 − top type share) ×
+   * confidence`, capped at `limit` names and `namesPerItem` types.
+   */
+  private homonyms(rows: NonNullable<OntologyReportRows["homonyms"]>, limit: number): OntologyHomonym[] {
+    const t = ONTOLOGY_REPORT_THRESHOLDS;
+    const judged: (OntologyHomonym & { score: number })[] = [];
+    for (const row of rows) {
+      const types = mergeUnqualifiedTypeSpellings(row.types).map((type) => ({
         type: type.typeName,
         n: type.n,
         shape: classifyNamingShape({
@@ -351,9 +367,25 @@ export class OntologyReportOps {
           typeName: type.typeName,
         }),
         example: location(type.example),
-      })),
-      evidence: evidence(row.evidence),
-    }));
+      }));
+      if (types.length < 2) continue;
+      if (isTypeFamilyRoleName(types.map(({ type, shape }) => ({ typeName: type, shape })))) continue;
+      const topTypeShare = types[0].n / row.n;
+      const conf = confidence(row.n, t.confidenceSupport);
+      judged.push({
+        name: row.name,
+        n: row.n,
+        confidence: conf,
+        topTypeShare,
+        types: types.slice(0, t.namesPerItem),
+        evidence: evidence(row.evidence),
+        score: (1 - topTypeShare) * conf,
+      });
+    }
+    return judged
+      .sort((a, b) => b.score - a.score || b.n - a.n || a.name.localeCompare(b.name))
+      .slice(0, limit)
+      .map(({ score: _score, ...homonym }) => homonym);
   }
 
   /**
@@ -383,7 +415,8 @@ export class OntologyReportOps {
       if (!dominant) continue;
       const conf = confidence(group.n, t.confidenceSupport);
       for (const item of named) {
-        if (shapeFamily(item.shape) === dominantFamily) continue;
+        // EXACT is the type's own spelling: canonical whatever the group's habit.
+        if (item.shape === "EXACT" || shapeFamily(item.shape) === dominantFamily) continue;
         judged.push({
           type: group.typeName,
           kind: group.kind,

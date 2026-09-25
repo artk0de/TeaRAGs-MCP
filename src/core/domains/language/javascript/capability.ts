@@ -75,7 +75,8 @@ export const capability: LanguageCapability = {
       field: ["camel"],
       constant: ["camel", "screamingSnake"],
     },
-    // JavaScript types come from constructors only (`new Map()`), so only the built-in ones appear.
+    // JavaScript types come from constructors only (`new Map()`), so only the built-in ones appear —
+    // the constructible subset of TypeScript's list (no `Iterable`, `ReturnType` …: those are type-only).
     nonConceptTypes: [
       "undefined",
       "null",
@@ -90,6 +91,9 @@ export const capability: LanguageCapability = {
       "Map",
       "Set",
       "Promise",
+      "WeakMap",
+      "WeakSet",
+      "WeakRef",
     ],
   },
 };

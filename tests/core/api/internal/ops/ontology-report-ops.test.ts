@@ -450,6 +450,154 @@ describe("OntologyReportOps#report — ranking and resilience", () => {
   });
 });
 
+/** A homonym candidate row as the store returns it; `n` is the sum of its types. */
+function homonym(name: string, types: [typeName: string, n: number, relPath: string][]) {
+  const n = types.reduce((s, [, count]) => s + count, 0);
+  return {
+    name,
+    n,
+    topTypeShare: Math.max(...types.map(([, count]) => count)) / n,
+    types: types.map(([typeName, count, relPath]) => ({ typeName, n: count, example: at(relPath) })),
+    evidence: { binding: n },
+  };
+}
+
+describe("OntologyReportOps#report — live false positives", () => {
+  it("homonyms: a role word every type ends in, each a different class, is not a homonym", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        homonyms: [
+          homonym("symbolTable", [
+            ["InMemoryGlobalSymbolTable", 6, "src/a.ts"],
+            ["GlobalSymbolTable", 5, "src/b.ts"],
+          ]),
+          homonym("state", [
+            ["ClientState", 4, "src/a.ts"],
+            ["ChunkPhaseState", 3, "src/b.ts"],
+            ["FilePhaseState", 3, "src/c.ts"],
+            ["CodegraphRunState", 2, "src/d.ts"],
+          ]),
+          homonym("composer", [
+            ["DefaultSymbolIdComposer", 4, "src/a.ts"],
+            ["SymbolIdComposer", 3, "src/b.ts"],
+          ]),
+          homonym("facts", [
+            ["RubyTypeFact", 4, "src/a.ts"],
+            ["TypeFact", 3, "src/b.ts"],
+          ]),
+          homonym("connection", [
+            ["Bookkeeping::QBO::Connection", 4, "app/a.rb"],
+            ["Communication::TwilioConnection", 3, "app/b.rb"],
+            ["GettingPaid::StripeConnection", 3, "app/c.rb"],
+          ]),
+          homonym("result", [
+            ["KindOfService::Result", 6, "app/a.rb"],
+            ["Crm::Api::Account", 4, "app/b.rb"],
+          ]),
+          homonym("invoice", [
+            ["Billing::Invoice", 6, "app/a.rb"],
+            ["GettingPaid::Bill", 4, "app/b.rb"],
+          ]),
+          homonym("subscription", [
+            ["GrowthBilling::Subscription", 5, "app/a.rb"],
+            ["Subscriptions::Subscription", 5, "app/b.rb"],
+          ]),
+        ],
+      }),
+    );
+    const { homonyms } = await ops.report({ collection: "code_x", sections: ["homonyms"] });
+    expect(homonyms?.map((h) => h.name).sort()).toEqual(["invoice", "result", "subscription"]);
+  });
+
+  it("homonyms: an unqualified spelling folds into the one qualified type sharing its last segment", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        homonyms: [
+          homonym("@document", [
+            ["TaxPreparation::Document", 27, "app/a.rb"],
+            ["Document", 10, "app/b.rb"],
+          ]),
+          homonym("request", [
+            ["Request", 5, "app/a.rb"],
+            ["Invoice", 4, "app/b.rb"],
+            ["ActionDispatch::Request", 3, "app/c.rb"],
+          ]),
+        ],
+      }),
+    );
+    const { homonyms } = await ops.report({ collection: "code_x", sections: ["homonyms"] });
+    expect(homonyms?.map((h) => h.name)).toEqual(["request"]);
+    const [request] = homonyms ?? [];
+    expect(request.types.map((t) => [t.type, t.n])).toEqual([
+      ["ActionDispatch::Request", 8],
+      ["Invoice", 4],
+    ]);
+    expect(request.topTypeShare).toBeCloseTo(8 / 12);
+    // The merged type keeps the qualified spelling's example.
+    expect(request.types[0].example.relPath).toBe("app/c.rb");
+  });
+
+  it("homonyms: judged over the pooled candidates, then capped at limit and namesPerItem", async () => {
+    const many = Array.from({ length: 8 }, (_, i): [string, number, string] => [`Type${"ABCDEFGH"[i]}`, 3, "app/t.rb"]);
+    const { ops, graphDb } = makeOps(async () =>
+      rows({
+        homonyms: [
+          homonym("state", [
+            ["ClientState", 6, "src/a.ts"],
+            ["RunState", 5, "src/b.ts"],
+          ]),
+          homonym("record", many),
+          homonym("entry", [
+            ["Invoice", 6, "app/a.rb"],
+            ["Payment", 5, "app/b.rb"],
+          ]),
+        ],
+      }),
+    );
+    const { homonyms } = await ops.report({ collection: "code_x", sections: ["homonyms"], limit: 1 });
+    expect(graphDb.readOntologyReport.mock.calls[0][0].thresholds.groupPool).toBeGreaterThan(1);
+    expect(homonyms?.map((h) => h.name)).toEqual(["record"]);
+    expect(homonyms?.[0].types).toHaveLength(ONTOLOGY_REPORT_THRESHOLDS.namesPerItem);
+  });
+
+  it("outliers: a name EXACT for its type is the canonical spelling, never an outlier", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        outlierGroups: [
+          group({
+            typeName: "Error",
+            names: [
+              { name: "cause", n: 40, example: at("src/a.ts") },
+              { name: "error", n: 3, example: at("src/b.ts") },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { outliers } = await ops.report({ collection: "code_x", sections: ["outliers"] });
+    expect(outliers).toEqual([]);
+  });
+
+  it("synonyms: a type whose dominant name occurs once is a set of singleton instances, not synonyms", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        synonyms: [
+          group({
+            typeName: "ChunkingHook",
+            names: ["jsTestDslFilterHook", "rspecFilterHook", "pythonHook", "rubyHook", "goHook"].map((name, i) => ({
+              name,
+              n: 1,
+              example: at("src/hooks.ts", i + 1),
+            })),
+          }),
+        ],
+      }),
+    );
+    const { synonyms } = await ops.report({ collection: "code_x", sections: ["synonyms"] });
+    expect(synonyms).toEqual([]);
+  });
+});
+
 describe("ontologyLanguageProfiles", () => {
   it("derives one profile per language that declares naming, with its file extensions", () => {
     const profiles = ontologyLanguageProfiles();

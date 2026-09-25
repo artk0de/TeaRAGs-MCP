@@ -193,7 +193,7 @@ export interface DaemonRequest {
     | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[] } // aggregateIdentifiersByCallee
     | { collection: string; names: string[] } // identifierNameTypes | existingSymbolShortNames
     | { collection: string; names: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByName
-    | { collection: string; pathPrefixes?: string[] } // identifierLanguageCounts
+    | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[] } // identifierLanguageCounts
     | { collection: string; limit: number; pathPrefixes?: string[] } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery }; // readOntologyReport
 }

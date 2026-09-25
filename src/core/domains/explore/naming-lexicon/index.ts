@@ -8,8 +8,11 @@ export {
   singularizeIdentifierWord,
   splitIdentifierWords,
   stripIdentifierDecorations,
+  typeNameLastSegment,
   typeNameWords,
 } from "./casing.js";
+export { isTypeFamilyRoleName, mergeUnqualifiedTypeSpellings } from "./homonyms.js";
+export type { HomonymTypeCount, HomonymTypeShape } from "./homonyms.js";
 export {
   NAMING_VERB_PREFIXES,
   calleeDerivedName,

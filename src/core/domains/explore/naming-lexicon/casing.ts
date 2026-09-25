@@ -51,13 +51,18 @@ export function joinIdentifierWords(words: readonly string[], casing: Identifier
 }
 
 /**
- * The words of a type name's LAST namespace segment (`Foo::Bar`, `pkg.Bar`),
- * with a leading `::` and any generic arguments (`<…>`, `[…]`) dropped.
+ * A type name's LAST namespace segment (`Foo::Bar`, `pkg.Bar` → `Bar`), with a
+ * leading `::` and any generic arguments (`<…>`, `[…]`) dropped.
  */
-export function typeNameWords(typeName: string): string[] {
+export function typeNameLastSegment(typeName: string): string {
   const bare = typeName.replace(/^::/, "").replace(/[<[].*$/, "");
   const segments = bare.split(/::|\./);
-  return splitIdentifierWords(segments[segments.length - 1] ?? "");
+  return segments[segments.length - 1] ?? "";
+}
+
+/** The words of {@link typeNameLastSegment}. */
+export function typeNameWords(typeName: string): string[] {
+  return splitIdentifierWords(typeNameLastSegment(typeName));
 }
 
 /** Renders a type name as an identifier: `Foo::TaxAutomationDocument` → `tax_automation_document` (snake). */

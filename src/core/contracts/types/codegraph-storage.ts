@@ -193,6 +193,15 @@ export interface IdentifierNameKindTypeRow {
   exampleOwner: SymbolId;
 }
 
+/**
+ * The language-count read's scope: {@link IdentifierScopeQuery}, further
+ * narrowed to rel_paths ending in any of `pathSuffixes` (`.rb`) — the file
+ * extension a request's path pattern pins. Absent or empty → no suffix narrowing.
+ */
+export interface IdentifierLanguageCountQuery extends IdentifierScopeQuery {
+  pathSuffixes?: readonly string[];
+}
+
 /** Identifier rows per file language (`cg_symbols_files.language`; null for a file with no files row). */
 export interface IdentifierLanguageCountRow {
   language: string | null;
@@ -258,11 +267,12 @@ export interface OntologyReportThresholds {
   outlierMinDominantShare: number;
   /** `k` of the `(n/k)^2` confidence the sections rank by. */
   confidenceSupport: number;
-  /** Names returned per synonym / outlier group, types per homonym. */
+  /** Names returned per synonym / outlier group; types per homonym, applied by the caller after its judgement. */
   namesPerItem: number;
   /**
-   * Candidate (type, kind) groups read for synonyms and outliers, before the
-   * caller's plural merge and shape judgement narrow them to `limit`.
+   * Candidate (type, kind) groups read for synonyms and outliers, and candidate
+   * names read for homonyms, before the caller's plural / spelling merge and
+   * shape judgement narrow them to `limit`.
    */
   groupPool: number;
 }
@@ -357,6 +367,7 @@ export interface OntologyReportRows {
   /** The most frequent generic names, capped at `limit`. */
   genericNames: OntologyGenericNameRow[];
   synonyms?: OntologyTypeGroupRow[];
+  /** Candidate names (up to `groupPool`, every qualifying type); the caller judges and caps them. */
   homonyms?: OntologyHomonymRow[];
   /** Candidate groups (a dominant name exists); the caller judges shapes. */
   outlierGroups?: OntologyTypeGroupRow[];
@@ -830,7 +841,7 @@ export interface GraphDbClient {
   aggregateIdentifiersByName: (q: IdentifierNameScopeQuery) => Promise<IdentifierNameKindTypeRow[]>;
 
   /** Row count in scope per file language, largest first; empty when the scope holds no rows. */
-  identifierLanguageCounts: (q: IdentifierScopeQuery) => Promise<IdentifierLanguageCountRow[]>;
+  identifierLanguageCounts: (q: IdentifierLanguageCountQuery) => Promise<IdentifierLanguageCountRow[]>;
 
   /**
    * A reservoir sample of at most `q.limit` scoped rows that carry a persisted

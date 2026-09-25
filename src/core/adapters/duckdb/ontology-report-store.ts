@@ -14,7 +14,11 @@
  *   - `concept_all` — rows whose effective type names a concept: not a
  *     non-concept type of the row's language, not a single capital letter;
  *     value kinds only (`param`, `local`, `field` — a `return` row's name is a
- *     method name, not a value name); a name of more than one character;
+ *     method name, not a value name); a name of more than one character; not
+ *     an unused marker — a `param` / `local` named `_` + letter (`_ctx`), the
+ *     TS / Ruby / Rust / Python convention for a binding the body ignores.
+ *     Fields keep a leading `_` (Python `_private` is a real name), and a
+ *     dunder (`__init__`) is no marker;
  *   - `generic` — names bound to many types none of which dominates. Data
  *     derived, project-wide, so `result` / `data` / `item` drop out without a
  *     hardcoded list;
@@ -61,6 +65,8 @@ const TYPE_SOURCES = Object.keys(TYPE_SOURCE_SET) as IdentifierTypeSource[];
 const EXTENSION_SQL = `lower(regexp_extract(rel_path, '\\.[^./]+$'))`;
 /** The name without a storage sigil (`@`, `@@`, `$`). */
 const BARE_NAME_SQL = `regexp_replace(name, '^(@@|@|\\$)', '')`;
+/** A single `_` then a letter: the unused-binding marker (`_ctx`); a dunder (`__init__`) does not match. */
+const UNUSED_MARKER_SQL = `regexp_matches(name, '^_[A-Za-z]')`;
 /** Deterministic example-row order: first file, first line, first owner. */
 const EXAMPLE_KEY_SQL = `rel_path || ':' || lpad(CAST(line AS VARCHAR), 10, '0') || ':' || owner_symbol_id`;
 const EXAMPLE_COLUMNS_SQL = `arg_min(rel_path, ${EXAMPLE_KEY_SQL}) AS ex_path,
@@ -119,6 +125,7 @@ function ontologyBaseCte(q: OntologyReportQuery): SqlPredicate {
            AND kind IN ('param', 'local', 'field')
            AND NOT regexp_full_match(type_name, '[A-Z]?')
            AND length(${BARE_NAME_SQL}) > 1
+           AND NOT (kind IN ('param', 'local') AND ${UNUSED_MARKER_SQL})
            AND NOT (${nonConcept.sql})
       ),
       name_types AS (
@@ -298,7 +305,12 @@ export class DuckDbOntologyReportStore {
     }));
   }
 
-  /** Names bound to two or more supported concept types, ranked by how evenly they split. */
+  /**
+   * Names bound to two or more supported concept types, ranked by how evenly
+   * they split. A candidate POOL (`groupPool`, every qualifying type uncapped):
+   * the ops layer drops type-family role words and merged spellings, then caps
+   * at `limit` and `namesPerItem`.
+   */
   private async readHomonyms(q: OntologyReportQuery): Promise<OntologyHomonymRow[]> {
     const base = ontologyBaseCte(q);
     const t = q.thresholds;
@@ -323,7 +335,7 @@ export class DuckDbOntologyReportStore {
           GROUP BY r.name, t.total, t.top_n
          HAVING count(*) >= 2 AND t.total >= ${int(t.minSupport)}
           ORDER BY score DESC, t.total DESC, r.name
-          LIMIT ${int(q.limit)}
+          LIMIT ${int(t.groupPool)}
        ),
        sources AS (
          SELECT name, ${EVIDENCE_COLUMNS_SQL}
@@ -331,7 +343,7 @@ export class DuckDbOntologyReportStore {
           GROUP BY name
        )
        SELECT p.name, CAST(p.total AS INTEGER) AS n, p.top_n / p.total AS top_type_share,
-              list_slice(p.types, 1, ${int(t.namesPerItem)}) AS types,
+              p.types,
               s.* EXCLUDE (name)
          FROM picked p JOIN sources s USING (name)
         ORDER BY p.score DESC, p.total DESC, p.name`,

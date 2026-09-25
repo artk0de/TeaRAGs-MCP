@@ -16,7 +16,10 @@
  *      parent directory, then the project. Support = rows of the asked types
  *      (`countIdentifiers`), else rows bound to the drafts' callees, else all
  *      rows in scope.
- *   2. Language. The request's, else the scope's dominant file language. Its
+ *   2. Language. The request's, else the dominant file language of the
+ *      REQUESTED pattern (literal prefix + pinned extension), not of the
+ *      widened scope; the pinned extension project-wide, then the project,
+ *      only when that pattern holds no rows (so up to three reads). Its
  *      descriptor supplies the canonical casing per role and the non-concept
  *      types, which leave `byType`.
  *   3. byType. The type aggregate (persisted sources + the store's call-return
@@ -41,6 +44,7 @@ import type {
   IdentifierBoundCallee,
   IdentifierCalleeAggregateRow,
   IdentifierDeclarationKind,
+  IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
   IdentifierTypeAggregateRow,
 } from "../../../contracts/types/codegraph.js";
@@ -210,9 +214,9 @@ export class NamingLexiconOps {
     let { language } = req;
     let projectLanguages: IdentifierLanguageCountRow[] | undefined;
     if (language === undefined) {
-      const counts = await graphDb.identifierLanguageCounts({ pathPrefixes });
-      if (scope.prefix === "") projectLanguages = counts;
-      language = counts.find((c) => c.language !== null)?.language ?? undefined;
+      const decided = await requestedLanguageCounts(graphDb, req.pathPattern);
+      projectLanguages = decided.projectCounts;
+      language = decided.counts.find((c) => c.language !== null)?.language ?? undefined;
     }
     const convention = language ? this.deps.namingConventions.get(language) : undefined;
     const nonConceptTypes = convention?.nonConceptTypes ?? [];
@@ -377,6 +381,47 @@ async function supportAt(
     return { prefix, support: sum(calleeRows), calleeRows };
   }
   return { prefix, support: sum(await graphDb.identifierLanguageCounts({ pathPrefixes })) };
+}
+
+/**
+ * The file extensions a path pattern pins in its last segment: `**\/*.rb` →
+ * `[".rb"]`, `*.{ts,tsx}` → `[".ts", ".tsx"]`. A last segment that does not end
+ * in a literal extension or a brace list of them pins none.
+ */
+function pinnedExtensions(pathPattern: string | undefined): string[] | undefined {
+  if (!pathPattern) return undefined;
+  const last = pathPattern.slice(pathPattern.lastIndexOf("/") + 1);
+  const single = /\.([\w+-]+)$/.exec(last);
+  if (single) return [`.${single[1]}`];
+  const braced = /\.\{([\w+,-]+)\}$/.exec(last);
+  const extensions = braced?.[1].split(",").filter(Boolean) ?? [];
+  return extensions.length > 0 ? extensions.map((ext) => `.${ext}`) : undefined;
+}
+
+/**
+ * The language counts the language decision reads when the request names none:
+ * those of the REQUESTED pattern — its literal prefix, narrowed to the
+ * extensions it pins — never those of the widened evidence scope. A callee with
+ * no rows under `app/**\/*.rb` widens the evidence to the project, and the
+ * project's dominant language says nothing about the Ruby the caller is writing.
+ * Only when the requested pattern holds no rows: the pinned extensions
+ * project-wide, then the whole project (`projectCounts`, reused by the drift check).
+ */
+async function requestedLanguageCounts(
+  graphDb: IdentifierReader,
+  pathPattern: string | undefined,
+): Promise<{ counts: IdentifierLanguageCountRow[]; projectCounts?: IdentifierLanguageCountRow[] }> {
+  const prefix = literalPrefix(pathPattern);
+  const pathSuffixes = pinnedExtensions(pathPattern);
+  const requested: IdentifierLanguageCountQuery[] = [];
+  if (prefix !== "") requested.push({ pathPrefixes: [prefix], ...(pathSuffixes ? { pathSuffixes } : {}) });
+  if (pathSuffixes) requested.push({ pathSuffixes });
+  for (const query of requested) {
+    const counts = await graphDb.identifierLanguageCounts(query);
+    if (counts.length > 0) return { counts };
+  }
+  const projectCounts = await graphDb.identifierLanguageCounts({});
+  return { counts: projectCounts, projectCounts };
 }
 
 /**

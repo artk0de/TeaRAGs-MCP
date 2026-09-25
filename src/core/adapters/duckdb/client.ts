@@ -58,12 +58,12 @@ import type {
   HierarchySnapshot,
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
   IdentifierNameKindTypeRow,
   IdentifierNameScopeQuery,
   IdentifierNameTypeRow,
   IdentifierReplaceEntry,
-  IdentifierScopeQuery,
   IdentifierShapeSampleQuery,
   IdentifierShapeSampleRow,
   IdentifierTypeAggregateRow,
@@ -347,7 +347,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.identifiers.aggregateIdentifiersByName(q);
   }
 
-  async identifierLanguageCounts(q: IdentifierScopeQuery): Promise<IdentifierLanguageCountRow[]> {
+  async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
     return this.identifiers.identifierLanguageCounts(q);
   }
 

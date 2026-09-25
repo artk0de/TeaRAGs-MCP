@@ -261,7 +261,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     }),
   ),
   identifierLanguageCounts: read(async (graphDb, p) =>
-    graphDb.identifierLanguageCounts({ pathPrefixes: p.pathPrefixes as string[] | undefined }),
+    graphDb.identifierLanguageCounts({
+      pathPrefixes: p.pathPrefixes as string[] | undefined,
+      pathSuffixes: p.pathSuffixes as string[] | undefined,
+    }),
   ),
   sampleIdentifierShapes: read(async (graphDb, p) =>
     graphDb.sampleIdentifierShapes({ limit: p.limit as number, pathPrefixes: p.pathPrefixes as string[] | undefined }),

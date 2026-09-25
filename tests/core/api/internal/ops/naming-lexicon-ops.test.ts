@@ -520,4 +520,54 @@ describe("NamingLexiconOps", () => {
       ]);
     });
   });
+
+  // Live taxdome (Ruby + TypeScript): `app/**/*.rb` with a callee that has no
+  // rows widened to the project and took the project's dominant language —
+  // TypeScript — so Ruby drafts were judged in TypeScript casing.
+  describe("language is decided by the REQUESTED pattern, not the widened scope", () => {
+    beforeEach(async () => {
+      const tsRows = (i: number) => [0, 1, 2, 3].map((j) => local(`Widget${i}#render${j}`, "vendorEnvelope"));
+      await write(
+        [0, 1, 2, 3, 4].map((i) => ({ relPath: `app/javascript/widget_${i}.ts`, rows: tsRows(i) })),
+        "typescript",
+      );
+      await write([
+        { relPath: "app/models/vendor.rb", rows: [local("Vendor#load", "vendor_envelope")] },
+        { relPath: "app/models/envelope.rb", rows: [local("Envelope#load", "envelope")] },
+      ]);
+    });
+
+    const draft = { name: "row", callee: { member: "find_vendor_envelope" } };
+
+    it("`app/**/*.rb` → ruby while the evidence scope widens to the project", async () => {
+      const result = await ops.getNamingLexicon({ collection: "c", pathPattern: "app/**/*.rb", names: [draft] });
+      expect(result.scope).toBe("");
+      expect(result.language).toBe("ruby");
+    });
+
+    it("a braced extension list restricts the counts to every listed suffix", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        pathPattern: "app/**/*.{rb,rake}",
+        names: [draft],
+      });
+      expect(result.language).toBe("ruby");
+    });
+
+    it("a requested prefix with no rows keeps the pinned extension over the project's dominant language", async () => {
+      const result = await ops.getNamingLexicon({ collection: "c", pathPattern: "lib/**/*.rb", names: [draft] });
+      expect(result.language).toBe("ruby");
+    });
+
+    it("a requested scope with no identifier rows at all falls back to the project counts", async () => {
+      const result = await ops.getNamingLexicon({ collection: "c", pathPattern: "vendor/**", names: [draft] });
+      expect(result.language).toBe("typescript");
+    });
+
+    it("without an extension the requested prefix still decides", async () => {
+      const result = await ops.getNamingLexicon({ collection: "c", pathPattern: "app/models/**", names: [draft] });
+      expect(result.scope).toBe("");
+      expect(result.language).toBe("ruby");
+    });
+  });
 });

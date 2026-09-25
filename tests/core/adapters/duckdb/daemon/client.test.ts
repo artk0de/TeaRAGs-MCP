@@ -853,6 +853,24 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
     expect(params("identifierLanguageCounts")).toMatchObject({ pathPrefixes: ["app/"] });
     expect(params("sampleIdentifierShapes")).toMatchObject({ collection: "code_x_v1", limit: 50 });
   });
+
+  it("forwards identifierLanguageCounts' path suffixes", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return [];
+    });
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.identifierLanguageCounts({ pathPrefixes: ["app/"], pathSuffixes: [".rb"] });
+    await client.close();
+    expect(seen.find((r) => r.op === "identifierLanguageCounts")?.params).toMatchObject({
+      pathPrefixes: ["app/"],
+      pathSuffixes: [".rb"],
+    });
+  });
 });
 
 describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)", () => {

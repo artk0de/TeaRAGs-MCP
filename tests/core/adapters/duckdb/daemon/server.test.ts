@@ -1062,6 +1062,30 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
     ]);
     await pool.closeAll();
   });
+
+  it("applies identifierLanguageCounts' path suffixes", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ident_suffix_v1";
+    const doc = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2 };
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: { collection: c, entries: [{ relPath: "a.rb", rows: [doc] }] },
+    });
+    const rb = await server.handle({
+      id: 2,
+      op: "identifierLanguageCounts",
+      params: { collection: c, pathSuffixes: [".rb"] },
+    });
+    const ts = await server.handle({
+      id: 3,
+      op: "identifierLanguageCounts",
+      params: { collection: c, pathSuffixes: [".ts"] },
+    });
+    expect((rb as { result: unknown }).result).toEqual([{ language: null, n: 1 }]);
+    expect((ts as { result: unknown }).result).toEqual([]);
+    await pool.closeAll();
+  });
 });
 
 // bd tea-rags-mcp-4p3sb.20: the ontology audit is a read proxied through the daemon.

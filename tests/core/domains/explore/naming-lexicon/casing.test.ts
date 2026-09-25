@@ -9,6 +9,7 @@ import {
   singularizeIdentifierWord,
   splitIdentifierWords,
   stripIdentifierDecorations,
+  typeNameLastSegment,
 } from "../../../../../src/core/domains/explore/naming-lexicon/casing.js";
 
 /**
@@ -158,5 +159,18 @@ describe("detectIdentifierCasing", () => {
   it("is indeterminate for a mixed style", () => {
     expect(detectIdentifierCasing("tax_AutomationDocument")).toBeUndefined();
     expect(detectIdentifierCasing("")).toBeUndefined();
+  });
+});
+
+describe("typeNameLastSegment", () => {
+  it.each([
+    ["TaxPreparation::Document", "Document"],
+    ["::Document", "Document"],
+    ["Document", "Document"],
+    ["http.Request", "Request"],
+    ["Foo::Bar<Baz::Qux>", "Bar"],
+    ["pkg.Items[int]", "Items"],
+  ])("%s → %s", (typeName, expected) => {
+    expect(typeNameLastSegment(typeName)).toBe(expected);
   });
 });

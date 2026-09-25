@@ -305,6 +305,50 @@ describe("DuckDbGraphClient#readOntologyReport", () => {
     expect(tax?.evidence).toEqual({ binding: 7, "call-return": 1 });
   });
 
+  it("drops unused-marker params and locals (`_ctx`, `_user`) everywhere; fields and dunders stay", async () => {
+    const at = (kind: IdentifierRow["kind"], name: string, typeName: string) => typed(name, typeName, kind);
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "src/handlers.ts",
+        rows: [
+          ...rows(3, at("param", "_ctx", "RequestContext"), 1),
+          ...rows(3, at("param", "_ctx", "JobContext"), 10),
+          ...rows(4, at("local", "_relPath", "RelPath"), 20),
+          ...rows(2, at("local", "relPath", "RelPath"), 30),
+        ],
+      },
+      {
+        relPath: "app/models/cache.py",
+        rows: [
+          ...rows(3, at("field", "_store", "Store"), 1),
+          ...rows(3, at("field", "_store", "Backend"), 10),
+          ...rows(3, at("local", "__entry__", "Entry"), 20),
+          ...rows(3, at("local", "__entry__", "Slot"), 30),
+        ],
+      },
+    ]);
+    const report = await db.readOntologyReport(query());
+    const homonymNames = report.homonyms?.map((h) => h.name) ?? [];
+    expect(homonymNames).not.toContain("_ctx");
+    expect(homonymNames).toContain("_store");
+    expect(homonymNames).toContain("__entry__");
+    const relPathNames = [...(report.synonyms ?? []), ...(report.outlierGroups ?? [])]
+      .filter((g) => g.typeName === "RelPath")
+      .flatMap((g) => g.names.map((n) => n.name));
+    expect(relPathNames).not.toContain("_relPath");
+  });
+
+  it("reads homonym candidates up to groupPool, not limit — the ops layer filters before it caps", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "app/services/extra.rb",
+        rows: [...rows(3, typed("entry", "Ledger"), 1), ...rows(3, typed("entry", "Journal"), 10)],
+      },
+    ]);
+    const { homonyms } = await db.readOntologyReport(query({ sections: ["homonyms"], limit: 1 }));
+    expect(homonyms?.map((h) => h.name).sort()).toEqual(["entry", "record"]);
+  });
+
   it("an empty table yields empty sections and zero counts", async () => {
     await db.run("DELETE FROM cg_identifiers");
     const report = await db.readOntologyReport(query());
