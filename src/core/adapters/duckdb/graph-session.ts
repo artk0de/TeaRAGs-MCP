@@ -856,6 +856,11 @@ export class DuckDbGraphSession {
    * ignored — the same first-wins outcome the previous writer produced.
    * `table` and the column names are compile-time literals supplied by the
    * caller, never user input; every value goes through a positional bind.
+   *
+   * Resolves to the keys it DELETED, in `keyColumns` order, so a caller whose
+   * rows are referenced from another table can retire those references too
+   * (`DuckDbSymbolStore#upsertSymbolsBulk` and the method edges into a removed
+   * symbol).
    */
   async applyScopedRowDiff(
     table: string,
@@ -864,8 +869,8 @@ export class DuckDbGraphSession {
     keyColumns: readonly string[],
     valueColumns: readonly string[],
     rows: readonly (readonly unknown[])[],
-  ): Promise<void> {
-    if (scopeValues.length === 0) return;
+  ): Promise<unknown[][]> {
+    if (scopeValues.length === 0) return [];
     const columns = [...keyColumns, ...valueColumns];
     const keyWidth = keyColumns.length;
 
@@ -904,6 +909,7 @@ export class DuckDbGraphSession {
     await this.deleteByKeyBatched(table, keyColumns, toDelete);
     await this.insertOrIgnoreBatched(table, columns, toInsert);
     await this.updateFromRows(table, keyColumns, valueColumns, toUpdate);
+    return toDelete;
   }
 
   /**
@@ -952,9 +958,12 @@ export class DuckDbGraphSession {
    *
    * A NULL key column cannot occur: DuckDB requires every PRIMARY KEY column to
    * be NOT NULL, so the `IN (VALUES ...)` comparison never meets the SQL NULL
-   * semantics that would silently match nothing.
+   * semantics that would silently match nothing. `keyColumns` need not be
+   * `table`'s own key: a caller may match any columns, as long as the values it
+   * passes are keys of ANOTHER table and so non-NULL — a row whose column is
+   * NULL is then correctly never matched.
    */
-  private async deleteByKeyBatched(
+  async deleteByKeyBatched(
     table: string,
     keyColumns: readonly string[],
     keys: readonly (readonly unknown[])[],
