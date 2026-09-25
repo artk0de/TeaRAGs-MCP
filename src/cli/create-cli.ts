@@ -2,6 +2,7 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import { autoUpdateCommand } from "./commands/auto-update.js";
+import { callCommand } from "./commands/call.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { indexCodebaseCommand } from "./commands/index-codebase.js";
 import { primeCommand } from "./commands/prime.js";
@@ -22,6 +23,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
   return yargs(argvSource)
     .scriptName("tea-rags")
     .command(serverCommand)
+    .command(callCommand)
     .command(tuneCommand)
     .command(primeCommand)
     .command(updateCommand)

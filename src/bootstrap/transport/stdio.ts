@@ -61,7 +61,16 @@ export function installStdioShutdown(options: StdioShutdownOptions = {}): () => 
   return shutdown;
 }
 
-async function releaseWithin(cleanup: (() => void | Promise<void>) | undefined, timeoutMs: number): Promise<void> {
+/**
+ * Run `cleanup` (an `AppContext#cleanup`), waiting at most `timeoutMs`; a
+ * throwing cleanup is reported on stderr, never rethrown. Shared by every
+ * shutdown path that must end the process promptly — the stdio server and the
+ * one-shot in-process session behind `tea-rags call`.
+ */
+export async function releaseWithin(
+  cleanup: (() => void | Promise<void>) | undefined,
+  timeoutMs: number,
+): Promise<void> {
   if (!cleanup) return;
   let timer: NodeJS.Timeout | undefined;
   const budget = new Promise<void>((resolve) => {
@@ -71,7 +80,7 @@ async function releaseWithin(cleanup: (() => void | Promise<void>) | undefined, 
     try {
       await cleanup();
     } catch (error) {
-      console.error("[tea-rags] cleanup failed during stdio shutdown:", error);
+      console.error("[tea-rags] cleanup failed during shutdown:", error);
     }
   })();
   try {

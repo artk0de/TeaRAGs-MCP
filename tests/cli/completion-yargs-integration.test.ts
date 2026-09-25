@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { rememberCallToolNames } from "../../src/cli/call/tool-name-cache.js";
 import { createCli } from "../../src/cli/create-cli.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
@@ -138,5 +139,24 @@ describe("createCli — yargs --get-yargs-completions integration", () => {
 
     // Alias must NOT appear — register is for inventing brand-new names.
     expect(lines).not.toContain("alpha");
+  });
+  it("offers `call` at root completion", async () => {
+    const lines = await runCompletion(["--get-yargs-completions", "tea-rags", ""]);
+
+    expect(lines).toContain("call");
+  });
+
+  it("completes `call <TAB>` with the tool names the last `call` run observed (bd tea-rags-mcp-8vy3o)", async () => {
+    rememberCallToolNames(["find_symbol", "hybrid_search"], dir);
+
+    const lines = await runCompletion(["--get-yargs-completions", "tea-rags", "call", ""]);
+
+    expect(lines.sort()).toEqual(["find_symbol", "hybrid_search"]);
+  });
+
+  it("completes `call <TAB>` with nothing before any `call` run", async () => {
+    const lines = await runCompletion(["--get-yargs-completions", "tea-rags", "call", ""]);
+
+    expect(lines).toEqual([]);
   });
 });
