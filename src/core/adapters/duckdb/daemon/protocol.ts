@@ -10,6 +10,7 @@ import type {
   ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
+  TemporalCochangeSnapshot,
 } from "../../../contracts/types/codegraph.js";
 
 /**
@@ -54,6 +55,8 @@ export const DAEMON_OPS = [
   "updateSymbolChunkIdsBulk",
   "replaceCycles",
   "replacePageRanks",
+  // Wholesale rewrite of the temporal co-change sub-graph (bd tea-rags-mcp-x4rpp).
+  "replaceTemporalCochange",
   "checkpoint",
   "rebuildEdgeFileTargetIndex",
   "recordRunStats",
@@ -101,6 +104,12 @@ export const DAEMON_OPS = [
   // (bd tea-rags-mcp-r8hme.1). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "no convention-privacy leaks".
   "readNonPublicMemberEdges",
+  // Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp): the provenance row the
+  // builder compares against HEAD, and the pair set the silent-coupling detector
+  // judges (bd tea-rags-mcp-b4dcz). REQUIRED, not legacy-tolerated: an empty
+  // graph would read as "no silent coupling".
+  "readTemporalCochangeMeta",
+  "readTemporalCochangeGraph",
   // One file's importers / imports for file-scope get_callers / get_callees
   // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
   // would read as "nothing imports this file".
@@ -133,7 +142,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
     | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
     | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
@@ -155,6 +164,7 @@ export interface DaemonRequest {
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks
+    | { collection: string; snapshot: TemporalCochangeSnapshot } // replaceTemporalCochange
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes

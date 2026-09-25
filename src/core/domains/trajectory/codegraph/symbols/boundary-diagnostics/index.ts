@@ -11,7 +11,13 @@ export {
   resolveFacadeAdoptionThreshold,
   type FacadeAdoptionThresholdPolicy,
 } from "./leaking-abstraction.js";
-export { otsuSplit, type OtsuSplit } from "./otsu-split.js";
+export {
+  otsuSplit,
+  resolveMajorityFlooredOtsuThreshold,
+  type MajorityFlooredOtsuOptions,
+  type MajorityFlooredOtsuThreshold,
+  type OtsuSplit,
+} from "./otsu-split.js";
 export {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,

@@ -318,6 +318,21 @@
   table, per-file rows cover only what incrementals touched, so reading them
   before a whole-corpus run reproduces the same bug (bd tea-rags-mcp-xpmwg).
 
+- **A second sub-graph rebuilds through the family's completion hook, not a
+  second enrichment provider.** `cg_temporal_*` (migration 031, bd
+  tea-rags-mcp-x4rpp) is written by `TemporalCochangeBuilder`
+  (temporal/cochange/builder.ts), a `CodegraphCollectionCompletionHook` the
+  symbols provider runs from `CodegraphEnrichmentProvider#finalizeSignals` — and
+  under language affinity only from the completion owner's `readBack`, never a
+  partition's `resolve`. Hooks are best-effort and log, so a repository with no
+  git history still indexes. The builder is gated on the persisted
+  `cg_temporal_meta` row (same HEAD + parameter fingerprint, built under a day
+  ago ⇒ skipped without reading history) and reads history through the git
+  trajectory's discovery store with the git trajectory's own window, so the two
+  share one snapshot. Why: a provider with no payload would still stamp an
+  `enrichedAt` marker on every point of every index and enter the recovery scan,
+  for tables that live in DuckDB only.
+
 ## Gotchas
 
 - **`codegraph.file.instability` is sampled over the files the graph actually

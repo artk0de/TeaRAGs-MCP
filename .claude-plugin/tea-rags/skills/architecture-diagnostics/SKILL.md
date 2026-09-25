@@ -2,13 +2,15 @@
 name: architecture-diagnostics
 description:
   Check if code laid out correctly — dependency direction, module borders,
-  Stable Dependencies Principle violations and leaking abstractions (imports
-  past an adopted facade) with evidence per line, grouped into root causes. Use
-  when asked "is architecture right", "layering violations", "wrong dependency
-  direction", "SDP", "stable depends on unstable", "module borders", "facade
-  bypass", "deep imports", "leaking abstraction", "архитектурные нарушения" —
-  NOT for risk/health of code (use risk-assessment), NOT for one failure (use
-  bug-hunt), NOT for plain cycle listing (find_cycles).
+  Stable Dependencies Principle violations, leaking abstractions (imports past
+  an adopted facade) and silent coupling (files changing together with no
+  import/call between them) with evidence per line, grouped into root causes.
+  Use when asked "is architecture right", "layering violations", "wrong
+  dependency direction", "SDP", "stable depends on unstable", "module borders",
+  "facade bypass", "deep imports", "leaking abstraction", "hidden coupling",
+  "change together", "shotgun surgery", "архитектурные нарушения" — NOT for
+  risk/health of code (use risk-assessment), NOT for one failure (use bug-hunt),
+  NOT for plain cycle listing (find_cycles).
 argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 ---
 
@@ -23,8 +25,9 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 3. Phase 2 — ROOT CAUSES first (**never lead with flat violations**)
 4. Phase 3 — residual violations, judged by evidence
 5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
-6. Phase 4 — EXCLUSIONS: say what not judged
-7. Phase 5 — OUTPUT
+6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
+7. Phase 4 — EXCLUSIONS: say what not judged
+8. Phase 5 — OUTPUT
 
 ## Top Anti-patterns
 
@@ -42,6 +45,9 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
   module should be drawn.
 - **Reading `facade-not-adopted` as a leak.** Nobody uses that facade → no
   boundary to leak past. Not judged, not clean.
+- **`silentCoupling.built: false` read as clean.** No co-change build (git
+  trajectory off, or no index run yet) — say "not built", never "no hidden
+  coupling".
 
 ## Rules
 
@@ -61,13 +67,15 @@ prime `## Enrichment` lists `codegraph.symbols`? No → tool not registered. Say
 get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50)
 ```
 
-- `pathPattern` scopes JUDGED edges by SOURCE file. Instability + facade
-  adoption always whole-graph — scoped run sees same numbers as full run.
+- `pathPattern` scopes JUDGED edges by SOURCE file (silent coupling: by EITHER
+  file of pair). Instability, facade adoption, strength cut always whole-graph —
+  scoped run sees same numbers as full run.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
-- Every finding carries `detector`: `stableDependencies` (Phases 2–3) or
-  `leakingAbstraction` (Phase 3b). Never mix groups across detectors.
+- Every finding carries `detector`: `stableDependencies` (Phases 2–3),
+  `leakingAbstraction` (Phase 3b) or `silentCoupling` (Phase 3c). Never mix
+  groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
 
@@ -150,6 +158,41 @@ Counts: `summary.leakingAbstraction.conventionPrivacy` (`candidateEdgeCount`,
 `violationsByRule`). No module root cause — list per symbol pair. Candidates
 come from resolved method edges only: unresolved call → not judged.
 
+## Phase 3c — SILENT COUPLING
+
+Pair of files changing together strongly, no import / re-export / resolved call
+between them. Coupling lives in heads, not code: wire protocol + its two ends,
+descriptor + implementation it describes, sibling files edited as set. History
+from codegraph co-change sub-graph (git window, mass-change commits dropped).
+
+| Summary field (`summary.silentCoupling`) | Read as                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| `built`                                  | `false` = no co-change build → not judged, stop here                           |
+| `build`                                  | provenance: `head`, window, `commitCount`, mass cut `maxFilesPerBundle`        |
+| `strengthThreshold`                      | cut this codebase got; strength must ALSO be > 0.5                             |
+| `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) |
+| `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`  |
+
+`rootCauses` with `detector: "silentCoupling"` = file with ≥ 2 silent partners:
+`relPath`, `violationCount`, `maxStrength`, `partners`. Read first — hub of
+hidden coupling.
+
+Pair undirected: `sourceRelPath` = lexicographically smaller. Evidence per line:
+
+| Evidence                           | Read as                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `strength`                         | 95% Wilson lower bound on P(other changes \| one changes), stronger direction |
+| `support`                          | commits (or author sessions) touching both — thin support = hedge             |
+| `confidenceAB` / `confidenceBA`    | P(target \| source) / P(source \| target); asymmetric = one drags other       |
+| `lift`                             | co-change over independence; always > 1 here                                  |
+| `sampleCommits`                    | shas to cite; show one to prove                                               |
+| `structuralVisibility: one-walked` | other file not walked code (config, data, script) — coupling to non-code      |
+| `directoryRelation: disjoint`      | crosses module border — rank highest                                          |
+
+Fix direction: make coupling explicit (shared contract / generated table / one
+owner) OR merge. Type-only imports are NOT graph edges — pair joined only by
+`import type` can surface; check before claiming "no link".
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
@@ -174,6 +217,11 @@ Rails/React monolith.
 | `tooFewImporters`  | < 3 external importers — adoption untrustworthy                       |
 | `languageEnforced` | Go package — compiler enforces boundary, nothing to leak              |
 
+`summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
+`generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither
+file walked), `noSymbolEndpoints` (barrel / type-only / object-literal module —
+its `import type` deps invisible, missing edge no evidence), `nonPositiveLift`.
+
 ## Phase 5 — OUTPUT
 
 ```text
@@ -192,6 +240,10 @@ Judged [judgedEdgeCount] of [edgeCount] edges (excluded: private collaborators N
 ## Leaking abstractions — [violationCount] (bypass N, internal-reach N)
 Threshold [adoptionThreshold] ([method], η [separability]); [activeModuleCount] of [moduleCount] modules judged
 | # | Module | Adoption (facade/deep) | Bypass | Internal-reach | Sources |
+
+## Silent coupling — [violationCount] ([strongLinkedCount] strong pairs linked in code)
+Threshold [strengthThreshold] ([method], η [separability]); history [commitCount] commits since [windowSince] @ [head]
+| # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

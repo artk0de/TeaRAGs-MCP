@@ -114,6 +114,16 @@ export class GitCommitDiscovery {
   }
 
   /**
+   * The whole matrix, unsliced, in log order (newest→oldest) — for a consumer
+   * that reads history repo-wide rather than per file batch (the temporal
+   * co-change extractor, bd tea-rags-mcp-x4rpp). Shares the one single-flight
+   * build with `commitsForFiles`; callers must not mutate the rows.
+   */
+  async allEntries(): Promise<readonly GitCommitDiscoveryEntry[]> {
+    return (await this.getMatrix()).entries;
+  }
+
+  /**
    * ONE shared bug-fix SHA set built over ALL matrix commits — superset
    * semantics vs the legacy per-batch set. Identical today: the parser drops
    * merge commits (no numstat without `-m`) from BOTH the legacy pathspec
