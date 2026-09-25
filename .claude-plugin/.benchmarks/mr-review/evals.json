@@ -1,0 +1,26 @@
+{
+  "skill": "tea-rags:mr-review",
+  "skillPath": ".claude-plugin/tea-rags/skills/mr-review/SKILL.md",
+  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension (new identifiers of the diff judged by get_naming_lexicon names[], MISFIT/NEW_TERM surface as findings with the suggestion and holder as evidence).",
+  "runs": [],
+  "cases": [
+    {
+      "id": "naming-diff-misfit",
+      "category": "d8-naming",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Local review; the diff adds `row = find_vendor_envelope(id)` in app/services/tax_automation/importer.rb, returning a TaxAutomationDocument.",
+      "prompt": "Сделай ревью моей ветки.",
+      "expected": {
+        "mustDo": [
+          "Run D8: get_naming_lexicon with names[] = the identifiers the diff declares (row, find_vendor_envelope) scoped to the touched dirs",
+          "Turn MISFIT / NEW_TERM into a minor finding whose fix is the returned suggestion, citing the holder file as precedent",
+          "Word the comment body in plain language (no MISFIT / lexicon / tool names)"
+        ],
+        "mustNotDo": [
+          "Judge the names by taste or by grep / semantic_search on the draft name",
+          "Report naming as 'not assessed' while codegraph is on"
+        ]
+      },
+      "failureMode": "Agent skips the naming dimension or flags names without project evidence"
+    }
+  ]
+}

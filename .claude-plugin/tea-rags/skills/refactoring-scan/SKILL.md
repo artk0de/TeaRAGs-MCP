@@ -95,6 +95,11 @@ For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
 | **Complex logic** | Deep nesting, long condition chains                 |
 | **Naming**        | Misleading names, inconsistent conventions          |
 
+**Naming** is decided by the lexicon, not by taste (codegraph on):
+`get_naming_lexicon(names=<Tier 1 identifiers>, pathPattern=<scope>)` → `MISFIT`
+= Naming candidate, Action `rename to <suggestion>`; `CONFORMS` = not a
+candidate. Codegraph off → classify Naming only with a cited in-scope precedent.
+
 ### 4. OUTPUT
 
 ```

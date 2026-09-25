@@ -312,6 +312,10 @@ Has query?
    │
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
+   ├─ Naming? ("what does the project call X", "how are values of type T
+   │   named", "is this name right") → get_naming_lexicon (codegraph on);
+   │     reading the answer: /tea-rags:data-driven-generation Step 5 Naming
+   │
    └─ Describing behavior / intent (no exact name) → semantic_search
 ```
 
@@ -390,6 +394,8 @@ non-search tasks.
   verify via find_symbol/hybrid_search, flag drift (see Principles)
 - **Mixed-axis broad exploration** — one unfiltered query over src+tests+docs
   lets dominant class take all slots; split per `references/axis-splitting.md`
+- **Judging a name by grep or semantic_search on the draft name** — the draft
+  pulls in its own lexical neighbours; use get_naming_lexicon (`names[]`)
 - **hybrid_search for TODO/FIXME/HACK markers** — use ripgrep MCP
 - **git log/diff for code history** — overlay already has git signals
 - **10+ ripgrep calls instead of reading a file** — just read it
@@ -409,6 +415,7 @@ non-search tasks.
 | Exact text                    | ripgrep MCP                       | built-in Grep                                     |
 | Call path A→B (codegraph on)  | trace_path                        | get_callees breadth-first (manual)                |
 | Call path A→B (codegraph off) | semantic_search / hybrid + manual | — (graph tools unavailable; see Graph navigation) |
+| Naming vocabulary / verdict   | get_naming_lexicon                | codegraph off: DDG Step 5 Naming concept recipe   |
 
 ## pathPattern Rules
 

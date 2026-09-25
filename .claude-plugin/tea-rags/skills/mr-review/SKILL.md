@@ -3,22 +3,23 @@ name: mr-review
 description:
   Signal-driven review of merge request or local branch — rank diff risks via
   tea-rags (blast radius, fragile zones, silo style, missing tests, doc
-  invariants, cycles), emit plain-language comments each naming a concrete fix.
-  Triggers on "review this MR <url>", "review MR/PR", "проведи ревью MR",
-  "сделай ревью ветки", "review my branch". External URL → inline comments
-  posted via session's MR-platform mechanism after ONE draft-gate confirm,
-  signed agent, [minor] prefix on style nits. NOT for own-branch pre-merge flow
-  (use dinopowers:requesting-code-review), NOT for health scan without a diff
-  (use risk-assessment), NOT for debugging a concrete failure (use bug-hunt).
+  invariants, cycles, naming), emit plain-language comments each naming a
+  concrete fix. Triggers on "review this MR <url>", "review MR/PR", "проведи
+  ревью MR", "сделай ревью ветки", "review my branch". External URL → inline
+  comments posted via session's MR-platform mechanism after ONE draft-gate
+  confirm, signed agent, [minor] prefix on style nits. NOT for own-branch
+  pre-merge flow (use dinopowers:requesting-code-review), NOT for health scan
+  without a diff (use risk-assessment), NOT for debugging a concrete failure
+  (use bug-hunt).
 argument-hint: "[MR/PR URL — omit for local review]"
 ---
 
 # MR Review
 
-Signal-driven diff review: 7-dimension scan (blast radius, co-change twins,
-fragile zones, silo style, tests, doc invariants, cycles) → comments a reviewer
-can act on. Signals decide WHAT to flag; the comment states the fact in plain
-words and names a fix. Local mode = chat report. External mode = inline MR
+Signal-driven diff review: 8-dimension scan (blast radius, co-change twins,
+fragile zones, silo style, tests, doc invariants, cycles, naming) → comments a
+reviewer can act on. Signals decide WHAT to flag; the comment states the fact in
+plain words and names a fix. Local mode = chat report. External mode = inline MR
 comments behind ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
 
 ## Phase Order (MANDATORY — do not skip any phase)
@@ -26,7 +27,7 @@ comments behind ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
 1. Phase 0 — RESOLVE mode + project + freshness
 2. Phase 1 — ACQUIRE diff + intent
 3. Phase 2 — MAP diff → symbols + overlay working set
-4. Phase 3 — SCAN 7 dimensions (parallel blocks)
+4. Phase 3 — SCAN 8 dimensions (parallel blocks)
 5. Phase 4 — CLASSIFY severity + evidence filter
 6. Phase 5 — DELIVER (chat report | draft-gate → post)
 
@@ -60,7 +61,7 @@ comments behind ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
 0. RESOLVE   → mode (URL? external : local) + registry alias + freshness
 1. ACQUIRE   → unified diff + MR title/description/author
 2. MAP       → hunks → {file, changedSymbols[], chunkUUIDs[], overlay}
-3. SCAN      → 7 dimensions — references/dimension-playbook.md
+3. SCAN      → 8 dimensions — references/dimension-playbook.md
 4. CLASSIFY  → severity + evidence filter + dedup
 5. DELIVER   → local: chat report | external: draft-gate → post
               (references/delivery-contract.md)
@@ -109,7 +110,7 @@ eligible for D6.
 
 ## Phase 3: SCAN
 
-Seven dimensions over working set, parallel blocks. Full per-dimension
+Eight dimensions over working set, parallel blocks. Full per-dimension
 parameters + severity mapping:
 [references/dimension-playbook.md](./references/dimension-playbook.md) — execute
 its parameter blocks byte-exact.
@@ -123,13 +124,13 @@ its parameter blocks byte-exact.
 | tests         | scenarios at risk, uncovered changes | tests-as-context + stratified per-cluster coverage    |
 | invariants    | diff contradicts docs/specs          | `semantic_search documentation="only"` on concepts    |
 | cycles        | MR introduces import/call cycle      | `find_cycles` scoped to touched dirs                  |
+| naming        | new names off the project vocabulary | `get_naming_lexicon` `names[]` on new identifiers     |
 
-Gating: prime lists `codegraph.symbols` → D1 + D7 run on the graph. Absent → D7
-"not assessed" (cycles need the graph, no substitute); D1 degrades to
-name-matched callers (`hybrid_search` symbol name + `find_symbol`) and every
-comment built on it says callers were found by name, not by call graph — a lower
-bound, never "these are all the callers". tests follows tests-as-context
-preflight.
+Gating: prime lists `codegraph.symbols` → D1 + D7 + D8 run on the graph. Absent
+→ D7 and D8 "not assessed" (no substitute); D1 degrades to name-matched callers
+(`hybrid_search` symbol name + `find_symbol`) and every comment built on it says
+callers were found by name, not by call graph — a lower bound, never "these are
+all the callers". tests follows tests-as-context preflight.
 
 Call budget: ≤30 tea-rags calls typical MR (≤15 files). Exceeded → narrow scope
 with user, never silently truncate coverage.

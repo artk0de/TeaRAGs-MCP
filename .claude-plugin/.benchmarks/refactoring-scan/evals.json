@@ -210,6 +210,22 @@
         "mustNotDo": ["Skip validation, proceed directly to next preset"]
       },
       "failureMode": "Agent skips post-search-validation"
+    },
+    {
+      "id": "eval-15",
+      "category": "naming-via-lexicon",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Tier 1 candidate TaxAutomation::Importer#call declares locals `row`, `doc2`.",
+      "prompt": "Что отрефакторить в app/services/tax_automation? Нейминг тоже смотри.",
+      "expected": {
+        "mustDo": [
+          "Classify the Naming type through get_naming_lexicon(names=<Tier 1 identifiers>, pathPattern=<scope>)",
+          "MISFIT → Naming candidate with Action 'rename to <suggestion>'; CONFORMS → not a candidate"
+        ],
+        "mustNotDo": [
+          "Mark names as misleading from reading the code alone while codegraph is on"
+        ]
+      },
+      "failureMode": "Agent classifies naming by taste instead of the project lexicon"
     }
   ]
 }

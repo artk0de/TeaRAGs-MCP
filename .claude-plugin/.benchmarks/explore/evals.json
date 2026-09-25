@@ -558,6 +558,24 @@
         },
         { "text": "Does NOT run ORIENT or axis splitting", "type": "negative" }
       ]
+    },
+    {
+      "id": 27,
+      "prompt": "Как в этом проекте принято называть переменную с TaxAutomationDocument?",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available).",
+      "expected_output": "Codegraph intent row 5 → get_naming_lexicon(types=[TaxAutomationDocument]); answer = dominant shape + top names per kind. NOT semantic_search / hybrid_search on a guessed name.",
+      "failure_mode": "vocabulary-question-by-search",
+      "audit_finding": "naming-lexicon-routing",
+      "assertions": [
+        {
+          "text": "get_naming_lexicon with types as the primary call",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT grep or semantic_search for candidate names",
+          "type": "negative"
+        }
+      ]
     }
   ]
 }
