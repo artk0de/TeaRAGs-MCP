@@ -325,13 +325,19 @@
   symbols provider runs from `CodegraphEnrichmentProvider#finalizeSignals` — and
   under language affinity only from the completion owner's `readBack`, never a
   partition's `resolve`. Hooks are best-effort and log, so a repository with no
-  git history still indexes. The builder is gated on the persisted
-  `cg_temporal_meta` row (same HEAD + parameter fingerprint, built under a day
-  ago ⇒ skipped without reading history) and reads history through the git
-  trajectory's discovery store with the git trajectory's own window, so the two
-  share one snapshot. Why: a provider with no payload would still stamp an
-  `enrichedAt` marker on every point of every index and enter the recovery scan,
-  for tables that live in DuckDB only.
+  git history still indexes. It stores only LIVE paths — tracked by HEAD's tree
+  (`VcsGitAdapter#listTreePaths`) and not deleted in the working tree
+  (`#listWorktreeDeletions`) — never "exists on disk": an ignored build artifact
+  can reuse a once-committed path. The builder is gated on the persisted
+  `cg_temporal_meta` row (same HEAD + fingerprint, built under a day ago ⇒
+  skipped without reading history); the fingerprint hashes the parameters, the
+  project subtree AND the working-tree deletions, because those with HEAD fix
+  the live set — keyed on HEAD alone, an uncommitted deletion (or a worktree
+  seeded with a sibling's DB) kept pairs whose endpoint is gone. It reads
+  history through the git trajectory's discovery store with the git trajectory's
+  own window, so the two share one snapshot. Why: a provider with no payload
+  would still stamp an `enrichedAt` marker on every point of every index and
+  enter the recovery scan, for tables that live in DuckDB only.
 
 ## Gotchas
 

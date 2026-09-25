@@ -106,6 +106,51 @@ describe("wholesale codegraph table rewrites reclaim the previous generation", (
     expect(await db.diffSymbolSignals()).toEqual({ symbols: [], files: [] });
   });
 
+  it("replaceTemporalCochange leaves no dead rows in any cg_temporal table and keeps their keys (bd tea-rags-mcp-x4rpp)", async () => {
+    const tables = ["cg_temporal_files", "cg_temporal_edges_cochange", "cg_temporal_meta"];
+    const before = await Promise.all(tables.map(constraintsOf));
+
+    for (let run = 0; run < RUNS; run++) {
+      // Every generation names a different file set, as a rebuild after deletions would.
+      const files = Array.from({ length: 50 }, (_, i) => `src/g${run}/f${i}.ts`);
+      await db.replaceTemporalCochange({
+        meta: {
+          head: `h${run}`,
+          fingerprint: "fp",
+          builtAt: run,
+          windowSince: 0,
+          commitCount: 10,
+          bundleCount: 10,
+          admittedBundleCount: 10,
+          maxFilesPerBundle: 5,
+          minSupport: 2,
+          maxPartnersPerFile: 20,
+          sessionGapMinutes: null,
+        },
+        files: files.map((relPath) => ({ relPath, bundleCount: 3, partnerCount: 1, lastChangedAt: run })),
+        edges: files.slice(1).map((relPathB) => ({
+          relPathA: files[0],
+          relPathB,
+          support: 2,
+          confidenceAB: 0.5,
+          confidenceBA: 1,
+          lift: 2,
+          lastCoChangeAt: run,
+          sampleCommits: ["s1"],
+        })),
+      });
+      await db.checkpoint();
+    }
+
+    expect(await storedVsLive("cg_temporal_files")).toEqual({ stored: 50, live: 50 });
+    expect(await storedVsLive("cg_temporal_edges_cochange")).toEqual({ stored: 49, live: 49 });
+    expect(await storedVsLive("cg_temporal_meta")).toEqual({ stored: 1, live: 1 });
+    expect(await Promise.all(tables.map(constraintsOf))).toEqual(before);
+    const graph = await db.readTemporalCochangeGraph();
+    expect(graph.meta?.head).toBe(`h${RUNS - 1}`);
+    expect(graph.edges.every((e) => e.relPathA.startsWith(`src/g${RUNS - 1}/`))).toBe(true);
+  });
+
   it("a replacement that fails leaves the previous generation in place", async () => {
     await db.replacePageRanks(new Map([["src/a.ts|A#m", 0.5]]));
 

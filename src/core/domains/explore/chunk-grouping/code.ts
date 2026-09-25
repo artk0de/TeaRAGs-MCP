@@ -6,6 +6,7 @@
 
 import type { SearchResult } from "../../../api/public/dto/explore.js";
 import { TEST_SCOPE_PARENT_TYPE } from "../../../contracts/types/chunker.js";
+import { splitFragmentBase } from "../split-fragment.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
 
 /** Sort chunks by startLine ascending. */
@@ -68,22 +69,6 @@ function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibili
     lines.push(`  ${formatMember(symbolId)}${visibilitySuffix(chunk, visibilityOf)}`);
   }
   return lines;
-}
-
-/**
- * If `payload` is an oversized-chunk split fragment (`${parent}#partN`), return
- * its base symbolId (the `parentSymbolId`); otherwise undefined. The chunker
- * emits parts as `${originalSymbolId}#part${i + 1}` with
- * `parentSymbolId = originalSymbolId` (chunker `splitOversizedChunk`), so a
- * fragment is identified by `symbolId === parentSymbolId + "#part" + <digits>`.
- */
-export function splitFragmentBase(payload: Record<string, unknown>): string | undefined {
-  const symbolId = payload.symbolId as string | undefined;
-  const parentSymbolId = payload.parentSymbolId as string | undefined;
-  if (!symbolId || !parentSymbolId) return undefined;
-  const prefix = `${parentSymbolId}#part`;
-  if (!symbolId.startsWith(prefix)) return undefined;
-  return /^\d+$/.test(symbolId.slice(prefix.length)) ? parentSymbolId : undefined;
 }
 
 /** A DSL test chunk — an example, or a scope's setup. */

@@ -25,6 +25,8 @@ import {
   getCommitsSince,
   getHead,
   isAncestor,
+  listTreePaths,
+  listWorktreeDeletions,
   readBlobAsString,
   readCommitFileNumstat,
   readCommitFileNumstatForPaths,
@@ -77,6 +79,14 @@ export class GitCliAdapter extends VcsGitAdapter {
 
   async writeCommitGraph(timeoutMs?: number): Promise<void> {
     return writeCommitGraph(this.repoRoot, timeoutMs);
+  }
+
+  async listTreePaths(commitOid: string, timeoutMs?: number): Promise<string[]> {
+    return listTreePaths(this.repoRoot, commitOid, timeoutMs);
+  }
+
+  async listWorktreeDeletions(timeoutMs?: number): Promise<string[]> {
+    return listWorktreeDeletions(this.repoRoot, timeoutMs);
   }
 
   async getCommitsByPathspec(

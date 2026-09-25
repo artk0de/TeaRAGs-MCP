@@ -63,10 +63,11 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
-import { isTestExampleChunk, splitFragmentBase } from "../chunk-grouping/code.js";
+import { isTestExampleChunk } from "../chunk-grouping/code.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
+import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
 import { keepPathPatternMatches } from "./path-pattern-fill.js";
@@ -306,10 +307,21 @@ function filterByExactSymbolId(
     if (parentSymbolId === fqn || parentSymbolId === containerName) return true;
     // A `#partN` window of an oversized test example names the EXAMPLE as its
     // parent, not the scope; it stands for an example of the queried scope
-    // when its base id extends the scope id (bd tea-rags-mcp-msv3l).
-    const base = isTestExampleChunk(c) ? splitFragmentBase(c.payload) : undefined;
-    return base?.startsWith(`${fqn}.`) === true;
+    // when its base id extends the scope id (bd tea-rags-mcp-msv3l). An example
+    // name is free text, so its scope is read by prefix, never by
+    // `memberOwnerOf`'s last-separator split.
+    if (isTestExampleChunk(c)) return splitFragmentBase(c.payload)?.startsWith(`${fqn}.`) === true;
+    // A member split into `#partN` parts names the member as its parent; the
+    // container is the member id's owner (bd tea-rags-mcp-y5vx4).
+    const owner = splitPartOwner(c.payload);
+    return owner !== undefined && (owner === fqn || owner === containerName);
   });
+}
+
+/** The container of a split part's member: `Foo#bar#part2` → `Foo`; undefined for any other chunk. */
+function splitPartOwner(payload: Record<string, unknown>): string | undefined {
+  const base = splitFragmentBase(payload);
+  return base === undefined ? undefined : memberOwnerOf(base);
 }
 
 /**
@@ -333,6 +345,7 @@ function filterByLastSegment(
     if (symbolId !== undefined && symbolIdLastSegment(symbolId) === target) return true;
     const parentSymbolId = c.payload.parentSymbolId as string | undefined;
     if (parentSymbolId !== undefined && symbolIdLastSegment(parentSymbolId) === target) return true;
-    return false;
+    const owner = splitPartOwner(c.payload);
+    return owner !== undefined && symbolIdLastSegment(owner) === target;
   });
 }

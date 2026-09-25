@@ -798,4 +798,66 @@ describe("SymbolSearchStrategy", () => {
       expect(result[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`].join("\n"));
     });
   });
+
+  // bd tea-rags-mcp-y5vx4 — an oversized member is indexed ONLY as
+  // `${member}#partN` parts whose parentSymbolId is the member, not the class.
+  // A class query must still list it, once, under its base id.
+  describe("members split into #partN parts (bd tea-rags-mcp-y5vx4)", () => {
+    const chunk = (id: string, payload: Record<string, unknown>) => ({
+      id,
+      payload: { chunkType: "function", content: "", language: "typescript", ...payload },
+    });
+    const members = (owner: string, path: string) => [
+      chunk("small", {
+        symbolId: `${owner}#small`,
+        name: "small",
+        parentSymbolId: owner,
+        parentType: "class_declaration",
+        relativePath: path,
+        startLine: 2,
+        endLine: 4,
+      }),
+      chunk("big-1", {
+        symbolId: `${owner}#big#part1`,
+        name: "big (part 1/2)",
+        parentSymbolId: `${owner}#big`,
+        parentType: "method_definition",
+        relativePath: path,
+        startLine: 6,
+        endLine: 40,
+      }),
+      chunk("big-2", {
+        symbolId: `${owner}#big#part2`,
+        name: "big (part 2/2)",
+        parentSymbolId: `${owner}#big`,
+        parentType: "method_definition",
+        relativePath: path,
+        startLine: 41,
+        endLine: 70,
+      }),
+    ];
+
+    it("a short class query outlines the split member under its base id", async () => {
+      mockScrollFiltered.mockResolvedValueOnce([]).mockResolvedValueOnce(members("Foo", "src/foo.ts"));
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], [], buildRegistry(), { symbol: "Foo" });
+      const result = await strategy.execute({ collectionName: "c", limit: 50 });
+
+      expect(result).toHaveLength(1);
+      const outline = String(result[0].payload?.content);
+      expect(outline).toContain("Foo#big");
+      expect(outline).toContain("Foo#small");
+      expect(outline).not.toContain("#part");
+    });
+
+    it("an FQN class query keeps the split member too", async () => {
+      mockScrollFiltered.mockResolvedValueOnce([]).mockResolvedValueOnce(members("Acme::Foo", "lib/foo.rb"));
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], [], buildRegistry(), { symbol: "Acme::Foo" });
+      const result = await strategy.execute({ collectionName: "c", limit: 50 });
+
+      expect(result).toHaveLength(1);
+      expect(String(result[0].payload?.content)).toContain("Acme::Foo#big");
+    });
+  });
 });

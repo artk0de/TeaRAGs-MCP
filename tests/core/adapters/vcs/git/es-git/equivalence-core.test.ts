@@ -56,6 +56,13 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     expect(es).toBe(fixture.headSha);
   });
 
+  it("listTreePaths / listWorktreeDeletions: the live tracked set matches the CLI", async () => {
+    const [esTree, cliTree] = [await esGit.listTreePaths(fixture.headSha), await cli.listTreePaths(fixture.headSha)];
+    expect(esTree).toEqual(cliTree);
+    expect(esTree.length).toBeGreaterThan(0);
+    expect(await esGit.listWorktreeDeletions()).toEqual(await cli.listWorktreeDeletions());
+  });
+
   it("isAncestor: reachability verdicts match the CLI for every probe (errors → false, never throw)", async () => {
     const probes: [string, string, boolean][] = [
       [fixture.initialSha, fixture.headSha, true],
