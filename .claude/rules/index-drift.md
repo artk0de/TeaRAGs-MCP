@@ -27,9 +27,20 @@ Every monitor implements `IndexDriftMonitor#check(collectionName)`.
 `none < incremental < recompute(trajectories, languages?) < force` (`remedy.ts`)
 and `formatIndexDriftReport` renders ONE `Run:` line. A consumer that prints two
 commands for one collection is a defect — add the monitor to the reporter in
-`src/bootstrap/factory.ts`, do not render it separately. The search path shows
-each report once per collection per REPORT SIGNATURE per process, so a clean
-check consumes nothing and a changed report warns again.
+`src/bootstrap/factory.ts`, do not render it separately.
+
+One exception, and it lives inside the lattice, not beside it: a `force` may
+carry a `selector` (a scoped force, bd tea-rags-mcp-j4oww) when every pending
+chunk-set bump declared its file scope (`LanguageCapability.chunkSetBumpScopes`,
+`sharedChunkSetBumpScopes`). A scoped force rebuilds only its selection, so it
+cannot subsume a whole-collection recompute; the fold keeps that recompute as
+`then` and the report renders it as a `Then:` line after `Run:`. Scoped forces
+fold with each other through `combineRechunkSelectors` (a superset, never
+narrower); any unscoped `force` absorbs them all back into the plain `--force`.
+Coverage — which scope a finished run may claim — is `chunk-set-scope.ts`, the
+one judgement the monitor and `IndexingOps#stampRechunkedChunkSet` share. The
+search path shows each report once per collection per REPORT SIGNATURE per
+process, so a clean check consumes nothing and a changed report warns again.
 
 ## An enable-flag finding is about the process that READS the index
 

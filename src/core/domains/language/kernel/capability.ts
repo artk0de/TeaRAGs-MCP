@@ -1,4 +1,5 @@
 import type { LanguageSupportVersions } from "../../../contracts/types/language.js";
+import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 
 /**
  * Pseudo-language whose stamp vouches for every language at once. Defined in
@@ -66,3 +67,12 @@ export const sharedVersions: LanguageSupportVersions = {
   walker: 5,
   codegraphSchema: 2,
 };
+
+/**
+ * Which files each shared chunk-set bump touched (bd tea-rags-mcp-j4oww) — the
+ * `*` half of `LanguageCapability.chunkSetBumpScopes`. A `sharedVersions.chunking`
+ * revision with no entry here is unscoped and routes to the plain `--force`; one
+ * that changed only test chunking declares `{ testFile: "only" }` under its
+ * revision, and the drift report names the scoped force instead.
+ */
+export const sharedChunkSetBumpScopes: ChunkSetBumpScopes = {};

@@ -16,6 +16,19 @@
   tea-rags itself (better chunker, larger context window), not in the user's
   file. Trimming the work set to "what actually changed" strands every
   quarantined file forever, since their content is precisely what never changes.
+- **A scoped force enters the work set as MODIFIED, via the snapshot — never by
+  a side list.** `ReindexPipeline#invalidateRechunkWorkSet` selects the indexed
+  files a `RechunkFileSelector` matches (`selectRechunkWorkSet`,
+  `rechunk-work-set.ts`) and PERSISTS their snapshot entries as stale
+  (`ParallelFileSynchronizer#invalidateEntries`: `mtime: 0`, a sentinel hash)
+  BEFORE change detection and before any point is deleted. From there the
+  ordinary modified path does the rest: delete by path, re-chunk, embed, upsert,
+  codegraph DELETE+INSERT per file, enrichment for those chunks only. Why: the
+  persisted mark IS the crash safety — a run that dies part-way leaves the
+  unfinished files stale on disk, so the next run of any kind (auto-update
+  included) re-chunks them; a work set held only in memory would lose them, and
+  a separate delete/upsert path would duplicate the ordering the modified path
+  already gets right.
 - **Finalize the alias BEFORE storing the completion marker, and signal failure
   by THROWING.** The order in `IndexPipeline` is fixed: `#finalizeAlias` →
   `storeIndexingMarker(…, true, …)` → `#saveSnapshot` → `#recordRegistryEntry`

@@ -121,6 +121,22 @@ scratch.
 }
 ```
 
+`forceReindex: true` combined with `testFile` (`only` / `exclude`),
+`pathPattern`, `languages`, `fileExtension` or `files` is a **scoped force**: only
+the matching indexed files are re-chunked and re-embedded, in place on the live
+collection; every other point is untouched. The response reports
+`Re-chunked in place (scoped force): N`. See
+[Scoped force](/operations/recovery-reindexing#scoped-force--re-chunk-a-file-set-in-place).
+
+```json
+{
+  "project": "myapp",
+  "forceReindex": true,
+  "testFile": "only",
+  "languages": ["ruby"]
+}
+```
+
 The first call on a git worktree whose repository has another indexed working
 tree with the same model and settings is **seeded** from it: the sibling's index
 is cloned and only differing files are embedded. The response then opens with a

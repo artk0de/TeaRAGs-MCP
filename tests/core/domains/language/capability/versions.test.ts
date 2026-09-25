@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { resolveLanguageCodeVersions } from "../../../../../src/core/domains/language/capability/versions.js";
+import {
+  resolveChunkSetBumpScopes,
+  resolveLanguageCodeVersions,
+} from "../../../../../src/core/domains/language/capability/versions.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 import { SHARED_LANGUAGE } from "../../../../../src/core/domains/language/kernel/capability.js";
 
@@ -445,5 +448,25 @@ describe("seeded support versions", () => {
       expect(v.chunking, `chunking version for ${language}`).toBe(CHUNKING_BUMPED.get(language) ?? 1);
       expect(v.codegraphSchema, `codegraph schema version for ${language}`).toBe(expectedCodegraph);
     }
+  });
+});
+
+describe("resolveChunkSetBumpScopes (bd tea-rags-mcp-j4oww)", () => {
+  it("carries each capability's declared chunk-set bump scopes, keyed by language", () => {
+    const capabilities = new Map(factory.capabilities());
+    const ruby = capabilities.get("ruby")!;
+    capabilities.set("ruby", { ...ruby, chunkSetBumpScopes: { chunking: { 9: { testFile: "only" } } } });
+
+    const scopes = resolveChunkSetBumpScopes(capabilities, { chunking: { 7: { testFile: "only" } } });
+
+    expect(scopes.get("ruby")).toEqual({ chunking: { 9: { testFile: "only" } } });
+    expect(scopes.get(SHARED_LANGUAGE)).toEqual({ chunking: { 7: { testFile: "only" } } });
+  });
+
+  it("omits languages that declare nothing — an undeclared bump is unscoped", () => {
+    const scopes = resolveChunkSetBumpScopes(new Map(factory.capabilities()), {});
+
+    expect(scopes.has("typescript")).toBe(false);
+    expect(scopes.has(SHARED_LANGUAGE)).toBe(false);
   });
 });
