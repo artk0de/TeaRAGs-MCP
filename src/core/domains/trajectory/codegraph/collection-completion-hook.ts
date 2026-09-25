@@ -12,6 +12,10 @@
  * enrichment provider, which would stamp a marker onto every point of every
  * index for no payload.
  *
+ * A reindex that opens no enrichment run (deletion-only, nothing to chunk)
+ * reaches the same hooks through `CodegraphEnrichmentProvider#completeCollection`
+ * (bd tea-rags-mcp-l1ot.2), so a hook must be cheap when its inputs did not move.
+ *
  * Hooks run best-effort, after the symbol graph's own metrics: a hook that
  * throws is logged and never fails the run.
  */

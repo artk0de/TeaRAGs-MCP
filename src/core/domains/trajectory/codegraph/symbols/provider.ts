@@ -1036,6 +1036,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
+   * The collection-completion hooks for a reindex that finalized nothing (bd
+   * tea-rags-mcp-l1ot.2) — a deletion-only run, or one with no file to chunk,
+   * reaches no `finalizeSignals`, so this is the only way its co-change graph
+   * learns the working tree moved. Runs on the main-thread instance, whose
+   * store that run already opened (repair read, deletion prune, stale check).
+   * No hook ⇒ no store is opened at all.
+   */
+  async completeCollection(root: string, options: { collectionName: PhysicalCollectionName }): Promise<void> {
+    if ((this.deps.collectionCompletionHooks ?? []).length === 0) return;
+    const { graphDb } = await this.getStore(options.collectionName);
+    await this.runCollectionCompletionHooks(root, graphDb);
+  }
+
+  /**
    * Run the family's collection-completion hooks (bd tea-rags-mcp-x4rpp) —
    * best-effort and in order: a hook that throws is logged and the next one
    * still runs, because a sub-graph that cannot be rebuilt (no git, a transient

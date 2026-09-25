@@ -223,7 +223,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         // tea-rags-mcp-dy852). This branch is the next run that has nothing to
         // chunk, so it owes that finalize even when the repair found nothing.
         const staleDerived = repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection));
-        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
+        const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
+        await this.completeCollectionUnlessFinalized(ctx, finalized);
         // No snapshot: nothing changed, so the stored file list already matches
         // what is on disk.
         await this.closeRun(ctx, { snapshot: false });
@@ -238,7 +239,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         // but a repair on THIS run does, so the finalize below overwrites
         // "skipped" exactly when it had something to finalize.
         stats.enrichmentStatus = "skipped";
-        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
+        const finalized = await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
+        await this.completeCollectionUnlessFinalized(ctx, finalized);
         await this.closeRun(ctx, { snapshot: true });
         stats.durationMs = Date.now() - startTime;
         return stats;
@@ -795,6 +797,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    * A failure is reported the way every other enrichment failure is: through the
    * terminal markers and the log, not by failing a reindex that otherwise
    * succeeded (mirrors `startEnrichment`'s background catch).
+   *
+   * Returns whether a finalize ran to completion — and with it every
+   * provider's whole-collection work (`completeCollectionUnlessFinalized`).
    */
   private async finalizeRepairedRun(
     ctx: ReindexContext,
@@ -809,8 +814,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
      * path is the run that pruned, and stays closed.
      */
     staleDerived = false,
-  ): Promise<void> {
-    if (repaired === 0 && !staleDerived) return;
+  ): Promise<boolean> {
+    if (repaired === 0 && !staleDerived) return false;
     pipelineLog.reindexPhase("REPAIR_FINALIZE_START", {
       repaired,
       ...(staleDerived ? { staleDerived: true } : {}),
@@ -823,10 +828,26 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         deferredChunkHandoff,
       );
       stats.enrichmentStatus = "completed";
+      return true;
     } catch (error) {
       console.error("[Reindex] Repair finalize failed:", error);
       stats.enrichmentStatus = "failed";
+      return false;
     }
+  }
+
+  /**
+   * The whole-collection work a finalize ends with, owed by the early returns
+   * that ran none (bd tea-rags-mcp-l1ot.2). Codegraph's co-change sub-graph is
+   * a function of HEAD and the working tree's deletions — both of which a
+   * deletion-only run, or a run whose HEAD moved with no indexed file changed,
+   * can move — yet only a finalize rebuilt it, so a committed `git rm` left the
+   * deleted file's pairs standing. A finalize that completed already ran it;
+   * asking again would only pay a second skip check.
+   */
+  private async completeCollectionUnlessFinalized(ctx: ReindexContext, finalized: boolean): Promise<void> {
+    if (finalized) return;
+    await this.enrichment.runCollectionCompletion(ctx.absolutePath, ctx.targetCollection);
   }
 
   // ── Deletion-only fast path ─────────────────────────────
