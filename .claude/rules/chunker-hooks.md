@@ -74,6 +74,33 @@ every emission path — the leaf chunk's prefix, the head of an oversized child'
 `#part1`, a recursed child's remainder (bd tea-rags-mcp-u7tjf / 6wy02). Only
 exclude rows you set a prefix for.
 
+## Container header: once per chunk, on every member part
+
+A chunk names its container exactly ONCE (bd tea-rags-mcp-4i6ab). A body chunk
+whose first row already IS the container's header row (a class-body hook writes
+it verbatim, `export class X extends Y {` / `class Foo < Bar`) gets only the
+enclosing hierarchy from the engine, not the engine's `class X extends Y {` on
+top; a body chunk that does not start with it gets the header prefixed. The
+remainder carries its header row as its own row when that row is among its rows,
+and as a prefix only when a child covers it. The hook budget
+(`bodyChunkPrefixLength`) reserves the full prefix either way.
+
+Every `#partN` of a split MEMBER opens with the container hierarchy prefix,
+exactly like the unsplit member chunk (bd tea-rags-mcp-jgb5a). A part's layout,
+top to bottom:
+
+1. hierarchy prefix — the enclosing containers' headers;
+2. leading comment — `#part1` only (the u7tjf rule above);
+3. the splitter's signature/context prefix — every part after the first;
+4. the part's own rows — the only rows `startLine..endLine` covers.
+
+The hierarchy prefix is taken out of every part's budget, so each part stays ≤
+`maxChunkSize`. A member that fits the budget alone but not under its prefix and
+leading comment takes the same split path instead of being line-cut by the
+`enforceMaxChunkSize` post-pass. Top-level split symbols carry no hierarchy
+prefix. Several chunks sharing one symbolId (class-body groups, accessor pairs)
+is by design — never uniquify them.
+
 ## What NOT to put in the chain
 
 - Hooks reading `ctx.bodyChunks` after another hook wrote them (post-processing,

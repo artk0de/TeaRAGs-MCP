@@ -69,11 +69,29 @@ function rowsSize(codeLines: string[], from: number, to: number): number {
   return codeLines.slice(from, to + 1).join("\n").length;
 }
 
-/** Lines of `part.content` that precede its own rows — the context prefix. */
+/**
+ * Lines of `part.content` that precede its own rows: the container hierarchy
+ * prefix (a member's parts, bd tea-rags-mcp-jgb5a) followed by the splitter's
+ * context prefix.
+ */
 function prefixOf(part: CodeChunk): string[] {
   const lines = part.content.split("\n");
   const own = part.endLine - part.startLine + 1;
   return lines.slice(0, Math.max(0, lines.length - own));
+}
+
+/**
+ * The container hierarchy prefix every part of a MEMBER opens with — what
+ * precedes `#part1`'s own rows, since `#part1` carries no splitter context.
+ * Empty for a top-level symbol.
+ */
+function hierarchyOf(parts: CodeChunk[]): string[] {
+  return prefixOf(parts[0]);
+}
+
+/** The splitter's context prefix of a part: its prefix past the hierarchy lines. */
+function contextOf(part: CodeChunk, hierarchy: string[]): string[] {
+  return prefixOf(part).slice(hierarchy.length);
 }
 
 function partsOf(chunks: CodeChunk[], base: string): CodeChunk[] {
@@ -134,6 +152,17 @@ describe("oversized symbol split (bd tea-rags-mcp-y5vx4)", () => {
       for (const part of parts) expect(part.content.length).toBeLessThanOrEqual(BUDGET);
     });
 
+    it("every part of a member opens with the same container hierarchy prefix; a top-level symbol's with none", () => {
+      // bd tea-rags-mcp-jgb5a — a member's parts name their container exactly
+      // as the unsplit member chunk does.
+      const isMember = /[#.]|::/.test(fixture.baseSymbolId);
+      const hierarchy = hierarchyOf(parts);
+      expect(hierarchy.length, `${language}: hierarchy prefix lines`).toBe(isMember ? 1 : 0);
+      for (const part of parts) {
+        expect(part.content.split("\n").slice(0, hierarchy.length)).toEqual(hierarchy);
+      }
+    });
+
     it("never cuts strictly inside a construct that fits a part on its own", () => {
       const maxPrefix = Math.max(0, ...parts.map((p) => prefixOf(p).reduce((sum, l) => sum + l.length + 1, 0)));
       const symbolFirstRow = parts[0].startLine - 1;
@@ -182,19 +211,25 @@ describe("oversized symbol split (bd tea-rags-mcp-y5vx4)", () => {
         }
       });
       openingRows.add(codeLines[parts[0].startLine - 1].trim()); // the signature
+      const hierarchy = hierarchyOf(parts);
       const strays = parts
         .slice(1)
-        .flatMap((p) => prefixOf(p).map((l) => l.trim()))
+        .flatMap((p) => contextOf(p, hierarchy).map((l) => l.trim()))
         .filter((l) => !openingRows.has(l));
       expect(strays, `${language}: context lines that open nothing`).toEqual([]);
     });
 
     it("a later part carries the signature and the oversized loop header as its context", () => {
       const signature = codeLines[parts[0].startLine - 1].trim();
+      const hierarchy = hierarchyOf(parts);
       for (const part of parts.slice(1)) {
-        expect(prefixOf(part)[0]?.trim(), `${language} part context starts at the signature`).toBe(signature);
+        expect(contextOf(part, hierarchy)[0]?.trim(), `${language} part context starts at the signature`).toBe(
+          signature,
+        );
       }
-      const insideLoop = parts.slice(1).filter((p) => prefixOf(p).some((l) => l.trim() === fixture.bigLoopHeader));
+      const insideLoop = parts
+        .slice(1)
+        .filter((p) => contextOf(p, hierarchy).some((l) => l.trim() === fixture.bigLoopHeader));
       expect(insideLoop.length, `${language}: no part is framed by "${fixture.bigLoopHeader}"`).toBeGreaterThan(0);
     });
 
@@ -223,7 +258,10 @@ describe("oversized symbol split (bd tea-rags-mcp-y5vx4)", () => {
 
       const firstRow = parts[0].startLine - 1;
       const lastRow = parts[parts.length - 1].endLine - 1;
-      const head = parts[0].content.split("\n")[0];
+      // A member's reassembly opens with its container hierarchy prefix, exactly
+      // as the unsplit member chunk does (bd tea-rags-mcp-jgb5a).
+      const hierarchy = hierarchyOf(parts);
+      const head = parts[0].content.split("\n")[hierarchy.length];
       let symbol: NativeNode | undefined;
       walk(root, (n) => {
         if (n === root || n.startPosition.row !== firstRow || lastRowOf(n) !== lastRow) return;
@@ -231,7 +269,7 @@ describe("oversized symbol split (bd tea-rags-mcp-y5vx4)", () => {
         if (!symbol || n.endIndex - n.startIndex > symbol.endIndex - symbol.startIndex) symbol = n;
       });
       expect(symbol).toBeDefined();
-      expect(payload.content).toBe(symbol?.text);
+      expect(payload.content).toBe([...hierarchy, symbol?.text].join("\n"));
     });
   });
 });

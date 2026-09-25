@@ -44,7 +44,61 @@ const CORPORA: Corpus[] = [
   { name: "express (js)", root: join(OSS, "express"), ext: ".js", language: "javascript" },
   { name: "flask (py)", root: join(OSS, "flask"), ext: ".py", language: "python" },
   { name: "sinatra (rb)", root: join(OSS, "sinatra"), ext: ".rb", language: "ruby" },
+  { name: "iTerm2 (swift)", root: join(homedir(), "Dev/OpenSource/iTerm2"), ext: ".swift", language: "swift" },
 ];
+
+/** Chunk budget the probe runs the engine under. */
+const MAX_CHUNK_SIZE = 2500;
+/** A line that opens a scope: the only kind a hierarchy prefix is built from. */
+const HEADER_LIKE =
+  /^(abstract\s+)?(class|module|struct|enum|extension|protocol|interface|namespace|impl|actor|trait)\b|^(const|let|var)\s+\S+\s*=\s*\{$|^(RSpec\.)?(describe|context)\b/;
+
+/** A header row with its export / visibility keywords dropped, for comparison. */
+function normalizeHeader(line: string): string {
+  return line.trim().replace(/^(export\s+(default\s+)?|declare\s+|public\s+|open\s+|final\s+)+/, "");
+}
+
+/**
+ * bd tea-rags-mcp-4i6ab — the chunk repeats a scope header: one of its leading
+ * (prefix) lines comes back verbatim, modulo `export`, among the next leading
+ * lines. Both occurrences sit in the first `HEAD_WINDOW` rows — a repeat deep
+ * in the body is the source repeating itself, not a doubled prefix.
+ */
+const HEAD_WINDOW = 5;
+function repeatsHeader(content: string): boolean {
+  const lines = content.split("\n").slice(0, HEAD_WINDOW).map(normalizeHeader);
+  for (let i = 0; i < lines.length; i++) {
+    const head = lines[i];
+    if (head.length < 6 || !HEADER_LIKE.test(head)) continue;
+    if (lines.indexOf(head, i + 1) > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * bd tea-rags-mcp-jgb5a — a `#partN` of a split MEMBER (`Foo#bar#part2`,
+ * `Foo.bar#part1`) whose content never names its container on the first row.
+ * A container whose node opens on an attribute row (`@MainActor`,
+ * `@NSApplicationMain`, `#[derive(..)]`) has that row as its engine header —
+ * the unsplit members carry the same line — so such a first row counts as the
+ * header.
+ */
+function splitMemberLacksContainer(symbolId: string | undefined, content: string): boolean {
+  const m = symbolId?.match(/^(.*)#part\d+$/);
+  if (!m) return false;
+  const base = m[1];
+  const cut = Math.max(base.lastIndexOf("#"), base.lastIndexOf("."), base.lastIndexOf("::"));
+  if (cut <= 0) return false;
+  // Any segment of the container path: intermediate scopes fold into the id
+  // (`LLM.Message.Body#tryAppend`) but the prefix names the outer container.
+  const owners = base
+    .slice(0, cut)
+    .split(/#|\.|::/)
+    .filter((segment) => segment !== "");
+  if (owners.length === 0) return false;
+  const firstRow = (content.split("\n")[0] ?? "").trim();
+  return !owners.some((owner) => firstRow.includes(owner)) && !/^(@|#\[)/.test(firstRow);
+}
 
 const PUNCTUATION_ONLY = /^[\s{}()[\];,]*$|^\s*end\s*$/;
 const COMMENT_ROW = /^\s*(\/\/|\/\*|\*|#)/;
@@ -63,7 +117,7 @@ type FileDump = [string | null, number, number][];
 
 async function measure(dump: Record<string, FileDump>) {
   const chunker = new TreeSitterChunker(
-    { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 2500 },
+    { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: MAX_CHUNK_SIZE },
     new DefaultSymbolIdComposer(),
     new LanguageFactory(),
   );
@@ -103,6 +157,13 @@ async function measure(dump: Record<string, FileDump>) {
     let uncoveredInContainerComment = 0;
     let chunkCount = 0;
     let dupIds = 0;
+    let doubleHeader = 0;
+    let splitMemberNoHeader = 0;
+    let splitMemberParts = 0;
+    let maxLen = 0;
+    let overBudget = 0;
+    const doubleHeaderSamples: string[] = [];
+    const noHeaderSamples: string[] = [];
     const worstFiles: [string, number][] = [];
 
     for (const file of files) {
@@ -111,6 +172,21 @@ async function measure(dump: Record<string, FileDump>) {
       const chunks = await chunker.chunk(code, rel, corpus.language);
       chunkCount += chunks.length;
       dump[`${corpus.name}:${rel}`] = chunks.map((c) => [c.metadata.symbolId ?? null, c.startLine, c.endLine]);
+
+      for (const c of chunks) {
+        maxLen = Math.max(maxLen, c.content.length);
+        if (c.content.length > MAX_CHUNK_SIZE) overBudget++;
+        if (repeatsHeader(c.content)) {
+          doubleHeader++;
+          if (doubleHeaderSamples.length < 3) doubleHeaderSamples.push(`${rel}:${c.metadata.symbolId}@${c.startLine}`);
+        }
+        const id = c.metadata.symbolId;
+        if (id && /#part\d+$/.test(id) && /[#.]|::/.test(id.replace(/#part\d+$/, ""))) splitMemberParts++;
+        if (splitMemberLacksContainer(id, c.content)) {
+          splitMemberNoHeader++;
+          if (noHeaderSamples.length < 3) noHeaderSamples.push(`${rel}:${id}`);
+        }
+      }
 
       const seen = new Map<string, number>();
       for (const c of chunks) {
@@ -160,11 +236,14 @@ async function measure(dump: Record<string, FileDump>) {
     worstFiles.sort((a, b) => b[1] - a[1]);
     rows.push(
       `${corpus.name}: files=${files.length} chunks=${chunkCount} dupIds=${dupIds} nonBlank=${nonBlank} ` +
+        `doubleHeader=${doubleHeader} splitMemberParts=${splitMemberParts} splitMemberNoHeader=${splitMemberNoHeader} ` +
+        `maxLen=${maxLen} overBudget=${overBudget} ` +
         `uncoveredInContainer=${uncoveredInContainer} (substantive ${uncoveredInContainerSubst}, of which comment ${uncoveredInContainerComment}) ` +
         `uncoveredTotal=${uncoveredTotal} (substantive ${uncoveredTotalSubst})\n    worst: ${worstFiles
           .slice(0, 5)
           .map(([f, n]) => `${f}=${n}`)
-          .join(", ")}`,
+          .join(", ")}` +
+        `\n    doubleHeader: ${doubleHeaderSamples.join(", ")}\n    splitMemberNoHeader: ${noHeaderSamples.join(", ")}`,
     );
   }
   return rows;
