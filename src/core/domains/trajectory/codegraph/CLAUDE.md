@@ -106,6 +106,65 @@
   `pageRank` written comes off that graph, and `find_cycles` keeps reporting
   cycles the source dropped weeks ago.
 
+- **No row outlives its source — dead symbols included, not just dead files.**
+  Once a method, class or file is gone from the tree, no `cg_*` row names it:
+  not `cg_symbols`, not the method edge table as source OR target, not
+  `cg_identifiers` (the params / locals / `return` row the method owned), not
+  cycles or ranks. Each shape of "gone" has exactly one owner: a re-walked
+  file's own rows are row-diffed (`DuckDbSymbolStore#upsertSymbolsBulk`,
+  `DuckDbFileGraphStore#writeFileRowsGroup`,
+  `DuckDbIdentifierStore#replaceIdentifiersBulk` — the flush queue passes `[]`,
+  never omits the list, for a file that declares nothing); a symbol that left a
+  still-present file takes its INCOMING method edges with it, because
+  `upsertSymbolsBulk` follows every key its diff deleted into the edge table; a
+  deleted, renamed-away or newly ignored file goes through
+  `CodegraphEnrichmentProvider#handleDeletedPaths` →
+  `DuckDbFileGraphStore#removeFile`; a file the codegraph exclusion starts
+  declining is orphaned by `EnrichmentCoordinator#runRepairPass`. A full
+  `--force` inherits nothing because a new `_vN` is a new DuckDB file. Why:
+  edges are reconciled per SOURCE file, so a caller in an unchanged file is
+  never revisited — before the incoming-edge rule its call into a removed method
+  stayed, `get_callees` served it, and PageRank ranked the dead symbol (epic
+  tea-rags-mcp-4p3sb, found by the matrix). The case matrix is
+  `tests/core/domains/trajectory/codegraph/symbols/provider-dead-symbols.test.ts`;
+  routing of deletions is
+  `tests/core/domains/ingest/operations/reindexing-dead-symbols.test.ts`; the
+  storage face (dead row versions, bd tea-rags-mcp-dvzdm) is
+  `tests/core/adapters/duckdb/identifier-dead-row-reclaim.test.ts`; the full
+  rebuild is `tests/core/adapters/duckdb/force-rebuild-fresh-graph.test.ts`. A
+  new table that names a file joins the matrix by itself — its deleted-file
+  check discovers every `*rel_path` column from the catalog.
+
+  **Live check** after an incremental run that removes a method `M` from a file
+  `F` which another, UNCHANGED file still calls (pick one with `get_callers`).
+  The daemon holds the database's write lock, so query a COPY: copy
+  `~/.tea-rags/codegraph/<physical>_v<N>.duckdb` and its `.wal` to a scratch
+  dir, then open the copy with `@duckdb/node-api` (`node -e`). Run before and
+  after the reindex:
+
+  ```sql
+  SELECT 'symbols' AS t, count(*) FROM cg_symbols WHERE rel_path = $F AND symbol_id = $M
+  UNION ALL SELECT 'edges_out', count(*) FROM cg_symbols_edges_method
+    WHERE source_rel_path = $F AND source_symbol_id = $M
+  UNION ALL SELECT 'edges_in', count(*) FROM cg_symbols_edges_method
+    WHERE target_rel_path = $F AND target_symbol_id = $M
+  UNION ALL SELECT 'identifiers', count(*) FROM cg_identifiers
+    WHERE rel_path = $F AND owner_symbol_id = $M
+  UNION ALL SELECT 'rank', count(*) FROM cg_symbols_metrics WHERE rel_path = $F AND symbol_id = $M
+  UNION ALL SELECT 'cycles', count(*) FROM cg_symbols_cycles
+    WHERE scope = 'method' AND member_rel_path = $F AND member = $M
+  UNION ALL SELECT 'dangling_edges', count(*) FROM cg_symbols_edges_method e
+    WHERE e.target_symbol_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM cg_symbols s
+      WHERE s.rel_path = e.target_rel_path AND s.symbol_id = e.target_symbol_id);
+  ```
+
+  Pass: every per-`M` count is non-zero before and 0 after; `dangling_edges`
+  does not grow (it is not 0 on a real corpus — DSL-synthesised targets carry no
+  symbol row); the caller file's own row counts are unchanged; and `get_callees`
+  on the caller no longer lists `M`. For a deleted file, the same zero holds for
+  every `*rel_path` column naming it, including `cg_symbols_cycles.member` for
+  `scope = 'file'`.
+
 - **A pooled graph client is valid only while its path still names the file it
   holds open, and closing one never checkpoints.** `GraphDbClientPool#acquire` —
   the daemon's per-op path through `CodegraphDaemonServer#handle` — and
