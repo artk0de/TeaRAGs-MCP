@@ -143,7 +143,10 @@ describe("swift tier 2 — extraction over the real fixtures", () => {
     // [String: Account] — a Dictionary, not an Account (INVARIANT CHANGED, bd
     // tea-rags-mcp-y99pg.14: it used to be dropped).
     expect(classFieldTypes.Ledger?.accounts).toBe("Dictionary");
-    expect(classFieldTypes["Ledger.Account"]).toBeUndefined(); // keyed by the type's own short name
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.36): a nested type is keyed by
+    // its nesting path AS WELL as by its own short name, so same-named nested
+    // types in one file no longer share one entry.
+    expect(classFieldTypes["Ledger.Account"]?.balance).toBe("Decimal");
     expect(classFieldTypes.Account?.balance).toBe("Decimal");
     expect(classFieldTypes.Invoice?.state).toBe("InvoiceState");
   });

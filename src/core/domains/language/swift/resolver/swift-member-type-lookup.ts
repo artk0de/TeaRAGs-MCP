@@ -60,6 +60,7 @@ import {
 import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../vocabulary/sdk-vocabulary.js";
 import { parseSwiftTypeText, swiftSpelledNominal, type SwiftTypeExpr } from "../vocabulary/swift-type-text.js";
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
+import { swiftEnclosingTypeIds } from "./swift-enclosing-scope.js";
 import { SwiftModuleValueIndex } from "./swift-module-values.js";
 import { SwiftSdkMemberTypes, type SwiftNominalTypeRef, type SwiftSelfAliases } from "./swift-sdk-member-types.js";
 import {
@@ -441,10 +442,18 @@ export class SwiftMemberTypeLookup {
    * project overload there takes the call's argument labels, and the SDK
    * declares the member on the same hierarchy — `self.init(url:cachePolicy:)`
    * inside `extension URLRequest` beside a project `init(_:method:headers:)`.
+   *
+   * `excludeSymbolId` is a declaration that cannot be the target however well
+   * the call fits it — the calling initializer of a `self.init(…)` delegation
+   * (bd tea-rags-mcp-y99pg.36).
    */
-  runsSdkOverload(typeName: string, call: CallRef, ctx: CallContext): boolean {
+  runsSdkOverload(typeName: string, call: CallRef, ctx: CallContext, excludeSymbolId?: string): boolean {
     const { order } = this.linearizerFor(ctx).linearize(typeName);
-    if (order.some((candidate) => declaresMember(qualifySwiftTypeName(candidate, ctx), call.member, ctx, call))) {
+    if (
+      order.some((candidate) =>
+        declaresMember(qualifySwiftTypeName(candidate, ctx), call.member, ctx, call, excludeSymbolId),
+      )
+    ) {
       return false;
     }
     return this.sdkDeclaresMember(typeName, call.member, ctx);
@@ -495,12 +504,13 @@ export class SwiftMemberTypeLookup {
    * them under its last segment.
    */
   private propertyTypeOn(typeName: string, member: string, ctx: CallContext): string | null {
-    const key = typeName.slice(typeName.lastIndexOf(".") + 1);
-    return (
-      identifierEntry(identifierEntry(ctx.classFieldTypes, key), member) ??
-      identifierEntry(this.fields.fieldsOf(key, ctx), member) ??
-      null
-    );
+    for (const key of swiftFieldKeys(typeName, ctx)) {
+      const hit =
+        identifierEntry(identifierEntry(ctx.classFieldTypes, key), member) ??
+        identifierEntry(this.fields.fieldsOf(key, ctx), member);
+      if (hit !== undefined) return hit;
+    }
+    return null;
   }
 
   /**
@@ -549,6 +559,25 @@ export class SwiftMemberTypeLookup {
   }
 }
 
+/**
+ * The field-channel keys a type NAME is read under, most specific first (bd
+ * tea-rags-mcp-y99pg.36): the nesting path of the innermost type enclosing the
+ * caller that the name denotes lexically (`Inner` inside
+ * `DownloadResponsePublisher.Inner`), then the name the lookup qualifies it
+ * to, then its last segment — the short key every reader used before the
+ * walker published paths, which keeps only what same-named namesakes agree on.
+ */
+function swiftFieldKeys(typeName: string, ctx: CallContext): string[] {
+  const keys: string[] = [];
+  const lexical = swiftEnclosingTypeIds(ctx).find((id) => id === typeName || id.endsWith(`.${typeName}`));
+  if (lexical !== undefined) keys.push(lexical);
+  const qualified = qualifySwiftTypeName(typeName, ctx);
+  if (!keys.includes(qualified)) keys.push(qualified);
+  const short = typeName.slice(typeName.lastIndexOf(".") + 1);
+  if (!keys.includes(short)) keys.push(short);
+  return keys;
+}
+
 /** Two declared returns name the same nominal — only the forms Swift publishes ever agree. */
 function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
   if ((a.form !== "instance" && a.form !== "class") || (b.form !== "instance" && b.form !== "class")) return false;
@@ -565,9 +594,16 @@ const SWIFT_WRAPPER_MEMBERS: readonly string[] = ["wrappedValue", "projectedValu
 const SWIFT_SELF_RETURN = "Self";
 
 /** Whether `typeName` declares `member` in either spelling — one the call fits, given one — whatever the cardinality. */
-function declaresMember(typeName: string, member: string, ctx: CallContext, call?: CallRef): boolean {
-  return (
-    swiftMemberCandidates(ctx, `${typeName}#${member}`, call).length > 0 ||
-    swiftMemberCandidates(ctx, `${typeName}.${member}`, call).length > 0
+function declaresMember(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+  excludeSymbolId?: string,
+): boolean {
+  return [`${typeName}#${member}`, `${typeName}.${member}`].some((id) =>
+    swiftMemberCandidates(ctx, id, call).some(
+      (def) => def.symbolId !== excludeSymbolId || def.relPath !== ctx.callerFile,
+    ),
   );
 }
