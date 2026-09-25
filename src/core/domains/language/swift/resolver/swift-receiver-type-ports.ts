@@ -410,12 +410,51 @@ export function swiftCastOperand(head: string): string | undefined {
 function swiftLiteralHeadType(head: string): TypeRef | undefined {
   // A string literal, interpolated or raw, is a `String` (bd tea-rags-mcp-y99pg.25).
   if (SWIFT_STRING_LITERAL_HEAD.test(head)) return { form: "instance", name: "String" };
+  const range = swiftRangeHeadType(head);
+  if (range !== undefined) return range;
   const cast = SWIFT_CAST_HEAD.exec(head);
   const literal = head.startsWith("[") && head.endsWith("]") ? head : undefined;
   const typeText = cast ? cast[2].trim() : literal;
   if (typeText === undefined) return undefined;
   const name = swiftTypeTextName(typeText);
   return name === undefined ? undefined : { form: "instance", name };
+}
+
+/**
+ * The range a parenthesised range head builds (bd tea-rags-mcp-y99pg.39):
+ * `(0..<n)` is a `Range`, `("a"..."z")` a `ClosedRange` — the operator names
+ * the type whatever the bounds are. Only a two-sided range whose operator sits
+ * at the parentheses' own depth, outside any string: `(f(0..<3))` is a call.
+ */
+function swiftRangeHeadType(head: string): TypeRef | undefined {
+  if (!head.startsWith("(") || !head.endsWith(")")) return undefined;
+  const inner = head.slice(1, -1);
+  let depth = 0;
+  let quote = false;
+  let found: { readonly at: number; readonly name: string } | undefined;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === '"') quote = false;
+      continue;
+    }
+    if (ch === '"') quote = true;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      // The opening parenthesis closed before the end: `(a)…(b)` is no one group.
+      if (--depth < 0) return undefined;
+    } else if (depth === 0 && found === undefined && inner.startsWith("..", i)) {
+      const op = inner.startsWith("..<", i) ? "..<" : inner.startsWith("...", i) ? "..." : undefined;
+      if (op === undefined) return undefined;
+      found = { at: i, name: op === "..<" ? "Range" : "ClosedRange" };
+      i += op.length - 1;
+    }
+  }
+  if (found === undefined || depth !== 0 || quote) return undefined;
+  const lower = inner.slice(0, found.at).trim();
+  const upper = inner.slice(found.at + 3).trim();
+  return lower.length > 0 && upper.length > 0 ? { form: "instance", name: found.name } : undefined;
 }
 
 /**

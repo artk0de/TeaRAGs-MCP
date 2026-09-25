@@ -1287,6 +1287,40 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
     );
     expect(target).toBeNull();
   });
+
+  // bd tea-rags-mcp-y99pg.39 — `(0..<n).map` / `(200..<300).contains`: a
+  // parenthesised range spells its own type, `Range` for `..<` and
+  // `ClosedRange` for `...`, whatever the bounds are.
+  it("types a parenthesised RANGE head as the range it builds", () => {
+    const withRanges = table({
+      "Sources/Range+Ext.swift": [
+        { symbolId: "Range#clamped", scope: ["Range"] },
+        { symbolId: "ClosedRange#clamped", scope: ["ClosedRange"] },
+      ],
+      "Sources/Tile.swift": [
+        { symbolId: "Tile", scope: [] },
+        { symbolId: "Tile#contains", scope: ["Tile"] },
+      ],
+    });
+    const at = ctx({
+      callerFile: "Sources/Encoder.swift",
+      symbolTable: withRanges,
+      typeDeclarations: {
+        "Sources/Range+Ext.swift": [
+          { typeId: "Range", reopens: true },
+          { typeId: "ClosedRange", reopens: true },
+        ],
+        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("(0..<count)", "clamped"), at)?.targetSymbolId).toBe("Range#clamped");
+    expect(resolver.resolve(call('("a"..."z")', "clamped"), at)?.targetSymbolId).toBe("ClosedRange#clamped");
+    // `Range.contains` is the standard library's: `Tile#contains` is a namesake.
+    expect(resolver.hasInProjectDefinition(call("(200..<300)", "contains"), at)).toBe(false);
+    // Not a range: a parenthesised call whose argument holds one.
+    expect(resolver.hasInProjectDefinition(call("(f(0..<3))", "contains"), at)).toBe(true);
+  });
 });
 
 describe("SwiftCallResolver — a SHORT type name reaches its NESTED declaration", () => {
