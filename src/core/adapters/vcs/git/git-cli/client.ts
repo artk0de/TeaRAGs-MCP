@@ -618,6 +618,44 @@ export async function isAncestor(repoRoot: string, ancestor: string, descendant:
   }
 }
 
+/** Silence window for the two tree listings below — one bounded spawn each, never a history walk. */
+const TREE_LISTING_STALL_MS = 60_000;
+
+/**
+ * Every path `commitOid`'s tree tracks, repo-relative, as git spells it
+ * (`ls-tree -z`: no C-quoting). Submodule entries are listed by their path.
+ */
+export async function listTreePaths(
+  repoRoot: string,
+  commitOid: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<string[]> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["ls-tree", "-r", "-z", "--name-only", "--full-tree", commitOid],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  return splitNulTerminated(out);
+}
+
+/**
+ * HEAD paths the working tree no longer has, repo-relative: deleted on disk,
+ * removed from the index, or moved away (`--no-renames`, so the old side of an
+ * uncommitted rename reads as a deletion). Edited files are not listed.
+ */
+export async function listWorktreeDeletions(repoRoot: string, timeoutMs = TREE_LISTING_STALL_MS): Promise<string[]> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=D", "HEAD", "--"],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  return splitNulTerminated(out);
+}
+
+function splitNulTerminated(out: string): string[] {
+  return out.split("\0").filter((p) => p.length > 0);
+}
+
 /** Run a single pathspec-filtered git log and parse the output. */
 export async function getCommitsByPathspecSingle(
   repoRoot: string,

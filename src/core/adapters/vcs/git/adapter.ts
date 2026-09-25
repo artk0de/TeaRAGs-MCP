@@ -45,6 +45,14 @@ export abstract class VcsGitAdapter implements VcsAdapter {
   ): Promise<CommitFileNumstat[]>;
   abstract readBlobAsString(commitOid: string, filepath: string): Promise<string>;
   abstract blameFile(filePath: string, timeoutMs?: number, historyDepthHint?: number): Promise<BlameLine[]>;
+  /** Every path `commitOid`'s tree tracks, repo-relative. Untracked and ignored files are not in it. */
+  abstract listTreePaths(commitOid: string, timeoutMs?: number): Promise<string[]>;
+  /**
+   * HEAD paths the working tree no longer has — deleted, removed from the
+   * index, or the old side of an uncommitted rename. Edited files are not
+   * listed. With `listTreePaths(HEAD)` it defines the LIVE tracked set.
+   */
+  abstract listWorktreeDeletions(timeoutMs?: number): Promise<string[]>;
 
   /** One-time pre-enrichment warmup — write the commit-graph (+ changed-path
    *  Bloom filters) to accelerate every `git log` / `git blame` this run.

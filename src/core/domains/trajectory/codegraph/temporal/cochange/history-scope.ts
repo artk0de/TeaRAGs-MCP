@@ -10,9 +10,9 @@
  *    does not come back as a phantom file;
  * 2. subtree scoping — a project indexed from a repo subdirectory keeps only
  *    its own files, re-rooted;
- * 3. existence — a file absent from the working tree is dropped: its pairs
- *    describe code that no longer exists, and plain deletions are invisible to
- *    rename following.
+ * 3. liveness — a file that is not live (the builder: tracked at HEAD and
+ *    still in the working tree) is dropped: its pairs describe code that no
+ *    longer exists, and plain deletions are invisible to rename following.
  *
  * Merge commits are dropped by subject (`MERGE_SUBJECT`) and by parent count —
  * a merge restates its branch's changes as one bundle.
@@ -25,7 +25,11 @@ import type { CochangeCommit } from "./commit-bundles.js";
 export interface CochangeHistoryScope {
   /** The project root relative to the repo root, POSIX, with a trailing `/`; `""` when they coincide. */
   projectPrefix: string;
-  /** Whether a PROJECT-relative path exists in the working tree now. */
+  /**
+   * Whether a PROJECT-relative path is live now. The builder answers from git
+   * (tracked at HEAD, not deleted in the working tree), never from the disk
+   * alone — an ignored file can reuse a once-committed path.
+   */
   fileExists: (relPath: RelPath) => boolean;
 }
 
