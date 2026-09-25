@@ -105,6 +105,20 @@
   earlier harness headlines are understated by ~0.5pp, so any A/B mixing pre-
   and post-parity measure-sets is invalid.
 
+- **The RSpec chunker READS; the kernel EMITS.** `buildScopeTree`
+  (`chunking/rspec-scope-chunker.ts`) turns a container call into the neutral
+  `TestScope` and `produceScopeChunks` hands it to `produceTestScopeChunks` —
+  ids, inherited setup, `~N` and line ranges are the kernel's, per
+  `.claude/rules/test-spec-chunking.md`. What stays Ruby: an example is named by
+  `extractScopeName` exactly as a scope is, so a description-less one-liner
+  (`it { is_expected.to be_valid }`) carries its whole line and a multi-line
+  `it do` is just `it` (repeats become `it~2`); `delegatesExamples` is set from
+  the CALL name (`it_behaves_like` / `include_examples`), never from line text;
+  and `topLevelName` is the first constant / string argument of the root call.
+  Why: splicing parent setup in the hook, or matching a setup line's text, is
+  the pre-kernel code this replaced — `let(:include_examples_flag)` used to make
+  a setup-only scope a `test`.
+
 ## Boundaries
 
 - **Levers CLOSED BY VERDICT (2026-07-27) — do not reopen without new
