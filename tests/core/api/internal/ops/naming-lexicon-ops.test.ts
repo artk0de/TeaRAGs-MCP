@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
-import { InputValidationError } from "../../../../../src/core/api/errors.js";
+import { InputValidationError, InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import { NamingLexiconOps } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
 import type { IdentifierReplaceEntry, IdentifierRow } from "../../../../../src/core/contracts/types/codegraph.js";
@@ -274,6 +274,24 @@ describe("NamingLexiconOps", () => {
         evidence: { n: 15, boundTypes: 1, collision: false },
       });
     });
+
+    it("asked types and an untyped callee-bound draft together: byType and byCallee both answer", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        types: [DOC],
+        names: [{ name: "row", kind: "local", callee: { member: "find_tax_automation_document!" } }],
+      });
+      expect(result.byType.map((e) => e.type)).toEqual([DOC]);
+      expect(result.byCallee).toEqual([
+        {
+          member: "find_tax_automation_document!",
+          kinds: { local: [{ name: "tax_automation_document", n: 3 }] },
+          shapes: { local: [{ shape: "CALLEE_DERIVED", share: 1 }] },
+        },
+      ]);
+      expect(result.names[0]).toMatchObject({ verdict: "MISFIT", suggestion: "tax_automation_document" });
+    });
   });
 
   describe("project prior licenses the callee-derived fallback", () => {
@@ -406,6 +424,100 @@ describe("NamingLexiconOps", () => {
       const result = await ops.getNamingLexicon({ collection: "c", types: ["TaxDocument"] });
       expect(result.language).toBe("kotlin");
       expect(result.byType[0].shapes.local).toEqual([{ shape: "EXACT", share: 1 }]);
+    });
+
+    it("an input error from the concept search propagates instead of degrading to a notice", async () => {
+      await seedTaxdome();
+      semanticSearch.mockRejectedValue(new InvalidParameterError("pathPattern", "malformed glob"));
+      await expect(
+        ops.getNamingLexicon({ collection: "c", language: "ruby", concept: "x", types: [DOC] }),
+      ).rejects.toBeInstanceOf(InvalidParameterError);
+    });
+
+    it("an alias that fails to resolve reads the physical name; a failing reader close never masks the answer", async () => {
+      await seedTaxdome();
+      const graphDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === "close") return async () => Promise.reject(new Error("already closed"));
+          const value: unknown = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+      const acquireReader = vi.fn(async () => ({ graphDb, symbolTable: {} }));
+      const resilient = new NamingLexiconOps({
+        pool: { acquireReader } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async () => Promise.reject(new Error("registry offline")),
+        explore: { semanticSearch },
+        namingConventions: NAMING,
+      });
+      const result = await resilient.getNamingLexicon({ collection: "c", types: [DOC], language: "ruby" });
+      expect(acquireReader).toHaveBeenCalledWith("c");
+      expect(result.byType.map((e) => e.type)).toEqual([DOC]);
+    });
+  });
+
+  describe("several types in one answer", () => {
+    /** Invoice: 4 × invoice + 2 × inv locals and an `amount` return; Payment: 2 × payment. */
+    async function seedLedger(): Promise<void> {
+      const typed = (owner: string, name: string, typeName: string) =>
+        local(owner, name, { typeName, typeSource: "binding" });
+      const rows: IdentifierRow[] = [
+        ...[0, 1, 2, 3].map((i) => typed(`A${i}#run`, "invoice", "Invoice")),
+        ...[0, 1].map((i) => typed(`B${i}#run`, "inv", "Invoice")),
+        ...[0, 1].map((i) => typed(`C${i}#run`, "payment", "Payment")),
+      ];
+      rows.push({
+        ownerSymbolId: "Ledger#amount",
+        kind: "return",
+        name: "amount",
+        line: 9,
+        typeName: "Invoice",
+        typeSource: "return-type",
+      });
+      await write([{ relPath: "app/ledger.rb", rows }]);
+    }
+
+    it("orders types by evidence, names within a kind by count, and judges a typed draft against its own type only", async () => {
+      await seedLedger();
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        types: ["Payment", "Invoice"],
+        names: [{ name: "inv", kind: "local", type: "Invoice" }],
+      });
+
+      expect(result.byType.map((e) => e.type)).toEqual(["Invoice", "Payment"]);
+      expect(result.byType[0].kinds.local).toEqual([
+        { name: "invoice", n: 4 },
+        { name: "inv", n: 2 },
+      ]);
+      expect(result.byType[0].kinds.return).toEqual([{ name: "amount", n: 1 }]);
+      expect(result.byType[1].kinds.local).toEqual([{ name: "payment", n: 2 }]);
+      expect(result.names).toHaveLength(1);
+      expect(result.names[0]).toMatchObject({ name: "inv", evidence: { n: 2, boundTypes: 1, collision: false } });
+    });
+
+    it("name-inferred lends only an asked type held by ≥ 80% of ≥ 3 typed rows", async () => {
+      const rows: IdentifierRow[] = [
+        // `doc`: typed Draft 4×, Invoice 1× → Draft dominates, but Draft was not asked.
+        ...[0, 1, 2, 3].map((i) => local(`D${i}#run`, "doc", { typeName: "Draft", typeSource: "binding" })),
+        local("E0#run", "doc", { typeName: "Invoice", typeSource: "binding" }),
+        local("F0#run", "doc"),
+        // `memo`: one typed row — too little evidence to lend its type.
+        local("G0#run", "memo", { typeName: "Invoice", typeSource: "binding" }),
+        local("H0#run", "memo"),
+      ];
+      await write([{ relPath: "app/docs.rb", rows }]);
+
+      const result = await ops.getNamingLexicon({ collection: "c", language: "ruby", types: ["Invoice"] });
+
+      expect(result.byType).toHaveLength(1);
+      expect(result.byType[0].evidence).toEqual({ binding: 2 });
+      expect(result.byType[0].kinds.local).toEqual([
+        { name: "doc", n: 1 },
+        { name: "memo", n: 1 },
+      ]);
     });
   });
 });

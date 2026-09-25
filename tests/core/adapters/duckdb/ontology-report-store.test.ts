@@ -237,6 +237,24 @@ describe("DuckDbGraphClient#readOntologyReport", () => {
     expect(report.synonyms?.map((s) => s.typeName)).toContain("String");
   });
 
+  it("a non-concept group naming no extension or no type excludes nothing", async () => {
+    const report = await db.readOntologyReport(
+      query({
+        nonConceptTypes: [
+          { extensions: [], typeNames: ["String"] },
+          { extensions: [".rb"], typeNames: [] },
+        ],
+      }),
+    );
+    expect(report.synonyms?.map((s) => s.typeName)).toContain("String");
+  });
+
+  it("refuses a non-finite threshold instead of interpolating it into SQL", async () => {
+    await expect(
+      db.readOntologyReport(query({ thresholds: { ...THRESHOLDS, synonymDominantShareCeiling: Number.NaN } })),
+    ).rejects.toThrow(/non-finite threshold/);
+  });
+
   it("reads only the requested sections", async () => {
     const report = await db.readOntologyReport(query({ sections: ["homonyms"] }));
     expect(report.homonyms).toBeDefined();

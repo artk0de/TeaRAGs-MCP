@@ -376,6 +376,76 @@ describe("OntologyReportOps#report — degraded states", () => {
   });
 });
 
+describe("OntologyReportOps#report — ranking and resilience", () => {
+  it("synonyms rank by (1 − dominant share) × confidence across types; a nameless group is skipped", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        synonyms: [
+          { ...group({ typeName: "Ghost", names: [{ name: "ghost", n: 1, example: at("app/g.rb") }] }), names: [] },
+          group({
+            typeName: "Payment",
+            names: [
+              { name: "payment", n: 4, example: at("app/p.rb") },
+              { name: "pmt", n: 3, example: at("app/p.rb", 2) },
+              { name: "charge", n: 3, example: at("app/p.rb", 3) },
+            ],
+          }),
+          group({
+            typeName: "Invoice",
+            names: [
+              { name: "invoice", n: 10, example: at("app/i.rb") },
+              { name: "bill", n: 10, example: at("app/i.rb", 2) },
+              { name: "_", n: 5, example: at("app/i.rb", 3) },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { synonyms } = await ops.report({ collection: "code_x", sections: ["synonyms"] });
+
+    // Invoice: share 0.4, confidence 1 → 0.6; Payment: share 0.4, confidence 0.25 → 0.15.
+    expect(synonyms?.map((s) => s.type)).toEqual(["Invoice", "Payment"]);
+    expect(synonyms?.[0].dominant).toMatchObject({ name: "invoice", n: 10 });
+    expect(synonyms?.[0].deviants.map((d) => d.name)).toEqual(["bill", "_"]);
+    expect(synonyms?.[1].confidence).toBeCloseTo(0.25);
+  });
+
+  it("outliers need a convention: a group holding a single name yields none", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        outlierGroups: [group({ typeName: "Invoice", names: [{ name: "inv", n: 30, example: at("app/i.rb") }] })],
+      }),
+    );
+    const { outliers } = await ops.report({ collection: "code_x", sections: ["outliers"] });
+    expect(outliers).toEqual([]);
+  });
+
+  it("an alias that cannot be resolved falls back to the physical name; a failing close never masks the report", async () => {
+    const graphDb = {
+      readOntologyReport: vi.fn(async () => rows({ homonyms: [] })),
+      close: vi.fn(async () => {
+        throw new Error("already closed");
+      }),
+    };
+    const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
+    const ops = new OntologyReportOps({
+      pool: pool as never,
+      collectionRegistry: {} as never,
+      resolveActiveCollection: async () => {
+        throw new Error("registry offline");
+      },
+      languages: [RUBY],
+    });
+
+    const res = await ops.report({ collection: "code_x", sections: ["homonyms"] });
+
+    expect(pool.acquireReader).toHaveBeenCalledWith("code_x");
+    expect(graphDb.close).toHaveBeenCalled();
+    expect(res.homonyms).toEqual([]);
+    expect(res.summary.evidenceRows).toBe(80);
+  });
+});
+
 describe("ontologyLanguageProfiles", () => {
   it("derives one profile per language that declares naming, with its file extensions", () => {
     const profiles = ontologyLanguageProfiles();

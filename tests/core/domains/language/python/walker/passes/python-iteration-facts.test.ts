@@ -140,6 +140,13 @@ describe("pythonIterationTypeSource — emitted", () => {
     ]);
   });
 
+  it("reads a one-argument `tuple[T]` as a homogeneous container", () => {
+    const src = ["def run(xs: tuple[Row]):", "    for row in xs:", "        row.render()", ""].join("\n");
+    expect(facts(src)).toEqual([
+      { kind: "local", source: "ast", symbolScope: [], methodName: "run", name: "row", line: 2, type: instance("Row") },
+    ]);
+  });
+
   it("scopes a comprehension variable to its enclosing def", () => {
     const src = [
       "class View:",
@@ -223,6 +230,38 @@ describe("pythonIterationTypeSource — declined", () => {
   declines(
     "skips a module-level comprehension",
     ["xs: list[Row] = []", "ys = [r.render() for r in xs]", ""].join("\n"),
+  );
+  declines(
+    "declines a plain nominal annotation — it states no element",
+    ["def run(xs: Rows):", "    for x in xs:", "        x.render()", ""].join("\n"),
+  );
+  declines(
+    "declines a three-argument tuple annotation",
+    ["def run(xs: tuple[A, A, A]):", "    for x in xs:", "        x.render()", ""].join("\n"),
+  );
+  declines(
+    "declines iterating a subscript — only a name or a self field is looked up",
+    ["def run(groups: list[list[Row]]):", "    for x in groups[0]:", "        x.render()", ""].join("\n"),
+  );
+  declines(
+    "declines another object's field",
+    ["def run(other):", "    for x in other.items:", "        x.render()", ""].join("\n"),
+  );
+  declines(
+    "declines `self.<field>` outside any class",
+    ["def run(self):", "    for x in self.items:", "        x.render()", ""].join("\n"),
+  );
+  declines(
+    "declines annotations on another object's attribute or on a subscript",
+    [
+      "class Basket:",
+      "    def fill(self, other, d):",
+      "        other.items: list[Item] = []",
+      '        d["k"]: list[Item] = []',
+      "        for item in other.items:",
+      "            item.price()",
+      "",
+    ].join("\n"),
   );
   declines(
     "emits nothing when local type tracking is off",

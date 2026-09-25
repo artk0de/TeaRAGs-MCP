@@ -454,3 +454,67 @@ describe("collectIdentifierFinderVocabulary", () => {
     expect(collectIdentifierFinderVocabulary(undefined).size).toBe(0);
   });
 });
+
+describe("buildIdentifierRows — owner chunk resolution", () => {
+  it("a symbol split into several chunks reads the chunk holding the declaration's line", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "ProcessEvent#call",
+            startLine: 1,
+            endLine: 10,
+            localBindings: { doc: [{ line: 5, type: "Draft" }] },
+          }),
+          chunk({
+            symbolId: "ProcessEvent#call",
+            startLine: 11,
+            endLine: 20,
+            localBindings: { doc: [{ line: 15, type: "Invoice" }] },
+            calls: [call({ member: "load", startLine: 15, callText: "load(id)" })],
+          }),
+        ],
+        identifierDeclarations: [
+          decl({ name: "doc", line: 5 }),
+          decl({ name: "doc", line: 15, boundCallee: { member: "load" } }),
+        ],
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        ownerSymbolId: "ProcessEvent#call",
+        kind: "local",
+        name: "doc",
+        line: 5,
+        typeName: "Draft",
+        typeSource: "binding",
+      },
+      {
+        ownerSymbolId: "ProcessEvent#call",
+        kind: "local",
+        name: "doc",
+        line: 15,
+        typeName: "Invoice",
+        typeSource: "binding",
+        boundMember: "load",
+        boundCallExpression: "load(id)",
+      },
+    ]);
+  });
+
+  it("a declaration whose owner has no chunk keeps its syntax but recovers no field type or call text", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        classFieldTypes: { Orphan: { client: "HttpClient" } },
+        identifierDeclarations: [
+          decl({ name: "client", kind: "field", ownerSymbolId: "Orphan" }),
+          decl({ name: "row", ownerSymbolId: "Orphan#run", boundCallee: { member: "fetch", receiver: "api" } }),
+        ],
+      }),
+    );
+    expect(rows).toEqual([
+      { ownerSymbolId: "Orphan", kind: "field", name: "client", line: 5 },
+      { ownerSymbolId: "Orphan#run", kind: "local", name: "row", line: 5, boundMember: "fetch", boundReceiver: "api" },
+    ]);
+  });
+});

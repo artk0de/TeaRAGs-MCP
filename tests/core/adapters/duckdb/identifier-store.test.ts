@@ -439,4 +439,14 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
       expect(bounded.reduce((sum, r) => sum + r.n, 0)).toBe(1);
     });
   });
+
+  it("an empty replace batch leaves stored rows alone, and a count over no types is zero", async () => {
+    await db.replaceIdentifiersBulk([
+      { relPath: "a.rb", rows: [row({ name: "doc", typeName: "Doc", typeSource: "binding" })] },
+    ]);
+    await db.replaceIdentifiersBulk([]);
+    expect(await allRows()).toEqual([{ rel_path: "a.rb", name: "doc" }]);
+    expect(await db.countIdentifiers({ types: [] })).toBe(0);
+    expect(await db.countIdentifiers({ types: ["Doc"] })).toBe(1);
+  });
 });
