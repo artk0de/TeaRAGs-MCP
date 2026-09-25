@@ -192,9 +192,10 @@ The right column shows what runs under the hood.
 - 🕸️ **Call graph** — callers, callees, cycles and A→B paths (`get_callers`,
   `get_callees`, `find_cycles`, `trace_path`) for TypeScript, JavaScript, Python
   and Ruby at a high tier, plus an architecture report of Stable Dependencies
-  violations (`get_architecture_report`) and the project's naming vocabulary —
-  how values of a type are named, and a verdict on a draft name
-  (`get_naming_lexicon`)
+  violations (`get_architecture_report`), the project's naming vocabulary — how
+  values of a type are named, and a verdict on a draft name
+  (`get_naming_lexicon`) — and a naming ontology audit: synonyms, homonyms,
+  outlier names and symbol collisions (`get_ontology_report`)
 - 🧠 **Agent skills** — the plugin routes every question to the right tools and
   presets on its own; 15 ready-made workflows (`explore`, `bug-hunt`,
   `risk-assessment`, `data-driven-generation`, `mr-review`, …) plus

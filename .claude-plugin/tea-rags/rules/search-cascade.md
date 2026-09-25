@@ -316,6 +316,9 @@ Has query?
    │   named", "is this name right") → get_naming_lexicon (codegraph on);
    │     reading the answer: /tea-rags:data-driven-generation Step 5 Naming
    │
+   ├─ Audit naming consistency / find ontology collisions project-wide
+   │   → get_ontology_report (codegraph on; synonyms, homonyms, outliers, collisions)
+   │
    └─ Describing behavior / intent (no exact name) → semantic_search
 ```
 

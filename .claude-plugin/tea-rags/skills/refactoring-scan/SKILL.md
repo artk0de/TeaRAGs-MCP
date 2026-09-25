@@ -99,6 +99,10 @@ For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
 `get_naming_lexicon(names=<Tier 1 identifiers>, pathPattern=<scope>)` → `MISFIT`
 = Naming candidate, Action `rename to <suggestion>`; `CONFORMS` = not a
 candidate. Codegraph off → classify Naming only with a cited in-scope precedent.
+Rename candidates can also seed from
+`get_ontology_report(pathPattern=<scope>, sections=["outliers","synonyms"])` —
+each outlier / synonym deviant is a Naming candidate, Action
+`rename to <dominant.name>`.
 
 ### 4. OUTPUT
 
