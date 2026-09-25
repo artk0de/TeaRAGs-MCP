@@ -153,6 +153,8 @@ export interface GetOntologyReportResponse {
   homonyms?: OntologyHomonym[];
   outliers?: OntologyOutlier[];
   collisions?: OntologyCollision[];
+  /** Why sections are empty for a reason other than the data — e.g. the codegraph store could not be opened. */
+  notices?: string[];
   /** Set when the index predates `cg_identifiers` (migration 033) — reindex, the report is not "clean". */
   driftWarning?: string;
 }

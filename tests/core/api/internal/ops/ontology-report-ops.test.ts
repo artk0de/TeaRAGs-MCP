@@ -363,16 +363,20 @@ describe("OntologyReportOps#report — degraded states", () => {
     await expect(ops.report({ collection: "code_x" })).rejects.toThrow(/disk on fire/);
   });
 
-  it("a graph that cannot be opened degrades to the empty report", async () => {
+  // Invariant changed 2026-09-25 (live validation): an unreadable graph used to
+  // answer a bare empty report — indistinguishable from a clean project. It now
+  // says why, the same notice get_naming_lexicon gives.
+  it("a graph that cannot be opened degrades to the empty report with a notice saying why", async () => {
     const pool = {
       acquireReader: vi.fn(async () => {
         throw new Error("lock held");
       }),
     };
     const ops = new OntologyReportOps({ pool, collectionRegistry: {} as never, languages: [RUBY] });
-    expect(await ops.report({ collection: "code_x", sections: ["synonyms"] })).toEqual(
-      OntologyReportOps.empty({ sections: ["synonyms"] }),
-    );
+    expect(await ops.report({ collection: "code_x", sections: ["synonyms"] })).toEqual({
+      ...OntologyReportOps.empty({ sections: ["synonyms"] }),
+      notices: ["codegraph store unavailable: lock held"],
+    });
   });
 });
 

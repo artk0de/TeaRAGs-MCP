@@ -183,8 +183,10 @@ export class OntologyReportOps {
     let handle: Awaited<ReturnType<GraphDbClientPool["acquireReader"]>>;
     try {
       handle = await this.deps.pool.acquireReader(active);
-    } catch {
-      return OntologyReportOps.empty(req);
+    } catch (error) {
+      // An unreadable graph must not pass for a clean project.
+      const message = error instanceof Error ? error.message : String(error);
+      return { ...OntologyReportOps.empty(req), notices: [`codegraph store unavailable: ${message}`] };
     }
 
     let rows: OntologyReportRows;
