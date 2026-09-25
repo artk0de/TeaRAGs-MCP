@@ -85,6 +85,26 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     expect(out).toMatch(/Removed 'alpha'/);
   });
 
+  it("unregister --path removes the entry the path registered (bd tea-rags-mcp-usbb5)", async () => {
+    await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
+    stdoutSpy.mockClear();
+    await makeCli().parseAsync(["projects", "unregister", "--path", repo]);
+    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toMatch(/Removed 'alpha'/);
+  });
+
+  // The `.fail` handler throws synchronously out of parseAsync, so the call is
+  // wrapped in an async thunk to surface it as a rejection.
+  it("unregister rejects --name together with --path", async () => {
+    await expect(async () =>
+      makeCli().parseAsync(["projects", "unregister", "--name", "alpha", "--path", repo]),
+    ).rejects.toThrow(/mutually exclusive/);
+  });
+
+  it("unregister rejects a call with neither --name nor --path", async () => {
+    await expect(async () => makeCli().parseAsync(["projects", "unregister"])).rejects.toThrow(/--name or --path/);
+  });
+
   it("list subcommand closure invokes runList", async () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
     stdoutSpy.mockClear();

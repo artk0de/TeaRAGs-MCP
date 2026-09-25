@@ -19,8 +19,10 @@ interface RegisterArgs {
   path: string;
   name: string;
 }
+/** Exactly one of `name` / `path` — yargs enforces it, and the op re-checks. */
 interface UnregisterArgs {
-  name: string;
+  name?: string;
+  path?: string;
   purge?: boolean;
 }
 interface ListArgs {
@@ -86,25 +88,56 @@ type PurgeQdrantClient = Pick<QdrantManager, "deleteCollection" | "countPoints" 
 
 export async function runUnregister(args: UnregisterArgs, qdrant?: PurgeQdrantClient): Promise<void> {
   const { registry, ops } = newOps();
-  // Capture the entry before it is removed — the purge addresses its collection.
-  const entry = registry.findByName(args.name);
-  const out = await ops.unregister({ name: args.name });
+  const address = {
+    ...(args.name !== undefined ? { name: args.name } : {}),
+    ...(args.path !== undefined ? { path: args.path } : {}),
+  };
+  let entry: CollectionEntry | null;
+  let removed: boolean;
+  try {
+    // Capture the entry before it is removed — the purge addresses its collection.
+    entry = ops.findEntry(address);
+    ({ removed } = await ops.unregister(address));
+  } catch (err) {
+    process.stderr.write(`${stderrColorizer().alert(`projects unregister failed: ${(err as Error).message}`)}\n`);
+    process.exit(1);
+  }
   const c = createColorizer();
-  if (!out.removed) {
-    process.stdout.write(`${c.warn(`'${args.name}' was not registered`)}\n`);
+  if (!removed || !entry) {
+    process.stdout.write(`${c.warn(`'${args.name ?? args.path ?? ""}' was not registered`)}\n`);
     return;
   }
-  const collectionName = entry?.collectionName ?? "(unknown)";
+  const label = unregisterLabel(entry);
+  const { collectionName } = entry;
   if (args.purge) {
     await purgeFootprint(
-      { name: args.name, collectionName, registry, ...(entry?.path ? { path: entry.path } : {}) },
+      { name: label, collectionName, registry, ...(entry.path ? { path: entry.path } : {}) },
       qdrant,
     );
     return;
   }
   process.stdout.write(
-    `${c.ok(`Removed '${args.name}' from registry.`)} ${c.warn(`Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister --name ${args.name} --purge' to remove it.`)}\n`,
+    `${c.ok(`Removed '${label}' from registry.`)} ${c.warn(`Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister ${unregisterAddressFlag(entry)} --purge' to remove it.`)}\n`,
   );
+}
+
+/**
+ * How an unregister message names the project. `index-codebase <path>`
+ * registers WITHOUT an alias (bd tea-rags-mcp-usbb5), so a nameless entry is
+ * named by the directory it was registered at — what the user typed.
+ */
+function unregisterLabel(entry: CollectionEntry): string {
+  return entry.name ?? (entry.path || entry.collectionName);
+}
+
+/** The flag that re-addresses this entry — `--path` when it has no alias to name. */
+function unregisterAddressFlag(entry: CollectionEntry): string {
+  return entry.name !== null ? `--name ${entry.name}` : `--path ${shellQuote(entry.path)}`;
+}
+
+/** Quote a path for a copy-pasteable hint only when the shell would split or expand it. */
+function shellQuote(value: string): string {
+  return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -474,14 +507,30 @@ export const projectsCommand: CommandModule = {
       )
       .command<UnregisterArgs>(
         "unregister",
-        "Remove a registered project by name (optionally also delete the Qdrant collection)",
+        "Remove a registered project by name or path (optionally also delete the Qdrant collection)",
         (y) =>
-          y.option("name", { type: "string", demandOption: true, describe: "Project name to remove" }).option("purge", {
-            type: "boolean",
-            default: false,
-            describe: "Also delete the underlying Qdrant collection",
+          y
+            .option("name", { type: "string", describe: "Project name to remove" })
+            .option("path", {
+              type: "string",
+              describe: "Project root it was registered at — reaches entries `index-codebase <path>` left unnamed",
+            })
+            .conflicts("name", "path")
+            .check((argv) => {
+              if (!argv.name && !argv.path) throw new Error("Pass exactly one of --name or --path");
+              return true;
+            })
+            .option("purge", {
+              type: "boolean",
+              default: false,
+              describe: "Also delete the underlying Qdrant collection",
+            }),
+        async (argv) =>
+          runUnregister({
+            ...(argv.name !== undefined ? { name: argv.name } : {}),
+            ...(argv.path !== undefined ? { path: argv.path } : {}),
+            purge: argv.purge,
           }),
-        async (argv) => runUnregister({ name: argv.name, purge: argv.purge }),
       )
       .command<OrphansArgs>(
         "orphans",

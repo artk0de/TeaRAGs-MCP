@@ -58,6 +58,7 @@ import type {
   PresetDescriptors,
   PresetDetail,
   ProgressCallback,
+  ProjectRegistryAddress,
   RankChunksRequest,
   SemanticSearchRequest,
   TracePathRequest,
@@ -142,7 +143,7 @@ export interface App {
     name: string;
   }) => Promise<{ collectionName: string; alreadyIndexed: boolean }>;
   listProjects: () => Promise<{ projects: ProjectInfo[] }>;
-  unregisterProject: (input: { name: string }) => Promise<{ removed: boolean }>;
+  unregisterProject: (input: ProjectRegistryAddress) => Promise<{ removed: boolean }>;
 
   // -- Codegraph (→ internal/facades/graph-facade.ts) --
   getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;

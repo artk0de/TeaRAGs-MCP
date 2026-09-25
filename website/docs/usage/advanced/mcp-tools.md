@@ -215,7 +215,7 @@ aliases to indexed projects.
 | -------------------- | ----------------------------------------------------------------------------- |
 | `register_project`   | Bind a short name to a project path. Lets later calls use `project: "<name>"` |
 | `list_projects`      | List all registered projects with collection metadata                         |
-| `unregister_project` | Remove a name (idempotent; does NOT delete the Qdrant collection)             |
+| `unregister_project` | Remove by name or path (idempotent; does NOT delete the Qdrant collection)    |
 
 The registered alias resolves to the project's path and collection name across
 every search and indexing tool — see [Project Registry](./project-registry)
