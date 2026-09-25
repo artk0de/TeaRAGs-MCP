@@ -138,6 +138,15 @@ export class EsGitAdapter extends VcsGitAdapter {
     return this.cliHistory.writeCommitGraph(timeoutMs);
   }
 
+  /** Delegated: a whole-tree walk plus an index/working-tree diff, one spawn each. */
+  async listTreePaths(commitOid: string, timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.listTreePaths(commitOid, timeoutMs);
+  }
+
+  async listWorktreeDeletions(timeoutMs?: number): Promise<string[]> {
+    return this.cliHistory.listWorktreeDeletions(timeoutMs);
+  }
+
   async getCommitsByPathspec(
     sinceDate: Date,
     filePaths: string[],

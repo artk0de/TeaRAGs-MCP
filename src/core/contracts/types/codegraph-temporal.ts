@@ -54,7 +54,11 @@ export interface TemporalCochangeEdge {
 export interface TemporalCochangeBuildMeta {
   /** HEAD the graph was built at. */
   head: string;
-  /** Hash of every parameter that shapes the graph (window, bundling, caps, algorithm revision). */
+  /**
+   * Hash of every input besides HEAD and the clock that shapes the graph: the
+   * parameters (window, bundling, caps, algorithm revision), the project's
+   * subtree of the repo, and the working tree's deletions of HEAD paths.
+   */
   fingerprint: string;
   /** Unix seconds when the build ran. */
   builtAt: number;
