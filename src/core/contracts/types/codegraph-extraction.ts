@@ -414,6 +414,15 @@ export interface TypeDeclarationFact {
    */
   readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;
   /**
+   * The methods whose return IS their closure's result, every overload of the
+   * name agreeing: a method generic `U` declared as the return and as what the
+   * one closure parameter returns — `func read<U>(_ closure: (Value) throws ->
+   * U) rethrows -> U`. A call passing a key path `\.p` there returns the type
+   * of `p` on the closure's parameter (bd tea-rags-mcp-y99pg.37). Absent when no
+   * method is one.
+   */
+  readonly closureResultMembers?: readonly string[];
+  /**
    * An enum's cases that carry a payload, by case name, each payload slot's
    * nominal type in position order (`case group(ExampleGroup, count: Int)` →
    * `group: ["ExampleGroup", "Int"]`, `null` for a slot no nominal names) —

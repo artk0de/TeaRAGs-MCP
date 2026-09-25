@@ -390,6 +390,11 @@ describe("seeded support versions", () => {
       // swift walker 58 (branch 51): bd tea-rags-mcp-y99pg.33 — member typealiases reach
       // `typeDeclarations`, so a walker-57 index cannot bind `Self.X` on a
       // project conformer.
+      // swift walker 59: bd tea-rags-mcp-y99pg.37 — a call's lone key-path
+      // argument stays in the value spelling, a `for` item over an untyped local
+      // is recorded as its sequence's element, and `typeDeclarations` names the
+      // methods returning their closure's result, so a walker-58 index cannot
+      // type `for request in mutableState.read(\.activeRequests)`.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],
@@ -399,7 +404,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 58],
+        ["swift", 59],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

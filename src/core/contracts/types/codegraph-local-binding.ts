@@ -175,6 +175,14 @@ export interface CallResultBinding {
    * `unit`'s type declares `group` to carry. ABSENT on every other binding.
    */
   readonly enumPayload?: { readonly caseName: string; readonly index: number };
+  /**
+   * Set when the binding is an ELEMENT drawn from the sequence `callee`
+   * spells rather than the value itself — a `for item in items` loop over a
+   * local only the resolver can type (bd tea-rags-mcp-y99pg.37). Which type a
+   * sequence yields as its element is the language's rule. ABSENT on every
+   * other binding.
+   */
+  readonly sequenceElement?: true;
 }
 
 /**

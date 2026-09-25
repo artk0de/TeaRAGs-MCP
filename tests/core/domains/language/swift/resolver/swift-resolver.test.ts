@@ -3916,3 +3916,95 @@ describe("SwiftCallResolver — a constrained extension binds the extended type'
     });
   });
 });
+
+/**
+ * Alamofire `Session.deinit`: `let requests = mutableState.read(\.activeRequests)`,
+ * then `for request in requests { request.finish(…) }` (bd tea-rags-mcp-y99pg.37).
+ * `read<U>(_: (Value) throws -> U) -> U` returns what its closure returns; a
+ * key path `\.p` passed as that closure returns `Value.p`, so `U` is the
+ * property's type, and the loop draws that sequence's `Element`.
+ */
+describe("SwiftCallResolver — a key-path argument binds a generic method's return", () => {
+  const t = table({
+    "Sources/Protected.swift": [
+      { symbolId: "Protected", scope: [] },
+      { symbolId: "Protected#read", scope: ["Protected"] },
+    ],
+    "Sources/Request.swift": [
+      { symbolId: "Request", scope: [] },
+      { symbolId: "Request#finish", scope: ["Request"] },
+    ],
+    "Sources/Session.swift": [
+      { symbolId: "Session", scope: [] },
+      { symbolId: "Session.MutableState", scope: ["Session"] },
+      { symbolId: "Session.MutableState#reset", scope: ["Session", "MutableState"] },
+    ],
+  });
+  const protectedFact = (closureResultMembers: string[] | null) => ({
+    typeId: "Protected",
+    reopens: false,
+    genericParameters: ["Value"],
+    memberClosureParameters: { read: ["Value"] },
+    ...(closureResultMembers ? { closureResultMembers } : {}),
+  });
+  const context = (callee: string, closureResultMembers: string[] | null = ["read"]) =>
+    ctx({
+      callerFile: "Sources/Session.swift",
+      callerScope: ["Session"],
+      symbolTable: t,
+      typeDeclarations: {
+        "Sources/Protected.swift": [protectedFact(closureResultMembers)],
+        "Sources/Session.swift": [
+          { typeId: "Session", reopens: false, fieldTypeArguments: { mutableState: ["MutableState"] } },
+          {
+            typeId: "Session.MutableState",
+            reopens: false,
+            fieldTypeArguments: { activeRequests: ["Request"] },
+          },
+        ],
+      },
+      classFieldTypes: { Session: { mutableState: "Protected" }, MutableState: { activeRequests: "Set" } },
+      callResultBindings: {
+        requests: [{ line: 10, callee }],
+        request: [{ line: 11, callee: "requests", sequenceElement: true, scopeEndLine: 13 }],
+        state: [{ line: 10, callee }],
+      },
+    });
+
+  it("types the for-in item as the element of the key path's property", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request", "finish", 12),
+      context("mutableState.read(\\.activeRequests)"),
+    );
+    expect(target?.targetSymbolId).toBe("Request#finish");
+  });
+
+  // `deinit` is not chunked, so its calls sit in the type's chunk, where the
+  // stored property's own declaration reads as a binding of its bare type.
+  it("keeps the property's generic arguments when the type chunk binds the property itself", () => {
+    const withPropertyBinding = {
+      ...context("mutableState.read(\\.activeRequests)"),
+      localBindings: { mutableState: [{ line: 2, type: "Protected" }] },
+    };
+    const target = new SwiftCallResolver().resolve(call("request", "finish", 12), withPropertyBinding);
+    expect(target?.targetSymbolId).toBe("Request#finish");
+  });
+
+  it("binds `\\.self` to the closure's parameter type itself", () => {
+    const target = new SwiftCallResolver().resolve(call("state", "reset", 12), context("mutableState.read(\\.self)"));
+    expect(target?.targetSymbolId).toBe("Session.MutableState#reset");
+  });
+
+  it("types nothing when the method does not return its closure's result", () => {
+    const target = new SwiftCallResolver().resolve(
+      call("request", "finish", 12),
+      context("mutableState.read(\\.activeRequests)", null),
+    );
+    expect(target).toBeNull();
+  });
+
+  it("types nothing when the argument is not a key path", () => {
+    const target = new SwiftCallResolver().resolve(call("request", "finish", 12), context("mutableState.read(x)"));
+    expect(target).toBeNull();
+  });
+});

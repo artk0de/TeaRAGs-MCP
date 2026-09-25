@@ -55,7 +55,7 @@ import {
 import { parseSwiftTypeText } from "../vocabulary/swift-type-text.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "./swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
-import { boundedBy } from "./swift-sdk-member-types.js";
+import { boundedBy, type SwiftNominalTypeRef } from "./swift-sdk-member-types.js";
 import {
   lookupSwiftSymbols,
   lookupSwiftSymbolsByShortName,
@@ -185,7 +185,7 @@ function swiftHeadType(
   if (head === "super") return undefined;
 
   const local = swiftLocalValueTypeRef(head, atLine, ctx, ports, members, keepsOptionals);
-  if (local?.form === "instance") return local;
+  if (local?.form === "instance") return swiftPropertyArgumentsOnLocal(local, head, enclosing, ctx, members);
 
   if (enclosing !== undefined) {
     const fieldType = members.typeOfProperty(enclosing, head, ctx);
@@ -214,6 +214,28 @@ function swiftHeadType(
   // A type the SDK declares — `Locale.preferredLanguages` (bd tea-rags-mcp-y99pg.25).
   if (isSwiftTypeName(head) && members.isSdkType(head)) return { form: "class", name: head };
   return undefined;
+}
+
+/**
+ * A local bound with the enclosing type's property's OWN type is that property
+ * — a call attributed to its type's chunk (a `deinit`, an initializer the
+ * chunker does not split out) sees the stored property as a binding — so it
+ * carries the generic arguments the property declares (`mutableState:
+ * Protected<MutableState>`, bd tea-rags-mcp-y99pg). The rule
+ * {@link swiftClosureParameterType} applies to a closure's receiver, applied
+ * to a chain head.
+ */
+function swiftPropertyArgumentsOnLocal(
+  local: SwiftNominalTypeRef,
+  head: string,
+  enclosing: string | undefined,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): TypeRef {
+  if (local.args !== undefined || enclosing === undefined) return local;
+  if (members.typeOfProperty(enclosing, head, ctx) !== local.name) return local;
+  const args = members.fieldTypeArguments(enclosing, head, ctx);
+  return args === undefined ? local : swiftTypeRefWithArguments(local.name, args);
 }
 
 /**
@@ -418,6 +440,13 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
     // A hop off a value known only by a bound is known only by one too (bd tea-rags-mcp-y99pg.25).
     memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
       boundedBy(recv, swiftMemberHopType(recv, member, ctx, members)),
+    // `read(\.activeRequests)`: a key path binds a generic return (bd tea-rags-mcp-y99pg.37).
+    memberCallTypeOf: (recv: TypeRef, member: string, argumentText: string, ctx: CallContext): TypeRef | undefined =>
+      boundedBy(
+        recv,
+        swiftKeyPathCallType(recv, member, argumentText, ctx, members, ports) ??
+          swiftMemberHopType(recv, member, ctx, members),
+      ),
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
     // An argument list carries its own dots (`request(for: task.id)`).
     splitReceiverHops,
@@ -552,6 +581,43 @@ function swiftWrittenReceiverHops(receiver: string): string[] {
 /** The standard library's `Optional`, which a declared `T?` is (bd tea-rags-mcp-y99pg.33). */
 const SWIFT_OPTIONAL = "Optional";
 
+/** `\.p`, `\.p.q`, `\.self` — the key paths {@link swiftKeyPathCallType} reads. */
+const SWIFT_KEY_PATH_ARGUMENT = /^\\\.(self|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)$/;
+
+/**
+ * What `recv.member(\.p)` returns when `member` returns its closure's result
+ * (bd tea-rags-mcp-y99pg.37): `read<U>(_ closure: (Value) throws -> U) -> U`
+ * given the key path `\.p` — a function from the closure's parameter to its
+ * `p` (SE-0249) — returns the type of `p` on that parameter. The parameter is
+ * a concrete type as declared, or one of the declaring type's generic
+ * parameters bound by the receiver's arguments. Each key-path component is a
+ * member hop; `\.self` is the parameter itself. Undefined for any other
+ * argument, or when a hop is unknown.
+ */
+function swiftKeyPathCallType(
+  recv: TypeRef,
+  member: string,
+  argumentText: string,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  const keyPath = SWIFT_KEY_PATH_ARGUMENT.exec(argumentText.trim());
+  if (keyPath === null || (recv.form !== "instance" && recv.form !== "class")) return undefined;
+  const signature = members.closureParameterTypes(recv.name, member, ctx);
+  if (signature === undefined || !signature.returnsClosureResult || signature.types?.length !== 1) return undefined;
+  const declared = signature.types[0];
+  if (declared === null) return undefined;
+  const slot = signature.genericParameters.indexOf(declared);
+  let root: TypeRef | undefined = slot === -1 ? swiftDeclaredTypeRef(declared) : recv.args?.[slot];
+  if (keyPath[1] === "self") return root;
+  for (const component of keyPath[1].split(".")) {
+    if (root === undefined) return undefined;
+    root = ports.memberTypeOf(root, component, ctx);
+  }
+  return root;
+}
+
 /** The type one member hop off `recv` denotes — the fold's `memberTypeOf`, before the bound mark. */
 function swiftMemberHopType(
   recv: TypeRef,
@@ -655,6 +721,8 @@ function swiftLocalValueTypeRef(
   }
   const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
   if (folded?.form !== "instance") return undefined;
+  // `for request in requests`: the loop draws the sequence's element (bd tea-rags-mcp-y99pg.37).
+  if (spelled.sequenceElement === true) return members.sdkSequenceElementType(folded);
   // `case .group(let g)`: the subject's enum says what the slot carries (bd tea-rags-mcp-y99pg.16).
   // The cases are published under the enum's QUALIFIED id, and a `self`
   // subject folds to the enclosing type's short name — `switch self` inside

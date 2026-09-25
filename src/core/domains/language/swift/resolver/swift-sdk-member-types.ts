@@ -150,6 +150,18 @@ export class SwiftSdkMemberTypes {
   }
 
   /**
+   * The element a `for` loop over `sequence` draws: its `Element` — a generic
+   * parameter of that name (`Set<Request>` → `Request`) or the alias its
+   * lookup order declares (bd tea-rags-mcp-y99pg.37). Undefined for a type the
+   * substrate does not declare, or one whose argument is unknown.
+   */
+  sequenceElementType(sequence: SwiftNominalTypeRef): TypeRef | undefined {
+    if (sequence.form !== "instance") return undefined;
+    const element = this.associatedType(sequence, "Element", 0);
+    return element?.form === "instance" && element.upperBound !== true ? element : undefined;
+  }
+
+  /**
    * A construction's value: `T(…)` / `T { … }` is an instance of `T`, with the
    * generic arguments the spelling states. Only an SDK type answers here.
    */

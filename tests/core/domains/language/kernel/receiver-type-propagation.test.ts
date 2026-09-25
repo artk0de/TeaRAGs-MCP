@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CallContext } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../src/core/contracts/types/language.js";
 import {
+  callArgumentText,
   CHAIN_MAX_HOPS_DEFAULT,
   propagateReceiverType,
   splitReceiverHops,
@@ -196,6 +197,53 @@ describe("propagateReceiverType — the hop-split PORT", () => {
       splitReceiverHops,
     });
     expect(propagateReceiverType("f(a.b, c.d).run", 5, ctx(), ports)).toEqual(instance("Job"));
+  });
+});
+
+describe("propagateReceiverType — the call-argument PORT", () => {
+  // Opt-in (bd tea-rags-mcp-y99pg.37): a language whose return type can depend on
+  // an ARGUMENT (Swift's `read<U>(_: (Value) -> U) -> U` given `\.prop`) sees
+  // the argument text; every language without the port keeps the stripped hop.
+  it("asks memberCallTypeOf with the member and its argument text for a CALL link", () => {
+    const memberCallTypeOf = vi.fn(() => instance("Set"));
+    const memberTypeOf = vi.fn(() => undefined);
+    const ports = portsWith({
+      singleHopType: () => instance("Protected"),
+      memberTypeOf,
+      memberCallTypeOf,
+      splitReceiverHops,
+    });
+    expect(propagateReceiverType("state.read(\\.active)", 5, ctx(), ports)).toEqual(instance("Set"));
+    expect(memberCallTypeOf).toHaveBeenCalledWith(instance("Protected"), "read", "\\.active", expect.anything());
+    expect(memberTypeOf).not.toHaveBeenCalled();
+  });
+
+  it("keeps memberTypeOf for a link with no argument list", () => {
+    const memberCallTypeOf = vi.fn(() => instance("Wrong"));
+    const ports = portsWith({
+      singleHopType: () => instance("User"),
+      memberTypeOf: (recv, member) => (member === "account" ? instance("Account") : undefined),
+      memberCallTypeOf,
+    });
+    expect(propagateReceiverType("u.account", 5, ctx(), ports)).toEqual(instance("Account"));
+    expect(memberCallTypeOf).not.toHaveBeenCalled();
+  });
+
+  it("strips the arguments and asks memberTypeOf when the port is absent", () => {
+    const memberTypeOf = vi.fn(() => instance("Post"));
+    const ports = portsWith({ singleHopType: () => instance("Repo"), memberTypeOf, splitReceiverHops });
+    expect(propagateReceiverType("repo.find(id).x", 5, ctx(), ports)).toEqual(instance("Post"));
+    expect(memberTypeOf.mock.calls.map((c) => c[1])).toEqual(["find", "x"]);
+  });
+});
+
+describe("callArgumentText", () => {
+  it("returns the text inside a link's argument list, or undefined when it has none", () => {
+    expect(callArgumentText("read(\\.active)")).toBe("\\.active");
+    expect(callArgumentText("f(a, g(b))")).toBe("a, g(b)");
+    expect(callArgumentText("f()")).toBe("");
+    expect(callArgumentText("find")).toBeUndefined();
+    expect(callArgumentText("f(a")).toBeUndefined();
   });
 });
 

@@ -165,14 +165,19 @@
   OPTIONAL and defaults to that plain `split(".")`: only Python supplies the
   bracket-aware scan (`splitAtBracketDepthZero`, the one depth-and-quote scanner
   in the engine), because the same split newly types 34 unmeasured mastodon
-  receivers and Ruby's gate is parity, not inspection. It supplies them as ONE
-  FROZEN object built once and reused, because the fold runs per call site and
-  `ctx` is threaded as an argument precisely so nothing is allocated there:
-  Ruby's is a module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
-  `createPythonReceiverTypePorts`, a factory the resolver calls once so the
-  ports close over its ONE `PythonImportFileMapper` instead of a private memo.
-  What an `@ivar` is, what a capitalized head means, which env caps the hops —
-  all language, none of it in the kernel.
+  receivers and Ruby's gate is parity, not inspection. A sixth,
+  `memberCallTypeOf`, is OPTIONAL too: present, it replaces `memberTypeOf` for a
+  link carrying an argument list and receives that list's text
+  (`callArgumentText`), for a return an argument binds; absent, the fold strips
+  the arguments exactly as before, so adding it moves no other language's edges
+  (bd tea-rags-mcp-y99pg.37). It supplies them as ONE FROZEN object built once
+  and reused, because the fold runs per call site and `ctx` is threaded as an
+  argument precisely so nothing is allocated there: Ruby's is a module singleton
+  (`RUBY_RECEIVER_TYPE_PORTS`), Python's is `createPythonReceiverTypePorts`, a
+  factory the resolver calls once so the ports close over its ONE
+  `PythonImportFileMapper` instead of a private memo. What an `@ivar` is, what a
+  capitalized head means, which env caps the hops — all language, none of it in
+  the kernel.
 - **The ancestor walk is a kernel driver with a per-language ORDER policy.**
   `kernel/ancestor-walk.ts` owns the recursion, the per-path cycle guard, the
   already-reachable dedupe filter, the per-run memo and

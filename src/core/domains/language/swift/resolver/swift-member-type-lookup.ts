@@ -75,6 +75,7 @@ import {
   swiftGenericParameters,
   swiftIsOptionalProperty,
   swiftMemberClosureParameters,
+  swiftMemberReturnsClosureResult,
   swiftMemberTypeAliases,
   swiftPropertyAttributeTypes,
   swiftWhereClauseAt,
@@ -89,6 +90,8 @@ export interface SwiftClosureSignature {
   readonly genericParameters: readonly string[];
   /** The declaring type, from which a nominal entry is qualified. */
   readonly ownerTypeId: string;
+  /** Whether the method returns what the closure returns — `read<U>(_: (Value) -> U) -> U` (bd tea-rags-mcp-y99pg.37). */
+  readonly returnsClosureResult: boolean;
 }
 
 /** A receiver as the SDK substrate is asked about it: the nominal, its lookup order, `Self`'s project aliases. */
@@ -200,6 +203,11 @@ export class SwiftMemberTypeLookup {
   /** The SDK-declared type of the `index`-th parameter of the closure the module-level function `name` takes. */
   sdkFunctionClosureParameterType(name: string, index: number): TypeRef | undefined {
     return this.sdkMembers.functionClosureParameterType(name, index);
+  }
+
+  /** What a `for` loop over `sequence` draws — its SDK `Element` (bd tea-rags-mcp-y99pg.37). */
+  sdkSequenceElementType(sequence: SwiftNominalTypeRef): TypeRef | undefined {
+    return this.sdkMembers.sequenceElementType(sequence);
   }
 
   /** The instance an SDK construction `T(…)` / `T { … }` spelled `typeText` builds. */
@@ -384,7 +392,12 @@ export class SwiftMemberTypeLookup {
       const typeId = qualifySwiftTypeName(candidate, ctx);
       const types = swiftMemberClosureParameters(typeId, member, ctx);
       if (types === undefined) return null;
-      return { types, genericParameters: swiftGenericParameters(typeId, ctx), ownerTypeId: typeId };
+      return {
+        types,
+        genericParameters: swiftGenericParameters(typeId, ctx),
+        ownerTypeId: typeId,
+        returnsClosureResult: swiftMemberReturnsClosureResult(typeId, member, ctx),
+      };
     });
     return scan.target ?? undefined;
   }
