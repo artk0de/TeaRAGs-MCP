@@ -478,4 +478,24 @@ describe("createApp", () => {
       expect(res).toEqual({ paths: [], truncated: false });
     });
   });
+
+  // bd tea-rags-mcp-4p3sb.12
+  describe("App.getNamingLexicon", () => {
+    it("delegates to namingLexiconOps when wired", async () => {
+      const answer = { scope: "", byType: [], names: [] };
+      const namingLexiconOps = { getNamingLexicon: vi.fn(async () => answer) };
+      const app = createApp({ ...deps, namingLexiconOps } as never);
+      expect(await app.getNamingLexicon({ collection: "c", types: ["Doc"] })).toBe(answer);
+      expect(namingLexiconOps.getNamingLexicon).toHaveBeenCalledWith({ collection: "c", types: ["Doc"] });
+    });
+
+    it("returns an empty answer when codegraph (namingLexiconOps) is absent", async () => {
+      const app = createApp({ ...deps, namingLexiconOps: undefined });
+      expect(await app.getNamingLexicon({ collection: "c", types: ["Doc"] })).toEqual({
+        scope: "",
+        byType: [],
+        names: [],
+      });
+    });
+  });
 });

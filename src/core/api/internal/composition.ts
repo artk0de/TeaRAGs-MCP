@@ -13,7 +13,11 @@ import {
 } from "../../adapters/qdrant/schema-manager.js";
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
-import type { LanguageCodeVersions, LanguageFactoryDescriptor } from "../../contracts/types/language.js";
+import type {
+  IdentifierNamingConvention,
+  LanguageCodeVersions,
+  LanguageFactoryDescriptor,
+} from "../../contracts/types/language.js";
 import type { FilterDescriptor, WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { ChunkSetBumpScopes } from "../../contracts/types/rechunk.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
@@ -91,6 +95,14 @@ export interface CompositionResult {
    * scoped force may advance.
    */
   languageChunkSetBumpScopes: Map<string, ChunkSetBumpScopes>;
+  /**
+   * `LanguageCapability.naming` per language that declares one (bd
+   * tea-rags-mcp-4p3sb.12) — the casing per identifier role and the
+   * non-concept types the naming lexicon reads. Resolved here for the same
+   * reason as `signalFloors`: the lexicon's ops must not reach into
+   * `domains/language`.
+   */
+  namingConventions: Map<string, IdentifierNamingConvention>;
 }
 
 export interface CompositionOptions {
@@ -332,5 +344,10 @@ export function createComposition(options: CompositionOptions = {}): Composition
     signalFloors,
     languageCodeVersions: resolveLanguageCodeVersions(languageFactory.capabilities()),
     languageChunkSetBumpScopes: resolveChunkSetBumpScopes(languageFactory.capabilities()),
+    namingConventions: new Map(
+      [...languageFactory.capabilities()].flatMap(([language, capability]) =>
+        capability.naming ? [[language, capability.naming] as const] : [],
+      ),
+    ),
   };
 }

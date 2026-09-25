@@ -15,6 +15,15 @@ describe("createComposition", () => {
     expect(registry.has("git")).toBe(true);
   });
 
+  // bd tea-rags-mcp-4p3sb.12 — the naming lexicon reads the descriptors' naming facts from here.
+  it("resolves namingConventions for exactly the languages whose descriptor declares naming", () => {
+    const { namingConventions, languageFactory } = createComposition();
+    expect(namingConventions.get("ruby")?.casing.local[0]).toBe("snake");
+    expect(namingConventions.get("typescript")?.casing.local[0]).toBe("camel");
+    expect(namingConventions.has("markdown")).toBe(false);
+    for (const language of namingConventions.keys()) expect(languageFactory.supported()).toContain(language);
+  });
+
   it("aggregates payload signals from BASE + trajectories", () => {
     const { allPayloadSignalDescriptors } = createComposition();
     // BASE has relativePath, language, etc. + git has git.file.*, git.chunk.*

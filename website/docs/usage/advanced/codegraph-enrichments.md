@@ -139,6 +139,19 @@ the pre-computed DuckDB graph directly — no embedding):
 | `get_callees` | Symbols **invoked by** the given `symbolId` (what this depends on)                   |
 | `find_cycles` | Strongly-connected components (cycles ≥ 2) in the import graph (`scope: "file"`) or call graph (`scope: "method"`) |
 | `get_architecture_report` | Architecture violations with per-line evidence. Stable Dependencies Principle judged on components (modules with a measured facade, else directories) — a stable component depending on a less stable one, grouped into root causes by unstable target, with the file edges that carry it; plus leaking abstractions, silent coupling and main-sequence distance (zone of pain / uselessness, abstractness from the walker type census). Scripts, spikes, benchmarks, examples and fixtures are left out. Optional `pathPattern` scopes the judged edges by source file |
+| `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` verdict per draft in `names`, and project terms for a `concept` (with `language`) |
+
+`get_naming_lexicon` reads the identifier declarations the codegraph records —
+params, locals, fields and return types, each with the type it is known to hold.
+A type comes from an annotation, a constructor, a resolver binding, a finder
+call (`Doc.find(id)`), the return of the one method a call resolves to, or —
+counted apart as `name-inferred` — a name that holds one type in at least 80% of
+its typed uses. The shapes it reports (`EXACT`, `QUALIFIED`, `TAIL`,
+`VERB_TYPE`, `CALLEE_DERIVED`, `FREE`) are induced from those rows, never
+assumed: a project that names by role gets a `FREE`-dominant answer and no
+forced suggestion. Casing per role comes from the language descriptor. An index
+built before the identifier table existed answers with a `driftWarning` naming
+the reindex.
 
 These pair naturally with [`find_symbol`](/usage/advanced/mcp-tools), which
 resolves a name to a `symbolId` using the same `Class#method` (instance) /

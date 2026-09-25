@@ -4,8 +4,8 @@
  *
  * When `app.hasProvider("codegraph.symbols") === false`, the registrar must
  * be a complete no-op — neither `get_callers`, `get_callees`, `find_cycles`,
- * `trace_path` nor `get_architecture_report` appears in the MCP tool list.
- * When true, all five tools register.
+ * `trace_path`, `get_architecture_report` nor `get_naming_lexicon` appears in
+ * the MCP tool list. When true, all of them register.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -45,15 +45,22 @@ function makeServer(): McpServer {
 }
 
 describe("registerCodegraphTools — provider gating", () => {
-  it("registers all 5 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
+  it("registers all 6 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
     const register = vi.fn();
     const app = makeApp(true);
 
     registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
 
-    expect(register).toHaveBeenCalledTimes(5);
+    expect(register).toHaveBeenCalledTimes(6);
     const names = register.mock.calls.map((c) => c[1] as string).sort();
-    expect(names).toEqual(["find_cycles", "get_architecture_report", "get_callees", "get_callers", "trace_path"]);
+    expect(names).toEqual([
+      "find_cycles",
+      "get_architecture_report",
+      "get_callees",
+      "get_callers",
+      "get_naming_lexicon",
+      "trace_path",
+    ]);
   });
 
   it("registers trace_path when codegraph.symbols is present", () => {

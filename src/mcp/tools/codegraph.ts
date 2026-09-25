@@ -155,6 +155,52 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
   };
 }
 
+/**
+ * `get_naming_lexicon` (bd tea-rags-mcp-4p3sb.12) — COMPACT by contract: the
+ * description states the call contract only (when to call is selection policy,
+ * owned by the search cascade), each field one line, no examples. A test holds
+ * the description ≤ 300 chars and the input schema, as clients receive it,
+ * ≤ 1.5 KB serialized.
+ */
+const NAMING_LEXICON_DESCRIPTION =
+  "Project naming vocabulary from the codegraph. `types`/`anchors` → names per kind + dominant shape; " +
+  "`names[]` → CONFORMS | MISFIT{suggestion} | NEW_TERM{topTerms}; " +
+  "`concept`+`language` → project terms for a description.";
+
+function buildNamingLexiconInputSchema() {
+  const draftName = z.object({
+    name: z.string().min(1),
+    kind: z.enum(["param", "local", "field", "return"]).optional(),
+    type: z.string().optional(),
+    callee: z
+      .object({ member: z.string().min(1), receiver: z.string().optional() })
+      .optional()
+      .describe("Call the value is bound to"),
+  });
+  return z
+    .object({
+      ...collectionPathFields(),
+      pathPattern: z.string().optional().describe("Glob scope; widens under 5 rows"),
+      language: z.string().optional().describe("Casing source; required with concept"),
+      types: z.array(z.string()).optional(),
+      anchors: z.array(z.string()).optional().describe("SymbolIds whose param/return types to add"),
+      concept: z.string().optional().describe("Domain description, not a name"),
+      names: z.array(draftName).optional().describe("Draft names to judge; kind defaults to local"),
+    })
+    .refine(
+      (req) =>
+        (req.types?.length ?? 0) > 0 ||
+        (req.anchors?.length ?? 0) > 0 ||
+        (req.names?.length ?? 0) > 0 ||
+        (req.concept ?? "").length > 0,
+      { message: "Provide at least one of types, anchors, concept, names" },
+    )
+    .refine((req) => req.concept === undefined || req.language !== undefined, {
+      message: "concept requires language",
+      path: ["language"],
+    });
+}
+
 export function registerCodegraphTools(
   server: McpServer,
   deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
@@ -301,6 +347,31 @@ export function registerCodegraphTools(
         rerank: preset,
         maxDepth,
         maxPaths,
+      });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "get_naming_lexicon",
+    {
+      title: "Get Naming Lexicon",
+      description: NAMING_LEXICON_DESCRIPTION,
+      inputSchema: buildNamingLexiconInputSchema(),
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, pathPattern, language, types, anchors, concept, names }) => {
+      const response = await app.getNamingLexicon({
+        project,
+        collection,
+        path,
+        pathPattern,
+        language,
+        types,
+        anchors,
+        concept,
+        names,
       });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
