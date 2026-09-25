@@ -32,6 +32,25 @@ their own navigators.
   Pure moves (numstat `0 0`) still credit no chunk: following changes which file
   a commit lands on, not whether it has hunks.
 
+- **The file walk follows renames through the same alias map.**
+  `aggregateFileChurnFollowingRenames` (`infra/rename-following.ts`) folds
+  per-commit numstat onto HEAD paths for both `FileChurnDiscovery#fileChurn` and
+  the per-path backfill `buildFileSignalsForPaths`. The discovery resolves
+  aliases over its entries in LOG order and only folds in its committer-date
+  order; the persisted snapshot keeps raw per-commit rows, so a pre-rename
+  commit cached under its old path is re-resolved on every build. The backfill
+  widens with `sliceCommitsFollowingRenames` over
+  `VcsGitAdapter#readCommitFileNumstatForPaths`, which re-reads add/delete
+  commits without the pathspec — a pathspec detects renames only between paths
+  it names, so on the HEAD path alone the rename prints as a plain add. Unlike
+  the chunk side, a pure move DOES count as a file commit (it is what
+  `git log --follow` lists). Why: the file side used to key each commit by the
+  path it recorded, so a directory rename reset every moved file to
+  `commitCount: 1` while its chunks kept 20–30 commits (bd tea-rags-mcp-aikfk).
+  `readNumstatLog` / `readNumstatLogForPaths` still aggregate raw; only the
+  discovery-less legacy branch of `buildFileSignalMap` /
+  `buildFileSignalDiscovery` reads them, and the provider never takes it.
+
 - **A changed-file row is a PAIR, and the two halves address different
   commits.** `git log --numstat` runs with rename detection on, so the parsers
   split git's `pre{old => new}post` column into

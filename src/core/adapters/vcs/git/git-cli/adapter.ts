@@ -27,6 +27,7 @@ import {
   isAncestor,
   readBlobAsString,
   readCommitFileNumstat,
+  readCommitFileNumstatForPaths,
   writeCommitGraph,
 } from "./client.js";
 
@@ -88,6 +89,10 @@ export class GitCliAdapter extends VcsGitAdapter {
 
   async readNumstatLogForPaths(paths: string[], timeoutMs?: number): Promise<Map<string, FileChurnData>> {
     return buildViaCliForPaths(this.repoRoot, paths, timeoutMs);
+  }
+
+  async readCommitFileNumstatForPaths(paths: string[], timeoutMs?: number): Promise<CommitFileNumstat[]> {
+    return readCommitFileNumstatForPaths(this.repoRoot, paths, timeoutMs);
   }
 
   createBlobBatchReader(): BlobBatchReader {

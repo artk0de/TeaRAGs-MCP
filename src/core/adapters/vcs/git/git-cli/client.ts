@@ -543,6 +543,65 @@ export async function readCommitFileNumstat(
 }
 
 /**
+ * `git log HEAD --numstat -- <paths>` kept per commit, with the rename rows a
+ * pathspec hides put back (bd tea-rags-mcp-aikfk).
+ *
+ * Git detects a rename only between paths the pathspec names, so a commit that
+ * moved a named path in from an unnamed one prints a plain add, and one that
+ * moved it out prints a plain delete — neither row carries `previousPath`, and
+ * a caller following renames (`sliceCommitsFollowingRenames`) never learns the
+ * predecessor. `--diff-filter=AD` lists exactly those commits; they are re-read
+ * without the pathspec (`--no-walk`, one spawn) and their rows touching a named
+ * path on either side replace the pathspec-limited ones. Commits that only
+ * modified a named path keep their pathspec rows. Log order is preserved.
+ */
+export async function readCommitFileNumstatForPaths(
+  repoRoot: string,
+  paths: string[],
+  timeoutMs?: number,
+): Promise<CommitFileNumstat[]> {
+  if (paths.length === 0) return [];
+  const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const entries = parseCommitFileNumstat(
+    await execFileForPathspec(
+      repoRoot,
+      ["log", "HEAD", "--numstat", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--", ...paths],
+      effectiveTimeoutMs,
+    ),
+  );
+  const addOrDelete = (
+    await execFileForPathspec(
+      repoRoot,
+      ["log", "HEAD", "--diff-filter=AD", "--format=%H", "--", ...paths],
+      effectiveTimeoutMs,
+    )
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (addOrDelete.length === 0) return entries;
+
+  const named = new Set(paths);
+  const unrestricted = new Map(
+    parseCommitFileNumstat(
+      await execFileForPathspec(
+        repoRoot,
+        ["log", "--no-walk=unsorted", NUMSTAT_LOG_FORMAT_WITH_COMMITTER, "--numstat", ...addOrDelete],
+        effectiveTimeoutMs,
+      ),
+    ).map((entry) => [entry.commit.sha, entry]),
+  );
+  return entries.map((entry) => {
+    const full = unrestricted.get(entry.commit.sha);
+    if (!full) return entry;
+    const files = full.files.filter(
+      (row) => named.has(row.path) || (row.previousPath !== undefined && named.has(row.previousPath)),
+    );
+    return files.length > 0 ? { ...entry, files } : entry;
+  });
+}
+
+/**
  * True iff `ancestor` is an ancestor of `descendant` per
  * `git merge-base --is-ancestor`. Any failure — non-ancestor exit code,
  * unresolvable / gc'd shas, not a repo — resolves false, which callers treat

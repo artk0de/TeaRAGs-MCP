@@ -1,5 +1,7 @@
 /**
- * Rename following for the chunk churn walk (bd tea-rags-mcp-z8w16).
+ * Rename following for the chunk churn walk (bd tea-rags-mcp-z8w16) and the
+ * file-level churn aggregate (bd tea-rags-mcp-aikfk,
+ * `aggregateFileChurnFollowingRenames`).
  *
  * The walk's chunk map is keyed on HEAD paths, but a commit names each file by
  * its path AS OF THAT COMMIT. A commit made before a rename therefore names a
@@ -18,16 +20,16 @@
  *    commits under the same name follow the renamed file.
  */
 
-import type { CommitChangedPath } from "../../../../adapters/vcs/types.js";
+import type { CommitChangedPath, CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
 
 /** Minimal slice row shape: anything carrying the commit's changed-path pairs. */
-interface CommitSliceRow {
-  changedFiles: CommitChangedPath[];
+interface CommitSliceRow<P extends CommitChangedPath = CommitChangedPath> {
+  changedFiles: P[];
 }
 
 /** A changed-path row paired with the HEAD path whose chunks it credits. */
-export interface HeadAttributedChangedPath {
-  changed: CommitChangedPath;
+export interface HeadAttributedChangedPath<P extends CommitChangedPath = CommitChangedPath> {
+  changed: P;
   headPath: string;
 }
 
@@ -72,7 +74,9 @@ export async function sliceCommitsFollowingRenames<T extends CommitSliceRow>(
  * Predecessor mappings are applied last so a same-commit swap (A→B, B→A)
  * resolves both names.
  */
-export function resolveHeadPaths(entries: readonly CommitSliceRow[]): HeadAttributedChangedPath[][] {
+export function resolveHeadPaths<P extends CommitChangedPath>(
+  entries: readonly CommitSliceRow<P>[],
+): HeadAttributedChangedPath<P>[][] {
   const aliases = new Map<string, string | null>();
   const resolve = (path: string): string | null => {
     const alias = aliases.get(path);
@@ -80,7 +84,7 @@ export function resolveHeadPaths(entries: readonly CommitSliceRow[]): HeadAttrib
   };
 
   return entries.map(({ changedFiles }) => {
-    const rows: HeadAttributedChangedPath[] = [];
+    const rows: HeadAttributedChangedPath<P>[] = [];
     const bornHere: string[] = [];
     const predecessors: [string, string | null][] = [];
     for (const changed of changedFiles) {
@@ -95,4 +99,47 @@ export function resolveHeadPaths(entries: readonly CommitSliceRow[]): HeadAttrib
     for (const [previousPath, headPath] of predecessors) aliases.set(previousPath, headPath);
     return rows;
   });
+}
+
+type NumstatRow = CommitFileNumstat["files"][number];
+
+/**
+ * Fold per-commit numstat into per-file churn keyed on HEAD paths — the FILE
+ * side of rename following, over the same `resolveHeadPaths` alias map the
+ * chunk walk uses.
+ *
+ * `logOrder` must be newest → oldest in log order (children before parents):
+ * the alias map is resolved over it, never over a timestamp-sorted copy, since
+ * such a sort can put a pre-rename commit ahead of the rename when both share
+ * a second — which every commit of a rebased series does. `foldOrder`, a
+ * permutation of the same entry objects, only sets the order of each file's
+ * `commits[]` (the discovery passes its canonical committer-date order).
+ *
+ * A pure move (numstat `0 0`) still counts as a commit touching the file — it
+ * is what `git log --follow` lists — and adds no lines. A file that does not
+ * survive to HEAD stays keyed under the last name it had.
+ */
+export function aggregateFileChurnFollowingRenames(
+  logOrder: readonly CommitFileNumstat[],
+  foldOrder: readonly CommitFileNumstat[] = logOrder,
+): Map<string, FileChurnData> {
+  const attributed = resolveHeadPaths<NumstatRow>(logOrder.map((entry) => ({ changedFiles: entry.files })));
+  const rowsByEntry = new Map<CommitFileNumstat, HeadAttributedChangedPath<NumstatRow>[]>();
+  logOrder.forEach((entry, i) => rowsByEntry.set(entry, attributed[i]));
+
+  const fileMap = new Map<string, FileChurnData>();
+  for (const entry of foldOrder) {
+    for (const { changed, headPath } of rowsByEntry.get(entry) ?? []) {
+      let churn = fileMap.get(headPath);
+      if (!churn) {
+        churn = { commits: [], linesAdded: 0, linesDeleted: 0 };
+        fileMap.set(headPath, churn);
+      }
+      // Two rows of one commit can land on one file (a same-commit swap chain).
+      if (churn.commits.at(-1) !== entry.commit) churn.commits.push(entry.commit);
+      churn.linesAdded += changed.added;
+      churn.linesDeleted += changed.deleted;
+    }
+  }
+  return fileMap;
 }
