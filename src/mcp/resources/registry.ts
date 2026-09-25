@@ -278,7 +278,12 @@ export function buildIndexingGuide(): string {
 ## index_codebase Options
 
 - \`path\` — root directory to index
-- \`forceReindex\` — delete existing index and rebuild
+- \`forceReindex\` — rebuild the whole index into a new collection (zero downtime, alias swaps at the end)
+- Scoped force: \`forceReindex\` plus any of \`languages\`, \`testFile\` (only | exclude),
+  \`pathPattern\`, \`fileExtension\`, \`files\` re-chunks and re-embeds ONLY the selected
+  indexed files, in place on the live collection; every other point is untouched. The
+  filters combine as AND and match like their search namesakes. Needs an existing index.
+  A drift report whose chunking bump declared a scope names this form in its \`Run:\` line.
 - \`extensions\` — file extensions to include (default: auto-detect)
 - \`ignorePatterns\` — additional ignore patterns beyond .gitignore
 
