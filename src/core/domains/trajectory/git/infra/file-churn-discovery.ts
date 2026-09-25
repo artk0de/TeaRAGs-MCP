@@ -22,6 +22,7 @@
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { CommitFileNumstat, FileChurnData } from "../../../../adapters/vcs/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
+import { aggregateFileChurnFollowingRenames } from "./rename-following.js";
 
 /**
  * On-disk snapshot shape of a file-churn window (see FileChurnDiscoveryStore).
@@ -135,26 +136,18 @@ export class FileChurnDiscovery {
     // tie-break-sensitive derived signals (recentDominantAuthor / lastCommitHash
     // / taskId order) are stable. `filter` yields a fresh array, so the `.sort`
     // never mutates the array `resolveEntries` already persisted via `store.save`.
-    const ordered = entries
-      .filter((entry) => entry.committerTimestamp >= lowerBoundSec)
-      .sort((a, b) => b.committerTimestamp - a.committerTimestamp || a.commit.sha.localeCompare(b.commit.sha));
+    const inWindow = entries.filter((entry) => entry.committerTimestamp >= lowerBoundSec);
+    const ordered = [...inWindow].sort(
+      (a, b) => b.committerTimestamp - a.committerTimestamp || a.commit.sha.localeCompare(b.commit.sha),
+    );
 
-    // AGGREGATE in canonical order — each file's `commits[]` is deterministic.
-    const fileMap = new Map<string, FileChurnData>();
-    for (const entry of ordered) {
-      for (const file of entry.files) {
-        let churn = fileMap.get(file.path);
-        if (!churn) {
-          churn = { commits: [], linesAdded: 0, linesDeleted: 0 };
-          fileMap.set(file.path, churn);
-        }
-        churn.commits.push(entry.commit);
-        churn.linesAdded += file.added;
-        churn.linesDeleted += file.deleted;
-      }
-    }
-
-    return fileMap;
+    // AGGREGATE in canonical order — each file's `commits[]` is deterministic —
+    // keyed on HEAD paths (bd tea-rags-mcp-aikfk). Renames resolve over
+    // `inWindow`, which keeps log order: a full read is git's own order and a
+    // top-up is `[...fresh, ...prior]`, where no prior commit descends from a
+    // fresh one. The snapshot stores raw per-commit rows, so a pre-rename
+    // commit persisted under its old path is re-resolved on every build.
+    return aggregateFileChurnFollowingRenames(inWindow, ordered);
   }
 
   private async resolveEntries(sinceDate: Date): Promise<CommitFileNumstat[]> {

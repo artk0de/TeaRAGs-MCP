@@ -374,14 +374,14 @@ describe("seeded support versions", () => {
       // swift walker 54: bd tea-rags-mcp-y99pg.34 — the chain fold's hop cap
       // moves from three links to five, so an index built by walker 50 leaves a
       // four- or five-link receiver untyped.
-      // swift walker 59: bd tea-rags-mcp-y99pg.36 — an `@autoclosure` parameter
-      // no longer accepts a trailing closure, so an index built by walker 58
+      // swift walker 61: bd tea-rags-mcp-y99pg.36 — an `@autoclosure` parameter
+      // no longer accepts a trailing closure, so an index built by walker 60
       // lands `validate { … }` on `validate(contentType:)`.
-      // swift walker 60: bd tea-rags-mcp-y99pg.36 — `self.init(…)` never lands
-      // on the calling initializer, so an index built by walker 59 keeps an
+      // swift walker 62: bd tea-rags-mcp-y99pg.36 — `self.init(…)` never lands
+      // on the calling initializer, so an index built by walker 61 keeps an
       // edge from `OperationQueue#init` to itself.
-      // swift walker 61: bd tea-rags-mcp-y99pg.36 — nested types' fields are
-      // published under their nesting path, so an index built by walker 60 lets
+      // swift walker 63: bd tea-rags-mcp-y99pg.36 — nested types' fields are
+      // published under their nesting path, so an index built by walker 62 lets
       // the first same-named nested type type every namesake's properties.
       // typescript walker 16, javascript walker 7, python walker 14: bd
       // tea-rags-mcp-r8hme.2 records the export names every import takes (and,
@@ -399,6 +399,10 @@ describe("seeded support versions", () => {
       // swift walker 58 (branch 51): bd tea-rags-mcp-y99pg.33 — member typealiases reach
       // `typeDeclarations`, so a walker-57 index cannot bind `Self.X` on a
       // project conformer.
+      // swift walker 60: bd tea-rags-mcp-y99pg.35 — `declarationKind` is new
+      // `typeDeclarations` content, and an Objective-C dynamic-lookup call no
+      // project class can implement leaves the denominator, so an index built
+      // by an earlier walker still charges it as a miss.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],
@@ -408,7 +412,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 61],
+        ["swift", 63],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

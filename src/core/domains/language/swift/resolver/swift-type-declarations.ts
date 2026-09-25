@@ -23,6 +23,7 @@ import type {
   SwiftFieldConstruction,
   SwiftWhereClauseFact,
   TypeDeclarationFact,
+  TypeDeclarationKind,
 } from "../../../../contracts/types/codegraph.js";
 import { RunScopedMemo, splitAtBracketDepthZero } from "../../kernel/index.js";
 
@@ -31,6 +32,8 @@ interface SwiftTypeDeclarationSets {
   readonly declaring: ReadonlyMap<string, ReadonlySet<string>>;
   /** typeId → the files re-opening it. */
   readonly reopening: ReadonlyMap<string, ReadonlySet<string>>;
+  /** typeId → the keyword of each own declaration; `null` for one whose fact recorded none (bd tea-rags-mcp-y99pg.35). */
+  readonly kinds: ReadonlyMap<string, ReadonlySet<TypeDeclarationKind | null>>;
   /** typeId → every supertype any declaration of it names, in first-seen order. */
   readonly conforms: ReadonlyMap<string, readonly string[]>;
   /** typeId → its own generic parameter names (bd tea-rags-mcp-y99pg.13). */
@@ -139,6 +142,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   if (hit !== undefined) return hit;
   const declaring = new Map<string, Set<string>>();
   const reopening = new Map<string, Set<string>>();
+  const kinds = new Map<string, Set<TypeDeclarationKind | null>>();
   const conforms = new Map<string, string[]>();
   const generics = new Map<string, readonly string[]>();
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
@@ -160,6 +164,11 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     if (!relPath.endsWith(".swift")) continue;
     for (const fact of channel[relPath]) {
       add(fact.reopens ? reopening : declaring, fact.typeId, relPath);
+      if (!fact.reopens) {
+        const own = kinds.get(fact.typeId) ?? new Set<TypeDeclarationKind | null>();
+        own.add(fact.declarationKind ?? null);
+        kinds.set(fact.typeId, own);
+      }
       if (fact.genericParameters !== undefined && !generics.has(fact.typeId)) {
         generics.set(fact.typeId, fact.genericParameters);
       }
@@ -223,6 +232,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const fresh = {
     declaring,
     reopening,
+    kinds,
     conforms,
     generics,
     fieldArguments,
@@ -251,6 +261,20 @@ export function swiftDeclaringFiles(typeId: string, ctx: CallContext): ReadonlyS
   const declaring = sets.declaring.get(typeId);
   if (declaring !== undefined) return declaring;
   return sets.reopening.has(typeId) ? new Set<string>() : undefined;
+}
+
+/**
+ * The keyword of every declaration of `typeId` the project holds — `null` for
+ * one an older index recorded without it — or `undefined` when the project
+ * declares no type of that id, or the run publishes no channel (bd
+ * tea-rags-mcp-y99pg.35). More than one member means namesake types in several
+ * targets, each a declaration of its own.
+ */
+export function swiftDeclarationKinds(
+  typeId: string,
+  ctx: CallContext,
+): ReadonlySet<TypeDeclarationKind | null> | undefined {
+  return setsFor(ctx)?.kinds.get(typeId);
 }
 
 /** Whether the run PROVES `typeId` is a type the project re-opens but never declares. */

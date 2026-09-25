@@ -536,16 +536,25 @@ export const capability: LanguageCapability = {
   // Alamofire TOTAL 0.991 -> 0.992 (1251/1262 -> 1251/1261), Quick unchanged,
   // WRONG 8, edges +0 / -0 (Combine `completion.error.map` is `Optional.map`,
   // oracle-confirmed).
-  // walker 59: bd tea-rags-mcp-y99pg.36 — an `@autoclosure` parameter takes no
+  // walker 60: bd tea-rags-mcp-y99pg.35 — `typeDeclarations` publishes each own
+  // declaration's keyword (`declarationKind`), and a member called on an
+  // `AnyObject` / `AnyClass` value — Objective-C dynamic lookup — leaves the
+  // denominator when no project declaration of it can be the implementation
+  // the runtime dispatches to: every one sits on a protocol, struct or enum, or
+  // on a class outside the lineage of the cast operand's class. Quick TOTAL
+  // 0.997 -> 1.000 (375/376 -> 375/375), Alamofire unchanged, WRONG unchanged;
+  // edges +0 / -0; `(specClass as AnyClass).buildExamplesIfNeeded()` proved
+  // external (`+[QuickSpec buildExamplesIfNeeded]`, Objective-C).
+  // walker 61: bd tea-rags-mcp-y99pg.36 — an `@autoclosure` parameter takes no
   // trailing closure (a closure literal there is the wrapped value, not the
   // body), so its label stays required and it no longer makes a declaration
-  // accept a block. Walkers 59-61 were measured on a branch without 55-58. Measured:
+  // accept a block. Walkers 61-63 (branch 59-61) were measured on a branch without 55-60. Measured:
   // Alamofire TOTAL 0.994 -> 0.994 (1254/1261 unchanged), Quick 0.997
   // unchanged, WRONG 8 -> 2; edges +0 / -0 / ~6 — the six `validate { … }`
   // sites in Validation.swift move from `validate(contentType:)` to
   // `DataRequest` / `DataStreamRequest` / `DownloadRequest#validate(_:)`, as
   // swiftc binds them.
-  // walker 60: bd tea-rags-mcp-y99pg.36 — `self.init(…)` never lands on the
+  // walker 62: bd tea-rags-mcp-y99pg.36 — `self.init(…)` never lands on the
   // calling initializer (a delegation to itself never terminates): another
   // overload the call fits wins, else the edge is refused, and when the SDK
   // declares the member on the hierarchy the site leaves the denominator.
@@ -553,7 +562,7 @@ export const capability: LanguageCapability = {
   // 0.997 unchanged, WRONG 2 -> 1; edges +0 / -1 — the refused
   // OperationQueue+Alamofire.swift:42 `self.init()`, which swiftc binds to
   // Foundation's `OperationQueue.init()`.
-  // walker 61: bd tea-rags-mcp-y99pg.36 — a nested type's property types are
+  // walker 63: bd tea-rags-mcp-y99pg.36 — a nested type's property types are
   // published under its nesting path (`DownloadResponsePublisher.Inner`) as
   // well as its short name, the short entry keeps only the fields same-named
   // namesakes agree on, and the enclosing type's fields are read by path.
@@ -561,7 +570,10 @@ export const capability: LanguageCapability = {
   // 0.997 unchanged, WRONG 1 -> 0; edges +0 / -0 / ~1 — Combine.swift:486
   // `request.cancel()` moves from `Request#cancel` (through the first
   // `Inner`'s `DataRequest`) to `DownloadRequest#cancel`, as swiftc binds it.
-  versions: { chunking: 4, walker: 61, codegraphSchema: 2 },
+  // Walkers 61-63 together, re-measured on integration walker 60: Alamofire
+  // TOTAL 0.998 (1255/1257 -> 1254/1256), Quick 1.000 unchanged (375/375),
+  // oracle WRONG 8 -> 0 (resolved-ok 1182 -> 1189); edges +0 / -1 / ~7.
+  versions: { chunking: 4, walker: 63, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };
