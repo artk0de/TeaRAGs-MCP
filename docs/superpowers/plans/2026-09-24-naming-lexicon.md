@@ -1132,18 +1132,44 @@ mcp схему". Placement per `.claude/rules/plugin-guidance-layers.md`:
 - [ ] `npm run test:coverage` — thresholds unchanged. Below threshold →
       `coverage-expander` subagent (background), per project CLAUDE.md.
 - [ ] `npx tsc --noEmit`, `npx eslint` on touched files — no disables.
-- [ ] **Live validation — USER-GATED** (ask, then run exactly):
-  1. `npm run build && npm link`, `/mcp reconnect`.
-  2. `DEBUG=1 tea-rags index-codebase --project tea-rags --force --wait-enrichments --json`
-     (walker versions bumped for every language → drift routes to `--force`).
-  3. `get_naming_lexicon(project: "tea-rags", types: ["GraphDbClient"])` →
-     non-empty `byType` with camel shapes.
-  4. taxdome `--force` (hours — only on explicit consent), then
-     `get_naming_lexicon(types: ["TaxAutomationDocument"], language: "ruby")` →
-     `tax_automation_document` dominant local; and
-     `names: [{name:"row", kind:"local", type:"TaxAutomationDocument"}, {name:"find_vendor_envelope", kind:"return", type:"TaxAutomationDocument"}]`
-     → both MISFIT with the project's names.
-  5. DuckDB file size before/after the taxdome run recorded.
+- [ ] **Live validation — authorized 2026-09-25 ("залайв валидируй в пачке
+      совсем остальным"), one batch, every heavy step under
+      `/Users/artk0re/.claude/heavy-measure.lock.d`:**
+  1. `npm run build && npm link`, `/mcp reconnect` (user action).
+  2. Record DuckDB file sizes of both projects' codegraph DBs.
+  3. `DEBUG=1 tea-rags index-codebase --project tea-rags --force-enrichments codegraph --wait-enrichments --json`
+     — walker changes are enrichment-owned (`epic-completion-gate.md`); if the
+     drift report demands `--force` instead, ask before substituting.
+  4. Same for taxdome (`--force-enrichments codegraph`, minutes, not hours).
+  5. Measure on taxdome: typed share per `typeSource` (annotation, constructor,
+     binding, finder, call-return, name-inferred), rows per kind, DuckDB size
+     delta; `prime` resolve rates unchanged vs before.
+  6. MCP: `get_naming_lexicon` — taxdome scenario (`row` /
+     `find_vendor_envelope` → MISFIT with the project's names), a TS type on
+     taxdome, `GraphDbClient` on tea-rags; `get_ontology_report` on both
+     projects — top synonyms / homonyms / outliers inspected by hand for false
+     positives.
+  7. DDG + skill evals (Task 10b / 12) under the lock.
+  8. Defect scan: every false positive / wrong verdict / slow query found in 5–7
+     becomes a fix (parallel subagents), then re-measure. Target: "works well",
+     not perfect — each remaining limitation named with its number.
+
+### Task 6b: return rows for every language (bead .21)
+
+`call-return` needs the TARGET's `return` row; before 6b only Ruby's
+`structuredReturnTypes` produced them. 6b adds `functionReturnTypes` (Go, Ruby,
+Swift) to the row builder and syntactic return annotations to the declaration
+pass (TS, Python, Java, Rust, Go, Swift; TS async `Promise<T>` records `T`).
+
+### Task 13: `get_ontology_report` (bead .20; user: "Искал уголь, нашел золото")
+
+Project-wide naming ontology audit over `cg_identifiers`, sibling of
+`get_architecture_report`: synonyms (one type, scattered names), homonyms (one
+name, several concept types), outliers (names off their type's dominant shape),
+symbol collisions. Data-driven generic-name filter, `nonConceptTypes` excluded,
+`name-inferred` never counts. Same compact-schema budget as Task 9. Concept
+synonyms (two terms, one concept) are reserved for semantic clustering — bead
+`tea-rags-mcp-wa6bz`, linked.
 
 ## Phase 0 results
 
