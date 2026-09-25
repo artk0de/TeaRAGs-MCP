@@ -121,6 +121,46 @@ export function getCallDisplayName(node: AstNode, code: string): string | null {
   return code.substring(shown.startIndex, shown.endIndex).replace(/\s+/g, "");
 }
 
+/** Every node kind that opens a function body a DSL call can sit in. */
+const FUNCTION_TYPES = new Set([
+  "function_declaration",
+  "generator_function_declaration",
+  "function_expression",
+  "function",
+  "generator_function",
+  "arrow_function",
+  "method_definition",
+]);
+
+/**
+ * True when a function runs where it is written: a callback handed to a call
+ * (`describe('x', () => …)`, `cases.forEach((c) => …)`) or an IIFE. Any other
+ * function — declared, assigned, returned, a method — is a helper DEFINITION.
+ */
+function isInvokedInPlace(fn: AstNode): boolean {
+  const { parent } = fn;
+  if (parent?.type === "arguments") return true;
+  if (parent?.type !== "parenthesized_expression") return false;
+  const call = parent.parent;
+  return call?.type === "call_expression" && call.childForFieldName("function")?.startIndex === parent.startIndex;
+}
+
+/**
+ * True when a DSL call sits inside a helper definition — `function test(app) {
+ * it('x', fn) }`, `const shared = () => { describe(…) }`. Such a call runs only
+ * when the helper is called, possibly under many scopes, so it is part of the
+ * helper's body and not a chunk of its own (bd tea-rags-mcp-c0vdv, l180).
+ * Before, each `it` there became a leaf chunk `<helper>.it` — title lost, ids
+ * colliding — and a nested describe claimed its rows while the helper's own
+ * statements reached no chunk at all.
+ */
+export function isInsideHelperDefinition(node: AstNode): boolean {
+  for (let cursor = node.parent; cursor; cursor = cursor.parent) {
+    if (FUNCTION_TYPES.has(cursor.type) && !isInvokedInPlace(cursor)) return true;
+  }
+  return false;
+}
+
 export const jsTestDslFilterHook: ChunkingHook = {
   name: "js-test-dsl-filter",
 
@@ -130,7 +170,7 @@ export const jsTestDslFilterHook: ChunkingHook = {
 
     const callName = getCallName(node, code);
     if (!callName) return false;
-    return ALL_DSL_METHODS.has(callName);
+    return ALL_DSL_METHODS.has(callName) && !isInsideHelperDefinition(node);
   },
 
   process(_ctx: HookContext): void {

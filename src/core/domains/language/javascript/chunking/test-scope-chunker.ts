@@ -91,6 +91,20 @@ function findCallbackBody(node: AstNode): AstNode | null {
 }
 
 /**
+ * True when an example-named call is shaped like an example: its arguments
+ * carry a string / template title or a callback — `it('x', fn)`,
+ * `it.todo('x')`, `it(title, () => …)`, `it.each(t)('x', fn)`. A call with
+ * neither — `test(app)`, a shared-behaviour helper that happens to be named
+ * `test` — is an ordinary statement of its scope (bd tea-rags-mcp-c0vdv).
+ */
+function isExampleShaped(node: AstNode): boolean {
+  const args = node.childForFieldName("arguments")?.namedChildren ?? [];
+  const [title] = args;
+  if (title?.type === "string" || title?.type === "template_string") return true;
+  return args.some(isCallback);
+}
+
+/**
  * The display name of a scope or example: the call as written plus its first
  * argument — `describe 'User'`, `context "when admin"`, `it.skip 'pending'`,
  * `it.each 'adds %i'`. The argument is kept verbatim (quotes included) with
@@ -180,7 +194,7 @@ export function buildScopeTree(containerNode: AstNode, code: string): TestScope 
     if (CONTAINER_METHODS.has(methodName)) {
       scope.children.push(buildScopeTree(call, code));
       claim(child);
-    } else if (EXAMPLE_METHODS.has(methodName)) {
+    } else if (EXAMPLE_METHODS.has(methodName) && isExampleShaped(call)) {
       scope.examples.push({
         name: extractScopeName(call, code),
         text: claim(child),
