@@ -46,6 +46,17 @@ is `.claude/rules/test-spec-chunking.md` — read it before touching a hook.
   (`makeSuite()('x', fn)`) stays non-DSL. Why: before this, a parametrized
   example inside a `describe` fell into `otherLines` and was pasted into every
   sibling example's chunk.
+- **A DSL name alone does not make an example or a chunk.** `buildScopeTree`
+  files an example-named call as an example only when its arguments carry a
+  string / template title or a callback (`isExampleShaped`), so a helper call
+  `test(app)` is an `otherLines` statement while `it.todo('x')` stays an
+  example. `isInsideHelperDefinition` (`chunking/test-dsl-filter.ts`) rejects
+  every DSL call under a function that is not invoked in place (a declared,
+  assigned or returned helper, not a callback or IIFE), so the helper stays one
+  plain function chunk. Why: each `it` in `function test(app) {…}` became a leaf
+  `test.it` — five identical title-less ids — and a nested describe claimed its
+  rows while the helper's own statements reached no chunk (bd
+  tea-rags-mcp-c0vdv).
 - **`topLevelName` prefers a string / template literal (quotes stripped) or an
   identifier among the root call's arguments, else the root scope's name.** A
   `describe.each` root is therefore named by its title template (`Cart in %s`),

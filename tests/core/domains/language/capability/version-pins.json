@@ -34,7 +34,7 @@
   "javascript": {
     "chunking": {
       "version": 2,
-      "digest": "sha256:495b161ee98d9098d28f7a9fe9c9d08cbe4f9d81cf84644c2d8d81f53a179063"
+      "digest": "sha256:599b3d409599615eea226f88c7ab1a3fba8f61ecc42b85dd899e134b71198ce6"
     },
     "walker": {
       "version": 7,
@@ -82,7 +82,7 @@
   "typescript": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:5e801f96284747b9efa8080c0a164fbf207f6f853dd3fbde9b5085beecc350fb"
+      "digest": "sha256:699527e0dc82e546d7e02ad7942fdd32171a34de3a788db0e78313beca5e91a2"
     },
     "walker": {
       "version": 16,
