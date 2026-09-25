@@ -1134,7 +1134,12 @@ mcp схему". Placement per `.claude/rules/plugin-guidance-layers.md`:
 - [ ] `npx tsc --noEmit`, `npx eslint` on touched files — no disables.
 - [ ] **Live validation — authorized 2026-09-25 ("залайв валидируй в пачке
       совсем остальным"), one batch, every heavy step under
-      `/Users/artk0re/.claude/heavy-measure.lock.d`:**
+      `/Users/artk0re/.claude/heavy-measure.lock.d`:** 0. After Tracks E–H are
+      merged: REBASE onto the newest `worktree-mass-wave-0923` (user,
+      2026-09-25: "ребейзнись на самую свежую версию интеграционной ветки и уже
+      после ребейза делай лайв валидацию"). Version conflicts: walker version
+      above both sides; pins only via `npm run pin:lang-versions`. Full
+      path-filtered suite + tsc after.
   1. `npm run build && npm link`, `/mcp reconnect` (user action).
   2. Record DuckDB file sizes of both projects' codegraph DBs.
   3. `DEBUG=1 tea-rags index-codebase --project tea-rags --force-enrichments codegraph --wait-enrichments --json`
