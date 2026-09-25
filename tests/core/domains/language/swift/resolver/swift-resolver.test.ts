@@ -3899,6 +3899,25 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
     expect(resolver.resolve(written("(results  others)", "(results ?? others)", "chunked"), at)).toBeNull();
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `let clockModel = … .first { … }?.model`,
+  // then `clockModel.map(…)`: a spelled local the walker marks optional is an
+  // Optional, so `map` written straight on it is `Optional.map`.
+  it("reads a member written straight on an optional spelled local off `Optional`", () => {
+    const at = ctx({
+      callerFile: "Sources/Serializer.swift",
+      callerScope: ["Serializer", "run"],
+      symbolTable: t,
+      typeDeclarations,
+      callResultBindings: { held: [{ line: 5, callee: "completion.box", optional: true }] },
+      localBindings: { completion: [{ line: 4, type: "Completion" }] },
+      classFieldTypesByClassKey: { "Sources/Completion.swift::Completion": { box: "Box" } },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("held", "map"), at)).toBeNull();
+    expect(resolver.resolve(written("held", "held?", "map"), at)?.targetSymbolId).toBe("Box#map");
+    expect(resolver.resolve(call("held", "open"), at)?.targetSymbolId).toBe("Box#open");
+  });
+
   it("types a property declared optional as an Optional", () => {
     const resolver = new SwiftCallResolver();
     // `completion.box` is a `Box?`: `.map` on it is `Optional.map`, never `Box#map`.

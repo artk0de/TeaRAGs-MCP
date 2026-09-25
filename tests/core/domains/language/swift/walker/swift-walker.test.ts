@@ -1447,7 +1447,9 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
   it("records an untyped chain local by its spelling, sugar and arguments stripped", () => {
     const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
     const chunk = extract(src).chunks[0];
-    expect(chunk.callResultBindings?.e).toEqual([{ line: 2, callee: "sp.mgr.eval" }]);
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.39): the optional-chained value
+    // is now marked `optional`, the one fact the stripped spelling loses.
+    expect(chunk.callResultBindings?.e).toEqual([{ line: 2, callee: "sp.mgr.eval", optional: true }]);
     expect(chunk.localBindings?.e).toBeUndefined();
   });
 
@@ -1516,6 +1518,34 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
     ]) {
       expect(bindings?.placed).toEqual([{ line: 2, callee: "tiles.filter" }]);
       expect(bindings?.first).toEqual([{ line: 3, callee: "xs.sorted.first" }]);
+    }
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `let clockModel = clocks.first { … }?.model`:
+  // an optional-chained or `try?` right-hand side holds an Optional, which
+  // the stripped spelling cannot say; a bound `if let` / `guard let` and a
+  // `??` fallback do not.
+  it("marks a spelling whose value is an Optional", () => {
+    const src = [
+      "func go() {",
+      "  let m = clocks.first { $0.on }?.model",
+      "  let e = try? foo.bar()",
+      "  let p = foo.bar()",
+      "  let q = foo?.bar ?? other",
+      "  guard let g = foo?.bar else { return }",
+      "  m.run()",
+      "}",
+      "",
+    ].join("\n");
+    for (const bindings of [
+      extract(src).chunks[0].callResultBindings,
+      extractMaterialized(src).chunks[0].callResultBindings,
+    ]) {
+      expect(bindings?.m).toEqual([{ line: 2, callee: "clocks.first.model", optional: true }]);
+      expect(bindings?.e).toEqual([{ line: 3, callee: "foo.bar", optional: true }]);
+      expect(bindings?.p?.[0].optional).toBeUndefined();
+      expect(bindings?.q?.[0].optional).toBeUndefined();
+      expect(bindings?.g?.[0].optional).toBeUndefined();
     }
   });
 

@@ -183,6 +183,15 @@ export interface CallResultBinding {
    * other binding.
    */
   readonly sequenceElement?: true;
+  /**
+   * Set when the value the right-hand side produces is an OPTIONAL although
+   * `callee` spells no sugar — the chain was optional-chained or the call
+   * `try?`'d (bd tea-rags-mcp-y99pg.39). A reader that distinguishes
+   * `Optional`'s own members from the wrapped type's needs it; one that reads
+   * an optional as what it wraps may ignore it. ABSENT means no such marker
+   * was seen, not that the value is proven non-optional.
+   */
+  readonly optional?: true;
 }
 
 /**

@@ -2095,15 +2095,18 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const declared = swiftDeclaredPropertyFact(node);
         const value = node.childForFieldName("value");
         const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
+        const spelling = deferredSpelling(fact, value, site);
         record(
           name,
           fact,
           site,
           enclosingSwiftClosureEndLine(node),
-          deferredSpelling(fact, value, site),
+          spelling,
           undefined,
           undefined,
-          declared.nominal !== null && swiftDeclaresOptional(node),
+          declared.nominal !== null
+            ? swiftDeclaresOptional(node)
+            : spelling !== undefined && swiftValueIsOptionalChained(value),
         );
         // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
         // parameter is a value of the property's DECLARED type, for the
@@ -2742,6 +2745,37 @@ function swiftValueChainSpelling(node: AstNode | null, depth = 0): string | null
   }
 }
 
+/**
+ * Whether the value a {@link swiftValueChainSpelling} spells is an OPTIONAL
+ * the spelling cannot show (bd tea-rags-mcp-y99pg.39): some link of the chain
+ * is optional-chained (`a.first?.model` — the `?` is a child of the
+ * navigation, read positionally because its field collides with `target`),
+ * or the whole is `try?`'d. A force unwrap and a `??` end the question with
+ * "not known optional", which is what a spelling meant before.
+ */
+function swiftValueIsOptionalChained(node: AstNode | null, depth = 0): boolean {
+  if (!node || depth > SWIFT_MAX_TYPE_HOPS + 2) return false;
+  switch (node.type) {
+    case "try_expression": {
+      const operator = node.children.find((c) => c.type === "try_operator");
+      if (operator?.children.some((c) => c.type === "?")) return true;
+      return swiftValueIsOptionalChained(node.namedChildren[node.namedChildCount - 1] ?? null, depth + 1);
+    }
+    case "await_expression":
+      return swiftValueIsOptionalChained(node.namedChildren[node.namedChildCount - 1] ?? null, depth + 1);
+    case "navigation_expression":
+      if (node.children.some((c) => c.type === "?")) return true;
+      return swiftValueIsOptionalChained(
+        node.namedChildren.find((c) => c.type !== "navigation_suffix") ?? null,
+        depth + 1,
+      );
+    case "call_expression":
+      return swiftValueIsOptionalChained(node.namedChildren.find((c) => c.type !== "call_suffix") ?? null, depth + 1);
+    default:
+      return false;
+  }
+}
+
 /** `\.p`, `\.p.q`, `\.self` — a root-inferred key path of plain property names. */
 const SWIFT_PLAIN_KEY_PATH = /^\\\.(?:self|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)$/;
 
@@ -3057,6 +3091,7 @@ function assignBindingsToInnermostChunks(
         ...(binding.closureParameter === undefined ? {} : { closureParameter: binding.closureParameter }),
         ...(binding.enumPayload === undefined ? {} : { enumPayload: binding.enumPayload }),
         ...(binding.sequenceElement === undefined ? {} : { sequenceElement: binding.sequenceElement }),
+        ...(binding.optional === true ? { optional: true as const } : {}),
         ...scoped,
       };
       (bucket.callResultBindings[binding.name] ??= []).push(emitted);

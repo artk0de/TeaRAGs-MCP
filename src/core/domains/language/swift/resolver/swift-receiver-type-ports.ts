@@ -869,7 +869,9 @@ function swiftLocalValueTypeRef(
     const payload = swiftEnumCasePayloadType(enumId, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
     return payload === undefined ? undefined : { form: "instance", name: payload };
   }
-  return folded;
+  // `let m = clocks.first { … }?.model`: the walker saw the value is an
+  // Optional the spelling cannot show (bd tea-rags-mcp-y99pg.39).
+  return keepsOptionals && spelled.optional === true && !isSwiftOptionalRef(folded) ? swiftOptionalOf(folded) : folded;
 }
 
 /** The written-fold probe {@link swiftSpellingHidesOptionalMember} runs, built once per member lookup. */
