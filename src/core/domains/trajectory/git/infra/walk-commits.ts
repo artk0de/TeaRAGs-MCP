@@ -20,7 +20,7 @@ import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
-import { applyOffsets, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
+import { applyOffsets, changedRowsInRange, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
 import { resolveHeadPaths, sliceCommitsFollowingRenames, type HeadAttributedChangedPath } from "./rename-following.js";
 import { extractTaskIds } from "./utils.js";
 
@@ -330,7 +330,11 @@ async function collectHunksPerFile(
       }
 
       try {
-        const patch = structuredPatch(filePath, filePath, oldContent, newContent, "", "");
+        // Zero context: a hunk spans only the rows this commit added or
+        // removed. The default 4 context rows credited every chunk within 4
+        // rows of an edit with a commit `git log -L` never lists for it (bd
+        // tea-rags-mcp-z3cnd); `changedRowsInRange` reads these hunks as-is.
+        const patch = structuredPatch(filePath, filePath, oldContent, newContent, "", "", { context: 0 });
         ({ hunks } = patch);
         out.patchCalls++;
       } catch {
@@ -436,21 +440,15 @@ function applyFileHunksToAccumulators(
     // Map hunks to chunks using current adjusted ranges
     const affectedChunkIds = mapHunksToChunks(hunks, adjustedRanges);
 
-    // Compute relativeChurn from hunk overlaps with adjusted ranges
+    // relativeChurn inputs: the rows each hunk changed inside each chunk — the
+    // same predicate `mapHunksToChunks` credits commits by.
     for (const hunk of hunks) {
-      const hunkStart = hunk.newStart;
-      const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
       for (const r of adjustedRanges) {
-        if (hunkStart <= r.end && hunkEnd >= r.start) {
-          const acc = accumulators.get(r.chunkId);
-          if (acc) {
-            const overlapLines = Math.min(hunkEnd, r.end) - Math.max(hunkStart, r.start) + 1;
-            acc.linesAdded += overlapLines;
-            if (hunk.newLines > 0) {
-              acc.linesDeleted += Math.round((hunk.oldLines * overlapLines) / hunk.newLines);
-            }
-          }
-        }
+        const changed = changedRowsInRange(hunk, r);
+        const acc = changed && accumulators.get(r.chunkId);
+        if (!changed || !acc) continue;
+        acc.linesAdded += changed.added;
+        acc.linesDeleted += changed.deleted;
       }
     }
 

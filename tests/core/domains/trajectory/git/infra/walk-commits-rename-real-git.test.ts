@@ -62,8 +62,8 @@ function source(v: number): string {
     `  // factor ${v}`,
     "  return total;",
     "}",
-    // Padding keeps `other` out of the edits' diff context lines, which the
-    // walk's hunk ranges include.
+    // Padding between the two chunks. The walk credits changed rows only
+    // (bd tea-rags-mcp-z3cnd), so `other` would stay untouched without it too.
     ...Array.from({ length: 7 }, () => ""),
     "export function other(): number {",
     "  return 42;",

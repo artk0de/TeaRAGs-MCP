@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  type AdjustedRange,
   applyOffsets,
+  changedRowsInRange,
   mapHunksToChunks,
+  type AdjustedRange,
 } from "../../../../../../src/core/domains/trajectory/git/infra/offset-tracker.js";
 
 interface Hunk {
@@ -137,5 +138,51 @@ describe("applyOffsets", () => {
 
   it("returns empty array for empty input", () => {
     expect(applyOffsets([], [])).toEqual([]);
+  });
+});
+
+// bd tea-rags-mcp-z3cnd — zero-context hunks: only added/removed rows credit a
+// chunk. jsdiff places a pure deletion (newLines 0) at the new-side row that
+// FOLLOWS the removed rows; `git log -L` credits it only strictly inside a range.
+describe("zero-context hunks (changed rows only)", () => {
+  const ranges: AdjustedRange[] = [
+    { chunkId: "A", start: 1, end: 6 },
+    { chunkId: "B", start: 7, end: 9 },
+  ];
+
+  it("credits a pure deletion to the chunk it sat inside", () => {
+    // Rows removed between new rows 3 and 4.
+    const hunks: Hunk[] = [{ oldStart: 4, oldLines: 2, newStart: 4, newLines: 0 }];
+    expect([...mapHunksToChunks(hunks, ranges)]).toEqual(["A"]);
+    expect(changedRowsInRange(hunks[0], ranges[0])).toEqual({ added: 0, deleted: 2 });
+  });
+
+  it("credits neither chunk for a pure deletion on the seam between them", () => {
+    // Rows removed between new rows 6 (A's last) and 7 (B's first).
+    const hunks: Hunk[] = [{ oldStart: 7, oldLines: 1, newStart: 7, newLines: 0 }];
+    expect(mapHunksToChunks(hunks, ranges).size).toBe(0);
+  });
+
+  it("credits an edit of a chunk's last row to that chunk only, not the adjacent one", () => {
+    const hunks: Hunk[] = [{ oldStart: 6, oldLines: 1, newStart: 6, newLines: 1 }];
+    expect([...mapHunksToChunks(hunks, ranges)]).toEqual(["A"]);
+    expect(changedRowsInRange(hunks[0], ranges[1])).toBeNull();
+  });
+
+  it("moves a chunk starting right after a pure deletion past the removed rows", () => {
+    const hunks: Hunk[] = [{ oldStart: 7, oldLines: 2, newStart: 7, newLines: 0 }];
+    expect(applyOffsets(ranges, hunks)).toEqual([
+      { chunkId: "A", start: 1, end: 6 },
+      { chunkId: "B", start: 9, end: 11 },
+    ]);
+  });
+
+  it("maps a chunk partly covered by an insertion block onto the pre-insertion rows", () => {
+    // New rows 5-8 inserted (A's tail and B's head); nothing removed.
+    const hunks: Hunk[] = [{ oldStart: 5, oldLines: 0, newStart: 5, newLines: 4 }];
+    expect(applyOffsets(ranges, hunks)).toEqual([
+      { chunkId: "A", start: 1, end: 4 },
+      { chunkId: "B", start: 5, end: 5 },
+    ]);
   });
 });

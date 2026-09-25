@@ -72,6 +72,19 @@ their own navigators.
   rename bug on a renamed file whose control had a non-root creation (bd
   tea-rags-mcp-z8w16).
 
+- **A chunk is credited only for rows a commit changed, never for diff
+  context.** `collectOneFile` diffs with `structuredPatch(..., { context: 0 })`
+  and every per-chunk walk signal — commitCount, authors, timestamps (ageDays,
+  churnVolatility), bugFixRate, taskIds, linesAdded / linesDeleted
+  (relativeChurn) — goes through the one predicate `changedRowsInRange`
+  (`infra/offset-tracker.ts`). A pure deletion credits a chunk only when its
+  seam lies strictly inside it; one on the seam between two chunks credits
+  neither, which is what `git log -L` does. Why: with the default 4 context rows
+  every short method next to an edited one inherited its commits — a fixture
+  chunk never edited after creation read 4 commits against a `git log -L` oracle
+  of 1 (bd tea-rags-mcp-z3cnd). Anything new that reads the walk's hunks must
+  use that predicate, not the hunk's raw `newStart`/`newLines` span.
+
 ## Gotchas
 
 - **The file→chunk blame handoff is held per path, never per batch, and survives
