@@ -417,7 +417,7 @@ export class OntologyReportOps {
 }
 
 const STALE_INDEX_HINT =
-  "the index predates the identifier table (migration 032). Reindex the project to populate it " +
+  "the index predates the identifier table (migration 033). Reindex the project to populate it " +
   "(get_index_status's drift warning names the command); until then the report is empty, not clean.";
 
 const MISSING_TABLE_WARNING = `cg_identifiers does not exist: ${STALE_INDEX_HINT}`;

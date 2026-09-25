@@ -3,7 +3,7 @@
  * lexicon (bd tea-rags-mcp-4p3sb.8): one row per param / local / field a symbol
  * declares, plus a `return` row per symbol with a structured return type.
  *
- * Writes replace a file's rows as a whole. The table has no key (migration 032),
+ * Writes replace a file's rows as a whole. The table has no key (migration 033),
  * so the row diff `cg_symbols` uses has nothing to key on; the unit of change is
  * the FILE instead. A batch reads the stored rows of the files it names and
  * rewrites only the files whose row multiset moved — a recompute that re-walks

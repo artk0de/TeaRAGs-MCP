@@ -9,7 +9,7 @@
  * handled by `recreateEmptyTable` (wholesale writers) and `compactStorage`
  * (per-file writers); see `wholesale-table-reclaim.test.ts`.
  *
- * `cg_identifiers` (migration 032) is the one codegraph table deliberately built
+ * `cg_identifiers` (migration 033) is the one codegraph table deliberately built
  * WITHOUT a key or index, so it needs neither: its per-file DELETEs are
  * reclaimed by the ordinary checkpoint. What these pin:
  *

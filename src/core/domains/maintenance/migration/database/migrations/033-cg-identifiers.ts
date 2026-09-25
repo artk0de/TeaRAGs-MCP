@@ -19,7 +19,7 @@
  *
  * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
  */
-export const SQL_032_CG_IDENTIFIERS = `
+export const SQL_033_CG_IDENTIFIERS = `
 CREATE TABLE IF NOT EXISTS cg_identifiers (
   rel_path              VARCHAR NOT NULL,
   owner_symbol_id       VARCHAR NOT NULL,

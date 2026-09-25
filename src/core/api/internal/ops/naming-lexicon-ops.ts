@@ -32,7 +32,7 @@
  *      `judgeDraftName`.
  *
  * An index whose graph has files but whose identifier table is empty predates
- * migration 032 → `driftWarning` naming the reindex, not a silent empty answer.
+ * migration 033 → `driftWarning` naming the reindex, not a silent empty answer.
  */
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
@@ -381,7 +381,7 @@ async function supportAt(
 
 /**
  * True when the identifier table is empty while the graph holds files — an
- * index written before migration 032. Called only for a project-wide answer
+ * index written before migration 033. Called only for a project-wide answer
  * with no support; `projectLanguages` = the project's language counts, when
  * already read.
  */

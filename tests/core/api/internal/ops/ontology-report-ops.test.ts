@@ -306,7 +306,7 @@ describe("OntologyReportOps#report — sections", () => {
 });
 
 describe("OntologyReportOps#report — degraded states", () => {
-  it("an index predating migration 032 (empty table beside symbols) answers a driftWarning", async () => {
+  it("an index predating migration 033 (empty table beside symbols) answers a driftWarning", async () => {
     const { ops } = makeOps(async () =>
       rows({
         totals: { identifierRows: 0, symbolRows: 500 },
