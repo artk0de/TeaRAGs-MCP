@@ -1288,6 +1288,38 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
     expect(target).toBeNull();
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `ClockStore(defaults: defaults).all()`: a
+  // construction of a PROJECT type is an instance of it, multi-line argument
+  // lists and `try` included; an UpperCamelCase FUNCTION is no type.
+  it("types a construction of a PROJECT type as an instance of it", () => {
+    const withStore = table({
+      "Sources/ClockStore.swift": [
+        { symbolId: "ClockStore", scope: [] },
+        { symbolId: "ClockStore#all", scope: ["ClockStore"] },
+      ],
+      "Sources/Tile.swift": [
+        { symbolId: "Tile", scope: [] },
+        { symbolId: "Tile#all", scope: ["Tile"] },
+      ],
+      "Sources/Factory.swift": [{ symbolId: "MakeStore", scope: [] }],
+    });
+    const at = ctx({
+      callerFile: "Sources/App.swift",
+      callerScope: ["App"],
+      symbolTable: withStore,
+      typeDeclarations: {
+        "Sources/ClockStore.swift": [{ typeId: "ClockStore", reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("ClockStore(defaults: defaults)", "all"), at)?.targetSymbolId).toBe("ClockStore#all");
+    expect(resolver.resolve(call("try ClockStore(\n  defaults: defaults\n)", "all"), at)?.targetSymbolId).toBe(
+      "ClockStore#all",
+    );
+    expect(resolver.resolve(call("MakeStore(defaults: defaults)", "all"), at)).toBeNull();
+  });
+
   // bd tea-rags-mcp-y99pg.39 — `(0..<n).map` / `(200..<300).contains`: a
   // parenthesised range spells its own type, `Range` for `..<` and
   // `ClosedRange` for `...`, whatever the bounds are.

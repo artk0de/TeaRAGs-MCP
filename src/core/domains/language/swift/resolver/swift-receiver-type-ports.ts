@@ -62,7 +62,7 @@ import {
   qualifySwiftTypeName,
   qualifySwiftTypeNameWithin,
 } from "./swift-symbol-lookup.js";
-import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
+import { swiftDeclaringFiles, swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
 /**
@@ -174,6 +174,7 @@ function swiftHeadType(
     return (
       swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ??
       swiftLiteralHeadType(head) ??
+      swiftProjectConstructionHeadType(head, ctx) ??
       swiftSdkConstructionHeadType(head, members)
     );
   }
@@ -286,6 +287,26 @@ export function swiftModuleValueReceiverType(
  * (bd tea-rags-mcp-y99pg.25). The callee must be the WHOLE head up to one
  * argument list and / or trailing closure, so `f(x).y` never reads as one.
  */
+/**
+ * `ClockStore(defaults: defaults)`, `Migration(\n  a: 1\n)`, `Box<Int> { … }` as
+ * a chain head: a construction of a PROJECT type is an instance of the type
+ * the name denotes from the caller's scope (bd tea-rags-mcp-y99pg.39). Only a
+ * name the run records as a type — a declaration or a re-opening — so an
+ * UpperCamelCase free function never reads as one; the callee must be the
+ * whole head up to its argument list and / or trailing closure.
+ */
+function swiftProjectConstructionHeadType(head: string, ctx: CallContext): TypeRef | undefined {
+  const open = head.search(/[({]/);
+  if (open <= 0 || !swiftHeadEndsAtCallGroups(head, open)) return undefined;
+  const typeText = head
+    .slice(0, open)
+    .trim()
+    .replace(/<[\s\S]*>$/, "");
+  const type = swiftVisibleProjectType(typeText, ctx);
+  if (type?.form !== "class" || swiftDeclaringFiles(type.name, ctx) === undefined) return undefined;
+  return { form: "instance", name: type.name };
+}
+
 function swiftSdkConstructionHeadType(head: string, members: SwiftMemberTypeLookup): TypeRef | undefined {
   const open = head.search(/[({]/);
   if (open <= 0) return undefined;
