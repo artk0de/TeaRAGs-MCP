@@ -298,6 +298,29 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
     expect(await db.aggregateIdentifiersByCallee({ callees: [] })).toEqual([]);
   });
 
+  it("aggregateIdentifiersByCallee carries the rows' persisted type, grouping typed and untyped apart", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "app/a.rb",
+        rows: [
+          row({
+            ownerSymbolId: "A#x",
+            name: "doc",
+            typeName: "Doc",
+            typeSource: "finder",
+            boundMember: "find",
+            boundReceiver: "Doc",
+          }),
+          row({ ownerSymbolId: "A#y", name: "doc", boundMember: "find", boundReceiver: "Doc" }),
+        ],
+      },
+    ]);
+    expect(await db.aggregateIdentifiersByCallee({ callees: [{ member: "find", receiver: "Doc" }] })).toEqual([
+      { member: "find", receiver: "Doc", kind: "local", name: "doc", n: 1, exampleOwner: "A#y" },
+      { member: "find", receiver: "Doc", kind: "local", name: "doc", n: 1, exampleOwner: "A#x", typeName: "Doc" },
+    ]);
+  });
+
   it("identifierNameTypes returns one entry per distinct type, null for untyped", async () => {
     await db.replaceIdentifiersBulk([
       {
@@ -348,5 +371,72 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
     ]);
     expect(await db.existingSymbolShortNames(["document", "doc"])).toEqual(["document"]);
     expect(await db.existingSymbolShortNames([])).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-4p3sb.11: the reads behind the lexicon's name-inferred stage,
+  // language inference / drift check, and project shape prior.
+  describe("naming-lexicon scope reads", () => {
+    beforeEach(async () => {
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "app/a.rb",
+          rows: [
+            row({ ownerSymbolId: "A#one", name: "doc", typeName: "Doc", typeSource: "binding" }),
+            row({ ownerSymbolId: "A#two", name: "doc" }),
+            row({ ownerSymbolId: "A#three", kind: "param", name: "doc" }),
+            row({ ownerSymbolId: "A#four", name: "row", boundMember: "find", boundReceiver: "Doc" }),
+            row({ ownerSymbolId: "A#five", name: "plain" }),
+          ],
+        },
+        {
+          relPath: "lib/b.ts",
+          rows: [row({ ownerSymbolId: "B#one", name: "doc", typeName: "Doc", typeSource: "annotation" })],
+        },
+      ]);
+      await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, ?), (?, ?)", [
+        "app/a.rb",
+        "ruby",
+        "lib/b.ts",
+        "typescript",
+      ]);
+    });
+
+    it("aggregateIdentifiersByName groups by name, kind and effective type, untyped rows as null", async () => {
+      expect(await db.aggregateIdentifiersByName({ names: ["doc"], pathPrefixes: ["app/"] })).toEqual([
+        { name: "doc", kind: "local", typeName: "Doc", n: 1, exampleOwner: "A#one" },
+        { name: "doc", kind: "local", typeName: null, n: 1, exampleOwner: "A#two" },
+        { name: "doc", kind: "param", typeName: null, n: 1, exampleOwner: "A#three" },
+      ]);
+      expect(await db.aggregateIdentifiersByName({ names: ["doc"] })).toContainEqual({
+        name: "doc",
+        kind: "local",
+        typeName: "Doc",
+        n: 2,
+        exampleOwner: "A#one",
+      });
+      expect(await db.aggregateIdentifiersByName({ names: [] })).toEqual([]);
+    });
+
+    it("identifierLanguageCounts counts scoped rows per file language, largest first", async () => {
+      expect(await db.identifierLanguageCounts({})).toEqual([
+        { language: "ruby", n: 5 },
+        { language: "typescript", n: 1 },
+      ]);
+      expect(await db.identifierLanguageCounts({ pathPrefixes: ["lib/"] })).toEqual([{ language: "typescript", n: 1 }]);
+      expect(await db.identifierLanguageCounts({ pathPrefixes: ["nowhere/"] })).toEqual([]);
+    });
+
+    it("sampleIdentifierShapes reads only rows carrying a persisted type or a bound callee", async () => {
+      const sample = await db.sampleIdentifierShapes({ pathPrefixes: ["app/"], limit: 100 });
+      expect(sample).toHaveLength(2);
+      expect(sample).toEqual(
+        expect.arrayContaining([
+          { kind: "local", name: "doc", typeName: "Doc", boundMember: null, boundReceiver: null, n: 1 },
+          { kind: "local", name: "row", typeName: null, boundMember: "find", boundReceiver: "Doc", n: 1 },
+        ]),
+      );
+      const bounded = await db.sampleIdentifierShapes({ limit: 1 });
+      expect(bounded.reduce((sum, r) => sum + r.n, 0)).toBe(1);
+    });
   });
 });

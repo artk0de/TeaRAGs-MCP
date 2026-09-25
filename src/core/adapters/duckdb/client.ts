@@ -57,8 +57,14 @@ import type {
   HierarchySnapshot,
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountRow,
+  IdentifierNameKindTypeRow,
+  IdentifierNameScopeQuery,
   IdentifierNameTypeRow,
   IdentifierReplaceEntry,
+  IdentifierScopeQuery,
+  IdentifierShapeSampleQuery,
+  IdentifierShapeSampleRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
@@ -329,6 +335,18 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
     return this.identifiers.countIdentifiers(q);
+  }
+
+  async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
+    return this.identifiers.aggregateIdentifiersByName(q);
+  }
+
+  async identifierLanguageCounts(q: IdentifierScopeQuery): Promise<IdentifierLanguageCountRow[]> {
+    return this.identifiers.identifierLanguageCounts(q);
+  }
+
+  async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
+    return this.identifiers.sampleIdentifierShapes(q);
   }
 
   // ── Method-edge / chunk-signal reads ──

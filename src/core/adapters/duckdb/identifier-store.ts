@@ -26,9 +26,15 @@ import type {
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
   IdentifierDeclarationKind,
+  IdentifierLanguageCountRow,
+  IdentifierNameKindTypeRow,
+  IdentifierNameScopeQuery,
   IdentifierNameTypeRow,
   IdentifierReplaceEntry,
   IdentifierRow,
+  IdentifierScopeQuery,
+  IdentifierShapeSampleQuery,
+  IdentifierShapeSampleRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   IdentifierTypeSource,
@@ -57,6 +63,9 @@ const CG_IDENTIFIERS_COLUMNS = [
  * caller's large batch never becomes one wide literal filter.
  */
 const IDENTIFIER_IN_LIST_CHUNK = 200;
+
+/** Fixed reservoir seed, so the same table state yields the same shape sample. */
+const SHAPE_SAMPLE_SEED = 42;
 
 /** A predicate fragment and its positional binds. */
 interface SqlPredicate {
@@ -276,14 +285,16 @@ export class DuckDbIdentifierStore {
       bound_receiver: string | null;
       kind: string;
       name: string;
+      type_name: string | null;
       n: number | string;
       example_owner: string;
     }>(
-      `SELECT bound_member, bound_receiver, kind, name, count(*) AS n, min(owner_symbol_id) AS example_owner
+      `SELECT bound_member, bound_receiver, kind, name, type_name, count(*) AS n,
+              min(owner_symbol_id) AS example_owner
          FROM cg_identifiers
         WHERE ${scope.sql} AND (${calleeSql})
-        GROUP BY bound_member, bound_receiver, kind, name
-        ORDER BY n DESC, bound_member, bound_receiver NULLS FIRST, kind, name`,
+        GROUP BY bound_member, bound_receiver, kind, name, type_name
+        ORDER BY n DESC, bound_member, bound_receiver NULLS FIRST, kind, name, type_name NULLS FIRST`,
       [...scope.params, ...calleeParams],
     );
     return rows.map((r) => ({
@@ -293,6 +304,7 @@ export class DuckDbIdentifierStore {
       name: r.name,
       n: Number(r.n),
       exampleOwner: r.example_owner,
+      ...(r.type_name === null ? {} : { typeName: r.type_name }),
     }));
   }
 
@@ -328,6 +340,88 @@ export class DuckDbIdentifierStore {
       for (const r of rows) out.push({ name: r.name, typeName: r.type_name, n: Number(r.n) });
     }
     return out;
+  }
+
+  async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
+    const out: IdentifierNameKindTypeRow[] = [];
+    const scope = pathPrefixPredicate(q.pathPrefixes);
+    for (const chunk of chunked([...new Set(q.names)])) {
+      const cte = resolvedIdentifiersCte({
+        sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
+        params: [...chunk, ...scope.params],
+      });
+      const rows = await this.session.queryAll<{
+        name: string;
+        kind: string;
+        type_name: string | null;
+        n: number | string;
+        example_owner: string;
+      }>(
+        `${cte.sql}
+         SELECT name, kind, type_name, count(*) AS n, min(owner_symbol_id) AS example_owner
+           FROM resolved
+          GROUP BY name, kind, type_name
+          ORDER BY name, kind, type_name NULLS LAST`,
+        cte.params,
+      );
+      for (const r of rows) {
+        out.push({
+          name: r.name,
+          kind: r.kind as IdentifierDeclarationKind,
+          typeName: r.type_name,
+          n: Number(r.n),
+          exampleOwner: r.example_owner,
+        });
+      }
+    }
+    return out;
+  }
+
+  async identifierLanguageCounts(q: IdentifierScopeQuery): Promise<IdentifierLanguageCountRow[]> {
+    const scope = pathPrefixPredicate(q.pathPrefixes);
+    const rows = await this.session.queryAll<{ language: string | null; n: number | string }>(
+      `SELECT f.language, count(*) AS n
+         FROM (SELECT rel_path FROM cg_identifiers WHERE ${scope.sql}) i
+         LEFT JOIN cg_symbols_files f ON f.rel_path = i.rel_path
+        GROUP BY f.language
+        ORDER BY n DESC, f.language NULLS LAST`,
+      scope.params,
+    );
+    return rows.map((r) => ({ language: r.language, n: Number(r.n) }));
+  }
+
+  async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
+    const scope = pathPrefixPredicate(q.pathPrefixes);
+    // The reservoir size is inlined: DuckDB takes no bind parameter there. It is
+    // coerced to a positive integer first, so no caller value reaches the SQL text.
+    const limit = Math.max(1, Math.floor(Number(q.limit) || 1));
+    const rows = await this.session.queryAll<{
+      kind: string;
+      name: string;
+      type_name: string | null;
+      bound_member: string | null;
+      bound_receiver: string | null;
+      n: number | string;
+    }>(
+      `SELECT kind, name, type_name, bound_member, bound_receiver, count(*) AS n
+         FROM (
+           SELECT * FROM (
+             SELECT kind, name, type_name, bound_member, bound_receiver FROM cg_identifiers
+              WHERE ${scope.sql} AND (type_name IS NOT NULL OR bound_member IS NOT NULL)
+           ) USING SAMPLE reservoir(${limit} ROWS) REPEATABLE (${SHAPE_SAMPLE_SEED})
+         )
+        GROUP BY kind, name, type_name, bound_member, bound_receiver
+        ORDER BY n DESC, kind, name`,
+      scope.params,
+    );
+    return rows.map((r) => ({
+      kind: r.kind as IdentifierDeclarationKind,
+      name: r.name,
+      typeName: r.type_name,
+      boundMember: r.bound_member,
+      boundReceiver: r.bound_receiver,
+      n: Number(r.n),
+    }));
   }
 
   async existingSymbolShortNames(names: readonly string[]): Promise<string[]> {

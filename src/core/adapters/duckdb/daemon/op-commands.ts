@@ -252,6 +252,19 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   countIdentifiers: read(async (graphDb, p) =>
     graphDb.countIdentifiers({ types: p.types as string[], pathPrefixes: p.pathPrefixes as string[] | undefined }),
   ),
+  // Naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11).
+  aggregateIdentifiersByName: read(async (graphDb, p) =>
+    graphDb.aggregateIdentifiersByName({
+      names: p.names as string[],
+      pathPrefixes: p.pathPrefixes as string[] | undefined,
+    }),
+  ),
+  identifierLanguageCounts: read(async (graphDb, p) =>
+    graphDb.identifierLanguageCounts({ pathPrefixes: p.pathPrefixes as string[] | undefined }),
+  ),
+  sampleIdentifierShapes: read(async (graphDb, p) =>
+    graphDb.sampleIdentifierShapes({ limit: p.limit as number, pathPrefixes: p.pathPrefixes as string[] | undefined }),
+  ),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),

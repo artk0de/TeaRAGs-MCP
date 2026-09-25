@@ -123,6 +123,20 @@ export type {
   StableDependencyViolationEvidence,
 } from "./architecture.js";
 
+export type {
+  // Naming lexicon (get_naming_lexicon)
+  NamingLexiconCalleeEntry,
+  NamingLexiconDraftName,
+  NamingLexiconEvidenceSource,
+  NamingLexiconKindProfile,
+  NamingLexiconNameCount,
+  NamingLexiconNameEvidence,
+  NamingLexiconNameVerdict,
+  NamingLexiconRequest,
+  NamingLexiconResult,
+  NamingLexiconTypeEntry,
+} from "./naming-lexicon.js";
+
 export { projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";
 

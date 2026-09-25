@@ -68,6 +68,9 @@ export type {
   ArchitectureViolation,
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
+  // Naming lexicon DTOs
+  NamingLexiconRequest,
+  NamingLexiconResult,
 } from "./dto/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────

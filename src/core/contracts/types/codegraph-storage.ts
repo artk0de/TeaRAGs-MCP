@@ -140,7 +140,12 @@ export interface IdentifierTypeAggregateRow {
   exampleOwner: SymbolId;
 }
 
-/** One (callee, kind, name) group of the callee aggregate; `receiver` is null for a receiverless call. */
+/**
+ * One (callee, kind, name, persisted type) group of the callee aggregate;
+ * `receiver` is null for a receiverless call. `typeName` is the rows' PERSISTED
+ * type (a `finder` row carries its receiver constant) and is absent for untyped
+ * rows — the callee path answers for values the type path cannot name.
+ */
 export interface IdentifierCalleeAggregateRow {
   member: string;
   receiver: string | null;
@@ -148,6 +153,7 @@ export interface IdentifierCalleeAggregateRow {
   name: string;
   n: number;
   exampleOwner: SymbolId;
+  typeName?: string;
 }
 
 /** A typed `param` / `return` row of an anchor symbol. */
@@ -161,6 +167,55 @@ export interface AnchorIdentifierTypeRow {
 export interface IdentifierNameTypeRow {
   name: string;
   typeName: string | null;
+  n: number;
+}
+
+/** A read over every identifier row, optionally narrowed to files under any of `pathPrefixes`. */
+export interface IdentifierScopeQuery {
+  pathPrefixes?: readonly string[];
+}
+
+/** Names asked for by `GraphDbClient.aggregateIdentifiersByName`, scoped like {@link IdentifierScopeQuery}. */
+export interface IdentifierNameScopeQuery extends IdentifierScopeQuery {
+  names: readonly string[];
+}
+
+/**
+ * One (name, kind, effective type) group of the name aggregate. `typeName` is
+ * null for rows untyped even after the call-return join — the rows the naming
+ * lexicon's `name-inferred` stage may type.
+ */
+export interface IdentifierNameKindTypeRow {
+  name: string;
+  kind: IdentifierDeclarationKind;
+  typeName: string | null;
+  n: number;
+  exampleOwner: SymbolId;
+}
+
+/** Identifier rows per file language (`cg_symbols_files.language`; null for a file with no files row). */
+export interface IdentifierLanguageCountRow {
+  language: string | null;
+  n: number;
+}
+
+/** A bounded sample of the scope's evidence-carrying rows (`GraphDbClient.sampleIdentifierShapes`). */
+export interface IdentifierShapeSampleQuery extends IdentifierScopeQuery {
+  /** Reservoir size in rows; a scope with fewer rows is read whole. */
+  limit: number;
+}
+
+/**
+ * One (kind, name, persisted type, bound callee) group of the sampled rows. A
+ * sampled row carries a persisted type or a bound callee — a row with neither
+ * can only classify as a role name, so it is not evidence of a convention.
+ */
+export interface IdentifierShapeSampleRow {
+  kind: IdentifierDeclarationKind;
+  name: string;
+  typeName: string | null;
+  boundMember: string | null;
+  boundReceiver: string | null;
   n: number;
 }
 
@@ -621,6 +676,24 @@ export interface GraphDbClient {
 
   /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
   countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;
+
+  /**
+   * Rows named one of `q.names` in scope, grouped by (name, kind, effective
+   * type) and counted — untyped rows included (`typeName: null`). The effective
+   * type is the one {@link aggregateIdentifiersByType} reports. Empty `names`
+   * reads nothing.
+   */
+  aggregateIdentifiersByName: (q: IdentifierNameScopeQuery) => Promise<IdentifierNameKindTypeRow[]>;
+
+  /** Row count in scope per file language, largest first; empty when the scope holds no rows. */
+  identifierLanguageCounts: (q: IdentifierScopeQuery) => Promise<IdentifierLanguageCountRow[]>;
+
+  /**
+   * A reservoir sample of at most `q.limit` scoped rows that carry a persisted
+   * type or a bound callee, grouped and counted. Persisted types only — no
+   * call-return join: the sample measures how the project names what it binds.
+   */
+  sampleIdentifierShapes: (q: IdentifierShapeSampleQuery) => Promise<IdentifierShapeSampleRow[]>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

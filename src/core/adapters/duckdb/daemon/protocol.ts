@@ -142,6 +142,9 @@ export const DAEMON_OPS = [
   "identifierNameTypes",
   "existingSymbolShortNames",
   "countIdentifiers",
+  "aggregateIdentifiersByName",
+  "identifierLanguageCounts",
+  "sampleIdentifierShapes",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   "getSupertypes",
   "getSubtypes",
@@ -184,7 +187,10 @@ export interface DaemonRequest {
     | { collection: string; entries: IdentifierReplaceEntry[] } // replaceIdentifiersBulk
     | { collection: string; types: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByType | countIdentifiers
     | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[] } // aggregateIdentifiersByCallee
-    | { collection: string; names: string[] }; // identifierNameTypes | existingSymbolShortNames
+    | { collection: string; names: string[] } // identifierNameTypes | existingSymbolShortNames
+    | { collection: string; names: string[]; pathPrefixes?: string[] } // aggregateIdentifiersByName
+    | { collection: string; pathPrefixes?: string[] } // identifierLanguageCounts
+    | { collection: string; limit: number; pathPrefixes?: string[] }; // sampleIdentifierShapes
 }
 
 /**

@@ -27,8 +27,14 @@ import type {
   HierarchySnapshot,
   IdentifierCalleeAggregateRow,
   IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountRow,
+  IdentifierNameKindTypeRow,
+  IdentifierNameScopeQuery,
   IdentifierNameTypeRow,
   IdentifierReplaceEntry,
+  IdentifierScopeQuery,
+  IdentifierShapeSampleQuery,
+  IdentifierShapeSampleRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
@@ -886,6 +892,26 @@ export class DaemonGraphDbClient implements GraphDbClient {
       types: [...q.types],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
     })) as number;
+  }
+
+  async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
+    return (await this.call("aggregateIdentifiersByName", {
+      names: [...q.names],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as IdentifierNameKindTypeRow[];
+  }
+
+  async identifierLanguageCounts(q: IdentifierScopeQuery): Promise<IdentifierLanguageCountRow[]> {
+    return (await this.call("identifierLanguageCounts", {
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as IdentifierLanguageCountRow[];
+  }
+
+  async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
+    return (await this.call("sampleIdentifierShapes", {
+      limit: q.limit,
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as IdentifierShapeSampleRow[];
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

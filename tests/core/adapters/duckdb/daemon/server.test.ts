@@ -1030,4 +1030,36 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
     expect((byCallee as { result: unknown }).result).toEqual([]);
     await pool.closeAll();
   });
+
+  it("answers the naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11)", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ident_scope_v1";
+    const doc = { ownerSymbolId: "A#run", kind: "local", name: "doc", line: 2, typeName: "Doc", typeSource: "binding" };
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: { collection: c, entries: [{ relPath: "a.rb", rows: [doc] }] },
+    });
+
+    const byName = await server.handle({
+      id: 2,
+      op: "aggregateIdentifiersByName",
+      params: { collection: c, names: ["doc"] },
+    });
+    const languages = await server.handle({ id: 3, op: "identifierLanguageCounts", params: { collection: c } });
+    const sample = await server.handle({ id: 4, op: "sampleIdentifierShapes", params: { collection: c, limit: 10 } });
+
+    for (const op of ["aggregateIdentifiersByName", "identifierLanguageCounts", "sampleIdentifierShapes"] as const) {
+      expect(DAEMON_OP_COMMANDS[op].access, op).toBe("read");
+    }
+    expect((byName as { result: unknown }).result).toEqual([
+      { name: "doc", kind: "local", typeName: "Doc", n: 1, exampleOwner: "A#run" },
+    ]);
+    // a.rb has no cg_symbols_files row here, so its language reads as null.
+    expect((languages as { result: unknown }).result).toEqual([{ language: null, n: 1 }]);
+    expect((sample as { result: unknown }).result).toEqual([
+      { kind: "local", name: "doc", typeName: "Doc", boundMember: null, boundReceiver: null, n: 1 },
+    ]);
+    await pool.closeAll();
+  });
 });

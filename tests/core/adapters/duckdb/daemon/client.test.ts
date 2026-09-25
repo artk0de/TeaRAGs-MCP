@@ -825,4 +825,32 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
     expect(params("anchorIdentifierTypes")).toMatchObject({ symbolIds: ["A#x"] });
     expect(params("existingSymbolShortNames")).toMatchObject({ names: ["doc"] });
   });
+
+  it("proxies the naming-lexicon scope reads with their params (bd tea-rags-mcp-4p3sb.11)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const byName = [{ name: "doc", kind: "local", typeName: null, n: 2, exampleOwner: "A#x" }];
+    const languages = [{ language: "ruby", n: 7 }];
+    const sample = [{ kind: "local", name: "doc", typeName: "Doc", boundMember: null, boundReceiver: null, n: 1 }];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "aggregateIdentifiersByName") return byName;
+      if (r.op === "identifierLanguageCounts") return languages;
+      if (r.op === "sampleIdentifierShapes") return sample;
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    expect(await client.aggregateIdentifiersByName({ names: ["doc"], pathPrefixes: ["app/"] })).toEqual(byName);
+    expect(await client.identifierLanguageCounts({ pathPrefixes: ["app/"] })).toEqual(languages);
+    expect(await client.sampleIdentifierShapes({ limit: 50 })).toEqual(sample);
+    await client.close();
+
+    const params = (op: string) => seen.find((r) => r.op === op)?.params;
+    expect(params("aggregateIdentifiersByName")).toMatchObject({ names: ["doc"], pathPrefixes: ["app/"] });
+    expect(params("identifierLanguageCounts")).toMatchObject({ pathPrefixes: ["app/"] });
+    expect(params("sampleIdentifierShapes")).toMatchObject({ collection: "code_x_v1", limit: 50 });
+  });
 });
