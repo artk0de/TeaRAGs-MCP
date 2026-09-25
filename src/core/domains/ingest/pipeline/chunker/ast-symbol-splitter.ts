@@ -50,21 +50,54 @@ export class AstSymbolSplitter {
    */
   constructor(private readonly budget: number) {}
 
-  split(node: AstNode, code: string): AstSymbolPart[] {
-    const firstRow = node.startPosition.row;
-    const lastRow = AstSymbolSplitter.lastRowOf(node);
+  /**
+   * @param leadingStartRow - 0-based first row of the comment block a
+   *   comment-capture hook attached to the symbol (bd tea-rags-mcp-u7tjf). The
+   *   block opens the first part, whose `startLine` then starts there, and
+   *   never enters a later part's context prefix. The first part's capacity is
+   *   reduced by the block, so the cuts land where they would without it; a
+   *   block larger than half the budget instead joins the rows being cut, as
+   *   one span, so it can take a part of its own rather than overflow one.
+   *   Defaults to the symbol's own first row (no leading block).
+   */
+  split(node: AstNode, code: string, leadingStartRow: number = node.startPosition.row): AstSymbolPart[] {
     const codeLines = code.split("\n");
+    const symbolRow = node.startPosition.row;
+    if (leadingStartRow >= symbolRow) return this.splitRows(node, codeLines, symbolRow, 0);
+
+    const leading = codeLines.slice(leadingStartRow, symbolRow);
+    leading[0] = leading[0].trimStart();
+    const leadingText = leading.join("\n").trimEnd();
+    const reserve = leadingText.length + 1;
+    if (reserve > this.budget / 2) return this.splitRows(node, codeLines, leadingStartRow, 0);
+
+    const [first, ...rest] = this.splitRows(node, codeLines, symbolRow, reserve);
+    return [{ ...first, content: `${leadingText}\n${first.content}`, startLine: leadingStartRow + 1 }, ...rest];
+  }
+
+  /**
+   * Cut rows `firstRow..` of the symbol. `firstRow` is the symbol's own first
+   * row, or earlier when a leading block rides along as rows; `firstPartReserve`
+   * is the capacity the first part leaves for text the caller prepends.
+   */
+  private splitRows(node: AstNode, codeLines: string[], firstRow: number, firstPartReserve: number): AstSymbolPart[] {
+    const symbolRow = node.startPosition.row;
+    const leadingRows = symbolRow - firstRow;
+    const lastRow = AstSymbolSplitter.lastRowOf(node);
 
     const rows: string[] = [];
     for (let row = firstRow; row <= lastRow; row++) {
       let text = codeLines[row] ?? "";
       if (row === lastRow && node.endPosition.row === lastRow) text = text.slice(0, node.endPosition.column);
-      if (row === firstRow) text = text.slice(node.startPosition.column);
+      if (row === symbolRow) text = text.slice(node.startPosition.column);
+      else if (row === firstRow) text = text.trimStart();
       rows.push(text);
     }
 
     const spans = this.collectSpans(node, firstRow, rows.length);
-    const signatureRows = this.signatureRows(node, firstRow, rows);
+    // The leading block is one span, so the cutter keeps it whole when it fits.
+    if (leadingRows > 1) spans.push({ startRow: 0, endRow: leadingRows - 1, opener: false });
+    const signatureRows = this.signatureRows(node, firstRow, rows, leadingRows);
     const contextLimit = Math.floor(this.budget / 3);
     const contextCache = new Map<number, string[]>();
     const contextAt = (row: number): string[] => {
@@ -85,7 +118,7 @@ export class AstSymbolSplitter {
     const splitter = new NestingLineSplitter({
       rows,
       spans,
-      capacityAt: (row) => this.budget - prefixLength(row),
+      capacityAt: (row) => this.budget - prefixLength(row) - (row === 0 ? firstPartReserve : 0),
       openingRows,
     });
 
@@ -128,15 +161,15 @@ export class AstSymbolSplitter {
    * row that opens its body (`{` / `:` / `do`), trimmed to the first rows plus
    * that opening row. A symbol without a `body` field keeps its first row.
    */
-  private signatureRows(node: AstNode, firstRow: number, rows: string[]): number[] {
+  private signatureRows(node: AstNode, firstRow: number, rows: string[], leadingRows: number): number[] {
     const body = node.childForFieldName("body") ?? node.childForFieldName("definition")?.childForFieldName("body");
-    if (!body) return [0];
+    if (!body) return [leadingRows];
     const bodyRow = body.startPosition.row - firstRow;
     const opensOnSignatureRow = (rows[bodyRow] ?? "").slice(0, body.startPosition.column).trim().length > 0;
-    const lastSignatureRow = Math.max(0, opensOnSignatureRow ? bodyRow : bodyRow - 1);
+    const lastSignatureRow = Math.max(leadingRows, opensOnSignatureRow ? bodyRow : bodyRow - 1);
     const signature: number[] = [];
-    for (let row = 0; row <= lastSignatureRow; row++) {
-      if (row < MAX_SIGNATURE_ROWS - 1 || row === lastSignatureRow) signature.push(row);
+    for (let row = leadingRows; row <= lastSignatureRow; row++) {
+      if (row - leadingRows < MAX_SIGNATURE_ROWS - 1 || row === lastSignatureRow) signature.push(row);
     }
     return signature;
   }

@@ -75,6 +75,12 @@ interface SplitSymbolIdentity {
   parentType?: string;
   /** Transient classifier flag, preserved on every part. */
   claimed?: boolean;
+  /**
+   * 0-based first row of the comment block a comment-capture hook attached to
+   * the symbol (bd tea-rags-mcp-u7tjf). The block opens `#part1`, whose
+   * `startLine` then starts there — the leaf path's `methodStartLines` rule.
+   */
+  leadingStartRow?: number;
 }
 
 /**
@@ -525,7 +531,7 @@ export class TreeSitterChunker implements CodeChunker {
     language: string,
     chunks: CodeChunk[],
   ): void {
-    const parts = this.symbolSplitter.split(node, code);
+    const parts = this.symbolSplitter.split(node, code, identity.leadingStartRow);
     const methodLines = node.endPosition.row - node.startPosition.row + 1;
     const parentType = identity.parentType ?? this.unwrapDecoratedDefinition(node).type;
     parts.forEach((part, i) => {
@@ -1091,7 +1097,7 @@ export class TreeSitterChunker implements CodeChunker {
         langConfig.alwaysExtractChildren &&
         this.canRecurseAsContainer(childNode, langConfig)
       ) {
-        await this.emitNestedContainer(childNode, validGrandChildren, pass);
+        await this.emitNestedContainer(childNode, ci, validGrandChildren, pass);
         continue;
       }
 
@@ -1152,7 +1158,12 @@ export class TreeSitterChunker implements CodeChunker {
     // no longer a self-loop because no part carries the bare id.
     this.emitSplitSymbol(
       childNode,
-      { symbolId: methodSymbolId, name: childName, chunkType: methodChunkType },
+      {
+        symbolId: methodSymbolId,
+        name: childName,
+        chunkType: methodChunkType,
+        leadingStartRow: this.leadingCommentStartRow(pass.ctx, ci),
+      },
       code,
       filePath,
       language,
@@ -1167,6 +1178,7 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private async emitNestedContainer(
     childNode: AstNode,
+    ci: number,
     validGrandChildren: AstNode[],
     pass: ChildChunkEmissionPass,
   ): Promise<void> {
@@ -1268,7 +1280,24 @@ export class TreeSitterChunker implements CodeChunker {
       filePath,
       language,
       chunks,
+      // bd tea-rags-mcp-6wy02 — the comment the OUTER container's capture hook
+      // attached to this child is in the outer `excludedRows`, i.e. promised
+      // to this child's chunk; the recursed child's own chunk is its remainder.
+      this.leadingCommentStartRow(pass.ctx, ci),
     );
+  }
+
+  /**
+   * First row (0-based) of the comment block a comment-capture hook attached to
+   * child `ci`, or `undefined` when it attached none. Those rows are in the
+   * container's `excludedRows` — promised to the child's chunk — so every
+   * emission path of the child must carry them, not only the leaf path that
+   * reads `methodPrefixes` (bd tea-rags-mcp-u7tjf / 6wy02).
+   */
+  private leadingCommentStartRow(ctx: HookContext, ci: number): number | undefined {
+    if (!ctx.methodPrefixes.has(ci)) return undefined;
+    const startLine = ctx.methodStartLines.get(ci);
+    return startLine === undefined ? undefined : startLine - 1;
   }
 
   /**
@@ -1529,6 +1558,7 @@ export class TreeSitterChunker implements CodeChunker {
     filePath: string,
     language: string,
     chunks: CodeChunk[],
+    leadingStartRow?: number,
   ): void {
     if (ctx.skipChildren || ctx.bodyChunks.length > 0) return;
 
@@ -1540,6 +1570,7 @@ export class TreeSitterChunker implements CodeChunker {
     const parts = planContainerRemainder({
       codeLines: ctx.codeLines,
       containerStartRow: containerNode.startPosition.row,
+      leadingStartRow,
       containerEndRow: containerNode.endPosition.row,
       coveredRows,
       containerHeader: this.extractContainerHeader(containerNode, ctx.code),

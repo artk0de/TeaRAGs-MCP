@@ -31,6 +31,13 @@ export interface ContainerRemainderInput {
   codeLines: readonly string[];
   /** 0-based rows of the container node, inclusive. */
   containerStartRow: number;
+  /**
+   * 0-based first row of a comment block attached to the container from
+   * OUTSIDE it — a recursed child's leading comment the enclosing container's
+   * capture hook claimed (bd tea-rags-mcp-6wy02). Its rows join the remainder
+   * ahead of the header; they are never the header row.
+   */
+  leadingStartRow?: number;
   containerEndRow: number;
   /** 0-based rows some other chunk already carries (children, body chunks, captured comments). */
   coveredRows: ReadonlySet<number>;
@@ -54,9 +61,10 @@ const PUNCTUATION_ONLY_ROW = /^[\s{}()[\];,]*$|^\s*end\s*$/;
 /** Remainder rows grouped into runs: consecutive rows, or rows separated only by blank rows. */
 function collectRuns(input: ContainerRemainderInput): number[][] {
   const { codeLines, containerStartRow, containerEndRow, coveredRows } = input;
+  const firstRow = Math.min(input.leadingStartRow ?? containerStartRow, containerStartRow);
   const runs: number[][] = [];
   let current: number[] = [];
-  for (let row = containerStartRow; row <= containerEndRow; row++) {
+  for (let row = firstRow; row <= containerEndRow; row++) {
     if (coveredRows.has(row)) {
       if (current.length > 0) runs.push(current);
       current = [];

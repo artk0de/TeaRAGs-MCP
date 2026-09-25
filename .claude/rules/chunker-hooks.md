@@ -68,6 +68,12 @@ when a hook wrote `ctx.bodyChunks` (that hook owns the container's rows) or set
 re-emit a type-level chunk just to keep the container's rows searchable; to
 relabel it, a metadata hook sets `ctx.containerChunkType`.
 
+Rows a comment hook puts in `excludedRows` for child `ci` (with `methodPrefixes`
+/ `methodStartLines`) are PROMISED to that child: the engine carries them on
+every emission path — the leaf chunk's prefix, the head of an oversized child's
+`#part1`, a recursed child's remainder (bd tea-rags-mcp-u7tjf / 6wy02). Only
+exclude rows you set a prefix for.
+
 ## What NOT to put in the chain
 
 - Hooks reading `ctx.bodyChunks` after another hook wrote them (post-processing,
