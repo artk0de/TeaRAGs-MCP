@@ -136,8 +136,9 @@ with the matching block in `tea-rags:tests-as-context` and
    - `modifiedAfter` / `modifiedBefore` → ALWAYS `git.file.lastModifiedAt`,
      `recentAuthor` → ALWAYS `git.file.recentDominantAuthor*`, `contributor` →
      ALWAYS `git.file.recentAuthors`, any `level`. Never need `level: "file"`.
-2. **Result granularity.** `level: "file"` → one result per file
-   (`payload.members` outline), git signals blended at file level only.
+2. **Result granularity.** `level: "file"` → one result per file (file-level
+   payload only — no chunk fields, no content; outline it via
+   `find_symbol(relativePath)`), git signals blended at file level only.
    `"chunk"` or none → individual chunks.
 
 Effective level = explicit `level`, else rerank preset `signalLevel` (e.g.

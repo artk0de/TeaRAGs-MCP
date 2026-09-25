@@ -1,4 +1,6 @@
 // src/bootstrap/factory.test.ts
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import * as nodeFs from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
 import type { ProjectIngestFactory as ProjectIngestFactoryType } from "../../src/bootstrap/project-ingest-factory.js";
+import { trackGitChildProcess } from "../../src/core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
 import type { EnvDriftMonitor as EnvDriftMonitorType } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
@@ -104,6 +107,7 @@ vi.mock("../../src/core/api/internal/facades/explore-facade.js", () => ({
 vi.mock("../../src/core/domains/explore/reranker.js", () => ({
   Reranker: vi.fn().mockImplementation(function () {
     this.setFilterPresetNames = vi.fn();
+    this.setFilterParamNames = vi.fn();
   }),
 }));
 vi.mock("../../src/core/domains/explore/rerank/presets/index.js", () => ({
@@ -241,6 +245,40 @@ describe("createAppContext", () => {
     }
   });
 
+  it("cleanup releases once however many shutdown paths call it (bd tea-rags-mcp-e6cpu)", async () => {
+    // Under stdio the signal handler and the stdin-close shutdown both reach
+    // ctx.cleanup; the second call must not re-release anything.
+    const stop = vi.fn();
+    const startWatching = vi.spyOn(CollectionRegistry.prototype, "startWatching").mockReturnValue(stop);
+    try {
+      const ctx = await createAppContext(makeConfig());
+      ctx.cleanup?.();
+      ctx.cleanup?.();
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally {
+      startWatching.mockRestore();
+    }
+  });
+
+  it("cleanup kills the git children an in-process enrichment left running (bd tea-rags-mcp-w26dc)", async () => {
+    // MCP index_codebase runs enrichment inside the server and git inline, so
+    // git is a direct child of the server; SIGTERM/SIGINT route to ctx.cleanup
+    // and nothing else would reach those children before the host SIGKILLs us.
+    const child = spawn("sleep", ["30"], { stdio: "ignore" });
+    // The exit event, not a pid probe: a SIGKILLed child stays a zombie (and
+    // answers kill(pid, 0)) until libuv reaps it, which a loaded box delays.
+    const exited = once(child, "exit");
+    try {
+      trackGitChildProcess(child);
+      const ctx = await createAppContext(makeConfig());
+      ctx.cleanup?.();
+      const [, signal] = (await exited) as [number | null, NodeJS.Signals | null];
+      expect(signal).toBe("SIGKILL");
+    } finally {
+      child.kill("SIGKILL");
+    }
+  });
+
   it("git runs inline (no workerDescriptor) so it uses the InlineEnrichmentExecutor in-process (production regression guard)", async () => {
     // This test is GENUINELY RED when bootstrap/factory.ts builds a gitWorkerDescriptor
     // and passes it to GitTrajectory. It reads the ACTUAL value captured by the
@@ -370,5 +408,31 @@ describe("wireCodegraph", () => {
     expect(descriptor?.languageAffinity?.partitionByExtension).toEqual(CODEGRAPH_LANGUAGE_BY_EXTENSION);
     expect(descriptor?.languageAffinity?.partitionByExtension[".tsx"]).toBe("typescript");
     expect(descriptor?.languageAffinity?.partitionByExtension[".rb"]).toBe("ruby");
+  });
+
+  // bd tea-rags-mcp-x4rpp: the temporal co-change build reads the SAME history
+  // window, session rule, adapter and timeout as the git trajectory, on both the
+  // main-thread provider and the pinned worker — and nothing when git is off.
+  it("derives the co-change build config from the git trajectory's settings", () => {
+    const withGit = {
+      ...zodConfigWithCodegraph(),
+      trajectoryGit: {
+        enabled: true,
+        chunkMaxAgeMonths: 6,
+        chunkTimeoutMs: 120_000,
+        squashAwareSessions: true,
+        sessionGapMinutes: 45,
+      },
+      vcs: { adapter: "git" },
+    } as unknown as ReturnType<typeof getZodConfig>;
+    const expected = { windowMonths: 6, sessionGapMinutes: 45, vcsAdapter: "git", gitTimeoutMs: 120_000 };
+
+    const ctx = wireCodegraph(makeConfig(), withGit);
+
+    expect(ctx?.deps.temporal).toEqual(expected);
+    expect((ctx?.deps.workerDescriptor?.serializableConfig as { temporal?: unknown }).temporal).toEqual(expected);
+
+    const gitOff = { ...withGit, trajectoryGit: { ...withGit.trajectoryGit, enabled: false } } as typeof withGit;
+    expect(wireCodegraph(makeConfig(), gitOff)?.deps.temporal).toBeUndefined();
   });
 });

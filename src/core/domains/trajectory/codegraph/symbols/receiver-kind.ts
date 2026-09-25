@@ -11,6 +11,11 @@
  * literals here — TS emits receiver `"super"`, the Ruby walker emits
  * `SUPER_RECEIVER_SENTINEL` (`"<super>"`). These are stable markers; the
  * classifier is a heuristic instrument, not a contract participant.
+ *
+ * The `super` markers alone are the exception: {@link isSuperReceiver} is also
+ * read by the self-dispatch discovery (a `super`-delegating override inherits
+ * its ancestor template's hook), so a walker renaming its sentinel breaks
+ * resolution, not just instrumentation.
  */
 import type { CallRef, LocalBinding } from "../../../../contracts/types/codegraph.js";
 
@@ -38,6 +43,12 @@ export const RECEIVER_KINDS: readonly ReceiverKind[] = [
 ] as const;
 
 const SUPER_MARKERS = new Set(["super", "<super>"]);
+
+/** Whether a call's receiver is a language's `super` marker. */
+export function isSuperReceiver(receiver: string | null): boolean {
+  return receiver !== null && SUPER_MARKERS.has(receiver);
+}
+
 const CONST_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
 
 /**
@@ -66,7 +77,7 @@ export function classifyReceiverKind(
 ): ReceiverKind {
   const r = call.receiver;
   if (r === null) return "bareCall";
-  if (SUPER_MARKERS.has(r)) return "super";
+  if (isSuperReceiver(r)) return "super";
   if (r === "self") return "selfMember";
   if (localBindings && Object.prototype.hasOwnProperty.call(localBindings, r)) return "localVar";
   if (CONST_RE.test(r)) return "constant";

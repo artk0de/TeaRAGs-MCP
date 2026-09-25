@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
+import { LanguageFactory } from "../../../src/core/domains/language/factory.js";
 
 const { pingMock, createAppContextMock } = vi.hoisted(() => ({
   pingMock: vi.fn(),
@@ -119,6 +120,44 @@ describe("runPrime — happy path", () => {
     await runPrime({ path: "/some/project" });
 
     expect(cleanupMock).toHaveBeenCalledOnce();
+  });
+
+  // bd tea-rags-mcp-xip6g — the digest's tier lines come from the shipped
+  // descriptors, so the expectation is read from the same source rather than
+  // hard-coded: a tier moving in a `<lang>/capability.ts` must not break this.
+  it("renders language-capability tiers read from LanguageFactory.capabilities()", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    createAppContextMock.mockResolvedValue({
+      app: {
+        getIndexStatus: vi.fn().mockResolvedValue({
+          isIndexed: true,
+          status: "indexed",
+          collectionName: "c",
+          chunksCount: 100,
+        }),
+        getIndexMetrics: vi.fn().mockResolvedValue({
+          collection: "c",
+          totalChunks: 100,
+          totalFiles: 10,
+          distributions: { language: { typescript: 100 } },
+          signals: {},
+        }),
+        checkIndexDrift: vi.fn().mockResolvedValue(null),
+      },
+      cleanup: vi.fn(),
+      updateService: stubUpdateService(),
+    });
+
+    await runPrime({ path: "/some/project" });
+
+    const ts = new LanguageFactory().capabilities().get("typescript");
+    expect(ts).toBeDefined();
+    const codegraph = ts?.codegraph.tier;
+    if (typeof codegraph !== "string") throw new Error("typescript codegraph tier is expected to be a single tier");
+    expect(writeMock.mock.calls[0][0]).toContain(
+      `typescript: ast ${ts?.ast.tier} · tests ${ts?.tests.tier} · codegraph ${codegraph}`,
+    );
   });
 });
 

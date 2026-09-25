@@ -5,10 +5,10 @@ import type {
   DispatchFanoutOutcome,
   SymbolDefinition,
 } from "../../../contracts/types/codegraph.js";
-import type { NarrowedFanoutOptions } from "../../../contracts/types/language.js";
+import type { NarrowedFanoutOptions, VisibilityAccessPolicy } from "../../../contracts/types/language.js";
 import { dispatchFanoutPolicyFor } from "./fanout-policy.js";
 
-export type { NarrowedFanoutOptions };
+export type { NarrowedFanoutOptions, VisibilityAccessPolicy };
 
 /** A candidate filter in the untyped-dispatch narrowing cascade (bd xlnub).
  *  Drops a candidate ONLY on PROVEN incompatibility; missing evidence ⇒ keep. */
@@ -56,10 +56,52 @@ export class KwargNarrower implements DispatchCandidateNarrower {
   }
 }
 
-/** Explicit-receiver call cannot reach a `private` method → drop those. */
+/**
+ * The EXPLICIT-RECEIVER access rule: an explicit-receiver call can never reach a
+ * `private` method, whoever makes it. Ruby's semantics — `other.priv` raises
+ * `NoMethodError` even inside the declaring class — and the narrower's default,
+ * because Ruby is the language the cascade was relocated from (bd w205u).
+ */
+export const EXPLICIT_RECEIVER_VISIBILITY_ACCESS: VisibilityAccessPolicy = {
+  canReach: (_call, candidate) => candidate.visibility !== "private",
+};
+
+/**
+ * The ENCLOSING-CLASS access rule (bd tea-rags-mcp-jwjyr.1): a `private`
+ * candidate is reachable only from a call site lexically inside a class of the
+ * candidate's declaring-class NAME — TypeScript/Java class privacy, and Python
+ * name mangling (`obj.__x` inside `class A` compiles to `obj._A__x`, which
+ * reaches `A.__x` in any file). `protected` / `public` are always reachable.
+ *
+ * Deliberately wider than each language's exact rule so it never drops a legal
+ * edge: ANY enclosing scope segment of that name counts (Java nested classes
+ * read the outer class's privates; Python mangles by the innermost class, which
+ * a same-named outer segment over-approximates), and the file is not compared.
+ * Missing evidence keeps: no caller scope on the context, or a candidate with no
+ * declaring class. The caller's own `callerSymbolId` is consulted too, because a
+ * class-BODY chunk's `callerScope` omits the class it is the body of.
+ */
+export class EnclosingClassPrivateAccess implements VisibilityAccessPolicy {
+  canReach(_call: CallRef, candidate: SymbolDefinition, ctx: CallContext): boolean {
+    if (candidate.visibility !== "private") return true;
+    const declaringClass = candidate.scope.at(-1);
+    if (declaringClass === undefined) return true;
+    const callerScope = ctx.callerScope as string[] | undefined;
+    if (callerScope === undefined) return true;
+    if (callerScope.includes(declaringClass)) return true;
+    return ctx.callerSymbolId?.split(/[#.:]+/).includes(declaringClass) ?? false;
+  }
+}
+
+/**
+ * Drop a candidate whose declared `visibility` the call site cannot reach. What
+ * "reach" means is language data, injected as a {@link VisibilityAccessPolicy};
+ * a candidate that records no visibility is kept without asking.
+ */
 export class VisibilityNarrower implements DispatchCandidateNarrower {
-  narrow(_call: CallRef, candidates: SymbolDefinition[]): SymbolDefinition[] {
-    return candidates.filter((c) => c.visibility !== "private");
+  constructor(private readonly access: VisibilityAccessPolicy = EXPLICIT_RECEIVER_VISIBILITY_ACCESS) {}
+  narrow(call: CallRef, candidates: SymbolDefinition[], ctx: CallContext): SymbolDefinition[] {
+    return candidates.filter((c) => c.visibility === undefined || this.access.canReach(call, c, ctx));
   }
 }
 
@@ -131,7 +173,10 @@ export function resolveNarrowedFanout(
   }
   if (survivors.length === 1) return { kind: "edges", edges: [edgeFor(survivors[0], 1.0, edgeKind)] };
   // The policy cap is the ceiling; a language may only ask for a TIGHTER one.
-  const policyCap = dispatchFanoutPolicyFor(ctx.symbolTable, { runScope: ctx.runScope }).cap;
+  const policyCap = dispatchFanoutPolicyFor(ctx.symbolTable, {
+    runScope: ctx.runScope,
+    population: opts.population,
+  }).cap;
   const cap = opts.cap === undefined ? policyCap : Math.min(opts.cap, policyCap);
   if (survivors.length > cap) {
     return { kind: "ambiguous", member: call.member, candidateCount: survivors.length };

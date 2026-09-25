@@ -327,11 +327,37 @@ describe("summarizeCodegraphResolve — ambiguous fan-out dual recall (j0pki)", 
     expect(summary?.coveredRecall).toBeCloseTo(summary?.inProjectEdgeRecall ?? -1, 10);
   });
 
-  it("guards the empty denominator — coveredRecall is 0, not NaN", () => {
+  it("guards the empty denominator — recall is null (nothing scored), not NaN and not 0", () => {
     // Every attempted call is external → recall denominator collapses to 0.
+    // bd tea-rags-mcp-stpvj: null, the same empty-denominator value qodqg gave
+    // resolveSuccessRate — 0 would read as "linked none of what it tried".
     const summary = summarizeCodegraphResolve([rowAf("ruby", "chain", 4, 0, 0, 4)]);
+    expect(summary?.inProjectEdgeRecall).toBeNull();
+    expect(summary?.coveredRecall).toBeNull();
+  });
+
+  it("reports null recall on the per-language and per-receiver-kind rows whose denominator is empty", () => {
+    const summary = summarizeCodegraphResolve([
+      rowAf("swift", "index", 6, 0, 0, 6),
+      rowAf("ruby", "chain", 4, 0, 0, 4),
+    ]);
+    expect(summary?.byLanguage).toHaveLength(2);
+    for (const lang of summary?.byLanguage ?? []) {
+      expect(lang.inProjectEdgeRecall).toBeNull();
+      expect(lang.byReceiverKind?.length).toBeGreaterThan(0);
+      for (const kind of lang.byReceiverKind ?? []) {
+        expect(kind.inProjectEdgeRecall).toBeNull();
+        expect(kind.coveredRecall).toBeNull();
+      }
+    }
+  });
+
+  it("keeps a scored zero recall as 0, distinct from the empty case", () => {
+    const summary = summarizeCodegraphResolve([rowAf("swift", "index", 3, 0, 0)]);
     expect(summary?.inProjectEdgeRecall).toBe(0);
     expect(summary?.coveredRecall).toBe(0);
+    expect(summary?.byReceiverKind?.[0]?.inProjectEdgeRecall).toBe(0);
+    expect(summary?.byReceiverKind?.[0]?.coveredRecall).toBe(0);
   });
 
   it("carries ambiguousFanout + coveredRecall onto the per-receiver-kind rows (DEBUG, single language)", () => {
@@ -404,5 +430,49 @@ describe("summarizeCodegraphResolve — unnarrowed-entry attribution (4vg1i)", (
     expect(ruby?.byReceiverKind?.find((k) => k.receiverKind === "constant")?.callsUnnarrowedTemplate).toBe(30);
     const ts = (summary?.byLanguage ?? []).find((l) => l.language === "typescript");
     expect(ts?.byReceiverKind?.find((k) => k.receiverKind === "constant")?.callsUnnarrowedTemplate).toBe(0);
+  });
+});
+
+// bd tea-rags-mcp-qodqg — a rate over an empty denominator is "nothing to
+// score", not a number. When every attempted site fell into an excluded bucket
+// (here: no in-project def) the DTO carries `resolveSuccessRate: null`, so a
+// JSON consumer can tell it from a scored 0 (resolved none of what it tried).
+describe("summarizeCodegraphResolve — empty rate denominator (qodqg)", () => {
+  const rowNoDef = (
+    language: string,
+    receiverKind: string,
+    attempted: number,
+    resolved: number,
+    noInProjectDef: number,
+  ): ResolveRunStatsRow => ({ language, receiverKind, attempted, resolved, externalSkipped: 0, noInProjectDef });
+
+  it("reports a receiver kind whose every site was excluded as a null rate, counters kept", () => {
+    const summary = summarizeCodegraphResolve([
+      rowNoDef("swift", "selfMember", 10, 7, 0),
+      rowNoDef("swift", "index", 6, 0, 6),
+    ]);
+    const index = (summary?.byReceiverKind ?? []).find((k) => k.receiverKind === "index");
+    expect(index).toMatchObject({ attempted: 6, resolved: 0, callsNoInProjectDef: 6 });
+    expect(index?.resolveSuccessRate).toBeNull();
+    const self = (summary?.byReceiverKind ?? []).find((k) => k.receiverKind === "selfMember");
+    expect(self?.resolveSuccessRate).toBeCloseTo(7 / 10, 6);
+    expect(summary?.resolveSuccessRate).toBeCloseTo(7 / 10, 6);
+  });
+
+  it("reports a null aggregate and per-language rate when nothing anywhere was scored", () => {
+    const summary = summarizeCodegraphResolve([
+      rowNoDef("swift", "index", 6, 0, 6),
+      rowNoDef("ruby", "chain", 4, 0, 4),
+    ]);
+    expect(summary?.callsAttempted).toBe(10);
+    expect(summary?.resolveSuccessRate).toBeNull();
+    expect(summary?.byLanguage).toHaveLength(2);
+    for (const lang of summary?.byLanguage ?? []) expect(lang.resolveSuccessRate).toBeNull();
+  });
+
+  it("keeps a scored zero as 0, distinct from the empty case", () => {
+    const summary = summarizeCodegraphResolve([rowNoDef("swift", "index", 3, 0, 0)]);
+    expect(summary?.resolveSuccessRate).toBe(0);
+    expect(summary?.byReceiverKind?.[0]?.resolveSuccessRate).toBe(0);
   });
 });

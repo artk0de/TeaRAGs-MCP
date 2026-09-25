@@ -15,7 +15,7 @@
  */
 
 import type { CallRef, ChunkExtraction } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
 import { bindCompoundReceiverChains, collectRubyLocalCallBindingsForChunk } from "./local-bindings.js";

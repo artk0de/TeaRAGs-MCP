@@ -1004,6 +1004,27 @@ function third() {
       );
       expect(embedSpy).toHaveBeenCalledTimes(3);
     });
+
+    it("should not probe again once the provider has already spent its recovery wait (bd tea-rags-mcp-umatc)", async () => {
+      // The provider waited out EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS
+      // before throwing. Re-probing would start that wait over — three probes
+      // turned a 240s budget into 12 minutes of silence before the error.
+      const waitedOut = new OllamaUnavailableError("http://192.168.1.71:11434", undefined, undefined, 240_000);
+      const downEmbeddings = new MockEmbeddingProvider();
+      const embedSpy = vi.spyOn(downEmbeddings, "embed").mockRejectedValue(waitedOut);
+
+      const downIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: downEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        healthCheckRetryAttempts: 3,
+        healthCheckRetryDelayMs: 1,
+      });
+
+      await expect(downIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toBe(waitedOut);
+      expect(embedSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("resumeOptimizer failure is non-fatal", () => {

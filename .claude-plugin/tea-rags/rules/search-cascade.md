@@ -20,6 +20,14 @@ mid-body — there `Read` is legit fallback for exact code; markdown is
 **partial** (section-level, fine for docs). `Read` always allowed to MODIFY —
 never _needed_ to gather code for a full-AST language.
 
+**`#partN` = fragment, never the unit of reasoning (MANDATORY).** Result
+`symbolId` ends `#partN` (or `name` says `part i/N`) → oversized symbol, split
+at the cap. One part lacks the rest of the body: branches, loop tails, returns,
+calls. BEFORE interpreting it — ranking it, judging risk, quoting behavior,
+editing — call `find_symbol(symbol: result.parentSymbolId)` once: merges every
+part into the whole method. Several parts of one symbol in one result set = one
+symbol, one fetch; count it once in any tally or overlap across presets.
+
 **Code is evidence, docs are hypothesis.** Doc chunks (`.md`, `isDocumentation`)
 carry intent + navigation (why / what-for) — NOT behavior truth. Behavioral
 claim from doc chunk entering final answer → verify against code FIRST
@@ -172,19 +180,27 @@ class outline, file outline, doc TOC carries id (`Class#method`, `Class.method`,
 `doc:<hash>`). Content needed → `find_symbol(symbol: <that id verbatim>)`, one
 call per chapter, parallel for several. Never answer from outline as if it held
 bodies. Never `Read` file or grep saved tool-output dump to find a member — ids
-already in hand.
+already in hand. Member line may end in declared visibility —
+`Class#helper (private)` (see "Declared visibility" below); suffix not part of
+id — drop before drilling.
 
 ### Graph navigation — get_callers / get_callees / trace_path
 
 Requires codegraph. **Availability signal:** prime digest's `## Enrichment`
 section lists `codegraph.symbols` when codegraph active. When that line absent
-the four graph tools (`get_callers`, `get_callees`, `find_cycles`, `trace_path`)
-are **not registered** — never appear in tool list. Off-signal is an _absent
-tool_, not an empty result; check prime first rather than calling a tool to
-discover it's missing. Precedence — start cheap, escalate only if needed:
+the graph tools (`get_callers`, `get_callees`, `find_cycles`, `trace_path`,
+`get_architecture_report`) are **not registered** — never appear in tool list.
+Off-signal is an _absent tool_, not an empty result; check prime first rather
+than calling a tool to discover it's missing. Precedence — start cheap, escalate
+only if needed:
 
 1. **`get_callers` / `get_callees`** — ONE hop ("who calls X" / "what X calls").
-   Default for impact & dependency questions; instant, no traversal.
+   Default for impact & dependency questions; instant, no traversal. Pass
+   `symbolId` for call edges, OR `relativePath` (repo-relative file, no
+   `symbolId`) for FILE scope: `get_callers` → `importers[]` (files importing
+   it), `get_callees` → `imports[]` (files it imports), each with `importText` +
+   `callWeight`, heaviest first. Unknown path → empty list + `message`, not a
+   fact about the file.
 2. **`find_cycles`** — detect circular dependency chains.
 3. **`trace_path`** — ALL paths A→B. Lean by default (path enumeration only);
    pass `rerank="bugHunt"` (or `dangerous`/`hotspots`/`blastRadius`) to attach
@@ -198,6 +214,15 @@ discover it's missing. Precedence — start cheap, escalate only if needed:
    relativePath, take it from a prior search result. Wrong path → `paths: []` +
    `namesakes` listing real candidates: disambiguation cue, NOT absence-of-path.
 
+**Declared visibility.** `get_callees` targets, `get_callers` callers (+ queried
+symbol as top-level `visibility`), `trace_path` steps, find_symbol outline lines
+carry DECLARED level when codegraph knows it. `private` → callers confined to
+declaring class (Go: package, Swift: file) — local blast radius; `protected` →
+class + subclasses; `public` → run `get_callers` for blast radius.
+TS/Java/Swift/Rust/Go: compiler-enforced. Ruby (`send`), Python (`_x`
+convention, only `__x` marked): hint, not guarantee. **Missing field = unknown**
+— never read as public.
+
 **When codegraph is off** (no `codegraph.symbols` in prime), route by intent to
 a non-graph substitute — never read an absent/empty graph tool as positive fact
 (no "it's a DAG", no "path structurally impossible", no "architectural centre"):
@@ -207,6 +232,7 @@ a non-graph substitute — never read an absent/empty graph tool as positive fac
 | who calls / X calls | `hybrid_search` (exact-name recall) + `find_symbol` — name-match, NOT edge truth         |
 | call path A→B       | `semantic_search` / `hybrid_search` + manual reading; say plainly "no static path tool"  |
 | cycles              | none — cycle detection NEEDS codegraph; say so, do NOT claim "no cycles / it's a DAG"    |
+| layout / SDP        | none — architecture report NEEDS codegraph; say so, do NOT claim "no violations"         |
 | architectural hubs  | git imports/churn rerank or relevance; say fan-in centrality is unavailable              |
 | entry points        | relevance + `chunkSize` heuristic; flag results as content-inferred, not graph-confirmed |
 
@@ -259,6 +285,7 @@ Intent matches a skill? (check FIRST — skills handle tool selection internally
 ├─ Bug hunting ("why does X fail") → /tea-rags:bug-hunt
 ├─ Code generation/modification → /tea-rags:data-driven-generation
 ├─ Risk/health assessment → /tea-rags:risk-assessment
+├─ Layout / dependency direction / SDP → /tea-rags:architecture-diagnostics
 ├─ Filter shape beyond pathPattern → /tea-rags:filter-building
 ├─ Pick rerank preset / build custom weights → /tea-rags:analytics-rerank
 └─ No skill matches → direct tool selection below
@@ -342,6 +369,8 @@ non-search tasks.
   or addressable outline (class / doc)
 - **Grep / Read a saved find_symbol dump or an outline** — lines are ids; drill
   `find_symbol(symbol: <id>)` instead
+- **Conclusions from one `#partN` chunk** — fetch the whole symbol first
+  (`find_symbol(symbol: parentSymbolId)`); parts of one symbol count as ONE hit
 - **Multiple semantic_search for same area** — one call, navigate from results
 - **Unfiltered semantic_search for cross-layer** — dominant language takes 100%
   of slots. Always use language filter (see `references/polyglot-rule.md`)

@@ -5,12 +5,15 @@ import {
   type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import { buildDispatchCascade } from "../../../kernel/dispatch-cascade.js";
-import { resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
+import { buildDispatchCascade, EnclosingClassPrivateAccess, resolveNarrowedFanout } from "../../../kernel/index.js";
 import { lookupPythonSymbolsByShortName } from "../strategies/shared.js";
 import type { PythonChainAnswerProbe } from "./python-chain-probe.js";
 import { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
-import { PY_DYNAMIC_RECEIVER_CONFIDENCE, resolvePythonDispatchFanMax } from "./python-dispatch-policy.js";
+import {
+  PY_DYNAMIC_RECEIVER_CONFIDENCE,
+  PYTHON_FANOUT_POPULATION,
+  resolvePythonDispatchFanMax,
+} from "./python-dispatch-policy.js";
 
 /** An instance member — `Cls#member`. A module function (`fn`) and a
  *  class-level `Cls.member` are not what a VALUE receiver dispatches. */
@@ -35,17 +38,21 @@ const isPythonInstanceMember = (symbolId: string): boolean => symbolId.includes(
  * honest: a fan REPLACES a chain answer, so a component that fired where the
  * chain answers would bury an exact edge under N discounted ones.
  *
- * The cascade is built with NEITHER language injection. Python has no duck
- * vocabulary to hand it — the runtime-member question is asked one gate
- * earlier, by the external classifier, which also knows whether the receiver is
- * typed — and no literal-receiver map, because a Python literal receiver
- * (`"s".join`, `[].append`) never reaches here: it ends in `"` or `]`, or its
- * member is a core one. What is left is the signature half — arity and kwargs,
- * which Task E4.1.2 taught the Python walker to record — plus two narrowers
- * that keep every candidate on absent evidence.
+ * The cascade takes neither the duck-vocabulary nor the literal-receiver
+ * injection. Python has no duck vocabulary to hand it — the runtime-member
+ * question is asked one gate earlier, by the external classifier, which also
+ * knows whether the receiver is typed — and no literal-receiver map, because a
+ * Python literal receiver (`"s".join`, `[].append`) never reaches here: it ends
+ * in `"` or `]`, or its member is a core one. What is left is the signature
+ * half — arity and kwargs, which Task E4.1.2 taught the Python walker to record
+ * — plus the block narrower, inert on absent evidence, and the visibility
+ * narrower under Python's own access rule. Python's `private` is a name-mangled
+ * `__name` (bd tea-rags-mcp-jwjyr.1), reachable from inside a class of the
+ * declaring class's name: the enclosing-class rule, NOT the explicit-receiver
+ * default, which would drop `other.__x()` inside the class that declares it.
  */
 export class PythonDynamicDispatchResolver implements DispatchResolverComponent {
-  private readonly narrowers = buildDispatchCascade();
+  private readonly narrowers = buildDispatchCascade({ visibilityAccess: new EnclosingClassPrivateAccess() });
 
   constructor(
     private readonly probe: PythonChainAnswerProbe,
@@ -63,6 +70,7 @@ export class PythonDynamicDispatchResolver implements DispatchResolverComponent 
     return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, PY_DYNAMIC_RECEIVER_CONFIDENCE, {
       cap: this.fanMax,
       edgeKind: "dynamic",
+      population: PYTHON_FANOUT_POPULATION,
     });
   }
 }

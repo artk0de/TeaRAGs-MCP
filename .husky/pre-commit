@@ -114,6 +114,27 @@ if [ -n "$RUN_TYPECHECK" ]; then
   npm run type-check:scripts || { echo "❌ Scripts type check failed"; exit 1; }
 fi
 
+if [ -n "$RUN_TESTS" ] && [ ! -d build ]; then
+  # A fresh worktree has no build/, and every test that forks a worker loads the
+  # COMPILED worker from it (the `/src/` → `/build/` remap in chunker/infra/pool.ts
+  # and its sibling pools) — without it those tests die on MODULE_NOT_FOUND
+  # (bd tea-rags-mcp-hyj9d). A bare build touches nothing global, so building
+  # here cannot collide with a parallel session; only `npm link` would. Once:
+  # the next commit finds build/ and skips this.
+  echo "🏗️  No build/ — building once so worker-forking tests can load the compiled workers..."
+  BUILD_LOG=$(mktemp -t tea-rags-pre-commit-build.XXXXXX)
+  BUILD_EXIT=0
+  npm run build >"$BUILD_LOG" 2>&1 || BUILD_EXIT=$?
+  if [ $BUILD_EXIT -ne 0 ]; then
+    tail -20 "$BUILD_LOG"
+    echo ""
+    echo "❌ npm run build failed — tests need a compiled build/. Fix the build, retry."
+    echo "   Full log: $BUILD_LOG"
+    exit 1
+  fi
+  rm -f "$BUILD_LOG"
+fi
+
 if [ -n "$RUN_TESTS" ]; then
   echo "📦 Running affected tests (fast, no coverage — full suite + coverage run on CI)..."
   # Pre-commit runs ONLY the tests affected by the staged changes WITHOUT
@@ -133,9 +154,13 @@ if [ -n "$RUN_TESTS" ]; then
   TESTED_FILES=$(git diff --cached --name-only)
   # `|| TEST_EXIT=$?`: husky runs this hook under `sh -e`, which exits on the
   # failing command itself — before the summary below could say what failed.
+  # `--maxWorkers=4` (bd tea-rags-mcp-3xtg7): a related set that pulls many
+  # spawn-heavy real-git fixture files (git adapters, enrichment e2e, indexer)
+  # dies on 5s timeouts at default fork concurrency; the same files are green at
+  # 4. A CLI flag — vitest 4 has no VITEST_MAX_FORKS env.
   TEST_EXIT=0
   # shellcheck disable=SC2086 # word splitting IS the argument list
-  npm test -- related --run --reporter=dot $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
+  npm test -- related --run --reporter=dot --maxWorkers=4 $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
   if [ $TEST_EXIT -ne 0 ]; then
     grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
     echo ""

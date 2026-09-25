@@ -136,6 +136,7 @@ export class QdrantManager {
     quantizationScalar = false,
     turboQuant = false,
     strictMode?: { maxResidentMemoryPercent?: number; searchMaxBatchsize?: number },
+    metadata?: Record<string, unknown>,
   ): Promise<void> {
     return this.collections.createCollection(
       name,
@@ -145,6 +146,7 @@ export class QdrantManager {
       quantizationScalar,
       turboQuant,
       strictMode,
+      metadata,
     );
   }
 

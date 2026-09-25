@@ -37,11 +37,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { extname, join, resolve as resolvePath, sep } from "node:path";
 
-import type {
-  CallContext,
-  ChunkExtraction,
-  FileExtraction,
-  SymbolResolutionTarget,
+import {
+  chunkCallerScope,
+  type CallContext,
+  type ChunkExtraction,
+  type FileExtraction,
+  type SymbolResolutionTarget,
 } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { RubyCallResolver } from "../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
@@ -198,7 +199,7 @@ function buildCallContext(
 ): CallContext {
   return {
     callerFile: extraction.relPath,
-    callerScope: chunk.scope,
+    callerScope: chunkCallerScope(chunk),
     callerSymbolId: chunk.symbolId,
     imports: extraction.imports,
     symbolTable,

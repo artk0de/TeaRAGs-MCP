@@ -12,8 +12,8 @@ import {
   type CollectionEntry,
   type StaleProjectEntry,
 } from "../../core/api/public/index.js";
-import { createColorizer } from "../infra/color.js";
-import { formatProjectsTable } from "./projects-format.js";
+import { createColorizer, type Colorizer } from "../infra/color.js";
+import { formatOrphansTable, formatProjectInfo, formatProjectsTable } from "./projects-format.js";
 
 interface RegisterArgs {
   path: string;
@@ -56,15 +56,21 @@ function newOps(): { registry: CollectionRegistry; ops: ProjectRegistryOps } {
   return { registry, ops: new ProjectRegistryOps({ registry }) };
 }
 
+/** Colors for stderr lines — gated on stderr's own TTY, not stdout's. */
+function stderrColorizer(): Colorizer {
+  return createColorizer({ isTTY: Boolean(process.stderr.isTTY) });
+}
+
 export async function runRegister(args: RegisterArgs): Promise<void> {
   const { ops } = newOps();
   try {
     const out = await ops.register({ path: args.path, name: args.name });
+    const c = createColorizer();
     process.stdout.write(
-      `Registered '${args.name}' -> ${out.collectionName}${out.alreadyIndexed ? " (already indexed)" : ""}\n`,
+      `${c.ok(`Registered '${args.name}'`)} -> ${out.collectionName}${out.alreadyIndexed ? c.dim(" (already indexed)") : ""}\n`,
     );
   } catch (err) {
-    process.stderr.write(`projects register failed: ${(err as Error).message}\n`);
+    process.stderr.write(`${stderrColorizer().alert(`projects register failed: ${(err as Error).message}`)}\n`);
     process.exit(1);
   }
 }
@@ -83,8 +89,9 @@ export async function runUnregister(args: UnregisterArgs, qdrant?: PurgeQdrantCl
   // Capture the entry before it is removed — the purge addresses its collection.
   const entry = registry.findByName(args.name);
   const out = await ops.unregister({ name: args.name });
+  const c = createColorizer();
   if (!out.removed) {
-    process.stdout.write(`'${args.name}' was not registered\n`);
+    process.stdout.write(`${c.warn(`'${args.name}' was not registered`)}\n`);
     return;
   }
   const collectionName = entry?.collectionName ?? "(unknown)";
@@ -96,7 +103,7 @@ export async function runUnregister(args: UnregisterArgs, qdrant?: PurgeQdrantCl
     return;
   }
   process.stdout.write(
-    `Removed '${args.name}' from registry. Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister --name ${args.name} --purge' to remove it.\n`,
+    `${c.ok(`Removed '${args.name}' from registry.`)} ${c.warn(`Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister --name ${args.name} --purge' to remove it.`)}\n`,
   );
 }
 
@@ -122,20 +129,23 @@ async function purgeFootprint(
   const report = await purgeCollectionFootprint(target, client);
 
   const qdrantFailure = report.failures.find((f) => f.artifact === "qdrant");
+  const c = createColorizer();
   process.stdout.write(
     qdrantFailure
-      ? `Removed '${name}' from registry; failed to delete Qdrant collection '${qdrantFailure.target}': ${qdrantFailure.reason}\n`
-      : `Removed '${name}' from registry; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)\n`,
+      ? `${c.alert(`Removed '${name}' from registry; failed to delete Qdrant collection '${qdrantFailure.target}': ${qdrantFailure.reason}`)}\n`
+      : `${c.ok(`Removed '${name}' from registry; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)`)}\n`,
   );
 
-  const detail = (label: string, value: string): void => {
-    process.stdout.write(`  ${label.padEnd(10)} ${value}\n`);
+  const detail = (label: string, value: string, paint: (s: string) => string = c.dim): void => {
+    process.stdout.write(`  ${paint(label.padEnd(10))} ${value}\n`);
   };
   if (report.qdrantCollections.length > 0) detail("qdrant:", report.qdrantCollections.join(", "));
   if (report.codegraphDatabases.length > 0) detail("codegraph:", report.codegraphDatabases.join(", "));
   if (report.clearedStores.length > 0) detail("cleared:", [...report.clearedStores].sort().join(", "));
-  for (const note of report.kept) detail("kept:", note);
-  for (const failure of report.failures) detail("failed:", `${failure.artifact} ${failure.target} — ${failure.reason}`);
+  for (const note of report.kept) detail("kept:", note, c.warn);
+  for (const failure of report.failures) {
+    detail("failed:", `${failure.artifact} ${failure.target} — ${failure.reason}`, c.alert);
+  }
 }
 
 /**
@@ -191,7 +201,7 @@ export function runInfo(args: InfoArgs): void {
   const { registry } = newOps();
   const entry: CollectionEntry | null = registry.findByName(args.name);
   if (!entry) {
-    process.stderr.write(`'${args.name}' was not registered\n`);
+    process.stderr.write(`${stderrColorizer().alert(`'${args.name}' was not registered`)}\n`);
     process.exit(1);
     return;
   }
@@ -215,21 +225,7 @@ export function runInfo(args: InfoArgs): void {
     return;
   }
 
-  process.stdout.write(`name:                ${entry.name ?? "(no name)"}\n`);
-  process.stdout.write(`collectionName:      ${entry.collectionName}\n`);
-  process.stdout.write(`path:                ${entry.path}\n`);
-  if (realpath === null) {
-    process.stdout.write(`realpath:            (missing on disk)\n`);
-  } else if (realpathDiffers) {
-    process.stdout.write(`realpath:            ${realpath}\n`);
-    process.stdout.write(`                     (symlink or moved mount — re-register to refresh)\n`);
-  }
-  process.stdout.write(`qdrantUrl:           ${entry.qdrantUrl || "(none)"}\n`);
-  process.stdout.write(`embeddingModel:      ${entry.embeddingModel || "(none)"}\n`);
-  process.stdout.write(`embeddingDimensions: ${entry.embeddingDimensions || 0}\n`);
-  process.stdout.write(`chunksCount:         ${entry.chunksCount}\n`);
-  process.stdout.write(`indexedAt:           ${entry.indexedAt || "(never)"}\n`);
-  process.stdout.write(`teaRagsVersion:      ${entry.teaRagsVersion || "(unknown)"}\n`);
+  process.stdout.write(formatProjectInfo(entry, realpath, createColorizer()));
 }
 
 /**
@@ -261,26 +257,24 @@ export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Pro
   const collections = await client.listCollections();
   const orphans = collections.filter((c) => !registered.has(c) && !aliasedTargets.has(c));
 
+  const rows = await Promise.all(
+    orphans.map(async (collectionName) => ({
+      collectionName,
+      chunksCount: await safeCount(client, collectionName),
+    })),
+  );
+
   if (args.json) {
-    const rows = await Promise.all(
-      orphans.map(async (collectionName) => ({
-        collectionName,
-        chunksCount: await safeCount(client, collectionName),
-      })),
-    );
     process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     return;
   }
 
-  if (orphans.length === 0) {
+  if (rows.length === 0) {
     process.stdout.write("(no orphan collections)\n");
     return;
   }
 
-  for (const collectionName of orphans) {
-    const count = await safeCount(client, collectionName);
-    process.stdout.write(`${collectionName}\t${count}\n`);
-  }
+  process.stdout.write(formatOrphansTable(rows, createColorizer()));
 }
 
 /** One stale entry as a line: collection, alias, path, chunks, what happens to it. */

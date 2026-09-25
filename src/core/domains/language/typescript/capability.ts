@@ -95,5 +95,24 @@ export const capability: LanguageCapability = {
   // `reexportOriginFile` with its own ambiguity bounds; receivers no import
   // binds are unchanged, as are `selectTableDef`, `resolveCandidateName`,
   // `receiverSymbol` and the cone locator's import narrowing.
-  versions: { chunking: 1, walker: 11, codegraphSchema: 2 },
+  // walker 12: bd tea-rags-mcp-v0207. The owner rule gains the
+  // annotated-factory hop: a member the checker declares on a same-file
+  // interface / type alias accounts for a candidate whose owner is a
+  // top-level factory annotated to return that type (bare or `Promise<…>`),
+  // recovering the `createAppContext(): Promise<AppContext>` pins walker 10's
+  // containment arm left file-only. Classes, cross-file types and
+  // un-annotated factories still decline.
+  // walker 14: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
+  // visibility on `ChunkExtraction.visibility` — a class member's declared access level (`private` / `protected` / `#name`) — persisted in
+  // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
+  // walker 15: bd tea-rags-mcp-g7h1y. A `.call` / `.apply` / `.bind` the walker
+  // unwraps carries the literal invoker as `functionInvokerSite`, and the
+  // resolver keeps the member edge (`QdrantConnection#call`) when the receiver's
+  // declared type declares that member. Function receivers unwrap as before.
+  // walker 16: bd tea-rags-mcp-r8hme.2. Every module reference records the
+  // export names it takes (`importedExportNames`) and every source re-export
+  // the names it forwards (`reexportedExportNames`), persisted on the file edge
+  // (migration 030) for the facade check. No edge moves; the names fill only on
+  // `--force-enrichments codegraph`.
+  versions: { chunking: 1, walker: 16, codegraphSchema: 2 },
 };

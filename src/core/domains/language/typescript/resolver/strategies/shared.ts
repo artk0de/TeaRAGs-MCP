@@ -8,7 +8,7 @@
  */
 
 import type { AmbiguousResolveMode, CallContext } from "../../../../../contracts/types/codegraph.js";
-import { reexportOriginFile as kernelReexportOriginFile } from "../../../kernel/reexport-origin.js";
+import { reexportOriginFile as kernelReexportOriginFile } from "../../../kernel/index.js";
 import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
 

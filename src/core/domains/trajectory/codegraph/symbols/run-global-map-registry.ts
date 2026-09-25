@@ -89,6 +89,7 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   moduleReexports: { policy: "hydrate", sliceField: "moduleReexports" },
   schemaTables: { policy: "hydrate", sliceField: "classSchemaTables" },
   buildConstraintsByFile: { policy: "hydrate", sliceField: "buildConstraint" },
+  typeDeclarations: { policy: "hydrate", sliceField: "typeDeclarations" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

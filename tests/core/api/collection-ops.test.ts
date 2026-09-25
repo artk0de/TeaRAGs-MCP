@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GraphDbClientPool } from "../../../src/core/adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
+import { InvalidDocumentMetadataSchemaError } from "../../../src/core/api/errors.js";
 import { CollectionOps } from "../../../src/core/api/internal/ops/collection-ops.js";
 
 function createMockQdrant(): QdrantManager {
@@ -122,6 +123,31 @@ describe("CollectionOps", () => {
 
       expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, undefined, false, false, true);
     });
+
+    describe("with a document metadata schema (typed collection)", () => {
+      const schema = { type: "object", properties: { domain: { type: "string" } }, required: ["domain"] };
+
+      it("stores the schema in the collection metadata at creation", async () => {
+        await ops.create({ name: "memory", schema });
+
+        expect(qdrant.createCollection).toHaveBeenCalledWith("memory", 384, undefined, false, false, false, undefined, {
+          documentMetadataSchema: schema,
+        });
+      });
+
+      it("reports the schema on the created collection", async () => {
+        const result = await ops.create({ name: "memory", schema });
+
+        expect(result.schema).toEqual(schema);
+      });
+
+      it("rejects an uncompilable schema without creating the collection", async () => {
+        await expect(ops.create({ name: "memory", schema: { type: "string" } })).rejects.toBeInstanceOf(
+          InvalidDocumentMetadataSchemaError,
+        );
+        expect(qdrant.createCollection).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("list", () => {
@@ -145,6 +171,26 @@ describe("CollectionOps", () => {
         distance: "Cosine",
         hybridEnabled: false,
       });
+    });
+
+    it("surfaces a typed collection's schema and keeps the raw metadata out of the DTO", async () => {
+      const schema = { type: "object" };
+      vi.mocked(qdrant.getCollectionInfo).mockResolvedValue({
+        name: "memory",
+        vectorSize: 384,
+        pointsCount: 3,
+        distance: "Cosine",
+        hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "ok",
+        quantization: "none",
+        metadata: { documentMetadataSchema: schema },
+      });
+
+      const result = await ops.getInfo("memory");
+
+      expect(result.schema).toEqual(schema);
+      expect(result).not.toHaveProperty("metadata");
     });
   });
 

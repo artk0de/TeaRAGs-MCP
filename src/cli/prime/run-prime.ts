@@ -12,6 +12,7 @@ import {
   createPathCollectionResolver,
   IndexFreshnessCheck,
   replayRegistryEnv,
+  resolveLanguageCapabilities,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
@@ -209,12 +210,14 @@ export async function runPrime(input: {
         )
       : null;
 
+    const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
     const data: PrimeData = {
       path,
       projectName: registryEntry?.name ?? null,
       registry: registryEntry,
       status: status.value,
-      metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
+      metrics,
+      languageCapabilities: resolveLanguageCapabilities(Object.keys(metrics?.distributions?.language ?? {})),
       drift: drift.status === "fulfilled" ? drift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
       memory: memory.status === "fulfilled" ? memory.value : null,

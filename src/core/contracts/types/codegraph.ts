@@ -21,6 +21,7 @@
  *   - `codegraph-pass1.ts`         the persisted per-file pass-1 aggregate slice
  *   - `codegraph-resolution.ts`    `CallContext` / `CallResolver` (pass 2)
  *   - `codegraph-storage.ts`       `GraphDbClient` and its call shapes
+ *   - `codegraph-temporal.ts`      the co-change sub-graph (`cg_temporal_*`)
  *
  * Dependencies run strictly one way, symbols → storage, with no cycles; import
  * a sibling directly when you want the narrow surface, or this barrel when you
@@ -43,3 +44,4 @@ export type * from "./codegraph-pass1.js";
 export * from "./codegraph-resolution.js";
 export type * from "./codegraph-storage.js";
 export * from "./codegraph-symbols.js";
+export type * from "./codegraph-temporal.js";

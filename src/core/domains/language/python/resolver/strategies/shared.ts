@@ -13,6 +13,7 @@
  * strategy AND by the local-type walk — factored here so each lives once.
  */
 
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   nearestCallResultBinding,
   pickSingleCandidate,
@@ -26,11 +27,12 @@ import {
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
+  propagateReceiverType,
+  typeRefReceiverForm,
   type AncestorClosure,
   type AncestorLinearizer,
-} from "../../../kernel/ancestor-walk.js";
-import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
-import { typeRefReceiverForm } from "../../../kernel/type-ref.js";
+  type ReceiverTypePorts,
+} from "../../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
@@ -57,6 +59,19 @@ export function lookupPythonSymbolsByShortName(
   options?: SymbolLookupOptions,
 ): SymbolDefinition[] {
   return ctx.symbolTable.lookupByShortName(name, options).filter((def) => isPythonSourcePath(def.relPath));
+}
+
+/**
+ * Fully-qualified lookup restricted to PYTHON candidates — the lookup the
+ * Python resolver hands `reexportOriginFile` (bd tea-rags-mcp-nbf8q). The
+ * fq key is no safer than the short name: a top-level class's fqName is its
+ * bare name in every language, so a TypeScript `Flask` beside the package's
+ * own made the barrel hop read two declarations and decline, or land a Python
+ * import on a `.ts` file. Mirrors `lookupEcmascriptSymbols` on the TypeScript
+ * side.
+ */
+export function lookupPythonSymbols(ctx: CallContext, fqName: string): SymbolDefinition[] {
+  return ctx.symbolTable.lookup(fqName).filter((def) => isPythonSourcePath(def.relPath));
 }
 
 /**
@@ -166,7 +181,7 @@ export function pythonEnclosingClass(ctx: CallContext): PythonEnclosingClass | n
   for (let depth = scope.length; depth > 0; depth--) {
     const classFq = scope.slice(0, depth).join(".");
     const key = pythonClassKey(ctx.callerFile, classFq);
-    if (ctx.classAncestors?.[key] !== undefined || pythonClassKeyIsDeclared(key, ctx)) {
+    if (identifierEntry(ctx.classAncestors, key) !== undefined || pythonClassKeyIsDeclared(key, ctx)) {
       return { key, classFq, name: scope[depth - 1] };
     }
   }
@@ -450,13 +465,13 @@ function pythonDeclaredMemberType(
 ): TypeRef | undefined {
   const separator = form === "class" ? "." : "#";
   const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
-    const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
+    const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypes, shortName), member);
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
     const returned = pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`]);
     return pythonSubstituteSelfReturn(returned, bareType);
   };
   const byClassKey = (classKey: string): TypeRef | undefined => {
-    const fieldType = ctx.classFieldTypesByClassKey?.[classKey]?.[member];
+    const fieldType = identifierEntry(identifierEntry(ctx.classFieldTypesByClassKey, classKey), member);
     return fieldType === undefined ? undefined : { form: "instance", name: fieldType };
   };
   // The own-class read is byte-identical to the pre-seam one: `classFieldTypes`
@@ -724,7 +739,7 @@ export function walkClassExtendsForMethod(
     if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
     const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${current}.${member}`), mode);
     if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-    current = ctx.classExtends?.[current];
+    current = identifierEntry(ctx.classExtends, current);
   }
   return null;
 }
@@ -757,7 +772,7 @@ export function pythonTypeNameIsExternal(typeName: string, ctx: CallContext, map
   if (root.length === 0) return false;
   if (PYTHON_BUILTINS.has(root)) return true;
   for (const imp of ctx.imports) {
-    const bound = imp.importedBindings?.[root] ?? (imp.importedNames?.includes(root) ? root : undefined);
+    const bound = identifierEntry(imp.importedBindings, root) ?? (imp.importedNames?.includes(root) ? root : undefined);
     if (bound === undefined) continue;
     if (mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx).kind === "external") return true;
   }
@@ -788,8 +803,8 @@ export function pythonTypeNameIsExternal(typeName: string, ctx: CallContext, map
  * for every `x: datetime` receiver in the repo.
  */
 export function pythonTypeOwnsMembers(bareType: string, member: string | undefined, ctx: CallContext): boolean {
-  if (ctx.classExtends?.[bareType] !== undefined) return true;
-  if (ctx.classFieldTypes?.[bareType] !== undefined) return true;
+  if (identifierEntry(ctx.classExtends, bareType) !== undefined) return true;
+  if (identifierEntry(ctx.classFieldTypes, bareType) !== undefined) return true;
   if (member === undefined) return true;
   return (
     ctx.symbolTable.lookup(`${bareType}#${member}`).length > 0 ||
@@ -823,7 +838,7 @@ export interface PythonImportBinding {
  */
 export function findPythonImportBinding(imports: readonly ImportRef[], localName: string): PythonImportBinding | null {
   for (const imp of imports) {
-    const importedName = imp.importedBindings?.[localName];
+    const importedName = identifierEntry(imp.importedBindings, localName);
     if (importedName) return { imp, localName, importedName };
   }
   for (const imp of imports) {
@@ -1034,7 +1049,7 @@ export function resolvePythonMemberOnType(
   // IN-PROJECT base chain before giving up: an inherited `Leaf().shared()`
   // where `shared` lives on `Base` resolves to `Base#shared`. The walk starts
   // one level up (the type was already checked above).
-  const parent = ctx.classExtends?.[bareType];
+  const parent = identifierEntry(ctx.classExtends, bareType);
   return parent ? walkClassExtendsForMethod(parent, member, ctx, mode) : null;
 }
 

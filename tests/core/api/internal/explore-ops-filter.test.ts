@@ -57,12 +57,22 @@ describe("resolveFilterSpec", () => {
 
   it("compiles {presets:'production'} to the production filter (must_not isTest)", () => {
     const result = resolveFilterSpec({ presets: "production" }, undefined, undefined, "chunk", registry);
-    expect(result).toEqual({ must_not: [{ key: "isTest", match: { value: true } }] });
+    expect(result).toEqual({
+      must_not: [
+        { key: "isTest", match: { value: true } },
+        { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
+      ],
+    });
   });
 
   it("applies the preset default when the param is undefined", () => {
     const result = resolveFilterSpec(undefined, { presets: "production" }, undefined, "chunk", registry);
-    expect(result).toEqual({ must_not: [{ key: "isTest", match: { value: true } }] });
+    expect(result).toEqual({
+      must_not: [
+        { key: "isTest", match: { value: true } },
+        { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
+      ],
+    });
   });
 
   it("lets an explicit param REPLACE the preset default (godMethods, not production)", () => {
@@ -103,7 +113,10 @@ describe("resolveFilterSpec", () => {
     const result = resolveFilterSpec({ presets: "production,godMethods" }, undefined, undefined, "chunk", registry);
     expect(result).toEqual({
       must: [{ key: "git.chunk.commitCount", range: { gte: 100 } }],
-      must_not: [{ key: "isTest", match: { value: true } }],
+      must_not: [
+        { key: "isTest", match: { value: true } },
+        { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
+      ],
     });
   });
 });

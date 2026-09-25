@@ -203,6 +203,63 @@ describe("ParallelFileSynchronizer", () => {
       expect(changes.deleted.length).toBe(1);
     });
 
+    describe("updateSnapshot retainPrevious (bd tea-rags-mcp-ti1oa)", () => {
+      /** A fresh synchronizer over the saved snapshot — how the NEXT run sees it. */
+      async function nextRunChanges(files: string[]) {
+        const next = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
+        await next.initialize();
+        return next.detectChanges(files);
+      }
+
+      it("keeps a retained modified path's previous entry, so the next run sees it modified again", async () => {
+        const files = await createTestFiles(3);
+        await synchronizer.initialize();
+        await synchronizer.detectChanges(files);
+        await synchronizer.updateSnapshot(files);
+
+        await fs.writeFile(files[1], "// changed\nexport const changed = true;");
+        const run = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
+        await run.initialize();
+        const changes = await run.detectChanges(files);
+        const [modified] = changes.modified;
+        await run.updateSnapshot(files, undefined, { retainPrevious: new Set([modified]) });
+
+        expect((await nextRunChanges(files)).modified).toEqual([modified]);
+      });
+
+      it("keeps a retained removed path in the snapshot, so the next run sees it deleted again", async () => {
+        const files = await createTestFiles(3);
+        await synchronizer.initialize();
+        await synchronizer.detectChanges(files);
+        await synchronizer.updateSnapshot(files);
+
+        await fs.unlink(files[2]);
+        const remaining = files.slice(0, 2);
+        const run = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
+        await run.initialize();
+        const [removed] = (await run.detectChanges(remaining)).deleted;
+        await run.updateSnapshot(remaining, undefined, { retainPrevious: new Set([removed]) });
+
+        expect((await nextRunChanges(remaining)).deleted).toEqual([removed]);
+      });
+
+      it("drops a retained path the previous snapshot never had, so the next run sees it added again", async () => {
+        const files = await createTestFiles(2);
+        await synchronizer.initialize();
+        await synchronizer.detectChanges(files);
+        await synchronizer.updateSnapshot(files);
+
+        const extra = await createTestFile("extra.ts", "export const extra = 1;");
+        const all = [...files, extra];
+        const run = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
+        await run.initialize();
+        await run.detectChanges(all);
+        await run.updateSnapshot(all, undefined, { retainPrevious: new Set(["extra.ts"]) });
+
+        expect((await nextRunChanges(all)).added).toEqual(["extra.ts"]);
+      });
+    });
+
     it("should handle concurrent detection correctly", async () => {
       const files = await createTestFiles(20);
 

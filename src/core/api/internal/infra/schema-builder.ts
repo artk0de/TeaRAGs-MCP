@@ -85,6 +85,15 @@ export class SchemaBuilder {
   }
 
   /**
+   * Typed filter param names the registered trajectories apply. The MCP layer
+   * exposes a typed filter field only when its name is here — a field without a
+   * FilterDescriptor would be accepted and silently ignored (bd tea-rags-mcp-86wsz).
+   */
+  filterParamNames(): string[] {
+    return this.reranker.filterParamNames();
+  }
+
+  /**
    * Build the `filter` param union schema: a raw Qdrant filter object OR a
    * `{ presets }` named-filter-preset reference.
    *
@@ -103,18 +112,15 @@ export class SchemaBuilder {
     const rawFilterSchema = z.record(z.string(), z.any());
     const presetsSchema = z.object({ presets: z.string() });
 
+    // Inline hint only; the default-resolution rules (auto-skip, notice) live
+    // in tea-rags://schema/overview (bd tea-rags-mcp-ewg2s).
     const names = this.reranker.filterPresetNames();
     let description =
-      "Qdrant filter object with must/should/must_not conditions. " +
-      "See tea-rags://schema/filters for syntax and available fields.";
+      'Raw Qdrant filter (must/should/must_not) or { presets: "a,b" }. ' +
+      "Omitted → preset default filter; {} clears. tea-rags://schema/overview.";
     if (names.length > 0) {
-      description += ` Named filter presets: ${names.join(", ")}. Use { presets: "name,name2" }.`;
+      description += ` Presets: ${names.join(", ")}.`;
     }
-    description +=
-      " Omitted → the rerank preset's default filter applies (most: production = no tests/docs/block); " +
-      "any explicit filter replaces it, {} clears it; skipped automatically when typed params explicitly select " +
-      'what it excludes (testFile "only" / "include", documentation "only" / "include", ' +
-      'chunkType test/test_setup, language "markdown").';
 
     return z.union([rawFilterSchema, presetsSchema]).describe(description);
   }

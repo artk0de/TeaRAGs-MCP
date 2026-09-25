@@ -311,9 +311,9 @@ describe("SimilarSearchStrategy", () => {
     expect(callArgs.limit).toBeGreaterThan(5); // strictly greater than user-requested limit
   });
 
-  // tea-rags-mcp-zrma: the collapsed chunks are the answer to "what in this
-  // file is similar" — they must survive as an outline, not be thrown away.
-  it("attaches a members outline of the collapsed chunks at file level", async () => {
+  // bd tea-rags-mcp-947xf / mwq0k: a file hit names the file — no members
+  // outline, no fields of whichever chunk happened to represent it.
+  it("returns a file hit with no members outline and no chunk-scoped fields", async () => {
     const qdrant = createMockQdrant([
       { id: "1", score: 0.95, payload: { relativePath: "src/a.ts", name: "Alpha", symbolId: "Alpha", startLine: 1 } },
       {
@@ -332,7 +332,8 @@ describe("SimilarSearchStrategy", () => {
 
     const results = await strategy.execute({ collectionName: "col", limit: 5, level: "file" });
 
-    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+    expect(results).toHaveLength(1);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
 
   it("returns userFilter unchanged when buildFilter produces no must clauses (empty must, has should)", async () => {
@@ -354,5 +355,32 @@ describe("SimilarSearchStrategy", () => {
     const callArgs = (qdrant.query as ReturnType<typeof vi.fn>).mock.calls[0][1];
     // Original filter passed through, not wrapped/rebuilt.
     expect(callArgs.filter).toBe(userFilter);
+  });
+
+  // metaOnly contract (2026-09-24): labels live only on rankingOverlay.
+  it("keeps rankingOverlay under metaOnly and leaves the payload raw", async () => {
+    const overlay = { preset: "hotspots", file: { commitCount: { value: 37, label: "extreme" } } };
+    const qdrant = createMockQdrant([
+      { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", git: { file: { commitCount: 37 } } } },
+    ]);
+    const reranker = {
+      rerank: vi.fn((results: object[]) => results.map((r) => ({ ...r, rankingOverlay: overlay }))),
+    } as unknown as Reranker;
+    const strategy = new SimilarSearchStrategy(
+      qdrant,
+      reranker,
+      [
+        { key: "relativePath", type: "string", description: "path" },
+        { key: "git.file.commitCount", type: "number", description: "commits" },
+      ],
+      ["git.file.commitCount"],
+      createMockEmbeddings(),
+      { positiveIds: ["uuid-1"] },
+    );
+
+    const results = await strategy.execute({ collectionName: "col", limit: 5, rerank: "hotspots", metaOnly: true });
+
+    expect(results[0].rankingOverlay).toEqual(overlay);
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts", git: { file: { commitCount: 37 } } });
   });
 });

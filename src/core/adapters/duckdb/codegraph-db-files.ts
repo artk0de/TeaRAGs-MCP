@@ -51,6 +51,21 @@ function escapeRegExp(value: string): string {
  */
 const CLONE_TMP_SUFFIX = ".clone-tmp";
 
+/**
+ * Marks the staging copy a storage compaction writes before it publishes it
+ * over the live file (bd tea-rags-mcp-dvzdm). Outside the listing pattern for
+ * the same reason as {@link CLONE_TMP_SUFFIX}, and one fixed name per database:
+ * only the process holding the database's read-write lock compacts it, so a
+ * file at this path can only be an interrupted compaction's leftover, which the
+ * next compaction clears first.
+ */
+const COMPACTION_TMP_SUFFIX = ".compact-tmp";
+
+/** Where a compaction of the database at `dbPath` stages its copy. */
+export function compactionStagingPath(dbPath: string): string {
+  return `${dbPath}${COMPACTION_TMP_SUFFIX}`;
+}
+
 export class CodegraphDbFiles {
   constructor(private readonly rootDir: string) {}
 
@@ -206,6 +221,10 @@ export class CodegraphDbFiles {
     const dbPath = this.pathFor(collectionName);
     await unlink(dbPath).catch(() => undefined);
     await unlink(`${dbPath}.wal`).catch(() => undefined);
+    // An interrupted compaction's staging copy belongs to this database too.
+    const staging = compactionStagingPath(dbPath);
+    await unlink(staging).catch(() => undefined);
+    await unlink(`${staging}.wal`).catch(() => undefined);
   }
 
   /**

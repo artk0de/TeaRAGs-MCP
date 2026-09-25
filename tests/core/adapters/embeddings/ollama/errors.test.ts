@@ -214,3 +214,30 @@ describe("isLocalUrl edge cases (via withFallback)", () => {
     expect(error.hint).toContain("Check network connectivity");
   });
 });
+
+describe("OllamaUnavailableError actionable hint (bd tea-rags-mcp-umatc)", () => {
+  it("names the canonical EMBEDDING_BASE_URL, not the deprecated OLLAMA_URL alias", () => {
+    const error = new OllamaUnavailableError("http://127.0.0.1:9");
+    expect(error.hint).toContain("EMBEDDING_BASE_URL=http://127.0.0.1:9");
+    expect(error.hint).not.toContain("OLLAMA_URL");
+  });
+
+  it("says how long it waited for the host when it did wait", () => {
+    const error = new OllamaUnavailableError("http://127.0.0.1:9", undefined, undefined, 240_000);
+    expect(error.message).toBe("Ollama is not reachable at http://127.0.0.1:9 (waited 240s for it to come back)");
+    expect(error.hint).toContain("EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS");
+  });
+
+  it("keeps the plain message when it gave up at once", () => {
+    const error = new OllamaUnavailableError("http://127.0.0.1:9");
+    expect(error.message).toBe("Ollama is not reachable at http://127.0.0.1:9");
+  });
+
+  it("says how long it waited on the primary-and-fallback form too", () => {
+    const error = OllamaUnavailableError.withFallback("http://127.0.0.1:9", "http://127.0.0.1:7", undefined, 30_000);
+    expect(error.message).toBe(
+      "Ollama is not reachable at http://127.0.0.1:9 (primary) or http://127.0.0.1:7 (fallback) (waited 30s for it to come back)",
+    );
+    expect(error.recoveryWaitMs).toBe(30_000);
+  });
+});

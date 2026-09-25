@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
@@ -57,7 +58,7 @@ function baseClassName(spelling: string): string {
  * at all, carry no evidence and keep the walk they have always had.
  */
 function namesOtherClass(extendsBase: string, enclosing: { key: string; name: string }, ctx: CallContext): boolean {
-  const recorded = ctx.classAncestors?.[enclosing.key];
+  const recorded = identifierEntry(ctx.classAncestors, enclosing.key);
   if (recorded === undefined || recorded.length === 0) return false;
   const named = baseClassName(extendsBase);
   for (const spelling of recorded) {
@@ -198,7 +199,7 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
     const enclosingClass = pythonEnclosingClass(ctx);
     const enclosing = enclosingClass?.name;
     if (enclosing === undefined) return null;
-    let current: string | undefined = ctx.classExtends[enclosing];
+    let current: string | undefined = identifierEntry(ctx.classExtends, enclosing);
     if (!current) return null;
     if (enclosingClass !== null && namesOtherClass(current, enclosingClass, ctx)) return null;
     const visited = new Set<string>([enclosing]);
@@ -220,7 +221,7 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
         return { targetRelPath: staticTarget.relPath, targetSymbolId: staticTarget.symbolId };
       }
       // Walk one step deeper.
-      current = ctx.classExtends[current];
+      current = identifierEntry(ctx.classExtends, current);
     }
     return null;
   }

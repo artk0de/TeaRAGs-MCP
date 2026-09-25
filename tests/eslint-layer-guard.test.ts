@@ -118,10 +118,7 @@ describe("eslint layer guard — foundation zones", () => {
     expect(reportFor(FIXTURES.adaptersToApi)).toContain("adapters may import only");
   });
 
-  // Unskipped by tea-rags-mcp-pn12w: adapters/qdrant/client.ts throws the
-  // explore-domain InvalidQueryError, so the "**/domains/**" pattern cannot be
-  // enabled for this zone until that error taxonomy is fixed.
-  it.skip("rejects a relative adapters -> domains import", () => {
+  it("rejects a relative adapters -> domains import", () => {
     expect(reportFor(FIXTURES.adaptersToDomains)).toContain("adapters may import only");
   });
 

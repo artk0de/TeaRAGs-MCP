@@ -23,10 +23,14 @@
 
 import type { QdrantClient } from "@qdrant/js-client-rest";
 
-import { InvalidQueryError } from "../../domains/explore/errors.js";
 import type { CollectionInfo } from "./collection-admin.js";
 import type { QdrantConnection } from "./connection.js";
-import { QdrantOperationError, QdrantPointNotFoundError, QdrantUnavailableError } from "./errors.js";
+import {
+  QdrantInvalidQueryParameterError,
+  QdrantOperationError,
+  QdrantPointNotFoundError,
+  QdrantUnavailableError,
+} from "./errors.js";
 import type { SparseVector } from "./types.js";
 
 type QdrantPayload = Record<string, unknown>;
@@ -246,7 +250,7 @@ export class QdrantSearchExecutor {
   ): Promise<SearchResult[]> {
     if (semanticWeight !== undefined) {
       if (!Number.isFinite(semanticWeight) || semanticWeight < 0 || semanticWeight > 1) {
-        throw new InvalidQueryError("semanticWeight must be a finite number in [0, 1]");
+        throw new QdrantInvalidQueryParameterError("semanticWeight must be a finite number in [0, 1]");
       }
     }
 
