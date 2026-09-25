@@ -43,6 +43,7 @@ import { composeExtractionWalker } from "../kernel/index.js";
 import { rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueForGemfile } from "./gemfile.js";
+import { RUBY_IDENTIFIER_FINDER_METHODS } from "./identifier-finder-methods.js";
 import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
 import { RAILS_SCHEMA_COLUMN_ACCESSORS } from "./schema/index.js";
@@ -129,6 +130,8 @@ export class RubyLanguage implements LanguageProvider {
    * DECLARATION SOURCE it is exactly the missing information.
    */
   readonly schemaColumnAccessors = RAILS_SCHEMA_COLUMN_ACCESSORS;
+  /** ActiveRecord finders for the naming lexicon's `finder` stage (bd tea-rags-mcp-4p3sb.9). */
+  readonly identifierFinderMethods = RUBY_IDENTIFIER_FINDER_METHODS;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const callResolver: CallResolver = new RubyCallResolver(mode);

@@ -1,0 +1,349 @@
+/**
+ * `buildIdentifierRows` (bd tea-rags-mcp-4p3sb.9) — the sink-time join from a
+ * file's `identifierDeclarations` and type channels to `cg_identifiers` rows.
+ *
+ * Invariant pinned last: rows come ONLY from declarations and the three type
+ * channels. A receiver a naming convention could type (`tax_automation_document`
+ * → `TaxAutomationDocument`) produces no row when nothing declares it — a lexicon
+ * fed by its own convention would confirm itself.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  IdentifierDeclaration,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  LanguageFactoryDescriptor,
+  LanguageProvider,
+} from "../../../../../../src/core/contracts/types/language.js";
+import {
+  buildIdentifierRows,
+  collectIdentifierFinderVocabulary,
+} from "../../../../../../src/core/domains/trajectory/codegraph/symbols/identifier-rows.js";
+
+function chunk(partial: Partial<ChunkExtraction> & Pick<ChunkExtraction, "symbolId">): ChunkExtraction {
+  return { scope: [], calls: [], ...partial };
+}
+
+function extraction(partial: Partial<FileExtraction>): FileExtraction {
+  return {
+    relPath: "app/services/process_event.rb",
+    language: "ruby",
+    imports: [],
+    chunks: [],
+    fileScope: [],
+    ...partial,
+  };
+}
+
+function decl(partial: Partial<IdentifierDeclaration> & Pick<IdentifierDeclaration, "name">): IdentifierDeclaration {
+  return { kind: "local", line: 5, ownerSymbolId: "ProcessEvent#call", ...partial };
+}
+
+function call(partial: Partial<CallRef> & Pick<CallRef, "member" | "startLine">): CallRef {
+  return { callText: `${partial.member}()`, receiver: null, ...partial };
+}
+
+const RUBY_FINDERS = new Map([["ruby", new Set(["find", "find_by!"])]]);
+
+describe("buildIdentifierRows", () => {
+  it("keeps a syntactic type with its source", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "typescript",
+        chunks: [chunk({ symbolId: "Svc#run" })],
+        identifierDeclarations: [
+          decl({ name: "doc", kind: "param", ownerSymbolId: "Svc#run", typeName: "Doc", typeSource: "annotation" }),
+        ],
+      }),
+    );
+    expect(rows).toEqual([
+      { ownerSymbolId: "Svc#run", kind: "param", name: "doc", line: 5, typeName: "Doc", typeSource: "annotation" },
+    ]);
+  });
+
+  it("types an untyped Ruby local from the owner chunk's binding on its line", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "ProcessEvent#call",
+            localBindings: { row: [{ line: 5, type: "TaxAutomationDocument" }] },
+          }),
+        ],
+        identifierDeclarations: [decl({ name: "row" })],
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        ownerSymbolId: "ProcessEvent#call",
+        kind: "local",
+        name: "row",
+        line: 5,
+        typeName: "TaxAutomationDocument",
+        typeSource: "binding",
+      },
+    ]);
+  });
+
+  it("falls back to the nearest preceding binding when none sits on the declaration's line", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "ProcessEvent#call",
+            localBindings: {
+              row: [
+                { line: 2, type: "Early" },
+                { line: 4, type: "Nearest" },
+                { line: 9, type: "Later" },
+              ],
+            },
+          }),
+        ],
+        identifierDeclarations: [decl({ name: "row", line: 6 })],
+      }),
+    );
+    expect(rows[0]).toMatchObject({ typeName: "Nearest", typeSource: "binding" });
+  });
+
+  it("ignores a binding with an empty type", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "go",
+        chunks: [chunk({ symbolId: "run", localBindings: { err: [{ line: 5, type: "" }] } })],
+        identifierDeclarations: [decl({ name: "err", ownerSymbolId: "run" })],
+      }),
+    );
+    expect(rows).toEqual([{ ownerSymbolId: "run", kind: "local", name: "err", line: 5 }]);
+  });
+
+  it("types a field from the enclosing class's ivar types", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "Acme::Importer#initialize", scope: ["Acme", "Importer"] })],
+        ivarTypes: { "Acme::Importer": { "@account": "Account" } },
+        identifierDeclarations: [decl({ name: "@account", kind: "field", ownerSymbolId: "Acme::Importer#initialize" })],
+      }),
+    );
+    expect(rows[0]).toMatchObject({ name: "@account", typeName: "Account", typeSource: "field-type" });
+  });
+
+  it("types a field from the short-name class field types, with or without the sigil", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "python",
+        chunks: [chunk({ symbolId: "Importer.__init__", scope: ["Importer"] })],
+        classFieldTypes: { Importer: { client: "HttpClient" } },
+        identifierDeclarations: [decl({ name: "self.client", kind: "field", ownerSymbolId: "Importer.__init__" })],
+      }),
+    );
+    expect(rows[0]).toMatchObject({ typeName: "HttpClient", typeSource: "field-type" });
+  });
+
+  it("builds a return row from a structured return type", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "ProcessEvent#find_tax_automation_document!", startLine: 12 })],
+        structuredReturnTypes: {
+          "ProcessEvent#find_tax_automation_document!": { form: "instance", name: "TaxAutomationDocument" },
+        },
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        ownerSymbolId: "ProcessEvent#find_tax_automation_document!",
+        kind: "return",
+        name: "find_tax_automation_document!",
+        line: 12,
+        typeName: "TaxAutomationDocument",
+        typeSource: "return-type",
+      },
+    ]);
+  });
+
+  it("names a container return by its element and skips a return with no single nominal name", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "Repo.all", startLine: 3 }), chunk({ symbolId: "Repo.maybe", startLine: 8 })],
+        structuredReturnTypes: {
+          "Repo.all": { form: "container", element: { form: "instance", name: "Doc" } },
+          "Repo.maybe": { form: "union", members: [{ form: "instance", name: "Doc" }, { form: "nil" }] },
+        },
+      }),
+    );
+    expect(rows).toEqual([
+      { ownerSymbolId: "Repo.all", kind: "return", name: "all", line: 3, typeName: "Doc", typeSource: "return-type" },
+    ]);
+  });
+
+  it("strips a leading root-namespace :: from type names", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "ProcessEvent#call" })],
+        identifierDeclarations: [decl({ name: "sys", typeName: "::System", typeSource: "constructor" })],
+      }),
+    );
+    expect(rows[0]).toMatchObject({ typeName: "System", typeSource: "constructor" });
+  });
+
+  describe("bound callee", () => {
+    it("copies the callee and the callText of the first matching call at or after the declaration", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [
+            chunk({
+              symbolId: "ProcessEvent#call",
+              calls: [
+                call({ member: "find_doc!", startLine: 3, callText: "find_doc!(earlier)" }),
+                call({ member: "find_doc!", startLine: 9, callText: "find_doc!(later)" }),
+                call({ member: "find_doc!", startLine: 6, callText: "find_doc!(id)" }),
+                call({ member: "find_doc!", receiver: "Other", startLine: 5, callText: "Other.find_doc!(x)" }),
+              ],
+            }),
+          ],
+          identifierDeclarations: [decl({ name: "document", line: 5, boundCallee: { member: "find_doc!" } })],
+        }),
+      );
+      expect(rows).toEqual([
+        {
+          ownerSymbolId: "ProcessEvent#call",
+          kind: "local",
+          name: "document",
+          line: 5,
+          boundMember: "find_doc!",
+          boundCallExpression: "find_doc!(id)",
+        },
+      ]);
+    });
+
+    it("keeps the callee but no call expression when no call matches", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [chunk({ symbolId: "ProcessEvent#call", calls: [call({ member: "other", startLine: 5 })] })],
+          identifierDeclarations: [decl({ name: "x", boundCallee: { member: "make", receiver: "Factory" } })],
+        }),
+      );
+      expect(rows).toEqual([
+        {
+          ownerSymbolId: "ProcessEvent#call",
+          kind: "local",
+          name: "x",
+          line: 5,
+          boundMember: "make",
+          boundReceiver: "Factory",
+        },
+      ]);
+    });
+
+    it("types a local bound to a finder on a constant receiver as that constant (finder stage)", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [
+            chunk({
+              symbolId: "ProcessEvent#call",
+              calls: [
+                call({
+                  member: "find_by!",
+                  receiver: "::Tax::Doc",
+                  startLine: 5,
+                  callText: "::Tax::Doc.find_by!(id: 1)",
+                }),
+              ],
+            }),
+          ],
+          identifierDeclarations: [decl({ name: "doc", boundCallee: { member: "find_by!", receiver: "::Tax::Doc" } })],
+        }),
+        RUBY_FINDERS,
+      );
+      expect(rows[0]).toMatchObject({
+        typeName: "Tax::Doc",
+        typeSource: "finder",
+        boundCallExpression: "::Tax::Doc.find_by!(id: 1)",
+      });
+    });
+
+    it("does not treat a non-finder member, a non-constant receiver, or another language's call as a finder", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [chunk({ symbolId: "ProcessEvent#call" })],
+          identifierDeclarations: [
+            decl({ name: "a", boundCallee: { member: "where", receiver: "Doc" } }),
+            decl({ name: "b", boundCallee: { member: "find", receiver: "repo" } }),
+            decl({ name: "c", boundCallee: { member: "find", receiver: "Doc.where(x)" } }),
+            decl({ name: "d", boundCallee: { member: "find" } }),
+          ],
+        }),
+        RUBY_FINDERS,
+      );
+      expect(rows.every((r) => r.typeName === undefined)).toBe(true);
+
+      const python = buildIdentifierRows(
+        extraction({
+          language: "python",
+          chunks: [chunk({ symbolId: "run" })],
+          identifierDeclarations: [
+            decl({ name: "doc", ownerSymbolId: "run", boundCallee: { member: "find", receiver: "Doc" } }),
+          ],
+        }),
+        RUBY_FINDERS,
+      );
+      expect(python[0]?.typeName).toBeUndefined();
+    });
+
+    it("prefers a resolver binding over the finder stage", () => {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [chunk({ symbolId: "ProcessEvent#call", localBindings: { doc: [{ line: 5, type: "Draft" }] } })],
+          identifierDeclarations: [decl({ name: "doc", boundCallee: { member: "find", receiver: "Doc" } })],
+        }),
+        RUBY_FINDERS,
+      );
+      expect(rows[0]).toMatchObject({ typeName: "Draft", typeSource: "binding" });
+    });
+  });
+
+  it("produces no row for a convention-typable receiver nothing declares", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "ProcessEvent#call",
+            calls: [
+              call({
+                member: "provider",
+                receiver: "tax_automation_document",
+                startLine: 7,
+                callText: "tax_automation_document.provider",
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(rows).toEqual([]);
+  });
+});
+
+describe("collectIdentifierFinderVocabulary", () => {
+  it("collects each language's finder methods, skipping languages that declare none", () => {
+    const providers: Record<string, Partial<LanguageProvider>> = {
+      ruby: { identifierFinderMethods: ["find", "first"] },
+      typescript: {},
+    };
+    const factory = {
+      supported: () => Object.keys(providers),
+      create: (lang: string) => providers[lang] as LanguageProvider,
+    } as unknown as LanguageFactoryDescriptor;
+
+    const vocabulary = collectIdentifierFinderVocabulary(factory);
+
+    expect([...vocabulary.keys()]).toEqual(["ruby"]);
+    expect([...(vocabulary.get("ruby") ?? [])]).toEqual(["find", "first"]);
+    expect(collectIdentifierFinderVocabulary(undefined).size).toBe(0);
+  });
+});

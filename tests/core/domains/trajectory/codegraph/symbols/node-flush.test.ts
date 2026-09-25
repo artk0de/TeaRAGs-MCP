@@ -10,7 +10,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { BulkSymbolUpsertEntry, GraphDbClient } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  BulkSymbolUpsertEntry,
+  GraphDbClient,
+  IdentifierReplaceEntry,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   SymbolNodeFlushQueue,
   type GraphDbResolver,
@@ -79,5 +83,58 @@ describe("SymbolNodeFlushQueue", () => {
 
     await expect(queue.flushRemainder("coll")).rejects.toBe(failure);
     expect(calls).toBe(1);
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.9 — the same flush carries each file's identifier rows
+// into `cg_identifiers`, after its symbols.
+describe("SymbolNodeFlushQueue — identifier rows", () => {
+  it("hands buffered identifiers to replaceIdentifiersBulk with their relPath, after upsertSymbolsBulk", async () => {
+    const order: string[] = [];
+    const replaced: IdentifierReplaceEntry[][] = [];
+    const queue = new SymbolNodeFlushQueue(
+      makeResolver({
+        upsertSymbolsBulk: async () => {
+          order.push("symbols");
+        },
+        replaceIdentifiersBulk: async (entries: readonly IdentifierReplaceEntry[]) => {
+          order.push("identifiers");
+          replaced.push([...entries]);
+        },
+      }),
+      1000,
+    );
+    const row = { ownerSymbolId: "A#run", kind: "local" as const, name: "doc", line: 3 };
+    queue.buffer("src/a.rb", [], "coll", undefined, [row]);
+    queue.buffer("src/b.rb", [], "coll", undefined, []);
+
+    await queue.flushRemainder("coll");
+
+    expect(order).toEqual(["symbols", "identifiers"]);
+    // A file buffered with [] still produces an entry — that is what clears it.
+    expect(replaced).toEqual([
+      [
+        { relPath: "src/a.rb", rows: [row] },
+        { relPath: "src/b.rb", rows: [] },
+      ],
+    ]);
+  });
+
+  it("does not write identifiers for files buffered without any", async () => {
+    let identifierCalls = 0;
+    const queue = new SymbolNodeFlushQueue(
+      makeResolver({
+        upsertSymbolsBulk: async () => undefined,
+        replaceIdentifiersBulk: async () => {
+          identifierCalls += 1;
+        },
+      }),
+      1000,
+    );
+    queue.buffer("src/a.rb", [], "coll");
+
+    await queue.flushRemainder("coll");
+
+    expect(identifierCalls).toBe(0);
   });
 });

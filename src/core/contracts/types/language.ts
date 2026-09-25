@@ -757,6 +757,14 @@ export interface LanguageProvider {
    * bd tea-rags-mcp-w205u.1.
    */
   dependencyManifest?: DependencyManifestSource;
+  /**
+   * Optional finder vocabulary for the naming lexicon (bd tea-rags-mcp-4p3sb.9) —
+   * member names that, called on a CONSTANT receiver, return an instance of that
+   * constant (Rails `Doc.find(id)`, `Doc.find_by!(…)`). The codegraph row builder
+   * types an untyped local or field bound to such a call as the receiver, with
+   * `typeSource: "finder"`. Absent → the language contributes no finder stage.
+   */
+  identifierFinderMethods?: readonly string[];
 }
 
 /**

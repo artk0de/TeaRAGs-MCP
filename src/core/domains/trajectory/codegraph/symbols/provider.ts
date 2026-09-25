@@ -25,6 +25,7 @@ import type {
   FileExtraction,
   GlobalSymbolTable,
   GraphDbClient,
+  IdentifierRow,
   SymbolDefinition,
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
@@ -71,6 +72,11 @@ import {
 } from "./extraction-sink.js";
 import { CodegraphFileExtractor } from "./file-extractor.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
+import {
+  buildIdentifierRows,
+  collectIdentifierFinderVocabulary,
+  type IdentifierFinderVocabulary,
+} from "./identifier-rows.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
@@ -261,6 +267,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * sources, collected ONCE here because `factory.create` is expensive.
    */
   private readonly runState: CodegraphRunState;
+  /** Each language's finder members for `cg_identifiers` rows, collected once (bd tea-rags-mcp-4p3sb.9). */
+  private readonly identifierFinderVocabulary: IdentifierFinderVocabulary;
   /**
    * Codegraph-layer ignore filter, built once from `deps.exclusion` plus each
    * language's own non-app-code globs (bd tea-rags-mcp-biwbq — e.g. Ruby's
@@ -298,6 +306,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       collectSchemaColumnSources(deps.languageFactory),
       collectDependencyManifestSources(deps.languageFactory),
     );
+    this.identifierFinderVocabulary = collectIdentifierFinderVocabulary(deps.languageFactory);
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
     this.graphFinalizer = new GraphBuildFinalizer(
       async (collectionName) => this.getStore(collectionName),
@@ -478,6 +487,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return symbolDefinitionsOf(extraction);
   }
 
+  /** The file's `cg_identifiers` rows — shared by both node-write paths, like {@link buildSymbolDefs}. */
+  private buildIdentifierRows(extraction: FileExtraction): IdentifierRow[] {
+    return buildIdentifierRows(extraction, this.identifierFinderVocabulary);
+  }
+
   /**
    * Build an `ExtractionSink` bound to the active collection (optional in direct
    * mode, required in pool mode — store resolution fails loud otherwise).
@@ -507,6 +521,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       runState: this.runState,
       nodeFlush: this.nodeFlush,
       buildSymbolDefs: (extraction) => this.buildSymbolDefs(extraction),
+      buildIdentifierRows: (extraction) => this.buildIdentifierRows(extraction),
       indexChunkSymbolsByLine: (collectionName, extraction) => {
         this.chunkSignalPass.recordWalkRanges(this.collectionKey(collectionName), extraction);
       },
@@ -862,7 +877,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // in bulk on the cadence, hoisting the node write into embedding; the sorted
     // drain then skips it (`skipDurableNodeWrite`). Order-independent:
     // `upsertSymbolsBulk` is last-wins per relPath. After the dedup guard, so once.
-    this.nodeFlush.buffer(extraction.relPath, this.buildSymbolDefs(extraction), key, options?.collectionName);
+    this.nodeFlush.buffer(
+      extraction.relPath,
+      this.buildSymbolDefs(extraction),
+      key,
+      options?.collectionName,
+      this.buildIdentifierRows(extraction),
+    );
   };
 
   /**
