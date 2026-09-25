@@ -443,9 +443,14 @@ describe("seeded support versions", () => {
       // swift chunking 3 added the Quick scope chunker; chunking 4 is the
       // grammar bump to 0.7.3 — files 0.7.1 failed to parse now split at real
       // symbol boundaries, so the chunk set moves.
+      // bash chunking 2: bd tea-rags-mcp-lyo4p — a top-level `command` chunk no
+      // longer takes its callee's name as its symbolId, so an index built by
+      // chunking 1 holds statement blocks claiming the id of the function they
+      // call.
       const CHUNKING_BUMPED = new Map([
         ["javascript", 2],
         ["swift", 4],
+        ["bash", 2],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

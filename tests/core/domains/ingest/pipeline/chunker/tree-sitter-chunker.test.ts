@@ -3589,6 +3589,34 @@ public class Calculator {
   });
 
   describe("chunk - Bash", () => {
+    // bd tea-rags-mcp-lyo4p — a top-level `command` chunk used to take its
+    // COMMAND NAME (the callee) as its symbolId, so every block that called
+    // `note` claimed the id of `note()` itself (x10 in
+    // tests/hooks/inject-rules.test.sh). A statement declares nothing; only the
+    // function definition may own the id.
+    it("gives a top-level command block no symbolId, even when it calls a function", async () => {
+      const code = [
+        "#!/usr/bin/env bash",
+        'note() { if [ "$1" = 0 ]; then echo "ok   - $2"; else echo "FAIL - $2"; fi; }',
+        "",
+        'note "$?" "the first check passes and prints a long enough label to chunk"',
+        "",
+        "",
+        "",
+        'note "$?" "the second check passes and prints a long enough label to chunk"',
+        "",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "checks.test.sh", "bash");
+
+      const owners = chunks.filter((c) => c.metadata.symbolId === "note");
+      expect(owners).toHaveLength(1);
+      expect(owners[0].metadata.chunkType).toBe("function");
+      const commands = chunks.filter((c) => c.metadata.chunkType !== "function");
+      expect(commands.length).toBeGreaterThan(0);
+      for (const command of commands) expect(command.metadata.symbolId).toBeUndefined();
+    });
+
     it("should chunk Bash functions", async () => {
       const code = `
 function setup_environment() {

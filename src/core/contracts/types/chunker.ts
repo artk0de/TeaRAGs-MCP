@@ -187,11 +187,22 @@ export interface EmittedChunk {
  * Per-node classification result.
  *   - `passthrough` — the engine applies its generic shaping (extractName +
  *     buildSymbolId + getChunkType) and the min-length floor. The common case.
+ *   - `statement` — the same generic shaping, except the node DECLARES nothing:
+ *     the name the engine extracts only labels the chunk and never becomes its
+ *     symbolId. It exists for a chunkable statement whose `name` field names
+ *     something it USES — a Bash `command` carries its callee there — so the
+ *     chunk cannot claim the id of the function it calls (bd
+ *     tea-rags-mcp-lyo4p). The result matches a merged block of small
+ *     statements: a name, no symbolId.
  *   - `skip` — drop this node entirely.
  *   - `emit` — emit these explicit chunks at the node's source range (Go = 1,
  *     JS = N); the engine flags them `claimed`.
  */
-export type ChunkDecision = { kind: "passthrough" } | { kind: "skip" } | { kind: "emit"; chunks: EmittedChunk[] };
+export type ChunkDecision =
+  | { kind: "passthrough" }
+  | { kind: "statement" }
+  | { kind: "skip" }
+  | { kind: "emit"; chunks: EmittedChunk[] };
 
 /**
  * Per-language node→chunk classification. The engine consults it for each
