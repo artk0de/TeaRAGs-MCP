@@ -138,7 +138,7 @@ the pre-computed DuckDB graph directly — no embedding):
 | `get_callers` | Symbols that **invoke** the given `symbolId` (who depends on this)                   |
 | `get_callees` | Symbols **invoked by** the given `symbolId` (what this depends on)                   |
 | `find_cycles` | Strongly-connected components (cycles ≥ 2) in the import graph (`scope: "file"`) or call graph (`scope: "method"`) |
-| `get_architecture_report` | Architecture violations with per-line evidence. Today: Stable Dependencies Principle — a stable file depending on a less stable one, grouped into root causes by unstable target. Optional `pathPattern` scopes the judged edges by source file |
+| `get_architecture_report` | Architecture violations with per-line evidence. Stable Dependencies Principle judged on components (modules with a measured facade, else directories) — a stable component depending on a less stable one, grouped into root causes by unstable target, with the file edges that carry it; plus leaking abstractions. Scripts, spikes, benchmarks, examples and fixtures are left out. Optional `pathPattern` scopes the judged edges by source file |
 
 These pair naturally with [`find_symbol`](/usage/advanced/mcp-tools), which
 resolves a name to a `symbolId` using the same `Class#method` (instance) /

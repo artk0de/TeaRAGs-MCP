@@ -13,32 +13,37 @@ function file(relPath: string) {
 }
 
 /**
- * `lib/hub.ts` is imported by `app/s1.ts` and `web/s2.ts` (each with 5
- * importers of its own) and imports `app/s1.ts` back plus 4 leaves:
- * I(hub) = 5/7, I(s1) = 2/8, I(s2) = 1/6 — both sources violate SDP, and the
- * hub references one of its own dependents. `app/s1.ts` also imports
- * `app/private.ts`, which nothing else imports: a private collaborator.
+ * INVARIANT CHANGED (bd tea-rags-mcp-r8hme.7): Stable Dependencies is judged
+ * on COMPONENTS, not files — the file-level fixture this block used produced
+ * no component with enough support. Components here are plain directories.
+ *
+ * `core/` (a, b): imported by 6 `app/` files and by `lib/f5.ts`, both files
+ * import `lib/` → Ca 7, Ce 2, I = 2/9. `base/a.ts`: imported by 6 `users/`
+ * files, imports `lib/f4.ts` → Ca 6, Ce 1, I = 1/7. `lib/` (f1..f5, each
+ * importing `vendor/v.ts`): imported by core a/b, base/a and `other/o.ts` →
+ * Ca 4, Ce 5, I = 5/9. core → lib and base → lib both run uphill; lib → core
+ * closes a cycle with a dependent.
  */
 function graph(): FileDependencyGraph {
-  const files = [file("lib/hub.ts"), file("app/s1.ts"), file("web/s2.ts"), file("app/private.ts")];
+  const files = [file("core/a.ts"), file("core/b.ts"), file("base/a.ts"), file("other/o.ts"), file("vendor/v.ts")];
   const edges: FileDependencyGraph["edges"] = [];
   const add = (sourceRelPath: string, targetRelPath: string, callWeight = 1) => {
     edges.push({ sourceRelPath, targetRelPath, callWeight });
   };
-  for (const s of ["app/s1.ts", "web/s2.ts"]) {
-    add(s, "lib/hub.ts", 2);
-    for (let i = 1; i <= 5; i++) {
-      files.push(file(`${s}.in${i}.ts`));
-      add(`${s}.in${i}.ts`, s);
-    }
+  add("core/a.ts", "lib/f1.ts", 2);
+  add("core/b.ts", "lib/f2.ts");
+  add("base/a.ts", "lib/f4.ts", 3);
+  add("other/o.ts", "lib/f3.ts");
+  for (let i = 1; i <= 6; i++) {
+    files.push(file(`app/c${i}.ts`), file(`users/u${i}.ts`));
+    add(`app/c${i}.ts`, "core/b.ts");
+    add(`users/u${i}.ts`, "base/a.ts");
   }
-  add("lib/hub.ts", "app/s1.ts");
-  add("app/s1.ts", "app/private.ts");
-  for (let i = 1; i <= 4; i++) {
-    files.push(file(`vendor/h${i}.ts`), file(`vendor/p${i}.ts`));
-    add("lib/hub.ts", `vendor/h${i}.ts`);
-    add("app/private.ts", `vendor/p${i}.ts`);
+  for (let i = 1; i <= 5; i++) {
+    files.push(file(`lib/f${i}.ts`));
+    add(`lib/f${i}.ts`, "vendor/v.ts");
   }
+  add("lib/f5.ts", "core/a.ts");
   return { files, edges };
 }
 
@@ -50,58 +55,69 @@ function graphDb(g: FileDependencyGraph = graph(), nonPublicEdges: NonPublicMemb
 }
 
 describe("ArchitectureReportOps#build", () => {
-  it("returns SDP violations with per-line evidence, most severe first", async () => {
+  it("returns component SDP violations with coupling evidence and the file edges carrying them, most severe first", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), {});
 
     expect(report.violations).toEqual([
       {
         detector: "stableDependencies",
-        sourceRelPath: "web/s2.ts",
-        targetRelPath: "lib/hub.ts",
+        sourceComponent: "base",
+        targetComponent: "lib",
         evidence: {
-          sourceInstability: 1 / 6,
-          targetInstability: 5 / 7,
-          instabilityDelta: 5 / 7 - 1 / 6,
-          sourceConnectionCount: 6,
-          targetConnectionCount: 7,
-          callWeight: 2,
+          sourceInstability: 1 / 7,
+          targetInstability: 5 / 9,
+          instabilityDelta: 5 / 9 - 1 / 7,
+          sourceAfferentCount: 6,
+          sourceEfferentCount: 1,
+          targetAfferentCount: 4,
+          targetEfferentCount: 5,
+          callWeight: 3,
           directoryRelation: "disjoint",
+          fileEdgeCount: 1,
+          fileEdges: [{ sourceRelPath: "base/a.ts", targetRelPath: "lib/f4.ts", callWeight: 3 }],
         },
       },
       {
         detector: "stableDependencies",
-        sourceRelPath: "app/s1.ts",
-        targetRelPath: "lib/hub.ts",
+        sourceComponent: "core",
+        targetComponent: "lib",
         evidence: {
-          sourceInstability: 2 / 8,
-          targetInstability: 5 / 7,
-          instabilityDelta: 5 / 7 - 2 / 8,
-          sourceConnectionCount: 8,
-          targetConnectionCount: 7,
-          callWeight: 2,
+          sourceInstability: 2 / 9,
+          targetInstability: 5 / 9,
+          instabilityDelta: 5 / 9 - 2 / 9,
+          sourceAfferentCount: 7,
+          sourceEfferentCount: 2,
+          targetAfferentCount: 4,
+          targetEfferentCount: 5,
+          callWeight: 3,
           directoryRelation: "disjoint",
+          fileEdgeCount: 2,
+          fileEdges: [
+            { sourceRelPath: "core/a.ts", targetRelPath: "lib/f1.ts", callWeight: 2 },
+            { sourceRelPath: "core/b.ts", targetRelPath: "lib/f2.ts", callWeight: 1 },
+          ],
         },
       },
     ]);
   });
 
-  it("returns root causes grouped by unstable target, flagging a cycle with its dependents", async () => {
+  it("returns root causes grouped by unstable target component, flagging a cycle with its dependents", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), {});
 
     expect(report.rootCauses).toEqual([
       {
         detector: "stableDependencies",
-        targetRelPath: "lib/hub.ts",
-        targetInstability: 5 / 7,
+        targetComponent: "lib",
+        targetInstability: 5 / 9,
         violationCount: 2,
-        maxInstabilityDelta: 5 / 7 - 1 / 6,
-        sources: ["app/s1.ts", "web/s2.ts"],
+        maxInstabilityDelta: 5 / 9 - 1 / 7,
+        sources: ["base", "core"],
         cycleWithDependents: true,
       },
     ]);
   });
 
-  it("summarises what was read, judged and excluded, naming each exclusion reason", async () => {
+  it("summarises the component graph, what was judged and excluded, naming each exclusion reason", async () => {
     const g = graph();
     const report = await new ArchitectureReportOps().build(graphDb(g), {});
 
@@ -109,43 +125,45 @@ describe("ArchitectureReportOps#build", () => {
       tolerance: 0.2,
       minConnectionCount: 5,
       edgeCount: g.edges.length,
-      judgedEdgeCount: 3,
+      componentCount: 7,
+      moduleComponentCount: 0,
+      directoryComponentCount: 7,
+      componentEdgeCount: 7,
+      judgedEdgeCount: 6,
       violationCount: 2,
       rootCauseCount: 1,
       excluded: {
         selfEdges: 0,
         unwalkedEndpoints: 0,
-        noSymbolEndpoints: 0,
-        // INVARIANT CHANGED (bd tea-rags-mcp-r8hme.6): the exclusion summary gains facadeAggregations.
+        intraComponent: 0,
         facadeAggregations: 0,
-        lowConnectionCount: g.edges.length - 3 - 1,
-        privateCollaborators: 1,
+        containment: 0,
+        lowConnectionCount: 1,
       },
       exclusionReasons: {
-        noSymbolEndpoints: "no-symbol endpoint: barrel, type-only or object-literal module",
         facadeAggregations: "facade aggregation: a module facade re-exporting a descendant module's facade",
-        privateCollaborators: "private collaborator: source is the target's sole importer",
+        containment:
+          "containment: a component depending on a component nested inside its directory - composition, not a peer dependency",
       },
     });
     expect(report.pathPattern).toBeUndefined();
   });
 
-  it("scopes the judged edges to sources matching pathPattern and reports what fell outside", async () => {
-    const g = graph();
-    const report = await new ArchitectureReportOps().build(graphDb(g), { pathPattern: "app/**" });
+  it("scopes the judged dependencies to those carried by a source file matching pathPattern", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(), { pathPattern: "base/**" });
 
-    expect(report.pathPattern).toBe("app/**");
-    expect(report.violations.map((v) => v.sourceRelPath)).toEqual(["app/s1.ts"]);
-    expect(report.rootCauses.map((r) => r.sources)).toEqual([["app/s1.ts"]]);
-    const outOfScope = g.edges.filter((e) => !e.sourceRelPath.startsWith("app/")).length;
-    expect(report.summary.stableDependencies.outOfScopeEdgeCount).toBe(outOfScope);
+    expect(report.pathPattern).toBe("base/**");
+    expect(
+      report.violations.map((v) => (v.detector === "stableDependencies" ? v.sourceComponent : v.sourceRelPath)),
+    ).toEqual(["base"]);
+    expect(report.summary.stableDependencies.outOfScopeEdgeCount).toBe(6);
   });
 
   it("caps violations and root causes at limit while the summary keeps the totals", async () => {
     const report = await new ArchitectureReportOps().build(graphDb(), { limit: 1 });
 
     expect(report.violations).toHaveLength(1);
-    expect(report.violations[0].sourceRelPath).toBe("web/s2.ts");
+    expect(report.violations[0]).toMatchObject({ sourceComponent: "base" });
     expect(report.rootCauses).toHaveLength(1);
     expect(report.summary.stableDependencies.violationCount).toBe(2);
   });
@@ -389,7 +407,7 @@ describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-
     const g = graph();
     return {
       files: [...g.files, file("scripts/spikes/probe.ts")],
-      edges: [...g.edges, { sourceRelPath: "scripts/spikes/probe.ts", targetRelPath: "lib/hub.ts", callWeight: 3 }],
+      edges: [...g.edges, { sourceRelPath: "scripts/spikes/probe.ts", targetRelPath: "core/b.ts", callWeight: 3 }],
     };
   }
 

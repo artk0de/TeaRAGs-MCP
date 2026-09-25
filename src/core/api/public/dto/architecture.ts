@@ -34,28 +34,50 @@ export interface GetArchitectureReportRequest {
 /** Where a dependency's target sits relative to its source, by directory. */
 export type ArchitectureDirectoryRelation = "same" | "descendant" | "ancestor" | "disjoint";
 
-/** Why a Stable Dependencies edge is a violation. */
+/** One file edge carrying a component dependency. */
+export interface ArchitectureFileEdge {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
+  callWeight: number;
+}
+
+/**
+ * Why a component dependency violates Stable Dependencies (bd tea-rags-mcp-r8hme.7).
+ * Coupling counts DISTINCT FILES across the component border (Martin counts classes).
+ */
 export interface StableDependencyViolationEvidence {
-  /** Martin instability I = fanOut / (fanIn + fanOut) of the source file. */
+  /** Martin instability I = Ce / (Ca + Ce) of the source component. */
   sourceInstability: number;
-  /** Martin instability of the target file. */
+  /** Martin instability of the target component. */
   targetInstability: number;
   /** `targetInstability − sourceInstability`, above the tolerance. The severity. */
   instabilityDelta: number;
-  /** Support behind the source's instability: fanIn + fanOut. */
-  sourceConnectionCount: number;
-  /** Support behind the target's instability: fanIn + fanOut. */
-  targetConnectionCount: number;
-  /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
+  /** Ca: files outside the source component depending on it. */
+  sourceAfferentCount: number;
+  /** Ce: files inside the source component depending outward. */
+  sourceEfferentCount: number;
+  targetAfferentCount: number;
+  targetEfferentCount: number;
+  /** Confidence-weighted resolved calls across the carrying file edges. */
   callWeight: number;
+  /** Where the target component's directory sits relative to the source's. */
   directoryRelation: ArchitectureDirectoryRelation;
+  /** File edges carrying the dependency. */
+  fileEdgeCount: number;
+  /** The carrying file edges, heaviest call weight first, capped at 5. */
+  fileEdges: ArchitectureFileEdge[];
 }
 
-/** A stable file depending on a less stable one. */
+/**
+ * A stable component depending on a less stable one. A component is a module
+ * whose facade the leaking-abstraction detector measured (its directory
+ * subtree), or a plain directory; `""` is the repository root.
+ */
 export interface StableDependencyArchitectureViolation {
   detector: "stableDependencies";
-  sourceRelPath: RelPath;
-  targetRelPath: RelPath;
+  sourceComponent: string;
+  targetComponent: string;
   evidence: StableDependencyViolationEvidence;
 }
 
@@ -128,16 +150,17 @@ export type LeakingAbstractionArchitectureViolation =
 
 export type ArchitectureViolation = StableDependencyArchitectureViolation | LeakingAbstractionArchitectureViolation;
 
-/** Every Stable Dependencies violation into one unstable target, as one finding. */
+/** Every Stable Dependencies violation into one unstable target component, as one finding. */
 export interface StableDependencyArchitectureRootCause {
   detector: "stableDependencies";
-  targetRelPath: RelPath;
+  targetComponent: string;
   targetInstability: number;
-  /** Stable dependents affected — the severity. */
+  /** Stable dependent components affected — the severity. */
   violationCount: number;
   maxInstabilityDelta: number;
-  sources: RelPath[];
-  /** The target references one of its own violating dependents: its instability is self-inflicted. */
+  /** Source components, by path. */
+  sources: string[];
+  /** The target depends back on one of its violating dependents: its instability is self-inflicted. */
   cycleWithDependents: boolean;
 }
 
@@ -158,24 +181,39 @@ export interface LeakingAbstractionArchitectureRootCause {
 
 export type ArchitectureRootCause = StableDependencyArchitectureRootCause | LeakingAbstractionArchitectureRootCause;
 
-/** Edges read but not judged, by the first reason that applied. */
+/**
+ * Edges read but not judged, by the first reason that applied: file edges that
+ * never became a component dependency, then component dependencies not judged.
+ */
 export interface StableDependenciesExclusionSummary {
+  /** File edges from a file to itself. */
   selfEdges: number;
+  /** File edges with an endpoint the codegraph walk never extracted. */
   unwalkedEndpoints: number;
-  noSymbolEndpoints: number;
-  /** A module facade re-exporting a nested module's facade — see `exclusionReasons.facadeAggregations`. */
+  /** File edges inside one component. */
+  intraComponent: number;
+  /** File edges: a module facade re-exporting a nested module's facade — see `exclusionReasons.facadeAggregations`. */
   facadeAggregations: number;
+  /** Component dependencies on a component nested inside the source — see `exclusionReasons.containment`. */
+  containment: number;
+  /** Component dependencies with an end whose Ca + Ce is below `minConnectionCount`. */
   lowConnectionCount: number;
-  /** The source is the target's sole importer — see `exclusionReasons.privateCollaborators`. */
-  privateCollaborators: number;
 }
 
 export interface StableDependenciesReportSummary {
   tolerance: number;
+  /** Minimum component Ca + Ce for both ends of a judged dependency. */
   minConnectionCount: number;
-  /** Every file edge read. */
+  /** Every production file edge read. */
   edgeCount: number;
-  /** Edges in scope that survived every exclusion. */
+  componentCount: number;
+  /** Components that are modules with a measured facade. */
+  moduleComponentCount: number;
+  /** Components that are plain directories. */
+  directoryComponentCount: number;
+  /** Component dependencies built from the file edges. */
+  componentEdgeCount: number;
+  /** In-scope component dependencies that survived every exclusion. */
   judgedEdgeCount: number;
   /** Total violations, before `limit`. */
   violationCount: number;
@@ -183,8 +221,8 @@ export interface StableDependenciesReportSummary {
   rootCauseCount: number;
   excluded: StableDependenciesExclusionSummary;
   /** Human-readable meaning of the exclusions a reader is most likely to question. */
-  exclusionReasons: { noSymbolEndpoints: string; facadeAggregations: string; privateCollaborators: string };
-  /** Edges whose source did not match `pathPattern`; present only when scoped. */
+  exclusionReasons: { facadeAggregations: string; containment: string };
+  /** Component dependencies none of whose file edges has a source matching `pathPattern`; present only when scoped. */
   outOfScopeEdgeCount?: number;
 }
 

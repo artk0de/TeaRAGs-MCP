@@ -15,22 +15,22 @@
 
 import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
 import {
+  buildComponentGraph,
+  COMPONENT_CONTAINMENT_REASON,
   CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
+  detectComponentStableDependencyViolations,
   detectConventionPrivacyLeaks,
   detectLeakingAbstractions,
-  detectStableDependencyViolations,
   excludeNonProductionFiles,
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
-  NO_SYMBOL_ENDPOINT_REASON,
   NON_PRODUCTION_REASON,
-  PRIVATE_COLLABORATOR_REASON,
+  type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type FacadeModuleAssessment,
   type LeakingAbstractionReport,
-  type StableDependenciesReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
 import type {
@@ -62,8 +62,10 @@ export class ArchitectureReportOps {
     const nonProduction = buildNonProductionPathFilter();
     const production = excludeNonProductionFiles(await graphDb.readFileDependencyGraph(), nonProduction);
     const { graph } = production;
-    const sdp = detectStableDependencyViolations(graph, { sourcePathPattern: request.pathPattern });
     const leaks = detectLeakingAbstractions(graph, { sourcePathPattern: request.pathPattern });
+    // Components: the modules A4 measured, plain directories elsewhere (bd tea-rags-mcp-r8hme.7).
+    const components = buildComponentGraph(graph, leaks.modules);
+    const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
     const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     const privacy = detectConventionPrivacyLeaks(
       memberEdges.filter((e) => !nonProduction.ignores(e.sourceRelPath) && !nonProduction.ignores(e.targetRelPath)),
@@ -99,16 +101,20 @@ export class ArchitectureReportOps {
           tolerance: DEFAULT_SDP_TOLERANCE,
           minConnectionCount: DEFAULT_SDP_MIN_CONNECTION_COUNT,
           edgeCount: 0,
+          componentCount: 0,
+          moduleComponentCount: 0,
+          directoryComponentCount: 0,
+          componentEdgeCount: 0,
           judgedEdgeCount: 0,
           violationCount: 0,
           rootCauseCount: 0,
           excluded: {
             selfEdges: 0,
             unwalkedEndpoints: 0,
-            noSymbolEndpoints: 0,
+            intraComponent: 0,
             facadeAggregations: 0,
+            containment: 0,
             lowConnectionCount: 0,
-            privateCollaborators: 0,
           },
           exclusionReasons: EXCLUSION_REASONS,
         },
@@ -125,18 +131,21 @@ export class ArchitectureReportOps {
 }
 
 const EXCLUSION_REASONS = {
-  noSymbolEndpoints: NO_SYMBOL_ENDPOINT_REASON,
   facadeAggregations: FACADE_AGGREGATION_REASON,
-  privateCollaborators: PRIVATE_COLLABORATOR_REASON,
+  containment: COMPONENT_CONTAINMENT_REASON,
 } as const;
 
-function summarise(report: StableDependenciesReport): StableDependenciesReportSummary {
+function summarise(report: ComponentStableDependenciesReport): StableDependenciesReportSummary {
   const { summary } = report;
   return {
     tolerance: summary.tolerance,
     minConnectionCount: summary.minConnectionCount,
     edgeCount: summary.edgeCount,
-    judgedEdgeCount: summary.consideredEdgeCount,
+    componentCount: summary.componentCount,
+    moduleComponentCount: summary.moduleComponentCount,
+    directoryComponentCount: summary.directoryComponentCount,
+    componentEdgeCount: summary.componentEdgeCount,
+    judgedEdgeCount: summary.judgedEdgeCount,
     violationCount: summary.violationCount,
     rootCauseCount: report.rootCauses.length,
     excluded: { ...summary.excluded },
@@ -145,11 +154,11 @@ function summarise(report: StableDependenciesReport): StableDependenciesReportSu
   };
 }
 
-function sdpRootCauses(report: StableDependenciesReport, limit: number): ArchitectureRootCause[] {
+function sdpRootCauses(report: ComponentStableDependenciesReport, limit: number): ArchitectureRootCause[] {
   return report.rootCauses.slice(0, limit).map(
     (r): ArchitectureRootCause => ({
       detector: "stableDependencies",
-      targetRelPath: r.targetRelPath,
+      targetComponent: r.targetComponent,
       targetInstability: r.targetInstability,
       violationCount: r.violationCount,
       maxInstabilityDelta: r.maxInstabilityDelta,
@@ -159,20 +168,24 @@ function sdpRootCauses(report: StableDependenciesReport, limit: number): Archite
   );
 }
 
-function sdpViolations(report: StableDependenciesReport, limit: number): ArchitectureViolation[] {
+function sdpViolations(report: ComponentStableDependenciesReport, limit: number): ArchitectureViolation[] {
   return report.violations.slice(0, limit).map(
     (v): ArchitectureViolation => ({
       detector: "stableDependencies",
-      sourceRelPath: v.sourceRelPath,
-      targetRelPath: v.targetRelPath,
+      sourceComponent: v.sourceComponent,
+      targetComponent: v.targetComponent,
       evidence: {
         sourceInstability: v.sourceInstability,
         targetInstability: v.targetInstability,
         instabilityDelta: v.instabilityDelta,
-        sourceConnectionCount: v.sourceConnectionCount,
-        targetConnectionCount: v.targetConnectionCount,
+        sourceAfferentCount: v.sourceAfferentCount,
+        sourceEfferentCount: v.sourceEfferentCount,
+        targetAfferentCount: v.targetAfferentCount,
+        targetEfferentCount: v.targetEfferentCount,
         callWeight: v.callWeight,
         directoryRelation: v.directoryRelation,
+        fileEdgeCount: v.fileEdgeCount,
+        fileEdges: v.fileEdges,
       },
     }),
   );

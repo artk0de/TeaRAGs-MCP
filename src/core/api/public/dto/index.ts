@@ -87,6 +87,7 @@ export type {
 export type {
   // Architecture diagnostics (get_architecture_report)
   ArchitectureDirectoryRelation,
+  ArchitectureFileEdge,
   ArchitectureReportSummary,
   ArchitectureRootCause,
   ArchitectureViolation,

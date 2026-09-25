@@ -57,15 +57,19 @@ needing attention. Not for specific bug symptoms — use `bug-hunt` instead.
 **Is the code laid out correctly?** A different question from
 `risk-assessment`'s "is it dangerous to touch". The skill calls
 `get_architecture_report` and reads the result root cause first: violations of
-the Stable Dependencies Principle (a stable file depending on a less stable
-one) are grouped by the unstable target, so one base class that names its own
-subclasses shows up as one finding rather than one per subclass. Every line
-carries its evidence: both instabilities, the delta, the support behind them,
-the call weight across the edge and the directory relation.
+the Stable Dependencies Principle are judged on components, the unit Martin
+defined it for: a module whose facade importers were measured, or otherwise a
+plain directory. A stable component depending on a less stable one is grouped
+by the unstable target, so one registry that names the features registering in
+it shows up as one finding rather than one per feature. Every line carries its
+evidence: both instabilities, the afferent and efferent file counts behind them,
+the delta, the call weight, the directory relation and the file edges that
+carry the dependency.
 
-Edges the detector did not judge are counted, not hidden. The most common is a
-private collaborator: the source is the only file importing the target, so the
-target's instability reaches nobody else. Requires codegraph.
+Dependencies the detector did not judge are counted, not hidden: a component
+depending on one nested inside it is composition, and a component with too few
+connections has no trustworthy instability. Scripts, spikes, benchmarks,
+examples and fixtures are left out of the graph altogether. Requires codegraph.
 
 ## Generation
 

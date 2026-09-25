@@ -246,9 +246,11 @@ export function registerCodegraphTools(
       title: "Get Architecture Report",
       description:
         "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
-        "Typed violations with per-line evidence, per detector. stableDependencies (Stable Dependencies " +
-        "Principle): stable file depending on less stable one (instabilities, delta, support, call weight, directory relation); rootCauses group " +
-        "by unstable target, cycleWithDependents = target references own dependents. leakingAbstraction: " +
+        "Typed violations with per-line evidence, per detector; scripts/spikes/benchmarks/examples/fixtures excluded. " +
+        "stableDependencies (Stable Dependencies Principle): stable COMPONENT depending on less stable one — " +
+        "component = module with measured facade, else directory; evidence = instabilities, Ca/Ce, delta, carrying " +
+        "file edges; dependency on nested component not judged; rootCauses by unstable target component, " +
+        "cycleWithDependents = target depends on own dependents. leakingAbstraction: " +
         "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
         "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
         "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +

@@ -32,7 +32,10 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
   defect. Fix target, not N sources.
 - **`edgeCount: 0` read as clean.** Nothing read ≠ no violations. No codegraph
   DB or empty graph — say so.
-- **Ignoring `privateCollaborators`.** Excluded, not clean — see Phase 4.
+- **Ignoring `containment` / `lowConnectionCount`.** Excluded, not clean — see
+  Phase 4.
+- **Reading SDP as file-level.** SDP judged on COMPONENTS; file edges in
+  `evidence.fileEdges` only show which files carry the dependency.
 - **Using risk-assessment signals (churn, bugFixRate) here.** Other question.
   Combine only when user asks both.
 - **Proposing tolerance change.** Tolerance fixed, reported in
@@ -61,8 +64,11 @@ prime `## Enrichment` lists `codegraph.symbols`? No → tool not registered. Say
 get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50)
 ```
 
-- `pathPattern` scopes JUDGED edges by SOURCE file. Instability + facade
+- `pathPattern` scopes JUDGED edges by SOURCE file (SDP: component dependency
+  judged when ≥1 carrying file edge's source matches). Instability + facade
   adoption always whole-graph — scoped run sees same numbers as full run.
+- Tooling paths (scripts, spikes, benchmarks, examples, fixtures) removed before
+  any detector — `summary.nonProduction` counts them.
 - `limit` caps `violations` + `rootCauses` PER DETECTOR; each
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
@@ -71,23 +77,28 @@ get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50)
 
 ## Phase 2 — ROOT CAUSES
 
+SDP unit = COMPONENT: module with measured facade (A4 active or not-adopted —
+owns its directory subtree minus nested modules), else plain directory. Ca/Ce
+count distinct files across component border.
+
 `rootCauses[]` ordered by `violationCount` desc, then `maxInstabilityDelta`.
 
-| Field                 | Read as                                                             |
-| --------------------- | ------------------------------------------------------------------- |
-| `targetRelPath`       | unstable file stable files lean on                                  |
-| `violationCount`      | stable dependents affected — severity                               |
-| `targetInstability`   | I = fanOut/(fanIn+fanOut); high = depends on much, few depend on it |
-| `sources`             | the stable dependents                                               |
-| `cycleWithDependents` | target references own dependents → instability self-inflicted       |
+| Field                 | Read as                                                       |
+| --------------------- | ------------------------------------------------------------- |
+| `targetComponent`     | unstable component stable components lean on                  |
+| `violationCount`      | stable dependent components affected — severity               |
+| `targetInstability`   | I = Ce/(Ca+Ce); high = depends on much, few depend on it      |
+| `sources`             | the stable dependent components                               |
+| `cycleWithDependents` | target depends on own dependents → instability self-inflicted |
 
 `cycleWithDependents: true` = strongest finding. Base names its subclasses,
 concern names its includers, registry names its entries. Fix: invert
 back-reference (registry/lookup, DI, move knowledge to dependents) → every
 violation of group disappears at once.
 
-Confirm cycle (optional): `find_cycles(scope: "file", pathPattern: "<target>")`;
-what target references: `find_symbol(relativePath: "<target>")`.
+Confirm cycle (optional):
+`find_cycles(scope: "file", pathPattern: "<target>/**")`; which files carry it:
+`evidence.fileEdges` of the group's violations.
 
 `cycleWithDependents: false`, count ≥ 3 → target too volatile for its role:
 split stable core (what dependents use) from volatile rest.
@@ -96,14 +107,16 @@ split stable core (what dependents use) from volatile rest.
 
 Groups with `violationCount: 1`: judge each by `evidence`.
 
-| Evidence                       | Weight                                                           |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `directoryRelation: disjoint`  | crosses module border — the case borders are about; rank highest |
-| `descendant` / `ancestor`      | module ↔ own sub-part; often intended layering, check direction  |
-| `same`                         | local; lowest                                                    |
-| `instabilityDelta`             | severity within the list                                         |
-| `callWeight: 0`                | type/const/import only — weaker coupling                         |
-| connectionCount near threshold | thin support; instability can swing — flag as tentative          |
+| Evidence                        | Weight                                                            |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `directoryRelation: disjoint`   | crosses into sibling/cousin — the case borders are about; highest |
+| `ancestor`                      | nested component reaching up into its parent; check direction     |
+| `instabilityDelta`              | severity within the list                                          |
+| `callWeight: 0`                 | type/const/re-export only — weaker coupling                       |
+| `fileEdgeCount` 1               | one file carries it — cheap to move                               |
+| Ca+Ce near `minConnectionCount` | thin support; instability can swing — flag as tentative           |
+
+`evidence.fileEdges` (top 5 by call weight) = where to act.
 
 ## Phase 3b — LEAKING ABSTRACTION
 
@@ -154,17 +167,17 @@ come from resolved method edges only: unresolved call → not judged.
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
 
-| Counter                | Meaning                                                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `privateCollaborators` | source = target's SOLE importer. Target's instability hurts only that source (worker → own service, component → private child). SDP premise void → skip |
-| `noSymbolEndpoints`    | endpoint defines no symbol + no call: barrel, type-only, object-literal module                                                                          |
-| `lowConnectionCount`   | endpoint fanIn+fanOut below `minConnectionCount` — instability untrustworthy                                                                            |
-| `unwalkedEndpoints`    | endpoint never extracted by codegraph                                                                                                                   |
-| `outOfScopeEdgeCount`  | source outside `pathPattern` (present only when scoped)                                                                                                 |
+| Counter               | Unit      | Meaning                                                                    |
+| --------------------- | --------- | -------------------------------------------------------------------------- |
+| `intraComponent`      | file edge | both ends in one component — not a component dependency                    |
+| `facadeAggregations`  | file edge | module facade re-exporting nested module's facade — aggregation            |
+| `unwalkedEndpoints`   | file edge | endpoint never extracted by codegraph                                      |
+| `containment`         | component | dependency on component nested inside source dir — composition, not peers  |
+| `lowConnectionCount`  | component | an end's Ca+Ce below `minConnectionCount` — instability untrustworthy      |
+| `outOfScopeEdgeCount` | component | no carrying file edge's source in `pathPattern` (present only when scoped) |
 
 Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
-"clean". Large `privateCollaborators` normal — about half of raw SDP hits in
-Rails/React monolith.
+"clean".
 
 `summary.leakingAbstraction.excludedModules` — modules NOT judged:
 
@@ -178,13 +191,13 @@ Rails/React monolith.
 
 ```text
 Architecture report: [scope] — [violationCount] SDP violations, [rootCauseCount] root causes
-Judged [judgedEdgeCount] of [edgeCount] edges (excluded: private collaborators N, no-symbol N, low support N)
+[componentCount] components ([moduleComponentCount] modules); judged [judgedEdgeCount] of [componentEdgeCount] component deps (excluded: containment N, low support N); tooling excluded: [nonProduction.excludedFileCount] files
 
 ## Root causes
-| # | Target | I | Dependents | Cycle | Fix direction |
+| # | Target component | I | Dependents | Cycle | Fix direction |
 
-## Cross-module violations (disjoint)
-| # | Source → Target | I src → tgt | Δ | calls |
+## Cross-component violations (disjoint)
+| # | Source → Target | I src → tgt | Δ | file edges (top) | calls |
 
 ## Local violations
 [count] — list only on request

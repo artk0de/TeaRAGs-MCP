@@ -1,0 +1,178 @@
+import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
+import { DEFAULT_SDP_MIN_CONNECTION_COUNT, DEFAULT_SDP_TOLERANCE } from "./stable-dependencies.js";
+import type {
+  ComponentDependency,
+  ComponentGraph,
+  ComponentStableDependenciesExclusionCounts,
+  ComponentStableDependenciesOptions,
+  ComponentStableDependenciesReport,
+  ComponentStableDependencyRootCause,
+  ComponentStableDependencyViolation,
+  StableDependenciesScope,
+} from "./types.js";
+
+/** File edges carried as evidence on one component violation; `fileEdgeCount` keeps the total. */
+export const COMPONENT_EVIDENCE_FILE_EDGE_LIMIT = 5;
+
+/** Same meaning as the file-level detector's: beyond the tolerance by more than rounding. */
+const INSTABILITY_DELTA_EPSILON = 1e-9;
+
+/**
+ * Stable Dependencies Principle on components (bd tea-rags-mcp-r8hme.7) — the
+ * granularity Martin defined it for. File-level instability with Ca + Ce in
+ * single digits swung by one edge; a component's counts pool its files.
+ *
+ * A component dependency is judged unless:
+ *
+ * 1. it is CONTAINMENT (`COMPONENT_CONTAINMENT_REASON`): the target is nested
+ *    inside the source's directory. A parent depending on its own parts is
+ *    composition — the file-level analogue is a module facade wiring its
+ *    internals — and on the self-index these edges (`language/ruby →
+ *    language/ruby/walker`, `explore → explore/strategies`) were 12 of the 24
+ *    violations the partition produced before they were excluded (taxdome: 56
+ *    of 323). The reverse
+ *    direction, a nested component reaching up into its parent, is judged;
+ * 2. either component's connection count is below `minConnectionCount`. The
+ *    default is the file-level floor, `DEFAULT_SDP_MIN_CONNECTION_COUNT`: the
+ *    ratio is the same arithmetic over distinct files, so the same binomial
+ *    noise argument sets the same floor. Measured on the self-index, 3 / 5 / 8
+ *    / 12 left 13 / 12 / 11 / 8 violations — the floor trims the tail, it does
+ *    not decide the list.
+ *
+ * Coupling is counted over the whole graph; `sourcePathPattern` only decides
+ * which dependencies are judged. File-level exclusions (self, unwalked,
+ * intra-component, facade aggregation) come from the component graph and are
+ * reported alongside.
+ */
+export function detectComponentStableDependencyViolations(
+  componentGraph: ComponentGraph,
+  options: ComponentStableDependenciesOptions = {},
+): ComponentStableDependenciesReport {
+  const tolerance = options.tolerance ?? DEFAULT_SDP_TOLERANCE;
+  const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
+  const inScope = compilePathPatternMatcher(options.sourcePathPattern);
+  const scope: StableDependenciesScope | undefined =
+    inScope && options.sourcePathPattern
+      ? { sourcePathPattern: options.sourcePathPattern, outOfScopeEdgeCount: 0 }
+      : undefined;
+  const excluded: ComponentStableDependenciesExclusionCounts = {
+    ...componentGraph.excluded,
+    containment: 0,
+    lowConnectionCount: 0,
+  };
+  const violations: ComponentStableDependencyViolation[] = [];
+  let judgedEdgeCount = 0;
+
+  for (const dependency of componentGraph.dependencies) {
+    const source = componentGraph.components.get(dependency.sourceComponent);
+    const target = componentGraph.components.get(dependency.targetComponent);
+    if (!source || !target) continue;
+    if (scope && inScope && !dependency.fileEdges.some((e) => inScope(e.sourceRelPath))) {
+      scope.outOfScopeEdgeCount++;
+    } else if (dependency.directoryRelation === "descendant") {
+      excluded.containment++;
+    } else if (source.connectionCount < minConnectionCount || target.connectionCount < minConnectionCount) {
+      excluded.lowConnectionCount++;
+    } else {
+      judgedEdgeCount++;
+      const instabilityDelta = target.instability - source.instability;
+      if (instabilityDelta > tolerance + INSTABILITY_DELTA_EPSILON) {
+        violations.push({
+          sourceComponent: source.componentDir,
+          targetComponent: target.componentDir,
+          sourceInstability: source.instability,
+          targetInstability: target.instability,
+          instabilityDelta,
+          sourceAfferentCount: source.afferentCount,
+          sourceEfferentCount: source.efferentCount,
+          targetAfferentCount: target.afferentCount,
+          targetEfferentCount: target.efferentCount,
+          callWeight: dependency.callWeight,
+          directoryRelation: dependency.directoryRelation,
+          fileEdgeCount: dependency.fileEdges.length,
+          fileEdges: evidenceFileEdges(dependency),
+        });
+      }
+    }
+  }
+
+  violations.sort(bySeverity);
+  const components = [...componentGraph.components.values()];
+  const moduleComponentCount = components.filter((c) => c.kind === "module").length;
+  return {
+    violations,
+    rootCauses: groupRootCauses(violations, componentGraph.dependencies),
+    summary: {
+      tolerance,
+      minConnectionCount,
+      edgeCount: componentGraph.fileEdgeCount,
+      componentCount: components.length,
+      moduleComponentCount,
+      directoryComponentCount: components.length - moduleComponentCount,
+      componentEdgeCount: componentGraph.dependencies.length,
+      judgedEdgeCount,
+      violationCount: violations.length,
+      excluded,
+      ...(scope ? { scope } : {}),
+    },
+  };
+}
+
+/** Heaviest call weight first, then path; capped at {@link COMPONENT_EVIDENCE_FILE_EDGE_LIMIT}. */
+function evidenceFileEdges(dependency: ComponentDependency): ComponentStableDependencyViolation["fileEdges"] {
+  return [...dependency.fileEdges]
+    .sort(
+      (a, b) =>
+        b.callWeight - a.callWeight ||
+        compareCodePoints(a.sourceRelPath, b.sourceRelPath) ||
+        compareCodePoints(a.targetRelPath, b.targetRelPath),
+    )
+    .slice(0, COMPONENT_EVIDENCE_FILE_EDGE_LIMIT)
+    .map((e) => ({ sourceRelPath: e.sourceRelPath, targetRelPath: e.targetRelPath, callWeight: e.callWeight }));
+}
+
+function groupRootCauses(
+  violations: readonly ComponentStableDependencyViolation[],
+  dependencies: readonly ComponentDependency[],
+): ComponentStableDependencyRootCause[] {
+  const byTarget = new Map<string, ComponentStableDependencyViolation[]>();
+  for (const v of violations) {
+    const group = byTarget.get(v.targetComponent);
+    if (group) group.push(v);
+    else byTarget.set(v.targetComponent, [v]);
+  }
+  const dependsOn = new Set(dependencies.map((d) => `${d.sourceComponent}\u0000${d.targetComponent}`));
+  const rootCauses: ComponentStableDependencyRootCause[] = [];
+  for (const [targetComponent, group] of byTarget) {
+    const sources = [...new Set(group.map((v) => v.sourceComponent))].sort(compareCodePoints);
+    rootCauses.push({
+      targetComponent,
+      targetInstability: group[0].targetInstability,
+      violationCount: group.length,
+      maxInstabilityDelta: Math.max(...group.map((v) => v.instabilityDelta)),
+      sources,
+      cycleWithDependents: sources.some((s) => dependsOn.has(`${targetComponent}\u0000${s}`)),
+    });
+  }
+  return rootCauses.sort(
+    (a, b) =>
+      b.violationCount - a.violationCount ||
+      b.maxInstabilityDelta - a.maxInstabilityDelta ||
+      compareCodePoints(a.targetComponent, b.targetComponent),
+  );
+}
+
+function bySeverity(a: ComponentStableDependencyViolation, b: ComponentStableDependencyViolation): number {
+  return (
+    b.instabilityDelta - a.instabilityDelta ||
+    b.callWeight - a.callWeight ||
+    compareCodePoints(a.sourceComponent, b.sourceComponent) ||
+    compareCodePoints(a.targetComponent, b.targetComponent)
+  );
+}
+
+/** Locale-independent, so the order is the same on every machine. */
+function compareCodePoints(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}

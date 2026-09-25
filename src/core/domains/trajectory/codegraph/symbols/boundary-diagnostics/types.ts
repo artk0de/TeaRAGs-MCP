@@ -1,4 +1,4 @@
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 
 /**
  * Where a dependency's target sits relative to its source, by directory:
@@ -301,4 +301,152 @@ export interface ConventionPrivacyReport {
   /** By source file, source symbol, then target. */
   violations: ConventionPrivacyViolation[];
   summary: ConventionPrivacySummary;
+}
+
+/**
+ * How a component came to be (bd tea-rags-mcp-r8hme.7): `module` = a directory
+ * whose facade the leaking-abstraction detector measured, owning its subtree;
+ * `directory` = the fallback, a plain directory's own files.
+ */
+export type ArchitectureComponentKind = "module" | "directory";
+
+/** One component of the partition and its Martin coupling, counted over files. */
+export interface ArchitectureComponent {
+  /** The component's directory, repo-relative; `""` for the repository root. */
+  componentDir: string;
+  kind: ArchitectureComponentKind;
+  /** The module's entry file; `null` for a directory component. */
+  facadeRelPath: RelPath | null;
+  /** Walked files the component holds. */
+  fileCount: number;
+  /** Ca: distinct files outside the component with an edge into it. */
+  afferentCount: number;
+  /** Ce: distinct files inside the component with an edge out of it. */
+  efferentCount: number;
+  /** Ca + Ce — the support behind `instability`. */
+  connectionCount: number;
+  /** Ce / (Ca + Ce); 0 with no edge. */
+  instability: number;
+}
+
+/** File edges from one component into another, as one dependency. */
+export interface ComponentDependency {
+  sourceComponent: string;
+  targetComponent: string;
+  /** `descendant` = the target is nested inside the source's directory (containment). */
+  directoryRelation: DependencyDirectoryRelation;
+  /** Sum of the carried file edges' call weights. */
+  callWeight: number;
+  /** The file edges that carry the dependency, in graph order. */
+  fileEdges: FileDependencyEdge[];
+}
+
+/** File edges that never became a component dependency, by the first reason that applied. */
+export interface ComponentGraphExclusionCounts {
+  selfEdges: number;
+  /** An endpoint the codegraph walk never extracted. */
+  unwalkedEndpoints: number;
+  /** Both endpoints in one component. */
+  intraComponent: number;
+  /** A module facade re-exporting a nested module's facade (`FACADE_AGGREGATION_REASON`). */
+  facadeAggregations: number;
+}
+
+export interface ComponentGraph {
+  /** Every component, by `componentDir`. */
+  components: Map<string, ArchitectureComponent>;
+  /** Walked file → the component holding it. */
+  componentOf: Map<RelPath, string>;
+  /** By source component, then target component. */
+  dependencies: ComponentDependency[];
+  excluded: ComponentGraphExclusionCounts;
+  /** Every file edge read. */
+  fileEdgeCount: number;
+}
+
+export interface ComponentStableDependenciesOptions {
+  /** Flagged when `I(target) − I(source) > tolerance`. Default `DEFAULT_SDP_TOLERANCE`. */
+  tolerance?: number;
+  /** Minimum component `connectionCount` for BOTH ends. Default `DEFAULT_SDP_MIN_CONNECTION_COUNT`. */
+  minConnectionCount?: number;
+  /**
+   * Picomatch glob: judge only component dependencies at least one of whose
+   * file edges has a matching source. Coupling is always counted over the
+   * whole graph.
+   */
+  sourcePathPattern?: string;
+}
+
+/** One file edge carrying a component dependency. */
+export interface ComponentDependencyFileEdge {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  callWeight: number;
+}
+
+/** A stable component depending on a less stable one. */
+export interface ComponentStableDependencyViolation {
+  sourceComponent: string;
+  targetComponent: string;
+  sourceInstability: number;
+  targetInstability: number;
+  /** `targetInstability − sourceInstability`, above the tolerance. The severity. */
+  instabilityDelta: number;
+  sourceAfferentCount: number;
+  sourceEfferentCount: number;
+  targetAfferentCount: number;
+  targetEfferentCount: number;
+  /** Sum of the carried file edges' call weights. */
+  callWeight: number;
+  directoryRelation: DependencyDirectoryRelation;
+  /** How many file edges carry the dependency. */
+  fileEdgeCount: number;
+  /** The carrying file edges, heaviest call weight first, capped at `COMPONENT_EVIDENCE_FILE_EDGE_LIMIT`. */
+  fileEdges: ComponentDependencyFileEdge[];
+}
+
+/** Every violation into one unstable target component, as one finding. */
+export interface ComponentStableDependencyRootCause {
+  targetComponent: string;
+  targetInstability: number;
+  violationCount: number;
+  maxInstabilityDelta: number;
+  /** Source components, by path. */
+  sources: string[];
+  /** The target depends back on one of its violating sources. */
+  cycleWithDependents: boolean;
+}
+
+/** Edges read but not judged: file-edge reasons from the component graph, then component-edge reasons. */
+export interface ComponentStableDependenciesExclusionCounts extends ComponentGraphExclusionCounts {
+  /** Component dependencies on a component nested inside the source (`COMPONENT_CONTAINMENT_REASON`). */
+  containment: number;
+  /** Component dependencies with an end below `minConnectionCount`. */
+  lowConnectionCount: number;
+}
+
+export interface ComponentStableDependenciesSummary {
+  tolerance: number;
+  minConnectionCount: number;
+  /** Every file edge read. */
+  edgeCount: number;
+  componentCount: number;
+  moduleComponentCount: number;
+  directoryComponentCount: number;
+  /** Component dependencies built from the file edges. */
+  componentEdgeCount: number;
+  /** In-scope component dependencies that survived every exclusion. */
+  judgedEdgeCount: number;
+  violationCount: number;
+  excluded: ComponentStableDependenciesExclusionCounts;
+  /** Present when scoped; `outOfScopeEdgeCount` counts COMPONENT dependencies. */
+  scope?: StableDependenciesScope;
+}
+
+export interface ComponentStableDependenciesReport {
+  /** Most severe first: delta, then call weight, then path. */
+  violations: ComponentStableDependencyViolation[];
+  /** Grouped by target: most violations first, then max delta, then path. */
+  rootCauses: ComponentStableDependencyRootCause[];
+  summary: ComponentStableDependenciesSummary;
 }
