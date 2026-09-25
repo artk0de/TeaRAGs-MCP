@@ -30,6 +30,7 @@ import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/inge
 import { SELECTABLE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
+import type { CodegraphStorageCompactionRunner } from "../../../domains/ingest/pipeline/enrichment/completion-runner.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
@@ -334,6 +335,14 @@ export class IngestFacade {
             acquireGraphDb: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb,
           })
         : undefined;
+    // bd tea-rags-mcp-dvzdm — the graph store keeps every row version an
+    // incremental run deletes; after the run's last graph write, let it
+    // reclaim them. Same client, same PHYSICAL name, same condition as the heal:
+    // the store decides whether the file is worth rewriting.
+    const codegraphCompaction: CodegraphStorageCompactionRunner | undefined =
+      codegraphPool && deferringProvider
+        ? { run: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb.compactStorage() }
+        : undefined;
     const enrichment = new EnrichmentCoordinator(
       qdrant,
       providers,
@@ -347,6 +356,7 @@ export class IngestFacade {
       // first git blob read. Built by the composition root from GIT_ADAPTER.
       deps.blobReaderFactory,
       codegraphHeal,
+      codegraphCompaction,
     );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then

@@ -1,73 +1,153 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { CodeChunkGrouper } from "../../../src/core/domains/explore/chunk-grouping/code.js";
+import { resolvePresets } from "../../../src/core/domains/explore/rerank/presets/index.js";
+import { Reranker } from "../../../src/core/domains/explore/reranker.js";
+import { resolveSymbols } from "../../../src/core/domains/explore/symbol-resolve.js";
+import { gitPayloadSignalDescriptors } from "../../../src/core/domains/trajectory/git/payload-signals.js";
+import { gitDerivedSignals } from "../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
+import { GIT_PRESETS } from "../../../src/core/domains/trajectory/git/rerank/presets/index.js";
 import { SearchResultOutputSchema } from "../../../src/mcp/tools/output-schemas.js";
+
+/** What the MCP transport actually carries: undefined-valued keys vanish. */
+const overTheWire = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe("SearchResultOutputSchema", () => {
   const schema = z.object(SearchResultOutputSchema);
+
+  // bd tea-rags-mcp-nb32e: the item schema declared relativePath / startLine /
+  // content / git at item level and passed only through `.passthrough()`. Real
+  // items are SearchResult { id, score, payload?, rankingOverlay? } — chunk
+  // fields live INSIDE payload.
+  it("declares the item shape tools return: id, score, payload, rankingOverlay", () => {
+    expect(Object.keys(SearchResultOutputSchema.results.element.shape).sort()).toEqual([
+      "id",
+      "payload",
+      "rankingOverlay",
+      "score",
+    ]);
+  });
+
+  it("requires id and score on every item", () => {
+    expect(() => schema.parse({ results: [{ score: 0.8 }] })).toThrow();
+    expect(() => schema.parse({ results: [{ id: "a" }] })).toThrow();
+  });
 
   it("validates a minimal search result", () => {
     const result = schema.parse({
       results: [
         {
+          id: "uuid-1",
           score: 0.85,
-          relativePath: "src/auth.ts",
-          startLine: 10,
-          endLine: 30,
-          language: "typescript",
+          payload: { relativePath: "src/auth.ts", startLine: 10, endLine: 30, language: "typescript" },
         },
       ],
     });
     expect(result.results).toHaveLength(1);
     expect(result.results[0].score).toBe(0.85);
+    expect(result.results[0].payload?.relativePath).toBe("src/auth.ts");
   });
 
-  it("validates result with ranking overlay", () => {
-    const result = schema.parse({
-      results: [
-        {
-          score: 0.9,
-          relativePath: "src/db.ts",
-          startLine: 1,
-          endLine: 50,
-          rankingOverlay: {
-            preset: "techDebt",
-            derived: { recency: 0.3, churn: 0.8 },
-          },
-        },
-      ],
-    });
-    expect(result.results[0].rankingOverlay?.preset).toBe("techDebt");
+  it("keeps every payload key, declared or not (payload passthrough)", () => {
+    const payload = {
+      relativePath: "src/main.ts",
+      content: "function main() {}",
+      git: { file: { commitCount: 5, ageDays: 30 }, chunk: { commitCount: 2 } },
+      codegraph: { symbols: { chunk: { fanIn: 3 } } },
+      navigation: { prevSymbolId: "a", nextSymbolId: "b" },
+    };
+    const result = schema.parse({ results: [{ id: 1, score: 0.7, payload }] });
+    expect(result.results[0].payload).toEqual(payload);
   });
 
-  it("validates result with content field", () => {
-    const result = schema.parse({
-      results: [
-        {
-          score: 0.7,
-          relativePath: "src/main.ts",
-          content: "function main() {}",
-        },
-      ],
-    });
-    expect(result.results[0].content).toBe("function main() {}");
+  // The overlay the reranker emits is RankingOverlay { preset, file?, chunk? } —
+  // labelled values plus raw unlabelled ones. The declared schema must keep
+  // both levels, since a metaOnly payload is raw and the overlay carries every label.
+  it("keeps the rankingOverlay file and chunk levels the reranker emits", () => {
+    const overlay = {
+      preset: "techDebt",
+      file: { commitCount: { value: 37, label: "extreme" }, imports: ["./a"] },
+      chunk: { methodLines: { value: 120, label: "decomposition_candidate" } },
+    };
+    const result = schema.parse({ results: [{ id: "x", score: 0.9, rankingOverlay: overlay }] });
+    expect(result.results[0].rankingOverlay).toEqual(overlay);
   });
 
-  it("validates result with git metadata", () => {
-    const result = schema.parse({
-      results: [
+  it("accepts a real reranked strategy result unchanged", async () => {
+    const reranker = new Reranker(gitDerivedSignals, resolvePresets([...GIT_PRESETS], []), gitPayloadSignalDescriptors);
+    const ranked = await reranker.rerank(
+      [
         {
+          id: "chunk-1",
           score: 0.8,
-          relativePath: "src/api.ts",
-          git: {
-            recentDominantAuthor: "John",
-            commitCount: 5,
-            ageDays: 30,
+          payload: {
+            relativePath: "src/db.ts",
+            startLine: 1,
+            endLine: 50,
+            language: "typescript",
+            chunkType: "function",
+            git: { file: { commitCount: 30, bugFixRate: 40 }, chunk: { commitCount: 8, churnRatio: 0.4 } },
           },
         },
       ],
-    });
-    expect(result.results[0].git).toBeDefined();
+      "hotspots",
+      "semantic_search",
+    );
+    const results = overTheWire(ranked);
+    expect(results[0].rankingOverlay).toBeDefined();
+
+    expect(schema.parse({ results }).results).toEqual(results);
+  });
+
+  it("accepts find_symbol's synthetic results (mergedChunkIds, chunkCount) unchanged", () => {
+    const merged = resolveSymbols([
+      {
+        id: "uuid-1",
+        payload: {
+          symbolId: "processData",
+          chunkType: "function",
+          relativePath: "src/processor.ts",
+          content: "function processData() {",
+          startLine: 10,
+          endLine: 20,
+          language: "typescript",
+        },
+      },
+      {
+        id: "uuid-2",
+        payload: {
+          symbolId: "processData",
+          chunkType: "function",
+          relativePath: "src/processor.ts",
+          content: "  return 1;\n}",
+          startLine: 21,
+          endLine: 25,
+          language: "typescript",
+        },
+      },
+    ]);
+    const outline = CodeChunkGrouper.groupMembers("Processor", [
+      {
+        id: 7,
+        payload: {
+          symbolId: "Processor#run",
+          name: "run",
+          chunkType: "function",
+          parentSymbolId: "Processor",
+          relativePath: "src/processor.ts",
+          language: "typescript",
+          startLine: 3,
+          endLine: 9,
+          content: "run() {}",
+        },
+      },
+    ]);
+    const results = overTheWire([...merged, outline]);
+    expect(results[0].payload?.mergedChunkIds).toEqual(["uuid-1", "uuid-2"]);
+    expect(results[1].payload?.chunkCount).toBe(1);
+
+    expect(schema.parse({ results }).results).toEqual(results);
   });
 
   it("validates response with level field", () => {

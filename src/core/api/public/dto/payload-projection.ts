@@ -4,8 +4,8 @@
  *
  * A search response carries ~40 payload fields when a caller needs three, and
  * `metaOnly` does not shrink that: it removes the chunk BODY and leaves every
- * signal, every structural field, and at `level: "file"` the whole `members`
- * outline. For an agent consumer that is a context-budget tax on every call.
+ * signal and every structural field. For an agent consumer that is a
+ * context-budget tax on every call.
  *
  * `fields` is a list of DOT-PATHS, so it composes with the nested signal
  * namespaces (`git.file.commitCount`, `codegraph.symbols.chunk.pageRank`), and

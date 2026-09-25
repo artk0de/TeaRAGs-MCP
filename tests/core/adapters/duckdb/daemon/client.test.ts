@@ -658,3 +658,122 @@ describe("DaemonGraphDbClient", () => {
     expect(received.map((s) => s.relPath)).toEqual(symbols.map((s) => s.relPath));
   });
 });
+
+describe("DaemonGraphDbClient — readFileDependencyGraph (bd tea-rags-mcp-94hd9)", () => {
+  it("proxies the whole-graph read through the daemon socket", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const graph = {
+      files: [{ relPath: "a.ts", language: "typescript", symbolCount: 1 }],
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", callWeight: 2 }],
+    };
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readFileDependencyGraph" ? graph : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.readFileDependencyGraph();
+    await client.close();
+
+    expect(result).toEqual(graph);
+    expect(seen.find((r) => r.op === "readFileDependencyGraph")?.params).toMatchObject({ collection: "code_x_v1" });
+  });
+});
+
+describe("DaemonGraphDbClient — getFileImporters / getFileImports (bd tea-rags-mcp-gfvr8)", () => {
+  it("proxies both per-file reads through the daemon socket with the relPath", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const lookup = {
+      fileKnown: true,
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", importText: "./b", callWeight: 1 }],
+    };
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "getFileImporters" || r.op === "getFileImports" ? lookup : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const importers = await client.getFileImporters("b.ts");
+    const imports = await client.getFileImports("a.ts");
+    await client.close();
+
+    expect(importers).toEqual(lookup);
+    expect(imports).toEqual(lookup);
+    expect(seen.find((r) => r.op === "getFileImporters")?.params).toMatchObject({
+      collection: "code_x_v1",
+      relPath: "b.ts",
+    });
+    expect(seen.find((r) => r.op === "getFileImports")?.params).toMatchObject({
+      collection: "code_x_v1",
+      relPath: "a.ts",
+    });
+  });
+});
+
+describe("DaemonGraphDbClient — getSymbolVisibilities (bd tea-rags-mcp-sqqkz)", () => {
+  it("proxies the batched visibility read through the daemon socket with the symbolIds", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const rows = [
+      { relPath: "a.ts", symbolId: "A#x", visibility: "private" },
+      { relPath: "a.ts", symbolId: "A#y", visibility: null },
+    ];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "getSymbolVisibilities" ? rows : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.getSymbolVisibilities(["A#x", "A#y"]);
+    await client.close();
+
+    expect(result).toEqual(rows);
+    expect(seen.find((r) => r.op === "getSymbolVisibilities")?.params).toMatchObject({
+      collection: "code_x_v1",
+      symbolIds: ["A#x", "A#y"],
+    });
+  });
+});
+
+describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hme.1)", () => {
+  it("proxies the convention-privacy candidate read through the daemon socket with the languages", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const rows = [
+      {
+        sourceRelPath: "app/a.py",
+        sourceSymbolId: "run",
+        targetRelPath: "pkg/b.py",
+        targetSymbolId: "B#_x",
+        targetShortName: "_x",
+        targetVisibility: null,
+        targetLanguage: "python",
+        callExpression: "b._x()",
+      },
+    ];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readNonPublicMemberEdges" ? rows : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const result = await client.readNonPublicMemberEdges(["python", "ruby"]);
+    await client.close();
+
+    expect(result).toEqual(rows);
+    expect(seen.find((r) => r.op === "readNonPublicMemberEdges")?.params).toMatchObject({
+      collection: "code_x_v1",
+      languages: ["python", "ruby"],
+    });
+  });
+});

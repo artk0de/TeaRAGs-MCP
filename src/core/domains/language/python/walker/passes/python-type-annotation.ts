@@ -29,7 +29,7 @@
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
-import { NIL_TYPE_REF, typeRefReceiverForm, typeRefUnionOf } from "../../../kernel/type-ref.js";
+import { NIL_TYPE_REF, typeRefReceiverForm, typeRefUnionOf } from "../../../kernel/index.js";
 
 /** Names that carry no receiver: annotated with one of these, a site gets no fact. */
 export const PYTHON_DECLINED_TYPE_NAMES: ReadonlySet<string> = new Set([

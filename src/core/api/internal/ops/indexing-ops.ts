@@ -10,6 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import { OllamaUnavailableError } from "../../../adapters/embeddings/ollama/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
@@ -1052,6 +1053,14 @@ export class IndexingOps {
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
     const collectionName = resolvePhysicalCollection(aliasName, await this.qdrant.aliases.listAliases());
 
+    // Same startup gate as the incremental and full paths, and for the same
+    // reason: the sync leg deletes a changed file's old chunks BEFORE it embeds
+    // the new ones, so a provider that is down at startup costs those files
+    // their points and then fails anyway (bd tea-rags-mcp-umatc — a scratch
+    // index went from 8 points to 2). Probing first turns that into the
+    // provider's typed "unreachable" error with nothing touched.
+    await this.checkEmbeddingHealth();
+
     // The sync leg is deliberately NOT forced: the recompute below owns the
     // forced re-extraction on this path, and forcing both meant paying for it
     // twice (bd tea-rags-mcp-6aytq).
@@ -1225,6 +1234,12 @@ export class IndexingOps {
           await this.embeddings.embed("health");
           return;
         } catch (error) {
+          // The provider already waited the operator's recovery budget out
+          // before giving up; probing again restarts that wait and multiplies
+          // the budget by the attempt count (bd tea-rags-mcp-umatc). The retry
+          // loop exists for a probe starved of an event-loop tick, which fails
+          // at once and reports no wait.
+          if (error instanceof OllamaUnavailableError && error.recoveryWaitMs > 0) throw error;
           lastError = error;
           if (attempt < attempts) {
             await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
@@ -1363,7 +1378,9 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
     filesIndexed: changeStats.filesAdded + changeStats.filesModified,
     chunksCreated: changeStats.chunksAdded,
     durationMs: changeStats.durationMs,
-    status: "completed",
+    // The pipeline downgrades to "partial" when a delete failed; hardcoding
+    // "completed" here reported a clean run over stale chunks (bd tea-rags-mcp-6l1w6).
+    status: changeStats.status,
     errors: [],
     enrichmentStatus: changeStats.enrichmentStatus,
     enrichmentDurationMs: changeStats.enrichmentDurationMs,
@@ -1378,6 +1395,10 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
       chunksAdded: changeStats.chunksAdded,
       chunksDeleted: changeStats.chunksDeleted,
       filesRetried: changeStats.filesRetried,
+      ...(changeStats.filesSkippedDueToDeleteFailure
+        ? { filesSkippedDueToDeleteFailure: changeStats.filesSkippedDueToDeleteFailure }
+        : {}),
+      ...(changeStats.filesFailedToDelete ? { filesFailedToDelete: changeStats.filesFailedToDelete } : {}),
     },
   };
 }

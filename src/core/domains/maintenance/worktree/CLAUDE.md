@@ -99,21 +99,21 @@
 ## Boundaries
 
 - **The command surface is consumed by a shell hook and by plugin skills outside
-  the TypeScript build, and one leg is ALREADY broken.**
+  the TypeScript build.**
   `.claude-plugin/tea-rags/scripts/cleanup-worktree-clone.sh` (a
   PostToolUse(Bash) backstop) reads `.path` and `.worktreeName` off
-  `tea-rags worktree list --json` and calls
-  `tea-rags worktree remove <worktreeName>` — but that JSON is `WorktreeInfo`
+  `tea-rags worktree list --json` — `WorktreeInfo`
   (`contracts/types/worktree.ts`, built by `toWorktreeInfo` in
-  `api/internal/ops/worktree-ops.ts`), which carries NO `path`. Every row hits
-  `[ -n "$p" ] || continue` and nothing is removed; the hook always `exit 0`s.
-  The dinopowers skills address the clone by the alias template
-  `<src-alias>-worktree-<name>` composed in `WorktreeProvisioner#create`; that
-  leg still holds. Why: the guaranteed teardown does not currently run, so
-  orphaned clones accumulate silently. Restoring it means adding `path` to
-  `WorktreeInfo` (or teaching the hook to read the registry). Renaming
-  `worktreeName`, the alias template, or `remove`'s argument breaks these
-  consumers with no compiler error and no test.
+  `api/internal/ops/worktree-ops.ts`) — and calls
+  `tea-rags worktree remove <worktreeName>` for every clone whose `path` is gone
+  from disk. The dinopowers skills address the clone by the alias template
+  `<src-alias>-worktree-<name>` composed in `WorktreeProvisioner#create`. Why:
+  no compiler links the hook to `WorktreeInfo`; the hook once read a `path` the
+  CLI never emitted, skipped every row, and the "guaranteed" teardown silently
+  removed nothing (bd tea-rags-mcp-ghk1f). The only guard is the contract test
+  in `tests/cli/commands/worktree.test.ts` that pipes the CLI's real JSON into
+  the real hook — renaming `path`, `worktreeName`, the alias template, or
+  `remove`'s argument must keep that test green.
 
 ## See also
 

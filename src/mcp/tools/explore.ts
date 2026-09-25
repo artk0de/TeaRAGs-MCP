@@ -117,12 +117,14 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids). " +
       "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
       "never Read the file or grep a saved dump. " +
+      "Member lines may end in declared visibility, e.g. 'Class#helper (private)' (codegraph; " +
+      "no suffix = unknown) — drop the suffix before drilling. " +
       "Uses Qdrant text match. Partial match supported: 'Reranker' → class outline. " +
       "symbolId convention: Class#method (instance), Class.method (static). " +
       'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +
       "attach rankingOverlay with churn/ownership/bugFixRate labels alongside " +
-      "definition — no second semantic_search needed. " +
-      'Supports `level: "file" | "chunk"` like other search tools.',
+      "definition — no second semantic_search needed.\n\n" +
+      "Param docs: tea-rags://schema/overview",
     schemaKey: "FindSymbolSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.findSymbol({

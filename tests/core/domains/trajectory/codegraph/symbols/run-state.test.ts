@@ -4,10 +4,14 @@
  * run-global aggregation maps + resolve tally.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { EMPTY_RESOLVE_DENOMINATOR_MARKER } from "../../../../../../src/core/contracts/resolve-rate.js";
 import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
+import {
+  CodegraphRunState,
+  languageKindTally,
+} from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 
 describe("CodegraphRunState.absorb", () => {
   it("merges classPrependedAncestors and ivarTypes from a file extraction into the run-global maps", () => {
@@ -46,7 +50,7 @@ describe("CodegraphRunState.absorb", () => {
 });
 
 describe("CodegraphRunState.drainMetrics", () => {
-  it("reports zero resolveSuccessRate and inProjectEdgeRecall for a run that extracted files/edges but attempted no calls", () => {
+  it("reports null resolveSuccessRate and inProjectEdgeRecall for a run that extracted files/edges but attempted no calls", () => {
     const runState = new CodegraphRunState();
     // A file with only file-edges (bare imports, no method calls) keeps
     // fileEdgeCount > 0 so drainMetrics takes the real-run branch rather
@@ -57,9 +61,82 @@ describe("CodegraphRunState.drainMetrics", () => {
     const metrics = runState.drainMetrics();
 
     expect(metrics).toBeDefined();
+    // bd tea-rags-mcp-stpvj — nothing scored is null, not 0.
+    expect(metrics?.resolveSuccessRate).toBeNull();
+    expect(metrics?.inProjectEdgeRecall).toBeNull();
+    expect(metrics?.fileEdgeCount).toBe(1);
+  });
+
+  // bd tea-rags-mcp-stpvj — every attempted call fell into an excluded bucket:
+  // the old `max(1, …)` guard turned the empty denominator into a 0 rate, both
+  // in the run result and in the stderr diagnostic line.
+  it("reports null rates and logs the marker when every attempted call was excluded", () => {
+    const runState = new CodegraphRunState();
+    runState.stats.extractedFiles = 1;
+    runState.stats.methodEdgeCount = 0;
+    runState.stats.fileEdgeCount = 1;
+    runState.stats.callsAttempted = 6;
+    runState.stats.callsNoInProjectDef = 4;
+    runState.stats.callsExternalSkipped = 2;
+    const kinds = languageKindTally(runState.stats, "swift");
+    kinds.index.attempted = 6;
+    kinds.index.noInProjectDef = 4;
+    kinds.index.externalSkipped = 2;
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    let metrics: ReturnType<CodegraphRunState["drainMetrics"]>;
+    try {
+      metrics = runState.drainMetrics();
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(metrics?.resolveSuccessRate).toBeNull();
+    expect(metrics?.inProjectEdgeRecall).toBeNull();
+    const line = writes.find((w) => w.includes("[codegraph] resolve by receiver-kind"));
+    expect(line).toContain(`(rate ${EMPTY_RESOLVE_DENOMINATOR_MARKER}, `);
+  });
+
+  it("keeps a scored zero as 0 in the run result and the stderr line", () => {
+    const runState = new CodegraphRunState();
+    runState.stats.extractedFiles = 1;
+    runState.stats.fileEdgeCount = 1;
+    runState.stats.callsAttempted = 3;
+    const kinds = languageKindTally(runState.stats, "swift");
+    kinds.index.attempted = 3;
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    let metrics: ReturnType<CodegraphRunState["drainMetrics"]>;
+    try {
+      metrics = runState.drainMetrics();
+    } finally {
+      spy.mockRestore();
+    }
+
     expect(metrics?.resolveSuccessRate).toBe(0);
     expect(metrics?.inProjectEdgeRecall).toBe(0);
-    expect(metrics?.fileEdgeCount).toBe(1);
+    const byKind = metrics?.resolveByReceiverKind as Record<string, { rate: number | null }>;
+    expect(byKind.index.rate).toBe(0);
+    expect(writes.find((w) => w.includes("[codegraph] resolve by receiver-kind"))).toContain("(rate 0.00, ");
+  });
+
+  it("reports a null per-receiver-kind rate for a kind with no attempted call", () => {
+    const runState = new CodegraphRunState();
+    runState.stats.extractedFiles = 1;
+    runState.stats.fileEdgeCount = 1;
+
+    const metrics = runState.drainMetrics();
+
+    const byKind = metrics?.resolveByReceiverKind as Record<string, { attempted: number; rate: number | null }>;
+    expect(byKind.dynamic).toEqual({ attempted: 0, resolved: 0, rate: null });
   });
 
   it("resets the tally to empty stats after draining, so a second drain of an untouched run reports undefined", () => {

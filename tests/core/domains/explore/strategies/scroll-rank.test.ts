@@ -190,10 +190,10 @@ describe("ScrollRankStrategy", () => {
     expect(paths).toContain("src/b.ts");
   });
 
-  // tea-rags-mcp-zrma: rank_chunks defaults to metaOnly=true, and metaOnly
-  // rebuilds the payload from payloadSignals — the synthetic outline has to
-  // survive that projection or the feature is invisible on this tool.
-  it("attaches a members outline at file level and keeps it through metaOnly", async () => {
+  // bd tea-rags-mcp-947xf / mwq0k: rank_chunks defaults to metaOnly=true; the
+  // file hit carries no members outline, no chunk-scoped fields (methodLines
+  // is a per-method value) and no payload copy of the top-level score.
+  it("returns a file hit with no members, no chunk-scoped fields and no payload.score", async () => {
     const qdrant = {
       scrollOrdered: vi.fn().mockResolvedValue([
         {
@@ -215,7 +215,18 @@ describe("ScrollRankStrategy", () => {
       ensurePayloadIndex: vi.fn().mockResolvedValue(true),
     } as unknown as QdrantManager;
 
-    const strategy = createStrategy(qdrant, undefined);
+    const relativePathSignal: PayloadSignalDescriptor = {
+      key: "relativePath",
+      type: "string",
+      description: "path",
+      level: "file",
+    };
+    const strategy = new ScrollRankStrategy(
+      qdrant,
+      createMockReranker(),
+      [METHOD_LINES_SIGNAL, relativePathSignal],
+      [],
+    );
 
     const results = await strategy.execute({
       collectionName: "test_col",
@@ -224,7 +235,9 @@ describe("ScrollRankStrategy", () => {
       limit: 10,
     });
 
-    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+    expect(results).toHaveLength(1);
+    expect(typeof results[0].score).toBe("number");
+    expect(results[0].payload).toEqual({ relativePath: "src/a.ts" });
   });
 
   it("adaptively fetches more chunks when first batch has too few unique files", async () => {
@@ -306,6 +319,33 @@ describe("ScrollRankStrategy", () => {
     for (const r of results) {
       expect(r.rankingOverlay).toBeDefined();
       expect(r.rankingOverlay?.preset).toBe("decomposition");
+    }
+  });
+
+  // metaOnly contract (2026-09-24): rank_chunks defaults metaOnly=true and the
+  // overlay is where every label lives, so the default must keep it.
+  it("keeps rankingOverlay under the default metaOnly and leaves the payload raw", async () => {
+    const overlay = {
+      preset: "decomposition",
+      chunk: { methodLines: { value: 200, label: "decomposition_candidate" } },
+    };
+    const reranker = createMockReranker();
+    vi.mocked(reranker.rerank).mockImplementation((results: RerankableResult[]) =>
+      results.map((r, i) => ({ ...r, score: 1 - i * 0.1, rankingOverlay: overlay })),
+    );
+
+    const results = await createStrategy(undefined, reranker).execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "chunk",
+      limit: 3,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.rankingOverlay).toEqual(overlay);
+      expect(JSON.stringify(r.payload)).not.toContain('"label"');
+      expect(typeof r.payload?.methodLines).toBe("number");
     }
   });
 

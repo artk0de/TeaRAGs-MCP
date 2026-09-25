@@ -109,6 +109,45 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is an imported
     });
   });
 
+  it("hops past a namesake another language declares inside the package (bd tea-rags-mcp-nbf8q)", () => {
+    // A polyglot package: the frontend bundle under the same directory declares
+    // a TypeScript `Flask`. Unfiltered, the hop reads it as a second declaration
+    // INSIDE the package and declines; the Python hop never sees it.
+    const table = tableWith({
+      "src/flask/__init__.py": ["__getattr__"],
+      "src/flask/app.py": ["Flask", "Flask#run"],
+      "src/flask/static/flask.ts": ["Flask", "Flask#run"],
+      "src/app/main.py": ["main"],
+    });
+    const ctx = ctxWith(
+      "src/app/main.py",
+      [{ importText: "flask", startLine: 1, importedNames: ["Flask"], importedBindings: { Flask: "Flask" } }],
+      table,
+    );
+    expect(strategy().attempt(call("Flask", "run"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/flask/app.py", targetSymbolId: "Flask#run" },
+    });
+  });
+
+  it("hops a module-member call past another language's namesake (bd tea-rags-mcp-nbf8q)", () => {
+    const table = tableWith({
+      "pkg/__init__.py": ["setup"],
+      "pkg/helpers.py": ["render"],
+      "pkg/web/render.ts": ["render"],
+      "app/main.py": ["main"],
+    });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: "pkg", startLine: 1, importedNames: ["pkg"], importedBindings: { pkg: "pkg" } }],
+      table,
+    );
+    expect(strategy().attempt(call("pkg", "render"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/helpers.py", targetSymbolId: "render" },
+    });
+  });
+
   it("declines the hop when the package declares the name in two of its own files", () => {
     // Both candidates sit INSIDE the barrel's package, so the ex28m
     // within-package narrowing cannot separate them either — decline.

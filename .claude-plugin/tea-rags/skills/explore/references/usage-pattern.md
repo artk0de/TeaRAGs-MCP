@@ -22,6 +22,13 @@ member before calling get_callers/get_callees.
   `call_expression` preview + `file:line`.
 - **"What does X call?" / "callees of X" / "what does X use"** →
   `get_callees symbolId=<id>`. Returns invoked symbols + `file:line`.
+- **"Who imports this file?" / "what does this file depend on?"** — the target
+  is a FILE, not a symbol: skip Step 1 and pass `relativePath=<path>`
+  (repo-relative) instead of `symbolId`. `get_callers` returns `importers[]`,
+  `get_callees` returns `imports[]`; each entry carries `importText` and
+  `callWeight` (resolved calls crossing the import, heaviest first; 0 = type /
+  constant / re-export only). An unknown path returns an empty list plus a
+  `message` — fix the path, don't report "nothing imports it".
 
 ## Step 3 — multi-hop trace ("trace flow X → Y")
 

@@ -28,6 +28,7 @@
  * which then feeds every `super` resolution downstream.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { FileExtraction, InheritanceEdgeDecl } from "../../../../contracts/types/codegraph.js";
 import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
@@ -307,18 +308,18 @@ export function attachRubyClassHierarchyChannels(out: FileExtraction, root: AstN
     schemaTables: schemaTableMap,
   } = collectRubyClassAncestors(root);
   if (ancestorMap.size > 0) {
-    const ancestorRecord: Record<string, readonly string[]> = {};
+    const ancestorRecord: Record<string, readonly string[]> = createIdentifierRecord();
     for (const [k, v] of ancestorMap) ancestorRecord[k] = v;
     out.classAncestors = ancestorRecord;
   }
   if (compactClassSet.size > 0) out.compactDeclaredClasses = [...compactClassSet];
   if (schemaTableMap.size > 0) {
-    const schemaTableRecord: Record<string, string> = {};
+    const schemaTableRecord: Record<string, string> = createIdentifierRecord();
     for (const [k, v] of schemaTableMap) schemaTableRecord[k] = v;
     out.classSchemaTables = schemaTableRecord;
   }
   if (prependedMap.size > 0) {
-    const prependedRecord: Record<string, readonly string[]> = {};
+    const prependedRecord: Record<string, readonly string[]> = createIdentifierRecord();
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
     out.classPrependedAncestors = prependedRecord;
   }
@@ -326,7 +327,7 @@ export function attachRubyClassHierarchyChannels(out: FileExtraction, root: AstN
   // `extends`), so only `class Foo < Bar` feeds it. Ruby's `extend Mod` mixin
   // is a different declaration and already rode out in `classAncestors` above.
   if (superclassMap.size > 0) {
-    const superclassRecord: Record<string, string> = {};
+    const superclassRecord: Record<string, string> = createIdentifierRecord();
     for (const [k, v] of superclassMap) superclassRecord[k] = v;
     out.classExtends = superclassRecord;
   }

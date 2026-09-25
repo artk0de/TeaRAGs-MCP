@@ -4,7 +4,7 @@ description:
   Expose new tool to LLM clients via MCP protocol — schema, handler, App method,
   docs in one coordinated change. Triggers on "add MCP tool", "new endpoint that
   returns X", "expose Y as a tool", "новый MCP tool". NOT for modifying an
-  existing tool's schema — just edit the tool file directly.
+  existing tool's schema — use mcp-schema-authoring for that.
 ---
 
 # Add MCP Endpoint
@@ -169,7 +169,11 @@ In `src/mcp/tools/schemas.ts`:
 
 - Add to `createSearchSchemas()` function
 - Use `schemaBuilder.buildRerankSchema(toolName)` for rerank param
-- Use `typedFilterFields()` for standard filters
+- Use `typedFilterFields(appliedFilterParams)` for standard filters — exposes
+  only params a registered trajectory applies (`SchemaBuilder#filterParamNames`)
+- Param `.describe()` = ≤ 20-word hint; reference prose → `buildOverview`
+  (`tea-rags://schema/overview`). `tests/mcp/tools/param-applicability.test.ts`
+  enforces both over the real tools/list
 - Use `collectionPathFields()` for collection/path resolution
 - Use `searchCommonFields()` for query/limit/filter/pathPattern
 

@@ -9,6 +9,13 @@
  * Search-related schemas (SemanticSearch, HybridSearch, SearchCode) are generated
  * dynamically via createSearchSchemas(SchemaBuilder) to avoid hardcoded imports
  * from domain/foundation layers. All other schemas remain static.
+ *
+ * Param descriptions are INLINE HINTS (≤ 20 words): the one semantic an agent
+ * would otherwise get wrong. Reference prose — per-filter level defaults, the
+ * metaOnly contract, filter-default resolution — lives in
+ * tea-rags://schema/overview (`buildOverview`), which every search tool links.
+ * `tests/mcp/tools/param-applicability.test.ts` enforces the budget over the
+ * real tools/list (bd tea-rags-mcp-ewg2s).
  */
 
 import { z } from "zod";
@@ -33,12 +40,11 @@ const projectField = () =>
     .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
     .optional()
     .describe(
-      "[RECOMMENDED] Project alias from registry — stable name that survives " +
-        "path moves and pulls qdrantUrl / embeddingModel from the registered " +
-        "entry. Use this when an alias exists; fall back to 'collection' or " +
-        "'path' only when no alias is registered. " +
-        "Resolution priority: collection > project > path.",
+      "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
     );
+
+/** `path` hint for the project-or-path tools (index status / metrics / clear). */
+const PROJECT_OR_PATH_HINT = "Codebase path. Prefer 'project' when an alias is registered.";
 
 // ---------------------------------------------------------------------------
 // Collection management schemas (static)
@@ -49,13 +55,14 @@ export const CreateCollectionSchema = {
   distance: z
     .enum(["Cosine", "Euclid", "Dot"])
     .optional()
-    .describe(
-      "Distance metric (default: Cosine). " +
-        "Cosine: recommended, works with all embedding providers. " +
-        "Dot: equivalent to Cosine for normalized embeddings. " +
-        "Euclid: absolute vector distance, rarely needed for text embeddings.",
-    ),
+    .describe("Distance metric, default Cosine. Dot ≡ Cosine on normalized embeddings; Euclid rarely fits text."),
   enableHybrid: coerceBoolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
+  schema: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "JSON Schema { type: object, properties } for metadata; add_documents validates per batch, fills defaults.",
+    ),
 };
 
 export const DeleteCollectionSchema = {
@@ -96,10 +103,7 @@ export const IndexCodebaseSchema = {
   path: z
     .string()
     .optional()
-    .describe(
-      "Absolute or relative path to codebase root directory. " +
-        "Prefer 'project' for re-indexing an already-registered alias; provide 'path' for first-time index.",
-    ),
+    .describe("Codebase root. Needed for first index; re-index a registered alias via 'project'."),
   project: projectField(),
   forceReindex: coerceBoolean().optional().describe("Force full re-index even if already indexed (default: false)"),
   extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
@@ -110,41 +114,22 @@ export const IndexCodebaseSchema = {
   seedFromWorktree: coerceBoolean()
     .optional()
     .describe(
-      "First index only (default true): sibling git worktree of same repo already indexed w/ same model + " +
-        "settings → clone its index, embed only differing files. false = index from scratch.",
+      "First index only, default true: clone an indexed sibling worktree, embed only differing files. false = scratch.",
     ),
 };
 
 export const GetIndexStatusSchema = {
-  path: z
-    .string()
-    .optional()
-    .describe(
-      "Filesystem path to codebase. " +
-        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
-    ),
+  path: z.string().optional().describe(PROJECT_OR_PATH_HINT),
   project: projectField(),
 };
 
 export const ClearIndexSchema = {
-  path: z
-    .string()
-    .optional()
-    .describe(
-      "Filesystem path to codebase. " +
-        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
-    ),
+  path: z.string().optional().describe(PROJECT_OR_PATH_HINT),
   project: projectField(),
 };
 
 export const GetIndexMetricsSchema = {
-  path: z
-    .string()
-    .optional()
-    .describe(
-      "Filesystem path to codebase. " +
-        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
-    ),
+  path: z.string().optional().describe(PROJECT_OR_PATH_HINT),
   project: projectField(),
 };
 
@@ -161,159 +146,133 @@ export const GetIndexMetricsSchema = {
  */
 function collectionPathFields() {
   return {
-    collection: z
-      .string()
-      .optional()
-      .describe(
-        "Internal Qdrant collection name (lowest-level handle). " +
-          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
-      ),
+    collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
     project: projectField(),
     path: z
       .string()
       .optional()
-      .describe(
-        "Filesystem path to indexed codebase (auto-resolves to a collection). " +
-          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
-      ),
+      .describe("Indexed codebase path; auto-resolves to its collection. Prefer 'project' when aliased."),
   };
 }
 
 /**
- * Typed filter params shared across all search tools (semantic, hybrid, search_code, rank_chunks).
- * These map 1:1 to TypedFilterParams in api/public/dto/explore.ts.
+ * Typed filter param CATALOG shared across the typed-filter search tools
+ * (semantic, hybrid, search_code, rank_chunks). Keys map 1:1 to
+ * TypedFilterParams in api/public/dto/explore.ts; each key names the
+ * `FilterDescriptor#param` of the trajectory that applies it.
+ *
+ * The catalog is the MCP-side shape (coercion + hint). Which entries a tool
+ * EXPOSES is decided by the registry: {@link typedFilterFields} keeps only the
+ * params a registered trajectory applies, so codegraph filters vanish when the
+ * codegraph trajectory is off instead of being accepted and silently ignored
+ * (bd tea-rags-mcp-86wsz).
  */
-function typedFilterFields() {
+function typedFilterCatalog() {
   return {
     language: z.string().optional().describe("Filter by programming language"),
     fileExtension: z
       .union([z.string(), z.array(z.string())])
       .optional()
-      .describe("Filter by file extension(s). Single string (e.g. '.ts') or array (e.g. ['.ts', '.py'])"),
+      .describe("File extension(s): '.ts' or ['.ts', '.py']."),
     chunkType: z.string().optional().describe("Filter by chunk type (function, class, interface, block)"),
     documentation: z
       .enum(["only", "exclude", "include"])
       .optional()
       .describe(
-        "Documentation filter mode. 'only' = documentation chunks only, " +
-          "'exclude' = no documentation chunks, 'include' = all chunks. " +
-          "Omitted → no doc filter of its own, but a rerank preset's default filter may exclude docs; " +
-          "explicit 'only' / 'include' drops such a default.",
+        "Doc chunks: only | exclude | include. Omitted → preset default may exclude docs; only/include drops it.",
       ),
     testFile: z
       .enum(["only", "exclude", "include"])
       .optional()
       .describe(
-        "Test file filter mode. 'only' = test files only, " +
-          "'exclude' = no test files, 'include' = all files. " +
-          "Omitted → no test filter of its own, but a rerank preset's default filter may exclude tests; " +
-          "explicit 'only' / 'include' drops such a default.",
+        "Test files: only | exclude | include. Omitted → preset default may exclude tests; only/include drops it.",
       ),
     author: z
       .string()
       .optional()
       .describe(
-        "Filter by blame-dominant author — owner of most live lines (git blame HEAD), exact name. " +
-          "File-level by default; level 'chunk' → owner of the chunk's own lines. Example: 'John Doe'",
+        "Blame owner (most live lines, git blame HEAD), exact name. File default; level 'chunk' → chunk lines.",
       ),
     recentAuthor: z
       .string()
       .optional()
-      .describe(
-        "Filter by recent-activity dominant author — most commits to the FILE in git log window (not blame). " +
-          "Exact full name OR email. File-level at any `level`. 'What did X work on' → recentAuthor + modifiedAfter. " +
-          "Example: 'john@acme.com'",
-      ),
+      .describe("Top committer to the FILE in git log window (not blame), exact name or email. 'What X worked on'."),
     contributor: z
       .string()
       .optional()
-      .describe(
-        "Filter to files the person COMMITTED to in git log window (any recent-window committer, not only the dominant one). " +
-          "Superset of recentAuthor — 'everything X touched' → contributor, 'where X dominates' → recentAuthor. " +
-          "Exact name as git records it. File-level at any `level`. Example: 'John Doe'",
-      ),
+      .describe("Any committer to the FILE in git log window, exact name (no email); superset of recentAuthor."),
     modifiedAfter: z
       .string()
       .optional()
-      .describe(
-        "Filter code whose file's last commit (git.file.lastModifiedAt) is on/after this date. " +
-          "File-level at any `level` — no level 'file' needed. ISO format: '2024-01-01' or '2024-01-01T00:00:00Z'",
-      ),
+      .describe("File last commit on/after ISO date ('2024-01-01'). File-level at any level."),
     modifiedBefore: z
       .string()
       .optional()
-      .describe(
-        "Filter code whose file's last commit (git.file.lastModifiedAt) is on/before this date. " +
-          "File-level at any `level`. ISO format: '2024-12-31'",
-      ),
+      .describe("File last commit on/before ISO date ('2024-12-31'). File-level at any level."),
     minAgeDays: coerceNumber()
       .optional()
       .describe(
-        "Filter code whose last commit is ≥ N days old, age computed at query time from lastModifiedAt. " +
-          "Level-aware: chunk last commit by default (none → dropped: docs + chunks with no commit in " +
-          "chunk git window); level 'file' → file last commit, results grouped per file.",
+        "Last commit ≥ N days old, query time. Chunk default drops docs + no-commit chunks; level 'file' → file.",
       ),
     maxAgeDays: coerceNumber()
       .optional()
-      .describe(
-        "Filter code whose last commit is ≤ N whole days old, query time (0 = within a day). " +
-          "Level-aware like minAgeDays. File-level recency at chunk granularity → modifiedAfter.",
-      ),
+      .describe("Last commit ≤ N whole days old, query time (0 = within a day). Level-aware like minAgeDays."),
     minCommitCount: coerceNumber()
       .optional()
-      .describe("Filter by minimum number of commits touching the chunk (churn indicator)."),
+      .describe("Min commits touching the chunk (churn). Level-aware, chunk default."),
     taskId: z
       .string()
       .optional()
-      .describe(
-        "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). " +
-          "Level-aware: any commit of the file by default; level 'chunk' → the chunk's own commits.",
-      ),
+      .describe("Task ID from commit messages (TD-1234, #567, AB#890). File default; level 'chunk' → chunk commits."),
     symbolId: z
       .string()
       .optional()
-      .describe(
-        "Filter by symbol ID (partial text match). Format: 'Class.method' for class methods, " +
-          "'functionName' for top-level functions. Supports partial match: 'ClassName' finds all " +
-          "methods of that class, 'methodName' finds that method in any class.",
-      ),
+      .describe("Partial symbolId text match: 'Class' hits all its methods, 'method' hits it in any class."),
     // Codegraph trajectory — names map to nested Qdrant paths in codegraphFilters.toCondition().
     minFanIn: coerceNumber()
       .optional()
-      .describe(
-        "Filter by minimum fan-in (incoming references). Level-aware: file = files importing this file, " +
-          "chunk = call sites invoking this symbol. Default level: file.",
-      ),
+      .describe("Min fan-in. File default = files importing this file; level 'chunk' = call sites."),
     minFanOut: coerceNumber()
       .optional()
-      .describe(
-        "Filter by minimum fan-out (outgoing references). Level-aware: file = files this file imports, " +
-          "chunk = outgoing calls from this symbol. Default level: file.",
-      ),
-    minPageRank: coerceNumber()
-      .optional()
-      .describe("Filter by minimum chunk-level PageRank score in [0,1] over the method call graph."),
+      .describe("Min fan-out. File default = files this file imports; level 'chunk' = outgoing calls."),
+    minPageRank: coerceNumber().optional().describe("Min chunk-level PageRank in [0,1] over the method call graph."),
     minInstability: coerceNumber()
       .optional()
-      .describe("Filter by minimum Martin instability = fanOut / (fanIn + fanOut), in [0,1]. File-level only."),
+      .describe("Min Martin instability fanOut / (fanIn + fanOut), in [0,1]. File-level only."),
     minTransitiveImpact: coerceNumber()
       .optional()
-      .describe(
-        "Filter by minimum distinct files transitively importing this file (reverse BFS, depth-capped). File-level only.",
-      ),
+      .describe("Min distinct files transitively importing this file (depth-capped reverse BFS). File-level only."),
     minConnectionCount: coerceNumber()
       .optional()
-      .describe(
-        "Filter by minimum file-graph edges (fanIn + fanOut). Useful for excluding low-confidence instability values. File-level only.",
-      ),
+      .describe("Min file-graph edges (fanIn + fanOut); drops low-confidence instability values. File-level only."),
     isHub: coerceBoolean()
       .optional()
-      .describe("Filter to files flagged as architectural hubs (fanIn above the collection p95). File-level only."),
-    isLeaf: coerceBoolean()
-      .optional()
-      .describe("Filter to files flagged as leaves (fanOut == 0 and fanIn > 0). File-level only."),
+      .describe("Files flagged architectural hubs (fanIn above collection p95). File-level only."),
+    isLeaf: coerceBoolean().optional().describe("Files flagged leaves (fanOut == 0, fanIn > 0). File-level only."),
   };
 }
+
+type TypedFilterCatalog = ReturnType<typeof typedFilterCatalog>;
+
+/** Every typed filter param the MCP catalog can expose (derived from the catalog keys). */
+export const TYPED_FILTER_PARAM_NAMES: readonly string[] = Object.keys(typedFilterCatalog());
+
+/**
+ * The typed filter fields a search tool exposes: the catalog narrowed to the
+ * params a registered trajectory applies (`SchemaBuilder#filterParamNames`).
+ * Typed as the full catalog so request DTO typing stays stable — at runtime a
+ * gated-off field is absent from the schema, and Zod strips it from requests.
+ */
+function typedFilterFields(applied: ReadonlySet<string>): TypedFilterCatalog {
+  const catalog = typedFilterCatalog();
+  return Object.fromEntries(Object.entries(catalog).filter(([param]) => applied.has(param))) as TypedFilterCatalog;
+}
+
+const PATH_PATTERN_HINT = "Glob on file path (picomatch), e.g. '**/workflow/**', 'src/**/*.ts'.";
+
+const RERANK_HINT = "Rerank preset or {custom: weights}. See tea-rags://schema/presets.";
+
+const OFFSET_HINT = "Skip first N results (pagination). Default: 0.";
 
 /**
  * Shared fields for query, limit, filter, pathPattern used in semantic/hybrid search.
@@ -323,39 +282,34 @@ function searchCommonFields(filterSchema: z.ZodTypeAny) {
     query: z.string().describe("Search query text"),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: filterSchema.optional(),
-    pathPattern: z
-      .string()
-      .optional()
-      .describe(
-        "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: '**/workflow/**', 'src/**/*.ts', '**/{models,services}/**'.",
-      ),
+    pathPattern: z.string().optional().describe(PATH_PATTERN_HINT),
   };
 }
 
 /**
- * Create dynamic search schemas from SchemaBuilder.
- * Replaces hardcoded imports from trajectory/ and search/structural-signals.
+ * Shared level field for all structured search tools. Per-filter level
+ * defaults (which filters are level-aware, which default where) are reference
+ * prose in tea-rags://schema/overview (`buildOverview`).
  */
-/** Shared level field for all structured search tools. */
 function levelField() {
   return {
     level: z
       .enum(["chunk", "file"])
       .optional()
       .describe(
-        "Analysis level. 'chunk' = rank individual code chunks (functions, classes, blocks) — " +
-          "use for decomposition candidates, hotspot detection. " +
-          "'file' = rank files as aggregated units — use for tech debt and ownership analysis; " +
-          "each result carries payload.members, an outline of what matched inside that file " +
-          "(markdown files get their heading TOC), in the same format find_symbol(relativePath) returns. " +
-          "Also sets payload scope of level-aware filters; unset → each filter's own default " +
-          "(minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/author/minFanIn/minFanOut: file). " +
-          "modifiedAfter/modifiedBefore/recentAuthor file-level regardless. " +
-          "Default: determined by preset signalLevel. Explicit value overrides preset.",
+        "'chunk' ranks chunks; 'file' ranks files, file payload only, no content. " +
+          "Also scopes level-aware filters. Default: preset signalLevel.",
       ),
   };
 }
+
+/**
+ * metaOnly hint. The full response contract (raw payload paths, essential git
+ * fields, labels only in rankingOverlay) is stated once in
+ * tea-rags://schema/overview (`META_ONLY_CONTRACT` in the resources registry).
+ */
+const META_ONLY_HINT =
+  "Drop content. Payload stays raw; labels only in rankingOverlay. Contract: tea-rags://schema/overview.";
 
 /**
  * Shared payload allow-list. Every tool that returns payload-bearing results
@@ -368,15 +322,8 @@ function fieldsField() {
       .array(z.string())
       .optional()
       .describe(
-        "Payload allow-list: dot-paths kept in each result's payload, e.g. " +
-          "['relativePath', 'git.file.commitCount']. Applied server-side before " +
-          "serialization, so it cuts response size rather than just hiding fields. " +
-          "Nesting matters — signals live under git.{file,chunk}.* and " +
-          "codegraph.symbols.{file,chunk}.*; read tea-rags://schema/signals for the paths. " +
-          "EXACT list: nothing is added back, relativePath included. " +
-          "Omitted → the full payload (today's behaviour). Note metaOnly is a different " +
-          "axis — it drops the chunk BODY and keeps every signal. " +
-          "A path no result carried comes back on fieldsWarning instead of failing.",
+        "Payload dot-path allow-list, e.g. ['relativePath', 'git.file.commitCount']. EXACT: nothing added back. " +
+          "Paths: tea-rags://schema/signals.",
       ),
   };
 }
@@ -384,35 +331,32 @@ function fieldsField() {
 /** Shared pagination + meta fields for search results. */
 function paginationFields(metaOnlyDefault?: boolean) {
   return {
-    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
+    offset: coerceNumber().optional().describe(OFFSET_HINT),
     metaOnly: coerceBoolean()
       .optional()
       .default(metaOnlyDefault ?? false)
-      .describe(
-        metaOnlyDefault
-          ? "Return only metadata (path, lines, git info) without content. " +
-              "Default: true (rank_chunks is analytics-oriented; use false to include code content)."
-          : "Return only metadata (path, lines, git info) without content. Reduces response size. Default: false.",
-      ),
+      .describe(`${META_ONLY_HINT} Default: ${metaOnlyDefault ? "true" : "false"}.`),
   };
 }
 
 /** Build the shared schema structure used by both semantic_search and hybrid_search. */
-function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeAny) {
+function vectorSearchSchema(rerankSchema: z.ZodTypeAny, filterSchema: z.ZodTypeAny, applied: ReadonlySet<string>) {
   return {
     ...collectionPathFields(),
     ...searchCommonFields(filterSchema),
-    ...typedFilterFields(),
+    ...typedFilterFields(applied),
     ...levelField(),
-    rerank: rerankSchema
-      .optional()
-      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    rerank: rerankSchema.optional().describe(RERANK_HINT),
     ...fieldsField(),
     ...paginationFields(),
   };
 }
 
 export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
+  // Typed filter params the registered trajectories apply — the only ones a
+  // typed-filter tool exposes (bd tea-rags-mcp-86wsz).
+  const appliedFilterParams = new Set(schemaBuilder.filterParamNames());
+
   const semanticSearchRerankSchema = schemaBuilder.buildRerankSchema("semantic_search");
   const searchCodeRerankSchema = schemaBuilder.buildRerankSchema("search_code");
   const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
@@ -422,53 +366,33 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   // available filter-preset names surfaced in the description for discovery.
   const filterSchema = schemaBuilder.buildFilterSchema();
 
-  const SemanticSearchSchema = vectorSearchSchema(semanticSearchRerankSchema, filterSchema);
-  const HybridSearchSchema = vectorSearchSchema(semanticSearchRerankSchema, filterSchema);
+  const SemanticSearchSchema = vectorSearchSchema(semanticSearchRerankSchema, filterSchema, appliedFilterParams);
+  const HybridSearchSchema = vectorSearchSchema(semanticSearchRerankSchema, filterSchema, appliedFilterParams);
 
   const SearchCodeSchema = {
     ...collectionPathFields(),
     query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 10, max: 100)"),
-    pathPattern: z
-      .string()
-      .optional()
-      .describe(
-        "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: '**/workflow/**', 'src/**/*.ts', '**/{models,services}/**'.",
-      ),
-    ...typedFilterFields(),
-    rerank: searchCodeRerankSchema
-      .optional()
-      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
-    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
+    // buildSearchCodeContext defaults to 5, not the 10 the analytic tools use.
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 5)"),
+    pathPattern: z.string().optional().describe(PATH_PATTERN_HINT),
+    ...typedFilterFields(appliedFilterParams),
+    rerank: searchCodeRerankSchema.optional().describe(RERANK_HINT),
+    offset: coerceNumber().optional().describe(OFFSET_HINT),
   };
 
   const RankChunksSchema = {
     ...collectionPathFields(),
-    ...typedFilterFields(),
+    ...typedFilterFields(appliedFilterParams),
     rerank: rankChunksRerankSchema.describe(
-      "Reranking preset or {custom: weights} (REQUIRED). " +
-        "similarity weight is ignored (no vector search). See tea-rags://schema/presets for details.",
+      "REQUIRED rerank preset or {custom: weights}; similarity weight ignored (no vector). See tea-rags://schema/presets.",
     ),
     ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: filterSchema.optional(),
-    pathPattern: z
-      .string()
-      .optional()
-      .describe(
-        "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: 'src/core/domains/ingest/**', '**/*.ts'",
-      ),
+    pathPattern: z.string().optional().describe(PATH_PATTERN_HINT),
     ...fieldsField(),
     ...paginationFields(true),
-    offset: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .optional()
-      .default(0)
-      .describe("Skip first N results (for pagination). Default: 0."),
+    offset: z.coerce.number().int().min(0).optional().default(0).describe(OFFSET_HINT),
   };
 
   const FindSimilarSchema = {
@@ -478,30 +402,19 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     positiveCode: z
       .array(z.string())
       .optional()
-      .describe(
-        "Code snippets to find similar code for. Paste any code block (function, class, pattern) " +
-          "and the tool will find semantically similar code across the codebase. " +
-          "Each string is one code example. Embedded on-the-fly.",
-      ),
+      .describe("Code snippets to match — one example per string, embedded on the fly."),
     negativeIds: z.array(z.string()).optional().describe("Chunk IDs to push results away from"),
-    negativeCode: z
-      .array(z.string())
-      .optional()
-      .describe("Code snippets to push results away from — exclude patterns you don't want in results"),
+    negativeCode: z.array(z.string()).optional().describe("Code snippets to push results away from."),
     strategy: z
       .enum(["best_score", "average_vector", "sum_scores"])
       .optional()
       .describe(
-        "Recommend strategy. best_score (default): scores each candidate against every example, " +
-          "supports negative-only. average_vector: averages all positive vectors, fastest. " +
-          "sum_scores: sums scores across examples, middle ground.",
+        "best_score (default, supports negative-only) | average_vector (fastest) | sum_scores (middle ground).",
       ),
     filter: filterSchema.optional(),
-    pathPattern: z.string().optional().describe("Glob pattern for filtering by file path (e.g. 'src/**/*.ts')"),
+    pathPattern: z.string().optional().describe(PATH_PATTERN_HINT),
     fileExtensions: z.array(z.string()).optional().describe("Filter by file extensions (e.g. ['.ts', '.js'])"),
-    rerank: findSimilarRerankSchema
-      .optional()
-      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    rerank: findSimilarRerankSchema.optional().describe(RERANK_HINT),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     ...fieldsField(),
     ...paginationFields(),
@@ -512,19 +425,9 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .string()
       .optional()
       .describe(
-        "Symbol name or symbolId to find. Format: 'ClassName.methodName' for class methods, " +
-          "'functionName' for top-level functions, 'ClassName' for classes. " +
-          "Supports partial match: 'ClassName' finds the class and all its methods. " +
-          "Mutually exclusive with relativePath.",
+        "Symbol or symbolId: Class#method (instance), Class.method (static), fn. Partial ok. Excludes relativePath.",
       ),
-    relativePath: z
-      .string()
-      .optional()
-      .describe(
-        "File path for file-level lookup. Returns file outline (code) or TOC (docs). " +
-          "Use the relativePath from a previous search result. " +
-          "Mutually exclusive with symbol.",
-      ),
+    relativePath: z.string().optional().describe("File path → outline (code) or heading TOC (docs). Excludes symbol."),
     ...collectionPathFields(),
     language: z
       .string()
@@ -533,19 +436,14 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     pathPattern: z
       .string()
       .optional()
-      .describe("Glob pattern for filtering by file path (picomatch). Example: '**/services/**'"),
-    metaOnly: coerceBoolean()
-      .optional()
-      .describe("Return only metadata (path, lines, git info) without content. Use for existence checks."),
+      .describe("Glob scoping symbol-mode lookup, e.g. '**/services/**'. Ignored with relativePath."),
+    metaOnly: coerceBoolean().optional().describe(`Existence check. ${META_ONLY_HINT}`),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe(
-        "Reranking preset or {custom: weights} — attaches ranking overlay with git signals. " +
-          "See tea-rags://schema/presets for details.",
-      ),
+      .describe("Rerank preset or {custom: weights} — attaches rankingOverlay to the definition."),
     ...fieldsField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 50)"),
-    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
+    offset: coerceNumber().optional().describe(OFFSET_HINT),
   };
 
   return {

@@ -15,15 +15,20 @@
  */
 
 import { DROP, resolved } from "../../../../../contracts/resolution.js";
-import {
-  pickSingleCandidate,
-  type AmbiguousResolveMode,
-  type CallContext,
-  type SymbolResolutionTarget,
+import type {
+  AmbiguousResolveMode,
+  CallContext,
+  CallRef,
+  SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import { swiftEnclosingTypeIds, swiftSelfTypeName } from "../swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "../swift-member-type-lookup.js";
-import { lookupSwiftSymbols } from "../swift-symbol-lookup.js";
+import { swiftCallReceiverType } from "../swift-receiver-type-ports.js";
+import { lookupSwiftTypeMember, swiftMemberCandidates } from "../swift-symbol-lookup.js";
+
+export { lookupSwiftTypeMember, swiftEnclosingTypeIds, swiftSelfTypeName };
 
 export interface SwiftResolverConfig {
   mode: AmbiguousResolveMode;
@@ -47,26 +52,27 @@ export interface SwiftResolverConfig {
 export const SWIFT_PSEUDO_RECEIVERS: ReadonlySet<string> = new Set(["self", "Self", "super"]);
 
 /**
- * Resolve `<typeName>#<member>` (instance) then `<typeName>.<member>` (static /
- * class) over Swift declarations. Instance first because Swift's type members
- * are overwhelmingly instance-level and a static namesake is the rarer shape.
+ * `"Optional"` when `call`'s member, as the receiver is WRITTEN, is
+ * `Optional`'s own — `box.map { … }` on a `box: Box?` with no `?` / `!`
+ * between them (bd tea-rags-mcp-y99pg.33) — else undefined, and the
+ * single-hop passes keep the wrapped type they read. Folded by
+ * `writtenPorts` (`createSwiftWrittenReceiverTypePorts`).
  */
-export function lookupSwiftTypeMember(
-  typeName: string,
-  member: string,
+export function swiftOptionalCallOwner(
+  call: CallRef,
   ctx: CallContext,
-  mode: AmbiguousResolveMode,
-): SymbolResolutionTarget | null {
-  const instanceHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}#${member}`), mode);
-  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-  const staticHit = pickSingleCandidate(lookupSwiftSymbols(ctx, `${typeName}.${member}`), mode);
-  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-  return null;
+  writtenPorts: ReceiverTypePorts,
+  cfg: SwiftResolverConfig,
+): string | undefined {
+  const type = swiftCallReceiverType(call, ctx, writtenPorts, cfg.memberTypes);
+  return type?.form === "instance" && type.name === "Optional" ? type.name : undefined;
 }
 
 /**
  * A receiver whose type the walker PROVED (a typed parameter, an annotated
- * `let`, a stored property) resolves against that type or emits nothing.
+ * `let`, a stored property) resolves against that type — its own member, else
+ * the nearest superclass's (`SwiftMemberTypeLookup#memberOn`) — or emits
+ * nothing.
  *
  * Java's equivalent (`resolveByLocalType`) falls back to a type-qualified
  * best-effort target for a receiver whose type is not a project symbol, which
@@ -83,30 +89,90 @@ export function resolveSwiftBoundTypeMember(
   typeName: string,
   member: string,
   ctx: CallContext,
-  mode: AmbiguousResolveMode,
+  cfg: SwiftResolverConfig,
+  call?: CallRef,
 ): SymbolResolutionOutcome {
-  const hit = lookupSwiftTypeMember(typeName, member, ctx, mode);
+  const hit = cfg.memberTypes.memberOn(typeName, member, ctx, cfg.mode, call);
   return hit ? resolved(hit) : DROP;
 }
 
 /**
- * Look up `<enclosingType>#<member>` / `<enclosingType>.<member>` constrained to
- * the caller's OWN file — the same-file arm the `self.` and bare-call passes
- * share. A hit here outranks anything the project-wide passes could say,
- * because a type's method declared in the very file that calls it is not a
- * guess.
+ * The calling initializer of a `self.init(…)` delegation, which is never its
+ * target: an initializer delegating to ITSELF never terminates, so the
+ * typechecker picked another overload (bd tea-rags-mcp-y99pg.36). Undefined
+ * for every other call, and where the run did not record the caller.
+ */
+export function swiftSelfDelegationCaller(call: CallRef, ctx: CallContext): string | undefined {
+  return call.receiver === "self" && call.member === "init" ? ctx.callerSymbolId : undefined;
+}
+
+/**
+ * Look up `<typeId>#<member>` then `<typeId>.<member>`, constrained to the
+ * caller's OWN file — and, given the call, to an overload its argument labels
+ * fit (bd tea-rags-mcp-y99pg.7), so a same-file declaration the call cannot
+ * reach no longer shadows the one in another file that it does.
+ */
+function lookupTypeMemberInCallerFile(
+  typeId: string,
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+  excludeSymbolId?: string,
+): SymbolResolutionTarget | null {
+  for (const id of [`${typeId}#${member}`, `${typeId}.${member}`]) {
+    const hit = swiftMemberCandidates(ctx, id, call).find(
+      (def) => def.relPath === ctx.callerFile && def.symbolId !== excludeSymbolId,
+    );
+    if (hit) return { targetRelPath: hit.relPath, targetSymbolId: hit.symbolId };
+  }
+  return null;
+}
+
+/**
+ * The same-file arm of `self.member()` / `Self.member()`: the member of the
+ * INNERMOST enclosing type, and only that one. A hit here outranks anything the
+ * project-wide passes could say, because a type's method declared in the very
+ * file that calls it is not a guess.
+ *
+ * Deliberately not the outward walk {@link lookupLexicalMemberInFile} does:
+ * `self` inside a nested type is the NESTED type, and Swift gives it no
+ * implicit reference to an outer instance.
  *
  * Returns null when the caller has no enclosing type (a top-level function) or
  * neither form is declared in the file; the caller then continues down the
  * chain to the extension-scope pass, which is where a Swift type split across
  * files is answered.
+ *
+ * `excludeSymbolId` names one declaration that is never the answer — the
+ * calling initializer, for a `self.init(…)` delegation (bd
+ * tea-rags-mcp-y99pg.36).
  */
-export function lookupEnclosingTypeMemberInFile(member: string, ctx: CallContext): SymbolResolutionTarget | null {
-  const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-  if (!enclosing) return null;
-  const instanceHit = lookupSwiftSymbols(ctx, `${enclosing}#${member}`).find((def) => def.relPath === ctx.callerFile);
-  if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-  const staticHit = lookupSwiftSymbols(ctx, `${enclosing}.${member}`).find((def) => def.relPath === ctx.callerFile);
-  if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+export function lookupSelfTypeMemberInFile(
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+  excludeSymbolId?: string,
+): SymbolResolutionTarget | null {
+  const selfType = swiftEnclosingTypeIds(ctx)[0];
+  return selfType === undefined ? null : lookupTypeMemberInCallerFile(selfType, member, ctx, call, excludeSymbolId);
+}
+
+/**
+ * The same-file arm of a BARE call: Swift's unqualified lookup, which searches
+ * the members of each enclosing type from the innermost outward and stops at
+ * the first that declares the name. So an inner declaration shadows an outer
+ * one, and a nested type's body still reaches a sibling nested type or its own
+ * enclosing type's static members — `Options(rawValue:)` written inside
+ * `Download.Options` names `Download.Options`, found one scope out.
+ */
+export function lookupLexicalMemberInFile(
+  member: string,
+  ctx: CallContext,
+  call?: CallRef,
+): SymbolResolutionTarget | null {
+  for (const typeId of swiftEnclosingTypeIds(ctx)) {
+    const hit = lookupTypeMemberInCallerFile(typeId, member, ctx, call);
+    if (hit) return hit;
+  }
   return null;
 }

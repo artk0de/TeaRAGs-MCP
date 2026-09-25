@@ -22,6 +22,7 @@
 
 import type ts from "typescript";
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
 import {
   BARE_GLOBAL_CALLABLES,
@@ -633,7 +634,7 @@ export function receiverTypeName(call: CallRef, ctx: CallContext): string | unde
     const fieldSegment = receiver.slice("this.".length);
     if (fieldSegment.includes(".") || ctx.callerScope.length === 0) return undefined;
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    return ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+    return identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
   }
   return resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) ?? undefined;
 }

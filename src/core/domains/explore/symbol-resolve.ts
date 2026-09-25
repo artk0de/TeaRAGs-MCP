@@ -8,7 +8,7 @@
 import type { SearchResult } from "../../api/public/dto/explore.js";
 import { CodeChunkGrouper, isTestChunk, isTestExampleChunk, splitFragmentBase } from "./chunk-grouping/code.js";
 import { DocChunkGrouper } from "./chunk-grouping/doc.js";
-import type { ScrollChunk } from "./chunk-grouping/types.js";
+import type { MemberVisibilityLookup, ScrollChunk } from "./chunk-grouping/types.js";
 
 /**
  * A `parentType` naming a member CONTAINER — class, module or struct, whatever
@@ -68,8 +68,16 @@ interface ContainerOutlinePlan {
  * @param chunks - raw Qdrant scroll results
  * @param query - original symbol query (outline triggers + sort priority)
  * @param metaOnly - strip content from results (existence check)
+ * @param visibilityOf - declared visibility of an outline member, rendered as
+ *   `Class#m (private)`; consulted ONLY for outline member lines (bd
+ *   tea-rags-mcp-sqqkz)
  */
-export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?: boolean): SearchResult[] {
+export function resolveSymbols(
+  chunks: ScrollChunk[],
+  query?: string,
+  metaOnly?: boolean,
+  visibilityOf?: MemberVisibilityLookup,
+): SearchResult[] {
   const groups = [...groupChunks(chunks).values()];
   const results: SearchResult[] = [];
   const emittedIds = new Set<string | number>();
@@ -88,7 +96,7 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
       plan.memberGroups.forEach(emit);
     }
   }
-  for (const plan of plans) results.push(renderContainerOutline(plan));
+  for (const plan of plans) results.push(renderContainerOutline(plan, visibilityOf));
 
   // 2. Tests of an outlined class are dropped from the response.
   const outlinedIds = new Set(plans.flatMap((plan) => [...plan.ids]));
@@ -232,11 +240,11 @@ function asOutlineMember(group: ScrollChunk[]): ScrollChunk[] {
   return [{ ...head, payload: { ...head.payload, symbolId: splitFragmentBase(head.payload) } }];
 }
 
-function renderContainerOutline(plan: ContainerOutlinePlan): SearchResult {
+function renderContainerOutline(plan: ContainerOutlinePlan, visibilityOf?: MemberVisibilityLookup): SearchResult {
   const memberChunks = plan.memberGroups.flatMap(asOutlineMember);
   return plan.classChunk
-    ? CodeChunkGrouper.group(plan.classChunk, memberChunks)
-    : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks);
+    ? CodeChunkGrouper.group(plan.classChunk, memberChunks, visibilityOf)
+    : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks, visibilityOf);
 }
 
 function hasContainerParentType(c: ScrollChunk): boolean {

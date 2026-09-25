@@ -454,7 +454,7 @@ describe("CodegraphEnrichmentProvider — spill-pipeline error wrapping", () => 
     const internalProv = provider as unknown as {
       extractOneFile: (root: string, relPath: string) => unknown;
     };
-    const result = internalProv.extractOneFile(tmp, "foo.unknown-ext");
+    const result = await internalProv.extractOneFile(tmp, "foo.unknown-ext");
     expect(result).toEqual({
       relPath: "foo.unknown-ext",
       language: "",

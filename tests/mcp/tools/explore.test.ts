@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { App, SchemaBuilder } from "../../../src/core/api/index.js";
 import type { ExploreResponse } from "../../../src/core/api/public/dto/explore.js";
 import { registerSearchTools } from "../../../src/mcp/tools/explore.js";
+import { TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
 
 type CapturedTool = {
   name: string;
@@ -36,6 +37,7 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
   const schemaBuilder = {
     buildRerankSchema: vi.fn(() => z.any()),
     buildFilterSchema: vi.fn(() => z.any()),
+    filterParamNames: vi.fn(() => [...TYPED_FILTER_PARAM_NAMES]),
   } as unknown as SchemaBuilder;
 
   const server = {} as Parameters<typeof registerSearchTools>[0];

@@ -30,9 +30,12 @@ embedding).
 find_symbol:
   symbolId: <symbol name from PG-1>
   path: <project>
-  rerank: "techDebt"          ← any preset works, overlay is preset-independent
-  metaOnly: false             ← need overlay labels
+  rerank: "techDebt"          ← labels in rankingOverlay, for preset's overlayMask fields
+  metaOnly: false             ← full raw payload: recent*, churnVolatility are non-essential
 ```
+
+Labels → `rankingOverlay.{file,chunk}.<field>.label`; raw values →
+`payload.git.{file,chunk}.<field>` (never labelled).
 
 Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
 blameDominantAuthor, blameDominantAuthorPct (live-line owner — used for silo

@@ -15,14 +15,15 @@
  * namesake. The map layout is owned by `../../struct-fields.ts`.
  */
 
+import { createIdentifierRecord } from "../../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
-import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../../kernel/index.js";
 import { goEmbeddedFieldKey, goStructClassKey } from "../../struct-fields.js";
 
 export const goStructFieldTypesFacetPass: ExtractionFacetPass = {
   run: (root, ctx): Partial<FileExtraction> => {
-    const byClassKey: Record<string, Record<string, string>> = {};
+    const byClassKey: Record<string, Record<string, string>> = createIdentifierRecord();
     for (const declaration of root.children) {
       if (declaration.type !== "type_declaration") continue;
       for (const spec of declaration.children) {
@@ -39,7 +40,7 @@ export const goStructFieldTypesFacetPass: ExtractionFacetPass = {
 
 /** One `struct_type`'s field map, named and embedded fields in declaration order. */
 function collectStructFields(struct: AstNode): Record<string, string> {
-  const fields: Record<string, string> = {};
+  const fields: Record<string, string> = createIdentifierRecord();
   const list = struct.children.find((c) => c.type === "field_declaration_list");
   for (const field of list?.children ?? []) {
     if (field.type !== "field_declaration") continue;

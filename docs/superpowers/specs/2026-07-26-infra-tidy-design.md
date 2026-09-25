@@ -257,7 +257,10 @@ code, since deleted along with its `contracts/index.ts` barrel line), and
 The latter needs an adapter-level error class plus a mapping in `explore`, which
 changes an error surfaced through MCP; it is tracked as `tea-rags-mcp-pn12w`,
 and until it lands `**/domains/**` stays out of the `adapters` zone with a
-fixture case skipped against that bead.
+fixture case skipped against that bead. It has landed: the adapter throws
+`QdrantInvalidQueryParameterError`, `HybridSearchStrategy` maps it back to
+`InvalidQueryError`, the `adapters` zone denies `**/domains/**`, and the fixture
+case runs.
 
 Config changes require explicit approval per `.claude/rules/linter-config.md`;
 this spec is that approval request, and the guard-repair task carries it.

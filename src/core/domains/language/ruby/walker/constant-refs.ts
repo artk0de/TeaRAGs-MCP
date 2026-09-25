@@ -14,7 +14,7 @@
  * belongs to `imports`.
  */
 
-import type { AstNode } from "../../../../contracts/types/ast.js";
+import { isSameAstNode, type AstNode } from "../../../../contracts/types/ast.js";
 import type { ImportRef } from "../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
@@ -107,14 +107,14 @@ function isInDeclarationPosition(node: AstNode): boolean {
       // and any references inside the body are not.
       const nameField = p.childForFieldName("name");
       const superField = p.childForFieldName("superclass");
-      if (nameField === node || isAncestor(nameField, node)) return true;
-      if (superField === node || isAncestor(superField, node)) return false; // superclass is a reference
+      if (isSameAstNode(nameField, node) || isAncestor(nameField, node)) return true;
+      if (isSameAstNode(superField, node) || isAncestor(superField, node)) return false; // superclass is a reference
       return false;
     }
     if (p.type === "assignment") {
       // `User = Struct.new(...)` — the LHS constant is a declaration.
       const lhs = p.childForFieldName("left");
-      if (lhs === node || isAncestor(lhs, node)) return true;
+      if (isSameAstNode(lhs, node) || isAncestor(lhs, node)) return true;
       return false;
     }
     p = p.parent;
@@ -126,7 +126,7 @@ function isAncestor(maybeParent: AstNode | null, child: AstNode): boolean {
   if (!maybeParent) return false;
   let p: AstNode | null = child;
   while (p) {
-    if (p === maybeParent) return true;
+    if (isSameAstNode(p, maybeParent)) return true;
     p = p.parent;
   }
   return false;

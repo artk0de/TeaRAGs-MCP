@@ -27,7 +27,7 @@ import { TrajectoryRegistry } from "../../../../src/core/domains/trajectory/inde
 import { STATIC_FILTER_PRESETS } from "../../../../src/core/domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../../../src/core/domains/trajectory/static/index.js";
 import { DecompositionPreset } from "../../../../src/core/domains/trajectory/static/rerank/presets/decomposition.js";
-import { createSearchSchemas } from "../../../../src/mcp/tools/schemas.js";
+import { createSearchSchemas, TYPED_FILTER_PARAM_NAMES } from "../../../../src/mcp/tools/schemas.js";
 
 const PRESETS: Record<string, RerankPreset> = {
   bugHunt: new BugHuntCompositePreset(),
@@ -176,6 +176,7 @@ describe("explicit include / documentation language yield the preset default", (
     const { SemanticSearchSchema } = createSearchSchemas({
       buildRerankSchema: () => z.string(),
       buildFilterSchema: () => z.record(z.string(), z.any()),
+      filterParamNames: () => [...TYPED_FILTER_PARAM_NAMES],
     } as unknown as SchemaBuilder);
     const parse = (input: Record<string, unknown>) => z.object(SemanticSearchSchema).parse(input);
 

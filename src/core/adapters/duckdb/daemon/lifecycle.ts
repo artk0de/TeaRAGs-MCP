@@ -38,6 +38,12 @@ export interface CodegraphDaemonPaths {
   portFile: string;
   refsFile: string;
   lockFile: string;
+  /**
+   * Single-instance ownership lock of the key directory (bd tea-rags-mcp-imgjx):
+   * held by the owning daemon for its whole lifetime, stamped with its pid. See
+   * `claimDaemonOwnership`.
+   */
+  ownerFile: string;
   /** Where the spawned daemon's stdout + stderr are recorded. */
   logFile: string;
 }
@@ -90,6 +96,7 @@ export function daemonPathsForKeyDir(keyDir: string): CodegraphDaemonPaths {
     portFile: join(keyDir, "codegraph-daemon.port"),
     refsFile: join(keyDir, "codegraph-daemon.refs"),
     lockFile: join(keyDir, "codegraph-daemon.lock"),
+    ownerFile: join(keyDir, "codegraph-daemon.owner"),
     logFile: join(keyDir, "codegraph-daemon.log"),
   };
 }
@@ -175,8 +182,48 @@ export function decrementRefs(paths: CodegraphDaemonPaths): number {
 
 /** Read the daemon's pid from its pid file; undefined when absent/unreadable. */
 export function readDaemonPid(paths: CodegraphDaemonPaths): number | undefined {
+  return readPidFile(paths.pidFile);
+}
+
+/** What `claimDaemonOwnership` found: this process owns the key dir, or who does. */
+export type DaemonOwnershipClaim =
+  | { owned: true; release: () => void }
+  | { owned: false; ownerPid: number | undefined };
+
+/**
+ * Claim single-instance ownership of a daemon's key directory (bd
+ * tea-rags-mcp-imgjx). A daemon calls this FIRST — before it opens a DuckDB
+ * file, unlinks a socket or writes its pid file — and holds the claim until its
+ * shutdown cleanup releases it. Two daemons of one build spawned in the same
+ * window used to both run: the second's `listen` unlinked the first's socket, so
+ * the first became unreachable while still holding the RW lock of whatever
+ * collection it had opened.
+ *
+ * The claim is a `DaemonLock` on `ownerFile`: an atomic exclusive create stamped
+ * with the owner's pid. A live owner (signal 0 answers, or EPERM) makes the
+ * claim fail; a dead owner's file — a crashed or SIGKILLed daemon never ran its
+ * cleanup — is taken over, so a leftover never blocks the respawn. The pid file
+ * is deliberately NOT the claim: it is written after `listen` and spawners read
+ * it as "the daemon is reachable", a stronger statement than "owned".
+ */
+export function claimDaemonOwnership(paths: CodegraphDaemonPaths): DaemonOwnershipClaim {
+  mkdirSync(dirname(paths.ownerFile), { recursive: true });
+  const lock = daemonLock.acquire(paths.ownerFile);
+  if (!lock) return { owned: false, ownerPid: readPidFile(paths.ownerFile) };
+  let released = false;
+  return {
+    owned: true,
+    release: () => {
+      if (released) return;
+      released = true;
+      daemonLock.release(lock.fd);
+    },
+  };
+}
+
+function readPidFile(file: string): number | undefined {
   try {
-    const pid = parseInt(readFileSync(paths.pidFile, "utf-8").trim(), 10);
+    const pid = parseInt(readFileSync(file, "utf-8").trim(), 10);
     return Number.isFinite(pid) && pid > 0 ? pid : undefined;
   } catch {
     return undefined;

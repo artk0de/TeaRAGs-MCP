@@ -1,0 +1,82 @@
+# Builds the six N-API prebuilds of @artk0de/tree-sitter-swift and packs the
+# publishable tarball. It does NOT publish: download the `package` artifact and
+# run `npm publish` on the .tgz by hand (see README.md next to this file).
+#
+# Kept here as a template so it never triggers on this repo's pushes. To run it,
+# copy it to .github/workflows/prebuild-tree-sitter-swift.yml on a branch and
+# dispatch it from the Actions tab (or `gh workflow run`).
+name: Prebuild tree-sitter-swift
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build_node:
+    name: Prebuild on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        # The same six targets @artk0de/tree-sitter and tree-sitter-swift 0.7.1
+        # ship: {darwin,linux,win32} x {arm64,x64}.
+        os:
+          - macos-15
+          - macos-15-intel
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - windows-2022
+          - windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Stage package sources
+        run: node scripts/vendor/tree-sitter-swift/prepare.js "$RUNNER_TEMP/pkg"
+      - name: Build prebuild
+        working-directory: ${{ runner.temp }}/pkg
+        run: |
+          npm install --omit peer --ignore-scripts --no-audit --no-fund
+          npx prebuildify --napi --strip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuilds-${{ matrix.os }}
+          path: ${{ runner.temp }}/pkg/prebuilds/**
+          retention-days: 7
+
+  package:
+    name: Pack
+    needs: build_node
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Stage package sources
+        run: node scripts/vendor/tree-sitter-swift/prepare.js "$RUNNER_TEMP/pkg"
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/pkg/prebuilds
+          pattern: prebuilds-*
+          merge-multiple: true
+      - name: Check all six targets are present
+        working-directory: ${{ runner.temp }}/pkg
+        run: |
+          for t in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-arm64 win32-x64; do
+            ls prebuilds/$t/*.node
+          done
+      - name: Pack
+        working-directory: ${{ runner.temp }}/pkg
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP/out"
+          cd "$RUNNER_TEMP/out" && shasum -a 512 *.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: ${{ runner.temp }}/out/*.tgz
+          retention-days: 14

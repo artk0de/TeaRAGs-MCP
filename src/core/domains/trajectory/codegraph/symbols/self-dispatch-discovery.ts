@@ -27,6 +27,7 @@
  * barrier.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type {
   ChunkExtraction,
   GlobalSymbolTable,
@@ -127,6 +128,14 @@ function isSelfReceiver(receiver: string | null): boolean {
     receiver.startsWith("self.class.new(")
   );
 }
+
+/**
+ * The one language whose files {@link extractSelfDispatchMethods} runs on — the
+ * entry strategy consuming the discovered templates is Ruby's. The barrier
+ * reads and writes this language's family partitions for everything it derives
+ * from self-dispatch (bd tea-rags-mcp-qea83).
+ */
+export const SELF_DISPATCH_LANGUAGE = "ruby";
 
 /**
  * Per-method self-dispatch candidates from a file's method chunks: each method
@@ -306,7 +315,7 @@ export function foldSelfDispatchTemplates(templates: readonly SelfDispatchTempla
     set.add(t.hook);
     hooksBySymbol.set(t.templateSymbolId, set);
   }
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = createIdentifierRecord();
   for (const [symbolId, hooks] of hooksBySymbol) {
     if (hooks.size === 1) map[symbolId] = [...hooks][0];
   }
@@ -421,7 +430,7 @@ export function deriveServiceEntryReturnTypes(
     if (declared.form !== "class" && declared.form !== "instance") return true;
     return isProjectDeclaredType(declared.name);
   };
-  const derived: Record<string, RubyTypeRef> = {};
+  const derived: Record<string, RubyTypeRef> = createIdentifierRecord();
   for (const symbolId of entrySymbolIds) {
     const split = splitMethodSymbolId(symbolId);
     if (split === null) continue;

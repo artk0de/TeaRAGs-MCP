@@ -23,7 +23,8 @@
  * `CallContext` for the same reason — a `CallContext` satisfies it by structure.
  */
 
-import { createAncestorLinearizer, type AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
+import { createAncestorLinearizer, type AncestorLinearizationPolicy } from "../../kernel/index.js";
 
 /**
  * The hierarchy facts a linearization needs — the three walker-recorded maps,
@@ -49,20 +50,20 @@ const RUBY_ANCESTOR_POLICY: AncestorLinearizationPolicy<RubyAncestorHierarchy> =
     // The superclass chain is built FIRST: in Ruby it already exists when the
     // class body runs, so it is what every `include`/`prepend` in that body checks
     // itself against before inserting.
-    const superclass = hierarchy.classExtends?.[klass];
+    const superclass = identifierEntry(hierarchy.classExtends, klass);
     const tail = superclass === undefined ? [] : recurse(superclass);
 
     // Includes, declaration order, each inserted at the FRONT of the region — so
     // the last one declared ends up nearest, as Ruby ranks them.
     const includes: string[] = [];
-    for (const mixin of hierarchy.classAncestors?.[klass] ?? []) {
+    for (const mixin of identifierEntry(hierarchy.classAncestors, klass) ?? []) {
       if (mixin === superclass) continue; // already carried by `tail`
       includes.unshift(...insertable(mixin, [includes, tail]));
     }
 
     // Prepends, same insertion rule, but the region sits BEFORE the class itself.
     const prepends: string[] = [];
-    for (const mixin of hierarchy.classPrependedAncestors?.[klass] ?? []) {
+    for (const mixin of identifierEntry(hierarchy.classPrependedAncestors, klass) ?? []) {
       prepends.unshift(...insertable(mixin, [prepends, includes, tail]));
     }
 

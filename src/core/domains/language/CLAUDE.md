@@ -136,11 +136,24 @@
 - **Dispatch narrowing terminates FOUR ways** (`kernel/dispatch-narrowing.ts`):
   0 survivors → no edges; 1 → one `dynamic` edge at `confidence: 1.0`
   (evidence-unique, NOT type-proven); over the corpus-adaptive cap from
-  `dispatchFanoutPolicyFor` → `ambiguous` with NO edges (f2jsb); else the fan at
-  `discount/m`. Sub-1 edges reach analytics confidence-WEIGHTED
-  (`SUM(confidence)` fanIn/fanOut, PageRank split across the fan); navigation
-  hides them via `isNavigationVisibleEdge`. Why: over the cap a multi-survivor
-  site emits nothing, and fanIn read unweighted over-counts a fan m-fold.
+  `dispatchFanoutPolicyFor` → `ambiguous` with NO edges (f2jsb) — computed over
+  the caller's `NarrowedFanoutOptions.population` when it passes one, which must
+  be the predicate its candidate lookup filters with (nbf8q); a caller that
+  omits it is capped by the polyglot corpus p99; else the fan at `discount/m`.
+  Sub-1 edges reach analytics confidence-WEIGHTED (`SUM(confidence)`
+  fanIn/fanOut, PageRank split across the fan); navigation hides them via
+  `isNavigationVisibleEdge`. Why: over the cap a multi-survivor site emits
+  nothing, and fanIn read unweighted over-counts a fan m-fold.
+- **`visibility` is a declared level; its REACH is a per-language rule.** Every
+  native walker records the declared access level on the one three-value union,
+  but `"private"` reaches differently per language, so `VisibilityNarrower` asks
+  an injected `VisibilityAccessPolicy`
+  (`DispatchCascadeOptions.visibilityAccess`) and never reads the word itself.
+  Its default is the explicit-receiver rule (private never reachable) — correct
+  for Ruby only. A language that runs `buildDispatchCascade` over candidates
+  with recorded visibility MUST inject its own rule. Why: under the default,
+  `other.priv()` inside the declaring class drops silently — a resolve-rate loss
+  no test on the walker sees (bd tea-rags-mcp-jwjyr.1).
 - **Receiver chain typing is a kernel fold with per-language ports.**
   `kernel/receiver-type-propagation.ts` owns the walk — split on `.`, seed the
   head, thread each hop through `memberTypeOf`, STOP at the first unknown, cap
@@ -152,14 +165,19 @@
   OPTIONAL and defaults to that plain `split(".")`: only Python supplies the
   bracket-aware scan (`splitAtBracketDepthZero`, the one depth-and-quote scanner
   in the engine), because the same split newly types 34 unmeasured mastodon
-  receivers and Ruby's gate is parity, not inspection. It supplies them as ONE
-  FROZEN object built once and reused, because the fold runs per call site and
-  `ctx` is threaded as an argument precisely so nothing is allocated there:
-  Ruby's is a module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
-  `createPythonReceiverTypePorts`, a factory the resolver calls once so the
-  ports close over its ONE `PythonImportFileMapper` instead of a private memo.
-  What an `@ivar` is, what a capitalized head means, which env caps the hops —
-  all language, none of it in the kernel.
+  receivers and Ruby's gate is parity, not inspection. A sixth,
+  `memberCallTypeOf`, is OPTIONAL too: present, it replaces `memberTypeOf` for a
+  link carrying an argument list and receives that list's text
+  (`callArgumentText`), for a return an argument binds; absent, the fold strips
+  the arguments exactly as before, so adding it moves no other language's edges
+  (bd tea-rags-mcp-y99pg.37). It supplies them as ONE FROZEN object built once
+  and reused, because the fold runs per call site and `ctx` is threaded as an
+  argument precisely so nothing is allocated there: Ruby's is a module singleton
+  (`RUBY_RECEIVER_TYPE_PORTS`), Python's is `createPythonReceiverTypePorts`, a
+  factory the resolver calls once so the ports close over its ONE
+  `PythonImportFileMapper` instead of a private memo. What an `@ivar` is, what a
+  capitalized head means, which env caps the hops — all language, none of it in
+  the kernel.
 - **The ancestor walk is a kernel driver with a per-language ORDER policy.**
   `kernel/ancestor-walk.ts` owns the recursion, the per-path cycle guard, the
   already-reachable dedupe filter, the per-run memo and

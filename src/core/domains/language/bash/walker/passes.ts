@@ -11,6 +11,6 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
 
 export const BASH_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];

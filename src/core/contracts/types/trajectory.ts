@@ -211,6 +211,39 @@ export interface SignalStatsRequest {
    */
   structuralAtoms?: readonly number[];
   /**
+   * A class of units named by a SIBLING signal: a unit whose co-signal equals
+   * `equals` belongs to it, leaves every stats bucket (global, per-language,
+   * per-scope), and reads `label` on the read path with no percentile lookup.
+   *
+   * `git.file.recentDominantAuthorPct` over a file whose recent history has
+   * one author reads 100 by construction. Measured on this project's own
+   * index, 72% of files sat on that value and every published threshold
+   * (p25/p50/p75/p95) was 100 — one reachable name, so the ladder graded
+   * nothing (bd tea-rags-mcp-od098). The co-signal answers the question the
+   * percentile could not: one recent contributor is `solo`, and the ladder is
+   * cut over the files where dominance is a position rather than a class.
+   *
+   * Distinct from `structuralAtoms`, which names class VALUES of the signal
+   * itself and grades them on the interior ladder: declaring the atom 100 here
+   * would sample the same files but label a solo file `silo` — above the
+   * interior p95 — which reads as a bus-factor finding about a file that
+   * simply has one recent author. The class is named by the co-signal because
+   * that is what defines it, and it earns its own label instead of a band.
+   * Distinct from
+   * `minSupportPercentile`, which selects by how WELL a unit was observed and
+   * leaves the excluded units unlabeled; a class member was observed perfectly
+   * well and is labeled.
+   *
+   * The co-signal is a bare name resolved at the signal's own namespace and
+   * scope, the way `confidence.support` is. A unit whose co-signal is missing
+   * cannot be shown to belong to the class and is sampled as before.
+   *
+   * Declaring it changes what the stats file SAMPLES, so `coSignal` and
+   * `equals` are part of `describeStatsSamplingContract`; `label` is a
+   * read-side name and is not.
+   */
+  coSignalClass?: CoSignalClass;
+  /**
    * Display hint for consumers rendering this signal's thresholds (prime digest,
    * get_index_metrics labelMap). The stored labelMap / threshold value always
    * stays RAW — this is a render-time hint only, never a value transform.
@@ -223,6 +256,16 @@ export interface SignalStatsRequest {
    *   (e.g. `git.*.bugFixRate`).
    */
   format?: "percent" | "percent100";
+}
+
+/** `SignalStatsRequest.coSignalClass` — see there for the semantics. */
+export interface CoSignalClass {
+  /** Bare sibling name at the signal's own namespace and scope (e.g. `recentContributorCount`). */
+  coSignal: string;
+  /** Co-signal value that makes a unit a class member. */
+  equals: number;
+  /** Label every class member reads, with no percentile lookup. */
+  label: string;
 }
 
 /**
@@ -310,6 +353,15 @@ export interface PayloadSignalDescriptor {
   stats?: SignalStatsRequest;
   /** Include in metaOnly results even without overlay mask. Default: false. */
   essential?: boolean;
+  /**
+   * Granularity the value describes — meaningful for FLAT keys only; a nested
+   * key names its level in its path (`git.file.*`, `git.chunk.*`). `"file"`
+   * marks a property of the whole file, identical on every chunk of it
+   * (`language`, `imports`, `moduleLines`). `level: "file"` search results
+   * keep only these flat keys: a file hit is one representative chunk, and
+   * everything else on it describes that chunk, not the file. Default: chunk.
+   */
+  level?: SignalLevel;
 }
 
 /**

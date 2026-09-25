@@ -39,6 +39,7 @@ export type {
 export type {
   // Collection
   CreateCollectionRequest,
+  DocumentMetadataSchema,
   CollectionInfo,
   CollectionMemoryBytes,
   CollectionMemoryMetrics,
@@ -63,19 +64,57 @@ export type {
   AmbiguousCallerResult,
   CalleeResult,
   CallerResult,
+  CycleMemberLocation,
   CycleResult,
+  FileImportersResponse,
+  FileImportResult,
+  FileImportsResponse,
   FindCyclesRequest,
   FindCyclesResponse,
   GetCalleesRequest,
   GetCalleesResponse,
   GetCallersRequest,
   GetCallersResponse,
+  SymbolCalleesResponse,
+  SymbolCallersResponse,
   // trace_path
   TracePathRequest,
   PathStep,
   TracedPath,
   PathTraceResult,
 } from "./graph.js";
+
+export type {
+  // Architecture diagnostics (get_architecture_report)
+  ArchitectureDirectoryRelation,
+  ArchitectureReportSummary,
+  ArchitectureRootCause,
+  ArchitectureViolation,
+  ConventionPrivacyArchitectureViolation,
+  ConventionPrivacyRule,
+  ConventionPrivacyViolationEvidence,
+  FacadeLeakArchitectureViolation,
+  FacadeLeakKind,
+  FacadeLeakViolationEvidence,
+  FacadeModuleExclusionReason,
+  FacadeModuleSummary,
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
+  LeakingAbstractionArchitectureRootCause,
+  LeakingAbstractionArchitectureViolation,
+  LeakingAbstractionReportSummary,
+  SilentCouplingArchitectureRootCause,
+  SilentCouplingArchitectureViolation,
+  SilentCouplingBuildSummary,
+  SilentCouplingReportSummary,
+  SilentCouplingStructuralVisibility,
+  SilentCouplingViolationEvidence,
+  StableDependenciesExclusionSummary,
+  StableDependenciesReportSummary,
+  StableDependencyArchitectureRootCause,
+  StableDependencyArchitectureViolation,
+  StableDependencyViolationEvidence,
+} from "./architecture.js";
 
 export { projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";

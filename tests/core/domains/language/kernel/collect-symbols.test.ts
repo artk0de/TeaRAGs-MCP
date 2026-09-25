@@ -40,6 +40,34 @@ describe("collectSymbols (kernel, yl9tv)", () => {
     expect(method?.startLine).toBe(3);
   });
 
+  it("stamps a `bodyScope` on a declaration whose nameOf says its body runs with it as `self`", () => {
+    // bd tea-rags-mcp-3ievc class B — a TYPE chunk's own calls (a stored
+    // property initializer, a computed property) execute inside the type, yet
+    // its `scope` is honestly the PARENT's. The flag is opt-in per nameOf, so a
+    // language that does not set it keeps its ranges byte-identical.
+    const tree = parse(["module M", "  class C", "    def m", "    end", "  end", "end", ""].join("\n"));
+    const optIn = (node: Parameters<typeof rbNameOf>[0]) => {
+      const named = rbNameOf(node);
+      if (named === null || Array.isArray(named) || node.type !== "class") return named;
+      return { ...named, opensSelfScope: true };
+    };
+    const rows = collectSymbols(tree, optIn, "::", false, composer);
+
+    const cls = rows.find((r) => r.symbolId === "M::C");
+    expect(cls?.scope).toEqual(["M"]);
+    expect(cls?.bodyScope).toEqual(["M", "C"]);
+    // A declaration that did not opt in carries no key at all.
+    expect(rows.find((r) => r.symbolId === "M")).not.toHaveProperty("bodyScope");
+    expect(rows.find((r) => r.symbolId === "M::C#m")).not.toHaveProperty("bodyScope");
+  });
+
+  it("stamps no `bodyScope` anywhere when no nameOf result opts in", () => {
+    const tree = parse(["module M", "  class C", "    def m", "    end", "  end", "end", ""].join("\n"));
+    for (const row of collectSymbols(tree, rbNameOf, "::", false, composer)) {
+      expect(row).not.toHaveProperty("bodyScope");
+    }
+  });
+
   it("dedups by symbolId (keeps first occurrence) when disambiguateOverloads is false", () => {
     // Two same-named top-level methods collide; the default path keeps one.
     const tree = parse(["def dup", "end", "def dup", "end", ""].join("\n"));

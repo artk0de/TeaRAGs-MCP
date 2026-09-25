@@ -152,7 +152,7 @@ describe("ExploreOps — preset default filter notice", () => {
 
     expect(response.presetFilterNotice).toEqual({
       preset: "techDebt",
-      by: "production (isTest)",
+      by: "production (isTest, codegraph.symbols.file.skippedAs)",
       clearWith: "filter: {}",
     });
   });
@@ -238,7 +238,7 @@ describe("ExploreOps — preset default filter notice", () => {
 
     expect(response.presetFilterNotice).toEqual({
       preset: "hotspots",
-      by: "production (isTest)",
+      by: "production (isTest, codegraph.symbols.file.skippedAs)",
       clearWith: "filter: {}",
     });
   });

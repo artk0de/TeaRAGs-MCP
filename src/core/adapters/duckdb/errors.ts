@@ -187,6 +187,31 @@ export class CodegraphDaemonBuildUnavailableError extends InfraError {
 }
 
 /**
+ * A codegraph daemon refused to start because another live daemon already owns
+ * its build-key directory (bd tea-rags-mcp-imgjx). Raised by `runDaemon` after
+ * it has asked its process to exit cleanly: the losing side of a spawn race must
+ * not open a DuckDB file or take over the socket — an unreachable twin holding a
+ * collection's RW lock is exactly what stalled the reachable daemon's opens for
+ * a full idle-eviction window. Never crosses the socket; it only tells an
+ * in-process caller why no daemon handle came back.
+ */
+export class CodegraphDaemonOwnedElsewhereError extends InfraError {
+  constructor(owner: { buildDir: string; ownerPid: number | undefined }, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_OWNED_ELSEWHERE",
+      message:
+        `Codegraph daemon key directory ${owner.buildDir} is already owned by live daemon ` +
+        `pid ${owner.ownerPid ?? "unknown"}; this daemon did not start`,
+      hint:
+        "Nothing to do: clients reach the owning daemon over the same socket. A second daemon of " +
+        "the same build only starts when two spawns race, and the loser exits on its own.",
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
  * The wire carries only `{ name, message }` (see `DaemonResponse`), so a
  * refusal cannot survive the socket as a class instance — the pool recognizes
  * it by the error name the daemon put on the response.
@@ -483,5 +508,41 @@ export class DuckDbCloseFailedError extends InfraError {
       httpStatus: 500,
       cause,
     });
+  }
+}
+
+/**
+ * A codegraph storage compaction (bd tea-rags-mcp-dvzdm) did not complete.
+ *
+ * `stage` says how far it got, and therefore what is on disk:
+ * - `copy` — the staged copy could not be written or did not match the live
+ *   database (`detail` names what differed); the staging file was removed and
+ *   the live file never moved.
+ * - `publish` — the atomic rename of the staged copy over the live file
+ *   failed; the live file is still the original and the client still has it
+ *   open.
+ * - `reopen` — the compacted file IS published, but opening it failed; the
+ *   client reports no open file, so its pool retires it and the next acquire
+ *   opens the path afresh.
+ *
+ * A compaction is best-effort: the caller logs this and a later run retries.
+ */
+export class CodegraphStorageCompactionFailedError extends InfraError {
+  readonly stage: "copy" | "publish" | "reopen";
+
+  constructor(dbPath: string, stage: "copy" | "publish" | "reopen", cause?: Error, detail?: string) {
+    super({
+      code: "INFRA_CODEGRAPH_STORAGE_COMPACTION_FAILED",
+      message: `Codegraph storage compaction of ${dbPath} failed at the ${stage} stage${detail ? `: ${detail}` : ""}`,
+      hint:
+        stage === "reopen"
+          ? "The compacted database is in place but could not be opened; the next codegraph operation " +
+            "reopens it. Inspect cause for the driver message."
+          : "The original database file is untouched. The next index run retries the compaction; " +
+            "inspect cause for the driver or filesystem message.",
+      httpStatus: 500,
+      cause,
+    });
+    this.stage = stage;
   }
 }

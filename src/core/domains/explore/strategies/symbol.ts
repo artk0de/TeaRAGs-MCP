@@ -56,11 +56,16 @@ import {
   symbolIdLastSegment,
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
-import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
+import type {
+  SymbolChunkLocation,
+  SymbolChunkResolver,
+  SymbolVisibilityResolver,
+} from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { isTestExampleChunk, splitFragmentBase } from "../chunk-grouping/code.js";
-import { applyEssentialSignalsToOverlay } from "../post-process.js";
+import { renderWithDeclaredVisibility } from "../outline-visibility.js";
+import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -90,6 +95,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     private readonly registry: TrajectoryFilterBuilder,
     private readonly input: SymbolSearchInput,
     private readonly chunkResolver?: SymbolChunkResolver,
+    private readonly visibilityResolver?: SymbolVisibilityResolver,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
@@ -127,7 +133,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       ? filterByExactSymbolId(allChunks, this.input.symbol)
       : filterByLastSegment(allChunks, this.input.symbol);
 
-    const resolved = resolveSymbols(filtered, this.input.symbol, ctx.metaOnly) as ExploreResult[];
+    // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
+    // metaOnly strips the outline text, so there is nothing to decorate.
+    const resolved = (await renderWithDeclaredVisibility(
+      (visibilityOf) => resolveSymbols(filtered, this.input.symbol, ctx.metaOnly, visibilityOf),
+      ctx.metaOnly ? undefined : this.visibilityResolver,
+      ctx.collectionName,
+    )) as ExploreResult[];
     if (resolved.length > 0) return resolved;
 
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
@@ -193,12 +205,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
    * (chunkCount, mergedChunkIds, merged startLine/endLine) intact and only
    * adjust the git layer to match the semantic/hybrid contract:
    *
-   *   metaOnly=true  → essential git keys + overlay signals (when reranked)
+   *   metaOnly=true  → signal namespaces reduced to their essential keys, raw;
+   *                    rankingOverlay (when reranked) stays on the result
    *   metaOnly=false → full payload passes through unchanged
    *
    * Using BaseExploreStrategy.applyMetaOnly would strip synthetic outline
-   * fields (not present in payloadSignals), so we apply a targeted git
-   * filter via applyEssentialGitToResult instead.
+   * fields (not present in payloadSignals), so we apply a targeted namespace
+   * filter via applyEssentialSignals instead.
    */
   protected override async postProcess(
     results: ExploreResult[],
@@ -218,7 +231,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     processed = processed.slice(0, limit);
 
     if (originalCtx.metaOnly) {
-      processed = processed.map((r) => applyEssentialSignalsToOverlay(r, this.essentialKeys) as ExploreResult);
+      processed = processed.map((r) => applyEssentialSignals(r, this.essentialKeys) as ExploreResult);
     }
 
     return processed;

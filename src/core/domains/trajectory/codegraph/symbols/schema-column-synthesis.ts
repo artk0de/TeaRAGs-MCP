@@ -26,6 +26,7 @@
  * edge, and there is no way for a consumer to tell the two apart afterwards.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { GlobalSymbolTable, RelPath, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef, SchemaTableColumns } from "../../../../contracts/types/language.js";
 
@@ -237,7 +238,7 @@ export function synthesizeSchemaColumnDefs(
   // a definition is what the short-name indexes hold, and the 8l5fo anti-explosion
   // invariant is that those stay byte-identical to a schema-less run. The types are
   // a second, independent output the caller merges into the run's return facts.
-  const returnTypes: Record<string, RubyTypeRef> = {};
+  const returnTypes: Record<string, RubyTypeRef> = createIdentifierRecord();
   for (const [tableName, model] of owners) {
     const table = tablesByName.get(tableName);
     if (table === undefined) continue;

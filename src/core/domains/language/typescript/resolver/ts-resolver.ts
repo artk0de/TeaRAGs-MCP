@@ -66,8 +66,13 @@
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
  * single-target resolution chain.
+ *
+ * One step runs AHEAD of the chain: a ref the walker unwrapped from
+ * `.call` / `.apply` / `.bind` first tries its literal invoker through passes
+ * 3-4 alone (`resolveFunctionInvokerSite`, bd tea-rags-mcp-g7h1y).
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   pickSingleCandidate,
@@ -87,6 +92,7 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
+import { importFileEdge } from "../../import-file-edges.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import {
@@ -290,6 +296,12 @@ function typeCheckerFallbackEnabled(raw: string | undefined): boolean {
 export class TSCallResolver implements CallResolver {
   readonly language = "typescript";
   private readonly strategies: SymbolResolutionStrategy[];
+  /**
+   * The declared-type passes that decide whether an unwrapped `.call` /
+   * `.apply` / `.bind` site is really a member call (bd tea-rags-mcp-g7h1y) —
+   * see `resolveFunctionInvokerSite`. The same instances the main chain runs.
+   */
+  private readonly functionInvokerSiteStrategies: readonly SymbolResolutionStrategy[];
   private readonly cone: ConeDispatchResolver;
 
   /**
@@ -365,11 +377,14 @@ export class TSCallResolver implements CallResolver {
     this.interfaceReceiver = this.programCache
       ? new TSTypeCheckerInterfaceReceiverDispatchResolver(cfg, this.programCache, this.cone)
       : null;
+    const fieldType = new TSFieldTypeSymbolResolutionStrategy(cfg);
+    const localBinding = new TSLocalBindingSymbolResolutionStrategy(cfg);
+    this.functionInvokerSiteStrategies = [fieldType, localBinding];
     this.strategies = [
       new TSSuperSymbolResolutionStrategy(cfg),
       new TSThisMemberSymbolResolutionStrategy(cfg),
-      new TSFieldTypeSymbolResolutionStrategy(cfg),
-      new TSLocalBindingSymbolResolutionStrategy(cfg),
+      fieldType,
+      localBinding,
       new TSNamedImportSymbolResolutionStrategy(cfg),
       // 6 answers only JSX TAGS, and its index is the whole fix for bd
       // tea-rags-mcp-33lqo: on taxdome, jsx carried 1,279 of the 1,479
@@ -451,7 +466,42 @@ export class TSCallResolver implements CallResolver {
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return resolveViaChain(this.strategies, call, ctx);
+    return this.resolveFunctionInvokerSite(call, ctx) ?? resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * The literal `<receiver>.call(…)` / `.apply` / `.bind` the walker unwrapped,
+   * resolved as the member call it is written as — kept only when the
+   * receiver's DECLARED type names a project class declaring that member (bd
+   * tea-rags-mcp-g7h1y).
+   *
+   * The walker unwraps on syntax and cannot see that `this.connection` is a
+   * `QdrantConnection` with a real `call` method; this layer can, because it
+   * holds the field / local type the walker recorded AND the symbol table that
+   * says which classes declare what. So the decision lives here, ahead of the
+   * main chain, and asks exactly the two passes whose only evidence is a
+   * declared type: `fieldType` (`this.<field>`) and `localBinding` (a typed
+   * parameter or constructed local). A function-typed receiver has no
+   * `<Type>#call` in the table, both CONTINUE, and the unwrapped ref proceeds
+   * through the main chain exactly as before (bd tea-rags-mcp-f2u54).
+   *
+   * Deliberately NOT the full chain: its short-name passes would match the
+   * literal `call` against whichever project class happens to declare one,
+   * turning every `fn.call(obj)` in the repo into a phantom edge. Nor the
+   * checker tier — it would add an answer only for receivers with no declared
+   * type, at the price of a Program acquisition per invoker site, and the
+   * checker-off path must reach the same verdict.
+   */
+  private resolveFunctionInvokerSite(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+    const site = call.functionInvokerSite;
+    if (site === undefined) return null;
+    const literal: CallRef = {
+      callText: call.callText,
+      receiver: site.receiver,
+      member: site.member,
+      startLine: call.startLine,
+    };
+    return resolveViaChain(this.functionInvokerSiteStrategies, literal, ctx);
   }
 
   /**
@@ -509,7 +559,7 @@ export class TSCallResolver implements CallResolver {
     const fileEdges: GraphEdges["fileEdges"] = [];
     for (const imp of extraction.imports) {
       const targetRelPath = mapImportToFile(imp.importText, extraction.relPath, this.tsOptions, this.fileExists);
-      if (targetRelPath) fileEdges.push({ targetRelPath, importText: imp.importText });
+      if (targetRelPath) fileEdges.push(importFileEdge(targetRelPath, imp));
     }
     return fileEdges;
   }
@@ -582,7 +632,7 @@ export class TSCallResolver implements CallResolver {
     if (call.dispatchArgs && call.dispatchArgs.length > 0) {
       const callee = this.resolve(call, ctx);
       const calleeSymbolId = callee?.targetSymbolId ?? null;
-      const invoked = calleeSymbolId ? ctx.callbackParams?.[calleeSymbolId] : undefined;
+      const invoked = calleeSymbolId ? identifierEntry(ctx.callbackParams, calleeSymbolId) : undefined;
       if (calleeSymbolId && invoked && invoked.length > 0) {
         for (const arg of call.dispatchArgs) {
           if (!invoked.includes(arg.argIndex)) continue;
@@ -644,7 +694,7 @@ export class TSCallResolver implements CallResolver {
    * ambiguous, drop rather than guess (m46z safety).
    */
   private selectTableDef(name: string, ctx: CallContext): DispatchTableDef | null {
-    const defs = ctx.dispatchTables?.[name];
+    const defs = identifierEntry(ctx.dispatchTables, name);
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
     const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.mode, this.fileExists);
