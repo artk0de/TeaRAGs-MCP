@@ -105,6 +105,21 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     await expect(async () => makeCli().parseAsync(["projects", "unregister"])).rejects.toThrow(/--name or --path/);
   });
 
+  it("unregister --collection removes the entry holding that collection", async () => {
+    await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
+    const registered = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const collection = /-> (code_\w+)/.exec(registered)![1];
+    stdoutSpy.mockClear();
+    await makeCli().parseAsync(["projects", "unregister", "--collection", collection]);
+    expect(stdoutSpy.mock.calls.map((c) => String(c[0])).join("")).toMatch(/Removed 'alpha'/);
+  });
+
+  it("unregister rejects --collection together with --name", async () => {
+    await expect(async () =>
+      makeCli().parseAsync(["projects", "unregister", "--name", "alpha", "--collection", "code_x"]),
+    ).rejects.toThrow(/mutually exclusive/);
+  });
+
   it("list subcommand closure invokes runList", async () => {
     await makeCli().parseAsync(["projects", "register", "--path", repo, "--name", "alpha"]);
     stdoutSpy.mockClear();

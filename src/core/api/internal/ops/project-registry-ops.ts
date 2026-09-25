@@ -33,6 +33,30 @@ export interface ProjectRegistryOpsDeps {
   pathExists?: (path: string) => boolean;
 }
 
+/** The one address field a validated {@link ProjectRegistryAddress} carries. */
+type RegistryAddressTarget = { kind: "name" | "path" | "collection"; value: string };
+
+/** Exactly one of `name` / `path` / `collection`, non-empty — typed errors otherwise. */
+function validateRegistryAddress(address: ProjectRegistryAddress): RegistryAddressTarget {
+  const given = (["name", "path", "collection"] as const).flatMap((kind) => {
+    const value = address[kind];
+    return typeof value === "string" && value.length > 0 ? [{ kind, value }] : [];
+  });
+  if (given.length > 1) {
+    throw new InvalidParameterError(
+      given[1].kind,
+      `${given.map((g) => g.kind).join(" and ")} are mutually exclusive — pass exactly one`,
+    );
+  }
+  if (given.length === 0) throw new MissingArgumentError(["name, path or collection"]);
+  return given[0];
+}
+
+/** Whether `candidate` is a versioned `<logical>_vN` generation of `logical`. */
+function isGenerationOf(candidate: string, logical: string): boolean {
+  return candidate.startsWith(`${logical}_v`) && /^\d+$/.test(candidate.slice(logical.length + 2));
+}
+
 export class ProjectRegistryOps {
   constructor(private readonly deps: ProjectRegistryOpsDeps) {}
 
@@ -323,7 +347,7 @@ export class ProjectRegistryOps {
 
   /**
    * The entry an address names, or null when nothing claims it. Validates the
-   * address: exactly one of `name` / `path`.
+   * address: exactly one of `name` / `path` / `collection`.
    *
    * A path is looked up by `resolveCollection`'s rule, not a new one: the plain
    * `resolve` spelling first (it is what a pre-canonicalization writer
@@ -331,19 +355,50 @@ export class ProjectRegistryOps {
    * record. Anything that finds the collection by path finds its entry here.
    */
   findEntry(address: ProjectRegistryAddress): CollectionEntry | null {
-    const { name, path } = address;
-    const hasName = typeof name === "string" && name.length > 0;
-    const hasPath = typeof path === "string" && path.length > 0;
-    if (hasName && hasPath) {
-      throw new InvalidParameterError("path", "name and path are mutually exclusive — pass exactly one");
-    }
-    if (hasName) return this.deps.registry.findByName(name);
-    if (!hasPath) throw new MissingArgumentError(["name or path"]);
-    const resolvedPath = resolve(path);
+    const target = validateRegistryAddress(address);
+    if (target.kind === "name") return this.deps.registry.findByName(target.value);
+    if (target.kind === "collection") return this.deps.registry.get(target.value);
+    const resolvedPath = resolve(target.value);
     const direct = this.deps.registry.findByPath(resolvedPath);
     if (direct) return direct;
     const canonicalPath = validatePathSync(resolvedPath);
     return canonicalPath === resolvedPath ? null : this.deps.registry.findByPath(canonicalPath);
+  }
+
+  /**
+   * How to reach this entry's footprint once the entry itself is gone — what
+   * the "collection still present" hint prints (bd tea-rags-mcp-usbb5).
+   *
+   * Never the name: an unregister removes it, so `--name X --purge` afterwards
+   * finds nothing. The path when it still derives the collection (the common
+   * case — `register` and `index-codebase` name a collection after its path),
+   * the collection itself otherwise (a re-pointed alias, a worktree clone, a
+   * recovered stub with no path). {@link unclaimedCollectionFor} reads this
+   * address back to the same collection.
+   */
+  leftoverAddress(entry: CollectionEntry): { path: string } | { collection: string } {
+    if (entry.path && resolveCollectionName(validatePathSync(entry.path)) === entry.collectionName) {
+      return { path: entry.path };
+    }
+    return { collection: entry.collectionName };
+  }
+
+  /**
+   * The collection an address names when NO registry entry claims it — the
+   * leftover footprint a `--purge` after an unregister tears down. Null when
+   * the address cannot name a collection (a name dies with its entry) or when
+   * the collection, or the logical collection it is a generation of, is still
+   * registered: that footprint is live data, never leftover.
+   */
+  unclaimedCollectionFor(address: ProjectRegistryAddress): string | null {
+    const target = validateRegistryAddress(address);
+    if (target.kind === "name") return null;
+    const candidate =
+      target.kind === "collection" ? target.value : resolveCollectionName(validatePathSync(target.value));
+    const claimed = this.deps.registry
+      .list()
+      .some((entry) => candidate === entry.collectionName || isGenerationOf(candidate, entry.collectionName));
+    return claimed ? null : candidate;
   }
 
   /**

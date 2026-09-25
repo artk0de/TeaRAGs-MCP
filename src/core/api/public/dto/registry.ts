@@ -30,9 +30,9 @@ export interface StaleProjectEntry {
 }
 
 /**
- * How a registry request addresses ONE project: by its alias, or by the
- * directory it was registered at. Exactly one of the two — the op rejects both
- * and neither.
+ * How a registry request addresses ONE project: by its alias, by the
+ * directory it was registered at, or by its collection. Exactly one — the op
+ * rejects several and none.
  *
  * `path` exists because `index-codebase <path>` registers a project WITHOUT an
  * alias, and a name-only address left that entry unreachable (bd
@@ -42,6 +42,12 @@ export interface StaleProjectEntry {
 export interface ProjectRegistryAddress {
   name?: string;
   path?: string;
+  /**
+   * Logical collection name (`code_<hash>`). The one address that survives
+   * an entry whose path no longer derives its collection — what the CLI
+   * purge hint falls back to.
+   */
+  collection?: string;
 }
 
 /** What a stale-entry sweep removed and what it deliberately left behind. */

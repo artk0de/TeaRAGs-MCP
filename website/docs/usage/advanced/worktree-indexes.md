@@ -171,8 +171,8 @@ in the background. A git rebuild that fails is retried the same way.
 Automatic seeding writes no worktree provenance. The collection is registered
 by the run like any first index — under the alias given with `--name`, or
 unnamed — and is not listed by `worktree list`. `worktree remove` refuses it;
-remove it with `tea-rags projects unregister --name <alias> --purge` or
-`clear_index`.
+remove it with `tea-rags projects unregister --name <alias> --purge` (or
+`--path <worktree> --purge` when it is unnamed) or `clear_index`.
 
 ### The `worktreeSeed` report
 

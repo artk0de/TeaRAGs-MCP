@@ -186,8 +186,10 @@ Passing both, or neither, is rejected with `INPUT_INVALID_PARAMETER` /
 The MCP `unregister_project` tool has **no** `purge` parameter — destructive
 removal of the Qdrant collection is exposed only via the CLI
 (`tea-rags projects unregister --name <alias> --purge`, see
-[CLI Commands](#cli-commands)). From an MCP client, follow `unregister_project`
-with `clear_index` or `delete_collection` to remove the chunks.
+[CLI Commands](#cli-commands)). The CLI `--purge` also works after an MCP
+`unregister_project`, addressed by `--path <root>` or `--collection <code_hash>`.
+From an MCP client, follow `unregister_project` with `clear_index` or
+`delete_collection` to remove the chunks.
 
 ## The `project` parameter on other tools
 
@@ -308,26 +310,33 @@ field stays empty.
 ```bash
 tea-rags projects unregister --name shop-backend
 # Removed 'shop-backend' from registry. Note: Qdrant collection 'code_8f42a1b3' is still present.
-# Run 'tea-rags projects unregister --name shop-backend --purge' to remove it.
-```
-
-Address the project by `--name <alias>` or by `--path <project root>` —
-exactly one. `index-codebase <path>` registers a project **without** a name, so
-`--path` is the only way to reach such an entry; the path is resolved the same
-way registration resolves it (trailing slash, `..`, and symlinked spellings
-all match). A nameless entry is named by its path in the output, and the
-`--purge` hint repeats `--path`:
-
-```bash
-tea-rags projects unregister --path /src/shop-backend
-# Removed '/src/shop-backend' from registry. Note: Qdrant collection 'code_8f42a1b3' is still present.
 # Run 'tea-rags projects unregister --path /src/shop-backend --purge' to remove it.
 ```
 
-Idempotent. Exits 0 with the message `'<name>' was not registered` when the
-project is absent. By default it touches only the registry — the underlying
-Qdrant collection (and its indexed chunks) is preserved, and the message
-above tells the user how to remove it.
+Address the project by `--name <alias>`, by `--path <project root>`, or by
+`--collection <code_hash>` — exactly one. `index-codebase <path>` registers a
+project **without** a name, so `--path` reaches such an entry; the path is
+resolved the same way registration resolves it (trailing slash, `..`, and
+symlinked spellings all match). A nameless entry is named by its path in the
+output.
+
+By default it touches only the registry — the underlying Qdrant collection (and
+its indexed chunks) is preserved, and the message tells you how to remove it.
+The hint never repeats `--name`: the name is gone once the entry is. It prints
+`--path` when the path still derives the collection, and `--collection`
+otherwise (an alias re-pointed at a new path, a worktree clone, a recovered stub
+with no path). Following the hint works **after** the entry is gone: `--purge`
+on an address no entry claims tears down the leftover footprint the path or
+collection names:
+
+```bash
+tea-rags projects unregister --path /src/shop-backend --purge
+# '/src/shop-backend' was already unregistered; purged its leftovers; deleted Qdrant collection 'code_8f42a1b3' (3832 chunks)
+```
+
+It never purges a collection that is still registered, or a `_vN` generation of
+one. Idempotent: it exits 0 with `'<address>' was not registered` when no entry
+matches and there is nothing to purge.
 
 Pass `--purge` to also delete everything the collection owns on disk:
 
