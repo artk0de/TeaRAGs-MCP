@@ -66,6 +66,7 @@ import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
+import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
 import { keepPathPatternMatches } from "./path-pattern-fill.js";
@@ -303,8 +304,17 @@ function filterByExactSymbolId(
     // FQN (e.g. `Foo::Bar`) or just the local class name (e.g. `Bar`),
     // depending on language. Accept both forms.
     if (parentSymbolId === fqn || parentSymbolId === containerName) return true;
-    return false;
+    // A member split into `#partN` parts names the member as its parent; the
+    // container is the member id's owner (bd tea-rags-mcp-y5vx4).
+    const owner = splitPartOwner(c.payload);
+    return owner !== undefined && (owner === fqn || owner === containerName);
   });
+}
+
+/** The container of a split part's member: `Foo#bar#part2` → `Foo`; undefined for any other chunk. */
+function splitPartOwner(payload: Record<string, unknown>): string | undefined {
+  const base = splitFragmentBase(payload);
+  return base === undefined ? undefined : memberOwnerOf(base);
 }
 
 /**
@@ -328,6 +338,7 @@ function filterByLastSegment(
     if (symbolId !== undefined && symbolIdLastSegment(symbolId) === target) return true;
     const parentSymbolId = c.payload.parentSymbolId as string | undefined;
     if (parentSymbolId !== undefined && symbolIdLastSegment(parentSymbolId) === target) return true;
-    return false;
+    const owner = splitPartOwner(c.payload);
+    return owner !== undefined && symbolIdLastSegment(owner) === target;
   });
 }

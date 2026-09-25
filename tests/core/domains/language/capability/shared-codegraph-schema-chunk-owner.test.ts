@@ -27,9 +27,14 @@ import {
  * The shared stamp every index carried before the chunk-owner rule landed. Its
  * `walker` tracks the current one: a LATER shared walker bump (bd
  * tea-rags-mcp-nbf8q took it 2 → 3) is its own drift, not this change's, and
- * would otherwise read as one here.
+ * would otherwise read as one here. `chunking` tracks the current one for the
+ * same reason (bd tea-rags-mcp-y5vx4 took it 1 → 2).
  */
-const STAMPED_BEFORE_CHUNK_OWNER = { chunking: 1, walker: sharedVersions.walker, codegraphSchema: 1 };
+const STAMPED_BEFORE_CHUNK_OWNER = {
+  chunking: sharedVersions.chunking,
+  walker: sharedVersions.walker,
+  codegraphSchema: 1,
+};
 
 describe("sharedVersions after the chunk-owner rule (bd tea-rags-mcp-9i2ow)", () => {
   const current = resolveLanguageCodeVersions(new LanguageFactory().capabilities(), () => undefined);
