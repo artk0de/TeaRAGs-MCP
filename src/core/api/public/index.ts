@@ -71,6 +71,10 @@ export type {
   // Naming lexicon DTOs
   NamingLexiconRequest,
   NamingLexiconResult,
+  // Naming ontology audit DTOs
+  GetOntologyReportRequest,
+  GetOntologyReportResponse,
+  OntologyReportSectionName,
 } from "./dto/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────

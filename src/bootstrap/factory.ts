@@ -34,6 +34,7 @@ import {
 import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { NamingLexiconOps } from "../core/api/internal/ops/naming-lexicon-ops.js";
+import { ontologyLanguageProfiles, OntologyReportOps } from "../core/api/internal/ops/ontology-report-ops.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
 import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
@@ -1075,6 +1076,18 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       })
     : undefined;
 
+  // get_ontology_report (bd tea-rags-mcp-4p3sb.20): reads cg_identifiers through
+  // the codegraph pool, so it exists only when codegraph is wired — omitted
+  // (→ App.getOntologyReport empty-result fallback) when disabled.
+  const ontologyReportOps = codegraphContext
+    ? new OntologyReportOps({
+        pool: codegraphContext.pool,
+        collectionRegistry,
+        resolveActiveCollection,
+        languages: ontologyLanguageProfiles(),
+      })
+    : undefined;
+
   const statsCache = new StatsCache(config.paths.snapshots);
 
   const registryWatchStop = collectionRegistry.startWatching();
@@ -1292,6 +1305,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     graphFacade: codegraphContext?.graphFacade,
     tracePathOps,
     namingLexiconOps,
+    ontologyReportOps,
     codegraphPool: codegraphContext?.pool,
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });

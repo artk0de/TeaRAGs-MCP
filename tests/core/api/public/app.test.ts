@@ -199,6 +199,28 @@ describe("createApp", () => {
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
   });
 
+  // bd tea-rags-mcp-4p3sb.20
+  it("getOntologyReport delegates to OntologyReportOps", async () => {
+    const report = { scope: { pathPrefix: "" }, summary: { evidenceRows: 3, genericNameCount: 0, genericNames: [] } };
+    const ontologyReportOps = { report: vi.fn().mockResolvedValue(report) };
+    const app = createApp({ ...makeDeps(), ontologyReportOps } as never);
+
+    await expect(app.getOntologyReport({ project: "p", sections: ["homonyms"] })).resolves.toBe(report);
+    expect(ontologyReportOps.report).toHaveBeenCalledWith({ project: "p", sections: ["homonyms"] });
+  });
+
+  it("getOntologyReport returns the empty report when codegraph is not wired", async () => {
+    const app = createApp(makeDeps() as never);
+
+    const report = await app.getOntologyReport({ project: "p", sections: ["synonyms"] });
+
+    expect(report).toEqual({
+      scope: { pathPrefix: "" },
+      summary: { evidenceRows: 0, genericNameCount: 0, genericNames: [] },
+      synonyms: [],
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Per-project ingest scope. An MCP server is long-lived with a fixed process
   // env, so a project's registry env can only reach an index run through a
