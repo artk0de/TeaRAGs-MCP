@@ -4391,9 +4391,16 @@ describe User do
 end`;
       const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
 
-      // Should have 2 test chunks (one per leaf context)
+      // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): one test chunk per EXAMPLE
+      // (3 `it` blocks), no longer one per leaf context (was 2).
       const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
-      expect(testChunks).toHaveLength(2);
+      expect(testChunks).toHaveLength(3);
+      expect(testChunks.map((c) => c.metadata.symbolId)).toEqual([
+        "User.context 'when admin'.it 'has admin access'",
+        "User.context 'when admin'.it 'can manage users'",
+        "User.context 'when regular'.it 'has limited access'",
+      ]);
+      expect(testChunks.every((c) => c.metadata.parentType === "test_scope")).toBe(true);
 
       // 'when admin' leaf should contain injected let(:user) from parent
       const adminChunk = testChunks.find((c) => c.content.includes("admin access"));

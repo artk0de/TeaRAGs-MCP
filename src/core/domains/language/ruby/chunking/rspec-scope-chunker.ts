@@ -1,12 +1,15 @@
 /**
- * RSpec Scope-Centric Chunker — Groups RSpec specs by scope hierarchy.
+ * RSpec Scope Chunker — reads an RSpec container call into the neutral
+ * `TestScope` tree and hands it to the kernel (`produceTestScopeChunks`,
+ * bd tea-rags-mcp-99gkm under epic tea-rags-mcp-phftd).
  *
- * Instead of treating the entire describe/context body as one flat chunk,
- * this hook walks the AST to build a scope tree and produces focused chunks
- * per leaf scope. Each chunk includes inherited setup (let/before/subject)
- * from ancestor scopes for self-contained context.
- *
- * Chunks get a 2-level symbolId: `TopLevelDescribe.leafScopeName`.
+ * This hook owns only the RSpec reading: which calls are containers, examples
+ * and setup, the display names (`describe User`, `context 'when admin'`,
+ * `it 'can invite'`), which setup calls run shared examples
+ * (`delegatesExamples`), and the `topLevelName`. The kernel owns what the
+ * chunks are, their ids (`<Top>.<scope>` scope, `<Top>.<scope>.<example>`
+ * example, `~N` on repeats), the inherited-setup splice and the line ranges —
+ * `.claude/rules/test-spec-chunking.md`.
  *
  * ── Language-list pointer (MANDATORY) ────────────────────────────────
  * This hook emits `chunkType: "test"` / `"test_setup"` for Ruby RSpec.
@@ -27,30 +30,19 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
+import type { BodyChunkResult, ChunkingHook, TestScope } from "../../../../contracts/types/chunker.js";
+import { produceTestScopeChunks } from "../../kernel/test-scope-chunks.js";
 import { isRspecFile } from "./rspec-filter.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface SetupLine {
-  text: string;
-  sourceLine: number;
-}
-
-export interface ItBlock {
-  text: string;
-  startLine: number;
-  endLine: number;
-}
-
-export interface RSpecScope {
-  name: string;
+/**
+ * An RSpec container read into the kernel's `TestScope`, keeping the call node
+ * the `topLevelName` is read from.
+ */
+export interface RSpecScope extends TestScope {
   node: AstNode;
-  isLeaf: boolean;
-  setupLines: SetupLine[];
-  ownItBlocks: ItBlock[];
   children: RSpecScope[];
-  otherLines: SetupLine[];
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -179,9 +171,10 @@ export function buildScopeTree(containerNode: AstNode, code: string): RSpecScope
   const scope: RSpecScope = {
     name: scopeName,
     node: containerNode,
-    isLeaf: true,
+    startLine: containerNode.startPosition.row + 1,
+    endLine: containerNode.endPosition.row + 1,
     setupLines: [],
-    ownItBlocks: [],
+    examples: [],
     children: [],
     otherLines: [],
   };
@@ -203,16 +196,18 @@ export function buildScopeTree(containerNode: AstNode, code: string): RSpecScope
       // Recurse into nested container
       const childScope = buildScopeTree(child, code);
       scope.children.push(childScope);
-      scope.isLeaf = false;
       for (let { row } = child.startPosition; row <= child.endPosition.row; row++) {
         claimedRows.add(row);
       }
     } else if (EXAMPLE_METHODS.has(methodName)) {
-      // Collect it block
+      // An example — named like a scope, by its call up to the block opener
+      // (`it 'returns nil'`, `its(:email)`); a one-line brace block keeps its
+      // whole line, the only description a description-less example has.
       const startRow = child.startPosition.row;
       const endRow = child.endPosition.row;
       const itText = codeLines.slice(startRow, endRow + 1).join("\n");
-      scope.ownItBlocks.push({
+      scope.examples.push({
+        name: extractScopeName(child, code),
         text: itText,
         startLine: startRow + 1,
         endLine: endRow + 1,
@@ -228,6 +223,7 @@ export function buildScopeTree(containerNode: AstNode, code: string): RSpecScope
       scope.setupLines.push({
         text: setupText,
         sourceLine: startRow + 1,
+        ...(DELEGATING_TEST_METHODS.has(methodName) ? { delegatesExamples: true } : {}),
       });
       for (let row = startRow; row <= endRow; row++) {
         claimedRows.add(row);
@@ -255,185 +251,16 @@ export function buildScopeTree(containerNode: AstNode, code: string): RSpecScope
 
 // ── Core: produceScopeChunks ─────────────────────────────────────────
 
+/**
+ * The chunks of one RSpec container: the kernel's emission over the scope
+ * tree, rooted at the container's subject (`User` for `describe User`).
+ */
 export function produceScopeChunks(
   rootScope: RSpecScope,
   code: string,
   config: { maxChunkSize: number },
 ): BodyChunkResult[] {
-  const topLevelName = extractTopLevelName(rootScope, code);
-  const results: BodyChunkResult[] = [];
-
-  function collectParentSetup(scope: RSpecScope, ancestors: RSpecScope[]): string[] {
-    const parts: string[] = [];
-    for (const ancestor of ancestors) {
-      for (const setup of ancestor.setupLines) {
-        parts.push(setup.text);
-      }
-    }
-    return parts;
-  }
-
-  function walk(scope: RSpecScope, ancestors: RSpecScope[]): void {
-    if (scope.isLeaf) {
-      if (scope.ownItBlocks.length > 0) {
-        // Leaf with it blocks → test chunk
-        const parentSetup = collectParentSetup(scope, ancestors);
-        const setupParts = [...parentSetup, ...scope.setupLines.map((s) => s.text)];
-        const otherParts = scope.otherLines.map((o) => o.text);
-        const itParts = scope.ownItBlocks.map((b) => b.text);
-
-        const contentParts = [...setupParts, ...otherParts, ...itParts];
-        const content = contentParts.join("\n").trim();
-
-        if (content.length < 50) return;
-
-        // Check oversized — split by it blocks
-        if (content.length > config.maxChunkSize && scope.ownItBlocks.length > 1) {
-          const sharedSetup = [...setupParts, ...otherParts].join("\n").trim();
-          for (const itBlock of scope.ownItBlocks) {
-            const subContent = sharedSetup ? `${sharedSetup}\n${itBlock.text}` : itBlock.text;
-            if (subContent.trim().length < 50) continue;
-            results.push({
-              content: subContent.trim(),
-              startLine: itBlock.startLine,
-              endLine: itBlock.endLine,
-              chunkType: "test",
-              symbolId: `${topLevelName}.${scope.name}`,
-              name: scope.name,
-              parentSymbolId: topLevelName,
-            });
-          }
-          return;
-        }
-
-        // Compute line range from this scope's own lines only.
-        // Ancestor setup is included in content for context but should NOT
-        // inflate the line range (causes git blame and Read offset issues).
-        const allLines = [
-          ...scope.setupLines.map((s) => s.sourceLine),
-          ...scope.otherLines.map((o) => o.sourceLine),
-          ...scope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
-        ];
-        const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
-        const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
-
-        results.push({
-          content,
-          startLine,
-          endLine,
-          chunkType: "test",
-          symbolId: `${topLevelName}.${scope.name}`,
-          name: scope.name,
-          parentSymbolId: topLevelName,
-        });
-      } else if (scope.setupLines.length > 0 || scope.otherLines.length > 0) {
-        // Leaf without it blocks → test_setup
-        const content = [...scope.setupLines.map((s) => s.text), ...scope.otherLines.map((o) => o.text)]
-          .join("\n")
-          .trim();
-
-        if (content.length < 50) return;
-
-        const allLines = [...scope.setupLines.map((s) => s.sourceLine), ...scope.otherLines.map((o) => o.sourceLine)];
-        const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
-        const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
-
-        // Classify: if setup contains delegating test methods (include_examples,
-        // it_behaves_like), these scopes execute actual tests via shared examples.
-        const hasDelegatingTests = scope.setupLines.some((s) => {
-          for (const method of DELEGATING_TEST_METHODS) {
-            if (s.text.includes(method)) return true;
-          }
-          return false;
-        });
-
-        results.push({
-          content,
-          startLine,
-          endLine,
-          chunkType: hasDelegatingTests ? "test" : "test_setup",
-          symbolId: `${topLevelName}.${scope.name}`,
-          name: scope.name,
-          parentSymbolId: topLevelName,
-        });
-      }
-    } else {
-      // Intermediate scope — recurse into children
-      const newAncestors = [...ancestors, scope];
-      for (const child of scope.children) {
-        walk(child, newAncestors);
-      }
-
-      // If intermediate scope has own it blocks, produce test_setup chunk for its setup + it blocks
-      if (scope.ownItBlocks.length > 0) {
-        const setupParts = scope.setupLines.map((s) => s.text);
-        const otherParts = scope.otherLines.map((o) => o.text);
-        const itParts = scope.ownItBlocks.map((b) => b.text);
-        const content = [...setupParts, ...otherParts, ...itParts].join("\n").trim();
-
-        if (content.length >= 50) {
-          const allLines = [
-            ...scope.setupLines.map((s) => s.sourceLine),
-            ...scope.otherLines.map((o) => o.sourceLine),
-            ...scope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
-          ];
-          const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
-          const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
-
-          results.push({
-            content,
-            startLine,
-            endLine,
-            chunkType: "test_setup",
-            symbolId: `${topLevelName}.${scope.name}`,
-            name: scope.name,
-            parentSymbolId: topLevelName,
-          });
-        }
-      }
-    }
-  }
-
-  // For root scope: if it's a leaf itself, process directly
-  // Otherwise, walk children with root as ancestor
-  if (rootScope.isLeaf) {
-    walk(rootScope, []);
-  } else {
-    // Root is intermediate — its setup flows down to children
-    for (const child of rootScope.children) {
-      walk(child, [rootScope]);
-    }
-
-    // Root's own it blocks (if any)
-    if (rootScope.ownItBlocks.length > 0) {
-      const setupParts = rootScope.setupLines.map((s) => s.text);
-      const otherParts = rootScope.otherLines.map((o) => o.text);
-      const itParts = rootScope.ownItBlocks.map((b) => b.text);
-      const content = [...setupParts, ...otherParts, ...itParts].join("\n").trim();
-
-      if (content.length >= 50) {
-        const allLines = [
-          ...rootScope.setupLines.map((s) => s.sourceLine),
-          ...rootScope.otherLines.map((o) => o.sourceLine),
-          ...rootScope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
-        ];
-        const startLine = allLines.length > 0 ? Math.min(...allLines) : rootScope.node.startPosition.row + 1;
-        const endLine = allLines.length > 0 ? Math.max(...allLines) : rootScope.node.endPosition.row + 1;
-
-        results.push({
-          content,
-          startLine,
-          endLine,
-          chunkType: "test_setup",
-          symbolId: `${topLevelName}.${rootScope.name}`,
-          name: rootScope.name,
-          parentSymbolId: topLevelName,
-        });
-      }
-    }
-  }
-
-  return results;
+  return produceTestScopeChunks(rootScope, extractTopLevelName(rootScope, code), config);
 }
 
 // ── Hook export ──────────────────────────────────────────────────────

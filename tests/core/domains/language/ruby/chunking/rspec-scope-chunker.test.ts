@@ -44,8 +44,8 @@ end`;
     const scope = buildScopeTree(node, code);
 
     expect(scope.name).toBe("describe User");
-    expect(scope.isLeaf).toBe(true);
-    expect(scope.ownItBlocks).toHaveLength(2);
+    expect(scope.children).toHaveLength(0);
+    expect(scope.examples).toHaveLength(2);
     expect(scope.children).toHaveLength(0);
     expect(scope.setupLines).toHaveLength(0);
   });
@@ -69,12 +69,12 @@ end`;
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
+    expect(scope.children.length).toBeGreaterThan(0);
     expect(scope.children).toHaveLength(2);
     expect(scope.children[0].name).toBe("context 'when admin'");
-    expect(scope.children[0].isLeaf).toBe(true);
+    expect(scope.children[0].children).toHaveLength(0);
     expect(scope.children[1].name).toBe("context 'when guest'");
-    expect(scope.children[1].isLeaf).toBe(true);
+    expect(scope.children[1].children).toHaveLength(0);
   });
 
   it("should collect setup lines (let, before, subject) at each level", () => {
@@ -121,9 +121,9 @@ end`;
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
-    expect(scope.ownItBlocks).toHaveLength(1);
-    expect(scope.ownItBlocks[0].text).toContain("it 'exists'");
+    expect(scope.children.length).toBeGreaterThan(0);
+    expect(scope.examples).toHaveLength(1);
+    expect(scope.examples[0].text).toContain("it 'exists'");
     expect(scope.children).toHaveLength(1);
   });
 
@@ -144,21 +144,21 @@ end`;
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
+    expect(scope.children.length).toBeGreaterThan(0);
     const level1 = scope.children[0];
-    expect(level1.isLeaf).toBe(false);
+    expect(level1.children.length).toBeGreaterThan(0);
     const level2 = level1.children[0];
-    expect(level2.isLeaf).toBe(false);
+    expect(level2.children.length).toBeGreaterThan(0);
     const level3 = level2.children[0];
-    expect(level3.isLeaf).toBe(true);
-    expect(level3.ownItBlocks).toHaveLength(1);
+    expect(level3.children).toHaveLength(0);
+    expect(level3.examples).toHaveLength(1);
   });
 });
 
 // ── produceScopeChunks ───────────────────────────────────────────────
 
 describe("produceScopeChunks", () => {
-  it("should produce a single test chunk for a leaf scope", () => {
+  it("should produce one test chunk per example of a leaf scope", () => {
     const code = `describe User do
   it 'validates name' do
     expect(user.name).to be_present
@@ -176,11 +176,14 @@ end`;
     const scope = buildScopeTree(node, code);
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].chunkType).toBe("test");
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the unit is the example, not
+    // the leaf scope — two `it` blocks are two chunks, each parented to the
+    // scope id instead of the bare top-level name (kernel emission, msv3l).
+    expect(chunks).toHaveLength(2);
+    expect(chunks.every((c) => c.chunkType === "test")).toBe(true);
     expect(chunks[0].content).toContain("validates name");
-    expect(chunks[0].content).toContain("validates email");
-    expect(chunks[0].parentSymbolId).toBe("User");
+    expect(chunks[1].content).toContain("validates email");
+    expect(chunks[0].parentSymbolId).toBe("User.describe User");
   });
 
   it("should inject parent setup into leaf chunks", () => {
@@ -232,13 +235,15 @@ end`;
     const scope = buildScopeTree(node, code);
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
-    // Should have: 1 test chunk for leaf context + 1 test_setup for root's own it
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): an intermediate scope's own
+    // `it` is an example like any other — a `test` chunk, not a `test_setup`
+    // block of the scope. Two examples → two test chunks, no setup chunk.
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
-    expect(testChunks).toHaveLength(1);
-    expect(setupChunks).toHaveLength(1);
-    expect(setupChunks[0].content).toContain("is a class that works correctly");
+    expect(testChunks).toHaveLength(2);
+    expect(setupChunks).toHaveLength(0);
+    expect(testChunks[0].content).toContain("is a class that works correctly");
   });
 
   it("should split oversized leaf by it blocks when exceeding maxChunkSize", () => {
@@ -264,9 +269,16 @@ end`;
 
     // Each it block should become its own chunk
     expect(chunks.length).toBe(3);
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): each example chunk carries its
+    // OWN id under the scope, no longer the shared scope id (test-spec-chunking.md).
+    expect(chunks.map((c) => c.symbolId)).toEqual([
+      "User.context 'validations'.it 'validates name'",
+      "User.context 'validations'.it 'validates email'",
+      "User.context 'validations'.it 'validates phone'",
+    ]);
     for (const chunk of chunks) {
       expect(chunk.chunkType).toBe("test");
-      expect(chunk.symbolId).toBe("User.context 'validations'");
+      expect(chunk.parentSymbolId).toBe("User.context 'validations'");
     }
   });
 
@@ -304,9 +316,12 @@ end`;
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].symbolId).toBe("User.context 'when admin'");
-    expect(chunks[0].parentSymbolId).toBe("User");
-    expect(chunks[0].name).toBe("context 'when admin'");
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the chunk is the EXAMPLE —
+    // `<Top>.<scope>.<example>`, parented to the `<Top>.<scope>` leaf-scope id
+    // that search-cascade drill-downs already address.
+    expect(chunks[0].symbolId).toBe("User.context 'when admin'.it 'has permissions for managing all system resources'");
+    expect(chunks[0].parentSymbolId).toBe("User.context 'when admin'");
+    expect(chunks[0].name).toBe("it 'has permissions for managing all system resources'");
   });
 
   it("should handle RSpec.describe form (receiver-qualified call)", () => {
@@ -324,7 +339,9 @@ end`;
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].symbolId).toContain("User");
-    expect(chunks[0].parentSymbolId).toBe("User");
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): an example's parent is its
+    // scope id (`<Top>.<root scope>`), not the bare top-level name.
+    expect(chunks[0].parentSymbolId).toBe("User.RSpec.describe User");
   });
 
   it("should handle shared_examples at file root (symbolId fallback)", () => {
@@ -361,7 +378,7 @@ end`;
     // Shoulda one-liners might not be parsed as `it` calls with do blocks
     // They should still appear in the scope tree somehow
     const leafScope = scope.children[0];
-    expect(leafScope.isLeaf).toBe(true);
+    expect(leafScope.children).toHaveLength(0);
   });
 
   it("should produce no chunks for empty describe block", () => {
@@ -444,9 +461,9 @@ end`;
     const scope = buildScopeTree(node, code);
 
     // Should return scope with isLeaf=true and no children/setup/it blocks
-    expect(scope.isLeaf).toBe(true);
     expect(scope.children).toHaveLength(0);
-    expect(scope.ownItBlocks).toHaveLength(0);
+    expect(scope.children).toHaveLength(0);
+    expect(scope.examples).toHaveLength(0);
     expect(scope.setupLines).toHaveLength(0);
   });
 });
@@ -519,15 +536,18 @@ end`;
     const scope = buildScopeTree(node, code);
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
-    // Root is intermediate (has context child) with own setup + it blocks
-    // Should produce: 1 test chunk for leaf context + 1 test_setup for root's own it+setup
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the root's own `it` is an
+    // example chunk (`test`) carrying the root's setup, and the nested example
+    // inherits that setup too — no `test_setup` block for the root.
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
-    expect(testChunks).toHaveLength(1);
-    expect(setupChunks).toHaveLength(1);
-    expect(setupChunks[0].content).toContain("is a class that exists");
-    expect(setupChunks[0].content).toContain("let(:user)");
+    expect(testChunks).toHaveLength(2);
+    expect(setupChunks).toHaveLength(0);
+    expect(testChunks[0].content).toContain("is a class that exists");
+    expect(testChunks[0].content).toContain("let(:user)");
+    expect(testChunks[1].content).toContain("let(:user)");
+    expect(testChunks[1].content).toContain("has admin role and can manage");
   });
 
   it("should produce test_setup for leaf scope with only setup lines", () => {
@@ -598,10 +618,12 @@ end`;
     expect(allContent).toContain("can be instantiated");
     expect(allContent).toContain("returns a valid authentication token");
 
-    // Root test_setup should include setup and otherLines
-    const setupChunk = chunks.find((c) => c.chunkType === "test_setup" && c.content.includes("can be instantiated"));
-    expect(setupChunk).toBeDefined();
-    expect(setupChunk!.content).toContain("let(:service)");
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the root's own example is a
+    // `test` chunk carrying the root's setup and otherLines (was `test_setup`).
+    const rootExample = chunks.find((c) => c.chunkType === "test" && c.content.includes("can be instantiated"));
+    expect(rootExample).toBeDefined();
+    expect(rootExample!.content).toContain("let(:service)");
+    expect(rootExample!.content).toContain("TIMEOUT = 30");
   });
 
   it("should produce test_setup for intermediate scope with setup, otherLines, it blocks, and children", () => {
@@ -631,16 +653,21 @@ end`;
     const scope = buildScopeTree(node, code);
     const chunks = produceScopeChunks(scope, code, defaultConfig);
 
-    // Intermediate 'authentication' context has children + own it blocks + setup + otherLines
-    // Should produce: test chunk for leaf + test_setup for intermediate's it+setup+otherLines
+    // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): the intermediate scope's own
+    // example is a `test` chunk with that scope's setup + otherLines; the
+    // nested leaf example inherits the intermediate setup. No `test_setup`.
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
-    expect(setupChunks.length).toBeGreaterThanOrEqual(1);
+    expect(setupChunks).toHaveLength(0);
 
-    // The test_setup chunk for intermediate scope should contain setup and it block
-    const authSetup = setupChunks.find((c) => c.content.includes("validates credentials format"));
-    expect(authSetup).toBeDefined();
-    expect(authSetup!.content).toContain("let(:credentials)");
-    expect(authSetup!.content).toContain("AuthService.configure");
+    const authExample = chunks.find((c) => c.content.includes("validates credentials format"));
+    expect(authExample).toBeDefined();
+    expect(authExample!.chunkType).toBe("test");
+    expect(authExample!.content).toContain("let(:credentials)");
+    expect(authExample!.content).toContain("AuthService.configure");
+    expect(authExample!.content).toContain("RETRY_COUNT = 3");
+
+    const leafExample = chunks.find((c) => c.content.includes("authenticates successfully"));
+    expect(leafExample!.content).toContain("let(:credentials)");
   });
 
   it("should handle leaf scope with setup, otherLines, but no it blocks producing test_setup", () => {
@@ -732,5 +759,125 @@ end`;
     for (const chunk of chunks) {
       expect(chunk.content.length).toBeGreaterThanOrEqual(50);
     }
+  });
+});
+
+// ── Example-level emission through the kernel (bd tea-rags-mcp-99gkm) ─
+
+describe("produceScopeChunks — addressable examples (bd tea-rags-mcp-99gkm)", () => {
+  function chunksOf(code: string, config = defaultConfig) {
+    const node = findTopLevelCall(parseRuby(code));
+    return produceScopeChunks(buildScopeTree(node, code), code, config);
+  }
+
+  it("gives every example of a root leaf its own id (taxdome worker_spec reproducer shape)", () => {
+    const examples = Array.from(
+      { length: 16 },
+      (_, i) => `  it 'handles operation case number ${i}' do\n    expect(worker.perform(${i})).to be_truthy\n  end\n`,
+    ).join("\n");
+    const code = `RSpec.describe Platform::Async::Operation::Worker do\n  let(:worker) { described_class.new }\n\n${examples}end`;
+
+    const chunks = chunksOf(code);
+
+    expect(chunks).toHaveLength(16);
+    expect(new Set(chunks.map((c) => c.symbolId)).size).toBe(16);
+    expect(chunks[0].symbolId).toBe(
+      "Platform::Async::Operation::Worker.RSpec.describe Platform::Async::Operation::Worker.it 'handles operation case number 0'",
+    );
+    for (const chunk of chunks) {
+      expect(chunk.parentSymbolId).toBe(
+        "Platform::Async::Operation::Worker.RSpec.describe Platform::Async::Operation::Worker",
+      );
+      expect(chunk.parentType).toBe("test_scope");
+      expect(chunk.content).toContain("let(:worker)");
+    }
+  });
+
+  it("disambiguates repeated example descriptions with ~N in source order", () => {
+    const code = `describe User do
+  it 'is valid with the factory defaults and all attributes' do
+    expect(build(:user)).to be_valid
+  end
+
+  it 'is valid with the factory defaults and all attributes' do
+    expect(build(:user, :admin)).to be_valid
+  end
+end`;
+
+    const ids = chunksOf(code).map((c) => c.symbolId);
+
+    expect(ids).toEqual([
+      "User.describe User.it 'is valid with the factory defaults and all attributes'",
+      "User.describe User.it 'is valid with the factory defaults and all attributes'~2",
+    ]);
+  });
+
+  it("names a description-less one-liner by its own line, a multi-line block by its call", () => {
+    const code = `describe User do
+  let(:user) { create(:user, name: 'John', email: 'john@example.com') }
+
+  it { is_expected.to validate_presence_of(:name) }
+  its(:email) { is_expected.to eq('john@example.com') }
+  specify do
+    expect(user).to be_persisted
+  end
+end`;
+
+    const names = chunksOf(code).map((c) => c.name);
+
+    expect(names).toEqual([
+      "it { is_expected.to validate_presence_of(:name) }",
+      "its(:email) { is_expected.to eq('john@example.com') }",
+      "specify",
+    ]);
+  });
+
+  it("keeps each example's line range on the example's own rows", () => {
+    const code = `describe User do
+  let(:user) { create(:user) }
+
+  context 'when admin' do
+    before { user.update!(role: 'admin', verified: true) }
+
+    it 'can invite other members to the workspace' do
+      expect(user.can_invite?).to be true
+    end
+  end
+end`;
+
+    const [chunk] = chunksOf(code);
+
+    expect(chunk.startLine).toBe(7);
+    expect(chunk.endLine).toBe(9);
+  });
+
+  it("marks it_behaves_like / include_examples setup lines as delegating examples", () => {
+    const code = `describe User do
+  context 'with shared behaviour' do
+    let(:resource) { create(:user) }
+    it_behaves_like 'an auditable resource'
+    include_examples 'a searchable resource'
+  end
+end`;
+
+    const tree = buildScopeTree(findTopLevelCall(parseRuby(code)), code);
+    const lines = tree.children[0].setupLines;
+
+    expect(lines.map((l) => l.delegatesExamples === true)).toEqual([false, true, true]);
+  });
+
+  it("does not classify a let whose text merely mentions a shared-example call as delegating", () => {
+    const code = `describe User do
+  context 'with a helper named after shared examples' do
+    let(:include_examples_flag) { true }
+    let(:it_behaves_like_label) { 'shared examples label for the user' }
+  end
+end`;
+
+    const [chunk] = chunksOf(code);
+
+    // Only a real it_behaves_like / include_examples CALL delegates; a let name
+    // containing the word does not (the pre-kernel text.includes() check did).
+    expect(chunk.chunkType).toBe("test_setup");
   });
 });

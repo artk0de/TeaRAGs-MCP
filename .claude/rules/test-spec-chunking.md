@@ -206,7 +206,11 @@ chunker).
 - Emission: `src/core/domains/language/kernel/test-scope-chunks.ts`, spec
   `tests/core/domains/language/kernel/test-scope-chunks.test.ts`. The language
   hooks below still build their own chunks until their phftd migration lands.
-- Ruby: `hooks/ruby/rspec-filter.ts` + `hooks/ruby/rspec-scope-chunker.ts`
+- Ruby (on the kernel, bd tea-rags-mcp-99gkm):
+  `src/core/domains/language/ruby/chunking/rspec-filter.ts` +
+  `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts` — the
+  reference for a hook that reads its AST into `TestScope` and emits nothing
+  itself.
 - TypeScript: `hooks/typescript/test-dsl-filter.ts` +
   `hooks/typescript/test-scope-chunker.ts`
 - Tests mirror sources: `tests/.../<lang>/test-*.test.ts` (or `rspec-*.test.ts`)
