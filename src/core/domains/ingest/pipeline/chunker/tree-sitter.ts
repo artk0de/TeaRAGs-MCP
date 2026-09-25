@@ -568,7 +568,16 @@ export class TreeSitterChunker implements CodeChunker {
     );
 
     if (validChildren.length > 0) {
-      const ctx = createHookContext(node, validChildren, code, { maxChunkSize: this.config.maxChunkSize }, filePath);
+      const containerHeader = this.extractContainerHeader(node, code);
+      // Every body chunk is emitted as `${containerHeader}\n${content}` below,
+      // so the hook's budget is told about that prefix (bd tea-rags-mcp-pi1cl).
+      const ctx = createHookContext(
+        node,
+        validChildren,
+        code,
+        { maxChunkSize: this.config.maxChunkSize, bodyChunkPrefixLength: containerHeader.length + 1 },
+        filePath,
+      );
       for (const hook of langConfig.hooks ?? []) {
         // Hook chain stops as soon as a writer claims this container by
         // populating ctx.bodyChunks. See .claude/rules/chunker-hooks.md.
@@ -576,7 +585,6 @@ export class TreeSitterChunker implements CodeChunker {
         hook.process(ctx);
       }
 
-      const containerHeader = this.extractContainerHeader(node, code);
       await this.processChildren(
         validChildren,
         ctx,
@@ -1150,12 +1158,17 @@ export class TreeSitterChunker implements CodeChunker {
     const { langConfig, code, filePath, language, parentName, parentType, chunks, hierarchyHeaders } = pass;
     const childName = this.extractName(childNode, code, langConfig.nameExtractor);
     const childHeader = this.extractContainerHeader(childNode, code);
+    // The prefix every body chunk of this container is emitted under (below),
+    // reserved in the hook's budget (bd tea-rags-mcp-pi1cl).
+    const bodyChunkPrefix =
+      hierarchyHeaders.length > 0 ? `${this.buildHierarchyPrefix(hierarchyHeaders)}${childHeader}\n` : "";
     const childCtx = createHookContext(
       childNode,
       validGrandChildren,
       code,
       {
         maxChunkSize: this.config.maxChunkSize,
+        bodyChunkPrefixLength: bodyChunkPrefix.length,
       },
       filePath,
     );
@@ -1201,10 +1214,8 @@ export class TreeSitterChunker implements CodeChunker {
     );
 
     // Body chunks from hook chain for this nested container
-    const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
     for (const result of childCtx.bodyChunks) {
-      const bodyContent =
-        hierarchyHeaders.length > 0 ? `${hierarchyPrefix}${childHeader}\n${result.content}` : result.content;
+      const bodyContent = `${bodyChunkPrefix}${result.content}`;
       chunks.push({
         content: bodyContent,
         startLine: result.startLine,

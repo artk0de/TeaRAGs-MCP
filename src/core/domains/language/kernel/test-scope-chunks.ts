@@ -34,6 +34,7 @@
 import {
   TEST_SCOPE_PARENT_TYPE,
   type BodyChunkResult,
+  type HookChunkingConfig,
   type TestExample,
   type TestScope,
   type TestScopeLine,
@@ -53,8 +54,11 @@ type ExampleEvent = { kind: "example"; example: TestExample; scope: TestScope; a
 export function produceTestScopeChunks(
   root: TestScope,
   topLevelName: string,
-  config: { maxChunkSize: number },
+  config: HookChunkingConfig,
 ): BodyChunkResult[] {
+  // The engine emits every chunk under the container header(s); the example
+  // has only what is left of the cap (bd tea-rags-mcp-pi1cl).
+  const contentBudget = config.maxChunkSize - (config.bodyChunkPrefixLength ?? 0);
   const occurrences = new Map<string, number>();
   const disambiguate = (baseId: string): string => {
     const next = (occurrences.get(baseId) ?? 0) + 1;
@@ -76,7 +80,7 @@ export function produceTestScopeChunks(
 
     const scopeId = scopeIds.get(event.scope) as string;
     const symbolId = disambiguate(`${scopeId}.${event.example.name}`);
-    const content = exampleContent(event.example, event.scope, event.ancestors, config.maxChunkSize);
+    const content = exampleContent(event.example, event.scope, event.ancestors, contentBudget);
     if (content.length < MIN_TEST_CHUNK_CONTENT) continue;
     results.push({
       content,
@@ -115,7 +119,8 @@ function isScope(member: TestScope | TestExample): member is TestScope {
 
 /**
  * Inherited setup (outermost ancestor first), the scope's own setup and other
- * lines, then the example. When that exceeds `maxChunkSize` the prefix sheds
+ * lines, then the example. When that exceeds the budget (`maxChunkSize` less
+ * the header prefix the engine prepends) the prefix sheds
  * whole statements from the OUTERMOST end first, so the context nearest the
  * example survives longest and the example itself is never cut here — an
  * example that is oversized on its own is left to the engine's hard cap.

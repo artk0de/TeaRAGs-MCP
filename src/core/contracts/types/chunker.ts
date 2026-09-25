@@ -63,6 +63,22 @@ export interface BodyChunkResult {
  */
 export const TEST_SCOPE_PARENT_TYPE = "test_scope";
 
+/**
+ * The size budget the engine hands a hook for its `bodyChunks`.
+ *
+ * `bodyChunkPrefixLength` is how many characters the engine prepends to every
+ * body chunk it emits for this container — the container's header row plus,
+ * for a nested container, its ancestors' header rows, each with its line break.
+ * A hook that sizes its chunks to `maxChunkSize` must subtract it: otherwise a
+ * chunk that fits the hook's budget is pushed over the cap by the header and
+ * the hard cap cuts it into `#partN` windows with only prefix rows in the first
+ * (bd tea-rags-mcp-pi1cl). Absent means nothing is prepended.
+ */
+export interface HookChunkingConfig {
+  maxChunkSize: number;
+  bodyChunkPrefixLength?: number;
+}
+
 /** Shared mutable context passed through the hook chain */
 export interface HookContext {
   // Read-only inputs
@@ -70,7 +86,7 @@ export interface HookContext {
   readonly validChildren: AstNode[];
   readonly code: string;
   readonly codeLines: string[];
-  readonly config: { maxChunkSize: number };
+  readonly config: HookChunkingConfig;
   readonly filePath: string;
 
   // Mutable state — hooks modify these
