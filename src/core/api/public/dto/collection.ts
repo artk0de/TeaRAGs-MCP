@@ -2,10 +2,19 @@
  * Collection domain DTOs — collection CRUD types.
  */
 
+/**
+ * JSON Schema (top level `"type": "object"`) that every document's `metadata`
+ * must satisfy on `add_documents`. Compiled to Zod; `default` values are
+ * filled into the stored payload.
+ */
+export type DocumentMetadataSchema = Record<string, unknown>;
+
 export interface CreateCollectionRequest {
   name: string;
   distance?: "Cosine" | "Euclid" | "Dot";
   enableHybrid?: boolean;
+  /** Makes the collection typed. Absent = metadata is free-form JSON, as before. */
+  schema?: DocumentMetadataSchema;
 }
 
 export interface CollectionInfo {
@@ -18,6 +27,8 @@ export interface CollectionInfo {
   status: "green" | "yellow" | "red";
   /** Optimizer state string from Qdrant (`"ok"` or `"unknown"` when absent). */
   optimizerStatus: string;
+  /** The document metadata schema of a typed collection; absent for an untyped one. */
+  schema?: DocumentMetadataSchema;
 }
 
 /** Bytes the Qdrant server attributes to one part of a collection. */

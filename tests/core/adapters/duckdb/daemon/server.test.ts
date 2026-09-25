@@ -784,3 +784,182 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-94hd9: get_architecture_report reads the whole file dependency
+// graph through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — readFileDependencyGraph", () => {
+  it("is a read op that returns the walked files and file edges", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_fdg_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+
+    const res = await server.handle({ id: 3, op: "readFileDependencyGraph", params: { collection: c } });
+
+    expect(DAEMON_OP_COMMANDS.readFileDependencyGraph.access).toBe("read");
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual({
+      files: [
+        { relPath: "a.ts", language: "typescript", symbolCount: 0 },
+        { relPath: "b.ts", language: "typescript", symbolCount: 0 },
+      ],
+      edges: [{ sourceRelPath: "a.ts", targetRelPath: "b.ts", callWeight: 0 }],
+    });
+    await pool.closeAll();
+  });
+});
+
+// bd tea-rags-mcp-gfvr8: file-scope get_callers / get_callees read one file's
+// import edges through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — getFileImporters / getFileImports", () => {
+  it("are read ops answering one file's importers and imports", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_fie_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "a.ts", language: "typescript" },
+        edges: { fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "b.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+
+    const importers = await server.handle({
+      id: 3,
+      op: "getFileImporters",
+      params: { collection: c, relPath: "b.ts" },
+    });
+    const imports = await server.handle({ id: 4, op: "getFileImports", params: { collection: c, relPath: "a.ts" } });
+
+    expect(DAEMON_OP_COMMANDS.getFileImporters.access).toBe("read");
+    expect(DAEMON_OP_COMMANDS.getFileImports.access).toBe("read");
+    const edge = { sourceRelPath: "a.ts", targetRelPath: "b.ts", importText: "./b", callWeight: 0 };
+    expect((importers as { result: unknown }).result).toEqual({ fileKnown: true, edges: [edge] });
+    expect((imports as { result: unknown }).result).toEqual({ fileKnown: true, edges: [edge] });
+    await pool.closeAll();
+  });
+});
+
+// bd tea-rags-mcp-sqqkz: the declared-visibility decoration reads cg_symbols
+// through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — getSymbolVisibilities", () => {
+  it("is a read op answering the definitions' declared visibility, NULL as null", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_vis_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "a.ts",
+        definitions: [
+          { symbolId: "A#x", fqName: "A#x", shortName: "x", relPath: "a.ts", scope: [], visibility: "private" },
+          { symbolId: "A#y", fqName: "A#y", shortName: "y", relPath: "a.ts", scope: [] },
+        ],
+      },
+    });
+
+    const res = await server.handle({
+      id: 2,
+      op: "getSymbolVisibilities",
+      params: { collection: c, symbolIds: ["A#x", "A#y"] },
+    });
+
+    expect(DAEMON_OP_COMMANDS.getSymbolVisibilities.access).toBe("read");
+    const rows = (res as { result: { symbolId: string }[] }).result;
+    expect([...rows].sort((a, b) => a.symbolId.localeCompare(b.symbolId))).toEqual([
+      { relPath: "a.ts", symbolId: "A#x", visibility: "private" },
+      { relPath: "a.ts", symbolId: "A#y", visibility: null },
+    ]);
+    await pool.closeAll();
+  });
+});
+
+// bd tea-rags-mcp-r8hme.1: the convention-privacy check reads its candidate
+// method edges through the daemon, which holds the only connection.
+describe("CodegraphDaemonServer.handle — readNonPublicMemberEdges", () => {
+  it("is a read op that returns method edges into non-public members of the requested languages", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_npm_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "app/a.py", language: "python" },
+        edges: {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "run", targetSymbolId: "B#_x", targetRelPath: "pkg/b.py", callExpression: "b._x()" },
+          ],
+        },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "pkg/b.py", language: "python" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 3,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "pkg/b.py",
+        definitions: [{ symbolId: "B#_x", fqName: "B#_x", shortName: "_x", relPath: "pkg/b.py", scope: [] }],
+      },
+    });
+
+    const res = await server.handle({
+      id: 4,
+      op: "readNonPublicMemberEdges",
+      params: { collection: c, languages: ["python"] },
+    });
+
+    expect(DAEMON_OP_COMMANDS.readNonPublicMemberEdges.access).toBe("read");
+    expect(res.ok).toBe(true);
+    expect((res as { result: unknown }).result).toEqual([
+      {
+        sourceRelPath: "app/a.py",
+        sourceSymbolId: "run",
+        targetRelPath: "pkg/b.py",
+        targetSymbolId: "B#_x",
+        targetShortName: "_x",
+        targetVisibility: null,
+        targetLanguage: "python",
+        callExpression: "b._x()",
+      },
+    ]);
+    await pool.closeAll();
+  });
+});

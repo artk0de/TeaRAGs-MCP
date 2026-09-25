@@ -42,6 +42,18 @@ export interface Checkpoint {
 }
 
 /**
+ * Options for {@link ParallelFileSynchronizer.updateSnapshot}.
+ */
+export interface SnapshotUpdateOptions extends SnapshotSaveOptions {
+  /**
+   * Relative paths whose saved entry must stay as the PREVIOUS snapshot had it
+   * (absent when it had none), so the next `detectChanges` reports them again.
+   * For paths the run failed to reconcile with disk.
+   */
+  retainPrevious?: ReadonlySet<string>;
+}
+
+/**
  * Extended FileChanges with computed hashes for reuse
  */
 export interface FileChangesWithHashes extends FileChanges {
@@ -119,7 +131,7 @@ export class ParallelFileSynchronizer {
   async updateSnapshot(
     files: string[],
     precomputedHashes?: Map<string, FileMetadata>,
-    options?: SnapshotSaveOptions,
+    options?: SnapshotUpdateOptions,
   ): Promise<void> {
     const startTime = Date.now();
 
@@ -145,7 +157,12 @@ export class ParallelFileSynchronizer {
       fileMetadata = await this.computeAllFileMetadata(files);
     }
 
-    await this.snapshotManager.save(this.codebasePath, fileMetadata, options);
+    const { retainPrevious, ...saveOptions } = options ?? {};
+    if (retainPrevious && retainPrevious.size > 0) {
+      fileMetadata = this.withPreviousEntries(fileMetadata, retainPrevious);
+    }
+
+    await this.snapshotManager.save(this.codebasePath, fileMetadata, saveOptions);
 
     // Clear cache after use
     this.lastComputedHashes = null;
@@ -153,6 +170,34 @@ export class ParallelFileSynchronizer {
     if (isDebug()) {
       console.error(`[Sync] updateSnapshot: saved ${fileMetadata.size} files in ${Date.now() - startTime}ms`);
     }
+  }
+
+  /**
+   * The snapshot to save, with each `retained` path reverted to its entry in
+   * the snapshot this run started from — or left out when that snapshot had
+   * none. A copy: the cached scan is never mutated.
+   *
+   * Why (bd tea-rags-mcp-ti1oa): the snapshot is how the next run decides what
+   * changed. A path whose index state this run did NOT bring in line with disk
+   * — a removed file whose old chunks could not be deleted, a modified file
+   * whose re-ingest was skipped — must keep describing what the index holds.
+   * Stamping it from the disk scan instead makes the next run see it as
+   * unchanged, and its stale chunks are never retried.
+   */
+  private withPreviousEntries(
+    scanned: Map<string, FileMetadata>,
+    retained: ReadonlySet<string>,
+  ): Map<string, FileMetadata> {
+    const merged = new Map(scanned);
+    for (const path of retained) {
+      const previous = this.previousSnapshot?.files.get(path);
+      if (previous) {
+        merged.set(path, previous);
+      } else {
+        merged.delete(path);
+      }
+    }
+    return merged;
   }
 
   /**

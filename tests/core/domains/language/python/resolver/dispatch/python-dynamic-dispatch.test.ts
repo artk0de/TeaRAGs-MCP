@@ -211,6 +211,24 @@ describe("PythonDynamicDispatchResolver (w205u — untyped bare-name fan-out)", 
     expect(edges[0].targetSymbolId).toBe("Owner2#perform");
   });
 
+  // bd tea-rags-mcp-jwjyr.1 — a name-mangled `__priv` is reachable only from
+  // inside a class of the same name (`obj.__priv` there compiles to
+  // `obj._Owner1__priv`); the Ruby rule "explicit receiver never reaches private"
+  // would drop this edge from inside the declaring class.
+  it("keeps a name-mangled private owner from inside its class, drops it from outside every class", () => {
+    const relPath = "app/owner1.py";
+    const priv: SymbolDefinition = {
+      ...sym("Owner1#__priv", "__priv", relPath, ["Owner1"]),
+      visibility: "private",
+    };
+    const symbolTable = tableWith([relPath, [priv]]);
+    const privCall = call({ callText: "other.__priv()", receiver: "other", member: "__priv" });
+
+    const inside = edgesOf(build().resolveDispatch(privCall, ctxOf(symbolTable, { callerScope: ["Owner1"] })));
+    expect(inside.map((e) => e.targetSymbolId)).toEqual(["Owner1#__priv"]);
+    expect(edgesOf(build().resolveDispatch(privCall, ctxOf(symbolTable)))).toEqual([]);
+  });
+
   it("never fans onto a same-named member in another language's file", () => {
     const symbolTable = tableWith(owner(1), [
       "web/Widget.tsx",

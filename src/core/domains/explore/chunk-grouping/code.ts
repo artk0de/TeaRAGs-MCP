@@ -5,7 +5,7 @@
  */
 
 import type { SearchResult } from "../../../api/public/dto/explore.js";
-import type { ScrollChunk } from "./types.js";
+import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
 
 /** Sort chunks by startLine ascending. */
 function sortByLine(chunks: ScrollChunk[]): ScrollChunk[] {
@@ -41,18 +41,30 @@ function formatMember(symbolId: string): string {
 }
 
 /**
+ * ` (private)` after a member whose declared visibility is known, nothing when
+ * it is not — an unknown level is never rendered as public (bd
+ * tea-rags-mcp-sqqkz).
+ */
+function visibilitySuffix(chunk: ScrollChunk, visibilityOf: MemberVisibilityLookup | undefined): string {
+  const symbolId = chunk.payload.symbolId as string | undefined;
+  if (visibilityOf === undefined || symbolId === undefined) return "";
+  const level = visibilityOf((chunk.payload.relativePath as string | undefined) ?? "", symbolId);
+  return level === undefined ? "" : ` (${level})`;
+}
+
+/**
  * One line per distinct member symbolId, in line order. A member the chunker
  * cut into several same-id windows (a Ruby class body, an oversized method
  * without `#partN`) is still ONE member of the outline.
  */
-function memberLines(sortedMembers: ScrollChunk[]): string[] {
+function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibilityLookup): string[] {
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const chunk of sortedMembers) {
     const symbolId = (chunk.payload.symbolId as string | undefined) ?? "";
     if (seen.has(symbolId)) continue;
     seen.add(symbolId);
-    lines.push(`  ${formatMember(symbolId)}`);
+    lines.push(`  ${formatMember(symbolId)}${visibilitySuffix(chunk, visibilityOf)}`);
   }
   return lines;
 }
@@ -66,11 +78,11 @@ export const CodeChunkGrouper = {
    * Group a class chunk with its member chunks into an outline result.
    * Replaces the inline `outlineClass` in symbol-resolve.ts.
    */
-  group(classChunk: ScrollChunk, memberChunks: ScrollChunk[]): SearchResult {
+  group(classChunk: ScrollChunk, memberChunks: ScrollChunk[], visibilityOf?: MemberVisibilityLookup): SearchResult {
     const sorted = sortByLine(memberChunks);
 
     const className = (classChunk.payload.name as string | undefined) ?? "";
-    const outlineContent = [className, ...memberLines(sorted)].join("\n");
+    const outlineContent = [className, ...memberLines(sorted, visibilityOf)].join("\n");
 
     const allChunks = [classChunk, ...sorted];
 
@@ -102,7 +114,11 @@ export const CodeChunkGrouper = {
    * `memberChunks` must be non-empty and come from one file: path, language,
    * git and codegraph are taken from the first member by line.
    */
-  groupMembers(containerSymbolId: string, memberChunks: ScrollChunk[]): SearchResult {
+  groupMembers(
+    containerSymbolId: string,
+    memberChunks: ScrollChunk[],
+    visibilityOf?: MemberVisibilityLookup,
+  ): SearchResult {
     const sorted = sortByLine(memberChunks);
     const anchor = sorted[0];
 
@@ -112,7 +128,7 @@ export const CodeChunkGrouper = {
       relativePath: anchor.payload.relativePath,
       language: anchor.payload.language,
       fileExtension: anchor.payload.fileExtension,
-      content: [containerSymbolId, ...memberLines(sorted)].join("\n"),
+      content: [containerSymbolId, ...memberLines(sorted, visibilityOf)].join("\n"),
       startLine: Math.min(...sorted.map((c) => Number(c.payload.startLine) || 0)),
       endLine: Math.max(...sorted.map((c) => Number(c.payload.endLine) || 0)),
       git: fileGit(anchor),
@@ -128,7 +144,7 @@ export const CodeChunkGrouper = {
    * Group all chunks of a file into a file-level outline.
    * Top-level symbols (no parentSymbolId) are roots; children nest under them.
    */
-  groupFile(chunks: ScrollChunk[]): SearchResult {
+  groupFile(chunks: ScrollChunk[], visibilityOf?: MemberVisibilityLookup): SearchResult {
     const sorted = sortByLine(chunks);
     const first = sorted[0];
     const relativePath = (first.payload.relativePath as string | undefined) ?? "";
@@ -162,12 +178,12 @@ export const CodeChunkGrouper = {
       const name = root.payload.name as string | undefined;
       const symbolId = root.payload.symbolId as string | undefined;
       const label = root.payload.parentSymbolId ? (symbolId ?? name ?? "") : (name ?? symbolId ?? "");
-      lines.push(`  ${label}`);
+      lines.push(`  ${label}${visibilitySuffix(root, visibilityOf)}`);
       const children = name ? childrenByParent.get(name) : undefined;
       if (children) {
         for (const child of children) {
           const childId = (child.payload.symbolId as string | undefined) ?? "";
-          lines.push(`    ${childId}`);
+          lines.push(`    ${childId}${visibilitySuffix(child, visibilityOf)}`);
         }
       }
     }

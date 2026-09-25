@@ -3,6 +3,9 @@
   "feature": "explicit-worktree-index-lifecycle",
   "date": "2026-06-29",
   "kind": "feature-driven-update",
+  "superseded": true,
+  "supersededBy": "read-side-freshness-evals.json",
+  "supersededReason": "Step 0 (CREATE at plan start) + post-commit REINDEX were replaced by the read-side Step 2.0 precondition (bd tea-rags-mcp-jufg1). E1/E2 expectations ('create once before Task 1', 'reindex after each commit') no longer describe the skill; E3-E8 are carried over into read-side-freshness-evals.json.",
   "outcome": "Skill EDITED — added Step 0 (explicit worktree-clone CREATE at plan start via `tea-rags worktree create`) + Mandatory-Step-Order item 5 (explicit per-Task REINDEX of the clone after each commit via `mcp__tea-rags__index_codebase`), and rewrote the 'Index freshness' pointer to state there is NO background reindex hook. The PostToolUse commit-reindex hook was REMOVED this session and replaced by a cleanup-only teardown backstop. Phase 2 baseline measured the NEW behavior: with-rule 8/8 (100%), without-rule 4/8 (50%), delta +50pp. With-rule reached 100% on first measure — no FIX/ITERATE needed. SUPERSEDES worktree-auto-reindex-evals.json, whose hook-based premise is now false.",
   "scenario": "Executing a multi-task plan in a git worktree (inline OR subagent-driven); tea-rags MCP available. There is NO commit-reindex hook — freshness is explicit: clone CREATE at plan start, incremental REINDEX after each task commit, teardown on branch finish (a cleanup-only hook is the teardown backstop).",
   "metrics": {

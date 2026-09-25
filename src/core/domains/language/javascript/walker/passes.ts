@@ -1,8 +1,13 @@
 /**
- * JavaScript's ordered extraction passes — EMPTY, which is what makes JavaScript
- * a plugin host without moving a byte of its output: `composeExtractionWalker`
- * runs `extractFromJavascriptFile` and, finding no passes, hands that result back
- * BY IDENTITY (bd tea-rags-mcp-zhetx, E1 seam 0).
+ * JavaScript's ordered extraction passes. The monolith
+ * `extractFromJavascriptFile` runs first (bd tea-rags-mcp-zhetx, E1 seam 0);
+ * each facet below folds in after it.
+ *
+ *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — a class member's `#name`
+ *      private access on `ChunkExtraction.visibility`. The reader is
+ *      TypeScript's, for the same reason `jsNameOf` delegates to `tsNameOf`: the
+ *      class-member node shapes are shared, and JavaScript's grammar simply has
+ *      no `accessibility_modifier` for it to find.
  *
  * A new JavaScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -11,6 +16,9 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import { declaredVisibilityFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
+import { readEcmascriptDeclaredVisibility } from "../../typescript/walker/passes/declared-visibility.js";
 
-export const JAVASCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
+export const JAVASCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  declaredVisibilityFacetPass(readEcmascriptDeclaredVisibility),
+];

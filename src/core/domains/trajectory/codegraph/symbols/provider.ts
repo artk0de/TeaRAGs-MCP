@@ -54,6 +54,7 @@ import type {
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
+import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   buildCodegraphExclusionFilter,
@@ -75,7 +76,7 @@ import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import { drainCrossPassInputSpill, persistRunResolveStats, readCodegraphFileOverlays } from "./run-finalize.js";
 import { CodegraphRunState } from "./run-state.js";
-import { lastSegment } from "./symbol-name.js";
+import { symbolDefinitionsOf } from "./symbol-definitions.js";
 
 /**
  * Relocated collaborators, re-exported for import stability: the symbols barrel,
@@ -257,7 +258,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `db/migrate/**`). Never empty: the generated + test patterns are
    * unconditional. The extractor and the chunk pass hold this same instance.
    */
-  private readonly codegraphExclusionFilter: Ignore;
+  private readonly codegraphExclusionFilter: PathFilter;
   /**
    * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq). Owned
    * here, not by the finalizer, because pass-1 runs on this side and both halves
@@ -438,6 +439,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     if (paths.length === 0) return;
     const { graphDb, symbolTable } = await this.getStore(options?.collectionName);
     const perColl = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
+    // The derived tables (cycles, PageRank) are whole-graph recomputes this
+    // hook does not pay for — a deletion-only reindex exists to stay cheap.
+    // Prune what the deletion invalidated and mark the rest stale; the next
+    // finalize recomputes (bd tea-rags-mcp-dy852). BEFORE the base rows go:
+    // only a file `cg_symbols_files` still knows marks the tables stale.
+    await graphDb.pruneDerivedForDeletedFiles(paths);
     for (const relPath of paths) {
       // `removeFile` clears edges AND cg_symbols rows; `removeSymbolsForFile` is
       // idempotent for symbol-only callers, so calling both is safe.
@@ -448,31 +455,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
   }
 
+  /** Whether a deletion pruned cycles / PageRank since their last recompute (bd tea-rags-mcp-dy852). */
+  async hasStaleDerivedState(collectionName?: PhysicalCollectionName): Promise<boolean> {
+    return (await this.getStore(collectionName)).graphDb.hasStaleDerivedTables();
+  }
+
   /**
    * Map a file's `FileExtraction` chunks to `SymbolDefinition[]` — the SINGLE
    * source of the def shape, used by both the sink's `write` and
    * `acceptExtraction`'s eager buffer so the two node-write paths cannot drift.
    */
   private buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
-    return extraction.chunks.map((c) => ({
-      symbolId: c.symbolId,
-      fqName: c.symbolId,
-      shortName: lastSegment(c.symbolId),
-      relPath: extraction.relPath,
-      scope: c.scope,
-      // Thread walker-captured arity + visibility into SymbolDefinition (bd xlnub)
-      ...(c.arity !== undefined ? { arity: c.arity } : {}),
-      ...(c.visibility !== undefined ? { visibility: c.visibility } : {}),
-      // Thread walker-captured kwarg signature + block-acceptance (bd d9o7o)
-      ...(c.kwargs !== undefined ? { kwargs: c.kwargs } : {}),
-      ...(c.acceptsBlock !== undefined ? { acceptsBlock: c.acceptsBlock } : {}),
-      // Abstract-stub marker (bd tea-rags-mcp-bcdfe) — set only when true, so the
-      // self-dispatch probe can tell a declaration from a concrete definition.
-      ...(c.isAbstractStub === true ? { isAbstractStub: true } : {}),
-      // The symbol's AST range, persisted so the payload healer maps chunks to
-      // owners by the same rule the deferred pass uses (bd tea-rags-mcp-9i2ow).
-      ...(c.startLine !== undefined && c.endLine !== undefined ? { startLine: c.startLine, endLine: c.endLine } : {}),
-    }));
+    return symbolDefinitionsOf(extraction);
   }
 
   /**
@@ -610,7 +604,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const sink = this.asExtractionSink(options?.collectionName);
     for (const relPath of targetRelPaths) {
       try {
-        await sink.write(this.extractOneFile(root, relPath));
+        await sink.write(await this.extractOneFile(root, relPath));
       } catch (err) {
         // One bad file must not take down the build; the sink buffers per file
         // and resolves on finish, so the graph stays consistent.
@@ -671,7 +665,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // calls tallied per spill, jittering resolveSuccessRate with batch composition.
       if (extracted.has(relPath)) continue;
       try {
-        await sink.write(this.extractOneFile(root, relPath));
+        await sink.write(await this.extractOneFile(root, relPath));
         extracted.add(relPath);
       } catch (err) {
         if (process.env.DEBUG === "true") {
@@ -729,7 +723,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       if (!this.fileExtractor.isExtractable(relPath)) continue;
       const startedAtMs = Date.now();
       try {
-        const extraction = this.fileExtractor.parse(root, relPath);
+        const extraction = await this.fileExtractor.parse(root, relPath);
         const language = extraction.language || "unknown";
         const total = (pass1ByLanguage[language] ??= { ms: 0, files: 0 });
         total.ms += Date.now() - startedAtMs;
@@ -964,6 +958,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // and PageRank wait for the completion owner's `readBack`.
       if (sink) await sink.finish(partitioned ? { recomputeMetrics: false } : undefined);
       const { graphDb } = await this.getStore(options?.collectionName);
+      // No sink = this run walked no codegraph file, so nothing recomputed
+      // cycles / PageRank — which a prior deletion may have left pruned but
+      // stale (bd tea-rags-mcp-dy852). Recompute here; `runFinalizeOnly`
+      // reaches this seam too. A partition leaves it to `readBack`.
+      if (!sink && !partitioned && (await graphDb.hasStaleDerivedTables())) {
+        await recomputeCodegraphMetricsBestEffort(async () =>
+          this.recomputeGraphMetricsStreaming(options?.collectionName),
+        );
+      }
       if (!partitioned) {
         const paths =
           options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
@@ -1079,7 +1082,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /** Parse + walk one file from disk, recording its pass-1 time (`CodegraphFileExtractor#extract`). */
-  private extractOneFile(root: string, relPath: string): FileExtraction {
+  private async extractOneFile(root: string, relPath: string): Promise<FileExtraction> {
     return this.fileExtractor.extract(root, relPath);
   }
 

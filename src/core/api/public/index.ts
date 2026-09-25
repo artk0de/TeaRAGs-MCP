@@ -18,6 +18,17 @@ export type { App, AppDeps } from "./app.js";
 // The one runtime symbol among them: the recompute-path predicate both
 // `IndexingOps#run` and the CLI index worker branch on.
 export { isEnrichmentRecompute } from "./dto/index.js";
+
+// ── Codegraph resolve rate — miss definition + rendering rule ─────────
+// `tea-rags prime` renders the per-receiver-kind rows of the resolve DTO with
+// the same empty-denominator rule the chain-tally harness uses (bd qodqg).
+export {
+  EMPTY_RESOLVE_DENOMINATOR_MARKER,
+  formatResolveRate,
+  formatResolveRateCell,
+  resolveRateMiss,
+} from "../../contracts/resolve-rate.js";
+export type { ResolveRateCell, ResolveRateCounts } from "../../contracts/resolve-rate.js";
 export type {
   // Explore DTOs
   CollectionRef,
@@ -28,6 +39,7 @@ export type {
   ExploreCodeRequest,
   SearchResult,
   ExploreResponse,
+  PresetFilterNotice,
   SignalDescriptor,
   PresetDescriptors,
   // Ingest DTOs
@@ -40,6 +52,7 @@ export type {
   EnrichmentProgressEvent,
   // Collection DTOs
   CreateCollectionRequest,
+  DocumentMetadataSchema,
   CollectionInfo,
   CollectionMemoryBytes,
   CollectionMemoryMetrics,
@@ -49,6 +62,11 @@ export type {
   // Registry DTOs
   StaleProjectEntry,
   StaleProjectPruneReport,
+  // Architecture diagnostics DTOs
+  ArchitectureRootCause,
+  ArchitectureViolation,
+  GetArchitectureReportRequest,
+  GetArchitectureReportResponse,
 } from "./dto/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────
@@ -64,8 +82,10 @@ export {
   PathDoesNotExistError,
   ProjectPathMissingError,
   StaleProjectAliasError,
+  InvalidDocumentMetadataSchemaError,
+  DocumentMetadataSchemaViolationError,
 } from "../errors.js";
-export type { InputErrorCode } from "../errors.js";
+export type { InputErrorCode, DocumentMetadataViolation } from "../errors.js";
 
 // ── Error classes — foundation + config (infra/errors.ts) ─────────────
 export {
@@ -166,6 +186,12 @@ export { resolveQdrantUrl, EMBEDDED_MARKER } from "../../adapters/qdrant/embedde
 // Repo identity — lets the CLI tell that two paths are working trees of ONE
 // repository (a checkout and its linked worktrees), so it can inherit config.
 export { resolveGitCommonDir } from "../../adapters/vcs/git/common-dir.js";
+
+// ── Language capability ceilings (cli/prime per-index tier lines) ─────
+// Static per-language descriptors, never measured numbers — prime pairs them
+// with the realized resolve rate it already reads (bd tea-rags-mcp-xip6g).
+export { resolveLanguageCapabilities } from "../../domains/language/capability/resolve.js";
+export type { LanguageCapability } from "../../contracts/types/language.js";
 
 // ── Payload signal descriptor (used by mcp schema-emitting code) ──────
 export type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";

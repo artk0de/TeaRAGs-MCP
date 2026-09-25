@@ -57,42 +57,45 @@ Show matches as `#<number> — <title> (<state>)`. Then:
   genuinely distinct.
 - **No match** → continue to step 3.
 
-### 3. Compose the issue body
+### 3. Compose the issue fields
 
-Fill this template (markdown):
+Repo sets `blank_issues_enabled: false` → blank `issues/new?title=&body=` URL
+redirects to template chooser, DROPS prefill. Target issue form
+`.github/ISSUE_TEMPLATE/bug_report.yml` instead. One value per form field id:
 
-```markdown
-## Summary
+| Field id       | Value                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `title`        | `[bug]: <one-line summary>` (form default prefix kept)                                                                                                       |
+| `version`      | `tea-rags --version`                                                                                                                                         |
+| `client`       | EXACT dropdown option: `Claude Code`, `Cursor`, `Continue`, `Zed`, `CLI only (tea-rags command, no MCP client)`, `Other (name it in the reproduction steps)` |
+| `embedding`    | `<provider> / <model id>`                                                                                                                                    |
+| `qdrant`       | `<embedded\|external> <version>` (+ URL when external)                                                                                                       |
+| `platform`     | `<os> / Node <ver>`                                                                                                                                          |
+| `reproduction` | numbered steps, if known                                                                                                                                     |
+| `expected`     | what should have happened                                                                                                                                    |
+| `actual`       | error code + message + hint verbatim, or quarantine summary                                                                                                  |
+| `index-status` | `get_index_status` / `tea-rags doctor <path> --json` output                                                                                                  |
+| `logs`         | `--quarantine --json` / `DEBUG=1` excerpt, redacted                                                                                                          |
 
-<one-line description>
-
-## Environment
-
-- tea-rags: <version>
-- embedding: <model> · qdrant: <version> · platform: <os> / node <ver>
-
-## What happened
-
-<error code + message, or quarantine summary>
-
-## Reproduction
-
-<steps, if known>
-
-## Logs / diagnostics
-
-<the doctor --json / --quarantine --json / error hint block>
-```
+Unknown value → omit param; user fills it in form. `checks` checkboxes NOT
+prefillable — user ticks them.
 
 ### 4. Output (hybrid)
 
-- **Default** — print composed body + pre-filled issue URL user opens and
-  submits:
-  `https://github.com/artk0de/TeaRAGs-MCP/issues/new?title=<url-encoded>&body=<url-encoded>`
+- **Default** — print composed fields + pre-filled issue-form URL user opens and
+  submits (every value url-encoded):
+  `https://github.com/artk0de/TeaRAGs-MCP/issues/new?template=bug_report.yml&title=<enc>&version=<enc>&client=<enc>&embedding=<enc>&qdrant=<enc>&platform=<enc>&reproduction=<enc>&expected=<enc>&actual=<enc>&index-status=<enc>&logs=<enc>`
+  URL past ~8000 chars → drop `logs` then `index-status` from URL, print them
+  for user to paste into form.
 - **If `gh` installed AND authenticated** (`gh auth status` succeeds) — offer as
-  one-step alternative, run ONLY after user confirms:
+  one-step alternative, run ONLY after user confirms. API bypasses form → body
+  file carries one `### <form label>` heading per field (`TeaRAGs version`,
+  `MCP client`, `Embedding provider and model`, `Qdrant mode and version`,
+  `OS and Node version`, `Reproduction steps`, `Expected behavior`,
+  `Actual behavior`, `get_index_status output`, `Logs`) — same shape as
+  form-filed issue:
   ```bash
-  gh issue create --repo artk0de/TeaRAGs-MCP --title "<title>" --body-file <tmp-body.md>
+  gh issue create --repo artk0de/TeaRAGs-MCP --title "[bug]: <summary>" --body-file <tmp-body.md>
   ```
 
 ## Red flags — STOP

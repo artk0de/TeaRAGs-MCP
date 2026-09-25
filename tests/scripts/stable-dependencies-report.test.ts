@@ -103,7 +103,10 @@ describe("collectStableDependencies + renderStableDependenciesReport", () => {
     const dbPath = join(dir, "copy.duckdb");
     await writeFixture(dbPath);
 
-    const { graph, report } = await collectStableDependencies(dbPath, {});
+    // The fixture's volatile file has stable.ts as its only importer, which the
+    // private-collaborator rule (bd tea-rags-mcp-er6mu) excludes by default; this
+    // test pins reading and rendering, so it opts back in.
+    const { graph, report } = await collectStableDependencies(dbPath, { judgePrivateCollaborators: true });
     const text = renderStableDependenciesReport(report, graph, 20);
 
     expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
@@ -165,6 +168,71 @@ describe("the no-symbol exclusion in the report", () => {
       reason: "no-symbol endpoint: barrel, type-only or object-literal module",
       count: 2,
       sample: [{ relPath: "lib/types.ts", excludedEdgeCount: 3 }],
+    });
+  });
+});
+
+// bd tea-rags-mcp-er6mu: the private-collaborator exclusion and the root-cause
+// grouping, as the report prints them.
+describe("private collaborators and root causes in the report", () => {
+  function file(relPath: string): FileDependencyGraphFile {
+    return { relPath, language: "typescript", symbolCount: 1 };
+  }
+
+  /**
+   * `hub.ts` imported by `s1.ts`, `s2.ts` (each with 5 importers of its own),
+   * importing `s1.ts` back plus 4 leaves; `s1.ts` also imports `private.ts`,
+   * which nothing else imports and which imports 4 leaves.
+   */
+  function graph(): FileDependencyGraph {
+    const files = [file("hub.ts"), file("s1.ts"), file("s2.ts"), file("private.ts")];
+    const edges: FileDependencyGraph["edges"] = [];
+    const add = (sourceRelPath: string, targetRelPath: string) => {
+      edges.push({ sourceRelPath, targetRelPath, callWeight: 1 });
+    };
+    for (const s of ["s1.ts", "s2.ts"]) {
+      add(s, "hub.ts");
+      for (let i = 1; i <= 5; i++) {
+        files.push(file(`${s}-in${i}.ts`));
+        add(`${s}-in${i}.ts`, s);
+      }
+    }
+    add("hub.ts", "s1.ts");
+    add("s1.ts", "private.ts");
+    for (let i = 1; i <= 4; i++) {
+      files.push(file(`hub-leaf${i}.ts`), file(`private-leaf${i}.ts`));
+      add("hub.ts", `hub-leaf${i}.ts`);
+      add("private.ts", `private-leaf${i}.ts`);
+    }
+    return { files, edges };
+  }
+
+  it("prints the private-collaborator count with its reason and a top root causes section", () => {
+    const g = graph();
+    const text = renderStableDependenciesReport(detectStableDependencyViolations(g), g, 20);
+
+    expect(text).toMatch(/private collaborator\s+1/);
+    expect(text).toContain("private collaborator: source is the target's sole importer");
+    expect(text).toContain("top 20 root causes");
+    expect(text).toMatch(/2\s+.*hub\.ts.*cycle/);
+    expect(text).not.toMatch(/-> private\.ts/);
+  });
+
+  it("carries the root causes in the --json document", () => {
+    const g = graph();
+    const json = buildStableDependenciesJson(detectStableDependencyViolations(g), g, "/tmp/copy.duckdb", 20);
+
+    expect(json.summary.excluded.privateCollaborators).toBe(1);
+    expect(json.rootCauses.map((r) => [r.targetRelPath, r.violationCount, r.cycleWithDependents])).toEqual([
+      ["hub.ts", 2, true],
+    ]);
+  });
+
+  it("parses --judge-private-collaborators, to measure the report without the exclusion", () => {
+    expect(parseArgs(["--db", "g.duckdb", "--judge-private-collaborators"])).toEqual({
+      dbPath: "g.duckdb",
+      top: 20,
+      judgePrivateCollaborators: true,
     });
   });
 });

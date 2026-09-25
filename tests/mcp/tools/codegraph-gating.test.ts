@@ -4,8 +4,8 @@
  *
  * When `app.hasProvider("codegraph.symbols") === false`, the registrar must
  * be a complete no-op — neither `get_callers`, `get_callees`, `find_cycles`,
- * nor `trace_path` appears in the MCP tool list. When true, all four tools
- * register.
+ * `trace_path` nor `get_architecture_report` appears in the MCP tool list.
+ * When true, all five tools register.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -22,6 +22,7 @@ function makeApp(hasCodegraph: boolean): App {
     getCallees: vi.fn(),
     findCycles: vi.fn(),
     tracePath: vi.fn(),
+    getArchitectureReport: vi.fn(),
   } as unknown as App;
 }
 
@@ -44,15 +45,15 @@ function makeServer(): McpServer {
 }
 
 describe("registerCodegraphTools — provider gating", () => {
-  it("registers all 4 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
+  it("registers all 5 codegraph tools when hasProvider('codegraph.symbols') is true", () => {
     const register = vi.fn();
     const app = makeApp(true);
 
     registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
 
-    expect(register).toHaveBeenCalledTimes(4);
+    expect(register).toHaveBeenCalledTimes(5);
     const names = register.mock.calls.map((c) => c[1] as string).sort();
-    expect(names).toEqual(["find_cycles", "get_callees", "get_callers", "trace_path"]);
+    expect(names).toEqual(["find_cycles", "get_architecture_report", "get_callees", "get_callers", "trace_path"]);
   });
 
   it("registers trace_path when codegraph.symbols is present", () => {
@@ -169,5 +170,106 @@ describe("registerCodegraphTools — provider gating", () => {
     expect(rerankSchema.safeParse(undefined).success).toBe(true);
     // Typo rejected at the MCP boundary — no more silent no-op.
     expect(rerankSchema.safeParse("totally_bogus").success).toBe(false);
+  });
+});
+
+// bd tea-rags-mcp-94hd9 — architecture diagnostics report, codegraph-gated like find_cycles.
+describe("get_architecture_report", () => {
+  function registered(hasCodegraph = true) {
+    const register = vi.fn();
+    const app = makeApp(hasCodegraph);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === "get_architecture_report");
+    return { app, call };
+  }
+
+  it("is not registered when codegraph.symbols is absent", () => {
+    expect(registered(false).call).toBeUndefined();
+  });
+
+  it("is a read-only tool whose schema takes the address triad, an optional pathPattern and limit", () => {
+    const { call } = registered();
+    const config = call?.[2] as {
+      inputSchema: Record<string, z.ZodTypeAny>;
+      annotations: Record<string, boolean>;
+      description: string;
+    };
+    const schema = z.object(config.inputSchema);
+
+    expect(config.annotations).toMatchObject({ readOnlyHint: true, idempotentHint: true });
+    expect(config.description).toMatch(/Stable Dependencies/);
+    expect(schema.safeParse({ project: "tea-rags" }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", pathPattern: "src/core/**", limit: 20 }).success).toBe(true);
+    expect(schema.safeParse({ project: "tea-rags", limit: 0 }).success).toBe(false);
+    expect(schema.safeParse({ project: "tea-rags", limit: 501 }).success).toBe(false);
+  });
+
+  it("forwards the address, pathPattern and limit into app.getArchitectureReport and returns its report as text", async () => {
+    const { app, call } = registered();
+    const report = { summary: {}, rootCauses: [], violations: [] };
+    (app.getArchitectureReport as ReturnType<typeof vi.fn>).mockResolvedValue(report);
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
+
+    const result = await handler({ project: "tea-rags", pathPattern: "src/core/**", limit: 10 });
+
+    expect(app.getArchitectureReport).toHaveBeenCalledWith({
+      project: "tea-rags",
+      collection: undefined,
+      path: undefined,
+      pathPattern: "src/core/**",
+      limit: 10,
+    });
+    expect(JSON.parse(result.content[0].text)).toEqual(report);
+  });
+});
+
+// bd tea-rags-mcp-gfvr8 — get_callers / get_callees at FILE scope.
+describe("get_callers / get_callees — file scope", () => {
+  function registered(tool: "get_callers" | "get_callees") {
+    const register = vi.fn();
+    const app = makeApp(true);
+    registerCodegraphTools(makeServer(), { app, schemaBuilder: makeSchemaBuilder(), register });
+    const call = register.mock.calls.find((c) => c[1] === tool);
+    const config = call?.[2] as { inputSchema: Record<string, z.ZodTypeAny>; description: string };
+    const handler = call?.[3] as (args: Record<string, unknown>) => Promise<unknown>;
+    return { app, config, handler };
+  }
+
+  for (const tool of ["get_callers", "get_callees"] as const) {
+    it(`${tool} schema accepts relativePath without symbolId, and symbolId without relativePath`, () => {
+      const schema = z.object(registered(tool).config.inputSchema);
+      expect(schema.safeParse({ project: "p", relativePath: "src/a.ts" }).success).toBe(true);
+      expect(schema.safeParse({ project: "p", symbolId: "A#b" }).success).toBe(true);
+    });
+
+    it(`${tool} description documents the file-scope answer`, () => {
+      const { description } = registered(tool).config;
+      expect(description).toMatch(/relativePath/);
+      expect(description).toMatch(/import/);
+    });
+  }
+
+  it("get_callers handler forwards relativePath into app.getCallers", async () => {
+    const { app, handler } = registered("get_callers");
+    (app.getCallers as ReturnType<typeof vi.fn>).mockResolvedValue({
+      relativePath: "src/a.ts",
+      importers: [],
+      total: 0,
+    });
+
+    await handler({ project: "p", relativePath: "src/a.ts", limit: 5 });
+
+    expect(app.getCallers).toHaveBeenCalledWith(
+      expect.objectContaining({ project: "p", relativePath: "src/a.ts", limit: 5 }),
+    );
+  });
+
+  it("get_callees handler forwards relativePath into app.getCallees", async () => {
+    const { app, handler } = registered("get_callees");
+    (app.getCallees as ReturnType<typeof vi.fn>).mockResolvedValue({ relativePath: "src/a.ts", imports: [], total: 0 });
+
+    await handler({ project: "p", relativePath: "src/a.ts" });
+
+    expect(app.getCallees).toHaveBeenCalledWith(expect.objectContaining({ project: "p", relativePath: "src/a.ts" }));
   });
 });

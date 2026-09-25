@@ -31,8 +31,9 @@ import { buildCorpusExclusionFilter, collectSourceFiles, extractFile } from "../
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value === null || typeof value !== "object") return value;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+  // Null-prototype: a key named `__proto__` must stay an own key, not reset the prototype.
+  const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  for (const key of Object.keys(value).sort()) {
     out[key] = canonical((value as Record<string, unknown>)[key]);
   }
   return out;

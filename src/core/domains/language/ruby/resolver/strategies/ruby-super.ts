@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
@@ -82,7 +83,7 @@ export class RubySuperSymbolResolutionStrategy implements SymbolResolutionStrate
     // FQ key matches `collectRubyClassAncestors` output: nested classes
     // become `Outer::Inner` via scope-stack join with `::`.
     const enclosingClass = ctx.callerScope.join("::");
-    const ancestors = ctx.classAncestors?.[enclosingClass];
+    const ancestors = identifierEntry(ctx.classAncestors, enclosingClass);
     if (!ancestors) {
       // Module with no own ancestors (e.g. `module Tracer` with no `include`):
       // the class-keyed walk has nothing to iterate, but the reverse-include

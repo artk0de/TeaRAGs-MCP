@@ -6,8 +6,8 @@ import type {
   WorktreeInfo,
   WorktreeRemoveInput,
 } from "../../../contracts/index.js";
-import type { WorktreeProvisioner } from "../../../domains/maintenance/worktree/index.js";
 import type { CollectionEntry, CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import type { WorktreeProvisioner } from "../../../domains/maintenance/worktree/index.js";
 
 /**
  * WorktreeOps — CLI-facing facade over the maintenance worktree domain.
@@ -41,6 +41,7 @@ export function toWorktreeInfo(entry: CollectionEntry): WorktreeInfo {
     alias: entry.name ?? undefined,
     worktreeOf: entry.worktreeOf,
     worktreeName: entry.worktreeName,
+    path: entry.path,
     chunksCount: entry.chunksCount,
   };
 }

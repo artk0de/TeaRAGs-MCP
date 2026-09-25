@@ -19,10 +19,9 @@
  * Two grammars, one provider: `.ts` and `.tsx` both map to language "typescript"
  * (`LANGUAGE_MAP`). The CHUNKER uses the kernel's `.typescript` grammar for both
  * (`kernel.ts` note). The CODEGRAPH engine loads the `.tsx` grammar for `.tsx`
- * files via the retained `CODEGRAPH_LANGUAGES[".tsx"].loadParser` — both reach
+ * files through the same kernel (`extractLanguage(mod, ".tsx")`) — both reach
  * the SAME `walker.walk` (`extractFromTypescriptFile`, grammar-agnostic for the
- * node types it reads). So the provider parses both correctly without itself
- * holding two grammars: the per-extension grammar choice stays on the legacy map.
+ * node types it reads).
  */
 
 import {
@@ -42,7 +41,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver } from "./resolver/index.js";

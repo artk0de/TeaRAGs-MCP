@@ -23,6 +23,7 @@ import type {
 import type { FilterLevel } from "../../../contracts/types/provider.js";
 import type { CollectionSignalStats } from "../../../contracts/types/trajectory.js";
 import { invertPercentileKey, stampThresholdFromDays, stampToTimestampKey } from "../git/index.js";
+import { isTestExclusionCondition, TEST_EXCLUSION_FILTER_CONDITIONS } from "../static/test-exclusion.js";
 
 /** Resolve a range threshold: literal number, or adaptive percentile from stats with cold-start fallback. */
 function resolveThreshold(signal: string, value: FilterThreshold, stats: CollectionSignalStats | undefined): number {
@@ -109,6 +110,12 @@ export function compileFilterPreset(
   const should: QdrantFilterCondition[] = [];
 
   for (const c of def.conditions) {
+    // "Exclude tests" has one owner (static/test-exclusion.ts): the isTest leaf
+    // plus the codegraph skippedAs bridge for pre-9ty5z indexes.
+    if (isTestExclusionCondition(c)) {
+      mustNot.push(...TEST_EXCLUSION_FILTER_CONDITIONS);
+      continue;
+    }
     const compiled = compileCondition(c, stats, nowSec);
     switch (c.occur ?? "must") {
       case "should":

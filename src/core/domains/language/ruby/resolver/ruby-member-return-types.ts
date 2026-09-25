@@ -18,6 +18,7 @@
  * guards and vocabulary byte-identical.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { rubyNonNilArms, rubyTypeRefEquals } from "../type-ref.js";
@@ -141,7 +142,7 @@ export function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext
   // 4. Flat functionReturnTypes fallback — YARD @return map, populated today.
   //    Owner-less, so it answers only for a member the corpus does not multiply
   //    define (bd tea-rags-mcp-h4hxh).
-  const flatName = ctx.functionReturnTypes?.[member];
+  const flatName = identifierEntry(ctx.functionReturnTypes, member);
   if (flatName !== undefined && flatReturnFactMayOverrideKnownReceiver(member, ctx)) {
     return { form: "instance", name: flatName };
   }

@@ -14,6 +14,7 @@
  * symbol-table query (`hasFile` / `hasFilesUnder`, bd q9u85). The vocabulary is
  * consulted once per unresolved call on corpora with 80k of them.
  */
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import { resolveLocalBindingType } from "../../../../contracts/types/codegraph-local-binding.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
@@ -83,7 +84,8 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
     if (PYTHON_BUILTINS.has(member)) return true;
     if (ctx === undefined) return false;
     for (const imp of ctx.imports) {
-      const bound = imp.importedBindings?.[member] ?? (imp.importedNames?.includes(member) ? member : undefined);
+      const bound =
+        identifierEntry(imp.importedBindings, member) ?? (imp.importedNames?.includes(member) ? member : undefined);
       if (bound === undefined) continue;
       if (this.mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx).kind === "external") return true;
     }

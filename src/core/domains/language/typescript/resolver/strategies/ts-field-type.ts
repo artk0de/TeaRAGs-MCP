@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
@@ -22,7 +23,7 @@ export class TSFieldTypeSymbolResolutionStrategy implements SymbolResolutionStra
     if (fieldSegment.includes(".")) return CONTINUE;
 
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+    const typeName = identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
     if (!typeName) return CONTINUE;
 
     // Instance form first — most common dispatch shape. Strict mode drops the

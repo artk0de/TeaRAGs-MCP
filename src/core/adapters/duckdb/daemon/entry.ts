@@ -27,10 +27,11 @@ import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
 import { setDebug } from "../../../infra/runtime.js";
-import { CodegraphDaemonDrainRefusedError } from "../errors.js";
+import { CodegraphDaemonDrainRefusedError, CodegraphDaemonOwnedElsewhereError } from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
+  claimDaemonOwnership,
   decrementRefs,
   getDaemonPaths,
   getStorageDir,
@@ -279,12 +280,47 @@ export function createConnectionHandler(
  * the pid file, and arm the idle watcher. Resolves once the socket is listening
  * (the process then stays alive on the open server handle). Returns the server
  * + a `shutdown` so tests can tear it down deterministically.
+ *
+ * When another live daemon already owns `paths.buildDir` (bd
+ * tea-rags-mcp-imgjx) it logs one line, calls `exit(0)` and — for an injected
+ * `exit` that returns — rejects with `CodegraphDaemonOwnedElsewhereError`.
  */
 export async function runDaemon(
   options: DaemonRuntimeOptions,
 ): Promise<{ server: Server; shutdown: () => Promise<void> }> {
   // First, so every diagnostic the pool and server emit from here on sees it.
   if (options.debug !== undefined) setDebug(options.debug);
+  const exit = options.exit ?? ((code: number): void => process.exit(code));
+  // Single-instance guard (bd tea-rags-mcp-imgjx), claimed synchronously before
+  // anything else touches the key directory, a socket or a DuckDB file. The
+  // loser of a spawn race exits cleanly: a twin that kept running took over
+  // nothing reachable but held the RW lock of every collection it opened.
+  const ownership = claimDaemonOwnership(options.paths);
+  if (!ownership.owned) {
+    process.stderr.write(
+      `[codegraph-daemon] ${options.paths.buildDir} is owned by live daemon pid ${ownership.ownerPid ?? "unknown"} — ` +
+        "exiting without starting\n",
+    );
+    exit(0);
+    // Reached only when `exit` returns (an in-process caller's injected hook).
+    throw new CodegraphDaemonOwnedElsewhereError({ buildDir: options.paths.buildDir, ownerPid: ownership.ownerPid });
+  }
+  try {
+    return await startOwnedDaemon(options, exit, ownership.release);
+  } catch (err) {
+    // A daemon that never came up must not keep the key dir owned — its pid
+    // is still alive in-process, so nobody could take the claim over.
+    ownership.release();
+    throw err;
+  }
+}
+
+/** Everything `runDaemon` does once this process owns the key directory. */
+async function startOwnedDaemon(
+  options: DaemonRuntimeOptions,
+  exit: (code: number) => void,
+  releaseOwnership: () => void,
+): Promise<{ server: Server; shutdown: () => Promise<void> }> {
   // Same reason the symbol table is injected: the DDL steps live in a domain
   // this layer may not import, so they arrive as a module URL and are loaded
   // in-process here.
@@ -339,7 +375,6 @@ export async function runDaemon(
   const shutdownRef: { current?: () => Promise<void> } = {};
   // ONE drain/exit lambda shared by the idle watcher AND the client-requested
   // `shutdown` op (bd tea-rags-mcp-ji56r) — a single teardown path, no clone.
-  const exit = options.exit ?? ((code: number): void => process.exit(code));
   const drainAndExit = (): void => {
     void shutdownRef.current?.().then(() => {
       exit(0);
@@ -352,6 +387,9 @@ export async function runDaemon(
     pool,
     cleanup: () => {
       cleanupDaemonFiles(options.paths);
+      // Last: while the pid and socket files are still being unlinked, a
+      // successor that took the claim could have its fresh socket removed.
+      releaseOwnership();
     },
   });
   const shutdown = async (): Promise<void> => {

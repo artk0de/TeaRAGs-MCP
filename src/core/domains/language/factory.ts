@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+
 import { DEFAULT_AMBIGUOUS_RESOLVE_MODE, type AmbiguousResolveMode } from "../../contracts/types/codegraph.js";
 import type {
   LanguageCapability,
@@ -5,35 +7,26 @@ import type {
   LanguageProvider,
 } from "../../contracts/types/language.js";
 import type { SignalFloors } from "../../contracts/types/trajectory.js";
-import { capability as bashCapability } from "./bash/capability.js";
 import { BashLanguage } from "./bash/index.js";
 import { signalFloors as bashSignalFloors } from "./bash/signal-floors.js";
-import { UnsupportedLanguageError } from "./errors.js";
-import { capability as goCapability } from "./go/capability.js";
+import { nativeLanguageCapabilities } from "./capability/native.js";
+import { GrammarPackageNotInstalledError, UnsupportedLanguageError } from "./errors.js";
 import { GoLanguage } from "./go/index.js";
 import { signalFloors as goSignalFloors } from "./go/signal-floors.js";
-import { capability as javaCapability } from "./java/capability.js";
 import { JavaLanguage } from "./java/index.js";
 import { signalFloors as javaSignalFloors } from "./java/signal-floors.js";
-import { capability as javascriptCapability } from "./javascript/capability.js";
 import { JavaScriptLanguage } from "./javascript/index.js";
 import { signalFloors as javascriptSignalFloors } from "./javascript/signal-floors.js";
-import { capability as markdownCapability } from "./markdown/capability.js";
 import { MarkdownLanguage } from "./markdown/index.js";
 import { signalFloors as markdownSignalFloors } from "./markdown/signal-floors.js";
-import { capability as pythonCapability } from "./python/capability.js";
 import { PythonLanguage } from "./python/index.js";
 import { signalFloors as pythonSignalFloors } from "./python/signal-floors.js";
-import { capability as rubyCapability } from "./ruby/capability.js";
 import { RubyLanguage } from "./ruby/index.js";
 import { signalFloors as rubySignalFloors } from "./ruby/signal-floors.js";
-import { capability as rustCapability } from "./rust/capability.js";
 import { RustLanguage } from "./rust/index.js";
 import { signalFloors as rustSignalFloors } from "./rust/signal-floors.js";
-import { capability as swiftCapability } from "./swift/capability.js";
 import { SwiftLanguage } from "./swift/index.js";
 import { signalFloors as swiftSignalFloors } from "./swift/signal-floors.js";
-import { capability as typescriptCapability } from "./typescript/capability.js";
 import { TypeScriptLanguage } from "./typescript/index.js";
 import { signalFloors as typescriptSignalFloors } from "./typescript/signal-floors.js";
 
@@ -58,6 +51,22 @@ const NATIVE_LANGUAGES: ReadonlySet<string> = new Set<string>([
   "swift",
   "markdown",
 ]);
+
+/**
+ * Whether an npm package resolves from this module — the factory's default
+ * grammar check. Only a missing package reads as "not installed": any other
+ * resolution failure (a broken `exports` map, say) means the package IS there,
+ * and the grammar load itself reports what is wrong with it.
+ */
+const resolveFromFactory = createRequire(import.meta.url);
+function isPackageResolvable(packageName: string): boolean {
+  try {
+    resolveFromFactory.resolve(packageName);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND";
+  }
+}
 
 /**
  * Real `LanguageFactoryDescriptor`. `create(lang)` ENCAPSULATES construction — it builds
@@ -91,6 +100,11 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    */
   private readonly repoRoot: string;
   private readonly cache = new Map<string, LanguageProvider>();
+  /**
+   * bd tea-rags-mcp-e2pu7 — whether a grammar package is installed. Checked in
+   * `create` against the built provider's `kernel.grammarPackage`.
+   */
+  private readonly isGrammarPackageInstalled: (packageName: string) => boolean;
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
@@ -100,17 +114,36 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    *   project-root-relative configuration (TypeScript's tsconfig today), used
    *   when a resolve arrives with no `CallContext.projectRoot`. Defaults to
    *   `process.cwd()`, which is what every caller got before it existed.
+   * @param options.isGrammarPackageInstalled Grammar-package check. Defaults to
+   *   resolving the package from this module; tests substitute a fake.
    */
-  constructor(options: { ambiguousResolveMode?: AmbiguousResolveMode; repoRoot?: string } = {}) {
+  constructor(
+    options: {
+      ambiguousResolveMode?: AmbiguousResolveMode;
+      repoRoot?: string;
+      isGrammarPackageInstalled?: (packageName: string) => boolean;
+    } = {},
+  ) {
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
     this.repoRoot = options.repoRoot ?? process.cwd();
+    this.isGrammarPackageInstalled = options.isGrammarPackageInstalled ?? isPackageResolvable;
   }
 
+  /**
+   * Build (or return the cached) provider for `lang`. Throws
+   * `GrammarPackageNotInstalledError` when the provider's grammar package does
+   * not resolve — nothing is cached then, so a call after `npm install`
+   * re-checks — and `UnsupportedLanguageError` for an unknown language.
+   */
   create(lang: string): LanguageProvider {
     const cached = this.cache.get(lang);
     if (cached) return cached;
 
     const provider = this.build(lang);
+    const { grammarPackage } = provider.kernel;
+    if (grammarPackage !== undefined && !this.isGrammarPackageInstalled(grammarPackage)) {
+      throw new GrammarPackageNotInstalledError(lang, grammarPackage);
+    }
     this.cache.set(lang, provider);
     return provider;
   }
@@ -144,18 +177,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * generator (rule + README renderers) and prime's per-index highlight.
    */
   capabilities(): Map<string, LanguageCapability> {
-    return new Map<string, LanguageCapability>([
-      ["ruby", rubyCapability],
-      ["typescript", typescriptCapability],
-      ["javascript", javascriptCapability],
-      ["python", pythonCapability],
-      ["go", goCapability],
-      ["java", javaCapability],
-      ["rust", rustCapability],
-      ["bash", bashCapability],
-      ["swift", swiftCapability],
-      ["markdown", markdownCapability],
-    ]);
+    return nativeLanguageCapabilities();
   }
 
   /**

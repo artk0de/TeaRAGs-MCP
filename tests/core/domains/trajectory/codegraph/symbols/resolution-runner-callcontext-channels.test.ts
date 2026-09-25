@@ -166,3 +166,48 @@ describe("CallEdgeResolutionRunner run-global channel threading", () => {
     expect(fileEdge.instantiatedTypes?.has("Svc")).toBe(true);
   });
 });
+
+describe("CallEdgeResolutionRunner caller scope (bd tea-rags-mcp-3ievc)", () => {
+  /** The call-site `callerScope` the runner hands the resolver for each chunk, keyed by chunk symbolId. */
+  function callerScopes(extraction: FileExtraction): Map<string, string[]> {
+    const seen = new Map<string, string[]>();
+    const languageFactory = {
+      supported: () => ["swift"],
+      create: () => ({
+        resolver: {
+          resolve: (_call: unknown, ctx: CallContext) => {
+            if (ctx.callerSymbolId !== undefined) seen.set(ctx.callerSymbolId, ctx.callerScope);
+            return null;
+          },
+        },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+    new CallEdgeResolutionRunner(languageFactory, new CodegraphRunState()).resolve(extraction, {
+      lookup: () => [],
+      lookupByShortName: () => [],
+    } as unknown as GlobalSymbolTable);
+    return seen;
+  }
+
+  const call = { callText: "compute()", receiver: null, member: "compute", startLine: 2 };
+  const extraction: FileExtraction = {
+    relPath: "Sources/Invoice.swift",
+    language: "swift",
+    fileScope: [],
+    imports: [],
+    chunks: [
+      // A type chunk: declared at top level, its OWN body runs inside the type.
+      { symbolId: "Invoice", scope: [], bodyScope: ["Invoice"], startLine: 1, calls: [call] },
+      // A method chunk: no bodyScope, its declaration scope is the caller scope.
+      { symbolId: "Invoice#run", scope: ["Invoice"], startLine: 5, calls: [{ ...call, startLine: 6 }] },
+    ],
+  };
+
+  it("resolves a chunk's own calls in its bodyScope when the walker stamped one", () => {
+    expect(callerScopes(extraction).get("Invoice")).toEqual(["Invoice"]);
+  });
+
+  it("falls back to the declaration scope for a chunk without one", () => {
+    expect(callerScopes(extraction).get("Invoice#run")).toEqual(["Invoice"]);
+  });
+});

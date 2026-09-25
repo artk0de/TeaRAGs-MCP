@@ -69,8 +69,8 @@ Semantic/hybrid search resolves intent-based scopes.
    batch symbol names into one `hybrid_search` — BM25 scores the join as one bag
    of terms and the biggest-file domain takes every slot (see Phase 4 step 2).
    Target: ≤17 calls domain scope, ≤22 broad scope (codegraph off: −1 / −2 — no
-   criticalPath). Phase 4 god-class fallback adds ≤7 (2 probes + 5 outlines) —
-   only when symbol-mass fields are absent.
+   criticalPath). Phase 4 god-class attribution adds ≤5 (one outline per
+   `godModule` hit).
 
 ## Flow
 
@@ -246,9 +246,6 @@ Degradation:
   `decomposition` resolves the size-only static variant. Note "god-method lens
   unavailable — codegraph off". `godModule` resolves the mass-only static
   variant, still valid.
-- **Symbol-mass fields absent** (overlay carries no `fileMethodCount` — index
-  predates the signals) → `godModule` ranks flat. Use the Phase 4 fallback
-  finder and label the output accordingly.
 
 ## Phase 2: MERGE
 
@@ -407,28 +404,19 @@ Codegraph off → those rows score 0; mark the estimate partial, never claim
 
 **5. God-class attribution** — for `godModule` hits.
 
-Primary path (overlay carries `moduleLines` / `fileMethodCount` / `memberCount`)
-— zero extra calls:
+1. File mass from `godModule` overlay: `rankingOverlay.file.moduleLines` +
+   `rankingOverlay.file.moduleMethodCount`, value + label. Overlay has NO
+   per-class numbers — file-level result, no chunk bucket.
+2. Per hit, cap 5: `find_symbol({relativePath})` → outline. Per-class member
+   count = distinct member symbolIds under class, `#partN` folded. Spans from
+   `startLine` / `endLine`.
+3. Verdict:
+   - One class holds most of file's callables → **god class**. Report class
+     symbol + its outline member count.
+   - Callables spread top-level, no dominant class → **god module**. Report
+     file + `moduleMethodCount` + `moduleLines`.
 
-- One class holds most of the file's callables → **god class**. Report the class
-  symbol with `memberCount`.
-- Callables spread top-level, no dominant class → **god module**. Report the
-  file with `fileMethodCount` + `moduleLines`.
-
-Fallback path (fields absent — index predates symbol-mass signals):
-
-1. `rank_chunks` with
-   `filter: { must: [{ key: "chunkIndex", range: { gte: 20 } }] }`,
-   `metaOnly: true`, `limit: 20`. Any hit = file with ≥21 chunks — exact lower
-   bound, size-unbiased (a class of 40 five-line methods is still caught).
-   Adaptive threshold: empty at 20 → probe 10; >20 files → probe 40. Max 2
-   probes.
-2. Dedupe by `relativePath` → `find_symbol({relativePath})` per candidate,
-   cap 5. Exact member counts from the merged outline (distinct member
-   symbolIds, `#partN` folded), spans from `startLine` / `endLine`.
-
-Label the output "fallback path — index predates symbol-mass signals". Reported
-numbers ALWAYS come from the outline (exact), NEVER from the finder window.
+Member counts ALWAYS from outline (exact), file mass ALWAYS from overlay.
 
 **6. Risk classification** — from overlay labels + tier + test coverage.
 

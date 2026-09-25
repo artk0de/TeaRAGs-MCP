@@ -20,6 +20,7 @@ import {
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,
   NO_SYMBOL_ENDPOINT_REASON,
+  PRIVATE_COLLABORATOR_REASON,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 import { CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/payload-signals.js";
 
@@ -55,6 +56,15 @@ function importsOf(source: string, count: number, prefix: string): FileDependenc
   return { files, edges };
 }
 
+/**
+ * These fixtures predate the private-collaborator rule (bd tea-rags-mcp-er6mu)
+ * and build their violating target with the source as its only importer —
+ * which that rule now excludes by default. Tests that pin some OTHER invariant
+ * on such a fixture opt back in, so their fixture and expectations stay as
+ * written.
+ */
+const PRIVATE_COLLABORATORS_JUDGED = { judgePrivateCollaborators: true } as const;
+
 function merge(...parts: FileDependencyGraph[]): FileDependencyGraph {
   return { files: parts.flatMap((p) => p.files), edges: parts.flatMap((p) => p.edges) };
 }
@@ -77,7 +87,7 @@ function stableOnVolatile(callWeight = 3): FileDependencyGraph {
 
 describe("detectStableDependencyViolations", () => {
   it("flags a stable file depending on a less stable one, with both instabilities, delta, support and weight", () => {
-    const report = detectStableDependencyViolations(stableOnVolatile());
+    const report = detectStableDependencyViolations(stableOnVolatile(), PRIVATE_COLLABORATORS_JUDGED);
 
     expect(report.violations).toEqual([
       {
@@ -97,7 +107,10 @@ describe("detectStableDependencyViolations", () => {
   it("never flags a dependency pointing toward stability", () => {
     // user{n} (I = 1) → stable (I = 1/6) and volatile (I = 4/5) → dep{n} (I = 0)
     // both run downhill; only stable → volatile runs uphill.
-    const report = detectStableDependencyViolations(stableOnVolatile(), { minConnectionCount: 0 });
+    const report = detectStableDependencyViolations(stableOnVolatile(), {
+      minConnectionCount: 0,
+      ...PRIVATE_COLLABORATORS_JUDGED,
+    });
 
     expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
       "core/stable.ts -> lib/volatile.ts",
@@ -128,7 +141,7 @@ describe("detectStableDependencyViolations", () => {
       edges: [edge("lib/volatile.ts", "generated/schema.ts"), edge("core/stable.ts", "generated/other.ts")],
     });
 
-    const report = detectStableDependencyViolations(graph);
+    const report = detectStableDependencyViolations(graph, PRIVATE_COLLABORATORS_JUDGED);
 
     expect(report.violations).toHaveLength(1);
     expect(report.violations[0].sourceInstability).toBe(2 / 7);
@@ -151,7 +164,9 @@ describe("detectStableDependencyViolations", () => {
 
     expect(report.violations).toEqual([]);
     expect(report.summary.excluded.lowConnectionCount).toBeGreaterThan(0);
-    expect(detectStableDependencyViolations(thinned, { minConnectionCount: 4 }).violations).toHaveLength(1);
+    expect(
+      detectStableDependencyViolations(thinned, { minConnectionCount: 4, ...PRIVATE_COLLABORATORS_JUDGED }).violations,
+    ).toHaveLength(1);
   });
 
   it("skips the out-edges of a pass-through file — no symbols and no call — but judges files that define or call", () => {
@@ -173,7 +188,7 @@ describe("detectStableDependencyViolations", () => {
       files: barrel.files,
       edges: barrel.edges.map((e) => (e.sourceRelPath === "mod/index.ts" ? { ...e, callWeight: 1 } : e)),
     };
-    expect(detectStableDependencyViolations(calling).violations).toHaveLength(1);
+    expect(detectStableDependencyViolations(calling, PRIVATE_COLLABORATORS_JUDGED).violations).toHaveLength(1);
 
     // Same topology, a file that DEFINES symbols but carries no call is judged too
     // (a JSX element, a constant, a class used as a value).
@@ -181,7 +196,7 @@ describe("detectStableDependencyViolations", () => {
       files: barrel.files.map((f) => (f.relPath === "mod/index.ts" ? { ...f, symbolCount: 2 } : f)),
       edges: barrel.edges,
     };
-    const judged = detectStableDependencyViolations(defining);
+    const judged = detectStableDependencyViolations(defining, PRIVATE_COLLABORATORS_JUDGED);
     expect(judged.violations).toHaveLength(1);
     expect(judged.violations[0].callWeight).toBe(0);
   });
@@ -237,7 +252,7 @@ describe("detectStableDependencyViolations", () => {
       importsOf("t/z.ts", 5, "out/z"),
     );
 
-    const report = detectStableDependencyViolations(graph);
+    const report = detectStableDependencyViolations(graph, PRIVATE_COLLABORATORS_JUDGED);
 
     // s/b: fanIn 10, fanOut 2 → I = 1/6 ; s/a: fanIn 5, fanOut 1 → I = 1/6.
     expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
@@ -248,7 +263,11 @@ describe("detectStableDependencyViolations", () => {
   });
 
   it("summarises what it read, what it judged and what it excluded", () => {
-    const report = detectStableDependencyViolations(stableOnVolatile(), { tolerance: 0.3, minConnectionCount: 5 });
+    const report = detectStableDependencyViolations(stableOnVolatile(), {
+      tolerance: 0.3,
+      minConnectionCount: 5,
+      ...PRIVATE_COLLABORATORS_JUDGED,
+    });
 
     expect(report.summary).toEqual({
       tolerance: 0.3,
@@ -256,7 +275,13 @@ describe("detectStableDependencyViolations", () => {
       edgeCount: 10,
       consideredEdgeCount: 1,
       violationCount: 1,
-      excluded: { selfEdges: 0, unwalkedEndpoints: 0, noSymbolEndpoints: 0, lowConnectionCount: 9 },
+      excluded: {
+        selfEdges: 0,
+        unwalkedEndpoints: 0,
+        noSymbolEndpoints: 0,
+        lowConnectionCount: 9,
+        privateCollaborators: 0,
+      },
     });
     expect(report.noSymbolEndpointFiles).toEqual([]);
   });
@@ -306,5 +331,192 @@ describe("classifyDirectoryRelation", () => {
     ["a/b/x.ts", "a/c/y.ts", "disjoint"],
   ] as const)("%s -> %s is %s", (source, target, relation) => {
     expect(classifyDirectoryRelation(source, target)).toBe(relation);
+  });
+});
+
+// bd tea-rags-mcp-er6mu: on taxdome half of all violations (209 of 415) ran from
+// a file into a target nothing else imports — a worker into its own service, a
+// component into its private child. The target's instability reaches only that
+// one source, so the SDP premise (a volatile dependency destabilises its
+// dependents) has nobody to hurt.
+describe("detectStableDependencyViolations — private collaborators", () => {
+  /**
+   * `core/stable.ts` (I = 1/6) → `lib/volatile.ts`, which `extraImporters`
+   * further files also import; volatile imports 4 → I = 4/(4 + 1 + extra).
+   */
+  function stableOnSharedVolatile(extraImporters: number): FileDependencyGraph {
+    return merge(
+      {
+        files: [walked("core/stable.ts"), walked("lib/volatile.ts")],
+        edges: [edge("core/stable.ts", "lib/volatile.ts", 3)],
+      },
+      importersOf("core/stable.ts", 5, "app/user"),
+      importsOf("lib/volatile.ts", 4, "vendor/dep"),
+      importersOf("lib/volatile.ts", extraImporters, "other/user"),
+    );
+  }
+
+  it("does not judge an edge whose source is the target's sole importer, and counts it with a named reason", () => {
+    const graph = stableOnSharedVolatile(0);
+
+    const report = detectStableDependencyViolations(graph);
+
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.privateCollaborators).toBe(1);
+    expect(PRIVATE_COLLABORATOR_REASON).toBe("private collaborator: source is the target's sole importer");
+  });
+
+  it("judges the edge once a second file imports the target", () => {
+    // volatile: fanIn 2, fanOut 4 → I = 4/6 ; delta 4/6 − 1/6 = 0.5.
+    const report = detectStableDependencyViolations(stableOnSharedVolatile(1));
+
+    expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
+      "core/stable.ts -> lib/volatile.ts",
+    ]);
+    expect(report.summary.excluded.privateCollaborators).toBe(0);
+  });
+
+  it("counts distinct importers, not edges, and ignores a self-edge", () => {
+    // Two rows from the same source and a self-edge still leave one importer.
+    const graph = merge(stableOnSharedVolatile(0), {
+      files: [],
+      edges: [edge("core/stable.ts", "lib/volatile.ts", 1), edge("lib/volatile.ts", "lib/volatile.ts")],
+    });
+
+    const report = detectStableDependencyViolations(graph);
+
+    expect(report.violations.filter((v) => v.targetRelPath === "lib/volatile.ts")).toEqual([]);
+    expect(report.summary.excluded.privateCollaborators).toBe(2);
+  });
+
+  it("an unwalked importer still counts as an importer", () => {
+    const graph = merge(stableOnSharedVolatile(0), {
+      files: [],
+      edges: [edge("generated/client.ts", "lib/volatile.ts")],
+    });
+
+    const report = detectStableDependencyViolations(graph);
+
+    expect(report.violations.map((v) => v.targetRelPath)).toContain("lib/volatile.ts");
+  });
+
+  it("judges private collaborators when the caller opts back in", () => {
+    const report = detectStableDependencyViolations(stableOnSharedVolatile(0), { judgePrivateCollaborators: true });
+
+    expect(report.violations).toHaveLength(1);
+    expect(report.summary.excluded.privateCollaborators).toBe(0);
+  });
+});
+
+// bd tea-rags-mcp-er6mu: one unstable target with many stable dependents is ONE
+// defect showing up as many violations. On taxdome a base class naming its own
+// STI subclasses made every subclass → base edge a violation.
+describe("detectStableDependencyViolations — root causes", () => {
+  /**
+   * `hub/base.ts` imported by `count` stable sources `src/s{n}.ts` (each with 5
+   * importers of its own), and importing 4 vendor files plus — when
+   * `cycleBack` — the first source.
+   */
+  function hubWithDependents(count: number, cycleBack: boolean, hub = "hub/base.ts", prefix = "src/s") {
+    const parts: FileDependencyGraph[] = [importsOf(hub, 4, `${prefix}-vendor`)];
+    parts.push({ files: [walked(hub)], edges: [] });
+    for (let i = 1; i <= count; i++) {
+      const source = `${prefix}${i}.ts`;
+      parts.push({ files: [walked(source)], edges: [edge(source, hub)] });
+      parts.push(importersOf(source, 5, `${prefix}${i}-in`));
+    }
+    if (cycleBack) parts.push({ files: [], edges: [edge(hub, `${prefix}1.ts`)] });
+    return merge(...parts);
+  }
+
+  it("groups violations by unstable target with its sources, count and instability", () => {
+    // base: fanIn 3, fanOut 4 → I = 4/7 ; each source: fanIn 5, fanOut 1 → I = 1/6.
+    const report = detectStableDependencyViolations(hubWithDependents(3, false));
+
+    expect(report.violations).toHaveLength(3);
+    expect(report.rootCauses).toEqual([
+      {
+        targetRelPath: "hub/base.ts",
+        targetInstability: 4 / 7,
+        violationCount: 3,
+        maxInstabilityDelta: 4 / 7 - 1 / 6,
+        sources: ["src/s1.ts", "src/s2.ts", "src/s3.ts"],
+        cycleWithDependents: false,
+      },
+    ]);
+  });
+
+  it("marks a target that references one of its own violating dependents as a cycle", () => {
+    // base: fanIn 3, fanOut 5 → I = 5/8 ; s1 gains fanIn 1 → I = 1/7.
+    const report = detectStableDependencyViolations(hubWithDependents(3, true));
+
+    expect(report.rootCauses).toHaveLength(1);
+    expect(report.rootCauses[0].cycleWithDependents).toBe(true);
+    expect(report.rootCauses[0].violationCount).toBe(3);
+  });
+
+  it("orders groups by violation count, then max delta, then path", () => {
+    const graph = merge(
+      hubWithDependents(2, false, "hub/two.ts", "two/s"),
+      hubWithDependents(3, false, "hub/three.ts", "three/s"),
+      hubWithDependents(2, true, "hub/cyclic.ts", "cyc/s"),
+    );
+
+    const report = detectStableDependencyViolations(graph);
+
+    // two: I = 4/6 ; cyclic: fanIn 2, fanOut 5 → I = 5/7, a bigger max delta than two.
+    expect(report.rootCauses.map((g) => [g.targetRelPath, g.violationCount])).toEqual([
+      ["hub/three.ts", 3],
+      ["hub/cyclic.ts", 2],
+      ["hub/two.ts", 2],
+    ]);
+    // The flat list is untouched by the grouping.
+    expect(report.violations).toHaveLength(7);
+  });
+});
+
+// bd tea-rags-mcp-94hd9: the architecture report scopes by `pathPattern` — an
+// edge is judged when its SOURCE matches. Instability stays whole-graph: a
+// file's fan does not shrink because the reader looks at one module.
+describe("detectStableDependencyViolations — source scope", () => {
+  function twoModules(): FileDependencyGraph {
+    // a/s.ts and b/s.ts: 5 importers each, 1 import → I = 1/6.
+    // shared/volatile.ts: imported by both, imports 4 → I = 4/6.
+    return merge(
+      {
+        files: [walked("a/s.ts"), walked("b/s.ts"), walked("shared/volatile.ts")],
+        edges: [edge("a/s.ts", "shared/volatile.ts"), edge("b/s.ts", "shared/volatile.ts")],
+      },
+      importersOf("a/s.ts", 5, "a/in"),
+      importersOf("b/s.ts", 5, "b/in"),
+      importsOf("shared/volatile.ts", 4, "vendor/v"),
+    );
+  }
+
+  it("judges only edges whose source matches, with instabilities from the whole graph", () => {
+    const report = detectStableDependencyViolations(twoModules(), { sourcePathPattern: "a/**" });
+
+    expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
+      "a/s.ts -> shared/volatile.ts",
+    ]);
+    expect(report.violations[0].targetInstability).toBe(4 / 6);
+    expect(report.rootCauses.map((r) => [r.targetRelPath, r.sources])).toEqual([["shared/volatile.ts", ["a/s.ts"]]]);
+    // Out-of-scope edges are counted once, under the scope, not under any exclusion reason.
+    const outOfScope = twoModules().edges.filter((e) => !e.sourceRelPath.startsWith("a/")).length;
+    expect(report.summary.scope).toEqual({ sourcePathPattern: "a/**", outOfScopeEdgeCount: outOfScope });
+    expect(report.summary.edgeCount).toBe(twoModules().edges.length);
+  });
+
+  it("the private-collaborator rule still counts importers outside the scope", () => {
+    // Scoped to a/, shared/volatile.ts still has b/s.ts as a second importer.
+    const report = detectStableDependencyViolations(twoModules(), { sourcePathPattern: "a/**" });
+
+    expect(report.summary.excluded.privateCollaborators).toBe(0);
+    expect(report.violations).toHaveLength(1);
+  });
+
+  it("reports no scope when no pattern is given", () => {
+    expect(detectStableDependencyViolations(twoModules()).summary.scope).toBeUndefined();
+    expect(detectStableDependencyViolations(twoModules(), { sourcePathPattern: "" }).summary.scope).toBeUndefined();
   });
 });

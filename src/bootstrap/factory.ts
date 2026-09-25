@@ -1,5 +1,5 @@
 // src/bootstrap/factory.ts
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,12 +16,13 @@ import {
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
-import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
+import { OllamaEmbeddings, type OllamaRecoveryWaitEvent } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { DaemonLock } from "../core/adapters/qdrant/embedded/daemon-lock.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-guard.js";
 import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
+import { reapGitChildProcesses } from "../core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import {
   createApp,
   createComposition,
@@ -35,7 +36,7 @@ import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
 import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
-import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
+import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
@@ -160,6 +161,7 @@ async function resolveInfrastructure(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
   onTurboMigration?: TurboMigrationListener,
+  onEmbeddingRecoveryWait?: (event: OllamaRecoveryWaitEvent) => void,
 ): Promise<InfraContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData, zodConfig.qdrantTune.lowMemory);
   if (resolution.mode === "external") {
@@ -218,6 +220,9 @@ async function resolveInfrastructure(
       // with the index. Drop it and let the next check re-measure.
       modelGuardSlot.current?.invalidateAll();
     };
+    // Armed before the first request below, so a provider that is already
+    // down at startup is reported as a wait from its first pause on.
+    if (onEmbeddingRecoveryWait) embeddings.onRecoveryWait = onEmbeddingRecoveryWait;
   }
 
   // Eagerly init ONNX to get calibrated batch size before pipeline config
@@ -411,7 +416,9 @@ export function buildCodegraphDaemonSpawnEnv(
 /**
  * Lazily spawn the codegraph daemon process when it is not already alive. The
  * spawn is single-flighted across processes via `DaemonLock` on the lock file —
- * mirrors the Qdrant embedded-daemon cold-spawn guard. The daemon binary is the
+ * mirrors the Qdrant embedded-daemon cold-spawn guard. The lock is held past the `spawn` call until
+ * the child is observable (bd tea-rags-mcp-imgjx, `holdSpawnLockUntilObservable`),
+ * and the daemon itself refuses to run as a second owner of its key directory. The daemon binary is the
  * built `entry.js` next to this module; resolved via `import.meta.url` so it
  * works identically under `src/` (ts-node) and `build/` (shipped JS).
  *
@@ -436,6 +443,7 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
   mkdirSync(paths.buildDir, { recursive: true });
   const lock = codegraphDaemonLock.acquire(paths.lockFile);
   if (!lock) return; // another process is spawning; it will own the daemon
+  let child: ChildProcess | undefined;
   try {
     if (isCodegraphDaemonAlive(paths)) return;
     // Build-keyed spawn hygiene (bd tea-rags-mcp-42hno): key directories of
@@ -454,7 +462,7 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
     // own copy once the child owns it.
     const logFd = openDaemonLogFd(paths);
     try {
-      const child = spawn(process.execPath, [entryPath], {
+      child = spawn(process.execPath, [entryPath], {
         detached: true,
         stdio: ["ignore", logFd, logFd],
         env: buildCodegraphDaemonSpawnEnv(settings),
@@ -466,8 +474,48 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
   } catch {
     /* best-effort: fall back to in-process write path */
   } finally {
-    codegraphDaemonLock.release(lock.fd);
+    // A child that exists keeps the spawn lock until it is observable (bd
+    // tea-rags-mcp-imgjx); no child (spawn threw, or produced no pid) has
+    // nothing to wait for.
+    if (child?.pid === undefined) codegraphDaemonLock.release(lock.fd);
+    else holdSpawnLockUntilObservable(paths, lock.fd, child);
   }
+}
+
+/** Upper bound on how long a spawner holds the spawn lock for its child's startup. */
+export const CODEGRAPH_DAEMON_SPAWN_OBSERVE_TIMEOUT_MS = 10_000;
+const CODEGRAPH_DAEMON_SPAWN_OBSERVE_POLL_MS = 25;
+
+/**
+ * Keep the spawn lock until the just-spawned daemon is observable — its pid
+ * file names a live pid — or the child exits, bounded by
+ * `CODEGRAPH_DAEMON_SPAWN_OBSERVE_TIMEOUT_MS` (bd tea-rags-mcp-imgjx).
+ *
+ * Releasing right after `spawn` left a window of a whole daemon startup in
+ * which the pid file did not exist yet: a second ensure in this process (the
+ * index run's keep-alive guard, the pool's respawn hook, a second pool) or in
+ * another one passed the alive check and spawned a twin. While the lock is held
+ * every other ensure takes its "another spawner owns it" branch — the lock file
+ * names this live process, so no other process treats it as abandoned. The
+ * wait is asynchronous and `unref`'d: callers are never blocked (their daemon
+ * client's bounded connect retry absorbs the startup) and a process exiting
+ * mid-wait leaves a lock whose dead pid the next spawner reclaims.
+ */
+function holdSpawnLockUntilObservable(paths: CodegraphDaemonPaths, lockFd: number, child: ChildProcess): void {
+  const deadline = Date.now() + CODEGRAPH_DAEMON_SPAWN_OBSERVE_TIMEOUT_MS;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    clearInterval(poll);
+    child.off("exit", release);
+    codegraphDaemonLock.release(lockFd);
+  };
+  const poll = setInterval(() => {
+    if (isCodegraphDaemonAlive(paths) || Date.now() >= deadline) release();
+  }, CODEGRAPH_DAEMON_SPAWN_OBSERVE_POLL_MS);
+  poll.unref();
+  child.once("exit", release);
 }
 
 /**
@@ -943,6 +991,11 @@ export interface AppContextOptions {
   /** Notified while a startup TurboQuant collection migration's optimizer pass runs (CLI, over IPC). */
   onTurboMigration?: TurboMigrationListener;
   /**
+   * Notified while an unreachable Ollama is waited for (CLI, over IPC), so the
+   * wait shows on screen instead of passing in silence (bd tea-rags-mcp-umatc).
+   */
+  onEmbeddingRecoveryWait?: (event: OllamaRecoveryWaitEvent) => void;
+  /**
    * Where this process's env came from. The MCP server entry points declare
    * `server`, so a registered project's stamped index shape outranks the spawn
    * env in BOTH the index run and the env drift axis (tea-rags-mcp-o0qsw).
@@ -956,7 +1009,12 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   setDebug(zodConfig.core.debug);
   const ambientEnvRole = options?.ambientEnvRole ?? "invocation";
 
-  const infra = await resolveInfrastructure(config, zodConfig, options?.onTurboMigration);
+  const infra = await resolveInfrastructure(
+    config,
+    zodConfig,
+    options?.onTurboMigration,
+    options?.onEmbeddingRecoveryWait,
+  );
   // Registry must exist before wireCodegraph because GraphFacade resolves
   // the `{ collection, project, path }` triad through it. startWatching()
   // is deferred until later — registry construction alone is side-effect
@@ -1160,6 +1218,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
+    visibilityResolver: createSymbolVisibilityResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
     // The frame of `get_index_metrics`' enrichment health: the providers the
     // composition runs, not the ones the last run happened to touch
@@ -1189,8 +1248,17 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });
 
+  // Idempotent: under stdio both the signal listeners and the stdin-close
+  // shutdown reach it (bd tea-rags-mcp-e6cpu); resources release once.
+  let cleanedUp = false;
   const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
     registryWatchStop();
+    // In-process enrichment (MCP index_codebase, inline git trajectory) spawns
+    // git as a direct child of THIS process; no parent-death guard reaches it,
+    // so an interrupted run's git children are killed here (bd tea-rags-mcp-w26dc).
+    reapGitChildProcesses();
     if ("terminate" in infra.embeddings && typeof infra.embeddings.terminate === "function") {
       void (infra.embeddings as { terminate: () => Promise<void> }).terminate();
     }
@@ -1266,5 +1334,18 @@ export function createSymbolChunkResolver(graphFacade?: GraphFacade): SymbolChun
   return {
     resolveSymbolChunk: async (collectionName, symbolId) =>
       graphFacade.resolveSymbolChunk({ collection: collectionName }, symbolId),
+  };
+}
+
+/**
+ * Same bridge for the find_symbol outline's declared-visibility read (bd
+ * tea-rags-mcp-sqqkz). Undefined when codegraph is disabled → the outline
+ * renders undecorated.
+ */
+export function createSymbolVisibilityResolver(graphFacade?: GraphFacade): SymbolVisibilityResolver | undefined {
+  if (!graphFacade) return undefined;
+  return {
+    resolveSymbolVisibilities: async (collectionName, symbolIds) =>
+      graphFacade.getSymbolVisibilities({ collection: collectionName }, symbolIds),
   };
 }

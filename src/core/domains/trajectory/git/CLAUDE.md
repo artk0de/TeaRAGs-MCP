@@ -19,24 +19,49 @@ their own navigators.
   low-commit chunks, so tuning aimed at the ratio alone explains none of the
   observed values; on files older than six months the two effects compound.
 
+- **The chunk walk follows renames, and the ORDER of the slice is what makes
+  that correct.** A commit older than a rename names the file by its old path,
+  so `sliceCommitsFollowingRenames` (`infra/rename-following.ts`) re-queries
+  discovery with every predecessor path a rename row reveals, to a fixpoint;
+  `resolveHeadPaths` then walks the slice newest → oldest with an alias map
+  rewritten at each rename row. The off-thread path widens its slice in
+  `GitEnrichmentProvider#walkChunkChurnOffThread` the same way. Why: the alias
+  map is only correct in log order — resolved in any other order, an old path
+  RE-CREATED after the rename would merge with the renamed file's history. The
+  slice must stay one query result, never a concatenation of per-path queries.
+  Pure moves (numstat `0 0`) still credit no chunk: following changes which file
+  a commit lands on, not whether it has hunks.
+
 - **A changed-file row is a PAIR, and the two halves address different
   commits.** `git log --numstat` runs with rename detection on, so the parsers
   split git's `pre{old => new}post` column into
-  `CommitChangedPath { path, previousPath? }`. `collectHunks` matches `path`
-  against `relativeChunkMap` (keyed on HEAD paths); `collectOneFile` reads the
-  COMMIT side at `path` and the PARENT side at `previousPath ?? path` (both in
-  `infra/walk-commits.ts`). Why: read the parent at the post-rename path and it
-  comes back `""`, so `structuredPatch` returns one hunk spanning the file and
-  the rename lands on EVERY chunk — measured 6/6 chunks and 351 attributed lines
-  against the correct 2/6 and 178 on
+  `CommitChangedPath { path, previousPath? }`. `collectHunks` matches the row's
+  resolved HEAD path against `relativeChunkMap` (keyed on HEAD paths);
+  `collectOneFile` reads the COMMIT side at `path` and the PARENT side at
+  `previousPath ?? path` (both in `infra/walk-commits.ts`). Why: read the parent
+  at the post-rename path and it comes back `""`, so `structuredPatch` returns
+  one hunk spanning the file and the rename lands on EVERY chunk — measured 6/6
+  chunks and 351 attributed lines against the correct 2/6 and 178 on
   `tests/core/domains/maintenance/drift/schema-drift-monitor.test.ts`. Keeping
   the column raw is the opposite failure: nothing matches, the commit is dropped
-  before any blob read, and every chunk publishes `commitCount: 0`. Rename
-  FOLLOWING is deliberately NOT done — a commit that touched the file before the
-  rename still names it by its old path and still misses.
+  before any blob read, and every chunk publishes `commitCount: 0`. For a
+  pre-rename commit `path` itself is the old name; the alias map above resolves
+  it, and both blob reads stay at the path that commit used.
 
 ## Gotchas
 
+- **The file→chunk blame handoff is held per path, never per batch, and survives
+  `finalizeSignals`.** A chunk batch is gated only on ITS OWN file batch, so
+  later file batches finish before earlier chunk walks, one file's chunks span
+  several batches, and `CompletionRunner` calls `finalizeSignals` BEFORE it
+  drains streaming chunk work. `GitEnrichmentProvider#blameByRelPath` therefore
+  lives until every file-batch hold on the path is released by a chunk walk
+  (`holdForChunkPhase` / `releaseChunkHandoff`); unreleased holds are evicted
+  one run later (`evictStaleChunkHandoff`). Why: the old per-batch map swap left
+  53,836 of 107,428 touched chunks on a taxdome `--force-enrichments git` at
+  `blameDominantAuthor: "unknown"` — the recompute fires every file batch at
+  once, so the race was maximal there and near-absent on embedding-paced
+  streaming. Clearing at `finalizeSignals` would reintroduce it.
 - **Two unrelated ownership families coexist: `recent*` (commit window) vs
   `blame*` (live lines).** `assembleFileSignals`
   (`infra/metrics/file-assembler.ts`) writes both side by side —

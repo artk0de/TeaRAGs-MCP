@@ -43,7 +43,7 @@ import type {
   CallRef,
   SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import { resolveSelfDispatchHookTarget } from "./strategies/shared.js";
+import { enclosingTypeOf, resolveSelfDispatchHookTarget } from "./strategies/shared.js";
 import { typeOfReceiver } from "./type-propagation.js";
 
 /**
@@ -86,19 +86,4 @@ export function redirectSelfDispatchTemplate(
   const redirected = resolveSelfDispatchHookTarget(receiverType, hook, ctx, mode);
   if (redirected === null) return target;
   return redirected;
-}
-
-/**
- * The enclosing type of a method symbolId — the segment before the class↔method
- * separator: `KindOfService#call` → `KindOfService`, `KindOfService.call` →
- * `KindOfService`, `Mod::Svc#m` → `Mod::Svc` (`::` is the namespace separator, not
- * the method separator). `null` for a separatorless top-level function symbolId
- * (never a template). Instance (`#`) and class (`.`) forms are both handled.
- */
-function enclosingTypeOf(symbolId: string): string | null {
-  const hash = symbolId.lastIndexOf("#");
-  if (hash !== -1) return symbolId.slice(0, hash);
-  const dot = symbolId.lastIndexOf(".");
-  if (dot !== -1) return symbolId.slice(0, dot);
-  return null;
 }

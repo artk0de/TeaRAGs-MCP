@@ -33,12 +33,20 @@
  *                             of `/`) is absent — it cannot be named;
  *   - `kwargs.hasSplat`     — the def declares `**kwargs`.
  *
- * Python does NOT fill `visibility`, `acceptsBlock` or `paramNames`: `_name` is
- * a convention rather than a keyword and treating it as `private` would drop
- * legitimate candidates, there is no block argument, and nothing on this path
- * joins an argument POSITION to a parameter NAME. `VisibilityNarrower` and
- * `BlockNarrower` keep every candidate on absent evidence, so they are inert
- * for Python rather than wrong.
+ * `visibility` is filled for ONE shape only (bd tea-rags-mcp-jwjyr.1): a method
+ * — a def directly in a class body — named `__name` but not a `__dunder__`.
+ * The interpreter name-mangles it to `_Class__name`, so that spelling reaches it
+ * only from inside a class of the same name → `private`, and the dispatch
+ * cascade reads it under the enclosing-class access rule
+ * (`EnclosingClassPrivateAccess`), never Ruby's explicit-receiver one.
+ * `_name` stays unrecorded: it is a convention the runtime ignores, and treating
+ * it as `private` would drop legitimate candidates. A module-level `__name`
+ * is not mangled and stays unrecorded too.
+ *
+ * Python does NOT fill `acceptsBlock` or `paramNames`: there is no block
+ * argument, and nothing on this path joins an argument POSITION to a parameter
+ * NAME. `BlockNarrower` keeps every candidate on absent evidence, so it is
+ * inert for Python rather than wrong.
  *
  * A `@property` getter is NOT marked in any way: an attribute read is not a
  * call site, so the walker emits no `CallRef` for it and nothing ever narrows
@@ -53,6 +61,13 @@ import { walkPythonScopes } from "./python-def-scope-walk.js";
 export interface PythonDefSignature {
   readonly arity: AritySignature;
   readonly kwargs?: KwargSignature;
+  /** `"private"` for a name-mangled method, absent otherwise (see the docblock). */
+  readonly visibility?: "private";
+}
+
+/** A `__name` the interpreter mangles: two leading underscores, not a dunder. */
+function isNameMangled(name: string): boolean {
+  return name.startsWith("__") && !name.endsWith("__");
 }
 
 /** Parameter node types that declare one ordinary (nameable) parameter. */
@@ -169,8 +184,14 @@ export function collectPythonDefSignatures(root: AstNode): Map<number, PythonDef
   const out = new Map<number, PythonDefSignature>();
   walkPythonScopes(root, {
     onDef: (site) => {
-      const dropReceiver = isPythonMethodDef(site.node) && !site.decorators.includes("staticmethod");
-      out.set(site.line, pythonDefSignature(site.node, dropReceiver));
+      const isMethod = isPythonMethodDef(site.node);
+      const dropReceiver = isMethod && !site.decorators.includes("staticmethod");
+      const signature = pythonDefSignature(site.node, dropReceiver);
+      const name = site.node.childForFieldName("name")?.text;
+      out.set(
+        site.line,
+        isMethod && name !== undefined && isNameMangled(name) ? { ...signature, visibility: "private" } : signature,
+      );
     },
   });
   return out;

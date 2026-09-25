@@ -86,6 +86,7 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   // The merge key itself, and the lexical chain that travels with it.
   symbolId: (base) => base,
   scope: (base) => base,
+  bodyScope: (base) => base,
   // The channel a pass is normally here to add to.
   calls: (base, pass) => [...base, ...pass],
   localBindings: (base, pass) => mergeLocalBindings(base, pass),
@@ -119,6 +120,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   inheritanceEdges: (base, pass) => [...(base ?? []), ...pass],
   knownTargetCallArgs: (base, pass) => [...(base ?? []), ...pass],
   moduleReexports: (base, pass) => [...(base ?? []), ...pass],
+  typeDeclarations: (base, pass) => [...(base ?? []), ...pass],
   // Set-like arrays: concat, then drop repeats KEEPING THE FIRST occurrence
   // (`Set` preserves insertion order; it never leaves this function, so the
   // NDJSON spill still sees a plain array).

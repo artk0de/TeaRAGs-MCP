@@ -195,6 +195,8 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
   it("every protocol op is either required or explicitly tolerated — nothing falls between", () => {
     // Widening the tolerated set is a deliberate decision, so it is pinned here.
     expect([...LEGACY_TOLERATED_OPS].sort()).toEqual([
+      // Storage compaction (dvzdm): an older daemon's file simply stays as large as it was.
+      "compactStorage",
       "diffSymbolSignals",
       "getFileMetricsBulk",
       "getSymbolLineRangesBulk",

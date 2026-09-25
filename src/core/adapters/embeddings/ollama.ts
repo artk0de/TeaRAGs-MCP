@@ -103,6 +103,16 @@ export interface FallbackSwitchEvent {
   reason: string;
 }
 
+/**
+ * Emitted while a request waits for an unreachable Ollama to come back
+ * (EMBEDDING_TUNE_UNAVAILABLE_RETRY_*): `waiting` before each backoff pause,
+ * `recovered` when a request that had to wait finally got through. The wait
+ * gives up with the typed `OllamaUnavailableError`, not with an event.
+ */
+export type OllamaRecoveryWaitEvent =
+  | { state: "waiting"; url: string; elapsedMs: number; budgetMs: number }
+  | { state: "recovered"; url: string; elapsedMs: number };
+
 export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   /**
@@ -134,6 +144,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   /** Optional callback for fallback switch observability. Set by pipeline wiring. */
   onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
+
+  /**
+   * Optional callback for the connection-recovery wait. Without it the wait is
+   * visible only under DEBUG, so an index run sat silent for the whole budget
+   * before printing the error (bd tea-rags-mcp-umatc). Set by the CLI wiring.
+   */
+  onRecoveryWait?: (event: OllamaRecoveryWaitEvent) => void;
 
   constructor(
     model = "unclemusclez/jina-embeddings-v2-base-code:latest",
@@ -288,17 +305,22 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
-    const recoveryDeadline = Date.now() + this.unavailableRetryMaxWaitMs;
+    const recoveryStart = Date.now();
+    const recoveryDeadline = recoveryStart + this.unavailableRetryMaxWaitMs;
     let recoveryAttempt = 0;
 
     for (;;) {
       const url = this.resolveActiveUrl();
       try {
-        return await withRateLimitRetry(async () => fn(url), {
+        const result = await withRateLimitRetry(async () => fn(url), {
           maxAttempts: this.retryAttempts,
           baseDelayMs: this.retryDelayMs,
           isRetryable: (error) => this.isRateLimit(error),
         });
+        if (recoveryAttempt > 0) {
+          this.onRecoveryWait?.({ state: "recovered", url, elapsedMs: Date.now() - recoveryStart });
+        }
+        return result;
       } catch (error) {
         // Typed errors propagate directly — the server IS reachable but rejected
         // the request (missing model, timeout, HTTP error), so waiting for a
@@ -328,17 +350,26 @@ export class OllamaEmbeddings implements EmbeddingProvider {
                 `(~${Math.ceil(remainingMs / 1000)}s of budget left, attempt ${recoveryAttempt})...`,
             );
           }
+          this.onRecoveryWait?.({
+            state: "waiting",
+            url,
+            elapsedMs: Date.now() - recoveryStart,
+            budgetMs: this.unavailableRetryMaxWaitMs,
+          });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
 
         // Recovery budget exhausted (or disabled) — abort. Fallback is only
         // decided at initial health check (constructor), not mid-operation.
+        // The error carries the wait already spent so a caller does not spend
+        // the operator's budget a second time (bd tea-rags-mcp-umatc).
+        const recoveryWaitMs = recoveryAttempt > 0 ? Date.now() - recoveryStart : 0;
         if (this.usingFallback && this.fallbackBaseUrl) {
-          throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl, cause);
+          throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl, cause, recoveryWaitMs);
         }
 
-        throw new OllamaUnavailableError(url, cause);
+        throw new OllamaUnavailableError(url, cause, undefined, recoveryWaitMs);
       }
     }
   }

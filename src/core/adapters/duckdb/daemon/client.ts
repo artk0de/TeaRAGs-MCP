@@ -10,10 +10,13 @@ import type {
   ChunkGraphSignals,
   CodegraphPass1FileAggregates,
   CodegraphSignalDrift,
+  CodegraphStorageCompactionOutcome,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileDependencyGraph,
   FileGraphMetrics,
+  FileImportLookup,
   FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -22,6 +25,7 @@ import type {
   GraphFileNode,
   HierarchySnapshot,
   InheritanceEdge,
+  NonPublicMemberEdge,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -29,6 +33,7 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
@@ -60,6 +65,7 @@ const LEGACY_TOLERATED_OP_LIST = [
   "getSymbolLineRangesBulk",
   "diffSymbolSignals",
   "refreshSymbolSignalsPrev",
+  "compactStorage",
   "ping",
 ] as const satisfies readonly DaemonOp[];
 
@@ -82,6 +88,9 @@ type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  *   moved" would be worse: such a daemon has no `cg_symbol_signals_prev`, so the
  *   heal would rewrite the corpus on every run and never converge.
  * - `refreshSymbolSignalsPrev` — that daemon has no baseline table to refresh.
+ * - `compactStorage` — "not compacted": the file stays as large as it was, the
+ *   pre-dvzdm behaviour. Requiring it would drain a daemon other sessions are
+ *   using for the sake of disk space.
  * - `ping` — the liveness probe (bd tea-rags-mcp-f924y). An older daemon's
  *   "unknown daemon op" answer is itself the proof of life the probe asks for.
  *
@@ -791,6 +800,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("removeSymbolsForFile", { relPath });
   }
 
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    await this.call("pruneDerivedForDeletedFiles", { relPaths: [...relPaths] });
+  }
+
+  async hasStaleDerivedTables(): Promise<boolean> {
+    return (await this.call("hasStaleDerivedTables", {})) as boolean;
+  }
+
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
     await this.call("upsertSymbols", { relPath, definitions });
   }
@@ -818,6 +835,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("findSymbolChunk", { symbolId })) as SymbolChunkLocation | null;
   }
 
+  async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    return (await this.call("getSymbolVisibilities", { symbolIds: [...symbolIds] })) as SymbolVisibilityRow[];
+  }
+
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
     await this.call("replaceCycles", { scope, sccs });
   }
@@ -829,6 +850,19 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async checkpoint(): Promise<void> {
     await this.call("checkpoint", {});
+  }
+
+  /**
+   * Compact the collection's graph file daemon-side (bd tea-rags-mcp-dvzdm). A
+   * tolerated legacy op: a daemon that predates it leaves the file as it is.
+   */
+  async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
+    return this.callTolerated<CodegraphStorageCompactionOutcome>(
+      "compactStorage",
+      {},
+      (result) => result as CodegraphStorageCompactionOutcome,
+      () => ({ kind: "skipped", reason: "unsupported" }),
+    );
   }
 
   async rebuildEdgeFileTargetIndex(): Promise<void> {
@@ -954,10 +988,12 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("getCallSiteCount", { symbolId })) as number;
   }
 
-  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+  async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
     // Server serialises the Map as `[key, value][]` entries — rebuild here
-    // (same pattern as getCalleeEdges / listAdjacency).
-    const entries = (await this.call("getChunkSignalsBulk", {})) as [SymbolId, ChunkGraphSignals][];
+    // (same pattern as getCalleeEdges / listAdjacency). The key is the
+    // file-scoped composite (bd tea-rags-mcp-xtdkq), so the wire shape is
+    // unchanged — one more string, still one flat entry list.
+    const entries = (await this.call("getChunkSignalsBulk", {})) as [FileScopedSymbolId, ChunkGraphSignals][];
     return new Map(entries);
   }
 
@@ -1055,8 +1091,24 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return new Map(entries);
   }
 
-  async getPageRank(symbolId: SymbolId): Promise<number> {
-    return (await this.call("getPageRank", { symbolId })) as number;
+  async readFileDependencyGraph(): Promise<FileDependencyGraph> {
+    return (await this.call("readFileDependencyGraph", {})) as FileDependencyGraph;
+  }
+
+  async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
+    return (await this.call("readNonPublicMemberEdges", { languages: [...languages] })) as NonPublicMemberEdge[];
+  }
+
+  async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
+    return (await this.call("getFileImporters", { relPath })) as FileImportLookup;
+  }
+
+  async getFileImports(relPath: RelPath): Promise<FileImportLookup> {
+    return (await this.call("getFileImports", { relPath })) as FileImportLookup;
+  }
+
+  async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
+    return (await this.call("getPageRank", relPath === undefined ? { symbolId } : { symbolId, relPath })) as number;
   }
 
   async getSupertypes(fqName: string): Promise<InheritanceEdge[]> {

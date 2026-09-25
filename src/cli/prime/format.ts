@@ -1,6 +1,12 @@
 import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../core/api/public/dto/collection.js";
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
+import {
+  formatResolveRate,
+  formatResolveRateCell,
+  resolveRateMiss,
+  type LanguageCapability,
+} from "../../core/api/public/index.js";
 import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason, PrimeRegistryEntry } from "./types.js";
 
@@ -130,6 +136,17 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
     lines.push(...formatLanguageSection(languages, primaries));
   }
 
+  const capabilityLines = formatLanguageCapabilitySection(
+    languages,
+    primaries,
+    data.languageCapabilities,
+    data.status.codegraphResolve,
+  );
+  if (capabilityLines.length > 0) {
+    lines.push("");
+    lines.push(...capabilityLines);
+  }
+
   for (const language of thresholdLanguages) {
     lines.push("");
     lines.push(...formatThresholdsSection(language, signals[language]));
@@ -234,6 +251,79 @@ function formatLanguageSection(languages: string[], primaries: string[]): string
   ];
 }
 
+/**
+ * `## Language capability` (bd tea-rags-mcp-xip6g) — the per-index projection
+ * of the static language-compatibility matrix: one line per language THIS index
+ * holds, its ceiling tiers read from the descriptors, paired with the realized
+ * resolve rate where the index measured one. The cascade rule owns what a tier
+ * means and how to act on a low rate; this section owns only which tiers and
+ * rates apply here. Unmeasured languages with identical tiers share one line —
+ * the digest is read every session.
+ */
+function formatLanguageCapabilitySection(
+  languages: readonly string[],
+  primaries: readonly string[],
+  capabilities: ReadonlyMap<string, LanguageCapability> | undefined,
+  resolve: CodegraphResolve | undefined,
+): string[] {
+  if (!capabilities) return [];
+  const rates = realizedResolveRates(primaries, resolve);
+  const rows: { languages: string[]; tiers: string; rate?: number | null }[] = [];
+  for (const language of languages) {
+    const capability = capabilities.get(language);
+    if (!capability) continue;
+    const tiers = formatCapabilityTiers(capability);
+    // A rate on a language with no call graph would be another language's number.
+    const rate = capability.codegraph.tier === "none" ? undefined : rates.get(language);
+    const shared = rate === undefined ? rows.find((row) => row.rate === undefined && row.tiers === tiers) : undefined;
+    if (shared) {
+      shared.languages.push(language);
+    } else {
+      rows.push({ languages: [language], tiers, rate });
+    }
+  }
+  if (rows.length === 0) return [];
+  return [
+    "## Language capability — ceiling tier · realized resolve",
+    ...rows.map(
+      (row) =>
+        `${row.languages.join(", ")}: ${row.tiers}${row.rate === undefined ? "" : ` · resolve ${renderRecall(row.rate)}`}`,
+    ),
+  ];
+}
+
+function formatCapabilityTiers(capability: LanguageCapability): string {
+  const { tier } = capability.codegraph;
+  const codegraph =
+    typeof tier === "string"
+      ? tier
+      : Object.entries(tier)
+          .map(([typing, typingTier]) => `${typing} ${typingTier}`)
+          .join(" / ");
+  return `ast ${capability.ast.tier} · tests ${capability.tests.tier} · codegraph ${codegraph}`;
+}
+
+/**
+ * Realized recall per language. `summarizeCodegraphResolve` drops `byLanguage`
+ * when a single language survives its share cut, so an unsplit rate belongs to
+ * the index's one primary language; with several primaries it cannot be
+ * attributed and is left to `## Codegraph resolve` alone.
+ */
+function realizedResolveRates(
+  primaries: readonly string[],
+  resolve: CodegraphResolve | undefined,
+): Map<string, number | null> {
+  const rates = new Map<string, number | null>();
+  if (!resolve) return rates;
+  const byLanguage = resolve.byLanguage ?? [];
+  for (const row of byLanguage) rates.set(row.language, row.inProjectEdgeRecall);
+  const [primary] = primaries;
+  if (byLanguage.length === 0 && primaries.length === 1 && primary !== undefined) {
+    rates.set(primary, resolve.inProjectEdgeRecall);
+  }
+  return rates;
+}
+
 function formatThresholdsSection(
   language: string,
   signals: Record<string, Record<string, { labelMap: Record<string, number>; format?: "percent" | "percent100" }>>,
@@ -287,6 +377,14 @@ function formatThreshold(threshold: number, format?: "percent" | "percent100"): 
 
 function roundTwo(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * A recall shown without counters. `null` is the DTO's "nothing scored" value
+ * (bd tea-rags-mcp-stpvj) and renders the shared marker; a scored 0 stays `0`.
+ */
+function renderRecall(rate: number | null): string {
+  return formatResolveRate(rate, (r) => `${roundTwo(r)}`);
 }
 
 // Local to the prime digest layer: the MCP tool layer (register-status-tools)
@@ -545,8 +643,8 @@ function formatResolvePlain(resolve: CodegraphResolve): string[] {
   const languages = resolve.byLanguage ?? [];
   const rate =
     languages.length > 0
-      ? languages.map((l) => `${l.language} ${roundTwo(l.inProjectEdgeRecall)}`).join(" · ")
-      : `${roundTwo(resolve.inProjectEdgeRecall)}`;
+      ? languages.map((l) => `${l.language} ${renderRecall(l.inProjectEdgeRecall)}`).join(" · ")
+      : renderRecall(resolve.inProjectEdgeRecall);
   const lines = ["## Codegraph resolve", `resolve rate: ${rate}`];
   // Plain counterpart of the DEBUG ⚠ line (bd tea-rags-mcp-znxg8). The reader
   // needs the consequence — get_callers misses callers of those services — and
@@ -626,7 +724,24 @@ function formatResolveBreakdown(resolve: CodegraphResolve): string[] {
  * on which bucket holds it.
  */
 function formatResolveKind(k: CodegraphResolveKindRow): string {
-  const base = `${k.receiverKind} ${roundTwo(k.resolveSuccessRate)} ${k.resolved}/${k.attempted}`;
+  // bd tea-rags-mcp-qodqg — a bucket whose every site was excluded from the
+  // rate has an empty denominator; the DTO reports its rate as null. The shared
+  // cell renders it as the "nothing to score" marker, counters kept.
+  const miss = resolveRateMiss({
+    attempted: k.attempted,
+    resolved: k.resolved,
+    externalSkipped: k.externalSkipped,
+    unresolvable: k.unresolvable,
+    noInProjectDef: k.callsNoInProjectDef,
+    coreAmbiguous: k.callsCoreAmbiguous,
+  });
+  const cell = formatResolveRateCell({
+    rate: k.resolveSuccessRate,
+    denominator: k.resolved + miss,
+    counters: `${k.resolved}/${k.attempted}`,
+    renderRate: (rate) => `${roundTwo(rate)}`,
+  });
+  const base = `${k.receiverKind} ${cell}`;
   const unnarrowed = k.callsUnnarrowedTemplate ?? 0;
   return unnarrowed > 0 ? `${base} · ${unnarrowed} unnarrowed` : base;
 }

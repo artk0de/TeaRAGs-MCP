@@ -34,6 +34,12 @@ export const myPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 | File  | `<provider>.file.<field>`  | `git.file.commitCount`  |
 | Chunk | `<provider>.chunk.<field>` | `git.chunk.commitCount` |
 
+A FLAT key (no namespace, e.g. `language`) has no level in its path, so it
+declares one: `level: "file"` when the value describes the whole file, omitted
+when it describes the chunk. `level: "file"` search results keep only
+file-declared flat keys (`chunk-grouping/file-scope.ts`) — a flat file-level key
+without the declaration vanishes from them silently.
+
 ## Adding a New Payload Signal
 
 ### Checklist (ALL steps mandatory)

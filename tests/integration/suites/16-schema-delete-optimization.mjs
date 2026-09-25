@@ -3,14 +3,31 @@
  * Auto-migrated from test-business-logic.mjs
  */
 
-// SchemaManager + CURRENT_SCHEMA_VERSION (top-level constant) were removed
-// during SOLID refactor. Migration orchestration now lives behind the
-// Migrator class; schema version is derived per-Migrator. Test 9 in this
-// suite covered the old standalone SchemaManager API and is skip()'d.
+// The standalone SchemaManager#ensureCurrentSchema / getSchemaVersion API is
+// gone: an existing collection's schema is upgraded by the Migrator sweep
+// IngestFacade#reindexChanges runs, and a new collection is stamped at the
+// latest version by SchemaManager#initializeSchema. The schema scenario below
+// drives the first through the facade and checks it against the second.
 // QdrantManager payload index ops still work — kept inline below.
-// See plan `2026-05-17-integration-tests-rewrite-impl.md`.
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+
+import { SchemaMetadataPointStore } from "../../../build/core/adapters/qdrant/schema-metadata-point.js";
+import { createIngestDependencies } from "../../../build/core/api/internal/ingest-dependencies.js";
 import { buildPipelineConfig } from "../../../build/core/domains/ingest/pipeline/index.js";
-import { assert, log, section, skip } from "../helpers.mjs";
+import { ParallelFileSynchronizer } from "../../../build/core/domains/ingest/sync/parallel-synchronizer.js";
+import { StaticPayloadBuilder } from "../../../build/core/domains/trajectory/static/provider.js";
+import { TEST_DIR } from "../config.mjs";
+import {
+  assert,
+  createProbeOnlyEmbeddings,
+  createTestFacades,
+  createTestFile,
+  log,
+  resources,
+  section,
+  seedLegacyIndexedCollection,
+} from "../helpers.mjs";
 
 export async function testSchemaAndDeleteOptimization(qdrant) {
   section("15. Schema Migration & Delete Optimization");
@@ -39,15 +56,7 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
     const created = await qdrant.ensurePayloadIndex(schemaTestCollection, "relativePath", "keyword");
     assert(created === false, "ensurePayloadIndex returns false when index exists");
 
-    // SchemaManager standalone migration test — skipped: the old
-    // SchemaManager#ensureCurrentSchema/getSchemaVersion API was removed
-    // during SOLID refactor. Schema migration orchestration now flows
-    // through the Migrator class wired in IngestFacade via
-    // ingest/factory.ts. Restoring this scenario requires constructing
-    // the full migration graph (SchemaMigrator + stores + Migrator) —
-    // follow-up. The migration is exercised indirectly by suites that
-    // call IngestFacade#indexCodebase against fresh collections.
-    skip("SchemaManager standalone migration API removed (follow-up)");
+    await testSchemaMigrationFromZero(qdrant);
 
     // Test 10: Delete configuration defaults
     log("info", "Testing delete optimization configuration...");
@@ -84,4 +93,70 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
   } finally {
     await qdrant.deleteCollection(schemaTestCollection);
   }
+}
+
+/**
+ * A collection indexed before schema versioning (no schema metadata point, no
+ * payload indexes) is migrated 0 → latest by the next incremental reindex. The
+ * result must be indistinguishable from a collection created today: same
+ * stamped schema version, same payload index set — the initializeSchema ⟺
+ * migrations parity `SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS` documents, checked here
+ * against a real Qdrant instead of the unit suite's mock.
+ */
+async function testSchemaMigrationFromZero(qdrant) {
+  log("info", "Testing schema migration 0 → latest via IngestFacade#reindexChanges...");
+
+  const codebase = join(TEST_DIR, "schema_migration");
+  const snapshotDir = join(TEST_DIR, "schema_migration_snapshots");
+  await fs.mkdir(join(codebase, "src"), { recursive: true });
+  await fs.mkdir(snapshotDir, { recursive: true });
+  resources.trackSnapshotDir(snapshotDir);
+  const sourceFile = await createTestFile(codebase, "src/a.ts", "export const a = 1;\n");
+
+  const embeddings = createProbeOnlyEmbeddings();
+  const collectionName = await seedLegacyIndexedCollection(qdrant, embeddings, codebase);
+  // The snapshot matches disk, so the reindex runs the migration sweep and
+  // finds nothing to embed.
+  await new ParallelFileSynchronizer(codebase, collectionName, snapshotDir, 4).updateSnapshot([sourceFile]);
+
+  const metadataPoint = new SchemaMetadataPointStore(qdrant);
+  assert((await metadataPoint.read(collectionName)) === null, "Legacy collection has no schema metadata point");
+  assert(
+    (await qdrant.listPayloadIndexes(collectionName)).length === 0,
+    "Legacy collection has no payload indexes (schema version reads as 0)",
+  );
+
+  // Reference: a collection created today, through the same factory
+  // IngestFacade hands its indexing pipeline for new collections.
+  const freshCollection = `test_schema_fresh_${Date.now()}`;
+  await qdrant.createCollection(freshCollection, embeddings.getDimensions(), "Cosine", false);
+  resources.trackCollection(freshCollection);
+  await createIngestDependencies(qdrant, snapshotDir, new StaticPayloadBuilder())
+    .createSchemaManager(freshCollection)
+    .initializeSchema(freshCollection);
+  const freshVersion = (await metadataPoint.read(freshCollection))?.schemaVersion;
+
+  const { ingest } = createTestFacades(qdrant, embeddings, { snapshotDir });
+  const stats = await ingest.reindexChanges(codebase);
+  assert(
+    stats.status === "completed" && stats.filesAdded + stats.filesModified + stats.filesDeleted === 0,
+    `Reindex ran the migration sweep with no file changes: ${stats.status}, +${stats.filesAdded} ~${stats.filesModified} -${stats.filesDeleted}`,
+  );
+
+  const migratedVersion = (await metadataPoint.read(collectionName))?.schemaVersion;
+  assert(
+    typeof freshVersion === "number" && freshVersion > 0 && migratedVersion === freshVersion,
+    `Migrated collection stamped at the latest schema version: ${migratedVersion} (new collection: ${freshVersion})`,
+  );
+
+  const indexSignature = async (collection) =>
+    (await qdrant.listPayloadIndexes(collection)).map(({ field, dataType }) => `${field}:${dataType}`).sort();
+  const migratedIndexes = await indexSignature(collectionName);
+  const freshIndexes = await indexSignature(freshCollection);
+  const missing = freshIndexes.filter((index) => !migratedIndexes.includes(index));
+  const extra = migratedIndexes.filter((index) => !freshIndexes.includes(index));
+  assert(
+    migratedIndexes.length > 0 && missing.length === 0 && extra.length === 0,
+    `Migrated payload indexes equal a new collection's (${migratedIndexes.length}): missing [${missing.join(", ")}], extra [${extra.join(", ")}]`,
+  );
 }

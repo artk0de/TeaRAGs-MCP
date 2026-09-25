@@ -7,8 +7,10 @@ import { fileURLToPath } from "node:url";
 import type { CommandModule } from "yargs";
 
 import { CollectionRegistry, InputValidationError, replayRegistryEnv } from "../../core/api/public/index.js";
+import { createColorizer } from "../infra/color.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
+import { formatTuneInputError, formatTuneRegistryUpdate, formatTuneRegistryWriteFailure } from "./tune-format.js";
 import { mergeTunedEnvIntoRegistry } from "./tune-registry-write.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -63,7 +65,8 @@ function runScript(script: string, argv: TuneArgs, release?: () => void, onSucce
       } catch (err) {
         // The tuned run itself succeeded — a registry write failure must not
         // flip the exit code, only surface.
-        process.stderr.write(`[tea-rags] tune registry write failed: ${(err as Error).message}\n`);
+        const c = createColorizer({ isTTY: Boolean(process.stderr.isTTY) });
+        process.stderr.write(`${formatTuneRegistryWriteFailure((err as Error).message, c)}\n`);
       }
     }
     process.exit(code ?? 1);
@@ -125,7 +128,8 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       resolved = applyProjectDefaults(argv as TuneArgs);
     } catch (err) {
       if (err instanceof InputValidationError) {
-        process.stderr.write(`${err.message}\nHint: ${err.hint}\n`);
+        const c = createColorizer({ isTTY: Boolean(process.stderr.isTTY) });
+        process.stderr.write(`${formatTuneInputError(err.message, err.hint, c)}\n`);
         process.exit(1);
       }
       throw err;
@@ -163,7 +167,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
             );
             if (applied > 0) {
               process.stdout.write(
-                `[tea-rags] registry env snapshot updated for '${resolved.project}' (${applied} measured keys)\n`,
+                `${formatTuneRegistryUpdate(resolved.project as string, applied, createColorizer())}\n`,
               );
             }
           }

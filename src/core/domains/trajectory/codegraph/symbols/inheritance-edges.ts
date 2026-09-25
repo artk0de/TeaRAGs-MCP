@@ -17,6 +17,7 @@
  *                               avoids a duplicate super)
  *   - classPrependedAncestors → prepend
  */
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type {
   HierarchySnapshot,
   InheritanceEdgeDecl,
@@ -53,8 +54,8 @@ export interface InheritanceDeclarationSource {
  * DB is not yet complete when the first file resolves).
  */
 export function buildHierarchySnapshot(rows: readonly InheritanceEdgeRow[]): HierarchySnapshot {
-  const ancestorsBySource: Record<string, InheritanceEdgeRow[]> = {};
-  const descendantsByAncestor: Record<string, InheritanceEdgeRow[]> = {};
+  const ancestorsBySource: Record<string, InheritanceEdgeRow[]> = createIdentifierRecord();
+  const descendantsByAncestor: Record<string, InheritanceEdgeRow[]> = createIdentifierRecord();
   for (const r of rows) {
     (ancestorsBySource[r.sourceFqName] ??= []).push(r);
     (descendantsByAncestor[r.ancestorFqName] ??= []).push(r);

@@ -143,6 +143,47 @@ only needed when:
 `enableHybrid: true` provisions BM25 sparse vectors for `hybrid_search`. If you
 forget this, `hybrid_search` will error on the collection.
 
+### Typed collections
+
+Pass `schema` to make a document collection typed: every `add_documents` call
+then validates each document's `metadata` against it before anything is
+embedded.
+
+```json
+{
+  "name": "memory",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "domain": { "type": "string" },
+      "type": { "enum": ["failure_mode", "decision", "anti_pattern", "migration", "domain_map"] },
+      "helpful": { "type": "number", "default": 0 },
+      "harmful": { "type": "number", "default": 0 },
+      "resolved_symbols": { "type": "array", "items": { "type": "string" }, "default": [] }
+    },
+    "required": ["domain", "type"],
+    "additionalProperties": false
+  }
+}
+```
+
+- `schema` is a JSON Schema whose top level must be `"type": "object"`. It is
+  compiled when the collection is created, so a schema that does not compile
+  fails `create_collection` and no collection is created.
+- The schema is stored in the Qdrant collection's own metadata and read back
+  on every `add_documents`; `get_collection_info` shows it as `schema`.
+- Validation is all-or-nothing per batch. One bad document rejects the whole
+  call with `INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION`, and the error lists each
+  violation as document index, id, field, what was expected and the value
+  received.
+- `default` values are written into the stored payload for fields a document
+  leaves out. A document with no `metadata` is validated as `{}`, so `required`
+  fields still apply.
+- Without `schema`, metadata stays free-form JSON, same as before.
+
+The schema is fixed at creation. To change it, delete the collection and create
+it again.
+
 ## Collection Lifecycle
 
 ```

@@ -25,21 +25,34 @@ function getOllamaCommands(): OllamaCommands {
 export class OllamaUnavailableError extends EmbeddingError {
   /** HTTP response status from Ollama API (e.g. 429 for rate limit). Undefined for network errors. */
   readonly responseStatus?: number;
+  /**
+   * Wall-clock ms the provider already spent waiting for the host to come back
+   * (EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS) before giving up; 0 when it
+   * gave up at once. A caller that retries on top of a spent wait multiplies
+   * the operator's budget, so it reads this before trying again.
+   */
+  readonly recoveryWaitMs: number;
 
-  constructor(url: string, cause?: Error, responseStatus?: number) {
+  constructor(url: string, cause?: Error, responseStatus?: number, recoveryWaitMs = 0) {
     const cmd = getOllamaCommands();
     super({
       code: "INFRA_OLLAMA_UNAVAILABLE",
-      message: `Ollama is not reachable at ${url}`,
-      hint: `Start Ollama: ${cmd.start}, or verify OLLAMA_URL=${url}`,
+      message: `Ollama is not reachable at ${url}${recoveryWaitSuffix(recoveryWaitMs)}`,
+      hint: `Start Ollama: ${cmd.start}, or verify EMBEDDING_BASE_URL=${url}${recoveryWaitHint(recoveryWaitMs)}`,
       httpStatus: 503,
       cause,
     });
     this.responseStatus = responseStatus;
+    this.recoveryWaitMs = recoveryWaitMs;
   }
 
   /** Create error when both primary and fallback URLs are unreachable. */
-  static withFallback(primaryUrl: string, fallbackUrl: string, cause?: Error): OllamaUnavailableError {
+  static withFallback(
+    primaryUrl: string,
+    fallbackUrl: string,
+    cause?: Error,
+    recoveryWaitMs = 0,
+  ): OllamaUnavailableError {
     const hasLocal = isLocalUrl(primaryUrl) || isLocalUrl(fallbackUrl);
     const cmd = getOllamaCommands();
 
@@ -52,14 +65,26 @@ export class OllamaUnavailableError extends EmbeddingError {
       hint = `Check network connectivity to ${primaryUrl} and ${fallbackUrl}`;
     }
 
-    const error = new OllamaUnavailableError(primaryUrl, cause);
+    const error = new OllamaUnavailableError(primaryUrl, cause, undefined, recoveryWaitMs);
     // Override message and hint via the base class fields
     Object.defineProperty(error, "message", {
-      value: `Ollama is not reachable at ${primaryUrl} (primary) or ${fallbackUrl} (fallback)`,
+      value: `Ollama is not reachable at ${primaryUrl} (primary) or ${fallbackUrl} (fallback)${recoveryWaitSuffix(recoveryWaitMs)}`,
     });
-    Object.defineProperty(error, "hint", { value: hint });
+    Object.defineProperty(error, "hint", { value: `${hint}${recoveryWaitHint(recoveryWaitMs)}` });
     return error;
   }
+}
+
+/** Message tail stating the recovery wait already spent — absent when none was. */
+function recoveryWaitSuffix(recoveryWaitMs: number): string {
+  return recoveryWaitMs > 0 ? ` (waited ${Math.round(recoveryWaitMs / 1000)}s for it to come back)` : "";
+}
+
+/** Hint tail naming the knob that sized the wait — absent when none was spent. */
+function recoveryWaitHint(recoveryWaitMs: number): string {
+  return recoveryWaitMs > 0
+    ? ". A host that restarts slowly can be given longer with EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS"
+    : "";
 }
 
 function isLocalUrl(url: string): boolean {

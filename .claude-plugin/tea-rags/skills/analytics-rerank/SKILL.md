@@ -195,9 +195,10 @@ path that still gets bug-fixed" — prime audit target.
 
 ## Reading the overlay back
 
-Every reranked result carries `rankingOverlay.derived` (normalized 0-1 signal
-contributions) + `rankingOverlay.raw.{file,chunk}` (raw payload values with
-labels). Read `references/runtime-introspection.md` for the structure,
+Every reranked result (metaOnly too) carries
+`rankingOverlay.{file,chunk}.<field>` — `{value,label}` for labelled signals.
+Labels live only there; payload = raw. Read
+`references/runtime-introspection.md` for the structure,
 `references/signal-interpretation.md` for pair diagnostics disambiguating
 single-signal ambiguity (god module vs bug attractor, healthy owner vs toxic
 silo, legacy minefield vs proven stable).

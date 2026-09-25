@@ -47,6 +47,7 @@
  * (decision 7: netbox has ~3,600 classes and ~30,000 `self.` call sites).
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
   AmbiguousResolveMode,
   CallContext,
@@ -55,17 +56,18 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import {
   createAncestorLinearizer,
+  reexportOriginFile,
+  RunScopedMemo,
   type AncestorClosure,
   type AncestorLinearizationPolicy,
   type AncestorLinearizer,
-} from "../../kernel/ancestor-walk.js";
-import { reexportOriginFile } from "../../kernel/reexport-origin.js";
-import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
+} from "../../kernel/index.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
+  lookupPythonSymbols,
   lookupPythonSymbolsByShortName,
   parsePythonClassKey,
   pythonClassKey,
@@ -109,7 +111,7 @@ export function createPythonAncestorPolicy(
     let closure: AncestorClosure = "closed";
     const basesOf = (key: string): readonly string[] => {
       const parsed = parsePythonClassKey(key);
-      const spellings = ctx.classAncestors?.[key];
+      const spellings = identifierEntry(ctx.classAncestors, key);
       if (parsed === null || spellings === undefined) {
         // No hierarchy recorded under this key — two different facts wearing
         // one shape (bd tea-rags-mcp-graiw). A class the run DECLARES and the
@@ -242,7 +244,7 @@ function resolveOneBaseSpelling(
   if (moduleFile === null) return UNKNOWN_BASE;
   const direct = classKeyIn(className, moduleFile, ctx);
   if (direct.kind === "project") return direct;
-  const origin = reexportOriginFile(className, moduleFile, ctx, mode);
+  const origin = reexportOriginFile(className, moduleFile, ctx, mode, lookupPythonSymbols);
   return origin === null ? UNKNOWN_BASE : classKeyIn(className, origin, ctx);
 }
 

@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
@@ -61,7 +62,7 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
     ctx: CallContext,
     visited: Set<string>,
   ): SymbolResolutionTarget | null {
-    const ancestors = ctx.classAncestors?.[receiver];
+    const ancestors = identifierEntry(ctx.classAncestors, receiver);
     if (!ancestors) return null;
     for (const ancestor of ancestors) {
       if (visited.has(ancestor)) continue;

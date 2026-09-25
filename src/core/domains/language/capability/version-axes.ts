@@ -1,4 +1,4 @@
-import { SHARED_LANGUAGE } from "../kernel/capability.js";
+import { SHARED_LANGUAGE } from "../kernel/index.js";
 
 /** The two axes a digest can stand behind; `codegraphSchema` stays hand-judged. */
 export type PinnedVersionAxis = "chunking" | "walker";
