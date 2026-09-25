@@ -63,6 +63,17 @@
   read-path return of `EmbeddingModelGuard#decideVerdict`) is what expresses the
   asymmetry; the reasoning is the `EmbeddingModelGuard#embedCanary` docblock.
 
+- **A provider that is DOWN travels as data, never as a throw inside the
+  guard.** `EmbeddingModelGuard#embedCanary` never throws; a failure that
+  `isProviderRecoveryWaitSpent` (`adapters/embeddings/errors.ts`) recognises
+  comes back as `providerOutage` on the check's settlement, uncached, and
+  `ensureMatch` throws it only for a caller that passed `failOnProviderOutage` —
+  one that embeds right after the check and would otherwise wait the provider's
+  recovery budget out a second time (bd tea-rags-mcp-umatc). A caller that only
+  reads the index omits the option and is never blocked. Keep the outage out of
+  the marker try: thrown there, the marker-catch above would turn it into "guard
+  disabled".
+
 - **Two marker-shape rules to know before editing `readOrCreateMarker`:** the
   canary is folded into the payload of the create upsert rather than written by
   a `setPayload` behind it (the `payload` literal in

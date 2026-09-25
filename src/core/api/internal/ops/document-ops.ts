@@ -28,7 +28,7 @@ export class DocumentOps {
     }
 
     // 2. Verify embedding model matches
-    await this.modelGuard?.ensureMatch(collection);
+    await this.modelGuard?.ensureMatch(collection, { failOnProviderOutage: true });
 
     // 2. Get collection info for hybrid check and the typed-collection schema
     const collectionInfo = await this.qdrant.getCollectionInfo(collection);

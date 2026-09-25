@@ -12,6 +12,7 @@ import {
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
+import { EmbeddingModelGuard } from "../../../../../src/core/adapters/qdrant/embedding-model-guard.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors.js";
@@ -1024,6 +1025,35 @@ function third() {
 
       await expect(downIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toBe(waitedOut);
       expect(embedSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("should spend the recovery wait once on the incremental path, where the model guard embeds first (bd tea-rags-mcp-umatc)", async () => {
+      // The incremental path runs the model guard before the health gate. The
+      // guard's canary embed waited the budget out and swallowed the error as
+      // "cannot prove drift", then the gate embedded again and waited it out a
+      // second time — measured live: 22s against a 10s budget, 8 minutes at
+      // the 240s default.
+      await createTestFile(codebaseDir, "test.ts", "export function fn() { return 1; }");
+      await ingest.indexCodebase(codebaseDir);
+
+      const waitedOut = new OllamaUnavailableError("http://127.0.0.1:59999", undefined, undefined, 10_000);
+      const downEmbeddings = new MockEmbeddingProvider();
+      const embedSpy = vi.spyOn(downEmbeddings, "embed").mockRejectedValue(waitedOut);
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const downIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: downEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        modelGuard: new EmbeddingModelGuard(qdrant as any, downEmbeddings.getModel(), 384, downEmbeddings),
+        healthCheckRetryAttempts: 3,
+        healthCheckRetryDelayMs: 1,
+      });
+
+      await expect(downIngest.indexCodebase(codebaseDir)).rejects.toBe(waitedOut);
+      expect(embedSpy).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
     });
   });
 

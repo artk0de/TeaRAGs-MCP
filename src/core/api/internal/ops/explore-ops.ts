@@ -13,7 +13,10 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import type {
+  EmbeddingModelGuard,
+  EmbeddingModelGuardCallOptions,
+} from "../../../adapters/qdrant/embedding-model-guard.js";
 import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
@@ -233,7 +236,7 @@ export class ExploreOps {
       project: request.project,
       path: request.path,
     });
-    await this.modelGuard?.ensureMatch(collectionName);
+    await this.modelGuard?.ensureMatch(collectionName, { failOnProviderOutage: true });
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
     // Load collection stats BEFORE buildFilter so filter-preset adaptive
@@ -373,7 +376,9 @@ export class ExploreOps {
     strategy: BaseExploreStrategy,
     attachConfidence: boolean,
   ): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project, {
+      failOnProviderOutage: true,
+    });
     const { embedding } = await this.embeddings.embed(request.query);
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
@@ -470,11 +475,12 @@ export class ExploreOps {
     collection?: string,
     path?: string,
     project?: string,
+    guardOptions?: EmbeddingModelGuardCallOptions,
   ): Promise<{ collectionName: string; path?: string }> {
     const resolved = resolveCollection(this.collectionRegistry, { collection, project, path });
     const exists = await this.qdrant.collectionExists(resolved.collectionName);
     if (!exists) throw new DomainCollectionNotFoundError(resolved.collectionName);
-    await this.modelGuard?.ensureMatch(resolved.collectionName);
+    await this.modelGuard?.ensureMatch(resolved.collectionName, guardOptions);
     return resolved;
   }
 

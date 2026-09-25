@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fixtureCollectionAlias } from "../../../__helpers__/collection-identity.js";
+import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { EMBEDDED_MARKER } from "../../../../../src/core/adapters/qdrant/embedded/daemon.js";
 import { WorktreeSeedOps } from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
@@ -330,6 +331,19 @@ describe("WorktreeSeedOps", () => {
       source: { collectionName: "code_other" },
       rejected: [{ collectionName: "code_main", reason: "embedding-model", detail: expect.stringContaining("0.41") }],
     });
+  });
+
+  it("fails the seed once when the canary finds the provider down, instead of trying the next sibling (bd tea-rags-mcp-umatc)", async () => {
+    // The provider already waited its recovery budget out on the first
+    // sibling's canary. Every further candidate, and the index run behind
+    // them, would wait it out again.
+    const outage = new OllamaUnavailableError("http://127.0.0.1:59999", undefined, undefined, 10_000);
+    modelGuard = { ensureMatch: vi.fn().mockRejectedValue(outage) };
+
+    await expect(ops().seed(request())).rejects.toBe(outage);
+    expect(modelGuard.ensureMatch).toHaveBeenCalledTimes(1);
+    expect(modelGuard.ensureMatch).toHaveBeenCalledWith("code_main", { failOnProviderOutage: true });
+    expect(builds).toHaveLength(0);
   });
 
   it("refuses a sibling on a stamp mismatch before claiming it", async () => {

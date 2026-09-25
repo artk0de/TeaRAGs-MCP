@@ -34,3 +34,25 @@ export class EmbeddingModelMismatchError extends EmbeddingError {
     });
   }
 }
+
+/**
+ * Carried by a provider-unavailable error whose provider can wait for its host
+ * to come back (EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS) before giving up.
+ * `recoveryWaitMs` is the wall-clock time that wait already took; 0 when the
+ * provider gave up at once.
+ */
+export interface ProviderRecoveryWaitReporting {
+  readonly recoveryWaitMs: number;
+}
+
+/**
+ * True when the provider gave up only after waiting its recovery budget out:
+ * the host is down, and the next embed restarts that same wait. A caller about
+ * to embed again must fail with this error instead — a retry on top of a spent
+ * wait multiplies the operator's budget (bd tea-rags-mcp-umatc).
+ */
+export function isProviderRecoveryWaitSpent(error: unknown): error is EmbeddingError & ProviderRecoveryWaitReporting {
+  if (!(error instanceof EmbeddingError)) return false;
+  const { recoveryWaitMs } = error as Partial<ProviderRecoveryWaitReporting>;
+  return typeof recoveryWaitMs === "number" && recoveryWaitMs > 0;
+}

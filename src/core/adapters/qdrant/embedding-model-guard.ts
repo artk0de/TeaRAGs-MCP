@@ -15,7 +15,11 @@
  */
 
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
-import { EmbeddingModelMismatchError } from "../../adapters/embeddings/errors.js";
+import {
+  EmbeddingModelMismatchError,
+  isProviderRecoveryWaitSpent,
+  type EmbeddingError,
+} from "../../adapters/embeddings/errors.js";
 import { EMBEDDING_CANARY_MIN_COSINE, EMBEDDING_CANARY_TEXT, INDEXING_METADATA_ID } from "../../contracts/constants.js";
 import { isDebug } from "../../infra/runtime.js";
 import { cosine } from "../../infra/vector-math.js";
@@ -37,6 +41,31 @@ interface EmbeddingMarkerReading {
    * model in hand, so there is nothing to compare and nothing to embed twice.
    */
   createdNow?: boolean;
+  /** Set when the create path's canary embed found the provider down. See `EmbeddingCanaryEmbed`. */
+  providerOutage?: EmbeddingError;
+}
+
+/**
+ * One canary embed: the canary, or why there is none. `providerOutage` is set
+ * only for a provider that gave up after spending its recovery wait
+ * (`isProviderRecoveryWaitSpent`); any other failure leaves both fields unset.
+ */
+interface EmbeddingCanaryEmbed {
+  canary?: EmbeddingCanaryRecord;
+  providerOutage?: EmbeddingError;
+}
+
+/** What one caller of `ensureMatch` needs beyond the verdict. */
+export interface EmbeddingModelGuardCallOptions {
+  /**
+   * The caller embeds right after this check (indexing, adding documents, a
+   * query-embedding search). A provider that is DOWN — it gave up after
+   * spending its recovery wait on the canary — is then thrown here instead of
+   * swallowed, so the caller fails once instead of paying that wait a second
+   * time on its own embed. Callers that read the index without embedding leave
+   * it off: an outage does not concern them.
+   */
+  failOnProviderOutage?: boolean;
 }
 
 /**
@@ -60,7 +89,15 @@ interface EmbeddingModelCheckOutcome {
    * collection unguarded for the rest of the process; the next check retries.
    */
   cacheable: boolean;
+  /**
+   * The canary embed found the provider down. Never cached: it goes to the
+   * callers of THIS check only, and a later check measures the provider anew.
+   */
+  providerOutage?: EmbeddingError;
 }
+
+/** What a settled check hands its callers: the verdict, and an outage if it saw one. */
+type EmbeddingModelCheckSettlement = Pick<EmbeddingModelCheckOutcome, "verdict" | "providerOutage">;
 
 /**
  * What to do about a model that kept its name and changed its weights. The
@@ -85,7 +122,7 @@ export class EmbeddingModelGuard {
   private readonly cache = new Map<string, EmbeddingModelVerdict>();
 
   /** Checks currently running, one per collection. See `startCheck`. */
-  private readonly pending = new Map<string, Promise<EmbeddingModelVerdict | undefined>>();
+  private readonly pending = new Map<string, Promise<EmbeddingModelCheckSettlement | undefined>>();
 
   constructor(
     private readonly qdrant: QdrantManager,
@@ -103,9 +140,11 @@ export class EmbeddingModelGuard {
    * Ensure the current embedding model matches the one that built the
    * collection — by name, and (when an embedding provider is wired) by canary
    * vector. Throws EmbeddingModelMismatchError on either mismatch. Backfills
-   * the model name and the canary when missing (legacy collections).
+   * the model name and the canary when missing (legacy collections). With
+   * `failOnProviderOutage`, also throws the provider's error when the canary
+   * embed found the provider down.
    */
-  async ensureMatch(collectionName: string): Promise<void> {
+  async ensureMatch(collectionName: string, options?: EmbeddingModelGuardCallOptions): Promise<void> {
     const cached = this.cache.get(collectionName);
     if (cached) {
       this.assertVerdict(cached);
@@ -115,10 +154,12 @@ export class EmbeddingModelGuard {
     // Cold: one check per collection, however many callers arrive. A cold start
     // fans several searches at the same collection, and each would otherwise
     // read the marker and embed the canary for itself.
-    const verdict = await (this.pending.get(collectionName) ?? this.startCheck(collectionName));
+    const settled = await (this.pending.get(collectionName) ?? this.startCheck(collectionName));
     // undefined = the check was invalidated while in flight; it measured an
     // endpoint or an index state that no longer applies, so nothing to assert.
-    if (verdict) this.assertVerdict(verdict);
+    if (!settled) return;
+    this.assertVerdict(settled.verdict);
+    if (options?.failOnProviderOutage && settled.providerOutage) throw settled.providerOutage;
   }
 
   /**
@@ -129,14 +170,14 @@ export class EmbeddingModelGuard {
    * before an endpoint failover cannot write its verdict behind the
    * invalidation that was meant to clear exactly that measurement.
    */
-  private async startCheck(collectionName: string): Promise<EmbeddingModelVerdict | undefined> {
+  private async startCheck(collectionName: string): Promise<EmbeddingModelCheckSettlement | undefined> {
     const checked = this.decideVerdict(collectionName);
-    const settled: Promise<EmbeddingModelVerdict | undefined> = checked.then(
+    const settled: Promise<EmbeddingModelCheckSettlement | undefined> = checked.then(
       (outcome) => {
         if (this.pending.get(collectionName) !== settled) return undefined;
         this.pending.delete(collectionName);
         if (outcome.cacheable) this.cache.set(collectionName, outcome.verdict);
-        return outcome.verdict;
+        return { verdict: outcome.verdict, providerOutage: outcome.providerOutage };
       },
       (error: unknown) => {
         // Clear the registration before rethrowing, or every later call would
@@ -170,16 +211,12 @@ export class EmbeddingModelGuard {
       return {
         verdict: { model: marker.model, canaryMismatch: null },
         cacheable: marker.canary !== undefined || this.embeddings === undefined,
+        providerOutage: marker.providerOutage,
       };
     }
 
-    return {
-      verdict: {
-        model: marker.model,
-        canaryMismatch: await this.compareCanary(collectionName, marker.canary),
-      },
-      cacheable: true,
-    };
+    const { canaryMismatch, providerOutage } = await this.compareCanary(collectionName, marker.canary);
+    return { verdict: { model: marker.model, canaryMismatch }, cacheable: true, providerOutage };
   }
 
   /** Re-derive the throw from a cached verdict, so a mismatch stays sticky. */
@@ -197,50 +234,58 @@ export class EmbeddingModelGuard {
   }
 
   /**
-   * Compare the stored canary against a freshly embedded one. Returns the
-   * mismatch description, or null when the canary passed, was written for the
-   * first time, or could not be embedded.
+   * Compare the stored canary against a freshly embedded one. `canaryMismatch`
+   * is the mismatch description, or null when the canary passed, was written
+   * for the first time, or could not be embedded.
    */
   private async compareCanary(
     collectionName: string,
     stored: EmbeddingCanaryRecord | undefined,
-  ): Promise<string | null> {
-    const fresh = await this.embedCanary(collectionName);
-    if (!fresh) return null;
+  ): Promise<{ canaryMismatch: string | null; providerOutage?: EmbeddingError }> {
+    const { canary: fresh, providerOutage } = await this.embedCanary(collectionName);
+    if (!fresh) return { canaryMismatch: null, providerOutage };
 
     // No canary yet (legacy marker), or one written for a different text — the
     // stored vector says nothing about the current canary, so replace it.
     if (stored?.text !== EMBEDDING_CANARY_TEXT) {
       await this.writeCanary(collectionName, fresh);
-      return null;
+      return { canaryMismatch: null };
     }
 
     // A width change is a model change by itself, and cosine over ragged arrays
     // is NaN — which would compare false against the threshold and pass.
     const similarity = stored.vector.length === fresh.vector.length ? cosine(fresh.vector, stored.vector) : 0;
     if (similarity < EMBEDDING_CANARY_MIN_COSINE) {
-      return `${this.currentModel} (same name, different weights: canary cosine ${similarity.toFixed(4)})`;
+      return {
+        canaryMismatch: `${this.currentModel} (same name, different weights: canary cosine ${similarity.toFixed(4)})`,
+      };
     }
-    return null;
+    return { canaryMismatch: null };
   }
 
   /**
-   * Embed the canary with the configured provider. Returns undefined when there
-   * is no provider, or when the embed failed — a provider that cannot embed
-   * cannot prove drift either, and must not block indexing. The failure is
-   * reported once per collection, exactly as a failed marker read reports
-   * disabling the guard. The clean verdict is cached on the READ path; the
-   * create path withholds it so the next check retries the embed and backfills
-   * the canary.
+   * Embed the canary with the configured provider. No canary when there is no
+   * provider, or when the embed failed — a provider that cannot embed cannot
+   * prove drift either, and must not block indexing. The failure is reported
+   * once per collection, exactly as a failed marker read reports disabling the
+   * guard. The clean verdict is cached on the READ path; the create path
+   * withholds it so the next check retries the embed and backfills the canary.
+   *
+   * Never throws, so nothing new reaches the marker-catch through the create
+   * path. A provider that gave up after spending its recovery wait comes back
+   * as `providerOutage`: the guard still does not block on it, but a caller
+   * that embeds next would wait that budget out a second time, so
+   * `ensureMatch` hands the error to a `failOnProviderOutage` caller
+   * (bd tea-rags-mcp-umatc).
    */
-  private async embedCanary(collectionName: string): Promise<EmbeddingCanaryRecord | undefined> {
-    if (!this.embeddings) return undefined;
+  private async embedCanary(collectionName: string): Promise<EmbeddingCanaryEmbed> {
+    if (!this.embeddings) return {};
     try {
       const { embedding } = await this.embeddings.embed(EMBEDDING_CANARY_TEXT);
-      return { text: EMBEDDING_CANARY_TEXT, vector: embedding };
+      return { canary: { text: EMBEDDING_CANARY_TEXT, vector: embedding } };
     } catch (error) {
       console.error(`[ModelGuard] Canary check skipped for ${collectionName}:`, error);
-      return undefined;
+      return isProviderRecoveryWaitSpent(error) ? { providerOutage: error } : {};
     }
   }
 
@@ -291,7 +336,7 @@ export class EmbeddingModelGuard {
       // The canary goes into the payload being written, not into a setPayload
       // right behind it: the marker is created once, and the model that fills
       // it in is the model in hand.
-      const canary = await this.embedCanary(collectionName);
+      const { canary, providerOutage } = await this.embedCanary(collectionName);
       const payload = {
         _type: "indexing_metadata",
         indexingComplete: true,
@@ -321,7 +366,7 @@ export class EmbeddingModelGuard {
       if (isDebug()) {
         console.error(`[ModelGuard] Created marker with embeddingModel="${this.currentModel}" for ${collectionName}`);
       }
-      return { model: this.currentModel, canary, createdNow: true };
+      return { model: this.currentModel, canary, createdNow: true, providerOutage };
     } catch (error) {
       if (error instanceof EmbeddingModelMismatchError) throw error;
       // Marker access failed — skip the guard so an unreachable Qdrant cannot
