@@ -692,6 +692,43 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     expect(extract(src).classFieldTypes?.Store).toEqual({ items: "Array" });
   });
 
+  /**
+   * bd tea-rags-mcp-y99pg.36 — Alamofire's Combine.swift nests a private
+   * `Inner` in each of three publishers, each holding a `request` of a
+   * different type. Keyed by the short name alone, the first `Inner` spoke for
+   * all three and `request.cancel()` in `DownloadResponsePublisher.Inner` went
+   * to `Request#cancel` through a `DataRequest`.
+   */
+  it("keys a nested type's fields by its nesting path, and drops a short-name field the namesakes disagree on", () => {
+    const src = [
+      "struct DataPublisher {",
+      "  final class Inner {",
+      "    let request: DataRequest",
+      "    let queue: DispatchQueue",
+      "  }",
+      "}",
+      "struct DownloadPublisher {",
+      "  final class Inner {",
+      "    let request: DownloadRequest",
+      "    let queue: DispatchQueue",
+      "    func cancel() {",
+      "      let r = request",
+      "      r.cancel()",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extract(src);
+    expect(r.classFieldTypes?.["DataPublisher.Inner"]).toEqual({ request: "DataRequest", queue: "DispatchQueue" });
+    expect(r.classFieldTypes?.["DownloadPublisher.Inner"]).toEqual({
+      request: "DownloadRequest",
+      queue: "DispatchQueue",
+    });
+    expect(r.classFieldTypes?.Inner).toEqual({ queue: "DispatchQueue" });
+    expect(typeAt(src, "r", 13)).toBe("DownloadRequest");
+  });
+
   it("leaves classFieldTypes absent when no type declares a typed stored property", () => {
     const src = ["class Store {", "  func go() {}", "}", ""].join("\n");
     expect(extract(src).classFieldTypes).toBeUndefined();
@@ -1641,6 +1678,29 @@ describe("swift walker — a closure spelled through a typealias", () => {
     expect(configure.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
     expect(configure.acceptsBlock).toBe(true);
     expect(count.acceptsBlock).toBe(false);
+  });
+
+  /**
+   * bd tea-rags-mcp-y99pg.36 — `@autoclosure` wraps the argument EXPRESSION in
+   * a closure; a closure literal written there is the value, not the body. So
+   * `validate { … }` cannot land on Alamofire's `validate(contentType:
+   * @escaping @Sendable @autoclosure () -> S)`, and the label stays required.
+   */
+  it("does not let a trailing closure land on an `@autoclosure` parameter", () => {
+    const src = [
+      "func validate<S: Sequence>(contentType types: @escaping @Sendable @autoclosure () -> S) -> Self { self }",
+      "func check(_ condition: @autoclosure () -> Bool) {}",
+      "",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "validate", scope: [], startLine: 1, endLine: 1 },
+      { symbolId: "check", scope: [], startLine: 2, endLine: 2 },
+    ];
+    const [validate, check] = extract(src, chunks).chunks;
+    expect(validate.kwargs).toEqual({ required: ["contentType"], optional: [], hasSplat: false });
+    expect(validate.acceptsBlock).toBe(false);
+    expect(check.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
+    expect(check.acceptsBlock).toBe(false);
   });
 });
 

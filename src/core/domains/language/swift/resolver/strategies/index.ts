@@ -15,6 +15,7 @@ export {
   resolveSwiftBoundTypeMember,
   SWIFT_PSEUDO_RECEIVERS,
   swiftEnclosingTypeIds,
+  swiftSelfDelegationCaller,
   swiftSelfTypeName,
   type SwiftResolverConfig,
 } from "./shared.js";
