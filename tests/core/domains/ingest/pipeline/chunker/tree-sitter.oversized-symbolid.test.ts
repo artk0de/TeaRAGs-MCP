@@ -31,9 +31,13 @@ describe("TreeSitterChunker oversized method symbolId inheritance", () => {
 
     const splits = chunks.filter((c) => c.metadata.parentSymbolId === fnName);
     expect(splits.length).toBeGreaterThan(1);
-    for (const c of splits) {
-      expect(c.metadata.symbolId).toBe(fnName);
+    // INVARIANT CHANGED (bd tea-rags-mcp-y5vx4): the splits no longer share
+    // the bare id — they are `doWork#part1..N`, numbered once, all under
+    // parentSymbolId `doWork`. The codegraph slice folds `#partN` onto the
+    // symbol, so "every split maps to one symbolId" still holds there.
+    splits.forEach((c, i) => {
+      expect(c.metadata.symbolId).toBe(`${fnName}#part${i + 1}`);
       expect(c.metadata.chunkType).toBe("function");
-    }
+    });
   });
 });

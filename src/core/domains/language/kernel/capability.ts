@@ -45,9 +45,16 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * `--force-enrichments codegraph` runs. `codegraphSchema` stays at 2: this
  * walker bump already routes every index to that same whole-collection
  * recompute, and a second axis would name the same remedy twice.
+ *
+ * chunking 2: an oversized symbol is cut on its statement boundaries into
+ * `#part1..#partN` parts, numbered once, each prefixed with its enclosing
+ * context instead of overlapping raw lines; markdown sections are cut between
+ * blocks and the character fallback between syntax-neutral units (bd
+ * tea-rags-mcp-y5vx4, tea-rags-mcp-308ff). The chunk set moves in every
+ * language, so every index needs `tea-rags index-codebase --force`.
  */
 export const sharedVersions: LanguageSupportVersions = {
-  chunking: 1,
+  chunking: 2,
   walker: 5,
   codegraphSchema: 2,
 };

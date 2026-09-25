@@ -39,13 +39,15 @@ here. Per-project realized numbers live in **prime**, never in this file.
 - **full** — tree-sitter cuts on real symbol boundaries. The chunk /
   `find_symbol` result IS the source of truth; gather code from it, do NOT
   `Read` to "see the real code". `Read` only to MODIFY. (An oversized symbol is
-  hard-cap split into `#partN` chunks — one part is NOT the whole symbol;
-  `find_symbol(symbolId)` reassembles every part into one trusted result. See
-  `search-cascade.md` → After-Search Navigation.)
+  split between its statements into `#partN` chunks, each opening with the
+  signature and enclosing block headers as context — one part is NOT the whole
+  symbol; `find_symbol(parentSymbolId)` reassembles every part into one trusted
+  result. See `search-cascade.md` → After-Search Navigation.)
 - **partial** — chunked by section / heading (Markdown). A section is coherent
   for docs; there are no code symbols to split.
-- **none** — CharacterChunker splits at arbitrary offsets; a chunk may cut a
-  symbol in half. Here `Read` is a legitimate fallback to obtain exact code.
+- **none** — CharacterChunker splits at blank lines and top-level statement
+  ends, blind to symbols; a chunk may cut a symbol in half. Here `Read` is a
+  legitimate fallback to obtain exact code.
 
 **Tests code chunking** — can you trust a test chunk as a unit?
 
