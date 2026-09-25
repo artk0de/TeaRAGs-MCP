@@ -991,9 +991,10 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     const target = callee.childForFieldName("target");
     const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
     if (!target || !member) return;
-    const receiver = normalizeSwiftReceiver(target.text);
+    const targetText = swiftReceiverTargetText(target);
+    const receiver = normalizeSwiftReceiver(targetText);
     // `a?.c()` puts its `?` beside the target, not inside it (bd tea-rags-mcp-y99pg.33).
-    const written = callee.children.some((c) => c.type === "?") ? `${target.text}?` : target.text;
+    const written = callee.children.some((c) => c.type === "?") ? `${targetText}?` : targetText;
     out.push({
       callText: node.text,
       receiver,
@@ -1057,6 +1058,30 @@ function declaresSwiftParameter(fn: AstNode, name: string): boolean {
  * names, neither of which carries the sugar, so an un-normalized receiver never
  * matches.
  */
+/**
+ * A call target's text without the prefix operator the grammar hangs on it
+ * (bd tea-rags-mcp-y99pg.39). tree-sitter-swift parses `!kept.contains(id)`
+ * with `!kept` as the navigation target, but Swift binds a prefix operator
+ * looser than member access and call: the expression is `!(kept.contains(id))`
+ * and the receiver is `kept`. The operator sits on the leftmost spine of the
+ * target, however deep (`!a!.b.c()`). An implicit member expression's leading
+ * `.` (`.quaternary.opacity(1)`) is part of the receiver and stays.
+ */
+function swiftReceiverTargetText(target: AstNode): string {
+  let node: AstNode | null = target;
+  while (node !== null && node.startIndex === target.startIndex) {
+    if (node.type === "prefix_expression") {
+      const operation = node.childForFieldName("operation");
+      const operand = node.childForFieldName("target");
+      if (operation !== null && operand !== null && operation.text !== ".") {
+        return target.text.slice(operand.startIndex - target.startIndex);
+      }
+    }
+    node = node.child(0);
+  }
+  return target.text;
+}
+
 export function normalizeSwiftReceiver(text: string): string {
   return text.replace(/[?!]/g, "");
 }

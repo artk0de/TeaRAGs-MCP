@@ -2330,6 +2330,31 @@ describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99
       expect(calls.find((c) => c.member === "run")?.writtenReceiver).toBeUndefined();
     }
   });
+
+  // tree-sitter-swift hangs a prefix operator on the navigation TARGET, but
+  // Swift binds it looser than member access: `!kept.contains(id)` is
+  // `!(kept.contains(id))`, so the receiver is `kept` (bd tea-rags-mcp-y99pg.39).
+  it("keeps a prefix operator out of the receiver it does not apply to", () => {
+    const src = [
+      "func go() {",
+      "  if !kept.contains(id) {}",
+      "  let n = -offset.magnitude()",
+      "  let m = !a!.b.c()",
+      "  let color = .quaternary.opacity(1)",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      const contains = calls.find((c) => c.member === "contains");
+      expect(contains).toMatchObject({ receiver: "kept" });
+      expect(contains?.writtenReceiver).toBeUndefined();
+      expect(calls.find((c) => c.member === "magnitude")).toMatchObject({ receiver: "offset" });
+      expect(calls.find((c) => c.member === "c")).toMatchObject({ receiver: "a.b", writtenReceiver: "a!.b" });
+      // An implicit member expression's leading `.` is no operator: it stays.
+      expect(calls.find((c) => c.member === "opacity")).toMatchObject({ receiver: ".quaternary" });
+    }
+  });
 });
 
 /**
