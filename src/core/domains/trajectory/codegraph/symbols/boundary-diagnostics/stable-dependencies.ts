@@ -2,6 +2,7 @@ import type { FileDependencyGraph, RelPath } from "../../../../../contracts/type
 import { compilePathPatternMatcher } from "../../../../../infra/path-pattern.js";
 import { CODEGRAPH_SYMBOLS_FILE_SIGNALS, type MartinInstability } from "../payload-signals.js";
 import { classifyDirectoryRelation } from "./directory-relation.js";
+import { isFacadeAggregationEdge } from "./facade-aggregation.js";
 import { computeFileInstabilities } from "./file-instability.js";
 import type {
   StableDependenciesExclusionCounts,
@@ -75,8 +76,15 @@ const NO_EDGES: MartinInstability = { instability: 0, connectionCount: 0 };
  *    276 of 1102 files and 891 of 2314 edges. Whether those belong is the SDP
  *    premise review's decision, so the report names every file it excluded
  *    (`noSymbolEndpointFiles`) instead of changing the criterion here;
- * 4. either endpoint's connectionCount is below `minConnectionCount`;
- * 5. the source is the target's SOLE importer (`PRIVATE_COLLABORATOR_REASON`):
+ * 4. the edge is FACADE AGGREGATION (`FACADE_AGGREGATION_REASON`,
+ *    bd tea-rags-mcp-r8hme.6): a module facade re-exporting the facade of a
+ *    module nested inside it (`isFacadeAggregationEdge`). The child is part of
+ *    the parent's surface, not a dependency the parent took on; the no-symbol
+ *    rule misses the shape whenever the parent facade declares symbols of its
+ *    own (`trajectory/codegraph/index.ts → codegraph/symbols/index.ts` on the
+ *    self-index);
+ * 5. either endpoint's connectionCount is below `minConnectionCount`;
+ * 6. the source is the target's SOLE importer (`PRIVATE_COLLABORATOR_REASON`):
  *    no other file, walked or not, has an edge into the target (a self-edge
  *    is no import). The premise is that a volatile dependency destabilises
  *    its dependents; with one dependent, the target is that file's private
@@ -119,6 +127,7 @@ export function detectStableDependencyViolations(
     selfEdges: 0,
     unwalkedEndpoints: 0,
     noSymbolEndpoints: 0,
+    facadeAggregations: 0,
     lowConnectionCount: 0,
     privateCollaborators: 0,
   };
@@ -141,6 +150,8 @@ export function detectStableDependencyViolations(
           excludedByNoSymbolFile.set(endpoint, (excludedByNoSymbolFile.get(endpoint) ?? 0) + 1);
         }
       }
+    } else if (isFacadeAggregationEdge(edge)) {
+      excluded.facadeAggregations++;
     } else if (source.connectionCount < minConnectionCount || target.connectionCount < minConnectionCount) {
       excluded.lowConnectionCount++;
     } else if (!judgePrivateCollaborators && isSoleImporter(importers, edge.sourceRelPath, edge.targetRelPath)) {

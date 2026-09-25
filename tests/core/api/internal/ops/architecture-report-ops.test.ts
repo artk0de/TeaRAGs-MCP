@@ -116,11 +116,14 @@ describe("ArchitectureReportOps#build", () => {
         selfEdges: 0,
         unwalkedEndpoints: 0,
         noSymbolEndpoints: 0,
+        // INVARIANT CHANGED (bd tea-rags-mcp-r8hme.6): the exclusion summary gains facadeAggregations.
+        facadeAggregations: 0,
         lowConnectionCount: g.edges.length - 3 - 1,
         privateCollaborators: 1,
       },
       exclusionReasons: {
         noSymbolEndpoints: "no-symbol endpoint: barrel, type-only or object-literal module",
+        facadeAggregations: "facade aggregation: a module facade re-exporting a descendant module's facade",
         privateCollaborators: "private collaborator: source is the target's sole importer",
       },
     });

@@ -72,6 +72,12 @@ export interface StableDependenciesExclusionCounts {
    * `StableDependenciesReport.noSymbolEndpointFiles` names the files.
    */
   noSymbolEndpoints: number;
+  /**
+   * A module facade re-exporting the facade of a module nested inside it
+   * (`FACADE_AGGREGATION_REASON`, bd tea-rags-mcp-r8hme.6): aggregation, not a
+   * dependency.
+   */
+  facadeAggregations: number;
   /** An endpoint's connectionCount is below `minConnectionCount`. */
   lowConnectionCount: number;
   /**

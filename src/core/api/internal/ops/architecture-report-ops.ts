@@ -21,6 +21,7 @@ import {
   detectConventionPrivacyLeaks,
   detectLeakingAbstractions,
   detectStableDependencyViolations,
+  FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
   NO_SYMBOL_ENDPOINT_REASON,
   PRIVATE_COLLABORATOR_REASON,
@@ -89,6 +90,7 @@ export class ArchitectureReportOps {
             selfEdges: 0,
             unwalkedEndpoints: 0,
             noSymbolEndpoints: 0,
+            facadeAggregations: 0,
             lowConnectionCount: 0,
             privateCollaborators: 0,
           },
@@ -108,6 +110,7 @@ export class ArchitectureReportOps {
 
 const EXCLUSION_REASONS = {
   noSymbolEndpoints: NO_SYMBOL_ENDPOINT_REASON,
+  facadeAggregations: FACADE_AGGREGATION_REASON,
   privateCollaborators: PRIVATE_COLLABORATOR_REASON,
 } as const;
 

@@ -1,5 +1,6 @@
 export { CONVENTION_PRIVACY_LANGUAGES, detectConventionPrivacyLeaks } from "./convention-privacy.js";
 export { classifyDirectoryRelation } from "./directory-relation.js";
+export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";
 export {
   detectLeakingAbstractions,

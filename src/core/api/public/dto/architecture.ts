@@ -163,6 +163,8 @@ export interface StableDependenciesExclusionSummary {
   selfEdges: number;
   unwalkedEndpoints: number;
   noSymbolEndpoints: number;
+  /** A module facade re-exporting a nested module's facade — see `exclusionReasons.facadeAggregations`. */
+  facadeAggregations: number;
   lowConnectionCount: number;
   /** The source is the target's sole importer — see `exclusionReasons.privateCollaborators`. */
   privateCollaborators: number;
@@ -181,7 +183,7 @@ export interface StableDependenciesReportSummary {
   rootCauseCount: number;
   excluded: StableDependenciesExclusionSummary;
   /** Human-readable meaning of the exclusions a reader is most likely to question. */
-  exclusionReasons: { noSymbolEndpoints: string; privateCollaborators: string };
+  exclusionReasons: { noSymbolEndpoints: string; facadeAggregations: string; privateCollaborators: string };
   /** Edges whose source did not match `pathPattern`; present only when scoped. */
   outOfScopeEdgeCount?: number;
 }

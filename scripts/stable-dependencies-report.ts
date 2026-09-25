@@ -197,6 +197,7 @@ export function renderStableDependenciesReport(
     `    self-edges          ${summary.excluded.selfEdges}`,
     `    unwalked endpoint   ${summary.excluded.unwalkedEndpoints}`,
     `    no-symbol endpoint  ${summary.excluded.noSymbolEndpoints}`,
+    `    facade aggregation  ${summary.excluded.facadeAggregations}`,
     `    low connectionCount ${summary.excluded.lowConnectionCount}`,
     `    private collaborator ${summary.excluded.privateCollaborators}`,
     `  edges judged        ${summary.consideredEdgeCount}`,

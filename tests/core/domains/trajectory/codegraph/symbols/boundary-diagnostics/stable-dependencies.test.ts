@@ -19,6 +19,7 @@ import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,
+  FACADE_AGGREGATION_REASON,
   NO_SYMBOL_ENDPOINT_REASON,
   PRIVATE_COLLABORATOR_REASON,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
@@ -279,6 +280,8 @@ describe("detectStableDependencyViolations", () => {
         selfEdges: 0,
         unwalkedEndpoints: 0,
         noSymbolEndpoints: 0,
+        // INVARIANT CHANGED (bd tea-rags-mcp-r8hme.6): the exclusion summary gains facadeAggregations.
+        facadeAggregations: 0,
         lowConnectionCount: 9,
         privateCollaborators: 0,
       },
@@ -520,3 +523,83 @@ describe("detectStableDependencyViolations — source scope", () => {
     expect(detectStableDependencyViolations(twoModules(), { sourcePathPattern: "" }).summary.scope).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-r8hme.6 — a parent module's facade re-exporting a child
+// module's facade is aggregation: the child is part of the parent's surface,
+// not a dependency the parent took on. The no-symbol rule misses it whenever
+// the parent facade declares symbols of its own.
+describe("detectStableDependencyViolations — facade aggregation", () => {
+  /**
+   * `mod/index.ts` (declares 1 symbol): 5 importers, 1 edge out → I = 1/6.
+   * `mod/sub/index.ts`: imported by the parent + 2 others, imports 4 → I = 4/7.
+   * The parent → child edge carries `aggregation` on the file edge.
+   */
+  function parentOverChild(aggregation: Partial<FileDependencyEdge>, childRelPath = "mod/sub/index.ts") {
+    return merge(
+      {
+        files: [walked("mod/index.ts"), walked(childRelPath)],
+        edges: [{ ...edge("mod/index.ts", childRelPath, 1), ...aggregation }],
+      },
+      importersOf("mod/index.ts", 5, "app/user"),
+      importersOf(childRelPath, 2, "other/user"),
+      importsOf(childRelPath, 4, "vendor/dep"),
+    );
+  }
+
+  it("does not judge a parent facade re-exporting a descendant module's facade, and counts it with a named reason", () => {
+    const report = detectStableDependencyViolations(
+      parentOverChild({ importedExportNames: ["create"], reexportedExportNames: ["create", "LANGUAGES"] }),
+    );
+
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.facadeAggregations).toBe(1);
+    expect(FACADE_AGGREGATION_REASON).toBe(
+      "facade aggregation: a module facade re-exporting a descendant module's facade",
+    );
+  });
+
+  it("treats a Python package __init__ importing a subpackage's __init__ as aggregation — its imports are its exports", () => {
+    const graph = parentOverChild({ importedExportNames: ["Client"] });
+    const python: FileDependencyGraph = {
+      files: graph.files.map((f) => ({ ...f, relPath: pyPath(f.relPath), language: "python" })),
+      edges: graph.edges.map((e) => ({
+        ...e,
+        sourceRelPath: pyPath(e.sourceRelPath),
+        targetRelPath: pyPath(e.targetRelPath),
+      })),
+    };
+
+    const report = detectStableDependencyViolations(python);
+
+    expect(report.violations).toEqual([]);
+    expect(report.summary.excluded.facadeAggregations).toBe(1);
+  });
+
+  it("judges the same edge when the parent facade only imports from the child — that is its own code's dependency", () => {
+    const report = detectStableDependencyViolations(parentOverChild({ importedExportNames: ["create"] }));
+
+    expect(report.summary.excluded.facadeAggregations).toBe(0);
+    expect(report.violations.map((v) => `${v.sourceRelPath} -> ${v.targetRelPath}`)).toEqual([
+      "mod/index.ts -> mod/sub/index.ts",
+    ]);
+  });
+
+  it("judges a facade re-exporting a facade that is not its descendant, or a descendant's non-entry file", () => {
+    const sibling = detectStableDependencyViolations(
+      parentOverChild({ reexportedExportNames: ["create"] }, "other/index.ts"),
+    );
+    expect(sibling.summary.excluded.facadeAggregations).toBe(0);
+    expect(sibling.violations).toHaveLength(1);
+
+    const deepFile = detectStableDependencyViolations(
+      parentOverChild({ reexportedExportNames: ["create"] }, "mod/sub/impl.ts"),
+    );
+    expect(deepFile.summary.excluded.facadeAggregations).toBe(0);
+    expect(deepFile.violations).toHaveLength(1);
+  });
+});
+
+/** `mod/sub/index.ts` → `mod/sub/__init__.py`; other `.ts` paths → `.py`. */
+function pyPath(relPath: string): string {
+  return relPath.endsWith("/index.ts") ? relPath.replace(/index\.ts$/, "__init__.py") : relPath.replace(/\.ts$/, ".py");
+}
