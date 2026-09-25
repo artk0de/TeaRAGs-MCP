@@ -403,6 +403,11 @@ describe("seeded support versions", () => {
       // `typeDeclarations` content, and an Objective-C dynamic-lookup call no
       // project class can implement leaves the denominator, so an index built
       // by an earlier walker still charges it as a miss.
+      // swift walker 64: bd tea-rags-mcp-y99pg.37 — a call's lone key-path
+      // argument stays in the value spelling, a `for` item over an untyped local
+      // is recorded as its sequence's element, and `typeDeclarations` names the
+      // methods returning their closure's result, so a walker-63 index cannot
+      // type `for request in mutableState.read(\.activeRequests)`.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],
@@ -412,7 +417,7 @@ describe("seeded support versions", () => {
         ["java", 5],
         ["rust", 4],
         ["go", 6],
-        ["swift", 63],
+        ["swift", 64],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

@@ -2331,3 +2331,65 @@ describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99
     }
   });
 });
+
+/**
+ * `let requests = mutableState.read(\.activeRequests)` then
+ * `for request in requests` (Alamofire `Session`, bd tea-rags-mcp-y99pg.37):
+ * the key path is the one argument a generic method's return depends on, so
+ * the spelling keeps it; the loop item is recorded as an ELEMENT of the
+ * spelled sequence, and the generic method says its return is its closure's.
+ */
+describe("swift walker — key-path arguments and for-in over a spelled sequence", () => {
+  const src = [
+    "final class Session {",
+    "  func go() {",
+    "    let requests = mutableState.read(\\.activeRequests)",
+    "    for request in requests where !request.isFinished {",
+    "      request.finish()",
+    "    }",
+    "    let other = mutableState.read(label: \\.activeRequests)",
+    "    let all = mutableState.read(\\.self)",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  it("spells a lone unlabeled key-path argument and strips any other", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const bindings = out.chunks[0].callResultBindings ?? {};
+      expect(bindings.requests).toEqual([{ line: 3, callee: "mutableState.read(\\.activeRequests)" }]);
+      expect(bindings.other).toEqual([{ line: 7, callee: "mutableState.read" }]);
+      expect(bindings.all).toEqual([{ line: 8, callee: "mutableState.read(\\.self)" }]);
+    }
+  });
+
+  it("records a for-in item over an untyped local as an element of its spelling", () => {
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      expect(out.chunks[0].callResultBindings?.request).toEqual([
+        { line: 4, callee: "requests", sequenceElement: true, scopeEndLine: 6 },
+      ]);
+    }
+  });
+
+  it("records no element spelling when the walker already types the item", () => {
+    const typed = ["func go(xs: [Thing]) {", "  for x in xs {", "    x.run()", "  }", "}", ""].join("\n");
+    expect(extract(typed).chunks[0].callResultBindings?.x).toBeUndefined();
+  });
+
+  it("publishes the generic methods whose return is their closure's result", () => {
+    const decl = [
+      "final class Protected<Value> {",
+      "  func read<U>(_ closure: (Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func write<U>(_ closure: (inout Value) throws -> U) rethrows -> U { fatalError() }",
+      "  func write(_ value: Value) {}",
+      "  func map<U>(_ closure: (Value) -> U) -> [U] { [] }",
+      "  func around<T>(_ closure: () throws -> T) rethrows -> T { fatalError() }",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(decl), extractMaterialized(decl)]) {
+      // `write` has an overload that is not one; `map` wraps U; `around`'s closure takes no value.
+      expect(out.typeDeclarations?.find((f) => f.typeId === "Protected")?.closureResultMembers).toEqual(["read"]);
+    }
+  });
+});

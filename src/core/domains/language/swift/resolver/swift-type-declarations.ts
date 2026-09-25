@@ -42,6 +42,8 @@ interface SwiftTypeDeclarationSets {
   readonly fieldArguments: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[]>>;
   /** typeId → method → its closure's parameter types; `null` where declarations disagree. */
   readonly closureParameters: ReadonlyMap<string, ReadonlyMap<string, readonly (string | null)[] | null>>;
+  /** typeId → the methods returning their closure's result (bd tea-rags-mcp-y99pg.37). */
+  readonly closureResults: ReadonlyMap<string, ReadonlySet<string>>;
   /** typeId → the ids its generic-argument extensions compose members under (bd tea-rags-mcp-y99pg.19). */
   readonly spellings: ReadonlyMap<string, readonly string[]>;
   /** typeId → function-typed alias → what calling it returns (bd tea-rags-mcp-y99pg.22). */
@@ -147,6 +149,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const generics = new Map<string, readonly string[]>();
   const fieldArguments = new Map<string, Map<string, readonly (string | null)[]>>();
   const closureParameters = new Map<string, Map<string, readonly (string | null)[] | null>>();
+  const closureResults = new Map<string, Set<string>>();
   const spellings = new Map<string, string[]>();
   const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
@@ -189,6 +192,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         constructions.push({ owner: fact.typeId, field, construction });
       }
       mergeClosureParameters(closureParameters, fact);
+      for (const member of fact.closureResultMembers ?? []) add(closureResults, fact.typeId, member);
       for (const field of fact.optionalProperties ?? []) add(optionalProperties, fact.typeId, field);
       for (const [field, types] of Object.entries(fact.propertyAttributeTypes ?? {})) {
         const fields = propertyAttributes.get(fact.typeId) ?? new Map<string, readonly string[]>();
@@ -237,6 +241,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     generics,
     fieldArguments,
     closureParameters,
+    closureResults,
     spellings,
     functionAliases,
     enumCases,
@@ -348,6 +353,11 @@ export function swiftMemberClosureParameters(
   ctx: CallContext,
 ): readonly (string | null)[] | null | undefined {
   return setsFor(ctx)?.closureParameters.get(typeId)?.get(member);
+}
+
+/** Whether a declaration of `typeId` says its method `member` returns its closure's result (bd tea-rags-mcp-y99pg.37). */
+export function swiftMemberReturnsClosureResult(typeId: string, member: string, ctx: CallContext): boolean {
+  return setsFor(ctx)?.closureResults.get(typeId)?.has(member) === true;
 }
 
 /**
