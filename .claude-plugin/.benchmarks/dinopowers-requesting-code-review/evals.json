@@ -157,6 +157,22 @@
         ],
         "mustNotDo": ["Include 25 rows (unreadable bundle)"]
       }
+    },
+    {
+      "id": "eval-13",
+      "category": "naming-pre-check",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). The diff declares new locals `row` and method `find_vendor_envelope`.",
+      "prompt": "Готовлю PR, собери запрос на ревью.",
+      "expected": {
+        "mustDo": [
+          "Step 2.6: get_naming_lexicon(names=<identifiers the diff declares>, pathPattern=<diff dirs>)",
+          "MISFIT → rename to suggestion before sending or list under risk flags with the holder; NEW_TERM → justification in the bundle"
+        ],
+        "mustNotDo": [
+          "Send the request leaving MISFIT names for the reviewer to find"
+        ]
+      },
+      "failureMode": "Reviewer spends comments on naming the lexicon would have settled"
     }
   ]
 }

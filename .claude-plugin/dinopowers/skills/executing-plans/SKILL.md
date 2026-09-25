@@ -280,9 +280,15 @@ decides WHETHER to invoke.
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template     | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (CREATE / EXTEND) |
 | **Modification**: change behavior of EXISTING symbol in place (bug fix, condition tweak, new branch, hotfix) | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write (MODIFY)          |
-| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5 — DDG out of scope for pure refactor                                                 |
+| **Refactor only**: rename, move, extract, inline, reformat — no behavior change                              | Skip Step 5 — DDG out of scope for pure refactor; see naming note below                          |
 | **Deletion**: remove file, remove function, prune dead code                                                  | Skip Step 5 — no generation                                                                      |
 | **Trivial**: typo, comment / log-message text, single-token swap, no behavior change                         | Skip Step 5 AND skip wrapper entirely — direct Edit                                              |
+
+**Naming note (rename / extract, codegraph on):** the new name goes through
+`get_naming_lexicon(names=[{name, kind, type?}], pathPattern)` before the Edit —
+`MISFIT` → use `suggestion`; `NEW_TERM` → a `topTerms` word if it means the
+same. A plan-fixed name is checked too. Reading:
+`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 Why MANDATORY for modification — DDG MODIFY mode owns what in-context edit
 misses:

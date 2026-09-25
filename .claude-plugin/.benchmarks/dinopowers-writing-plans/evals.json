@@ -219,6 +219,22 @@
         "mustNotDo": ["Set metaOnly=false on enrichment call"]
       },
       "failureMode": "Agent inflates enrichment payload to 'include content'"
+    },
+    {
+      "id": "eval-15",
+      "category": "naming-new-symbols",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Task 2 of the draft: 'create VendorEnvelopeFetcher in app/services/tax_automation/'.",
+      "prompt": "Допиши план — Task 2 создаёт новый класс.",
+      "expected": {
+        "mustDo": [
+          "Step 3.5 item 5: get_naming_lexicon(names=[VendorEnvelopeFetcher], concept+language, pathPattern=pathPatternL1) before the plan fixes the name",
+          "MISFIT → plan uses suggestion; NEW_TERM → a project term if it means the same, else a one-line justification in the Task"
+        ],
+        "mustNotDo": [
+          "Fix the class name in the plan without a lexicon verdict"
+        ]
+      },
+      "failureMode": "Plan fixes names the project vocabulary contradicts"
     }
   ]
 }

@@ -195,6 +195,24 @@
         "acceptable": ["Skill(superpowers:brainstorming) directly"]
       },
       "failureMode": "Agent triggers enrichment for abstract discussion"
+    },
+    {
+      "id": "eval-14",
+      "category": "codegraph-vocabulary",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available).",
+      "prompt": "Давай обсудим, как встроить импорт конвертов из e-signature вендора в app/services/tax_automation.",
+      "expected": {
+        "mustDo": [
+          "Run Call E get_naming_lexicon(concept=<intent>, language, pathPattern) in the same parallel block as A-D",
+          "Put concept.terms into the enrichment block as Project vocabulary",
+          "Hand off: names the design proposes for new symbols go through names[] before being fixed"
+        ],
+        "mustNotDo": [
+          "Pass the draft name as concept",
+          "Run Call E when codegraph is off"
+        ]
+      },
+      "failureMode": "Design names new symbols without the project vocabulary"
     }
   ]
 }

@@ -28,9 +28,9 @@ Correct tool (`semantic_search`) + correct custom impact rerank
 scoping to target, `metaOnly: true`) + ordering (analysis BEFORE agreement) =
 core value.
 
-Comment stylistic-only (typo, spacing, unclear name without structural change):
-skip wrapper, pass through to `superpowers:receiving-code-review`. Don't
-fabricate target.
+Comment stylistic-only (typo, spacing): skip wrapper, pass through to
+`superpowers:receiving-code-review`. Don't fabricate target. A naming comment
+("rename X to Y", "unclear name") is never stylistic-only — it runs Step 3b.
 
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass wrapper.
@@ -220,6 +220,16 @@ empty list: append
 Bound-test list raises cost of proposed change visibly: agreeing to a rename
 that breaks 6 named scenarios is different conversation than one with no test
 bindings. Phrasing stays runner-agnostic — list scenarios, never name a runner.
+
+## Step 3b — Naming comments (codegraph on)
+
+Rename / "unclear name" comment →
+`get_naming_lexicon(names=[{current}, {proposed}], pathPattern=<targetPathPattern>)`.
+Proposed `CONFORMS` → agree on the name; proposed `MISFIT` → counter-propose its
+`suggestion` (holder as precedent); proposed `NEW_TERM` while current `CONFORMS`
+→ push back with the project's term. Append the verdicts to the impact block —
+the naming verdict decides WHICH name, Step 2 decides the cost. Reading:
+`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 4 — Invoke superpowers:receiving-code-review
 
