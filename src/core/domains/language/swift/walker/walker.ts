@@ -117,8 +117,9 @@
  *   `guard let self = self else { return }` would otherwise put a local under a
  *   pseudo receiver, where the FIRST chain pass answers and DROPS what
  *   `selfMember` resolves.
- * - `classFieldTypes` keeps the NARROW rule — annotation or CapWords
- *   initializer — while a local reads the full expression walk. The map is the
+ * - `classFieldTypes` keeps the NARROW rule — annotation, CapWords
+ *   initializer, or a collection / string literal initializer (bd
+ *   tea-rags-mcp-y99pg.39) — while a local reads the full expression walk. The map is the
  *   INPUT to that walk, so widening it would make a property's type depend on
  *   another property's.
  *
@@ -1770,7 +1771,7 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, SwiftTypePro
       member.type === "property_declaration"
         ? singleIdentifierPatternName(member.childForFieldName("name"))
         : protocolRequirementName(member);
-    const fact = swiftDeclaredPropertyFact(member);
+    const fact = swiftStoredPropertyFact(member);
     if (!fieldName || (!fact.nominal && !fact.element)) continue;
     let entry = into.get(path);
     if (!entry) {
@@ -2395,6 +2396,43 @@ function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
   const annotation = node.children.find((c) => c.type === "type_annotation");
   if (annotation) return swiftGenericResolvedFact(swiftTypeFactOf(swiftTypeNodeAfter(annotation, ":")), node);
   return constructedTypeFact(node.childForFieldName("value"));
+}
+
+/**
+ * The type a STORED property (a type member or a module-level value)
+ * publishes: {@link swiftDeclaredPropertyFact}, else the literal it is
+ * initialised by. A local reads the full expression walk instead, which also
+ * types a literal's elements.
+ */
+function swiftStoredPropertyFact(node: AstNode): SwiftTypeFact {
+  const declared = swiftDeclaredPropertyFact(node);
+  if (declared.nominal || declared.element) return declared;
+  return swiftLiteralPropertyFact(node.childForFieldName("value")) ?? declared;
+}
+
+/**
+ * The type a collection or string LITERAL names at the declaration itself (bd
+ * tea-rags-mcp-y99pg.39): `[(1, 2), (14, 1)]` is an `Array`, `["a": 1]` a
+ * `Dictionary`, `"GitHub"` a `String` — Swift's defaults for an unannotated
+ * literal. Evidence written at the declaration, like a CapWords initializer,
+ * and read without typing any element, so a property's type still never
+ * depends on another's. An empty `[]` is not here — only its context types
+ * it — and neither is a number, whose default the resolver has no use for.
+ */
+function swiftLiteralPropertyFact(value: AstNode | null): SwiftTypeFact | null {
+  if (value === null) return null;
+  switch (value.type) {
+    case "array_literal":
+      return value.namedChildren.some((c) => c.type !== "comment") ? { nominal: "Array", element: null } : null;
+    case "dictionary_literal":
+      return { nominal: "Dictionary", element: null };
+    case "line_string_literal":
+    case "multi_line_string_literal":
+    case "raw_string_literal":
+      return { nominal: "String", element: null };
+    default:
+      return null;
+  }
 }
 
 /**

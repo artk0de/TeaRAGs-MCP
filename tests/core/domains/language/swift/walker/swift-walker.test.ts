@@ -692,6 +692,32 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     expect(extract(src).classFieldTypes?.Store).toEqual({ items: "Array" });
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `static let sparks = [(1, 2), (14, 1)]`: a
+  // non-empty collection literal or a string literal names its type at the
+  // declaration itself, whatever its elements are.
+  it("records a stored property initialised by a collection or string literal", () => {
+    const src = [
+      "enum Glyphs {",
+      "  static let sparks = [(1, 2), (14, 1)]",
+      '  static let prefixes = ["pct-"]',
+      '  static let names = ["a": 1]',
+      '  static let title = "GitHub"',
+      "  static let empty = [Int]()",
+      "  var counter = 0",
+      "}",
+      "",
+    ].join("\n");
+    for (const r of [extract(src), extractMaterialized(src)]) {
+      expect(r.classFieldTypes?.Glyphs).toEqual({
+        sparks: "Array",
+        prefixes: "Array",
+        names: "Dictionary",
+        title: "String",
+        empty: "Array",
+      });
+    }
+  });
+
   /**
    * bd tea-rags-mcp-y99pg.36 — Alamofire's Combine.swift nests a private
    * `Inner` in each of three publishers, each holding a `request` of a
