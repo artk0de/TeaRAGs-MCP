@@ -262,6 +262,66 @@ describe("ProjectRegistryOps", () => {
     it("rejects neither name nor path", async () => {
       await expect(ops.unregister({})).rejects.toBeInstanceOf(MissingArgumentError);
     });
+
+    it("addresses an entry by its collection name", async () => {
+      const registry = new CollectionRegistry(dir);
+      const byCollection = new ProjectRegistryOps({ registry });
+      const collectionName = await recordNameless(registry);
+      expect(await byCollection.unregister({ collection: collectionName })).toEqual({ removed: true });
+    });
+
+    it("rejects collection together with name", async () => {
+      await expect(ops.unregister({ name: "alpha", collection: "code_x" })).rejects.toBeInstanceOf(
+        InvalidParameterError,
+      );
+    });
+  });
+
+  describe("leftover footprint addressing (bd tea-rags-mcp-usbb5 follow-up)", () => {
+    function recordAt(registry: CollectionRegistry, collectionName: string, path: string, name?: string): void {
+      registry.record({
+        collectionName,
+        path,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "http://q",
+        indexedAt: "",
+        teaRagsVersion: "",
+        chunksCount: 1,
+      });
+      if (name) registry.setName(collectionName, name);
+    }
+
+    it("leftoverAddress is the path when the path still derives the collection", async () => {
+      const canonical = await validatePath(realPath);
+      const registry = new CollectionRegistry(dir);
+      recordAt(registry, resolveCollectionName(canonical), canonical, "alpha");
+      const entry = registry.findByName("alpha")!;
+      expect(new ProjectRegistryOps({ registry }).leftoverAddress(entry)).toEqual({ path: canonical });
+    });
+
+    it("leftoverAddress is the collection when the path no longer derives it", async () => {
+      const canonical = await validatePath(realPath);
+      const registry = new CollectionRegistry(dir);
+      recordAt(registry, "code_moved", canonical, "moved");
+      const entry = registry.findByName("moved")!;
+      expect(new ProjectRegistryOps({ registry }).leftoverAddress(entry)).toEqual({ collection: "code_moved" });
+    });
+
+    it("unclaimedCollectionFor derives the collection of an unregistered path", async () => {
+      const canonical = await validatePath(realPath);
+      expect(ops.unclaimedCollectionFor({ path: realPath })).toBe(resolveCollectionName(canonical));
+      expect(ops.unclaimedCollectionFor({ collection: "code_gone" })).toBe("code_gone");
+    });
+
+    it("unclaimedCollectionFor answers null for a name, a registered collection, or one of its generations", async () => {
+      const registry = new CollectionRegistry(dir);
+      recordAt(registry, "code_live", await validatePath(realPath), "live");
+      const withLive = new ProjectRegistryOps({ registry });
+      expect(withLive.unclaimedCollectionFor({ name: "gone" })).toBeNull();
+      expect(withLive.unclaimedCollectionFor({ collection: "code_live" })).toBeNull();
+      expect(withLive.unclaimedCollectionFor({ collection: "code_live_v3" })).toBeNull();
+    });
   });
 
   describe("recoverFromQdrant", () => {

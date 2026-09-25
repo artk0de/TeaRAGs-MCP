@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { projectsCommand, runInfo, runList, runRegister, runUnregister } from "../../../src/cli/commands/projects.js";
 import { createColorizer } from "../../../src/cli/infra/color.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
+import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
 
 describe("CLI 'projects' command group", () => {
   let dir: string;
@@ -732,21 +733,28 @@ describe("CLI 'projects' command group", () => {
         const out = io.out();
         expect(out).toContain(`Removed '${canonical}'`);
         expect(out).not.toContain("undefined");
-        expect(out).toContain(`tea-rags projects unregister --path ${canonical} --purge`);
+        // Invariant changed (usbb5 follow-up): this fixture's collection is not
+        // the one its path hashes to, so a `--path` hint would purge the wrong
+        // (absent) collection. The hint must name what actually reaches it.
+        expect(out).toContain("tea-rags projects unregister --collection code_nameless --purge");
         expect(out).not.toContain("--name");
       } finally {
         io.restore();
       }
     });
 
-    it("keeps the --name hint for a named entry addressed by path", async () => {
+    // Invariant changed (usbb5 follow-up): the hint used to print `--name alpha
+    // --purge`, which can never work — the name is gone once the entry is. The
+    // hint now carries the path, which still derives the collection.
+    it("hints a purge addressed by path for a named entry, since the name is gone", async () => {
       await runRegister({ path: repo, name: "alpha" });
       const io = captureStdout();
       try {
         await runUnregister({ path: repo });
         const out = io.out();
         expect(out).toContain("Removed 'alpha'");
-        expect(out).toContain("tea-rags projects unregister --name alpha --purge");
+        expect(out).toContain(`tea-rags projects unregister --path ${realpathSync(repo)} --purge`);
+        expect(out).not.toContain("--name alpha");
       } finally {
         io.restore();
       }
@@ -801,6 +809,143 @@ describe("CLI 'projects' command group", () => {
         expect(io.out()).toContain(`'${nowhere}' was not registered`);
       } finally {
         io.restore();
+      }
+    });
+  });
+
+  describe("unregister hint → follow it with --purge (bd tea-rags-mcp-usbb5 follow-up)", () => {
+    /** Qdrant fake answering the purge's enumeration; `live` shows what survived. */
+    function purgeQdrant(collections: string[]) {
+      const live = new Set(collections);
+      return {
+        live,
+        listCollections: vi.fn(async () => [...live]),
+        deleteCollection: vi.fn(async (name: string) => {
+          live.delete(name);
+        }),
+        countPoints: vi.fn(async () => 4),
+        aliases: { listAliases: vi.fn(async () => []), deleteAlias: vi.fn(async () => {}) },
+      };
+    }
+
+    function seedCodegraph(collectionName: string): string {
+      const codegraphDir = join(dir, "codegraph");
+      mkdirSync(codegraphDir, { recursive: true });
+      writeFileSync(join(codegraphDir, `${collectionName}_v1.duckdb`), "db");
+      writeFileSync(join(codegraphDir, `${collectionName}_v1.duckdb.wal`), "wal");
+      return codegraphDir;
+    }
+
+    function recordEntry(collectionName: string, name?: string): void {
+      const reg = new CollectionRegistry(dir);
+      reg.record({
+        collectionName,
+        path: realpathSync(repo),
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "http://q",
+        indexedAt: "",
+        teaRagsVersion: "",
+        chunksCount: 4,
+      });
+      if (name) reg.setName(collectionName, name);
+    }
+
+    async function runRegisterQuiet(name: string): Promise<void> {
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        await runRegister({ path: repo, name });
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    /** The address the leftover-collection hint tells the user to purge by. */
+    function hintedAddress(out: string): Record<string, string> {
+      const match = /Run 'tea-rags projects unregister --(path|name|collection) (\S+) --purge'/.exec(out);
+      expect(match, `no purge hint in: ${out}`).not.toBeNull();
+      return { [match![1]]: match![2] };
+    }
+
+    async function unregisterThenFollowHint(
+      first: { name?: string; path?: string },
+      fake: ReturnType<typeof purgeQdrant>,
+    ): Promise<string> {
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        await runUnregister(first);
+        const hint = hintedAddress(spy.mock.calls.map((c) => String(c[0])).join(""));
+        spy.mockClear();
+        await runUnregister({ ...hint, purge: true }, fake as never);
+        return spy.mock.calls.map((c) => String(c[0])).join("");
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    it("--path: following the hint removes the collection and the codegraph DBs", async () => {
+      const collectionName = resolveCollectionName(realpathSync(repo));
+      recordEntry(collectionName);
+      const codegraphDir = seedCodegraph(collectionName);
+      const fake = purgeQdrant([`${collectionName}_v1`, "code_other_v1"]);
+
+      const out = await unregisterThenFollowHint({ path: repo }, fake);
+
+      expect([...fake.live]).toEqual(["code_other_v1"]);
+      expect(readdirSync(codegraphDir)).toEqual([]);
+      expect(out).not.toContain("was not registered");
+      expect(out).toContain(collectionName);
+    });
+
+    it("--name: following the hint removes the collection and the codegraph DBs", async () => {
+      await runRegisterQuiet("alpha");
+      const { collectionName } = new CollectionRegistry(dir).findByName("alpha")!;
+      const codegraphDir = seedCodegraph(collectionName);
+      const fake = purgeQdrant([`${collectionName}_v1`]);
+
+      const out = await unregisterThenFollowHint({ name: "alpha" }, fake);
+
+      expect([...fake.live]).toEqual([]);
+      expect(readdirSync(codegraphDir)).toEqual([]);
+      expect(out).not.toContain("was not registered");
+    });
+
+    it("an entry whose collection the path no longer derives is hinted by collection name", async () => {
+      // A re-pointed alias keeps the collection it was indexed under.
+      recordEntry("code_moved", "moved");
+      const codegraphDir = seedCodegraph("code_moved");
+      const fake = purgeQdrant(["code_moved_v1"]);
+
+      const out = await unregisterThenFollowHint({ name: "moved" }, fake);
+
+      expect([...fake.live]).toEqual([]);
+      expect(readdirSync(codegraphDir)).toEqual([]);
+      expect(out).toContain("code_moved");
+    });
+
+    it("--purge on an unregistered path with no footprint still answers 'was not registered'", async () => {
+      const fake = purgeQdrant(["code_other_v1"]);
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        await runUnregister({ path: repo, purge: true }, fake as never);
+        expect(spy.mock.calls.map((c) => String(c[0])).join("")).toContain("was not registered");
+        expect(fake.deleteCollection).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("never purges a generation of a collection that is still registered", async () => {
+      recordEntry("code_live", "live");
+      const fake = purgeQdrant(["code_live_v2"]);
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        await runUnregister({ collection: "code_live_v2", purge: true }, fake as never);
+        expect(spy.mock.calls.map((c) => String(c[0])).join("")).toContain("was not registered");
+        expect(fake.deleteCollection).not.toHaveBeenCalled();
+        expect(new CollectionRegistry(dir).findByName("live")).not.toBeNull();
+      } finally {
+        spy.mockRestore();
       }
     });
   });

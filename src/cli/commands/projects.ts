@@ -19,10 +19,11 @@ interface RegisterArgs {
   path: string;
   name: string;
 }
-/** Exactly one of `name` / `path` — yargs enforces it, and the op re-checks. */
+/** Exactly one of `name` / `path` / `collection` — yargs enforces it, and the op re-checks. */
 interface UnregisterArgs {
   name?: string;
   path?: string;
+  collection?: string;
   purge?: boolean;
 }
 interface ListArgs {
@@ -91,20 +92,34 @@ export async function runUnregister(args: UnregisterArgs, qdrant?: PurgeQdrantCl
   const address = {
     ...(args.name !== undefined ? { name: args.name } : {}),
     ...(args.path !== undefined ? { path: args.path } : {}),
+    ...(args.collection !== undefined ? { collection: args.collection } : {}),
   };
+  const requested = args.name ?? args.path ?? args.collection ?? "";
   let entry: CollectionEntry | null;
   let removed: boolean;
+  let leftover: string | null = null;
   try {
     // Capture the entry before it is removed — the purge addresses its collection.
     entry = ops.findEntry(address);
     ({ removed } = await ops.unregister(address));
+    if (!entry && args.purge) leftover = ops.unclaimedCollectionFor(address);
   } catch (err) {
     process.stderr.write(`${stderrColorizer().alert(`projects unregister failed: ${(err as Error).message}`)}\n`);
     process.exit(1);
   }
   const c = createColorizer();
   if (!removed || !entry) {
-    process.stdout.write(`${c.warn(`'${args.name ?? args.path ?? ""}' was not registered`)}\n`);
+    // No entry, but `--purge` may still have a footprint to tear down: the one a
+    // plain unregister left behind, addressed the way its hint said to.
+    if (leftover !== null) {
+      const purged = await purgeFootprint(
+        { name: requested, collectionName: leftover, registry, ...(args.path ? { path: args.path } : {}) },
+        qdrant,
+        "leftover",
+      );
+      if (purged) return;
+    }
+    process.stdout.write(`${c.warn(`'${requested}' was not registered`)}\n`);
     return;
   }
   const label = unregisterLabel(entry);
@@ -113,11 +128,12 @@ export async function runUnregister(args: UnregisterArgs, qdrant?: PurgeQdrantCl
     await purgeFootprint(
       { name: label, collectionName, registry, ...(entry.path ? { path: entry.path } : {}) },
       qdrant,
+      "registered",
     );
     return;
   }
   process.stdout.write(
-    `${c.ok(`Removed '${label}' from registry.`)} ${c.warn(`Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister ${unregisterAddressFlag(entry)} --purge' to remove it.`)}\n`,
+    `${c.ok(`Removed '${label}' from registry.`)} ${c.warn(`Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister ${leftoverAddressFlag(ops, entry)} --purge' to remove it.`)}\n`,
   );
 }
 
@@ -130,9 +146,15 @@ function unregisterLabel(entry: CollectionEntry): string {
   return entry.name ?? (entry.path || entry.collectionName);
 }
 
-/** The flag that re-addresses this entry — `--path` when it has no alias to name. */
-function unregisterAddressFlag(entry: CollectionEntry): string {
-  return entry.name !== null ? `--name ${entry.name}` : `--path ${shellQuote(entry.path)}`;
+/**
+ * The flag that reaches this entry's footprint AFTER the entry is gone — never
+ * `--name`, which dies with the entry. Which address survives is the op's call
+ * (`ProjectRegistryOps#leftoverAddress`), so the hint and the purge that
+ * follows it read the same rule.
+ */
+function leftoverAddressFlag(ops: ProjectRegistryOps, entry: CollectionEntry): string {
+  const address = ops.leftoverAddress(entry);
+  return "path" in address ? `--path ${shellQuote(address.path)}` : `--collection ${address.collection}`;
 }
 
 /** Quote a path for a copy-pasteable hint only when the shell would split or expand it. */
@@ -151,22 +173,41 @@ function shellQuote(value: string): string {
  * (2026-08-15 and 2026-08-17). The saga now sweeps all of them; the detail
  * lines are printed whether or not something failed, because a half-completed
  * purge is exactly the case where the user needs to know what is left.
+ *
+ * `leftover` is the footprint of an entry an earlier plain unregister already
+ * removed: the headline says so instead of claiming a registry removal, and
+ * when the purge found no generation and failed at nothing it prints nothing
+ * and answers false — the caller then says "was not registered", which is the
+ * truth when there was nothing to purge.
  */
 async function purgeFootprint(
   target: { name: string; collectionName: string; registry: CollectionRegistry; path?: string },
-  qdrant?: PurgeQdrantClient,
-): Promise<void> {
+  qdrant: PurgeQdrantClient | undefined,
+  kind: "registered" | "leftover",
+): Promise<boolean> {
   const { name, collectionName } = target;
   const client = qdrant ?? (await defaultQdrant());
   const chunkCount = await safeCount(client, collectionName);
   const report = await purgeCollectionFootprint(target, client);
+  if (
+    kind === "leftover" &&
+    report.qdrantCollections.length === 0 &&
+    report.codegraphDatabases.length === 0 &&
+    report.failures.length === 0
+  ) {
+    return false;
+  }
 
   const qdrantFailure = report.failures.find((f) => f.artifact === "qdrant");
   const c = createColorizer();
+  const subject =
+    kind === "registered"
+      ? `Removed '${name}' from registry`
+      : `'${name}' was already unregistered; purged its leftovers`;
   process.stdout.write(
     qdrantFailure
-      ? `${c.alert(`Removed '${name}' from registry; failed to delete Qdrant collection '${qdrantFailure.target}': ${qdrantFailure.reason}`)}\n`
-      : `${c.ok(`Removed '${name}' from registry; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)`)}\n`,
+      ? `${c.alert(`${subject}; failed to delete Qdrant collection '${qdrantFailure.target}': ${qdrantFailure.reason}`)}\n`
+      : `${c.ok(`${subject}; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)`)}\n`,
   );
 
   const detail = (label: string, value: string, paint: (s: string) => string = c.dim): void => {
@@ -179,6 +220,7 @@ async function purgeFootprint(
   for (const failure of report.failures) {
     detail("failed:", `${failure.artifact} ${failure.target} — ${failure.reason}`, c.alert);
   }
+  return true;
 }
 
 /**
@@ -507,7 +549,7 @@ export const projectsCommand: CommandModule = {
       )
       .command<UnregisterArgs>(
         "unregister",
-        "Remove a registered project by name or path (optionally also delete the Qdrant collection)",
+        "Remove a registered project by name, path or collection (optionally also delete its footprint)",
         (y) =>
           y
             .option("name", { type: "string", describe: "Project name to remove" })
@@ -515,20 +557,29 @@ export const projectsCommand: CommandModule = {
               type: "string",
               describe: "Project root it was registered at — reaches entries `index-codebase <path>` left unnamed",
             })
-            .conflicts("name", "path")
+            .option("collection", {
+              type: "string",
+              describe: "Logical collection name (code_<hash>) — reaches a footprint no path derives",
+            })
+            .conflicts("name", ["path", "collection"])
+            .conflicts("path", "collection")
             .check((argv) => {
-              if (!argv.name && !argv.path) throw new Error("Pass exactly one of --name or --path");
+              if (!argv.name && !argv.path && !argv.collection) {
+                throw new Error("Pass exactly one of --name or --path (or --collection)");
+              }
               return true;
             })
             .option("purge", {
               type: "boolean",
               default: false,
-              describe: "Also delete the underlying Qdrant collection",
+              describe:
+                "Also delete the Qdrant/codegraph footprint — also works after a plain unregister, by --path or --collection",
             }),
         async (argv) =>
           runUnregister({
             ...(argv.name !== undefined ? { name: argv.name } : {}),
             ...(argv.path !== undefined ? { path: argv.path } : {}),
+            ...(argv.collection !== undefined ? { collection: argv.collection } : {}),
             purge: argv.purge,
           }),
       )
