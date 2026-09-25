@@ -251,5 +251,18 @@ describe("produceTestScopeChunks", () => {
 
       expect(chunk.content).toBe(big.text.trim());
     });
+
+    it("reserves the container header the engine prepends, so header + chunk fits maxChunkSize (pi1cl)", () => {
+      const setup = line(`  let(:setup) { ${"s".repeat(60)} }`, 2);
+      const fits = example("it 'fits'", 4);
+      const root = scope("describe Budget", 1, 10, { setupLines: [setup], examples: [fits] });
+      const maxChunkSize = setup.text.length + 1 + fits.text.length;
+      const bodyChunkPrefixLength = "RSpec.describe Budget do\n".length;
+
+      const [chunk] = produceTestScopeChunks(root, "Budget", { maxChunkSize, bodyChunkPrefixLength });
+
+      expect(bodyChunkPrefixLength + chunk.content.length).toBeLessThanOrEqual(maxChunkSize);
+      expect(chunk.content).toBe(fits.text.trim());
+    });
   });
 });

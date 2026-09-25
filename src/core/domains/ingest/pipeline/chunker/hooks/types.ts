@@ -1,5 +1,10 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../../contracts/types/chunker.js";
+import type {
+  BodyChunkResult,
+  ChunkingHook,
+  HookChunkingConfig,
+  HookContext,
+} from "../../../../../contracts/types/chunker.js";
 
 // The hook interfaces moved to `contracts/types/chunker.ts` (foundation layer)
 // so the per-language `LanguageChunkerHooks` interface can reference
@@ -13,7 +18,7 @@ export function createHookContext(
   containerNode: AstNode,
   validChildren: AstNode[],
   code: string,
-  config: { maxChunkSize: number },
+  config: HookChunkingConfig,
   filePath = "",
 ): HookContext {
   return {
