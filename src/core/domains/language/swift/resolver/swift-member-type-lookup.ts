@@ -62,7 +62,7 @@ import { parseSwiftTypeText, swiftSpelledNominal, type SwiftTypeExpr } from "../
 import { SWIFT_MEMBER_LOOKUP_POLICY } from "./swift-ancestor-policy.js";
 import { swiftEnclosingTypeIds } from "./swift-enclosing-scope.js";
 import { SwiftModuleValueIndex } from "./swift-module-values.js";
-import { SwiftSdkMemberTypes, type SwiftNominalTypeRef } from "./swift-sdk-member-types.js";
+import { SwiftSdkMemberTypes, type SwiftNominalTypeRef, type SwiftSelfAliases } from "./swift-sdk-member-types.js";
 import {
   lookupSwiftOverloads,
   lookupSwiftTypeMember,
@@ -74,7 +74,10 @@ import {
   swiftFieldTypeArguments,
   swiftGenericFieldParameter,
   swiftGenericParameters,
+  swiftIsOptionalProperty,
   swiftMemberClosureParameters,
+  swiftMemberTypeAliases,
+  swiftPropertyAttributeTypes,
   swiftWhereClauseAt,
 } from "./swift-type-declarations.js";
 import { SwiftTypeFieldIndex } from "./swift-type-field-index.js";
@@ -87,6 +90,13 @@ export interface SwiftClosureSignature {
   readonly genericParameters: readonly string[];
   /** The declaring type, from which a nominal entry is qualified. */
   readonly ownerTypeId: string;
+}
+
+/** A receiver as the SDK substrate is asked about it: the nominal, its lookup order, `Self`'s project aliases. */
+interface SwiftSdkView {
+  readonly receiver: SwiftNominalTypeRef;
+  readonly order: readonly string[];
+  readonly selfAliases: SwiftSelfAliases | undefined;
 }
 
 /** What a member lookup on one type can reach: see {@link SwiftMemberTypeLookup#memberReach}. */
@@ -111,6 +121,43 @@ export class SwiftMemberTypeLookup {
    */
   constructor(private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary()) {
     this.sdkMembers = new SwiftSdkMemberTypes(sdk);
+    this.sdkMembersKeepingOptionals = new SwiftSdkMemberTypes(sdk, true);
+  }
+
+  /** The SDK reader that keeps a declared `T?` an `Optional` (bd tea-rags-mcp-y99pg.33). */
+  private readonly sdkMembersKeepingOptionals: SwiftSdkMemberTypes;
+
+  /**
+   * {@link sdkMemberType} with a declared `T?` kept an `Optional` of `T` —
+   * for the fold that reads the source's unwrap sugar (bd tea-rags-mcp-y99pg.33).
+   */
+  sdkMemberTypeKeepingOptionals(receiver: SwiftNominalTypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+    if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
+    const sdk = this.sdkView(receiver, ctx);
+    return this.sdkMembersKeepingOptionals.memberType(sdk.receiver, member, sdk.order, sdk.selfAliases);
+  }
+
+  /**
+   * Whether `Optional` itself declares `member` — the project's `extension
+   * Optional` or the SDK — so a member written straight on an optional value
+   * is `Optional`'s and not the wrapped type's (bd tea-rags-mcp-y99pg.33).
+   */
+  optionalDeclares(member: string, ctx: CallContext): boolean {
+    return (
+      this.memberReach(SWIFT_OPTIONAL, member, ctx).declared || this.sdkDeclaresMember(SWIFT_OPTIONAL, member, ctx)
+    );
+  }
+
+  /**
+   * Whether the property `member` of `typeName` — found where
+   * {@link typeOfProperty} finds it — is declared `T?` (bd tea-rags-mcp-y99pg.33).
+   */
+  isOptionalProperty(typeName: string, member: string, ctx: CallContext): boolean {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) =>
+      this.propertyTypeOn(candidate, member, ctx),
+    );
+    if (scan.definingClassKey === null) return false;
+    return swiftIsOptionalProperty(qualifySwiftTypeName(scan.definingClassKey, ctx), member, ctx);
   }
 
   /** Whether the SDK substrate declares a type of this path. */
@@ -126,7 +173,7 @@ export class SwiftMemberTypeLookup {
   sdkMemberType(receiver: SwiftNominalTypeRef, member: string, ctx: CallContext): TypeRef | undefined {
     if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
     const sdk = this.sdkView(receiver, ctx);
-    return this.sdkMembers.memberType(sdk.receiver, member, sdk.order);
+    return this.sdkMembers.memberType(sdk.receiver, member, sdk.order, sdk.selfAliases);
   }
 
   /** The SDK-declared type of the `index`-th parameter of the closure `receiver.member` takes, on the same terms. */
@@ -138,7 +185,7 @@ export class SwiftMemberTypeLookup {
   ): TypeRef | undefined {
     if (this.memberReach(receiver.name, member, ctx).declared) return undefined;
     const sdk = this.sdkView(receiver, ctx);
-    return this.sdkMembers.closureParameterType(sdk.receiver, member, index, sdk.order);
+    return this.sdkMembers.closureParameterType(sdk.receiver, member, index, sdk.order, sdk.selfAliases);
   }
 
   /**
@@ -308,6 +355,27 @@ export class SwiftMemberTypeLookup {
   }
 
   /**
+   * The property WRAPPER of `typeName`'s (or the nearest ancestor's) property
+   * `field` (bd tea-rags-mcp-y99pg.33): the first of its attribute types that
+   * is one — a type declaring `wrappedValue` or `projectedValue`, in the
+   * project or the SDK. Swift applies wrappers outermost first in written
+   * order, so the first such attribute is the one `$field` projects through;
+   * `@MainActor`, spelled the same way, declares neither and is skipped.
+   */
+  propertyWrapperOf(typeName: string, field: string, ctx: CallContext): string | undefined {
+    const scan = findMemberInAncestorChain(typeName, this.linearizerFor(ctx), (candidate) => {
+      const attributes = swiftPropertyAttributeTypes(qualifySwiftTypeName(candidate, ctx), field, ctx);
+      return attributes.length === 0 ? null : { attributes };
+    });
+    return scan.target?.attributes.find((attribute) =>
+      SWIFT_WRAPPER_MEMBERS.some(
+        (member) =>
+          this.typeOfProperty(attribute, member, ctx) !== undefined || this.sdkDeclaresMember(attribute, member, ctx),
+      ),
+    );
+  }
+
+  /**
    * The declared parameter types of the closure `typeName`'s method `member`
    * takes, found up the member-lookup chain, with the generic parameters of
    * the type that DECLARES the method (bd tea-rags-mcp-y99pg.13).
@@ -383,14 +451,38 @@ export class SwiftMemberTypeLookup {
    * found along: an extension's spelled id (`Collection<String>`,
    * `[HTTPHeader]`) reads as the nominal it re-opens.
    */
-  private sdkView(
-    receiver: SwiftNominalTypeRef,
-    ctx: CallContext,
-  ): { readonly receiver: SwiftNominalTypeRef; readonly order: readonly string[] } {
+  private sdkView(receiver: SwiftNominalTypeRef, ctx: CallContext): SwiftSdkView {
     const nominal = swiftSpelledNominal(receiver.name);
-    if (nominal === receiver.name) return { receiver, order: this.lookupOrder(receiver.name, ctx) };
+    if (nominal === receiver.name) {
+      const order = this.lookupOrder(receiver.name, ctx);
+      return { receiver, order, selfAliases: this.selfAliasesAlong(order, ctx) };
+    }
     const order = [...new Set([...this.lookupOrder(receiver.name, ctx), ...this.lookupOrder(nominal, ctx)])];
-    return { receiver: { ...receiver, name: nominal }, order };
+    return { receiver: { ...receiver, name: nominal }, order, selfAliases: this.selfAliasesAlong(order, ctx) };
+  }
+
+  /**
+   * What `Self.X` means on a receiver whose lookup order is `order` (bd
+   * tea-rags-mcp-y99pg.33): the member typealiases the project types on it
+   * declare, the nearest declaration of each name winning. Each alias is
+   * qualified from the type that declares it, as a property's type is
+   * ({@link typeOfProperty}). An alias naming one of its type's own generic
+   * parameters says nothing a bare receiver can bind, and is left out.
+   */
+  private selfAliasesAlong(order: readonly string[], ctx: CallContext): SwiftSelfAliases | undefined {
+    let out: Map<string, TypeRef> | undefined;
+    for (const candidate of order) {
+      const typeId = qualifySwiftTypeName(candidate, ctx);
+      const aliases = swiftMemberTypeAliases(typeId, ctx);
+      if (aliases === undefined) continue;
+      const generics = swiftGenericParameters(typeId, ctx);
+      for (const [alias, aliased] of aliases) {
+        if (out?.has(alias) === true || generics.includes(aliased)) continue;
+        out ??= new Map();
+        out.set(alias, { form: "instance", name: qualifySwiftTypeNameWithin(aliased, typeId, ctx) });
+      }
+    }
+    return out;
   }
 
   /**
@@ -478,6 +570,12 @@ function sameTypeRef(a: TypeRef, b: TypeRef): boolean {
   if ((a.form !== "instance" && a.form !== "class") || (b.form !== "instance" && b.form !== "class")) return false;
   return a.form === b.form && a.name === b.name;
 }
+
+/** The standard library's `Optional`, which a declared `T?` is (bd tea-rags-mcp-y99pg.33). */
+const SWIFT_OPTIONAL = "Optional";
+
+/** The members that make a type a property wrapper: Swift requires `wrappedValue`, and `$x` reads `projectedValue`. */
+const SWIFT_WRAPPER_MEMBERS: readonly string[] = ["wrappedValue", "projectedValue"];
 
 /** The `structuredReturnTypes` marker the walker publishes for `-> Self` (bd tea-rags-mcp-y99pg.18). */
 const SWIFT_SELF_RETURN = "Self";

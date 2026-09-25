@@ -22,8 +22,10 @@ import type {
   SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
 import { swiftEnclosingTypeIds, swiftSelfTypeName } from "../swift-enclosing-scope.js";
 import type { SwiftMemberTypeLookup } from "../swift-member-type-lookup.js";
+import { swiftCallReceiverType } from "../swift-receiver-type-ports.js";
 import { lookupSwiftTypeMember, swiftMemberCandidates } from "../swift-symbol-lookup.js";
 
 export { lookupSwiftTypeMember, swiftEnclosingTypeIds, swiftSelfTypeName };
@@ -48,6 +50,23 @@ export interface SwiftResolverConfig {
  * supertype. Each is claimed (or deliberately declined) by a pass of its own.
  */
 export const SWIFT_PSEUDO_RECEIVERS: ReadonlySet<string> = new Set(["self", "Self", "super"]);
+
+/**
+ * `"Optional"` when `call`'s member, as the receiver is WRITTEN, is
+ * `Optional`'s own — `box.map { … }` on a `box: Box?` with no `?` / `!`
+ * between them (bd tea-rags-mcp-y99pg.33) — else undefined, and the
+ * single-hop passes keep the wrapped type they read. Folded by
+ * `writtenPorts` (`createSwiftWrittenReceiverTypePorts`).
+ */
+export function swiftOptionalCallOwner(
+  call: CallRef,
+  ctx: CallContext,
+  writtenPorts: ReceiverTypePorts,
+  cfg: SwiftResolverConfig,
+): string | undefined {
+  const type = swiftCallReceiverType(call, ctx, writtenPorts, cfg.memberTypes);
+  return type?.form === "instance" && type.name === "Optional" ? type.name : undefined;
+}
 
 /**
  * A receiver whose type the walker PROVED (a typed parameter, an annotated

@@ -4,7 +4,7 @@ description:
   Expose new tool to LLM clients via MCP protocol — schema, handler, App method,
   docs in one coordinated change. Triggers on "add MCP tool", "new endpoint that
   returns X", "expose Y as a tool", "новый MCP tool". NOT for modifying an
-  existing tool's schema — just edit the tool file directly.
+  existing tool's schema — use mcp-schema-authoring for that.
 ---
 
 # Add MCP Endpoint

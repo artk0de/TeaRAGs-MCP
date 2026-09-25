@@ -375,8 +375,8 @@ describe("seeded support versions", () => {
       // moves from three links to five, so an index built by walker 50 leaves a
       // four- or five-link receiver untyped.
       // swift walker 59: bd tea-rags-mcp-y99pg.36 — an `@autoclosure` parameter
-      // no longer accepts a trailing closure, so an index built by walker 54
-      // lands `validate { … }` on `validate(contentType:)` (55-58: T3 stream).
+      // no longer accepts a trailing closure, so an index built by walker 58
+      // lands `validate { … }` on `validate(contentType:)`.
       // swift walker 60: bd tea-rags-mcp-y99pg.36 — `self.init(…)` never lands
       // on the calling initializer, so an index built by walker 59 keeps an
       // edge from `OperationQueue#init` to itself.
@@ -388,6 +388,17 @@ describe("seeded support versions", () => {
       // for typescript, every re-export forwards) on the persisted file edge, so
       // an index built by the previous walker carries no names and the facade
       // check falls back to its file-level rule there.
+      // swift walker 55 (branch 48): bd tea-rags-mcp-y99pg.33 — `typeDeclarations` carries
+      // an extension's `where Self` constraints, so a walker-54 index cannot
+      // resolve an implicit-self call to the constraint's member.
+      // swift walker 56 (branch 49): bd tea-rags-mcp-y99pg.33 — property attribute types
+      // reach `typeDeclarations`, so a walker-55 index cannot type `$name`.
+      // swift walker 57 (branch 50): bd tea-rags-mcp-y99pg.33 — optional bindings,
+      // optional properties and the written receiver are new extraction, so a
+      // walker-56 index reads every optional as what it wraps.
+      // swift walker 58 (branch 51): bd tea-rags-mcp-y99pg.33 — member typealiases reach
+      // `typeDeclarations`, so a walker-57 index cannot bind `Self.X` on a
+      // project conformer.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],

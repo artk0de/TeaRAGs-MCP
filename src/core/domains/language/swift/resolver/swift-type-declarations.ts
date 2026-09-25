@@ -45,6 +45,12 @@ interface SwiftTypeDeclarationSets {
   readonly functionAliases: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** enum typeId → case → its payload slot types (bd tea-rags-mcp-y99pg.16). */
   readonly enumCases: ReadonlyMap<string, ReadonlyMap<string, Readonly<Record<string, readonly (string | null)[]>>>>;
+  /** typeId → property → its attribute types, the wrapper candidates (bd tea-rags-mcp-y99pg.33). */
+  readonly propertyAttributes: ReadonlyMap<string, ReadonlyMap<string, readonly string[]>>;
+  /** typeId → the properties any declaration of it annotates `T?` (bd tea-rags-mcp-y99pg.33). */
+  readonly optionalProperties: ReadonlyMap<string, ReadonlySet<string>>;
+  /** typeId → member typealias → the nominal it aliases, first declaration wins (bd tea-rags-mcp-y99pg.33). */
+  readonly memberTypeAliases: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** typeId → stored property → the generic parameter it is typed as (bd tea-rags-mcp-y99pg.34). */
   readonly genericFields: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** relPath → the constrained re-openings it holds, each with its `where` clause (bd tea-rags-mcp-y99pg.34). */
@@ -140,6 +146,9 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   const spellings = new Map<string, string[]>();
   const functionAliases = new Map<string, Readonly<Record<string, string>>>();
   const enumCases = new Map<string, Map<string, Readonly<Record<string, readonly (string | null)[]>>>>();
+  const propertyAttributes = new Map<string, Map<string, readonly string[]>>();
+  const optionalProperties = new Map<string, Set<string>>();
+  const memberTypeAliases = new Map<string, Map<string, string>>();
   const initializers = new Map<string, GenericInitializerFact[]>();
   const constructions: { owner: string; field: string; construction: SwiftFieldConstruction }[] = [];
   const genericFields = new Map<string, Readonly<Record<string, string>>>();
@@ -171,6 +180,17 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
         constructions.push({ owner: fact.typeId, field, construction });
       }
       mergeClosureParameters(closureParameters, fact);
+      for (const field of fact.optionalProperties ?? []) add(optionalProperties, fact.typeId, field);
+      for (const [field, types] of Object.entries(fact.propertyAttributeTypes ?? {})) {
+        const fields = propertyAttributes.get(fact.typeId) ?? new Map<string, readonly string[]>();
+        if (!fields.has(field)) fields.set(field, types);
+        propertyAttributes.set(fact.typeId, fields);
+      }
+      for (const [alias, aliased] of Object.entries(fact.memberTypeAliases ?? {})) {
+        const aliases = memberTypeAliases.get(fact.typeId) ?? new Map<string, string>();
+        if (!aliases.has(alias)) aliases.set(alias, aliased);
+        memberTypeAliases.set(fact.typeId, aliases);
+      }
       if (fact.functionAliasReturns !== undefined && !functionAliases.has(fact.typeId)) {
         functionAliases.set(fact.typeId, fact.functionAliasReturns);
       }
@@ -210,6 +230,9 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
     spellings,
     functionAliases,
     enumCases,
+    propertyAttributes,
+    optionalProperties,
+    memberTypeAliases,
     genericFields,
     whereClauses,
   };
@@ -363,4 +386,44 @@ export function swiftFunctionAliasReturn(
     if (table !== undefined && Object.hasOwn(table, alias)) return { returned: table[alias], declaredIn: scope };
   }
   return undefined;
+}
+
+/**
+ * The attribute types the property `field` of `typeId` is declared with, in
+ * source order — its wrapper candidates (bd tea-rags-mcp-y99pg.33). Empty
+ * when it carries none or the channel is absent.
+ */
+export function swiftPropertyAttributeTypes(typeId: string, field: string, ctx: CallContext): readonly string[] {
+  return setsFor(ctx)?.propertyAttributes.get(typeId)?.get(field) ?? [];
+}
+
+/**
+ * The member typealiases the declarations of `typeId` declare, each to the
+ * nominal it names as spelled (bd tea-rags-mcp-y99pg.33): `typealias Output =
+ * DataStreamRequest.Stream<…>` → `Output` → `DataStreamRequest.Stream`.
+ * Undefined when none does or the channel is absent.
+ */
+export function swiftMemberTypeAliases(typeId: string, ctx: CallContext): ReadonlyMap<string, string> | undefined {
+  return setsFor(ctx)?.memberTypeAliases.get(typeId);
+}
+
+/** Whether a declaration of `typeId` annotates its property `field` as `T?` (bd tea-rags-mcp-y99pg.33). */
+export function swiftIsOptionalProperty(typeId: string, field: string, ctx: CallContext): boolean {
+  return setsFor(ctx)?.optionalProperties.get(typeId)?.has(field) ?? false;
+}
+
+/**
+ * The types `Self` is constrained to at `line` of the caller's file, inside a
+ * re-opening of `typeId` whose `where` clause names them (bd
+ * tea-rags-mcp-y99pg.33): `extension Download where Self: DataSerializer`. Read
+ * from the caller's own file only — the constraint holds inside that body and
+ * nowhere else. Empty when no such re-opening spans the line.
+ */
+export function swiftSelfConstraintsAt(typeId: string, line: number, ctx: CallContext): readonly string[] {
+  for (const fact of ctx.typeDeclarations?.[ctx.callerFile] ?? []) {
+    const constraint = fact.selfConstraints;
+    if (fact.typeId !== typeId || constraint === undefined) continue;
+    if (line >= constraint.startLine && line <= constraint.endLine) return constraint.types;
+  }
+  return [];
 }
