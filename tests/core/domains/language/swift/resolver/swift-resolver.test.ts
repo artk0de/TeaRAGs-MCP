@@ -1287,6 +1287,103 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
     );
     expect(target).toBeNull();
   });
+
+  // bd tea-rags-mcp-y99pg.39 — `CodeUsage.Tile.awtrix(reading)`: a type
+  // path hop off a type names the nested type, whose static member is the call.
+  it("types a nested-type hop off a type as that nested type", () => {
+    const nested = table({
+      "Sources/CodeUsage.swift": [
+        { symbolId: "CodeUsage", scope: [] },
+        { symbolId: "CodeUsage.Tile", scope: ["CodeUsage"] },
+        { symbolId: "CodeUsage.Tile.awtrix", scope: ["CodeUsage", "Tile"] },
+      ],
+      "Sources/Github.swift": [
+        { symbolId: "Github", scope: [] },
+        { symbolId: "Github#awtrix", scope: ["Github"] },
+      ],
+    });
+    const at = ctx({
+      callerFile: "Sources/Connector.swift",
+      callerScope: ["Connector"],
+      symbolTable: nested,
+      typeDeclarations: {
+        "Sources/CodeUsage.swift": [
+          { typeId: "CodeUsage", reopens: false },
+          { typeId: "CodeUsage.Tile", reopens: false },
+        ],
+        "Sources/Github.swift": [{ typeId: "Github", reopens: false }],
+      },
+    });
+    expect(new SwiftCallResolver().resolve(call("CodeUsage.Tile", "awtrix"), at)?.targetSymbolId).toBe(
+      "CodeUsage.Tile.awtrix",
+    );
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `ClockStore(defaults: defaults).all()`: a
+  // construction of a PROJECT type is an instance of it, multi-line argument
+  // lists and `try` included; an UpperCamelCase FUNCTION is no type.
+  it("types a construction of a PROJECT type as an instance of it", () => {
+    const withStore = table({
+      "Sources/ClockStore.swift": [
+        { symbolId: "ClockStore", scope: [] },
+        { symbolId: "ClockStore#all", scope: ["ClockStore"] },
+      ],
+      "Sources/Tile.swift": [
+        { symbolId: "Tile", scope: [] },
+        { symbolId: "Tile#all", scope: ["Tile"] },
+      ],
+      "Sources/Factory.swift": [{ symbolId: "MakeStore", scope: [] }],
+    });
+    const at = ctx({
+      callerFile: "Sources/App.swift",
+      callerScope: ["App"],
+      symbolTable: withStore,
+      typeDeclarations: {
+        "Sources/ClockStore.swift": [{ typeId: "ClockStore", reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("ClockStore(defaults: defaults)", "all"), at)?.targetSymbolId).toBe("ClockStore#all");
+    expect(resolver.resolve(call("try ClockStore(\n  defaults: defaults\n)", "all"), at)?.targetSymbolId).toBe(
+      "ClockStore#all",
+    );
+    expect(resolver.resolve(call("MakeStore(defaults: defaults)", "all"), at)).toBeNull();
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `(0..<n).map` / `(200..<300).contains`: a
+  // parenthesised range spells its own type, `Range` for `..<` and
+  // `ClosedRange` for `...`, whatever the bounds are.
+  it("types a parenthesised RANGE head as the range it builds", () => {
+    const withRanges = table({
+      "Sources/Range+Ext.swift": [
+        { symbolId: "Range#clamped", scope: ["Range"] },
+        { symbolId: "ClosedRange#clamped", scope: ["ClosedRange"] },
+      ],
+      "Sources/Tile.swift": [
+        { symbolId: "Tile", scope: [] },
+        { symbolId: "Tile#contains", scope: ["Tile"] },
+      ],
+    });
+    const at = ctx({
+      callerFile: "Sources/Encoder.swift",
+      symbolTable: withRanges,
+      typeDeclarations: {
+        "Sources/Range+Ext.swift": [
+          { typeId: "Range", reopens: true },
+          { typeId: "ClosedRange", reopens: true },
+        ],
+        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("(0..<count)", "clamped"), at)?.targetSymbolId).toBe("Range#clamped");
+    expect(resolver.resolve(call('("a"..."z")', "clamped"), at)?.targetSymbolId).toBe("ClosedRange#clamped");
+    // `Range.contains` is the standard library's: `Tile#contains` is a namesake.
+    expect(resolver.hasInProjectDefinition(call("(200..<300)", "contains"), at)).toBe(false);
+    // Not a range: a parenthesised call whose argument holds one.
+    expect(resolver.hasInProjectDefinition(call("(f(0..<3))", "contains"), at)).toBe(true);
+  });
 });
 
 describe("SwiftCallResolver — a SHORT type name reaches its NESTED declaration", () => {
@@ -3380,8 +3477,12 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
     expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], ["Publisher"]))).toBe(
       false,
     );
-    // No SDK supertype declaring `map`: the bare name may still be the project's.
-    expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], []))).toBe(true);
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.39): with no SDK supertype
+    // declaring `map`, the bare name still cannot be `DataResponse#map` — that
+    // type is off `DataResponsePublisher`'s lookup, so the site leaves the
+    // denominator whatever the SDK says. A project member ON the lookup keeps
+    // it (see "a bare name reaches only what lexical lookup reaches").
+    expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], []))).toBe(false);
   });
 
   it("types nothing for a bare callee neither the enclosing type nor the SDK declares", () => {
@@ -3753,6 +3854,68 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
 
   it("reads a member `Optional` does not declare off the wrapped type", () => {
     expect(new SwiftCallResolver().resolve(call("box", "open"), within)?.targetSymbolId).toBe("Box#open");
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `let name = shortName.flatMap { … } ?? repo`
+  // on a `String?`: a SPELLING carries no unwrap sugar, so `flatMap` may be
+  // `Optional`'s (written straight) or `String`'s (behind `?`) — the local is
+  // left untyped rather than read as the `Array` `Sequence.flatMap` returns.
+  it("leaves a spelled local untyped where the spelling cannot tell Optional's member from the wrapped type's", () => {
+    const arrays = table({
+      "Sources/ArrayText.swift": [{ symbolId: "Array#lowercased", scope: ["Array"] }],
+    });
+    const at = ctx({
+      callerFile: "Sources/Face.swift",
+      callerScope: ["Face", "displayName"],
+      symbolTable: arrays,
+      typeDeclarations: { "Sources/ArrayText.swift": [{ typeId: "Array", reopens: true }] },
+      localBindings: { shortName: [{ line: 5, type: "String", typeRef: optional("String") }] },
+      callResultBindings: { name: [{ line: 6, callee: "shortName.flatMap" }] },
+    });
+    expect(new SwiftCallResolver().resolve(call("name", "lowercased"), at)?.targetSymbolId).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `(results ?? []).map { … }`: `??` with a
+  // non-optional literal on the right is the left operand's WRAPPED type.
+  it("types a parenthesised `??` head with a literal fallback as the unwrapped left operand", () => {
+    const arrays = table({
+      "Sources/ArrayChunks.swift": [{ symbolId: "Array#chunked", scope: ["Array"] }],
+    });
+    const at = ctx({
+      callerFile: "Sources/Places.swift",
+      callerScope: ["Places", "candidates"],
+      symbolTable: arrays,
+      typeDeclarations: { "Sources/ArrayChunks.swift": [{ typeId: "Array", reopens: true }] },
+      localBindings: {
+        results: [{ line: 5, type: "Array", typeRef: optional("Array") }],
+        others: [{ line: 5, type: "Array", typeRef: optional("Array") }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(written("(results  [])", "(results ?? [])", "chunked"), at)?.targetSymbolId).toBe(
+      "Array#chunked",
+    );
+    // A fallback that may itself be nil leaves the value an Optional: untyped.
+    expect(resolver.resolve(written("(results  others)", "(results ?? others)", "chunked"), at)).toBeNull();
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `let clockModel = … .first { … }?.model`,
+  // then `clockModel.map(…)`: a spelled local the walker marks optional is an
+  // Optional, so `map` written straight on it is `Optional.map`.
+  it("reads a member written straight on an optional spelled local off `Optional`", () => {
+    const at = ctx({
+      callerFile: "Sources/Serializer.swift",
+      callerScope: ["Serializer", "run"],
+      symbolTable: t,
+      typeDeclarations,
+      callResultBindings: { held: [{ line: 5, callee: "completion.box", optional: true }] },
+      localBindings: { completion: [{ line: 4, type: "Completion" }] },
+      classFieldTypesByClassKey: { "Sources/Completion.swift::Completion": { box: "Box" } },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("held", "map"), at)).toBeNull();
+    expect(resolver.resolve(written("held", "held?", "map"), at)?.targetSymbolId).toBe("Box#map");
+    expect(resolver.resolve(call("held", "open"), at)?.targetSymbolId).toBe("Box#open");
   });
 
   it("types a property declared optional as an Optional", () => {
@@ -4318,5 +4481,160 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
     // requirement statically, and the requirement IS the project target.
     const context = at({ localBindings: { spec: [{ line: 5, type: "_QuickSpecInternal" }] } });
     expect(new SwiftCallResolver().hasInProjectDefinition(call("spec", "buildExamplesIfNeeded"), context)).toBe(true);
+  });
+});
+
+/**
+ * A BARE call is resolved lexically (bd tea-rags-mcp-y99pg.39): Swift looks an
+ * unqualified name up in the enclosing types — their members, inherited and
+ * conformed — and then at module scope. A member of any other type is not in
+ * that lookup at all: from outside `AppIconArt`, `colour(…)` never names
+ * `AppIconArt.colour`, however unique the short name is.
+ */
+describe("SwiftCallResolver — a bare name reaches only what lexical lookup reaches", () => {
+  const scriptTable = table({
+    "Scripts/MakeIcon.swift": [
+      { symbolId: "colour", scope: [] },
+      { symbolId: "makeContext", scope: [], arity: { minRequired: 1, maxPositional: 1, hasSplat: false } },
+      { symbolId: "makeContext~2", scope: [], arity: { minRequired: 2, maxPositional: 2, hasSplat: false } },
+      { symbolId: "MakeIcon", scope: [] },
+      { symbolId: "MakeIcon.main", scope: ["MakeIcon"] },
+    ],
+    "Sources/AppIconArt.swift": [
+      { symbolId: "AppIconArt", scope: [] },
+      { symbolId: "AppIconArt.colour", scope: ["AppIconArt"] },
+      { symbolId: "AppIconArt#makeContext", scope: ["AppIconArt"] },
+    ],
+    "Sources/Listener.swift": [
+      { symbolId: "Listener", scope: [] },
+      { symbolId: "Listener#stop", scope: ["Listener"] },
+    ],
+    "Sources/Stream.swift": [
+      { symbolId: "ByteStream", scope: [] },
+      { symbolId: "ByteStream#close", scope: ["ByteStream"] },
+      { symbolId: "SocketStream", scope: [] },
+      { symbolId: "SocketStream#close", scope: ["SocketStream"] },
+    ],
+  });
+  const declarations = {
+    "Scripts/MakeIcon.swift": [{ typeId: "MakeIcon", reopens: false }],
+    "Sources/AppIconArt.swift": [{ typeId: "AppIconArt", reopens: false }],
+    "Sources/Listener.swift": [{ typeId: "Listener", reopens: false }],
+    "Sources/Stream.swift": [
+      { typeId: "ByteStream", reopens: false, declarationKind: "protocol" as const },
+      { typeId: "SocketStream", reopens: false, conforms: ["ByteStream"] },
+    ],
+  };
+  const at = (callerFile: string, callerScope: string[]) =>
+    ctx({ callerFile, callerScope, symbolTable: scriptTable, typeDeclarations: declarations });
+  const bare = (member: string, argCount: number, startLine = 30): CallRef => ({
+    callText: `${member}(…)`,
+    receiver: null,
+    member,
+    startLine,
+    argCount,
+    kwargKeys: [],
+  });
+
+  it("lands a module-scope call on the top-level function, not a static namesake of another type", () => {
+    expect(new SwiftCallResolver().resolve(bare("colour", 1), at("Scripts/MakeIcon.swift", []))).toEqual({
+      targetRelPath: "Scripts/MakeIcon.swift",
+      targetSymbolId: "colour",
+    });
+  });
+
+  it("lands a call inside an unrelated type on the top-level function", () => {
+    expect(
+      new SwiftCallResolver().resolve(bare("colour", 1), at("Scripts/MakeIcon.swift", ["MakeIcon"]))?.targetSymbolId,
+    ).toBe("colour");
+  });
+
+  it("picks the top-level overload the call's arguments fit", () => {
+    expect(
+      new SwiftCallResolver().resolve(bare("makeContext", 2), at("Scripts/MakeIcon.swift", ["MakeIcon"]))
+        ?.targetSymbolId,
+    ).toBe("makeContext~2");
+  });
+
+  it("proves a bare name external when only unrelated types declare it", () => {
+    // `close(fd)` inside `Listener` is Darwin's `close`: neither stream type is
+    // in `Listener`'s lookup.
+    const resolver = new SwiftCallResolver();
+    const site = bare("close", 1);
+    const context = at("Sources/Listener.swift", ["Listener"]);
+    expect(resolver.resolve(site, context)).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(false);
+  });
+
+  it("keeps a member the enclosing type conforms to in reach", () => {
+    const context = at("Sources/Stream.swift", ["SocketStream"]);
+    expect(new SwiftCallResolver().hasInProjectDefinition(bare("close", 0), context)).toBe(true);
+  });
+
+  it("reaches a local function from inside its enclosing function only", () => {
+    const locals = table({
+      "Sources/Config.swift": [
+        { symbolId: "Config", scope: [] },
+        { symbolId: "Config#init", scope: ["Config"] },
+        { symbolId: "Config#init#flag", scope: ["Config", "init"] },
+        { symbolId: "Config#reset", scope: ["Config"] },
+      ],
+      "Sources/Other.swift": [
+        { symbolId: "Other", scope: [] },
+        { symbolId: "Other#run#flag", scope: ["Other", "run"] },
+      ],
+    });
+    const inside = (callerSymbolId: string): CallContext =>
+      ctx({
+        callerFile: "Sources/Config.swift",
+        callerScope: ["Config"],
+        callerSymbolId,
+        symbolTable: locals,
+        typeDeclarations: {
+          "Sources/Config.swift": [{ typeId: "Config", reopens: false }],
+          "Sources/Other.swift": [{ typeId: "Other", reopens: false }],
+        },
+      });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(bare("flag", 1), inside("Config#init"))?.targetSymbolId).toBe("Config#init#flag");
+    expect(resolver.resolve(bare("flag", 1), inside("Config#init#flag"))?.targetSymbolId).toBe("Config#init#flag");
+    // A local composes under its container's base name: `init~2` holds it too.
+    expect(resolver.resolve(bare("flag", 1), inside("Config#init~2"))?.targetSymbolId).toBe("Config#init#flag");
+    expect(resolver.resolve(bare("flag", 1), inside("Config#reset"))).toBeNull();
+    expect(resolver.hasInProjectDefinition(bare("flag", 1), inside("Config#reset"))).toBe(false);
+  });
+
+  it("never reaches a local function through a receiver", () => {
+    // `region(grip).frame(width:)` is SwiftUI's `View.frame`: a `frame` local to
+    // some other function body is callable by its bare name there and nowhere else.
+    const withLocal = table({
+      "Sources/Face.swift": [
+        { symbolId: "Face", scope: [] },
+        { symbolId: "Face.timeline", scope: ["Face"] },
+        { symbolId: "Face.timeline#frame", scope: ["Face", "timeline"] },
+      ],
+      "Sources/Board.swift": [
+        { symbolId: "Board", scope: [] },
+        { symbolId: "Board#frame", scope: ["Board"] },
+      ],
+      "Sources/Tile.swift": [{ symbolId: "Tile", scope: [] }],
+    });
+    const context = ctx({
+      callerFile: "Sources/Border.swift",
+      callerScope: ["Border"],
+      symbolTable: withLocal,
+      localBindings: { tile: [{ line: 5, type: "Tile" }] },
+      typeDeclarations: {
+        "Sources/Face.swift": [{ typeId: "Face", reopens: false }],
+        "Sources/Board.swift": [{ typeId: "Board", reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+      },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("tile", "frame"), context)).toBe(false);
+  });
+
+  it("keeps every namesake in reach on an index with no type-declaration channel", () => {
+    const context = ctx({ callerFile: "Sources/Listener.swift", callerScope: ["Listener"], symbolTable: scriptTable });
+    expect(new SwiftCallResolver().hasInProjectDefinition(bare("close", 1), context)).toBe(true);
   });
 });

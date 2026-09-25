@@ -117,8 +117,9 @@
  *   `guard let self = self else { return }` would otherwise put a local under a
  *   pseudo receiver, where the FIRST chain pass answers and DROPS what
  *   `selfMember` resolves.
- * - `classFieldTypes` keeps the NARROW rule — annotation or CapWords
- *   initializer — while a local reads the full expression walk. The map is the
+ * - `classFieldTypes` keeps the NARROW rule — annotation, CapWords
+ *   initializer, or a collection / string literal initializer (bd
+ *   tea-rags-mcp-y99pg.39) — while a local reads the full expression walk. The map is the
  *   INPUT to that walk, so widening it would make a property's type depend on
  *   another property's.
  *
@@ -539,7 +540,13 @@ function swiftGenericMemberFacts(
         anyGenericField = true;
         continue;
       }
-      const args = typeNode?.type === "user_type" ? typeNode.children.find((c) => c.type === "type_arguments") : null;
+      // `[K: V]` / `[T]` spell `Dictionary<K, V>` / `Array<T>`'s arguments (bd tea-rags-mcp-y99pg.39).
+      const args =
+        typeNode?.type === "user_type"
+          ? typeNode.children.find((c) => c.type === "type_arguments")
+          : typeNode?.type === "array_type" || typeNode?.type === "dictionary_type"
+            ? typeNode
+            : null;
       if (args) {
         fields[name] = args.namedChildren.map((arg) => swiftTypeFactOf(arg).nominal);
         anyField = true;
@@ -991,9 +998,10 @@ function collectSwiftCalls(root: AstNode): CallRef[] {
     const target = callee.childForFieldName("target");
     const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
     if (!target || !member) return;
-    const receiver = normalizeSwiftReceiver(target.text);
+    const targetText = swiftReceiverTargetText(target);
+    const receiver = normalizeSwiftReceiver(targetText);
     // `a?.c()` puts its `?` beside the target, not inside it (bd tea-rags-mcp-y99pg.33).
-    const written = callee.children.some((c) => c.type === "?") ? `${target.text}?` : target.text;
+    const written = callee.children.some((c) => c.type === "?") ? `${targetText}?` : targetText;
     out.push({
       callText: node.text,
       receiver,
@@ -1048,6 +1056,52 @@ function declaresSwiftParameter(fn: AstNode, name: string): boolean {
     const internal = names.filter((c) => c.type === "simple_identifier").pop();
     return internal?.text === name;
   });
+}
+
+/**
+ * A call target's text without the prefix operator the grammar hangs on it
+ * (bd tea-rags-mcp-y99pg.39). tree-sitter-swift parses `!kept.contains(id)`
+ * with `!kept` as the navigation target, but Swift binds a prefix operator
+ * looser than member access and call: the expression is `!(kept.contains(id))`
+ * and the receiver is `kept`. The operator sits on the leftmost spine of the
+ * target, however deep (`!a!.b.c()`). An implicit member expression's leading
+ * `.` (`.quaternary.opacity(1)`) is part of the receiver and stays.
+ *
+ * The same grammar folds an additive or multiplicative expression into the
+ * target — `PixelCanvas.width - font.width(x)` navigates off
+ * `PixelCanvas.width - font` — where Swift binds the call to the RIGHT
+ * operand alone: the receiver is `font`. Any infix shape found as a target is
+ * such a misbinding (a parenthesised one is a tuple), so the walk takes the
+ * right operand of each, then strips a prefix operator off what is left.
+ */
+function swiftReceiverTargetText(target: AstNode): string {
+  const operand = swiftReceiverOperand(target);
+  return operand === target ? target.text : target.text.slice(operand.startIndex - target.startIndex);
+}
+
+/** The node a call's receiver really is, inside the target the grammar handed over — see {@link swiftReceiverTargetText}. */
+function swiftReceiverOperand(target: AstNode): AstNode {
+  // An infix shape keeps its right operand under one of these: `a - b`,
+  // `a...b`, `a ?? b`, `c ? a : b`.
+  const rights = [
+    target.childForFieldName("rhs"),
+    target.childForFieldName("end"),
+    target.childForFieldName("if_nil"),
+    target.childForFieldName("if_false"),
+  ];
+  for (const right of rights) {
+    if (right !== null && right.endIndex === target.endIndex) return swiftReceiverOperand(right);
+  }
+  let node: AstNode | null = target;
+  while (node !== null && node.startIndex === target.startIndex) {
+    if (node.type === "prefix_expression") {
+      const operation = node.childForFieldName("operation");
+      const operand = node.childForFieldName("target");
+      if (operation !== null && operand !== null && operation.text !== ".") return swiftReceiverOperand(operand);
+    }
+    node = node.child(0);
+  }
+  return target;
 }
 
 /**
@@ -1723,7 +1777,7 @@ function collectSwiftPropertyTypes(node: AstNode, into: Map<string, SwiftTypePro
       member.type === "property_declaration"
         ? singleIdentifierPatternName(member.childForFieldName("name"))
         : protocolRequirementName(member);
-    const fact = swiftDeclaredPropertyFact(member);
+    const fact = swiftStoredPropertyFact(member);
     if (!fieldName || (!fact.nominal && !fact.element)) continue;
     let entry = into.get(path);
     if (!entry) {
@@ -2041,15 +2095,18 @@ function collectSwiftTypedBindings(root: AstNode, evidence: SwiftFileTypeEvidenc
         const declared = swiftDeclaredPropertyFact(node);
         const value = node.childForFieldName("value");
         const fact = declared.nominal ? declared : swiftExpressionFact(value, { evidence, bindingsByName, site }, 0);
+        const spelling = deferredSpelling(fact, value, site);
         record(
           name,
           fact,
           site,
           enclosingSwiftClosureEndLine(node),
-          deferredSpelling(fact, value, site),
+          spelling,
           undefined,
           undefined,
-          declared.nominal !== null && swiftDeclaresOptional(node),
+          declared.nominal !== null
+            ? swiftDeclaresOptional(node)
+            : spelling !== undefined && swiftValueIsOptionalChained(value),
         );
         // `didSet { oldValue… }` / `willSet { newValue… }`: an observer's
         // parameter is a value of the property's DECLARED type, for the
@@ -2351,6 +2408,43 @@ function swiftDeclaredPropertyFact(node: AstNode): SwiftTypeFact {
 }
 
 /**
+ * The type a STORED property (a type member or a module-level value)
+ * publishes: {@link swiftDeclaredPropertyFact}, else the literal it is
+ * initialised by. A local reads the full expression walk instead, which also
+ * types a literal's elements.
+ */
+function swiftStoredPropertyFact(node: AstNode): SwiftTypeFact {
+  const declared = swiftDeclaredPropertyFact(node);
+  if (declared.nominal || declared.element) return declared;
+  return swiftLiteralPropertyFact(node.childForFieldName("value")) ?? declared;
+}
+
+/**
+ * The type a collection or string LITERAL names at the declaration itself (bd
+ * tea-rags-mcp-y99pg.39): `[(1, 2), (14, 1)]` is an `Array`, `["a": 1]` a
+ * `Dictionary`, `"GitHub"` a `String` — Swift's defaults for an unannotated
+ * literal. Evidence written at the declaration, like a CapWords initializer,
+ * and read without typing any element, so a property's type still never
+ * depends on another's. An empty `[]` is not here — only its context types
+ * it — and neither is a number, whose default the resolver has no use for.
+ */
+function swiftLiteralPropertyFact(value: AstNode | null): SwiftTypeFact | null {
+  if (value === null) return null;
+  switch (value.type) {
+    case "array_literal":
+      return value.namedChildren.some((c) => c.type !== "comment") ? { nominal: "Array", element: null } : null;
+    case "dictionary_literal":
+      return { nominal: "Dictionary", element: null };
+    case "line_string_literal":
+    case "multi_line_string_literal":
+    case "raw_string_literal":
+      return { nominal: "String", element: null };
+    default:
+      return null;
+  }
+}
+
+/**
  * `Helper()` → `Helper`. Nothing for anything else, including a lowercase callee.
  *
  * Swift types are UpperCamelCase and functions lowerCamelCase by universal
@@ -2632,16 +2726,53 @@ function swiftValueChainSpelling(node: AstNode | null, depth = 0): string | null
     }
     case "call_expression": {
       const suffix = node.children.find((c) => c.type === "call_suffix");
-      if (!suffix || suffix.children.some((c) => c.type !== "value_arguments")) return null;
+      // `tiles.filter { … }`: a trailing closure is one more argument, and the
+      // spelling strips arguments (bd tea-rags-mcp-y99pg.39).
+      if (!suffix || suffix.children.some((c) => c.type !== "value_arguments" && c.type !== "lambda_literal")) {
+        return null;
+      }
       const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
       const spelled = callee?.type === "navigation_expression" ? swiftValueChainSpelling(callee, depth + 1) : null;
       // `read(\.activeRequests)`: the one argument a generic return can be
       // bound by, so the spelling keeps it (bd tea-rags-mcp-y99pg.37).
-      const keyPath = swiftLoneKeyPathArgument(suffix);
+      const keyPath = suffix.children.some((c) => c.type === "lambda_literal")
+        ? null
+        : swiftLoneKeyPathArgument(suffix);
       return spelled !== null && keyPath !== null ? `${spelled}(${keyPath})` : spelled;
     }
     default:
       return null;
+  }
+}
+
+/**
+ * Whether the value a {@link swiftValueChainSpelling} spells is an OPTIONAL
+ * the spelling cannot show (bd tea-rags-mcp-y99pg.39): some link of the chain
+ * is optional-chained (`a.first?.model` — the `?` is a child of the
+ * navigation, read positionally because its field collides with `target`),
+ * or the whole is `try?`'d. A force unwrap and a `??` end the question with
+ * "not known optional", which is what a spelling meant before.
+ */
+function swiftValueIsOptionalChained(node: AstNode | null, depth = 0): boolean {
+  if (!node || depth > SWIFT_MAX_TYPE_HOPS + 2) return false;
+  switch (node.type) {
+    case "try_expression": {
+      const operator = node.children.find((c) => c.type === "try_operator");
+      if (operator?.children.some((c) => c.type === "?")) return true;
+      return swiftValueIsOptionalChained(node.namedChildren[node.namedChildCount - 1] ?? null, depth + 1);
+    }
+    case "await_expression":
+      return swiftValueIsOptionalChained(node.namedChildren[node.namedChildCount - 1] ?? null, depth + 1);
+    case "navigation_expression":
+      if (node.children.some((c) => c.type === "?")) return true;
+      return swiftValueIsOptionalChained(
+        node.namedChildren.find((c) => c.type !== "navigation_suffix") ?? null,
+        depth + 1,
+      );
+    case "call_expression":
+      return swiftValueIsOptionalChained(node.namedChildren.find((c) => c.type !== "call_suffix") ?? null, depth + 1);
+    default:
+      return false;
   }
 }
 
@@ -2960,6 +3091,7 @@ function assignBindingsToInnermostChunks(
         ...(binding.closureParameter === undefined ? {} : { closureParameter: binding.closureParameter }),
         ...(binding.enumPayload === undefined ? {} : { enumPayload: binding.enumPayload }),
         ...(binding.sequenceElement === undefined ? {} : { sequenceElement: binding.sequenceElement }),
+        ...(binding.optional === true ? { optional: true as const } : {}),
         ...scoped,
       };
       (bucket.callResultBindings[binding.name] ??= []).push(emitted);

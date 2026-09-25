@@ -66,6 +66,10 @@ const MODULES: readonly ModuleSpec[] = [
   { module: "UniformTypeIdentifiers", sdk: "macosx", target: MAC },
   { module: "XCTest", sdk: "macosx", target: MAC },
   { module: "SwiftUI", sdk: "macosx", target: MAC },
+  // `View`, `Text`, `Color`, `VStack`, `Rectangle` live in SwiftUICore since
+  // the macOS 15 / iOS 18 SDKs; SwiftUI re-exports them, and its own symbol
+  // graph no longer carries them (bd tea-rags-mcp-y99pg.39).
+  { module: "SwiftUICore", sdk: "macosx", target: MAC },
   { module: "UIKit", sdk: "iphoneos", target: "arm64-apple-ios17.0" },
   { module: "WatchKit", sdk: "watchos", target: "arm64-apple-watchos10.0" },
 ];

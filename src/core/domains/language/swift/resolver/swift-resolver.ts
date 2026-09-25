@@ -135,6 +135,7 @@ import {
   type SwiftResolverConfig,
 } from "./strategies/index.js";
 import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
+import { isSwiftLocalDeclaration, swiftLexicallyReachableDefinitions } from "./swift-lexical-reach.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import {
   createSwiftWrittenReceiverTypePorts,
@@ -272,7 +273,10 @@ export class SwiftCallResolver implements CallResolver {
     const defs = lookupSwiftSymbolsByShortName(ctx, call.member);
     if (defs.length === 0) return false;
     if (call.receiver === null) return this.bareNameMayReach(call, ctx);
-    return this.receiverMayReach(call, ctx, defs);
+    // A function-local declaration answers to its bare name only (bd tea-rags-mcp-y99pg.39).
+    const members = defs.filter((def) => !isSwiftLocalDeclaration(def));
+    if (members.length === 0) return false;
+    return this.receiverMayReach(call, ctx, members);
   }
 
   /**
@@ -282,7 +286,14 @@ export class SwiftCallResolver implements CallResolver {
    * `PathMonitor` names the standard library's `Result`.
    */
   private bareNameMayReach(call: CallRef, ctx: CallContext): boolean {
-    const defs = lookupSwiftBareNameDefinitions(ctx, call.member);
+    // A member of a type off every enclosing lookup is no target of an
+    // unqualified name (bd tea-rags-mcp-y99pg.39).
+    const defs = swiftLexicallyReachableDefinitions(
+      lookupSwiftBareNameDefinitions(ctx, call.member),
+      call,
+      ctx,
+      this.memberTypes,
+    );
     if (defs.length === 0) return false;
     // Swift's `self` is implicit: inside a type whose hierarchy the SDK
     // declares the member on and the project does not, the bare name IS that

@@ -582,6 +582,94 @@ export const capability: LanguageCapability = {
   // hands a link's argument text to the optional `memberCallTypeOf` port:
   // Alamofire TOTAL 0.998 -> 1.000 (1255/1257 -> 1257/1257), Quick unchanged,
   // WRONG 8, edges +2 / -0 (Session `request.finish` x2, oracle-confirmed).
+  // walker 64 (bd tea-rags-mcp-y99pg.39, prefix operator): a prefix operator the grammar hangs
+  // on a call's target (`!kept.contains(id)`, `-x.magnitude()`) no longer
+  // enters the written receiver, which the fold could not type. Measured:
+  // pixelclocktiles TOTAL 0.885 -> 0.893 (3030/3423 -> 3030/3392; localVar
+  // 256/276 -> 256/258, dynamic 303/414 -> 303/404), edges +0 / -0;
+  // Alamofire 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, bare-call lexical reach): a BARE call reaches only what
+  // Swift's unqualified lookup reaches: module scope, the enclosing types'
+  // lookups (and a `where Self:` constraint in force), and the local functions
+  // of the function the caller sits in. A member of any other project type is
+  // a namesake — an edge never rests on it, and a site whose every namesake is
+  // off the lookup leaves the denominator; the terminal pass narrows a
+  // same-file overload set by the call's arguments. Measured: pixelclocktiles
+  // TOTAL 0.893 -> 0.912 (3030/3392 -> 3080/3377; bareCall 1949/2028 ->
+  // 1999/2013), edges +58 / -8 — the 8 were closure-property calls
+  // (`render(reading)` on `let render: (Reading) -> …`) pinned to a namesake
+  // in another module; Alamofire 1256/1256 and Quick 375/375 unchanged,
+  // edges +0 / -0, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, range head): a parenthesised range head spells
+  // its own type (`(0..<n)` a `Range`, `("a"..."z")` a `ClosedRange`), so
+  // `(0..<n).map` / `(200..<300).contains` run the standard library's member
+  // and leave the denominator unless the project extends the range. Measured:
+  // pixelclocktiles TOTAL 0.912 -> 0.929 (3080/3377 -> 3080/3317; chain
+  // 17/175 -> 17/115), edges +0 / -0; Alamofire 1256/1256 and Quick 375/375
+  // unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, local declarations): a function-local declaration
+  // (`WeatherFace.areaTimeline#frame`) is never reachable through a receiver,
+  // so it no longer keeps a typed receiver call (`region(grip).frame(…)`,
+  // SwiftUI's) in the denominator as an owner "the run says nothing about".
+  // Measured: pixelclocktiles TOTAL 0.929 -> 0.932 (3080/3317 -> 3080/3305;
+  // localVar 256/258 -> 256/256, chain 17/115 -> 17/109, dynamic 303/404 ->
+  // 303/400), edges +0 / -0; Alamofire 1256/1256 and Quick 375/375 unchanged,
+  // oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, project construction head): a construction of a PROJECT type
+  // as a chain head (`ClockStore(defaults: defaults).all()`, multi-line
+  // argument lists and `try` included) is an instance of the type the name
+  // denotes from the caller's scope; only a name the run records as a type.
+  // Measured: pixelclocktiles TOTAL 0.932 -> 0.943 (3080/3305 -> 3106/3295;
+  // dynamic 303/400 -> 326/396, chain 17/109 -> 20/103), edges +26 / -0;
+  // Alamofire 1256/1256 and Quick 375/375 unchanged, edges +0 / -0, oracle
+  // WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, SwiftUICore substrate): the SDK substrate carries
+  // SwiftUICore, where `View`, `Text`, `Color`, `VStack`, `Rectangle` live
+  // since the macOS 15 / iOS 18 SDKs (SwiftUI's own symbol graph no longer
+  // does): +365 types. Measured: pixelclocktiles TOTAL 0.943 -> 0.956
+  // (3106/3295 -> 3113/3257; chain 20/103 -> 27/80, dynamic 326/396 ->
+  // 326/387), edges +7 / -0 (project `extension View` members at the end of
+  // modifier chains); Alamofire 1256/1256 and Quick 375/375 unchanged, edges
+  // +0 / -0, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, infix operand): the grammar folds
+  // an additive or multiplicative expression into a call's target
+  // (`PixelCanvas.width - font.width(x)` navigates off `… - font`); the
+  // receiver is the right operand. Measured: pixelclocktiles TOTAL 0.956 ->
+  // 0.957 (3113/3257 -> 3116/3255), edges +3 / -0; Alamofire 1256/1256 and
+  // Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, nested type hop): `CodeUsage.Tile`
+  // off the type `CodeUsage` names the nested type the project declares, so
+  // its static members resolve. Measured: pixelclocktiles TOTAL 0.957 ->
+  // 0.959 (3116/3255 -> 3122/3254), chain 27/76 -> 33/75, edges +6 / -0;
+  // Alamofire 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, trailing-closure spelling): a
+  // local bound to `tiles.filter { … }` is spelled like any call (the closure
+  // is an argument), and a spelling whose fold steps onto a member `Optional`
+  // itself declares, off an Optional value, types nothing, because the
+  // stripped sugar decided whose member it was. Measured: pixelclocktiles
+  // TOTAL 0.959 -> 0.962 (3122/3254 -> 3122/3244), edges +0 / -0; Alamofire
+  // 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, nil-coalescing head): a
+  // parenthesised `(xs ?? [])` head with a literal fallback is the left
+  // operand's wrapped type. Measured: pixelclocktiles TOTAL 0.962 -> 0.963
+  // (3122/3244 -> 3122/3241), index 0/13 -> 0/10, edges +0 / -0; Alamofire
+  // 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, literal-initialised property): a
+  // type member initialised by a non-empty collection literal or a string
+  // literal publishes `Array` / `Dictionary` / `String`. Measured:
+  // pixelclocktiles TOTAL 0.963 -> 0.964 (3122/3241 -> 3122/3237), edges
+  // +0 / -0; Alamofire 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, collection-sugar field arguments):
+  // a field declared `[K: V]` / `[T]` publishes Dictionary's / Array's
+  // arguments like `Dictionary<K, V>` would. Measured: pixelclocktiles TOTAL
+  // 0.964 -> 0.967 (3122/3237 -> 3125/3231), edges +3 / -0; Alamofire
+  // 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
+  // walker 64 (bd tea-rags-mcp-y99pg.39, optional spelled locals): a
+  // spelling whose chain is optional-chained or `try?`'d is marked
+  // `optional`, and the written fold reads the local as an Optional, so
+  // `clockModel.map(…)` is `Optional.map`. Measured: pixelclocktiles TOTAL
+  // 0.967 (3125/3231) unchanged, edges +0 / -0, two receivers retyped
+  // Optional; Alamofire 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
   versions: { chunking: 4, walker: 64, codegraphSchema: 2 },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",

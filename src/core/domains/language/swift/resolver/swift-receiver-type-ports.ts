@@ -62,7 +62,7 @@ import {
   qualifySwiftTypeName,
   qualifySwiftTypeNameWithin,
 } from "./swift-symbol-lookup.js";
-import { swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
+import { swiftDeclaringFiles, swiftEnumCasePayloadType, swiftFunctionAliasReturn } from "./swift-type-declarations.js";
 import { isSwiftTypeName } from "./swift-type-name.js";
 
 /**
@@ -174,6 +174,8 @@ function swiftHeadType(
     return (
       swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ??
       swiftLiteralHeadType(head) ??
+      swiftNilCoalescingHeadType(head, atLine, ctx, ports) ??
+      swiftProjectConstructionHeadType(head, ctx) ??
       swiftSdkConstructionHeadType(head, members)
     );
   }
@@ -286,6 +288,26 @@ export function swiftModuleValueReceiverType(
  * (bd tea-rags-mcp-y99pg.25). The callee must be the WHOLE head up to one
  * argument list and / or trailing closure, so `f(x).y` never reads as one.
  */
+/**
+ * `ClockStore(defaults: defaults)`, `Migration(\n  a: 1\n)`, `Box<Int> { … }` as
+ * a chain head: a construction of a PROJECT type is an instance of the type
+ * the name denotes from the caller's scope (bd tea-rags-mcp-y99pg.39). Only a
+ * name the run records as a type — a declaration or a re-opening — so an
+ * UpperCamelCase free function never reads as one; the callee must be the
+ * whole head up to its argument list and / or trailing closure.
+ */
+function swiftProjectConstructionHeadType(head: string, ctx: CallContext): TypeRef | undefined {
+  const open = head.search(/[({]/);
+  if (open <= 0 || !swiftHeadEndsAtCallGroups(head, open)) return undefined;
+  const typeText = head
+    .slice(0, open)
+    .trim()
+    .replace(/<[\s\S]*>$/, "");
+  const type = swiftVisibleProjectType(typeText, ctx);
+  if (type?.form !== "class" || swiftDeclaringFiles(type.name, ctx) === undefined) return undefined;
+  return { form: "instance", name: type.name };
+}
+
 function swiftSdkConstructionHeadType(head: string, members: SwiftMemberTypeLookup): TypeRef | undefined {
   const open = head.search(/[({]/);
   if (open <= 0) return undefined;
@@ -410,12 +432,102 @@ export function swiftCastOperand(head: string): string | undefined {
 function swiftLiteralHeadType(head: string): TypeRef | undefined {
   // A string literal, interpolated or raw, is a `String` (bd tea-rags-mcp-y99pg.25).
   if (SWIFT_STRING_LITERAL_HEAD.test(head)) return { form: "instance", name: "String" };
+  const range = swiftRangeHeadType(head);
+  if (range !== undefined) return range;
   const cast = SWIFT_CAST_HEAD.exec(head);
   const literal = head.startsWith("[") && head.endsWith("]") ? head : undefined;
   const typeText = cast ? cast[2].trim() : literal;
   if (typeText === undefined) return undefined;
   const name = swiftTypeTextName(typeText);
   return name === undefined ? undefined : { form: "instance", name };
+}
+
+/**
+ * The range a parenthesised range head builds (bd tea-rags-mcp-y99pg.39):
+ * `(0..<n)` is a `Range`, `("a"..."z")` a `ClosedRange` — the operator names
+ * the type whatever the bounds are. Only a two-sided range whose operator sits
+ * at the parentheses' own depth, outside any string: `(f(0..<3))` is a call.
+ */
+function swiftRangeHeadType(head: string): TypeRef | undefined {
+  if (!head.startsWith("(") || !head.endsWith(")")) return undefined;
+  const inner = head.slice(1, -1);
+  let depth = 0;
+  let quote = false;
+  let found: { readonly at: number; readonly name: string } | undefined;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === '"') quote = false;
+      continue;
+    }
+    if (ch === '"') quote = true;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      // The opening parenthesis closed before the end: `(a)…(b)` is no one group.
+      if (--depth < 0) return undefined;
+    } else if (depth === 0 && found === undefined && inner.startsWith("..", i)) {
+      const op = inner.startsWith("..<", i) ? "..<" : inner.startsWith("...", i) ? "..." : undefined;
+      if (op === undefined) return undefined;
+      found = { at: i, name: op === "..<" ? "Range" : "ClosedRange" };
+      i += op.length - 1;
+    }
+  }
+  if (found === undefined || depth !== 0 || quote) return undefined;
+  const lower = inner.slice(0, found.at).trim();
+  const upper = inner.slice(found.at + 3).trim();
+  return lower.length > 0 && upper.length > 0 ? { form: "instance", name: found.name } : undefined;
+}
+
+/** A fallback no `nil` can hide in: a collection, string, number or boolean literal. */
+const SWIFT_NON_OPTIONAL_LITERAL = /^(?:\[[\s\S]*\]|"[\s\S]*"|-?\d[\w.]*|true|false)$/;
+
+/** Postfix unwrap sugar on a link — `a?.b`, `a!.b`, a trailing `a?` — which the spelled fold does not read. */
+const SWIFT_POSTFIX_UNWRAP = /(?<=[\w)\]])[?!](?=\.|$)/g;
+
+/**
+ * The type a parenthesised `??` head denotes (bd tea-rags-mcp-y99pg.39):
+ * `(results ?? [])` is the left operand's WRAPPED type when the fallback is a
+ * literal, which can never be `nil` — with an Optional fallback the value
+ * would still be an Optional, and `Optional`'s members would answer instead.
+ * The first `??` at the parentheses' own depth, outside any string, splits the
+ * operands; `??` is right-associative, so a chained fallback is no literal and
+ * types nothing. The left operand is folded by `ports` with its unwrap sugar
+ * removed; the fold reads an Optional as what it wraps.
+ */
+function swiftNilCoalescingHeadType(
+  head: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  if (!head.startsWith("(") || !head.endsWith(")")) return undefined;
+  const inner = head.slice(1, -1);
+  let depth = 0;
+  let quote = false;
+  let at = -1;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === '"') quote = false;
+      continue;
+    }
+    if (ch === '"') quote = true;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      if (--depth < 0) return undefined;
+    } else if (depth === 0 && at === -1 && inner.startsWith("??", i)) {
+      at = i;
+      i++;
+    }
+  }
+  if (at === -1 || depth !== 0 || quote) return undefined;
+  const lhs = inner.slice(0, at).trim().replace(SWIFT_POSTFIX_UNWRAP, "");
+  const rhs = inner.slice(at + 2).trim();
+  if (lhs.length === 0 || !SWIFT_NON_OPTIONAL_LITERAL.test(rhs)) return undefined;
+  const type = propagateReceiverType(lhs, atLine, ctx, ports);
+  return type === undefined ? undefined : swiftUnwrappedOptional(type);
 }
 
 /**
@@ -629,6 +741,14 @@ function swiftKeyPathCallType(
   return root;
 }
 
+/** `owner.member` as a type the project DECLARES (not merely re-opens), in type form. */
+function swiftNestedProjectType(owner: string, member: string, ctx: CallContext): TypeRef | undefined {
+  if (!isSwiftTypeName(member)) return undefined;
+  const qualified = `${owner}.${member}`;
+  const declaring = swiftDeclaringFiles(qualified, ctx);
+  return declaring !== undefined && declaring.size > 0 ? { form: "class", name: qualified } : undefined;
+}
+
 /** The type one member hop off `recv` denotes — the fold's `memberTypeOf`, before the bound mark. */
 function swiftMemberHopType(
   recv: TypeRef,
@@ -641,6 +761,11 @@ function swiftMemberHopType(
   // `self.$result` / `model.$result`: the property's wrapper, projected (bd tea-rags-mcp-y99pg.33).
   const projected = SWIFT_PROJECTED_VALUE.exec(member.trim());
   if (projected !== null) return swiftProjectedValueType(recv, projected[1], ctx, members);
+  // `CodeUsage.Tile`: a type path off a type names the NESTED type the
+  // project declares — Swift forbids a member of the same name beside it, so
+  // this reading excludes every other (bd tea-rags-mcp-y99pg.39).
+  const nested = recv.form === "class" ? swiftNestedProjectType(recv.name, member, ctx) : undefined;
+  if (nested !== undefined) return nested;
   // The field channel records no staticness, so the receiver's form does
   // not select a channel here — a `class` head and an `instance` head read
   // the same property map. Accessing a property always yields a VALUE, so
@@ -730,6 +855,7 @@ function swiftLocalValueTypeRef(
   if (spelled.closureParameter !== undefined) {
     return swiftClosureParameterType(spelled.callee, spelled.closureParameter, spelled.line, ctx, ports, members);
   }
+  if (swiftSpellingHidesOptionalMember(spelled.callee, spelled.line, ctx, members)) return undefined;
   const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
   if (folded?.form !== "instance") return undefined;
   // `for request in requests`: the loop draws the sequence's element (bd tea-rags-mcp-y99pg.37).
@@ -743,7 +869,58 @@ function swiftLocalValueTypeRef(
     const payload = swiftEnumCasePayloadType(enumId, spelled.enumPayload.caseName, spelled.enumPayload.index, ctx);
     return payload === undefined ? undefined : { form: "instance", name: payload };
   }
-  return folded;
+  // `let m = clocks.first { … }?.model`: the walker saw the value is an
+  // Optional the spelling cannot show (bd tea-rags-mcp-y99pg.39).
+  return keepsOptionals && spelled.optional === true && !isSwiftOptionalRef(folded) ? swiftOptionalOf(folded) : folded;
+}
+
+/** The written-fold probe {@link swiftSpellingHidesOptionalMember} runs, built once per member lookup. */
+interface SwiftSpellingOptionalProbe {
+  readonly ports: ReceiverTypePorts;
+  readonly state: { ambiguous: boolean };
+}
+
+const SWIFT_SPELLING_OPTIONAL_PROBES = new WeakMap<SwiftMemberTypeLookup, SwiftSpellingOptionalProbe>();
+
+/**
+ * Whether folding `callee` — a SPELLING, unwrap sugar stripped — steps onto a
+ * member `Optional` itself declares while the value it steps from is an
+ * `Optional` (bd tea-rags-mcp-y99pg.39). `shortName.flatMap { … }` on a
+ * `String?` is `Optional.flatMap` as written and `String.flatMap` behind a
+ * `?`, and the spelling is the same string for both: the two readings return
+ * different types, so the local is left untyped rather than typed by a guess.
+ *
+ * The probe is the written fold (which reads a sugar-free link as written
+ * straight on the value) with its member hop instrumented. A nested fold can
+ * re-enter through a head bound to another spelling, so the flag is saved and
+ * restored around each probe.
+ */
+function swiftSpellingHidesOptionalMember(
+  callee: string,
+  line: number,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): boolean {
+  let probe = SWIFT_SPELLING_OPTIONAL_PROBES.get(members);
+  if (probe === undefined) {
+    const written = createSwiftWrittenReceiverTypePorts(members);
+    const state = { ambiguous: false };
+    const ports: ReceiverTypePorts = Object.freeze({
+      ...written,
+      memberTypeOf: (recv: TypeRef, member: string, at: CallContext): TypeRef | undefined => {
+        if (isSwiftOptionalRef(recv) && members.optionalDeclares(stripCallArgs(member), at)) state.ambiguous = true;
+        return written.memberTypeOf(recv, member, at);
+      },
+    });
+    probe = { ports, state };
+    SWIFT_SPELLING_OPTIONAL_PROBES.set(members, probe);
+  }
+  const saved = probe.state.ambiguous;
+  probe.state.ambiguous = false;
+  propagateReceiverType(callee, line, ctx, probe.ports);
+  const { ambiguous } = probe.state;
+  probe.state.ambiguous = saved;
+  return ambiguous;
 }
 
 /**

@@ -24,6 +24,15 @@ describe("SwiftSdkVocabulary", () => {
     expect(sdk.hasType("Session")).toBe(false);
   });
 
+  // bd tea-rags-mcp-y99pg.39 — SwiftUI re-exports its core from SwiftUICore
+  // (macOS 15 / iOS 18 SDKs on), whose symbol graph is its own.
+  it("knows SwiftUI's core view types, which live in SwiftUICore", () => {
+    expect(sdk.type("View")?.kind).toBe("protocol");
+    for (const name of ["Text", "Color", "VStack", "Rectangle"]) expect(sdk.hasType(name), name).toBe(true);
+    expect(sdk.supertypes("Text")).toContain("View");
+    expect(sdk.findMember("Text", "frame")?.owner.path).toBe("View");
+  });
+
   it("reaches an inherited member through the superclass chain", () => {
     expect(sdk.type("OutputStream")?.superclass).toBe("Stream");
     expect(sdk.findMember("OutputStream", "close")?.owner.path).toBe("Stream");

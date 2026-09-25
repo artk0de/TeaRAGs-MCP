@@ -692,6 +692,32 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     expect(extract(src).classFieldTypes?.Store).toEqual({ items: "Array" });
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `static let sparks = [(1, 2), (14, 1)]`: a
+  // non-empty collection literal or a string literal names its type at the
+  // declaration itself, whatever its elements are.
+  it("records a stored property initialised by a collection or string literal", () => {
+    const src = [
+      "enum Glyphs {",
+      "  static let sparks = [(1, 2), (14, 1)]",
+      '  static let prefixes = ["pct-"]',
+      '  static let names = ["a": 1]',
+      '  static let title = "GitHub"',
+      "  static let empty = [Int]()",
+      "  var counter = 0",
+      "}",
+      "",
+    ].join("\n");
+    for (const r of [extract(src), extractMaterialized(src)]) {
+      expect(r.classFieldTypes?.Glyphs).toEqual({
+        sparks: "Array",
+        prefixes: "Array",
+        names: "Dictionary",
+        title: "String",
+        empty: "Array",
+      });
+    }
+  });
+
   /**
    * bd tea-rags-mcp-y99pg.36 — Alamofire's Combine.swift nests a private
    * `Inner` in each of three publishers, each holding a `request` of a
@@ -1421,7 +1447,9 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
   it("records an untyped chain local by its spelling, sugar and arguments stripped", () => {
     const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
     const chunk = extract(src).chunks[0];
-    expect(chunk.callResultBindings?.e).toEqual([{ line: 2, callee: "sp.mgr.eval" }]);
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.39): the optional-chained value
+    // is now marked `optional`, the one fact the stripped spelling loses.
+    expect(chunk.callResultBindings?.e).toEqual([{ line: 2, callee: "sp.mgr.eval", optional: true }]);
     expect(chunk.localBindings?.e).toBeUndefined();
   });
 
@@ -1470,6 +1498,55 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
   it("records no spelling for a chain headed by a bare call", () => {
     const src = ["func go() {", "  let n = make().value", "  n.run()", "}", ""].join("\n");
     expect(extract(src).chunks[0].callResultBindings).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `let placed = tiles.filter { … }`: a closure
+  // passed as the trailing argument is an argument like any other, and the
+  // spelling strips arguments.
+  it("records the spelling of a call that passes a trailing closure", () => {
+    const src = [
+      "func go() {",
+      "  let placed = tiles.filter { $0.key == k }",
+      "  let first = xs.sorted(by: <).first { $0 > 1 }",
+      "  placed.run()",
+      "}",
+      "",
+    ].join("\n");
+    for (const bindings of [
+      extract(src).chunks[0].callResultBindings,
+      extractMaterialized(src).chunks[0].callResultBindings,
+    ]) {
+      expect(bindings?.placed).toEqual([{ line: 2, callee: "tiles.filter" }]);
+      expect(bindings?.first).toEqual([{ line: 3, callee: "xs.sorted.first" }]);
+    }
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `let clockModel = clocks.first { … }?.model`:
+  // an optional-chained or `try?` right-hand side holds an Optional, which
+  // the stripped spelling cannot say; a bound `if let` / `guard let` and a
+  // `??` fallback do not.
+  it("marks a spelling whose value is an Optional", () => {
+    const src = [
+      "func go() {",
+      "  let m = clocks.first { $0.on }?.model",
+      "  let e = try? foo.bar()",
+      "  let p = foo.bar()",
+      "  let q = foo?.bar ?? other",
+      "  guard let g = foo?.bar else { return }",
+      "  m.run()",
+      "}",
+      "",
+    ].join("\n");
+    for (const bindings of [
+      extract(src).chunks[0].callResultBindings,
+      extractMaterialized(src).chunks[0].callResultBindings,
+    ]) {
+      expect(bindings?.m).toEqual([{ line: 2, callee: "clocks.first.model", optional: true }]);
+      expect(bindings?.e).toEqual([{ line: 3, callee: "foo.bar", optional: true }]);
+      expect(bindings?.p?.[0].optional).toBeUndefined();
+      expect(bindings?.q?.[0].optional).toBeUndefined();
+      expect(bindings?.g?.[0].optional).toBeUndefined();
+    }
   });
 
   it("reads the same spelling off the materialized tree", () => {
@@ -1744,6 +1821,26 @@ describe("swift walker — generic closure parameters across files (bd tea-rags-
     expect(facts.find((f) => f.typeId === "Request")?.fieldTypeArguments).toEqual({
       mutableState: ["MutableState"],
     });
+  });
+
+  // bd tea-rags-mcp-y99pg.39 — `timers.removeValue(forKey: key)?.cancel()` on
+  // `timers: [TileKey: Task<Void, Never>]`: the sugar spells `Dictionary`'s
+  // arguments exactly as `Dictionary<TileKey, Task<…>>` would.
+  it("publishes the arguments of an array- or dictionary-sugared field", () => {
+    const src = [
+      "final class Model {",
+      "  private var timers: [TileKey: Task<Void, Never>] = [:]",
+      "  var names: [String] = []",
+      "  var maybe: [String]? = nil",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      expect(out.typeDeclarations?.find((f) => f.typeId === "Model")?.fieldTypeArguments).toEqual({
+        timers: ["TileKey", "Task"],
+        names: ["String"],
+      });
+    }
   });
 
   // `adapter.adapt(…) { result in let r = try result.get() }` in another file
@@ -2328,6 +2425,52 @@ describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99
         expect.objectContaining({ receiver: "obj", writtenReceiver: "obj?", member: "maybe" }),
       );
       expect(calls.find((c) => c.member === "run")?.writtenReceiver).toBeUndefined();
+    }
+  });
+
+  // tree-sitter-swift hangs a prefix operator on the navigation TARGET, but
+  // Swift binds it looser than member access: `!kept.contains(id)` is
+  // `!(kept.contains(id))`, so the receiver is `kept` (bd tea-rags-mcp-y99pg.39).
+  it("keeps a prefix operator out of the receiver it does not apply to", () => {
+    const src = [
+      "func go() {",
+      "  if !kept.contains(id) {}",
+      "  let n = -offset.magnitude()",
+      "  let m = !a!.b.c()",
+      "  let color = .quaternary.opacity(1)",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      const contains = calls.find((c) => c.member === "contains");
+      expect(contains).toMatchObject({ receiver: "kept" });
+      expect(contains?.writtenReceiver).toBeUndefined();
+      expect(calls.find((c) => c.member === "magnitude")).toMatchObject({ receiver: "offset" });
+      expect(calls.find((c) => c.member === "c")).toMatchObject({ receiver: "a.b", writtenReceiver: "a!.b" });
+      // An implicit member expression's leading `.` is no operator: it stays.
+      expect(calls.find((c) => c.member === "opacity")).toMatchObject({ receiver: ".quaternary" });
+    }
+  });
+
+  // tree-sitter-swift parses `PixelCanvas.width - font.width(x)` with the
+  // additive expression `PixelCanvas.width - font` as the navigation target;
+  // Swift binds member access and call tighter than any infix operator, so
+  // the receiver is `font` (bd tea-rags-mcp-y99pg.39).
+  it("keeps an infix operator's left operand out of the receiver", () => {
+    const src = [
+      "func go() {",
+      "  let w = PixelCanvas.width - font.measure(text)",
+      "  let x = labelX[index] + glyph.advance(of: c)",
+      "  let y = scale * -curve.slope()",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      expect(calls.find((c) => c.member === "measure")).toMatchObject({ receiver: "font" });
+      expect(calls.find((c) => c.member === "advance")).toMatchObject({ receiver: "glyph" });
+      expect(calls.find((c) => c.member === "slope")).toMatchObject({ receiver: "curve" });
     }
   });
 });
