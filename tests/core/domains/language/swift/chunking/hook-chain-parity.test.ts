@@ -2,12 +2,12 @@
  * Registering a hook chain must not move Swift chunk output on code that has
  * none of the shapes the chain exists for.
  *
- * Two engine branches key on "does this language have hooks at all", not on
- * what the hooks do: `chunkWithChildExtraction` stops emitting its narrow
- * parent class chunk, and `canRecurseAsContainer` starts treating every child
- * with chunkable grandchildren as a container. Both are covered by the chain —
- * by `swiftContainerBodyChunkerHook` and `swiftNestedFunctionFilterHook`
- * respectively — and this test is what proves the cover is exact: the same
+ * One engine branch keys on "does this language have hooks at all", not on
+ * what the hooks do: `canRecurseAsContainer` starts treating every child with
+ * chunkable grandchildren as a container, which `swiftNestedFunctionFilterHook`
+ * covers. (The type-level chunk no longer needs a cover: since bd
+ * tea-rags-mcp-deoki the engine emits the container remainder on both
+ * branches.) This test is what proves the cover is exact: the same
  * fixtures chunked with and without the chain, compared chunk for chunk on
  * symbolId, chunkType, line range and content.
  */

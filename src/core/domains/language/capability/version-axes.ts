@@ -47,6 +47,7 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       `${CHUNKER_ROOT}/symbol-mass.ts`,
       `${CHUNKER_ROOT}/symbol-id-disambiguator.ts`,
       `${CHUNKER_ROOT}/chunk-navigation.ts`,
+      `${CHUNKER_ROOT}/container-remainder.ts`,
       `${CHUNKER_ROOT}/utils/chunk-id.ts`,
       "src/core/infra/symbolid",
       // `chunker/materialize.ts` is a seven-line re-export; the AST every

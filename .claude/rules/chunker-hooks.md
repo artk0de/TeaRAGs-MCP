@@ -57,6 +57,17 @@ language:
 
 Reordering breaks invariant. Don't reorder without revising this rule.
 
+## Container remainder (engine-owned, bd tea-rags-mcp-deoki)
+
+After the children are emitted, the engine emits ONE remainder chunk per
+container for the container's own rows no child, no captured comment
+(`excludedRows`) and no body chunk carries — under the container's own symbolId,
+`lineRanges` for the non-contiguous rows, `#partN` when oversized. It stays out
+when a hook wrote `ctx.bodyChunks` (that hook owns the container's rows) or set
+`ctx.skipChildren` (a claim owns the whole container). So a hook never needs to
+re-emit a type-level chunk just to keep the container's rows searchable; to
+relabel it, a metadata hook sets `ctx.containerChunkType`.
+
 ## What NOT to put in the chain
 
 - Hooks reading `ctx.bodyChunks` after another hook wrote them (post-processing,

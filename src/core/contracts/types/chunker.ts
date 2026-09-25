@@ -108,6 +108,16 @@ export interface HookContext {
    * disambiguation, intermediate-scope collection and the oversized-child split.
    */
   methodChunkTypes: Map<number, ChunkType>;
+  /**
+   * Label for the container's REMAINDER chunk — the chunk the engine emits for
+   * the container's own rows that no child and no body chunk carries (bd
+   * tea-rags-mcp-deoki). The container-level counterpart of `methodChunkTypes`:
+   * a metadata hook relabels without taking over the emission, so the engine
+   * keeps owning the rows, the ranges and the id. Swift sets `test_setup` on a
+   * recognized test suite, whose stored properties are fixtures, not source.
+   * The engine falls back to its node-type mapping when unset.
+   */
+  containerChunkType?: ChunkType;
   bodyChunks: BodyChunkResult[];
   /** When true, processChildren() skips child chunk emission. */
   skipChildren?: boolean;
