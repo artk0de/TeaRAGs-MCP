@@ -39,20 +39,20 @@
  * lever. So the claim also has to account for the rest of the type body, which
  * `suiteResidueChunk` does: one `test_setup` chunk carrying the header rows and
  * every member that is not a `spec()`, left un-symbolId'd so the engine names
- * it after the class exactly as `container-body-chunker.ts` would have. Nothing
- * in the file stops being searchable; what a Quick suite gives up is per-member
- * addressability for its static helpers, which Quick 7's `class func spec()`
- * shape makes rare.
+ * it after the class exactly as it names the type-level chunk of an unclaimed
+ * container. Nothing in the file stops being searchable; what a Quick suite
+ * gives up is per-member addressability for its static helpers, which Quick 7's
+ * `class func spec()` shape makes rare.
  *
- * ── How this composes with `container-body-chunker.ts` ───────────────
+ * ── How this composes with the engine's container remainder ──────────
  *
- * Both hooks write `ctx.bodyChunks` and the engine stops the chain at the first
- * writer, so ORDER is the whole contract: this hook runs first and abstains on
- * everything that is not a Quick suite with a `spec()` method, at which point
- * the body chunker claims exactly as it does today. An XCTest class, a
- * protocol, a production type — none of them reach a single line of scope-tree
- * work. When this hook does claim, the body chunker is skipped and the residue
- * chunk stands in for the type-level chunk it would have emitted.
+ * A container nobody claims gets its type-level chunk from the ENGINE: the
+ * remainder of rows no member carries (bd tea-rags-mcp-deoki). A claim sets
+ * `skipChildren`, and the engine then adds nothing to the container — so when
+ * this hook claims, the residue chunk stands in for that remainder. The hook
+ * abstains on everything that is not a Quick suite with a `spec()` method; an
+ * XCTest class, a protocol, a production type — none of them reach a single
+ * line of scope-tree work.
  *
  * ── The Swift wrinkle: trailing closures ─────────────────────────────
  *
@@ -69,7 +69,6 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, ChunkType, HookContext } from "../../../../contracts/types/chunker.js";
-import { toLineRanges } from "./container-body-chunker.js";
 import {
   getSwiftCallName,
   isQuickSpecFile,
@@ -398,11 +397,10 @@ export function produceQuickScopeChunks(
  * Everything in the suite's body that is NOT a `spec()` method, as one
  * `test_setup` chunk — stored fixtures, static helpers, nested types.
  *
- * Deliberately not `extractSwiftContainerBody`: that one is a faithful port of
- * the engine's narrow parent chunk and stops at the first extracted member,
- * which is correct when the members are emitted separately and wrong here,
- * where `skipChildren` means they are not. No `symbolId` is set, so the engine
- * names this chunk after the class exactly as it names the body chunker's.
+ * Not the engine's container remainder: that one excludes every extracted
+ * member, which is correct when the members are emitted separately and wrong
+ * here, where `skipChildren` means they are not. No `symbolId` is set, so the
+ * engine names this chunk after the class exactly as it names the remainder.
  */
 function suiteResidueChunk(ctx: HookContext, specMethods: AstNode[]): BodyChunkResult | null {
   const body = ctx.containerNode.childForFieldName("body");
@@ -432,11 +430,31 @@ function suiteResidueChunk(ctx: HookContext, specMethods: AstNode[]): BodyChunkR
   };
 }
 
+/**
+ * Collapse sorted 0-based rows into contiguous 1-based ranges — the residue
+ * chunk is non-contiguous because the claimed `spec()` rows sit in the middle
+ * of the body.
+ */
+export function toLineRanges(rows: number[]): { start: number; end: number }[] {
+  const sorted = [...rows].sort((a, b) => a - b);
+  const ranges: { start: number; end: number }[] = [];
+  for (const row of sorted) {
+    const line = row + 1;
+    const last = ranges[ranges.length - 1];
+    if (last && line === last.end + 1) {
+      last.end = line;
+    } else {
+      ranges.push({ start: line, end: line });
+    }
+  }
+  return ranges;
+}
+
 // ── Hook export ──────────────────────────────────────────────────────
 
 /**
- * Scope chunker (chain position 4) — after every filter and metadata hook,
- * BEFORE the generic body chunker, per `.claude/rules/test-spec-chunking.md`.
+ * Scope chunker (chain position 4) — after every filter and metadata hook, per
+ * `.claude/rules/test-spec-chunking.md`.
  * Claims the suite by writing `ctx.bodyChunks`, and sets `skipChildren` so the
  * engine does not also emit the `spec()` method it just flattened.
  */

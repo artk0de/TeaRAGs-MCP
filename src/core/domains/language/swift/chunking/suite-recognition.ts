@@ -249,15 +249,22 @@ export function classifySwiftSuiteMember(memberNode: AstNode, suiteKind: SwiftSu
 }
 
 /**
- * Metadata hook (chain position 2): labels the children of a recognized suite
- * and writes nothing else. It must NOT touch `ctx.bodyChunks` — that would
- * short-circuit the chain before the container-body chunker runs.
+ * Metadata hook (chain position 2): labels a recognized suite — each child via
+ * `methodChunkTypes`, and the suite's own type-level chunk via
+ * `containerChunkType` — and writes nothing else. It must NOT touch
+ * `ctx.bodyChunks`: that would short-circuit the chain AND take the type-level
+ * chunk away from the engine, which emits it as the container remainder (bd
+ * tea-rags-mcp-deoki). The suite's stored properties are its fixtures, so that
+ * chunk is `test_setup`: once Swift emits ANY `test` chunk, `detectScope`
+ * switches the language from path-based to chunkType-based scoping, which would
+ * otherwise score an XCTest fixture block as production source.
  */
 export const swiftSuiteClassificationHook: ChunkingHook = {
   name: "swiftSuiteClassification",
   process(ctx: HookContext): void {
     const suiteKind = detectSwiftSuiteKind(ctx.containerNode, ctx.filePath);
     if (!suiteKind) return;
+    ctx.containerChunkType = "test_setup";
     ctx.validChildren.forEach((child, index) => {
       ctx.methodChunkTypes.set(index, classifySwiftSuiteMember(child, suiteKind));
     });

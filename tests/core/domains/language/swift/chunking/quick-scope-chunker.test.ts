@@ -10,12 +10,11 @@
  *     the hook CLAIMS is the type declaring it — the engine tests a child for
  *     oversize before it tests whether the child is a container, so a spec
  *     method above `maxChunkSize` would never get a context of its own.
- *   - CO-EXISTENCE. `swiftContainerBodyChunkerHook` already owns
- *     `ctx.bodyChunks` for that same node, so the two writers are ordered, not
- *     partitioned: the scope chunker takes first refusal and abstains on
- *     everything that is not a Quick suite, and its claim carries a residue
- *     chunk standing in for the type-level chunk the body chunker would have
- *     emitted.
+ *   - CO-EXISTENCE. An unclaimed container's type-level chunk is the engine's
+ *     container remainder (bd tea-rags-mcp-deoki), and a claim suppresses it:
+ *     the scope chunker abstains on everything that is not a Quick suite, and
+ *     its claim carries a residue chunk standing in for the type-level chunk
+ *     the engine would have emitted.
  */
 
 import { readFileSync } from "node:fs";

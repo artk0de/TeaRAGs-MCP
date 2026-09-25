@@ -30,6 +30,7 @@ import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
+import { planContainerRemainder } from "./container-remainder.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
 import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
@@ -74,6 +75,20 @@ interface SplitSymbolIdentity {
   parentType?: string;
   /** Transient classifier flag, preserved on every part. */
   claimed?: boolean;
+}
+
+/**
+ * Who a container's remainder chunk belongs to (bd tea-rags-mcp-deoki). The
+ * symbolId is the CONTAINER's own id — the remainder is the container's chunk,
+ * not a sibling of it — so an oversized remainder splits into
+ * `${symbolId}#partN` like any other symbol.
+ */
+interface ContainerRemainderIdentity {
+  symbolId: string | undefined;
+  name: string | undefined;
+  parentSymbolId: string | undefined;
+  parentType: string;
+  chunkType: NonNullable<CodeChunk["metadata"]["chunkType"]>;
 }
 
 export class TreeSitterChunker implements CodeChunker {
@@ -620,27 +635,27 @@ export class TreeSitterChunker implements CodeChunker {
               },
             });
           }
-        } else {
-          // bd tea-rags-mcp-b7k3 — when methods are extracted as separate
-          // chunks but the language has no hook chain (Python), emit ONE
-          // narrow parent class chunk covering only the signature + leading
-          // class-level attributes BEFORE the first method declaration.
-          // Without this narrowing the parent chunk spans the FULL class
-          // range, exceeds maxChunkSize on real classes (e.g. Flask), and
-          // gets split by enforceMaxChunkSize into anonymous Foo#part1..N
-          // that duplicate method bodies and shadow the first method in
-          // find_symbol lookups.
-          this.emitNarrowParentClassChunk(
-            node,
-            validChildren,
-            parentName,
-            parentType,
-            code,
-            filePath,
-            language,
-            chunks,
-          );
         }
+        // bd tea-rags-mcp-deoki — the container's own rows no child and no
+        // body chunk carries. On the no-hook path this IS the narrow parent
+        // chunk of bd tea-rags-mcp-b7k3 (never the full range — children's rows
+        // are excluded), now also carrying the rows AFTER the first child.
+        this.emitContainerRemainder(
+          node,
+          validChildren,
+          ctx,
+          {
+            symbolId: this.buildSymbolId(parentName),
+            name: parentName,
+            parentSymbolId: parentName,
+            parentType,
+            chunkType: this.getChunkType(node.type),
+          },
+          [],
+          filePath,
+          language,
+          chunks,
+        );
       }
       return true;
     }
@@ -1233,6 +1248,27 @@ export class TreeSitterChunker implements CodeChunker {
         },
       });
     }
+
+    // bd tea-rags-mcp-deoki — the recursed container's own rows. An anonymous
+    // container has no id of its own (`fullParentName` fell back to the OUTER
+    // container's id above), so its remainder stays anonymous rather than
+    // borrowing — and duplicating — the enclosing container's id.
+    this.emitContainerRemainder(
+      childNode,
+      validGrandChildren,
+      childCtx,
+      {
+        symbolId: childName ? fullParentName : undefined,
+        name: childName,
+        parentSymbolId: parentName,
+        parentType,
+        chunkType: this.getChunkType(childNode.type),
+      },
+      hierarchyHeaders,
+      filePath,
+      language,
+      chunks,
+    );
   }
 
   /**
@@ -1453,62 +1489,85 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Emit ONE narrow parent class chunk covering the lines BEFORE the first
-   * extracted child (method) — class signature, docstring, class-level
-   * attributes. The parent chunk MUST NOT span the full class range when
-   * methods have been extracted into their own chunks: the parent's content
-   * would then duplicate method bodies AND get split by enforceMaxChunkSize
-   * into anonymous Foo#part1..partN whose line ranges are bogus linear
-   * interpolations across the full class span.
+   * Emit the container's REMAINDER — its own rows that no extracted child, no
+   * hook body chunk, and no captured comment carries (bd tea-rags-mcp-deoki).
    *
-   * Used by no-hook languages with `alwaysExtractChildren` (Python).
-   * Languages with hooks (TS/Ruby) emit narrow chunks via `ctx.bodyChunks`
-   * which the hook chain populates with proper ranges.
+   * Before this, a container whose children were extracted lost every row the
+   * children did not cover: a Python function's statements after a nested
+   * `def`, class attributes declared between methods, and — on the hook path —
+   * a TS/JS factory's own statements around the object literal it returns
+   * (the class-body hook serves class bodies only). One remainder chunk per
+   * container carries them: non-contiguous rows via `lineRanges`, split into
+   * `${symbolId}#partN` windows when oversized.
    *
-   * bd tea-rags-mcp-b7k3.
+   * Invariants it keeps:
+   *   - bd tea-rags-mcp-b7k3 — the container chunk stays NARROW. A child's rows
+   *     are never in it, so it is never the full container range and never
+   *     duplicates a method body. On the no-hook path it REPLACES the old
+   *     narrow parent (rows above the first child) under the same id; it adds
+   *     no second chunk.
+   *   - One chunk per id. A container whose hook already wrote body chunks
+   *     carries the container id there, so the remainder stays out.
+   *   - The claim invariant (`.claude/rules/chunker-hooks.md`): a hook that sets
+   *     `skipChildren` claimed the WHOLE container — test-scope chunkers decide
+   *     themselves where setup rows go (inside example content, never in a
+   *     range) — so the engine adds nothing to a claimed container.
+   *   - bd tea-rags-mcp-07fr — no new recursion: rows of every valid child,
+   *     leaf or recursed, count as covered here; a recursed child emits its
+   *     own remainder from `emitNestedContainer`.
+   *   - No code-free chunk: a remainder that is only the header line (plus
+   *     closing punctuation) is dropped — every member chunk already carries
+   *     that header as its hierarchy prefix — and the 50-char floor is measured
+   *     on the substantive rows (`planContainerRemainder`).
    */
-  private emitNarrowParentClassChunk(
+  private emitContainerRemainder(
     containerNode: AstNode,
     validChildren: AstNode[],
-    parentName: string | undefined,
-    parentType: string,
-    code: string,
+    ctx: HookContext,
+    identity: ContainerRemainderIdentity,
+    hierarchyHeaders: string[],
     filePath: string,
     language: string,
     chunks: CodeChunk[],
   ): void {
-    // First child node is the first method (validChildren retains source order
-    // because findChildChunkableNodes does a depth-first traversal). Use its
-    // startPosition as the cutoff for the parent chunk.
-    const firstChild = validChildren.reduce(
-      (earliest, c) => (c.startPosition.row < earliest.startPosition.row ? c : earliest),
-      validChildren[0],
-    );
-    const classStartRow = containerNode.startPosition.row;
-    const cutoffRow = firstChild.startPosition.row;
-    const lines = code.split("\n");
-    // Slice [classStart, cutoff) — header row inclusive, first-method row
-    // exclusive. Methods live at cutoffRow onward and are emitted separately.
-    const headerLines = lines.slice(classStartRow, cutoffRow);
-    const content = headerLines.join("\n").trimEnd();
-    if (content.length < 50) return;
-    chunks.push({
-      content,
-      startLine: classStartRow + 1,
-      // endLine is the last header row (1-based, inclusive). cutoffRow is
-      // 0-based for firstChild.startPosition; the row above it is the last
-      // line of the header region.
-      endLine: Math.max(classStartRow + 1, cutoffRow),
-      metadata: {
-        filePath,
-        language,
-        chunkIndex: chunks.length,
-        chunkType: this.getChunkType(containerNode.type),
-        name: parentName,
-        parentSymbolId: parentName,
-        parentType,
-        symbolId: this.buildSymbolId(parentName),
-      },
+    if (ctx.skipChildren || ctx.bodyChunks.length > 0) return;
+
+    const coveredRows = new Set<number>(ctx.excludedRows);
+    for (const child of validChildren) {
+      for (let { row } = child.startPosition; row <= child.endPosition.row; row++) coveredRows.add(row);
+    }
+
+    const parts = planContainerRemainder({
+      codeLines: ctx.codeLines,
+      containerStartRow: containerNode.startPosition.row,
+      containerEndRow: containerNode.endPosition.row,
+      coveredRows,
+      containerHeader: this.extractContainerHeader(containerNode, ctx.code),
+      hierarchyPrefix: this.buildHierarchyPrefix(hierarchyHeaders),
+      maxChunkSize: this.config.maxChunkSize,
+      minContentLength: 50,
+    });
+
+    const split = parts.length > 1;
+    parts.forEach((part, i) => {
+      chunks.push({
+        content: part.content,
+        startLine: part.startLine,
+        endLine: part.endLine,
+        metadata: {
+          filePath,
+          language,
+          chunkIndex: chunks.length,
+          chunkType: ctx.containerChunkType ?? identity.chunkType,
+          name:
+            split && identity.name !== undefined ? `${identity.name} (part ${i + 1}/${parts.length})` : identity.name,
+          symbolId: split && identity.symbolId !== undefined ? `${identity.symbolId}#part${i + 1}` : identity.symbolId,
+          parentSymbolId: split ? (identity.symbolId ?? identity.parentSymbolId) : identity.parentSymbolId,
+          parentType: identity.parentType,
+          // A single contiguous run needs no ranges — startLine..endLine says it.
+          ...(part.lineRanges.length > 1 ? { lineRanges: part.lineRanges } : {}),
+        },
+      });
     });
   }
 
