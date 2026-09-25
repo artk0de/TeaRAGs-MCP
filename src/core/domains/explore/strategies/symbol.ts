@@ -63,6 +63,7 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
+import { isTestExampleChunk } from "../chunk-grouping/code.js";
 import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -304,6 +305,12 @@ function filterByExactSymbolId(
     // FQN (e.g. `Foo::Bar`) or just the local class name (e.g. `Bar`),
     // depending on language. Accept both forms.
     if (parentSymbolId === fqn || parentSymbolId === containerName) return true;
+    // A `#partN` window of an oversized test example names the EXAMPLE as its
+    // parent, not the scope; it stands for an example of the queried scope
+    // when its base id extends the scope id (bd tea-rags-mcp-msv3l). An example
+    // name is free text, so its scope is read by prefix, never by
+    // `memberOwnerOf`'s last-separator split.
+    if (isTestExampleChunk(c)) return splitFragmentBase(c.payload)?.startsWith(`${fqn}.`) === true;
     // A member split into `#partN` parts names the member as its parent; the
     // container is the member id's owner (bd tea-rags-mcp-y5vx4).
     const owner = splitPartOwner(c.payload);

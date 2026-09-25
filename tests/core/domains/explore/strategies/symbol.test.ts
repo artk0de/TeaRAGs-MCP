@@ -755,6 +755,50 @@ describe("SymbolSearchStrategy", () => {
     });
   });
 
+  describe("test scope query (tea-rags-mcp-msv3l)", () => {
+    const scopeId = "User.context 'when admin'";
+    const example = (id: string, symbolId: string, parentSymbolId: string, startLine: number) => ({
+      id,
+      payload: {
+        symbolId,
+        name: symbolId,
+        chunkType: "test",
+        parentSymbolId,
+        parentType: "test_scope",
+        relativePath: "spec/models/user_spec.rb",
+        content: "let(:user) { create(:user) }\nit 'works' do\n  expect(user).to be_admin\nend",
+        startLine,
+        endLine: startLine + 3,
+        language: "ruby",
+      },
+    });
+
+    it("keeps an oversized example's #partN windows so the scope outline lists it", async () => {
+      const huge = `${scopeId}.it 'exports everything'`;
+      const invite = example("e-1", `${scopeId}.it 'can invite'`, scopeId, 10);
+      const part1 = example("p-1", `${huge}#part1`, huge, 20);
+      mockScrollFiltered.mockResolvedValueOnce([]).mockResolvedValueOnce([invite, part1]);
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], [], buildRegistry(), { symbol: scopeId });
+      const result = await strategy.execute({ collectionName: "c", limit: 50 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`, `  ${huge}`].join("\n"));
+    });
+
+    it("does not let a sibling scope's examples into the outline", async () => {
+      const sibling = "User.context 'when admin' extra";
+      const invite = example("e-1", `${scopeId}.it 'can invite'`, scopeId, 10);
+      const foreign = example("e-2", `${sibling}.it 'can invite'`, sibling, 30);
+      mockScrollFiltered.mockResolvedValueOnce([]).mockResolvedValueOnce([invite, foreign]);
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], [], buildRegistry(), { symbol: scopeId });
+      const result = await strategy.execute({ collectionName: "c", limit: 50 });
+
+      expect(result[0].payload?.content).toBe([scopeId, `  ${scopeId}.it 'can invite'`].join("\n"));
+    });
+  });
+
   // bd tea-rags-mcp-y5vx4 — an oversized member is indexed ONLY as
   // `${member}#partN` parts whose parentSymbolId is the member, not the class.
   // A class query must still list it, once, under its base id.

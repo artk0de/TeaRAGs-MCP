@@ -46,12 +46,20 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * walker bump already routes every index to that same whole-collection
  * recompute, and a second axis would name the same remedy twice.
  *
- * chunking 2: an oversized symbol is cut on its statement boundaries into
- * `#part1..#partN` parts, numbered once, each prefixed with its enclosing
- * context instead of overlapping raw lines; markdown sections are cut between
- * blocks and the character fallback between syntax-neutral units (bd
- * tea-rags-mcp-y5vx4, tea-rags-mcp-308ff). The chunk set moves in every
- * language, so every index needs `tea-rags index-codebase --force`.
+ * chunking 2 is this release's ONE chunking bump, shared by two changes:
+ *   - an oversized symbol is cut on its statement boundaries into
+ *     `#part1..#partN` parts, numbered once, each prefixed with its enclosing
+ *     context instead of overlapping raw lines; markdown sections are cut
+ *     between blocks and the character fallback between syntax-neutral units
+ *     (bd tea-rags-mcp-y5vx4, tea-rags-mcp-308ff);
+ *   - test files are chunked by EXAMPLE (bd tea-rags-mcp-msv3l, epic
+ *     tea-rags-mcp-phftd) — `kernel/test-scope-chunks.ts` emits one chunk per
+ *     example with the id `<top>.<scope>.<example>` and a `test_scope`
+ *     parentType, and the engine honours a hook-provided parentType.
+ * Every language's test-chunker migration onto the kernel shipped in the same
+ * release lands under it and re-pins its own `chunking` digest without bumping
+ * again. The chunk set moves in every language and no narrower drift scope is
+ * declared, so every index needs `tea-rags index-codebase --force`.
  */
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 2,

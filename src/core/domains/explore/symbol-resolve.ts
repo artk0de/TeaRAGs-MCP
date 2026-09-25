@@ -6,7 +6,7 @@
  */
 
 import type { SearchResult } from "../../api/public/dto/explore.js";
-import { CodeChunkGrouper } from "./chunk-grouping/code.js";
+import { CodeChunkGrouper, isTestChunk, isTestExampleChunk } from "./chunk-grouping/code.js";
 import { DocChunkGrouper } from "./chunk-grouping/doc.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./chunk-grouping/types.js";
 import { memberOwnerOf, splitFragmentBase, splitFragmentOwnRows } from "./split-fragment.js";
@@ -55,10 +55,14 @@ interface ContainerOutlinePlan {
  *    find_symbol on the class. With no source class or member in the scroll
  *    nothing is outlined, so the tests merge per group like any other symbol —
  *    an empty find_symbol reads to an agent as a wrong separator.
- * 3. Doc TOC — only when the query IS the document path (the chunks'
+ * 3. Test scope outline. A query naming a test scope — the parentSymbolId its
+ *    example chunks share (`User.context 'when admin'`) — yields an outline of
+ *    its example ids, one per relativePath; an example id itself still merges
+ *    to that example's body in step 5. See `.claude/rules/test-spec-chunking.md`.
+ * 4. Doc TOC — only when the query IS the document path (the chunks'
  *    parentSymbolId). Several windows of one section share a `doc:<hash>` id,
  *    so "more than one doc chunk" is no signal that a TOC was asked for.
- * 4. Everything else merges per group: documentation windows are stitched by
+ * 5. Everything else merges per group: documentation windows are stitched by
  *    text (`DocChunkGrouper.mergeSection`), code chunks by startLine
  *    (`mergeChunks`).
  *
@@ -99,7 +103,15 @@ export function resolveSymbols(
   const outlinedIds = new Set(plans.flatMap((plan) => [...plan.ids]));
   for (const group of groups) if (isTestGroup(group) && hasParentIn(group, outlinedIds)) emit(group);
 
-  // 3. Doc TOC for a document-path query.
+  // 3. A test scope id outlines its examples.
+  if (query !== undefined) {
+    for (const plan of planTestScopeOutlines(groups.filter(isPending), query)) {
+      plan.memberGroups.forEach(emit);
+      results.push(renderContainerOutline(plan));
+    }
+  }
+
+  // 4. Doc TOC for a document-path query.
   if (query !== undefined) {
     const tocByPath = new Map<string, ScrollChunk[]>();
     for (const c of chunks) {
@@ -114,7 +126,7 @@ export function resolveSymbols(
     }
   }
 
-  // 4. Everything left merges per group.
+  // 5. Everything left merges per group.
   for (const group of groups) {
     const pending = group.filter((c) => !emittedIds.has(c.id));
     if (pending.length === 0) continue;
@@ -198,6 +210,35 @@ function planSynthesisedOutlines(pendingGroups: ScrollChunk[][], query: string):
   }));
 }
 
+/**
+ * One plan per relativePath for a query naming a TEST SCOPE — the
+ * `parentSymbolId` its examples share (bd tea-rags-mcp-msv3l). A scope has no
+ * chunk of its own, so it is always synthesised. Members are the test groups
+ * whose parentSymbolId IS the query, plus an oversized example present only as
+ * `#partN` windows, whose base id extends the query by one more segment.
+ */
+function planTestScopeOutlines(pendingGroups: ScrollChunk[][], query: string): ContainerOutlinePlan[] {
+  const membersByPath = new Map<string, ScrollChunk[][]>();
+  for (const group of pendingGroups) {
+    const isMember = group.some((c) => {
+      if (!isTestExampleChunk(c)) return false;
+      const base = splitFragmentBase(c.payload);
+      return base === undefined ? c.payload.parentSymbolId === query : base.startsWith(`${query}.`);
+    });
+    if (!isMember) continue;
+    const relativePath = relativePathOf(group[0]);
+    const list = membersByPath.get(relativePath);
+    if (list) list.push(group);
+    else membersByPath.set(relativePath, [group]);
+  }
+  return [...membersByPath].map(([relativePath, memberGroups]) => ({
+    containerSymbolId: query,
+    ids: new Set([query]),
+    relativePath,
+    memberGroups,
+  }));
+}
+
 function renderContainerOutline(plan: ContainerOutlinePlan, visibilityOf?: MemberVisibilityLookup): SearchResult {
   const memberChunks = plan.memberGroups.flatMap(outlineMemberChunks);
   return plan.classChunk
@@ -240,9 +281,7 @@ function isClassLevelChunk(c: ScrollChunk): boolean {
 }
 
 function isTestGroup(group: ScrollChunk[]): boolean {
-  return group.some(
-    (c) => c.payload.chunkType === "test" || c.payload.chunkType === "test_setup" || c.payload.isTest === true,
-  );
+  return group.some(isTestChunk);
 }
 
 function isDocumentationSection(group: ScrollChunk[]): boolean {

@@ -77,7 +77,8 @@ describe("resolveLanguageCodeVersions", () => {
     // engine and unioned by the runner's per-target dedupe.
     // chunking 2: bd tea-rags-mcp-y5vx4 — oversized symbols split on statement
     // boundaries into `#part1..N` with context prefixes; markdown and the
-    // character fallback cut between blocks / syntax-neutral units.
+    // character fallback cut between blocks / syntax-neutral units. Same bump:
+    // bd tea-rags-mcp-msv3l — test files chunked by example.
     expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 5, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.

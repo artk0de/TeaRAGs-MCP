@@ -24,6 +24,15 @@
   `codegraph` was lost this way (tea-rags-mcp-0am0), and `DocChunkGrouper` still
   copies `git` only. Why: a new payload namespace vanishes from find_symbol with
   no type error to catch it.
+- **A test scope is drawn only from `parentType: TEST_SCOPE_PARENT_TYPE`.**
+  `isTestExampleChunk` (`chunk-grouping/code.ts`) is the one gate for the scope
+  lines of `CodeChunkGrouper.groupFile`, the scope-id outline in
+  `resolveSymbols`, and the `#partN` admission in `SymbolSearchStrategy`. Never
+  infer a scope from the id shape: a setup-only scope under its top-level name
+  and an example under its scope are both `<parent>.<name>`. Id and emission
+  contract: `.claude/rules/test-spec-chunking.md`. Why: a pre-example-era test
+  chunk parented to a CLASS would be outlined instead of merged, reversing the
+  u74dj decision its tests pin.
 - **A `level: "file"` hit is reduced to file scope AFTER ranking, never
   before.** `FileLevelGrouper` keeps the top chunk per file with its full
   payload; `BaseExploreStrategy#shapeFileLevel` then applies

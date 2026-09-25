@@ -16,28 +16,22 @@ import { describe, expect, it } from "vitest";
 
 import { resolveLanguageCodeVersions } from "../../../../../src/core/domains/language/capability/versions.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
-import { SHARED_LANGUAGE, sharedVersions } from "../../../../../src/core/domains/language/kernel/capability.js";
+import { SHARED_LANGUAGE } from "../../../../../src/core/domains/language/kernel/capability.js";
 import { LanguageVersionDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/language-version-drift-monitor.js";
 import {
   formatIndexDriftReport,
   IndexDriftReporter,
 } from "../../../../../src/core/domains/maintenance/drift/report.js";
 
-/**
- * The shared stamp every index carried before the chunk-owner rule landed. Its
- * `walker` tracks the current one: a LATER shared walker bump (bd
- * tea-rags-mcp-nbf8q took it 2 → 3) is its own drift, not this change's, and
- * would otherwise read as one here. `chunking` tracks the current one for the
- * same reason (bd tea-rags-mcp-y5vx4 took it 1 → 2).
- */
-const STAMPED_BEFORE_CHUNK_OWNER = {
-  chunking: sharedVersions.chunking,
-  walker: sharedVersions.walker,
-  codegraphSchema: 1,
-};
-
 describe("sharedVersions after the chunk-owner rule (bd tea-rags-mcp-9i2ow)", () => {
   const current = resolveLanguageCodeVersions(new LanguageFactory().capabilities(), () => undefined);
+  /**
+   * An index stamped before the chunk-owner rule landed, current on every other
+   * shared axis — so the codegraphSchema step is the ONLY drift under test. A
+   * later bump of another axis (chunking 2, bd tea-rags-mcp-msv3l) moves with
+   * the current stamp instead of leaking into this assertion.
+   */
+  const STAMPED_BEFORE_CHUNK_OWNER = { ...current.get(SHARED_LANGUAGE)!, codegraphSchema: 1 };
 
   it("an index stamped before it reports the shared codegraph schema and nothing else shared", () => {
     const drifts = LanguageVersionDriftMonitor.detectDrift(
