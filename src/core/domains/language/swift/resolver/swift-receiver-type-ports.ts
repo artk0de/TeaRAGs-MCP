@@ -689,6 +689,14 @@ function swiftKeyPathCallType(
   return root;
 }
 
+/** `owner.member` as a type the project DECLARES (not merely re-opens), in type form. */
+function swiftNestedProjectType(owner: string, member: string, ctx: CallContext): TypeRef | undefined {
+  if (!isSwiftTypeName(member)) return undefined;
+  const qualified = `${owner}.${member}`;
+  const declaring = swiftDeclaringFiles(qualified, ctx);
+  return declaring !== undefined && declaring.size > 0 ? { form: "class", name: qualified } : undefined;
+}
+
 /** The type one member hop off `recv` denotes — the fold's `memberTypeOf`, before the bound mark. */
 function swiftMemberHopType(
   recv: TypeRef,
@@ -701,6 +709,11 @@ function swiftMemberHopType(
   // `self.$result` / `model.$result`: the property's wrapper, projected (bd tea-rags-mcp-y99pg.33).
   const projected = SWIFT_PROJECTED_VALUE.exec(member.trim());
   if (projected !== null) return swiftProjectedValueType(recv, projected[1], ctx, members);
+  // `CodeUsage.Tile`: a type path off a type names the NESTED type the
+  // project declares — Swift forbids a member of the same name beside it, so
+  // this reading excludes every other (bd tea-rags-mcp-y99pg.39).
+  const nested = recv.form === "class" ? swiftNestedProjectType(recv.name, member, ctx) : undefined;
+  if (nested !== undefined) return nested;
   // The field channel records no staticness, so the receiver's form does
   // not select a channel here — a `class` head and an `instance` head read
   // the same property map. Accessing a property always yields a VALUE, so

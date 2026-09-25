@@ -1288,6 +1288,37 @@ describe("SwiftCallResolver — call-result and cast receiver heads (bd tea-rags
     expect(target).toBeNull();
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `CodeUsage.Tile.awtrix(reading)`: a type
+  // path hop off a type names the nested type, whose static member is the call.
+  it("types a nested-type hop off a type as that nested type", () => {
+    const nested = table({
+      "Sources/CodeUsage.swift": [
+        { symbolId: "CodeUsage", scope: [] },
+        { symbolId: "CodeUsage.Tile", scope: ["CodeUsage"] },
+        { symbolId: "CodeUsage.Tile.awtrix", scope: ["CodeUsage", "Tile"] },
+      ],
+      "Sources/Github.swift": [
+        { symbolId: "Github", scope: [] },
+        { symbolId: "Github#awtrix", scope: ["Github"] },
+      ],
+    });
+    const at = ctx({
+      callerFile: "Sources/Connector.swift",
+      callerScope: ["Connector"],
+      symbolTable: nested,
+      typeDeclarations: {
+        "Sources/CodeUsage.swift": [
+          { typeId: "CodeUsage", reopens: false },
+          { typeId: "CodeUsage.Tile", reopens: false },
+        ],
+        "Sources/Github.swift": [{ typeId: "Github", reopens: false }],
+      },
+    });
+    expect(new SwiftCallResolver().resolve(call("CodeUsage.Tile", "awtrix"), at)?.targetSymbolId).toBe(
+      "CodeUsage.Tile.awtrix",
+    );
+  });
+
   // bd tea-rags-mcp-y99pg.39 — `ClockStore(defaults: defaults).all()`: a
   // construction of a PROJECT type is an instance of it, multi-line argument
   // lists and `try` included; an UpperCamelCase FUNCTION is no type.
