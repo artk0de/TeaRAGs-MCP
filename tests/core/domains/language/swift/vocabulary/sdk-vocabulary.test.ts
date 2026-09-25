@@ -94,6 +94,12 @@ describe("SwiftSdkVocabulary", () => {
     expect(sdk.globalFunctions("noSuchFunction")).toEqual([]);
   });
 
+  it("publishes the standard library's value-returning free functions by full name (bd tea-rags-mcp-3j7rg)", () => {
+    expect(sdk.labelledGlobalFunction("stride(from:to:by:)").map((shape) => shape.returns)).toEqual(["StrideTo<T>"]);
+    expect(sdk.labelledGlobalFunction("stride(from:through:by:)")[0]?.genericParameters.get("T")).toBe("Strideable");
+    expect(sdk.labelledGlobalFunction("stride")).toEqual([]);
+  });
+
   it("spells every declared and returned type in a grammar the parser covers", () => {
     const raw = JSON.parse(SWIFT_SDK_VOCABULARY_JSON) as {
       types: Record<string, { m: Record<string, string[]> }>;

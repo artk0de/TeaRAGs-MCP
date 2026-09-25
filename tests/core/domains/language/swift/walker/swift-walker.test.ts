@@ -718,6 +718,16 @@ describe("extractFromSwiftFile — classFieldTypes", () => {
     }
   });
 
+  // bd tea-rags-mcp-3j7rg — `@State private var showing = false`: a Boolean
+  // literal is a `Bool` at the declaration, wrapper or not, so
+  // `showing.toggle()` is `Bool.toggle`, never a project `toggle`.
+  it("records a stored property initialised by a Boolean literal", () => {
+    const src = ["struct Card {", "  @State private var showing = false", "  var lit = true", "}", ""].join("\n");
+    for (const r of [extract(src), extractMaterialized(src)]) {
+      expect(r.classFieldTypes?.Card).toEqual({ showing: "Bool", lit: "Bool" });
+    }
+  });
+
   /**
    * bd tea-rags-mcp-y99pg.36 — Alamofire's Combine.swift nests a private
    * `Inner` in each of three publishers, each holding a `request` of a

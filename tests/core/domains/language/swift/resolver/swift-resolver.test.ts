@@ -3353,6 +3353,112 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
   });
 
+  /**
+   * bd tea-rags-mcp-3j7rg — `IndicatorSlot.allCases.map { … }` on a project
+   * enum that conforms to `CaseIterable` and declares neither `allCases` nor
+   * `AllCases`: the synthesized conformance's `AllCases` is the protocol's
+   * default, `[Self]`, and `CaseIterable` has no other requirement a witness
+   * could infer it from. A generic parameter bounded by `CaseIterable` keeps
+   * its `AllCases` unknown — a conformer may declare its own.
+   */
+  it("types a project CaseIterable's allCases as an Array of itself", () => {
+    const withSlot = table({
+      "Sources/Request.swift": [
+        { symbolId: "Request", scope: [] },
+        { symbolId: "Request#map", scope: ["Request"] },
+      ],
+      "Sources/Slot.swift": [{ symbolId: "IndicatorSlot", scope: [] }],
+    });
+    const enumContext = context({
+      symbolTable: withSlot,
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/Slot.swift": [{ typeId: "IndicatorSlot", reopens: false, conforms: ["Int", "CaseIterable"] }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("IndicatorSlot.allCases", "map", 6), enumContext)).toBe(false);
+    // Unqualified inside the enum: an SDK member only a STATIC declaration
+    // answers is the static one — Swift reaches no static member unqualified
+    // from an instance context.
+    const inEnum = { ...enumContext, callerScope: ["IndicatorSlot"] };
+    expect(resolver.hasInProjectDefinition(call("allCases", "map", 6), inEnum)).toBe(false);
+    const generic = context({ callerScope: ["Picker<Value: CaseIterable>", "go"] });
+    expect(resolver.hasInProjectDefinition(call("Value.allCases", "map", 6), generic)).toBe(true);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — `stride(from: 5, through: 60, by: 5).map { … }`:
+   * the standard library's free function, picked by the labels the head
+   * writes (`through:` is a `StrideThrough`, `to:` a `StrideTo`), whose
+   * `map` is the SDK's. A project function of that name shadows it, and the
+   * head then types nothing.
+   */
+  it("types a standard-library free-function head by its labels", () => {
+    const resolver = new SwiftCallResolver();
+    for (const head of ["stride(from: 5, through: 60, by: 5)", "stride(from: width - 2, to: 0, by: -1)"]) {
+      expect(resolver.hasInProjectDefinition(call(head, "map", 6), context())).toBe(false);
+    }
+    const shadowed = table({
+      "Sources/Request.swift": [
+        { symbolId: "Request", scope: [] },
+        { symbolId: "Request#map", scope: ["Request"] },
+      ],
+      "Sources/Stride.swift": [{ symbolId: "stride", scope: [] }],
+    });
+    const own = context({ symbolTable: shadowed });
+    expect(resolver.hasInProjectDefinition(call("stride(from: 5, through: 60, by: 5)", "map", 6), own)).toBe(true);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — a subscript head. `frames[0]` on a `[Request]` is
+   * a `Request` (an integer literal is only ever an `Int`, and `Int` picks
+   * the element subscript); `apps[key]` on a `[String: Set<String>]` with a
+   * `String` key is an `Optional<Set<String>>`, whose `map` is `Optional`'s.
+   * An index the resolver cannot type picks no subscript: an `Array` also
+   * takes ranges, a `Dictionary` also takes its own `Index`.
+   */
+  it("types a subscript head by the subscript its index can only mean", () => {
+    const fields = context({
+      classFieldTypes: { Session: { apps: "Dictionary", frames: "Array" } },
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/Session.swift": [
+          {
+            typeId: "Session",
+            reopens: false,
+            fieldTypeArguments: { apps: ["String", "Set"], frames: ["Request"] },
+          },
+        ],
+      },
+      localBindings: { key: [{ line: 2, type: "String" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("frames[0]", "cancel", 6), fields)?.targetSymbolId).toBe("Request#cancel");
+    expect(resolver.resolve(call("frames[i]", "cancel", 6), fields)).toBeNull();
+    expect(resolver.hasInProjectDefinition(call("apps[key]", "map", 6), fields)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call('apps["x"]', "map", 6), fields)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("apps[index]", "map", 6), fields)).toBe(true);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — a link called with a trailing closure alone:
+   * `frames.filter { $0.ok }.map { … }` is `Array.filter`'s `[Request]`, and
+   * `map` on it the SDK's. The closure is the link's argument, not its name.
+   */
+  it("types a link called with only a trailing closure", () => {
+    const fields = context({
+      classFieldTypes: { Session: { frames: "Array" } },
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false, fieldTypeArguments: { frames: ["Request"] } }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("frames.filter { $0.isOK(1) }", "map", 6), fields)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("frames.sorted { $0.at < $1.at }", "map", 6), fields)).toBe(false);
+  });
+
   it("types an implicit-self property and call head the SDK declares on the enclosing type", () => {
     const resolver = new SwiftCallResolver();
     const inRequest = context({ callerScope: ["URLRequest", "headers"] });

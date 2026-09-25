@@ -2472,7 +2472,7 @@ function swiftStoredPropertyFact(node: AstNode): SwiftTypeFact {
 }
 
 /**
- * The type a collection or string LITERAL names at the declaration itself (bd
+ * The type a collection, string or Boolean LITERAL names at the declaration itself (bd
  * tea-rags-mcp-y99pg.39): `[(1, 2), (14, 1)]` is an `Array`, `["a": 1]` a
  * `Dictionary`, `"GitHub"` a `String` — Swift's defaults for an unannotated
  * literal. Evidence written at the declaration, like a CapWords initializer,
@@ -2491,6 +2491,10 @@ function swiftLiteralPropertyFact(value: AstNode | null): SwiftTypeFact | null {
     case "multi_line_string_literal":
     case "raw_string_literal":
       return { nominal: "String", element: null };
+    // `@State private var showing = false` (bd tea-rags-mcp-3j7rg): a Boolean
+    // literal's default type is `Bool`, and reading the property reads it.
+    case "boolean_literal":
+      return { nominal: "Bool", element: null };
     default:
       return null;
   }
