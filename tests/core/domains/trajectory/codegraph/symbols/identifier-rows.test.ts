@@ -518,3 +518,62 @@ describe("buildIdentifierRows — owner chunk resolution", () => {
     ]);
   });
 });
+
+// Live taxdome recompute (2026-09-25) died with `Worker error: (bindings ?? [])
+// is not iterable`: a declared name that is also an `Object.prototype` member
+// (`constructor`, `toString`, `hasOwnProperty`) looked up a plain-object channel
+// map and got the inherited FUNCTION back. The binding channel then threw, and
+// the field channel would have written that function as the row's type.
+describe("buildIdentifierRows — names shared with Object.prototype", () => {
+  const PROTOTYPE_NAMES = ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"];
+
+  it("a local named like a prototype member stays untyped instead of throwing", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [chunk({ symbolId: "ProcessEvent#call", localBindings: { row: [{ line: 5, type: "Doc" }] } })],
+          identifierDeclarations: [decl({ name })],
+        }),
+      );
+      expect(rows, name).toEqual([{ ownerSymbolId: "ProcessEvent#call", kind: "local", name, line: 5 }]);
+    }
+  });
+
+  it("a field named like a prototype member takes no inherited function as its type", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [chunk({ symbolId: "ProcessEvent#call", scope: ["ProcessEvent"] })],
+          ivarTypes: { ProcessEvent: { "@row": "Doc" } },
+          classFieldTypes: { ProcessEvent: { row: "Doc" } },
+          identifierDeclarations: [decl({ name, kind: "field" })],
+        }),
+      );
+      expect(rows, name).toEqual([{ ownerSymbolId: "ProcessEvent#call", kind: "field", name, line: 5 }]);
+    }
+  });
+
+  it("a declaration still reads its own entry when the map also holds a prototype-named one", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "ProcessEvent#call",
+            localBindings: { constructor: [{ line: 5, type: "Builder" }] },
+          }),
+        ],
+        identifierDeclarations: [decl({ name: "constructor" })],
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        ownerSymbolId: "ProcessEvent#call",
+        kind: "local",
+        name: "constructor",
+        line: 5,
+        typeName: "Builder",
+        typeSource: "binding",
+      },
+    ]);
+  });
+});

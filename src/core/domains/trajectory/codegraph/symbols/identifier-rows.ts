@@ -27,6 +27,7 @@
  * confirm itself.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -135,10 +136,10 @@ function fieldTypeOf(extraction: FileExtraction, chunk: ChunkExtraction | undefi
   for (const map of [extraction.ivarTypes, extraction.classFieldTypes]) {
     if (!map) continue;
     for (const classKey of classKeys) {
-      const fields = map[classKey];
+      const fields = identifierEntry(map, classKey);
       if (!fields) continue;
       for (const field of names) {
-        const type = fields[field];
+        const type = identifierEntry(fields, field);
         if (type) return type;
       }
     }
@@ -177,7 +178,8 @@ function recoveredType(
     const fieldType = fieldTypeOf(extraction, chunk, decl.name);
     if (fieldType) return { typeName: fieldType, typeSource: "field-type" };
   } else {
-    const bound = bindingTypeAt(chunk?.localBindings?.[decl.name], decl.line);
+    // Own-key read: a local named `constructor` would index Object.prototype (live taxdome crash).
+    const bound = bindingTypeAt(identifierEntry(chunk?.localBindings, decl.name), decl.line);
     if (bound) return { typeName: bound, typeSource: "binding" };
   }
   const callee = decl.boundCallee;
