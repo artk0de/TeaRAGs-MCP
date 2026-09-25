@@ -87,7 +87,7 @@ function swiftLexicalReachClassifier(
   );
   return (def) => {
     if (def.scope.length === 0 || isSwiftTypeDeclarationId(def.symbolId)) return "reached";
-    if (!isSwiftTypeName(lastComponent(def.scope[def.scope.length - 1]))) return localReach(def, ctx);
+    if (isSwiftLocalDeclaration(def)) return localReach(def, ctx);
     const owner = def.scope.join(".");
     if (reached.has(owner)) return "reached";
     const declaring = swiftDeclaringFiles(owner, ctx);
@@ -120,7 +120,14 @@ function localReach(def: SymbolDefinition, ctx: CallContext): SwiftLexicalReach 
   return inside ? "reached" : "off";
 }
 
-/** A scope segment's last `.` component — `extension AFError.Reason` is judged by `Reason`. */
-function lastComponent(segment: string): string {
-  return segment.slice(segment.lastIndexOf(".") + 1);
+/**
+ * Whether `def` is declared in a FUNCTION body — its innermost scope segment
+ * names a function, not a type (`GitHubTileConfig#init#flag`). Such a
+ * declaration is reachable by its bare name inside that body and through no
+ * receiver anywhere (bd tea-rags-mcp-y99pg.39).
+ */
+export function isSwiftLocalDeclaration(def: SymbolDefinition): boolean {
+  if (def.scope.length === 0) return false;
+  const segment = def.scope[def.scope.length - 1];
+  return !isSwiftTypeName(segment.slice(segment.lastIndexOf(".") + 1));
 }

@@ -4479,6 +4479,35 @@ describe("SwiftCallResolver — a bare name reaches only what lexical lookup rea
     expect(resolver.hasInProjectDefinition(bare("flag", 1), inside("Config#reset"))).toBe(false);
   });
 
+  it("never reaches a local function through a receiver", () => {
+    // `region(grip).frame(width:)` is SwiftUI's `View.frame`: a `frame` local to
+    // some other function body is callable by its bare name there and nowhere else.
+    const withLocal = table({
+      "Sources/Face.swift": [
+        { symbolId: "Face", scope: [] },
+        { symbolId: "Face.timeline", scope: ["Face"] },
+        { symbolId: "Face.timeline#frame", scope: ["Face", "timeline"] },
+      ],
+      "Sources/Board.swift": [
+        { symbolId: "Board", scope: [] },
+        { symbolId: "Board#frame", scope: ["Board"] },
+      ],
+      "Sources/Tile.swift": [{ symbolId: "Tile", scope: [] }],
+    });
+    const context = ctx({
+      callerFile: "Sources/Border.swift",
+      callerScope: ["Border"],
+      symbolTable: withLocal,
+      localBindings: { tile: [{ line: 5, type: "Tile" }] },
+      typeDeclarations: {
+        "Sources/Face.swift": [{ typeId: "Face", reopens: false }],
+        "Sources/Board.swift": [{ typeId: "Board", reopens: false }],
+        "Sources/Tile.swift": [{ typeId: "Tile", reopens: false }],
+      },
+    });
+    expect(new SwiftCallResolver().hasInProjectDefinition(call("tile", "frame"), context)).toBe(false);
+  });
+
   it("keeps every namesake in reach on an index with no type-declaration channel", () => {
     const context = ctx({ callerFile: "Sources/Listener.swift", callerScope: ["Listener"], symbolTable: scriptTable });
     expect(new SwiftCallResolver().hasInProjectDefinition(bare("close", 1), context)).toBe(true);

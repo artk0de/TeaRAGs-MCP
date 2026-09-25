@@ -135,7 +135,7 @@ import {
   type SwiftResolverConfig,
 } from "./strategies/index.js";
 import { swiftSelfTypeName } from "./swift-enclosing-scope.js";
-import { swiftLexicallyReachableDefinitions } from "./swift-lexical-reach.js";
+import { isSwiftLocalDeclaration, swiftLexicallyReachableDefinitions } from "./swift-lexical-reach.js";
 import { SwiftMemberTypeLookup } from "./swift-member-type-lookup.js";
 import {
   createSwiftWrittenReceiverTypePorts,
@@ -273,7 +273,10 @@ export class SwiftCallResolver implements CallResolver {
     const defs = lookupSwiftSymbolsByShortName(ctx, call.member);
     if (defs.length === 0) return false;
     if (call.receiver === null) return this.bareNameMayReach(call, ctx);
-    return this.receiverMayReach(call, ctx, defs);
+    // A function-local declaration answers to its bare name only (bd tea-rags-mcp-y99pg.39).
+    const members = defs.filter((def) => !isSwiftLocalDeclaration(def));
+    if (members.length === 0) return false;
+    return this.receiverMayReach(call, ctx, members);
   }
 
   /**
