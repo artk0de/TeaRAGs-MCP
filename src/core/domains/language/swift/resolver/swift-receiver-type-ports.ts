@@ -174,6 +174,7 @@ function swiftHeadType(
     return (
       swiftImplicitSelfCallHeadType(head, atLine, ctx, enclosing, members, ports) ??
       swiftLiteralHeadType(head) ??
+      swiftNilCoalescingHeadType(head, atLine, ctx, ports) ??
       swiftProjectConstructionHeadType(head, ctx) ??
       swiftSdkConstructionHeadType(head, members)
     );
@@ -476,6 +477,57 @@ function swiftRangeHeadType(head: string): TypeRef | undefined {
   const lower = inner.slice(0, found.at).trim();
   const upper = inner.slice(found.at + 3).trim();
   return lower.length > 0 && upper.length > 0 ? { form: "instance", name: found.name } : undefined;
+}
+
+/** A fallback no `nil` can hide in: a collection, string, number or boolean literal. */
+const SWIFT_NON_OPTIONAL_LITERAL = /^(?:\[[\s\S]*\]|"[\s\S]*"|-?\d[\w.]*|true|false)$/;
+
+/** Postfix unwrap sugar on a link — `a?.b`, `a!.b`, a trailing `a?` — which the spelled fold does not read. */
+const SWIFT_POSTFIX_UNWRAP = /(?<=[\w)\]])[?!](?=\.|$)/g;
+
+/**
+ * The type a parenthesised `??` head denotes (bd tea-rags-mcp-y99pg.39):
+ * `(results ?? [])` is the left operand's WRAPPED type when the fallback is a
+ * literal, which can never be `nil` — with an Optional fallback the value
+ * would still be an Optional, and `Optional`'s members would answer instead.
+ * The first `??` at the parentheses' own depth, outside any string, splits the
+ * operands; `??` is right-associative, so a chained fallback is no literal and
+ * types nothing. The left operand is folded by `ports` with its unwrap sugar
+ * removed; the fold reads an Optional as what it wraps.
+ */
+function swiftNilCoalescingHeadType(
+  head: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  if (!head.startsWith("(") || !head.endsWith(")")) return undefined;
+  const inner = head.slice(1, -1);
+  let depth = 0;
+  let quote = false;
+  let at = -1;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === '"') quote = false;
+      continue;
+    }
+    if (ch === '"') quote = true;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      if (--depth < 0) return undefined;
+    } else if (depth === 0 && at === -1 && inner.startsWith("??", i)) {
+      at = i;
+      i++;
+    }
+  }
+  if (at === -1 || depth !== 0 || quote) return undefined;
+  const lhs = inner.slice(0, at).trim().replace(SWIFT_POSTFIX_UNWRAP, "");
+  const rhs = inner.slice(at + 2).trim();
+  if (lhs.length === 0 || !SWIFT_NON_OPTIONAL_LITERAL.test(rhs)) return undefined;
+  const type = propagateReceiverType(lhs, atLine, ctx, ports);
+  return type === undefined ? undefined : swiftUnwrappedOptional(type);
 }
 
 /**

@@ -3875,6 +3875,30 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
     expect(new SwiftCallResolver().resolve(call("name", "lowercased"), at)?.targetSymbolId).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `(results ?? []).map { … }`: `??` with a
+  // non-optional literal on the right is the left operand's WRAPPED type.
+  it("types a parenthesised `??` head with a literal fallback as the unwrapped left operand", () => {
+    const arrays = table({
+      "Sources/ArrayChunks.swift": [{ symbolId: "Array#chunked", scope: ["Array"] }],
+    });
+    const at = ctx({
+      callerFile: "Sources/Places.swift",
+      callerScope: ["Places", "candidates"],
+      symbolTable: arrays,
+      typeDeclarations: { "Sources/ArrayChunks.swift": [{ typeId: "Array", reopens: true }] },
+      localBindings: {
+        results: [{ line: 5, type: "Array", typeRef: optional("Array") }],
+        others: [{ line: 5, type: "Array", typeRef: optional("Array") }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(written("(results  [])", "(results ?? [])", "chunked"), at)?.targetSymbolId).toBe(
+      "Array#chunked",
+    );
+    // A fallback that may itself be nil leaves the value an Optional: untyped.
+    expect(resolver.resolve(written("(results  others)", "(results ?? others)", "chunked"), at)).toBeNull();
+  });
+
   it("types a property declared optional as an Optional", () => {
     const resolver = new SwiftCallResolver();
     // `completion.box` is a `Box?`: `.map` on it is `Optional.map`, never `Box#map`.
