@@ -22,6 +22,7 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import {
+  classExpressionName,
   classifyMethod,
   classPropertyFunction,
   constObjectNamespaceName,
@@ -90,6 +91,19 @@ export function tsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: true, syntheticConstructorIfMissing: true };
   }
+  // bd tea-rags-mcp-lyo4p — a class EXPRESSION, named by what binds it:
+  //
+  //   vi.mock("./x.js", () => ({ Worker: class { constructor() {} } }));
+  //   export const Recorder = class { record() {} };
+  //
+  // Unnamed, its members composed under the enclosing scope, so every mock
+  // class's constructor in a file became one bare `constructor` — distinct
+  // symbols collapsing onto one id. It is a class like the declaration above,
+  // so it is named, scoped and given an implicit constructor the same way. The
+  // name gate lives in `infra/symbolid/class-scope.ts`, which the chunker reads
+  // for the same member (`.claude/rules/symbolid-convention.md`).
+  const classExpression = classExpressionName(node);
+  if (classExpression) return { name: classExpression, descendsInto: true, syntheticConstructorIfMissing: true };
   // bd tea-rags-mcp-2jhwk — const-object NAMESPACE:
   //
   //   export const FileLevelGrouper = { group(...) { … } };

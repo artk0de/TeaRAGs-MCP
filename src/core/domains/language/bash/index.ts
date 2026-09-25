@@ -11,9 +11,8 @@
  *   kernel        ← ./kernel.ts            (parser load, scopeSeparator ".",
  *                                           detection)
  *   chunkerHooks  ← (inline below)         (generic chunking — NO hooks chain,
- *                                           NO nameExtractor; Bash's
- *                                           LANGUAGE_DEFINITIONS entry declares
- *                                           only chunkableTypes)
+ *                                           NO nameExtractor; chunkableTypes
+ *                                           plus ./chunking's classifier)
  *   walker        ← ./walker/              (extractFromBashFile + bashNameOf)
  *   resolver      ← ./resolver/            (BashCallResolver — `source` path
  *                                           mapping + global short-name lookup)
@@ -60,6 +59,7 @@ import type {
   LanguageWalker,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
+import { BashChunkClassifier } from "./chunking/index.js";
 import { bashKernel } from "./kernel.js";
 import { BashCallResolver } from "./resolver/index.js";
 import { bashNameOf } from "./walker/name-of.js";
@@ -73,10 +73,13 @@ import { extractFromBashFile, type BashExtractInput } from "./walker/walker.js";
  * `scopeContainerTypes` / `macroSymbols` / `chunkSymbols` — Bash declares none
  * (generic chunking, driven by node types alone). Each top-level
  * `function_definition` is a chunk; `command` is chunkable so script bodies that
- * are bare command sequences (no function wrapper) are not dropped.
+ * are bare command sequences (no function wrapper) are not dropped. The
+ * classifier keeps a `command` chunk from taking its callee's name as its
+ * symbolId (bd tea-rags-mcp-lyo4p).
  */
 const bashChunkerHooks: LanguageChunkerHooks = {
   chunkableTypes: ["function_definition", "command"],
+  classifier: new BashChunkClassifier(),
 };
 
 /**

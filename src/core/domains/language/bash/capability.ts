@@ -6,5 +6,7 @@ export const capability: LanguageCapability = {
   tests: { tier: "low", detection: "—", tech: "generic AST (bats/shunit not recognized)" },
   codegraph: { tier: "minimal", tech: "function-call extraction only, no dispatch" },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
-  versions: { chunking: 1, walker: 1, codegraphSchema: 2 },
+  // chunking 2: bd tea-rags-mcp-lyo4p — a top-level `command` chunk no longer
+  // takes its callee's name as its symbolId.
+  versions: { chunking: 2, walker: 1, codegraphSchema: 2 },
 };

@@ -14,3 +14,4 @@ export {
   moduleLevelFunctionDeclarationNames,
   moduleLevelFunctionDeclaratorName,
 } from "./const-bound-function.js";
+export { classExpressionName, enclosingClassScopeNames } from "./class-scope.js";

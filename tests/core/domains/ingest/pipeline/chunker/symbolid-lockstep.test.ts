@@ -392,6 +392,95 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       expect(holding("static build")).toBeGreaterThanOrEqual(0);
       expect(holding("request = async")).not.toBe(holding("static build"));
     });
+
+    /**
+     * bd tea-rags-mcp-lyo4p — classes that are not top-level declarations. Both
+     * sides dropped the class from the id, so DIFFERENT constructors collapsed
+     * onto one bare `constructor` (tests/bootstrap/factory.test.ts x3): the
+     * walker never named a class EXPRESSION, and the chunker composed a member
+     * of a class nested in a function directly under the function, skipping
+     * the class the walker does name.
+     */
+    const CLASS_EXPRESSIONS_IN_MOCK_FACTORY = [
+      'vi.mock("./coordinator.js", () => ({',
+      "  EnrichmentCoordinator: class {",
+      "    constructor(qdrant: unknown, providers: unknown[]) {",
+      "      registry.push({ qdrant, providers, kind: 'coordinator' });",
+      "    }",
+      "  },",
+      "  EnrichmentRecovery: class extends Base {",
+      "    constructor(qdrant: unknown, applier: unknown) {",
+      "      super(qdrant);",
+      "      registry.push({ qdrant, applier, kind: 'recovery' });",
+      "    }",
+      "  },",
+      "}));",
+    ].join("\n");
+
+    const CONST_BOUND_CLASS_EXPRESSION = [
+      "export const Recorder = class {",
+      "  record(event: string): string {",
+      "    const trimmed = event.trim();",
+      "    return trimmed.toUpperCase();",
+      "  }",
+      "};",
+    ].join("\n");
+
+    /** A NAMED class expression keeps its own name over the key binding it. */
+    const NAMED_CLASS_EXPRESSION_AS_DEFAULT = [
+      'vi.mock("tree-sitter", () => ({',
+      "  default: class MockParser {",
+      "    parse(source: string): { rootNode: { type: string; text: string } } {",
+      "      return { rootNode: { type: 'program', text: source } };",
+      "    }",
+      "  },",
+      "}));",
+    ].join("\n");
+
+    const CLASS_DECLARED_IN_FUNCTION = [
+      "export function buildHelper(): unknown {",
+      "  class LocalHelper {",
+      "    constructor(private readonly value: number) {",
+      "      this.value = value * 2 + value * 3;",
+      "    }",
+      "    compute(): number {",
+      "      return this.value + 1 + this.value * 3;",
+      "    }",
+      "  }",
+      "  return new LocalHelper(1);",
+      "}",
+    ].join("\n");
+
+    it("qualifies a class expression's members by the property that binds it", async () => {
+      const ids = await chunkerCallableIds(TYPESCRIPT, CLASS_EXPRESSIONS_IN_MOCK_FACTORY);
+      expect(ids).toEqual(["EnrichmentCoordinator#constructor", "EnrichmentRecovery#constructor"]);
+    });
+
+    it("qualifies a class expression's members by the declarator that binds it", async () => {
+      expect(await chunkerCallableIds(TYPESCRIPT, CONST_BOUND_CLASS_EXPRESSION)).toEqual(["Recorder#record"]);
+    });
+
+    it("names a named class expression by its own name, not by the key that binds it", async () => {
+      expect(await chunkerCallableIds(TYPESCRIPT, NAMED_CLASS_EXPRESSION_AS_DEFAULT)).toEqual(["MockParser#parse"]);
+    });
+
+    it("composes a member of a class declared inside a function under function AND class", async () => {
+      const ids = await chunkerCallableIds(TYPESCRIPT, CLASS_DECLARED_IN_FUNCTION);
+      expect(ids).toContain("buildHelper.LocalHelper#constructor");
+      expect(ids).toContain("buildHelper.LocalHelper#compute");
+    });
+
+    it.each([
+      ["class expressions bound by object properties", CLASS_EXPRESSIONS_IN_MOCK_FACTORY],
+      ["class expression bound by a declarator", CONST_BOUND_CLASS_EXPRESSION],
+      ["named class expression bound by a key", NAMED_CLASS_EXPRESSION_AS_DEFAULT],
+      ["class declared inside a function", CLASS_DECLARED_IN_FUNCTION],
+    ])("emits no callable id absent from cg_symbols — %s", async (_shape, src) => {
+      const graphIds = new Set(codegraphIds(TYPESCRIPT, src));
+      for (const id of await chunkerCallableIds(TYPESCRIPT, src)) {
+        expect([...graphIds]).toContain(id);
+      }
+    });
   });
 
   describe("JavaScript", () => {
@@ -473,6 +562,24 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       );
       expect(functionScoped).toContain("render");
       expect(functionScoped).toContain("render.handler");
+    });
+
+    // bd tea-rags-mcp-lyo4p — `jsNameOf` delegates the class surface to
+    // `tsNameOf`, so a class EXPRESSION is named for JavaScript by the same
+    // branch, and the chunker must follow on this grammar too.
+    const JS_CLASS_EXPRESSION_IN_MOCK_FACTORY = [
+      'jest.mock("./worker.js", () => ({',
+      "  Worker: class {",
+      "    constructor(script) {",
+      "      registry.push({ script, kind: 'worker', started: Date.now() });",
+      "    }",
+      "  },",
+      "}));",
+    ].join("\n");
+
+    it("qualifies a class expression's members by the property that binds it", async () => {
+      expect(await chunkerCallableIds(JAVASCRIPT, JS_CLASS_EXPRESSION_IN_MOCK_FACTORY)).toEqual(["Worker#constructor"]);
+      expect(codegraphIds(JAVASCRIPT, JS_CLASS_EXPRESSION_IN_MOCK_FACTORY)).toContain("Worker#constructor");
     });
   });
 });

@@ -23,6 +23,7 @@ import {
   classifyMethod,
   constObjectNamespaceContainerName,
   constObjectNamespaceOwner,
+  enclosingClassScopeNames,
   type MethodClassification,
 } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
@@ -49,6 +50,12 @@ interface ChildChunkEmissionPass {
   language: string;
   parentName: string | undefined;
   parentType: string;
+  /**
+   * The container node `parentName` names. A child found BELOW a class the
+   * container does not name (a class declared inside a function) composes that
+   * class in between — see `enclosingClassScopeNames`.
+   */
+  container: AstNode;
   /** Output accumulator — emitters push in emission order. */
   chunks: CodeChunk[];
   hierarchyHeaders: string[];
@@ -632,18 +639,9 @@ export class TreeSitterChunker implements CodeChunker {
         hook.process(ctx);
       }
 
-      await this.processChildren(
-        validChildren,
-        ctx,
-        langConfig,
-        code,
-        filePath,
-        language,
-        parentName,
-        parentType,
-        chunks,
-        [containerHeader],
-      );
+      await this.processChildren(validChildren, ctx, langConfig, code, filePath, language, parentName, node, chunks, [
+        containerHeader,
+      ]);
 
       if (langConfig.alwaysExtractChildren) {
         const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
@@ -780,10 +778,25 @@ export class TreeSitterChunker implements CodeChunker {
     // out of a search hit returned []. The separator is the namespace one, not
     // the instance `#`: an object-literal method binds no instance.
     const namespaceOwner = constObjectNamespaceOwner(node);
-    const symbolId =
-      namespaceOwner && nodeName
-        ? this.symbolIds.compose(namespaceOwner, nodeName, { scopeSeparator: langConfig.scopeSeparator })
-        : this.buildSymbolId(nodeName);
+    // bd tea-rags-mcp-lyo4p — a member of a class EXPRESSION or of a class
+    // nested in an anonymous scope reaches this path too, with no container to
+    // name its class. The walker names that class, so the id carries it.
+    const classOwner = this.composeParentSymbol(
+      undefined,
+      enclosingClassScopeNames(node, null),
+      langConfig.scopeSeparator,
+    );
+    // A `statement` decision (bd tea-rags-mcp-lyo4p): the extracted name is
+    // something the statement USES, so it labels the chunk and owns no id.
+    let symbolId: string | undefined;
+    if (decision.kind === "statement") {
+      symbolId = undefined;
+    } else if (namespaceOwner && nodeName) {
+      symbolId = this.symbolIds.compose(namespaceOwner, nodeName, { scopeSeparator: langConfig.scopeSeparator });
+    } else {
+      symbolId = this.buildSymbolId(nodeName, classOwner, classifyMethod(node), langConfig.scopeSeparator);
+    }
+    const parentSymbolId = namespaceOwner ?? classOwner;
     if (oversized) {
       this.emitSplitSymbol(
         node,
@@ -805,7 +818,7 @@ export class TreeSitterChunker implements CodeChunker {
         chunkIndex: index,
         chunkType: this.getChunkType(node.type),
         name: nodeName,
-        parentSymbolId: namespaceOwner ?? undefined,
+        parentSymbolId,
         symbolId,
         methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
       },
@@ -1094,7 +1107,7 @@ export class TreeSitterChunker implements CodeChunker {
     filePath: string,
     language: string,
     parentName: string | undefined,
-    parentType: string,
+    container: AstNode,
     chunks: CodeChunk[],
     hierarchyHeaders: string[] = [],
   ): Promise<void> {
@@ -1109,7 +1122,8 @@ export class TreeSitterChunker implements CodeChunker {
       filePath,
       language,
       parentName,
-      parentType,
+      parentType: container.type,
+      container,
       chunks,
       hierarchyHeaders,
       // bd tea-rags-mcp-a466 — occurrence counting is scoped to THIS pass, so
@@ -1181,7 +1195,10 @@ export class TreeSitterChunker implements CodeChunker {
     const semanticNode = this.unwrapDecoratedDefinition(childNode);
     const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
     const methodKind = classifyMethod(semanticNode);
-    const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
+    const intermediateScopes = [
+      ...this.collectIntermediateScopes(childNode, langConfig, code),
+      ...enclosingClassScopeNames(semanticNode, pass.container),
+    ];
     const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
     // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
     // the chunk's symbolId so oversized-method splits inherit the
@@ -1281,7 +1298,7 @@ export class TreeSitterChunker implements CodeChunker {
       filePath,
       language,
       fullParentName,
-      childNode.type,
+      childNode,
       chunks,
       [...hierarchyHeaders, childHeader],
     );
@@ -1405,7 +1422,15 @@ export class TreeSitterChunker implements CodeChunker {
     // container's name and diverges from the codegraph form
     // (bd tea-rags-mcp-bdvm). When `scopeContainerTypes` is unset, the
     // returned list is empty and behaviour is unchanged.
-    const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
+    //
+    // bd tea-rags-mcp-lyo4p — the same gap for a class member found below a
+    // class the container does not name (`function f() { class C { m() {} } }`
+    // was `f#m`, the walker's `f.C#m`): `enclosingClassScopeNames` supplies
+    // those classes. Disjoint from the Ruby-style chain above by node type.
+    const intermediateScopes = [
+      ...this.collectIntermediateScopes(childNode, langConfig, code),
+      ...enclosingClassScopeNames(semanticNode, pass.container),
+    ];
     const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
     // bd tea-rags-mcp-a466 — disambiguate per-overload. The first occurrence
     // under a given (parent, name) keeps its symbolId; subsequent occurrences
