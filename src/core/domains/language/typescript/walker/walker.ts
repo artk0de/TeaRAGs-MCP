@@ -16,6 +16,7 @@
  * walker becomes the canonical extraction shape.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
@@ -27,7 +28,13 @@ import type {
   InheritanceEdgeDecl,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import {
+  esmImportExportNames,
+  esmReexportExportNames,
+  exportNamesField,
+  moduleCallExportNames,
+} from "../../shared/ecmascript-export-names.js";
 
 export interface ExtractInput {
   tree: MaterializedTree;
@@ -61,7 +68,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   const classExtends = collectClassExtends(input.tree.rootNode);
   // Convert nested Map → nested Record so the contract survives NDJSON
   // spill between walker emit and resolver consume.
-  const classFieldTypesRecord: Record<string, Record<string, string>> = {};
+  const classFieldTypesRecord: Record<string, Record<string, string>> = createIdentifierRecord();
   for (const [cls, fields] of classFieldTypes) {
     classFieldTypesRecord[cls] = Object.fromEntries(fields);
   }
@@ -114,7 +121,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
     // Convert Map → Record so the field round-trips through the NDJSON
     // spill in the codegraph provider. Mirrors the same discipline as
     // ruby-walker's `classAncestors` / `classPrependedAncestors`.
-    const classExtendsRecord: Record<string, string> = {};
+    const classExtendsRecord: Record<string, string> = createIdentifierRecord();
     for (const [cls, parent] of classExtends) classExtendsRecord[cls] = parent;
     out.classExtends = classExtendsRecord;
   }
@@ -221,7 +228,11 @@ function collectEsmImport(node: AstNode, out: ImportRef[]): void {
   // side-effect imports have no `import_clause` → undefined.
   // bd tea-rags-mcp-w65s7 — each named specifier ALSO records the member it
   // reaches, which is the half an alias throws away.
-  const ref: ImportRef = { importText: stringLiteralText(src), startLine: node.startPosition.row + 1 };
+  const ref: ImportRef = {
+    importText: stringLiteralText(src),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("importedExportNames", esmImportExportNames(node)),
+  };
   applyModuleBindings(ref, collectImportedBindings(node));
   out.push(ref);
 }
@@ -260,7 +271,13 @@ function collectReexport(node: AstNode, out: ImportRef[]): void {
   const src = node.childForFieldName("source");
   if (src?.type !== "string") return;
   if (hasTypeOnlyModifier(node, "export")) return;
-  out.push({ importText: stringLiteralText(src), startLine: node.startPosition.row + 1 });
+  // bd tea-rags-mcp-r8hme.2 — the names it FORWARDS are recorded on their own
+  // channel; `importedNames` stays empty for the reason above.
+  out.push({
+    importText: stringLiteralText(src),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("reexportedExportNames", esmReexportExportNames(node)),
+  });
 }
 
 /**
@@ -278,7 +295,11 @@ function collectRequire(node: AstNode, out: ImportRef[]): void {
   if (callee?.type !== "identifier" || callee.text !== "require") return;
   const first = node.childForFieldName("arguments")?.namedChildren[0];
   if (first?.type !== "string") return;
-  const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
+  const ref: ImportRef = {
+    importText: stringLiteralText(first),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("importedExportNames", moduleCallExportNames(node)),
+  };
   applyModuleBindings(ref, moduleCallBindings(node));
   out.push(ref);
 }
@@ -308,7 +329,11 @@ function collectDynamicImport(node: AstNode, out: ImportRef[]): void {
   if (isTypePositionCall(node)) return;
   const first = node.childForFieldName("arguments")?.namedChildren[0];
   if (first?.type !== "string") return;
-  const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
+  const ref: ImportRef = {
+    importText: stringLiteralText(first),
+    startLine: node.startPosition.row + 1,
+    ...exportNamesField("importedExportNames", moduleCallExportNames(node)),
+  };
   applyModuleBindings(ref, moduleCallBindings(node));
   out.push(ref);
 }
@@ -417,7 +442,7 @@ function attachNamespaceMemberBindings(root: AstNode, imports: ImportRef[]): voi
     const owner = byLocalName.get(value.text);
     if (!owner) return;
     for (const binding of objectPatternBindings(target)) {
-      owner.importedBindings ??= {};
+      owner.importedBindings ??= createIdentifierRecord();
       owner.importedBindings[binding.local] ??= binding.exported;
     }
   });
@@ -768,6 +793,14 @@ export const FUNCTION_INVOKER_MEMBERS = new Set(["call", "apply", "bind"]);
  * `getFn().call(x)`) there is nothing to unwrap TO: keep the literal edge and
  * tag it `dynamicSend`, so the site is accounted as statically undeterminable
  * rather than counted as a resolution miss — Ruby's "dynamic" branch exactly.
+ *
+ * The unwrap is decided on SYNTAX, and syntax cannot tell `fn.call(obj)` from
+ * `this.connection.call(fn)` on an object whose class declares `call` (bd
+ * tea-rags-mcp-g7h1y). This walker sees one file and no types, so it does not
+ * decide: the unwrapped ref carries the literal invoker as
+ * `functionInvokerSite`, and the resolver — which holds the receiver's declared
+ * type and the symbol table — keeps the literal member when that type declares
+ * it. Still one ref, so still one edge.
  */
 function emitFunctionInvokerUnwrap(node: AstNode, callee: AstNode, startLine: number, out: CallRef[]): boolean {
   if (callee.type !== "member_expression") return false;
@@ -777,7 +810,13 @@ function emitFunctionInvokerUnwrap(node: AstNode, callee: AstNode, startLine: nu
   const invoked = calleeToCallShape(obj);
   out.push(
     invoked
-      ? { callText: node.text, receiver: invoked.receiver, member: invoked.member, startLine }
+      ? {
+          callText: node.text,
+          receiver: invoked.receiver,
+          member: invoked.member,
+          startLine,
+          functionInvokerSite: { receiver: obj.text, member: prop.text },
+        }
       : { callText: node.text, receiver: obj.text, member: prop.text, startLine, dynamicSend: true },
   );
   return true;
@@ -916,7 +955,7 @@ function isFunctionLike(node: AstNode): boolean {
  * usable entries (pure config objects) are omitted.
  */
 function collectDispatchTables(root: AstNode): Record<string, DispatchTable> {
-  const out: Record<string, DispatchTable> = {};
+  const out: Record<string, DispatchTable> = createIdentifierRecord();
   const consider = (decl: AstNode): void => {
     if (decl.type !== "lexical_declaration" || !isConstDeclaration(decl)) return;
     for (const d of decl.children) {
@@ -937,7 +976,7 @@ function collectDispatchTables(root: AstNode): Record<string, DispatchTable> {
 }
 
 function objectToTableEntries(objNode: AstNode): Record<string, string | Record<string, string>> {
-  const entries: Record<string, string | Record<string, string>> = {};
+  const entries: Record<string, string | Record<string, string>> = createIdentifierRecord();
   for (const pair of objNode.namedChildren) {
     if (pair.type !== "pair") continue;
     const key = keyText(pair.childForFieldName("key"));
@@ -954,7 +993,7 @@ function objectToTableEntries(objNode: AstNode): Record<string, string | Record<
 }
 
 function objectFieldsToMap(objNode: AstNode): Record<string, string> {
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = createIdentifierRecord();
   for (const pair of objNode.namedChildren) {
     if (pair.type !== "pair") continue;
     const key = keyText(pair.childForFieldName("key"));
@@ -983,7 +1022,7 @@ function collectCallbackParams(
   root: AstNode,
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[],
 ): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
+  const out: Record<string, number[]> = createIdentifierRecord();
   walk(root, (node) => {
     if (!isFunctionLike(node)) return;
     const params = node.childForFieldName("parameters");
@@ -1279,7 +1318,7 @@ function assignParamBindingsToInnermostChunks(
       }
     }
     if (bestIdx === -1) continue;
-    const bucket = out.get(bestIdx) ?? {};
+    const bucket = out.get(bestIdx) ?? createIdentifierRecord<LocalBinding[]>();
     (bucket[binding.name] ??= []).push({ line: binding.startLine, type: binding.type });
     out.set(bestIdx, bucket);
   }

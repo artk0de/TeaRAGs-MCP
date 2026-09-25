@@ -56,11 +56,18 @@ import {
   symbolIdLastSegment,
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
-import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
+import type {
+  SymbolChunkLocation,
+  SymbolChunkResolver,
+  SymbolVisibilityResolver,
+} from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
-import { applyEssentialSignalsToOverlay } from "../post-process.js";
+import { isTestExampleChunk } from "../chunk-grouping/code.js";
+import { renderWithDeclaredVisibility } from "../outline-visibility.js";
+import { applyEssentialSignals } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
+import { memberOwnerOf, splitFragmentBase } from "../split-fragment.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
 import { keepPathPatternMatches } from "./path-pattern-fill.js";
@@ -89,6 +96,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     private readonly registry: TrajectoryFilterBuilder,
     private readonly input: SymbolSearchInput,
     private readonly chunkResolver?: SymbolChunkResolver,
+    private readonly visibilityResolver?: SymbolVisibilityResolver,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
@@ -126,7 +134,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
       ? filterByExactSymbolId(allChunks, this.input.symbol)
       : filterByLastSegment(allChunks, this.input.symbol);
 
-    const resolved = resolveSymbols(filtered, this.input.symbol, ctx.metaOnly) as ExploreResult[];
+    // Outline member lines carry declared visibility (bd tea-rags-mcp-sqqkz);
+    // metaOnly strips the outline text, so there is nothing to decorate.
+    const resolved = (await renderWithDeclaredVisibility(
+      (visibilityOf) => resolveSymbols(filtered, this.input.symbol, ctx.metaOnly, visibilityOf),
+      ctx.metaOnly ? undefined : this.visibilityResolver,
+      ctx.collectionName,
+    )) as ExploreResult[];
     if (resolved.length > 0) return resolved;
 
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
@@ -192,12 +206,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
    * (chunkCount, mergedChunkIds, merged startLine/endLine) intact and only
    * adjust the git layer to match the semantic/hybrid contract:
    *
-   *   metaOnly=true  → essential git keys + overlay signals (when reranked)
+   *   metaOnly=true  → signal namespaces reduced to their essential keys, raw;
+   *                    rankingOverlay (when reranked) stays on the result
    *   metaOnly=false → full payload passes through unchanged
    *
    * Using BaseExploreStrategy.applyMetaOnly would strip synthetic outline
-   * fields (not present in payloadSignals), so we apply a targeted git
-   * filter via applyEssentialGitToResult instead.
+   * fields (not present in payloadSignals), so we apply a targeted namespace
+   * filter via applyEssentialSignals instead.
    */
   protected override async postProcess(
     results: ExploreResult[],
@@ -217,7 +232,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     processed = processed.slice(0, limit);
 
     if (originalCtx.metaOnly) {
-      processed = processed.map((r) => applyEssentialSignalsToOverlay(r, this.essentialKeys) as ExploreResult);
+      processed = processed.map((r) => applyEssentialSignals(r, this.essentialKeys) as ExploreResult);
     }
 
     return processed;
@@ -290,8 +305,23 @@ function filterByExactSymbolId(
     // FQN (e.g. `Foo::Bar`) or just the local class name (e.g. `Bar`),
     // depending on language. Accept both forms.
     if (parentSymbolId === fqn || parentSymbolId === containerName) return true;
-    return false;
+    // A `#partN` window of an oversized test example names the EXAMPLE as its
+    // parent, not the scope; it stands for an example of the queried scope
+    // when its base id extends the scope id (bd tea-rags-mcp-msv3l). An example
+    // name is free text, so its scope is read by prefix, never by
+    // `memberOwnerOf`'s last-separator split.
+    if (isTestExampleChunk(c)) return splitFragmentBase(c.payload)?.startsWith(`${fqn}.`) === true;
+    // A member split into `#partN` parts names the member as its parent; the
+    // container is the member id's owner (bd tea-rags-mcp-y5vx4).
+    const owner = splitPartOwner(c.payload);
+    return owner !== undefined && (owner === fqn || owner === containerName);
   });
+}
+
+/** The container of a split part's member: `Foo#bar#part2` → `Foo`; undefined for any other chunk. */
+function splitPartOwner(payload: Record<string, unknown>): string | undefined {
+  const base = splitFragmentBase(payload);
+  return base === undefined ? undefined : memberOwnerOf(base);
 }
 
 /**
@@ -315,6 +345,7 @@ function filterByLastSegment(
     if (symbolId !== undefined && symbolIdLastSegment(symbolId) === target) return true;
     const parentSymbolId = c.payload.parentSymbolId as string | undefined;
     if (parentSymbolId !== undefined && symbolIdLastSegment(parentSymbolId) === target) return true;
-    return false;
+    const owner = splitPartOwner(c.payload);
+    return owner !== undefined && symbolIdLastSegment(owner) === target;
   });
 }

@@ -1,30 +1,38 @@
 /**
  * Qdrant alias CRUD operations.
  *
- * Wraps QdrantClient alias API with typed methods and error handling.
+ * Wraps the Qdrant alias API with typed methods and error handling. Every op goes
+ * through {@link QdrantConnection.call}, so a transport failure gets the same
+ * classification (stale-socket retry, reconnect, typed unavailable error) as any
+ * other collaborator; the client is read from the connection at call time
+ * because a reconnect replaces it.
+ *
+ * Every failure surfaces as {@link AliasOperationError} — a connection failure
+ * that survives `call()` is kept as its typed cause.
  */
-
-import type { QdrantClient } from "@qdrant/js-client-rest";
 
 import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../../infra/collection-name.js";
+import type { QdrantConnection } from "./connection.js";
 import { AliasOperationError } from "./errors.js";
 
 export class QdrantAliasManager {
-  constructor(private readonly client: QdrantClient) {}
+  constructor(private readonly connection: QdrantConnection) {}
 
   async createAlias(alias: string, collection: string): Promise<void> {
     try {
-      await this.client.updateCollectionAliases({
-        actions: [
-          {
-            create_alias: {
-              alias_name: alias,
-              collection_name: collection,
+      await this.connection.call(async () =>
+        this.connection.client.updateCollectionAliases({
+          actions: [
+            {
+              create_alias: {
+                alias_name: alias,
+                collection_name: collection,
+              },
             },
-          },
-        ],
-      });
+          ],
+        }),
+      );
     } catch (error: unknown) {
       throw new AliasOperationError(
         "createAlias",
@@ -36,21 +44,23 @@ export class QdrantAliasManager {
 
   async switchAlias(alias: string, fromCollection: string, toCollection: string): Promise<void> {
     try {
-      await this.client.updateCollectionAliases({
-        actions: [
-          {
-            delete_alias: {
-              alias_name: alias,
+      await this.connection.call(async () =>
+        this.connection.client.updateCollectionAliases({
+          actions: [
+            {
+              delete_alias: {
+                alias_name: alias,
+              },
             },
-          },
-          {
-            create_alias: {
-              alias_name: alias,
-              collection_name: toCollection,
+            {
+              create_alias: {
+                alias_name: alias,
+                collection_name: toCollection,
+              },
             },
-          },
-        ],
-      });
+          ],
+        }),
+      );
     } catch (error: unknown) {
       throw new AliasOperationError(
         "switchAlias",
@@ -62,15 +72,17 @@ export class QdrantAliasManager {
 
   async deleteAlias(alias: string): Promise<void> {
     try {
-      await this.client.updateCollectionAliases({
-        actions: [
-          {
-            delete_alias: {
-              alias_name: alias,
+      await this.connection.call(async () =>
+        this.connection.client.updateCollectionAliases({
+          actions: [
+            {
+              delete_alias: {
+                alias_name: alias,
+              },
             },
-          },
-        ],
-      });
+          ],
+        }),
+      );
     } catch (error: unknown) {
       throw new AliasOperationError("deleteAlias", `alias="${alias}"`, error instanceof Error ? error : undefined);
     }
@@ -78,7 +90,7 @@ export class QdrantAliasManager {
 
   async isAlias(name: string): Promise<boolean> {
     try {
-      const response = await this.client.getAliases();
+      const response = await this.connection.call(async () => this.connection.client.getAliases());
       return response.aliases.some((a) => a.alias_name === name);
     } catch (error: unknown) {
       throw new AliasOperationError("isAlias", `name="${name}"`, error instanceof Error ? error : undefined);
@@ -87,7 +99,7 @@ export class QdrantAliasManager {
 
   async listAliases(): Promise<CollectionAliasEntry[]> {
     try {
-      const response = await this.client.getAliases();
+      const response = await this.connection.call(async () => this.connection.client.getAliases());
       return response.aliases.map((a) => collectionAliasEntryFromQdrant(a));
     } catch (error: unknown) {
       throw new AliasOperationError(

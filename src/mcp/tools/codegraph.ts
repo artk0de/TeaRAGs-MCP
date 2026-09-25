@@ -1,6 +1,7 @@
 /**
  * Codegraph MCP tools — slice 1: get_callers, get_callees.
  * Slice 2 adds: find_cycles. Slice 6 adds: trace_path.
+ * get_architecture_report (bd tea-rags-mcp-94hd9) judges the file graph.
  *
  * All tools read directly from the codegraph DuckDB via the App's
  * GraphFacade (wired in createApp()).
@@ -35,45 +36,52 @@ function collectionPathFields() {
       .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
       .optional()
       .describe(
-        "[RECOMMENDED] Project alias from registry — stable name survives path moves. " +
-          "Use when alias exists; fall back to 'collection'/'path' only when no alias registered. " +
-          "Resolution priority: collection > project > path.",
+        "[RECOMMENDED] Registered project alias; survives path moves. Resolution priority: collection > project > path.",
       ),
-    collection: z
-      .string()
-      .optional()
-      .describe(
-        "Internal Qdrant collection name (lowest-level handle). " +
-          "Prefer 'project' when alias registered; provide one of 'project', 'collection', 'path'.",
-      ),
+    collection: z.string().optional().describe("Raw Qdrant collection name — lowest-level handle; prefer 'project'."),
     path: z
       .string()
       .optional()
-      .describe(
-        "Filesystem path to indexed codebase (auto-resolves to collection). " +
-          "Prefer 'project' when alias registered; provide one of 'project', 'collection', 'path'.",
-      ),
+      .describe("Indexed codebase path; auto-resolves to its collection. Prefer 'project' when aliased."),
   };
 }
 
 const GetCallersInputShape = {
   ...collectionPathFields(),
-  symbolId: z.string().describe("Target symbol id (e.g. Foo.bar)"),
-  limit: z.number().int().positive().max(500).optional().describe("Max caller edges (default 50)"),
+  symbolId: z
+    .string()
+    .optional()
+    .describe("Target symbol id (e.g. Foo.bar). Provide exactly one of 'symbolId' / 'relativePath'."),
+  relativePath: z
+    .string()
+    .optional()
+    .describe(
+      "Target FILE, repo-relative (e.g. src/core/app.ts) — file scope: returns the files importing it. " +
+        "Provide exactly one of 'symbolId' / 'relativePath'.",
+    ),
+  limit: z.number().int().positive().max(500).optional().describe("Max caller edges / importer files (default 50)"),
   includeAmbiguous: z
     .boolean()
     .optional()
     .describe(
-      "Also attach `ambiguousCallers`: ambiguous dispatch sites whose member matches target — " +
-        "call MAY reach target among candidateCount candidates; not materialized as edges (bd f2jsb). " +
-        "Default false — response unchanged.",
+      "Also attach ambiguousCallers: member-matched dispatch sites that MAY reach target, not edges. Default false.",
     ),
 };
 
 const GetCalleesInputShape = {
   ...collectionPathFields(),
-  symbolId: z.string().describe("Source symbol id (e.g. main)"),
-  limit: z.number().int().positive().max(500).optional().describe("Max callee edges (default 50)"),
+  symbolId: z
+    .string()
+    .optional()
+    .describe("Source symbol id (e.g. main). Provide exactly one of 'symbolId' / 'relativePath'."),
+  relativePath: z
+    .string()
+    .optional()
+    .describe(
+      "Source FILE, repo-relative (e.g. src/core/app.ts) — file scope: returns the files it imports. " +
+        "Provide exactly one of 'symbolId' / 'relativePath'.",
+    ),
+  limit: z.number().int().positive().max(500).optional().describe("Max callee edges / imported files (default 50)"),
 };
 
 const FindCyclesInputShape = {
@@ -86,10 +94,25 @@ const FindCyclesInputShape = {
     .string()
     .optional()
     .describe(
-      "Picomatch glob scoping result to subdomain/module (e.g. '**/domains/ingest/**', " +
-        "'{src/core/api,src/mcp}/**'). Cycle kept if AT LEAST ONE member resolves to matching " +
-        "file path — cross-boundary cycles retained. Omit for no filter.",
+      "Glob scoping cycles, e.g. '**/domains/ingest/**'. Cycle kept when ≥1 member file matches (cross-boundary stays).",
     ),
+};
+
+const GetArchitectureReportInputShape = {
+  ...collectionPathFields(),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe(
+      "Glob scoping judged edges by SOURCE file. Instability and adoption stay whole-graph. Omit for whole project.",
+    ),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .max(500)
+    .optional()
+    .describe("Max violations and max root causes per detector (default 50). Summary keeps totals."),
 };
 
 /**
@@ -109,24 +132,19 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
     fromPath: z
       .string()
       .optional()
-      .describe(
-        "Exact relative path pinning 'from' when the symbol id names several files " +
-          "(top-level symbols share bare ids). Omit to trace from all; response lists candidates as 'namesakes'.",
-      ),
+      .describe("Exact relative path pinning 'from' when its id names several files. Omit → all, listed as namesakes."),
     toPath: z.string().optional().describe("Exact relative path pinning 'to'. Same semantics as fromPath."),
     rerank: schemaBuilder
       .buildPresetSchema("trace_path")
       .optional()
-      .describe(
-        "Rerank preset scoring per-step danger for overlay (optional — omit for lean path enumeration, no danger ranking)",
-      ),
+      .describe("Danger preset scoring each step for the overlay. Omit for lean path enumeration."),
     maxDepth: z
       .number()
       .int()
       .positive()
       .max(20)
       .optional()
-      .describe("Max hops per path (default 8). Capped at 20 — deep traces on dense graphs expensive; prefer default."),
+      .describe("Max hops per path (default 8, cap 20 — deep traces on dense graphs are expensive)."),
     maxPaths: z
       .number()
       .int()
@@ -156,13 +174,26 @@ export function registerCodegraphTools(
       title: "Get Callers",
       description:
         "Return symbols that invoke given symbolId. Backed by codegraph DuckDB. " +
+        "Top-level visibility = queried symbol's declared level; each caller carries its own " +
+        "(private|protected|public; absent = unknown). " +
         "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
-        "MAY reach target among candidateCount candidates; not materialized as edges).",
+        "MAY reach target among candidateCount candidates; not materialized as edges). " +
+        "File scope: pass relativePath instead of symbolId → {relativePath, importers[], total} — " +
+        "files that import it, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+        "unknown file → empty importers + message.",
       inputSchema: GetCallersInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, symbolId, limit, includeAmbiguous }) => {
-      const response = await app.getCallers({ project, collection, path, symbolId, limit, includeAmbiguous });
+    async ({ project, collection, path, symbolId, relativePath, limit, includeAmbiguous }) => {
+      const response = await app.getCallers({
+        project,
+        collection,
+        path,
+        symbolId,
+        relativePath,
+        limit,
+        includeAmbiguous,
+      });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
@@ -172,12 +203,17 @@ export function registerCodegraphTools(
     "get_callees",
     {
       title: "Get Callees",
-      description: "Return symbols invoked by given symbolId. Backed by codegraph DuckDB.",
+      description:
+        "Return symbols invoked by given symbolId. Backed by codegraph DuckDB. " +
+        "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
+        "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
+        "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +
+        "unknown file → empty imports + message.",
       inputSchema: GetCalleesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, symbolId, limit }) => {
-      const response = await app.getCallees({ project, collection, path, symbolId, limit });
+    async ({ project, collection, path, symbolId, relativePath, limit }) => {
+      const response = await app.getCallees({ project, collection, path, symbolId, relativePath, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
@@ -190,12 +226,44 @@ export function registerCodegraphTools(
       description:
         "Return strongly-connected components (cycles) from import or call graph. " +
         "Cycles length >= 2; single-node 'cycles' excluded. Read from pre-computed " +
-        "table — sub-millisecond per call.",
+        "table — sub-millisecond per call. scope=method: members are symbol ids and " +
+        "memberLocations lists {symbolId, relativePath} per member in the same order — " +
+        "namesakes in different files are distinct members; an empty relativePath means " +
+        "the cycle was not recomputed since the index upgrade.",
       inputSchema: FindCyclesInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ project, collection, path, scope, pathPattern }) => {
       const response = await app.findCycles({ project, collection, path, scope, pathPattern });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "get_architecture_report",
+    {
+      title: "Get Architecture Report",
+      description:
+        "Architecture diagnostics: is code laid out correctly (NOT is it risky to touch — use risk-assessment). " +
+        "Typed violations with per-line evidence, per detector. stableDependencies (Stable Dependencies " +
+        "Principle): stable file depending on less stable one (instabilities, delta, support, call weight, directory relation); rootCauses group " +
+        "by unstable target, cycleWithDependents = target references own dependents. leakingAbstraction: " +
+        "import past a module facade (index.ts/__init__.py/mod.rs) its importers adopted (>=3 importers, " +
+        "adoption >0.5 and >= adaptive Otsu cut; summary gives threshold, method, separability); kind " +
+        "bypass = facade re-exports what import takes (by imported names when indexed, else target file), " +
+        "internal-reach = it does not (nonExportedNames), conventionPrivacy = Python _name " +
+        "used from other package or Ruby send(:private) from outside its class; rootCauses per module. " +
+        "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
+        "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
+        "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
+        "partners; summary.silentCoupling.built false = no co-change build, not clean. Summary " +
+        "counts exclusions with named reasons. Diagnosis, not prescription.",
+      inputSchema: GetArchitectureReportInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, pathPattern, limit }) => {
+      const response = await app.getArchitectureReport({ project, collection, path, pathPattern, limit });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
@@ -208,7 +276,8 @@ export function registerCodegraphTools(
       description:
         "Trace all simple call paths from one symbol to another, in execution order. " +
         "Lean path enumeration by default. Pass `rerank` danger preset to annotate each step " +
-        "with git/churn overlay and sort paths most-dangerous first. Backed by codegraph DuckDB.",
+        "with git/churn overlay and sort paths most-dangerous first. Steps carry declared visibility " +
+        "when known (absent = unknown). Backed by codegraph DuckDB.",
       inputSchema: buildTracePathInputShape(schemaBuilder),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },

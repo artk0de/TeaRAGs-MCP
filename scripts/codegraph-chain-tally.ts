@@ -44,9 +44,11 @@
  *     `lost` must be 0.
  *
  * `--kind-stats` is orthogonal to the three: it recomputes the per-receiver-kind
- * counters `cg_run_stats` persists — through `classifyResolveMiss`, the decision
- * the production runner tallies — so a DENOMINATOR change is measurable without
- * a reindex, next to the edge counts that must not move (bd tea-rags-mcp-1v12o.3).
+ * counters `cg_run_stats` persists — folding the production runner's own per-site
+ * verdict (`CallEdgeResolutionRunner#callSiteVerdicts`) with its own
+ * `tallyCallSiteVerdict`, dispatch-table sites and the `dispatchArgs` join
+ * included — so a DENOMINATOR change is measurable without a reindex, next to
+ * the edge counts that must not move (bd tea-rags-mcp-1v12o.3 / c6xuu).
  *
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
@@ -63,25 +65,19 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { extname, join, resolve as resolvePath, sep } from "node:path";
+import { extname, resolve as resolvePath, sep } from "node:path";
 
 import { deferred } from "../src/core/contracts/resolution.js";
+import { formatResolveRateCell, resolveRateMiss } from "../src/core/contracts/resolve-rate.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
-  type ChunkExtraction,
   type FileExtraction,
-  type HierarchyView,
-  type InheritanceEdgeRow,
-  type ModuleReexport,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
-import type {
-  SymbolResolutionOutcome,
-  SymbolResolutionStrategy,
-  TypeRef,
-} from "../src/core/contracts/types/language.js";
+import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,
@@ -99,30 +95,28 @@ import {
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
-import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
-import {
-  buildHierarchySnapshot,
-  normalizeInheritanceEdges,
-} from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
+import { collectSchemaColumnSources } from "../src/core/domains/trajectory/codegraph/exclusion.js";
+import { absorbPass1FileState } from "../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import { RECEIVER_KINDS, type ReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import {
-  classifyReceiverKind,
-  RECEIVER_KINDS,
-  type ReceiverKind,
-} from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
-import { classifyResolveMiss } from "../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
+  CallEdgeResolutionRunner,
+  tallyCallSiteVerdict,
+  type CallSiteVerdict,
+} from "../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import {
+  CodegraphRunState,
   emptyReceiverKindTally,
   type ReceiverKindTally,
 } from "../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { collectDependencyManifestSources } from "../src/core/infra/dependency-manifests.js";
 import { NO_FAN, scoreFan, type PyFanOutcomeKind } from "./lib/py-oracle-core.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
   collectSourceFiles,
   extractFile,
-  readCorpusDeclaredDependencies,
 } from "./ts-codegraph-typechecker-oracle.js";
 
 // ---------------------------------------------------------------------------
@@ -323,13 +317,34 @@ export interface CallSiteRow {
   /** `fan.length` for `single` / `fan`, `candidateCount` for `ambiguous`, 0 for `none`. */
   fanSize: number;
   /**
-   * The answer PRODUCTION books: the dispatch layer's single target when it
-   * pinned one, else the exact chain's, and null where a fan or an over-cap
-   * decision left production with no 1:1 edge. `baseline` deliberately stays
-   * the EXACT chain — the A/B this script exists for is a chain instrument, and
-   * folding a fan into it would make a real drift invisible (Step 7).
+   * A dispatch-table site (`CallRef.dispatch`). Production never runs the exact
+   * chain on it, so `baseline` / `variant` are null and the chain A/B skips it;
+   * `runnerEdges` and the kind stats still carry what production books there.
+   */
+  dispatchTable: boolean;
+  /**
+   * Every method edge PRODUCTION pushes for this site, straight off the runner's
+   * verdict (bd tea-rags-mcp-c6xuu): a dispatch-table fan, the additive
+   * `dispatchArgs` join (callee edge plus callee-sourced fan), a cone — all of it.
+   */
+  runnerEdges: MethodEdge[];
+  /**
+   * The answer PRODUCTION books when it is a single 1:1 edge — `runnerEdges`'
+   * only target — and null where a fan, a join, an over-cap decision or a
+   * decline left it none. `baseline` deliberately stays the EXACT chain — the
+   * A/B this script exists for is a chain instrument, and folding a fan into it
+   * would make a real drift invisible (Step 7).
    */
   runnerAnswer: SymbolResolutionTarget | null;
+}
+
+type MethodEdge = GraphEdges["methodEdges"][number];
+
+/** {@link CallSiteRow.runnerAnswer} off the runner's verdict. */
+function runnerAnswerOf(verdict: CallSiteVerdict): SymbolResolutionTarget | null {
+  if (verdict.edges.length !== 1) return null;
+  const [{ targetRelPath, targetSymbolId }] = verdict.edges;
+  return { targetRelPath, targetSymbolId };
 }
 
 export interface DiffTally {
@@ -426,167 +441,26 @@ export function diffRows(rows: readonly CallSiteRow[]): { tally: DiffTally; chan
 const SYMBOL_TABLE_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAGES);
 
 /**
- * The run-global type channels production merges at the pass-1→pass-2 barrier
- * (`CodegraphRunState`), accumulated here across every walked file.
+ * A run state wired as the provider wires it: the constructor's two
+ * language-contributed source vocabularies, then the run-start seam — project
+ * root, Gemfile, declared dependencies, schema snapshots.
  *
- * `classExtends` was already shaped this way; the other three ride the same
- * barrier and a resolver pass that reads them — Python's `chainType` reads
- * `structuredReturnTypes` — measures a no-op without them (bd
- * tea-rags-mcp-9fgdi, decision 7).
+ * The harness used to keep its own run-global channels and one hierarchy over
+ * every language. Production partitions the class-name maps, the return-type
+ * maps and the CHA hierarchy by language FAMILY (bd nbf8q / qea83), so on a
+ * polyglot corpus a Go method `get` typed a Ruby `get` here and nowhere in a
+ * live run. Driving the production state — pass 1 through the extraction
+ * sink's own absorb, pass 2 through `CallEdgeResolutionRunner#callSiteContexts`
+ * — makes every channel production threads, and every partition it applies,
+ * this harness's by construction (bd tea-rags-mcp-pkfi7).
  */
-interface RunGlobalTypeChannels {
-  classExtends: Record<string, string>;
-  structuredReturnTypes: Record<string, TypeRef>;
-  functionReturnTypes: Record<string, string>;
-  classAncestors: Record<string, readonly string[]>;
-  /** `<relPath>::<class FQ>` → field → type, the run-global field address (f0xaa). */
-  classFieldTypesByClassKey: Record<string, Record<string, string>>;
-  /** The same address for a field assigned from a CALL — the callee spelling (w205u, E4.6c). */
-  classFieldCallResults: Record<string, Record<string, string>>;
-  /** `relPath` → the names its `from` statements bind, for the mapper's re-export hop (xpl83.3). */
-  moduleReexports: Record<string, readonly ModuleReexport[]>;
-  /** `relPath` → its `//go:build` expression, Go's build-tag twin tie-breaker (e6xx). */
-  buildConstraintsByFile: Record<string, string>;
-  /**
-   * Inheritance rows and instantiated types, the two channels the CHA cone
-   * reads (bd tea-rags-mcp-o17v2 / pffv, wired here by w205u/E4.0.3). Without
-   * them `ctx.hierarchy` is undefined and `resolveDispatch` returns `[]` at
-   * every site, so the tally reported a dispatch layer that never ran.
-   */
-  inheritanceRows: InheritanceEdgeRow[];
-  instantiatedTypes: Set<string>;
-}
-
-/** Absorb one file's contribution to every run-global channel. */
-function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExtraction): void {
-  Object.assign(channels.classExtends, extraction.classExtends ?? {});
-  Object.assign(channels.structuredReturnTypes, extraction.structuredReturnTypes ?? {});
-  Object.assign(channels.functionReturnTypes, extraction.functionReturnTypes ?? {});
-  Object.assign(channels.classAncestors, extraction.classAncestors ?? {});
-  for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
-    channels.classFieldTypesByClassKey[classKey] = { ...channels.classFieldTypesByClassKey[classKey], ...fields };
-  }
-  for (const [classKey, fields] of Object.entries(extraction.classFieldCallResults ?? {})) {
-    channels.classFieldCallResults[classKey] = { ...channels.classFieldCallResults[classKey], ...fields };
-  }
-  if (extraction.moduleReexports) channels.moduleReexports[extraction.relPath] = extraction.moduleReexports;
-  if (extraction.buildConstraint !== undefined) {
-    channels.buildConstraintsByFile[extraction.relPath] = extraction.buildConstraint;
-  }
-  // `() => null` mirrors the extraction sink: the cone reads ancestors by
-  // fqName, and pass 1's table cannot bind symbol ids yet anyway.
-  channels.inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
-  for (const instantiated of extraction.instantiatedTypes ?? []) channels.instantiatedTypes.add(instantiated);
-}
-
-/**
- * The channels only the Ruby fold reads, kept apart from {@link RunGlobalTypeChannels}
- * rather than folded into it. Two reasons, and both are load-bearing: Ruby's
- * `classFieldTypes` is RUN-GLOBAL where the Python/Java context passes the
- * per-file one, so merging the two shapes would silently move a Python answer;
- * and the byte-identity gate on the existing python/java runs only holds if
- * their `CallContext` is assembled exactly as before. Copied from
- * `scripts/spikes/ruby-resolver-parity.ts`, which is the gate these channels
- * already answer to — a channel absent here is a branch the Ruby leg never
- * reaches, and its wall would then be a measurement of a shorter chain.
- */
-interface RubyRunGlobalChannels {
-  classFieldTypes: NonNullable<CallContext["classFieldTypes"]>;
-  classPrependedAncestors: NonNullable<CallContext["classPrependedAncestors"]>;
-  ivarTypes: NonNullable<CallContext["ivarTypes"]>;
-  compactDeclaredClasses: Set<string>;
-  /** The project's `Gemfile`, as the provider reads it once per run; absent ⇒ ungated catalogue. */
-  gemfileContent: string | undefined;
-  /** Zeitwerk's autoload root — the corpus, never the harness's cwd. */
-  projectRoot: string;
-}
-
-function emptyRubyChannels(root: string): RubyRunGlobalChannels {
-  let gemfileContent: string | undefined;
-  try {
-    gemfileContent = readFileSync(join(root, "Gemfile"), "utf8");
-  } catch {
-    gemfileContent = undefined;
-  }
-  return {
-    classFieldTypes: {},
-    classPrependedAncestors: {},
-    ivarTypes: {},
-    compactDeclaredClasses: new Set<string>(),
-    gemfileContent,
-    projectRoot: root,
-  };
-}
-
-function absorbRubyChannels(channels: RubyRunGlobalChannels, extraction: FileExtraction): void {
-  Object.assign(channels.classFieldTypes, extraction.classFieldTypes ?? {});
-  Object.assign(channels.classPrependedAncestors, extraction.classPrependedAncestors ?? {});
-  Object.assign(channels.ivarTypes, extraction.ivarTypes ?? {});
-  for (const fq of extraction.compactDeclaredClasses ?? []) channels.compactDeclaredClasses.add(fq);
-}
-
-/** The Ruby-only half of one call site's context; `{}` for every other language. */
-function rubyCallContext(
-  extraction: FileExtraction,
-  chunk: ChunkExtraction,
-  channels: RubyRunGlobalChannels | null,
-): Partial<CallContext> {
-  if (channels === null) return {};
-  return {
-    classFieldTypes: channels.classFieldTypes,
-    classPrependedAncestors: channels.classPrependedAncestors,
-    ivarTypes: channels.ivarTypes,
-    compactDeclaredClasses: channels.compactDeclaredClasses,
-    associationTypes: extraction.associationTypes,
-    gemfileContent: channels.gemfileContent,
-    projectRoot: channels.projectRoot,
-  };
-}
-
-function buildCallContext(
-  extraction: FileExtraction,
-  chunk: ChunkExtraction,
-  symbolTable: InMemoryGlobalSymbolTable,
-  channels: RunGlobalTypeChannels,
-  hierarchy: HierarchyView,
-  ruby: RubyRunGlobalChannels | null = null,
-  declaredDependencies: ReadonlySet<string> | undefined = undefined,
-  projectRoot: string | undefined = undefined,
-): CallContext {
-  return {
-    hierarchy,
-    declaredDependencies,
-    // Every language, as production threads it: Go reads the corpus's go.mod
-    // module map through it (bd tea-rags-mcp-e6xx), TypeScript binds to it and
-    // gets the same root the factory already carries, Python and Java never read it.
-    projectRoot,
-    instantiatedTypes: channels.instantiatedTypes,
-    callerFile: extraction.relPath,
-    callerScope: chunk.scope,
-    callerSymbolId: chunk.symbolId,
-    imports: extraction.imports,
-    symbolTable,
-    classFieldTypes: extraction.classFieldTypes,
-    localBindings: chunk.localBindings,
-    // Per-chunk for EVERY language, as `CallEdgeResolutionRunner#buildCallContext`
-    // threads it: Go's `returnTypeBinding` reads nothing else, and a Ruby-only
-    // thread left that pass unable to fire (bd tea-rags-mcp-e6xx). Python and
-    // Java walkers never emit it, so their contexts are unchanged.
-    localCallBindings: chunk.localCallBindings,
-    callResultBindings: chunk.callResultBindings,
-    classExtends: channels.classExtends,
-    structuredReturnTypes: channels.structuredReturnTypes,
-    functionReturnTypes: channels.functionReturnTypes,
-    classAncestors: channels.classAncestors,
-    classFieldTypesByClassKey: channels.classFieldTypesByClassKey,
-    classFieldCallResults: channels.classFieldCallResults,
-    moduleReexports: channels.moduleReexports,
-    buildConstraintsByFile: channels.buildConstraintsByFile,
-    // LAST, so the Ruby leg's run-global `classFieldTypes` wins over the
-    // per-file one above. `{}` for every other language, which is what keeps
-    // the python/java context byte-identical to the pre-E6 one.
-    ...rubyCallContext(extraction, chunk, ruby),
-  };
+function newProductionRunState(root: string, factory: LanguageFactory): CodegraphRunState {
+  const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
+  state.bindProjectRoot(root);
+  state.loadGemfile(root);
+  state.loadDeclaredDependencies(root);
+  state.loadSchemaSnapshots(root);
+  return state;
 }
 
 export interface RunResult {
@@ -601,7 +475,12 @@ export interface RunResult {
   codegraphExcluded: number;
   parseFailures: number;
   symbols: number;
-  dispatchSkipped: number;
+  /**
+   * Dispatch-table sites (`CallRef.dispatch`). Resolved and counted as
+   * production resolves and counts them; only the chain A/B leaves them out,
+   * because production never runs the exact chain on one (bd c6xuu).
+   */
+  dispatchTableSites: number;
   /** Rebuilt baseline disagreeing with the production resolver. MUST be 0. */
   chainDrift: number;
   /** Did this run consult the dispatch layer at all (bd tea-rags-mcp-w205u)? */
@@ -626,9 +505,10 @@ export interface RunResult {
   timing?: ChainTallyTiming;
   /**
    * `--kind-stats`: the per-receiver-kind counters `cg_run_stats` persists,
-   * recomputed OFFLINE (bd tea-rags-mcp-1v12o.3). The buckets come from
-   * `classifyResolveMiss` — production's own decision, not a copy — so a
-   * denominator change is measurable without a reindex.
+   * recomputed OFFLINE (bd tea-rags-mcp-1v12o.3). Every counter comes from the
+   * runner's own per-site verdict folded by its own `tallyCallSiteVerdict` —
+   * production's decision, not a copy — so a denominator change is measurable
+   * without a reindex (bd tea-rags-mcp-c6xuu).
    */
   kindStats?: Record<ReceiverKind, ReceiverKindTally>;
   /** Under `--kind-stats`: a few `missWithInProjectDef` sites per kind, for diagnosis. */
@@ -636,15 +516,12 @@ export interface RunResult {
 }
 
 /**
- * Misses the rate charges as failures — `status-module.ts#missWithInProjectDef`
- * for one kind's row. `ambiguousFanout` is deliberately NOT subtracted: the
- * strict rate keeps an over-cap fan in the denominator.
+ * Misses the rate charges as failures for one kind's row — the shared
+ * `contracts/resolve-rate.ts#resolveRateMiss`, the same exclusion list
+ * `status-module.ts#missWithInProjectDef` persists rates with.
  */
 export function kindMissWithInProjectDef(t: ReceiverKindTally): number {
-  return Math.max(
-    0,
-    t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
-  );
+  return resolveRateMiss(t);
 }
 
 /** Knobs the E6 timing legs add; every one of them is off in a default run. */
@@ -671,47 +548,24 @@ function emptyKindSamples(): Record<ReceiverKind, string[]> {
 }
 
 /**
- * One call site's contribution to the offline per-kind run stats. Mirrors
- * `CallEdgeResolutionRunner#resolveMethodEdges`'s tally block — the SAME
- * `classifyResolveMiss` production calls, so the buckets cannot drift.
+ * One call site's contribution to the offline per-kind run stats: the runner's
+ * own verdict folded by the runner's own `tallyCallSiteVerdict`, so no bucket,
+ * outcome or gate can drift (bd tea-rags-mcp-c6xuu). The harness adds only the
+ * residual-miss samples, which production has no counter for.
  */
 function tallyKindStats(
   stats: Record<ReceiverKind, ReceiverKindTally>,
   samples: Record<ReceiverKind, string[]>,
-  site: {
-    call: CallRef;
-    ctx: CallContext;
-    chunk: ChunkExtraction;
-    resolver: Parameters<typeof classifyResolveMiss>[2];
-    symbolTable: InMemoryGlobalSymbolTable;
-    relPath: string;
-    resolved: boolean;
-    ambiguous: boolean;
-  },
+  site: { call: CallRef; verdict: CallSiteVerdict; relPath: string },
 ): void {
-  const kind = classifyReceiverKind(site.call, site.chunk.localBindings);
-  const row = stats[kind];
-  row.attempted += 1;
-  if (site.ambiguous) {
-    row.ambiguousFanout += 1;
-    return;
-  }
-  if (site.resolved) {
-    row.resolved += 1;
-    return;
-  }
-  const bucket = classifyResolveMiss(site.call, site.ctx, site.resolver, site.symbolTable);
-  if (bucket === "missWithInProjectDef") {
-    if (samples[kind].length < KIND_SAMPLE_CAP) {
-      // The RECEIVER and the member, never `callText` — a multi-line call would
-      // break one sample across as many lines and make the block ungreppable.
-      samples[kind].push(
-        `${site.relPath}:${site.call.startLine} ${String(site.call.receiver)}.${site.call.member}`.replace(/\s+/g, " "),
-      );
-    }
-    return;
-  }
-  row[bucket] += 1;
+  const { verdict, call } = site;
+  tallyCallSiteVerdict(stats, verdict);
+  if (verdict.missBucket !== "missWithInProjectDef") return;
+  const kindSamples = samples[verdict.receiverKind];
+  if (kindSamples.length >= KIND_SAMPLE_CAP) return;
+  // The RECEIVER and the member, never `callText` — a multi-line call would
+  // break one sample across as many lines and make the block ungreppable.
+  kindSamples.push(`${site.relPath}:${call.startLine} ${String(call.receiver)}.${call.member}`.replace(/\s+/g, " "));
 }
 
 export async function run(
@@ -763,25 +617,14 @@ export async function run(
     );
   }
   const scoredExts = buildable === undefined ? scoredExtensionsFor(lang) : buildable.extensions;
-  const rubyChannels = lang === "ruby" ? emptyRubyChannels(root) : null;
   const sampler = timing ? startRssSampler() : null;
   const pass1Start = performance.now();
 
   const symbolTable = new InMemoryGlobalSymbolTable();
-  // Run-global, as `CodegraphRunState` is — every walkable language feeds
-  // them, then pass 2 narrows to the files this resolver owns.
-  const channels: RunGlobalTypeChannels = {
-    classExtends: {},
-    structuredReturnTypes: {},
-    functionReturnTypes: {},
-    classAncestors: {},
-    classFieldTypesByClassKey: {},
-    classFieldCallResults: {},
-    moduleReexports: {},
-    buildConstraintsByFile: {},
-    inheritanceRows: [],
-    instantiatedTypes: new Set<string>(),
-  };
+  // Run-global, as production's is — every walkable language feeds it, each
+  // into its own language family's partition, then pass 2 narrows to the files
+  // this resolver owns.
+  const runState = newProductionRunState(root, factory);
   const scored: FileExtraction[] = [];
   const corpusFiles = new Set<string>();
   let parseFailures = 0;
@@ -794,20 +637,16 @@ export async function run(
     SYMBOL_TABLE_EXTENSIONS,
   );
 
-  // Read ONCE per corpus, exactly where production reads it (run start), and
-  // threaded into every walk AND every call context below — the tally must be
-  // taken with production's gate, not with an ungated walker (w205u.1).
-  const declaredDependencies = readCorpusDeclaredDependencies(root, factory);
-
   for (const relPath of selection.kept.slice(0, limit)) {
-    const extraction = extractFile(root, relPath, composer, factory, declaredDependencies);
+    // The run state read the declared dependencies at its run-start seam, as
+    // production does; every walk takes production's gate, not an ungated
+    // walker's (w205u.1), and the call contexts carry the same set.
+    const extraction = extractFile(root, relPath, composer, factory, runState.declaredDependencies);
     if (extraction === null) {
       parseFailures++;
       continue;
     }
-    symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
-    absorbTypeChannels(channels, extraction);
-    if (rubyChannels !== null) absorbRubyChannels(rubyChannels, extraction);
+    absorbPass1FileState(runState, symbolTable, extraction, buildSymbolDefs(extraction), "own");
     corpusFiles.add(relPath);
     if (scoredExts.includes(extname(relPath).toLowerCase())) scored.push(extraction);
     else symbolTableOnlyFiles++;
@@ -824,73 +663,64 @@ export async function run(
   const rows: CallSiteRow[] = [];
   const kindStats = opts.kindStats === true ? emptyReceiverKindTally() : null;
   const kindSamples = opts.kindStats === true ? emptyKindSamples() : null;
-  let dispatchSkipped = 0;
+  let dispatchTableSites = 0;
   let chainDrift = 0;
   let singleSites = 0;
   let fanSites = 0;
   let ambiguousSites = 0;
   let fanEdges = 0;
-  // Built at the same pass-1→pass-2 barrier production builds it at, over every
-  // file the walk absorbed — the cone reads it by fqName, so it must be whole
-  // before the first call resolves.
-  const hierarchy = new MapHierarchyView(buildHierarchySnapshot(channels.inheritanceRows));
+  // The pass-1→pass-2 barrier, as production crosses it: the per-family
+  // hierarchy views, include-by indexes and barrier-derived facts are built
+  // over every file the walk absorbed, then each resolver is told its volume.
+  await runState.seal(async () => symbolTable);
+  const runner = new CallEdgeResolutionRunner(factory, runState);
+  runner.prepareResolvePass();
 
   for (const extraction of scored) {
-    for (const chunk of extraction.chunks) {
-      const ctx = buildCallContext(
-        extraction,
-        chunk,
-        symbolTable,
-        channels,
-        hierarchy,
-        rubyChannels,
-        declaredDependencies,
-        root,
-      );
-      for (const call of chunk.calls ?? []) {
-        if (call.dispatch !== undefined) {
-          dispatchSkipped++;
-          continue;
-        }
-        // --time-only asks production directly. There is no rebuilt chain to
-        // drift FROM, so `chainDrift` stays 0 and the report says the check did
-        // not run — it must never read as "0 drift, verified".
-        const baseline =
-          baselineChain === null ? production.resolve(call, ctx) : resolveViaChain(baselineChain, call, ctx);
-        if (baselineChain !== null && !sameTarget(baseline, production.resolve(call, ctx))) chainDrift++;
-        const fan = dispatch ? scoreFan(production, call, ctx) : NO_FAN;
-        if (fan.kind === "single") singleSites++;
-        else if (fan.kind === "fan") {
-          fanSites++;
-          fanEdges += fan.fanSize;
-        } else if (fan.kind === "ambiguous") ambiguousSites++;
-        rows.push({
-          relPath: extraction.relPath,
-          startLine: call.startLine,
-          callText: call.callText,
-          receiver: call.receiver,
-          member: call.member,
-          baseline,
-          variant: variantChain ? resolveViaChain(variantChain, call, ctx) : baseline,
-          baselineTargetInProject: baseline !== null && corpusFiles.has(baseline.targetRelPath),
-          dispatchOutcome: fan.kind,
-          fanSize: fan.fanSize,
-          runnerAnswer: fan.kind === "single" ? fan.single : fan.kind === "none" ? baseline : null,
-        });
-        if (kindStats !== null && kindSamples !== null) {
-          tallyKindStats(kindStats, kindSamples, {
-            call,
-            ctx,
-            chunk,
-            resolver: production,
-            symbolTable,
-            relPath: extraction.relPath,
-            // The runner books a fan or a single as RESOLVED (it pushed edges);
-            // only `ambiguous` and a declining chain reach miss classification.
-            resolved: fan.kind === "single" || fan.kind === "fan" || (fan.kind === "none" && baseline !== null),
-            ambiguous: fan.kind === "ambiguous",
-          });
-        }
+    // Every call site with the context the production runner resolves it
+    // against AND the verdict it reaches there — both built BY the runner, so
+    // no channel can be threaded, and no site routed or counted, differently.
+    for (const { call, ctx, verdict } of runner.callSiteVerdicts(extraction, symbolTable)) {
+      // A dispatch-table site never reaches the exact chain in production — the
+      // runner fans it out through `resolveDispatch` and counts it like any
+      // other site. It is kept, with its production edges and its counters, but
+      // it has no chain answer for the A/B to score (bd tea-rags-mcp-c6xuu).
+      const dispatchTable = call.dispatch !== undefined;
+      if (dispatchTable) dispatchTableSites++;
+      // --time-only asks production directly. There is no rebuilt chain to
+      // drift FROM, so `chainDrift` stays 0 and the report says the check did
+      // not run — it must never read as "0 drift, verified".
+      const baseline = dispatchTable
+        ? null
+        : baselineChain === null
+          ? production.resolve(call, ctx)
+          : resolveViaChain(baselineChain, call, ctx);
+      if (!dispatchTable && baselineChain !== null && !sameTarget(baseline, production.resolve(call, ctx))) {
+        chainDrift++;
+      }
+      const fan = dispatch ? scoreFan(production, call, ctx) : NO_FAN;
+      if (fan.kind === "single") singleSites++;
+      else if (fan.kind === "fan") {
+        fanSites++;
+        fanEdges += fan.fanSize;
+      } else if (fan.kind === "ambiguous") ambiguousSites++;
+      rows.push({
+        relPath: extraction.relPath,
+        startLine: call.startLine,
+        callText: call.callText,
+        receiver: call.receiver,
+        member: call.member,
+        baseline,
+        variant: variantChain && !dispatchTable ? resolveViaChain(variantChain, call, ctx) : baseline,
+        baselineTargetInProject: baseline !== null && corpusFiles.has(baseline.targetRelPath),
+        dispatchOutcome: fan.kind,
+        fanSize: fan.fanSize,
+        dispatchTable,
+        runnerEdges: verdict.edges,
+        runnerAnswer: runnerAnswerOf(verdict),
+      });
+      if (kindStats !== null && kindSamples !== null) {
+        tallyKindStats(kindStats, kindSamples, { call, verdict, relPath: extraction.relPath });
       }
     }
   }
@@ -916,7 +746,7 @@ export async function run(
     codegraphExcluded: selection.codegraphExcluded,
     parseFailures,
     symbols: symbolTable.size(),
-    dispatchSkipped,
+    dispatchTableSites,
     chainDrift,
     dispatch,
     singleSites,
@@ -973,15 +803,19 @@ async function main(): Promise<void> {
     timing: opts.timing,
     kindStats: opts.kindStats,
   });
-  const baseline = tallyChainOutput(result.rows.map((r) => r.baseline));
-  const variant = tallyChainOutput(result.rows.map((r) => r.variant));
-  const { tally, changed } = diffRows(result.rows);
+  // The chain A/B scores only the sites production runs the exact chain on; a
+  // dispatch-table site has no chain answer to count as "unresolved".
+  const chainRows = result.rows.filter((r) => !r.dispatchTable);
+  const baseline = tallyChainOutput(chainRows.map((r) => r.baseline));
+  const variant = tallyChainOutput(chainRows.map((r) => r.variant));
+  const { tally, changed } = diffRows(chainRows);
 
   const out: string[] = [
     `CORPUS ${opts.corpus} · lang ${opts.lang}`,
     `  ${result.files} scored files (+${result.symbolTableOnlyFiles} symbol-table only), ${result.symbols} symbols,` +
       ` ${result.rows.length} call sites` +
-      ` (parse failures ${result.parseFailures}, dispatch skipped ${result.dispatchSkipped})`,
+      ` (parse failures ${result.parseFailures}, dispatch-table sites ${result.dispatchTableSites}` +
+      ` — counted, not chain-scored)`,
     `  excluded as production excludes them: ${result.ingestIgnored} by .gitignore and friends · ` +
       `${result.codegraphExcluded} generated/test/non-app`,
     `  chain drift vs production resolver: ${result.chainDrift}${result.chainDrift === 0 ? "" : "  ← REBUILD IS STALE, numbers void"}`,
@@ -1048,7 +882,8 @@ async function main(): Promise<void> {
 /**
  * The `## Codegraph resolve` per-kind section, recomputed offline. `rate` is
  * `resolved / (resolved + miss)` — the exact `resolveSuccessRate` formula, with
- * `miss` the residual the rate charges as a failure.
+ * `miss` the residual the rate charges as a failure. An empty denominator
+ * renders as the `—` marker with the counters kept, never as a rate (bd qodqg).
  */
 export function formatKindStatsBlock(
   stats: Record<ReceiverKind, ReceiverKindTally>,
@@ -1062,9 +897,15 @@ export function formatKindStatsBlock(
     const miss = kindMissWithInProjectDef(t);
     totals.resolved += t.resolved;
     totals.miss += miss;
-    const rate = t.resolved + miss === 0 ? 1 : t.resolved / (t.resolved + miss);
+    const kindDenominator = t.resolved + miss;
+    const cell = formatResolveRateCell({
+      rate: t.resolved / kindDenominator,
+      denominator: kindDenominator,
+      counters: `${t.resolved}/${kindDenominator}`,
+      renderRate: (rate) => rate.toFixed(3),
+    });
     lines.push(
-      `  ${kind.padEnd(11)} ${rate.toFixed(3)} ${t.resolved}/${t.resolved + miss}` +
+      `  ${kind.padEnd(11)} ${cell}` +
         ` · attempted ${t.attempted} · external ${t.externalSkipped} · noInProjectDef ${t.noInProjectDef}` +
         ` · coreAmbiguous ${t.coreAmbiguous} · unresolvable ${t.unresolvable}` +
         ` · ambiguousFanout ${t.ambiguousFanout} · MISS ${miss}`,
@@ -1072,10 +913,13 @@ export function formatKindStatsBlock(
     for (const sample of samples?.[kind] ?? []) lines.push(`      miss: ${sample}`);
   }
   const denominator = totals.resolved + totals.miss;
-  lines.push(
-    `  TOTAL       ${(denominator === 0 ? 1 : totals.resolved / denominator).toFixed(3)}` +
-      ` ${totals.resolved}/${denominator} · residual miss ${totals.miss}`,
-  );
+  const totalCell = formatResolveRateCell({
+    rate: totals.resolved / denominator,
+    denominator,
+    counters: `${totals.resolved}/${denominator}`,
+    renderRate: (rate) => rate.toFixed(3),
+  });
+  lines.push(`  TOTAL       ${totalCell} · residual miss ${totals.miss}`);
   return lines;
 }
 

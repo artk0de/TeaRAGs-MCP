@@ -56,7 +56,10 @@ import type { DaemonOp } from "../../../../../../../../src/core/adapters/duckdb/
 import { GraphDbClientPool } from "../../../../../../../../src/core/adapters/duckdb/pool.js";
 import { IngestFacade } from "../../../../../../../../src/core/api/index.js";
 import { INDEXING_METADATA_ID } from "../../../../../../../../src/core/contracts/constants.js";
-import type { SymbolDefinition } from "../../../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  fileScopedSymbolKey,
+  type SymbolDefinition,
+} from "../../../../../../../../src/core/contracts/types/codegraph.js";
 import type { EnrichmentRunHandle } from "../../../../../../../../src/core/contracts/types/enrichment-executor.js";
 import type {
   ChunkSignalOverlay,
@@ -94,6 +97,8 @@ export const CHUNK_SIGNALS_KEY = `${CODEGRAPH_PROVIDER_KEY}.chunk`;
 /** The outer function whose second `#part` chunk starts inside its nested closure. */
 export const ANCHOR_SYMBOL = "outer";
 export const NESTED_OWNER_SYMBOL = "outer.inner";
+/** The file both declare — the chunk signal map is keyed by (file, symbol). */
+export const OUTER_REL = "src/lib/outer.ts";
 
 const FIXTURE_FILES: Readonly<Record<string, string>> = {
   "src/lib/helpers.ts": [
@@ -433,8 +438,12 @@ export interface EnrichmentLifecycleHarness {
   chunkMap: () => Map<string, ChunkLookupEntry[]>;
   /** `payload.enrichment` of the collection's metadata point. */
   readEnrichmentMarker: () => Promise<Record<string, any>>;
-  /** The chunk overlay the codegraph builder derives for `symbolId` from the persisted graph. */
-  chunkSignalsOf: (symbolId: string) => Promise<ChunkSignalOverlay>;
+  /**
+   * The chunk overlay the codegraph builder derives for one symbol OF ONE FILE
+   * from the persisted graph. The file is part of the address, not decoration:
+   * a symbolId is unique per file (bd tea-rags-mcp-xtdkq).
+   */
+  chunkSignalsOf: (relPath: string, symbolId: string) => Promise<ChunkSignalOverlay>;
   /**
    * Every symbol the graph persisted, with its line range — read over a raw daemon
    * connection, so it works against a daemon a client pool would refuse.
@@ -514,10 +523,10 @@ export async function startEnrichmentLifecycleHarness(
       const point = await qdrant.getPoint(collection, INDEXING_METADATA_ID);
       return (point?.payload?.enrichment ?? {}) as Record<string, any>;
     },
-    chunkSignalsOf: async (symbolId) => {
+    chunkSignalsOf: async (relPath, symbolId) => {
       const { graphDb } = await mainPool.acquireReader(collection);
       const bulk = await graphDb.getChunkSignalsBulk();
-      return buildCodegraphChunkSignals(bulk.get(symbolId));
+      return buildCodegraphChunkSignals(bulk.get(fileScopedSymbolKey({ relPath, symbolId })));
     },
     persistedSymbols: async () => {
       const client = new DaemonGraphDbClient(fixture.daemonPaths.socketPath, collection);

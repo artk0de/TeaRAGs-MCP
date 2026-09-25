@@ -71,6 +71,37 @@ describe("TtyProgressRenderer — qdrant-state readiness row", () => {
   });
 });
 
+describe("TtyProgressRenderer — embedding-state recovery-wait row (bd tea-rags-mcp-umatc)", () => {
+  const waiting = {
+    type: "embedding-state",
+    state: "waiting",
+    url: "http://127.0.0.1:9",
+    elapsedMs: 0,
+    budgetMs: 240_000,
+  } as const;
+
+  it("creates one indeterminate bar on the first wait, and no second one while the wait goes on", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle(waiting);
+    r.handle({ ...waiting, elapsedMs: 2000 });
+    expect(mockMultibar.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes the bar with a Done marker once the provider is back", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle(waiting);
+    r.handle({ type: "embedding-state", state: "recovered", url: "http://127.0.0.1:9", elapsedMs: 6000 });
+    const lastUpdate = mockSingleBar.update.mock.calls.at(-1);
+    expect(lastUpdate?.[1]).toMatchObject({ done: expect.objectContaining({ elapsed: expect.any(String) }) });
+  });
+
+  it("ignores a recovery when no wait was shown", () => {
+    const r = new TtyProgressRenderer(colors);
+    r.handle({ type: "embedding-state", state: "recovered", url: "http://127.0.0.1:9", elapsedMs: 6000 });
+    expect(mockSingleBar.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("TtyProgressRenderer — turbo-migration terminal edges", () => {
   it("freezes with a background hint when the optimizer runs past the poll cap", () => {
     const r = new TtyProgressRenderer(colors);

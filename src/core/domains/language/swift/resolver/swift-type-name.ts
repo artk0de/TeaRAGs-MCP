@@ -59,7 +59,9 @@ export function stripSwiftOverloadSuffix(symbolId: string): string {
  * every other name in the language.
  */
 export function isSwiftTypeName(name: string): boolean {
-  return /^[A-Z]/.test(name);
+  // A leading underscore marks an internal type (`_URLEncodedFormEncoder`),
+  // not a value (bd tea-rags-mcp-y99pg.9).
+  return /^_*[A-Z]/.test(name);
 }
 
 /**

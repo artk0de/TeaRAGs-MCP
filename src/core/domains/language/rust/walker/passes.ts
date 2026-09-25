@@ -1,8 +1,9 @@
 /**
- * Rust's ordered extraction passes — EMPTY, which is what makes Rust a plugin
- * host without moving a byte of its output: `composeExtractionWalker` runs
- * `extractFromRustFile` and, finding no passes, hands that result back BY
- * IDENTITY (bd tea-rags-mcp-zhetx, E1 seam 0).
+ * Rust's ordered extraction passes. The monolith `extractFromRustFile` runs
+ * first (bd tea-rags-mcp-zhetx, E1 seam 0); each facet below folds in after it.
+ *
+ *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — `pub` vs module-private
+ *      on `ChunkExtraction.visibility`, which the monolith never fills.
  *
  * A new Rust extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -11,6 +12,7 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
+import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { rustDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 
-export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
+export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [rustDeclaredVisibilityFacetPass];

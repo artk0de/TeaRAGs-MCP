@@ -138,6 +138,10 @@ export interface IndexStats {
     chunksDeleted: number;
     /** Previously-quarantined files re-attempted this pass (unchanged content). */
     filesRetried: number;
+    /** Mirrors `ChangeStats.filesSkippedDueToDeleteFailure`; present only when non-zero. */
+    filesSkippedDueToDeleteFailure?: number;
+    /** Mirrors `ChangeStats.filesFailedToDelete`; present only when non-zero. */
+    filesFailedToDelete?: number;
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
@@ -166,10 +170,18 @@ export interface ChangeStats {
   migrations?: string[];
   /**
    * Files whose upsert was skipped because their delete silently failed.
-   * Their old chunks remain in the index and will be retried on next reindex.
+   * Their old chunks remain in the index; the saved snapshot keeps their
+   * previous hash, so the next reindex detects them as modified and retries.
    * Present only when at least one path was blocked (see Phase 3.2).
    */
   filesSkippedDueToDeleteFailure?: number;
+  /**
+   * Files removed from disk (deleted or newly ignored) whose old chunks could
+   * not be deleted, so they remain in the index. Present only when at least one
+   * such delete failed; the run is then reported as "partial". The saved
+   * snapshot keeps listing them, so the next reindex retries the delete.
+   */
+  filesFailedToDelete?: number;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
@@ -214,24 +226,30 @@ export interface CodegraphResolveSummary {
    * member has no in-project definition (gem/core/runtime-generated — they can
    * never produce an in-project edge). This is the honest "what fraction of
    * resolvable in-project calls became edges" number a casual reader wants.
+   * `null` when that denominator is empty (every attempted call fell into an
+   * excluded bucket): nothing was scored, which is neither 1 nor 0 (bd
+   * tea-rags-mcp-stpvj). A scored zero stays 0.
    */
-  inProjectEdgeRecall: number;
+  inProjectEdgeRecall: number | null;
   /**
    * bd tea-rags-mcp-f2jsb / j0pki — dual-recall companion to
    * {@link inProjectEdgeRecall}: `(callsResolved + ambiguousFanout) / SAME
    * denominator`. An over-cap ambiguous dispatch fan-out stays a miss for the
    * strict recall (it produced no edge), but its persisted aggregate still
    * covers the call site — this number reports completeness when that
-   * aggregate is accepted as coverage.
+   * aggregate is accepted as coverage. `null` exactly when
+   * {@link inProjectEdgeRecall} is.
    */
-  coveredRecall: number;
+  coveredRecall: number | null;
   /**
    * Raw resolver capability over ALL internal-attempted calls (denominator
    * polluted by no-in-project-def calls, so it reads far lower than recall).
    * Surfaced ONLY under DEBUG — it misleads a casual reader who expects it to
-   * mean graph completeness.
+   * mean graph completeness. `null` when the rate denominator is empty (every
+   * attempted site fell into an excluded bucket): nothing was scored, which is
+   * neither 1 nor 0 (bd tea-rags-mcp-qodqg). Absent = not DEBUG.
    */
-  resolveSuccessRate?: number;
+  resolveSuccessRate?: number | null;
   callsAttempted: number;
   callsResolved: number;
   /** Unresolved calls classified as external-library / runtime targets, excluded from the rate. */
@@ -327,15 +345,15 @@ export interface EdgeKindBreakdown {
 
 /**
  * tea-rags-mcp-cnqrg — one per-language slice of {@link CodegraphResolveSummary}.
- * `resolveSuccessRate` uses the same `resolved / max(1, attempted − external)`
- * formula as the aggregate, scoped to this language's call-sites.
+ * `resolveSuccessRate` uses the same formula as the aggregate, scoped to this
+ * language's call-sites, and the same `null` for an empty denominator.
  */
 export interface CodegraphResolveLanguageRow {
   language: string;
-  /** Graph-completeness for this language (always present). See {@link CodegraphResolveSummary.inProjectEdgeRecall}. */
-  inProjectEdgeRecall: number;
-  /** Raw resolver capability for this language. DEBUG-only (see summary). */
-  resolveSuccessRate?: number;
+  /** Graph-completeness for this language (always present; `null` = nothing scored). See {@link CodegraphResolveSummary.inProjectEdgeRecall}. */
+  inProjectEdgeRecall: number | null;
+  /** Raw resolver capability for this language. DEBUG-only; `null` = nothing scored (see summary). */
+  resolveSuccessRate?: number | null;
   callsAttempted: number;
   callsResolved: number;
   callsExternalSkipped: number;
@@ -363,18 +381,20 @@ export interface CodegraphResolveLanguageRow {
  * tea-rags-mcp-7m5xz — one per-receiver-kind slice of the resolve tally.
  * `receiverKind` mirrors {@link ResolveRunStatsRow.receiverKind} (a plain
  * string — the domain `ReceiverKind` enum is NOT imported across this
- * boundary). `resolveSuccessRate` uses the same
- * `resolved / max(1, attempted − externalSkipped)` formula as the aggregate.
+ * boundary). `resolveSuccessRate` uses the same formula as the aggregate, and
+ * is `null` when the bucket's denominator is empty (bd tea-rags-mcp-qodqg).
  */
 export interface CodegraphResolveKindRow {
   receiverKind: string;
   /** Graph completeness for this receiver-kind bucket — `resolved / (resolved +
    *  missWithInProjectDef)`, excluding no-in-project-def misses. Surfaces WHICH
-   *  bucket holds the real recall holes so recall work is targeted, not estimated. */
-  inProjectEdgeRecall: number;
+   *  bucket holds the real recall holes so recall work is targeted, not estimated.
+   *  `null` = empty denominator, nothing scored in this bucket (bd tea-rags-mcp-stpvj). */
+  inProjectEdgeRecall: number | null;
   /** bd f2jsb / j0pki — dual-recall companion for this bucket:
-   *  `(resolved + ambiguousFanout) / SAME denominator` as inProjectEdgeRecall. */
-  coveredRecall: number;
+   *  `(resolved + ambiguousFanout) / SAME denominator` as inProjectEdgeRecall;
+   *  `null` exactly when inProjectEdgeRecall is. */
+  coveredRecall: number | null;
   attempted: number;
   resolved: number;
   externalSkipped: number;
@@ -402,7 +422,8 @@ export interface CodegraphResolveKindRow {
    * a pre-migration-022 index whose column was never written.
    */
   callsUnnarrowedTemplate: number;
-  resolveSuccessRate: number;
+  /** `null` = empty denominator, nothing scored in this bucket (bd tea-rags-mcp-qodqg). */
+  resolveSuccessRate: number | null;
 }
 
 export interface IndexStatus {

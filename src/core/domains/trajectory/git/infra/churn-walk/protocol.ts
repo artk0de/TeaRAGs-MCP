@@ -21,6 +21,13 @@ import type { ChunkChurnOverlay } from "../../types.js";
 import type { SquashOptions } from "../metrics.js";
 import type { ChunkChurnWalkStats } from "../walk-commits.js";
 
+/** `workerData` every churn-walk worker is started with. */
+export interface ChurnWalkWorkerData {
+  /** The git binary the spawning thread resolved — the worker adopts it
+   *  instead of probing again (`infra/git-executable.ts`). */
+  gitExecutable: string;
+}
+
 /** One serializable walk job — everything the worker needs for one batch. */
 export interface ChunkChurnWalkJobInput {
   repoRoot: string;

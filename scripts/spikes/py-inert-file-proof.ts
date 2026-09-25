@@ -26,6 +26,7 @@ import Parser from "tree-sitter";
 
 import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
+import { loadCodegraphGrammarSync } from "../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { fileIsInertForExtraction } from "../../src/core/infra/extraction-fast-path.js";
 import { materializeTree } from "../../src/core/infra/materialize.js";
@@ -83,7 +84,7 @@ async function proveCorpus(alias: string, root: string): Promise<number> {
 
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
-    parser.setLanguage(config.loadParser());
+    parser.setLanguage(loadCodegraphGrammarSync(factory, extensionOf(relPath)));
     const nativeRoot = parser.parse(code).rootNode;
     if (!fileIsInertForExtraction(nativeRoot, walker.extractionBearingNodeTypes)) continue;
     inert++;

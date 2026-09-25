@@ -23,18 +23,24 @@ import { STATIC_PRESETS } from "../../../../src/core/domains/trajectory/static/r
 
 const presets = resolvePresets([...STATIC_PRESETS], []);
 
-/** The three symbol-mass signals, all dotless, all label-bearing. */
+/**
+ * The three symbol-mass signals, all dotless, all label-bearing. The two
+ * module-mass keys declare `level: "file"` as production does — a flat key's
+ * overlay bucket follows its declared level (bd tea-rags-mcp-llmc0).
+ */
 const payloadSignals: PayloadSignalDescriptor[] = [
   {
     key: "moduleLines",
     type: "number",
     description: "Physical line count of the file",
+    level: "file",
     stats: { labels: { p50: "small", p75: "large", p95: "god-module" }, dedupeByFile: true },
   },
   {
     key: "moduleMethodCount",
     type: "number",
     description: "Distinct callables declared in this file",
+    level: "file",
     stats: { labels: { p50: "typical", p75: "busy", p95: "god-module" }, dedupeByFile: true },
   },
   {

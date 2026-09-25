@@ -179,6 +179,26 @@ describe("createApp", () => {
     expect(result).toEqual({ callers: [] });
   });
 
+  // bd tea-rags-mcp-94hd9
+  it("getArchitectureReport delegates to the graph facade", async () => {
+    const deps = makeDeps();
+    const report = { summary: {}, rootCauses: [], violations: [] };
+    const graphFacade = { getArchitectureReport: vi.fn().mockResolvedValue(report) };
+    const app = createApp({ ...deps, graphFacade } as never);
+
+    await expect(app.getArchitectureReport({ project: "p", pathPattern: "src/**" })).resolves.toBe(report);
+    expect(graphFacade.getArchitectureReport).toHaveBeenCalledWith({ project: "p", pathPattern: "src/**" });
+  });
+
+  it("getArchitectureReport returns a report with nothing read when no graph backend is wired", async () => {
+    const app = createApp(makeDeps() as never);
+
+    const report = await app.getArchitectureReport({ project: "p" });
+
+    expect(report.violations).toEqual([]);
+    expect(report.summary.stableDependencies.edgeCount).toBe(0);
+  });
+
   // -------------------------------------------------------------------------
   // Per-project ingest scope. An MCP server is long-lived with a fixed process
   // env, so a project's registry env can only reach an index run through a

@@ -13,7 +13,9 @@ import { join } from "node:path";
 import { createComposition } from "../../build/core/api/internal/composition.js";
 import { ExploreFacade } from "../../build/core/api/internal/facades/explore-facade.js";
 import { IngestFacade } from "../../build/core/api/internal/facades/ingest-facade.js";
-import { CollectionRegistry } from "../../build/core/infra/registry/index.js";
+import { storeIndexingMarker } from "../../build/core/domains/ingest/pipeline/indexing-marker.js";
+import { CollectionRegistry } from "../../build/core/domains/maintenance/registry/index.js";
+import { hashCollectionForPath } from "../../build/core/infra/collection-name.js";
 import { StatsCache } from "../../build/core/infra/stats-cache.js";
 
 // ANSI colors
@@ -320,6 +322,49 @@ export function createTestFacades(qdrant, embeddings, overrides = {}) {
   });
 
   return { ingest, explore, statsCache, collectionRegistry, composition, snapshotDir };
+}
+
+/**
+ * Embedding provider for Qdrant-only suites that drive a NO-CHANGE incremental
+ * reindex through IngestFacade — the path the migration sweep runs on.
+ *
+ * `IngestFacade#reindexChanges` probes embedding health with one `embed()`
+ * before touching the index, so a reindex needs a provider that answers even
+ * when nothing will be embedded. This one answers that probe with a zero vector
+ * and rejects `embedBatch`, so no fake chunk vector can ever be stored. The
+ * pipeline does not abort a run on an embed failure, so callers must still
+ * assert the reindex saw zero added/modified files. Keeps the migration
+ * scenarios independent of Ollama, which they do not exercise.
+ */
+export function createProbeOnlyEmbeddings(dimensions = 768) {
+  return {
+    embed: async () => ({ embedding: new Array(dimensions).fill(0), dimensions }),
+    embedBatch: async (texts) => {
+      throw new Error(`Probe-only embeddings asked to embed ${texts.length} text(s): the reindex found changes`);
+    },
+    getDimensions: () => dimensions,
+    getModel: () => "probe-only",
+    checkHealth: async () => true,
+    getProviderName: () => "probe-only",
+  };
+}
+
+/**
+ * Stand up the Qdrant side of an index built by an EARLIER tea-rags: the
+ * collection the codebase path resolves to, carrying a completed indexing
+ * marker and nothing else — no schema metadata point, so the schema pipeline
+ * reads version 0. The caller supplies the snapshot in whatever layout the
+ * scenario needs. Tracked for cleanup.
+ *
+ * @returns the collection name `IngestFacade` resolves `codebasePath` to.
+ */
+export async function seedLegacyIndexedCollection(qdrant, embeddings, codebasePath) {
+  const collectionName = await hashCollectionForPath(codebasePath);
+  await qdrant.createCollection(collectionName, embeddings.getDimensions(), "Cosine", false);
+  resources.trackCollection(collectionName);
+  await storeIndexingMarker(qdrant, embeddings, collectionName, false);
+  await storeIndexingMarker(qdrant, embeddings, collectionName, true);
+  return collectionName;
 }
 
 /**

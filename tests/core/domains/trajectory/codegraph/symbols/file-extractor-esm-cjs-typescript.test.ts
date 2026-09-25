@@ -61,8 +61,8 @@ describe("CodegraphFileExtractor .mts / .cts (bd tea-rags-mcp-1y13c)", () => {
     expect(extractor.discover(root).sort()).toEqual(["src/legacy.cts", "src/worker.mts"]);
   });
 
-  it.each(["src/worker.mts", "src/legacy.cts"])("extracts the symbols, calls and imports of %s", (relPath) => {
-    const extraction = extractor.extract(root, relPath);
+  it.each(["src/worker.mts", "src/legacy.cts"])("extracts the symbols, calls and imports of %s", async (relPath) => {
+    const extraction = await extractor.extract(root, relPath);
     expect(extraction.language).toBe("typescript");
     expect(extraction.chunks.map((chunk) => chunk.symbolId)).toEqual(
       expect.arrayContaining(["Pool", "Pool#run", "start"]),

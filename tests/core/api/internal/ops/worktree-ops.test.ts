@@ -73,6 +73,7 @@ describe("listWorktreeInfos", () => {
     expect(result[0].worktreeName).toBe("feat");
     expect(result[0].alias).toBe("proj-worktree-feat");
     expect(result[0].chunksCount).toBe(12);
+    expect(result[0].path).toBe("/wt");
   });
 
   it("uses undefined for alias when entry.name is null/undefined", () => {
@@ -167,6 +168,7 @@ describe("toWorktreeInfo", () => {
       alias: undefined,
       worktreeOf: "code_src",
       worktreeName: "feat",
+      path: "/wt",
       chunksCount: 3,
     });
   });

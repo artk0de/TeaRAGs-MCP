@@ -31,7 +31,7 @@ explicitly, don't omit.
 
 ## Process Rules
 
-`.claude/rules/` holds 37 path-scoped rule files — the loader surfaces the ones
+`.claude/rules/` holds 40 path-scoped rule files — the loader surfaces the ones
 whose `paths:` globs match what you touch, so do not enumerate them here. Read
 `.claude/rules/plugin-guidance-layers.md` first: it defines the guidance layers
 and which surface owns what.
@@ -79,6 +79,24 @@ search cascade — not these.) A navigator cites code by symbol (`Class#method`,
 `functionName`, or a file plus a symbol) and never by line number, which drifts
 silently — `tests/navigator-code-references.test.ts` fails on any
 `file.ts:NNN`-style reference.
+
+**A navigator names a CONTRACT; it never ENUMERATES that contract's
+implementers** (bd tea-rags-mcp-fk920). "TypeScript and JavaScript answer
+`hasInProjectDefinition`" was true when written, went stale the day the Swift
+vertical landed, and an agent repeated it to the user as current fact — the
+citation guard above could not catch it, because it constrains the FORM of a
+citation and not the TRUTH of a claim. An enumeration of code is the navigator
+content that rots fastest: the set moves whenever a language, strategy, or
+provider is added, which is routine here. So state which CONTRACT decides
+membership, then point at the test that DERIVES the set from the code —
+`tests/navigator-enumerations.test.ts` holds the derived sets and fails when
+prose and code disagree. This is the "state each fact ONCE" contract above,
+applied between prose and code rather than between two navigators: the set lives
+in one verified place, and prose cannot contradict it because prose no longer
+states it. Derive from the surface production READS (for a language capability,
+the `<lang>/index.ts` facade, never the `CallResolver` behind it) so the test
+also catches an implementation nothing forwards. A worked example naming ONE
+language stays legal; two is an enumeration.
 
 | Navigator (under `src/core/`)         | What it briefs you on                                                                |
 | ------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -272,8 +290,9 @@ per-session/per-worktree concern; main carries canonical _source_ after merge,
 not necessarily global link.
 
 ```bash
-# 1. Worktree: build the worktree branch + point global tea-rags at it
+# 1. Worktree: install + build the worktree branch + point global tea-rags at it
 cd .claude/worktrees/<branch>
+npm install
 npm run build
 npm link
 
@@ -283,6 +302,10 @@ npm link
 # 3. After tests pass: MERGE the worktree branch into main.
 cd /Users/artk0re/Dev/Tools/tea-rags-mcp
 git merge worktree-<branch> --no-ff
+
+# Before building main (or any other checkout) after the merge: npm install
+# first. The merged package.json may declare a dependency main's node_modules
+# does not have yet.
 
 # Do NOT relink main here. Leave the global link where your session needs it
 # (typically the worktree build you just tested). A parallel session may have its
@@ -297,8 +320,17 @@ actively testing — point at build you need, leave it. Once merged, worktree
 source preserved on main regardless of link; later `npm link` from any checkout
 reproduces it.
 
-### Why build AND link each time
+### Why install, build AND link each time
 
+- `npm install` brings `node_modules` in line with `package.json`.
+  `npm run build` compiles; it does NOT install. A checkout keeps the deps it
+  had when created, so a branch that ADDS a dependency (e.g. a tree-sitter
+  grammar) leaves every other checkout one install short once it merges. The
+  build still succeeds and the server dies at startup with
+  `ERR_MODULE_NOT_FOUND: Cannot find package '<pkg>'`, which `/mcp reconnect`
+  surfaces only as "Failed to reconnect to tea-rags" with no diagnostic; running
+  the linked binary by hand (`tea-rags --version`) shows the trace. Run it
+  unconditionally: a no-op install costs seconds (bd tea-rags-mcp-7lnos).
 - `npm link` registers current `package.json` path as global symlink source.
   Does NOT trigger build — consumer (MCP server) loads whatever `build/`
   contains at next start.
@@ -323,9 +355,10 @@ reproduces it.
   locally.** It touches nothing global, so it cannot collide with a parallel
   session — **the link is the shared resource, not the build.** Standing case: a
   fresh worktree has no `build/`, and the chunker pool forks the _compiled_
-  worker, so every worker-forking test — and therefore pre-commit — fails until
-  the worktree is built once. Build it, don't link it. (Tracked as
-  `tea-rags-mcp-hyj9d`; the mechanism is owned by
+  worker, so every worker-forking test fails until the worktree is built once.
+  Pre-commit builds a missing `build/` itself when `src/` is staged (it does not
+  rebuild a stale one, and never links); a direct `vitest` run still needs the
+  build. Build it, don't link it. (The mechanism is owned by
   `src/core/domains/ingest/pipeline/CLAUDE.md`.)
 - **Reindex is ALWAYS user-gated**, regardless of worktree count — rewrites the
   shared Qdrant index, depends on ollama embeddings (can flap mid-run). This
@@ -472,8 +505,9 @@ large project is hours, rarely the right tool for testing unreleased changes.
 ### Test sequence when new functionality affects payload
 
 ```bash
-# 1. Worktree: build + link + reindex tea-rags + (optionally another project)
+# 1. Worktree: install + build + link + reindex tea-rags + (optionally another project)
 cd .claude/worktrees/<branch>
+npm install
 npm run build
 npm link
 # → reconnect MCP servers

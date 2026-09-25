@@ -26,6 +26,21 @@ export interface AstNode {
   readonly previousNamedSibling: AstNode | null;
 }
 
+/**
+ * Whether `a` and `b` denote the same syntax node (bd tea-rags-mcp-3hyjt).
+ *
+ * Never compare nodes with `===`: a NATIVE tree hands out a fresh wrapper per
+ * accessor call unless its wrapper cache still holds one, so identity holds or
+ * fails with GC timing (rdv7d). A materialized tree happens to be
+ * identity-stable, which is why production never saw it — the native-vs-
+ * materialized parity test did, intermittently. Range + type is stable on both
+ * trees; a parent and a child that span the same bytes differ in type.
+ */
+export function isSameAstNode(a: AstNode | null | undefined, b: AstNode | null | undefined): boolean {
+  if (!a || !b) return false;
+  return a.startIndex === b.startIndex && a.endIndex === b.endIndex && a.type === b.type;
+}
+
 /** Mirror of the single `Parser.Tree` accessor the pipeline uses. */
 export interface MaterializedTree {
   readonly rootNode: AstNode;

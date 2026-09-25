@@ -25,6 +25,7 @@
  * the innermost declaration of the name, which is the one the compiler binds.
  */
 
+import { identifierEntry } from "../../../contracts/identifier-record.js";
 import type { CallResultBinding, LocalBinding } from "../../../contracts/types/codegraph.js";
 
 /** The position fields both binding channels share. */
@@ -82,7 +83,7 @@ export function goLocalBindingAt(
   name: string,
   atLine: number,
 ): LocalBinding | undefined {
-  return latestInScope(bindings?.[name], atLine);
+  return latestInScope(identifierEntry(bindings, name), atLine);
 }
 
 /**
@@ -92,9 +93,9 @@ export function goLocalBindingAt(
  */
 export function goLocalAt(channels: GoLocalChannels, name: string, atLine: number): GoLocalAtLine | undefined {
   const value = goLocalBindingAt(channels.localBindings, name, atLine);
-  const call = latestInScope(channels.callResultBindings?.[name], atLine);
+  const call = latestInScope(identifierEntry(channels.callResultBindings, name), atLine);
   if (value !== undefined && (call === undefined || value.line > call.line)) return { kind: "value", binding: value };
   if (call !== undefined) return { kind: "call", callee: call.callee, line: call.line };
-  const chunkWide = channels.localCallBindings?.[name];
+  const chunkWide = identifierEntry(channels.localCallBindings, name);
   return chunkWide === undefined ? undefined : { kind: "call", callee: chunkWide };
 }

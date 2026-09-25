@@ -6,8 +6,10 @@
 
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type { FileChurnData } from "../../../../adapters/vcs/types.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import type { FileChurnDiscovery } from "./file-churn-discovery.js";
+import { aggregateFileChurnFollowingRenames, sliceCommitsFollowingRenames } from "./rename-following.js";
 
 /**
  * Build per-file FileChurnData from git history.
@@ -109,17 +111,48 @@ export function sliceFileSignalsByPaths(
   return result;
 }
 
+/** Paths per pathspec log — keeps the argv within OS ARG_MAX limits. */
+const BACKFILL_BATCH = 500;
+
 /**
  * Fetch file-level metadata for specific files (no --since filter).
  * Used as a backfill for files that weren't in the main git log window.
- * Batching to stay within OS ARG_MAX limits happens adapter-side
- * (`readNumstatLogForPaths`).
+ *
+ * Follows renames like the discovery does (bd tea-rags-mcp-aikfk): a pathspec
+ * log on a HEAD path alone never sees the commits made under its old name, so
+ * each batch is widened to its predecessor paths (`sliceCommitsFollowingRenames`
+ * over `readCommitFileNumstatForPaths`, which restores the rename rows the
+ * pathspec hides) and folded onto HEAD paths by the same aggregate. A batch is
+ * one query result — never concatenated with another before resolving — and
+ * only the paths asked for are returned. A failed batch yields no entries.
  */
 export async function buildFileSignalsForPaths(
   adapter: VcsGitAdapter,
   paths: string[],
   timeoutMs = 30000,
 ): Promise<Map<string, FileChurnData>> {
-  if (paths.length === 0) return new Map();
-  return adapter.readNumstatLogForPaths(paths, timeoutMs);
+  const result = new Map<string, FileChurnData>();
+  for (let i = 0; i < paths.length; i += BACKFILL_BATCH) {
+    const batch = paths.slice(i, i + BACKFILL_BATCH);
+    try {
+      const entries = await sliceCommitsFollowingRenames(
+        async (queried) =>
+          (await adapter.readCommitFileNumstatForPaths(queried, timeoutMs)).map((entry) => ({
+            ...entry,
+            changedFiles: entry.files,
+          })),
+        batch,
+      );
+      const churn = aggregateFileChurnFollowingRenames(entries);
+      for (const path of batch) {
+        const entry = churn.get(path);
+        if (entry) result.set(path, entry);
+      }
+    } catch (error) {
+      if (isDebug()) {
+        console.error(`[GitLogReader] Backfill batch failed:`, error instanceof Error ? error.message : error);
+      }
+    }
+  }
+  return result;
 }

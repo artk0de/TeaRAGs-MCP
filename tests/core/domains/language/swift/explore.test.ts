@@ -126,7 +126,10 @@ func inspect(record: Int) -> Int {
 }
 `;
     const raw: CodeChunk[] = await chunker.chunk(code, "Sources/Audit.swift", "swift");
-    const windows = raw.filter((c) => c.metadata.symbolId === "bigAudit");
+    // INVARIANT CHANGED (bd tea-rags-mcp-y5vx4): the windows are the parts
+    // `bigAudit#part1..N` under parentSymbolId `bigAudit`, not windows sharing
+    // the bare id; find_symbol still merges them into the one body below.
+    const windows = raw.filter((c) => /^bigAudit#part\d+$/.test(c.metadata.symbolId ?? ""));
     expect(windows.length, "the oversized function must split into several windows").toBeGreaterThan(1);
 
     const scroll: ScrollChunk[] = raw.map((c, i) => ({

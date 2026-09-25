@@ -15,7 +15,7 @@ export type { DispatchCascadeOptions };
  * The untyped-dispatch narrowing CASCADE, in the one order every language runs
  * it (relocated from `RubyDynamicDispatchResolver`'s private array, bd
  * tea-rags-mcp-w205u / E4.1). The narrowers themselves are neutral and stay in
- * `dispatch-narrowing.ts`; what is shared here is the ORDER and the two
+ * `dispatch-narrowing.ts`; what is shared here is the ORDER and the
  * language-data injections.
  *
  * Language-specific narrowers run FIRST because they can empty the set outright
@@ -23,9 +23,11 @@ export type { DispatchCascadeOptions };
  * literal receiver's type is statically certain — and the signature narrowers,
  * which only ever drop PROVEN-incompatible candidates, run after. A language
  * that supplies neither gets the signature half, which is exactly what Python
- * needs: `VisibilityNarrower` and `BlockNarrower` keep every candidate when the
- * walker records no `visibility` / `acceptsBlock`, so they are inert rather
- * than wrong there.
+ * needs. `BlockNarrower` keeps every candidate when the walker records no
+ * `acceptsBlock`; `VisibilityNarrower` keeps every candidate with no recorded
+ * `visibility` and asks the injected `visibilityAccess` rule about the rest —
+ * the MEANING of `private` is language data (bd tea-rags-mcp-jwjyr.1), so a
+ * language whose walker records visibility injects its own rule.
  */
 export function buildDispatchCascade(opts: DispatchCascadeOptions = {}): DispatchCandidateNarrower[] {
   const cascade: DispatchCandidateNarrower[] = [];
@@ -33,6 +35,11 @@ export function buildDispatchCascade(opts: DispatchCascadeOptions = {}): Dispatc
   if (opts.classifyLiteralReceiver !== undefined) {
     cascade.push(new LiteralReceiverNarrower(opts.classifyLiteralReceiver));
   }
-  cascade.push(new ArityNarrower(), new KwargNarrower(), new VisibilityNarrower(), new BlockNarrower());
+  cascade.push(
+    new ArityNarrower(),
+    new KwargNarrower(),
+    new VisibilityNarrower(opts.visibilityAccess),
+    new BlockNarrower(),
+  );
   return cascade;
 }

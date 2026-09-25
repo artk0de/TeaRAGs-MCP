@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 import type { LanguageCapability, LanguageSupportVersions } from "../../../contracts/types/language.js";
-import { SHARED_LANGUAGE, sharedVersions } from "../kernel/capability.js";
+import { SHARED_LANGUAGE, sharedVersions } from "../kernel/index.js";
 import { versionAxisSources, type PinnedVersionAxis, type VersionAxisSources } from "./version-axes.js";
 
 export interface VersionPin {

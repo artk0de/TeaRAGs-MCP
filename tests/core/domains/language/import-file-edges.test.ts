@@ -104,3 +104,34 @@ describe("resolveImportFileEdges", () => {
     expect(resolveImportFileEdges(extractionWith("pkg/a.py", []), mapperFrom({}), ctx)).toEqual([]);
   });
 });
+
+describe("resolveImportFileEdges — export names (bd tea-rags-mcp-r8hme.2)", () => {
+  it("carries the import's imported and re-exported names onto its edge", () => {
+    const extraction: FileExtraction = {
+      relPath: "pkg/a.py",
+      language: "python",
+      imports: [
+        { importText: "pkg.b", startLine: 1, importedExportNames: ["x", "y"] },
+        { importText: "pkg.c", startLine: 2, reexportedExportNames: ["*"] },
+        { importText: "pkg.d", startLine: 3 },
+      ],
+      chunks: [],
+      fileScope: [],
+    };
+    const edges = resolveImportFileEdges(
+      extraction,
+      mapperFrom({
+        "pkg.b": { kind: "project", relPath: "pkg/b.py" },
+        "pkg.c": { kind: "project", relPath: "pkg/c.py" },
+        "pkg.d": { kind: "project", relPath: "pkg/d.py" },
+      }),
+      ctx,
+    );
+    expect(edges).toEqual([
+      { targetRelPath: "pkg/b.py", importText: "pkg.b", importedExportNames: ["x", "y"] },
+      { targetRelPath: "pkg/c.py", importText: "pkg.c", reexportedExportNames: ["*"] },
+      { targetRelPath: "pkg/d.py", importText: "pkg.d" },
+    ]);
+    expect(Object.keys(edges[2] ?? {})).toEqual(["targetRelPath", "importText"]);
+  });
+});

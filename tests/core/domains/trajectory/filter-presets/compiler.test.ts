@@ -62,7 +62,12 @@ describe("compileFilterPreset", () => {
       conditions: [{ signal: "isTest", op: "eq", value: true, occur: "must_not" }],
     };
     const filter = compileFilterPreset(def, undefined, "file");
-    expect(filter).toEqual({ must_not: [{ key: "isTest", match: { value: true } }] });
+    expect(filter).toEqual({
+      must_not: [
+        { key: "isTest", match: { value: true } },
+        { key: "codegraph.symbols.file.skippedAs", match: { value: "test" } },
+      ],
+    });
   });
 
   it("compiles should-group conditions into a nested must:[{should:[...]}] group", () => {

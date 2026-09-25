@@ -16,7 +16,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { mergeQdrantFilters } from "../../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter } from "../../../adapters/qdrant/types.js";
-import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
+import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { FilterPresetDef, FilterSpec } from "../../../contracts/types/filter-preset.js";
 import type { FilterLevel } from "../../../contracts/types/provider.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
@@ -51,6 +51,7 @@ import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import {
+  projectSearchResultPayloads,
   stripInternalFields,
   type ExploreCodeRequest,
   type ExploreResponse,
@@ -58,6 +59,7 @@ import {
   type FindSymbolRequest,
   type HybridSearchRequest,
   type IndexMetrics,
+  type PresetFilterNotice,
   type RankChunksRequest,
   type SemanticSearchRequest,
 } from "../../public/dto/index.js";
@@ -77,6 +79,11 @@ export interface ExploreOpsDeps {
   /** Optional — present when codegraph is wired (bootstrap adapts GraphFacade). */
   chunkResolver?: SymbolChunkResolver;
   /**
+   * Optional — present when codegraph is wired. Declared visibility for
+   * find_symbol outline lines (bd tea-rags-mcp-sqqkz); absent → undecorated.
+   */
+  visibilityResolver?: SymbolVisibilityResolver;
+  /**
    * Per-language structural-signal floors from the composition root. Reaches
    * `IndexMetricsQuery` so `get_index_metrics` and prime render the same
    * floored thresholds the reranker's overlay resolves against.
@@ -91,6 +98,38 @@ export interface ExploreOpsDeps {
    * Omitted → no frame, and a run-pointer marker reports no providers.
    */
   enrichmentHealthFrameForPath?: (path: string) => readonly string[];
+}
+
+/**
+ * What `ExploreOps#buildFilter` resolved: the merged Qdrant filter handed to
+ * the strategy, plus the notice owed to the caller when a rerank preset's
+ * DEFAULT filter is what narrowed the set.
+ */
+interface ResolvedExploreFilter {
+  filter: Record<string, unknown> | undefined;
+  presetFilterNotice?: PresetFilterNotice;
+}
+
+/**
+ * Response-envelope work `executeExplore` performs after the strategy returns.
+ * Everything here is decided by the CALLING operation, not by the strategy:
+ * which tools may attest confidence, and which of them resolved a preset
+ * default that the caller should be told about.
+ */
+interface ExploreFinalizeOptions {
+  /**
+   * Confidence reads score MAGNITUDE against the collection's similarity
+   * scale, so only the operations whose score is a genuine similarity opt in.
+   */
+  attachConfidence?: boolean;
+  presetFilterNotice?: PresetFilterNotice;
+  /**
+   * Caller's payload allow-list. Applied HERE rather than in each strategy:
+   * narrowing the payload that leaves the API is finalize work, the same step
+   * that strips internal fields, so one place serves every search tool
+   * (bd tea-rags-mcp-l2lix).
+   */
+  fields?: readonly string[];
 }
 
 export class ExploreOps {
@@ -110,6 +149,7 @@ export class ExploreOps {
   private readonly indexMetricsQuery?: IndexMetricsQuery;
   private readonly recomputeService?: StatsRecomputeService;
   private readonly chunkResolver?: SymbolChunkResolver;
+  private readonly visibilityResolver?: SymbolVisibilityResolver;
   private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
 
   constructor(deps: ExploreOpsDeps) {
@@ -124,6 +164,7 @@ export class ExploreOps {
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
     this.chunkResolver = deps.chunkResolver;
+    this.visibilityResolver = deps.visibilityResolver;
     this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
     this.vectorStrategy = createExploreStrategy(
       "vector",
@@ -177,11 +218,12 @@ export class ExploreOps {
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const filter = this.buildFilter(request, level, "rank_chunks");
+    const { filter, presetFilterNotice } = this.buildFilter(request, level, "rank_chunks");
     return this.executeExplore(
       this.scrollRankStrategy,
       buildRankChunksContext(request, collectionName, filter, level),
       path,
+      { presetFilterNotice, fields: request.fields },
     );
   }
 
@@ -198,11 +240,12 @@ export class ExploreOps {
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const filter = this.buildFilter(request, level, "search_code");
+    const { filter, presetFilterNotice } = this.buildFilter(request, level, "search_code");
     return this.executeExplore(
       this.vectorStrategy,
       buildSearchCodeContext(request, collectionName, embedding, filter),
       path,
+      { presetFilterNotice },
     );
   }
 
@@ -213,19 +256,24 @@ export class ExploreOps {
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const filter = this.buildFilter(request, level);
+    const { filter, presetFilterNotice } = this.buildFilter(request, level);
     // No confidence: the recommend score IS a similarity and separates
     // perfectly within this leg (measured AUC 1.000), but its query is CODE,
     // which sits far closer to a code corpus than prose does. The cut-points
     // are calibrated on prose queries, so applying them here labels every
     // find_similar response "high". Needs its own calibration corpus first.
-    return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path);
+    return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path, {
+      presetFilterNotice,
+      fields: request.fields,
+    });
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const strategy = this.buildFindSymbolStrategy(request);
-    const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path);
+    const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path, {
+      fields: request.fields,
+    });
     // Finalize: the per-request symbol strategy records a skipped OPTIONAL
     // codegraph hop (codegraph unavailable from this process) — attach it so the
     // caller learns why a collapsed symbol is missing (bd tea-rags-mcp-a43tr).
@@ -288,24 +336,30 @@ export class ExploreOps {
     strategy: BaseExploreStrategy,
     ctx: ExploreContext,
     path?: string,
-    attachConfidence = false,
+    finalize: ExploreFinalizeOptions = {},
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
     const results = await strategy.execute(ctx);
     const driftWarning = await this.checkDrift(path, ctx.collectionName);
-    const confidence = attachConfidence
+    const confidence = finalize.attachConfidence
       ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
       : undefined;
-    return {
-      results: results.map((r) => ({
+    const projection = projectSearchResultPayloads(
+      results.map((r) => ({
         id: r.id ?? "",
         score: r.score,
         payload: r.payload ? stripInternalFields(r.payload) : r.payload,
         rankingOverlay: r.rankingOverlay,
       })),
+      finalize.fields,
+    );
+    return {
+      results: projection.results,
       driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
       ...(confidence ? { confidence } : {}),
+      ...(finalize.presetFilterNotice ? { presetFilterNotice: finalize.presetFilterNotice } : {}),
+      ...(projection.fieldsWarning ? { fieldsWarning: projection.fieldsWarning } : {}),
     };
   }
 
@@ -327,12 +381,12 @@ export class ExploreOps {
     // percentiles resolve from real Stats on the first (cold) query, not
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
-    const filter = this.buildFilter(request, level);
+    const { filter, presetFilterNotice } = this.buildFilter(request, level);
     return this.executeExplore(
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
-      attachConfidence,
+      { attachConfidence, presetFilterNotice, fields: request.fields },
     );
   }
 
@@ -352,33 +406,45 @@ export class ExploreOps {
    * select (tests, docs, a chunk type, an explicit "include", a documentation
    * language) is dropped — see `presetDefaultExcludesCallerScope`. An explicit
    * `filter` is never touched.
+   *
+   * A default that SURVIVES that check narrowed the candidate set without the
+   * caller asking for it, so the resolution also carries a
+   * {@link PresetFilterNotice} naming it. The notice is built from what this
+   * method already resolved — no extra query — and is the only place that can
+   * tell "the caller's filter" from "a default they never wrote"
+   * (bd tea-rags-mcp-0qfpi).
    */
   private buildFilter(
     request: Record<string, unknown> | { filter?: Record<string, unknown> },
     level: SignalLevel | undefined,
     tool: "semantic_search" | "search_code" | "rank_chunks" = "semantic_search",
-  ): Record<string, unknown> | undefined {
+  ): ResolvedExploreFilter {
     const req = request as Record<string, unknown> & { filter?: FilterSpec; rerank?: unknown };
     const presetName = typeof req.rerank === "string" ? req.rerank : undefined;
     const presetDefault = presetName ? this.reranker.getFullPreset(presetName, tool)?.filter : undefined;
     const stats = this.reranker.getCollectionStats();
     let resolved = resolveFilterSpec(req.filter, presetDefault, stats, level ?? "chunk", this.registry);
-    if (
-      req.filter === undefined &&
-      presetDefault !== undefined &&
-      presetDefaultExcludesCallerScope(resolved, this.registry.buildFilter(req, level), req)
-    ) {
+    const appliesDefault = req.filter === undefined && presetDefault !== undefined;
+    if (appliesDefault && presetDefaultExcludesCallerScope(resolved, this.registry.buildFilter(req, level), req)) {
       resolved = undefined;
     }
-    return this.registry.buildMergedFilter(req, resolved, level);
+    const presetFilterNotice =
+      appliesDefault && resolved !== undefined && presetName !== undefined
+        ? buildPresetFilterNotice(presetName, presetDefault, resolved)
+        : undefined;
+    return { filter: this.registry.buildMergedFilter(req, resolved, level), presetFilterNotice };
   }
 
   private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {
     if (request.relativePath) {
-      return new FileOutlineStrategy(this.qdrant, this.reranker, this.payloadSignals, this.essentialKeys, {
-        relativePath: request.relativePath,
-        language: request.language,
-      });
+      return new FileOutlineStrategy(
+        this.qdrant,
+        this.reranker,
+        this.payloadSignals,
+        this.essentialKeys,
+        { relativePath: request.relativePath, language: request.language },
+        this.visibilityResolver,
+      );
     }
     return new SymbolSearchStrategy(
       this.qdrant,
@@ -392,6 +458,7 @@ export class ExploreOps {
         pathPattern: request.pathPattern,
       },
       this.chunkResolver,
+      this.visibilityResolver,
     );
   }
 
@@ -542,6 +609,68 @@ export function presetDefaultExcludesCallerScope(
     if (defaultMust.some((c) => admitsOnlyOtherValues(c, key, value))) return true;
   }
   return false;
+}
+
+/**
+ * Describe the rerank preset DEFAULT that narrowed this query, so an empty or
+ * thin answer is attributable from the response alone (bd tea-rags-mcp-0qfpi).
+ *
+ * `presetDefault` is the DECLARED spec — a `{presets}` reference carries the
+ * filter-preset names, a raw Qdrant filter carries none. `compiledDefault` is
+ * that spec after compilation, and it is where the payload keys come from:
+ * a `{presets}` name says nothing about what it constrains, and an adaptive
+ * percentile condition only becomes a key after the compiler has run.
+ *
+ * No count rides along. The search issues ONE Qdrant query, so the unfiltered
+ * candidate total is not at hand and producing it would mean a second
+ * round-trip on every search — a worse defect than a missing integer.
+ */
+export function buildPresetFilterNotice(
+  presetName: string,
+  presetDefault: FilterSpec,
+  compiledDefault: Record<string, unknown> | undefined,
+): PresetFilterNotice | undefined {
+  const keys = collectFilterKeys(compiledDefault);
+  if (keys.length === 0) return undefined;
+  const source = isPresetsSpec(presetDefault)
+    ? presetDefault.presets
+        .split(",")
+        .map((n) => n.trim())
+        .filter((n) => n.length > 0)
+        .join("+")
+    : "";
+  return {
+    preset: presetName,
+    by: `${source.length > 0 ? source : "raw filter"} (${keys.join(", ")})`,
+    clearWith: "filter: {}",
+  };
+}
+
+/**
+ * Payload keys a compiled Qdrant filter constrains, de-duplicated, in the
+ * order the compiler emitted them. Descends into the nested `must:[{should}]`
+ * group the filter-preset compiler builds for at-least-one conditions.
+ */
+function collectFilterKeys(filter: Record<string, unknown> | undefined): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const entry of node) visit(entry);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    const group = node as { key?: unknown; must?: unknown; must_not?: unknown; should?: unknown };
+    if (typeof group.key === "string" && !seen.has(group.key)) {
+      seen.add(group.key);
+      keys.push(group.key);
+    }
+    visit(group.must);
+    visit(group.must_not);
+    visit(group.should);
+  };
+  visit(filter);
+  return keys;
 }
 
 function exactMatchCondition(condition: unknown): { key: string; value: unknown } | undefined {

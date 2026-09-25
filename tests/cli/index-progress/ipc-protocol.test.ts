@@ -9,6 +9,7 @@ describe("isWorkerMessage", () => {
     { type: "status", status: { isIndexed: true, status: "indexed" } },
     { type: "done", result: { failed: [], degraded: [] } },
     { type: "error", message: "boom" },
+    { type: "error", message: "boom", code: "INFRA_OLLAMA_UNAVAILABLE", hint: "Start Ollama" },
     // totalFinal is an optional flag — present or absent, the message is valid
     { type: "embedding", phase: "embedding", percentage: 38, current: 1024, total: 2687, totalFinal: false },
     { type: "enrichment", providerKey: "git", level: "chunk", applied: 1005, total: 2687, totalFinal: true },
@@ -16,6 +17,8 @@ describe("isWorkerMessage", () => {
     { type: "turbo-migration", collection: "code_abc", stage: "start" },
     { type: "turbo-migration", collection: "code_abc", stage: "done", elapsedMs: 4200 },
     { type: "turbo-migration", collection: "code_abc", stage: "background", elapsedMs: 5000 },
+    { type: "embedding-state", state: "waiting", url: "http://127.0.0.1:9", elapsedMs: 0, budgetMs: 240_000 },
+    { type: "embedding-state", state: "recovered", url: "http://127.0.0.1:9", elapsedMs: 6000 },
   ])("accepts valid $type message", (msg) => {
     expect(isWorkerMessage(msg)).toBe(true);
   });
@@ -30,6 +33,10 @@ describe("isWorkerMessage", () => {
     { type: "enrichment", level: "file" }, // missing providerKey
     { type: "turbo-migration", stage: "start" }, // missing collection
     { type: "turbo-migration", collection: "code_abc", stage: "bogus" }, // invalid stage
+    { type: "error", message: "boom", hint: 42 }, // hint must be text
+    { type: "embedding-state", state: "stalled", url: "http://127.0.0.1:9", elapsedMs: 0 }, // invalid state
+    { type: "embedding-state", state: "waiting", elapsedMs: 0, budgetMs: 1 }, // missing url
+    { type: "embedding-state", state: "waiting", url: "http://127.0.0.1:9", elapsedMs: 0 }, // waiting needs its budget
   ])("rejects invalid payload %o", (bad) => {
     expect(isWorkerMessage(bad)).toBe(false);
   });

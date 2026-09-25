@@ -27,6 +27,7 @@
  * argument index no longer pins one parameter.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import {
   resolveLocalBinding,
@@ -230,7 +231,7 @@ export function collectKnownTargetCallArgs(
  *     conflict.
  */
 export function collectRubyClassFieldParamLinks(root: AstNode): Record<string, Record<string, ClassFieldParamLink>> {
-  const out: Record<string, Record<string, ClassFieldParamLink>> = {};
+  const out: Record<string, Record<string, ClassFieldParamLink>> = createIdentifierRecord();
   forEachClassScope(root, (classNode, fq) => {
     const links = new Map<string, ClassFieldParamLink>();
     const poisoned = new Set<string>();

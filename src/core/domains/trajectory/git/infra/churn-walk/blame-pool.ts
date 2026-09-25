@@ -11,6 +11,15 @@
  * Reuses the churn-walk worker.js (a "blame" job type); this host differs from
  * ChunkChurnWalkPool only in dispatch (file sharding vs round-robin walk jobs).
  * Provider-owned, lazily spawned on the first blame, closed at finalizeSignals.
+ *
+ * Concurrency contract: the pool holds AT MOST ONE in-flight blame job per
+ * worker, so N workers = at most N concurrent blames however many blame()
+ * calls overlap. The worker runs every message it receives concurrently, and
+ * FilePhase streams batches with no bound of its own, so the bound lives here:
+ * each worker has a FIFO tail, and the next shard for worker i is posted only
+ * after worker i answered the previous one (blamed / blame-failed). Without it
+ * ~113 overlapping batches under `--force-enrichments git` spawned 1354
+ * `git blame` children and exhausted kern.maxprocperuid (`spawn git EAGAIN`).
  */
 
 import { once } from "node:events";
@@ -19,8 +28,14 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import type { BlameLine, GitAdapterKind } from "../../../../../adapters/vcs/types.js";
+import { resolveGitExecutable } from "../../../../../infra/git-executable.js";
 import { ChunkChurnWalkThreadError } from "../../errors.js";
-import type { BlameJobInput, ChurnWalkThreadRequest, ChurnWalkThreadResponse } from "./protocol.js";
+import type {
+  BlameJobInput,
+  ChurnWalkThreadRequest,
+  ChurnWalkThreadResponse,
+  ChurnWalkWorkerData,
+} from "./protocol.js";
 
 /** Worker script path — always compiled JS in build/ (worker_threads require
  *  compiled JS; same idiom as churn-walk/thread.ts). */
@@ -40,10 +55,14 @@ export class BlameWorkerPool {
   private closed = false;
   private nextId = 0;
   private readonly pending = new Map<number, PendingBlame>();
+  /** Per-worker FIFO tail: settles once that worker's last queued job has been
+   *  answered (either way), so the next job chains behind it. */
+  private readonly tails: Promise<void>[];
 
   constructor(size: number) {
     this.size = Math.max(1, size);
     this.workers = new Array<Worker | undefined>(this.size).fill(undefined);
+    this.tails = new Array<Promise<void>>(this.size).fill(Promise.resolve());
   }
 
   /** Shard the files across the pool and blame each shard on its own worker,
@@ -75,7 +94,8 @@ export class BlameWorkerPool {
    * Idempotent teardown — posts "close" to every live worker, waits (bounded)
    * for graceful exits, hard-terminates the stragglers, then rejects any blame
    * still pending (its files fall back to unknown ownership, same as an inline
-   * blame failure).
+   * blame failure). Jobs still queued behind a worker's tail reject when they
+   * reach the head of the queue and find the pool closed; they never post.
    */
   async close(): Promise<void> {
     if (this.closed) return;
@@ -103,7 +123,19 @@ export class BlameWorkerPool {
     this.rejectAll(new ChunkChurnWalkThreadError("blame pool closed with blames still pending"));
   }
 
+  /** Queue the job behind worker `workerIdx`'s tail; a failed predecessor
+   *  releases the queue exactly like a successful one. */
   private async dispatch(workerIdx: number, job: BlameJobInput): Promise<Map<string, BlameLine[]>> {
+    const run = this.tails[workerIdx].then(async () => this.post(workerIdx, job));
+    this.tails[workerIdx] = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async post(workerIdx: number, job: BlameJobInput): Promise<Map<string, BlameLine[]>> {
+    if (this.closed) throw new ChunkChurnWalkThreadError("blame pool closed with blames still pending");
     const worker = this.ensureWorker(workerIdx);
     const id = this.nextId++;
     return new Promise<Map<string, BlameLine[]>>((resolve, reject) => {
@@ -115,8 +147,8 @@ export class BlameWorkerPool {
   private ensureWorker(idx: number): Worker {
     const existing = this.workers[idx];
     if (existing) return existing;
-    if (this.closed) throw new ChunkChurnWalkThreadError("blame() after close()");
-    const worker = new Worker(WORKER_PATH);
+    const workerData: ChurnWalkWorkerData = { gitExecutable: resolveGitExecutable() };
+    const worker = new Worker(WORKER_PATH, { workerData });
     worker.on("message", (response: ChurnWalkThreadResponse) => {
       this.onResponse(response);
     });

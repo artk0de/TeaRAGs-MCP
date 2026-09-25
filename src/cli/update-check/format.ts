@@ -1,16 +1,21 @@
+import type { Colorizer } from "../infra/color.js";
 import type { UpdateStatus } from "./types.js";
 
-/** Plain text for `tea-rags update` stdout / stderr. */
-export function formatForCli(status: UpdateStatus): string {
+/**
+ * Text for `tea-rags update` stdout / stderr. Coloring goes through the injected
+ * {@link Colorizer}, so the text is byte-identical with color off.
+ */
+export function formatForCli(status: UpdateStatus, c: Colorizer): string {
   switch (status.kind) {
     case "available":
-      return [`tea-rags ${status.current} → ${status.latest} available.`, `changelog: ${status.changelogUrl}`].join(
-        "\n",
-      );
+      return [
+        `tea-rags ${status.current} → ${c.bold(c.ok(status.latest))} available.`,
+        `${c.dim("changelog:")} ${c.brand(status.changelogUrl)}`,
+      ].join("\n");
     case "up-to-date":
-      return `tea-rags ${status.current} is up to date.`;
+      return c.ok(`tea-rags ${status.current} is up to date.`);
     case "unavailable":
-      return `Couldn't check for updates (reason: ${status.reason}). Try again later.`;
+      return c.warn(`Couldn't check for updates (reason: ${status.reason}). Try again later.`);
   }
 }
 

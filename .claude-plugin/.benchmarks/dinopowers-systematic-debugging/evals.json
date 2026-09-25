@@ -256,6 +256,42 @@
         ]
       },
       "failureMode": "Agent re-runs bug-hunt or uses Grep instead of find_similar from found chunk"
+    },
+    {
+      "id": "eval-16",
+      "category": "root-cause-report (bp3p)",
+      "prompt": "Debugging 'forceReindex leaves stats stale: get_index_metrics shows pre-reindex percentiles after a --force run'. bug-hunt prime suspect: src/core/infra/stats-cache.ts StatsCache#load L40-80; overlay: file bugFixRate 41% 'critical', file blameDominantAuthorPct 97% 'deep-silo', chunk churnVolatility 'erratic', chunk ageDays 3 'recent', codegraph file fanIn 'hub'. Investigation confirmed: StatsCache keys by ALIAS name; a force reindex flips the alias to a new physical collection, so the cache serves the old collection's stats. Fix: key by physical collection name. Write the final output.",
+      "expected": {
+        "mustDo": [
+          "Emit the Step 5 block with exactly three sections: Cause / Fix / Prevention",
+          "Cause = one sentence naming stats-cache.ts:<line> + why wrong, with a `signals:` line citing overlay labels",
+          "Fix = file:line + diff intent (key by physical collection name)",
+          "Prevention bullets each cite a signal: bugFixRate=critical → named regression test locking the invariant; blameDominantAuthorPct=deep-silo → owner review / pairing; churnVolatility=erratic → narrow/extract the cache-key contract; fanIn=hub → defensive validation at coupling point + integration test through the call chain; ageDays=recent → review the introducing commit"
+        ],
+        "mustNotDo": [
+          "Deliver the fix only",
+          "Prevention like 'be careful' / 'add more tests' with no named test or signal",
+          "Re-query suspects with custom rerank weights to fill signals"
+        ]
+      },
+      "failureMode": "Agent reports fix without cause/prevention, or Prevention ignores the overlay signals"
+    },
+    {
+      "id": "eval-17",
+      "category": "follow-up-decision-tree (bp3p)",
+      "prompt": "Mid-investigation after bug-hunt: I need (a) every caller of StatsCache#load and (b) the body of the method that flips the alias on force reindex (I know it is IndexingOps#finalizeReindex). Which tools, and how do you state the choice?",
+      "expected": {
+        "mustDo": [
+          "Line 'consulting decision tree → hybrid_search because exhaustive usage of identifier' for (a) (or get_callers when codegraph on)",
+          "Line 'consulting decision tree → find_symbol because study known symbol' for (b)"
+        ],
+        "mustNotDo": [
+          "Ad-hoc semantic_search for a known symbol",
+          "Grep / ripgrep for identifiers",
+          "Silent tool choice without the decision-tree line"
+        ]
+      },
+      "failureMode": "Follow-up searches bypass the search-cascade decision tree"
     }
   ]
 }

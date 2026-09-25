@@ -25,6 +25,7 @@
  * catalogue. AST argument extraction stays in the consumer engine, never here.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import { AASM_VOCABULARY } from "./aasm.js";
 import { ROUTING_VOCABULARY } from "./action-dispatch-routing.js";
 import { ACTIVESUPPORT_VOCABULARY } from "./activesupport.js";
@@ -39,14 +40,14 @@ import { GEOCODER_VOCABULARY } from "./geocoder.js";
 import { KAMINARI_VOCABULARY } from "./kaminari.js";
 import { PAPER_TRAIL_VOCABULARY } from "./paper_trail.js";
 import { PUNDIT_VOCABULARY } from "./pundit.js";
-import { RANSACK_VOCABULARY } from "./ransack.js";
 import { ACTIVE_RECORD_INSTANCE_BUILTINS } from "./rails-runtime.js";
 import { RAILS_VOCABULARY } from "./rails.js";
+import { RANSACK_VOCABULARY } from "./ransack.js";
 import { RUBY_CORE_VOCABULARY } from "./ruby-core.js";
 import { SIDEKIQ_VOCABULARY } from "./sidekiq.js";
 import { STATE_MACHINES_VOCABULARY } from "./state_machines.js";
-import { WILL_PAGINATE_VOCABULARY } from "./will_paginate.js";
 import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
+import { WILL_PAGINATE_VOCABULARY } from "./will_paginate.js";
 
 /**
  * Merge per-framework `entries` into one keyword → entry lookup. Throws on a
@@ -54,7 +55,7 @@ import type { RubyDslEntry, RubyFrameworkVocabulary } from "./types.js";
  * framework) — a programming error caught at module load, not a user fault.
  */
 export function composeEntries(modules: readonly RubyFrameworkVocabulary[]): Record<string, RubyDslEntry> {
-  const out: Record<string, RubyDslEntry> = {};
+  const out: Record<string, RubyDslEntry> = createIdentifierRecord();
   for (const mod of modules) {
     for (const [keyword, entry] of Object.entries(mod.entries)) {
       if (keyword in out) {
@@ -108,7 +109,7 @@ export const RUBY_INSTANCE_RETURNING = composeFacetSet(FRAMEWORKS, "instanceRetu
 export const RUBY_RELATION_RETURNING = composeFacetSet(FRAMEWORKS, "relationReturning");
 
 function composeEnqueueDispatch(modules: readonly RubyFrameworkVocabulary[]): Readonly<Record<string, string>> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = createIdentifierRecord();
   for (const mod of modules) for (const [k, v] of Object.entries(mod.enqueueDispatch ?? {})) out[k] = v;
   return out;
 }

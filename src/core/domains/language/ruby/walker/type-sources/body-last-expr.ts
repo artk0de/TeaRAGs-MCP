@@ -70,7 +70,7 @@
  * convention gate. This module keeps every export it had.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/return-inference.js";
+import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/index.js";
 import type { RubyDslCatalogue } from "../../dsl/index.js";
 import { catalogueForGemfile } from "../../gemfile.js";
 import { readScopeResolution } from "../ast-utils.js";

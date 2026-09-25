@@ -126,29 +126,31 @@ not error:
 
 ## rankingOverlay — Why This Result Was Ranked Here
 
-Every reranked search result carries `rankingOverlay` field explaining the
-score:
+Every reranked search result carries `rankingOverlay` — metaOnly included:
 
 ```jsonc
 {
   "rankingOverlay": {
-    "derived": {
-      "recency": 0.61,
-      "churn": 0.42,
-      "ownership": 0.18,
+    "preset": "techDebt",
+    "file": {
+      "commitCount": { "value": 37, "label": "extreme" },
+      "imports": ["./a", "./b"],
+      "fanIn": { "value": 3, "label": "popular" },
     },
-    "raw": {
-      "file": { "ageDays": { "value": 142, "label": "old" } },
-      "chunk": { "commitCount": { "value": 12, "label": "high" } },
-    },
+    "chunk": { "bugFixRate": { "value": 40, "label": "concerning" } },
   },
 }
 ```
 
-- `derived` — normalized 0-1 signals fed into score. Keys come from chosen
-  preset's weights or overlay mask.
-- `raw.file` / `raw.chunk` — original payload values + labels (resolved via
-  `signal-labels` resource).
+- Keys = preset `overlayMask` fields (custom weights → each weight's source
+  fields), bare field name, grouped by level. Flat structural signals sit under
+  the level they describe: file-wide ones (`imports`, `moduleLines`) under
+  `file`, per-method ones (`methodLines`, `methodDensity`) under `chunk`. A
+  `level: "file"` result carries no `chunk` block.
+- `{value,label}` when signal has labels (resolved via `signal-labels`
+  resource), else raw value.
+- Labels live ONLY here. Payload = raw values at filter-key paths, metaOnly or
+  not. Contract owner: `tea-rags://schema/overview` → `### metaOnly`.
 
 Use overlay to:
 

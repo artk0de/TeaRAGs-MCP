@@ -29,9 +29,9 @@ describe("DecompositionPreset", () => {
     expect(sum).toBeCloseTo(1.0, 5);
   });
 
-  it("has file overlay mask with methodLines", () => {
-    expect(preset.overlayMask.file).toContain("methodLines");
-    expect(preset.overlayMask.chunk).toBeUndefined();
+  it("has chunk overlay mask with methodLines (chunk-scoped signal)", () => {
+    expect(preset.overlayMask.chunk).toContain("methodLines");
+    expect(preset.overlayMask.file).toBeUndefined();
   });
 });
 
@@ -75,7 +75,7 @@ describe("Decomposition reranking produces scores in 0-1", () => {
     expect(ranked[0].score).toBeCloseTo(ranked[1].score, 5);
   });
 
-  it("ranking overlay includes file.methodLines raw value", async () => {
+  it("ranking overlay includes chunk.methodLines raw value", async () => {
     const results = [{ score: 0.8, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }];
 
     const ranked = await reranker.rerank(results, "decomposition", "semantic_search");
@@ -84,6 +84,6 @@ describe("Decomposition reranking produces scores in 0-1", () => {
     expect(overlay).toBeDefined();
     expect(overlay?.preset).toBe("decomposition");
     expect(overlay).not.toHaveProperty("derived");
-    expect(overlay?.file?.methodLines).toBeGreaterThan(0);
+    expect(overlay?.chunk?.methodLines).toBeGreaterThan(0);
   });
 });
