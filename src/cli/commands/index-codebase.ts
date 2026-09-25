@@ -28,6 +28,14 @@ export interface IndexCodebaseArgs {
   /** Comma-separated enrichment provider selectors, or `all`. */
   "force-enrichments"?: string;
   languages?: string;
+  /** Scoped force: picomatch pattern of files to re-chunk. */
+  "path-pattern"?: string;
+  /** Scoped force: `only` / `exclude` test files. */
+  "test-file"?: "only" | "exclude";
+  /** Scoped force: comma-separated extensions. */
+  "file-extension"?: string;
+  /** Scoped force: comma-separated project-relative files. */
+  files?: string;
   /** `--no-worktree-seed` sets this false: never seed a first index from a sibling working tree. */
   "worktree-seed"?: boolean;
   json?: boolean;
@@ -142,10 +150,18 @@ export function parseLanguageSelectors(raw: string | undefined): string[] | unde
 export function buildIndexOptions(argv: IndexCodebaseArgs): IndexOptions {
   const forceEnrichments = parseEnrichmentSelectors(argv["force-enrichments"]);
   const languages = parseLanguageSelectors(argv.languages);
+  // Same comma-separated, undefined-≠-empty contract as `--languages`; the
+  // facade decides what a scope filter may say (bd tea-rags-mcp-j4oww).
+  const fileExtensions = parseLanguageSelectors(argv["file-extension"]);
+  const files = parseLanguageSelectors(argv.files);
   return {
     forceReindex: Boolean(argv.force),
     ...(forceEnrichments ? { forceEnrichments } : {}),
     ...(languages ? { languages } : {}),
+    ...(argv["test-file"] !== undefined ? { testFile: argv["test-file"] } : {}),
+    ...(argv["path-pattern"] !== undefined ? { pathPattern: argv["path-pattern"] } : {}),
+    ...(fileExtensions ? { fileExtensions } : {}),
+    ...(files ? { files } : {}),
     ...(argv["worktree-seed"] === false ? { seedFromWorktree: false } : {}),
   };
 }
@@ -207,7 +223,11 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
       .option("force", {
         type: "boolean",
         default: false,
-        describe: "Force a full re-index from scratch instead of incremental.",
+        describe:
+          "Force a full re-index from scratch into a new collection (zero downtime, alias swaps at the end). " +
+          "With any of --languages, --test-file, --path-pattern, --file-extension or --files it is a SCOPED " +
+          "force instead: only the selected indexed files are re-chunked and re-embedded, in place on the live " +
+          "collection, and every other point stays as it is.",
       })
       .option("force-enrichments", {
         type: "string",
@@ -227,9 +247,33 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
         describe:
           "Restrict the run to these languages — comma-separated (e.g. typescript,ruby). " +
           "With --force-enrichments it narrows the recompute to points of those languages; " +
-          "with --force it narrows the WHOLE run, chunking included, which means the rebuilt " +
-          "collection contains ONLY them. Not valid on a plain incremental run, whose scope is " +
-          "already the set of changed files.",
+          "with --force it re-chunks the files of those languages in place (a scoped force) and " +
+          "leaves every other language's points untouched. Not valid on a plain incremental run, " +
+          "whose scope is already the set of changed files.",
+      })
+      .option("test-file", {
+        type: "string",
+        choices: ["only", "exclude"] as const,
+        describe:
+          "Scoped --force: re-chunk only test files (only) or everything but them (exclude), by the same " +
+          "classification as the search testFile filter.",
+      })
+      .option("path-pattern", {
+        type: "string",
+        nargs: 1,
+        describe:
+          "Scoped --force: re-chunk indexed files matching this picomatch pattern (leading ! negates), " +
+          "e.g. 'spec/**'. Same matcher as the search pathPattern.",
+      })
+      .option("file-extension", {
+        type: "string",
+        nargs: 1,
+        describe: "Scoped --force: re-chunk files with these extensions, comma-separated (e.g. .rb,.rake).",
+      })
+      .option("files", {
+        type: "string",
+        nargs: 1,
+        describe: "Scoped --force: re-chunk exactly these project-relative files, comma-separated.",
       })
       .option("worktree-seed", {
         type: "boolean",

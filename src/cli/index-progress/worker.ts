@@ -166,12 +166,26 @@ export async function runIndexWorker(
   // The seed outcome is a fact of THIS run, like its enrichment metrics: status
   // reads never carry it, so it rides every status message from here.
   const worktreeSeed = indexStats.worktreeSeed ? { worktreeSeed: indexStats.worktreeSeed } : {};
+  // A scoped force's outcome is a fact of this run too (bd tea-rags-mcp-j4oww).
+  const rechunked = indexStats.changeDetails;
+  const scopedRechunk =
+    rechunked?.filesRechunked !== undefined
+      ? {
+          scopedRechunk: {
+            filesRechunked: rechunked.filesRechunked,
+            filesModified: rechunked.filesModified,
+            chunksAdded: rechunked.chunksAdded,
+            chunksDeleted: rechunked.chunksDeleted,
+          },
+        }
+      : {};
   send({
     type: "status",
     status: {
       ...earlyStatus,
       enrichmentMetrics: indexStats.enrichmentMetrics,
       ...worktreeSeed,
+      ...scopedRechunk,
       ...(earlyCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: earlyCodegraphSizeBytes } : {}),
     },
   });
@@ -194,6 +208,7 @@ export async function runIndexWorker(
     ...finalStatus,
     enrichmentMetrics: indexStats.enrichmentMetrics,
     ...worktreeSeed,
+    ...scopedRechunk,
     ...(finalCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: finalCodegraphSizeBytes } : {}),
   };
   send({ type: "status", status: enrichedFinalStatus });
