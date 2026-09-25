@@ -33,6 +33,27 @@ describe("SwiftSdkVocabulary", () => {
     expect(sdk.findMember("Text", "frame")?.owner.path).toBe("View");
   });
 
+  // bd tea-rags-mcp-agapr — the macOS app frameworks a real menu-bar app
+  // imports: AppKit, AVFAudio, UserNotifications, CryptoKit,
+  // ServiceManagement, Intents.
+  it("knows the macOS app frameworks' types and their members", () => {
+    for (const name of [
+      "NSView",
+      "NSCursor",
+      "AVAudioPlayer",
+      "UNUserNotificationCenter",
+      "SHA256",
+      "SMAppService",
+      "INFocusStatusCenter",
+    ]) {
+      expect(sdk.hasType(name), name).toBe(true);
+    }
+    expect(sdk.findMember("NSCursor", "arrow")?.members[0]).toMatchObject({ isStatic: true });
+    expect(sdk.findMember("AVAudioPlayer", "play")).toBeDefined();
+    expect(sdk.findMember("SMAppService", "register")).toBeDefined();
+    expect(sdk.findMember("UNUserNotificationCenter", "current")?.members[0].returns).toBe("UNUserNotificationCenter");
+  });
+
   it("reaches an inherited member through the superclass chain", () => {
     expect(sdk.type("OutputStream")?.superclass).toBe("Stream");
     expect(sdk.findMember("OutputStream", "close")?.owner.path).toBe("Stream");

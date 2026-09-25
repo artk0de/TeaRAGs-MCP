@@ -70,6 +70,15 @@ const MODULES: readonly ModuleSpec[] = [
   // the macOS 15 / iOS 18 SDKs; SwiftUI re-exports them, and its own symbol
   // graph no longer carries them (bd tea-rags-mcp-y99pg.39).
   { module: "SwiftUICore", sdk: "macosx", target: MAC },
+  // The frameworks a macOS app reaches past SwiftUI (bd tea-rags-mcp-agapr):
+  // a call on `NSCursor`, `AVAudioPlayer` or `SMAppService` must be provably
+  // external, not charged against a project namesake.
+  { module: "AppKit", sdk: "macosx", target: MAC },
+  { module: "AVFAudio", sdk: "macosx", target: MAC },
+  { module: "UserNotifications", sdk: "macosx", target: MAC },
+  { module: "CryptoKit", sdk: "macosx", target: MAC },
+  { module: "ServiceManagement", sdk: "macosx", target: MAC },
+  { module: "Intents", sdk: "macosx", target: MAC },
   { module: "UIKit", sdk: "iphoneos", target: "arm64-apple-ios17.0" },
   { module: "WatchKit", sdk: "watchos", target: "arm64-apple-watchos10.0" },
 ];
