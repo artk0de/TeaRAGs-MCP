@@ -31,8 +31,9 @@ describe("032 adds the type-abstractness census to cg_symbols_files", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("is registered as the next migration", () => {
-    expect(DATABASE_MIGRATIONS.at(-1)?.filename).toBe(MIGRATION);
+  it("is registered after 031", () => {
+    const names = DATABASE_MIGRATIONS.map((m) => m.filename);
+    expect(names.indexOf(MIGRATION)).toBe(names.indexOf("031-cg-temporal-init.sql") + 1);
   });
 
   it("keeps legacy rows and reads their census back as NULL", async () => {
