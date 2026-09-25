@@ -75,8 +75,8 @@
       "digest": "sha256:2d801131eaa3bebb86fb6b3481840872199418de5e26eb01dc2935e22ddf67bb"
     },
     "walker": {
-      "version": 59,
-      "digest": "sha256:74ad07f235cb999368e2763d60f22d162c2b03ca00fa2db7db0649296c2fe501"
+      "version": 61,
+      "digest": "sha256:0a4d45210dfcd92a8d23979d69e91b0774b4574526b8c01e1ca09976d7c7d181"
     }
   },
   "typescript": {

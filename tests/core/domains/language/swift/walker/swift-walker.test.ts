@@ -1091,7 +1091,8 @@ describe("swift walker — typeDeclarations", () => {
   it("records a type's own declaration and its conformances", () => {
     const extraction = extractMaterialized("final class Session: NSObject, Sendable {\n  func run() {}\n}\n");
     expect(extraction.typeDeclarations).toEqual([
-      { typeId: "Session", reopens: false, conforms: ["NSObject", "Sendable"] },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Session", reopens: false, declarationKind: "class", conforms: ["NSObject", "Sendable"] },
     ]);
   });
 
@@ -1113,10 +1114,11 @@ describe("swift walker — typeDeclarations", () => {
       "",
     ].join("\n");
     expect(extractMaterialized(src).typeDeclarations).toEqual([
-      { typeId: "Request", reopens: false },
-      { typeId: "Request.State", reopens: false },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Request", reopens: false, declarationKind: "struct" },
+      { typeId: "Request.State", reopens: false, declarationKind: "enum" },
       { typeId: "Encoder", reopens: true },
-      { typeId: "Encoder.Container", reopens: false },
+      { typeId: "Encoder.Container", reopens: false, declarationKind: "class" },
     ]);
   });
 
@@ -1136,18 +1138,44 @@ describe("swift walker — typeDeclarations", () => {
         whereClause: { startLine: 2, endLine: 2, sameType: { Element: "Header" } },
       },
       // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
-      { typeId: "Box", reopens: false, conforms: ["Base"], genericParameters: ["T"] },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Box", reopens: false, declarationKind: "class", conforms: ["Base"], genericParameters: ["T"] },
     ]);
   });
 
   it("records a protocol as a declaration of its own", () => {
     expect(extractMaterialized("protocol Monitor: AnyObject {\n  func tick()\n}\n").typeDeclarations).toEqual([
-      { typeId: "Monitor", reopens: false, conforms: ["AnyObject"] },
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      { typeId: "Monitor", reopens: false, declarationKind: "protocol", conforms: ["AnyObject"] },
     ]);
   });
 
   it("publishes nothing for a file that declares no type", () => {
     expect(extractMaterialized("func free() {}\n").typeDeclarations).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-y99pg.35: the keyword says whether a type can hold an
+  // implementation the Objective-C runtime dispatches to — only a class can.
+  it("records each own declaration's keyword, and none on a re-opening", () => {
+    const src = [
+      "class A {}",
+      "struct B {}",
+      "enum C { case x }",
+      "actor D {}",
+      "@objc protocol E { static func build() }",
+      "extension A {}",
+      "",
+    ].join("\n");
+    for (const facts of [extract(src).typeDeclarations ?? [], extractMaterialized(src).typeDeclarations ?? []]) {
+      expect(facts.map((f) => [f.typeId, f.reopens, f.declarationKind])).toEqual([
+        ["A", false, "class"],
+        ["B", false, "struct"],
+        ["C", false, "enum"],
+        ["D", false, "actor"],
+        ["E", false, "protocol"],
+        ["A", true, undefined],
+      ]);
+    }
   });
 });
 
@@ -1963,6 +1991,8 @@ describe("swift walker — generic-typed fields and extension `where` clauses (b
     {
       typeId: "Protected",
       reopens: false,
+      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+      declarationKind: "class",
       genericParameters: ["Value"],
       genericFieldParameters: { value: "Value", backup: "Value" },
       // `backup: Value?` is also an optional property (bd tea-rags-mcp-y99pg.33).

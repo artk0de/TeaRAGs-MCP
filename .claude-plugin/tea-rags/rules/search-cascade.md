@@ -20,6 +20,14 @@ mid-body — there `Read` is legit fallback for exact code; markdown is
 **partial** (section-level, fine for docs). `Read` always allowed to MODIFY —
 never _needed_ to gather code for a full-AST language.
 
+**`#partN` = fragment, never the unit of reasoning (MANDATORY).** Result
+`symbolId` ends `#partN` (or `name` says `part i/N`) → oversized symbol, split
+at the cap. One part lacks the rest of the body: branches, loop tails, returns,
+calls. BEFORE interpreting it — ranking it, judging risk, quoting behavior,
+editing — call `find_symbol(symbol: result.parentSymbolId)` once: merges every
+part into the whole method. Several parts of one symbol in one result set = one
+symbol, one fetch; count it once in any tally or overlap across presets.
+
 **Code is evidence, docs are hypothesis.** Doc chunks (`.md`, `isDocumentation`)
 carry intent + navigation (why / what-for) — NOT behavior truth. Behavioral
 claim from doc chunk entering final answer → verify against code FIRST
@@ -361,6 +369,8 @@ non-search tasks.
   or addressable outline (class / doc)
 - **Grep / Read a saved find_symbol dump or an outline** — lines are ids; drill
   `find_symbol(symbol: <id>)` instead
+- **Conclusions from one `#partN` chunk** — fetch the whole symbol first
+  (`find_symbol(symbol: parentSymbolId)`); parts of one symbol count as ONE hit
 - **Multiple semantic_search for same area** — one call, navigate from results
 - **Unfiltered semantic_search for cross-layer** — dominant language takes 100%
   of slots. Always use language filter (see `references/polyglot-rule.md`)
