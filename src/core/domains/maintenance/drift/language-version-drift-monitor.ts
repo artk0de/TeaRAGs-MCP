@@ -11,7 +11,10 @@
  */
 
 import { SHARED_LANGUAGE, type LanguageCodeVersions } from "../../../contracts/types/language.js";
+import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
+import { chunkSetBumpSelector, pendingChunkingBumps, pendingGrammarBump } from "./chunk-set-scope.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
+import type { IndexDriftRemedy } from "./remedy.js";
 
 /** One version axis, in the order a drift report lists them. */
 export type LanguageVersionAxis = "grammar" | "chunking" | "walker" | "codegraphSchema";
@@ -71,6 +74,11 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
     private readonly registry: LanguageVersionStampReader,
     private readonly statsCache: IndexedLanguageReader,
     private readonly currentVersions: ReadonlyMap<string, LanguageCodeVersions>,
+    /**
+     * Which files each chunk-set bump touched, per language (bd tea-rags-mcp-j4oww).
+     * A bump with no declaration is unscoped and routes to the plain `--force`.
+     */
+    private readonly chunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes> = new Map(),
   ) {}
 
   /**
@@ -97,7 +105,7 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
           indexed: String(axis.indexed),
           current: String(axis.current),
           remedy: CHUNK_SET_AXES.has(axis.axis)
-            ? ({ kind: "force" } as const)
+            ? this.chunkSetRemedy(drift.language, axis.axis, entry.languageVersions?.[drift.language] ?? {})
             : ({
                 kind: "recompute",
                 trajectories: new Set(["codegraph"]),
@@ -105,6 +113,25 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
               } as const),
         })),
     );
+  }
+
+  /**
+   * What a moved chunk-set axis costs: the scoped force re-chunking exactly what
+   * the pending bumps declared they touched, or the plain `--force` as soon as
+   * one of them declared nothing (bd tea-rags-mcp-j4oww).
+   */
+  private chunkSetRemedy(
+    language: string,
+    axis: LanguageVersionAxis,
+    stamp: Partial<LanguageCodeVersions>,
+  ): IndexDriftRemedy {
+    const current = this.currentVersions.get(language);
+    if (!current) return { kind: "force" };
+    const scopes = this.chunkSetBumpScopes.get(language);
+    const pending =
+      axis === "chunking" ? pendingChunkingBumps(stamp, current, scopes) : [pendingGrammarBump(current, scopes)];
+    const selector = chunkSetBumpSelector(language, pending);
+    return selector ? { kind: "force", selector } : { kind: "force" };
   }
 
   /**
