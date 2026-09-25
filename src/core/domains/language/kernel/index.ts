@@ -65,6 +65,7 @@ export { methodKindFromClassify } from "./method-kind.js";
 export { conventionClassNameFor, type NamingConventionPorts } from "./naming-convention.js";
 export {
   CHAIN_MAX_HOPS_DEFAULT,
+  callArgumentText,
   propagateReceiverType,
   splitAtBracketDepthZero,
   splitReceiverHops,

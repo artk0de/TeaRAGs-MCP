@@ -292,6 +292,17 @@ export interface KwargSignature {
    *  `[]`) going forward. */
   optional?: string[];
   hasSplat: boolean;
+  /**
+   * Each keyword parameter's declared NOMINAL type, as written (`hex` →
+   * `"UInt32"`, `alpha` → `"Double?"`), for a language that overloads by
+   * parameter type (Swift, bd tea-rags-mcp-82l7s). A parameter whose type is
+   * no plain nominal — a function, tuple or collection spelling — is absent,
+   * and so is the whole map when no parameter qualifies. Absent means
+   * "unknown": a narrower reads it only to REJECT a declaration an argument's
+   * proven type cannot bind to, never to keep one. Persisted inside
+   * `kwargs_json`, so it hydrates with the rest of the signature.
+   */
+  types?: Record<string, string>;
 }
 
 /**

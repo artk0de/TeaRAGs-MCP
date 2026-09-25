@@ -2632,6 +2632,101 @@ describe("SwiftCallResolver — a construction picks the extension whose initial
   });
 });
 
+/**
+ * bd tea-rags-mcp-82l7s — two extensions each declare `init(hex:)`, one over a
+ * `UInt32`, one over a `String`. The labels fit both, so only the ARGUMENT's
+ * type can say which runs; the edge is committed only when that type PROVES
+ * every other overload unfit, and an argument the resolver cannot type keeps
+ * both — no pick.
+ */
+describe("SwiftCallResolver — a construction picks the extension initializer its argument type fits", () => {
+  function hexTable(): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    const def = (relPath: string, symbolId: string, scope: string[], extra: object = {}) => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: (symbolId.split(/[#.]/).pop() ?? symbolId).replace(/~\d+$/, ""),
+      relPath,
+      scope,
+      ...extra,
+    });
+    const hexInit = (type: string) => ({
+      arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+      kwargs: { required: ["hex"], optional: [], hasSplat: false, types: { hex: type } },
+      acceptsBlock: false,
+    });
+    t.upsertFile("Sources/PixelArt.swift", [
+      def("Sources/PixelArt.swift", "Color", []),
+      def("Sources/PixelArt.swift", "Color#init", ["Color"], hexInit("UInt32")),
+    ]);
+    t.upsertFile("Sources/TileDetail.swift", [
+      def("Sources/TileDetail.swift", "Color", []),
+      def("Sources/TileDetail.swift", "Color#init", ["Color"], hexInit("String")),
+    ]);
+    t.upsertFile("Sources/Glyphs.swift", [def("Sources/Glyphs.swift", "PanelGlyph", [])]);
+    return t;
+  }
+  const typeDeclarations = {
+    "Sources/PixelArt.swift": [{ typeId: "Color", reopens: true }],
+    "Sources/TileDetail.swift": [{ typeId: "Color", reopens: true }],
+    "Sources/Glyphs.swift": [{ typeId: "PanelGlyph", reopens: false }],
+  };
+  function hexCall(argument: string): CallRef {
+    return {
+      callText: `Color(hex: ${argument})`,
+      receiver: null,
+      member: "Color",
+      startLine: 10,
+      argCount: 0,
+      kwargKeys: ["hex"],
+      passesBlock: false,
+    };
+  }
+  function context(over: Partial<CallContext> = {}): CallContext {
+    return ctx({
+      callerFile: "Sources/Store.swift",
+      callerScope: ["Store"],
+      symbolTable: hexTable(),
+      typeDeclarations,
+      ...over,
+    });
+  }
+
+  it("lands on the UInt32 initializer for a UInt32-typed local", () => {
+    const site = hexCall("tint");
+    const target = new SwiftCallResolver().resolve(
+      site,
+      context({ localBindings: { tint: [{ line: 5, type: "UInt32" }] } }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/PixelArt.swift", targetSymbolId: "Color" });
+  });
+
+  it("lands on the String initializer for a string literal, the UInt32 one for an integer literal", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(hexCall('"#FF1744"'), context())?.targetRelPath).toBe("Sources/TileDetail.swift");
+    expect(resolver.resolve(hexCall("0x1E7A3A"), context())?.targetRelPath).toBe("Sources/PixelArt.swift");
+  });
+
+  it("types an argument through a stored property of a project type", () => {
+    const site = hexCall("PanelGlyph.addedTint");
+    const target = new SwiftCallResolver().resolve(
+      site,
+      context({ classFieldTypes: { PanelGlyph: { addedTint: "UInt32" } } }),
+    );
+    expect(target?.targetRelPath).toBe("Sources/PixelArt.swift");
+  });
+
+  it("commits nothing for an argument it cannot type, or one no overload fits", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(hexCall("palette[key]"), context())).toBeNull();
+    const intTyped = context({ localBindings: { n: [{ line: 5, type: "Int" }] } });
+    expect(resolver.resolve(hexCall("n"), intTyped)).toBeNull();
+    // A type the project declares is no closed value type: no proof, no pick.
+    const glyph = context({ localBindings: { g: [{ line: 5, type: "PanelGlyph" }] } });
+    expect(resolver.resolve(hexCall("g"), glyph)).toBeNull();
+  });
+});
+
 describe("SwiftCallResolver — a bare construction does not see another type's nested namesake", () => {
   const nested = table({
     "Sources/Result+Alamofire.swift": [

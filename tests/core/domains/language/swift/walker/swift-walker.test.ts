@@ -1707,7 +1707,12 @@ describe("swift walker — argument-label signatures", () => {
       "",
     ].join("\n");
     const chunk = extract(src, [{ symbolId: "validate", scope: [], startLine: 1, endLine: 1 }]).chunks[0];
-    expect(chunk.kwargs).toEqual({ required: ["statusCode"], optional: ["completion"], hasSplat: false });
+    expect(chunk.kwargs).toEqual({
+      required: ["statusCode"],
+      optional: ["completion"],
+      hasSplat: false,
+      types: { statusCode: "Int" },
+    });
     expect(chunk.arity).toEqual({ minRequired: 0, maxPositional: 2, hasSplat: true });
     expect(chunk.acceptsBlock).toBe(true);
   });
@@ -1719,9 +1724,37 @@ describe("swift walker — argument-label signatures", () => {
       { symbolId: "Box#init", scope: ["Box"], startLine: 2, endLine: 2 },
     ];
     const chunk = extract(src, chunks).chunks[1];
-    expect(chunk.kwargs).toEqual({ required: ["url"], optional: [], hasSplat: false });
+    expect(chunk.kwargs).toEqual({ required: ["url"], optional: [], hasSplat: false, types: { url: "URL" } });
     expect(chunk.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
     expect(chunk.acceptsBlock).toBe(false);
+  });
+
+  /**
+   * bd tea-rags-mcp-82l7s — Swift overloads by parameter TYPE as well as by
+   * label (`Color(hex: UInt32)` beside `Color(hex: String)`), so the
+   * signature carries each labelled parameter's nominal type as written. A
+   * function, tuple, collection or generic spelling is no nominal and stays
+   * off the record, as does a label two parameters share.
+   */
+  it("publishes each labelled parameter's nominal type as written", () => {
+    const src = [
+      "extension Color {",
+      "  init(hex: UInt32, alpha: Double? = nil, tag: Tag.Kind, done: @escaping () -> Void, items: [Int], box: Box<Int>) {}",
+      "  init(hex: String) {}",
+      "  func pair(a x: Int, a y: String) {}",
+      "}",
+      "",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "Color", scope: [], startLine: 1, endLine: 5 },
+      { symbolId: "Color#init", scope: ["Color"], startLine: 2, endLine: 2 },
+      { symbolId: "Color#init~2", scope: ["Color"], startLine: 3, endLine: 3 },
+      { symbolId: "Color#pair", scope: ["Color"], startLine: 4, endLine: 4 },
+    ];
+    const [, wide, text, pair] = extract(src, chunks).chunks;
+    expect(wide.kwargs?.types).toEqual({ hex: "UInt32", alpha: "Double?", tag: "Tag.Kind" });
+    expect(text.kwargs?.types).toEqual({ hex: "String" });
+    expect(pair.kwargs?.types).toBeUndefined();
   });
 
   it("records a call's labels, unlabelled count and trailing closure", () => {
@@ -1750,7 +1783,12 @@ describe("swift walker — a closure spelled through a typealias", () => {
       { symbolId: "count", scope: [], startLine: 3, endLine: 3 },
     ];
     const [progress, configure, count] = extract(src, chunks).chunks;
-    expect(progress.kwargs).toEqual({ required: [], optional: ["queue", "closure"], hasSplat: false });
+    expect(progress.kwargs).toEqual({
+      required: [],
+      optional: ["queue", "closure"],
+      hasSplat: false,
+      types: { queue: "DispatchQueue", closure: "ProgressHandler" },
+    });
     expect(progress.acceptsBlock).toBe(true);
     expect(configure.arity).toEqual({ minRequired: 1, maxPositional: 1, hasSplat: false });
     expect(configure.acceptsBlock).toBe(true);
