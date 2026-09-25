@@ -527,9 +527,11 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
     // Every link below is typed, so only the cap can decline this receiver.
     // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): the cap moved from three
     // links to five, so the refused chain carries six (was `self.a.b.c.d`).
+    // INVARIANT CHANGED (bd tea-rags-mcp-2rf51): the cap moved from five links
+    // to eight, so the refused chain carries nine (was `self.a.b.c.d.e.f`).
     const t = table({ "Sources/E.swift": [{ symbolId: "E#go", scope: ["E"] }] });
     const target = new SwiftCallResolver().resolve(
-      call("self.a.b.c.d.e.f", "go"),
+      call("self.a.b.c.d.e.f.g.h.i", "go"),
       ctx({
         callerFile: "Sources/Store.swift",
         callerScope: ["Store"],
@@ -540,7 +542,10 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
           B: { c: "C" },
           C: { d: "D" },
           D: { e: "F" },
-          F: { f: "E" },
+          F: { f: "G" },
+          G: { g: "H" },
+          H: { h: "I" },
+          I: { i: "E" },
         },
       }),
     );
@@ -3333,6 +3338,18 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
     // Alamofire's default User-Agent: `…first?.split(separator: "/").last.map(String.init)` —
     // `split` returns `[Substring]`, `last` a `Substring`; `map` is the SDK's, never `Request#map`.
     const site = call('ProcessInfo.processInfo.arguments.first.split(separator: "/").last', "map", 6);
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
+  });
+
+  it("types a SEVEN-link SwiftUI modifier chain (bd tea-rags-mcp-2rf51)", () => {
+    // Every link past `Text(reason)` is an SDK `View` member returning `some View`;
+    // a project `Request#cancel` is no member of a `View`.
+    const site = call(
+      "Text(reason).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)" +
+        ".fixedSize(horizontal: false, vertical: true).padding(.vertical, 6).padding(.horizontal, 8)",
+      "cancel",
+      6,
+    );
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
   });
 

@@ -1076,7 +1076,34 @@ function declaresSwiftParameter(fn: AstNode, name: string): boolean {
  */
 function swiftReceiverTargetText(target: AstNode): string {
   const operand = swiftReceiverOperand(target);
-  return operand === target ? target.text : target.text.slice(operand.startIndex - target.startIndex);
+  return withoutSwiftComments(target, operand.startIndex);
+}
+
+/** Comment node types tree-sitter-swift emits. */
+const SWIFT_COMMENT_NODES: ReadonlySet<string> = new Set(["comment", "multiline_comment"]);
+
+/**
+ * `node`'s source text from `from` on, every comment inside it dropped (bd
+ * tea-rags-mcp-2rf51). A SwiftUI modifier chain interleaves comments with its
+ * links, and a comment's own `.` would otherwise split the receiver into hops
+ * no fold can type. A comment is trivia, so what remains is the expression.
+ */
+function withoutSwiftComments(node: AstNode, from: number): string {
+  const comments: AstNode[] = [];
+  walk(node, (n) => {
+    if (SWIFT_COMMENT_NODES.has(n.type) && n.startIndex >= from) comments.push(n);
+  });
+  const { text } = node;
+  if (comments.length === 0) return text.slice(from - node.startIndex);
+  comments.sort((a, b) => a.startIndex - b.startIndex);
+  let out = "";
+  let at = from;
+  for (const comment of comments) {
+    if (comment.startIndex < at) continue;
+    out += text.slice(at - node.startIndex, comment.startIndex - node.startIndex);
+    at = comment.endIndex;
+  }
+  return out + text.slice(at - node.startIndex);
 }
 
 /** The node a call's receiver really is, inside the target the grammar handed over — see {@link swiftReceiverTargetText}. */

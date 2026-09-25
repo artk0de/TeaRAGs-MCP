@@ -2491,6 +2491,30 @@ describe("swift walker — optional values and unwrap sugar (bd tea-rags-mcp-y99
     }
   });
 
+  // A SwiftUI modifier chain carries comments between its links, and a
+  // comment's own `.` would split the receiver into hops no fold can type
+  // (bd tea-rags-mcp-2rf51). Comments are trivia: the receiver drops them.
+  it("keeps comments out of a receiver chain", () => {
+    const src = [
+      "func go() {",
+      "  VStack(spacing: 0) { }",
+      "    // One margin on every side. Nothing more.",
+      "    .padding(16)",
+      "    /* the window. */ .frame(minWidth: 440)",
+      "    .glassWindow()",
+      "}",
+      "",
+    ].join("\n");
+    for (const out of [extract(src), extractMaterialized(src)]) {
+      const { calls } = out.chunks[0];
+      const glass = calls.find((c) => c.member === "glassWindow");
+      expect(glass?.receiver?.replace(/\s+/g, "")).toBe("VStack(spacing:0){}.padding(16).frame(minWidth:440)");
+      expect(calls.find((c) => c.member === "frame")?.receiver?.replace(/\s+/g, "")).toBe(
+        "VStack(spacing:0){}.padding(16)",
+      );
+    }
+  });
+
   // tree-sitter-swift parses `PixelCanvas.width - font.width(x)` with the
   // additive expression `PixelCanvas.width - font` as the navigation target;
   // Swift binds member access and call tighter than any infix operator, so

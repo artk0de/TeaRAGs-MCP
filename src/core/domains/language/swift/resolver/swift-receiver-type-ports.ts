@@ -68,7 +68,7 @@ import { isSwiftTypeName } from "./swift-type-name.js";
 /**
  * How many LINKS a receiver may carry and still be folded.
  *
- * Five, and the number is measured rather than picked. It was three while
+ * Eight, and the number is measured rather than picked. It was three while
  * every hop was a `classFieldTypes` read keyed by a type's SHORT name — no
  * file, no module — where the chance that some link resolves against a
  * namesake compounds with depth. Two things moved since: the SDK substrate
@@ -77,14 +77,21 @@ import { isSwiftTypeName } from "./swift-type-name.js";
  * corpus contains is such a chain — Alamofire's default User-Agent,
  * `ProcessInfo.processInfo.arguments.first?.split(separator: "/").last`, five
  * links, all SDK. Across Alamofire and Quick every other chained receiver
- * carries at most three, so five changes no other site (bd
- * tea-rags-mcp-y99pg.34).
+ * carries at most three, so five changed no other site (bd
+ * tea-rags-mcp-y99pg.34). A SwiftUI app then brought the modifier chain: a
+ * view built as `Text(reason).font(.caption).foregroundStyle(.secondary)
+ * .multilineTextAlignment(.center).fixedSize(…).padding(…).padding(…)
+ * .frame(…)` is seven links, every one past the head an SDK `View` member
+ * returning `some View`. pixelclocktiles' longest receiver is eight links,
+ * and nine of its receivers carry six to eight; eight typed the one site
+ * among them five left untyped, moved no edge there, and moved nothing on
+ * Alamofire or Quick, whose longest stays five (bd tea-rags-mcp-2rf51).
  *
  * The namesake risk stays the reason not to raise it further on speculation:
- * a project link past five is still a short-name read, and a chain past the
- * cap is left untyped, which is the one answer that cannot be wrong.
+ * a project link past the cap is still a short-name read, and a chain past
+ * the cap is left untyped, which is the one answer that cannot be wrong.
  */
-const SWIFT_CHAIN_MAX_HOPS = 5;
+const SWIFT_CHAIN_MAX_HOPS = 8;
 
 /**
  * Static properties that, by the Swift API Design Guidelines' naming of
