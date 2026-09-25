@@ -382,10 +382,18 @@ Plugin version: minor bump.
 
 ## Plugin surface
 
-Tool schema description only ("how this project names values of type T / a
-concept; verdict on draft names"). No row in `search-cascade.md`: the call
-belongs to DDG, not to general search. `plugin-guidance-layers.md` decides if
-that changes.
+Amended 2026-09-25 (user: every skill that names or judges names uses the tool;
+the schema is described compactly). Per `plugin-guidance-layers.md`:
+
+- **Tool schema** — call contract only, ≤ 300-char description, one-line field
+  descriptions, no examples; a test pins the budget (plan Task 9).
+- **Search cascade** — one decision-tree row for naming intents, one prohibited
+  pattern (judging a name by grep / by `semantic_search` on the draft), one
+  fallback-chain row.
+- **Skills** — DDG Step 5 holds the full reading procedure; mr-review (D8
+  naming), refactoring-scan, explore and the dinopowers brainstorming /
+  writing-plans / executing-plans / requesting- and receiving-code-review carry
+  one call line plus what they read, and point back to DDG Step 5.
 
 ## Relation to program 89k7k, epic D
 
