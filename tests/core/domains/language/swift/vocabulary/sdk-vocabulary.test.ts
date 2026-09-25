@@ -33,6 +33,27 @@ describe("SwiftSdkVocabulary", () => {
     expect(sdk.findMember("Text", "frame")?.owner.path).toBe("View");
   });
 
+  // bd tea-rags-mcp-agapr — the macOS app frameworks a real menu-bar app
+  // imports: AppKit, AVFAudio, UserNotifications, CryptoKit,
+  // ServiceManagement, Intents.
+  it("knows the macOS app frameworks' types and their members", () => {
+    for (const name of [
+      "NSView",
+      "NSCursor",
+      "AVAudioPlayer",
+      "UNUserNotificationCenter",
+      "SHA256",
+      "SMAppService",
+      "INFocusStatusCenter",
+    ]) {
+      expect(sdk.hasType(name), name).toBe(true);
+    }
+    expect(sdk.findMember("NSCursor", "arrow")?.members[0]).toMatchObject({ isStatic: true });
+    expect(sdk.findMember("AVAudioPlayer", "play")).toBeDefined();
+    expect(sdk.findMember("SMAppService", "register")).toBeDefined();
+    expect(sdk.findMember("UNUserNotificationCenter", "current")?.members[0].returns).toBe("UNUserNotificationCenter");
+  });
+
   it("reaches an inherited member through the superclass chain", () => {
     expect(sdk.type("OutputStream")?.superclass).toBe("Stream");
     expect(sdk.findMember("OutputStream", "close")?.owner.path).toBe("Stream");
@@ -71,6 +92,12 @@ describe("SwiftSdkVocabulary", () => {
       expect(shape.closureParameters.at(-1)).toMatch(/^\(CheckedContinuation<T, (any Error|E)>\) -> Void$/);
     }
     expect(sdk.globalFunctions("noSuchFunction")).toEqual([]);
+  });
+
+  it("publishes the standard library's value-returning free functions by full name (bd tea-rags-mcp-3j7rg)", () => {
+    expect(sdk.labelledGlobalFunction("stride(from:to:by:)").map((shape) => shape.returns)).toEqual(["StrideTo<T>"]);
+    expect(sdk.labelledGlobalFunction("stride(from:through:by:)")[0]?.genericParameters.get("T")).toBe("Strideable");
+    expect(sdk.labelledGlobalFunction("stride")).toEqual([]);
   });
 
   it("spells every declared and returned type in a grammar the parser covers", () => {

@@ -20,7 +20,10 @@
  * tea-rags-mcp-y99pg.29). Overloads that
  * agree on all of those collapse to one signature: argument labels are not
  * kept, because only the PROJECT's overloads are ever picked by label — an SDK
- * overload set answers "declared" and "returns". Type spellings are rebuilt from the
+ * overload set answers "declared" and "returns". The one exception is the
+ * standard library's value-returning free functions, kept by FULL name
+ * (`stride(from:to:by:)`), since a chain head's labels are all that tells
+ * `StrideTo` from `StrideThrough` (bd tea-rags-mcp-3j7rg). Type spellings are rebuilt from the
  * declaration fragments with every nominal re-spelled by its full path (the
  * fragment's USR says which type it is), so `Continuation` inside
  * `AsyncStream` reads `AsyncStream.Continuation`. Docs, availability,
@@ -70,6 +73,15 @@ const MODULES: readonly ModuleSpec[] = [
   // the macOS 15 / iOS 18 SDKs; SwiftUI re-exports them, and its own symbol
   // graph no longer carries them (bd tea-rags-mcp-y99pg.39).
   { module: "SwiftUICore", sdk: "macosx", target: MAC },
+  // The frameworks a macOS app reaches past SwiftUI (bd tea-rags-mcp-agapr):
+  // a call on `NSCursor`, `AVAudioPlayer` or `SMAppService` must be provably
+  // external, not charged against a project namesake.
+  { module: "AppKit", sdk: "macosx", target: MAC },
+  { module: "AVFAudio", sdk: "macosx", target: MAC },
+  { module: "UserNotifications", sdk: "macosx", target: MAC },
+  { module: "CryptoKit", sdk: "macosx", target: MAC },
+  { module: "ServiceManagement", sdk: "macosx", target: MAC },
+  { module: "Intents", sdk: "macosx", target: MAC },
   { module: "UIKit", sdk: "iphoneos", target: "arm64-apple-ios17.0" },
   { module: "WatchKit", sdk: "watchos", target: "arm64-apple-watchos10.0" },
 ];
@@ -184,6 +196,9 @@ function baseName(component: string): string {
 function main(): void {
   const scratch = mkdtempSync(join(tmpdir(), "swift-sdk-vocab-"));
   const graphs: SymbolGraph[] = [];
+  // The standard library's own graphs: the module whose free functions a
+  // chain head spells (`stride(from:to:by:)`, bd tea-rags-mcp-3j7rg).
+  const standardLibrary = new Set<SymbolGraph>();
   const toolchain =
     execFileSync("xcrun", ["swift", "--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
       .split("\n")
@@ -203,7 +218,9 @@ function main(): void {
       }
       for (const file of readdirSync(out)) {
         if (!file.endsWith(".symbols.json")) continue;
-        graphs.push(JSON.parse(readFileSync(join(out, file), "utf8")) as SymbolGraph);
+        const graph = JSON.parse(readFileSync(join(out, file), "utf8")) as SymbolGraph;
+        graphs.push(graph);
+        if (spec.module === "Swift") standardLibrary.add(graph);
       }
       console.error(`extracted ${spec.module}`);
     }
@@ -380,12 +397,25 @@ function main(): void {
   // function is read, so one without a function-typed parameter is dropped —
   // Security and SystemConfiguration alone export thousands of C functions.
   const functions = new Map<string, string[]>();
+  // And the standard library's value-returning free functions by their FULL
+  // name, labels included (bd tea-rags-mcp-3j7rg): `stride(from:to:by:)`
+  // returns `StrideTo<T>` and `stride(from:through:by:)` `StrideThrough<T>`,
+  // so only the labels a call writes say which one a chain head is. Limited
+  // to the standard library: the C modules export thousands of functions no
+  // Swift chain starts from.
+  const labelledFunctions = new Map<string, string[]>();
   for (const graph of graphs) {
     for (const s of graph.symbols) {
       if (s.kind.identifier !== "swift.func" || s.pathComponents.length !== 1) continue;
       const name = baseName(s.pathComponents[0]);
       if (hidden(name)) continue;
       const signature = signatureOf(s, "m", []);
+      if (standardLibrary.has(graph) && signature.includes(">")) {
+        const full = s.pathComponents[0];
+        const labelled = labelledFunctions.get(full) ?? [];
+        if (!labelled.includes(signature)) labelled.push(signature);
+        labelledFunctions.set(full, labelled);
+      }
       if (!signature.includes("|")) continue;
       const list = functions.get(name) ?? [];
       if (!list.includes(signature)) list.push(signature);
@@ -426,7 +456,11 @@ function main(): void {
   }
   const sortedFunctions: Record<string, string[]> = {};
   for (const name of [...functions.keys()].sort()) sortedFunctions[name] = [...(functions.get(name) ?? [])].sort();
-  const json = JSON.stringify({ v: 1, types: sorted, functions: sortedFunctions });
+  const sortedLabelled: Record<string, string[]> = {};
+  for (const name of [...labelledFunctions.keys()].sort()) {
+    sortedLabelled[name] = [...(labelledFunctions.get(name) ?? [])].sort();
+  }
+  const json = JSON.stringify({ v: 1, types: sorted, functions: sortedFunctions, labelled: sortedLabelled });
   // Held in a raw template literal, so the JSON needs no second escaping pass.
   if (json.includes("`") || json.includes("${")) throw new Error("vocabulary JSON is not raw-template safe");
   const modules = MODULES.map((m) => m.module).join(", ");
@@ -436,7 +470,8 @@ function main(): void {
  * kind, generic parameters (and their constraints), superclass, conformances,
  * member type aliases, and members — kind, declared or returned type, the
  * types of function-typed parameters, method-level generic parameters —
- * and every module-level function that takes a closure, in the same shape.
+ * and every module-level function that takes a closure, in the same shape;
+ * plus the standard library's value-returning free functions by full name.
  *
  * GENERATED by \`scripts/gen-swift-sdk-vocabulary.ts\` from
  * \`swift-symbolgraph-extract\` (${toolchain}; SDKs: ${sdks}).
@@ -451,7 +486,10 @@ function main(): void {
 export const SWIFT_SDK_VOCABULARY_JSON: string = String.raw\`${json}\`;
 `;
   writeFileSync(target, source, "utf8");
-  console.error(`wrote ${target}: ${types.size} types, ${functions.size} functions, ${source.length} bytes`);
+  console.error(
+    `wrote ${target}: ${types.size} types, ${functions.size} functions, ` +
+      `${labelledFunctions.size} labelled functions, ${source.length} bytes`,
+  );
 }
 
 main();

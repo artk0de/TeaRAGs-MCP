@@ -527,9 +527,11 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
     // Every link below is typed, so only the cap can decline this receiver.
     // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): the cap moved from three
     // links to five, so the refused chain carries six (was `self.a.b.c.d`).
+    // INVARIANT CHANGED (bd tea-rags-mcp-2rf51): the cap moved from five links
+    // to eight, so the refused chain carries nine (was `self.a.b.c.d.e.f`).
     const t = table({ "Sources/E.swift": [{ symbolId: "E#go", scope: ["E"] }] });
     const target = new SwiftCallResolver().resolve(
-      call("self.a.b.c.d.e.f", "go"),
+      call("self.a.b.c.d.e.f.g.h.i", "go"),
       ctx({
         callerFile: "Sources/Store.swift",
         callerScope: ["Store"],
@@ -540,7 +542,10 @@ describe("SwiftCallResolver — chainedReceiverType", () => {
           B: { c: "C" },
           C: { d: "D" },
           D: { e: "F" },
-          F: { f: "E" },
+          F: { f: "G" },
+          G: { g: "H" },
+          H: { h: "I" },
+          I: { i: "E" },
         },
       }),
     );
@@ -2632,6 +2637,101 @@ describe("SwiftCallResolver — a construction picks the extension whose initial
   });
 });
 
+/**
+ * bd tea-rags-mcp-82l7s — two extensions each declare `init(hex:)`, one over a
+ * `UInt32`, one over a `String`. The labels fit both, so only the ARGUMENT's
+ * type can say which runs; the edge is committed only when that type PROVES
+ * every other overload unfit, and an argument the resolver cannot type keeps
+ * both — no pick.
+ */
+describe("SwiftCallResolver — a construction picks the extension initializer its argument type fits", () => {
+  function hexTable(): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    const def = (relPath: string, symbolId: string, scope: string[], extra: object = {}) => ({
+      symbolId,
+      fqName: symbolId,
+      shortName: (symbolId.split(/[#.]/).pop() ?? symbolId).replace(/~\d+$/, ""),
+      relPath,
+      scope,
+      ...extra,
+    });
+    const hexInit = (type: string) => ({
+      arity: { minRequired: 0, maxPositional: 0, hasSplat: false },
+      kwargs: { required: ["hex"], optional: [], hasSplat: false, types: { hex: type } },
+      acceptsBlock: false,
+    });
+    t.upsertFile("Sources/PixelArt.swift", [
+      def("Sources/PixelArt.swift", "Color", []),
+      def("Sources/PixelArt.swift", "Color#init", ["Color"], hexInit("UInt32")),
+    ]);
+    t.upsertFile("Sources/TileDetail.swift", [
+      def("Sources/TileDetail.swift", "Color", []),
+      def("Sources/TileDetail.swift", "Color#init", ["Color"], hexInit("String")),
+    ]);
+    t.upsertFile("Sources/Glyphs.swift", [def("Sources/Glyphs.swift", "PanelGlyph", [])]);
+    return t;
+  }
+  const typeDeclarations = {
+    "Sources/PixelArt.swift": [{ typeId: "Color", reopens: true }],
+    "Sources/TileDetail.swift": [{ typeId: "Color", reopens: true }],
+    "Sources/Glyphs.swift": [{ typeId: "PanelGlyph", reopens: false }],
+  };
+  function hexCall(argument: string): CallRef {
+    return {
+      callText: `Color(hex: ${argument})`,
+      receiver: null,
+      member: "Color",
+      startLine: 10,
+      argCount: 0,
+      kwargKeys: ["hex"],
+      passesBlock: false,
+    };
+  }
+  function context(over: Partial<CallContext> = {}): CallContext {
+    return ctx({
+      callerFile: "Sources/Store.swift",
+      callerScope: ["Store"],
+      symbolTable: hexTable(),
+      typeDeclarations,
+      ...over,
+    });
+  }
+
+  it("lands on the UInt32 initializer for a UInt32-typed local", () => {
+    const site = hexCall("tint");
+    const target = new SwiftCallResolver().resolve(
+      site,
+      context({ localBindings: { tint: [{ line: 5, type: "UInt32" }] } }),
+    );
+    expect(target).toEqual({ targetRelPath: "Sources/PixelArt.swift", targetSymbolId: "Color" });
+  });
+
+  it("lands on the String initializer for a string literal, the UInt32 one for an integer literal", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(hexCall('"#FF1744"'), context())?.targetRelPath).toBe("Sources/TileDetail.swift");
+    expect(resolver.resolve(hexCall("0x1E7A3A"), context())?.targetRelPath).toBe("Sources/PixelArt.swift");
+  });
+
+  it("types an argument through a stored property of a project type", () => {
+    const site = hexCall("PanelGlyph.addedTint");
+    const target = new SwiftCallResolver().resolve(
+      site,
+      context({ classFieldTypes: { PanelGlyph: { addedTint: "UInt32" } } }),
+    );
+    expect(target?.targetRelPath).toBe("Sources/PixelArt.swift");
+  });
+
+  it("commits nothing for an argument it cannot type, or one no overload fits", () => {
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(hexCall("palette[key]"), context())).toBeNull();
+    const intTyped = context({ localBindings: { n: [{ line: 5, type: "Int" }] } });
+    expect(resolver.resolve(hexCall("n"), intTyped)).toBeNull();
+    // A type the project declares is no closed value type: no proof, no pick.
+    const glyph = context({ localBindings: { g: [{ line: 5, type: "PanelGlyph" }] } });
+    expect(resolver.resolve(hexCall("g"), glyph)).toBeNull();
+  });
+});
+
 describe("SwiftCallResolver — a bare construction does not see another type's nested namesake", () => {
   const nested = table({
     "Sources/Result+Alamofire.swift": [
@@ -3239,6 +3339,124 @@ describe("SwiftCallResolver — SDK member types and SDK closure parameters (bd 
     // `split` returns `[Substring]`, `last` a `Substring`; `map` is the SDK's, never `Request#map`.
     const site = call('ProcessInfo.processInfo.arguments.first.split(separator: "/").last', "map", 6);
     expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
+  });
+
+  it("types a SEVEN-link SwiftUI modifier chain (bd tea-rags-mcp-2rf51)", () => {
+    // Every link past `Text(reason)` is an SDK `View` member returning `some View`;
+    // a project `Request#cancel` is no member of a `View`.
+    const site = call(
+      "Text(reason).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)" +
+        ".fixedSize(horizontal: false, vertical: true).padding(.vertical, 6).padding(.horizontal, 8)",
+      "cancel",
+      6,
+    );
+    expect(new SwiftCallResolver().hasInProjectDefinition(site, context())).toBe(false);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — `IndicatorSlot.allCases.map { … }` on a project
+   * enum that conforms to `CaseIterable` and declares neither `allCases` nor
+   * `AllCases`: the synthesized conformance's `AllCases` is the protocol's
+   * default, `[Self]`, and `CaseIterable` has no other requirement a witness
+   * could infer it from. A generic parameter bounded by `CaseIterable` keeps
+   * its `AllCases` unknown — a conformer may declare its own.
+   */
+  it("types a project CaseIterable's allCases as an Array of itself", () => {
+    const withSlot = table({
+      "Sources/Request.swift": [
+        { symbolId: "Request", scope: [] },
+        { symbolId: "Request#map", scope: ["Request"] },
+      ],
+      "Sources/Slot.swift": [{ symbolId: "IndicatorSlot", scope: [] }],
+    });
+    const enumContext = context({
+      symbolTable: withSlot,
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/Slot.swift": [{ typeId: "IndicatorSlot", reopens: false, conforms: ["Int", "CaseIterable"] }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("IndicatorSlot.allCases", "map", 6), enumContext)).toBe(false);
+    // Unqualified inside the enum: an SDK member only a STATIC declaration
+    // answers is the static one — Swift reaches no static member unqualified
+    // from an instance context.
+    const inEnum = { ...enumContext, callerScope: ["IndicatorSlot"] };
+    expect(resolver.hasInProjectDefinition(call("allCases", "map", 6), inEnum)).toBe(false);
+    const generic = context({ callerScope: ["Picker<Value: CaseIterable>", "go"] });
+    expect(resolver.hasInProjectDefinition(call("Value.allCases", "map", 6), generic)).toBe(true);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — `stride(from: 5, through: 60, by: 5).map { … }`:
+   * the standard library's free function, picked by the labels the head
+   * writes (`through:` is a `StrideThrough`, `to:` a `StrideTo`), whose
+   * `map` is the SDK's. A project function of that name shadows it, and the
+   * head then types nothing.
+   */
+  it("types a standard-library free-function head by its labels", () => {
+    const resolver = new SwiftCallResolver();
+    for (const head of ["stride(from: 5, through: 60, by: 5)", "stride(from: width - 2, to: 0, by: -1)"]) {
+      expect(resolver.hasInProjectDefinition(call(head, "map", 6), context())).toBe(false);
+    }
+    const shadowed = table({
+      "Sources/Request.swift": [
+        { symbolId: "Request", scope: [] },
+        { symbolId: "Request#map", scope: ["Request"] },
+      ],
+      "Sources/Stride.swift": [{ symbolId: "stride", scope: [] }],
+    });
+    const own = context({ symbolTable: shadowed });
+    expect(resolver.hasInProjectDefinition(call("stride(from: 5, through: 60, by: 5)", "map", 6), own)).toBe(true);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — a subscript head. `frames[0]` on a `[Request]` is
+   * a `Request` (an integer literal is only ever an `Int`, and `Int` picks
+   * the element subscript); `apps[key]` on a `[String: Set<String>]` with a
+   * `String` key is an `Optional<Set<String>>`, whose `map` is `Optional`'s.
+   * An index the resolver cannot type picks no subscript: an `Array` also
+   * takes ranges, a `Dictionary` also takes its own `Index`.
+   */
+  it("types a subscript head by the subscript its index can only mean", () => {
+    const fields = context({
+      classFieldTypes: { Session: { apps: "Dictionary", frames: "Array" } },
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/Session.swift": [
+          {
+            typeId: "Session",
+            reopens: false,
+            fieldTypeArguments: { apps: ["String", "Set"], frames: ["Request"] },
+          },
+        ],
+      },
+      localBindings: { key: [{ line: 2, type: "String" }] },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(call("frames[0]", "cancel", 6), fields)?.targetSymbolId).toBe("Request#cancel");
+    expect(resolver.resolve(call("frames[i]", "cancel", 6), fields)).toBeNull();
+    expect(resolver.hasInProjectDefinition(call("apps[key]", "map", 6), fields)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call('apps["x"]', "map", 6), fields)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("apps[index]", "map", 6), fields)).toBe(true);
+  });
+
+  /**
+   * bd tea-rags-mcp-3j7rg — a link called with a trailing closure alone:
+   * `frames.filter { $0.ok }.map { … }` is `Array.filter`'s `[Request]`, and
+   * `map` on it the SDK's. The closure is the link's argument, not its name.
+   */
+  it("types a link called with only a trailing closure", () => {
+    const fields = context({
+      classFieldTypes: { Session: { frames: "Array" } },
+      typeDeclarations: {
+        ...typeDeclarations,
+        "Sources/Session.swift": [{ typeId: "Session", reopens: false, fieldTypeArguments: { frames: ["Request"] } }],
+      },
+    });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.hasInProjectDefinition(call("frames.filter { $0.isOK(1) }", "map", 6), fields)).toBe(false);
+    expect(resolver.hasInProjectDefinition(call("frames.sorted { $0.at < $1.at }", "map", 6), fields)).toBe(false);
   });
 
   it("types an implicit-self property and call head the SDK declares on the enclosing type", () => {

@@ -6,7 +6,11 @@ import {
   type SymbolDefinition,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import { swiftSdkVocabulary, type SwiftSdkVocabulary } from "../../vocabulary/sdk-vocabulary.js";
+import { narrowSwiftOverloadsByArgumentType } from "../swift-argument-types.js";
 import { swiftLexicallyReachedDefinitions } from "../swift-lexical-reach.js";
+import { createSwiftWrittenReceiverTypePorts } from "../swift-receiver-type-ports.js";
 import {
   lookupSwiftBareNameDefinitions,
   narrowSwiftOverloads,
@@ -47,7 +51,14 @@ import type { SwiftResolverConfig } from "./shared.js";
  */
 export class SwiftGlobalShortNameSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "globalShortName";
-  constructor(private readonly cfg: SwiftResolverConfig) {}
+
+  /** ONE fold for the life of the resolver: an argument is typed as a receiver of its spelling would be. */
+  private readonly ports: ReceiverTypePorts;
+  private readonly sdk: SwiftSdkVocabulary = swiftSdkVocabulary();
+
+  constructor(private readonly cfg: SwiftResolverConfig) {
+    this.ports = createSwiftWrittenReceiverTypePorts(cfg.memberTypes);
+  }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null) return CONTINUE;
@@ -65,7 +76,7 @@ export class SwiftGlobalShortNameSymbolResolutionStrategy implements SymbolResol
     // and a same-file set is no ambiguity about where the target lives.
     // Without that evidence, or when no declaration fits, the cardinality gate
     // judges every declaration, as before.
-    const fitting = call.argCount === undefined ? [] : narrowSwiftOverloads(call, defs);
+    const fitting = call.argCount === undefined ? [] : this.byArgumentType(call, narrowSwiftOverloads(call, defs), ctx);
     const hit =
       fitting.length > 0 ? pickSwiftOverload(fitting, this.cfg.mode) : pickSingleCandidate(defs, this.cfg.mode);
     if (!hit) return CONTINUE;
@@ -82,14 +93,23 @@ export class SwiftGlobalShortNameSymbolResolutionStrategy implements SymbolResol
    * `init(catching:)` — emits nothing.
    */
   private extensionInitializer(typeId: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const inits = [
-      ...swiftMemberCandidates(ctx, `${typeId}#init`, call),
-      ...swiftMemberCandidates(ctx, `${typeId}.init`, call),
-    ];
+    // Labels first, then what the arguments' types prove (bd tea-rags-mcp-82l7s):
+    // `Color(hex: tint)` with `tint: UInt32` runs the `UInt32` initializer,
+    // not the `String` one another file declares.
+    const inits = this.byArgumentType(
+      call,
+      [...swiftMemberCandidates(ctx, `${typeId}#init`, call), ...swiftMemberCandidates(ctx, `${typeId}.init`, call)],
+      ctx,
+    );
     const files = [...new Set(inits.map((def) => def.relPath))].sort();
     if (files.length === 0) return CONTINUE;
     if (files.length > 1 && this.cfg.mode === "strict") return CONTINUE;
     return resolved({ targetRelPath: files[0], targetSymbolId: typeId });
+  }
+
+  /** `defs` minus the overloads a labelled argument's proven type cannot bind to. */
+  private byArgumentType(call: CallRef, defs: SymbolDefinition[], ctx: CallContext): SymbolDefinition[] {
+    return narrowSwiftOverloadsByArgumentType(call, defs, ctx, this.ports, this.sdk);
   }
 }
 

@@ -128,6 +128,26 @@ export class SwiftSdkMemberTypes {
     return this.agreedClosureParameter(this.sdk.globalFunctions(name), index, undefined);
   }
 
+  /**
+   * What the standard library's free function `fullName` — labels included,
+   * `stride(from:to:by:)` — returns, when its overloads agree (bd
+   * tea-rags-mcp-3j7rg). Only the function's own generic parameters are in
+   * scope, each bound by its constraint and so marked as a bound:
+   * `StrideTo<T>` with `T: Strideable` is a `StrideTo` whose element is known
+   * only as a `Strideable`.
+   */
+  functionReturnType(fullName: string): TypeRef | undefined {
+    let agreed: TypeRef | undefined;
+    for (const shape of this.sdk.labelledGlobalFunction(fullName)) {
+      if (shape.returns === null) continue;
+      const type = this.typeOfText(shape.returns, undefined, shape);
+      if (type === undefined) return undefined;
+      if (agreed !== undefined && !sameNominal(agreed, type)) return undefined;
+      agreed ??= type;
+    }
+    return agreed;
+  }
+
   /** The `index`-th parameter type of the last closure every shape taking one agrees on. */
   private agreedClosureParameter(
     shapes: readonly SwiftSdkMember[],
@@ -199,7 +219,11 @@ export class SwiftSdkMemberTypes {
     };
   }
 
-  private typeOfText(text: string, found: SwiftSdkSubstitutionScope, shape: SwiftSdkMember): TypeRef | undefined {
+  private typeOfText(
+    text: string,
+    found: SwiftSdkSubstitutionScope | undefined,
+    shape: SwiftSdkMember,
+  ): TypeRef | undefined {
     const parsed = parseSwiftTypeText(text);
     return parsed === undefined ? undefined : this.typeOf(parsed, found, shape);
   }
@@ -238,8 +262,44 @@ export class SwiftSdkMemberTypes {
     for (const [name, constraint] of shape?.genericParameters ?? []) {
       bindings.set(name, this.constraintType(constraint ?? undefined));
     }
+    for (const [name, type] of this.soleRequirementDefaults(receiver, owner)) bindings.set(`Self.${name}`, type);
     for (const [name, type] of selfAliases ?? []) bindings.set(`Self.${name}`, type);
     return bindings;
+  }
+
+  /**
+   * The associated-type DEFAULTS of a protocol whose one requirement is the
+   * member being read, for a PROJECT conformer (bd tea-rags-mcp-3j7rg):
+   * `IndicatorSlot.allCases` on a project `enum IndicatorSlot: CaseIterable`
+   * is `[IndicatorSlot]`.
+   *
+   * An associated type is fixed by the conformer's own typealias (which
+   * `selfAliases` states and overrides this), else INFERRED from its witnesses
+   * to the protocol's requirements, else the default. The member reaching
+   * here is the SDK's — the project declares none on the conformer's
+   * hierarchy, or the lookup would have answered from the project — and it is
+   * the protocol's only requirement, so no witness exists to infer from: the
+   * default is what the compiler synthesizes. A protocol with other
+   * requirements answers nothing, since a witness to one of those may fix the
+   * type (`Sequence.Iterator` follows `makeIterator()`). So does an SDK
+   * receiver, whose aliases the substrate states itself, and a value known
+   * only by a bound, whose conformer is unknown.
+   */
+  private soleRequirementDefaults(
+    receiver: SwiftNominalTypeRef | undefined,
+    owner: SwiftSdkType | undefined,
+  ): ReadonlyMap<string, TypeRef> {
+    const out = new Map<string, TypeRef>();
+    if (receiver === undefined || receiver.upperBound === true || this.sdk.hasType(receiver.name)) return out;
+    if (owner?.kind !== "protocol" || owner.memberNames.length !== 1) return out;
+    const self = { ...receiver, form: "instance" as const };
+    for (const [name, text] of Object.entries(owner.aliases)) {
+      // `[Self] where Self == Self.AllCases.Element`: the clause constrains, the type is before it.
+      const parsed = parseSwiftTypeText(text.split(/\swhere\s/)[0]);
+      const type = parsed === undefined ? undefined : this.substitute(parsed, new Map(), self, 1);
+      if (type !== undefined) out.set(name, type);
+    }
+    return out;
   }
 
   /** A constraint as the value type it admits: a protocol or class the substrate declares. */

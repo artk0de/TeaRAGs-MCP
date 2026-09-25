@@ -68,7 +68,7 @@ import { isSwiftTypeName } from "./swift-type-name.js";
 /**
  * How many LINKS a receiver may carry and still be folded.
  *
- * Five, and the number is measured rather than picked. It was three while
+ * Eight, and the number is measured rather than picked. It was three while
  * every hop was a `classFieldTypes` read keyed by a type's SHORT name — no
  * file, no module — where the chance that some link resolves against a
  * namesake compounds with depth. Two things moved since: the SDK substrate
@@ -77,14 +77,21 @@ import { isSwiftTypeName } from "./swift-type-name.js";
  * corpus contains is such a chain — Alamofire's default User-Agent,
  * `ProcessInfo.processInfo.arguments.first?.split(separator: "/").last`, five
  * links, all SDK. Across Alamofire and Quick every other chained receiver
- * carries at most three, so five changes no other site (bd
- * tea-rags-mcp-y99pg.34).
+ * carries at most three, so five changed no other site (bd
+ * tea-rags-mcp-y99pg.34). A SwiftUI app then brought the modifier chain: a
+ * view built as `Text(reason).font(.caption).foregroundStyle(.secondary)
+ * .multilineTextAlignment(.center).fixedSize(…).padding(…).padding(…)
+ * .frame(…)` is seven links, every one past the head an SDK `View` member
+ * returning `some View`. pixelclocktiles' longest receiver is eight links,
+ * and nine of its receivers carry six to eight; eight typed the one site
+ * among them five left untyped, moved no edge there, and moved nothing on
+ * Alamofire or Quick, whose longest stays five (bd tea-rags-mcp-2rf51).
  *
  * The namesake risk stays the reason not to raise it further on speculation:
- * a project link past five is still a short-name read, and a chain past the
- * cap is left untyped, which is the one answer that cannot be wrong.
+ * a project link past the cap is still a short-name read, and a chain past
+ * the cap is left untyped, which is the one answer that cannot be wrong.
  */
-const SWIFT_CHAIN_MAX_HOPS = 5;
+const SWIFT_CHAIN_MAX_HOPS = 8;
 
 /**
  * Static properties that, by the Swift API Design Guidelines' naming of
@@ -176,7 +183,9 @@ function swiftHeadType(
       swiftLiteralHeadType(head) ??
       swiftNilCoalescingHeadType(head, atLine, ctx, ports) ??
       swiftProjectConstructionHeadType(head, ctx) ??
-      swiftSdkConstructionHeadType(head, members)
+      swiftSdkConstructionHeadType(head, members) ??
+      swiftSdkFunctionHeadType(head, atLine, ctx, members) ??
+      swiftSubscriptHeadType(head, atLine, ctx, ports, keepsOptionals)
     );
   }
   if (head === "self" || head === "Self") {
@@ -205,6 +214,15 @@ function swiftHeadType(
       ? members.sdkMemberTypeKeepingOptionals(selfRef, head, ctx)
       : members.sdkMemberType(selfRef, head, ctx);
     if (sdkProperty !== undefined) return sdkProperty;
+    // No instance member of that name: an SDK member only a STATIC declaration
+    // answers is the static one, since Swift reaches no static member
+    // unqualified from an instance context — `allCases` inside an enum's
+    // static initializer (bd tea-rags-mcp-3j7rg).
+    const selfClass = { form: "class" as const, name: enclosing };
+    const staticProperty = keepsOptionals
+      ? members.sdkMemberTypeKeepingOptionals(selfClass, head, ctx)
+      : members.sdkMemberType(selfClass, head, ctx);
+    if (staticProperty !== undefined) return staticProperty;
   }
 
   const projectType = swiftVisibleProjectType(head, ctx);
@@ -315,6 +333,123 @@ function swiftSdkConstructionHeadType(head: string, members: SwiftMemberTypeLook
   if (!/^_*[A-Z]/.test(typeText) || !swiftHeadEndsAtCallGroups(head, open)) return undefined;
   return members.sdkConstructionType(typeText);
 }
+
+/**
+ * `stride(from: 5, through: 60, by: 5)` as a chain head: a call of the
+ * standard library's free function whose FULL name the head's labels spell —
+ * `stride(from:through:by:)` returns a `StrideThrough`, `stride(from:to:by:)`
+ * a `StrideTo` (bd tea-rags-mcp-3j7rg). The callee must be a lowercase name
+ * the project declares NOTHING under — no free function, method, property or
+ * local of that name — since any of those would shadow it, and the head must
+ * be that one argument list, to its end: a trailing closure is an argument
+ * the labels do not show.
+ */
+function swiftSdkFunctionHeadType(
+  head: string,
+  atLine: number,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): TypeRef | undefined {
+  const open = head.indexOf("(");
+  if (open <= 0 || closingBracketIndex(head, open) !== head.length - 1) return undefined;
+  const callee = head.slice(0, open).trim();
+  if (!/^[a-z]\w*$/.test(callee)) return undefined;
+  if (lookupSwiftSymbolsByShortName(ctx, callee).length > 0) return undefined;
+  if (resolveLocalBinding(ctx.localBindings, callee, atLine) !== undefined) return undefined;
+  if (identifierEntry(ctx.callResultBindings, callee) !== undefined) return undefined;
+  const inner = head.slice(open + 1, -1);
+  const labels =
+    inner.trim() === ""
+      ? []
+      : splitAtBracketDepthZero(inner, ",").map((argument) => SWIFT_ARGUMENT_LABEL.exec(argument)?.[1] ?? "_");
+  return members.sdkFunctionReturnType(`${callee}(${labels.map((label) => `${label}:`).join("")})`);
+}
+
+/**
+ * `frames[0]` / `apps[key]` as a chain head (bd tea-rags-mcp-3j7rg): a
+ * subscript on a value whose `Array` / `Dictionary` type the fold knows WITH
+ * its generic arguments, answered only where the index can mean one
+ * subscript.
+ *
+ *   - `Array<E>` indexed by an `Int` — an integer literal, or a value the fold
+ *     types `Int` — is an `E`. Anything else may be a range, whose subscript
+ *     is an `ArraySlice`.
+ *   - `Dictionary<K, V>` indexed by a value of type `K` — a string literal
+ *     when `K` is `String`, or a value the fold types `K` — is an optional
+ *     `V`: `Optional<V>` where the fold keeps optionals (so `apps[key].map`
+ *     is `Optional.map`), else `V`. Any other index may be the dictionary's
+ *     own `Index`, whose subscript is a key-value tuple.
+ *
+ * One unlabelled index only: a labelled one (`dict[key, default: 0]`) is
+ * another subscript.
+ */
+function swiftSubscriptHeadType(
+  head: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+  keepsOptionals: boolean,
+): TypeRef | undefined {
+  const open = head.indexOf("[");
+  if (open <= 0 || !head.endsWith("]")) return undefined;
+  const base = head.slice(0, open).trim();
+  if (!SWIFT_IDENTIFIER.test(base)) return undefined;
+  const inner = head.slice(open + 1, -1);
+  const parts = splitAtBracketDepthZero(inner, ",");
+  // A `]` closing early (`a[0][1]`) leaves the whole unbalanced: one part, but not this group's.
+  if (parts.length !== 1 || swiftBracketDepthAt(inner) !== 0) return undefined;
+  const index = inner.trim();
+  if (index === "" || SWIFT_ARGUMENT_LABEL.test(index)) return undefined;
+  const container = propagateReceiverType(base, atLine, ctx, ports);
+  if (container?.form !== "instance" || container.upperBound === true) return undefined;
+  const indexType = SWIFT_INTEGER_INDEX.test(index)
+    ? "Int"
+    : SWIFT_STRING_LITERAL_HEAD.test(index)
+      ? "String"
+      : swiftExactInstanceName(propagateReceiverType(index, atLine, ctx, ports));
+  if (indexType === undefined) return undefined;
+  const [first, second] = container.args ?? [];
+  if (container.name === "Array" && first !== undefined && container.args?.length === 1) {
+    return indexType === "Int" ? first : undefined;
+  }
+  if (container.name === "Dictionary" && first !== undefined && second !== undefined) {
+    if (swiftExactInstanceName(first) !== indexType) return undefined;
+    return keepsOptionals ? swiftOptionalOf(second) : second;
+  }
+  return undefined;
+}
+
+/** A decimal, hex, octal or binary integer literal. */
+const SWIFT_INTEGER_INDEX = /^(?:0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+|\d[\d_]*)$/;
+
+/** A type's name when it is an exact instance — not a bound, not `Optional`. */
+function swiftExactInstanceName(type: TypeRef | undefined): string | undefined {
+  if (type?.form !== "instance" || type.upperBound === true || type.name === SWIFT_OPTIONAL) return undefined;
+  return type.name;
+}
+
+/** The bracket depth at the end of `text`, outside quotes; 0 when balanced. */
+function swiftBracketDepthAt(text: string): number {
+  let depth = 0;
+  let quote = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === '"') quote = false;
+      continue;
+    }
+    if (ch === '"') quote = true;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      if (--depth < 0) return depth;
+    }
+  }
+  return depth;
+}
+
+/** An argument's label: the identifier before its first top-level `:` (never `::`). */
+const SWIFT_ARGUMENT_LABEL = /^\s*([A-Za-z_]\w*)\s*:(?!:)/;
 
 /** Whether `head` from `open` on is one `( … )` and / or `{ … }` group each, to its end. */
 function swiftHeadEndsAtCallGroups(head: string, open: number): boolean {
@@ -562,13 +697,13 @@ export function createSwiftReceiverTypePorts(members: SwiftMemberTypeLookup): Re
     seedHead: (): undefined => undefined,
     // A hop off a value known only by a bound is known only by one too (bd tea-rags-mcp-y99pg.25).
     memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
-      boundedBy(recv, swiftMemberHopType(recv, member, ctx, members)),
+      boundedBy(recv, swiftMemberHopType(recv, swiftLinkName(member), ctx, members)),
     // `read(\.activeRequests)`: a key path binds a generic return (bd tea-rags-mcp-y99pg.37).
     memberCallTypeOf: (recv: TypeRef, member: string, argumentText: string, ctx: CallContext): TypeRef | undefined =>
       boundedBy(
         recv,
         swiftKeyPathCallType(recv, member, argumentText, ctx, members, ports) ??
-          swiftMemberHopType(recv, member, ctx, members),
+          swiftMemberHopType(recv, swiftLinkName(member), ctx, members),
       ),
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
     // An argument list carries its own dots (`request(for: task.id)`).
@@ -603,7 +738,7 @@ export function createSwiftWrittenReceiverTypePorts(members: SwiftMemberTypeLook
     seedHead: (): undefined => undefined,
     memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined => {
       const { text, unwraps } = swiftUnwrapSugar(member);
-      const type = boundedBy(recv, swiftWrittenMemberHopType(recv, text, ctx, members));
+      const type = boundedBy(recv, swiftWrittenMemberHopType(recv, swiftLinkName(text), ctx, members));
       return unwraps ? swiftUnwrappedOptional(type) : type;
     },
     maxHops: (): number => SWIFT_CHAIN_MAX_HOPS,
@@ -676,6 +811,23 @@ function swiftUnwrappedOptional(type: TypeRef | undefined): TypeRef | undefined 
 }
 
 /** A written head or link with its trailing `?` / `!` split off. */
+/**
+ * A link's member NAME when the link is a call with a trailing closure and no
+ * argument list — `filter { $0.ok }`, `sorted { $0.at < $1.at }` (bd
+ * tea-rags-mcp-3j7rg). The kernel strips a link's argument list from its
+ * first `(`, which a trailing closure does not open (or opens only inside
+ * itself: `first { f($0) }` arrives as `first { f`), so the closure reaches
+ * the port as part of the name. The member's type is then read as for any
+ * call of it: every overload the name carries must agree, a property of the
+ * same name included, so reading the name alone can only decline more.
+ */
+function swiftLinkName(member: string): string {
+  const closure = SWIFT_TRAILING_CLOSURE_LINK.exec(member);
+  return closure === null ? member : closure[1];
+}
+
+const SWIFT_TRAILING_CLOSURE_LINK = /^\s*([A-Za-z_]\w*)\s*\{/;
+
 function swiftUnwrapSugar(text: string): { readonly text: string; readonly unwraps: boolean } {
   const trimmed = text.trim();
   const marker = /[?!]+$/.exec(trimmed);

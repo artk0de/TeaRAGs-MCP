@@ -70,6 +70,8 @@ interface RawVocabulary {
   readonly types: Readonly<Record<string, RawType>>;
   /** Module-level functions that take a closure, by base name (bd tea-rags-mcp-y99pg.29). */
   readonly functions?: Readonly<Record<string, readonly string[]>>;
+  /** The standard library's value-returning free functions, by full name with labels (bd tea-rags-mcp-3j7rg). */
+  readonly labelled?: Readonly<Record<string, readonly string[]>>;
 }
 
 const TYPE_KINDS: Readonly<Record<string, SwiftSdkTypeKind>> = {
@@ -99,6 +101,7 @@ export class SwiftSdkVocabulary {
   private readonly memberCache = new Map<string, readonly SwiftSdkMember[]>();
   private readonly supertypeCache = new Map<string, readonly string[]>();
   private readonly functionCache = new Map<string, readonly SwiftSdkMember[]>();
+  private readonly labelledFunctionCache = new Map<string, readonly SwiftSdkMember[]>();
 
   constructor(private readonly raw: RawVocabulary) {}
 
@@ -149,6 +152,21 @@ export class SwiftSdkVocabulary {
     const raw = this.raw.functions;
     const shapes = raw !== undefined && Object.hasOwn(raw, name) ? raw[name].map(parseSignature) : [];
     this.functionCache.set(name, shapes);
+    return shapes;
+  }
+
+  /**
+   * The shapes of the standard library's free function whose FULL name —
+   * labels included, `_` for an unlabelled parameter — is `fullName`
+   * (`stride(from:to:by:)`, bd tea-rags-mcp-3j7rg). Only value-returning
+   * functions are recorded: a chain head reads nothing else.
+   */
+  labelledGlobalFunction(fullName: string): readonly SwiftSdkMember[] {
+    const cached = this.labelledFunctionCache.get(fullName);
+    if (cached !== undefined) return cached;
+    const raw = this.raw.labelled;
+    const shapes = raw !== undefined && Object.hasOwn(raw, fullName) ? raw[fullName].map(parseSignature) : [];
+    this.labelledFunctionCache.set(fullName, shapes);
     return shapes;
   }
 

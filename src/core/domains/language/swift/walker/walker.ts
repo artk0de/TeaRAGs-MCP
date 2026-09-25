@@ -1076,7 +1076,34 @@ function declaresSwiftParameter(fn: AstNode, name: string): boolean {
  */
 function swiftReceiverTargetText(target: AstNode): string {
   const operand = swiftReceiverOperand(target);
-  return operand === target ? target.text : target.text.slice(operand.startIndex - target.startIndex);
+  return withoutSwiftComments(target, operand.startIndex);
+}
+
+/** Comment node types tree-sitter-swift emits. */
+const SWIFT_COMMENT_NODES: ReadonlySet<string> = new Set(["comment", "multiline_comment"]);
+
+/**
+ * `node`'s source text from `from` on, every comment inside it dropped (bd
+ * tea-rags-mcp-2rf51). A SwiftUI modifier chain interleaves comments with its
+ * links, and a comment's own `.` would otherwise split the receiver into hops
+ * no fold can type. A comment is trivia, so what remains is the expression.
+ */
+function withoutSwiftComments(node: AstNode, from: number): string {
+  const comments: AstNode[] = [];
+  walk(node, (n) => {
+    if (SWIFT_COMMENT_NODES.has(n.type) && n.startIndex >= from) comments.push(n);
+  });
+  const { text } = node;
+  if (comments.length === 0) return text.slice(from - node.startIndex);
+  comments.sort((a, b) => a.startIndex - b.startIndex);
+  let out = "";
+  let at = from;
+  for (const comment of comments) {
+    if (comment.startIndex < at) continue;
+    out += text.slice(at - node.startIndex, comment.startIndex - node.startIndex);
+    at = comment.endIndex;
+  }
+  return out + text.slice(at - node.startIndex);
 }
 
 /** The node a call's receiver really is, inside the target the grammar handed over — see {@link swiftReceiverTargetText}. */
@@ -1511,6 +1538,8 @@ function swiftCallableSignature(fn: AstNode): SwiftCallableSignature {
   let maxPositional = 0;
   let hasSplat = false;
   let acceptsBlock = false;
+  const types: Record<string, string> = {};
+  const repeatedLabels = new Set<string>();
   fn.children.forEach((parameter, i) => {
     if (parameter.type !== "parameter") return;
     const colon = parameter.children.findIndex((c) => c.type === ":");
@@ -1525,18 +1554,41 @@ function swiftCallableSignature(fn: AstNode): SwiftCallableSignature {
     const mandatory = capability !== "yes" && !variadic && !defaulted;
     if (capability !== "no") acceptsBlock = true;
     if (label !== null) {
+      if (required.includes(label) || optional.includes(label)) repeatedLabels.add(label);
       (mandatory ? required : optional).push(label);
+      const nominal = swiftNominalParameterType(parameter);
+      if (nominal !== undefined) types[label] = nominal;
       return;
     }
     maxPositional += 1;
     if (variadic) hasSplat = true;
     if (mandatory) minRequired += 1;
   });
+  // A label two parameters share says nothing about WHICH one an argument binds.
+  for (const label of repeatedLabels) delete types[label];
   return {
     arity: { minRequired, maxPositional, hasSplat },
-    kwargs: { required, optional, hasSplat: false },
+    kwargs: { required, optional, hasSplat: false, ...(Object.keys(types).length > 0 ? { types } : {}) },
     acceptsBlock,
   };
+}
+
+/**
+ * A parameter's declared type when it is a plain NOMINAL — `UInt32`,
+ * `Tag.Kind`, or one of those made optional (`Double?`) — spelled as written,
+ * whitespace dropped (bd tea-rags-mcp-82l7s). A function, tuple, collection,
+ * generic-argument or metatype spelling answers `undefined`: the resolver
+ * compares an argument's proven type against a NAME, and only a name can be
+ * compared without a type checker.
+ */
+function swiftNominalParameterType(parameter: AstNode): string | undefined {
+  const typeNode = swiftParameterTypeNode(parameter);
+  if (!typeNode) return undefined;
+  const inner = typeNode.type === "optional_type" ? typeNode.namedChildren[0] : typeNode;
+  if (inner?.type !== "user_type") return undefined;
+  const name = inner.text.replace(/\s+/g, "");
+  if (!/^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/.test(name) || name.endsWith(".Type")) return undefined;
+  return typeNode === inner ? name : `${name}?`;
 }
 
 /** Value types a closure is never spelled as — the common non-closure parameter types. */
@@ -2420,7 +2472,7 @@ function swiftStoredPropertyFact(node: AstNode): SwiftTypeFact {
 }
 
 /**
- * The type a collection or string LITERAL names at the declaration itself (bd
+ * The type a collection, string or Boolean LITERAL names at the declaration itself (bd
  * tea-rags-mcp-y99pg.39): `[(1, 2), (14, 1)]` is an `Array`, `["a": 1]` a
  * `Dictionary`, `"GitHub"` a `String` — Swift's defaults for an unannotated
  * literal. Evidence written at the declaration, like a CapWords initializer,
@@ -2439,6 +2491,10 @@ function swiftLiteralPropertyFact(value: AstNode | null): SwiftTypeFact | null {
     case "multi_line_string_literal":
     case "raw_string_literal":
       return { nominal: "String", element: null };
+    // `@State private var showing = false` (bd tea-rags-mcp-3j7rg): a Boolean
+    // literal's default type is `Bool`, and reading the property reads it.
+    case "boolean_literal":
+      return { nominal: "Bool", element: null };
     default:
       return null;
   }

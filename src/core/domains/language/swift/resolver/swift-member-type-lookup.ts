@@ -206,6 +206,11 @@ export class SwiftMemberTypeLookup {
     return this.sdkMembers.functionClosureParameterType(name, index);
   }
 
+  /** What the standard library's free function of full name `fullName` returns (bd tea-rags-mcp-3j7rg). */
+  sdkFunctionReturnType(fullName: string): TypeRef | undefined {
+    return this.sdkMembers.functionReturnType(fullName);
+  }
+
   /** What a `for` loop over `sequence` draws — its SDK `Element` (bd tea-rags-mcp-y99pg.37). */
   sdkSequenceElementType(sequence: SwiftNominalTypeRef): TypeRef | undefined {
     return this.sdkMembers.sequenceElementType(sequence);
