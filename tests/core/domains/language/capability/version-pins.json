@@ -76,7 +76,7 @@
     },
     "walker": {
       "version": 64,
-      "digest": "sha256:61768b6c5eb0138a26528413777fdc5e6e8aef0bd07ce43b7e13a725630c4ba5"
+      "digest": "sha256:45426890f79e83bbac56831e7283c2cfcbaa06a9bb2f7620960ce07856ceb8d7"
     }
   },
   "typescript": {

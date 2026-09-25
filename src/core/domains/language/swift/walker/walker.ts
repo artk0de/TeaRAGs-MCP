@@ -1052,13 +1052,6 @@ function declaresSwiftParameter(fn: AstNode, name: string): boolean {
 }
 
 /**
- * Strip optional-chaining `?` and force-unwrap `!` out of a receiver's source
- * text: `obj!` → `obj`, `a?.b!` → `a.b`, `self.db` unchanged. The resolver
- * matches a receiver against `localBindings` keys and `classFieldTypes` field
- * names, neither of which carries the sugar, so an un-normalized receiver never
- * matches.
- */
-/**
  * A call target's text without the prefix operator the grammar hangs on it
  * (bd tea-rags-mcp-y99pg.39). tree-sitter-swift parses `!kept.contains(id)`
  * with `!kept` as the navigation target, but Swift binds a prefix operator
@@ -1082,6 +1075,13 @@ function swiftReceiverTargetText(target: AstNode): string {
   return target.text;
 }
 
+/**
+ * Strip optional-chaining `?` and force-unwrap `!` out of a receiver's source
+ * text: `obj!` → `obj`, `a?.b!` → `a.b`, `self.db` unchanged. The resolver
+ * matches a receiver against `localBindings` keys and `classFieldTypes` field
+ * names, neither of which carries the sugar, so an un-normalized receiver never
+ * matches.
+ */
 export function normalizeSwiftReceiver(text: string): string {
   return text.replace(/[?!]/g, "");
 }

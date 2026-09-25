@@ -3380,8 +3380,12 @@ describe("SwiftCallResolver — closures passed to a BARE callee (bd tea-rags-mc
     expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], ["Publisher"]))).toBe(
       false,
     );
-    // No SDK supertype declaring `map`: the bare name may still be the project's.
-    expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], []))).toBe(true);
+    // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.39): with no SDK supertype
+    // declaring `map`, the bare name still cannot be `DataResponse#map` — that
+    // type is off `DataResponsePublisher`'s lookup, so the site leaves the
+    // denominator whatever the SDK says. A project member ON the lookup keeps
+    // it (see "a bare name reaches only what lexical lookup reaches").
+    expect(resolver.hasInProjectDefinition(site, within(["DataResponsePublisher", "result"], []))).toBe(false);
   });
 
   it("types nothing for a bare callee neither the enclosing type nor the SDK declares", () => {
@@ -4318,5 +4322,131 @@ describe("SwiftCallResolver — Objective-C dynamic lookup on AnyObject / AnyCla
     // requirement statically, and the requirement IS the project target.
     const context = at({ localBindings: { spec: [{ line: 5, type: "_QuickSpecInternal" }] } });
     expect(new SwiftCallResolver().hasInProjectDefinition(call("spec", "buildExamplesIfNeeded"), context)).toBe(true);
+  });
+});
+
+/**
+ * A BARE call is resolved lexically (bd tea-rags-mcp-y99pg.39): Swift looks an
+ * unqualified name up in the enclosing types — their members, inherited and
+ * conformed — and then at module scope. A member of any other type is not in
+ * that lookup at all: from outside `AppIconArt`, `colour(…)` never names
+ * `AppIconArt.colour`, however unique the short name is.
+ */
+describe("SwiftCallResolver — a bare name reaches only what lexical lookup reaches", () => {
+  const scriptTable = table({
+    "Scripts/MakeIcon.swift": [
+      { symbolId: "colour", scope: [] },
+      { symbolId: "makeContext", scope: [], arity: { minRequired: 1, maxPositional: 1, hasSplat: false } },
+      { symbolId: "makeContext~2", scope: [], arity: { minRequired: 2, maxPositional: 2, hasSplat: false } },
+      { symbolId: "MakeIcon", scope: [] },
+      { symbolId: "MakeIcon.main", scope: ["MakeIcon"] },
+    ],
+    "Sources/AppIconArt.swift": [
+      { symbolId: "AppIconArt", scope: [] },
+      { symbolId: "AppIconArt.colour", scope: ["AppIconArt"] },
+      { symbolId: "AppIconArt#makeContext", scope: ["AppIconArt"] },
+    ],
+    "Sources/Listener.swift": [
+      { symbolId: "Listener", scope: [] },
+      { symbolId: "Listener#stop", scope: ["Listener"] },
+    ],
+    "Sources/Stream.swift": [
+      { symbolId: "ByteStream", scope: [] },
+      { symbolId: "ByteStream#close", scope: ["ByteStream"] },
+      { symbolId: "SocketStream", scope: [] },
+      { symbolId: "SocketStream#close", scope: ["SocketStream"] },
+    ],
+  });
+  const declarations = {
+    "Scripts/MakeIcon.swift": [{ typeId: "MakeIcon", reopens: false }],
+    "Sources/AppIconArt.swift": [{ typeId: "AppIconArt", reopens: false }],
+    "Sources/Listener.swift": [{ typeId: "Listener", reopens: false }],
+    "Sources/Stream.swift": [
+      { typeId: "ByteStream", reopens: false, declarationKind: "protocol" as const },
+      { typeId: "SocketStream", reopens: false, conforms: ["ByteStream"] },
+    ],
+  };
+  const at = (callerFile: string, callerScope: string[]) =>
+    ctx({ callerFile, callerScope, symbolTable: scriptTable, typeDeclarations: declarations });
+  const bare = (member: string, argCount: number, startLine = 30): CallRef => ({
+    callText: `${member}(…)`,
+    receiver: null,
+    member,
+    startLine,
+    argCount,
+    kwargKeys: [],
+  });
+
+  it("lands a module-scope call on the top-level function, not a static namesake of another type", () => {
+    expect(new SwiftCallResolver().resolve(bare("colour", 1), at("Scripts/MakeIcon.swift", []))).toEqual({
+      targetRelPath: "Scripts/MakeIcon.swift",
+      targetSymbolId: "colour",
+    });
+  });
+
+  it("lands a call inside an unrelated type on the top-level function", () => {
+    expect(
+      new SwiftCallResolver().resolve(bare("colour", 1), at("Scripts/MakeIcon.swift", ["MakeIcon"]))?.targetSymbolId,
+    ).toBe("colour");
+  });
+
+  it("picks the top-level overload the call's arguments fit", () => {
+    expect(
+      new SwiftCallResolver().resolve(bare("makeContext", 2), at("Scripts/MakeIcon.swift", ["MakeIcon"]))
+        ?.targetSymbolId,
+    ).toBe("makeContext~2");
+  });
+
+  it("proves a bare name external when only unrelated types declare it", () => {
+    // `close(fd)` inside `Listener` is Darwin's `close`: neither stream type is
+    // in `Listener`'s lookup.
+    const resolver = new SwiftCallResolver();
+    const site = bare("close", 1);
+    const context = at("Sources/Listener.swift", ["Listener"]);
+    expect(resolver.resolve(site, context)).toBeNull();
+    expect(resolver.hasInProjectDefinition(site, context)).toBe(false);
+  });
+
+  it("keeps a member the enclosing type conforms to in reach", () => {
+    const context = at("Sources/Stream.swift", ["SocketStream"]);
+    expect(new SwiftCallResolver().hasInProjectDefinition(bare("close", 0), context)).toBe(true);
+  });
+
+  it("reaches a local function from inside its enclosing function only", () => {
+    const locals = table({
+      "Sources/Config.swift": [
+        { symbolId: "Config", scope: [] },
+        { symbolId: "Config#init", scope: ["Config"] },
+        { symbolId: "Config#init#flag", scope: ["Config", "init"] },
+        { symbolId: "Config#reset", scope: ["Config"] },
+      ],
+      "Sources/Other.swift": [
+        { symbolId: "Other", scope: [] },
+        { symbolId: "Other#run#flag", scope: ["Other", "run"] },
+      ],
+    });
+    const inside = (callerSymbolId: string): CallContext =>
+      ctx({
+        callerFile: "Sources/Config.swift",
+        callerScope: ["Config"],
+        callerSymbolId,
+        symbolTable: locals,
+        typeDeclarations: {
+          "Sources/Config.swift": [{ typeId: "Config", reopens: false }],
+          "Sources/Other.swift": [{ typeId: "Other", reopens: false }],
+        },
+      });
+    const resolver = new SwiftCallResolver();
+    expect(resolver.resolve(bare("flag", 1), inside("Config#init"))?.targetSymbolId).toBe("Config#init#flag");
+    expect(resolver.resolve(bare("flag", 1), inside("Config#init#flag"))?.targetSymbolId).toBe("Config#init#flag");
+    // A local composes under its container's base name: `init~2` holds it too.
+    expect(resolver.resolve(bare("flag", 1), inside("Config#init~2"))?.targetSymbolId).toBe("Config#init#flag");
+    expect(resolver.resolve(bare("flag", 1), inside("Config#reset"))).toBeNull();
+    expect(resolver.hasInProjectDefinition(bare("flag", 1), inside("Config#reset"))).toBe(false);
+  });
+
+  it("keeps every namesake in reach on an index with no type-declaration channel", () => {
+    const context = ctx({ callerFile: "Sources/Listener.swift", callerScope: ["Listener"], symbolTable: scriptTable });
+    expect(new SwiftCallResolver().hasInProjectDefinition(bare("close", 1), context)).toBe(true);
   });
 });

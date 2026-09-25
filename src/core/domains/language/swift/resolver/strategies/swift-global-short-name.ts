@@ -6,7 +6,13 @@ import {
   type SymbolDefinition,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupSwiftBareNameDefinitions, swiftMemberCandidates } from "../swift-symbol-lookup.js";
+import { swiftLexicallyReachedDefinitions } from "../swift-lexical-reach.js";
+import {
+  lookupSwiftBareNameDefinitions,
+  narrowSwiftOverloads,
+  pickSwiftOverload,
+  swiftMemberCandidates,
+} from "../swift-symbol-lookup.js";
 import { isSwiftReopenedOnlyType } from "../swift-type-declarations.js";
 import { isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "../swift-type-name.js";
 import type { SwiftResolverConfig } from "./shared.js";
@@ -45,10 +51,23 @@ export class SwiftGlobalShortNameSymbolResolutionStrategy implements SymbolResol
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null) return CONTINUE;
-    const defs = lookupSwiftBareNameDefinitions(ctx, call.member);
+    // Only what Swift's unqualified lookup reaches from here (bd tea-rags-mcp-y99pg.39).
+    const defs = swiftLexicallyReachedDefinitions(
+      lookupSwiftBareNameDefinitions(ctx, call.member),
+      call,
+      ctx,
+      this.cfg.memberTypes,
+    );
     const reopened = reopenedOnlyConstruction(defs, ctx);
     if (reopened !== undefined) return this.extensionInitializer(reopened, call, ctx);
-    const hit = pickSingleCandidate(defs, this.cfg.mode);
+    // With the call's arguments on record, a file's `makeContext` /
+    // `makeContext~2` are ONE function's overloads: the arguments narrow them,
+    // and a same-file set is no ambiguity about where the target lives.
+    // Without that evidence, or when no declaration fits, the cardinality gate
+    // judges every declaration, as before.
+    const fitting = call.argCount === undefined ? [] : narrowSwiftOverloads(call, defs);
+    const hit =
+      fitting.length > 0 ? pickSwiftOverload(fitting, this.cfg.mode) : pickSingleCandidate(defs, this.cfg.mode);
     if (!hit) return CONTINUE;
     return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
   }

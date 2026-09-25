@@ -240,7 +240,7 @@ function swiftCallFits(call: CallRef, def: SymbolDefinition): boolean {
  * member's overloads, not an ambiguity about where it lives. Across files the
  * cardinality gate decides, as it always has.
  */
-function pickSwiftOverload(defs: SymbolDefinition[], mode: AmbiguousResolveMode): SymbolDefinition | null {
+export function pickSwiftOverload(defs: SymbolDefinition[], mode: AmbiguousResolveMode): SymbolDefinition | null {
   const unsuffixed = defs.filter((def) => !hasSwiftOverloadSuffix(def.symbolId));
   const pool = unsuffixed.length > 0 ? unsuffixed : defs;
   if (pool.length > 1 && pool.every((def) => def.relPath === pool[0].relPath)) return pool[0];
