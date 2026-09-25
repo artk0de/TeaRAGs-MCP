@@ -59,6 +59,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -67,7 +68,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/index.js";
+import { composeExtractionWalker, fileEdgesFromResolvedCalls } from "../kernel/index.js";
 import { swiftHooks } from "./chunking/index.js";
 import { swiftKernel } from "./kernel.js";
 import { SwiftCallResolver } from "./resolver/index.js";
@@ -142,6 +143,15 @@ export class SwiftLanguage implements LanguageProvider {
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
       hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.hasInProjectDefinition?.(call, ctx) ?? false,
+      // A Swift `import` names a MODULE, so the runner's default import→file
+      // loop finds no file and every Swift file read fanIn = fanOut = 0. The
+      // file graph is where this file's resolved calls land instead (bd
+      // tea-rags-mcp-y99pg.38).
+      resolveFileEdges: (
+        extraction: FileExtraction,
+        _ctx: CallContext,
+        resolvedMethodEdges: GraphEdges["methodEdges"],
+      ): GraphEdges["fileEdges"] => fileEdgesFromResolvedCalls(extraction.relPath, resolvedMethodEdges),
     };
   }
 }
