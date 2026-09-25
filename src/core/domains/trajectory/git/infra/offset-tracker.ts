@@ -4,6 +4,14 @@
  * When processing commits newest→oldest, chunk line ranges (defined at HEAD)
  * must be adjusted backward through each commit's insertions/deletions.
  *
+ * Hunks are ZERO-CONTEXT (`structuredPatch(..., { context: 0 })` in
+ * walk-commits.ts): every row a hunk spans was added or removed by the commit.
+ * A context row is not a change, and crediting it lands a commit on every
+ * chunk within the context radius of an edit — which `git log -L` never does
+ * (bd tea-rags-mcp-z3cnd). jsdiff places a pure deletion (`newLines === 0`) at
+ * the new-side row that FOLLOWS the removed rows, so the deletion sits on the
+ * seam just above `newStart`.
+ *
  * Pure functions — no I/O, no git dependency.
  */
 
@@ -20,31 +28,72 @@ interface Hunk {
   newLines: number;
 }
 
+/** Rows one zero-context hunk changed inside one chunk range. */
+export interface ChunkChangedRows {
+  /** Added rows that fall inside the range. */
+  added: number;
+  /** Removed rows attributed to the range. */
+  deleted: number;
+}
+
 /**
- * Map hunks to overlapping chunks using current adjusted ranges.
- * Returns Set of affected chunkIds.
+ * Rows `hunk` changed inside `range`, or `null` when it changed none — the one
+ * predicate every per-chunk walk signal shares (commit crediting and churn).
+ *
+ * Added rows credit the range they overlap; a replacement's removed rows are
+ * spread over its added rows proportionally. A pure deletion credits the range
+ * only when its seam lies strictly INSIDE it (`start < newStart <= end`): the
+ * removed rows sat between two of the range's rows. A deletion on the seam
+ * between two chunks credits neither — `git log -L` does the same.
+ */
+export function changedRowsInRange(hunk: Hunk, range: { start: number; end: number }): ChunkChangedRows | null {
+  if (hunk.newLines === 0) {
+    return range.start < hunk.newStart && hunk.newStart <= range.end ? { added: 0, deleted: hunk.oldLines } : null;
+  }
+  const lastNew = hunk.newStart + hunk.newLines - 1;
+  const overlap = Math.min(lastNew, range.end) - Math.max(hunk.newStart, range.start) + 1;
+  if (overlap <= 0) return null;
+  return { added: overlap, deleted: Math.round((hunk.oldLines * overlap) / hunk.newLines) };
+}
+
+/**
+ * Map hunks to the chunks whose rows they changed, using current adjusted
+ * ranges. Returns Set of affected chunkIds.
  */
 export function mapHunksToChunks(hunks: Hunk[], ranges: AdjustedRange[]): Set<string> {
   const affected = new Set<string>();
   for (const hunk of hunks) {
-    const hunkStart = hunk.newStart;
-    const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
     for (const r of ranges) {
-      if (hunkStart <= r.end && hunkEnd >= r.start) {
-        affected.add(r.chunkId);
-      }
+      if (changedRowsInRange(hunk, r) !== null) affected.add(r.chunkId);
     }
   }
   return affected;
 }
 
 /**
+ * Map one new-side row through a single hunk into the parent's rows, in the
+ * coordinates of the hunks not yet undone (rows above the hunk are unchanged).
+ * A row after the hunk shifts by `-(newLines - oldLines)`; a row inside the
+ * added block keeps its offset, clamped into the removed block. A row with no
+ * counterpart (inside a pure insertion) lands per `edge`: a chunk START on the
+ * row that followed the insertion, an END on the row before it.
+ */
+function rowBeforeHunk(row: number, hunk: Hunk, edge: "start" | "end"): number {
+  const blockEnd = hunk.newStart + hunk.newLines; // exclusive
+  if (row >= blockEnd) return row - (hunk.newLines - hunk.oldLines);
+  if (row < hunk.newStart) return row;
+  if (hunk.oldLines === 0) return edge === "start" ? hunk.newStart : hunk.newStart - 1;
+  return hunk.newStart + Math.min(row - hunk.newStart, hunk.oldLines - 1);
+}
+
+/**
  * Apply offset corrections to adjusted ranges for the next (older) commit.
  *
- * For each hunk, computes delta = newLines - oldLines:
- * - Chunks BELOW hunk: shift start/end by -delta
- * - Chunks CONTAINING hunk (hunk entirely inside chunk): shrink/expand end by -delta
- * - Chunks ABOVE hunk: no change
+ * Each range boundary is mapped through every hunk (`rowBeforeHunk`): rows
+ * below a hunk shift by its delta, rows above stay, rows inside its added block
+ * clamp into its removed block. So a chunk a hunk sits inside grows or shrinks
+ * by the delta, and a chunk starting right after a pure deletion moves down
+ * past the removed rows instead of absorbing them.
  *
  * Hunks are processed bottom-to-top (sorted by newStart DESC) to prevent
  * cascading shift errors.
@@ -59,19 +108,10 @@ export function applyOffsets(ranges: AdjustedRange[], hunks: Hunk[]): AdjustedRa
   const sorted = [...hunks].sort((a, b) => b.newStart - a.newStart);
 
   for (const hunk of sorted) {
-    const delta = hunk.newLines - hunk.oldLines;
-    if (delta === 0) continue;
-
-    const hunkStart = hunk.newStart;
-    const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
-
+    if (hunk.newLines === hunk.oldLines) continue;
     for (const r of result) {
-      if (r.start > hunkEnd) {
-        r.start -= delta;
-        r.end -= delta;
-      } else if (hunkStart >= r.start && hunkEnd <= r.end) {
-        r.end -= delta;
-      }
+      r.start = rowBeforeHunk(r.start, hunk, "start");
+      r.end = rowBeforeHunk(r.end, hunk, "end");
     }
   }
 
