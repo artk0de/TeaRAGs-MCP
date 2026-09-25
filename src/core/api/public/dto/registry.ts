@@ -29,6 +29,21 @@ export interface StaleProjectEntry {
   worktreeName?: string;
 }
 
+/**
+ * How a registry request addresses ONE project: by its alias, or by the
+ * directory it was registered at. Exactly one of the two — the op rejects both
+ * and neither.
+ *
+ * `path` exists because `index-codebase <path>` registers a project WITHOUT an
+ * alias, and a name-only address left that entry unreachable (bd
+ * tea-rags-mcp-usbb5). It is resolved by the same rule every path-addressed
+ * reader uses, so any spelling that finds the collection finds the entry.
+ */
+export interface ProjectRegistryAddress {
+  name?: string;
+  path?: string;
+}
+
 /** What a stale-entry sweep removed and what it deliberately left behind. */
 export interface StaleProjectPruneReport {
   removed: StaleProjectEntry[];

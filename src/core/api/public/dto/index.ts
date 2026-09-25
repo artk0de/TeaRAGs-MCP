@@ -55,6 +55,7 @@ export type { IndexMetrics, SignalMetrics } from "./metrics.js";
 
 export type {
   // Registry
+  ProjectRegistryAddress,
   StaleProjectEntry,
   StaleProjectPruneReport,
 } from "./registry.js";

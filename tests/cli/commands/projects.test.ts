@@ -696,6 +696,115 @@ describe("CLI 'projects' command group", () => {
     });
   });
 
+  describe("unregister --path (bd tea-rags-mcp-usbb5)", () => {
+    /** What `index-codebase <path>` leaves behind: an entry with a path and no alias. */
+    function recordNameless(collectionName: string): string {
+      const canonical = realpathSync(repo);
+      new CollectionRegistry(dir).record({
+        collectionName,
+        path: canonical,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "http://q",
+        indexedAt: "",
+        teaRagsVersion: "",
+        chunksCount: 7,
+      });
+      return canonical;
+    }
+
+    function captureStdout(): { out: () => string; restore: () => void } {
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      return {
+        out: () => spy.mock.calls.map((c) => String(c[0])).join(""),
+        restore: () => {
+          spy.mockRestore();
+        },
+      };
+    }
+
+    it("removes a nameless entry and names it by its path, never 'undefined'", async () => {
+      const canonical = recordNameless("code_nameless");
+      const io = captureStdout();
+      try {
+        await runUnregister({ path: repo });
+        expect(new CollectionRegistry(dir).get("code_nameless")).toBeNull();
+        const out = io.out();
+        expect(out).toContain(`Removed '${canonical}'`);
+        expect(out).not.toContain("undefined");
+        expect(out).toContain(`tea-rags projects unregister --path ${canonical} --purge`);
+        expect(out).not.toContain("--name");
+      } finally {
+        io.restore();
+      }
+    });
+
+    it("keeps the --name hint for a named entry addressed by path", async () => {
+      await runRegister({ path: repo, name: "alpha" });
+      const io = captureStdout();
+      try {
+        await runUnregister({ path: repo });
+        const out = io.out();
+        expect(out).toContain("Removed 'alpha'");
+        expect(out).toContain("tea-rags projects unregister --name alpha --purge");
+      } finally {
+        io.restore();
+      }
+    });
+
+    it("--purge tears down the footprint of a nameless entry", async () => {
+      const canonical = recordNameless("code_nameless");
+      const live = new Set(["code_nameless", "code_other"]);
+      const fakeQdrant = {
+        listCollections: vi.fn(async () => [...live]),
+        deleteCollection: vi.fn(async (name: string) => {
+          live.delete(name);
+        }),
+        countPoints: vi.fn(async () => 7),
+        aliases: { listAliases: vi.fn(async () => []), deleteAlias: vi.fn(async () => {}) },
+      };
+      const io = captureStdout();
+      try {
+        await runUnregister({ path: repo, purge: true }, fakeQdrant as never);
+        expect(fakeQdrant.deleteCollection).toHaveBeenCalledWith("code_nameless");
+        expect([...live]).toEqual(["code_other"]);
+        const out = io.out();
+        expect(out).toContain(`Removed '${canonical}' from registry; deleted Qdrant collection 'code_nameless'`);
+        expect(out).not.toContain("undefined");
+      } finally {
+        io.restore();
+      }
+    });
+
+    it("exits 1 with the typed error when called with both name and path", async () => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+        throw new Error("process.exit called");
+      });
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        await expect(runUnregister({ name: "alpha", path: repo })).rejects.toThrow("process.exit called");
+        expect(exit).toHaveBeenCalledWith(1);
+        expect(stderr.mock.calls.map((c) => String(c[0])).join("")).toMatch(
+          /projects unregister failed: .*mutually exclusive/,
+        );
+      } finally {
+        exit.mockRestore();
+        stderr.mockRestore();
+      }
+    });
+
+    it("reports an unclaimed path as not registered", async () => {
+      const io = captureStdout();
+      try {
+        const nowhere = join(dir, "nowhere");
+        await runUnregister({ path: nowhere });
+        expect(io.out()).toContain(`'${nowhere}' was not registered`);
+      } finally {
+        io.restore();
+      }
+    });
+  });
+
   describe("info — symlink/realpath mismatch (audit #13)", () => {
     it("text mode adds a realpath line + hint when path diverges from realpathSync", async () => {
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

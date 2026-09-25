@@ -10,14 +10,16 @@ import {
   type CollectionRegistry,
   type ProjectInfo,
 } from "../../../domains/maintenance/registry/index.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { resolveCollectionName, validatePath, validatePathSync } from "../../../infra/collection-name.js";
 import {
+  InvalidParameterError,
+  MissingArgumentError,
   PathDoesNotExistError,
   ProjectNameInvalidError,
   ProjectNameNotUniqueError,
   ProjectPathAlreadyRegisteredError,
 } from "../../errors.js";
-import type { StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
+import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;
@@ -307,10 +309,41 @@ export class ProjectRegistryOps {
     return { removed, kept };
   }
 
-  async unregister(input: { name: string }): Promise<{ removed: boolean }> {
-    const entry = this.deps.registry.findByName(input.name);
+  /**
+   * Remove the entry the address names. Idempotent: `removed: false` when
+   * nothing claims it. Addressable by `path` because `index-codebase <path>`
+   * registers WITHOUT an alias, and a name-only op left such an entry
+   * impossible to remove (bd tea-rags-mcp-usbb5).
+   */
+  async unregister(input: ProjectRegistryAddress): Promise<{ removed: boolean }> {
+    const entry = this.findEntry(input);
     if (!entry) return { removed: false };
     return { removed: this.deps.registry.remove(entry.collectionName) };
+  }
+
+  /**
+   * The entry an address names, or null when nothing claims it. Validates the
+   * address: exactly one of `name` / `path`.
+   *
+   * A path is looked up by `resolveCollection`'s rule, not a new one: the plain
+   * `resolve` spelling first (it is what a pre-canonicalization writer
+   * recorded), then the realpath'd spelling `register` and `index-codebase`
+   * record. Anything that finds the collection by path finds its entry here.
+   */
+  findEntry(address: ProjectRegistryAddress): CollectionEntry | null {
+    const { name, path } = address;
+    const hasName = typeof name === "string" && name.length > 0;
+    const hasPath = typeof path === "string" && path.length > 0;
+    if (hasName && hasPath) {
+      throw new InvalidParameterError("path", "name and path are mutually exclusive — pass exactly one");
+    }
+    if (hasName) return this.deps.registry.findByName(name);
+    if (!hasPath) throw new MissingArgumentError(["name or path"]);
+    const resolvedPath = resolve(path);
+    const direct = this.deps.registry.findByPath(resolvedPath);
+    if (direct) return direct;
+    const canonicalPath = validatePathSync(resolvedPath);
+    return canonicalPath === resolvedPath ? null : this.deps.registry.findByPath(canonicalPath);
   }
 
   /**

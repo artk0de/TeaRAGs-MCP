@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import type { App } from "../../../src/core/api/index.js";
 import { registerUnregisterProjectTool } from "../../../src/mcp/tools/unregister-project.js";
@@ -70,5 +71,23 @@ describe("registerUnregisterProjectTool — unregister_project", () => {
     };
     const parsed = JSON.parse(result.content[0].text) as { removed: boolean };
     expect(parsed.removed).toBe(false);
+  });
+
+  describe("path addressing (bd tea-rags-mcp-usbb5)", () => {
+    it("schema exposes path as an alternative to name", () => {
+      const { captured } = makeHarness();
+      const tool = captured.find((t) => t.name === "unregister_project")!;
+      const schema = z.object(tool.config.inputSchema as z.ZodRawShape);
+      expect(schema.safeParse({ path: "/abs/repo" }).success).toBe(true);
+      expect(schema.safeParse({ name: "alpha" }).success).toBe(true);
+      expect(tool.config.description).toMatch(/path/);
+    });
+
+    it("handler delegates a path-addressed request as { path }", async () => {
+      const { captured, app } = makeHarness();
+      const tool = captured.find((t) => t.name === "unregister_project")!;
+      await tool.handler({ path: "/abs/repo" }, {});
+      expect(app.unregisterProject).toHaveBeenCalledWith({ path: "/abs/repo" });
+    });
   });
 });

@@ -60,6 +60,7 @@ export type {
   AddDocumentsRequest,
   DeleteDocumentsRequest,
   // Registry DTOs
+  ProjectRegistryAddress,
   StaleProjectEntry,
   StaleProjectPruneReport,
   // Architecture diagnostics DTOs

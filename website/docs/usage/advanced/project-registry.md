@@ -165,13 +165,17 @@ Entries without a registered `name` show `name: null`.
 
 ### `unregister_project`
 
-Remove an alias by name. **Idempotent** — returns `removed: false` when the
-project was not registered. Does **not** delete the underlying Qdrant
-collection or any indexed chunks.
+Remove a registry entry by name or by path — pass exactly one. **Idempotent**
+— returns `removed: false` when the project was not registered. Does **not**
+delete the underlying Qdrant collection or any indexed chunks.
 
-| Parameter | Type     | Required | Description            |
-| --------- | -------- | -------- | ---------------------- |
-| `name`    | `string` | yes      | Project name to remove |
+| Parameter | Type     | Required        | Description                                                                              |
+| --------- | -------- | --------------- | ---------------------------------------------------------------------------------------- |
+| `name`    | `string` | one of the two  | Project name to remove                                                                   |
+| `path`    | `string` | one of the two  | Project root it was registered at. Reaches projects indexed by path that have no name    |
+
+Passing both, or neither, is rejected with `INPUT_INVALID_PARAMETER` /
+`INPUT_MISSING_ARGUMENT`.
 
 **Returns:**
 
@@ -305,6 +309,19 @@ field stays empty.
 tea-rags projects unregister --name shop-backend
 # Removed 'shop-backend' from registry. Note: Qdrant collection 'code_8f42a1b3' is still present.
 # Run 'tea-rags projects unregister --name shop-backend --purge' to remove it.
+```
+
+Address the project by `--name <alias>` or by `--path <project root>` —
+exactly one. `index-codebase <path>` registers a project **without** a name, so
+`--path` is the only way to reach such an entry; the path is resolved the same
+way registration resolves it (trailing slash, `..`, and symlinked spellings
+all match). A nameless entry is named by its path in the output, and the
+`--purge` hint repeats `--path`:
+
+```bash
+tea-rags projects unregister --path /src/shop-backend
+# Removed '/src/shop-backend' from registry. Note: Qdrant collection 'code_8f42a1b3' is still present.
+# Run 'tea-rags projects unregister --path /src/shop-backend --purge' to remove it.
 ```
 
 Idempotent. Exits 0 with the message `'<name>' was not registered` when the

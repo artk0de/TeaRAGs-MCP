@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import {
+  InvalidParameterError,
+  MissingArgumentError,
   PathDoesNotExistError,
   ProjectNameInvalidError,
   ProjectNameNotUniqueError,
@@ -211,6 +213,55 @@ describe("ProjectRegistryOps", () => {
     await ops.register({ path: realPath, name: "alpha" });
     const out2 = await ops.unregister({ name: "alpha" });
     expect(out2.removed).toBe(true);
+  });
+
+  describe("unregister() by path (bd tea-rags-mcp-usbb5)", () => {
+    /** What `index-codebase <path>` leaves behind: an entry with a path and no alias. */
+    async function recordNameless(registry: CollectionRegistry): Promise<string> {
+      const canonical = await validatePath(realPath);
+      const collectionName = resolveCollectionName(canonical);
+      registry.record({
+        collectionName,
+        path: canonical,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "http://q",
+        indexedAt: "",
+        teaRagsVersion: "",
+        chunksCount: 3,
+      });
+      return collectionName;
+    }
+
+    it("removes a nameless entry addressed by its path", async () => {
+      const registry = new CollectionRegistry(dir);
+      const byPath = new ProjectRegistryOps({ registry });
+      const collectionName = await recordNameless(registry);
+      expect(await byPath.unregister({ path: realPath })).toEqual({ removed: true });
+      expect(registry.get(collectionName)).toBeNull();
+    });
+
+    it("resolves the path the way registration does (trailing slash, symlinked spelling)", async () => {
+      const registry = new CollectionRegistry(dir);
+      const byPath = new ProjectRegistryOps({ registry });
+      const collectionName = await recordNameless(registry);
+      const link = join(dir, "link");
+      symlinkSync(realPath, link);
+      expect(byPath.findEntry({ path: `${link}/` })?.collectionName).toBe(collectionName);
+      expect(await byPath.unregister({ path: `${link}/` })).toEqual({ removed: true });
+    });
+
+    it("is idempotent for a path nothing claims", async () => {
+      expect(await ops.unregister({ path: join(dir, "nowhere") })).toEqual({ removed: false });
+    });
+
+    it("rejects both name and path", async () => {
+      await expect(ops.unregister({ name: "alpha", path: realPath })).rejects.toBeInstanceOf(InvalidParameterError);
+    });
+
+    it("rejects neither name nor path", async () => {
+      await expect(ops.unregister({})).rejects.toBeInstanceOf(MissingArgumentError);
+    });
   });
 
   describe("recoverFromQdrant", () => {
