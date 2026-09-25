@@ -28,7 +28,8 @@ function commitTouching(paths: string[], parents: string[] | undefined, body = "
     body,
   } as CommitInfo;
   // `undefined` models a legacy fixture / loose-cast shape with NO parents
-  // field at all — the walk must treat it as a root commit, never spawn.
+  // field at all — the walk must treat it as a root commit, never spawn a
+  // rev-parse.
   if (parents !== undefined) commit.parents = parents;
   return { commit, changedFiles: paths.map((path) => ({ path })) };
 }
@@ -105,14 +106,17 @@ describe("walkCommits parents-from-matrix (bd tea-rags-mcp-iqpuu)", () => {
     expect(result.get("test.ts")?.get("c1")?.commitCount).toBe(1);
   });
 
-  it("treats parents: [] as a root commit — nothing to diff, zero blob reads", async () => {
+  // A root commit is diffed against the empty tree (bd tea-rags-mcp-z8w16):
+  // only the commit blob is read, and the lines it holds land as added.
+  it("treats parents: [] as a root commit — commit blob only, credited as an add", async () => {
     const discovery = fakeDiscovery([commitTouching(["test.ts"], [])]);
     const blobReader = fakeBlobReader();
 
     const result = await walkOnce("test.ts", blobReader, discovery);
 
-    expect(blobReader.read).not.toHaveBeenCalled();
-    expect(result.get("test.ts")?.get("c1")?.commitCount).toBe(0);
+    expect(blobReader.read).toHaveBeenCalledTimes(1);
+    expect(blobReader.read).toHaveBeenCalledWith(COMMIT_SHA, "test.ts");
+    expect(result.get("test.ts")?.get("c1")?.commitCount).toBe(1);
   });
 
   it("treats an ABSENT parents field as a root commit (legacy fixture shape)", async () => {
@@ -121,7 +125,8 @@ describe("walkCommits parents-from-matrix (bd tea-rags-mcp-iqpuu)", () => {
 
     const result = await walkOnce("test.ts", blobReader, discovery);
 
-    expect(blobReader.read).not.toHaveBeenCalled();
-    expect(result.get("test.ts")?.get("c1")?.commitCount).toBe(0);
+    expect(blobReader.read).toHaveBeenCalledTimes(1);
+    expect(blobReader.read).toHaveBeenCalledWith(COMMIT_SHA, "test.ts");
+    expect(result.get("test.ts")?.get("c1")?.commitCount).toBe(1);
   });
 });

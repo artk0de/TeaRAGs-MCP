@@ -31,6 +31,8 @@ function mockBlobReads(): ReturnType<typeof vi.fn> {
 
 // ─── processCommitEntry — parent unresolvable, empty blobs, large file skip ────
 
+const FIFTY_LINES = `${Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join("\n")}\n`;
+
 describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -84,7 +86,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     }
   });
 
-  it("should skip commit when it carries no parents (e.g., loose fixture shape)", async () => {
+  it("diffs a commit that carries no parents (loose fixture shape) against the empty tree", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
@@ -99,7 +101,10 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     ]);
 
     // No `parents` field at all (loose cast) — the walk treats it as a root
-    // commit: nothing to diff against, no churn recorded, never a throw.
+    // commit (bd tea-rags-mcp-z8w16): only the commit side is read, and the
+    // lines it holds are credited as added, never a throw.
+    const read = mockBlobReads();
+    read.mockResolvedValueOnce(FIFTY_LINES);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -116,15 +121,13 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       undefined,
     );
 
-    // Should not throw; chunks should have 0 commits
     const overlay = result.get("test.ts");
-    expect(overlay).toBeDefined();
-    for (const [, o] of overlay!) {
-      expect(o.commitCount).toBe(0);
-    }
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(overlay?.get("c1")?.commitCount).toBe(1);
+    expect(overlay?.get("c2")?.commitCount).toBe(0);
   });
 
-  it("should skip commit when it has no parent (root commit)", async () => {
+  it("credits a root commit with the lines it adds, like `git log -L` (bd tea-rags-mcp-z8w16)", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
       {
         commit: {
@@ -139,7 +142,10 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       },
     ]);
 
-    // Root commit → parents [] → nothing to diff against → the walk skips it.
+    // Root commit → parents [] → diffed against the empty tree: lines 1-50 are
+    // added, so c1 is credited and c2 (51-100) is not.
+    const read = mockBlobReads();
+    read.mockResolvedValueOnce(FIFTY_LINES);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
@@ -157,10 +163,11 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     );
 
     const overlay = result.get("test.ts");
-    expect(overlay).toBeDefined();
-    for (const [, o] of overlay!) {
-      expect(o.commitCount).toBe(0);
-    }
+    // Only the commit side is read — a root commit has no parent blob.
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith("a".repeat(40), "test.ts");
+    expect(overlay?.get("c1")?.commitCount).toBe(1);
+    expect(overlay?.get("c2")?.commitCount).toBe(0);
   });
 
   it("should skip when both blobs are empty", async () => {
