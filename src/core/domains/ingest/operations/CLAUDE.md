@@ -29,6 +29,23 @@
   included) re-chunks them; a work set held only in memory would lose them, and
   a separate delete/upsert path would duplicate the ordering the modified path
   already gets right.
+- **Every early return of `ReindexPipeline#reindexChanges` owes the providers'
+  whole-collection work its finalize would have done.** The no-change and
+  deletion-only returns open no enrichment run, so no `finalizeSignals` fires;
+  unless their repair finalize ran to completion,
+  `ReindexPipeline#completeCollectionUnlessFinalized` asks
+  `EnrichmentCoordinator#runCollectionCompletion`, which calls each provider's
+  `completeCollection`. Every other run shape — first index, `--force`, a delta,
+  a scoped force that selected files, the recompute leg of `--force-enrichments`
+  — completes through the finalize; the sync leg of `--force-enrichments`, the
+  auto-updater and MCP `index_codebase` all ARE `reindexChanges`.
+  `tests/core/domains/ingest/operations/collection-completion-paths.test.ts`
+  pins one case per path. Why: codegraph's co-change graph is a function of HEAD
+  and the working tree's deletions, both of which exactly these runs move — a
+  committed `git rm` took the deletion-only return and left the deleted file's
+  pairs and the old HEAD standing (bd tea-rags-mcp-l1ot.2). The ask is cheap
+  when nothing moved (two git spawns and one meta read) and must stay so: every
+  quiet reindex pays it.
 - **Finalize the alias BEFORE storing the completion marker, and signal failure
   by THROWING.** The order in `IndexPipeline` is fixed: `#finalizeAlias` →
   `storeIndexingMarker(…, true, …)` → `#saveSnapshot` → `#recordRegistryEntry`

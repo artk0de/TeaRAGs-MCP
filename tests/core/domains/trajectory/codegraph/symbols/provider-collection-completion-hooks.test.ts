@@ -98,3 +98,62 @@ describe("CodegraphEnrichmentProvider collection-completion hooks (bd tea-rags-m
     stderr.mockRestore();
   });
 });
+
+/**
+ * `completeCollection` (bd tea-rags-mcp-l1ot.2) — the same hooks, reached by a
+ * reindex that finalized nothing (a deletion-only run, a run with no file
+ * change). The delete-only fast path never opens an enrichment run, so without
+ * this seam the co-change graph kept a deleted file's pairs.
+ */
+describe("CodegraphEnrichmentProvider.completeCollection (bd tea-rags-mcp-l1ot.2)", () => {
+  it("runs every hook once with the project root and the collection's graph DB", async () => {
+    const graphDb = stubGraphDb();
+    const first = recordingHook("first");
+    const second = recordingHook("second");
+
+    await makeProvider(graphDb, [first, second]).completeCollection("/repo/project", {
+      collectionName: "code_x_v1" as never,
+    });
+
+    expect(first.calls).toEqual([{ projectRoot: "/repo/project", graphDb }]);
+    expect(second.calls).toHaveLength(1);
+  });
+
+  it("opens no graph store when the family registers no hook (git history off)", async () => {
+    const acquireWrite = vi.fn();
+    const provider = new CodegraphEnrichmentProvider({
+      pool: { acquireWrite } as never,
+      ...buildTestCodegraphDeps(new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]])),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+      collectionCompletionHooks: [],
+    });
+
+    await provider.completeCollection("/repo", { collectionName: "code_x_v1" as never });
+
+    expect(acquireWrite).not.toHaveBeenCalled();
+  });
+
+  it("logs a failing hook and resolves", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const failing: CodegraphCollectionCompletionHook = {
+      name: "failing",
+      onCollectionComplete: async () => {
+        throw new Error("git unavailable");
+      },
+    };
+    const after = recordingHook();
+
+    try {
+      await expect(
+        makeProvider(stubGraphDb(), [failing, after]).completeCollection("/repo", {
+          collectionName: "code_x_v1" as never,
+        }),
+      ).resolves.toBeUndefined();
+      expect(after.calls).toHaveLength(1);
+      expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toContain("git unavailable");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+});

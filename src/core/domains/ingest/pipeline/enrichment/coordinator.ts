@@ -457,6 +457,30 @@ export class EnrichmentCoordinator {
   }
 
   /**
+   * The whole-collection work a finalize ends with, for a reindex that
+   * finalized nothing (bd tea-rags-mcp-l1ot.2) — `ReindexPipeline`'s
+   * deletion-only and no-change returns, unless their repair finalize ran.
+   * Codegraph rebuilds its co-change sub-graph here; without it a committed
+   * deletion kept the deleted file's pairs until some later run chunked a file.
+   *
+   * Every declaring provider is asked once, in order, on its main-thread
+   * instance (like `hasStaleDerivedState`). One that throws is logged and never
+   * fails the reindex, and the next one still runs.
+   */
+  async runCollectionCompletion(absolutePath: string, collectionName: PhysicalCollectionName): Promise<void> {
+    for (const provider of this.providers) {
+      if (!provider.completeCollection) continue;
+      try {
+        await provider.completeCollection(provider.resolveRoot(absolutePath), { collectionName });
+      } catch (err) {
+        process.stderr.write(
+          `[tea-rags] ${provider.key} collection completion failed: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
+  }
+
+  /**
    * Drive the completion sequence for a pass that never opened a chunk pipeline
    * (bd tea-rags-mcp-gvw8h).
    *

@@ -701,6 +701,17 @@ export interface EnrichmentProvider {
    */
   hasStaleDerivedState?: (collectionName?: PhysicalCollectionName) => Promise<boolean>;
   /**
+   * Optional — the whole-collection work a provider's finalize ends with, for a
+   * reindex that finalized nothing (bd tea-rags-mcp-l1ot.2): a deletion-only
+   * run, or one with no file to chunk. Such a run opens no enrichment run, so
+   * `finalizeSignals` never fires; `EnrichmentCoordinator#runCollectionCompletion`
+   * asks here instead, once, on the main-thread instance. `root` is this
+   * provider's `resolveRoot` of the project. Must be best-effort (log, never
+   * throw) and cheap when there is nothing to redo — every such run pays it.
+   * Absent ⇒ the provider's finalize owns no whole-collection work.
+   */
+  completeCollection?: (root: string, options: { collectionName: PhysicalCollectionName }) => Promise<void>;
+  /**
    * Per-file enrichment policy. The coordinator classifies each file once
    * (FileClassification) and asks the provider how much enrichment it wants.
    * Absent ⇒ "full" (backward-compatible: existing providers enrich
