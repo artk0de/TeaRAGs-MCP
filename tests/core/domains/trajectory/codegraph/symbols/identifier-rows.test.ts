@@ -577,3 +577,123 @@ describe("buildIdentifierRows — names shared with Object.prototype", () => {
     ]);
   });
 });
+
+// Live taxdome: byType for GrowthBilling::Subscription listed `return` rows named
+// `initialize`. A constructor's "return" is its own class, not a naming choice.
+describe("buildIdentifierRows — constructors publish no return row", () => {
+  const cases: readonly { language: string; symbolId: string }[] = [
+    { language: "ruby", symbolId: "GrowthBilling::Subscription#initialize" },
+    { language: "typescript", symbolId: "Subscription#constructor" },
+    { language: "javascript", symbolId: "Subscription#constructor" },
+    { language: "python", symbolId: "Subscription#__init__" },
+    { language: "swift", symbolId: "Subscription#init" },
+    { language: "swift", symbolId: "Billing.Subscription.init" },
+    { language: "java", symbolId: "billing.Subscription#Subscription" },
+  ];
+
+  it.each(cases)("$language $symbolId: no row from any return producer", ({ language, symbolId }) => {
+    const member = symbolId.slice(Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf(".")) + 1);
+    const rows = buildIdentifierRows(
+      extraction({
+        language,
+        chunks: [chunk({ symbolId, startLine: 3 })],
+        identifierDeclarations: [
+          decl({ name: member, kind: "return", ownerSymbolId: symbolId, line: 3, typeName: "Subscription" }),
+        ],
+        structuredReturnTypes: { [symbolId]: { form: "instance", name: "Subscription" } },
+        functionReturnTypes: { [member]: "Subscription" },
+      }),
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("a constructor's params and locals still produce rows", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "Subscription#initialize" })],
+        identifierDeclarations: [decl({ name: "plan", kind: "param", ownerSymbolId: "Subscription#initialize" })],
+        structuredReturnTypes: { "Subscription#initialize": { form: "instance", name: "Subscription" } },
+      }),
+    );
+    expect(rows).toEqual([{ ownerSymbolId: "Subscription#initialize", kind: "param", name: "plan", line: 5 }]);
+  });
+
+  it("a constructor name of ANOTHER language is an ordinary method, and Rust `new` keeps its return row", () => {
+    const tsInitialize = buildIdentifierRows(
+      extraction({
+        language: "typescript",
+        chunks: [chunk({ symbolId: "Boot#initialize", startLine: 2 })],
+        structuredReturnTypes: { "Boot#initialize": { form: "instance", name: "Session" } },
+      }),
+    );
+    expect(tsInitialize.map((r) => [r.kind, r.name, r.typeName])).toEqual([["return", "initialize", "Session"]]);
+
+    const rustNew = buildIdentifierRows(
+      extraction({
+        language: "rust",
+        chunks: [chunk({ symbolId: "Subscription.new", startLine: 2 })],
+        structuredReturnTypes: { "Subscription.new": { form: "instance", name: "Subscription" } },
+      }),
+    );
+    expect(rustNew.map((r) => [r.kind, r.name, r.typeName])).toEqual([["return", "new", "Subscription"]]);
+  });
+});
+
+// Known Defect 4 (live taxdome): the `binding` source typed local `matching_root`
+// as `APP_ROOTS_FOR_DOMAIN_LOOKUP`. A value constant is not a type.
+describe("buildIdentifierRows — a SCREAMING_SNAKE constant is never a type", () => {
+  it("leaves a binding-, field- and finder-typed row untyped when the type is a value constant", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "Lookup#call",
+            scope: ["Lookup"],
+            localBindings: { matching_root: [{ line: 5, type: "APP_ROOTS_FOR_DOMAIN_LOOKUP" }] },
+            calls: [call({ member: "find", receiver: "Config::DEFAULT_ROOTS", startLine: 6 })],
+          }),
+        ],
+        ivarTypes: { Lookup: { "@root": "Config::DEFAULT_ROOT_PATH" } },
+        identifierDeclarations: [
+          decl({ name: "matching_root", ownerSymbolId: "Lookup#call" }),
+          decl({ name: "@root", kind: "field", ownerSymbolId: "Lookup#call" }),
+          decl({
+            name: "fallback",
+            ownerSymbolId: "Lookup#call",
+            line: 6,
+            boundCallee: { member: "find", receiver: "Config::DEFAULT_ROOTS" },
+          }),
+        ],
+      }),
+      RUBY_FINDERS,
+    );
+    expect(rows.map((r) => [r.name, r.typeName, r.typeSource])).toEqual([
+      ["matching_root", undefined, undefined],
+      ["@root", undefined, undefined],
+      ["fallback", undefined, undefined],
+    ]);
+  });
+
+  it("publishes no channel return row typed by a value constant", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "Lookup#roots" }), chunk({ symbolId: "Lookup#limit" })],
+        structuredReturnTypes: { "Lookup#roots": { form: "instance", name: "APP_ROOTS" } },
+        functionReturnTypes: { limit: "MAX_LIMIT" },
+      }),
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("keeps acronym and namespaced acronym types", () => {
+    for (const type of ["URI", "IO", "HTTP", "API::V1", "Net::HTTP", "X"]) {
+      const rows = buildIdentifierRows(
+        extraction({
+          chunks: [chunk({ symbolId: "ProcessEvent#call", localBindings: { v: [{ line: 5, type }] } })],
+          identifierDeclarations: [decl({ name: "v" })],
+        }),
+      );
+      expect(rows[0], type).toMatchObject({ typeName: type, typeSource: "binding" });
+    }
+  });
+});

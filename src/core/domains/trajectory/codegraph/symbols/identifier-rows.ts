@@ -21,6 +21,11 @@
  * written annotation), then `structuredReturnTypes`, then the flat
  * `functionReturnTypes` channel. Every `return` row persists as `return-type`.
  *
+ * Two types are never persisted. A constructor publishes no `return` row: what
+ * it "returns" is its own class, not a naming choice, and the row would pollute
+ * every return-kind vocabulary. A value constant (`APP_ROOTS_FOR_LOOKUP`) is
+ * never a type: a stage that answers with one leaves the row untyped.
+ *
  * Invariant: every row is a declaration or a declared return type. A name a
  * naming convention could type but nothing declares yields no row, and no stage
  * reads a convention-derived type — a lexicon fed by its own convention would
@@ -63,6 +68,53 @@ export function collectIdentifierFinderVocabulary(
 
 /** A constant path as written: `Doc`, `Tax::Doc`, `::Tax::Doc`. A call chain is not one. */
 const CONSTANT_RECEIVER = /^(?:::)?[A-Z]\w*(?:::[A-Z]\w*)*$/;
+
+/**
+ * Constructor member names per language, for the languages whose constructor is
+ * a NAMED member. The extraction carries no structural "is a constructor" fact
+ * on a chunk, so the name decides — keyed by language, because the same name is
+ * an ordinary method elsewhere (a TypeScript `initialize()` returns what it
+ * declares). A constructor named like its class (Java `Subscription#Subscription`)
+ * is recognized structurally by {@link isConstructorSymbol} instead. Rust `new`
+ * is a convention, not a constructor, and keeps its return row.
+ */
+const CONSTRUCTOR_MEMBER_NAMES: Readonly<Record<string, ReadonlySet<string>>> = {
+  ruby: new Set(["initialize"]),
+  typescript: new Set(["constructor"]),
+  javascript: new Set(["constructor"]),
+  python: new Set(["__init__"]),
+  swift: new Set(["init"]),
+};
+
+/**
+ * True when `symbolId` is a constructor of `language`: its member is the
+ * language's constructor name, or it is an instance member named like its
+ * enclosing type (`billing.Subscription#Subscription`).
+ */
+function isConstructorSymbol(language: string, symbolId: string): boolean {
+  const namedConstructors = Object.hasOwn(CONSTRUCTOR_MEMBER_NAMES, language)
+    ? CONSTRUCTOR_MEMBER_NAMES[language]
+    : undefined;
+  if (namedConstructors?.has(memberNameOf(symbolId))) return true;
+  const hash = symbolId.lastIndexOf("#");
+  return hash > 0 && symbolId.slice(hash + 1) === lastScopeSegment(symbolId.slice(0, hash));
+}
+
+/**
+ * A value constant's spelling: SCREAMING_SNAKE, capitals and digits with at
+ * least one underscore. An acronym type (`URI`, `HTTP`, `API::V1`) has no
+ * underscore and stays a type. Checked locally rather than through the language
+ * descriptor's `constant` casing: the row builder receives only the finder
+ * vocabulary, and SCREAMING_SNAKE is the constant casing of every language that
+ * publishes identifier declarations.
+ */
+const SCREAMING_SNAKE = /^_*[A-Z][A-Z0-9]*(?:_+[A-Z0-9]+)+_*$/;
+
+/** True when the type name's last segment is a value constant, not a type. */
+function isValueConstantName(typeName: string): boolean {
+  const segments = typeName.split(/::|[./]/);
+  return SCREAMING_SNAKE.test(segments[segments.length - 1] ?? typeName);
+}
 
 /** Drop the root-namespace marker: `::System` and `System` name one type. */
 function normalizeTypeName(typeName: string): string {
@@ -198,7 +250,7 @@ function declarationRow(
   const chunk = ownerChunkOf(chunksBySymbol.get(decl.ownerSymbolId), decl.line);
   const row: IdentifierRow = { ownerSymbolId: decl.ownerSymbolId, kind: decl.kind, name: decl.name, line: decl.line };
   const type = recoveredType(extraction, chunk, decl, finders);
-  if (type) {
+  if (type && !isValueConstantName(type.typeName)) {
     row.typeName = normalizeTypeName(type.typeName);
     row.typeSource = type.typeSource;
   }
@@ -230,7 +282,7 @@ function structuredReturnRows(extraction: FileExtraction, typedOwners: Set<strin
   for (const chunk of extraction.chunks) {
     if (typedOwners.has(chunk.symbolId) || !Object.hasOwn(returnTypes, chunk.symbolId)) continue;
     const typeName = singleNominalName(returnTypes[chunk.symbolId]);
-    if (!typeName) continue;
+    if (!typeName || isValueConstantName(typeName)) continue;
     typedOwners.add(chunk.symbolId);
     rows.push(channelReturnRow(chunk, typeName));
   }
@@ -274,9 +326,10 @@ function flatReturnRows(extraction: FileExtraction, typedOwners: Set<string>): I
     const candidates = chunksByMember.get(flatKeyMember(key));
     if (candidates?.length !== 1 || recorded === "") continue;
     const [chunk] = candidates;
-    if (typedOwners.has(chunk.symbolId)) continue;
+    const typeName = flatTypeName(recorded);
+    if (typedOwners.has(chunk.symbolId) || isValueConstantName(typeName)) continue;
     typedOwners.add(chunk.symbolId);
-    rows.push(channelReturnRow(chunk, flatTypeName(recorded)));
+    rows.push(channelReturnRow(chunk, typeName));
   }
   return rows;
 }
@@ -305,5 +358,6 @@ export function buildIdentifierRows(
     declarationRow(extraction, chunksBySymbol, decl, finders),
   );
   const typedOwners = new Set(rows.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
-  return [...rows, ...structuredReturnRows(extraction, typedOwners), ...flatReturnRows(extraction, typedOwners)];
+  const all = [...rows, ...structuredReturnRows(extraction, typedOwners), ...flatReturnRows(extraction, typedOwners)];
+  return all.filter((row) => row.kind !== "return" || !isConstructorSymbol(extraction.language, row.ownerSymbolId));
 }
