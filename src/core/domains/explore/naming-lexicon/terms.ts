@@ -7,7 +7,7 @@
  */
 import { singularizeIdentifierWord, splitIdentifierWords } from "./casing.js";
 
-/** One concept term: a snake n-gram, its summed holder score, and up to three holders (best first). */
+/** One concept term: a snake n-gram, its summed holder score, and up to three distinct holder symbols (best first, no `#partN`). */
 export interface ConceptTerm {
   term: string;
   score: number;
@@ -33,9 +33,14 @@ function fileStemWords(relativePath: string): string[] {
   return splitIdentifierWords(fileName.replace(/\.[^.]*$/, ""));
 }
 
+/** The symbol a chunk id windows: the id without the chunker's `#partN` split suffix. */
+function symbolOfChunkId(symbolId: string): string {
+  return symbolId.replace(CHUNK_PART_SUFFIX, "");
+}
+
 /** Words of the symbol id without the chunker's `#partN` split suffix. */
 function symbolWords(symbolId: string): string[] {
-  return splitIdentifierWords(symbolId.replace(CHUNK_PART_SUFFIX, ""));
+  return splitIdentifierWords(symbolOfChunkId(symbolId));
 }
 
 function ngrams(words: readonly string[]): string[] {
@@ -80,10 +85,11 @@ export function extractConceptTerms(holders: readonly ConceptTermHolder[], limit
     .map(([term, entry]) => ({
       term,
       score: entry.score,
-      holders: [...entry.holders]
-        .sort((a, b) => b.score - a.score)
-        .slice(0, MAX_TERM_HOLDERS)
-        .map((holder) => holder.symbolId),
+      holders: [
+        ...new Set(
+          [...entry.holders].sort((a, b) => b.score - a.score).map((holder) => symbolOfChunkId(holder.symbolId)),
+        ),
+      ].slice(0, MAX_TERM_HOLDERS),
     }))
     .sort((a, b) => b.score - a.score || wordCount(b.term) - wordCount(a.term) || a.term.localeCompare(b.term))
     .slice(0, limit);

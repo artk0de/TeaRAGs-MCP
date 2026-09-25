@@ -632,7 +632,15 @@ describe("OntologyReportOps#report — live false positives", () => {
             typeName: "ChunkItem",
             names: [
               { name: "items", n: 12, example: at("src/a.ts") },
-              { name: "fileItems", n: 2, example: at("src/c.ts") },
+              { name: "entries", n: 2, example: at("src/c.ts") },
+            ],
+          }),
+          // A qualifier before the type's tail is still TAIL: not weaker than the bare tail.
+          group({
+            typeName: "ChunkItem",
+            names: [
+              { name: "items", n: 12, example: at("src/a.ts") },
+              { name: "fileItems", n: 2, example: at("src/d.ts") },
             ],
           }),
         ],
@@ -640,7 +648,7 @@ describe("OntologyReportOps#report — live false positives", () => {
     );
     const { outliers } = await ops.report({ collection: "code_x", sections: ["outliers"] });
     expect(outliers?.map((o) => [o.type, o.name, o.shape, o.dominant.shape])).toEqual([
-      ["ChunkItem", "fileItems", "FREE", "TAIL"],
+      ["ChunkItem", "entries", "FREE", "TAIL"],
     ]);
   });
 

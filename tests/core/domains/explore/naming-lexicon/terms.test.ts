@@ -120,6 +120,21 @@ describe("extractConceptTerms", () => {
       const terms = extractConceptTerms(STATS_HOLDERS, 100).map((t) => t.term);
       expect(terms.filter((term) => /part\d/.test(term))).toEqual([]);
     });
+
+    it("names a holder by its symbol, not by a #partN window, once per term", () => {
+      const holders = [
+        { symbolId: "computePerSignalStats#part1", relativePath: "src/a.ts", score: 3.0 },
+        { symbolId: "computePerSignalStats#part2", relativePath: "src/a.ts", score: 2.9 },
+        { symbolId: "IndexMetricsQuery#buildSignalMetrics#part1", relativePath: "src/b.ts", score: 2.8 },
+        { symbolId: "CollectionSignalStats", relativePath: "src/c.ts", score: 2.7 },
+      ];
+      const signal = extractConceptTerms(holders, 100).find((t) => t.term === "signal");
+      expect(signal?.holders).toEqual([
+        "computePerSignalStats",
+        "IndexMetricsQuery#buildSignalMetrics",
+        "CollectionSignalStats",
+      ]);
+    });
   });
 
   it("returns nothing for no holders", () => {

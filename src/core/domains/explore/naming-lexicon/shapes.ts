@@ -24,7 +24,8 @@ import {
  *   (`tax_automation_document`, `tax_automation_documents`).
  * - `QUALIFIED` — the type's words plus a qualifier before or after them
  *   (`tax_automation_document_ignored`, `source_tax_automation_document`).
- * - `TAIL` — a proper suffix of the type's words (`document`).
+ * - `TAIL` — a proper suffix of the type's words, alone or after the name's own
+ *   qualifier words (`document`, `source_document`).
  * - `VERB_TYPE` — on a `return`: one verb word plus the type's words
  *   (`find_tax_automation_document!`).
  * - `CALLEE_DERIVED` — a `local` / `field` named after the member it is bound
@@ -134,7 +135,21 @@ function typeShape(
   if (extra < 0 && nameWords.length > 0 && matchesTypeWords(nameWords, typeWords.slice(-nameWords.length))) {
     return "TAIL";
   }
+  if (endsWithQualifiedTypeTail(nameWords, typeWords)) return "TAIL";
   return undefined;
+}
+
+/**
+ * True when the name's last `k` words are a proper suffix of the type's words
+ * (`1 <= k < typeWords.length`, longest first) behind at least one leading
+ * qualifier word of the name's own: `childNode : AstNode`,
+ * `deferredChunkHandoff : CodegraphChunkHandoff`.
+ */
+function endsWithQualifiedTypeTail(nameWords: readonly string[], typeWords: readonly string[]): boolean {
+  for (let k = Math.min(typeWords.length - 1, nameWords.length - 1); k >= 1; k--) {
+    if (matchesTypeWords(nameWords.slice(-k), typeWords.slice(-k))) return true;
+  }
+  return false;
 }
 
 /**

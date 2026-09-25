@@ -22,6 +22,7 @@ const CASES: {
   qualifiedSuffix: string;
   qualifiedPrefix: string;
   tail: string;
+  qualifiedTail: string;
   verbType: string;
 }[] = [
   {
@@ -31,6 +32,7 @@ const CASES: {
     qualifiedSuffix: "tax_automation_document_ignored",
     qualifiedPrefix: "source_tax_automation_document",
     tail: "document",
+    qualifiedTail: "source_document",
     verbType: "find_tax_automation_document!",
   },
   {
@@ -40,6 +42,7 @@ const CASES: {
     qualifiedSuffix: "taxAutomationDocumentIgnored",
     qualifiedPrefix: "sourceTaxAutomationDocument",
     tail: "document",
+    qualifiedTail: "sourceDocument",
     verbType: "findTaxAutomationDocument",
   },
 ];
@@ -67,6 +70,11 @@ describe.each(CASES)("classifyNamingShape ($casing)", (c) => {
     expect(typed(`${c.tail}s`)).toBe("TAIL");
   });
 
+  it("TAIL — the name's own qualifier plus a proper suffix of the type's words", () => {
+    expect(typed(c.qualifiedTail)).toBe("TAIL");
+    expect(typed(`${c.qualifiedTail}s`)).toBe("TAIL");
+  });
+
   it("VERB_TYPE — a verb prefix plus the type, on a return", () => {
     expect(typed(c.verbType, "return")).toBe("VERB_TYPE");
   });
@@ -77,6 +85,36 @@ describe.each(CASES)("classifyNamingShape ($casing)", (c) => {
 
   it("FREE — a role name", () => {
     expect(typed("row")).toBe("FREE");
+  });
+});
+
+describe("classifyNamingShape — qualifier plus a proper suffix of the type's words", () => {
+  const camel = (name: string, typeName: string) =>
+    classifyNamingShape({ name, typeName, kind: "local", casing: "camel" });
+
+  it.each([
+    ["childNode", "AstNode"],
+    ["semanticNode", "AstNode"],
+    ["shardTree", "MerkleTree"],
+    ["fileItems", "ChunkItem"],
+    ["dbNames", "PhysicalCollectionName"],
+    ["deferredChunkHandoff", "CodegraphChunkHandoff"],
+  ])("%s : %s is TAIL", (name, typeName) => {
+    expect(camel(name, typeName)).toBe("TAIL");
+  });
+
+  it.each([
+    ["targetCollection", "PhysicalCollectionName"],
+    ["allCollections", "PhysicalCollectionName"],
+    ["row", "AstNode"],
+    ["row", "CodegraphChunkHandoff"],
+  ])("%s : %s is FREE — no proper suffix of the type's words ends the name", (name, typeName) => {
+    expect(camel(name, typeName)).toBe("FREE");
+  });
+
+  it("a name spelling the full type words stays EXACT / QUALIFIED", () => {
+    expect(camel("astNode", "AstNode")).toBe("EXACT");
+    expect(camel("childAstNode", "AstNode")).toBe("QUALIFIED");
   });
 });
 
