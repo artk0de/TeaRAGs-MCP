@@ -11,10 +11,13 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../cont
  *   Similarity stays at 0.2 so a broad query still ranks by mass.
  *
  * `signalLevel: "file"` — the score is about the file, not the chunk that
- * happened to match. The overlay then carries the numbers that decide the
- * verdict: a dominant class holding most of the file's members is a god
- * CLASS, a spread of top-level symbols with no dominant class is a god
- * MODULE. The preset name tracks the ranking granularity, not the verdict.
+ * happened to match. The overlay carries file mass only (`moduleLines`,
+ * `moduleMethodCount`): a file-level result never emits a chunk bucket, so a
+ * chunk mask here would be dead. Class-vs-module attribution is the
+ * consumer's job, done through the file outline — a dominant class holding
+ * most of the file's members is a god CLASS, a spread of top-level symbols
+ * with no dominant class is a god MODULE. The preset name tracks the ranking
+ * granularity, not the verdict.
  *
  * Call-graph signals are deliberately absent: fanIn and pageRank measure
  * connectivity, not mass, and this preset must work on collections with no
@@ -32,6 +35,5 @@ export class GodModulePreset implements RerankPreset {
   };
   readonly overlayMask: OverlayMask = {
     file: ["moduleLines", "moduleMethodCount"],
-    chunk: ["memberCount"],
   };
 }

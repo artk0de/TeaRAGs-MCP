@@ -50,6 +50,7 @@ import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
+import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 import {
   CONE_MAX_DEFAULT,
   resolveConstant,
@@ -174,6 +175,17 @@ export class RubyCallResolver implements CallResolver {
    */
   targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
     return this.externalClassifier.targetsCoreAmbiguousMember(call, ctx);
+  }
+
+  /**
+   * Whether a RUBY file declares the member — the miss classifier's denominator
+   * question (bd tea-rags-mcp-nbf8q). Every pass of this chain reaches the table
+   * through `lookupRubySymbolsByShortName`, so a namesake only a `.ts` / `.py`
+   * file declares is no edge this call can have; the runner's unfiltered
+   * fallback charged it as `missWithInProjectDef` anyway.
+   */
+  hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
+    return lookupRubySymbolsByShortName(ctx, call.member).length > 0;
   }
 
   /**

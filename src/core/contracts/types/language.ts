@@ -22,6 +22,7 @@ import type {
   GraphEdges,
   NamedSymbol,
   RelPath,
+  SymbolDefinition,
   SymbolResolutionPassPlan,
   SymbolResolutionTarget,
 } from "./codegraph.js";
@@ -102,20 +103,48 @@ export interface DispatchResolverComponent {
 }
 
 /**
- * The two language-DATA injections the neutral untyped-dispatch narrowing
- * cascade (`buildDispatchCascade`, `domains/language/kernel/dispatch-cascade.ts`)
+ * A language's ACCESS rule, asked by `VisibilityNarrower` (bd
+ * tea-rags-mcp-jwjyr.1): can THIS call site reach a candidate that declares
+ * THIS `visibility`? `visibility` is the declared access level every walker maps
+ * onto one three-value union, but what `private` MEANS differs per language —
+ * unreachable through any explicit receiver (Ruby), reachable only from inside
+ * the declaring class (TypeScript, Java, Python name mangling), from the same
+ * file (Swift), package (Go) or module tree (Rust) — so the kernel cannot
+ * answer it and each language injects its own rule.
+ *
+ * Contract: return `false` ONLY on PROVEN inaccessibility. Missing evidence (no
+ * caller scope, no declaring class) ⇒ `true`. The narrower never asks about a
+ * candidate that records no `visibility`.
+ */
+export interface VisibilityAccessPolicy {
+  canReach: (call: CallRef, candidate: SymbolDefinition, ctx: CallContext) => boolean;
+}
+
+/**
+ * The language-DATA injections the neutral untyped-dispatch narrowing cascade
+ * (`buildDispatchCascade`, `domains/language/kernel/dispatch-cascade.ts`)
  * accepts (bd tea-rags-mcp-w205u). The cascade owns the ORDER — the neutral part
- * — and a language contributes only the two facts no engine can know: which
- * members are pure duck/runtime vocabulary, and how a literal receiver's source
- * text maps to a core type. A language that supplies neither gets the signature
- * half of the cascade, which is inert rather than wrong when its walker records
- * no `visibility` / `acceptsBlock`.
+ * — and a language contributes only the facts no engine can know: which members
+ * are pure duck/runtime vocabulary, how a literal receiver's source text maps to
+ * a core type, and what its declared `visibility` lets a call site reach. A
+ * language that supplies none gets the signature half of the cascade, which is
+ * inert rather than wrong when its walker records no `visibility` /
+ * `acceptsBlock`.
  */
 export interface DispatchCascadeOptions {
   /** Members that are never short-name resolvable to an in-project target. */
   readonly duckVocabulary?: ReadonlySet<string>;
   /** Literal receiver source text → its core type name, or `null`. */
   readonly classifyLiteralReceiver?: (receiver: string | null) => string | null;
+  /**
+   * The language's access rule for a candidate's declared `visibility`. Absent
+   * ⇒ `VisibilityNarrower`'s default, the EXPLICIT-RECEIVER rule (a `private`
+   * candidate is never reachable), which is right only for a language whose
+   * dispatch cascade sees explicit receivers exclusively and whose `private`
+   * forbids them — Ruby. A language that records `visibility` with any other
+   * meaning MUST inject its own rule, or its in-class `this.priv()` edges drop.
+   */
+  readonly visibilityAccess?: VisibilityAccessPolicy;
 }
 
 /**
@@ -130,6 +159,26 @@ export interface NarrowedFanoutOptions {
   readonly cap?: number;
   /** Edge kind carried by every emitted edge. Default `"dynamic"`. */
   readonly edgeKind?: DispatchEdge["edgeKind"];
+  /**
+   * The definitions this language's candidates are drawn from, so the policy
+   * cap derives from THIS language's p99 rather than the polyglot corpus's
+   * (bd tea-rags-mcp-nbf8q). Absent ⇒ the corpus policy.
+   */
+  readonly population?: DispatchFanoutPopulation;
+}
+
+/**
+ * The definition population a dispatch fan-out policy is computed over (bd
+ * tea-rags-mcp-nbf8q). `ownsPath` MUST be the predicate the caller filters its
+ * candidate lookup with — the p99 then describes exactly the population the
+ * survivors come from. `family` is the memo key and names the population, so
+ * one family id must always travel with one predicate; a family, not a single
+ * language, because a family that resolves across its members (TypeScript and
+ * JavaScript) draws candidates from all of them.
+ */
+export interface DispatchFanoutPopulation {
+  readonly family: string;
+  readonly ownsPath: (relPath: RelPath) => boolean;
 }
 
 /**
@@ -317,6 +366,11 @@ export interface CollectedSymbolRange {
   startLine: number;
   endLine: number;
   scope: string[];
+  /**
+   * The caller scope of this declaration's OWN calls, present only when its
+   * `nameOf` result set `opensSelfScope`. See `ChunkExtraction.bodyScope`.
+   */
+  bodyScope?: string[];
 }
 
 /**
@@ -357,8 +411,21 @@ export type CollectSymbolsFn = (
 export interface LanguageKernel {
   /** Lazily load the tree-sitter language module for this language. */
   loadModule: () => Promise<TreeSitterLanguageModule | null>;
-  /** Extract the grammar from a loaded module when nested (e.g. `{ typescript, tsx }`). */
-  extractLanguage?: (mod: TreeSitterLanguageModule) => unknown;
+  /**
+   * npm package `loadModule` imports the grammar from (`tree-sitter-ruby`, …).
+   * `LanguageFactory.create` checks it resolves before handing the provider
+   * out, so a missing grammar is a typed error naming the package rather than
+   * a raw resolver trace (bd tea-rags-mcp-e2pu7). Absent for a language that
+   * loads no grammar.
+   */
+  grammarPackage?: string;
+  /**
+   * Extract the grammar from a loaded module when nested (e.g. `{ typescript, tsx }`).
+   * `extension` (with the dot) selects a per-extension grammar where one module
+   * ships several — the codegraph walk passes it (`.tsx` → the tsx grammar); the
+   * chunker omits it and gets the language's default grammar.
+   */
+  extractLanguage?: (mod: TreeSitterLanguageModule, extension?: string) => unknown;
   /**
    * Namespace separator joining nested scope names: `"::"` (Ruby/Rust), `"."`
    * (TS/JS/Python/Go/Java). Default `"."`. Applies to namespaces / nested
@@ -780,9 +847,20 @@ export interface LanguageFactoryDescriptor {
  * nothing to name — `nil.foo` reaches no in-project definition, so the RESOLVER
  * drops nil arms before dispatch while the fact keeps stating them. Build and
  * compare these through `domains/language/kernel/type-ref.ts`, never by hand.
+ *
+ * `args` are a nominal's generic ARGUMENTS, positionally — `Set<Request>` is
+ * `{ form: "instance", name: "Set", args: [instance(Request)] }`. Optional and
+ * set only by a resolver that substitutes generic parameters (Swift's SDK
+ * substrate, bd tea-rags-mcp-y99pg.25); absent means "unknown", never
+ * "none", so a consumer that ignores it reads the nominal exactly as before.
+ * `upperBound` marks a type known only as a BOUND of the value's type — a
+ * generic parameter nothing binds, read as its constraint (`Failure` as
+ * `Error`): members found on it are callable, but the value's own type may
+ * declare members it does not, so it proves nothing about what the value
+ * CANNOT reach.
  */
 export type TypeRef =
-  | { form: "class" | "instance"; name: string }
+  | { form: "class" | "instance"; name: string; args?: readonly TypeRef[]; upperBound?: true }
   | { form: "union"; members: TypeRef[] }
   | { form: "container"; element: TypeRef }
   | { form: "nil" };

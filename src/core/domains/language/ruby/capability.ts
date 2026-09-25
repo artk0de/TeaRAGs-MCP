@@ -31,7 +31,22 @@ export const capability: LanguageCapability = {
   // file's pass-1 slice and hydrated at the barrier. Rows written earlier do not carry them,
   // and only a re-walk can backfill them, so the recompute is what makes incremental runs see
   // the overrides.
-  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
+  // walker 5: a `Const.call` entry whose delegated `#call` is overridden below the
+  // delegating class method now lands on that override, and a `super`-delegating
+  // override inherits its ancestor template's hook (persisted as `superDelegates` in
+  // the pass-1 slice). Edges that sat on the shared `KindOfService.call` node move,
+  // and rows written earlier carry no `superDelegates`, so only the recompute moves them.
+  // walker 7: bd tea-rags-mcp-nbf8q — the facade answers `hasInProjectDefinition`
+  // from Ruby files only, so a miss whose only namesake is a `.ts` / `.py`
+  // declaration books as `noInProjectDef` instead of `missWithInProjectDef`.
+  // No edge moves; the persisted resolve rate does, and only a recompute
+  // rewrites a `cg_run_stats` row the previous walker tallied.
+  // walker 8: bd tea-rags-mcp-nbf8q item 4 — the dynamic fan-out cap reads Ruby's
+  // own defs-per-member p99 (`RUBY_FANOUT_POPULATION`), not the polyglot corpus
+  // one: taxdome 19, not 16. Fans of 17–19 survivors a walker-7 index recorded as
+  // `ambiguous` become edges. Bumped past an unreleased 7 because a worktree
+  // build may already have stamped an index at it.
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

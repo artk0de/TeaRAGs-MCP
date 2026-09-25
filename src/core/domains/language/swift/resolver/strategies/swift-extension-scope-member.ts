@@ -1,7 +1,8 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { lookupSwiftTypeMember, type SwiftResolverConfig } from "./shared.js";
+import { swiftSelfConstraintsAt } from "../swift-type-declarations.js";
+import { swiftEnclosingTypeIds, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * The enclosing type's member declared in ANOTHER file — the pass Swift needs
@@ -18,9 +19,12 @@ import { lookupSwiftTypeMember, type SwiftResolverConfig } from "./shared.js";
  *
  * It sits AFTER both same-file passes so a file-local declaration always wins,
  * and it answers `self` / `Self` receivers and bare calls alike — the two
- * spellings of "a member of the type I am inside". `lookupSwiftTypeMember`
- * applies the ambiguous-resolve mode, so two files declaring the same
- * `Invoice#format` produce no edge rather than a coin flip.
+ * spellings of "a member of the type I am inside". It is also where a member
+ * INHERITED from the superclass is found (`SwiftMemberTypeLookup#memberOn`):
+ * `Request#cancel` called as `cancel()` inside `DataRequest` is declared in
+ * neither the caller's file nor the caller's type. The lookup applies the
+ * ambiguous-resolve mode, so two files declaring the same `Invoice#format`
+ * produce no edge rather than a coin flip — and no fall-through to a base.
  *
  * On a miss, continue: a bare call may still be a free function, which the
  * terminal pass answers.
@@ -31,9 +35,24 @@ export class SwiftExtensionScopeMemberSymbolResolutionStrategy implements Symbol
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const selfScoped = call.receiver === null || call.receiver === "self" || call.receiver === "Self";
-    if (!selfScoped || ctx.callerScope.length === 0) return CONTINUE;
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const hit = lookupSwiftTypeMember(enclosing, call.member, ctx, this.cfg.mode);
-    return hit ? resolved(hit) : CONTINUE;
+    if (!selfScoped) return CONTINUE;
+    // `self` / `Self` is the innermost type alone; a bare name walks outward,
+    // as Swift's unqualified lookup does (`lookupLexicalMemberInFile`).
+    const enclosingTypes = swiftEnclosingTypeIds(ctx);
+    const searched = call.receiver === null ? enclosingTypes : enclosingTypes.slice(0, 1);
+    for (const typeId of searched) {
+      const hit = this.cfg.memberTypes.memberOn(typeId, call.member, ctx, this.cfg.mode, call);
+      if (hit) return resolved(hit);
+    }
+    // Inside `extension Download where Self: DataSerializer`, `Self` is a
+    // `DataSerializer` too (bd tea-rags-mcp-y99pg.33): its requirements are
+    // members of the innermost type there, after the type's own.
+    const innermost = enclosingTypes[0];
+    if (innermost === undefined) return CONTINUE;
+    for (const constraint of swiftSelfConstraintsAt(innermost, call.startLine, ctx)) {
+      const hit = this.cfg.memberTypes.memberOn(constraint, call.member, ctx, this.cfg.mode, call);
+      if (hit) return resolved(hit);
+    }
+    return CONTINUE;
   }
 }

@@ -5,14 +5,14 @@
  * kernel generic bound to Ruby's walker input — the one Ruby-specific fact
  * left in this file.
  */
-import type { InlineTypeSource } from "../../../kernel/type-facts.js";
+import type { InlineTypeSource } from "../../../kernel/index.js";
 import type { RubyExtractInput } from "../walker.js";
 
 export type {
   ProjectTypeSourceContext,
   SidecarTypeSource as RubySidecarTypeSource,
   TypeFact as RubyTypeFact,
-} from "../../../kernel/type-facts.js";
+} from "../../../kernel/index.js";
 
 /** A type source colocated in the `.rb` file (YARD comments, Sorbet `sig {}` / `T.let`). */
 export type RubyInlineTypeSource = InlineTypeSource<RubyExtractInput>;

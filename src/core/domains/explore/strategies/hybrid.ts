@@ -6,6 +6,7 @@
  * Extracted from MCP search.ts hybrid_search handler.
  */
 
+import { QdrantInvalidQueryParameterError } from "../../../adapters/qdrant/errors.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
@@ -13,6 +14,17 @@ import { BaseExploreStrategy } from "./base.js";
 import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
 import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
+
+/**
+ * The adapter refuses an out-of-range query parameter with its own error, since
+ * `adapters` may not import this domain; the MCP client has always seen that
+ * refusal as explore's `InvalidQueryError`, so it is translated here, at the
+ * one explore call site that reaches the check (bd tea-rags-mcp-pn12w).
+ */
+function rethrowAsInvalidQuery(error: unknown): never {
+  if (error instanceof QdrantInvalidQueryParameterError) throw new InvalidQueryError(error.reason);
+  throw error;
+}
 
 export class HybridSearchStrategy extends BaseExploreStrategy {
   readonly type = "hybrid" as const;
@@ -38,7 +50,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
       ctx.pathPattern,
       { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: ctx.level === "file" ? "file" : "chunk" },
       async (limit) =>
-        identityFilter
+        (identityFilter
           ? this.qdrant.hybridSearch(
               ctx.collectionName,
               embedding,
@@ -48,7 +60,8 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
               undefined,
               identityFilter,
             )
-          : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, ctx.filter),
+          : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, ctx.filter)
+        ).catch(rethrowAsInvalidQuery),
     );
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.

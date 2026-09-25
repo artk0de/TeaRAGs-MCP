@@ -9,6 +9,10 @@
  * - the REST client itself, which is REPLACED (not mutated) when an embedded
  *   daemon comes back on a different port, so collaborators must always read
  *   `connection.client` at call time rather than caching it;
+ * - stale-socket recovery — a request written onto a pooled keep-alive socket the
+ *   server already closed (the process blocked its event loop past the server's
+ *   idle timeout, so the FIN was never processed) is retried once on a fresh
+ *   socket, before anything below runs;
  * - reconnection — re-resolving the daemon URL and retrying the failed call once;
  * - corrupt-collection quarantine — a daemon bricked by a half-written versioned
  *   collection is unbrickable by reconnect alone, so the offending directory is
@@ -16,8 +20,8 @@
  * - liveness/identity probes (`checkHealth`, `getServerVersion`) that describe
  *   the server rather than anything stored in it.
  *
- * The alias manager lives here too, because it wraps the client and therefore
- * has to be discarded whenever the client is.
+ * The alias manager is built here too, and discarded whenever the client is
+ * replaced.
  */
 
 import { readFileSync } from "node:fs";
@@ -96,13 +100,20 @@ export class QdrantConnection {
   }
 
   get aliases(): QdrantAliasManager {
-    return (this._aliases ??= new QdrantAliasManager(this.client));
+    return (this._aliases ??= new QdrantAliasManager(this));
   }
 
   /**
    * Guard all Qdrant client calls through a single entry point.
    * Catches connection errors (fetch failed, ECONNREFUSED) and converts
    * them to a typed error. Business errors (404, 409) pass through.
+   *
+   * A stale-socket reset (the server closed an idle keep-alive socket while
+   * this process's event loop was blocked, so the request went out on a dead
+   * socket) is retried ONCE immediately — the pool opens a fresh socket. Neither
+   * reconnect path can recover it: a live embedded daemon on an unchanged port
+   * declines to reconnect, and an external Qdrant has no reconnect at all.
+   * ECONNREFUSED is not a reset and skips this retry.
    *
    * For embedded mode: on connection error, tries to reconnect to a daemon
    * that may have restarted on a different port, then retries once.
@@ -117,11 +128,19 @@ export class QdrantConnection {
       return await fn();
     } catch (error: unknown) {
       if (!isConnectionError(error)) throw error;
+      let connError: unknown = error;
+      if (isStaleSocketReset(error)) {
+        try {
+          return await fn();
+        } catch (resetRetryError: unknown) {
+          if (!isConnectionError(resetRetryError)) throw resetRetryError;
+          connError = resetRetryError;
+        }
+      }
       // A dead embedded daemon may have been bricked by a corrupt versioned
       // collection (killed reindex → WAL replay panic on boot). Quarantine it
       // BEFORE reconnect so the respawn boots clean (tea-rags-mcp-mh7nr).
       this.quarantineCorruptCollectionIfDead();
-      let connError: unknown = error;
       if (await this.tryReconnect()) {
         try {
           return await fn();
@@ -263,4 +282,26 @@ function isConnectionError(error: unknown): boolean {
   }
 
   return false;
+}
+
+/** Socket-level codes undici reports when the pooled socket was reset under the request. */
+const STALE_SOCKET_CODES = new Set(["ECONNRESET", "UND_ERR_SOCKET"]);
+const STALE_SOCKET_MESSAGES = ["other side closed", "socket hang up", "econnreset"];
+
+/**
+ * A request written onto a pooled keep-alive socket the server already closed.
+ * undici rejects with `TypeError("fetch failed")` and puts the socket failure in
+ * `cause` — `code: "ECONNRESET"` or `UND_ERR_SOCKET` ("other side closed"). Only
+ * the `cause` is inspected: a top-level message alone does not say whether the
+ * socket was a reused one, and ECONNREFUSED (nothing listening) never qualifies.
+ */
+function isStaleSocketReset(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { cause } = error;
+  if (typeof cause !== "object" || cause === null) return false;
+  const { code } = cause as { code?: unknown };
+  if (typeof code === "string") return STALE_SOCKET_CODES.has(code);
+  if (!(cause instanceof Error)) return false;
+  const msg = cause.message.toLowerCase();
+  return STALE_SOCKET_MESSAGES.some((marker) => msg.includes(marker));
 }

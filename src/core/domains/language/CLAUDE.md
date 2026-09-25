@@ -39,20 +39,23 @@
 
 - **Import → file is one seam per language.** `ImportFileMapper`
   (`contracts/types/language.ts`) answers `project | external | unknown`, and
-  `import-file-edges.ts` turns the `project` answers into file edges. Python's
-  `resolveFileEdges` delegates there, so its file graph no longer comes from
-  pushing a synthesised call through the resolver chain — a change to call
-  precedence cannot silently rewrite the file graph any more. Every Python
-  consumer that asks "which file is this import" goes through the resolver's ONE
-  `PythonImportFileMapper`: `importedName`, `resolveTypeFile` (and the cone
-  locator through it), the external vocabulary. The mapper answers from
-  `GlobalSymbolTable.hasFile` / `hasFilesUnder`, never from disk, and a PEP 420
-  namespace package answers `unknown` because a directory is not a legal
-  file-edge target. `unknown` is NOT `external`: a consumer keeps its pre-seam
-  fallback there, which is why the vocabulary still runs its own directory probe
-  for namespace packages. JavaScript's `resolveFileEdges` delegates there too,
-  through `JavascriptImportFileMapper` (the same `hasFile` membership), so a JS
-  file edge lands only on a file the index holds; its call path still reads the
+  `import-file-edges.ts` turns the `project` answers into file edges. Which
+  facades forward `resolveFileEdges` at all is derived and pinned in
+  `tests/navigator-enumerations.test.ts`; the per-language wiring below is how
+  the forwarding ones reach the seam. Python's `resolveFileEdges` delegates
+  there, so its file graph no longer comes from pushing a synthesised call
+  through the resolver chain — a change to call precedence cannot silently
+  rewrite the file graph any more. Every Python consumer that asks "which file
+  is this import" goes through the resolver's ONE `PythonImportFileMapper`:
+  `importedName`, `resolveTypeFile` (and the cone locator through it), the
+  external vocabulary. The mapper answers from `GlobalSymbolTable.hasFile` /
+  `hasFilesUnder`, never from disk, and a PEP 420 namespace package answers
+  `unknown` because a directory is not a legal file-edge target. `unknown` is
+  NOT `external`: a consumer keeps its pre-seam fallback there, which is why the
+  vocabulary still runs its own directory probe for namespace packages.
+  JavaScript's `resolveFileEdges` delegates there too, through
+  `JavascriptImportFileMapper` (the same `hasFile` membership), so a JS file
+  edge lands only on a file the index holds; its call path still reads the
   unverified head, `mapJavascriptImportToFile`. TypeScript keeps
   `ts-path-mapper` for now (it probes disk); migrating it is a follow-up. There
   an ASSET import — an existing as-written file no source candidate named (a CSS
@@ -133,11 +136,24 @@
 - **Dispatch narrowing terminates FOUR ways** (`kernel/dispatch-narrowing.ts`):
   0 survivors → no edges; 1 → one `dynamic` edge at `confidence: 1.0`
   (evidence-unique, NOT type-proven); over the corpus-adaptive cap from
-  `dispatchFanoutPolicyFor` → `ambiguous` with NO edges (f2jsb); else the fan at
-  `discount/m`. Sub-1 edges reach analytics confidence-WEIGHTED
-  (`SUM(confidence)` fanIn/fanOut, PageRank split across the fan); navigation
-  hides them via `isNavigationVisibleEdge`. Why: over the cap a multi-survivor
-  site emits nothing, and fanIn read unweighted over-counts a fan m-fold.
+  `dispatchFanoutPolicyFor` → `ambiguous` with NO edges (f2jsb) — computed over
+  the caller's `NarrowedFanoutOptions.population` when it passes one, which must
+  be the predicate its candidate lookup filters with (nbf8q); a caller that
+  omits it is capped by the polyglot corpus p99; else the fan at `discount/m`.
+  Sub-1 edges reach analytics confidence-WEIGHTED (`SUM(confidence)`
+  fanIn/fanOut, PageRank split across the fan); navigation hides them via
+  `isNavigationVisibleEdge`. Why: over the cap a multi-survivor site emits
+  nothing, and fanIn read unweighted over-counts a fan m-fold.
+- **`visibility` is a declared level; its REACH is a per-language rule.** Every
+  native walker records the declared access level on the one three-value union,
+  but `"private"` reaches differently per language, so `VisibilityNarrower` asks
+  an injected `VisibilityAccessPolicy`
+  (`DispatchCascadeOptions.visibilityAccess`) and never reads the word itself.
+  Its default is the explicit-receiver rule (private never reachable) — correct
+  for Ruby only. A language that runs `buildDispatchCascade` over candidates
+  with recorded visibility MUST inject its own rule. Why: under the default,
+  `other.priv()` inside the declaring class drops silently — a resolve-rate loss
+  no test on the walker sees (bd tea-rags-mcp-jwjyr.1).
 - **Receiver chain typing is a kernel fold with per-language ports.**
   `kernel/receiver-type-propagation.ts` owns the walk — split on `.`, seed the
   head, thread each hop through `memberTypeOf`, STOP at the first unknown, cap
@@ -149,14 +165,19 @@
   OPTIONAL and defaults to that plain `split(".")`: only Python supplies the
   bracket-aware scan (`splitAtBracketDepthZero`, the one depth-and-quote scanner
   in the engine), because the same split newly types 34 unmeasured mastodon
-  receivers and Ruby's gate is parity, not inspection. It supplies them as ONE
-  FROZEN object built once and reused, because the fold runs per call site and
-  `ctx` is threaded as an argument precisely so nothing is allocated there:
-  Ruby's is a module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
-  `createPythonReceiverTypePorts`, a factory the resolver calls once so the
-  ports close over its ONE `PythonImportFileMapper` instead of a private memo.
-  What an `@ivar` is, what a capitalized head means, which env caps the hops —
-  all language, none of it in the kernel.
+  receivers and Ruby's gate is parity, not inspection. A sixth,
+  `memberCallTypeOf`, is OPTIONAL too: present, it replaces `memberTypeOf` for a
+  link carrying an argument list and receives that list's text
+  (`callArgumentText`), for a return an argument binds; absent, the fold strips
+  the arguments exactly as before, so adding it moves no other language's edges
+  (bd tea-rags-mcp-y99pg.37). It supplies them as ONE FROZEN object built once
+  and reused, because the fold runs per call site and `ctx` is threaded as an
+  argument precisely so nothing is allocated there: Ruby's is a module singleton
+  (`RUBY_RECEIVER_TYPE_PORTS`), Python's is `createPythonReceiverTypePorts`, a
+  factory the resolver calls once so the ports close over its ONE
+  `PythonImportFileMapper` instead of a private memo. What an `@ivar` is, what a
+  capitalized head means, which env caps the hops — all language, none of it in
+  the kernel.
 - **The ancestor walk is a kernel driver with a per-language ORDER policy.**
   `kernel/ancestor-walk.ts` owns the recursion, the per-path cycle guard, the
   already-reachable dedupe filter, the per-run memo and
@@ -372,30 +393,32 @@
   `trajectory/codegraph/symbols/resolution-runner.ts` synthesises
   `{ receiver: basename, member: basename }` per import — `member` is a
   FILENAME, so a member-keyed pass answering it points `import './bar'` at
-  whichever file declares `Other.bar`. TS, JavaScript, Python and Ruby override
-  `resolveFileEdges` — TS via `mapImportToFile`, JavaScript and Python via
-  `resolveImportFileEdges` over their `ImportFileMapper`, Ruby via Zeitwerk plus
-  inheritance; Go, Java, Rust and Bash still take the default. The override
-  counts only when the language's `LanguageSymbolResolver` facade
-  (`<lang>/index.ts`) FORWARDS it: the runner reads the facade, never the
-  `CallResolver`. JavaScript's resolver carried the method for a round while its
-  facade did not, so production kept the default, whose `importMatchesReceiver`
-  strips `.js` from the import but not from the synthesised receiver — every
+  whichever file declares `Other.bar`. A language escapes that question by
+  overriding `resolveFileEdges`, and the override counts ONLY when that
+  language's `LanguageSymbolResolver` facade (`<lang>/index.ts`) FORWARDS it:
+  the runner reads the facade, never the `CallResolver`. Which facades do is
+  derived from the facades themselves and pinned in
+  `tests/navigator-enumerations.test.ts` — read the set there, never from prose.
+  JavaScript's resolver carried the method for a round while its facade did not,
+  so production kept the default, whose `importMatchesReceiver` strips `.js`
+  from the import but not from the synthesised receiver — every
   explicit-extension import, the ordinary Node ESM form, produced no edge —
   while a unit test driving the bare resolver passed (bd tea-rags-mcp-x9qsh).
-  Why: a new language on the default emits wrong or missing file-level import
+  Why: a language left on the default emits wrong or missing file-level import
   edges, surfacing as an unstable `provider.test.ts` count, not as anything
   naming the resolver.
 - **Filtering a resolver's lookups does not filter its DENOMINATOR.** The miss
   classifier (`classifyResolveMiss` in `resolution-runner.ts`) asks
-  `hasInProjectDefinition` when the resolver answers it and falls back to the
-  unfiltered `lookupByShortName(member).length > 0` otherwise. TypeScript and
-  JavaScript answer it (bd tea-rags-mcp-t5cji); Ruby, Python and Go (through
-  `go-symbol-lookup.ts`) filter their chains but not this gate, so their
-  unresolved call with only a foreign namesake still counts as a miss. Adding
-  the hook to them moves their rate — their own walker bump. Why: a chain-only
-  filter turns every former cross-language edge into a charged miss, which reads
-  as a recall regression the resolver cannot fix.
+  `hasInProjectDefinition` when the FACADE answers it and falls back to the
+  unfiltered `lookupByShortName(member).length > 0` otherwise (bd
+  tea-rags-mcp-t5cji). Which facades answer it is derived from the facades
+  themselves and pinned in `tests/navigator-enumerations.test.ts` — read the set
+  there, never from prose. A language that filters its resolver CHAIN but leaves
+  this gate on the fallback still charges a miss for an unresolved call whose
+  only namesake is another language's; adding the hook moves that language's
+  rate, so it is its own walker bump. Why: a chain-only filter turns every
+  former cross-language edge into a charged miss, which reads as a recall
+  regression the resolver cannot fix.
 - **A TypeScript member call is never committed by a unique short name alone.**
   `globalShortName` and `importNarrowedFallback` accept a candidate for a
   receiver the walker did not type — `this` included, once `thisMember` missed —
@@ -479,9 +502,9 @@
 ## Boundaries
 
 - **Deferral (`deferred(...)`) pays only where a LATER pass holds evidence the
-  parking pass lacks.** Five park sites: TS
-  `namedImport`/`importBasename`/`receiverSymbol`, Ruby
-  `constant`/`explicitRequire`. Three others look identical, were MEASURED as bd
+  parking pass lacks.** The park sites are derived from the strategies that call
+  `deferred(` and pinned in `tests/navigator-enumerations.test.ts` — read the
+  set there, never from prose. Other passes look identical, were MEASURED as bd
   86qfb (`codegraph-chain-tally.ts --defer <pass>`) and REJECTED, each verdict
   in its own docblock: java `importReceiver` (599 fabricated in-project edges),
   python `localBinding` (the yrs0 `serializer.is_valid()` false positive, 68×).

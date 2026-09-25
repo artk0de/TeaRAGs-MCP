@@ -1,7 +1,8 @@
 import ignore, { type Ignore } from "ignore";
 
 import type { FileClassification } from "../../contracts/types/file-classification.js";
-import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS, TEST_PATTERNS, USER_GENERATED_PATTERNS } from "./patterns.js";
+import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS, USER_GENERATED_PATTERNS } from "./patterns.js";
+import { buildTestPathFilter, type PathFilter } from "./test-path-filter.js";
 
 export type { FileClassification };
 
@@ -15,7 +16,7 @@ export interface ClassifyOptions {
 // Built once — immutable after construction (the `ignore` package is stateless
 // once loaded). Lazily initialised so module import stays side-effect-light.
 let generatedFilter: Ignore | undefined;
-let testFilter: Ignore | undefined;
+let testFilter: PathFilter | undefined;
 
 function getGeneratedFilter(): Ignore {
   if (!generatedFilter) {
@@ -24,8 +25,8 @@ function getGeneratedFilter(): Ignore {
   return generatedFilter;
 }
 
-function getTestFilter(): Ignore {
-  if (!testFilter) testFilter = ignore().add(TEST_PATTERNS);
+function getTestFilter(): PathFilter {
+  testFilter ??= buildTestPathFilter();
   return testFilter;
 }
 

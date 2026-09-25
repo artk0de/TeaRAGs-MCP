@@ -76,6 +76,17 @@ describe("buildCodegraphExclusionFilter", () => {
     expect(ig.ignores("crate/src/parser.rs")).toBe(false);
   });
 
+  it("keeps a PascalCase-convention production file in the graph (bd tea-rags-mcp-ezm9o)", () => {
+    const ig = buildCodegraphExclusionFilter({ customPatterns: [] });
+    expect(ig.ignores("src/main/java/com/acme/Latest.java")).toBe(false);
+    expect(ig.ignores("src/main/java/com/acme/Audit.java")).toBe(false);
+    expect(ig.ignores("Sources/Billing/Latest.swift")).toBe(false);
+    expect(ig.ignores("src/main/java/com/acme/LatestTest.java")).toBe(true);
+    expect(ig.ignores("Sources/Billing/LatestTests.swift")).toBe(true);
+    // Directory conventions stay case-insensitive.
+    expect(ig.ignores("Tests/BillingTests/Latest.swift")).toBe(true);
+  });
+
   it("layers customPatterns on top of test exclusion", () => {
     const ig = buildCodegraphExclusionFilter({
       customPatterns: ["vendor/**", "*.pb.go"],

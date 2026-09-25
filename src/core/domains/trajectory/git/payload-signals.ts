@@ -73,8 +73,16 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.recentDominantAuthorPct",
     type: "number",
     description: "Percentage of commits by dominant author",
-    // 100% dominance IS the top band, so a tie there keeps the upper name.
-    stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" }, dedupeByFile: true },
+    stats: {
+      labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" },
+      dedupeByFile: true,
+      // One recent contributor reads 100% by construction — class membership,
+      // not a position on the scale. Measured on this index (bd
+      // tea-rags-mcp-od098): 72% of files sat there and pinned p25..p95 all on
+      // 100, so the ladder graded nothing. The class reads `solo` and the
+      // ladder is cut over files with two or more recent contributors.
+      coSignalClass: { coSignal: "recentContributorCount", equals: 1, label: "solo" },
+    },
   },
   {
     key: "git.file.fileChurnCount",

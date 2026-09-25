@@ -35,9 +35,12 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     });
     stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    // Assertions read plain text: force color off regardless of the terminal.
+    vi.stubEnv("NO_COLOR", "1");
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     exitSpy.mockRestore();
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();

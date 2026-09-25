@@ -32,6 +32,23 @@ export function swiftTypeFieldKey(relPath: string, typeName: string): string {
 }
 
 /**
+ * The run-global key of the MODULE-LEVEL values `relPath` declares — the
+ * type-field key with an EMPTY type path, since module scope is the empty
+ * nesting (bd tea-rags-mcp-y99pg.30). `public let AF = Session.default`
+ * publishes `AF` under it: typed on `classFieldTypesByClassKey`, or by
+ * spelling on `classFieldCallResults`. {@link swiftTypeFieldKeyParts} answers
+ * `undefined` for it, so no type-field reader ever mistakes it for a type.
+ */
+export function swiftModuleScopeKey(relPath: string): string {
+  return `${relPath}::`;
+}
+
+/** The relPath of a {@link swiftModuleScopeKey}, or `undefined` for any other key. */
+export function swiftModuleScopeKeyRelPath(key: string): string | undefined {
+  return key.length > 2 && key.endsWith("::") ? key.slice(0, -2) : undefined;
+}
+
+/**
  * The TYPE-NAME half of a key this module composed, or `undefined` when the key
  * was composed by another language.
  *

@@ -7,6 +7,7 @@
  */
 
 import type { PayloadFieldIndex } from "../../../adapters/qdrant/payload-index.js";
+import type { PayloadFieldIndexSchema } from "../../../adapters/qdrant/schema-manager.js";
 
 /** Single migration. One class = one file. */
 export interface Migration {
@@ -80,6 +81,23 @@ export interface IndexStore {
   listPayloadIndexes?: (collection: string) => Promise<PayloadFieldIndex[]>;
   /** Drop one payload field index; the payload values stay. */
   dropPayloadIndex?: (collection: string, field: string) => Promise<void>;
+}
+
+/**
+ * DIP: payload field-index operations for the `payloadIndexes` reconcile.
+ *
+ * Every call takes the PHYSICAL collection name — the reconcile resolves it
+ * once through {@link PayloadIndexStore.resolvePhysicalCollection} before
+ * reading or creating anything, so the inventory it judges and the collection
+ * it writes are the same one.
+ */
+export interface PayloadIndexStore {
+  /** The collection an alias points at, or the name itself when it is not an alias. */
+  resolvePhysicalCollection: (collection: string) => Promise<string>;
+  /** Every payload field index on the collection. A read failure propagates — never an empty list. */
+  listPayloadIndexes: (collection: string) => Promise<PayloadFieldIndex[]>;
+  /** Create one payload field index; an online operation on the points already stored. */
+  createPayloadIndex: (collection: string, field: string, schema: PayloadFieldIndexSchema) => Promise<void>;
 }
 
 /** DIP: Sparse vector operations. */

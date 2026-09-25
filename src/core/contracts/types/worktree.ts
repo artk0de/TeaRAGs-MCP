@@ -39,6 +39,15 @@ export interface WorktreeInfo {
   alias?: string;
   worktreeOf?: string;
   worktreeName?: string;
+  /**
+   * Absolute path of the worktree the clone indexes — the registry entry's
+   * `path`, which `WorktreeProvisioner#create` records as the resolved
+   * worktree directory. `cleanup-worktree-clone.sh` (plugin PostToolUse
+   * backstop) tears a clone down when this directory no longer exists, and
+   * reads it from `tea-rags worktree list --json` — renaming it breaks that
+   * consumer with no compiler error.
+   */
+  path?: string;
   chunksCount?: number;
 }
 

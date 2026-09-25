@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -17,6 +17,7 @@ import {
   flagTrackBPriorities,
   formatOracleTable,
   isScoredSource,
+  queryFunctionInvokerMember,
   reconcileOracleMissed,
   reconcileOraclePhantom,
   reconcileOracleWrongFile,
@@ -31,6 +32,7 @@ import {
 } from "../../scripts/ts-codegraph-typechecker-oracle.js";
 import type { CallRef } from "../../src/core/contracts/types/codegraph.js";
 import { LanguageFactory } from "../../src/core/domains/language/index.js";
+import { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 
 /** One call-site row, defaulted so each test states only the axis it exercises. */
 function row(overrides: Partial<OracleRow> = {}): OracleRow {
@@ -1009,5 +1011,83 @@ describe("collectSourceFiles corpus scope", () => {
       "app/runner.ts",
     ]);
     expect(selection.ingestIgnored).toEqual(0);
+  });
+});
+
+describe("queryFunctionInvokerMember (bd tea-rags-mcp-g7h1y)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "oracle-invoker-")));
+    writeFileSync(join(repoRoot, "tsconfig.json"), `{ "include": ["src/**/*"] }\n`, "utf8");
+    mkdirSync(join(repoRoot, "src"), { recursive: true });
+    writeFileSync(
+      join(repoRoot, "src/a.ts"),
+      [
+        "export class Conn {",
+        "  call(fn: () => number): number {",
+        "    return fn();",
+        "  }",
+        "}",
+        "export function helper(): number {",
+        "  return 1;",
+        "}",
+        "export class User {",
+        "  constructor(private readonly c: Conn) {}",
+        "  run(): number {",
+        "    const viaMember = this.c.call(() => 1);",
+        "    return viaMember + helper.call(null);",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function query(call: CallRef) {
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+    const handle = cache.acquire("src/a.ts");
+    if (handle === null) throw new Error("no Program for the fixture");
+    return queryFunctionInvokerMember(handle, cache, call);
+  }
+
+  it("grounds an object receiver's `.call` on the member its class declares", () => {
+    const result = query(
+      callRef({
+        callText: "this.c.call(() => 1)",
+        receiver: "this",
+        member: "c",
+        startLine: 12,
+        functionInvokerSite: { receiver: "this.c", member: "call" },
+      }),
+    );
+
+    // The symbol id is pinned against the run's symbol table, which this
+    // unit does not load; the file and the declaration kind are the verdict.
+    expect(result?.outcome).toEqual(inProject("src/a.ts", null));
+    expect(result?.target?.declarationKind).toEqual("MethodDeclaration");
+  });
+
+  it("declines a function receiver, leaving it to the value-reference path", () => {
+    const result = query(
+      callRef({
+        callText: "helper.call(null)",
+        receiver: null,
+        member: "helper",
+        startLine: 13,
+        functionInvokerSite: { receiver: "helper", member: "call" },
+      }),
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("declines a ref the walker did not unwrap", () => {
+    expect(query(callRef({ callText: "helper()", member: "helper", startLine: 12 }))).toBeNull();
   });
 });

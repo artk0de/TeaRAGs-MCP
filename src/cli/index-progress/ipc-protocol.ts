@@ -26,6 +26,8 @@ export type WorkerMessage =
       message: string;
       /** Typed error code (TeaRagsError.code) when the fatal was typed; drives the --json error object. */
       code?: string;
+      /** Typed error hint (TeaRagsError.hint): what to DO about the fatal, which the message alone does not say. */
+      hint?: string;
     }
   | { type: "phase-done"; phase: string; elapsedMs: number }
   | {
@@ -40,6 +42,7 @@ export type WorkerMessage =
       /** Wall-clock wait so far (ms). */
       elapsedMs: number;
     }
+  | ({ type: "embedding-state" } & EmbeddingRecoveryWaitState)
   | {
       type: "turbo-migration";
       /** Collection whose quantized vectors the background optimizer is rebuilding. */
@@ -49,6 +52,17 @@ export type WorkerMessage =
       /** Migration wall-clock so far — set on the terminal done/background events. */
       elapsedMs?: number;
     };
+
+/**
+ * Wait for an unreachable embedding provider (EMBEDDING_TUNE_UNAVAILABLE_RETRY_*),
+ * as the worker reports it: `waiting` before each backoff pause, `recovered` as
+ * the terminal event that freezes the renderer's state line. Giving up arrives
+ * as an `error` (bd tea-rags-mcp-umatc). `elapsedMs` is the wall-clock wait so
+ * far, `budgetMs` the configured ceiling on it.
+ */
+export type EmbeddingRecoveryWaitState =
+  | { state: "waiting"; url: string; elapsedMs: number; budgetMs: number }
+  | { state: "recovered"; url: string; elapsedMs: number };
 
 /** Final enrichment outcome reported by the worker (drives exit code in --wait). */
 export interface EnrichmentOutcome {
@@ -81,13 +95,21 @@ export function isWorkerMessage(value: unknown): value is WorkerMessage {
     case "done":
       return typeof m.result === "object" && m.result !== null;
     case "error":
-      return typeof m.message === "string" && (m.code === undefined || typeof m.code === "string");
+      return (
+        typeof m.message === "string" &&
+        (m.code === undefined || typeof m.code === "string") &&
+        (m.hint === undefined || typeof m.hint === "string")
+      );
     case "phase-done":
       return typeof m.phase === "string" && typeof m.elapsedMs === "number";
     case "qdrant-state":
       return (
         (m.state === "starting" || m.state === "recovering" || m.state === "ready") && typeof m.elapsedMs === "number"
       );
+    case "embedding-state":
+      if (typeof m.url !== "string" || typeof m.elapsedMs !== "number") return false;
+      if (m.state === "recovered") return true;
+      return m.state === "waiting" && typeof m.budgetMs === "number";
     case "turbo-migration":
       return (
         typeof m.collection === "string" && (m.stage === "start" || m.stage === "done" || m.stage === "background")

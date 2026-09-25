@@ -10,6 +10,7 @@
  * that assembles them into the `associationTypes` channel.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { singularizeAssociation } from "../dsl/index.js";
 import { readScopeResolution } from "./ast-utils.js";
@@ -128,7 +129,7 @@ const ASSOCIATION_SCOPE_STOPS: ReadonlySet<string> = new Set(["class", "module",
  * (source-order DFS).
  */
 export function collectRubyAssociationTypes(root: AstNode): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   const walkScope = (node: AstNode, scope: string[]): void => {
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
@@ -143,7 +144,7 @@ export function collectRubyAssociationTypes(root: AstNode): Record<string, Recor
       // Collect association macros across THIS class's own body. Stop at any
       // nested class/module — those are attributed to their own fq below — and
       // at any `def`, which is NOT class-body scope (see ASSOCIATION_SCOPE_STOPS).
-      const assocs: Record<string, string> = {};
+      const assocs: Record<string, string> = createIdentifierRecord();
       const collectAssocs = (n: AstNode): void => {
         if (ASSOCIATION_SCOPE_STOPS.has(n.type)) return;
         if (n.type === "call" || n.type === "method_call") {

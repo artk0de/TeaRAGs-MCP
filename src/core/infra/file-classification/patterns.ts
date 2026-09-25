@@ -67,6 +67,19 @@ export const TEST_PATTERNS_BY_LANGUAGE: Readonly<Record<string, readonly string[
   java: ["**/*Test.java", "**/*Tests.java", "**/*IT.java"],
   go: ["**/*_test.go"],
   rust: ["**/*_test.rs"],
+  // Carried over from the retired static-trajectory basename regex (bd
+  // tea-rags-mcp-9ty5z) so `payload.isTest` loses no language when it moved
+  // onto this classifier. A capitalised suffix matches case-sensitively — see
+  // CASE_SENSITIVE_TEST_PATTERNS.
+  php: ["**/*Test.php"],
+  c_sharp: ["**/*Test.cs", "**/*Tests.cs"],
+  cpp: ["**/*Test.cpp", "**/*Tests.cpp", "**/*Test.cc", "**/*Tests.cc", "**/*Test.cxx", "**/*Tests.cxx"],
+  c: ["**/*Test.c", "**/*Tests.c"],
+  swift: ["**/*Test.swift", "**/*Tests.swift"],
+  kotlin: ["**/*Test.kt"],
+  dart: ["**/*_test.dart"],
+  scala: ["**/*Spec.scala", "**/*Test.scala"],
+  clojure: ["**/*_test.clj", "**/*_test.cljs"],
 };
 
 /**
@@ -75,6 +88,40 @@ export const TEST_PATTERNS_BY_LANGUAGE: Readonly<Record<string, readonly string[
  * from {@link TEST_PATTERNS_BY_LANGUAGE} so there is one source of truth.
  */
 export const TEST_PATTERNS: readonly string[] = [...new Set(Object.values(TEST_PATTERNS_BY_LANGUAGE).flat())];
+
+/**
+ * Languages whose test-file naming is mixed-case, so a capitalised suffix in
+ * their bucket is only the PascalCase spelling of a convention that is just as
+ * often lowercase (googletest's `parser_test.cc`, `unittest.c`). The retired
+ * basename regex said the same with `[Tt]ests?`. Their suffixes stay
+ * case-insensitive.
+ */
+const MIXED_CASE_TEST_CONVENTION_LANGUAGES: ReadonlySet<string> = new Set(["c", "cpp"]);
+
+function hasCapitalisedFilename(pattern: string): boolean {
+  return /[A-Z]/.test(pattern.slice(pattern.lastIndexOf("/") + 1));
+}
+
+/**
+ * Test patterns matched case-sensitively: a capitalised filename suffix
+ * (`*Test.java`, `*IT.java`, `*Spec.scala`) names a PascalCase convention, and
+ * matching it case-insensitively turns `Latest.java`, `Contest.kt` and
+ * `Audit.java` into tests (bd tea-rags-mcp-ezm9o). Derived from
+ * {@link TEST_PATTERNS_BY_LANGUAGE}, so a new PascalCase bucket lands here with
+ * no second edit. Directory patterns and lowercase suffixes are never in it.
+ */
+export const CASE_SENSITIVE_TEST_PATTERNS: readonly string[] = [
+  ...new Set(
+    Object.entries(TEST_PATTERNS_BY_LANGUAGE)
+      .filter(([language]) => !MIXED_CASE_TEST_CONVENTION_LANGUAGES.has(language))
+      .flatMap(([, patterns]) => patterns.filter(hasCapitalisedFilename)),
+  ),
+];
+
+/** The rest of {@link TEST_PATTERNS}, matched case-insensitively (`Tests/`, `*.spec.ts`, `*Test.cc`). */
+export const CASE_INSENSITIVE_TEST_PATTERNS: readonly string[] = TEST_PATTERNS.filter(
+  (pattern) => !CASE_SENSITIVE_TEST_PATTERNS.includes(pattern),
+);
 
 /** First-N-lines markers that identify generated files with non-standard names. */
 export const GENERATED_CONTENT_MARKERS: readonly RegExp[] = [

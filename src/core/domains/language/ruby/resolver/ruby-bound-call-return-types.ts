@@ -14,6 +14,7 @@
  * qualification and the two binding forms are unchanged.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { rubyReceiverForm } from "../type-ref.js";
@@ -51,7 +52,7 @@ import { selfMemberReturnType } from "./ruby-return-facts.js";
  * annotation used to produce as a bare `[RuleHit]`.
  */
 export function boundCallReturnType(receiver: string, ctx: CallContext): RubyTypeRef | undefined {
-  const binding = ctx.localCallBindings?.[receiver];
+  const binding = identifierEntry(ctx.localCallBindings, receiver);
   if (binding === undefined) return undefined;
   const derived = rubyReceiverForm(boundCallTypeRef(binding, ctx));
   return qualifyFactTypeName(derived, boundCallFactOwner(binding, ctx), ctx);
@@ -69,7 +70,7 @@ function boundCallFactOwner(binding: string, ctx: CallContext): string {
 
 /** Does the RUN declare this constant? The question `resolveConstant` asks first. */
 function isProjectDeclaredConstant(name: string, ctx: CallContext): boolean {
-  return ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length > 0;
+  return identifierEntry(ctx.classAncestors, name) !== undefined || ctx.symbolTable.lookup(name).length > 0;
 }
 
 /**
@@ -130,7 +131,7 @@ function boundCallTypeRef(binding: string, ctx: CallContext): RubyTypeRef | unde
   if (separator <= 0) {
     const owned = selfMemberReturnType(binding, ctx);
     if (owned !== undefined) return owned;
-    const flat = ctx.functionReturnTypes?.[binding];
+    const flat = identifierEntry(ctx.functionReturnTypes, binding);
     return flat ? { form: "instance", name: flat } : undefined;
   }
   return returnTypeOf({ form: "class", name: binding.slice(0, separator) }, binding.slice(separator + 1), ctx);

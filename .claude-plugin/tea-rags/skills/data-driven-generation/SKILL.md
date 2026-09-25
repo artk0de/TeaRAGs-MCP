@@ -20,10 +20,12 @@ hardcoded thresholds — strategies adapt per codebase.
 
 ## Prerequisites
 
-**Area context required:** files, pathPattern, overlay labels from
-risk-assessment must be in conversation. If missing, invoke `/tea-rags:explore`
-for target area — explore detects pre-generation intent, gathers context
-automatically. If explore output already exists this conversation, use it.
+**Area context required:** files, pathPattern, per-symbol overlay labels must be
+in conversation. Labels come from `find_symbol(rerank=<preset>, metaOnly=false)`
+on target symbols — explore PRE-GEN step PG-2 (SIGNAL LOOKUP). No full
+risk-assessment scan needed. If missing, invoke `/tea-rags:explore` for target
+area — explore detects pre-generation intent, gathers context automatically. If
+explore output already exists this conversation, use it.
 
 ## Reading Overlay Labels
 

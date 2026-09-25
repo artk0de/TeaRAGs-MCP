@@ -11,7 +11,6 @@ import { structuredPatch } from "diff";
 import type { VcsGitAdapter } from "../../../../adapters/vcs/git/adapter.js";
 import type {
   BlobBatchReader,
-  CommitChangedPath,
   CommitInfo,
   CommitWithChangedFiles,
   FileChurnData,
@@ -22,6 +21,7 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { applyOffsets, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
+import { resolveHeadPaths, sliceCommitsFollowingRenames, type HeadAttributedChangedPath } from "./rename-following.js";
 import { extractTaskIds } from "./utils.js";
 
 /** Duck type for injected concurrency limiter — matches infra/semaphore.ts Semaphore shape. */
@@ -132,6 +132,7 @@ interface CommitHunkData {
 
 /** Commits to walk plus the bug-fix SHA set their classification needs. */
 interface CommitDiscoveryResult {
+  /** Newest → oldest (log order) — `resolveHeadPaths` depends on it. */
   commitEntries: CommitWithChangedFiles[];
   bugFixShas: Set<string>;
 }
@@ -167,7 +168,9 @@ async function discoverCommits(
     const discovery = opts.commitDiscovery;
     let commitEntries: CommitWithChangedFiles[];
     try {
-      commitEntries = await discovery.commitsForFiles(filePaths);
+      // Pre-rename commits name the file by an old path, which a HEAD-keyed
+      // slice never contains — widen it (bd tea-rags-mcp-z8w16).
+      commitEntries = await sliceCommitsFollowingRenames(async (paths) => discovery.commitsForFiles(paths), filePaths);
     } catch (error) {
       if (isDebug()) {
         console.error(
@@ -189,7 +192,14 @@ async function discoverCommits(
   // Use CLI pathspec filtering — only fetches commits touching our files.
   let commitEntries: CommitWithChangedFiles[];
   try {
-    commitEntries = await opts.adapter.getCommitsByPathspec(sinceDate, filePaths, opts.chunkTimeoutMs);
+    // Same widening as the matrix branch. A pathspec restricts rename detection
+    // to the paths it names, so a HEAD-only pathspec rarely surfaces the rename
+    // row that would widen it — this legacy (recovery / backfill) path follows
+    // fewer renames than the matrix one.
+    commitEntries = await sliceCommitsFollowingRenames(
+      async (paths) => opts.adapter.getCommitsByPathspec(sinceDate, paths, opts.chunkTimeoutMs),
+      filePaths,
+    );
   } catch (error) {
     if (isDebug()) {
       console.error(
@@ -271,16 +281,21 @@ async function collectHunksPerFile(
     semWaitMs: 0,
   };
 
-  /** One (commit, file) pair: memo lookup, else two blob reads + structuredPatch. */
+  /**
+   * One (commit, file) pair: memo lookup, else two blob reads + structuredPatch.
+   * Blobs and the memo are addressed by the path the COMMIT used (`filePath`);
+   * the chunk map and `fileHunkMap` by the HEAD path the row resolved to —
+   * they differ for every commit made before a rename (bd tea-rags-mcp-z8w16).
+   */
   const collectOneFile = async (
-    changed: CommitChangedPath,
+    { changed, headPath }: HeadAttributedChangedPath,
     commit: CommitInfo,
     parentOid: string | null,
     isBugFix: boolean,
     commitTaskIds: string[],
   ): Promise<void> => {
     const filePath = changed.path;
-    const entries = relativeChunkMap.get(filePath);
+    const entries = relativeChunkMap.get(headPath);
     if (!entries) return;
 
     const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
@@ -333,26 +348,30 @@ async function collectHunksPerFile(
     if (hunks.length === 0) return;
 
     // Collect into fileHunkMap (safe: JS single-threaded between awaits)
-    let list = fileHunkMap.get(filePath);
+    let list = fileHunkMap.get(headPath);
     if (!list) {
       list = [];
-      fileHunkMap.set(filePath, list);
+      fileHunkMap.set(headPath, list);
     }
     list.push({ commit, hunks, isBugFix, taskIds: commitTaskIds });
   };
 
-  const collectHunks = async (entry: CommitWithChangedFiles): Promise<void> => {
+  const collectHunks = async (
+    entry: CommitWithChangedFiles,
+    attributedRows: HeadAttributedChangedPath[],
+  ): Promise<void> => {
     const acquireStart = Date.now();
     const release = await acquire();
     out.semWaitMs += Date.now() - acquireStart;
     out.holdCount++;
     try {
-      const { commit, changedFiles } = entry;
+      const { commit } = entry;
 
-      // Match on the CURRENT path — the chunk map is keyed on HEAD paths, and
-      // a rename row now carries that path rather than git's `{old => new}`
-      // column (bd tea-rags-mcp-0dwsn).
-      const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f.path));
+      // Match on the HEAD path each row resolved to — the chunk map is keyed on
+      // HEAD paths. A rename row names the post-rename path (bd
+      // tea-rags-mcp-0dwsn); a row older than a rename names a path the alias
+      // map resolves forward (bd tea-rags-mcp-z8w16).
+      const relevantFiles = attributedRows.filter((row) => relativeChunkMap.has(row.headPath));
       if (relevantFiles.length === 0) return;
 
       const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, discovery.bugFixShas);
@@ -366,7 +385,7 @@ async function collectHunksPerFile(
       const parentOid = entry.commit.parents?.[0] ?? null;
 
       await Promise.all(
-        relevantFiles.map(async (changed) => collectOneFile(changed, commit, parentOid, isBugFix, commitTaskIds)),
+        relevantFiles.map(async (row) => collectOneFile(row, commit, parentOid, isBugFix, commitTaskIds)),
       );
     } finally {
       release();
@@ -374,7 +393,11 @@ async function collectHunksPerFile(
   };
 
   try {
-    await Promise.all(discovery.commitEntries.map(collectHunks));
+    // Resolved sequentially, newest → oldest, BEFORE the parallel fan-out: the
+    // alias map is rewritten at each rename commit, so a row's HEAD path
+    // depends on every newer commit already having been seen.
+    const attributed = resolveHeadPaths(discovery.commitEntries);
+    await Promise.all(discovery.commitEntries.map(async (entry, i) => collectHunks(entry, attributed[i])));
   } finally {
     // Tear the cat-file process down once all blob reads are done (Phase 2 maps
     // hunks → chunks in-memory, no further git reads) — but ONLY if we spawned

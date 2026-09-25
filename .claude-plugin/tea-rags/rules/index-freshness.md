@@ -16,25 +16,28 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 
 Executing **multi-task plan inside git worktree** (inline- OR subagent-driven):
 give worktree own index clone, keep fresh with **explicit, user-visible**
-commands. **No implicit commit-reindex hook** — mid-task searches fresh only if
-you ran per-task REINDEX yourself. Clone throwaway; only hook is cleanup
-backstop dropping its footprint.
+commands. **No implicit commit-reindex hook** — freshness is a READ-side
+precondition run before each task's first search, not a post-commit chore. Clone
+throwaway; only hook is cleanup backstop dropping its footprint.
 
-| Phase        | When                                     | Explicit action — run it visibly                                                                 | Target                              |
-| ------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| **CREATE**   | start of a multi-task plan in a worktree | `tea-rags worktree create <name> --from <src-alias> --path <abs-worktree> --no-git`              | new clone `<src>-worktree-<name>`   |
-| **REINDEX**  | after EACH task's commit                 | `tea-rags index_codebase --project <src>-worktree-<name>` (incremental)                          | the clone — next task reads fresh   |
-| **TEARDOWN** | branch finished (merge OR delete)        | `tea-rags worktree remove <name>` (always) + on merge `tea-rags index_codebase --project <main>` | clone footprint dropped; main fresh |
-| Drift        | prime / status `## Drift` is not `none`  | the ONE `Run:` line that report ends with                                                        | — (consent per the table above)     |
+| Phase            | When                                                | Explicit action — run it visibly                                                                                                                                                                               | Target                                |
+| ---------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **PRECONDITION** | BEFORE each task's first tea-rags call (every task) | `tea-rags worktree info --json` → absent: `tea-rags worktree create <name> --from <src-alias> --path <abs-worktree> --no-git` (lazy) → `tea-rags index-codebase --project <src>-worktree-<name>` (incremental) | clone exists + fresh; search reads it |
+| **TEARDOWN**     | branch finished (merge OR delete)                   | `tea-rags worktree remove <name>` (always) + on merge `tea-rags index-codebase --project <main>`                                                                                                               | clone footprint dropped; main fresh   |
+| Drift            | prime / status `## Drift` is not `none`             | the ONE `Run:` line that report ends with                                                                                                                                                                      | — (consent per the table above)       |
 
 - **Run each phase explicitly — agent and user SEE it.** No background hook
-  reindexes after commit; skip per-task REINDEX → next task reads stale
-  payloads.
-- **Gate CREATE:** only for multi-task plan in worktree. Single-task plans,
+  reindexes after commit; skip PRECONDITION → task searches stale clone or
+  `main`.
+- **Gate:** only for multi-task plan in worktree. Single-task plans,
   explore-only sessions, main-checkout work use main collection directly — no
   clone. Very large source index → note size, confirm before cloning.
-- **Subagent-driven / bare:** PARENT orchestrating plan runs CREATE + per-task
-  REINDEX — whether task ran inline or via dispatched subagent. Subagent does
+- **Seeded path:** CREATE refuses `Target collection already exists` → earlier
+  first `index-codebase` on worktree path SEEDED an ordinary project from a
+  sibling working tree (not a clone; `worktree remove` refuses it). Reindex +
+  search it by path; do not delete it.
+- **Subagent-driven / bare:** PARENT orchestrating plan runs PRECONDITION before
+  each task — whether task runs inline or via dispatched subagent. Subagent does
   not reindex; parent owns clone lifecycle.
 - **Teardown guaranteed.** `dinopowers:finishing-a-development-branch` runs
   `worktree remove` explicitly; cleanup-only `PostToolUse:Bash` hook
@@ -71,7 +74,7 @@ made outside this session count the same: `git status --porcelain -uall` listing
 paths you are about to search fires the uncommitted-edits row. Prime staleness
 is time-based and never sees them.
 
-In worktree plan, explicit per-task REINDEX (above) keeps clone fresh between
+In worktree plan, the per-task PRECONDITION (above) keeps clone fresh between
 tasks. Code edited but NOT yet committed → run `index_codebase` (incremental)
 manually before searching — see `dinopowers/FRESHNESS.md`. `index_codebase` is
 only incremental entrypoint — older reindex endpoints deprecated.

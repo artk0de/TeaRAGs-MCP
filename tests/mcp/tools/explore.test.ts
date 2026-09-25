@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { App, SchemaBuilder } from "../../../src/core/api/index.js";
 import type { ExploreResponse } from "../../../src/core/api/public/dto/explore.js";
 import { registerSearchTools } from "../../../src/mcp/tools/explore.js";
+import { TYPED_FILTER_PARAM_NAMES } from "../../../src/mcp/tools/schemas.js";
 
 type CapturedTool = {
   name: string;
@@ -36,6 +37,7 @@ function makeHarness(appOverrides: Record<string, unknown> = {}) {
   const schemaBuilder = {
     buildRerankSchema: vi.fn(() => z.any()),
     buildFilterSchema: vi.fn(() => z.any()),
+    filterParamNames: vi.fn(() => [...TYPED_FILTER_PARAM_NAMES]),
   } as unknown as SchemaBuilder;
 
   const server = {} as Parameters<typeof registerSearchTools>[0];
@@ -171,5 +173,112 @@ describe("registerSearchTools — codegraphWarning", () => {
     };
 
     expect("codegraphWarning" in result.structuredContent).toBe(false);
+  });
+});
+
+// bd tea-rags-mcp-0qfpi — a rerank preset's DEFAULT filter narrowed the set and
+// the caller never wrote it. The notice rides the response next to driftWarning
+// so an empty or thin answer is attributable without reading preset source.
+describe("registerSearchTools — presetFilterNotice", () => {
+  const notice = { preset: "techDebt", by: "production (isTest)", clearWith: "filter: {}" };
+
+  it.each(["semantic_search", "hybrid_search", "rank_chunks", "find_similar"] as const)(
+    "%s passes presetFilterNotice through to structuredContent",
+    async (toolName) => {
+      const appMethod = {
+        semantic_search: "semanticSearch",
+        hybrid_search: "hybridSearch",
+        rank_chunks: "rankChunks",
+        find_similar: "findSimilar",
+      }[toolName];
+      const { captured } = makeHarness({
+        [appMethod]: vi.fn().mockResolvedValue({ results: [], presetFilterNotice: notice }),
+      });
+      const tool = captured.find((t) => t.name === toolName);
+
+      const result = (await tool!.handler({ path: "/x", query: "q", rerank: "techDebt" }, {})) as {
+        structuredContent: { presetFilterNotice?: typeof notice };
+      };
+
+      expect(result.structuredContent.presetFilterNotice).toEqual(notice);
+    },
+  );
+
+  it("omits presetFilterNotice when the caller's own filter is what applied", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "semantic_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q", filter: {} }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect("presetFilterNotice" in result.structuredContent).toBe(false);
+  });
+
+  it("declares presetFilterNotice on the shared search output schema", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.outputSchema).toHaveProperty("presetFilterNotice");
+    }
+  });
+});
+
+// bd tea-rags-mcp-l2lix — `fields` is a payload allow-list applied server-side.
+// It belongs on every tool that returns payload-bearing results, not on one of
+// them, and a path that matched nothing is reported rather than silently
+// producing empty payloads.
+describe("registerSearchTools — fields projection", () => {
+  const churnPath = "git.file.commitCount";
+
+  it("every search tool accepts a fields param", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.inputSchema).toHaveProperty("fields");
+    }
+  });
+
+  it("forwards fields to the App method verbatim", async () => {
+    const { captured, app } = makeHarness();
+    const tool = captured.find((t) => t.name === "semantic_search");
+
+    await tool!.handler({ path: "/x", query: "q", fields: [churnPath] }, {});
+
+    const call = (app.semanticSearch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(call.fields).toEqual([churnPath]);
+  });
+
+  it("passes fieldsWarning through to structuredContent", async () => {
+    const warning = `fields: no result carried "chunk.commitCount" — did you mean ${churnPath}?`;
+    const { captured } = makeHarness({
+      hybridSearch: vi.fn().mockResolvedValue({ results: [], fieldsWarning: warning }),
+    });
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q", fields: ["chunk.commitCount"] }, {})) as {
+      structuredContent: { fieldsWarning?: string };
+    };
+
+    expect(result.structuredContent.fieldsWarning).toBe(warning);
+  });
+
+  it("omits fieldsWarning when every requested path landed", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "hybrid_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q", fields: ["relativePath"] }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect("fieldsWarning" in result.structuredContent).toBe(false);
+  });
+
+  it("declares fieldsWarning on the shared search output schema", () => {
+    const { captured } = makeHarness();
+    for (const tool of captured) {
+      expect(tool.config.outputSchema).toHaveProperty("fieldsWarning");
+    }
   });
 });

@@ -7,6 +7,100 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 import type { PresetDescriptors } from "../../core/api/public/dto/explore.js";
 import { InvalidParameterError, type App, type PayloadSignalDescriptor } from "../../core/api/public/index.js";
 
+/**
+ * The metaOnly response contract — stated once, here. Every search tool's
+ * `metaOnly` hint points at it (filterMetaOnly / applyEssentialSignals select
+ * raw fields; BaseExploreStrategy#applyMetaOnly keeps rankingOverlay).
+ */
+export const META_ONLY_CONTRACT =
+  "Payload stays RAW, same paths + value forms as without metaOnly: flat signals at root, " +
+  "git trimmed to essential fields (commitCount, ageDays, taskIds, blame*), codegraph.symbols.* whole — " +
+  "never {value,label}. Labels live only in rankingOverlay.{file,chunk}.<field> ({value,label} when " +
+  "labelled, else raw), present whenever rerank ran; flat structural signals (methodLines, imports) " +
+  "under rankingOverlay.file. Signal outside essential set → read rankingOverlay (if preset surfaces it) " +
+  "or metaOnly=false.";
+
+/**
+ * Param reference — the prose that used to ride inline on every tool param
+ * (bd tea-rags-mcp-ewg2s). Schema keeps a ≤ 20-word hint; the semantics an
+ * agent needs to get a call exactly right live here.
+ */
+function buildParamReference(): string {
+  return `## Param reference
+Inline param hints short; full semantics here.
+
+### Addressing (every project-aware tool)
+- \`project\` [RECOMMENDED] — registry alias; survives path moves, pulls qdrantUrl / embeddingModel from entry.
+- \`collection\` — raw Qdrant name. \`path\` — codebase path, auto-resolves.
+- Resolution priority: collection > project > path. Give one.
+
+### level (semantic_search, hybrid_search, rank_chunks, find_similar)
+- 'chunk' = rank chunks (functions, classes, blocks) — decomposition, hotspots.
+- 'file' = rank files as units — tech debt, ownership. Result carries file-level payload only
+  (relativePath, language, imports, git.file, codegraph.symbols.file, …): no chunk fields, no content.
+  Outline a file via find_symbol(relativePath).
+- Unset → preset signalLevel. Explicit value overrides preset.
+- Also sets payload scope of level-aware filters. Unset → each filter's own default:
+  minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/author/minFanIn/minFanOut: file.
+  modifiedAfter/modifiedBefore/recentAuthor/contributor file-level regardless.
+
+### Typed filters
+- \`author\` — blame owner (most live lines, git blame HEAD), exact name. level 'chunk' → owner of chunk's own lines.
+- \`recentAuthor\` — top committer to FILE in git log window (not blame); name OR email. 'What did X work on' → recentAuthor + modifiedAfter.
+- \`contributor\` — any window committer, exact name as git records it. Superset: 'everything X touched' → contributor; 'where X dominates' → recentAuthor.
+- \`modifiedAfter\` / \`modifiedBefore\` — git.file.lastModifiedAt vs ISO date ('2024-01-01', '2024-01-01T00:00:00Z').
+- \`minAgeDays\` / \`maxAgeDays\` — age from lastModifiedAt at QUERY time (0 = within a day). Chunk level: chunk with no
+  commit in chunk git window (and docs) dropped. level 'file' → file last commit, grouped per file.
+  File-level recency at chunk granularity → modifiedAfter.
+- \`taskId\` — JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). File: any commit of file; chunk: chunk's own commits.
+- \`symbolId\` — text match: 'Class' → all its methods, 'method' → that method in any class.
+- Codegraph filters (\`minFanIn\`, \`minFanOut\`, \`minPageRank\`, \`minInstability\`, \`minTransitiveImpact\`,
+  \`minConnectionCount\`, \`isHub\`, \`isLeaf\`) exposed only when codegraph enabled.
+  fanIn/fanOut: file = importing / imported files; chunk = call sites / outgoing calls.
+- \`documentation\` / \`testFile\`: only | exclude | include. Omitted → no filter of own, but preset default may exclude.
+
+### filter (raw Qdrant or { presets })
+- Raw: must/should/must_not — syntax in tea-rags://schema/filters. Named: \`{ presets: "a,b" }\`.
+- Omitted → rerank preset's default filter applies (most: production = no tests/docs/block).
+  Any explicit filter replaces it; \`{}\` clears it.
+- Default skipped automatically when typed params explicitly select what it excludes:
+  testFile "only" / "include", documentation "only" / "include", chunkType test/test_setup, language "markdown".
+- Default DID apply → response carries presetFilterNotice naming it + how to clear.
+
+### metaOnly
+${META_ONLY_CONTRACT}
+Default false; rank_chunks default true (analytics — false to include code).
+
+### fields
+- Dot-path allow-list applied server-side before serialization — cuts response size.
+- Nesting matters: signals under git.{file,chunk}.* and codegraph.symbols.{file,chunk}.* (tea-rags://schema/signals).
+- EXACT: nothing added back, relativePath included. Omitted → full payload.
+- metaOnly = different axis (drops body, trims git). Path no result carried → fieldsWarning, not failure.
+
+### find_similar
+- positiveCode: any code block; each string = one example, embedded on the fly.
+- strategy: best_score (default) scores each candidate vs every example, supports negative-only;
+  average_vector averages positives, fastest; sum_scores sums across examples.
+
+### find_symbol
+- symbol: Class#method (instance), Class.method (static), fn (top-level), Class → class + members.
+  symbol XOR relativePath. pathPattern applies to symbol mode only.
+
+### Codegraph tools
+- get_callers includeAmbiguous: ambiguous dispatch sites whose member matches target — call MAY reach
+  target among candidateCount candidates; not materialized as edges. Default false.
+- find_cycles pathPattern: cycle kept if ≥1 member resolves to matching file → cross-boundary cycles retained.
+- trace_path fromPath / toPath: top-level symbols share bare ids; omitted → trace from all, candidates as namesakes.
+
+### Indexing / collections
+- index_codebase seedFromWorktree: sibling git worktree of same repo, same model + settings → clone its index,
+  embed only differing files. First index only.
+- create_collection schema: top level \`{ "type": "object", "properties": {...} }\`; add_documents validates each
+  document's metadata (all-or-nothing per batch), stores schema \`default\` for absent fields. Omit = free-form.
+- create_collection distance: Cosine recommended (all providers); Dot ≡ Cosine on normalized; Euclid rarely for text.
+`;
+}
+
 export function buildOverview(): string {
   return `# tea-rags Schema Overview
 
@@ -33,8 +127,13 @@ export function buildOverview(): string {
   moved past what the index was built with — new payload fields, or a newer
   grammar / walker for a language it holds. It names the one command that
   repairs it. Surface it to the user; do NOT auto-trigger a reindex.
-- Every reranked result carries \`rankingOverlay.derived\` + \`rankingOverlay.raw.{file,chunk}\`
-  explaining the score (normalized derived signals + raw values with labels).
+- A search that named a rerank preset can come back with \`presetFilterNotice\` — that
+  preset's DEFAULT filter (most: production = no tests/docs/block) narrowed the set and
+  you never wrote it. It names the preset, the payload keys the default constrains, and
+  the param that clears it. Read it before concluding the corpus lacks the code.
+- Every reranked result carries \`rankingOverlay\` \`{preset, file, chunk}\` — the preset's
+  surfaced signals keyed by bare field name, \`{value,label}\` when labelled, raw otherwise.
+  metaOnly results keep it; it is the only place labels live (the metaOnly param states the contract).
   Read tea-rags://schema/signal-labels for the label resolution algorithm.
 
 ## Project calibration
@@ -48,6 +147,7 @@ or "legacy" varies by codebase.
 - tea-rags://schema/indexing-guide — indexing options, git metadata guide
 - tea-rags://schema/signal-labels — human-readable label mappings for numeric signals
 
+${buildParamReference()}
 ## IMPORTANT: Destructive Tools
 
 **NEVER call these tools without explicit user confirmation:**
@@ -264,7 +364,8 @@ export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): stri
   md += "`modifiedBefore` always read `git.file.lastModifiedAt`, `recentAuthor` always ";
   md += "`git.file.recentDominantAuthor*`, `contributor` always `git.file.recentAuthors`, any ";
   md += "`level`. (2) Result granularity: ";
-  md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
+  md += '`level: "file"` → one result per file, file-level payload only (no chunk fields, no content; ';
+  md += "outline via `find_symbol(relativePath)`). `minAgeDays` / `maxAgeDays` ";
   md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
   md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
   md += "Age reads are query-time: overlay `ageDays`, `age`/`recency` rerank and the ageDays filter ";
@@ -482,7 +583,7 @@ export function registerAllResources(server: McpServer, app: App): void {
     "tea-rags://schema/overview",
     {
       title: "Schema Overview",
-      description: "Resource catalog and tools quick reference for tea-rags MCP",
+      description: "Resource catalog, tools quick reference, full param reference for tea-rags MCP",
       mimeType: "text/markdown",
     },
     async (uri) => ({

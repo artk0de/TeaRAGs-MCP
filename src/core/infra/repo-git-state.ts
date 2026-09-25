@@ -24,6 +24,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { resolveGitExecutable } from "./git-executable.js";
+
 export interface RepoGitState {
   /** Branch checked out; null = detached HEAD (or a non-branch ref). */
   branch: string | null;
@@ -121,7 +123,7 @@ export function readRepoGitState(repoPath: string): RepoGitState | null {
  */
 export function readWorkingTreeDirty(repoPath: string, execFileImpl: typeof execFileSync = execFileSync): boolean {
   try {
-    const out = execFileImpl("git", ["-C", repoPath, "status", "--porcelain", "-uno"], {
+    const out = execFileImpl(resolveGitExecutable(), ["-C", repoPath, "status", "--porcelain", "-uno"], {
       timeout: 15_000,
       encoding: "utf-8",
     });
@@ -139,7 +141,7 @@ export function readWorkingTreeDirty(repoPath: string, execFileImpl: typeof exec
 export function detectDefaultBranch(repoPath: string, execFileImpl: typeof execFileSync = execFileSync): string {
   try {
     const out = String(
-      execFileImpl("git", ["-C", repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], {
+      execFileImpl(resolveGitExecutable(), ["-C", repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], {
         timeout: 15_000,
         encoding: "utf-8",
       }),

@@ -13,12 +13,12 @@
  * plus a symbol) is what `find_symbol` resolves, and it breaks loudly — the
  * lookup comes back empty — instead of pointing somewhere plausible.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const ROOT = join(import.meta.dirname, "..");
+import { navigators, REPO_ROOT } from "./navigator-files.js";
 
 /** Extensions a line-number citation into this repo can carry. */
 const SOURCE_EXTENSIONS = "ts|tsx|mts|cts|js|mjs|cjs|json|py|rb|go|rs|java|sql|sh|ya?ml|md";
@@ -68,14 +68,6 @@ function findLineNumberReferences(markdown: string): LineReferenceOffense[] {
     }
     return kept.map((match) => ({ line: index + 1, text: match.text }));
   });
-}
-
-/** Every nested navigator under `src/`, repo-relative with POSIX separators. */
-function navigators(): string[] {
-  return readdirSync(join(ROOT, "src"), { recursive: true, encoding: "utf8" })
-    .map((entry) => `src/${entry.split(/[\\/]/).join("/")}`)
-    .filter((file) => file.endsWith("/CLAUDE.md"))
-    .sort();
 }
 
 describe("findLineNumberReferences", () => {
@@ -128,7 +120,7 @@ describe("domain navigators", () => {
 
   it("cite code by symbol, never by line number", () => {
     const offenses = navigators().flatMap((path) =>
-      findLineNumberReferences(readFileSync(join(ROOT, path), "utf8")).map(
+      findLineNumberReferences(readFileSync(join(REPO_ROOT, path), "utf8")).map(
         (offense) => `${path}:${offense.line} → ${offense.text}`,
       ),
     );

@@ -56,12 +56,18 @@ import {
   PythonChainAnswerProbe,
   pythonDynamicDispatchEnabled,
   PythonDynamicDispatchResolver,
+  PythonTableDispatchResolver,
 } from "./dispatch/index.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { CONE_MAX_DEFAULT, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
+import {
+  CONE_MAX_DEFAULT,
+  lookupPythonSymbolsByShortName,
+  PythonConeTypeLocator,
+  type ResolverConfig,
+} from "./strategies/index.js";
 
 /** Parse `CODEGRAPH_PY_CONE_MAX`; fall back to the Python default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -82,7 +88,10 @@ export class PythonCallResolver implements CallResolver {
   private readonly probe: PythonChainAnswerProbe;
   /**
    * Dispatch components in PRECEDENCE order, first non-empty wins
-   * (`resolveDispatchViaComponents`). The CHA cone leads because a receiver
+   * (`resolveDispatchViaComponents`). The dict-table component leads (bd
+   * tea-rags-mcp-pbwd): it answers only a call the walker tagged with a table
+   * read, whose candidate set is the table's own entries, and returns nothing
+   * for every other call. The CHA cone is next because a receiver
    * whose static type is known is not a guess; `dynamic` would be last because
    * it answers only what nothing else — the cone, and the exact chain behind its
    * own probe gate — can.
@@ -90,8 +99,8 @@ export class PythonCallResolver implements CallResolver {
    * `dynamic` is composed ONLY under `CODEGRAPH_PY_DYNAMIC_DISPATCH` and is off
    * by default (D10): its `single` terminal is a name-only claim, and measured
    * over five corpora it is right about as often as it is wrong. With the flag
-   * absent this array is the cone alone, byte-identically to the pre-E4.1.3
-   * behaviour.
+   * absent this array is the table and the cone, the cone answering exactly as
+   * it did before E4.1.3 for every call the table does not claim.
    */
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   /**
@@ -129,14 +138,16 @@ export class PythonCallResolver implements CallResolver {
       new PythonExternalVocabulary(this.importFileMapper, this.ancestorLinearizers, mode),
     );
     this.probe = new PythonChainAnswerProbe(this.chain);
+    const table = new PythonTableDispatchResolver((call, ctx) => this.probe.resolve(call, ctx), this.importFileMapper);
     this.dispatchComponents = pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)
       ? [
+          table,
           this.cone,
           new PythonDynamicDispatchResolver(this.probe, (call, ctx) =>
             this.external.targetsCoreAmbiguousMember(call, ctx),
           ),
         ]
-      : [this.cone];
+      : [table, this.cone];
   }
 
   /**
@@ -155,6 +166,12 @@ export class PythonCallResolver implements CallResolver {
    * Dispatch fan-out for a Python call, over the components in
    * {@link dispatchComponents} — first non-empty (or `ambiguous`) wins.
    *
+   *  - `table` — dict-table dispatch (bd tea-rags-mcp-pbwd). A call the walker
+   *    tagged with `dispatch` (`HANDLERS[k](x)`, `HANDLERS.get(k)(x)`, a local
+   *    bound to one) fans to the table's callables — one `exact` edge for a
+   *    string-literal key, `registry` edges at `1/N` otherwise; a call carrying
+   *    `dispatchArgs` fans from its callee when the candidate set lands on one of
+   *    the callee's `callbackParams` positions.
    *  - `cone` — CHA (bd tea-rags-mcp-f10y, N=2). A polymorphic TYPED receiver
    *    (`pet: Animal`, then `pet.speak()`) whose static type has subtypes
    *    overriding the member fans to N `cone` edges, or one `poly-base` edge
@@ -213,5 +230,17 @@ export class PythonCallResolver implements CallResolver {
    */
   targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
     return this.external.targetsCoreAmbiguousMember(call, ctx);
+  }
+
+  /**
+   * Whether a PYTHON file declares the member — the miss classifier's
+   * denominator question (bd tea-rags-mcp-nbf8q). The chain only ever lands on
+   * Python files (`lookupPythonSymbolsByShortName`, bd tea-rags-mcp-w205u), so
+   * a namesake only a `.ts` / `.rb` file declares is no edge this call can
+   * have; the runner's unfiltered fallback charged it as
+   * `missWithInProjectDef` anyway.
+   */
+  hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
+    return lookupPythonSymbolsByShortName(ctx, call.member).length > 0;
   }
 }

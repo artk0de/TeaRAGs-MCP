@@ -446,6 +446,47 @@ describe("main — bootstrap happy path", () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  it("carries a typed fatal's code AND hint to the supervisor — the hint is the actionable part (bd tea-rags-mcp-umatc)", async () => {
+    // An unreachable embedding provider's message only says what is wrong;
+    // what to do about it ("Start Ollama: …") lives in the hint, and the
+    // supervisor can only print what crosses the IPC channel.
+    const typed = Object.assign(new Error("Ollama is not reachable at http://127.0.0.1:9"), {
+      code: "INFRA_OLLAMA_UNAVAILABLE",
+      hint: "Start Ollama: open -a Ollama, or verify OLLAMA_URL=http://127.0.0.1:9",
+    });
+    mainFakeApp.indexCodebase.mockRejectedValueOnce(typed);
+    const { main } = await import("../../../src/cli/index-progress/worker.js");
+    await main();
+
+    expect(sendSpy).toHaveBeenCalledWith({
+      type: "error",
+      message: "Ollama is not reachable at http://127.0.0.1:9",
+      code: "INFRA_OLLAMA_UNAVAILABLE",
+      hint: "Start Ollama: open -a Ollama, or verify OLLAMA_URL=http://127.0.0.1:9",
+    });
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("carries the hint of a fatal raised while the app context is being built", async () => {
+    const { createAppContext } = await import("../../../src/bootstrap/factory.js");
+    vi.mocked(createAppContext).mockRejectedValueOnce(
+      Object.assign(new Error("Ollama is not reachable at http://127.0.0.1:9"), {
+        code: "INFRA_OLLAMA_UNAVAILABLE",
+        hint: "Start Ollama: open -a Ollama",
+      }),
+    );
+    const { main } = await import("../../../src/cli/index-progress/worker.js");
+    await main();
+
+    expect(sendSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "error",
+        code: "INFRA_OLLAMA_UNAVAILABLE",
+        hint: "Start Ollama: open -a Ollama",
+      }),
+    );
+  });
+
   it("wires an onTurboMigration hook that forwards a turbo-migration IPC message", async () => {
     const { createAppContext } = await import("../../../src/bootstrap/factory.js");
     const { main } = await import("../../../src/cli/index-progress/worker.js");
@@ -459,6 +500,30 @@ describe("main — bootstrap happy path", () => {
       collection: "code_abc",
       stage: "done",
       elapsedMs: 4200,
+    });
+  });
+
+  it("wires an onEmbeddingRecoveryWait hook that forwards an embedding-state IPC message (bd tea-rags-mcp-umatc)", async () => {
+    const { createAppContext } = await import("../../../src/bootstrap/factory.js");
+    const { main } = await import("../../../src/cli/index-progress/worker.js");
+    await main();
+
+    const hooks = vi.mocked(createAppContext).mock.calls.at(-1)?.[1];
+    expect(hooks?.onEmbeddingRecoveryWait).toBeTypeOf("function");
+    hooks?.onEmbeddingRecoveryWait?.({ state: "waiting", url: "http://127.0.0.1:9", elapsedMs: 0, budgetMs: 240_000 });
+    hooks?.onEmbeddingRecoveryWait?.({ state: "recovered", url: "http://127.0.0.1:9", elapsedMs: 6000 });
+    expect(sendSpy).toHaveBeenCalledWith({
+      type: "embedding-state",
+      state: "waiting",
+      url: "http://127.0.0.1:9",
+      elapsedMs: 0,
+      budgetMs: 240_000,
+    });
+    expect(sendSpy).toHaveBeenCalledWith({
+      type: "embedding-state",
+      state: "recovered",
+      url: "http://127.0.0.1:9",
+      elapsedMs: 6000,
     });
   });
 

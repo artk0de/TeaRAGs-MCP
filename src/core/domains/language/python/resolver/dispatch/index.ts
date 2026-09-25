@@ -12,3 +12,4 @@ export {
   resolvePythonDispatchFanMax,
 } from "./python-dispatch-policy.js";
 export { PythonDynamicDispatchResolver } from "./python-dynamic-dispatch.js";
+export { PythonTableDispatchResolver, type PythonCallAnswer } from "./python-table-dispatch.js";

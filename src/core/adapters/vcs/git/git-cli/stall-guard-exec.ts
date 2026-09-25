@@ -11,6 +11,8 @@
 
 import { spawn } from "node:child_process";
 
+import { trackGitChildProcess } from "./git-child-process-registry.js";
+
 export interface StallGuardOptions {
   cwd: string;
   /** Kill the child after this long with NO stdout activity (ms). */
@@ -21,6 +23,7 @@ export async function execWithStallGuard(command: string, args: string[], option
   const { cwd, stallTimeoutMs } = options;
   return new Promise<string>((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    trackGitChildProcess(child);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     let stalled = false;

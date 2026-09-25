@@ -142,6 +142,98 @@ describe("DuckDbGraphClient — ambiguous fan-out persistence (j0pki)", () => {
     expect(ts?.ambiguousFanout).toBe(0);
   });
 
+  // bd tea-rags-mcp-n9bmd — a SymbolId is unique per FILE, not per repository,
+  // so a namesake caller (a top-level `main`, a Ruby class reopened in two
+  // files) emitting the same over-cap fan-out in two files is TWO aggregates.
+  // Under the 013 key (source_symbol_id, call_expression) the second file's row
+  // was dropped by INSERT OR IGNORE — first file wins, no error at any layer.
+  describe("namesake callers in different files (n9bmd)", () => {
+    const namesakeFanout = (candidateCount: number) => ({
+      sourceSymbolId: "main",
+      callExpression: "handler.run",
+      member: "run",
+      candidateCount,
+    });
+
+    it("keeps both files' aggregates when written one file at a time", async () => {
+      await client.upsertFile(
+        { relPath: "src/cli/index.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(40)] },
+      );
+      await client.upsertFile(
+        { relPath: "src/daemon/entry.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(41)] },
+      );
+
+      const rows = await client.queryAll<{ source_rel_path: string; candidate_count: number | bigint }>(
+        "SELECT source_rel_path, candidate_count FROM cg_ambiguous_fanout WHERE source_symbol_id = 'main' ORDER BY source_rel_path",
+      );
+      expect(rows.map((r) => [r.source_rel_path, Number(r.candidate_count)])).toEqual([
+        ["src/cli/index.ts", 40],
+        ["src/daemon/entry.ts", 41],
+      ]);
+    });
+
+    it("keeps both files' aggregates when both files land in ONE bulk write", async () => {
+      await client.upsertFilesBulk([
+        {
+          node: { relPath: "src/cli/index.ts", language: "typescript" },
+          edges: { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(40)] },
+        },
+        {
+          node: { relPath: "src/daemon/entry.ts", language: "typescript" },
+          edges: { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(41)] },
+        },
+      ]);
+
+      const rows = await client.queryAll<{ source_rel_path: string }>(
+        "SELECT source_rel_path FROM cg_ambiguous_fanout WHERE source_symbol_id = 'main' ORDER BY source_rel_path",
+      );
+      expect(rows.map((r) => r.source_rel_path)).toEqual(["src/cli/index.ts", "src/daemon/entry.ts"]);
+    });
+
+    it("re-walking one namesake file leaves the other file's aggregate untouched", async () => {
+      await client.upsertFile(
+        { relPath: "src/cli/index.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(40)] },
+      );
+      await client.upsertFile(
+        { relPath: "src/daemon/entry.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(41)] },
+      );
+
+      // The fan-out resolved away in one file only.
+      await client.upsertFile(
+        { relPath: "src/cli/index.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [] },
+      );
+
+      const callers = await client.getAmbiguousCallersByMember("run");
+      expect(callers).toEqual([
+        {
+          sourceSymbolId: "main",
+          sourceRelPath: "src/daemon/entry.ts",
+          callExpression: "handler.run",
+          candidateCount: 41,
+        },
+      ]);
+    });
+
+    it("surfaces every namesake file's aggregate from getAmbiguousCallersByMember, ordered by file", async () => {
+      await client.upsertFile(
+        { relPath: "src/daemon/entry.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(41)] },
+      );
+      await client.upsertFile(
+        { relPath: "src/cli/index.ts", language: "typescript" },
+        { fileEdges: [], methodEdges: [], ambiguousFanouts: [namesakeFanout(40)] },
+      );
+
+      const callers = await client.getAmbiguousCallersByMember("run");
+      expect(callers.map((c) => c.sourceRelPath)).toEqual(["src/cli/index.ts", "src/daemon/entry.ts"]);
+    });
+  });
+
   it("removeFile deletes the file's ambiguous rows (same cascade as edge tables)", async () => {
     await client.upsertFile(
       { relPath: "app/services/runner.rb", language: "ruby" },

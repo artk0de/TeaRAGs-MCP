@@ -7,7 +7,7 @@ sidebar_position: 1
 
 | Tool                  | Description                                                          |
 | --------------------- | -------------------------------------------------------------------- |
-| `create_collection`   | Create collection with specified distance metric (Cosine/Euclid/Dot) |
+| `create_collection`   | Create collection with specified distance metric (Cosine/Euclid/Dot); optional `schema` (JSON Schema) makes it a [typed collection](/usage/advanced/collections#typed-collections) |
 | `list_collections`    | List all collections                                                 |
 | `get_collection_info` | Get collection details and statistics                                |
 | `delete_collection`   | Delete collection and all documents                                  |
@@ -16,7 +16,7 @@ sidebar_position: 1
 
 | Tool               | Description                                                                   |
 | ------------------ | ----------------------------------------------------------------------------- |
-| `add_documents`    | Add documents with automatic embedding (supports string/number IDs, metadata) |
+| `add_documents`    | Add documents with automatic embedding (supports string/number IDs, metadata); a typed collection validates metadata against its schema, all-or-nothing per batch |
 | `semantic_search`  | Natural language search with optional metadata filtering                      |
 | `hybrid_search`    | Hybrid search combining semantic and keyword (BM25) search with RRF           |
 | `delete_documents` | Delete specific documents by ID                                               |

@@ -69,7 +69,10 @@ describe("SchemaBuilder.buildFilterSchema", () => {
 
     expect(description).toContain("default filter");
     expect(description).toContain("{}");
-    expect(description).toContain('testFile "only"');
+    // The auto-skip rule (testFile "only" / "include" …) is reference prose —
+    // it moved to tea-rags://schema/overview (bd tea-rags-mcp-ewg2s); the
+    // inline hint points there.
+    expect(description).toContain("tea-rags://schema/overview");
   });
 
   it("omits the named-presets hint when no filter presets are registered", () => {
@@ -80,5 +83,17 @@ describe("SchemaBuilder.buildFilterSchema", () => {
     expect(schema.description).toContain("must/should/must_not");
     const parsed = schema.safeParse({ must: [{ key: "x", match: { value: 1 } }] });
     expect(parsed.success).toBe(true);
+  });
+});
+
+// The typed filter params a search tool exposes must be the ones the trajectory
+// registry APPLIES — a param with no FilterDescriptor is stripped of meaning
+// and the search silently runs unfiltered (bd tea-rags-mcp-86wsz). The names
+// reach the MCP layer through the same single Reranker dependency as the
+// filter-preset names.
+describe("SchemaBuilder.filterParamNames", () => {
+  it("passes through the Reranker's registered filter param names", () => {
+    const reranker = { filterParamNames: () => ["language", "minFanIn"] } as unknown as Reranker;
+    expect(new SchemaBuilder(reranker).filterParamNames()).toEqual(["language", "minFanIn"]);
   });
 });

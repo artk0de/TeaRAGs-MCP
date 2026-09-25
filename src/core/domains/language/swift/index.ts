@@ -67,7 +67,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
+import { composeExtractionWalker } from "../kernel/index.js";
 import { swiftHooks } from "./chunking/index.js";
 import { swiftKernel } from "./kernel.js";
 import { SwiftCallResolver } from "./resolver/index.js";

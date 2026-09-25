@@ -40,6 +40,20 @@ export interface ReceiverTypePorts {
   ) => { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
   /** What calling `member` on a receiver of type `recv` yields. */
   memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext) => TypeRef | undefined;
+  /**
+   * What calling `member` WITH the argument list `argumentText` on `recv`
+   * yields — asked INSTEAD of {@link memberTypeOf} for a link that carries a
+   * balanced argument list, so the port owns its own fallback. OPTIONAL: a
+   * language whose return types never depend on an argument omits it, and
+   * the fold strips the arguments and asks `memberTypeOf` as it always did.
+   *
+   * It exists because a return can be BOUND by an argument: Swift's
+   * `read<U>(_ closure: (Value) -> U) -> U` given the key path `\.prop`
+   * returns `Value.prop`'s type, and nothing but the argument says so (bd
+   * tea-rags-mcp-y99pg). What an argument means is the language's question;
+   * the kernel only hands the text over.
+   */
+  memberCallTypeOf?: (recv: TypeRef, member: string, argumentText: string, ctx: CallContext) => TypeRef | undefined;
   /** Hop cap; a chain longer than this is untyped rather than half-walked. */
   maxHops: () => number;
   /**
@@ -63,6 +77,32 @@ export const CHAIN_MAX_HOPS_DEFAULT = 4;
 export function stripCallArgs(segment: string): string {
   const paren = segment.indexOf("(");
   return paren === -1 ? segment : segment.slice(0, paren);
+}
+
+/**
+ * The text inside a chain segment's argument list — the group opened by its
+ * FIRST `(` (`read(\.p)` → `\.p`) — or `undefined` when the segment has none
+ * or the group never closes. Scanned with {@link splitAtBracketDepthZero}'s
+ * bracket-and-quote rules, so a `)` inside a string or a nested call does not
+ * end it.
+ */
+export function callArgumentText(segment: string): string | undefined {
+  const paren = segment.indexOf("(");
+  if (paren === -1) return undefined;
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = paren; i < segment.length; i++) {
+    const ch = segment[i];
+    if (quote !== null) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if ((ch === ")" || ch === "]" || ch === "}") && --depth === 0) return segment.slice(paren + 1, i);
+  }
+  return undefined;
 }
 
 /**
@@ -184,7 +224,12 @@ function propagateChain(
   if (current === undefined) return undefined;
 
   for (let i = startLink; i < links.length; i++) {
-    current = ports.memberTypeOf(current, stripCallArgs(links[i]), ctx);
+    const member = stripCallArgs(links[i]);
+    const argumentText = ports.memberCallTypeOf === undefined ? undefined : callArgumentText(links[i]);
+    current =
+      argumentText === undefined || ports.memberCallTypeOf === undefined
+        ? ports.memberTypeOf(current, member, ctx)
+        : ports.memberCallTypeOf(current, member, argumentText, ctx);
     if (current === undefined) return undefined; // STOP-at-unknown-hop
   }
 

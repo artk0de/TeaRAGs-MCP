@@ -21,6 +21,13 @@ const SWIFT_SCOPE_SEPARATOR = ".";
  * `Configuration` struct, a `Coordinator` class per view), so the shape is
  * common rather than exotic.
  *
+ * The walk ends at the MODULE scope (bd tea-rags-mcp-y99pg.9): a top-level
+ * type named from outside it (`DebugDescription.description(of:)`,
+ * `QuickConfiguration.configureSubclassesIfNeeded(world:)`) is the same
+ * lookup with an empty prefix, taken last so a nested namesake still shadows
+ * it. Measured on Alamofire and Quick: +28 edges, none the typechecker
+ * disputes.
+ *
  * ## What it requires before it answers
  *
  * The receiver must be UpperCamelCase (`isSwiftTypeName`) and the qualified
@@ -56,17 +63,17 @@ const SWIFT_SCOPE_SEPARATOR = ".";
  *     with a nested type is still a property access, and that pass's explicit-
  *     `self` DROP must not be reopened here.
  *
- * It steals nothing from the passes below it: `enclosingBareCall` (6) and
- * `globalShortName` (8) answer `call.receiver === null` only, and
- * `extensionScopeMember` (7) answers only `null` / `self` / `Self`. Every one
- * of those declines a receiver-bearing call, so this pass could sit anywhere
- * from 5 to 8 with identical behaviour today — index 5 is the one whose
- * ARGUMENT is stable, since it keeps "receiver passes first, in falling order
- * of evidence; bare-call passes after" true, and it stays correct if a pass
- * below ever grows a receiver arm.
+ * It steals nothing from the passes below it: `moduleValue` (6) answers a
+ * receiver no visible project type names, `enclosingBareCall` (7) and
+ * `globalShortName` (9) answer `call.receiver === null` only, and
+ * `extensionScopeMember` (8) answers only `null` / `self` / `Self`. Index 5
+ * is the one whose ARGUMENT is stable, since it keeps "receiver passes first,
+ * in falling order of evidence; bare-call passes after" true, and it stays
+ * correct if a pass below ever grows a receiver arm.
  *
  * On a receiver that names no declared type in any enclosing scope: CONTINUE.
- * It could still be a module, a global, or a type the index does not hold.
+ * It could still be a module-level value (`moduleValue`, bd
+ * tea-rags-mcp-y99pg.30), or a type the index does not hold.
  */
 export class SwiftScopedTypeReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "scopedTypeReceiver";
@@ -77,10 +84,13 @@ export class SwiftScopedTypeReceiverSymbolResolutionStrategy implements SymbolRe
     if (!receiver || SWIFT_PSEUDO_RECEIVERS.has(receiver) || receiver.includes(SWIFT_SCOPE_SEPARATOR)) return CONTINUE;
     if (!isSwiftTypeName(receiver)) return CONTINUE;
 
-    for (let depth = ctx.callerScope.length; depth > 0; depth--) {
+    // Depth 0 is the module scope: `Invoice.empty()` written outside
+    // `Invoice` (bd tea-rags-mcp-y99pg.9). Innermost first, which is Swift's
+    // own name lookup — a nested `Account` shadows a top-level one.
+    for (let depth = ctx.callerScope.length; depth >= 0; depth--) {
       const qualified = [...ctx.callerScope.slice(0, depth), receiver].join(SWIFT_SCOPE_SEPARATOR);
       if (lookupSwiftSymbols(ctx, qualified).length === 0) continue;
-      return resolveSwiftBoundTypeMember(qualified, call.member, ctx, this.cfg.mode);
+      return resolveSwiftBoundTypeMember(qualified, call.member, ctx, this.cfg, call);
     }
     return CONTINUE;
   }
