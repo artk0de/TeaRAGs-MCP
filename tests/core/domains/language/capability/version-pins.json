@@ -2,7 +2,7 @@
   "*": {
     "chunking": {
       "version": 2,
-      "digest": "sha256:d0e98db39cdd4138355e89f34679c355bcaa7fe9e901d25a1d4cc83ff0470d8c"
+      "digest": "sha256:e6145d4e01c6efb971132afd8f1b5a359010c845a7ee3c38e0ac5e0c93d655e4"
     },
     "walker": {
       "version": 5,
@@ -82,7 +82,7 @@
   "typescript": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:699527e0dc82e546d7e02ad7942fdd32171a34de3a788db0e78313beca5e91a2"
+      "digest": "sha256:3c26b42e2e053936caa70b8a4dabe49aaa6df76d3b019eafcd4953cb9c78d489"
     },
     "walker": {
       "version": 16,

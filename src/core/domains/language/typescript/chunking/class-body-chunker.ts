@@ -13,6 +13,9 @@
  *   abstract_method_signature                   → abstract_members
  *   everything else                             → other
  *
+ * A method_definition the engine did not extract as a child (under its 50-char
+ * floor) forms no group of its own: it joins the group around it.
+ *
  * Decorator is checked BEFORE static/abstract — a @Inject() static field
  * is classified as decorated_members, not static_members.
  */
@@ -27,14 +30,30 @@ import { findClassBody } from "./utils.js";
 type GroupType = "properties" | "static_members" | "decorated_members" | "abstract_members" | "other";
 
 /**
- * Classify a class_body child node into a group type.
- * Returns undefined for nodes that should be skipped (methods, comments).
+ * A `method_definition` the engine did NOT extract as a child — under its
+ * 50-char child floor, e.g. `constructor(_cfg: Config) {}` — has no chunk of
+ * its own, and once this hook claims the container the engine's remainder
+ * stays out too. It rides the neighbouring body group (with its leading
+ * comment) instead of being lost (bd tea-rags-mcp-u7tjf). It never forms a
+ * group of its own: that would add a second body chunk under the container's
+ * id where the class had one.
  */
-function classifyNode(node: AstNode): GroupType | undefined {
+const NEIGHBOUR_MEMBER = "neighbour" as const;
+
+/**
+ * Classify a class_body child node into a group type.
+ * Returns undefined for nodes that should be skipped (extracted methods, comments).
+ * `extractedStarts` holds the start offsets of the container's `validChildren`.
+ */
+function classifyNode(
+  node: AstNode,
+  extractedStarts: ReadonlySet<number>,
+): GroupType | typeof NEIGHBOUR_MEMBER | undefined {
   const { type } = node;
 
-  // Skip methods and comments — handled elsewhere
-  if (type === "method_definition" || type === "comment") return undefined;
+  // Skip comments (they ride the member below them) and extracted methods.
+  if (type === "comment") return undefined;
+  if (type === "method_definition") return extractedStarts.has(node.startIndex) ? undefined : NEIGHBOUR_MEMBER;
 
   // class_static_block → static_members
   if (type === "class_static_block") return "static_members";
@@ -94,12 +113,20 @@ interface NodeGroup {
 }
 
 /**
- * Group adjacent same-type nodes from class_body.
+ * Group adjacent same-type nodes from class_body. A `NEIGHBOUR_MEMBER` joins
+ * the group open at its position — the first group, when it precedes every
+ * typed member. A class with no typed member forms no group, writes no body
+ * chunk, and the engine's container remainder carries its short methods.
  */
-function groupAdjacentNodes(classBody: AstNode, excludedRows: Set<number>): NodeGroup[] {
+function groupAdjacentNodes(
+  classBody: AstNode,
+  excludedRows: Set<number>,
+  extractedStarts: ReadonlySet<number>,
+): NodeGroup[] {
   const groups: NodeGroup[] = [];
   let currentType: GroupType | null = null;
   let currentNodes: AstNode[] = [];
+  let pendingNeighbours: AstNode[] = [];
 
   const flush = () => {
     if (currentNodes.length > 0 && currentType) {
@@ -116,15 +143,19 @@ function groupAdjacentNodes(classBody: AstNode, excludedRows: Set<number>): Node
     // Skip if row is excluded
     if (excludedRows.has(child.startPosition.row)) continue;
 
-    const nodeType = classifyNode(child);
+    const nodeType = classifyNode(child, extractedStarts);
     if (nodeType === undefined) continue; // skip methods, comments
 
-    if (nodeType === currentType) {
+    if (nodeType === NEIGHBOUR_MEMBER) {
+      if (currentType) currentNodes.push(child);
+      else pendingNeighbours.push(child);
+    } else if (nodeType === currentType) {
       currentNodes.push(child);
     } else {
       flush();
       currentType = nodeType;
-      currentNodes = [child];
+      currentNodes = [...pendingNeighbours, child];
+      pendingNeighbours = [];
     }
   }
 
@@ -363,7 +394,8 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
   const classBody = findClassBody(ctx.containerNode);
   if (!classBody) return [];
 
-  const groups = groupAdjacentNodes(classBody, ctx.excludedRows);
+  const extractedStarts = new Set(ctx.validChildren.map((child) => child.startIndex));
+  const groups = groupAdjacentNodes(classBody, ctx.excludedRows, extractedStarts);
   const classHeader = extractClassHeader(ctx.containerNode, ctx.codeLines);
   const results: BodyChunkResult[] = [];
 
