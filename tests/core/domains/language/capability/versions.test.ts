@@ -78,6 +78,8 @@ describe("resolveLanguageCodeVersions", () => {
     // walker 5: bd tea-rags-mcp-r8hme.2 — export names on
     // `cg_symbols_edges_file` (migration 030), carried by the shared import→file
     // engine and unioned by the runner's per-target dedupe.
+    // bd tea-rags-mcp-r8hme.8's type-abstractness census pass ships under the
+    // same walker 5 (one bump per release) and only re-pins the digest.
     // chunking 2: bd tea-rags-mcp-y5vx4 — oversized symbols split on statement
     // boundaries into `#part1..N` with context prefixes; markdown and the
     // character fallback cut between blocks / syntax-neutral units. Same bump:
@@ -415,6 +417,8 @@ describe("seeded support versions", () => {
       // is recorded as its sequence's element, and `typeDeclarations` names the
       // methods returning their closure's result, so a walker-63 index cannot
       // type `for request in mutableState.read(\.activeRequests)`.
+      // bd tea-rags-mcp-r8hme.8's per-file type-abstractness census ships under
+      // each language's existing release bump below (re-pinned, not bumped).
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 16],

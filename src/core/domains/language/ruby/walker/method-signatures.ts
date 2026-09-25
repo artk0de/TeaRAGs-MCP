@@ -170,6 +170,27 @@ function computeRubyIsAbstractStub(methodNode: AstNode): boolean {
 }
 
 /**
+ * Whether a `method` / `singleton_method` node's whole body is
+ * `raise NotImplementedError` — the one stub shape that DECLARES the method is
+ * left to an includer or subclass (bd tea-rags-mcp-r8hme.8, abstractness
+ * census). Narrower than `computeRubyIsAbstractStub` on purpose: an empty body
+ * or a bare `super` is a hook with a default, which a dispatch probe may treat
+ * as overridable but which does not make its class abstract. Comments are
+ * ignored.
+ */
+export function isRubyNotImplementedStub(methodNode: AstNode): boolean {
+  const body = methodNode.childForFieldName("body");
+  if (!body) return false;
+  const statements = (body.type === "body_statement" ? body.namedChildren : [body]).filter((s) => s.type !== "comment");
+  if (statements.length !== 1) return false;
+  const only = statements[0];
+  if (only.type !== "call" && only.type !== "method_call") return false;
+  if (only.childForFieldName("receiver")) return false;
+  const methodField = only.childForFieldName("method") ?? only.children.find((c) => c.type === "identifier");
+  return methodField?.text === "raise" && raisesNotImplementedError(only);
+}
+
+/**
  * Whether a `raise …` call node names Ruby's `NotImplementedError` as the error
  * it raises: `raise NotImplementedError` / `raise ::NotImplementedError` /
  * `raise NotImplementedError, "msg"` / `raise NotImplementedError.new(…)`. A bare

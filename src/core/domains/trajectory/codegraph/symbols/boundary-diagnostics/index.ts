@@ -1,5 +1,11 @@
 export { CONVENTION_PRIVACY_LANGUAGES, detectConventionPrivacyLeaks } from "./convention-privacy.js";
+export { buildComponentGraph, COMPONENT_CONTAINMENT_REASON, COMPONENT_MODULE_STATUSES } from "./component-graph.js";
+export {
+  COMPONENT_EVIDENCE_FILE_EDGE_LIMIT,
+  detectComponentStableDependencyViolations,
+} from "./component-stable-dependencies.js";
 export { classifyDirectoryRelation } from "./directory-relation.js";
+export { FACADE_AGGREGATION_REASON, isFacadeAggregationEdge } from "./facade-aggregation.js";
 export { computeFileInstabilities } from "./file-instability.js";
 export {
   detectLeakingAbstractions,
@@ -12,12 +18,24 @@ export {
   type FacadeAdoptionThresholdPolicy,
 } from "./leaking-abstraction.js";
 export {
+  DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT,
+  detectMainSequenceDeviations,
+  MAIN_SEQUENCE_DISTANCE_FLOOR,
+  MAIN_SEQUENCE_OTSU_MIN_POPULATION,
+  MAIN_SEQUENCE_UNOBSERVABLE_REASON,
+} from "./main-sequence.js";
+export {
   otsuSplit,
   resolveMajorityFlooredOtsuThreshold,
   type MajorityFlooredOtsuOptions,
   type MajorityFlooredOtsuThreshold,
   type OtsuSplit,
 } from "./otsu-split.js";
+export {
+  excludeNonProductionFiles,
+  NON_PRODUCTION_REASON,
+  type ProductionDependencyGraph,
+} from "./production-graph.js";
 export {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
@@ -26,6 +44,18 @@ export {
   PRIVATE_COLLABORATOR_REASON,
 } from "./stable-dependencies.js";
 export type {
+  ArchitectureComponent,
+  ArchitectureComponentKind,
+  ComponentDependency,
+  ComponentDependencyFileEdge,
+  ComponentGraph,
+  ComponentGraphExclusionCounts,
+  ComponentStableDependenciesExclusionCounts,
+  ComponentStableDependenciesOptions,
+  ComponentStableDependenciesReport,
+  ComponentStableDependenciesSummary,
+  ComponentStableDependencyRootCause,
+  ComponentStableDependencyViolation,
   ConventionPrivacyOptions,
   ConventionPrivacyReport,
   ConventionPrivacyRule,
@@ -35,6 +65,13 @@ export type {
   FacadeAdoption,
   FacadeLeakKind,
   FacadeLeakRootCause,
+  MainSequenceExclusionCounts,
+  MainSequenceOptions,
+  MainSequenceReport,
+  MainSequenceScope,
+  MainSequenceSummary,
+  MainSequenceViolation,
+  MainSequenceZone,
   FacadeLeakViolation,
   FacadeModuleAssessment,
   FacadeModuleExclusionReason,

@@ -348,6 +348,23 @@ export interface FileExtraction {
    * languages whose walkers do not collect it.
    */
   typeDeclarations?: readonly TypeDeclarationFact[];
+  /**
+   * How many of the file's types declare behaviour without implementing it and
+   * how many implement it (bd tea-rags-mcp-r8hme.8) — the input of Martin's
+   * abstractness A that the architecture report's main-sequence detector sums
+   * per component. Which declaration is which is each language's census pass
+   * (`kernel/type-abstractness-pass.ts`). Present with both counts 0 when the
+   * census ran and found no type; absent for a language with no census pass.
+   */
+  typeAbstractness?: TypeAbstractnessCensus;
+}
+
+/** A file's type-abstractness census ({@link FileExtraction.typeAbstractness}). */
+export interface TypeAbstractnessCensus {
+  /** Types that declare behaviour and leave its implementation to others. */
+  abstractTypeCount: number;
+  /** Types that implement behaviour. */
+  concreteTypeCount: number;
 }
 
 /** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */

@@ -4,8 +4,9 @@
  *
  * Reads the whole file dependency graph from a codegraph handle, runs the
  * boundary detectors owned by the codegraph trajectory — Stable Dependencies,
- * leaking abstraction (bd tea-rags-mcp-jetrd) and, over the temporal
- * co-change sub-graph, silent coupling (bd tea-rags-mcp-b4dcz) — and shapes
+ * leaking abstraction (bd tea-rags-mcp-jetrd), the main sequence (bd
+ * tea-rags-mcp-r8hme.8) and, over the temporal co-change sub-graph, silent
+ * coupling (bd tea-rags-mcp-b4dcz) — and shapes
  * the typed report DTO. Lives in `api/internal` because it bridges the trajectory's
  * detectors and the public DTO — the one layer allowed to import both.
  *
@@ -19,25 +20,32 @@ import { extname } from "node:path";
 import type { GraphDbClient, RelPath } from "../../../contracts/types/codegraph.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
+  buildComponentGraph,
+  COMPONENT_CONTAINMENT_REASON,
   CONVENTION_PRIVACY_LANGUAGES,
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
+  detectComponentStableDependencyViolations,
   detectConventionPrivacyLeaks,
   detectLeakingAbstractions,
-  detectStableDependencyViolations,
+  detectMainSequenceDeviations,
+  excludeNonProductionFiles,
+  FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
-  NO_SYMBOL_ENDPOINT_REASON,
-  PRIVATE_COLLABORATOR_REASON,
+  MAIN_SEQUENCE_UNOBSERVABLE_REASON,
+  NON_PRODUCTION_REASON,
+  type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type FacadeModuleAssessment,
   type LeakingAbstractionReport,
-  type StableDependenciesReport,
+  type MainSequenceReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   detectSilentCoupling,
   SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON,
   type SilentCouplingReport,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
+import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
 import type {
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -45,6 +53,7 @@ import type {
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
   LeakingAbstractionReportSummary,
+  MainSequenceReportSummary,
   SilentCouplingReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
@@ -64,11 +73,21 @@ export class ArchitectureReportOps {
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph">,
     request: ArchitectureReportScope,
   ): Promise<GetArchitectureReportResponse> {
-    const graph = await graphDb.readFileDependencyGraph();
-    const sdp = detectStableDependencyViolations(graph, { sourcePathPattern: request.pathPattern });
+    // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9).
+    const nonProduction = buildNonProductionPathFilter();
+    const production = excludeNonProductionFiles(await graphDb.readFileDependencyGraph(), nonProduction);
+    const { graph } = production;
     const leaks = detectLeakingAbstractions(graph, { sourcePathPattern: request.pathPattern });
+    // Components: the modules A4 measured, plain directories elsewhere (bd tea-rags-mcp-r8hme.7).
+    const components = buildComponentGraph(graph, leaks.modules);
+    const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
+    // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8).
+    const mainSequence = detectMainSequenceDeviations(components, graph.files, {
+      sourcePathPattern: request.pathPattern,
+    });
+    const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     const privacy = detectConventionPrivacyLeaks(
-      await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]),
+      memberEdges.filter((e) => !nonProduction.ignores(e.sourceRelPath) && !nonProduction.ignores(e.targetRelPath)),
       { sourcePathPattern: request.pathPattern },
     );
     const silent = detectSilentCoupling(await graphDb.readTemporalCochangeGraph(), graph.files, {
@@ -79,15 +98,22 @@ export class ArchitectureReportOps {
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
+        nonProduction: {
+          excludedFileCount: production.excludedFileCount,
+          excludedEdgeCount: production.excludedEdgeCount,
+          reason: NON_PRODUCTION_REASON,
+        },
         stableDependencies: summarise(sdp),
         leakingAbstraction: summariseLeaks(leaks, privacy, limit),
         silentCoupling: summariseSilentCoupling(silent),
+        mainSequence: summariseMainSequence(mainSequence),
       },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
       violations: [
         ...sdpViolations(sdp, limit),
         ...leakViolations(leaks, privacy, limit),
         ...silentViolations(silent, limit),
+        ...mainSequenceViolations(mainSequence, limit),
       ],
     };
   }
@@ -100,19 +126,25 @@ export class ArchitectureReportOps {
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
+        nonProduction: { excludedFileCount: 0, excludedEdgeCount: 0, reason: NON_PRODUCTION_REASON },
         stableDependencies: {
           tolerance: DEFAULT_SDP_TOLERANCE,
           minConnectionCount: DEFAULT_SDP_MIN_CONNECTION_COUNT,
           edgeCount: 0,
+          componentCount: 0,
+          moduleComponentCount: 0,
+          directoryComponentCount: 0,
+          componentEdgeCount: 0,
           judgedEdgeCount: 0,
           violationCount: 0,
           rootCauseCount: 0,
           excluded: {
             selfEdges: 0,
             unwalkedEndpoints: 0,
-            noSymbolEndpoints: 0,
+            intraComponent: 0,
+            facadeAggregations: 0,
+            containment: 0,
             lowConnectionCount: 0,
-            privateCollaborators: 0,
           },
           exclusionReasons: EXCLUSION_REASONS,
         },
@@ -122,6 +154,9 @@ export class ArchitectureReportOps {
           0,
         ),
         silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, [])),
+        mainSequence: summariseMainSequence(
+          detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
+        ),
       },
       rootCauses: [],
       violations: [],
@@ -130,17 +165,21 @@ export class ArchitectureReportOps {
 }
 
 const EXCLUSION_REASONS = {
-  noSymbolEndpoints: NO_SYMBOL_ENDPOINT_REASON,
-  privateCollaborators: PRIVATE_COLLABORATOR_REASON,
+  facadeAggregations: FACADE_AGGREGATION_REASON,
+  containment: COMPONENT_CONTAINMENT_REASON,
 } as const;
 
-function summarise(report: StableDependenciesReport): StableDependenciesReportSummary {
+function summarise(report: ComponentStableDependenciesReport): StableDependenciesReportSummary {
   const { summary } = report;
   return {
     tolerance: summary.tolerance,
     minConnectionCount: summary.minConnectionCount,
     edgeCount: summary.edgeCount,
-    judgedEdgeCount: summary.consideredEdgeCount,
+    componentCount: summary.componentCount,
+    moduleComponentCount: summary.moduleComponentCount,
+    directoryComponentCount: summary.directoryComponentCount,
+    componentEdgeCount: summary.componentEdgeCount,
+    judgedEdgeCount: summary.judgedEdgeCount,
     violationCount: summary.violationCount,
     rootCauseCount: report.rootCauses.length,
     excluded: { ...summary.excluded },
@@ -149,11 +188,11 @@ function summarise(report: StableDependenciesReport): StableDependenciesReportSu
   };
 }
 
-function sdpRootCauses(report: StableDependenciesReport, limit: number): ArchitectureRootCause[] {
+function sdpRootCauses(report: ComponentStableDependenciesReport, limit: number): ArchitectureRootCause[] {
   return report.rootCauses.slice(0, limit).map(
     (r): ArchitectureRootCause => ({
       detector: "stableDependencies",
-      targetRelPath: r.targetRelPath,
+      targetComponent: r.targetComponent,
       targetInstability: r.targetInstability,
       violationCount: r.violationCount,
       maxInstabilityDelta: r.maxInstabilityDelta,
@@ -163,20 +202,24 @@ function sdpRootCauses(report: StableDependenciesReport, limit: number): Archite
   );
 }
 
-function sdpViolations(report: StableDependenciesReport, limit: number): ArchitectureViolation[] {
+function sdpViolations(report: ComponentStableDependenciesReport, limit: number): ArchitectureViolation[] {
   return report.violations.slice(0, limit).map(
     (v): ArchitectureViolation => ({
       detector: "stableDependencies",
-      sourceRelPath: v.sourceRelPath,
-      targetRelPath: v.targetRelPath,
+      sourceComponent: v.sourceComponent,
+      targetComponent: v.targetComponent,
       evidence: {
         sourceInstability: v.sourceInstability,
         targetInstability: v.targetInstability,
         instabilityDelta: v.instabilityDelta,
-        sourceConnectionCount: v.sourceConnectionCount,
-        targetConnectionCount: v.targetConnectionCount,
+        sourceAfferentCount: v.sourceAfferentCount,
+        sourceEfferentCount: v.sourceEfferentCount,
+        targetAfferentCount: v.targetAfferentCount,
+        targetEfferentCount: v.targetEfferentCount,
         callWeight: v.callWeight,
         directoryRelation: v.directoryRelation,
+        fileEdgeCount: v.fileEdgeCount,
+        fileEdges: v.fileEdges,
       },
     }),
   );
@@ -347,6 +390,57 @@ function silentViolations(report: SilentCouplingReport, limit: number): Architec
       },
     }),
   );
+}
+
+function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSummary {
+  const { summary } = report;
+  return {
+    judgedComponentCount: summary.judgedComponentCount,
+    violationCount: summary.violationCount,
+    painCount: summary.painCount,
+    uselessnessCount: summary.uselessnessCount,
+    meanDistance: round3(summary.meanDistance),
+    distanceThreshold: round3(summary.distanceThreshold),
+    distanceThresholdMethod: summary.distanceThresholdMethod,
+    ...(summary.distanceSeparability === undefined
+      ? {}
+      : { distanceSeparability: round3(summary.distanceSeparability) }),
+    minConnectionCount: summary.minConnectionCount,
+    minTypeCount: summary.minTypeCount,
+    abstractTypeShareByLanguage: Object.fromEntries(
+      Object.entries(summary.abstractTypeShareByLanguage).map(([language, share]) => [language, round3(share)]),
+    ),
+    excluded: { ...summary.excluded },
+    exclusionReasons: { unobservableAbstractness: MAIN_SEQUENCE_UNOBSERVABLE_REASON },
+    ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
+  };
+}
+
+function mainSequenceViolations(report: MainSequenceReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map(
+    (v): ArchitectureViolation => ({
+      detector: "mainSequence",
+      component: v.component,
+      componentKind: v.kind,
+      facadeRelPath: v.facadeRelPath,
+      evidence: {
+        zone: v.zone,
+        distance: v.distance,
+        abstractness: v.abstractness,
+        instability: v.instability,
+        abstractTypeCount: v.abstractTypeCount,
+        concreteTypeCount: v.concreteTypeCount,
+        afferentCount: v.afferentCount,
+        efferentCount: v.efferentCount,
+        fileCount: v.fileCount,
+        unmeasuredFileCount: v.unmeasuredFileCount,
+      },
+    }),
+  );
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 /** Locale-independent, so the order is the same on every machine. */

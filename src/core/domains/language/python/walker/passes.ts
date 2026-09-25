@@ -8,5 +8,9 @@
 
 import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { pythonAnnotationTypeFacetPass } from "./passes/annotation-type-facts.js";
+import { pythonTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
-export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [pythonAnnotationTypeFacetPass];
+export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  pythonAnnotationTypeFacetPass,
+  pythonTypeAbstractnessFacetPass,
+];

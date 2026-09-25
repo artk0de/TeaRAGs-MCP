@@ -739,7 +739,7 @@ function swiftSpelledWithArguments(
 }
 
 /** `class` / `struct` / `enum` / `actor` / `extension` / `protocol`, or null for any other node. */
-function swiftTypeDeclarationKind(node: AstNode): TypeDeclarationKind | "extension" | null {
+export function swiftTypeDeclarationKind(node: AstNode): TypeDeclarationKind | "extension" | null {
   if (node.type === "protocol_declaration") return "protocol";
   if (node.type !== "class_declaration") return null;
   for (let i = 0; i < node.childCount; i++) {

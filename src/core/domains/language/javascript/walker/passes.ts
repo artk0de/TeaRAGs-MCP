@@ -18,7 +18,9 @@
 
 import { declaredVisibilityFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { readEcmascriptDeclaredVisibility } from "../../typescript/walker/passes/declared-visibility.js";
+import { javascriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const JAVASCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   declaredVisibilityFacetPass(readEcmascriptDeclaredVisibility),
+  javascriptTypeAbstractnessFacetPass,
 ];

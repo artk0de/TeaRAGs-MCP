@@ -19,8 +19,10 @@
 import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { swiftDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 import { swiftModuleValuesFacetPass } from "./passes/module-values.js";
+import { swiftTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const SWIFT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   swiftDeclaredVisibilityFacetPass,
   swiftModuleValuesFacetPass,
+  swiftTypeAbstractnessFacetPass,
 ];

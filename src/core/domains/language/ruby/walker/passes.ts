@@ -12,5 +12,6 @@
  */
 
 import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { rubyTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
-export const RUBY_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
+export const RUBY_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [rubyTypeAbstractnessFacetPass];

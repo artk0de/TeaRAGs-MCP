@@ -14,5 +14,9 @@
 
 import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { rustDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { rustTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
-export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [rustDeclaredVisibilityFacetPass];
+export const RUST_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  rustDeclaredVisibilityFacetPass,
+  rustTypeAbstractnessFacetPass,
+];

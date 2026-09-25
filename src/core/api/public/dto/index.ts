@@ -87,6 +87,7 @@ export type {
 export type {
   // Architecture diagnostics (get_architecture_report)
   ArchitectureDirectoryRelation,
+  ArchitectureFileEdge,
   ArchitectureReportSummary,
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -103,6 +104,11 @@ export type {
   LeakingAbstractionArchitectureRootCause,
   LeakingAbstractionArchitectureViolation,
   LeakingAbstractionReportSummary,
+  MainSequenceArchitectureViolation,
+  MainSequenceReportSummary,
+  MainSequenceViolationEvidence,
+  MainSequenceZone,
+  NonProductionExclusionSummary,
   SilentCouplingArchitectureRootCause,
   SilentCouplingArchitectureViolation,
   SilentCouplingBuildSummary,

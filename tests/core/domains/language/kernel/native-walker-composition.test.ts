@@ -26,6 +26,11 @@
  * facet (bd tea-rags-mcp-jwjyr.1): a case carrying `visibilityFacet` is pinned
  * as "the native extraction plus exactly those chunks' `visibility`", which
  * is the same claim — nothing else moves — for a language with a pass.
+ *
+ * INVARIANT CHANGED (bd tea-rags-mcp-r8hme.8): every language with types gained
+ * the type-abstractness census facet, so "plus its facets" now includes the
+ * file's `typeAbstractness` — each fixture declares one concrete type and no
+ * abstraction. Bash declares no types and keeps identity.
  */
 
 import Parser from "tree-sitter";
@@ -63,6 +68,9 @@ interface LanguageCase {
   /** symbolId → the `visibility` the declared-visibility facet adds. Absent ⇒ no pass, identity holds. */
   readonly visibilityFacet?: Readonly<Record<string, string>>;
 }
+
+/** Each fixture declares exactly one concrete type (class / struct) and no abstraction. */
+const ONE_CONCRETE_TYPE = { typeAbstractness: { abstractTypeCount: 0, concreteTypeCount: 1 } };
 
 /** The native extraction with exactly the facet's `visibility` added to its chunks. */
 function withVisibility(native: FileExtraction, facet: Readonly<Record<string, string>>): FileExtraction {
@@ -168,7 +176,7 @@ describe("native walkers composed through the extraction pass-runner", () => {
         const sentinel = native(input);
         const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
-        expect(composed.walk(input)).toEqual(withVisibility(sentinel, visibilityFacet));
+        expect(composed.walk(input)).toEqual({ ...withVisibility(sentinel, visibilityFacet), ...ONE_CONCRETE_TYPE });
       });
     }
 
@@ -176,7 +184,10 @@ describe("native walkers composed through the extraction pass-runner", () => {
       const input = inputs.get(language) as WalkInput;
       const viaFactory = factory.create(language).walker.walk(input);
 
-      expect(viaFactory).toEqual(withVisibility(native(input), visibilityFacet ?? {}));
+      expect(viaFactory).toEqual({
+        ...withVisibility(native(input), visibilityFacet ?? {}),
+        ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
+      });
       expect(viaFactory.chunks.length).toBeGreaterThan(0);
     });
   }
@@ -211,13 +222,21 @@ describe("go walker composed through the extraction pass-runner", () => {
       passes: GO_EXTRACTION_PASSES,
     });
 
-    expect(composed.walk(input)).toEqual({ ...withVisibility(sentinel, VISIBILITY_FACET), ...STRUCT_FACET });
+    expect(composed.walk(input)).toEqual({
+      ...withVisibility(sentinel, VISIBILITY_FACET),
+      ...STRUCT_FACET,
+      ...ONE_CONCRETE_TYPE,
+    });
   });
 
   it("go: the factory's walker extracts the native monolith's output plus the struct-field and visibility facets", () => {
     const viaFactory = factory.create("go").walker.walk(input);
 
-    expect(viaFactory).toEqual({ ...withVisibility(extractFromGoFile(input), VISIBILITY_FACET), ...STRUCT_FACET });
+    expect(viaFactory).toEqual({
+      ...withVisibility(extractFromGoFile(input), VISIBILITY_FACET),
+      ...STRUCT_FACET,
+      ...ONE_CONCRETE_TYPE,
+    });
     expect(viaFactory.chunks.length).toBeGreaterThan(0);
   });
 });

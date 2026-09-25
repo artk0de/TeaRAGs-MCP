@@ -47,6 +47,14 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * walker bump already routes every index to that same whole-collection
  * recompute, and a second axis would name the same remedy twice.
  *
+ * The type-abstractness census (bd tea-rags-mcp-r8hme.8) — every language's
+ * walker counts abstract / concrete type declarations per file, persisted on
+ * `cg_symbols_files` (migration 032) for the main-sequence detector — ships
+ * under this release's walker 5 and re-pins the digests without bumping
+ * again. Only a walk fills the columns; until the release's
+ * `--force-enrichments codegraph` runs, the detector reports those components
+ * `unmeasured`.
+ *
  * chunking 2 is this release's ONE chunking bump, shared by two changes:
  *   - an oversized symbol is cut on its statement boundaries into
  *     `#part1..#partN` parts, numbered once, each prefixed with its enclosing

@@ -26,6 +26,11 @@ export {
   type DeclaredVisibilityReader,
   type DeclaredVisibilityReading,
 } from "./declared-visibility-pass.js";
+export {
+  typeAbstractnessFacetPass,
+  type TypeAbstractnessReader,
+  type TypeAbstractnessVerdict,
+} from "./type-abstractness-pass.js";
 export { buildDispatchCascade, type DispatchCascadeOptions } from "./dispatch-cascade.js";
 export {
   ArityNarrower,

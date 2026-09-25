@@ -114,11 +114,18 @@ export class DuckDbGraphAnalyticsStore {
    * to judge is the caller's.
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
-    const fileRows = await this.session.queryAll<{ rel_path: string; language: string; symbol_count: number | string }>(
-      `SELECT f.rel_path, f.language, COUNT(s.symbol_id) AS symbol_count
+    const fileRows = await this.session.queryAll<{
+      rel_path: string;
+      language: string;
+      symbol_count: number | string;
+      abstract_type_count: number | string | null;
+      concrete_type_count: number | string | null;
+    }>(
+      `SELECT f.rel_path, f.language, f.abstract_type_count, f.concrete_type_count,
+              COUNT(s.symbol_id) AS symbol_count
        FROM cg_symbols_files f
        LEFT JOIN cg_symbols s ON s.rel_path = f.rel_path
-       GROUP BY f.rel_path, f.language
+       GROUP BY f.rel_path, f.language, f.abstract_type_count, f.concrete_type_count
        ORDER BY f.rel_path`,
     );
     // Weighted like chunk fanIn: SUM of per-edge dispatch confidence, legacy
@@ -143,7 +150,20 @@ export class DuckDbGraphAnalyticsStore {
        ORDER BY e.source_rel_path, e.target_rel_path`,
     );
     return {
-      files: fileRows.map((r) => ({ relPath: r.rel_path, language: r.language, symbolCount: Number(r.symbol_count) })),
+      files: fileRows.map((r) => ({
+        relPath: r.rel_path,
+        language: r.language,
+        symbolCount: Number(r.symbol_count),
+        // bd tea-rags-mcp-r8hme.8 — present only when the walk took the census.
+        ...(r.abstract_type_count !== null && r.concrete_type_count !== null
+          ? {
+              typeAbstractness: {
+                abstractTypeCount: Number(r.abstract_type_count),
+                concreteTypeCount: Number(r.concrete_type_count),
+              },
+            }
+          : {}),
+      })),
       edges: edgeRows.map((r) => {
         // bd tea-rags-mcp-r8hme.2 — present only when the walk recorded them.
         const imported = decodeFileEdgeExportNames(r.imported_export_names);

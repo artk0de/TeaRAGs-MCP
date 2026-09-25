@@ -11,6 +11,7 @@
  * `GraphDbClient`. Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
+import type { TypeAbstractnessCensus } from "./codegraph-extraction.js";
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
 import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
@@ -49,6 +50,11 @@ export interface FileDependencyGraphFile {
    * definition — a re-export barrel, a data-only module.
    */
   symbolCount: number;
+  /**
+   * The file's type-abstractness census (bd tea-rags-mcp-r8hme.8). Absent when
+   * the row predates the census or the language has none.
+   */
+  typeAbstractness?: TypeAbstractnessCensus;
 }
 
 /**
@@ -158,6 +164,11 @@ export interface GraphFileNode {
    * (direct/test writes); that persists as NULL and makes the file re-extract.
    */
   contentHash?: string;
+  /**
+   * The walker's type-abstractness census (bd tea-rags-mcp-r8hme.8). Undefined
+   * persists as NULL — not measured, never "no types".
+   */
+  typeAbstractness?: TypeAbstractnessCensus;
 }
 
 /**

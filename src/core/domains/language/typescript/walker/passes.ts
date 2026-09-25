@@ -16,5 +16,9 @@
 
 import type { ExtractionFacetPass } from "../../kernel/index.js";
 import { typescriptDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { typescriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
-export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [typescriptDeclaredVisibilityFacetPass];
+export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  typescriptDeclaredVisibilityFacetPass,
+  typescriptTypeAbstractnessFacetPass,
+];

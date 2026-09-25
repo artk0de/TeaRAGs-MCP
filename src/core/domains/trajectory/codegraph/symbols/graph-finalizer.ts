@@ -268,6 +268,9 @@ export class GraphBuildFinalizer {
             // Undefined persists as NULL, which the repair check reads as
             // "unknown, re-extract" rather than assuming the row is fresh.
             contentHash: this.runState.contentHashes?.get(extraction.relPath),
+            // The file's type-abstractness census (bd tea-rags-mcp-r8hme.8);
+            // absent persists as NULL — not measured.
+            ...(extraction.typeAbstractness ? { typeAbstractness: extraction.typeAbstractness } : {}),
           },
           edges,
         });
