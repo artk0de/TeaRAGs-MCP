@@ -18,7 +18,8 @@
 import { createRequire } from "node:module";
 
 import type { LanguageCapability, LanguageCodeVersions } from "../../../contracts/types/language.js";
-import { SHARED_LANGUAGE, sharedVersions } from "../kernel/capability.js";
+import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
+import { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "../kernel/index.js";
 
 /** Reads an installed package's declared version. Injected so tests never touch `node_modules`. */
 export type GrammarVersionReader = (packageName: string) => string | undefined;
@@ -64,4 +65,27 @@ export function resolveLanguageCodeVersions(
   // mutating one stamp must not rewrite the module-level constant behind it.
   resolved.set(SHARED_LANGUAGE, { ...sharedVersions });
   return resolved;
+}
+
+/**
+ * The declared scope of every chunk-set bump, per language plus `*`
+ * (bd tea-rags-mcp-j4oww). A language that declares nothing is absent: its
+ * bumps are unscoped. Read by the drift monitor (to render the minimal scoped
+ * `--force`) and by the indexing run (to decide which stamps a scoped run may
+ * advance) — the same map, so the two cannot disagree.
+ */
+export function resolveChunkSetBumpScopes(
+  capabilities: ReadonlyMap<string, LanguageCapability>,
+  shared: ChunkSetBumpScopes = sharedChunkSetBumpScopes,
+): Map<string, ChunkSetBumpScopes> {
+  const resolved = new Map<string, ChunkSetBumpScopes>();
+  for (const [language, capability] of capabilities) {
+    if (declaresAny(capability.chunkSetBumpScopes)) resolved.set(language, capability.chunkSetBumpScopes);
+  }
+  if (declaresAny(shared)) resolved.set(SHARED_LANGUAGE, shared);
+  return resolved;
+}
+
+function declaresAny(scopes: ChunkSetBumpScopes | undefined): scopes is ChunkSetBumpScopes {
+  return Object.keys(scopes?.chunking ?? {}).length > 0 || Object.keys(scopes?.grammar ?? {}).length > 0;
 }

@@ -8,8 +8,6 @@
  * file gets and records the walk's ranges it reads.
  */
 
-import type { Ignore } from "ignore";
-
 import type {
   FileExtraction,
   GraphDbClient,
@@ -18,6 +16,7 @@ import type {
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
 import type { ChunkLookupEntry, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { PathFilter } from "../../../../infra/file-classification/index.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   CodegraphChunkSettlementTally,
@@ -40,7 +39,7 @@ export class CodegraphChunkSignalPass {
      */
     private readonly walkRangesByCollection: Map<string, Map<string, SymbolLineRange[]>>,
     /** The provider's codegraph-layer ignore filter — the same instance its policy reads. */
-    private readonly exclusionFilter: Ignore,
+    private readonly exclusionFilter: PathFilter,
   ) {}
 
   /**
@@ -100,7 +99,15 @@ export class CodegraphChunkSignalPass {
       // source. A file the run claims but whose walk left no line index is
       // UNSETTLED and omitted from the overlays, so no caller stamps it — not an
       // empty map passed off as a result (bd tea-rags-mcp-fxio5).
-      const settlement = settleCodegraphChunkSignals(this.chunkRangeSourceFor(relPath, ranges), entries, chunkSignals);
+      // relPath is the file half of the signal map's key (bd tea-rags-mcp-xtdkq):
+      // the map is whole-graph and a bare symbolId addresses every namesake at
+      // once, which is how three unrelated `main`s came to share one fanOut.
+      const settlement = settleCodegraphChunkSignals(
+        relPath,
+        this.chunkRangeSourceFor(relPath, ranges),
+        entries,
+        chunkSignals,
+      );
       settlementTally.record(relPath, settlement, entries.length);
       // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato) + PageRank from
       // the bulk map; bare inner keys (tea-rags-mcp-k6xu) under providerKey

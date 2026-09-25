@@ -22,6 +22,7 @@
  * `enum_item`, `trait_item`, `mod_item`.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
@@ -30,7 +31,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -156,13 +157,13 @@ function readRustBareType(typeNode: AstNode | null): string | null {
  * `collectPythonClassFieldTypes` channel.
  */
 function collectRustStructFieldTypes(root: AstNode): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   walk(root, (node) => {
     if (node.type !== "struct_item") return;
     const nameNode = node.childForFieldName("name");
     const body = node.childForFieldName("body");
     if (!nameNode || body?.type !== "field_declaration_list") return;
-    const fields: Record<string, string> = {};
+    const fields: Record<string, string> = createIdentifierRecord();
     for (const fd of body.children) {
       if (fd.type !== "field_declaration") continue;
       const fieldName = fd.childForFieldName("name");
@@ -201,7 +202,7 @@ function collectRustLocalBindingsForChunk(
   startLine: number,
   endLine: number,
 ): Record<string, LocalBinding[]> {
-  const bindings: Record<string, LocalBinding[]> = {};
+  const bindings: Record<string, LocalBinding[]> = createIdentifierRecord();
   // Find the innermost `function_item` whose span contains the chunk
   // range. Walk in document order tracking the tightest enclosing match
   // so nested functions attribute to the inner one.

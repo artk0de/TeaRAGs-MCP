@@ -629,5 +629,260 @@ describe("GitEnrichmentProvider", () => {
         expect.objectContaining({ commitEntries: [], bugFixShas: new Set() }),
       );
     });
+
+    it("ships commits made under a file's pre-rename path in the job (bd tea-rags-mcp-z8w16)", async () => {
+      const commit = (sha: string, path: string, previousPath?: string) => ({
+        commit: { sha, author: "A", authorEmail: "a@x", timestamp: 1, body: "chore", parents: ["p"] },
+        changedFiles: [previousPath ? { path, previousPath } : { path }],
+      });
+      const rename = commit("r", "src/a.ts", "src/old.ts");
+      const preRename = commit("m", "src/old.ts");
+      const log = [rename, preRename];
+      const discovery = {
+        commitsForFiles: vi.fn(async (paths: string[]) =>
+          log.filter((e) => e.changedFiles.some((r) => paths.includes(r.path))),
+        ),
+        getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
+      };
+      const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
+      const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
+
+      await provider.buildChunkSignals("/repo", chunkMap, {
+        churnWalkThread: walkThread,
+        commitDiscovery: discovery,
+        skipCache: true,
+      } as never);
+
+      expect(walkThread.walk).toHaveBeenCalledWith(expect.objectContaining({ commitEntries: [rename, preRename] }));
+    });
+  });
+
+  describe("populateBlameMap — run-scoped in-flight blame dedupe", () => {
+    type PoolFile = { relPath: string };
+    const line = (sha: string) => ({ lineNumber: 1, sha, author: "A", authorEmail: "a@x", timestamp: 0 });
+    const rawFor = (paths: string[]) => new Map(paths.map((p) => [p, { commits: [], recentAuthors: [] }])) as never;
+    const pooledPaths = (): string[] =>
+      blamePoolBlame.mock.calls.flatMap((c) => (c[2] as PoolFile[]).map((f) => f.relPath));
+    /** Unique root per test — the OID-keyed blame cache persists per root. */
+    const uniqueRoot = (tag: string) => `/repo-dedupe-${tag}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    it("blames a file shared by two concurrent batches exactly once, both batches get its lines", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const root = uniqueRoot("concurrent");
+      // Gate the pool: every blame stays queued until released, reproducing
+      // streaming batches that overlap while a file's first blame is pending.
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      blamePoolBlame.mockImplementation(async (_root: string, _kind: string, files: PoolFile[]) => {
+        await gate;
+        return new Map(files.map(({ relPath }) => [relPath, [line(`sha-${relPath}`)]]));
+      });
+      const statsA = vi.fn();
+      const statsB = vi.fn();
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts", "b.ts"]));
+      const pA = provider.buildFileSignals(root, { paths: ["a.ts", "b.ts"], onBlameStats: statsA });
+      await vi.waitFor(() => {
+        expect(blamePoolBlame).toHaveBeenCalledTimes(1);
+      });
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["b.ts", "c.ts"]));
+      const pB = provider.buildFileSignals(root, { paths: ["b.ts", "c.ts"], onBlameStats: statsB });
+      await vi.waitFor(() => {
+        expect(blamePoolBlame).toHaveBeenCalledTimes(2);
+      });
+      release();
+      await Promise.all([pA, pB]);
+
+      expect(pooledPaths().sort()).toEqual(["a.ts", "b.ts", "c.ts"]);
+      expect(statsA.mock.calls[0][0]).toMatchObject({ files: 2, hits: 0, misses: 2, joined: 0 });
+      expect(statsB.mock.calls[0][0]).toMatchObject({ files: 2, hits: 0, misses: 1, joined: 1 });
+
+      await provider.buildChunkSignals(root, new Map([["b.ts", [{ chunkId: "cb", startLine: 1, endLine: 1 }]]]));
+      const blameArg = vi.mocked(buildChunkChurnMap).mock.calls.at(-1)?.[12] as Map<string, unknown>;
+      expect(blameArg.get("b.ts")).toEqual([line("sha-b.ts")]);
+    });
+
+    it("reuses a completed empty blame for the rest of the run without pinning it into the OID cache", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const root = uniqueRoot("empty");
+      vi.mocked(createCatFileBatchCheck).mockReturnValueOnce({
+        check: vi.fn().mockResolvedValue("oid-a"),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+      blamePoolBlame.mockImplementation(async () => new Map());
+      const stats = vi.fn();
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"], onBlameStats: stats });
+
+      expect(pooledPaths()).toEqual(["a.ts"]);
+      expect(stats.mock.calls[0][0]).toMatchObject({ files: 1, hits: 0, misses: 0, joined: 1 });
+      const cache = (provider as unknown as { blameCache: Map<string, unknown> | null }).blameCache;
+      expect(cache?.has("a.ts") ?? false).toBe(false);
+    });
+
+    it("re-blames a file whose HEAD OID changed since the in-run blame", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const root = uniqueRoot("oid");
+      const oids = new Map([["HEAD:a.ts", "oid-1"]]);
+      vi.mocked(createCatFileBatchCheck).mockReturnValueOnce({
+        check: vi.fn(async (spec: string) => oids.get(spec) ?? null),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+      // Empty lines keep the OID cache out of the picture: only the run-scoped
+      // map could (wrongly) serve the second call.
+      blamePoolBlame.mockImplementation(async () => new Map());
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+      oids.set("HEAD:a.ts", "oid-2");
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+
+      expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
+    });
+
+    it("finalizeSignals drops the run-scoped blame map so the next run re-blames", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const root = uniqueRoot("finalize");
+      blamePoolBlame.mockImplementation(async () => new Map());
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+      expect(pooledPaths()).toEqual(["a.ts"]); // same run: reused
+
+      await provider.finalizeSignals();
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+
+      expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
+    });
+
+    it("releases a failed blame so a later batch retries instead of joining the failure", async () => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const root = uniqueRoot("reject");
+      blamePoolBlame.mockRejectedValueOnce(new Error("blame pool closed")).mockImplementation(async () => new Map());
+
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await expect(provider.buildFileSignals(root, { paths: ["a.ts"] })).rejects.toThrow("blame pool closed");
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(rawFor(["a.ts"]));
+      await provider.buildFileSignals(root, { paths: ["a.ts"] });
+
+      expect(pooledPaths()).toEqual(["a.ts", "a.ts"]);
+    });
+  });
+
+  describe("file→chunk handoff across interleaved streaming batches", () => {
+    // Enrichment streams per batch, and ChunkPhase gates a batch's chunk walk
+    // only on THAT batch's file work: file batch B can finish before chunk
+    // batch A runs. Live taxdome: 53,836 of 107,428 touched chunks got
+    // "unknown" chunk ownership while their file ownership was known.
+    const line = (author: string) => ({
+      lineNumber: 1,
+      sha: `sha-${author}`,
+      author,
+      authorEmail: "x@x",
+      timestamp: 0,
+    });
+    const churn = (author: string) => ({ commits: [{ hash: `h-${author}`, author }], recentAuthors: [author] });
+    const chunk = (id: string) => [{ chunkId: id, startLine: 1, endLine: 1 }];
+    const blameArgOf = (call: number) =>
+      vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[12] as Map<string, unknown>;
+    const churnArgOf = (call: number) =>
+      vi.mocked(buildChunkChurnMap).mock.calls.at(call)?.[6] as Map<string, unknown> | undefined;
+    const liveBlame = (): Map<string, unknown> =>
+      (provider as unknown as { blameByRelPath: Map<string, unknown> }).blameByRelPath;
+
+    beforeEach(() => {
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      vi.mocked(buildChunkChurnMap).mockClear();
+      vi.mocked(buildChunkChurnMap).mockResolvedValue(new Map());
+      vi.mocked(buildFileSignalDiscovery).mockResolvedValue(
+        new Map([
+          ["src/a.ts", churn("Alice")],
+          ["src/b.ts", churn("Bob")],
+        ]) as never,
+      );
+      vi.mocked(blameFile).mockImplementation(async (_root, relPath) =>
+        relPath === "src/a.ts" ? [line("Alice")] : relPath === "src/b.ts" ? [line("Bob")] : [],
+      );
+    });
+
+    it("chunk batch B still sees its blame when file batch B completed before chunk batch A", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca")]]));
+      await provider.buildChunkSignals("/repo", new Map([["src/b.ts", chunk("cb")]]));
+
+      expect(blameArgOf(-2).get("src/a.ts")).toEqual([line("Alice")]);
+      expect(blameArgOf(-1).get("src/b.ts")).toEqual([line("Bob")]);
+    });
+
+    it("chunk batch A reads its OWN batch's file churn, not the latest file batch's", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca")]]));
+
+      expect(churnArgOf(-1)?.get("src/a.ts")).toEqual(churn("Alice"));
+    });
+
+    it("a file whose chunks span two batches keeps its blame for the second chunk batch", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca1")]]));
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca2")]]));
+
+      expect(blameArgOf(-1).get("src/a.ts")).toEqual([line("Alice")]);
+      // Both consumers released their hold — nothing retained afterwards.
+      expect(liveBlame().size).toBe(0);
+    });
+
+    it("off-thread walk job carries blame for a batch whose file work finished before an earlier chunk batch", async () => {
+      const discovery = {
+        commitsForFiles: vi.fn().mockResolvedValue([]),
+        getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
+      };
+      const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
+      const opts = { churnWalkThread: walkThread, commitDiscovery: discovery, skipCache: true } as never;
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.streamFileBatch("/repo", ["src/b.ts"]);
+
+      await provider.buildChunkSignals("/repo", new Map([["/repo/src/a.ts", chunk("ca")]]), opts);
+      await provider.buildChunkSignals("/repo", new Map([["/repo/src/b.ts", chunk("cb")]]), opts);
+
+      const job = walkThread.walk.mock.calls.at(-1)?.[0] as {
+        blameByPath: Map<string, unknown>;
+        fileChurnData?: Map<string, unknown>;
+      };
+      expect(job.blameByPath.get("src/b.ts")).toEqual([line("Bob")]);
+      expect(job.fileChurnData?.get("src/b.ts")).toEqual(churn("Bob"));
+    });
+
+    it("keeps blame across finalizeSignals, which CompletionRunner calls BEFORE draining streaming chunk work", async () => {
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.finalizeSignals();
+
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", chunk("ca")]]));
+
+      expect(blameArgOf(-1).get("src/a.ts")).toEqual([line("Alice")]);
+    });
+
+    it("evicts a never-consumed entry at the NEXT run's finalize (bounded retention)", async () => {
+      // e.g. a "file-only" file: file level enriches it, chunk level never walks it.
+      await provider.streamFileBatch("/repo", ["src/a.ts"]);
+      await provider.finalizeSignals();
+      expect(liveBlame().has("src/a.ts")).toBe(true); // this run may still consume it
+
+      await provider.finalizeSignals(); // next run's finalize
+
+      expect(liveBlame().size).toBe(0);
+    });
   });
 });

@@ -4,6 +4,7 @@ import { InfraError } from "../../../../src/core/adapters/errors.js";
 import {
   AliasOperationError,
   CollectionAlreadyExistsError,
+  QdrantInvalidQueryParameterError,
   QdrantOperationError,
   QdrantOptimizationInProgressError,
   QdrantPointNotFoundError,
@@ -132,6 +133,15 @@ describe("Qdrant error taxonomy — (code, httpStatus) pairs", () => {
     const err = new QdrantPointNotFoundError("pt-1", "code_abc");
     expect(err.code).toBe("INFRA_QDRANT_POINT_NOT_FOUND");
     expect(err.httpStatus).toBe(404);
+  });
+
+  it("QdrantInvalidQueryParameterError → INFRA_QDRANT_INVALID_QUERY_PARAMETER / 400, keeps the bare reason", () => {
+    const err = new QdrantInvalidQueryParameterError("semanticWeight must be a finite number in [0, 1]");
+    expect(err).toBeInstanceOf(InfraError);
+    expect(err.code).toBe("INFRA_QDRANT_INVALID_QUERY_PARAMETER");
+    expect(err.httpStatus).toBe(400);
+    expect(err.reason).toBe("semanticWeight must be a finite number in [0, 1]");
+    expect(err.message).toContain("semanticWeight must be a finite number in [0, 1]");
   });
 
   it("CollectionAlreadyExistsError → INFRA_COLLECTION_ALREADY_EXISTS / 409", () => {

@@ -36,15 +36,20 @@ export interface RankOptions {
 
 const OVERFETCH_FACTOR = 3;
 
-export class RankModule {
+/**
+ * Which STORED payload path a derived signal orders a scroll by — the half of
+ * rank_chunks that needs no reranker, so the composition root can ask it for
+ * every field rank_chunks may ever order by (the payload indexes a collection
+ * must carry, bd tea-rags-mcp-mimq0) with the exact rule a query uses.
+ */
+export class OrderByFieldResolver {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
   /** Source name (`chunk.pageRank`, `methodLines`) → declared LOGICAL payload key. */
   private readonly payloadKeyMap: Map<string, string>;
   private readonly payloadSignalTypes: Map<string, PayloadSignalDescriptor["type"]>;
 
   constructor(
-    private readonly reranker: Reranker,
-    private readonly descriptors: DerivedSignalDescriptor[],
+    descriptors: DerivedSignalDescriptor[],
     /**
      * The payload signal descriptors the reranker reads — the only record of which
      * trajectory stores a source and where. A source none of them declares
@@ -60,10 +65,21 @@ export class RankModule {
     this.payloadSignalTypes = new Map(payloadSignals.map((ps) => [ps.key, ps.type]));
   }
 
+  /** Every physical payload path any one derived signal orders by, at either level. */
+  allOrderByPaths(): string[] {
+    const paths = new Set<string>();
+    for (const name of this.descriptorMap.keys()) {
+      for (const level of ["chunk", "file"] as const) {
+        for (const { key } of this.resolve({ [name]: 1 }, level)) paths.add(key);
+      }
+    }
+    return [...paths].sort();
+  }
+
   /**
    * Resolve order_by fields from preset weights + descriptor sources + inverted flag.
    */
-  resolveOrderByFields(weights: Record<string, number>, level: "chunk" | "file"): OrderByField[] {
+  resolve(weights: Record<string, number>, level: "chunk" | "file"): OrderByField[] {
     const fields: OrderByField[] = [];
 
     for (const [key, weight] of Object.entries(weights)) {
@@ -82,6 +98,55 @@ export class RankModule {
     }
 
     return fields;
+  }
+
+  /**
+   * The STORED payload path a scroll orders by for one derived signal.
+   *
+   * Candidate order: the source at the requested level, then a dotless source, then
+   * the first source. A candidate a payload descriptor declares resolves to that
+   * descriptor's logical key mapped to its physical path (`codegraph.chunk.pageRank`
+   * → `codegraph.symbols.chunk.pageRank`); a non-numeric one (`isHub`) orders
+   * nothing, since Qdrant `order_by` needs a numeric range index — the signal still
+   * scores the pooled candidates in the rerank.
+   *
+   * A candidate no descriptor declares orders nothing either, exactly like an
+   * unknown weight key. There is no naming convention to fall back on: a `git.`
+   * guess is how codegraph signals once ordered by `git.file.fanIn`, a key no
+   * point carries, and rank_chunks indexed every such guess before scrolling (bd
+   * tea-rags-mcp-q34ic).
+   */
+  private resolvePayloadField(sources: string[], level: "chunk" | "file"): string | undefined {
+    const levelSource = sources.find((s) => s.startsWith(`${level}.`));
+    const unprefixed = sources.find((s) => !s.includes("."));
+
+    for (const source of [levelSource, unprefixed, sources[0]]) {
+      const logicalKey = source === undefined ? undefined : this.payloadKeyMap.get(source);
+      if (logicalKey === undefined) continue;
+      return this.payloadSignalTypes.get(logicalKey) === "number" ? toPhysicalPayloadKey(logicalKey) : undefined;
+    }
+
+    return undefined;
+  }
+}
+
+export class RankModule {
+  private readonly orderBy: OrderByFieldResolver;
+
+  constructor(
+    private readonly reranker: Reranker,
+    descriptors: DerivedSignalDescriptor[],
+    /** The payload signal descriptors the reranker reads — see {@link OrderByFieldResolver}. */
+    payloadSignals: PayloadSignalDescriptor[],
+  ) {
+    this.orderBy = new OrderByFieldResolver(descriptors, payloadSignals);
+  }
+
+  /**
+   * Resolve order_by fields from preset weights + descriptor sources + inverted flag.
+   */
+  resolveOrderByFields(weights: Record<string, number>, level: "chunk" | "file"): OrderByField[] {
+    return this.orderBy.resolve(weights, level);
   }
 
   /**
@@ -127,35 +192,6 @@ export class RankModule {
   }
 
   // -- Private --
-
-  /**
-   * The STORED payload path a scroll orders by for one derived signal.
-   *
-   * Candidate order: the source at the requested level, then a dotless source, then
-   * the first source. A candidate a payload descriptor declares resolves to that
-   * descriptor's logical key mapped to its physical path (`codegraph.chunk.pageRank`
-   * → `codegraph.symbols.chunk.pageRank`); a non-numeric one (`isHub`) orders
-   * nothing, since Qdrant `order_by` needs a numeric range index — the signal still
-   * scores the pooled candidates in the rerank.
-   *
-   * A candidate no descriptor declares orders nothing either, exactly like an
-   * unknown weight key. There is no naming convention to fall back on: a `git.`
-   * guess is how codegraph signals once ordered by `git.file.fanIn`, a key no
-   * point carries, and rank_chunks indexed every such guess before scrolling (bd
-   * tea-rags-mcp-q34ic).
-   */
-  private resolvePayloadField(sources: string[], level: "chunk" | "file"): string | undefined {
-    const levelSource = sources.find((s) => s.startsWith(`${level}.`));
-    const unprefixed = sources.find((s) => !s.includes("."));
-
-    for (const source of [levelSource, unprefixed, sources[0]]) {
-      const logicalKey = source === undefined ? undefined : this.payloadKeyMap.get(source);
-      if (logicalKey === undefined) continue;
-      return this.payloadSignalTypes.get(logicalKey) === "number" ? toPhysicalPayloadKey(logicalKey) : undefined;
-    }
-
-    return undefined;
-  }
 
   private removeAndNormalize(weights: Record<string, number>): Record<string, number> {
     const clean: Record<string, number> = {};

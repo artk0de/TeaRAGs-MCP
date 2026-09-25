@@ -14,6 +14,10 @@ import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../.
  * No new derived signals: `fanIn`, `transitiveImpact` and `isHub` already
  * ship with the codegraph trajectory. Collections without codegraph resolve
  * the static, mass-only variant unchanged.
+ *
+ * Like the static variant, the overlay carries file-level numbers only: a
+ * file-level result never emits a chunk bucket. Class-vs-module attribution
+ * is left to the consumer, through the file outline.
  */
 export class GodModuleCompositePreset implements CompositeRerankPreset {
   readonly name = "godModule";
@@ -37,6 +41,5 @@ export class GodModuleCompositePreset implements CompositeRerankPreset {
       "codegraph.file.transitiveImpact",
       "codegraph.file.isHub",
     ],
-    chunk: ["memberCount"],
   };
 }

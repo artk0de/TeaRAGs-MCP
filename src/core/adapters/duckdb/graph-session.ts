@@ -14,13 +14,40 @@
  * contract.
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
 
-import { DuckDbStreamIncompleteError } from "./errors.js";
+import type { CodegraphStorageCompactionOutcome, CodegraphStorageFootprint } from "../../contracts/types/codegraph.js";
+import { compactionStagingPath } from "./codegraph-db-files.js";
+import {
+  readStorageFootprint,
+  removeStagedCopy,
+  walHoldsData,
+  writeCompactedCopy,
+  type CompactedCopyVerdict,
+} from "./database-file-compaction.js";
+import { CodegraphStorageCompactionFailedError, DuckDbStreamIncompleteError } from "./errors.js";
 import { asBindable, bindParams } from "./sql-binding.js";
+import {
+  DEFAULT_CODEGRAPH_COMPACTION_POLICY,
+  shouldCompactCodegraphStorage,
+  type CodegraphCompactionPolicy,
+} from "./storage-compaction.js";
+
+/**
+ * The database file a session holds open, as `dev` + `ino` read right after it
+ * opened it. A path check alone cannot tell the file the session writes into
+ * from a different database put at the same path since (bd tea-rags-mcp-amh78).
+ */
+export interface OpenedDatabaseFile {
+  dev: bigint;
+  ino: bigint;
+}
+
+/** Identifier shape the wholesale rewrite interpolates — `cg_*` literals from this adapter. */
+const TABLE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 /**
  * Fallback memory_limit applied to every write (READ_WRITE) connection when
@@ -88,6 +115,12 @@ export interface DuckDbGraphSessionOptions {
     tempDirectory?: string;
     preserveInsertionOrder?: boolean;
   };
+  /**
+   * When {@link DuckDbGraphSession#compactDatabaseFile} rewrites the file (bd
+   * tea-rags-mcp-dvzdm). Defaults to `DEFAULT_CODEGRAPH_COMPACTION_POLICY`;
+   * tests lower the floor so a small fixture qualifies.
+   */
+  compactionPolicy?: CodegraphCompactionPolicy;
 }
 
 export class DuckDbGraphSession {
@@ -120,12 +153,37 @@ export class DuckDbGraphSession {
    */
   private readonly streamConnections = new Set<DuckDBConnection>();
   private closing?: Promise<void>;
+  /** The file `instance` holds open — set by every open, swapped by a compaction, cleared by close. */
+  private databaseFile?: OpenedDatabaseFile;
+  /**
+   * Set while a compaction swaps the database file under this session. Every
+   * native call — reads included, which do not go through the write queue —
+   * waits for it before touching the connection, so none reaches a closed
+   * instance or the file being replaced.
+   */
+  private swapping?: Promise<void>;
 
   constructor(private readonly options: DuckDbGraphSessionOptions) {}
 
   async open(): Promise<void> {
     this.closing = undefined;
     this.refusingCalls = false;
+    await this.openNative();
+  }
+
+  /**
+   * The database file this session holds open right now, or `undefined` when
+   * it holds none (never opened, closed, or a compaction whose reopen failed).
+   * What `GraphDbClientPool` compares the path against before handing a cached
+   * client out, so a compaction swapping the file under the session is not
+   * mistaken for someone else replacing it (bd tea-rags-mcp-dvzdm, amh78).
+   */
+  openedDatabaseFile(): OpenedDatabaseFile | undefined {
+    return this.databaseFile;
+  }
+
+  /** Create the instance + connection on `options.path`, apply the resource ceiling, record the file. */
+  private async openNative(): Promise<void> {
     mkdirSync(dirname(this.options.path), { recursive: true });
     // @duckdb/node-api `DuckDBInstance.create(path, options)` takes a
     // string→string config map. `access_mode` controls RW vs RO; only
@@ -134,7 +192,8 @@ export class DuckDbGraphSession {
     const config: Record<string, string> = {};
     if (this.options.accessMode) config.access_mode = this.options.accessMode;
     this.instance = await DuckDBInstance.create(this.options.path, config);
-    this.conn = await this.instance.connect();
+    const conn = await this.instance.connect();
+    this.conn = conn;
 
     // Slice 2 — apply resource ceiling BEFORE migrations so the
     // schema bootstrap itself runs under the cap. Settings are issued
@@ -172,9 +231,9 @@ export class DuckDbGraphSession {
       // take and the connection is silently running at DuckDB's ~80%-of-RAM
       // default — surface that loudly instead of risking a native OOM. That
       // silent failure is exactly what hid the codegraph OOM in the field.
-      const beforeLimit = await this.readMemoryLimit();
-      await this.execSilent(`SET memory_limit = '${memoryLimit.replace(/'/g, "''")}'`);
-      const afterLimit = await this.readMemoryLimit();
+      const beforeLimit = await this.readMemoryLimitOn(conn);
+      await this.execSilentOn(conn, `SET memory_limit = '${memoryLimit.replace(/'/g, "''")}'`);
+      const afterLimit = await this.readMemoryLimitOn(conn);
       if (beforeLimit !== undefined && afterLimit === beforeLimit) {
         console.error(
           `[DuckDbGraphClient] memory_limit cap '${memoryLimit}' did NOT take effect ` +
@@ -191,26 +250,32 @@ export class DuckDbGraphSession {
             // Directory may already exist (concurrent first-callers from
             // the pool). The SET below is the load-bearing step.
           }
-          await this.execSilent(`SET temp_directory = '${spillDir.replace(/'/g, "''")}'`);
+          await this.execSilentOn(conn, `SET temp_directory = '${spillDir.replace(/'/g, "''")}'`);
         }
         if (r.threads !== undefined && r.threads > 0) {
-          await this.execSilent(`SET threads = ${Math.floor(r.threads)}`);
+          await this.execSilentOn(conn, `SET threads = ${Math.floor(r.threads)}`);
         }
         if (r.preserveInsertionOrder === false) {
-          await this.execSilent(`SET preserve_insertion_order = false`);
+          await this.execSilentOn(conn, `SET preserve_insertion_order = false`);
         }
       }
     }
+    const opened = statSync(this.options.path, { bigint: true });
+    this.databaseFile = { dev: opened.dev, ino: opened.ino };
   }
 
   /**
    * Issue a SET / PRAGMA-style statement that we WANT to apply but can
    * tolerate a driver-version error on. Used by `open()` for resource
    * ceilings — settings are advisory, not invariants.
+   *
+   * Straight on the connection being opened, never through `exec`: a
+   * compaction reopens the file while its gate still holds every other call,
+   * and a gated call here would wait on the gate its own reopen keeps closed.
    */
-  private async execSilent(sql: string): Promise<void> {
+  private async execSilentOn(conn: DuckDBConnection, sql: string): Promise<void> {
     try {
-      await this.exec(sql);
+      await conn.run(sql);
     } catch {
       // Older driver versions reject unrecognised setting names; allow
       // the ingest path to continue without the cap.
@@ -222,10 +287,10 @@ export class DuckDbGraphSession {
    * `undefined` if the setting can't be read — used by `open()` to verify the
    * resource-ceiling SET actually took effect (see the OOM guard there).
    */
-  private async readMemoryLimit(): Promise<string | undefined> {
+  private async readMemoryLimitOn(conn: DuckDBConnection): Promise<string | undefined> {
     try {
-      const rows = await this.queryAll<{ m: string }>("SELECT current_setting('memory_limit') AS m");
-      return rows[0]?.m;
+      const reader = await conn.runAndReadAll("SELECT current_setting('memory_limit') AS m");
+      return (reader.getRowObjectsJson()[0] as { m?: string } | undefined)?.m;
     } catch {
       return undefined;
     }
@@ -272,6 +337,7 @@ export class DuckDbGraphSession {
     const { conn, instance } = this;
     this.conn = undefined;
     this.instance = undefined;
+    this.databaseFile = undefined;
     try {
       if (conn && this.options.accessMode !== "READ_ONLY") {
         await conn.run("PRAGMA disable_checkpoint_on_shutdown");
@@ -288,6 +354,7 @@ export class DuckDbGraphSession {
    * mid-stream cannot hold a close open.
    */
   private async onConnection<T>(call: (conn: DuckDBConnection) => Promise<T>): Promise<T> {
+    if (this.swapping) await this.passSwapGate();
     const conn = this.requireConn();
     this.runningNativeCalls += 1;
     try {
@@ -342,6 +409,179 @@ export class DuckDbGraphSession {
    */
   async checkpoint(): Promise<void> {
     return this.serialize(async () => this.exec("CHECKPOINT"));
+  }
+
+  /**
+   * Drop `table` and create it again, empty, from its own catalog DDL — the
+   * table statement and every explicit index on it — so whatever the
+   * migrations declared survives unchanged (bd tea-rags-mcp-dvzdm).
+   *
+   * This is how a table that is rewritten WHOLESALE must be emptied. DuckDB
+   * 1.5.3 vacuums deleted rows at checkpoint only for tables without an index,
+   * and every `cg_*` table has a PRIMARY KEY, so `DELETE FROM <table>` keeps the
+   * previous generation in the file for good (measured: nine generations after
+   * eight rewrites). A dropped table's row groups go back to the free list and
+   * the next write reuses them. `CREATE OR REPLACE TABLE … AS` would free them
+   * too, but loses the key.
+   *
+   * Must run inside the caller's `transaction` body: the drop and the refill
+   * then commit together, a failed refill rolls the old table back, and a
+   * reader on another connection keeps its snapshot of the old table.
+   */
+  async recreateEmptyTable(table: string): Promise<void> {
+    if (!TABLE_IDENTIFIER.test(table)) throw new Error(`recreateEmptyTable: not a plain table identifier: ${table}`);
+    const [created] = await this.queryAll<{ sql: string }>(
+      "SELECT sql FROM duckdb_tables() WHERE database_name = current_database() AND schema_name = 'main' AND table_name = ?",
+      [table],
+    );
+    if (!created) throw new Error(`recreateEmptyTable: no table ${table} in the catalog`);
+    const indexes = await this.queryAll<{ sql: string | null }>(
+      "SELECT sql FROM duckdb_indexes() WHERE database_name = current_database() AND table_name = ? ORDER BY index_name",
+      [table],
+    );
+    await this.exec(`DROP TABLE ${table}`);
+    await this.exec(created.sql);
+    for (const index of indexes) {
+      if (index.sql) await this.exec(index.sql);
+    }
+  }
+
+  /** Live rows, stored row versions and file size — the compaction decision's input. */
+  async readStorageFootprint(): Promise<CodegraphStorageFootprint> {
+    return this.onConnection(async (conn) => readStorageFootprint(conn, this.options.path));
+  }
+
+  /**
+   * Rewrite the database file without its dead row versions, when the policy
+   * says it is worth it, and swap it in under THIS session (bd
+   * tea-rags-mcp-dvzdm). Callers keep the session they hold: nothing above it —
+   * the client, the pool entry, the daemon's sockets — is closed or replaced.
+   *
+   * The protocol, all inside one slot of the write queue so no write interleaves:
+   *
+   * 1. Measure. Below the policy: skipped, nothing else happens.
+   * 2. Close the gate: every native call issued from here on — reads too —
+   *    waits; the calls already running are waited out. A stream holding its
+   *    own connection cannot be waited out safely, so its presence skips the
+   *    compaction instead (the next run retries).
+   * 3. CHECKPOINT, so the file holds everything the WAL held.
+   * 4. `COPY FROM DATABASE` into `<path>.compact-tmp`, verified table by table
+   *    and key by key (`writeCompactedCopy`), with no WAL beside it.
+   * 5. Publish: one synchronous step renames the copy over the path, records
+   *    the copy's inode as this session's file, and closes the old instance.
+   *    The rename is the commit point — up to it the original is untouched
+   *    and still open; after it the path names a complete database. Renaming
+   *    BEFORE closing is deliberate: a daemon of another build waiting on the
+   *    lock can only ever open the NEW file, never an old inode about to be
+   *    unlinked, whose writes would be lost (bd tea-rags-mcp-amh78).
+   * 6. Reopen the path, restoring the memory limit the old connection ran
+   *    under (the daemon's governor may have raised it for the burst).
+   */
+  async compactDatabaseFile(): Promise<CodegraphStorageCompactionOutcome> {
+    if (this.options.accessMode === "READ_ONLY") return { kind: "skipped", reason: "unsupported" };
+    const policy = this.options.compactionPolicy ?? DEFAULT_CODEGRAPH_COMPACTION_POLICY;
+    return this.serialize(async (): Promise<CodegraphStorageCompactionOutcome> => {
+      const startedAt = Date.now();
+      const footprint = await this.readStorageFootprint();
+      if (!shouldCompactCodegraphStorage(footprint, policy)) {
+        return { kind: "skipped", reason: "belowThreshold", footprint };
+      }
+      if (this.streamConnections.size > 0) return { kind: "skipped", reason: "streamOpen", footprint };
+
+      let openGate!: () => void;
+      this.swapping = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      try {
+        await this.waitForNativeCalls();
+        if (this.streamConnections.size > 0) return { kind: "skipped", reason: "streamOpen", footprint };
+        const bytesAfter = await this.swapInCompactedCopy();
+        return {
+          kind: "compacted",
+          bytesBefore: footprint.fileBytes,
+          bytesAfter,
+          liveRows: footprint.liveRows,
+          storedRows: footprint.storedRows,
+          durationMs: Date.now() - startedAt,
+        };
+      } finally {
+        this.swapping = undefined;
+        openGate();
+      }
+    });
+  }
+
+  /** Steps 3–6 of {@link compactDatabaseFile}; the gate is closed and no native call runs. */
+  private async swapInCompactedCopy(): Promise<number> {
+    const { path } = this.options;
+    const conn = this.requireConn();
+    const { instance } = this;
+    if (!instance) throw new Error("DuckDbGraphClient: init() must be called before use");
+    const staging = compactionStagingPath(path);
+
+    let memoryLimit: string | undefined;
+    try {
+      await removeStagedCopy(staging);
+      await conn.run("CHECKPOINT");
+      memoryLimit = (await conn.runAndReadAll("SELECT current_setting('memory_limit') AS m")).getRowObjectsJson()[0]
+        ?.m as string | undefined;
+      const verdict: CompactedCopyVerdict = await writeCompactedCopy(conn, staging);
+      if (verdict.kind === "mismatch") {
+        await removeStagedCopy(staging);
+        throw new CodegraphStorageCompactionFailedError(path, "copy", undefined, verdict.detail);
+      }
+      // The old instance must not checkpoint on its way out: after the rename
+      // its WAL path belongs to the new file.
+      await conn.run("PRAGMA disable_checkpoint_on_shutdown");
+      if (walHoldsData(path)) {
+        await removeStagedCopy(staging);
+        throw new CodegraphStorageCompactionFailedError(path, "copy", undefined, `${path}.wal still holds data`);
+      }
+    } catch (err) {
+      if (err instanceof CodegraphStorageCompactionFailedError) throw err;
+      await removeStagedCopy(staging);
+      throw new CodegraphStorageCompactionFailedError(path, "copy", err instanceof Error ? err : undefined);
+    }
+
+    // Publish — synchronous from the rename to the close, so nothing can run
+    // on the old instance once the path names the new file.
+    const staged = statSync(staging, { bigint: true });
+    try {
+      renameSync(staging, path);
+    } catch (err) {
+      await removeStagedCopy(staging);
+      throw new CodegraphStorageCompactionFailedError(path, "publish", err instanceof Error ? err : undefined);
+    }
+    this.databaseFile = { dev: staged.dev, ino: staged.ino };
+    this.conn = undefined;
+    this.instance = undefined;
+    conn.closeSync();
+    instance.closeSync();
+
+    try {
+      await this.openNative();
+      const reopened = this.conn;
+      if (memoryLimit && reopened) {
+        await this.execSilentOn(reopened, `SET memory_limit = '${memoryLimit.replace(/'/g, "''")}'`);
+      }
+    } catch (err) {
+      this.databaseFile = undefined;
+      throw new CodegraphStorageCompactionFailedError(path, "reopen", err instanceof Error ? err : undefined);
+    }
+    return statSync(path).size;
+  }
+
+  /** Resolve once no native call is running on the connection. */
+  private async waitForNativeCalls(): Promise<void> {
+    if (this.runningNativeCalls === 0) return;
+    await new Promise<void>((resolve) => {
+      this.nativeCallsSettled.push(resolve);
+    });
+  }
+
+  /** Wait out a compaction's file swap (see {@link compactDatabaseFile}). */
+  private async passSwapGate(): Promise<void> {
+    while (this.swapping) await this.swapping;
   }
 
   /** Generic exec — used by the migration runner. Returns no rows. */
@@ -439,6 +679,7 @@ export class DuckDbGraphSession {
 
   /** A fresh connection on this session's instance, tracked so `close` can end it. */
   private async openStreamConnection(): Promise<DuckDBConnection> {
+    if (this.swapping) await this.passSwapGate();
     this.requireConn();
     const { instance } = this;
     if (!instance) throw new Error("DuckDbGraphClient: init() must be called before use");

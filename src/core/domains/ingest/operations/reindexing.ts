@@ -7,6 +7,7 @@
  */
 
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { RechunkFileSelector } from "../../../contracts/types/rechunk.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
@@ -28,6 +29,7 @@ import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.
 import { QuarantineStore } from "../sync/index.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
+import { selectRechunkWorkSet } from "./rechunk-work-set.js";
 import { resolvePhysicalCollection } from "./version-resolver.js";
 
 interface ReindexContext {
@@ -117,6 +119,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
        * run's deferred-pass semantics rather than a pre-walk approximation.
        */
       deferredChunkHandoff?: DeferredChunkRecoveryHandoff;
+      /**
+       * Scoped force (bd tea-rags-mcp-j4oww): every indexed file this selector
+       * picks joins the work set as a MODIFIED file and is re-chunked in place.
+       */
+      rechunk?: RechunkFileSelector;
     },
   ): Promise<ChangeStats> {
     const startTime = Date.now();
@@ -151,6 +158,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     try {
       const ctx = await this.prepareReindexContext(absolutePath, collectionName);
+      if (overrides?.rechunk) {
+        stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
+      }
       const resumeFromCheckpoint = await this.checkForCheckpoint(ctx.synchronizer);
 
       this.reportScanProgress(progressCallback, resumeFromCheckpoint);
@@ -208,7 +218,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       );
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
-        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
+        // A deletion-only run prunes the derived codegraph tables and leaves
+        // them stale rather than paying the recompute on its fast path (bd
+        // tea-rags-mcp-dy852). This branch is the next run that has nothing to
+        // chunk, so it owes that finalize even when the repair found nothing.
+        const staleDerived = repaired === 0 && (await this.enrichment.hasStaleDerivedState(ctx.targetCollection));
+        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff, staleDerived);
         // No snapshot: nothing changed, so the stored file list already matches
         // what is on disk.
         await this.closeRun(ctx, { snapshot: false });
@@ -230,25 +245,41 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       this.startHeartbeat(ctx.targetCollection);
-      const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
-        await this.executeParallelPipelines(
-          ctx,
-          changes,
-          quarantineStore,
-          retryPaths,
-          deferredChunkHandoff,
-          progressCallback,
-          overrides?.chunkSize,
-        );
+      const {
+        chunksAdded,
+        chunksDeleted,
+        processingCtx,
+        chunkMap,
+        filesSkippedDueToDeleteFailure,
+        filesFailedToDelete,
+        deletionOutcome,
+      } = await this.executeParallelPipelines(
+        ctx,
+        changes,
+        quarantineStore,
+        retryPaths,
+        deferredChunkHandoff,
+        progressCallback,
+        overrides?.chunkSize,
+      );
       stats.chunksAdded = chunksAdded;
       stats.chunksDeleted = chunksDeleted;
       if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
         stats.filesSkippedDueToDeleteFailure = filesSkippedDueToDeleteFailure;
         stats.status = "partial";
       }
+      if (filesFailedToDelete !== undefined && filesFailedToDelete > 0) {
+        stats.filesFailedToDelete = filesFailedToDelete;
+        stats.status = "partial";
+      }
 
       this.stopHeartbeat();
-      await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
+      // Every path whose delete failed still has its old chunks in the index —
+      // a removed file never left it, a modified file's re-ingest was skipped
+      // by the coordinator. Its snapshot entry stays as the previous run left
+      // it, so the next run detects it again and retries (bd tea-rags-mcp-ti1oa).
+      const unreconciled = deletionOutcome?.failed ?? new Set<string>();
+      await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime, unreconciled);
       return stats;
     } catch (error) {
       this.wrapUnexpectedError(error, ReindexFailedError);
@@ -329,6 +360,18 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         steps: statsResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
+
+    // After the schema pipeline, so its own indexes already exist: creates the
+    // declared payload indexes an existing collection lacks and names the
+    // undeclared ones (bd tea-rags-mcp-mimq0). A clean collection costs one read.
+    const payloadIndexResult = await migrator.run("payloadIndexes");
+    if (payloadIndexResult.steps.length > 0) {
+      pipelineLog.reindexPhase("payload_index_reconcile", {
+        fromVersion: payloadIndexResult.fromVersion,
+        toVersion: payloadIndexResult.toVersion,
+        steps: payloadIndexResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
+      });
+    }
   }
 
   private async checkForCheckpoint(synchronizer: ParallelFileSynchronizer): Promise<boolean> {
@@ -338,6 +381,35 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       return true;
     }
     return false;
+  }
+
+  // ── Scoped force ─────────────────────────────────────────
+
+  /**
+   * Turn a scoped force's selector into snapshot entries marked stale, so the
+   * change detection below reports those files as MODIFIED and the ordinary
+   * modified-file path re-chunks them: points deleted by path, new chunks
+   * embedded and upserted, codegraph rows replaced by the walker's
+   * DELETE+INSERT, enrichment run for their chunks only. Nothing outside the
+   * selection is touched and no new collection is built.
+   *
+   * The marks are persisted BEFORE any point is deleted — that is the crash
+   * safety. A run that dies after this leaves the files stale on disk, so the
+   * next run of any kind, auto-update included, re-chunks them; a delete that
+   * fails keeps its stale mark through `retainPrevious`. Returns how many
+   * indexed files the selector picked.
+   */
+  private async invalidateRechunkWorkSet(ctx: ReindexContext, selector: RechunkFileSelector): Promise<number> {
+    const base = ctx.absolutePath;
+    const scannedFiles = ctx.currentFiles.map((f) => (f.startsWith(base) ? f.slice(base.length + 1) : f));
+    const workSet = selectRechunkWorkSet({
+      selector,
+      scannedFiles,
+      indexedFiles: ctx.synchronizer.getSnapshotPaths(),
+    });
+    await ctx.synchronizer.invalidateEntries(workSet);
+    pipelineLog.reindexPhase("RECHUNK_SCOPED", { files: workSet.length, selector });
+    return workSet.length;
   }
 
   // ── Change detection ─────────────────────────────────────
@@ -386,6 +458,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     deletionOutcome?: DeletionOutcome;
     /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
     filesSkippedDueToDeleteFailure?: number;
+    /** Count of removed (deleted / newly ignored) files whose old chunks could not be deleted. */
+    filesFailedToDelete?: number;
   }> {
     const plan = this.prepareParallelExecution(
       ctx,
@@ -406,7 +480,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     try {
       const exec = await this.runParallelPipelines(ctx, plan, progressCallback);
-      const filesSkippedDueToDeleteFailure = this.assessParallelOutcome(plan, exec);
+      const { filesSkippedDueToDeleteFailure, filesFailedToDelete } = this.assessParallelOutcome(plan, exec);
       return {
         chunksAdded: exec.addedChunks + exec.modifiedChunks,
         chunksDeleted: exec.chunksDeleted,
@@ -414,6 +488,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         chunkMap: plan.chunkMap,
         deletionOutcome: exec.deletionOutcome,
         filesSkippedDueToDeleteFailure,
+        filesFailedToDelete,
       };
     } finally {
       // Reverting deleted_threshold to 0.2 naturally triggers one optimizer
@@ -607,22 +682,34 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    *   coordinator.hasBlockedPaths() -> filesSkippedDueToDeleteFailure: N
    *   AND caller marks stats.status = "partial" when N > 0.
    * Drift in this counter silently leaves stale chunks in the index.
+   *
+   * A removed path (deleted / newly ignored) has no upsert for the coordinator
+   * to gate, so its failed delete never reaches `skippedFiles()` — yet its old
+   * chunks stay in the index all the same (bd tea-rags-mcp-fa9k). Those are
+   * counted separately as `filesFailedToDelete`, and the caller downgrades to
+   * "partial" on either counter.
    */
-  private assessParallelOutcome(plan: ParallelExecutionPlan, exec: ParallelExecutionResult): number | undefined {
+  private assessParallelOutcome(
+    plan: ParallelExecutionPlan,
+    exec: ParallelExecutionResult,
+  ): { filesSkippedDueToDeleteFailure?: number; filesFailedToDelete?: number } {
     let filesSkippedDueToDeleteFailure: number | undefined;
+    let filesFailedToDelete: number | undefined;
     if (exec.coordinator.hasBlockedPaths()) {
       const skipped = exec.coordinator.skippedFiles();
       filesSkippedDueToDeleteFailure = skipped.length;
+      filesFailedToDelete = plan.providerDeletedOnly.filter((path) => exec.deletionOutcome?.failed.has(path)).length;
       pipelineLog.step({ component: "Reindex" }, "REINDEX_PARTIAL_COMPLETE", {
         skippedFilesCount: skipped.length,
         skippedSample: skipped.slice(0, 20),
+        removedFilesFailedCount: filesFailedToDelete,
         blockedPathsCount: exec.deletionOutcome?.failed.size ?? 0,
       });
     }
 
     this.logPipelineStats(plan.pCtx, plan.parallelStart);
 
-    return filesSkippedDueToDeleteFailure;
+    return { filesSkippedDueToDeleteFailure, filesFailedToDelete };
   }
 
   // ── Finalization ─────────────────────────────────────────
@@ -633,10 +720,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     stats: ChangeStats,
     startTime: number,
+    unreconciled: ReadonlySet<string>,
   ): Promise<void> {
     const getEnrichmentStatus = await this.finalizeProcessing(processingCtx, chunkMap);
 
-    await this.closeRun(ctx, { snapshot: true });
+    await this.closeRun(ctx, { snapshot: true, retainPrevious: unreconciled });
 
     const enrichmentResult = getEnrichmentStatus();
     stats.enrichmentStatus = enrichmentResult.status;
@@ -673,11 +761,19 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    *
    * `snapshot: false` belongs to the zero-change return alone — there the
    * stored file list already matches disk, so rewriting it is pure cost.
+   *
+   * `retainPrevious` names paths this run left out of line with disk; their
+   * snapshot entries stay as the previous run saved them, so the next run
+   * retries them (bd tea-rags-mcp-ti1oa).
    */
-  private async closeRun(ctx: ReindexContext, { snapshot }: { snapshot: boolean }): Promise<void> {
+  private async closeRun(
+    ctx: ReindexContext,
+    { snapshot, retainPrevious }: { snapshot: boolean; retainPrevious?: ReadonlySet<string> },
+  ): Promise<void> {
     await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
     if (snapshot) {
-      await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
+      const options = retainPrevious && retainPrevious.size > 0 ? { retainPrevious } : undefined;
+      await ctx.synchronizer.updateSnapshot(ctx.currentFiles, undefined, options);
     }
     await ctx.synchronizer.deleteCheckpoint();
     await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
@@ -706,9 +802,20 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     repaired: number,
     /** The narrowed recovery handoff whose files this repair walked (bd tea-rags-mcp-fxio5). */
     deferredChunkHandoff: DeferredChunkRecoveryHandoff,
+    /**
+     * A provider's derived tables were pruned by an earlier deletion and not yet
+     * recomputed (bd tea-rags-mcp-dy852): finalize even though nothing was
+     * repaired. Only the no-change branch passes it — the deletion-only fast
+     * path is the run that pruned, and stays closed.
+     */
+    staleDerived = false,
   ): Promise<void> {
-    if (repaired === 0) return;
-    pipelineLog.reindexPhase("REPAIR_FINALIZE_START", { repaired, collection: ctx.targetCollection });
+    if (repaired === 0 && !staleDerived) return;
+    pipelineLog.reindexPhase("REPAIR_FINALIZE_START", {
+      repaired,
+      ...(staleDerived ? { staleDerived: true } : {}),
+      collection: ctx.targetCollection,
+    });
     try {
       stats.enrichmentMetrics = await this.enrichment.runFinalizeOnly(
         ctx.absolutePath,

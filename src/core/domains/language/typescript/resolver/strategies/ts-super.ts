@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
@@ -56,7 +57,7 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
     if (ctx.callerScope.length === 0) return null;
     if (!ctx.classExtends) return null;
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    let current: string | undefined = ctx.classExtends[enclosing];
+    let current: string | undefined = identifierEntry(ctx.classExtends, enclosing);
     if (!current) return null;
     const visited = new Set<string>([enclosing]);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
@@ -121,7 +122,7 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
       }
       // Walk one step deeper. `classExtends` carries one parent per class —
       // single inheritance, no mixin chain to consider.
-      current = ctx.classExtends[current];
+      current = identifierEntry(ctx.classExtends, current);
     }
     return fileOnlyFallback;
   }

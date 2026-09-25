@@ -4,7 +4,8 @@ import { battleTestedFilterPreset } from "./battle-tested.js";
 
 export { battleTestedFilterPreset, abandonedHotspotsFilterPreset };
 
-const ALL_COMPOSITE_FILTER_PRESETS: readonly FilterPresetDef[] = [
+/** Every composite filter preset, ungated — the full-registry view the declared payload index set reads. */
+export const ALL_COMPOSITE_FILTER_PRESETS: readonly FilterPresetDef[] = [
   battleTestedFilterPreset,
   abandonedHotspotsFilterPreset,
 ];

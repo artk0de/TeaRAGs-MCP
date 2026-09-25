@@ -108,7 +108,43 @@ carry their own navigators.
   exactly zero into up to 10%. Both old values were the degenerate ones, so the
   direction is right, but it changes which points a preset PRE-filters. Read the
   referencing presets before and after; a support floor is never a labels-only
-  change.
+  change. **Clearing a degenerate top band is not what the gate DOES**, though —
+  it is what happened here, because `bugFixRate`'s 100 atom is manufactured
+  entirely by thin support and nothing else reaches it. Where an atom has a
+  structural source the gate leaves it standing: every `fanIn == 0` file reads
+  `codegraph.file.instability` 1 however many edges it has
+  (`codegraph/CLAUDE.md`). Declare the gate on the variance argument, and check
+  the top band as a separate question — the next bullet is the answer when the
+  atom is structural.
+- **A value that marks a structural CLASS leaves the sample through
+  `stats.structuralAtoms`, and is still labeled.** `admittedSignalValue` drops a
+  value equal to a declared atom from every bucket (global, per-language,
+  per-scope), after the zero rule — so a declared atom 0 leaves even under
+  `zeroIsValidObservation`. The label path has no counterpart and must not grow
+  one: the reranker grades an atom against the bands the interior produced,
+  which is the point (an atom above the interior p95 reads the top label, one
+  below p50 the bottom). Three different questions, three fields:
+  `zeroIsValidObservation` is whether a 0 was MEASURED, `minSupportPercentile`
+  is how WELL a unit was observed, `structuralAtoms` is which values are class
+  membership rather than position. They compose — the support floor resolves
+  from the SUPPORT's distribution, which an atom of the gated signal never
+  touches, and the atom rule then drops the atoms the floor admitted. Like the
+  global-bucket gate above, it moves filter-preset thresholds, not just labels.
+  It is part of `describeStatsSamplingContract` as a term written ONLY when
+  declared, so every signal without atoms keeps the stamp an existing index
+  already carries and reports no drift.
+- **A class a SIBLING names leaves the sample through `stats.coSignalClass`, and
+  reads the class label instead of a band.** Where the value an atom would name
+  is defined by another signal — one recent contributor makes
+  `recentDominantAuthorPct` 100 by construction — declaring the atom would still
+  grade it on the interior ladder, above p95, and call a one-author file a
+  `silo`. The class is resolved on both halves from the co-signal:
+  `admittedSignalValue` drops the member, and `Reranker#applyLabelResolution`
+  labels it before any stats lookup, so it is labeled even in a language with no
+  `perLanguage` entry. A missing co-signal is not membership. Same
+  written-only-when-declared stamp term as the atoms; the label is read-side and
+  not part of it. Measured cost and the before/after ladder live in the
+  descriptor comment and bd tea-rags-mcp-od098.
 - **Filter-preset thresholds are precomputed, global, and raw-signal-only.** A
   filter preset compiles to a Qdrant PRE-filter applied during the vector
   search, before any reranker exists. So: conditions address raw payload keys
@@ -203,14 +239,23 @@ carry their own navigators.
   label on a small-share language, not a polyglot-mixed one, and nothing falls
   back to the global distribution (`../explore/CLAUDE.md` owns the resolution
   side).
-- **`payload.isTest` is a filename regex, absent when false, 16 languages.**
-  `detectTestFile` (`static/test-detection.ts`) matches `basename(relativePath)`
-  only, so `spec/models/user_spec.rb` hits while `tests/helpers.py` and
-  `src/test/java/Helper.java` do not; the provider writes the key only on a hit
-  (`StaticPayloadBuilder#buildPayload`). Why: `production` / `coreLogic` exclude
-  by `isTest`, so directory-organized suites leak through them — and a condition
-  written `isTest = false` matches nothing, leaving the shipped
-  `{ op: "eq", value: true, occur: "must_not" }` as the only working form.
+- **`payload.isTest` is owned by the infra file classifier, absent when false.**
+  `detectTestFile` (`static/test-detection.ts`) delegates to `classify` in
+  `core/infra/file-classification/`, the same patterns the codegraph exclusion
+  and the enrichment `skippedAs: "test"` stamp read, so it is path-aware
+  (`tests/helpers.py` hits). Add a test shape THERE, never beside
+  `detectTestFile`. The provider writes the key only on a hit
+  (`StaticPayloadBuilder#buildPayload`), so a condition written `isTest = false`
+  matches nothing; `{ op: "eq", value: true, occur: "must_not" }` is the only
+  working form. Indexes built before bd tea-rags-mcp-9ty5z carry the old
+  filename-only flag until `--force`. The query path bridges them: "exclude
+  tests" has one owner, `static/test-exclusion.ts`, whose conditions add a
+  `must_not` on `codegraph.symbols.file.skippedAs = "test"`. Both
+  `testFile: "exclude"` and the filter-preset compiler emit them; the compiler
+  expands every `isTest` `must_not` condition, so a new test-excluding preset is
+  covered with no extra wiring. Why: two classifiers answering "is this a test"
+  disagreed, and every churn-weighted preset ranked shared `__helpers__`
+  fixtures as production.
 
 ## See also
 

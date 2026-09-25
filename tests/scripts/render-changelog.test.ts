@@ -478,3 +478,85 @@ describe("blog posts in the release range", () => {
     expect(notes).toContain("@artk0de");
   });
 });
+
+// ── Vocabulary emphasis ──────────────────────────────────────────────────────
+// WHICH words carry emphasis is a rendering decision, so it lives in
+// scripts/lib/changelog-emphasis.js — deterministic and testable — rather than
+// in the prompt, whose markdown nobody can verify. It applies to the two fields
+// a reader consumes as sentences and to nothing else: raw git data stays
+// verbatim, and hand-written blog prose keeps its author's own emphasis.
+
+const VOCABULARY = {
+  version: "1.43.0",
+  date: "2026-09-19",
+  compareUrl: "https://github.com/artk0de/TeaRAGs-MCP/compare/v1.42.0...v1.43.0",
+  groups: [
+    {
+      theme: "language",
+      items: [{ description: "Go code search and navigation resolves through the code-graph", commits: ["abc1234"] }],
+    },
+  ],
+  allCommits: [{ hash: "abc1234", subject: "fix(language): Go package imports resolve to the right package" }],
+  envChanges: [
+    {
+      name: "CODEGRAPH_ENABLED",
+      description: "Build the code-graph while indexing Go",
+      default: "true",
+      change: "new",
+    },
+  ],
+};
+
+describe("vocabulary emphasis", () => {
+  it("emphasises a language bold-italic and a project term bold in a product bullet", () => {
+    const out = renderChangelogSection(VOCABULARY);
+    expect(out).toContain("* ***Go*** code search and navigation resolves through the **code-graph**");
+  });
+
+  it("emphasises an env-change description but never the name or the default, which are code spans", () => {
+    const out = renderChangelogSection(VOCABULARY);
+    expect(out).toContain("Build the **code-graph** while indexing ***Go***");
+    expect(out).toContain("`CODEGRAPH_ENABLED`");
+    expect(out).not.toContain("`***CODEGRAPH_ENABLED***`");
+    expect(out).toContain("default: `true`");
+  });
+
+  it("leaves commit subjects in the Full Commits spoiler verbatim — they are raw git data", () => {
+    const out = renderReleaseNotes(VOCABULARY);
+    expect(out).toContain("- abc1234 fix(language): Go package imports resolve to the right package");
+  });
+
+  it("leaves blog post titles and summaries alone — the author's own emphasis wins", () => {
+    const posts = [{ ...POSTS[0], title: "Why Ruby ranking moved", summary: "A note about Qdrant." }];
+    for (const out of [
+      renderChangelogSection(VOCABULARY, { blogPosts: posts }),
+      renderReleaseNotes(VOCABULARY, [], { blogPosts: posts }),
+    ]) {
+      expect(out).toContain("[Why Ruby ranking moved]");
+      expect(out).toContain("A note about Qdrant.");
+      expect(out).not.toContain("***Ruby***");
+      expect(out).not.toContain("**Qdrant**");
+    }
+  });
+
+  it("leaves the version header alone, product name in its compare URL included", () => {
+    const out = renderChangelogSection(VOCABULARY);
+    expect(out).toContain("## [1.43.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.42.0...v1.43.0) (2026-09-19)");
+    expect(out).not.toContain("**MCP**");
+    expect(out).not.toContain("**TeaRAGs**");
+  });
+
+  // escapeMentions is the pass that INSERTS backticks, and the emphasis pass
+  // refuses to enter a code span — so mentions must be escaped first. Reversed,
+  // `@Rails` would emphasise to `@***Rails***`, which escapeMentions no longer
+  // recognises as a mention, and GitHub would autolink a phantom account.
+  it("escapes mentions before emphasising, so emphasis never lands inside an escaped mention", () => {
+    const data = {
+      ...VOCABULARY,
+      groups: [{ theme: "language", items: [{ description: "credit @Rails for the idea" }] }],
+    };
+    const out = renderChangelogSection(data);
+    expect(out).toContain("* credit `@Rails` for the idea");
+    expect(out).not.toContain("***Rails***");
+  });
+});

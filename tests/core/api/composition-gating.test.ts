@@ -58,7 +58,11 @@ describe("Composition + Reranker — end-to-end provider gating", () => {
     expect(new Set(off.registry.getRegisteredKeys())).toEqual(new Set(["static", "git"]));
 
     const on = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
-    expect(new Set(on.registry.getRegisteredKeys())).toEqual(new Set(["static", "git", "codegraph.symbols"]));
+    // The codegraph family registers its temporal co-change sub-graph beside
+    // symbols (bd tea-rags-mcp-x4rpp, epic l1ot Slice 5).
+    expect(new Set(on.registry.getRegisteredKeys())).toEqual(
+      new Set(["static", "git", "codegraph.symbols", "codegraph.temporal"]),
+    );
   });
 
   it("codegraph OFF: NEW composites (blastRadius, architecturalHub, entryPoint) absent from preset enum", () => {

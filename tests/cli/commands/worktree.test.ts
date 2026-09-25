@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -59,6 +60,32 @@ describe("worktree list CLI", () => {
     runWorktreeList({ json: true, dataDir: dir });
     expect(write.mock.calls.join("")).toContain("code_wt");
     write.mockRestore();
+  });
+
+  it("emits each clone's registered worktree path in JSON", () => {
+    const reg = new CollectionRegistry(dir);
+    reg.record({
+      collectionName: "code_wt",
+      path: "/abs/wt/feat",
+      embeddingModel: "j",
+      embeddingDimensions: 768,
+      qdrantUrl: "http://h",
+      indexedAt: "t",
+      teaRagsVersion: "1",
+      chunksCount: 3,
+    });
+    reg.setWorktreeProvenance("code_wt", "code_src", "feat");
+
+    const calls: string[] = [];
+    const write = vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+      calls.push(String(c));
+      return true;
+    });
+    runWorktreeList({ json: true, dataDir: dir });
+    write.mockRestore();
+
+    const rows = JSON.parse(calls.join("")) as { worktreeName?: string; path?: string }[];
+    expect(rows).toEqual([expect.objectContaining({ worktreeName: "feat", path: "/abs/wt/feat" })]);
   });
 
   it("prints 'No worktree indexes.' when registry has no worktrees", () => {
@@ -481,5 +508,98 @@ describe("runWorktreeRemove (via yargs builder)", () => {
     expect(parsed.removed).toBe(true);
     expect(exitSpy).toHaveBeenCalledWith(0);
     exitSpy.mockRestore();
+  });
+});
+
+// The PostToolUse teardown backstop (`cleanup-worktree-clone.sh`) consumes
+// `tea-rags worktree list --json` from outside the TypeScript build, so no
+// compiler ties the two. This pipes the JSON the CLI ACTUALLY prints into the
+// real hook, with a fake `tea-rags` binary that replays it and records the
+// removals it is asked for (bd tea-rags-mcp-ghk1f: the hook read `.path`, the
+// CLI never emitted it, and the backstop silently removed nothing).
+describe("worktree list --json feeds the cleanup-worktree-clone.sh backstop", () => {
+  const HOOK = resolve(__dirname, "../../../.claude-plugin/tea-rags/scripts/cleanup-worktree-clone.sh");
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "wt-hook-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function registerClone(reg: CollectionRegistry, collectionName: string, worktreeName: string, path: string): void {
+    reg.record({
+      collectionName,
+      path,
+      embeddingModel: "j",
+      embeddingDimensions: 768,
+      qdrantUrl: "http://h",
+      indexedAt: "t",
+      teaRagsVersion: "1",
+      chunksCount: 1,
+    });
+    reg.setWorktreeProvenance(collectionName, "code_src", worktreeName);
+  }
+
+  function captureListJson(dataDir: string): string {
+    const calls: string[] = [];
+    const write = vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+      calls.push(String(c));
+      return true;
+    });
+    try {
+      runWorktreeList({ json: true, dataDir });
+    } finally {
+      write.mockRestore();
+    }
+    return calls.join("");
+  }
+
+  it("tears down the clone whose worktree path is gone and keeps the live one", () => {
+    const registryDir = join(dir, "registry");
+    const liveWorktree = mkdtempSync(join(dir, "live-"));
+    const goneWorktree = join(dir, "gone");
+    const reg = new CollectionRegistry(registryDir);
+    registerClone(reg, "code_gone", "gone", goneWorktree);
+    registerClone(reg, "code_live", "live", liveWorktree);
+
+    const listJson = join(dir, "list.json");
+    const removals = join(dir, "removals.log");
+    writeFileSync(listJson, captureListJson(registryDir));
+    writeFileSync(removals, "");
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, "tea-rags"),
+      [
+        "#!/usr/bin/env bash",
+        'case "$1 $2" in',
+        '  "worktree list") cat "$FAKE_LIST_JSON" ;;',
+        '  "worktree remove") echo "$3" >> "$FAKE_REMOVALS" ;;',
+        "esac",
+        "exit 0",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "tea-rags"), 0o755);
+
+    const payload = JSON.stringify({
+      tool_name: "Bash",
+      tool_input: { command: `git worktree remove ${goneWorktree}` },
+      tool_response: { stdout: "" },
+    });
+    execFileSync("bash", [HOOK], {
+      input: payload,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        FAKE_LIST_JSON: listJson,
+        FAKE_REMOVALS: removals,
+      },
+    });
+
+    expect(readFileSync(removals, "utf8").split("\n").filter(Boolean)).toEqual(["gone"]);
   });
 });

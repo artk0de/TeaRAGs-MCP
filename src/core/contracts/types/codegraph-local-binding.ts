@@ -10,6 +10,7 @@
  * by the `codegraph.ts` barrel.
  */
 
+import { identifierEntry } from "../identifier-record.js";
 import type { RubyTypeRef } from "./language.js";
 
 /**
@@ -106,7 +107,7 @@ export function resolveLocalBinding(
   varName: string,
   atLine: number,
 ): LocalBinding | undefined {
-  const list = bindings?.[varName];
+  const list = identifierEntry(bindings, varName);
   if (!list || list.length === 0) return undefined;
   let best: LocalBinding | undefined;
   for (const binding of list) {
@@ -156,6 +157,32 @@ export interface CallResultBinding {
    * the chunk. ABSENT means visible to the end of the chunk.
    */
   readonly scopeEndLine?: number;
+  /**
+   * Set when the binding is NOT the call's result but the 0-based N-th
+   * parameter of a closure passed to `callee` (bd tea-rags-mcp-y99pg.13):
+   * `state.write { state in … }` binds `state` to parameter 0 of the closure
+   * `write` declares, whose type only the callee's declaration — often in
+   * another file — says. Visible from its own line, since a closure's
+   * parameters are in scope on the line that opens it. ABSENT on every
+   * call-result binding.
+   */
+  readonly closureParameter?: number;
+  /**
+   * Set when the binding is the `index`-th payload slot of enum case
+   * `caseName`, destructured from the value `callee` spells — the switch
+   * SUBJECT rather than a callee (bd tea-rags-mcp-y99pg.16):
+   * `switch unit { case .group(let g): … }` binds `g` to what the enum of
+   * `unit`'s type declares `group` to carry. ABSENT on every other binding.
+   */
+  readonly enumPayload?: { readonly caseName: string; readonly index: number };
+  /**
+   * Set when the binding is an ELEMENT drawn from the sequence `callee`
+   * spells rather than the value itself — a `for item in items` loop over a
+   * local only the resolver can type (bd tea-rags-mcp-y99pg.37). Which type a
+   * sequence yields as its element is the language's rule. ABSENT on every
+   * other binding.
+   */
+  readonly sequenceElement?: true;
 }
 
 /**
@@ -172,7 +199,7 @@ export function nearestCallResultBinding(
   varName: string,
   atLine: number,
 ): CallResultBinding | undefined {
-  const list = bindings?.[varName];
+  const list = identifierEntry(bindings, varName);
   if (!list || list.length === 0) return undefined;
   let best: CallResultBinding | undefined;
   for (const binding of list) {

@@ -2,6 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import {
+  enclosingTypeOf,
   resolveSelfDispatchHookTarget,
   resolveTypeInstanceMethod,
   resolveTypeStaticMethod,
@@ -49,7 +50,14 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  *      we re-resolve `Const#member` (INSTANCE form, same member); if THAT is a
  *      `selfDispatchTemplates` key (hook `H`), the constant narrows `H` to `Const#H`.
  *      Emit it.
- *   3. Either hop yields a single method-level target. The edge is entry-anchored
+ *   2c. **v2 override — the instance method is overridden below the delegator.**
+ *      `Const#member` resolves to a non-template method on another type than the
+ *      delegating class method's (`Destroy#call` in a service that defines `call`
+ *      itself instead of `perform`). `new(...).member` runs that override, so it
+ *      IS the target — emitted unless it is an abstract stub. A mixin override
+ *      that re-enters the template through `super` is a template of its own
+ *      (discovery's super propagation), so it narrows through 2b instead.
+ *   3. Every hop yields a single method-level target. The edge is entry-anchored
  *      (`enclosing(Const.member) → Const#H`), never piled at the shared template node.
  *
  * **MUST run BEFORE `constant`:** otherwise `RubyConstantSymbolResolutionStrategy`
@@ -96,6 +104,15 @@ export class RubySelfDispatchEntrySymbolResolutionStrategy implements SymbolReso
         if (hook2 !== undefined) {
           const target2 = resolveSelfDispatchHookTarget(receiver, hook2, ctx, this.cfg.mode);
           if (target2 !== null) return resolved(target2);
+        } else if (enclosingTypeOf(mInst.targetSymbolId) !== enclosingTypeOf(mClass.targetSymbolId)) {
+          // v2 override — the delegated instance method is NOT the delegator's
+          // own: a type between the constant and the delegator overrides it
+          // (`class Destroy; include KindOfService; def call … end`). Then
+          // `new(...).call` runs that override and never reaches a hook, so the
+          // override itself is the one target. The shared choke point keeps a
+          // stub override out (a declaration is not a call target).
+          const override = resolveSelfDispatchHookTarget(receiver, call.member, ctx, this.cfg.mode);
+          if (override !== null) return resolved(override);
         }
       }
     }

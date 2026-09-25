@@ -16,6 +16,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metadata-point.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import { resolveRateMiss } from "../../../contracts/resolve-rate.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
@@ -68,39 +69,38 @@ function emptyTally(): ResolveTally {
 }
 
 /**
- * Genuine recall holes in a tally: attempted misses minus every bucket that can
- * never become an in-project edge — external-library targets (ykj7), dynamic
- * sends (cai0), members with no in-project def (cai0.2), and core homonyms on an
- * untyped receiver (83cl7). The single place the exclusion list is written, so
- * the three rates below can never drift apart.
+ * Genuine recall holes in a tally. The exclusion list lives in
+ * `contracts/resolve-rate.ts#resolveRateMiss`, shared with the renderers that
+ * must tell an empty denominator from a scored one, so the three rates below
+ * and every rendering of them can never drift apart.
  */
 function missWithInProjectDef(t: ResolveTally): number {
-  return Math.max(
-    0,
-    t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
-  );
+  return resolveRateMiss(t);
 }
 
 /**
- * `resolved / max(1, attempted − <every excluded bucket>)`; 0 when nothing
- * attempted. cai0.2 (Option A): the denominator excludes calls whose member has
- * no in-project def — they can never resolve to an in-project symbol, so they
- * are not resolver failures — making this rate equal to {@link edgeRecall}
- * (inProjectEdgeRecall) by construction. 83cl7 adds core homonyms on the same
- * grounds.
+ * `resolved / (resolved + missWithInProjectDef)`; `null` when that denominator
+ * is empty — nothing was scored, which is neither a perfect nor a failed rate
+ * (bd tea-rags-mcp-qodqg). cai0.2 (Option A): the denominator excludes calls
+ * whose member has no in-project def — they can never resolve to an in-project
+ * symbol, so they are not resolver failures — making this rate equal to
+ * {@link edgeRecall} (inProjectEdgeRecall) whenever anything was scored. 83cl7
+ * adds core homonyms on the same grounds.
  */
-function resolveRate(t: ResolveTally): number {
-  return t.attempted === 0 ? 0 : t.resolved / Math.max(1, t.resolved + missWithInProjectDef(t));
+function resolveRate(t: ResolveTally): number | null {
+  const denominator = t.resolved + missWithInProjectDef(t);
+  return denominator === 0 ? null : t.resolved / denominator;
 }
 
 /**
  * Graph completeness: `resolved / (resolved + missWithInProjectDef)` — see
- * {@link missWithInProjectDef} for what is excluded. 0 when the denominator is
- * empty.
+ * {@link missWithInProjectDef} for what is excluded. `null` when the
+ * denominator is empty — nothing was scored, the same value {@link resolveRate}
+ * reports (bd tea-rags-mcp-stpvj). A scored zero stays 0.
  */
-function edgeRecall(t: ResolveTally): number {
+function edgeRecall(t: ResolveTally): number | null {
   const denominator = t.resolved + missWithInProjectDef(t);
-  return denominator === 0 ? 0 : t.resolved / denominator;
+  return denominator === 0 ? null : t.resolved / denominator;
 }
 
 /**
@@ -108,12 +108,12 @@ function edgeRecall(t: ResolveTally): number {
  * `(resolved + ambiguousFanout) / SAME denominator`. An over-cap ambiguous
  * fan-out stays a miss for STRICT recall (it produced no edge), but its
  * aggregate record still covers the call site — coveredRecall reports
- * completeness when that aggregate is accepted as coverage. 0 when the
- * denominator is empty.
+ * completeness when that aggregate is accepted as coverage. `null` when the
+ * denominator is empty (bd tea-rags-mcp-stpvj).
  */
-function coveredRecall(t: ResolveTally): number {
+function coveredRecall(t: ResolveTally): number | null {
   const denominator = t.resolved + missWithInProjectDef(t);
-  return denominator === 0 ? 0 : (t.resolved + t.ambiguousFanout) / denominator;
+  return denominator === 0 ? null : (t.resolved + t.ambiguousFanout) / denominator;
 }
 
 /**

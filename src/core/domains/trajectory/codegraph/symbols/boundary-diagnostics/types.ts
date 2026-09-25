@@ -27,6 +27,19 @@ export interface StableDependenciesOptions {
    * `codegraph.file.instability` declares.
    */
   minConnectionCount?: number;
+  /**
+   * Judge an edge whose source is its target's sole importer
+   * (`PRIVATE_COLLABORATOR_REASON`). Default `false`: such an edge is counted
+   * under `StableDependenciesExclusionCounts.privateCollaborators` instead.
+   */
+  judgePrivateCollaborators?: boolean;
+  /**
+   * Picomatch glob (`compilePathPatternMatcher`): judge only edges whose SOURCE
+   * matches. Instabilities, importer counts and root-cause cycles still read
+   * the whole graph — a file's fan does not shrink because the reader looks at
+   * one module. Empty or absent: every edge is in scope.
+   */
+  sourcePathPattern?: string;
 }
 
 /** One dependency that runs from a more stable file to a less stable one. */
@@ -61,6 +74,20 @@ export interface StableDependenciesExclusionCounts {
   noSymbolEndpoints: number;
   /** An endpoint's connectionCount is below `minConnectionCount`. */
   lowConnectionCount: number;
+  /**
+   * The source is the target's sole importer (`PRIVATE_COLLABORATOR_REASON`):
+   * the target's instability reaches no other dependent, so the SDP premise has
+   * nobody to protect. Checked last, so it counts only edges that would
+   * otherwise have been judged.
+   */
+  privateCollaborators: number;
+}
+
+/** Present when `StableDependenciesOptions.sourcePathPattern` scoped the run. */
+export interface StableDependenciesScope {
+  sourcePathPattern: string;
+  /** Edges read whose source did not match — never judged, counted under no exclusion reason. */
+  outOfScopeEdgeCount: number;
 }
 
 export interface StableDependenciesSummary {
@@ -72,6 +99,7 @@ export interface StableDependenciesSummary {
   consideredEdgeCount: number;
   violationCount: number;
   excluded: StableDependenciesExclusionCounts;
+  scope?: StableDependenciesScope;
 }
 
 /** A file the no-symbol rule excluded, and how many edges it took out of judgement. */
@@ -81,9 +109,32 @@ export interface NoSymbolEndpointFile {
   excludedEdgeCount: number;
 }
 
+/**
+ * Every violation into one unstable target, as one finding: a target with many
+ * stable dependents is one defect showing up once per dependent.
+ */
+export interface StableDependencyRootCause {
+  targetRelPath: RelPath;
+  targetInstability: number;
+  /** Violations whose target this is — the stable dependents affected. The severity. */
+  violationCount: number;
+  /** The largest `instabilityDelta` among them. */
+  maxInstabilityDelta: number;
+  /** Sources of those violations, by path. */
+  sources: RelPath[];
+  /**
+   * The target has an edge back to at least one of its violating sources: its
+   * instability comes, at least partly, from referencing its own dependents
+   * (a base class naming its subclasses, a concern naming its includers).
+   */
+  cycleWithDependents: boolean;
+}
+
 export interface StableDependenciesReport {
   /** Most severe first: delta, then call weight, then path. */
   violations: StableDependencyViolation[];
+  /** `violations` grouped by target: most violations first, then max delta, then path. */
+  rootCauses: StableDependencyRootCause[];
   summary: StableDependenciesSummary;
   /**
    * Every file that took at least one edge out under `noSymbolEndpoints`, most
@@ -91,4 +142,157 @@ export interface StableDependenciesReport {
    * judge whether it caught only barrels.
    */
   noSymbolEndpointFiles: NoSymbolEndpointFile[];
+}
+
+/**
+ * How an edge into an active module leaks its abstraction (bd tea-rags-mcp-jetrd):
+ *
+ * - `bypass`         — the facade itself imports the target (re-exports it): the
+ *                      importer could have gone through the facade and did not.
+ * - `internal-reach` — the facade does not import the target: the importer
+ *                      reaches something the module never offered.
+ */
+export type FacadeLeakKind = "bypass" | "internal-reach";
+
+/**
+ * Why a module's boundary is not judged:
+ *
+ * - `facade-not-adopted` — adoption not admitted by the adaptive threshold
+ *   (`resolveFacadeAdoptionThreshold`): the importers themselves do not treat
+ *   the entry file as the module's surface.
+ * - `too-few-importers`  — fewer than `FACADE_MIN_EXTERNAL_IMPORTERS` external
+ *   importers: adoption over so few files says nothing.
+ * - `language-enforced`  — a Go package: the compiler already enforces the
+ *   package boundary, so nothing can leak past it at file level.
+ */
+export type FacadeModuleExclusionReason = "facade-not-adopted" | "too-few-importers" | "language-enforced";
+
+export type FacadeModuleStatus = "active" | FacadeModuleExclusionReason;
+
+/** A module's facade adoption, counted over DISTINCT external importing files. */
+export interface FacadeAdoption {
+  /** `facadeImporterCount / (facadeImporterCount + deepImporterCount)`; 0 with no importer. */
+  adoption: number;
+  /** External importers whose every edge into the module targets its entry file. */
+  facadeImporterCount: number;
+  /** External importers with at least one edge to a non-entry file (a file doing both counts here). */
+  deepImporterCount: number;
+}
+
+/** One candidate module and whether its boundary is judged. */
+export interface FacadeModuleAssessment extends FacadeAdoption {
+  /** The module directory, repo-relative; `""` for the repository root. */
+  moduleDir: string;
+  /** The entry file (facade); `null` for a Go package, which has none. */
+  facadeRelPath: RelPath | null;
+  /** Distinct files outside the module with a file edge into it. */
+  externalImporterCount: number;
+  status: FacadeModuleStatus;
+}
+
+/** One edge from outside an active module into one of its non-entry files. */
+export interface FacadeLeakViolation extends FacadeAdoption {
+  kind: FacadeLeakKind;
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  /** The innermost active module the edge leaks past. */
+  moduleDir: string;
+  facadeRelPath: RelPath;
+  /** Confidence-weighted resolved calls across the edge; 0 for a call-free dependency. */
+  callWeight: number;
+  /**
+   * Names the deep import takes from the target (`default`, `*` = whole module),
+   * when the walk recorded them (bd tea-rags-mcp-r8hme.2); absent otherwise.
+   */
+  importedNames?: string[];
+  /** For a names-decided `internal-reach`: the imported names the facade does not expose. */
+  nonExportedNames?: string[];
+}
+
+export interface LeakingAbstractionOptions {
+  /**
+   * Picomatch glob: judge only edges whose SOURCE matches. Adoption is always
+   * counted over the whole graph — a module's importers do not shrink because
+   * the reader looks at one area.
+   */
+  sourcePathPattern?: string;
+}
+
+export interface LeakingAbstractionSummary {
+  /** The adaptive cut: Otsu's split over the population, or 0.5 under `majority`. */
+  adoptionThreshold: number;
+  /** How `adoptionThreshold` was drawn; either way adoption must also be > 0.5. */
+  adoptionThresholdMethod: "otsu" | "majority";
+  /** η of the Otsu cut (σ²between / σ²total); present only under `otsu`. */
+  adoptionSeparability?: number;
+  minExternalImporters: number;
+  /** Every file edge read. */
+  edgeCount: number;
+  /** In-scope edges entering an active module from outside it — the edges judged. */
+  judgedEdgeCount: number;
+  violationCount: number;
+  violationsByKind: { bypass: number; internalReach: number };
+  /** Candidate modules: directories with an entry file, plus Go package directories. */
+  moduleCount: number;
+  activeModuleCount: number;
+  excludedModules: { facadeNotAdopted: number; tooFewImporters: number; languageEnforced: number };
+  /** Present when `sourcePathPattern` scoped the run (same shape as the SDP scope). */
+  scope?: StableDependenciesScope;
+}
+
+/** Every violation of one module, as one finding: the module's leak profile. */
+export interface FacadeLeakRootCause extends FacadeAdoption {
+  moduleDir: string;
+  facadeRelPath: RelPath;
+  violationCount: number;
+  bypassCount: number;
+  internalReachCount: number;
+  /** Distinct violating sources, by path. */
+  sources: RelPath[];
+}
+
+export interface LeakingAbstractionReport {
+  /** `internal-reach` first, then call weight, then path. */
+  violations: FacadeLeakViolation[];
+  /** `violations` grouped by module: most violations first, then `moduleDir`. */
+  rootCauses: FacadeLeakRootCause[];
+  /** Every candidate module, by `moduleDir`. */
+  modules: FacadeModuleAssessment[];
+  summary: LeakingAbstractionSummary;
+}
+
+/**
+ * Which convention a convention-privacy leak broke (bd tea-rags-mcp-r8hme.1):
+ * `python-underscore` — a `_name` member used from another package directory;
+ * `ruby-send-private` — `send(:name)` into a private / protected method from
+ * outside its class.
+ */
+export type ConventionPrivacyRule = "python-underscore" | "ruby-send-private";
+
+export interface ConventionPrivacyOptions {
+  /** Picomatch glob: judge only edges whose SOURCE file matches. */
+  sourcePathPattern?: string;
+}
+
+/** One method edge that reaches a convention-private member from outside. */
+export interface ConventionPrivacyViolation {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  sourceSymbolId: string;
+  targetSymbolId: string;
+  rule: ConventionPrivacyRule;
+}
+
+export interface ConventionPrivacySummary {
+  /** Candidate edges read (method edges into non-public members). */
+  candidateEdgeCount: number;
+  violationCount: number;
+  violationsByRule: { pythonUnderscore: number; rubySendPrivate: number };
+  scope?: StableDependenciesScope;
+}
+
+export interface ConventionPrivacyReport {
+  /** By source file, source symbol, then target. */
+  violations: ConventionPrivacyViolation[];
+  summary: ConventionPrivacySummary;
 }

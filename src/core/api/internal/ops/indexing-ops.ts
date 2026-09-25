@@ -10,6 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import { OllamaUnavailableError } from "../../../adapters/embeddings/ollama/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
@@ -17,6 +18,7 @@ import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
+import type { ChunkSetBumpScopes, RechunkFileSelector } from "../../../contracts/types/rechunk.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
@@ -31,7 +33,6 @@ import {
 import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
-import { extensionsForLanguages } from "../../../domains/ingest/pipeline/chunker/config.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import {
@@ -46,6 +47,7 @@ import {
 } from "../../../domains/ingest/pipeline/indexing-marker.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
+import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/worktree-seed-source.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { computeScoreBackground } from "../../../infra/score-background.js";
@@ -59,7 +61,7 @@ import type {
   IngestCodeConfig,
   ProgressCallback,
 } from "../../../types.js";
-import { isEnrichmentRecompute } from "../../public/dto/ingest.js";
+import { isEnrichmentRecompute, rechunkSelectorOf } from "../../public/dto/ingest.js";
 import type { PathCollectionResolver } from "../collection-resolver.js";
 import type { WorktreeSeedAttempt, WorktreeSeedOps, WorktreeSeedSourceRelease } from "./worktree-seed-ops.js";
 
@@ -121,6 +123,12 @@ export interface IndexingOpsDeps {
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
+   * Declared scope of each chunk-set bump (bd tea-rags-mcp-j4oww): what a
+   * scoped force must have re-chunked before it may advance a chunk-set stamp.
+   * Omitted → every bump reads as unscoped.
+   */
+  languageChunkSetBumpScopes?: ReadonlyMap<string, ChunkSetBumpScopes>;
+  /**
    * Drift report whose per-collection consumption this run clears
    * (bd tea-rags-mcp-p0phi). The reporter tells a reader once per server
    * session; the run that repairs the drift is what re-arms it, so a second
@@ -161,6 +169,12 @@ export interface IndexingOpsDeps {
 /** The one registry mutation this ops layer performs. */
 export interface LanguageVersionStamper {
   stampLanguageVersions: (collectionName: string, stamp: Record<string, Partial<LanguageCodeVersions>>) => void;
+  /**
+   * The stamp as it stands — a scoped force advances a chunk-set axis only past
+   * revisions it covered, so it must know where the axis is (bd tea-rags-mcp-j4oww).
+   * Omitted → a scoped force stamps nothing.
+   */
+  get?: (collectionName: string) => { languageVersions?: Record<string, Partial<LanguageCodeVersions>> } | null;
 }
 
 /** The one drift-report mutation this ops layer performs. */
@@ -188,6 +202,7 @@ export class IndexingOps {
   private readonly status: StatusModule;
   private readonly collectionRegistry?: LanguageVersionStamper;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  private readonly languageChunkSetBumpScopes: ReadonlyMap<string, ChunkSetBumpScopes>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
   private readonly resolveCollectionForPath: PathCollectionResolver;
   /**
@@ -251,6 +266,7 @@ export class IndexingOps {
     );
     this.collectionRegistry = deps.collectionRegistry;
     this.languageCodeVersions = deps.languageCodeVersions;
+    this.languageChunkSetBumpScopes = deps.languageChunkSetBumpScopes ?? new Map();
     this.driftReporter = deps.driftReporter;
     this.indexingLock = deps.indexingLock;
     this.worktreeSeed = deps.worktreeSeed;
@@ -310,6 +326,8 @@ export class IndexingOps {
     if (isEnrichmentRecompute(options)) {
       return this.recomputeEnrichments(path, options.forceEnrichments, options.languages, progressCallback);
     }
+    const rechunk = rechunkSelectorOf(options);
+    if (rechunk) return this.scopedRechunk(path, rechunk, progressCallback);
     let worktreeSeed: WorktreeSeedReport | undefined;
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
@@ -703,6 +721,54 @@ export class IndexingOps {
   // ---------------------------------------------------------------------------
 
   /**
+   * Scoped force (bd tea-rags-mcp-j4oww): the incremental run, with every
+   * indexed file the selector picks forced into its work set and re-chunked in
+   * place on the live collection. Same claim, same lock, same recovery and
+   * finalize as any incremental — it IS one — and never a new collection, so a
+   * narrowed force can no longer shrink the index to its selection.
+   *
+   * Refuses a project with no index: there is nothing to re-chunk in place, and
+   * quietly turning into a first index restricted to the selection would build
+   * exactly the partial collection this path exists to avoid.
+   */
+  private async scopedRechunk(
+    path: string,
+    rechunk: RechunkFileSelector,
+    progressCallback?: ProgressCallback,
+  ): Promise<IndexStats> {
+    const stats = await this.tryIncrementalIndex(path, progressCallback, rechunk);
+    if (!stats) throw new NotIndexedError(path);
+    await this.resumePendingWorktreeSeed(path);
+    return stats;
+  }
+
+  /**
+   * Advance the chunk-set axes (`chunking`, `grammar`) a finished scoped force
+   * covered (bd tea-rags-mcp-j4oww). Per language, the stamp moves only past
+   * pending revisions whose declared scope the selection contains
+   * (`advanceChunkSetStamp` — the same judgement the drift monitor renders its
+   * `Run:` line from), so the run clears exactly the findings it repaired.
+   */
+  private stampRechunkedChunkSet(collectionName: string, rechunk: RechunkFileSelector): void {
+    const registry = this.collectionRegistry;
+    const versions = this.languageCodeVersions;
+    if (!registry?.get || !versions) return;
+    const indexed = registry.get(collectionName)?.languageVersions ?? {};
+    const stamp: Record<string, Partial<LanguageCodeVersions>> = {};
+    for (const [language, current] of versions) {
+      const advanced = advanceChunkSetStamp(
+        language,
+        indexed[language] ?? {},
+        current,
+        this.languageChunkSetBumpScopes.get(language),
+        rechunk,
+      );
+      if (Object.keys(advanced).length > 0) stamp[language] = advanced;
+    }
+    if (Object.keys(stamp).length > 0) registry.stampLanguageVersions(collectionName, stamp);
+  }
+
+  /**
    * Incremental reindex path when an existing collection is present.
    * Returns IndexStats on success or undefined when the collection is missing
    * (caller falls back to fullIndex).
@@ -710,6 +776,7 @@ export class IndexingOps {
   private async tryIncrementalIndex(
     path: string,
     progressCallback?: ProgressCallback,
+    rechunk?: RechunkFileSelector,
   ): Promise<IndexStats | undefined> {
     const absolutePath = await validatePath(path);
     const collectionName = await this.resolveCollectionForPath(absolutePath);
@@ -750,6 +817,7 @@ export class IndexingOps {
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, {
       ...overrides,
       ...(deferredChunkHandoff.size > 0 ? { deferredChunkHandoff } : {}),
+      ...(rechunk ? { rechunk } : {}),
     });
 
     // Awaited, like the other two run paths: the refresh is what rewrites
@@ -757,7 +825,11 @@ export class IndexingOps {
     // leaves a window in which a search re-checks the OLD keys and is warned
     // about drift this run just repaired.
     await this.refreshStats(path);
-    // Nothing corpus-wide was rebuilt, so the stamp stays put — but the payload
+    // A scoped force rebuilt the chunk set of its selection, which may cover
+    // pending chunk-set bumps in full (bd tea-rags-mcp-j4oww). A partial run left
+    // files on their old chunks, so it claims nothing.
+    if (rechunk && changeStats.status === "completed") this.stampRechunkedChunkSet(collectionName, rechunk);
+    // Otherwise nothing corpus-wide was rebuilt, so the stamp stays put — but the payload
     // of every CHANGED file was rewritten by the current build, so the reader
     // deserves a fresh verdict rather than the one this session already spent.
     //
@@ -1052,18 +1124,34 @@ export class IndexingOps {
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
     const collectionName = resolvePhysicalCollection(aliasName, await this.qdrant.aliases.listAliases());
 
+    // Same startup gate as the incremental and full paths, and for the same
+    // reason: the sync leg deletes a changed file's old chunks BEFORE it embeds
+    // the new ones, so a provider that is down at startup costs those files
+    // their points and then fails anyway (bd tea-rags-mcp-umatc — a scratch
+    // index went from 8 points to 2). Probing first turns that into the
+    // provider's typed "unreachable" error with nothing touched.
+    await this.checkEmbeddingHealth();
+
     // The sync leg is deliberately NOT forced: the recompute below owns the
     // forced re-extraction on this path, and forcing both meant paying for it
     // twice (bd tea-rags-mcp-6aytq).
     //
-    // The recompute is the only leg that can finish the job. It reads the chunk
-    // set back out of the index, so it is the only one holding the chunk ids a
-    // file overlay is applied through, and the only one that runs the deferred
-    // chunk pass — while its own file phase re-extracts every stored file
-    // unconditionally, no hash gate (EnrichmentCoordinator#recomputeEnrichments
-    // → FilePhase#onBatch → the provider's streamFileBatch). Forcing the repair
-    // pass as well therefore added a whole pass-1 + pass-2 over the same corpus
-    // whose result the recompute immediately rebuilt from scratch.
+    // The recompute is the only leg that can finish the PAYLOAD job. It reads
+    // the chunk set back out of the index, so it is the only one holding the
+    // chunk ids a file overlay is applied through, and the only one that runs
+    // the deferred chunk pass — and its own file phase re-extracts every
+    // stored file with no hash gate (EnrichmentCoordinator#recomputeEnrichments
+    // → FilePhase#onBatch → the provider's streamFileBatch). For the Qdrant
+    // payload that re-extraction is a rebuild. For the providers' PERSISTED
+    // STORE rows (codegraph's DuckDB edges) it is NOT: the recompute's store
+    // writes are additive, so a stale row written by older resolver code
+    // survives every recompute on an unchanged file (bd tea-rags-mcp-cneu7,
+    // live on taxdome 2026-09-21 — phantom method edges outlived two
+    // `--force-enrichments codegraph` runs). The coordinator therefore runs a
+    // FORCED provider repair — the diffing write path — for the selected store
+    // providers before its own scroll and heal, which reinstates the duplicate
+    // pass-1 the 6aytq measurement objected to: that cost is the price of
+    // actually retiring stale edges.
     //
     // Measured on taxdome 2026-08-14 17:30, `--force-enrichments codegraph
     // --languages typescript`: the forced repair ran pass-1 over 10,621 files
@@ -1133,7 +1221,7 @@ export class IndexingOps {
     await this.checkEmbeddingHealth();
     const modelInfo = await this.resolveModelInfo();
     const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
-    const result = await this.indexing.indexCodebase(path, applyLanguageFilter(options), progressCallback, {
+    const result = await this.indexing.indexCodebase(path, options, progressCallback, {
       chunkSize: effectiveChunkSize,
       modelInfo,
     });
@@ -1217,6 +1305,12 @@ export class IndexingOps {
           await this.embeddings.embed("health");
           return;
         } catch (error) {
+          // The provider already waited the operator's recovery budget out
+          // before giving up; probing again restarts that wait and multiplies
+          // the budget by the attempt count (bd tea-rags-mcp-umatc). The retry
+          // loop exists for a probe starved of an event-loop tick, which fails
+          // at once and reports no wait.
+          if (error instanceof OllamaUnavailableError && error.recoveryWaitMs > 0) throw error;
           lastError = error;
           if (attempt < attempts) {
             await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
@@ -1355,7 +1449,9 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
     filesIndexed: changeStats.filesAdded + changeStats.filesModified,
     chunksCreated: changeStats.chunksAdded,
     durationMs: changeStats.durationMs,
-    status: "completed",
+    // The pipeline downgrades to "partial" when a delete failed; hardcoding
+    // "completed" here reported a clean run over stale chunks (bd tea-rags-mcp-6l1w6).
+    status: changeStats.status,
     errors: [],
     enrichmentStatus: changeStats.enrichmentStatus,
     enrichmentDurationMs: changeStats.enrichmentDurationMs,
@@ -1370,21 +1466,15 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
       chunksAdded: changeStats.chunksAdded,
       chunksDeleted: changeStats.chunksDeleted,
       filesRetried: changeStats.filesRetried,
+      ...(changeStats.filesSkippedDueToDeleteFailure
+        ? { filesSkippedDueToDeleteFailure: changeStats.filesSkippedDueToDeleteFailure }
+        : {}),
+      ...(changeStats.filesFailedToDelete ? { filesFailedToDelete: changeStats.filesFailedToDelete } : {}),
+      ...(changeStats.filesRechunked !== undefined ? { filesRechunked: changeStats.filesRechunked } : {}),
     },
   };
 }
 
-/**
- * Turn a `languages` selection into the extension filter the scanner accepts.
- *
- * The scanner has no notion of a language, so this is where the two vocabularies
- * meet — and why restricting a full reindex needed no new plumbing at all.
- *
- * When the caller ALSO passed explicit extensions the two are intersected, not
- * overridden: both are restrictions, and honouring only one would widen the run
- * past what was asked for. Absent `languages`, options pass through untouched,
- * which keeps an ordinary force reindex byte-identical to before.
- */
 /**
  * Whether a `forceEnrichments` selector rebuilds the codegraph layer, and so
  * whether the language version stamp's edge axes may advance. `all` counts;
@@ -1398,18 +1488,7 @@ function isCodegraphSelector(selector: string): boolean {
 /** What an index operation is doing, as its indexing lock tells whoever finds the collection held. */
 function describeIndexOperation(options: IndexOptions | undefined): string {
   if (isEnrichmentRecompute(options)) return "force-enrichments";
+  if (rechunkSelectorOf(options)) return "force-rechunk-scoped";
   if (options?.forceReindex) return "force-reindex";
   return "index-codebase";
-}
-
-export function applyLanguageFilter(options: IndexOptions | undefined): IndexOptions | undefined {
-  const languages = options?.languages;
-  if (!options || !languages || languages.length === 0) return options;
-
-  const fromLanguages = extensionsForLanguages(languages);
-  const extensions = options.extensions
-    ? options.extensions.filter((ext) => fromLanguages.includes(ext))
-    : fromLanguages;
-
-  return { ...options, extensions };
 }

@@ -1150,7 +1150,7 @@ describe("Reranker (v2 class)", () => {
     expect(ranked[0].rankingOverlay).toBeUndefined();
   });
 
-  it("decomposition preset includes file.methodLines in overlay", async () => {
+  it("decomposition preset includes chunk.methodLines in overlay", async () => {
     const results = [
       makeResult(0.8, undefined, {
         contentSize: 5000,
@@ -1165,8 +1165,8 @@ describe("Reranker (v2 class)", () => {
     const overlay = ranked[0].rankingOverlay!;
     expect(overlay.preset).toBe("decomposition");
     expect(overlay).not.toHaveProperty("derived");
-    expect(overlay.file).toBeDefined();
-    expect(overlay.file!.methodLines).toBeGreaterThan(0);
+    expect(overlay.chunk).toBeDefined();
+    expect(overlay.chunk!.methodLines).toBeGreaterThan(0);
   });
 
   it("supports custom weights with overlay", async () => {

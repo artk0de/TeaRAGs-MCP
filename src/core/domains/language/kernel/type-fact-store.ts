@@ -17,6 +17,7 @@
  * "invalid": an unregistered source still contributes a fact when nothing else
  * claims that coordinate.
  */
+import { createIdentifierRecord } from "../../../contracts/identifier-record.js";
 import type { LocalBinding } from "../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../contracts/types/language.js";
 import type { TypeFact } from "./type-facts.js";
@@ -109,7 +110,7 @@ export class TypeFactStore {
   }
 
   localBindingsForChunk(startLine: number, endLine: number): Record<string, LocalBinding[]> {
-    const out: Record<string, LocalBinding[]> = {};
+    const out: Record<string, LocalBinding[]> = createIdentifierRecord();
     for (const f of this.resolvedFacts) {
       if (f.kind !== "param" && f.kind !== "local") continue;
       if (f.line === undefined || f.line < startLine || f.line > endLine) {
@@ -131,7 +132,7 @@ export class TypeFactStore {
   }
 
   returnTypeByMethod(): Record<string, string> {
-    const out: Record<string, string> = {};
+    const out: Record<string, string> = createIdentifierRecord();
     for (const f of this.resolvedFacts) {
       if (f.kind !== "return" || !f.methodName) continue;
       const type = refToName(f.type);
@@ -197,7 +198,7 @@ export class TypeFactStore {
    * (lowest `sourceRank`) wins per key.
    */
   structuredReturnTypesMap(): Record<string, TypeRef> {
-    const out: Record<string, TypeRef> = {};
+    const out: Record<string, TypeRef> = createIdentifierRecord();
     const bestRank = new Map<string, number>();
     for (const f of this.resolvedFacts) {
       if (f.kind !== "return" || !f.methodName) continue;
@@ -222,7 +223,7 @@ export class TypeFactStore {
    * highest-precedence string-reducible source wins per `(fqClass, @ivar)`.
    */
   ivarTypesMap(): Record<string, Record<string, string>> {
-    const out: Record<string, Record<string, string>> = {};
+    const out: Record<string, Record<string, string>> = createIdentifierRecord();
     const bestRank = new Map<string, number>();
     for (const f of this.resolvedFacts) {
       if (f.kind !== "ivar" || !f.name) continue;
@@ -233,7 +234,7 @@ export class TypeFactStore {
       const rank = sourceRank(f.source, this.sourceOrder);
       const prev = bestRank.get(coord);
       if (prev === undefined || rank < prev) {
-        (out[fqClass] ??= {})[f.name] = type;
+        (out[fqClass] ??= createIdentifierRecord())[f.name] = type;
         bestRank.set(coord, rank);
       }
     }

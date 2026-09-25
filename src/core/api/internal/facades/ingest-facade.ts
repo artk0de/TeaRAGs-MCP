@@ -19,6 +19,7 @@ import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
+import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
@@ -30,6 +31,7 @@ import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/inge
 import { SELECTABLE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
+import type { CodegraphStorageCompactionRunner } from "../../../domains/ingest/pipeline/enrichment/completion-runner.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
@@ -79,6 +81,12 @@ export interface IngestFacadeDeps {
    * actually rebuild a language layer; omitted → nothing is stamped.
    */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  /**
+   * Declared scope of each chunk-set bump (bd tea-rags-mcp-j4oww), from
+   * `createComposition`. Lets a scoped force advance the chunk-set stamps its
+   * selection covered; omitted → every bump reads as unscoped.
+   */
+  languageChunkSetBumpScopes?: ReadonlyMap<string, ChunkSetBumpScopes>;
   /**
    * Drift report re-armed after every run (bd tea-rags-mcp-p0phi). Forwarded
    * to IndexingOps, which owns the reset points. Omitted → nothing is re-armed.
@@ -198,6 +206,7 @@ export class IngestFacade {
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
       collectionRegistry: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
+      ...(deps.languageChunkSetBumpScopes ? { languageChunkSetBumpScopes: deps.languageChunkSetBumpScopes } : {}),
       driftReporter: deps.driftReporter,
       ...(resolveCollectionForPath ? { resolveCollectionForPath } : {}),
       // Beside the collection's other per-collection files, so every process
@@ -235,6 +244,7 @@ export class IngestFacade {
   ): Promise<IndexStats> {
     validateForceEnrichments(options ?? {}, this.enrichmentProviderKeys);
     validateLanguages(options ?? {}, SELECTABLE_LANGUAGES);
+    validateRechunkScope(options ?? {});
     return this.indexingOps.run(path, options, progressCallback, enrichmentProgress);
   }
 
@@ -334,6 +344,14 @@ export class IngestFacade {
             acquireGraphDb: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb,
           })
         : undefined;
+    // bd tea-rags-mcp-dvzdm — the graph store keeps every row version an
+    // incremental run deletes; after the run's last graph write, let it
+    // reclaim them. Same client, same PHYSICAL name, same condition as the heal:
+    // the store decides whether the file is worth rewriting.
+    const codegraphCompaction: CodegraphStorageCompactionRunner | undefined =
+      codegraphPool && deferringProvider
+        ? { run: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb.compactStorage() }
+        : undefined;
     const enrichment = new EnrichmentCoordinator(
       qdrant,
       providers,
@@ -347,6 +365,7 @@ export class IngestFacade {
       // first git blob read. Built by the composition root from GIT_ADAPTER.
       deps.blobReaderFactory,
       codegraphHeal,
+      codegraphCompaction,
     );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then
@@ -422,6 +441,47 @@ export function validateForceEnrichments(options: IndexOptions, availableProvide
       "forceEnrichments",
       `no enrichment provider matches ${unknown.join(", ")}. Available: ${available}`,
     );
+  }
+}
+
+/**
+ * Validate the scoped-force file filters (bd tea-rags-mcp-j4oww).
+ *
+ * Each one narrows a FORCED re-chunk, so each requires `forceReindex` and is
+ * refused beside `forceEnrichments` (a recompute never re-chunks). An empty or
+ * malformed filter is refused rather than dropped: dropped, it would widen the
+ * run to more than the caller asked for, or select nothing and read as success.
+ * `languages` has its own validator below.
+ */
+export function validateRechunkScope(options: IndexOptions): void {
+  const present = (["pathPattern", "testFile", "fileExtensions", "files"] as const).filter(
+    (key) => options[key] !== undefined,
+  );
+  if (present.length === 0) return;
+
+  const named = present.join(", ");
+  if (options.forceEnrichments !== undefined) {
+    throw new InvalidParameterError(
+      present[0],
+      `${named} cannot be combined with forceEnrichments — a recompute rewrites payload and never re-chunks`,
+    );
+  }
+  if (!options.forceReindex) {
+    throw new InvalidParameterError(
+      present[0],
+      `${named} only applies to a scoped forceReindex, which re-chunks the selected files in place`,
+    );
+  }
+  if (options.pathPattern?.replace(/^!/, "").trim() === "") {
+    throw new InvalidParameterError("pathPattern", "an empty pattern selects nothing");
+  }
+  if (options.testFile !== undefined && options.testFile !== "only" && options.testFile !== "exclude") {
+    throw new InvalidParameterError("testFile", `must be only or exclude, got ${String(options.testFile)}`);
+  }
+  for (const key of ["fileExtensions", "files"] as const) {
+    if (options[key]?.every((entry) => entry.trim().length === 0)) {
+      throw new InvalidParameterError(key, "at least one entry is required");
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import type { AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
 import type { CollectionMemoryMetrics, IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
-import type { CollectionEntry } from "../../core/api/public/index.js";
+import type { CollectionEntry, LanguageCapability } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
 
 /** Registry entry as consumed by the prime digest (env snapshot + legacy tuning). */
@@ -41,6 +41,13 @@ export interface PrimeData {
   autoUpdateOutcome?: AutoUpdateTriggerOutcome | null;
   /** Per-project auto-update log path, shown on failure lines. */
   autoUpdateLogPath?: string;
+  /**
+   * Static capability ceiling per language, keyed by the language names the
+   * index's metrics carry (bd tea-rags-mcp-xip6g). Absent = no
+   * `## Language capability` section; a language missing from the map renders
+   * no tier line.
+   */
+  languageCapabilities?: ReadonlyMap<string, LanguageCapability>;
 }
 
 /**

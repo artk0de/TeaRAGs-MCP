@@ -9,7 +9,7 @@
  */
 
 /** Which versioned pipeline to run. */
-export type MigrationPipelineName = "schema" | "snapshot" | "sparse" | "stats";
+export type MigrationPipelineName = "schema" | "snapshot" | "sparse" | "stats" | "payloadIndexes";
 
 /** One pipeline run's outcome. Mirrors MigrationSummary in the maintenance domain. */
 export interface MigrationRunSummary {

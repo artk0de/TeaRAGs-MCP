@@ -251,4 +251,36 @@ describe("printUsage", () => {
     expect(flags).toHaveLength(8);
     expect(flags.at(-1)?.endsWith("\\")).toBe(false);
   });
+
+  /**
+   * A pasteable shell command: every continuation line ends with `\` and the
+   * last flag does not. The marker belongs to the flag's POSITION, so it must
+   * hold for any subset of tuned knobs.
+   */
+  function expectPasteableCommand(optimal: typeof OPTIMAL | Record<string, unknown>, expectedFlags: number): void {
+    const lines = captureLog(() => {
+      printUsage(optimal);
+    }).filter((line) => line.trim() !== "");
+    const commandLines = lines.slice(lines.findIndex((line) => line.includes("claude mcp add")));
+    const flags = commandLines.filter((line) => line.trim().startsWith("-e "));
+
+    expect(flags).toHaveLength(expectedFlags);
+    for (const line of commandLines.slice(0, -1)) {
+      expect(line.trimEnd().endsWith("\\")).toBe(true);
+    }
+    expect(commandLines.at(-1)?.trimEnd().endsWith("\\")).toBe(false);
+    expect(commandLines.at(-1)).toBe(flags.at(-1));
+  }
+
+  it("continues every line of a full tuning run up to the final flag", () => {
+    expectPasteableCommand(ALL_KNOBS_TUNED, 14);
+  });
+
+  it("closes the command on the last tuned knob when the git phase was skipped", () => {
+    expectPasteableCommand({ ...ALL_KNOBS_TUNED, TRAJECTORY_GIT_CHUNK_CONCURRENCY: null }, 13);
+  });
+
+  it("closes the command on the last always-measured knob when every optional phase was skipped", () => {
+    expectPasteableCommand(OPTIONAL_KNOBS_SKIPPED, 8);
+  });
 });

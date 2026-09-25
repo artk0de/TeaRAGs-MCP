@@ -1,23 +1,29 @@
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 
+/**
+ * Flat payload keys every chunk carries. `level: "file"` marks the ones that
+ * describe the whole file (the same value on every chunk of it); the rest
+ * describe the chunk and are stripped from `level: "file"` search results.
+ */
 export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
-  { key: "relativePath", type: "string", description: "File path relative to project root" },
-  { key: "fileExtension", type: "string", description: "File extension (e.g. '.ts')" },
-  { key: "language", type: "string", description: "Programming language" },
+  { key: "relativePath", type: "string", description: "File path relative to project root", level: "file" },
+  { key: "fileExtension", type: "string", description: "File extension (e.g. '.ts')", level: "file" },
+  { key: "language", type: "string", description: "Programming language", level: "file" },
   { key: "startLine", type: "number", description: "Start line of chunk in file" },
   { key: "endLine", type: "number", description: "End line of chunk in file" },
   { key: "chunkIndex", type: "number", description: "Chunk position within file" },
-  { key: "isDocumentation", type: "boolean", description: "Whether chunk is documentation" },
+  { key: "isDocumentation", type: "boolean", description: "Whether chunk is documentation", level: "file" },
   {
     key: "isTest",
     type: "boolean",
     description: "Whether the file is a test/spec file (detected by naming convention per language)",
+    level: "file",
   },
   { key: "chunkType", type: "string", description: "Chunk type (function, class, block, etc.)" },
   { key: "name", type: "string", description: "Symbol name (class, function, etc.)" },
   { key: "parentSymbolId", type: "string", description: "Parent symbol name" },
   { key: "parentType", type: "string", description: "Parent symbol type" },
-  { key: "imports", type: "string[]", description: "File-level imports inherited by all chunks" },
+  { key: "imports", type: "string[]", description: "File-level imports inherited by all chunks", level: "file" },
   { key: "symbolId", type: "string", description: "Unique symbol identifier (e.g. 'MyClass.processData')" },
   {
     key: "methodLines",
@@ -47,12 +53,14 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
     key: "moduleLines",
     type: "number",
     description: "Physical line count of the file (stamped on every code chunk of the file)",
+    level: "file",
     stats: { labels: { p50: "small", p75: "large", p95: "god-module" }, dedupeByFile: true },
   },
   {
     key: "moduleMethodCount",
     type: "number",
     description: "Distinct callables — functions, methods, tests — declared in this file",
+    level: "file",
     // File-scoped value repeated on every chunk of the file: percentiles must
     // be taken over distinct files, or a many-chunk file outvotes every other
     // file in its own distribution.

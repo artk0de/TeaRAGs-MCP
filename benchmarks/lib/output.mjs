@@ -196,30 +196,41 @@ export function printSummary(optimal) {
  * Print usage instructions
  */
 export function printUsage(optimal) {
+  const flags = [
+    `EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}`,
+    `EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}`,
+    `QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE}`,
+    `QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}`,
+    `QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}`,
+    `BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}`,
+    `QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}`,
+    `QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}`,
+  ];
+  if (optimal.INGEST_TUNE_CHUNKER_POOL_SIZE !== null) {
+    flags.push(
+      `INGEST_TUNE_CHUNKER_POOL_SIZE=${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE}`,
+      `INGEST_TUNE_FILE_CONCURRENCY=${optimal.INGEST_TUNE_FILE_CONCURRENCY}`,
+      `INGEST_TUNE_IO_CONCURRENCY=${optimal.INGEST_TUNE_IO_CONCURRENCY}`,
+    );
+  }
+  if (optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS !== null) {
+    flags.push(`QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS}`);
+  }
+  if (optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE !== null) {
+    flags.push(`EMBEDDING_TUNE_MIN_BATCH_SIZE=${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE}`);
+  }
+  if (optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY !== null) {
+    flags.push(`TRAJECTORY_GIT_CHUNK_CONCURRENCY=${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}`);
+  }
+
   console.log(`${c.bold}Usage:${c.reset}`);
   console.log(`  ${c.dim}# Add to Claude Code MCP config:${c.reset}`);
   console.log(`  ${c.dim}claude mcp add tea-rags ... \\${c.reset}`);
-  console.log(`    -e EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE} \\`);
-  console.log(`    -e EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY} \\`);
-  console.log(`    -e QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE} \\`);
-  console.log(`    -e QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING} \\`);
-  console.log(`    -e QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS} \\`);
-  console.log(`    -e BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS} \\`);
-  console.log(`    -e QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE} \\`);
-  console.log(`    -e QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}`);
-  if (optimal.INGEST_TUNE_CHUNKER_POOL_SIZE !== null) {
-    console.log(`    -e INGEST_TUNE_CHUNKER_POOL_SIZE=${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE} \\`);
-    console.log(`    -e INGEST_TUNE_FILE_CONCURRENCY=${optimal.INGEST_TUNE_FILE_CONCURRENCY} \\`);
-    console.log(`    -e INGEST_TUNE_IO_CONCURRENCY=${optimal.INGEST_TUNE_IO_CONCURRENCY} \\`);
-  }
-  if (optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS !== null) {
-    console.log(`    -e QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS} \\`);
-  }
-  if (optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE !== null) {
-    console.log(`    -e EMBEDDING_TUNE_MIN_BATCH_SIZE=${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE} \\`);
-  }
-  if (optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY !== null) {
-    console.log(`    -e TRAJECTORY_GIT_CHUNK_CONCURRENCY=${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}`);
-  }
+  // The continuation marker is a property of position: every flag but the
+  // last continues the command, so any subset of tuned knobs stays pasteable.
+  const last = flags.length - 1;
+  flags.forEach((flag, index) => {
+    console.log(`    -e ${flag}${index < last ? " \\" : ""}`);
+  });
   console.log();
 }

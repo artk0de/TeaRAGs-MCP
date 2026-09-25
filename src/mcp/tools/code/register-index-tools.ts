@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { formatWorktreeSeedReport, type App } from "../../../core/api/public/index.js";
+import { formatWorktreeSeedReport, type App, type IndexStats } from "../../../core/api/public/index.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "../formatters/enrichment.js";
 import * as schemas from "../schemas.js";
@@ -26,11 +26,40 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       inputSchema: schemas.IndexCodebaseSchema,
       annotations: { idempotentHint: true },
     },
-    async ({ path: pathArg, project, forceReindex, extensions, ignorePatterns, seedFromWorktree }) => {
+    async ({
+      path: pathArg,
+      project,
+      forceReindex,
+      extensions,
+      ignorePatterns,
+      seedFromWorktree,
+      languages,
+      testFile,
+      pathPattern,
+      fileExtension,
+      files,
+    }) => {
       const path = await resolvePathFromProject({ path: pathArg, project }, app);
+      // Scope filters of a scoped force (bd tea-rags-mcp-j4oww); only the ones
+      // given are passed, so an unscoped call reaches the core unchanged.
+      const scope = {
+        ...(languages !== undefined ? { languages } : {}),
+        ...(testFile !== undefined ? { testFile } : {}),
+        ...(pathPattern !== undefined ? { pathPattern } : {}),
+        ...(fileExtension !== undefined
+          ? { fileExtensions: Array.isArray(fileExtension) ? fileExtension : [fileExtension] }
+          : {}),
+        ...(files !== undefined ? { files } : {}),
+      };
       const stats = await app.indexCodebase(
         path,
-        { forceReindex, extensions, ignorePatterns, ...(seedFromWorktree === false ? { seedFromWorktree } : {}) },
+        {
+          forceReindex,
+          extensions,
+          ignorePatterns,
+          ...(seedFromWorktree === false ? { seedFromWorktree } : {}),
+          ...scope,
+        },
         (progress) => {
           console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
         },
@@ -53,6 +82,9 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
           if (d.filesNewlyIgnored > 0) statusMessage += `  Newly ignored: ${d.filesNewlyIgnored}\n`;
           if (d.filesNewlyUnignored > 0) statusMessage += `  Newly unignored: ${d.filesNewlyUnignored}\n`;
           if (d.filesRetried > 0) statusMessage += `  Retried (quarantined): ${d.filesRetried}\n`;
+          if (d.filesRechunked !== undefined) {
+            statusMessage += `  Re-chunked in place (scoped force): ${d.filesRechunked}\n`;
+          }
           const chunkDiff = d.chunksAdded - d.chunksDeleted;
           const sign = chunkDiff >= 0 ? "+" : "";
           statusMessage += `- Chunks: +${d.chunksAdded} -${d.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
@@ -72,7 +104,9 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       statusMessage = seedMessage + statusMessage + enrichmentMessage;
 
       if (stats.status === "partial") {
-        statusMessage += `\n\nWarnings:\n${stats.errors?.join("\n")}`;
+        const deleteWarning = formatDeleteFailureWarning(stats.changeDetails);
+        if (deleteWarning) statusMessage += `\n\n${deleteWarning}`;
+        if (stats.errors && stats.errors.length > 0) statusMessage += `\n\nWarnings:\n${stats.errors.join("\n")}`;
       } else if (stats.status === "failed") {
         statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
       }
@@ -82,5 +116,24 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
         isError: stats.status === "failed",
       };
     },
+  );
+}
+
+/**
+ * The partial-run line for files whose old chunks survived a failed delete
+ * (bd tea-rags-mcp-6l1w6). The snapshot keeps them as changed, so the next
+ * reindex retries them — the line says so, since re-running is the remedy.
+ */
+function formatDeleteFailureWarning(details: IndexStats["changeDetails"]): string | undefined {
+  const removed = details?.filesFailedToDelete ?? 0;
+  const modified = details?.filesSkippedDueToDeleteFailure ?? 0;
+  if (removed + modified === 0) return undefined;
+  const parts = [
+    ...(removed > 0 ? [`${removed} removed`] : []),
+    ...(modified > 0 ? [`${modified} modified not re-indexed`] : []),
+  ];
+  return (
+    `Warning: partial run — old chunks could not be deleted for ${removed + modified} file(s) ` +
+    `(${parts.join(", ")}); the next reindex retries them.`
   );
 }

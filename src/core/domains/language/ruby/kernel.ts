@@ -28,6 +28,7 @@ interface TreeSitterLanguageModule {
 
 export const rubyKernel: LanguageKernel = {
   loadModule: async () => import("tree-sitter-ruby"),
+  grammarPackage: "tree-sitter-ruby",
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: "::",
   scopeContainerTypes: ["class", "module", "singleton_class"],

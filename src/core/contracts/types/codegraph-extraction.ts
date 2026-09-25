@@ -336,6 +336,210 @@ export interface FileExtraction {
    * build constraints.
    */
   buildConstraint?: string;
+  /**
+   * Every TYPE declaration the file carries, the primary declaration and the
+   * re-openings alike, in source order (bd tea-rags-mcp-y99pg.1).
+   *
+   * A symbol id cannot say which file holds a type's own declaration: Swift's
+   * `extension Request` composes exactly the id `class Request` does, so a type
+   * re-opened across files reads as ambiguous, and a type the project only
+   * EXTENDS (`extension JSONDecoder`) reads as one it declares. This is the fact
+   * both questions need. Undefined for a file declaring no type, and for
+   * languages whose walkers do not collect it.
+   */
+  typeDeclarations?: readonly TypeDeclarationFact[];
+}
+
+/** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */
+export type TypeDeclarationKind = "class" | "struct" | "enum" | "actor" | "protocol";
+
+/**
+ * One type declaration a file carries (`FileExtraction.typeDeclarations`).
+ */
+export interface TypeDeclarationFact {
+  /** The type's composed id, nesting included: `Request`, `Request.State`. */
+  readonly typeId: string;
+  /**
+   * `true` for a RE-OPENING — a declaration that adds members to a type
+   * declared elsewhere (Swift `extension`) — and `false` for the type's own
+   * declaration. A type with re-openings only is not the project's type.
+   */
+  readonly reopens: boolean;
+  /**
+   * The keyword of the type's OWN declaration — `class`, `struct`, `enum`,
+   * `actor` or `protocol` (bd tea-rags-mcp-y99pg.35). What a consumer reads it
+   * for is what the kind can hold: only a class carries an implementation the
+   * Objective-C runtime dispatches a selector to. Absent on a re-opening, and
+   * on a fact written before the walker published it — a consumer treats that
+   * as "any kind".
+   */
+  readonly declarationKind?: TypeDeclarationKind;
+  /**
+   * The supertypes this declaration names — superclass and protocols alike, in
+   * clause order, generic arguments dropped (`Base<T>` → `Base`). A re-opening
+   * lists the conformances IT adds (`extension SecTrust: AlamofireExtended`).
+   * Absent when the declaration names none.
+   */
+  readonly conforms?: readonly string[];
+  /**
+   * The type's own generic parameter names, in order (`Protected<Value>` →
+   * `["Value"]`) — the positions {@link fieldTypeArguments} and
+   * {@link memberClosureParameters} are read against (bd
+   * tea-rags-mcp-y99pg.13). Absent on a non-generic type and on re-openings.
+   */
+  readonly genericParameters?: readonly string[];
+  /**
+   * Stored properties this declaration types with generic arguments, by
+   * property name: `let mutableState: Protected<MutableState>` →
+   * `{ mutableState: ["MutableState"] }`. Each argument is the nominal its type
+   * text names, `null` where it names none. Absent when no property has any.
+   */
+  readonly fieldTypeArguments?: Readonly<Record<string, readonly (string | null)[]>>;
+  /**
+   * Stored properties this declaration initializes with an UNSPECIALISED
+   * construction and no annotation, by property name: `let state =
+   * Protected(State())` → `{ state: { type: "Protected", arguments: [{ label:
+   * null, type: "State" }] } }` — each argument's label and the nominal it
+   * constructs, `null` where it constructs none. What the constructed type's
+   * {@link genericInitializers} bind its generic arguments from (bd
+   * tea-rags-mcp-y99pg.26). Absent when no such property has an argument of
+   * known type.
+   */
+  readonly fieldConstructions?: Readonly<Record<string, SwiftFieldConstruction>>;
+  /**
+   * A generic type's initializers that take a parameter typed exactly as one
+   * of its {@link genericParameters}: each one's argument labels in order
+   * (`null` for `_`) and, per position, the generic parameter it binds or
+   * `null` — `init(_ value: Value)` → `{ labels: [null], binds: ["Value"] }`
+   * (bd tea-rags-mcp-y99pg.26). Absent when none does.
+   */
+  readonly genericInitializers?: readonly GenericInitializerFact[];
+  /**
+   * For each method taking ONE function-typed parameter, the types that
+   * function's parameters are declared with, by method name:
+   * `func write<U>(_ closure: (inout Value) throws -> U)` → `{ write: ["Value"] }`.
+   * An entry is a nominal — spelled with its generic arguments when every one
+   * is a concrete nominal (`Result<URLRequest, Error>`, bd
+   * tea-rags-mcp-y99pg.32) — one of {@link genericParameters} (bound per
+   * receiver by its type arguments), or `null`. A method whose overloads disagree maps
+   * to `null`. Absent when no method takes a closure.
+   */
+  readonly memberClosureParameters?: Readonly<Record<string, readonly (string | null)[] | null>>;
+  /**
+   * The methods whose return IS their closure's result, every overload of the
+   * name agreeing: a method generic `U` declared as the return and as what the
+   * one closure parameter returns — `func read<U>(_ closure: (Value) throws ->
+   * U) rethrows -> U`. A call passing a key path `\.p` there returns the type
+   * of `p` on the closure's parameter (bd tea-rags-mcp-y99pg.37). Absent when no
+   * method is one.
+   */
+  readonly closureResultMembers?: readonly string[];
+  /**
+   * An enum's cases that carry a payload, by case name, each payload slot's
+   * nominal type in position order (`case group(ExampleGroup, count: Int)` →
+   * `group: ["ExampleGroup", "Int"]`, `null` for a slot no nominal names) —
+   * what a `case .group(let g)` pattern in another file binds `g` to (bd
+   * tea-rags-mcp-y99pg.16). Absent when no case carries a payload.
+   */
+  readonly enumCasePayloads?: Readonly<Record<string, readonly (string | null)[]>>;
+  /**
+   * The id this declaration's members compose under when it differs from
+   * {@link typeId}: `extension Collection<String>` composes
+   * `Collection<String>#qualityEncoded` while its typeId is `Collection` (bd
+   * tea-rags-mcp-y99pg.19). Absent when the two agree.
+   */
+  readonly spelledAs?: string;
+  /**
+   * The return type of each FUNCTION-typed alias this declaration's body
+   * declares: `typealias Handler = (Callback) -> DataRequest` →
+   * `Handler: "DataRequest"` — what calling a stored closure of that alias
+   * yields (bd tea-rags-mcp-y99pg.22). Absent when none.
+   */
+  readonly functionAliasReturns?: Readonly<Record<string, string>>;
+  /**
+   * What a re-opening's `where` clause says `Self` is inside its body:
+   * `extension Download where Self: DataSerializer` → `types: ["DataSerializer"]`
+   * (a `Self == X` constraint names `X` the same way), with the declaration's
+   * 1-indexed line span — the constraint holds inside THIS body only, and a
+   * file routinely re-opens one protocol several times under different
+   * constraints. Absent when the clause constrains nothing about `Self`.
+   */
+  readonly selfConstraints?: SelfConstraintFact;
+  /**
+   * The UpperCamelCase attribute types each stored property of this
+   * declaration carries, in source order: `@Published var result` →
+   * `{ result: ["Published"] }`. The candidates for the property's WRAPPER —
+   * which one is (if any) is a question about the attribute's type, answered
+   * at resolve time — and so for what `$result` projects (bd
+   * tea-rags-mcp-y99pg.33). Absent when no property carries one.
+   */
+  readonly propertyAttributeTypes?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The properties this declaration declares OPTIONAL (`let error: AFError?`),
+   * in source order — the ones whose value is an `Optional` of the type the
+   * field channels publish for them (bd tea-rags-mcp-y99pg.33). Absent when
+   * none is.
+   */
+  readonly optionalProperties?: readonly string[];
+  /**
+   * The member typealiases this declaration's body declares, each to the
+   * nominal path it aliases (`typealias Output = DataStreamRequest.Stream<…>`
+   * → `{ Output: "DataStreamRequest.Stream" }`). How a type satisfies an
+   * associated type of a protocol it conforms to, and so what `Self.Output`
+   * in that protocol's members means on it (bd tea-rags-mcp-y99pg.33). An
+   * alias of a function, tuple, optional or metatype is left out. Absent when
+   * none is nominal.
+   */
+  readonly memberTypeAliases?: Readonly<Record<string, string>>;
+  /**
+   * Stored properties whose declared type IS one of {@link genericParameters},
+   * by property name: `var value: Value` inside `Protected<Value>` →
+   * `{ value: "Value" }` — what a receiver's generic arguments substitute (bd
+   * tea-rags-mcp-y99pg.34). Absent when none is.
+   */
+  readonly genericFieldParameters?: Readonly<Record<string, string>>;
+  /**
+   * A re-opening's `where` clause and the lines it scopes (bd
+   * tea-rags-mcp-y99pg.34): inside `extension Protected where Value ==
+   * Request.MutableState`, `self` is a `Protected<Request.MutableState>`.
+   * Absent on a declaration without one.
+   */
+  readonly whereClause?: SwiftWhereClauseFact;
+}
+
+/** A constrained re-opening's `where` clause (`TypeDeclarationFact.whereClause`). */
+export interface SwiftWhereClauseFact {
+  /** 1-based first and last line of the re-opening the clause scopes. */
+  readonly startLine: number;
+  readonly endLine: number;
+  /** Same-type requirements, type text as written: `Value == Request.MutableState` → `{ Value: "Request.MutableState" }`. */
+  readonly sameType?: Readonly<Record<string, string>>;
+  /** Conformance / superclass requirements, the nominal named: `ExtendedType: Bundle` → `{ ExtendedType: "Bundle" }`. */
+  readonly bounds?: Readonly<Record<string, string>>;
+}
+
+/** A re-opening's constraints on `Self` (`TypeDeclarationFact.selfConstraints`). */
+export interface SelfConstraintFact {
+  /** The nominals `Self` conforms to or equals, in clause order. */
+  readonly types: readonly string[];
+  readonly startLine: number;
+  readonly endLine: number;
+}
+
+/** A stored property's initializing construction (`TypeDeclarationFact.fieldConstructions`). */
+export interface SwiftFieldConstruction {
+  /** The constructed type as written, generic arguments absent. */
+  readonly type: string;
+  /** Each argument's label (`null` when unlabelled) and the nominal it constructs (`null` when none). */
+  readonly arguments: readonly { readonly label: string | null; readonly type: string | null }[];
+}
+
+/** One initializer of a generic type (`TypeDeclarationFact.genericInitializers`). */
+export interface GenericInitializerFact {
+  /** Argument labels in order, `null` for an unlabelled parameter. */
+  readonly labels: readonly (string | null)[];
+  /** Per position, the type's generic parameter that parameter is typed as, or `null`. */
+  readonly binds: readonly (string | null)[];
 }
 
 /**
@@ -430,12 +634,36 @@ export interface ImportRef {
    * a dispatch table.
    */
   importedBindings?: Record<string, string>;
+  /**
+   * Names this statement takes from the TARGET module's export surface
+   * (bd tea-rags-mcp-r8hme.2), in the target's spelling — `import { a as b }`
+   * takes `a`. `default` is a default import, `*` the whole module (a
+   * namespace import, `import m` in Python, a require bound whole). Absent when
+   * the statement names nothing (a side-effect import) or the walker does not
+   * record it. Carried onto the persisted file edge; the facade check reads it.
+   */
+  importedExportNames?: string[];
+  /**
+   * Names a source re-export forwards from the target (`export { a } from`),
+   * in the target's spelling; `*` for `export * from` / `export * as ns from`.
+   * Absent on every statement that is not a source re-export.
+   */
+  reexportedExportNames?: string[];
 }
 
 export interface ChunkExtraction {
   symbolId: SymbolId;
   /** Lexical scope chain enclosing this chunk, e.g. `["Acme", "Auth", "User"]`. */
   scope: string[];
+  /**
+   * The scope this chunk's OWN calls run in, when it is not `scope` — a TYPE
+   * chunk, whose declaration sits in its parent's scope while a computed
+   * property or a stored-property initializer in its body runs inside the type
+   * (bd tea-rags-mcp-3ievc). Absent for every other chunk, and for every chunk
+   * of a language whose `nameOf` never sets `opensSelfScope`. Read it through
+   * {@link chunkCallerScope}, never directly.
+   */
+  bodyScope?: string[];
   calls: CallRef[];
   /** 1-based start line of the chunk in the source file. Optional so
    *  walkers that don't track line info keep working. */
@@ -519,10 +747,19 @@ export interface ChunkExtraction {
    */
   paramNames?: string[];
   /**
-   * Visibility of the method definition this chunk represents (bd xlnub).
-   * Populated by the Ruby walker using the class-body visibility state machine
-   * (`private` / `protected` / `public` bare calls, inline `private def`,
-   * symbol form). Undefined for non-method chunks and non-Ruby languages.
+   * DECLARED access level of the definition this chunk represents (bd xlnub),
+   * mapped per language onto one three-value union. Ruby's walker fills it from
+   * the class-body visibility state machine (`private` / `protected` / `public`
+   * bare calls, inline `private def`, symbol form); every other native language
+   * fills it through its declared-visibility pass (bd tea-rags-mcp-jwjyr.1,
+   * `<lang>/walker/passes/declared-visibility.ts`, or the def-signature pass for
+   * Python). Undefined wherever the language states no provable level — Java
+   * package-private, a Python `_name`, a TypeScript declaration outside a class.
+   *
+   * The same word means different reach per language (Ruby: no explicit
+   * receiver; TypeScript/Java: the declaring class; Swift: the file; Go: the
+   * package; Rust: the module tree), so a consumer never reads `"private"`
+   * without that language's access rule — see `VisibilityAccessPolicy`.
    */
   visibility?: "public" | "private" | "protected";
   /** Keyword-arg signature of the method this chunk represents (bd d9o7o).
@@ -559,6 +796,15 @@ export interface CallRef {
   member: string;
   startLine: number;
   /**
+   * The receiver exactly as the source spells it, where a language's
+   * `receiver` normalizes sugar away: Swift strips optional chaining and
+   * force unwraps (`a?.b!` → `a.b`) so the receiver matches the names
+   * bindings are keyed by, and only this text still says which links read a
+   * member off an `Optional` and which off what it wraps (bd
+   * tea-rags-mcp-y99pg.33). Absent when identical to `receiver`.
+   */
+  writtenReceiver?: string;
+  /**
    * Present when this call dispatches through a lookup table
    * (bd tea-rags-mcp-n0zj). The resolver expands it to fan-out edges over
    * the run-global tables and SKIPS normal receiver resolution for this
@@ -585,6 +831,19 @@ export interface CallRef {
    * (framework) and from a genuine internal miss (bd cai0).
    */
   dynamicSend?: boolean;
+  /**
+   * The literal `<receiver>.call(…)` / `.apply(…)` / `.bind(…)` member call the
+   * walker UNWRAPPED this ref from (bd tea-rags-mcp-f2u54). `receiver`/`member`
+   * above name the invoked function; this names the invoker as written.
+   *
+   * The unwrap is a syntactic bet that the invoker's receiver is a function. It
+   * is wrong whenever the receiver is an OBJECT whose type declares a member of
+   * that name — `this.connection.call(fn)` on a class with a real `call` method
+   * — and only the resolver, holding the symbol table, can tell the two apart.
+   * So the walker keeps both readings and the resolver picks (bd
+   * tea-rags-mcp-g7h1y).
+   */
+  functionInvokerSite?: { receiver: string; member: string };
   /**
    * Set by the walker when this call site is a JSX component tag rather than a
    * call expression — `<Foo prop={x} />`, which is sugar over

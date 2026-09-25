@@ -22,8 +22,35 @@
   `DocChunkGrouper.group` hand-list every field (`DocChunkGrouper.mergeSection`
   spreads its head window instead); `fileGit()`/`fileCodegraph()` exist because
   `codegraph` was lost this way (tea-rags-mcp-0am0), and `DocChunkGrouper` still
-  copies `git` only. Why: a new payload namespace vanishes from find_symbol and
-  every `level: "file"` result, with no type error to catch it.
+  copies `git` only. Why: a new payload namespace vanishes from find_symbol with
+  no type error to catch it.
+- **A test scope is drawn only from `parentType: TEST_SCOPE_PARENT_TYPE`.**
+  `isTestExampleChunk` (`chunk-grouping/code.ts`) is the one gate for the scope
+  lines of `CodeChunkGrouper.groupFile`, the scope-id outline in
+  `resolveSymbols`, and the `#partN` admission in `SymbolSearchStrategy`. Never
+  infer a scope from the id shape: a setup-only scope under its top-level name
+  and an example under its scope are both `<parent>.<name>`. Id and emission
+  contract: `.claude/rules/test-spec-chunking.md`. Why: a pre-example-era test
+  chunk parented to a CLASS would be outlined instead of merged, reversing the
+  u74dj decision its tests pin.
+- **A `level: "file"` hit is reduced to file scope AFTER ranking, never
+  before.** `FileLevelGrouper` keeps the top chunk per file with its full
+  payload; `BaseExploreStrategy#shapeFileLevel` then applies
+  `chunk-grouping/file-scope.ts#reduceToFileScope`, whose keep-set `fileScopeOf`
+  derives from the payload signal descriptors (flat keys declaring
+  `level: "file"`, plus every namespace minus its `chunk` branches). Why: rerank
+  reads chunk signals for alpha-blending and `language`/`chunkType` for overlay
+  labels — stripping first silently changes ranking; and an undeclared flat key
+  is dropped from file hits by design.
+- **A metaOnly payload is raw; its labels live only on `rankingOverlay`.**
+  `post-process.ts#filterMetaOnly` and `post-process.ts#applyEssentialSignals`
+  select fields and never write an overlay value into the payload, and
+  `BaseExploreStrategy#applyMetaOnly` carries the hit's `rankingOverlay`
+  through. Why: the overlay is keyed by bare field name while one preset's
+  `overlayMask` spans trajectories, so every merge into the payload either
+  misplaced a key (bd tea-rags-mcp-rtjrn put `imports` and `fanIn` under
+  `git.*`) or turned a stored number into `{value, label}` at a path filters and
+  `fields` address as raw.
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has

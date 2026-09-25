@@ -21,7 +21,11 @@
  * type-fact facet, so identity does NOT hold there — the merge is the point.
  * Go left the identity set the same way when `GO_EXTRACTION_PASSES` gained the
  * struct-field facet (bd tea-rags-mcp-e6xx); its wiring is pinned below as
- * "the native extraction plus exactly that facet's channel".
+ * "the native extraction plus exactly that facet's channel". TypeScript,
+ * JavaScript, Java and Rust left it when they gained the declared-visibility
+ * facet (bd tea-rags-mcp-jwjyr.1): a case carrying `visibilityFacet` is pinned
+ * as "the native extraction plus exactly those chunks' `visibility`", which
+ * is the same claim — nothing else moves — for a language with a pass.
  */
 
 import Parser from "tree-sitter";
@@ -56,6 +60,19 @@ interface LanguageCase {
   readonly code: string;
   readonly passes: readonly ExtractionFacetPass[];
   readonly native: (input: WalkInput) => FileExtraction;
+  /** symbolId → the `visibility` the declared-visibility facet adds. Absent ⇒ no pass, identity holds. */
+  readonly visibilityFacet?: Readonly<Record<string, string>>;
+}
+
+/** The native extraction with exactly the facet's `visibility` added to its chunks. */
+function withVisibility(native: FileExtraction, facet: Readonly<Record<string, string>>): FileExtraction {
+  return {
+    ...native,
+    chunks: native.chunks.map((chunk) => {
+      const visibility = facet[chunk.symbolId] as FileExtraction["chunks"][number]["visibility"];
+      return visibility === undefined ? chunk : { ...chunk, visibility };
+    }),
+  };
 }
 
 /**
@@ -70,6 +87,7 @@ const CASES: readonly LanguageCase[] = [
     code: 'import { helper } from "./helper.js";\n\nexport class Svc {\n  run(): string {\n    return helper();\n  }\n}\n',
     passes: TYPESCRIPT_EXTRACTION_PASSES,
     native: extractFromTypescriptFile,
+    visibilityFacet: { "Svc#run": "public" },
   },
   {
     language: "javascript",
@@ -77,6 +95,7 @@ const CASES: readonly LanguageCase[] = [
     code: 'const { helper } = require("./helper.js");\n\nclass Svc {\n  run() {\n    return helper();\n  }\n}\n\nmodule.exports = { Svc };\n',
     passes: JAVASCRIPT_EXTRACTION_PASSES,
     native: extractFromJavascriptFile,
+    visibilityFacet: { "Svc#run": "public" },
   },
   {
     language: "java",
@@ -84,6 +103,7 @@ const CASES: readonly LanguageCase[] = [
     code: "import java.util.List;\n\npublic class Svc {\n  public String run() {\n    return List.of().toString();\n  }\n}\n",
     passes: JAVA_EXTRACTION_PASSES,
     native: extractFromJavaFile,
+    visibilityFacet: { Svc: "public", "Svc#run": "public" },
   },
   {
     language: "rust",
@@ -91,6 +111,7 @@ const CASES: readonly LanguageCase[] = [
     code: 'use std::fmt;\n\npub struct Svc;\n\nimpl Svc {\n    pub fn run(&self) -> String {\n        fmt::format(format_args!("x"))\n    }\n}\n',
     passes: RUST_EXTRACTION_PASSES,
     native: extractFromRustFile,
+    visibilityFacet: { Svc: "public", "Svc#run": "public" },
   },
   {
     language: "bash",
@@ -131,29 +152,39 @@ describe("native walkers composed through the extraction pass-runner", () => {
   });
 
   for (const testCase of CASES) {
-    const { language, passes, native } = testCase;
+    const { language, passes, native, visibilityFacet } = testCase;
 
-    it(`${language}: the composer returns the native extraction BY IDENTITY under its own pass list`, () => {
-      const input = inputs.get(language) as WalkInput;
-      const sentinel = native(input);
-      const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
+    if (visibilityFacet === undefined) {
+      it(`${language}: the composer returns the native extraction BY IDENTITY under its own pass list`, () => {
+        const input = inputs.get(language) as WalkInput;
+        const sentinel = native(input);
+        const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
-      expect(composed.walk(input)).toBe(sentinel);
-    });
+        expect(composed.walk(input)).toBe(sentinel);
+      });
+    } else {
+      it(`${language}: the composer merges the declared-visibility facet onto the native extraction and nothing else`, () => {
+        const input = inputs.get(language) as WalkInput;
+        const sentinel = native(input);
+        const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
-    it(`${language}: the factory's walker extracts what the native monolith extracts`, () => {
+        expect(composed.walk(input)).toEqual(withVisibility(sentinel, visibilityFacet));
+      });
+    }
+
+    it(`${language}: the factory's walker extracts what the native monolith extracts, plus its facets`, () => {
       const input = inputs.get(language) as WalkInput;
       const viaFactory = factory.create(language).walker.walk(input);
 
-      expect(viaFactory).toEqual(native(input));
+      expect(viaFactory).toEqual(withVisibility(native(input), visibilityFacet ?? {}));
       expect(viaFactory.chunks.length).toBeGreaterThan(0);
     });
   }
 });
 
 /**
- * Go carries one facet, so the composed extraction is the monolith's PLUS that
- * facet's channel and nothing else: a pass that touched any other channel, or a
+ * Go carries two facets, so the composed extraction is the monolith's PLUS those
+ * facets' channels and nothing else: a pass that touched any other channel, or a
  * `walk` wired to something other than `extractFromGoFile`, fails here.
  */
 describe("go walker composed through the extraction pass-runner", () => {
@@ -165,13 +196,14 @@ describe("go walker composed through the extraction pass-runner", () => {
     native: extractFromGoFile,
   };
   const STRUCT_FACET = { classFieldTypesByClassKey: { "svc.go::Svc": {} } };
+  const VISIBILITY_FACET = { Svc: "public", "Svc#Run": "public" };
   let input: WalkInput;
 
   beforeAll(async () => {
     input = await buildInput(GO_CASE);
   });
 
-  it("go: the composer merges the struct-field facet onto the native extraction and nothing else", () => {
+  it("go: the composer merges the struct-field and visibility facets onto the native extraction and nothing else", () => {
     const sentinel = extractFromGoFile(input);
     const composed = composeExtractionWalker({
       walk: () => sentinel,
@@ -179,13 +211,13 @@ describe("go walker composed through the extraction pass-runner", () => {
       passes: GO_EXTRACTION_PASSES,
     });
 
-    expect(composed.walk(input)).toEqual({ ...sentinel, ...STRUCT_FACET });
+    expect(composed.walk(input)).toEqual({ ...withVisibility(sentinel, VISIBILITY_FACET), ...STRUCT_FACET });
   });
 
-  it("go: the factory's walker extracts the native monolith's output plus the struct-field facet", () => {
+  it("go: the factory's walker extracts the native monolith's output plus the struct-field and visibility facets", () => {
     const viaFactory = factory.create("go").walker.walk(input);
 
-    expect(viaFactory).toEqual({ ...extractFromGoFile(input), ...STRUCT_FACET });
+    expect(viaFactory).toEqual({ ...withVisibility(extractFromGoFile(input), VISIBILITY_FACET), ...STRUCT_FACET });
     expect(viaFactory.chunks.length).toBeGreaterThan(0);
   });
 });

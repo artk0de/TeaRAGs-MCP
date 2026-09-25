@@ -12,8 +12,12 @@
  * and the netbox perf budget holds.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
-import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/return-inference.js";
-import type { InlineTypeSource, TypeFact } from "../../../kernel/type-facts.js";
+import {
+  inferReturnTypeName,
+  type InlineTypeSource,
+  type ReturnInferencePorts,
+  type TypeFact,
+} from "../../../kernel/index.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
 import { isPythonClassFormDef, pythonAnnotationExpression, walkPythonScopes } from "./python-def-scope-walk.js";
 import { pythonReturnExpressionType, type PythonReturnScope } from "./python-return-expression.js";

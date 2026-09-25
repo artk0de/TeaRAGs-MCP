@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifyQdrant,
+  formatOrphansTable,
+  formatProjectInfo,
   formatProjectsTable,
   humanCount,
   relativeAge,
@@ -134,5 +136,114 @@ describe("cli/commands/projects-format", () => {
     it("collapses the home directory to ~", () => {
       expect(out).toMatch(/~\/dup/);
     });
+  });
+});
+
+describe("formatProjectInfo", () => {
+  const colored = createColorizer({ env: { FORCE_COLOR: "1" }, isTTY: true });
+  const full = entry({
+    name: "alpha",
+    collectionName: "code_abc",
+    path: "/home/u/alpha",
+    qdrantUrl: "http://localhost:6333",
+    embeddingModel: "jina",
+    embeddingDimensions: 768,
+    chunksCount: 42,
+    indexedAt: "2026-06-06T12:00:00.000Z",
+    teaRagsVersion: "1.28.0",
+  });
+
+  it("renders an aligned key: value block (color off)", () => {
+    expect(formatProjectInfo(full, "/home/u/alpha", plain)).toBe(
+      [
+        "name:                alpha",
+        "collectionName:      code_abc",
+        "path:                /home/u/alpha",
+        "qdrantUrl:           http://localhost:6333",
+        "embeddingModel:      jina",
+        "embeddingDimensions: 768",
+        "chunksCount:         42",
+        "indexedAt:           2026-06-06T12:00:00.000Z",
+        "teaRagsVersion:      1.28.0",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("adds the realpath and a re-register hint when the path resolves elsewhere", () => {
+    const out = formatProjectInfo(full, "/mnt/alpha", plain);
+    expect(out).toContain("realpath:            /mnt/alpha\n");
+    expect(out).toContain("                     (symlink or moved mount — re-register to refresh)\n");
+  });
+
+  it("renders placeholders for a missing directory and empty fields", () => {
+    const out = formatProjectInfo(
+      entry({
+        name: null,
+        qdrantUrl: "",
+        embeddingModel: "",
+        embeddingDimensions: 0,
+        indexedAt: "",
+        teaRagsVersion: "",
+      }),
+      null,
+      plain,
+    );
+    expect(out).toContain("name:                (no name)\n");
+    expect(out).toContain("realpath:            (missing on disk)\n");
+    expect(out).toContain("qdrantUrl:           (none)\n");
+    expect(out).toContain("embeddingModel:      (none)\n");
+    expect(out).toContain("embeddingDimensions: 0\n");
+    expect(out).toContain("indexedAt:           (never)\n");
+    expect(out).toContain("teaRagsVersion:      (unknown)\n");
+  });
+
+  it("emits no ANSI escape codes when the colorizer is disabled", () => {
+    expect(formatProjectInfo(full, null, plain)).not.toContain("\x1b");
+  });
+
+  it("paints the name as brand, keys dim, a missing directory as alert, placeholders dim", () => {
+    const out = formatProjectInfo(entry({ name: "alpha", indexedAt: "" }), null, colored);
+    expect(out).toContain(colored.bold(colored.brand("alpha")));
+    expect(out).toContain(colored.dim("collectionName:     "));
+    expect(out).toContain(colored.alert("(missing on disk)"));
+    expect(out).toContain(colored.dim("(never)"));
+  });
+
+  it("paints an unnamed entry and a moved mount as warnings", () => {
+    const out = formatProjectInfo(entry({ name: null }), "/mnt/elsewhere", colored);
+    expect(out).toContain(colored.bold(colored.warn("(no name)")));
+    expect(out).toContain(colored.warn("/mnt/elsewhere"));
+    expect(out).toContain(colored.warn("(symlink or moved mount — re-register to refresh)"));
+  });
+});
+
+describe("formatOrphansTable", () => {
+  const colored = createColorizer({ env: { FORCE_COLOR: "1" }, isTTY: true });
+  const rows = [
+    { collectionName: "code_orphan_1", chunksCount: 11541 },
+    { collectionName: "code_b", chunksCount: 9 },
+  ];
+
+  it("renders an aligned COLLECTION / CHUNKS table (color off)", () => {
+    expect(formatOrphansTable(rows, plain)).toBe(
+      ["COLLECTION       CHUNKS", "code_orphan_1     11.5k", "code_b                9", ""].join("\n"),
+    );
+  });
+
+  it("widens the collection column to the header when every name is shorter", () => {
+    expect(formatOrphansTable([{ collectionName: "c", chunksCount: 0 }], plain)).toBe(
+      ["COLLECTION    CHUNKS", "c                  0", ""].join("\n"),
+    );
+  });
+
+  it("emits no ANSI escape codes when the colorizer is disabled", () => {
+    expect(formatOrphansTable(rows, plain)).not.toContain("\x1b");
+  });
+
+  it("paints the header as bold brand and each orphan name as a warning", () => {
+    const out = formatOrphansTable(rows, colored);
+    expect(out.split("\n")[0]).toBe(colored.bold(colored.brand("COLLECTION       CHUNKS")));
+    expect(out).toContain(colored.warn("code_orphan_1"));
   });
 });

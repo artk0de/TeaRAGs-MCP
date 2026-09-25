@@ -209,3 +209,19 @@ SUPERSEDED (its hook premise is now false). Done 2026-06-29: the same stale
 `dinopowers-finishing-a-development-branch` and
 `dinopowers-test-driven-development` benchmarks — see their "2026-06-29"
 sections.
+
+## 2026-09-23 — Read-side freshness precondition + DDG MODIFY routing (feature update)
+
+Step 0 and the post-commit REINDEX item were replaced by **Step 2.0**, a
+read-side precondition run before EVERY Task's guard (`worktree info` → lazy
+`worktree create` → incremental `index_codebase` → guard on the clone alias);
+spec `2026-07-02-dinopowers-read-side-freshness-precondition-design.md`, bd
+`tea-rags-mcp-jufg1`. Added the seeded-path branch the spec predates (bd
+`tea-rags-mcp-k8gac`). Step 5 now routes behavior-modification Tasks to
+`tea-rags:data-driven-generation` (DDG MODIFY mode), bd `tea-rags-mcp-if8jz`.
+
+Evals: `evals/read-side-freshness-evals.json` (F1-F5 new, E3-E8 carried over, X1
+execution eval) supersedes `evals/explicit-worktree-lifecycle-evals.json`;
+`../dinopowers-executing-plans-v2/evals.json` gained E11-E13 (MODIFY routing +
+trivial-text control). **Not yet measured** — no with/without-rule run; X1 is
+user-gated (live incremental index on a clone).

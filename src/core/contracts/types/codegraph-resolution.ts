@@ -13,7 +13,14 @@
  */
 
 import type { DispatchFanoutOutcome, DispatchTableDef } from "./codegraph-dispatch.js";
-import type { CallRef, FileExtraction, ImportRef, ModuleReexport } from "./codegraph-extraction.js";
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  ModuleReexport,
+  TypeDeclarationFact,
+} from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
@@ -205,6 +212,18 @@ export function pickSingleCandidate<T>(candidates: readonly T[], mode: Ambiguous
 }
 
 /**
+ * The `callerScope` a chunk's own calls resolve in: its `bodyScope` when the
+ * walker stamped one (a TYPE chunk, whose body runs inside the type), else its
+ * declaration `scope` (bd tea-rags-mcp-3ievc). The ONE read of that choice —
+ * the resolution runner and every offline harness that rebuilds a call-site
+ * `CallContext` go through it, so a harness cannot measure a caller scope
+ * production does not use.
+ */
+export function chunkCallerScope(chunk: Pick<ChunkExtraction, "scope" | "bodyScope">): string[] {
+  return chunk.bodyScope ?? chunk.scope;
+}
+
+/**
  * The identity of ONE codegraph resolve run (bd tea-rags-mcp-39xca.6).
  *
  * Minted by `CodegraphRunState` at the pass-1→pass-2 barrier and at every
@@ -299,6 +318,14 @@ export interface CallContext {
    * twins ambiguous — the pre-channel answer.
    */
   buildConstraintsByFile?: Readonly<Record<string, string>>;
+  /**
+   * `FileExtraction.typeDeclarations` collected RUN-GLOBAL, keyed by the relPath
+   * that declares each list (bd tea-rags-mcp-y99pg.1). Replaced on a re-walk, and
+   * hydrated from the pass-1 slice for every file a run did not walk. Absent on
+   * a run whose walker never wrote it, which reads exactly as before the channel
+   * existed: every declaration of a type counts as the type.
+   */
+  typeDeclarations?: Readonly<Record<string, readonly TypeDeclarationFact[]>>;
   /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker

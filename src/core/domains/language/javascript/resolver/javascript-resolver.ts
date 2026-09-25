@@ -18,6 +18,7 @@
  * receiver list here only contains real method calls.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   pickSingleCandidate,
@@ -25,14 +26,18 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type DispatchFanoutOutcome,
   type FileExtraction,
   type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import type { DispatchResolverComponent } from "../../../../contracts/types/language.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
+import { resolveDispatchViaComponents } from "../../resolver-chain.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { JavascriptImportFileMapper, javascriptImportPathCandidates } from "./javascript-import-file-mapper.js";
+import { JavascriptTableDispatchResolver } from "./javascript-table-dispatch.js";
 
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
@@ -40,7 +45,27 @@ export class JavascriptCallResolver implements CallResolver {
   /** Stateless — one per resolver so every file edge asks the same mapper. */
   private readonly importFileMapper = new JavascriptImportFileMapper();
 
-  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
+  /**
+   * Fan-out components, first non-empty wins (`resolveDispatchViaComponents`).
+   * One today: lookup-table dispatch (bd tea-rags-mcp-hkj8). JavaScript has no
+   * typed receiver, so there is no cone to follow it.
+   */
+  private readonly dispatchComponents: readonly DispatchResolverComponent[];
+
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
+    this.dispatchComponents = [
+      new JavascriptTableDispatchResolver(mode, this.importFileMapper, (call, ctx) => this.resolve(call, ctx)),
+    ];
+  }
+
+  /**
+   * Fan-out resolution for a call site — lookup-table dispatch (`call.dispatch`)
+   * and its bounded callback-param join (`call.dispatchArgs`). The runner calls
+   * `resolve` separately for a join call's normal callee edge.
+   */
+  resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    return resolveDispatchViaComponents(this.dispatchComponents, call, ctx);
+  }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     // `super(...)` / `super.X()` — walk to the PARENT class via
@@ -127,7 +152,7 @@ export class JavascriptCallResolver implements CallResolver {
     if (ctx.callerScope.length === 0) return null;
     if (!ctx.classExtends) return null;
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    let current: string | undefined = ctx.classExtends[enclosing];
+    let current: string | undefined = identifierEntry(ctx.classExtends, enclosing);
     if (!current) return null;
     const visited = new Set<string>([enclosing]);
     let fileOnlyFallback: SymbolResolutionTarget | null = null;
@@ -181,7 +206,7 @@ export class JavascriptCallResolver implements CallResolver {
       }
       // Walk one step deeper. `classExtends` carries one parent per
       // class — single inheritance, no mixin chain to consider.
-      current = ctx.classExtends[current];
+      current = identifierEntry(ctx.classExtends, current);
     }
     return fileOnlyFallback;
   }

@@ -6,7 +6,7 @@ import {
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";

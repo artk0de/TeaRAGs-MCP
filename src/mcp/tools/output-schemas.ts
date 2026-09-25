@@ -8,49 +8,40 @@
 
 import { z } from "zod";
 
+/** Mirrors RankingOverlay (contracts/types/reranker.ts). */
 const RankingOverlaySchema = z.object({
   preset: z.string().optional().describe("Rerank preset used"),
-  raw: z
-    .object({
-      file: z.record(z.string(), z.unknown()).optional().describe("Raw file-level signals"),
-      chunk: z.record(z.string(), z.unknown()).optional().describe("Raw chunk-level signals"),
-    })
+  file: z
+    .record(z.string(), z.unknown())
     .optional()
-    .describe("Raw signal values from payload"),
-  derived: z.record(z.string(), z.number()).optional().describe("Normalized derived signals (0-1)"),
+    .describe("File-level signals keyed by bare field name: {value,label} when labelled, else the raw value"),
+  chunk: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Chunk-level signals keyed by bare field name: {value,label} when labelled, else the raw value"),
 });
 
-const GitMetadataSchema = z
-  .object({
-    recentDominantAuthor: z.string().optional(),
-    authors: z.array(z.string()).optional(),
-    commitCount: z.number().optional(),
-    ageDays: z.number().optional(),
-    lastModifiedAt: z.string().optional(),
-    firstCreatedAt: z.string().optional(),
-    taskIds: z.array(z.string()).optional(),
-    blameDominantAuthor: z.string().optional().describe("Live-line owner from git blame HEAD"),
-    blameDominantAuthorPct: z.number().optional().describe("Percentage of live lines owned by blameDominantAuthor"),
-    blameAuthors: z.array(z.string()).optional().describe("Distinct authors of live lines (top-N)"),
-    blameContributorCount: z.number().optional().describe("Distinct authors of live lines"),
-  })
-  .passthrough();
+/**
+ * The chunk payload. Its keys depend on the index's enrichments, on `metaOnly`
+ * and on `fields`, and find_symbol adds synthetic ones — so no key is declared
+ * and every key passes through.
+ */
+const SearchResultPayloadSchema = z
+  .object({})
+  .passthrough()
+  .describe(
+    "Chunk payload: relativePath, startLine, endLine, language, chunkType, symbolId, name, content " +
+      "(omitted when metaOnly=true), trajectory signals under git.{file,chunk}.* / codegraph.*, " +
+      "plus find_symbol's chunkCount / mergedChunkIds. Raw values only — labels live on rankingOverlay.",
+  );
 
-const SearchResultItemSchema = z
-  .object({
-    id: z.union([z.string(), z.number()]).optional().describe("Chunk ID"),
-    score: z.number().describe("Relevance score"),
-    relativePath: z.string().optional().describe("File path relative to codebase root"),
-    startLine: z.number().optional().describe("Start line in file"),
-    endLine: z.number().optional().describe("End line in file"),
-    language: z.string().optional().describe("Programming language"),
-    chunkType: z.string().optional().describe("Chunk type: function, class, interface, block"),
-    name: z.string().optional().describe("Symbol name (function/class name)"),
-    content: z.string().optional().describe("Code content (omitted when metaOnly=true)"),
-    git: GitMetadataSchema.optional().describe("Git metadata (when indexed with git enrichment)"),
-    rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
-  })
-  .passthrough();
+/** Mirrors SearchResult (api/public/dto/explore.ts) — the only item shape search tools return. */
+const SearchResultItemSchema = z.object({
+  id: z.union([z.string(), z.number()]).describe("Chunk ID"),
+  score: z.number().describe("Relevance score"),
+  payload: SearchResultPayloadSchema.optional(),
+  rankingOverlay: RankingOverlaySchema.optional().describe("Explains scoring signals"),
+});
 
 const SearchConfidenceSchema = z.object({
   value: z.number().describe("0-1: score magnitude vs this collection's own similarity scale + path clustering"),
@@ -67,6 +58,33 @@ export const SearchResultOutputSchema = {
       "absent on hybrid_search, rank_chunks, find_symbol, and on indexes with no measured scale (reindex fills it).",
   ),
   driftWarning: z.string().nullable().optional().describe("Warning if index may be stale"),
+  fieldsWarning: z
+    .string()
+    .optional()
+    .describe(
+      "A path you passed in `fields` matched NO result, so its payloads came back without it. " +
+        "Names the path and, where the returned payloads carry the same leaf elsewhere, the paths " +
+        "that would have matched (e.g. git.commitCount → git.file.commitCount). " +
+        "Also legitimate when the index simply lacks that enrichment.",
+    ),
+  presetFilterNotice: z
+    .object({
+      preset: z.string().describe("Rerank preset whose DEFAULT filter applied"),
+      by: z
+        .string()
+        .describe(
+          "Filter-preset name(s) and the payload keys they constrain, e.g. 'coreLogic (chunkType, isTest, codegraph.symbols.file.skippedAs)'",
+        ),
+      clearWith: z.string().describe("Search param that clears the default — always 'filter: {}'"),
+      excluded: z.number().optional().describe("Candidates the default removed, when the count was free"),
+    })
+    .optional()
+    .describe(
+      "A rerank preset's DEFAULT filter narrowed this result set and you did not write it. " +
+        "Most presets default to production (no tests / docs / block chunks), so a thin or empty " +
+        "answer may be the default, not the corpus. Re-run with the named clearWith param to see " +
+        "the excluded population. Absent whenever you passed your own 'filter'.",
+    ),
   codegraphWarning: z
     .string()
     .optional()

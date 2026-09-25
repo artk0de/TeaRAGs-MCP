@@ -105,7 +105,10 @@ fabricate signals.
 Cross-reference returned chunks by `relativePath` (primary key — see
 `tea-rags:risk-assessment` Phase 2: MERGE). Per unique file in `fileList`:
 
-Extract from `payload.git.file.*`:
+Extract raw from `payload.git.file.*`, labels from `rankingOverlay.file.*`.
+metaOnly keeps git essential fields only (commitCount, ageDays, taskIds,
+blame\*); `recent*` / `bugFixRate` come from the overlay when the rerank
+surfaces them, else absent — do not fabricate:
 
 - `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner, silo
   indicator (from `git blame HEAD` — current state, not commit history)

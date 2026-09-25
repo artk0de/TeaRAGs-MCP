@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, CallRef, SymbolDefinition } from "../../../../../src/core/contracts/types/codegraph.js";
 import {
   ArityNarrower,
   BlockNarrower,
   DuckVocabularyNarrower,
+  EnclosingClassPrivateAccess,
   KwargNarrower,
   LiteralReceiverNarrower,
   resolveNarrowedFanout,
@@ -126,6 +127,77 @@ describe("VisibilityNarrower", () => {
       "C#m",
       "D#m",
     ]);
+  });
+});
+
+// bd tea-rags-mcp-jwjyr.1 — the narrower asks an injected, language-owned
+// ACCESS policy whether THIS call site can reach a candidate of THIS
+// visibility. Ruby's answer (explicit receiver never reaches `private`) stays
+// the constructor default; a class-private language answers "only from inside
+// the declaring class".
+describe("VisibilityNarrower — injected access policy", () => {
+  const inClass = (id: string, klass: string, visibility?: SymbolDefinition["visibility"]): SymbolDefinition => ({
+    ...def(id, undefined, visibility),
+    scope: [klass],
+  });
+  const at = (callerScope: string[], callerSymbolId?: string): CallContext => ({
+    callerFile: "caller.ts",
+    callerScope,
+    imports: [],
+    symbolTable: {} as never,
+    callerSymbolId,
+  });
+
+  it("consults the injected policy for a visibility-carrying candidate", () => {
+    const keepAll = { canReach: () => true };
+    const cands = [inClass("A#m", "A", "private")];
+    expect(new VisibilityNarrower(keepAll).narrow(call("m"), cands, at([])).length).toBe(1);
+  });
+
+  it("never asks the policy about a candidate with no recorded visibility (absent evidence ⇒ keep)", () => {
+    const dropAll = { canReach: () => false };
+    expect(new VisibilityNarrower(dropAll).narrow(call("m"), [def("D#m")], at([])).length).toBe(1);
+  });
+
+  describe("EnclosingClassPrivateAccess", () => {
+    const narrower = new VisibilityNarrower(new EnclosingClassPrivateAccess());
+
+    it("keeps a private candidate called from inside its declaring class (this.priv / self.__priv)", () => {
+      const cands = [inClass("A#priv", "A", "private")];
+      expect(narrower.narrow(call("priv"), cands, at(["A"])).map((c) => c.symbolId)).toEqual(["A#priv"]);
+    });
+
+    it("keeps it from a function nested anywhere inside the declaring class", () => {
+      const cands = [inClass("A#priv", "A", "private")];
+      expect(narrower.narrow(call("priv"), cands, at(["A", "run", "inner"])).length).toBe(1);
+    });
+
+    it("keeps it from the declaring class's own body chunk (scope omits the class, symbolId names it)", () => {
+      const cands = [inClass("A#priv", "A", "private")];
+      expect(narrower.narrow(call("priv"), cands, at([], "A")).length).toBe(1);
+    });
+
+    it("drops a private candidate of ANOTHER class — the call site proves it cannot reach it", () => {
+      const cands = [inClass("A#priv", "A", "private"), inClass("B#priv", "B", "private")];
+      expect(narrower.narrow(call("priv"), cands, at(["B"])).map((c) => c.symbolId)).toEqual(["B#priv"]);
+    });
+
+    it("drops a private candidate called from outside every class", () => {
+      expect(narrower.narrow(call("priv"), [inClass("A#priv", "A", "private")], at([]))).toEqual([]);
+    });
+
+    it("keeps protected / public candidates wherever the call sits", () => {
+      const cands = [inClass("A#m", "A", "protected"), inClass("B#m", "B", "public")];
+      expect(narrower.narrow(call("m"), cands, at([])).length).toBe(2);
+    });
+
+    it("keeps a private candidate with no declaring class (nothing to compare against)", () => {
+      expect(narrower.narrow(call("m"), [def("f", undefined, "private")], at([])).length).toBe(1);
+    });
+
+    it("keeps everything when the context carries no caller scope (missing evidence)", () => {
+      expect(narrower.narrow(call("priv"), [inClass("A#priv", "A", "private")], ctx).length).toBe(1);
+    });
   });
 });
 

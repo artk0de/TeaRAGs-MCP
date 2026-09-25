@@ -15,10 +15,11 @@ import {
   createCodegraphPayloadHealRunner,
   type CodegraphPayloadHealRunnerDeps,
 } from "../../../../../src/core/api/internal/infra/codegraph-payload-heal-runner.js";
-import type {
-  CodegraphSignalDrift,
-  GraphDbClient,
-  PersistedSymbolLineRanges,
+import {
+  fileScopedSymbolKey,
+  type CodegraphSignalDrift,
+  type GraphDbClient,
+  type PersistedSymbolLineRanges,
 } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { BatchPayloadOp } from "../../../../../src/core/domains/ingest/pipeline/enrichment/batch-write.js";
 
@@ -59,9 +60,17 @@ class OnePageQdrantStub {
   }
 }
 
+// The bulk read is keyed by (file, symbol) — a bare symbolId names every
+// namesake at once (bd tea-rags-mcp-xtdkq).
 const SIGNALS = new Map([
-  ["collectPythonInheritanceEdges", { fanIn: 1, fanOut: 1, pageRank: 0.1 }],
-  ["collectPythonInheritanceEdges.walkScope", { fanIn: 3, fanOut: 6, pageRank: 0.3 }],
+  [
+    fileScopedSymbolKey({ relPath: REL, symbolId: "collectPythonInheritanceEdges" }),
+    { fanIn: 1, fanOut: 1, pageRank: 0.1 },
+  ],
+  [
+    fileScopedSymbolKey({ relPath: REL, symbolId: "collectPythonInheritanceEdges.walkScope" }),
+    { fanIn: 3, fanOut: 6, pageRank: 0.3 },
+  ],
 ]);
 
 function graphDbStub(drift: CodegraphSignalDrift, ranges: Map<string, PersistedSymbolLineRanges>) {

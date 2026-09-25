@@ -125,6 +125,7 @@ is flipped, prime included — the note example under
 | `none`        | `No action required.`                                                                | —                                         | Nothing — and for two reasons. Either the finding is something the current build stopped declaring, and nothing reads a key that is not declared; or it is an enable-flag flip, whose fix is restoring the flag in the process that reads the index, which no rebuild performs. |
 | `incremental` | `tea-rags index-codebase --project <alias>`                                          | seconds                                   | The files that changed since the stamped commit.                                                                      |
 | `recompute`   | `tea-rags index-codebase --project <alias> --force-enrichments <scope> [--languages <lang>]` | minutes                                   | The enrichment payload, in place. No re-embedding, chunk ids unchanged.                                                |
+| `force` (scoped) | `tea-rags index-codebase --project <alias> --force --test-file only [--languages <lang>]` | proportional to the selection          | The selected files only, in place: their chunks re-chunked and re-embedded, their enrichment rerun. Every other point untouched. |
 | `force`       | `tea-rags index-codebase --project <alias> --force`                                  | minutes to hours on a large project       | Everything: new chunk ids, every vector re-embedded. Zero downtime — built into a new collection, alias swaps at the end. |
 
 The report always names the cheapest command that repairs every finding it
@@ -138,6 +139,36 @@ file content and line range, so those relocate every id and nothing short of a
 full rebuild is coherent. Everything else rewrites payload in place, which is
 why `--force-enrichments` is measured in minutes where `--force` is measured in
 hours.
+
+### Scoped chunk-set bumps
+
+A chunking or grammar bump can declare which files it changed — for example, a
+revision that only touched how test files are chunked declares
+`{ testFile: "only" }`. When every pending chunk-set bump is scoped, the report
+names a scoped force instead of the full rebuild:
+
+```text
+Language versions:
+  ruby.chunking: 1 → 2
+Run: tea-rags index-codebase --project myapp --force --test-file only --languages ruby
+```
+
+Several pending scoped bumps collapse into one command whose filter covers all
+of them — languages are unioned, and a filter dimension the bumps disagree on is
+dropped, so the command re-chunks a superset rather than too few files. One
+unscoped bump anywhere makes the whole report the plain `--force`.
+
+A scoped force only rebuilds its selection, so it cannot stand in for a
+whole-collection enrichment recompute. When the report also carries one, it
+names it as a second step — the one case a report prints two lines:
+
+```text
+Run: tea-rags index-codebase --project myapp --force --test-file only --languages ruby
+Then: tea-rags index-codebase --project myapp --force-enrichments codegraph --languages typescript
+```
+
+A finished scoped run advances the stamp only for the bumps its selection fully
+covered; see [Scoped force](/operations/recovery-reindexing#scoped-force--re-chunk-a-file-set-in-place).
 
 A report can also be non-empty and say `No action required.` — that is a
 collection carrying payload keys this build no longer declares, which costs

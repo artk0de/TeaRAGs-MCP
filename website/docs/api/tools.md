@@ -7,7 +7,7 @@ sidebar_position: 1
 
 | Tool                  | Description                                                          |
 | --------------------- | -------------------------------------------------------------------- |
-| `create_collection`   | Create collection with specified distance metric (Cosine/Euclid/Dot) |
+| `create_collection`   | Create collection with specified distance metric (Cosine/Euclid/Dot); optional `schema` (JSON Schema) makes it a [typed collection](/usage/advanced/collections#typed-collections) |
 | `list_collections`    | List all collections                                                 |
 | `get_collection_info` | Get collection details and statistics                                |
 | `delete_collection`   | Delete collection and all documents                                  |
@@ -16,7 +16,7 @@ sidebar_position: 1
 
 | Tool               | Description                                                                   |
 | ------------------ | ----------------------------------------------------------------------------- |
-| `add_documents`    | Add documents with automatic embedding (supports string/number IDs, metadata) |
+| `add_documents`    | Add documents with automatic embedding (supports string/number IDs, metadata); a typed collection validates metadata against its schema, all-or-nothing per batch |
 | `semantic_search`  | Natural language search with optional metadata filtering                      |
 | `hybrid_search`    | Hybrid search combining semantic and keyword (BM25) search with RRF           |
 | `delete_documents` | Delete specific documents by ID                                               |
@@ -25,7 +25,7 @@ sidebar_position: 1
 
 | Tool               | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
-| `index_codebase`   | Index a codebase for semantic code search with AST-aware chunking. **Incremental by default** — re-running it diffs the file-hash snapshot and processes only added/modified/deleted files; `forceReindex: true` rebuilds from scratch. The first index of a git worktree is [seeded](/usage/advanced/worktree-indexes#automatic-seeding-on-first-index) from an indexed sibling working tree when one matches; `seedFromWorktree: false` opts out |
+| `index_codebase`   | Index a codebase for semantic code search with AST-aware chunking. **Incremental by default** — re-running it diffs the file-hash snapshot and processes only added/modified/deleted files; `forceReindex: true` rebuilds from scratch, and `forceReindex: true` plus a file filter (`testFile`, `pathPattern`, `languages`, `fileExtension`, `files`) re-chunks only that selection in place ([scoped force](/operations/recovery-reindexing#scoped-force--re-chunk-a-file-set-in-place)). The first index of a git worktree is [seeded](/usage/advanced/worktree-indexes#automatic-seeding-on-first-index) from an indexed sibling working tree when one matches; `seedFromWorktree: false` opts out |
 | `search_code`      | Search indexed codebase using natural language queries                     |
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |

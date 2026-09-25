@@ -1,3 +1,4 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
@@ -29,7 +30,7 @@ export class RustSelfFieldSymbolResolutionStrategy implements SymbolResolutionSt
     if (fieldSegment.includes(".")) return CONTINUE;
 
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+    const typeName = identifierEntry(identifierEntry(ctx.classFieldTypes, enclosing), fieldSegment);
     if (typeName) {
       const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.cfg.mode);
       if (instanceHit) return resolved({ targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId });

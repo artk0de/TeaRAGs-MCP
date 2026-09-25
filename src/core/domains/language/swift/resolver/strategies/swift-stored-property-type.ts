@@ -1,7 +1,15 @@
 import { CONTINUE, DROP } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolverConfig } from "./shared.js";
+import type { ReceiverTypePorts } from "../../../kernel/index.js";
+import { createSwiftWrittenReceiverTypePorts } from "../swift-receiver-type-ports.js";
+import {
+  resolveSwiftBoundTypeMember,
+  SWIFT_PSEUDO_RECEIVERS,
+  swiftOptionalCallOwner,
+  swiftSelfTypeName,
+  type SwiftResolverConfig,
+} from "./shared.js";
 
 /**
  * A call on a STORED PROPERTY of the enclosing type, resolved through the
@@ -41,19 +49,26 @@ import { resolveSwiftBoundTypeMember, SWIFT_PSEUDO_RECEIVERS, type SwiftResolver
  */
 export class SwiftStoredPropertyTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "storedPropertyType";
-  constructor(private readonly cfg: SwiftResolverConfig) {}
+  /** The fold over the receiver AS WRITTEN, for a property declared `T?` (bd tea-rags-mcp-y99pg.33). */
+  private readonly writtenPorts: ReceiverTypePorts;
+
+  constructor(private readonly cfg: SwiftResolverConfig) {
+    this.writtenPorts = createSwiftWrittenReceiverTypePorts(cfg.memberTypes);
+  }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver || ctx.callerScope.length === 0) return CONTINUE;
+    if (!call.receiver) return CONTINUE;
+    const enclosing = swiftSelfTypeName(ctx);
+    if (enclosing === undefined) return CONTINUE;
     const explicitSelf = call.receiver.startsWith("self.");
     const property = explicitSelf ? call.receiver.slice("self.".length) : call.receiver;
     // Chained access carries no single type — decline both spellings.
     if (property.includes(".")) return CONTINUE;
     if (!explicitSelf && SWIFT_PSEUDO_RECEIVERS.has(property)) return CONTINUE;
 
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
     const typeName = this.cfg.memberTypes.typeOfProperty(enclosing, property, ctx);
     if (!typeName) return explicitSelf ? DROP : CONTINUE;
-    return resolveSwiftBoundTypeMember(typeName, call.member, ctx, this.cfg.mode);
+    const owner = swiftOptionalCallOwner(call, ctx, this.writtenPorts, this.cfg) ?? typeName;
+    return resolveSwiftBoundTypeMember(owner, call.member, ctx, this.cfg, call);
   }
 }

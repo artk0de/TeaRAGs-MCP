@@ -22,6 +22,7 @@
  * | `DuckDbHierarchyReader`      | `cg_symbols_inheritance` reads                  |
  * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
+ * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -38,11 +39,13 @@ import type {
   ChunkGraphSignals,
   CodegraphPass1FileAggregates,
   CodegraphSignalDrift,
+  CodegraphStorageCompactionOutcome,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
   FileDependencyGraph,
   FileGraphMetrics,
+  FileImportLookup,
   FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -51,6 +54,7 @@ import type {
   GraphFileNode,
   HierarchySnapshot,
   InheritanceEdge,
+  NonPublicMemberEdge,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -58,16 +62,21 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
+  TemporalCochangeBuildMeta,
+  TemporalCochangeGraph,
+  TemporalCochangeSnapshot,
 } from "../../contracts/types/codegraph.js";
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
 import { DuckDbGraphAnalyticsStore } from "./graph-analytics-store.js";
-import { DuckDbGraphSession, type DuckDbGraphSessionOptions } from "./graph-session.js";
+import { DuckDbGraphSession, type DuckDbGraphSessionOptions, type OpenedDatabaseFile } from "./graph-session.js";
 import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
+import { DuckDbTemporalCochangeStore } from "./temporal-cochange-store.js";
 
 // Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
 // here. Per the layering rules in .claude/rules/domain-boundaries.md
@@ -95,6 +104,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly analytics: DuckDbGraphAnalyticsStore;
   private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
+  private readonly temporalCochange: DuckDbTemporalCochangeStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -106,6 +116,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.analytics = new DuckDbGraphAnalyticsStore(this.session);
     this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
+    this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -120,6 +131,16 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async checkpoint(): Promise<void> {
     return this.session.checkpoint();
+  }
+
+  /** See `GraphDbClient.compactStorage`; the protocol is `DuckDbGraphSession#compactDatabaseFile`. */
+  async compactStorage(): Promise<CodegraphStorageCompactionOutcome> {
+    return this.session.compactDatabaseFile();
+  }
+
+  /** The database file this client holds open now — what the pool checks its path against. */
+  openedDatabaseFile(): OpenedDatabaseFile | undefined {
+    return this.session.openedDatabaseFile();
   }
 
   async hasData(): Promise<boolean> {
@@ -261,6 +282,10 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.symbols.findSymbolChunk(symbolId);
   }
 
+  async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    return this.symbols.getSymbolVisibilities(symbolIds);
+  }
+
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbols.getSymbolLineRangesBulk(relPaths);
   }
@@ -299,7 +324,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.methodEdges.getCallSiteCount(symbolId);
   }
 
-  async getChunkSignalsBulk(): Promise<Map<SymbolId, ChunkGraphSignals>> {
+  async getChunkSignalsBulk(): Promise<Map<FileScopedSymbolId, ChunkGraphSignals>> {
     return this.methodEdges.getChunkSignalsBulk();
   }
 
@@ -345,22 +370,57 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   /**
-   * Whole-graph read for the boundary diagnostics (bd tea-rags-mcp-thc7s).
-   * In-process only for now: it is not on `GraphDbClient`, so no daemon op
-   * proxies it — the report script opens a file copy directly. Exposing it
-   * through an MCP tool means adding it to the contract and the daemon op
-   * table together (bd tea-rags-mcp-94hd9).
+   * Whole-graph read for the boundary diagnostics (bd tea-rags-mcp-thc7s). The
+   * report script opens a file copy in-process; `get_architecture_report` reads
+   * it through the daemon op of the same name (bd tea-rags-mcp-94hd9).
    */
   async readFileDependencyGraph(): Promise<FileDependencyGraph> {
     return this.analytics.readFileDependencyGraph();
+  }
+
+  /** Convention-privacy candidates (bd tea-rags-mcp-r8hme.1); daemon op of the same name. */
+  async readNonPublicMemberEdges(languages: readonly string[]): Promise<NonPublicMemberEdge[]> {
+    return this.analytics.readNonPublicMemberEdges(languages);
+  }
+
+  // ── Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp) ──
+
+  async replaceTemporalCochange(snapshot: TemporalCochangeSnapshot): Promise<void> {
+    return this.temporalCochange.replace(snapshot);
+  }
+
+  async readTemporalCochangeMeta(): Promise<TemporalCochangeBuildMeta | null> {
+    return this.temporalCochange.readMeta();
+  }
+
+  async readTemporalCochangeGraph(): Promise<TemporalCochangeGraph> {
+    return this.temporalCochange.readGraph();
+  }
+
+  /** File-scope `get_callers` (bd tea-rags-mcp-gfvr8): the files importing `relPath`. */
+  async getFileImporters(relPath: RelPath): Promise<FileImportLookup> {
+    return this.analytics.getFileImporters(relPath);
+  }
+
+  /** File-scope `get_callees` (bd tea-rags-mcp-gfvr8): the files `relPath` imports. */
+  async getFileImports(relPath: RelPath): Promise<FileImportLookup> {
+    return this.analytics.getFileImports(relPath);
   }
 
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
     return this.analytics.replacePageRanks(ranks);
   }
 
-  async getPageRank(symbolId: SymbolId): Promise<number> {
-    return this.analytics.getPageRank(symbolId);
+  async pruneDerivedForDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    return this.analytics.pruneDerivedForDeletedFiles(relPaths);
+  }
+
+  async hasStaleDerivedTables(): Promise<boolean> {
+    return this.analytics.hasStaleDerivedTables();
+  }
+
+  async getPageRank(symbolId: SymbolId, relPath?: RelPath): Promise<number> {
+    return this.analytics.getPageRank(symbolId, relPath);
   }
 
   // ── Derived-signal drift (bd tea-rags-mcp-a2ddb) ──

@@ -259,3 +259,51 @@ describe("RubySelfDispatchEntrySymbolResolutionStrategy — self-instance delega
     );
   });
 });
+
+// The OVERRIDE shape of the v2 idiom: the concrete service defines the delegated
+// instance method itself (`def call` in the service body, no `perform`), so
+// `new(...).call` reaches `Destroy#call` and never the template's hook. Seen on
+// taxdome as `GrowthBilling::EmailConfirmation::Destroy.call(user, actor)` piling
+// onto the shared `KindOfService.call` node.
+const DESTROY_FILE = "app/services/destroy.rb";
+
+const overrideTable = (destroyCall: NamedSymbol): InMemoryGlobalSymbolTable =>
+  tableWith(
+    [
+      KOS_FILE,
+      [
+        sym("KindOfService", "KindOfService", KOS_FILE, []),
+        sym("KindOfService.call", "call", KOS_FILE, ["KindOfService"]),
+        sym("KindOfService#call", "call", KOS_FILE, ["KindOfService"]),
+      ],
+    ],
+    [DESTROY_FILE, [sym("Destroy", "Destroy", DESTROY_FILE, []), destroyCall]],
+  );
+
+const overrideCtx = (destroyCall: NamedSymbol): CallContext =>
+  v2Ctx({ symbolTable: overrideTable(destroyCall), classAncestors: { Destroy: ["KindOfService"] } });
+
+describe("RubySelfDispatchEntrySymbolResolutionStrategy — constant overrides the delegated instance method", () => {
+  it("narrows `Destroy.call` to the constant's own `Destroy#call` override", () => {
+    const outcome = strat.attempt(
+      entryCall("Destroy"),
+      overrideCtx(sym("Destroy#call", "call", DESTROY_FILE, ["Destroy"])),
+    );
+    expect(outcome.kind).toBe("resolved");
+    expect(outcome.kind === "resolved" && outcome.target).toEqual({
+      targetRelPath: DESTROY_FILE,
+      targetSymbolId: "Destroy#call",
+    });
+  });
+
+  it("CONTINUES when the override is an abstract STUB — a declaration is not a call target", () => {
+    const stub: SymbolDefinition = { ...sym("Destroy#call", "call", DESTROY_FILE, ["Destroy"]), isAbstractStub: true };
+    expect(strat.attempt(entryCall("Destroy"), overrideCtx(stub)).kind).toBe("continue");
+  });
+
+  it("CONTINUES when the delegated instance method sits on the delegator's own type but is no template", () => {
+    // No override and no template: `Create#call` resolves up the MRO to
+    // `KindOfService#call` — the shared node, which the normal passes own.
+    expect(strat.attempt(entryCall("Create"), v2Ctx({ selfDispatchTemplates: {} })).kind).toBe("continue");
+  });
+});

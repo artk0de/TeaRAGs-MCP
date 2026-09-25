@@ -9,7 +9,7 @@
  * them with a typed `CollectionNotProvidedError`.
  */
 
-import type { CycleScope, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
+import type { CycleScope, DeclaredSymbolVisibility, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 
 export interface GetCallersRequest {
@@ -19,7 +19,14 @@ export interface GetCallersRequest {
   collection?: string;
   /** Filesystem path to the indexed codebase — backward-compat fallback. */
   path?: string;
-  symbolId: SymbolId;
+  /** Target symbol. Exactly one of `symbolId` / `relativePath` is required. */
+  symbolId?: SymbolId;
+  /**
+   * Target FILE (repo-relative) — switches the answer to file scope: the files
+   * importing it, read from the file edge table (bd tea-rags-mcp-gfvr8).
+   * Exactly one of `symbolId` / `relativePath` is required.
+   */
+  relativePath?: RelPath;
   limit?: number;
   /**
    * Opt-in lazy ambiguous expansion (bd tea-rags-mcp-f2jsb A4): also fetch
@@ -30,7 +37,18 @@ export interface GetCallersRequest {
   includeAmbiguous?: boolean;
 }
 
-export interface CallerResult {
+/**
+ * Declared visibility on graph-tool entries (bd tea-rags-mcp-sqqkz), read from
+ * `cg_symbols.visibility`. OMITTED when unknown — the walker recorded none, the
+ * symbol is not in the graph, or codegraph could not be read. Never `null`,
+ * never a default of `public`: a missing field reads as "unknown".
+ */
+export interface DeclaredVisibilityField {
+  visibility?: DeclaredSymbolVisibility;
+}
+
+/** One caller; `visibility` is the CALLER symbol's own. */
+export interface CallerResult extends DeclaredVisibilityField {
   sourceSymbolId: SymbolId;
   sourceRelPath: RelPath;
   callExpression: string;
@@ -49,7 +67,58 @@ export interface AmbiguousCallerResult {
   candidateCount: number;
 }
 
-export interface GetCallersResponse {
+/**
+ * `get_callers` / `get_callees` answer: symbol scope when the request named a
+ * `symbolId`, file scope when it named a `relativePath`.
+ */
+export type GetCallersResponse = SymbolCallersResponse | FileImportersResponse;
+export type GetCalleesResponse = SymbolCalleesResponse | FileImportsResponse;
+
+/**
+ * One file on the other end of a file edge (bd tea-rags-mcp-gfvr8): an importer
+ * for `get_callers`, an imported file for `get_callees`.
+ */
+export interface FileImportResult {
+  relativePath: RelPath;
+  /** The import text the walker recorded; null on a row that carries none. */
+  importText: string | null;
+  /**
+   * Confidence-weighted count of the resolved calls crossing this import —
+   * 0 when the dependency carries no resolved call (a type, a constant, a
+   * re-export). Results are ordered by it, heaviest first.
+   */
+  callWeight: number;
+}
+
+interface FileScopeResponseBase {
+  /** The file the request named, normalised (a leading `./` stripped). */
+  relativePath: RelPath;
+  /** Edge count before `limit` was applied. */
+  total: number;
+  /**
+   * Present when the codegraph has no such file — the path is not
+   * repo-relative, has a typo, or its language is not walked. An empty list on
+   * a known file carries no message: nothing imports it (or it imports nothing).
+   */
+  message?: string;
+}
+
+/** File-scope `get_callers`: the files importing `relativePath`. */
+export interface FileImportersResponse extends FileScopeResponseBase {
+  importers: FileImportResult[];
+}
+
+/** File-scope `get_callees`: the files `relativePath` imports. */
+export interface FileImportsResponse extends FileScopeResponseBase {
+  imports: FileImportResult[];
+}
+
+export interface SymbolCallersResponse {
+  /**
+   * The QUERIED symbol's declared visibility — present only when every
+   * definition of the symbolId (namesakes included) states the same level.
+   */
+  visibility?: DeclaredSymbolVisibility;
   callers: CallerResult[];
   /**
    * Present ONLY when the request set `includeAmbiguous: true` AND the target
@@ -67,17 +136,24 @@ export interface GetCalleesRequest {
   collection?: string;
   /** Filesystem path to the indexed codebase — backward-compat fallback. */
   path?: string;
-  symbolId: SymbolId;
+  /** Source symbol. Exactly one of `symbolId` / `relativePath` is required. */
+  symbolId?: SymbolId;
+  /**
+   * Source FILE (repo-relative) — switches the answer to file scope: the files
+   * it imports (bd tea-rags-mcp-gfvr8).
+   */
+  relativePath?: RelPath;
   limit?: number;
 }
 
-export interface CalleeResult {
+/** One callee; `visibility` is the TARGET symbol's own (never set on a file-only edge). */
+export interface CalleeResult extends DeclaredVisibilityField {
   targetSymbolId: SymbolId | null;
   targetRelPath: RelPath;
   callExpression: string;
 }
 
-export interface GetCalleesResponse {
+export interface SymbolCalleesResponse {
   callees: CalleeResult[];
 }
 
@@ -104,10 +180,22 @@ export interface CycleResult {
   /** Numeric id assigned at recompute time. Stable within one recompute. */
   cycleId: number;
   scope: CycleScope;
-  /** Members in walk order. */
+  /** Members in walk order: relPaths (file scope) or bare symbolIds (method scope). */
   members: string[];
+  /**
+   * Method scope only — per member, index-aligned with `members`: its symbolId
+   * and the file that declares it. Tells namesakes apart (two `init` in one Go
+   * package, every top-level `main`), which the bare `members` entry cannot.
+   * `relativePath` is `""` for a cycle not yet recomputed since migration 028.
+   */
+  memberLocations?: CycleMemberLocation[];
   /** Convenience — member count (always >= 2). */
   length: number;
+}
+
+export interface CycleMemberLocation {
+  symbolId: SymbolId;
+  relativePath: RelPath;
 }
 
 export interface FindCyclesResponse {
@@ -153,7 +241,7 @@ export interface TracePathRequest {
   maxPaths?: number;
 }
 
-export interface PathStep {
+export interface PathStep extends DeclaredVisibilityField {
   /** Class#method (instance) / Class.method (static) / functionName. */
   symbolId: SymbolId;
   relativePath: RelPath;

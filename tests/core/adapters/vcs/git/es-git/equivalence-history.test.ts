@@ -113,6 +113,18 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
     expect(oracle.get("src/helper.ts")?.linesAdded).toBe(3);
   });
 
+  it("readCommitFileNumstatForPaths: ONE rename side still reports the rename row, on both adapters (aikfk)", async () => {
+    const oracle = await cli.readCommitFileNumstatForPaths(["src/helper.ts"]);
+    expect(await esGit.readCommitFileNumstatForPaths(["src/helper.ts"])).toEqual(oracle);
+    // The pathspec alone prints a plain add; the re-read restores the pair.
+    const rename = oracle.find((e) => e.commit.sha === fixture.renameSha);
+    expect(rename?.files).toEqual([{ path: "src/helper.ts", previousPath: "src/util.ts", added: 0, deleted: 0 }]);
+    // The source side, asked for alone, sees the same rename row.
+    const source = await cli.readCommitFileNumstatForPaths(["src/util.ts"]);
+    expect(source.find((e) => e.commit.sha === fixture.renameSha)?.files).toEqual(rename?.files);
+    await expect(cli.readCommitFileNumstatForPaths([])).resolves.toEqual([]);
+  });
+
   it("readNumstatLogForPaths: missing paths and empty input → empty maps on both adapters", async () => {
     await expect(cli.readNumstatLogForPaths(["no/such/file.ts"])).resolves.toEqual(new Map());
     await expect(esGit.readNumstatLogForPaths(["no/such/file.ts"])).resolves.toEqual(new Map());
