@@ -123,6 +123,27 @@ export const CASE_INSENSITIVE_TEST_PATTERNS: readonly string[] = TEST_PATTERNS.f
   (pattern) => !CASE_SENSITIVE_TEST_PATTERNS.includes(pattern),
 );
 
+/**
+ * Development tooling that lives beside the product: scripts (`script/` is the
+ * Rails spelling), spikes, benchmarks, examples and fixtures, at any depth
+ * (bd tea-rags-mcp-r8hme.9). Source code — indexed, chunked, searchable, in the
+ * codegraph — but not part of the architecture a boundary diagnostic judges:
+ * a spike deep-importing a worker pool is not a leaking abstraction, and a
+ * report script importing the detector does not stabilise it. `bin/` is left
+ * out on purpose — it holds the shipped entry points of a CLI package.
+ * `.gitignore` syntax: a trailing `/` names a directory at any depth.
+ */
+export const NON_PRODUCTION_PATTERNS: readonly string[] = [
+  "scripts/",
+  "script/",
+  "spikes/",
+  "benchmarks/",
+  "bench/",
+  "examples/",
+  "fixtures/",
+  "__fixtures__/",
+];
+
 /** First-N-lines markers that identify generated files with non-standard names. */
 export const GENERATED_CONTENT_MARKERS: readonly RegExp[] = [
   /Code generated .* DO NOT EDIT/i,

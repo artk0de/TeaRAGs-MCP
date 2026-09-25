@@ -21,15 +21,18 @@ import {
   detectConventionPrivacyLeaks,
   detectLeakingAbstractions,
   detectStableDependencyViolations,
+  excludeNonProductionFiles,
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
   NO_SYMBOL_ENDPOINT_REASON,
+  NON_PRODUCTION_REASON,
   PRIVATE_COLLABORATOR_REASON,
   type ConventionPrivacyReport,
   type FacadeModuleAssessment,
   type LeakingAbstractionReport,
   type StableDependenciesReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
 import type {
   ArchitectureRootCause,
   ArchitectureViolation,
@@ -55,17 +58,29 @@ export class ArchitectureReportOps {
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges">,
     request: ArchitectureReportScope,
   ): Promise<GetArchitectureReportResponse> {
-    const graph = await graphDb.readFileDependencyGraph();
+    // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9).
+    const nonProduction = buildNonProductionPathFilter();
+    const production = excludeNonProductionFiles(await graphDb.readFileDependencyGraph(), nonProduction);
+    const { graph } = production;
     const sdp = detectStableDependencyViolations(graph, { sourcePathPattern: request.pathPattern });
     const leaks = detectLeakingAbstractions(graph, { sourcePathPattern: request.pathPattern });
+    const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     const privacy = detectConventionPrivacyLeaks(
-      await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]),
+      memberEdges.filter((e) => !nonProduction.ignores(e.sourceRelPath) && !nonProduction.ignores(e.targetRelPath)),
       { sourcePathPattern: request.pathPattern },
     );
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
-      summary: { stableDependencies: summarise(sdp), leakingAbstraction: summariseLeaks(leaks, privacy, limit) },
+      summary: {
+        nonProduction: {
+          excludedFileCount: production.excludedFileCount,
+          excludedEdgeCount: production.excludedEdgeCount,
+          reason: NON_PRODUCTION_REASON,
+        },
+        stableDependencies: summarise(sdp),
+        leakingAbstraction: summariseLeaks(leaks, privacy, limit),
+      },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit)],
       violations: [...sdpViolations(sdp, limit), ...leakViolations(leaks, privacy, limit)],
     };
@@ -79,6 +94,7 @@ export class ArchitectureReportOps {
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
       summary: {
+        nonProduction: { excludedFileCount: 0, excludedEdgeCount: 0, reason: NON_PRODUCTION_REASON },
         stableDependencies: {
           tolerance: DEFAULT_SDP_TOLERANCE,
           minConnectionCount: DEFAULT_SDP_MIN_CONNECTION_COUNT,

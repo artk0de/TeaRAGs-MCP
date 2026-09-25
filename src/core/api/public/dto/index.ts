@@ -103,6 +103,7 @@ export type {
   LeakingAbstractionArchitectureRootCause,
   LeakingAbstractionArchitectureViolation,
   LeakingAbstractionReportSummary,
+  NonProductionExclusionSummary,
   StableDependenciesExclusionSummary,
   StableDependenciesReportSummary,
   StableDependencyArchitectureRootCause,

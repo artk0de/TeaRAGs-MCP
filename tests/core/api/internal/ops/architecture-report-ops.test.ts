@@ -378,3 +378,59 @@ describe("ArchitectureReportOps.empty", () => {
     expect(report.summary.stableDependencies.judgedEdgeCount).toBe(0);
   });
 });
+
+// bd tea-rags-mcp-r8hme.9 — scripts, spikes, benchmarks, examples and fixtures
+// are tooling, not architecture: every detector judges the graph without them.
+describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-r8hme.9)", () => {
+  const NON_PRODUCTION =
+    "non-production path: scripts, spikes, benchmarks, examples or fixtures - tooling, not architecture";
+
+  function withSpike(): FileDependencyGraph {
+    const g = graph();
+    return {
+      files: [...g.files, file("scripts/spikes/probe.ts")],
+      edges: [...g.edges, { sourceRelPath: "scripts/spikes/probe.ts", targetRelPath: "lib/hub.ts", callWeight: 3 }],
+    };
+  }
+
+  function underscoreCall(sourceRelPath: string): NonPublicMemberEdge {
+    return {
+      sourceRelPath,
+      sourceSymbolId: "render",
+      targetRelPath: "pkg/repo.py",
+      targetSymbolId: "Repo#_load",
+      targetShortName: "_load",
+      targetVisibility: null,
+      targetLanguage: "python",
+      callExpression: "repo._load()",
+    };
+  }
+
+  it("judges every detector on the production graph and counts what it left out", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(withSpike()), {});
+    const baseline = await new ArchitectureReportOps().build(graphDb(graph()), {});
+
+    expect(report.violations).toEqual(baseline.violations);
+    expect(report.summary.stableDependencies.edgeCount).toBe(graph().edges.length);
+    expect(report.summary.nonProduction).toEqual({
+      excludedFileCount: 1,
+      excludedEdgeCount: 1,
+      reason: NON_PRODUCTION,
+    });
+  });
+
+  it("drops a convention-privacy leak whose source is non-production", async () => {
+    const edges = [underscoreCall("app/views.py"), underscoreCall("scripts/spikes/probe.py")];
+    const report = await new ArchitectureReportOps().build(graphDb(facadeGraph(), edges), {});
+
+    expect(report.summary.leakingAbstraction.violationsByKind.conventionPrivacy).toBe(1);
+  });
+
+  it("reports nothing excluded for a collection with no graph database", () => {
+    expect(ArchitectureReportOps.empty({}).summary.nonProduction).toEqual({
+      excludedFileCount: 0,
+      excludedEdgeCount: 0,
+      reason: NON_PRODUCTION,
+    });
+  });
+});

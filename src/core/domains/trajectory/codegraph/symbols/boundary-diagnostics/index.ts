@@ -14,6 +14,11 @@ export {
 } from "./leaking-abstraction.js";
 export { otsuSplit, type OtsuSplit } from "./otsu-split.js";
 export {
+  excludeNonProductionFiles,
+  NON_PRODUCTION_REASON,
+  type ProductionDependencyGraph,
+} from "./production-graph.js";
+export {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,

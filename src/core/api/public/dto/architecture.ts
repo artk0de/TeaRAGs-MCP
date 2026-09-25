@@ -244,7 +244,21 @@ export interface LeakingAbstractionReportSummary {
   outOfScopeEdgeCount?: number;
 }
 
+/**
+ * Development tooling (scripts, spikes, benchmarks, examples, fixtures) taken
+ * out of the graph before any detector runs (bd tea-rags-mcp-r8hme.9). The
+ * detectors' `edgeCount` counts the production graph.
+ */
+export interface NonProductionExclusionSummary {
+  excludedFileCount: number;
+  /** Edges with a non-production endpoint. */
+  excludedEdgeCount: number;
+  /** Human-readable meaning of the exclusion. */
+  reason: string;
+}
+
 export interface ArchitectureReportSummary {
+  nonProduction: NonProductionExclusionSummary;
   stableDependencies: StableDependenciesReportSummary;
   leakingAbstraction: LeakingAbstractionReportSummary;
 }
