@@ -985,7 +985,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // `sink.finish()`, so every resolved call is already counted. A partition
       // persists only its own languages, which the store scopes its writes by.
       await this.recordRunStats(graphDb, options?.runCoverage);
-      if (!partitioned) await this.runCollectionCompletionHooks(root, graphDb);
+      // No collection-completion hook here (bd tea-rags-mcp-vtuu4): this runs
+      // inside the enrichment worker while `TSProgramCache` still holds the
+      // whole-project `ts.Program`, and the co-change build on top of it ran a
+      // 17k-file worker out of heap. The coordinator asks `completeCollection`
+      // on the main thread once the run's completion has settled.
       // The completion owner reports the run's timings after the recompute —
       // with the resolver block captured NOW, before the run state it is read
       // from is cleared below; any other partition reports here, or its pass-2
@@ -1028,7 +1032,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const paths =
         options.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
       await readCodegraphFileOverlays(graphDb, paths, file);
-      if (options.ownsCollectionCompletion === true) await this.runCollectionCompletionHooks(root, graphDb);
     } finally {
       this.runExtractedPaths.delete(key);
     }
@@ -1036,12 +1039,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * The collection-completion hooks for a reindex that finalized nothing (bd
-   * tea-rags-mcp-l1ot.2) — a deletion-only run, or one with no file to chunk,
-   * reaches no `finalizeSignals`, so this is the only way its co-change graph
-   * learns the working tree moved. Runs on the main-thread instance, whose
-   * store that run already opened (repair read, deletion prune, stale check).
-   * No hook ⇒ no store is opened at all.
+   * The ONLY seam the collection-completion hooks run through (bd
+   * tea-rags-mcp-vtuu4). The coordinator asks it on the main-thread instance
+   * exactly once per run: after an enrichment run's completion settled and the
+   * executor released the worker's run state (`ts.Program` included), or — for
+   * a reindex that finalized nothing, a deletion-only run or one with no file
+   * to chunk (bd tea-rags-mcp-l1ot.2) — from `ReindexPipeline`'s early returns.
+   * `finalizeSignals` never runs them: it executes inside the enrichment worker,
+   * and the co-change build beside a whole-project `ts.Program` ran a 17k-file
+   * worker out of heap. `getStore` resolves the same physical collection the
+   * worker wrote. No hook ⇒ no store is opened at all.
    */
   async completeCollection(root: string, options: { collectionName: PhysicalCollectionName }): Promise<void> {
     if ((this.deps.collectionCompletionHooks ?? []).length === 0) return;

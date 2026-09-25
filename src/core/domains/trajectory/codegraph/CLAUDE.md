@@ -322,20 +322,26 @@
   second enrichment provider.** `cg_temporal_*` (migration 031, bd
   tea-rags-mcp-x4rpp) is written by `TemporalCochangeBuilder`
   (temporal/cochange/builder.ts), a `CodegraphCollectionCompletionHook` the
-  symbols provider runs from `CodegraphEnrichmentProvider#finalizeSignals` — and
-  under language affinity only from the completion owner's `readBack`, never a
-  partition's `resolve`. A reindex that opens no enrichment run reaches the same
-  hooks through `CodegraphEnrichmentProvider#completeCollection` (bd
-  tea-rags-mcp-l1ot.2) — which early returns owe it is
-  `../../ingest/operations/CLAUDE.md`'s fact. Hooks are best-effort and log, so
-  a repository with no git history still indexes. It stores only LIVE paths —
-  tracked by HEAD's tree (`VcsGitAdapter#listTreePaths`) and not deleted in the
-  working tree (`#listWorktreeDeletions`) — never "exists on disk": an ignored
-  build artifact can reuse a once-committed path. The builder is gated on the
-  persisted `cg_temporal_meta` row (same HEAD + fingerprint, built under a day
-  ago ⇒ skipped without reading history); the fingerprint hashes the parameters,
-  the project subtree AND the working-tree deletions, because those with HEAD
-  fix the live set — keyed on HEAD alone, an uncommitted deletion (or a worktree
+  symbols provider runs ONLY from
+  `CodegraphEnrichmentProvider#completeCollection`, on the main-thread instance
+  — never from `finalizeSignals` or any partition stage (bd tea-rags-mcp-vtuu4).
+  `EnrichmentCoordinator#completeRun` asks it once a run's completion settled
+  and the executor released the worker's run state; a reindex that opens no
+  enrichment run asks it from its early returns (bd tea-rags-mcp-l1ot.2) — which
+  early returns owe it is `../../ingest/operations/CLAUDE.md`'s fact. Why:
+  finalize runs inside the enrichment worker while `TSProgramCache` still holds
+  the whole-project `ts.Program`; the history load and pair maps on top of it
+  ran a 17k-TS-file worker out of `ENRICHMENT_WORKER_MEMORY_LIMIT_MB` right
+  after the file finalize, and the run lost every codegraph signal. Hooks are
+  best-effort and log, so a repository with no git history still indexes. It
+  stores only LIVE paths — tracked by HEAD's tree
+  (`VcsGitAdapter#listTreePaths`) and not deleted in the working tree
+  (`#listWorktreeDeletions`) — never "exists on disk": an ignored build artifact
+  can reuse a once-committed path. The builder is gated on the persisted
+  `cg_temporal_meta` row (same HEAD + fingerprint, built under a day ago ⇒
+  skipped without reading history); the fingerprint hashes the parameters, the
+  project subtree AND the working-tree deletions, because those with HEAD fix
+  the live set — keyed on HEAD alone, an uncommitted deletion (or a worktree
   seeded with a sibling's DB) kept pairs whose endpoint is gone. It reads
   history through the git trajectory's discovery store with the git trajectory's
   own window, so the two share one snapshot. Why: a provider with no payload

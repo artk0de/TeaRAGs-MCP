@@ -37,8 +37,11 @@
   `EnrichmentCoordinator#runCollectionCompletion`, which calls each provider's
   `completeCollection`. Every other run shape — first index, `--force`, a delta,
   a scoped force that selected files, the recompute leg of `--force-enrichments`
-  — completes through the finalize; the sync leg of `--force-enrichments`, the
-  auto-updater and MCP `index_codebase` all ARE `reindexChanges`.
+  — reaches the same `completeCollection` from
+  `EnrichmentCoordinator#completeRun` once its completion settled, on the main
+  thread and never from inside the worker's finalize (bd tea-rags-mcp-vtuu4);
+  the sync leg of `--force-enrichments`, the auto-updater and MCP
+  `index_codebase` all ARE `reindexChanges`.
   `tests/core/domains/ingest/operations/collection-completion-paths.test.ts`
   pins one case per path. Why: codegraph's co-change graph is a function of HEAD
   and the working tree's deletions, both of which exactly these runs move — a

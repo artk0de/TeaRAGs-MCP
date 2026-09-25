@@ -842,8 +842,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    * a function of HEAD and the working tree's deletions — both of which a
    * deletion-only run, or a run whose HEAD moved with no indexed file changed,
    * can move — yet only a finalize rebuilt it, so a committed `git rm` left the
-   * deleted file's pairs standing. A finalize that completed already ran it;
-   * asking again would only pay a second skip check.
+   * deleted file's pairs standing. A finalize that completed already ran it —
+   * `EnrichmentCoordinator#completeRun` asks the same seam on the main thread
+   * once that run settles (bd tea-rags-mcp-vtuu4) — so asking again would only
+   * pay a second skip check; a finalize that threw never reached it, and this
+   * ask is the run's only one.
    */
   private async completeCollectionUnlessFinalized(ctx: ReindexContext, finalized: boolean): Promise<void> {
     if (finalized) return;
