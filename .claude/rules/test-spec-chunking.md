@@ -244,5 +244,7 @@ language-add work, not follow-up: language not "supported" until consumers know.
   `tea-rags-mcp-l180`. Both Ruby + TS share this by design (`buildScopeTree`
   walks direct namedChildren only).
 - **Chained-call DSL** (`test.each([...])('name', fn)`): outermost call's callee
-  is itself a `call_expression`, so `getCallName` returns null and filter
-  rejects it. Not supported in v1.
+  is itself a `call_expression`. TypeScript and JavaScript see through a
+  parametrizer member (`each` / `for` / `skipIf` / `runIf`) to the DSL call and
+  name it `it.each` (bd tea-rags-mcp-b55x2, tea-rags-mcp-dppnr); any other call
+  callee stays non-DSL.

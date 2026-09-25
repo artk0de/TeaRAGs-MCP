@@ -49,4 +49,3 @@ export {
   buildScopeTree,
   produceScopeChunks,
 } from "./test-scope-chunker.js";
-export type { ItBlock, SetupLine, TestScope } from "./test-scope-chunker.js";

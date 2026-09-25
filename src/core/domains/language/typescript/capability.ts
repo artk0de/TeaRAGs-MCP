@@ -12,7 +12,11 @@ export const capability: LanguageCapability = {
       { name: "testScopeChunker", short: "describe/it scopes" },
     ],
   },
-  tests: { tier: "high", detection: "*.test.ts / *.spec.ts", tech: "testScopeChunker (describe/it scopes)" },
+  tests: {
+    tier: "high",
+    detection: "*.test.ts / *.spec.ts",
+    tech: "testScopeChunker (describe/it scopes, one addressable chunk per example)",
+  },
   codegraph: {
     tier: "high",
     summary:
