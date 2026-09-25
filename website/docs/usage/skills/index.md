@@ -71,6 +71,16 @@ depending on one nested inside it is composition, and a component with too few
 connections has no trustworthy instability. Scripts, spikes, benchmarks,
 examples and fixtures are left out of the graph altogether. Requires codegraph.
 
+The same components are also placed against Martin's main sequence. The walker
+counts each file's abstract and concrete type declarations, which gives a
+component's abstractness A, and its distance from the line A + I = 1 is read as
+the zone of pain (stable and concrete) or of uselessness (unstable and
+abstract). The cut adapts to the codebase and never drops below 0.5. A language
+that almost never declares an abstraction, such as duck-typed Ruby, has its
+components excluded as unobservable rather than all reported as pain. An index
+built before the type census reports its components as unmeasured until a
+codegraph recompute.
+
 ## Generation
 
 ### `/tea-rags:data-driven-generation`

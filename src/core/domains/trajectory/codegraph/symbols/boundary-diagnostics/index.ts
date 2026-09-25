@@ -18,6 +18,13 @@ export {
   type FacadeAdoptionThresholdPolicy,
 } from "./leaking-abstraction.js";
 export {
+  DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT,
+  detectMainSequenceDeviations,
+  MAIN_SEQUENCE_DISTANCE_FLOOR,
+  MAIN_SEQUENCE_OTSU_MIN_POPULATION,
+  MAIN_SEQUENCE_UNOBSERVABLE_REASON,
+} from "./main-sequence.js";
+export {
   otsuSplit,
   resolveMajorityFlooredOtsuThreshold,
   type MajorityFlooredOtsuOptions,
@@ -58,6 +65,13 @@ export type {
   FacadeAdoption,
   FacadeLeakKind,
   FacadeLeakRootCause,
+  MainSequenceExclusionCounts,
+  MainSequenceOptions,
+  MainSequenceReport,
+  MainSequenceScope,
+  MainSequenceSummary,
+  MainSequenceViolation,
+  MainSequenceZone,
   FacadeLeakViolation,
   FacadeModuleAssessment,
   FacadeModuleExclusionReason,

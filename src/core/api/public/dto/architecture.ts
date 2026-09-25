@@ -195,10 +195,47 @@ export interface SilentCouplingArchitectureViolation {
   evidence: SilentCouplingViolationEvidence;
 }
 
+/** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8). */
+export type MainSequenceZone = "pain" | "uselessness";
+
+/** Why a component is off the main sequence. */
+export interface MainSequenceViolationEvidence {
+  /** `pain` = A + I < 1: stable and concrete. `uselessness` = A + I > 1: unstable and abstract. */
+  zone: MainSequenceZone;
+  /** D = |A + I - 1| — the severity. */
+  distance: number;
+  /** A = abstract / (abstract + concrete) types. */
+  abstractness: number;
+  /** I = Ce / (Ca + Ce) of the component. */
+  instability: number;
+  abstractTypeCount: number;
+  concreteTypeCount: number;
+  afferentCount: number;
+  efferentCount: number;
+  fileCount: number;
+  /** Files of the component the type census never ran over. */
+  unmeasuredFileCount: number;
+}
+
+/**
+ * A component far from Martin's main sequence A + I = 1 — the Stable
+ * Abstractions Principle: the more a component is depended on, the more of it
+ * should be abstract.
+ */
+export interface MainSequenceArchitectureViolation {
+  detector: "mainSequence";
+  component: string;
+  componentKind: "module" | "directory";
+  /** The module's entry file; `null` for a directory component. */
+  facadeRelPath: RelPath | null;
+  evidence: MainSequenceViolationEvidence;
+}
+
 export type ArchitectureViolation =
   | StableDependencyArchitectureViolation
   | LeakingAbstractionArchitectureViolation
-  | SilentCouplingArchitectureViolation;
+  | SilentCouplingArchitectureViolation
+  | MainSequenceArchitectureViolation;
 
 /** Every Stable Dependencies violation into one unstable target component, as one finding. */
 export interface StableDependencyArchitectureRootCause {
@@ -427,11 +464,48 @@ export interface SilentCouplingReportSummary {
   outOfScopePairCount?: number;
 }
 
+export interface MainSequenceReportSummary {
+  /** Components that survived every exclusion. */
+  judgedComponentCount: number;
+  /** Total violations, before `limit`. */
+  violationCount: number;
+  painCount: number;
+  uselessnessCount: number;
+  /** Mean D over judged components, 3 decimals; 0 when none is judged. */
+  meanDistance: number;
+  /** Otsu's split over judged distances, or the 0.5 floor under `majority`; D must also be STRICTLY above 0.5. */
+  distanceThreshold: number;
+  /** `otsu` when the population allowed a split (≥ 8 judged, ≥ 2 distinct distances), else `majority`. */
+  distanceThresholdMethod: "otsu" | "majority";
+  /** η of the Otsu cut, 3 decimals; absent under `majority`. */
+  distanceSeparability?: number;
+  /** Ca + Ce floor, the Stable Dependencies one. */
+  minConnectionCount: number;
+  /** Abstract + concrete type floor A is read from. */
+  minTypeCount: number;
+  /** Abstract share of every measured type per language, 3 decimals — what `unobservableAbstractness` is judged against. */
+  abstractTypeShareByLanguage: Record<string, number>;
+  /** Components read but not judged, by the first reason that applied. */
+  excluded: {
+    lowConnectionCount: number;
+    /** No file carries a type census — the index predates it; a codegraph recompute fills it. */
+    unmeasured: number;
+    fewTypes: number;
+    /** See `exclusionReasons.unobservableAbstractness`. */
+    unobservableAbstractness: number;
+  };
+  /** Human-readable meaning of the exclusion a reader is most likely to question. */
+  exclusionReasons: { unobservableAbstractness: string };
+  /** Judged components with no file matching `pathPattern`; present only when scoped. */
+  outOfScopeComponentCount?: number;
+}
+
 export interface ArchitectureReportSummary {
   nonProduction: NonProductionExclusionSummary;
   stableDependencies: StableDependenciesReportSummary;
   leakingAbstraction: LeakingAbstractionReportSummary;
   silentCoupling: SilentCouplingReportSummary;
+  mainSequence: MainSequenceReportSummary;
 }
 
 export interface GetArchitectureReportResponse {
@@ -444,6 +518,9 @@ export interface GetArchitectureReportResponse {
    * ordered most violations first.
    */
   rootCauses: ArchitectureRootCause[];
-  /** Per detector in the same order, each capped at `limit`, most severe first. */
+  /**
+   * Per detector in the same order, then `mainSequence` (one finding per
+   * component, no root cause), each capped at `limit`, most severe first.
+   */
   violations: ArchitectureViolation[];
 }

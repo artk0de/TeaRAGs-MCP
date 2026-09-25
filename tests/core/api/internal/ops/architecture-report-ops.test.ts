@@ -593,3 +593,105 @@ describe("ArchitectureReportOps#build — non-production paths (bd tea-rags-mcp-
     });
   });
 });
+
+// bd tea-rags-mcp-r8hme.8 — Stable Abstractions: per component, A from the
+// walker's type census, I from the component graph, D = |A + I - 1|.
+describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)", () => {
+  const census = (abstractTypeCount: number, concreteTypeCount: number) => ({ abstractTypeCount, concreteTypeCount });
+
+  /** `core/` stable and concrete, `ports/` unstable and abstract, `app/` on the sequence, `vendor/` typeless. */
+  function censusGraph(): FileDependencyGraph {
+    const files = [
+      { ...file("core/a.ts"), typeAbstractness: census(0, 3) },
+      { ...file("core/b.ts"), typeAbstractness: census(0, 3) },
+      { ...file("vendor/v.ts"), typeAbstractness: census(0, 0) },
+    ];
+    const edges: FileDependencyGraph["edges"] = [];
+    for (let i = 1; i <= 6; i++) {
+      files.push({ ...file(`app/c${i}.ts`), typeAbstractness: census(0, 1) });
+      edges.push({ sourceRelPath: `app/c${i}.ts`, targetRelPath: "core/b.ts", callWeight: 1 });
+    }
+    for (let i = 1; i <= 5; i++) {
+      files.push({ ...file(`ports/p${i}.ts`), typeAbstractness: census(1, 0) });
+      edges.push({ sourceRelPath: `ports/p${i}.ts`, targetRelPath: "vendor/v.ts", callWeight: 1 });
+    }
+    return { files, edges };
+  }
+
+  it("reports components off the main sequence after the other detectors, with their census and coupling", async () => {
+    const report = await new ArchitectureReportOps().build(graphDb(censusGraph()), {});
+
+    expect(report.violations.filter((v) => v.detector === "mainSequence")).toEqual([
+      {
+        detector: "mainSequence",
+        component: "core",
+        componentKind: "directory",
+        facadeRelPath: null,
+        evidence: {
+          zone: "pain",
+          distance: 1,
+          abstractness: 0,
+          instability: 0,
+          abstractTypeCount: 0,
+          concreteTypeCount: 6,
+          afferentCount: 6,
+          efferentCount: 0,
+          fileCount: 2,
+          unmeasuredFileCount: 0,
+        },
+      },
+      {
+        detector: "mainSequence",
+        component: "ports",
+        componentKind: "directory",
+        facadeRelPath: null,
+        evidence: {
+          zone: "uselessness",
+          distance: 1,
+          abstractness: 1,
+          instability: 1,
+          abstractTypeCount: 5,
+          concreteTypeCount: 0,
+          afferentCount: 0,
+          efferentCount: 5,
+          fileCount: 5,
+          unmeasuredFileCount: 0,
+        },
+      },
+    ]);
+    expect(report.violations.at(-1)?.detector).toBe("mainSequence");
+  });
+
+  it("summarises the judged components, the adaptive cut and the exclusions", async () => {
+    const summary = (await new ArchitectureReportOps().build(graphDb(censusGraph()), {})).summary.mainSequence;
+
+    expect(summary).toMatchObject({
+      judgedComponentCount: 3,
+      violationCount: 2,
+      painCount: 1,
+      uselessnessCount: 1,
+      meanDistance: 0.667,
+      distanceThreshold: 0.5,
+      distanceThresholdMethod: "majority",
+      minConnectionCount: 5,
+      minTypeCount: 5,
+      abstractTypeShareByLanguage: { typescript: 0.294 },
+      excluded: { lowConnectionCount: 0, unmeasured: 0, fewTypes: 1, unobservableAbstractness: 0 },
+    });
+    expect(summary.exclusionReasons.unobservableAbstractness).toMatch(/abstractions/);
+  });
+
+  it("says the census is missing rather than reporting a clean graph on an index written before it", async () => {
+    const summary = (await new ArchitectureReportOps().build(graphDb(), {})).summary.mainSequence;
+
+    expect(summary.judgedComponentCount).toBe(0);
+    expect(summary.excluded.unmeasured).toBeGreaterThan(0);
+  });
+
+  it("reports an empty main-sequence summary on a collection with no graph", () => {
+    const summary = ArchitectureReportOps.empty({}).summary.mainSequence;
+
+    expect(summary.judgedComponentCount).toBe(0);
+    expect(summary.violationCount).toBe(0);
+  });
+});

@@ -221,8 +221,16 @@ export class DuckDbFileGraphStore {
       "rel_path",
       relPaths,
       ["rel_path"],
-      ["language", "content_hash"],
-      group.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
+      ["language", "content_hash", "abstract_type_count", "concrete_type_count"],
+      // The census is NULL, never 0 / 0, when the walk did not take it (bd
+      // tea-rags-mcp-r8hme.8): "not measured" and "no types" are two facts.
+      group.map((e) => [
+        e.node.relPath,
+        e.node.language,
+        e.node.contentHash ?? null,
+        e.node.typeAbstractness?.abstractTypeCount ?? null,
+        e.node.typeAbstractness?.concreteTypeCount ?? null,
+      ]),
     );
     await this.session.applyScopedRowDiff(
       "cg_symbols_edges_file",

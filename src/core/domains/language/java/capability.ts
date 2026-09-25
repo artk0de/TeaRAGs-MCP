@@ -18,5 +18,5 @@ export const capability: LanguageCapability = {
   // enter the graph they were excluded from, and lose `skippedAs: "test"`.
   // `payload.isTest` moves too but is chunker-owned static payload, which only
   // `--force` rewrites; not bumping `chunking` for a false-positive repair.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

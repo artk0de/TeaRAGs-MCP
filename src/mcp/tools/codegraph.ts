@@ -259,7 +259,10 @@ export function registerCodegraphTools(
         "silentCoupling: file pair co-changing strongly in git history with no import/re-export/resolved call " +
         "between them (support, P(B|A), P(A|B), lift, strength = Wilson lower bound, sample commits, " +
         "structuralVisibility); strong = >0.5 and >= adaptive Otsu cut; rootCauses = file with >=2 silent " +
-        "partners; summary.silentCoupling.built false = no co-change build, not clean. Summary " +
+        "partners; summary.silentCoupling.built false = no co-change build, not clean. mainSequence " +
+        "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
+        "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
+        "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute. Summary " +
         "counts exclusions with named reasons. Diagnosis, not prescription.",
       inputSchema: GetArchitectureReportInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },

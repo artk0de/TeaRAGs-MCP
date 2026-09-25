@@ -450,3 +450,85 @@ export interface ComponentStableDependenciesReport {
   rootCauses: ComponentStableDependencyRootCause[];
   summary: ComponentStableDependenciesSummary;
 }
+
+/** Where a component far from the main sequence sits (bd tea-rags-mcp-r8hme.8). */
+export type MainSequenceZone = "pain" | "uselessness";
+
+export interface MainSequenceOptions {
+  /** Connection floor on Ca + Ce; defaults to the SDP floor. */
+  minConnectionCount?: number;
+  /** Type floor on abstract + concrete; defaults to `DEFAULT_MAIN_SEQUENCE_MIN_TYPE_COUNT`. */
+  minTypeCount?: number;
+  /** Report only components holding a file matching this glob; every number is still whole-graph. */
+  sourcePathPattern?: string;
+}
+
+/** One component judged against the main sequence, far enough off it to report. */
+export interface MainSequenceViolation {
+  component: string;
+  kind: ArchitectureComponentKind;
+  facadeRelPath: RelPath | null;
+  /** `pain` = A + I < 1 (stable and concrete); `uselessness` = A + I > 1 (unstable and abstract). */
+  zone: MainSequenceZone;
+  /** D = |A + I - 1|. */
+  distance: number;
+  /** A = abstract / (abstract + concrete). */
+  abstractness: number;
+  /** I = Ce / (Ca + Ce), from the component graph. */
+  instability: number;
+  abstractTypeCount: number;
+  concreteTypeCount: number;
+  afferentCount: number;
+  efferentCount: number;
+  fileCount: number;
+  /** Files of the component the census never ran over (written before it existed). */
+  unmeasuredFileCount: number;
+}
+
+/** Components read but not judged, by the first reason that applied. */
+export interface MainSequenceExclusionCounts {
+  /** Ca + Ce below `minConnectionCount`: I is untrustworthy. */
+  lowConnectionCount: number;
+  /** No file of the component carries a census. */
+  unmeasured: number;
+  /** Fewer than `minTypeCount` types: one type moves A by more than the floor's margin. */
+  fewTypes: number;
+  /**
+   * Its languages declare abstractions so rarely in this codebase that a
+   * component of its size would not be expected to show one (expected abstract
+   * types < 1): an A of 0 there is the language's idiom, not the component's.
+   */
+  unobservableAbstractness: number;
+}
+
+export interface MainSequenceScope {
+  sourcePathPattern: string;
+  /** Judged components with no file matching the pattern. */
+  outOfScopeComponentCount: number;
+}
+
+export interface MainSequenceSummary {
+  componentCount: number;
+  judgedComponentCount: number;
+  violationCount: number;
+  painCount: number;
+  uselessnessCount: number;
+  /** Mean D over judged components — Martin's D-bar for the system; 0 when none is judged. */
+  meanDistance: number;
+  /** The cut D must reach; D must also be strictly above `MAIN_SEQUENCE_DISTANCE_FLOOR`. */
+  distanceThreshold: number;
+  distanceThresholdMethod: "otsu" | "majority";
+  distanceSeparability?: number;
+  minConnectionCount: number;
+  minTypeCount: number;
+  /** Abstract share of every measured type, per language — what `unobservableAbstractness` is judged against. */
+  abstractTypeShareByLanguage: Record<string, number>;
+  excluded: MainSequenceExclusionCounts;
+  scope?: MainSequenceScope;
+}
+
+export interface MainSequenceReport {
+  /** Farthest first, then component path. */
+  violations: MainSequenceViolation[];
+  summary: MainSequenceSummary;
+}

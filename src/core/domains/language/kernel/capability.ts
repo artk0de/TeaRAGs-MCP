@@ -45,9 +45,16 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * `--force-enrichments codegraph` runs. `codegraphSchema` stays at 2: this
  * walker bump already routes every index to that same whole-collection
  * recompute, and a second axis would name the same remedy twice.
+ *
+ * walker 6: every language's walker emits a type-abstractness census
+ * (abstract / concrete type declarations per file, bd tea-rags-mcp-r8hme.8),
+ * persisted on `cg_symbols_files` (migration 032) for the main-sequence
+ * detector. No symbol or edge moves; only a walk fills the columns, and until
+ * then the detector reports those components `unmeasured`. `codegraphSchema`
+ * stays at 2 for the same reason as walker 5.
  */
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 1,
-  walker: 5,
+  walker: 6,
   codegraphSchema: 2,
 };

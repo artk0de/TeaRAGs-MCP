@@ -18,5 +18,5 @@ export const capability: LanguageCapability = {
   // walker 4: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — `pub` vs module-private (trait members public) — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
-  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
 };

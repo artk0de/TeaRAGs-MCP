@@ -50,5 +50,5 @@ export const capability: LanguageCapability = {
   // `import()` record the export names they take (`importedExportNames`),
   // persisted on the file edge (migration 030). Re-exports still produce no
   // edge in this walker. No edge moves.
-  versions: { chunking: 2, walker: 7, codegraphSchema: 2 },
+  versions: { chunking: 2, walker: 8, codegraphSchema: 2 },
 };

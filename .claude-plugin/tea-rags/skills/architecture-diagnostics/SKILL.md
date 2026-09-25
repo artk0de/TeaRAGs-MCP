@@ -3,14 +3,15 @@ name: architecture-diagnostics
 description:
   Check if code laid out correctly — dependency direction, module borders,
   Stable Dependencies Principle violations, leaking abstractions (imports past
-  an adopted facade) and silent coupling (files changing together with no
-  import/call between them) with evidence per line, grouped into root causes.
-  Use when asked "is architecture right", "layering violations", "wrong
-  dependency direction", "SDP", "stable depends on unstable", "module borders",
-  "facade bypass", "deep imports", "leaking abstraction", "hidden coupling",
-  "change together", "shotgun surgery", "архитектурные нарушения" — NOT for
-  risk/health of code (use risk-assessment), NOT for one failure (use bug-hunt),
-  NOT for plain cycle listing (find_cycles).
+  an adopted facade), silent coupling (files changing together with no
+  import/call between them) and main-sequence distance (zone of pain /
+  uselessness) with evidence per line, grouped into root causes. Use when asked
+  "is architecture right", "layering violations", "wrong dependency direction",
+  "SDP", "stable depends on unstable", "module borders", "facade bypass", "deep
+  imports", "leaking abstraction", "hidden coupling", "change together",
+  "shotgun surgery", "zone of pain", "main sequence", "abstractness",
+  "архитектурные нарушения" — NOT for risk/health of code (use risk-assessment),
+  NOT for one failure (use bug-hunt), NOT for plain cycle listing (find_cycles).
 argument-hint: "[scope — pathPattern, subsystem, or 'whole project']"
 ---
 
@@ -26,8 +27,9 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 4. Phase 3 — residual violations, judged by evidence
 5. Phase 3b — LEAKING ABSTRACTION (`detector: "leakingAbstraction"`)
 6. Phase 3c — SILENT COUPLING (`detector: "silentCoupling"`)
-7. Phase 4 — EXCLUSIONS: say what not judged
-8. Phase 5 — OUTPUT
+7. Phase 3d — MAIN SEQUENCE (`detector: "mainSequence"`)
+8. Phase 4 — EXCLUSIONS: say what not judged
+9. Phase 5 — OUTPUT
 
 ## Top Anti-patterns
 
@@ -51,6 +53,10 @@ Question: laid out right? NOT: dangerous to touch? (→ risk-assessment).
 - **`silentCoupling.built: false` read as clean.** No co-change build (git
   trajectory off, or no index run yet) — say "not built", never "no hidden
   coupling".
+- **`mainSequence` judged 0 read as balanced.** `excluded.unmeasured` > 0 =
+  index predates type census — say "needs codegraph recompute".
+  `unobservableAbstractness` = language rarely declares abstractions (Ruby duck
+  typing) — A 0 is idiom, not verdict.
 
 ## Rules
 
@@ -80,8 +86,8 @@ get_architecture_report(project: "<alias>", pathPattern?: "<glob>", limit?: 50)
   `summary.<detector>` keeps totals (`violationCount`, `rootCauseCount`).
   Totals > returned → say truncated.
 - Every finding carries `detector`: `stableDependencies` (Phases 2–3),
-  `leakingAbstraction` (Phase 3b) or `silentCoupling` (Phase 3c). Never mix
-  groups across detectors.
+  `leakingAbstraction` (Phase 3b), `silentCoupling` (Phase 3c) or `mainSequence`
+  (Phase 3d). Never mix groups across detectors.
 
 ## Phase 2 — ROOT CAUSES
 
@@ -206,6 +212,31 @@ Fix direction: make coupling explicit (shared contract / generated table / one
 owner) OR merge. Type-only imports are NOT graph edges — pair joined only by
 `import type` can surface; check before claiming "no link".
 
+## Phase 3d — MAIN SEQUENCE
+
+Stable Abstractions Principle over SAME components as SDP. A = abstract /
+(abstract + concrete) types, from walker type census; I = component instability;
+D = |A + I − 1|. Abstract = interface / abstract class / protocol / trait / ABC;
+TS interface or object type alias counts only when exported AND declaring
+behaviour (method/call signature, or majority function-typed members) — data
+shapes and props are concrete-neutral, not counted. Ruby: class/module with a
+`raise NotImplementedError` stub.
+
+| `zone`        | Meaning                                                     | Fix direction                                   |
+| ------------- | ----------------------------------------------------------- | ----------------------------------------------- |
+| `pain`        | stable + concrete (A + I < 1) — every change hits many      | extract interfaces dependents code against      |
+| `uselessness` | unstable + abstract (A + I > 1) — contracts nobody leans on | drop unused abstractions or merge into concrete |
+
+| Summary field (`summary.mainSequence`) | Read as                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------- |
+| `distanceThreshold` / `…Method`        | D must exceed it; `majority` = floor 0.5 decided, `otsu` = adaptive cut above |
+| `meanDistance`                         | whole-codebase D over judged components — trend number                        |
+| `abstractTypeShareByLanguage`          | abstract share per language — why a language's components are unobservable    |
+
+Evidence per line: `distance`, `abstractness`, `instability`, type counts,
+Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge). Stable core of
+utilities (`infra`) in pain is often by design — say so, don't prescribe.
+
 ## Phase 4 — EXCLUSIONS
 
 `summary.stableDependencies.excluded` — edges read, NOT judged:
@@ -235,6 +266,11 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 file walked), `noSymbolEndpoints` (barrel / type-only / object-literal module —
 its `import type` deps invisible, missing edge no evidence), `nonPositiveLift`.
 
+`summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
+(SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`
+— A swings per type), `unobservableAbstractness` (expected abstract types < 1 at
+language's share; reason in `exclusionReasons`).
+
 ## Phase 5 — OUTPUT
 
 ```text
@@ -257,6 +293,10 @@ Threshold [adoptionThreshold] ([method], η [separability]); [activeModuleCount]
 ## Silent coupling — [violationCount] ([strongLinkedCount] strong pairs linked in code)
 Threshold [strengthThreshold] ([method], η [separability]); history [commitCount] commits since [windowSince] @ [head]
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
+
+## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
+Threshold [distanceThreshold] ([method]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N
+| # | Component | Zone | D | A (abstract/types) | I | Ca/Ce |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

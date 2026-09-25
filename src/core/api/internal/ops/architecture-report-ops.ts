@@ -4,8 +4,9 @@
  *
  * Reads the whole file dependency graph from a codegraph handle, runs the
  * boundary detectors owned by the codegraph trajectory — Stable Dependencies,
- * leaking abstraction (bd tea-rags-mcp-jetrd) and, over the temporal
- * co-change sub-graph, silent coupling (bd tea-rags-mcp-b4dcz) — and shapes
+ * leaking abstraction (bd tea-rags-mcp-jetrd), the main sequence (bd
+ * tea-rags-mcp-r8hme.8) and, over the temporal co-change sub-graph, silent
+ * coupling (bd tea-rags-mcp-b4dcz) — and shapes
  * the typed report DTO. Lives in `api/internal` because it bridges the trajectory's
  * detectors and the public DTO — the one layer allowed to import both.
  *
@@ -27,14 +28,17 @@ import {
   detectComponentStableDependencyViolations,
   detectConventionPrivacyLeaks,
   detectLeakingAbstractions,
+  detectMainSequenceDeviations,
   excludeNonProductionFiles,
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
+  MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
   type ComponentStableDependenciesReport,
   type ConventionPrivacyReport,
   type FacadeModuleAssessment,
   type LeakingAbstractionReport,
+  type MainSequenceReport,
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   detectSilentCoupling,
@@ -49,6 +53,7 @@ import type {
   GetArchitectureReportRequest,
   GetArchitectureReportResponse,
   LeakingAbstractionReportSummary,
+  MainSequenceReportSummary,
   SilentCouplingReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
@@ -76,6 +81,10 @@ export class ArchitectureReportOps {
     // Components: the modules A4 measured, plain directories elsewhere (bd tea-rags-mcp-r8hme.7).
     const components = buildComponentGraph(graph, leaks.modules);
     const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
+    // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8).
+    const mainSequence = detectMainSequenceDeviations(components, graph.files, {
+      sourcePathPattern: request.pathPattern,
+    });
     const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     const privacy = detectConventionPrivacyLeaks(
       memberEdges.filter((e) => !nonProduction.ignores(e.sourceRelPath) && !nonProduction.ignores(e.targetRelPath)),
@@ -97,12 +106,14 @@ export class ArchitectureReportOps {
         stableDependencies: summarise(sdp),
         leakingAbstraction: summariseLeaks(leaks, privacy, limit),
         silentCoupling: summariseSilentCoupling(silent),
+        mainSequence: summariseMainSequence(mainSequence),
       },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
       violations: [
         ...sdpViolations(sdp, limit),
         ...leakViolations(leaks, privacy, limit),
         ...silentViolations(silent, limit),
+        ...mainSequenceViolations(mainSequence, limit),
       ],
     };
   }
@@ -143,6 +154,9 @@ export class ArchitectureReportOps {
           0,
         ),
         silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, [])),
+        mainSequence: summariseMainSequence(
+          detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
+        ),
       },
       rootCauses: [],
       violations: [],
@@ -376,6 +390,57 @@ function silentViolations(report: SilentCouplingReport, limit: number): Architec
       },
     }),
   );
+}
+
+function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSummary {
+  const { summary } = report;
+  return {
+    judgedComponentCount: summary.judgedComponentCount,
+    violationCount: summary.violationCount,
+    painCount: summary.painCount,
+    uselessnessCount: summary.uselessnessCount,
+    meanDistance: round3(summary.meanDistance),
+    distanceThreshold: round3(summary.distanceThreshold),
+    distanceThresholdMethod: summary.distanceThresholdMethod,
+    ...(summary.distanceSeparability === undefined
+      ? {}
+      : { distanceSeparability: round3(summary.distanceSeparability) }),
+    minConnectionCount: summary.minConnectionCount,
+    minTypeCount: summary.minTypeCount,
+    abstractTypeShareByLanguage: Object.fromEntries(
+      Object.entries(summary.abstractTypeShareByLanguage).map(([language, share]) => [language, round3(share)]),
+    ),
+    excluded: { ...summary.excluded },
+    exclusionReasons: { unobservableAbstractness: MAIN_SEQUENCE_UNOBSERVABLE_REASON },
+    ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
+  };
+}
+
+function mainSequenceViolations(report: MainSequenceReport, limit: number): ArchitectureViolation[] {
+  return report.violations.slice(0, limit).map(
+    (v): ArchitectureViolation => ({
+      detector: "mainSequence",
+      component: v.component,
+      componentKind: v.kind,
+      facadeRelPath: v.facadeRelPath,
+      evidence: {
+        zone: v.zone,
+        distance: v.distance,
+        abstractness: v.abstractness,
+        instability: v.instability,
+        abstractTypeCount: v.abstractTypeCount,
+        concreteTypeCount: v.concreteTypeCount,
+        afferentCount: v.afferentCount,
+        efferentCount: v.efferentCount,
+        fileCount: v.fileCount,
+        unmeasuredFileCount: v.unmeasuredFileCount,
+      },
+    }),
+  );
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 /** Locale-independent, so the order is the same on every machine. */
