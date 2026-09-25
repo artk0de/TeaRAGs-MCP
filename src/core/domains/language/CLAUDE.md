@@ -29,11 +29,12 @@
   indexing loses flow sensitivity — the first binding of a reassigned variable
   types every later call — and bypasses the block scope.
 - **`DefaultSymbolIdComposer.compose` (`kernel/symbol-id.ts`) yields the BASE
-  id; `#partN` is chunker-only** — appended by `enforceMaxChunkSize`
-  (`chunker/tree-sitter.ts`), never seen by the walker. Doc languages diverge
-  too: `markdown/index.ts` has `chunkerHooks`, no `walker`/`resolver`,
-  `doc:<hash>` ids. Why: id divergence yields edges pointing at ids no chunk
-  carries — `find_symbol` / `get_callers` return nothing, no error.
+  id; `#partN` is chunker-only** — appended when an oversized symbol is split
+  (`TreeSitterChunker#emitSplitSymbol`, and the `enforceMaxChunkSize`
+  post-pass), never seen by the walker. Doc languages diverge too:
+  `markdown/index.ts` has `chunkerHooks`, no `walker`/`resolver`, `doc:<hash>`
+  ids. Why: id divergence yields edges pointing at ids no chunk carries —
+  `find_symbol` / `get_callers` return nothing, no error.
 
 ## Mechanics
 

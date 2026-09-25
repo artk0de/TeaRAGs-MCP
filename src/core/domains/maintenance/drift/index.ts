@@ -3,7 +3,9 @@ export type { IndexDriftAxis, IndexDriftFinding, IndexDriftMonitor } from "./mon
 export {
   foldIndexDriftRemedies,
   renderIndexDriftRemedy,
+  renderRechunkFlags,
   resolvePayloadKeyRemedy,
+  type IndexDriftRecompute,
   type IndexDriftRemedy,
 } from "./remedy.js";
 export { formatIndexDriftReport, IndexDriftReporter, type IndexDriftReport } from "./report.js";
@@ -13,3 +15,9 @@ export { judgeStatsContract, type StatsContractFinding, type StatsContractJudgem
 export { LanguageVersionDriftMonitor } from "./language-version-drift-monitor.js";
 export { CommitDriftMonitor } from "./commit-drift-monitor.js";
 export { EnvDriftMonitor } from "./env-drift-monitor.js";
+export {
+  advanceChunkSetStamp,
+  chunkSetBumpSelector,
+  combineRechunkSelectors,
+  rechunkSelectorCovers,
+} from "./chunk-set-scope.js";

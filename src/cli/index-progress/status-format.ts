@@ -98,6 +98,13 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     for (const line of seedLines) lines.push(`  ${line}`);
   }
 
+  // Scoped force outcome (bd tea-rags-mcp-j4oww), injected from IndexStats likewise.
+  if (status.scopedRechunk) {
+    const r = status.scopedRechunk;
+    lines.push(colors.bold("Scoped re-chunk"));
+    lines.push(`  ${r.filesRechunked} files re-chunked in place (+${r.chunksAdded} / -${r.chunksDeleted} chunks)`);
+  }
+
   return lines.join("\n");
 }
 
@@ -192,6 +199,10 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
 
   if (status.worktreeSeed) {
     base.worktreeSeed = status.worktreeSeed;
+  }
+
+  if (status.scopedRechunk) {
+    base.scopedRechunk = status.scopedRechunk;
   }
 
   return base;

@@ -490,32 +490,26 @@ ${initBody}
 
       const chunks = await chunker.chunk(code, "test.py", "python");
 
-      // The oversized __init__ produces multiple sub-chunks via character
-      // fallback. All splits share the method symbolId (5xie). The
-      // parentSymbolId / parentType refer to the enclosing CLASS now
-      // (cpbv), keeping the class-method lineage intact for MCP
-      // navigation.
-      const splits = chunks.filter((c) => c.metadata.symbolId === "Foo#__init__");
+      // INVARIANT CHANGED (bd tea-rags-mcp-y5vx4): the oversized __init__ is
+      // split on statement boundaries into `Foo#__init__#part1..N`, numbered
+      // once, each part under the method id (parentSymbolId) and keeping the
+      // method's chunkType. The 5xie goal — find_symbol("Foo#__init__")
+      // resolves — now rides the `#partN` fold instead of a shared bare id;
+      // the parts' parent is the method they were cut from (see the cpbv
+      // block below for the lineage).
+      const splits = chunks.filter((c) => (c.metadata.symbolId ?? "").startsWith("Foo#__init__"));
       expect(splits.length).toBeGreaterThan(1);
+      expect(splits.map((c) => c.metadata.symbolId)).toEqual(splits.map((_, i) => `Foo#__init__#part${i + 1}`));
       for (const c of splits) {
-        expect(c.metadata.symbolId).toBe("Foo#__init__");
         expect(c.metadata.chunkType).toBe("function");
-        expect(c.metadata.parentType).toBe("class_definition");
-        expect(c.metadata.parentSymbolId).toBe("Foo");
+        expect(c.metadata.parentType).toBe("function_definition");
+        expect(c.metadata.parentSymbolId).toBe("Foo#__init__");
       }
 
       // The helper sibling is preserved with its own symbolId — the
       // oversized branch doesn't accidentally consume sibling methods.
       const helper = chunks.find((c) => c.metadata.symbolId === "Foo#helper");
       expect(helper).toBeDefined();
-
-      // No anonymous `Foo#__init__#partN` symbolIds — splits share the
-      // composed symbolId. enforceMaxChunkSize is a no-op because the
-      // sub-chunks are already character-bounded to maxChunkSize.
-      const anonParts = chunks.filter(
-        (c) => typeof c.metadata.symbolId === "string" && c.metadata.symbolId.startsWith("Foo#__init__#part"),
-      );
-      expect(anonParts.length).toBe(0);
     });
 
     it("should keep parent class chunk covering the full body when class has no methods", async () => {
@@ -1810,15 +1804,16 @@ function veryLargeFunction() {
 
       const splitChunks = chunks.filter((c) => c.metadata.parentSymbolId === "big_function");
       expect(splitChunks.length).toBeGreaterThan(0);
-      // bd tea-rags-mcp-t6sr — oversized top-level functions now flow
-      // through `chunkOversizedNode` (same path TS uses for big functions)
-      // so every sub-chunk shares `symbolId: "big_function"`. Codegraph
-      // invariant: all sub-chunks of one method share one symbolId.
-      // Matches the regression test in tree-sitter.oversized-symbolid.test.ts.
-      for (const chunk of splitChunks) {
-        expect(chunk.metadata.symbolId).toBe("big_function");
+      // bd tea-rags-mcp-t6sr — oversized top-level functions flow through
+      // `chunkOversizedNode` (same path TS uses for big functions).
+      // INVARIANT CHANGED (bd tea-rags-mcp-y5vx4): continuity is the part
+      // sequence `big_function#part1..N` under parentSymbolId `big_function`,
+      // not a shared bare id — the codegraph owner rule strips `#partN`, so
+      // every part still maps to the one symbol.
+      splitChunks.forEach((chunk, i) => {
+        expect(chunk.metadata.symbolId).toBe(`big_function#part${i + 1}`);
         expect(chunk.metadata.chunkType).toBe("function");
-      }
+      });
     });
 
     it("should enforce hard cap on a fallback (non-AST) language too", async () => {
@@ -4396,9 +4391,16 @@ describe User do
 end`;
       const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
 
-      // Should have 2 test chunks (one per leaf context)
+      // INVARIANT CHANGED (bd tea-rags-mcp-99gkm): one test chunk per EXAMPLE
+      // (3 `it` blocks), no longer one per leaf context (was 2).
       const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
-      expect(testChunks).toHaveLength(2);
+      expect(testChunks).toHaveLength(3);
+      expect(testChunks.map((c) => c.metadata.symbolId)).toEqual([
+        "User.context 'when admin'.it 'has admin access'",
+        "User.context 'when admin'.it 'can manage users'",
+        "User.context 'when regular'.it 'has limited access'",
+      ]);
+      expect(testChunks.every((c) => c.metadata.parentType === "test_scope")).toBe(true);
 
       // 'when admin' leaf should contain injected let(:user) from parent
       const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
@@ -5121,14 +5123,18 @@ ${initBody}
         return self.value_0 + self.value_1
       `;
       const chunks = await chunker.chunk(code, "test.py", "python");
-      const splits = chunks.filter((c) => c.metadata.symbolId === "Foo#__init__");
-      // 5xie invariant — every split shares symbolId "Foo#__init__".
+      // INVARIANT CHANGED (bd tea-rags-mcp-y5vx4): the parts are
+      // `Foo#__init__#part1..N` and their parent is the METHOD they were cut
+      // from, not the class. What cpbv protected still holds: no part is its
+      // own parent (no navigation self-loop), and the class lineage is read off
+      // the method id (`Foo#__init__` → `Foo`) by the codegraph owner rule,
+      // symbol mass and the find_symbol outline.
+      const splits = chunks.filter((c) => /^Foo#__init__#part\d+$/.test(c.metadata.symbolId ?? ""));
       expect(splits.length).toBeGreaterThan(1);
       for (const c of splits) {
-        // cpbv fix — parentSymbolId is the CLASS, not the method itself.
-        expect(c.metadata.parentSymbolId).toBe("Foo");
-        // parentType reflects the class declaration, not function.
-        expect(c.metadata.parentType).toBe("class_definition");
+        expect(c.metadata.parentSymbolId).toBe("Foo#__init__");
+        expect(c.metadata.parentSymbolId).not.toBe(c.metadata.symbolId);
+        expect(c.metadata.parentType).toBe("function_definition");
       }
     });
   });

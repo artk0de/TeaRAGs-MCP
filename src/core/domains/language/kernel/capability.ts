@@ -1,4 +1,5 @@
 import type { LanguageSupportVersions } from "../../../contracts/types/language.js";
+import type { ChunkSetBumpScopes } from "../../../contracts/types/rechunk.js";
 
 /**
  * Pseudo-language whose stamp vouches for every language at once. Defined in
@@ -52,9 +53,33 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
  * detector. No symbol or edge moves; only a walk fills the columns, and until
  * then the detector reports those components `unmeasured`. `codegraphSchema`
  * stays at 2 for the same reason as walker 5.
+ *
+ * chunking 2 is this release's ONE chunking bump, shared by two changes:
+ *   - an oversized symbol is cut on its statement boundaries into
+ *     `#part1..#partN` parts, numbered once, each prefixed with its enclosing
+ *     context instead of overlapping raw lines; markdown sections are cut
+ *     between blocks and the character fallback between syntax-neutral units
+ *     (bd tea-rags-mcp-y5vx4, tea-rags-mcp-308ff);
+ *   - test files are chunked by EXAMPLE (bd tea-rags-mcp-msv3l, epic
+ *     tea-rags-mcp-phftd) — `kernel/test-scope-chunks.ts` emits one chunk per
+ *     example with the id `<top>.<scope>.<example>` and a `test_scope`
+ *     parentType, and the engine honours a hook-provided parentType.
+ * Every language's test-chunker migration onto the kernel shipped in the same
+ * release lands under it and re-pins its own `chunking` digest without bumping
+ * again. The chunk set moves in every language and no narrower drift scope is
+ * declared, so every index needs `tea-rags index-codebase --force`.
  */
 export const sharedVersions: LanguageSupportVersions = {
-  chunking: 1,
+  chunking: 2,
   walker: 6,
   codegraphSchema: 2,
 };
+
+/**
+ * Which files each shared chunk-set bump touched (bd tea-rags-mcp-j4oww) — the
+ * `*` half of `LanguageCapability.chunkSetBumpScopes`. A `sharedVersions.chunking`
+ * revision with no entry here is unscoped and routes to the plain `--force`; one
+ * that changed only test chunking declares `{ testFile: "only" }` under its
+ * revision, and the drift report names the scoped force instead.
+ */
+export const sharedChunkSetBumpScopes: ChunkSetBumpScopes = {};

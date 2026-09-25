@@ -5,6 +5,8 @@
  */
 
 import type { SearchResult } from "../../../api/public/dto/explore.js";
+import { TEST_SCOPE_PARENT_TYPE } from "../../../contracts/types/chunker.js";
+import { splitFragmentBase } from "../split-fragment.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./types.js";
 
 /** Sort chunks by startLine ascending. */
@@ -67,6 +69,69 @@ function memberLines(sortedMembers: ScrollChunk[], visibilityOf?: MemberVisibili
     lines.push(`  ${formatMember(symbolId)}${visibilitySuffix(chunk, visibilityOf)}`);
   }
   return lines;
+}
+
+/** A DSL test chunk — an example, or a scope's setup. */
+export function isTestChunk(chunk: ScrollChunk): boolean {
+  const { chunkType } = chunk.payload;
+  return chunkType === "test" || chunkType === "test_setup" || chunk.payload.isTest === true;
+}
+
+/**
+ * A test EXAMPLE chunk (or a `#partN` window of one): its parentSymbolId names
+ * a test scope, not a chunk. Setup-only scopes and chunks indexed before
+ * examples were addressable carry the container's AST type instead.
+ */
+export function isTestExampleChunk(chunk: ScrollChunk): boolean {
+  return chunk.payload.parentType === TEST_SCOPE_PARENT_TYPE;
+}
+
+/**
+ * The outline lines of a test file's example chunks, keyed by the chunk that
+ * opens them (bd tea-rags-mcp-msv3l). An example carries its SCOPE as
+ * `parentSymbolId` (`User.context 'when admin'` for
+ * `User.context 'when admin'.it 'can invite'`), and a scope has no chunk of its
+ * own, so the scope line is drawn from that id, once, at its first example,
+ * with every example of the scope nested under it — both lines are addresses
+ * `find_symbol` answers. A `#partN` window of an oversized example stands for
+ * the example: it is one line, filed under the longest scope id its base id
+ * extends. Chunks absent from the map print nothing: a later member of a scope
+ * already drawn.
+ */
+function testScopeLines(roots: ScrollChunk[]): Map<ScrollChunk, string[]> {
+  const tests = roots.filter(isTestExampleChunk);
+  const scopeIds = new Set(
+    tests
+      .filter((c) => splitFragmentBase(c.payload) === undefined)
+      .map((c) => c.payload.parentSymbolId)
+      .filter((id): id is string => typeof id === "string"),
+  );
+  const scopeOf = (id: string): string | undefined =>
+    [...scopeIds].filter((scope) => id.startsWith(`${scope}.`)).sort((a, b) => b.length - a.length)[0];
+
+  const opened = new Map<string, string[]>();
+  const printed = new Set<string>();
+  const byChunk = new Map<ScrollChunk, string[]>();
+  for (const chunk of tests) {
+    const base = splitFragmentBase(chunk.payload);
+    const id = base ?? (chunk.payload.symbolId as string | undefined) ?? "";
+    const scope = base !== undefined ? scopeOf(base) : (chunk.payload.parentSymbolId as string | undefined);
+    if (printed.has(id)) continue;
+    printed.add(id);
+    if (scope === undefined) {
+      byChunk.set(chunk, [`  ${id}`]);
+      continue;
+    }
+    const existing = opened.get(scope);
+    if (existing) {
+      existing.push(`    ${id}`);
+      continue;
+    }
+    const block = [`  ${scope}`, `    ${id}`];
+    opened.set(scope, block);
+    byChunk.set(chunk, block);
+  }
+  return byChunk;
 }
 
 function contentSizeOf(chunks: ScrollChunk[]): number {
@@ -172,9 +237,15 @@ export const CodeChunkGrouper = {
     }
 
     // Build outline. An orphaned member is labelled by its qualified symbolId —
-    // a bare `rerank` would lose the class it belongs to.
+    // a bare `rerank` would lose the class it belongs to. Test chunks are drawn
+    // by scope instead (see `testScopeLines`), each scope at its first example.
+    const scopeLines = testScopeLines(roots);
     const lines: string[] = [relativePath];
     for (const root of roots) {
+      if (isTestExampleChunk(root)) {
+        lines.push(...(scopeLines.get(root) ?? []));
+        continue;
+      }
       const name = root.payload.name as string | undefined;
       const symbolId = root.payload.symbolId as string | undefined;
       const label = root.payload.parentSymbolId ? (symbolId ?? name ?? "") : (name ?? symbolId ?? "");

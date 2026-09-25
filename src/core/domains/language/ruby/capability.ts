@@ -13,7 +13,11 @@ export const capability: LanguageCapability = {
       { name: "bodyChunker", short: "method-body splitting" },
     ],
   },
-  tests: { tier: "high", detection: "*_test.rb / *_spec.rb", tech: "RSpec scope chunker (parent setup injected)" },
+  tests: {
+    tier: "high",
+    detection: "*_test.rb / *_spec.rb",
+    tech: "RSpec scope chunker (one chunk per example, ancestor setup injected)",
+  },
   codegraph: {
     tier: { untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" },
     summary:

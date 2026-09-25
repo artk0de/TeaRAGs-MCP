@@ -26,6 +26,7 @@ import type {
   SymbolResolutionPassPlan,
   SymbolResolutionTarget,
 } from "./codegraph.js";
+import type { ChunkSetBumpScopes } from "./rechunk.js";
 import type { SignalFloors } from "./trajectory.js";
 
 /** A loaded tree-sitter language module. Some packages expose the grammar
@@ -975,6 +976,14 @@ export interface LanguageCapability {
   };
   /** Hand-bumped code versions for this language — see {@link LanguageSupportVersions}. */
   versions: LanguageSupportVersions;
+  /**
+   * Which files each chunk-set bump of this language touched, declared next to
+   * the bump (bd tea-rags-mcp-j4oww). A declared scope lets the drift report
+   * route the bump to a scoped `--force` instead of a whole-project rebuild; a
+   * revision with no entry is unscoped. Kept apart from `versions` because the
+   * registry stamp copies `versions` verbatim, and a scope is not a version.
+   */
+  chunkSetBumpScopes?: ChunkSetBumpScopes;
   /** README prose extras (humans only). */
   notes?: string;
 }

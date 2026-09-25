@@ -9,7 +9,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { resolveLanguageCodeVersions } from "../../../../../src/core/domains/language/capability/versions.js";
+import {
+  resolveChunkSetBumpScopes,
+  resolveLanguageCodeVersions,
+} from "../../../../../src/core/domains/language/capability/versions.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
 import { SHARED_LANGUAGE } from "../../../../../src/core/domains/language/kernel/capability.js";
 
@@ -77,7 +80,11 @@ describe("resolveLanguageCodeVersions", () => {
     // engine and unioned by the runner's per-target dedupe.
     // walker 6: bd tea-rags-mcp-r8hme.8 — the kernel's type-abstractness census
     // pass, persisted on `cg_symbols_files` (migration 032).
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 6, codegraphSchema: 2 });
+    // chunking 2: bd tea-rags-mcp-y5vx4 — oversized symbols split on statement
+    // boundaries into `#part1..N` with context prefixes; markdown and the
+    // character fallback cut between blocks / syntax-neutral units. Same bump:
+    // bd tea-rags-mcp-msv3l — test files chunked by example.
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 6, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -447,5 +454,25 @@ describe("seeded support versions", () => {
       expect(v.chunking, `chunking version for ${language}`).toBe(CHUNKING_BUMPED.get(language) ?? 1);
       expect(v.codegraphSchema, `codegraph schema version for ${language}`).toBe(expectedCodegraph);
     }
+  });
+});
+
+describe("resolveChunkSetBumpScopes (bd tea-rags-mcp-j4oww)", () => {
+  it("carries each capability's declared chunk-set bump scopes, keyed by language", () => {
+    const capabilities = new Map(factory.capabilities());
+    const ruby = capabilities.get("ruby")!;
+    capabilities.set("ruby", { ...ruby, chunkSetBumpScopes: { chunking: { 9: { testFile: "only" } } } });
+
+    const scopes = resolveChunkSetBumpScopes(capabilities, { chunking: { 7: { testFile: "only" } } });
+
+    expect(scopes.get("ruby")).toEqual({ chunking: { 9: { testFile: "only" } } });
+    expect(scopes.get(SHARED_LANGUAGE)).toEqual({ chunking: { 7: { testFile: "only" } } });
+  });
+
+  it("omits languages that declare nothing — an undeclared bump is unscoped", () => {
+    const scopes = resolveChunkSetBumpScopes(new Map(factory.capabilities()), {});
+
+    expect(scopes.has("typescript")).toBe(false);
+    expect(scopes.has(SHARED_LANGUAGE)).toBe(false);
   });
 });

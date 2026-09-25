@@ -2,14 +2,17 @@
  * `TemporalCochangeBuilder` — rebuilds `cg_temporal_*` at codegraph collection
  * completion (bd tea-rags-mcp-x4rpp).
  *
- * history (discovery matrix, windowed) → scope to the project's HEAD paths →
- * bundle (per commit, or per author session) → adaptive mass-change cut →
- * association rules with the storage cap → one wholesale snapshot.
+ * history (discovery matrix, windowed) → scope to the project's LIVE paths
+ * (tracked at HEAD, still in the working tree; renames followed) → bundle (per
+ * commit, or per author session) → adaptive mass-change cut → association rules
+ * with the storage cap → one wholesale snapshot.
  *
  * Every incremental index finalizes, so the build is gated on the provenance
- * row: same HEAD, same parameter fingerprint and built within a day ⇒ skipped
- * without touching history. The day bound exists because the window slides with
- * the clock while HEAD stands still. A moved HEAD reads history through the SAME
+ * row: same HEAD, same fingerprint (parameters, project subtree, and the working
+ * tree's deletions of HEAD paths) and built within a day ⇒ skipped without
+ * touching history. Those inputs fix the live path set exactly, so a skipped
+ * build never keeps a pair whose endpoint the working tree lost; the day bound
+ * exists because the window slides with the clock while HEAD stands still. A moved HEAD reads history through the SAME
  * persisted discovery store the git trajectory's chunk walk fills, with the same
  * window (`chunkMaxAgeMonths`), so on a warm index the log is a snapshot load,
  * not a `git log` — and the two consumers never overwrite each other's snapshot
@@ -17,8 +20,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, realpathSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { realpathSync } from "node:fs";
+import { relative, sep } from "node:path";
 
 import { VcsAdapterFactory } from "../../../../../adapters/vcs/factory.js";
 import { resolveRepoRoot } from "../../../../../adapters/vcs/git/git-cli/client.js";
@@ -29,7 +32,7 @@ import type {
   CodegraphCollectionCompletionContext,
   CodegraphCollectionCompletionHook,
 } from "../../collection-completion-hook.js";
-import { bundleCochangeCommits } from "./commit-bundles.js";
+import { bundleCochangeCommits, compareCodePoints } from "./commit-bundles.js";
 import { scopeCochangeHistory } from "./history-scope.js";
 import { computeMassChangeCut, MASS_CHANGE_CEILING } from "./mass-change-cut.js";
 import { extractCochangeGraph } from "./pair-extractor.js";
@@ -58,10 +61,25 @@ const DAY_SECONDS = 86_400;
 /** The discovery window formula (`GitCommitDiscovery#buildMatrix`): months of 30 days. */
 const MONTH_SECONDS = 30 * DAY_SECONDS;
 
-/** One repository's history as the builder reads it. */
+/**
+ * One repository's history as the builder reads it. Paths are REPO-relative.
+ *
+ * A path is LIVE when `trackedPaths` has it and `worktreeDeletions` does not:
+ * tracked at HEAD and still in the working tree. Only live paths are stored —
+ * never a path merely because a file of that name exists on disk (an ignored
+ * build artifact reusing a once-committed path is not the file history named).
+ */
 export interface TemporalCochangeHistory {
   repoRoot: string;
   head: string;
+  /**
+   * HEAD paths the working tree lost (deleted, unstaged from the index, or
+   * renamed away). Read on EVERY run: with HEAD it is the whole of what the
+   * stored graph's path set depends on, so it keys the skip.
+   */
+  worktreeDeletions: readonly string[];
+  /** Every path HEAD's tree tracks. Only read when a rebuild is due. */
+  trackedPaths: () => Promise<readonly string[]>;
   /** Discovery rows, newest → oldest, inside the window. Only read when a rebuild is due. */
   entries: () => Promise<readonly GitCommitDiscoveryEntry[]>;
 }
@@ -82,8 +100,6 @@ export interface TemporalCochangeBuilderOptions {
   gitTimeoutMs?: number;
   /** Overrides the git history source (tests, offline harnesses). */
   historySource?: TemporalCochangeHistorySource;
-  /** Whether an ABSOLUTE path exists; default `existsSync`. */
-  fileExists?: (absolutePath: string) => boolean;
   /** Clock in ms; default `Date.now`. */
   now?: () => number;
 }
@@ -103,6 +119,8 @@ export class GitTemporalCochangeHistorySource implements TemporalCochangeHistory
     return {
       repoRoot,
       head,
+      worktreeDeletions: await adapter.listWorktreeDeletions(this.options.timeoutMs),
+      trackedPaths: async () => adapter.listTreePaths(head, this.options.timeoutMs),
       entries: async () =>
         new GitCommitDiscovery(adapter, {
           maxAgeMonths: this.options.windowMonths,
@@ -116,7 +134,6 @@ export class GitTemporalCochangeHistorySource implements TemporalCochangeHistory
 export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHook {
   readonly name = "temporal-cochange";
   private readonly historySource: TemporalCochangeHistorySource;
-  private readonly fileExists: (absolutePath: string) => boolean;
   private readonly now: () => number;
 
   constructor(private readonly options: TemporalCochangeBuilderOptions) {
@@ -127,7 +144,6 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
         windowMonths: options.windowMonths,
         timeoutMs: options.gitTimeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
       });
-    this.fileExists = options.fileExists ?? existsSync;
     this.now = options.now ?? Date.now;
   }
 
@@ -136,7 +152,8 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
     graphDb,
   }: CodegraphCollectionCompletionContext): Promise<TemporalCochangeBuildOutcome> {
     const history = await this.historySource.open(projectRoot);
-    const fingerprint = this.fingerprint();
+    const projectPrefix = projectPrefixOf(history.repoRoot, projectRoot);
+    const fingerprint = this.fingerprint(projectPrefix, history.worktreeDeletions);
     const nowSeconds = Math.floor(this.now() / 1000);
     const previous = await graphDb.readTemporalCochangeMeta();
     if (
@@ -147,10 +164,11 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
       return { status: "fresh", meta: previous };
     }
 
-    const projectPrefix = projectPrefixOf(history.repoRoot, projectRoot);
+    const live = new Set(await history.trackedPaths());
+    for (const deleted of history.worktreeDeletions) live.delete(deleted);
     const commits = scopeCochangeHistory(await history.entries(), {
       projectPrefix,
-      fileExists: (relPath: RelPath) => this.fileExists(join(projectRoot, relPath)),
+      fileExists: (relPath: RelPath) => live.has(`${projectPrefix}${relPath}`),
     });
     const bundles = bundleCochangeCommits(commits, this.options.sessionGapMinutes);
     const maxFilesPerBundle = computeMassChangeCut(bundles.map((b) => b.files.length));
@@ -176,8 +194,14 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
     return { status: "built", meta, fileCount: graph.files.length, edgeCount: graph.edges.length };
   }
 
-  /** Every parameter that shapes the stored graph — a change to any one rebuilds it. */
-  private fingerprint(): string {
+  /**
+   * Every input besides HEAD and the clock that shapes the stored graph — a
+   * change to any one rebuilds it. The build parameters, the project's subtree,
+   * and the working tree's deletions of HEAD paths: HEAD fixes the tracked set,
+   * but a file deleted (or restored) without a commit changes which paths are
+   * live, and a clone seeded from a sibling's DB carries the sibling's row.
+   */
+  private fingerprint(projectPrefix: string, worktreeDeletions: readonly string[]): string {
     return createHash("sha256")
       .update(
         JSON.stringify({
@@ -187,6 +211,8 @@ export class TemporalCochangeBuilder implements CodegraphCollectionCompletionHoo
           minSupport: TEMPORAL_COCHANGE_MIN_SUPPORT,
           maxPartnersPerFile: TEMPORAL_COCHANGE_MAX_PARTNERS_PER_FILE,
           massChangeCeiling: MASS_CHANGE_CEILING,
+          projectPrefix,
+          worktreeDeletions: [...worktreeDeletions].sort(compareCodePoints),
         }),
       )
       .digest("hex")

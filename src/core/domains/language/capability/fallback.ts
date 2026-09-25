@@ -2,10 +2,10 @@ import type { LanguageCapability } from "../../../contracts/types/language.js";
 
 /**
  * Languages with NO native provider — they fall back to the CharacterChunker at
- * arbitrary offsets (a chunk may split a symbol), and have no codegraph. They
- * are not in `LanguageFactory.supported()`; the generator appends them so the
- * matrix documents their absence of support explicitly, and prime describes
- * any such language an index holds with the same descriptor.
+ * syntax-neutral line boundaries (a chunk may split a symbol), and have no
+ * codegraph. They are not in `LanguageFactory.supported()`; the generator
+ * appends them so the matrix documents their absence of support explicitly, and
+ * prime describes any such language an index holds with the same descriptor.
  */
 export function unsupportedLanguageCapability(language: string): LanguageCapability {
   return {

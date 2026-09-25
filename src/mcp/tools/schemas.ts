@@ -105,7 +105,29 @@ export const IndexCodebaseSchema = {
     .optional()
     .describe("Codebase root. Needed for first index; re-index a registered alias via 'project'."),
   project: projectField(),
-  forceReindex: coerceBoolean().optional().describe("Force full re-index even if already indexed (default: false)"),
+  forceReindex: coerceBoolean()
+    .optional()
+    .describe("Full rebuild into a new collection. With any scope filter below: re-chunk only those files in place."),
+  languages: z
+    .array(z.string())
+    .optional()
+    .describe("Scoped force: re-chunk files of these languages. Needs forceReindex."),
+  testFile: z
+    .enum(["only", "exclude"])
+    .optional()
+    .describe("Scoped force: re-chunk only test files, or all but them. Needs forceReindex."),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe("Scoped force: picomatch glob of files to re-chunk, leading ! negates. Needs forceReindex."),
+  fileExtension: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe("Scoped force: extension(s) to re-chunk, '.rb' or ['.rb', '.rake']. Needs forceReindex."),
+  files: z
+    .array(z.string())
+    .optional()
+    .describe("Scoped force: exact project-relative files to re-chunk. Needs forceReindex."),
   extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
   ignorePatterns: z
     .array(z.string())

@@ -15,6 +15,7 @@ import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type { LanguageCodeVersions, LanguageFactoryDescriptor } from "../../contracts/types/language.js";
 import type { FilterDescriptor, WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
+import type { ChunkSetBumpScopes } from "../../contracts/types/rechunk.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, SignalFloors } from "../../contracts/types/trajectory.js";
@@ -22,7 +23,7 @@ import { OrderByFieldResolver } from "../../domains/explore/rank-module.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
-import { resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
+import { resolveChunkSetBumpScopes, resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
 import { LanguageFactory } from "../../domains/language/index.js";
 import type { DeclaredPayloadIndexSet } from "../../domains/maintenance/migration/payload_index_migrations/index.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
@@ -83,6 +84,13 @@ export interface CompositionResult {
    * stamps it onto the registry entry, the maintenance monitor compares it.
    */
   languageCodeVersions: Map<string, LanguageCodeVersions>;
+  /**
+   * Declared scope of each chunk-set bump, per language plus `*`
+   * (bd tea-rags-mcp-j4oww). The drift monitor renders the minimal scoped
+   * `--force` from it; the indexing run decides from the SAME map which stamps a
+   * scoped force may advance.
+   */
+  languageChunkSetBumpScopes: Map<string, ChunkSetBumpScopes>;
 }
 
 export interface CompositionOptions {
@@ -323,5 +331,6 @@ export function createComposition(options: CompositionOptions = {}): Composition
     languageFactory,
     signalFloors,
     languageCodeVersions: resolveLanguageCodeVersions(languageFactory.capabilities()),
+    languageChunkSetBumpScopes: resolveChunkSetBumpScopes(languageFactory.capabilities()),
   };
 }

@@ -12,6 +12,7 @@
 
 import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
 import type { ProviderRunMetrics } from "./contracts/types/provider.js";
+import type { RechunkTestFileScope } from "./contracts/types/rechunk.js";
 import type { WorktreeSeedReport } from "./contracts/types/worktree.js";
 
 // Back-compat re-exports of types relocated into contracts/.
@@ -98,11 +99,20 @@ export interface IndexOptions {
 
   /**
    * Restrict the run to points of these languages. Valid with `forceEnrichments`
-   * (narrows the recompute) and with `forceReindex` (narrows the whole run,
-   * chunking included); refused on a plain incremental. Mirrors the public DTO
-   * in `api/public/dto/ingest.ts`.
+   * (narrows the recompute) and with `forceReindex` (a scoped force: re-chunks
+   * those files in place); refused on a plain incremental. Mirrors the public
+   * DTO in `api/public/dto/ingest.ts`.
    */
   languages?: string[];
+
+  /** Scoped force: re-chunk files matching this picomatch pattern. Mirrors the public DTO. */
+  pathPattern?: string;
+  /** Scoped force: re-chunk only test files, or everything but them. Mirrors the public DTO. */
+  testFile?: RechunkTestFileScope;
+  /** Scoped force: re-chunk files with these extensions. Mirrors the public DTO. */
+  fileExtensions?: string[];
+  /** Scoped force: re-chunk exactly these project-relative files. Mirrors the public DTO. */
+  files?: string[];
 
   /**
    * First index only: may the new collection be seeded from a registered
@@ -142,6 +152,8 @@ export interface IndexStats {
     filesSkippedDueToDeleteFailure?: number;
     /** Mirrors `ChangeStats.filesFailedToDelete`; present only when non-zero. */
     filesFailedToDelete?: number;
+    /** Mirrors `ChangeStats.filesRechunked`; present only on a scoped force. */
+    filesRechunked?: number;
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
@@ -182,6 +194,12 @@ export interface ChangeStats {
    * snapshot keeps listing them, so the next reindex retries the delete.
    */
   filesFailedToDelete?: number;
+  /**
+   * Scoped force only (bd tea-rags-mcp-j4oww): indexed files the selector forced
+   * into the work set. They re-chunk as modified files, so `filesModified`
+   * counts them too.
+   */
+  filesRechunked?: number;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";

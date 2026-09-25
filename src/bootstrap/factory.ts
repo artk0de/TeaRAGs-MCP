@@ -155,6 +155,7 @@ interface CompositionContext {
   allStatsAccumulators: ReturnType<typeof createComposition>["allStatsAccumulators"];
   signalFloors: ReturnType<typeof createComposition>["signalFloors"];
   languageCodeVersions: ReturnType<typeof createComposition>["languageCodeVersions"];
+  languageChunkSetBumpScopes: ReturnType<typeof createComposition>["languageChunkSetBumpScopes"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -328,12 +329,19 @@ function wireComposition(
   // cold-reindex event-loop stall — fans out across GitEnrichmentProvider's own
   // BlameWorkerPool for shallow files while deep blames stay on main's async CLI
   // (bd tea-rags-mcp-dog1v).
-  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, signalFloors, languageCodeVersions } =
-    createComposition({
-      // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
-      git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
-      codegraph,
-    });
+  const {
+    registry,
+    reranker,
+    allPayloadSignalDescriptors,
+    allStatsAccumulators,
+    signalFloors,
+    languageCodeVersions,
+    languageChunkSetBumpScopes,
+  } = createComposition({
+    // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
+    git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
+    codegraph,
+  });
   const schemaBuilder = new SchemaBuilder(reranker);
   return {
     registry,
@@ -342,6 +350,7 @@ function wireComposition(
     allStatsAccumulators,
     signalFloors,
     languageCodeVersions,
+    languageChunkSetBumpScopes,
     schemaBuilder,
   };
 }
@@ -988,6 +997,9 @@ function createIngestFacade(
     // Per-language code versions of THIS build, stamped onto the registry entry
     // by the runs that actually rebuild a language layer (bd tea-rags-mcp-frwka).
     languageCodeVersions: facadeComposition.languageCodeVersions,
+    // Which files each chunk-set bump touched: lets a scoped force advance the
+    // stamps its selection covered (bd tea-rags-mcp-j4oww).
+    languageChunkSetBumpScopes: facadeComposition.languageChunkSetBumpScopes,
     // Full effective env set of this run (defaults materialized, 9vpnz).
     // Built AFTER the adaptive adjustments in resolveInfrastructure
     // (GPU-calibrated batch size, embedded delete tuning) so user-set values
@@ -1090,6 +1102,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     collectionRegistry,
     statsCache,
     composition.languageCodeVersions,
+    composition.languageChunkSetBumpScopes,
   );
   // Third axis: the indexing env. The resolver it takes builds what the NEXT
   // run on that collection would use, the way `ProjectIngestFactory#forPath`

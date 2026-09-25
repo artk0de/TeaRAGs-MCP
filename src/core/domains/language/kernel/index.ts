@@ -18,7 +18,7 @@ export {
   type LinearizedAncestors,
 } from "./ancestor-walk.js";
 export { assignCallsToInnermostChunks, type ChunkRange } from "./assign-calls-to-chunks.js";
-export { SHARED_LANGUAGE, sharedVersions } from "./capability.js";
+export { SHARED_LANGUAGE, sharedChunkSetBumpScopes, sharedVersions } from "./capability.js";
 export { collectSymbols } from "./collect-symbols.js";
 export {
   declaredVisibilityFacetPass,

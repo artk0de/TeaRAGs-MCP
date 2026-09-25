@@ -26,11 +26,40 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       inputSchema: schemas.IndexCodebaseSchema,
       annotations: { idempotentHint: true },
     },
-    async ({ path: pathArg, project, forceReindex, extensions, ignorePatterns, seedFromWorktree }) => {
+    async ({
+      path: pathArg,
+      project,
+      forceReindex,
+      extensions,
+      ignorePatterns,
+      seedFromWorktree,
+      languages,
+      testFile,
+      pathPattern,
+      fileExtension,
+      files,
+    }) => {
       const path = await resolvePathFromProject({ path: pathArg, project }, app);
+      // Scope filters of a scoped force (bd tea-rags-mcp-j4oww); only the ones
+      // given are passed, so an unscoped call reaches the core unchanged.
+      const scope = {
+        ...(languages !== undefined ? { languages } : {}),
+        ...(testFile !== undefined ? { testFile } : {}),
+        ...(pathPattern !== undefined ? { pathPattern } : {}),
+        ...(fileExtension !== undefined
+          ? { fileExtensions: Array.isArray(fileExtension) ? fileExtension : [fileExtension] }
+          : {}),
+        ...(files !== undefined ? { files } : {}),
+      };
       const stats = await app.indexCodebase(
         path,
-        { forceReindex, extensions, ignorePatterns, ...(seedFromWorktree === false ? { seedFromWorktree } : {}) },
+        {
+          forceReindex,
+          extensions,
+          ignorePatterns,
+          ...(seedFromWorktree === false ? { seedFromWorktree } : {}),
+          ...scope,
+        },
         (progress) => {
           console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
         },
@@ -53,6 +82,9 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
           if (d.filesNewlyIgnored > 0) statusMessage += `  Newly ignored: ${d.filesNewlyIgnored}\n`;
           if (d.filesNewlyUnignored > 0) statusMessage += `  Newly unignored: ${d.filesNewlyUnignored}\n`;
           if (d.filesRetried > 0) statusMessage += `  Retried (quarantined): ${d.filesRetried}\n`;
+          if (d.filesRechunked !== undefined) {
+            statusMessage += `  Re-chunked in place (scoped force): ${d.filesRechunked}\n`;
+          }
           const chunkDiff = d.chunksAdded - d.chunksDeleted;
           const sign = chunkDiff >= 0 ? "+" : "";
           statusMessage += `- Chunks: +${d.chunksAdded} -${d.chunksDeleted} (net: ${sign}${chunkDiff})\n`;

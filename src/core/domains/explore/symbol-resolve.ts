@@ -6,9 +6,10 @@
  */
 
 import type { SearchResult } from "../../api/public/dto/explore.js";
-import { CodeChunkGrouper } from "./chunk-grouping/code.js";
+import { CodeChunkGrouper, isTestChunk, isTestExampleChunk } from "./chunk-grouping/code.js";
 import { DocChunkGrouper } from "./chunk-grouping/doc.js";
 import type { MemberVisibilityLookup, ScrollChunk } from "./chunk-grouping/types.js";
+import { memberOwnerOf, splitFragmentBase, splitFragmentOwnRows } from "./split-fragment.js";
 
 /**
  * A `parentType` naming a member CONTAINER — class, module or struct, whatever
@@ -54,10 +55,14 @@ interface ContainerOutlinePlan {
  *    find_symbol on the class. With no source class or member in the scroll
  *    nothing is outlined, so the tests merge per group like any other symbol —
  *    an empty find_symbol reads to an agent as a wrong separator.
- * 3. Doc TOC — only when the query IS the document path (the chunks'
+ * 3. Test scope outline. A query naming a test scope — the parentSymbolId its
+ *    example chunks share (`User.context 'when admin'`) — yields an outline of
+ *    its example ids, one per relativePath; an example id itself still merges
+ *    to that example's body in step 5. See `.claude/rules/test-spec-chunking.md`.
+ * 4. Doc TOC — only when the query IS the document path (the chunks'
  *    parentSymbolId). Several windows of one section share a `doc:<hash>` id,
  *    so "more than one doc chunk" is no signal that a TOC was asked for.
- * 4. Everything else merges per group: documentation windows are stitched by
+ * 5. Everything else merges per group: documentation windows are stitched by
  *    text (`DocChunkGrouper.mergeSection`), code chunks by startLine
  *    (`mergeChunks`).
  *
@@ -98,7 +103,15 @@ export function resolveSymbols(
   const outlinedIds = new Set(plans.flatMap((plan) => [...plan.ids]));
   for (const group of groups) if (isTestGroup(group) && hasParentIn(group, outlinedIds)) emit(group);
 
-  // 3. Doc TOC for a document-path query.
+  // 3. A test scope id outlines its examples.
+  if (query !== undefined) {
+    for (const plan of planTestScopeOutlines(groups.filter(isPending), query)) {
+      plan.memberGroups.forEach(emit);
+      results.push(renderContainerOutline(plan));
+    }
+  }
+
+  // 4. Doc TOC for a document-path query.
   if (query !== undefined) {
     const tocByPath = new Map<string, ScrollChunk[]>();
     for (const c of chunks) {
@@ -113,7 +126,7 @@ export function resolveSymbols(
     }
   }
 
-  // 4. Everything left merges per group.
+  // 5. Everything left merges per group.
   for (const group of groups) {
     const pending = group.filter((c) => !emittedIds.has(c.id));
     if (pending.length === 0) continue;
@@ -168,9 +181,50 @@ function planClassChunkOutlines(groups: ScrollChunk[][]): ContainerOutlinePlan[]
  */
 function planSynthesisedOutlines(pendingGroups: ScrollChunk[][], query: string): ContainerOutlinePlan[] {
   const membersByPath = new Map<string, ScrollChunk[][]>();
+  const splitMembers: ScrollChunk[][] = [];
   for (const group of pendingGroups) {
     if (isTestGroup(group)) continue;
+    if (isSplitOnlyGroup(group)) {
+      splitMembers.push(group);
+      continue;
+    }
     const isMember = group.some((c) => c.payload.parentSymbolId === query && hasContainerParentType(c));
+    if (!isMember) continue;
+    const relativePath = relativePathOf(group[0]);
+    const list = membersByPath.get(relativePath);
+    if (list) list.push(group);
+    else membersByPath.set(relativePath, [group]);
+  }
+  // A split member names its container only through its base id, which cannot
+  // tell a class (`Foo#bar`) from an enclosing function (`handler.inner`), so it
+  // joins an outline its unsplit siblings already proved is a container's.
+  for (const group of splitMembers) {
+    if (!hasParentIn(group, new Set([query]))) continue;
+    membersByPath.get(relativePathOf(group[0]))?.push(group);
+  }
+  return [...membersByPath].map(([relativePath, memberGroups]) => ({
+    containerSymbolId: query,
+    ids: new Set([query]),
+    relativePath,
+    memberGroups,
+  }));
+}
+
+/**
+ * One plan per relativePath for a query naming a TEST SCOPE — the
+ * `parentSymbolId` its examples share (bd tea-rags-mcp-msv3l). A scope has no
+ * chunk of its own, so it is always synthesised. Members are the test groups
+ * whose parentSymbolId IS the query, plus an oversized example present only as
+ * `#partN` windows, whose base id extends the query by one more segment.
+ */
+function planTestScopeOutlines(pendingGroups: ScrollChunk[][], query: string): ContainerOutlinePlan[] {
+  const membersByPath = new Map<string, ScrollChunk[][]>();
+  for (const group of pendingGroups) {
+    const isMember = group.some((c) => {
+      if (!isTestExampleChunk(c)) return false;
+      const base = splitFragmentBase(c.payload);
+      return base === undefined ? c.payload.parentSymbolId === query : base.startsWith(`${query}.`);
+    });
     if (!isMember) continue;
     const relativePath = relativePathOf(group[0]);
     const list = membersByPath.get(relativePath);
@@ -186,11 +240,36 @@ function planSynthesisedOutlines(pendingGroups: ScrollChunk[][], query: string):
 }
 
 function renderContainerOutline(plan: ContainerOutlinePlan, visibilityOf?: MemberVisibilityLookup): SearchResult {
-  // A `#partN` fragment repeats its base member, whose chunk names it already.
-  const memberChunks = plan.memberGroups.flat().filter((c) => splitFragmentBase(c.payload) === undefined);
+  const memberChunks = plan.memberGroups.flatMap(outlineMemberChunks);
   return plan.classChunk
     ? CodeChunkGrouper.group(plan.classChunk, memberChunks, visibilityOf)
     : CodeChunkGrouper.groupMembers(plan.containerSymbolId, memberChunks, visibilityOf);
+}
+
+/**
+ * The chunks one member group contributes to an outline. A `#partN` fragment
+ * repeats a base window when the group has one; a member split into parts only
+ * (bd tea-rags-mcp-y5vx4) is represented by its first part under its base id.
+ */
+function outlineMemberChunks(group: ScrollChunk[]): ScrollChunk[] {
+  const whole = group.filter((c) => splitFragmentBase(c.payload) === undefined);
+  if (whole.length > 0) return whole;
+  const head = [...group].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0))[0];
+  const base = splitFragmentBase(head.payload);
+  return [
+    {
+      ...head,
+      payload: { ...head.payload, symbolId: base, name: stripPartName(head.payload.name) },
+    },
+  ];
+}
+
+function isSplitOnlyGroup(group: ScrollChunk[]): boolean {
+  return group.every((c) => splitFragmentBase(c.payload) !== undefined);
+}
+
+function stripPartName(name: unknown): string | undefined {
+  return (name as string | undefined)?.replace(/ \(part \d+\/\d+\)$/, "");
 }
 
 function hasContainerParentType(c: ScrollChunk): boolean {
@@ -202,37 +281,28 @@ function isClassLevelChunk(c: ScrollChunk): boolean {
 }
 
 function isTestGroup(group: ScrollChunk[]): boolean {
-  return group.some(
-    (c) => c.payload.chunkType === "test" || c.payload.chunkType === "test_setup" || c.payload.isTest === true,
-  );
+  return group.some(isTestChunk);
 }
 
 function isDocumentationSection(group: ScrollChunk[]): boolean {
   return group.length > 1 && group.every((c) => c.payload.isDocumentation === true);
 }
 
+/**
+ * Does the group name one of `ids` as its container? A split part's
+ * `parentSymbolId` is its own symbol, so for a part the container is read off
+ * the symbol id (`Foo#bar#part2` → `Foo#bar` → `Foo`).
+ */
 function hasParentIn(group: ScrollChunk[], ids: Set<string>): boolean {
-  return group.some((c) => typeof c.payload.parentSymbolId === "string" && ids.has(c.payload.parentSymbolId));
+  return group.some((c) => {
+    const base = splitFragmentBase(c.payload);
+    const parent = base === undefined ? c.payload.parentSymbolId : memberOwnerOf(base);
+    return typeof parent === "string" && ids.has(parent);
+  });
 }
 
 function relativePathOf(c: ScrollChunk): string {
   return (c.payload.relativePath as string | undefined) ?? "";
-}
-
-/**
- * If `payload` is an oversized-method split fragment (`${parent}#partN`), return
- * its base method symbolId (the `parentSymbolId`); otherwise undefined. The
- * chunker emits parts as `${originalSymbolId}#part${i + 1}` with
- * `parentSymbolId = originalSymbolId` (see chunker `splitOversizedChunk`), so a
- * fragment is identified by `symbolId === parentSymbolId + "#part" + <digits>`.
- */
-function splitFragmentBase(payload: Record<string, unknown>): string | undefined {
-  const symbolId = payload.symbolId as string | undefined;
-  const parentSymbolId = payload.parentSymbolId as string | undefined;
-  if (!symbolId || !parentSymbolId) return undefined;
-  const prefix = `${parentSymbolId}#part`;
-  if (!symbolId.startsWith(prefix)) return undefined;
-  return /^\d+$/.test(symbolId.slice(prefix.length)) ? parentSymbolId : undefined;
 }
 
 /** Group chunks by (symbolId, relativePath) composite key. Split fragments
@@ -256,7 +326,10 @@ function groupChunks(chunks: ScrollChunk[]): Map<string, ScrollChunk[]> {
 
 /** Merge multiple chunks of the same function into one result. */
 function mergeChunks(chunks: ScrollChunk[]): SearchResult {
-  const sorted = [...chunks].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
+  const sorted = [...chunks].sort(
+    (a, b) =>
+      (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0) || partNumberOf(a) - partNumberOf(b),
+  );
 
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
@@ -267,10 +340,18 @@ function mergeChunks(chunks: ScrollChunk[]): SearchResult {
   // (smallest startLine — it begins at the method signature) as the single
   // canonical view. Genuinely disjoint same-symbol chunks (no `#partN`) still
   // concatenate, so a method split into sequential pieces stays whole.
+  //
+  // A group of `#partN` fragments ONLY is the statement-boundary split (bd
+  // tea-rags-mcp-y5vx4): the parts tile the symbol and each later part opens
+  // with a context prefix outside its own line range. Dropping that prefix and
+  // concatenating reassembles the symbol exactly.
   const hasSplitFragment = sorted.some((c) => splitFragmentBase(c.payload) !== undefined);
-  const content = hasSplitFragment
-    ? ((first.payload.content as string | undefined) ?? "")
-    : sorted.map((c) => (c.payload.content as string | undefined) ?? "").join("\n");
+  const splitOnly = hasSplitFragment && isSplitOnlyGroup(sorted);
+  const content = splitOnly
+    ? stitchSplitParts(sorted)
+    : hasSplitFragment
+      ? ((first.payload.content as string | undefined) ?? "")
+      : sorted.map((c) => (c.payload.content as string | undefined) ?? "").join("\n");
 
   // When the group mixes the base method window with `#partN` fragments, the
   // base window carries the canonical identity (symbolId/name). Fall back to the
@@ -294,6 +375,38 @@ function mergeChunks(chunks: ScrollChunk[]): SearchResult {
   }
 
   return { id: identity.id, score: 1.0, payload };
+}
+
+/**
+ * Reassemble split parts sorted by startLine: the first part is kept whole
+ * (it opens at the signature), every later part contributes its own rows only.
+ * A part starting on the row the previous one ended on is a character slice of
+ * one wide row and continues it without a line break; rows a part repeats from
+ * its predecessor are dropped.
+ */
+/** `N` of a `#partN` fragment, 0 for anything else — orders slices of one row. */
+function partNumberOf(c: ScrollChunk): number {
+  const match = /#part(\d+)$/.exec((c.payload.symbolId as string | undefined) ?? "");
+  return match ? Number(match[1]) : 0;
+}
+
+function stitchSplitParts(sorted: ScrollChunk[]): string {
+  let text = (sorted[0].payload.content as string | undefined) ?? "";
+  let lastRow = Number(sorted[0].payload.endLine) || 0;
+  for (const part of sorted.slice(1)) {
+    const startLine = Number(part.payload.startLine) || 0;
+    const endLine = Number(part.payload.endLine) || startLine;
+    const rows = splitFragmentOwnRows(part.payload);
+    if (startLine === lastRow && endLine === startLine) {
+      text += rows.join("\n");
+    } else {
+      const repeated = Math.max(0, lastRow - startLine + 1);
+      const fresh = rows.slice(repeated);
+      if (fresh.length > 0) text += `\n${fresh.join("\n")}`;
+    }
+    lastRow = Math.max(lastRow, endLine);
+  }
+  return text;
 }
 
 /** Sort: exact symbolId match first, then alphabetical by path. */

@@ -4,6 +4,11 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
+import {
+  isRestrictingRechunkSelector,
+  type RechunkFileSelector,
+  type RechunkTestFileScope,
+} from "../../../contracts/types/rechunk.js";
 import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type {
@@ -49,12 +54,31 @@ export interface IndexOptions {
    * plain incremental, where the changed-file set already defines the scope.
    *
    * Under `forceEnrichments` it narrows the recompute. Under `forceReindex` it
-   * narrows the WHOLE run, chunking included — and since a full reindex builds
-   * a new collection and flips the alias to it, the result contains ONLY these
-   * languages. That is the accepted trade for skipping the embedding cost of
-   * everything else, not an oversight.
+   * makes the run a SCOPED force (see {@link rechunkSelectorOf}): the files of
+   * these languages are re-chunked in place on the live collection and every
+   * other point stays as it is (bd tea-rags-mcp-j4oww). It no longer builds a
+   * new collection holding only these languages.
    */
   languages?: string[];
+
+  /**
+   * Scoped force: re-chunk the indexed files this picomatch pattern selects
+   * (leading `!` negates; dot directories match). Same predicate as the search
+   * `pathPattern`. Requires `forceReindex`.
+   */
+  pathPattern?: string;
+
+  /**
+   * Scoped force: `only` re-chunks test files, `exclude` everything else — the
+   * classification behind the search `testFile` filter. Requires `forceReindex`.
+   */
+  testFile?: RechunkTestFileScope;
+
+  /** Scoped force: re-chunk files with these extensions (`.rb` or `rb`). Requires `forceReindex`. */
+  fileExtensions?: string[];
+
+  /** Scoped force: re-chunk exactly these project-relative files. Requires `forceReindex`. */
+  files?: string[];
 
   /**
    * First index only: may the new collection be seeded from a registered
@@ -85,6 +109,33 @@ export function isEnrichmentRecompute(
   options: IndexOptions | undefined,
 ): options is IndexOptions & { forceEnrichments: string[] } {
   return (options?.forceEnrichments?.length ?? 0) > 0;
+}
+
+/**
+ * The file selector of a SCOPED force, or `undefined` when these options do not
+ * ask for one (bd tea-rags-mcp-j4oww).
+ *
+ * `forceReindex` plus any file filter is a scoped force: the selected indexed
+ * files are re-chunked in place on the live collection. `forceReindex` alone
+ * stays the whole-project rebuild into a new collection. Lives here for the same
+ * reason as {@link isEnrichmentRecompute}: `IndexingOps#run` dispatches on it
+ * and the CLI worker reads it, and two hand-mirrored conditions drift.
+ */
+export function rechunkSelectorOf(options: IndexOptions | undefined): RechunkFileSelector | undefined {
+  if (!options?.forceReindex) return undefined;
+  const selector: RechunkFileSelector = {
+    ...(options.languages ? { languages: options.languages } : {}),
+    ...(options.pathPattern !== undefined ? { pathPattern: options.pathPattern } : {}),
+    ...(options.testFile !== undefined ? { testFile: options.testFile } : {}),
+    ...(options.fileExtensions ? { fileExtensions: options.fileExtensions } : {}),
+    ...(options.files ? { files: options.files } : {}),
+  };
+  if (!isRestrictingRechunkSelector(selector)) return undefined;
+  // A scanner `extensions` list is a restriction too: alongside a scope it
+  // narrows the selection (conjunction), never widens it. On its own it keeps
+  // meaning what it always did — the plain full rebuild's scanner filter.
+  if (options.extensions?.length && !selector.fileExtensions) selector.fileExtensions = options.extensions;
+  return selector;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +180,8 @@ export interface IndexStats {
     filesSkippedDueToDeleteFailure?: number;
     /** Mirrors `ChangeStats.filesFailedToDelete`; present only when non-zero. */
     filesFailedToDelete?: number;
+    /** Mirrors `ChangeStats.filesRechunked`; present only on a scoped force. */
+    filesRechunked?: number;
   };
   /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
   worktreeSeed?: WorktreeSeedReport;
@@ -167,6 +220,12 @@ export interface ChangeStats {
    * snapshot keeps listing them, so the next reindex retries the delete.
    */
   filesFailedToDelete?: number;
+  /**
+   * Scoped force only (bd tea-rags-mcp-j4oww): indexed files the selector forced
+   * into the work set. They re-chunk as modified files, so `filesModified`
+   * counts them too.
+   */
+  filesRechunked?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +273,12 @@ export interface IndexStatus {
    * `IndexStats.worktreeSeed` so `--json` reports it.
    */
   worktreeSeed?: WorktreeSeedReport;
+  /**
+   * Outcome of a live scoped force (bd tea-rags-mcp-j4oww), carried like
+   * `worktreeSeed`: attached by the CLI worker from `IndexStats.changeDetails`.
+   * `filesModified` includes the re-chunked files plus any genuinely changed.
+   */
+  scopedRechunk?: { filesRechunked: number; filesModified: number; chunksAdded: number; chunksDeleted: number };
   /**
    * Registered project alias for this collection, when one exists.
    * Intentionally unset in StatusModule to keep it registry-free (domain-boundary

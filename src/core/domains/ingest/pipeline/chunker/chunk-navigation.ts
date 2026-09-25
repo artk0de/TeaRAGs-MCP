@@ -40,15 +40,37 @@ export function assignNavigationAndDocSymbolId(chunks: CodeChunk[], basePath: st
     }
   }
 
-  // Phase 2: assign navigation
+  // Phase 2: assign navigation. A neighbour sharing the chunk's own symbolId
+  // (the windows of one oversized doc section, the body groups of one class)
+  // is skipped: navigation names the previous / next DIFFERENT symbol, so
+  // following it never lands back on the symbol it started from (bd
+  // tea-rags-mcp-308ff).
   for (let i = 0; i < chunks.length; i++) {
+    const own = chunks[i].metadata.symbolId;
     const nav: { prevSymbolId?: string; nextSymbolId?: string } = {};
-    if (i > 0 && chunks[i - 1].metadata.symbolId) {
-      nav.prevSymbolId = chunks[i - 1].metadata.symbolId;
-    }
-    if (i < chunks.length - 1 && chunks[i + 1].metadata.symbolId) {
-      nav.nextSymbolId = chunks[i + 1].metadata.symbolId;
-    }
+    const prev = neighbourSymbolId(chunks, i, -1, own);
+    const next = neighbourSymbolId(chunks, i, 1, own);
+    if (prev) nav.prevSymbolId = prev;
+    if (next) nav.nextSymbolId = next;
     chunks[i].metadata.navigation = nav;
   }
+}
+
+/**
+ * Nearest symbolId in `step` direction that differs from `own`. Only chunks
+ * sharing `own` are skipped; the first differing neighbour decides, and one
+ * without a symbolId means no link, as before.
+ */
+function neighbourSymbolId(
+  chunks: CodeChunk[],
+  from: number,
+  step: 1 | -1,
+  own: string | undefined,
+): string | undefined {
+  for (let j = from + step; j >= 0 && j < chunks.length; j += step) {
+    const id = chunks[j].metadata.symbolId;
+    if (own !== undefined && id === own) continue;
+    return id;
+  }
+  return undefined;
 }

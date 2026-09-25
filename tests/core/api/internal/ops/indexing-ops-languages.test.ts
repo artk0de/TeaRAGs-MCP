@@ -72,24 +72,28 @@ describe("IndexingOps — languages on the recompute branch", () => {
   });
 });
 
-describe("IndexingOps — languages on the full-reindex branch", () => {
-  it("translates languages into the scanner's extension filter", async () => {
-    // The scanner has no notion of a language; `extensions` is the filter it
-    // already accepts, which is why this branch needs no new plumbing.
+describe("IndexingOps — languages on the force branch", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-j4oww): `--force --languages` used to
+  // build a NEW collection holding only those languages (the scanner's
+  // extension filter). It is now a scoped force: the incremental pipeline
+  // re-chunks the selected languages' files in place, every other point stays.
+  const rechunkOf = (deps: IndexingOpsDeps) =>
+    (deps.reindex.reindexChanges as ReturnType<typeof vi.fn>).mock.calls[0][2]?.rechunk;
+
+  it("re-chunks the language's files in place instead of rebuilding the collection", async () => {
     const deps = makeDeps();
     await new IndexingOps(deps).run(process.cwd(), { forceReindex: true, languages: ["typescript"] });
 
-    const passedOptions = (deps.indexing.indexCodebase as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(passedOptions.extensions.sort()).toEqual([".cts", ".mts", ".ts", ".tsx"]);
+    expect(deps.indexing.indexCodebase).not.toHaveBeenCalled();
+    expect(rechunkOf(deps)).toEqual({ languages: ["typescript"] });
   });
 
-  it("unions the extensions of several languages", async () => {
+  it("selects the files of several languages in one run", async () => {
     const deps = makeDeps();
     await new IndexingOps(deps).run(process.cwd(), { forceReindex: true, languages: ["typescript", "ruby"] });
 
-    const passedOptions = (deps.indexing.indexCodebase as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(passedOptions.extensions).toContain(".ts");
-    expect(passedOptions.extensions).toContain(".rb");
+    expect(deps.indexing.indexCodebase).not.toHaveBeenCalled();
+    expect(rechunkOf(deps)).toEqual({ languages: ["typescript", "ruby"] });
   });
 
   it("leaves extensions alone when no languages were requested", async () => {
@@ -103,7 +107,8 @@ describe("IndexingOps — languages on the full-reindex branch", () => {
 
   it("intersects with an explicit extension list rather than overriding it", async () => {
     // Both filters are restrictions; honouring only one would silently widen
-    // the run past what the caller asked for.
+    // the run past what the caller asked for. The selector is a conjunction, so
+    // carrying both keeps the intersection.
     const deps = makeDeps();
     await new IndexingOps(deps).run(process.cwd(), {
       forceReindex: true,
@@ -111,7 +116,6 @@ describe("IndexingOps — languages on the full-reindex branch", () => {
       extensions: [".ts"],
     });
 
-    const passedOptions = (deps.indexing.indexCodebase as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(passedOptions.extensions).toEqual([".ts"]);
+    expect(rechunkOf(deps)).toEqual({ languages: ["typescript"], fileExtensions: [".ts"] });
   });
 });

@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import type { CodeChunk } from "../../../../types.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
+import { NestingLineSplitter } from "./nesting-line-splitter.js";
 
 interface HeadingInfo {
   depth: number;
@@ -59,7 +60,17 @@ export class MarkdownChunker {
     const sectionHeadings = headings.filter((h) => h.depth <= SECTION_HEADING_DEPTH);
     const codeBlockLineRanges = codeBlocks.map((b) => ({ startLine: b.startLine, endLine: b.endLine }));
 
-    await this.buildSectionChunks(chunks, sectionHeadings, headings, lines, codeBlockLineRanges, filePath, language);
+    const blockSpans = this.collectBlockSpans(tree.children);
+    await this.buildSectionChunks(
+      chunks,
+      sectionHeadings,
+      headings,
+      lines,
+      codeBlockLineRanges,
+      blockSpans,
+      filePath,
+      language,
+    );
     await this.buildCodeBlockChunks(chunks, codeBlocks, sectionHeadings, headings, filePath, language);
     this.buildPreambleChunk(chunks, tree.children, sectionHeadings, lines, codeBlockLineRanges, filePath, language);
     this.buildWholeDocumentFallback(chunks, tree.children, lines, filePath, language);
@@ -249,6 +260,86 @@ export class MarkdownChunker {
     return blocks;
   }
 
+  /**
+   * Line ranges of every multi-line block — lists, list items, tables,
+   * blockquotes, paragraphs, html — at any depth. These are the units an
+   * oversized section is cut between.
+   */
+  private collectBlockSpans(children: Content[]): { startLine: number; endLine: number }[] {
+    const spans: { startLine: number; endLine: number }[] = [];
+    const visit = (node: Content): void => {
+      if (node.type !== "code" && node.position && node.position.end.line > node.position.start.line) {
+        spans.push({ startLine: node.position.start.line, endLine: node.position.end.line });
+      }
+      if ("children" in node && Array.isArray(node.children)) {
+        for (const child of node.children as Content[]) visit(child);
+      }
+    };
+    for (const child of children) visit(child);
+    return spans;
+  }
+
+  /**
+   * Cut one oversized section between its blocks (bd tea-rags-mcp-y5vx4): a
+   * list, table or blockquote that fits a window is never divided, and the
+   * heading row stays with the block after it. The first window opens with
+   * the ancestor breadcrumb exactly as a whole section does — once (bd
+   * tea-rags-mcp-308ff doubled it); every later window opens with the heading
+   * path line, the only overlap between windows. A window's line range covers
+   * its own rows, never that prefix.
+   *
+   * `sourceLines` are the section's 1-based source lines with fenced code
+   * blocks already removed (they are chunked on their own).
+   */
+  private splitSection(
+    sourceLines: number[],
+    lines: string[],
+    blockSpans: { startLine: number; endLine: number }[],
+    breadcrumb: string,
+    headingPath: { depth: number; text: string }[],
+  ): { content: string; startLine: number; endLine: number }[] {
+    const rows = sourceLines.map((line) => lines[line - 1]);
+    const toRow = (line: number, fromEnd: boolean): number => {
+      if (fromEnd) {
+        let row = -1;
+        for (let i = 0; i < sourceLines.length && sourceLines[i] <= line; i++) row = i;
+        return row;
+      }
+      const row = sourceLines.findIndex((l) => l >= line);
+      return row < 0 ? sourceLines.length : row;
+    };
+    const spans = blockSpans
+      .map((s) => ({ startRow: toRow(s.startLine, false), endRow: toRow(s.endLine, true) }))
+      .filter((s) => s.endRow > s.startRow);
+
+    const pathLine = headingPath.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ");
+    const splitter = new NestingLineSplitter({
+      rows,
+      spans,
+      capacityAt: (row) => this.config.maxChunkSize - (row === 0 ? breadcrumb.length : pathLine.length + 1),
+      openingRows: [0],
+    });
+
+    const windows: { content: string; startLine: number; endLine: number }[] = [];
+    for (const part of splitter.split()) {
+      let { startRow, endRow } = part;
+      if (!part.columns) {
+        while (startRow < endRow && rows[startRow].trim() === "") startRow++;
+        while (endRow > startRow && rows[endRow].trim() === "") endRow--;
+      }
+      const body = part.columns
+        ? rows[startRow].slice(part.columns.start, part.columns.end)
+        : rows.slice(startRow, endRow + 1).join("\n");
+      if (body.trim() === "") continue;
+      windows.push({
+        content: part.startRow === 0 ? breadcrumb + body : `${pathLine}\n${body}`,
+        startLine: sourceLines[startRow],
+        endLine: sourceLines[endRow],
+      });
+    }
+    return windows;
+  }
+
   private extractText(node: Content): string {
     if (node.type === "text") {
       return (node as { type: "text"; value: string }).value;
@@ -277,6 +368,7 @@ export class MarkdownChunker {
     allHeadings: HeadingInfo[],
     lines: string[],
     codeBlockLineRanges: { startLine: number; endLine: number }[],
+    blockSpans: { startLine: number; endLine: number }[],
     filePath: string,
     language: string,
   ): Promise<void> {
@@ -286,23 +378,33 @@ export class MarkdownChunker {
     let accumName = "";
     let accumBreadcrumb = "";
     let accumHeadingPath: { depth: number; text: string }[] = [];
+    /** 1-based source lines of the section that opened the accumulator, code blocks excluded. */
+    let accumSourceLines: number[] = [];
 
     const flushAccum = async (): Promise<void> => {
       const content = accumContent.trim();
       if (content.length < MIN_SECTION_SIZE) return;
 
       if (content.length > this.config.maxChunkSize) {
-        // Oversized → character fallback, each sub-chunk gets breadcrumb
-        const subChunks = await this.fallbackChunker.chunk(content, filePath, language);
-        for (const subChunk of subChunks) {
+        // Oversized → cut between blocks (bd tea-rags-mcp-y5vx4). Only a
+        // single section can get here: an h3 joins the accumulator only while
+        // the result still fits.
+        for (const window of this.splitSection(
+          accumSourceLines,
+          lines,
+          blockSpans,
+          accumBreadcrumb,
+          accumHeadingPath,
+        )) {
           chunks.push({
-            ...subChunk,
-            content: accumBreadcrumb + subChunk.content,
-            startLine: accumStartLine + subChunk.startLine - 1,
-            endLine: accumStartLine + subChunk.endLine - 1,
+            content: window.content,
+            startLine: window.startLine,
+            endLine: window.endLine,
             metadata: {
-              ...subChunk.metadata,
+              filePath,
+              language,
               chunkIndex: chunks.length,
+              chunkType: "block",
               name: accumName,
               parentSymbolId: accumName,
               isDocumentation: true,
@@ -335,11 +437,13 @@ export class MarkdownChunker {
 
       // Extract section lines, excluding code block ranges
       const sectionLines: string[] = [];
+      const sectionSourceLines: number[] = [];
       for (let line = heading.startLine - 1; line < sectionEndLine; line++) {
         const lineNum = line + 1;
         const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
         if (!inCodeBlock) {
           sectionLines.push(lines[line]);
+          sectionSourceLines.push(lineNum);
         }
       }
       const sectionContent = sectionLines.join("\n").trim();
@@ -357,6 +461,7 @@ export class MarkdownChunker {
         accumName = heading.text;
         accumBreadcrumb = breadcrumb;
         accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
+        accumSourceLines = sectionSourceLines;
         continue;
       }
 
@@ -373,6 +478,7 @@ export class MarkdownChunker {
           accumStartLine = heading.startLine;
           accumBreadcrumb = breadcrumb;
           accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
+          accumSourceLines = sectionSourceLines;
         } else {
           // Add grouped h3 heading to path
           accumHeadingPath.push({ depth: heading.depth, text: heading.text });
@@ -386,6 +492,7 @@ export class MarkdownChunker {
         accumName = heading.text;
         accumBreadcrumb = breadcrumb;
         accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
+        accumSourceLines = sectionSourceLines;
       }
     }
 

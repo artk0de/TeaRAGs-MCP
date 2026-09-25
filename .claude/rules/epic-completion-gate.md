@@ -164,12 +164,14 @@ Comma-separate when a change genuinely spans languages
 only when the change is language-agnostic — the pool, the applier, the run
 lifecycle.
 
-The same flag works on `--force`, where it restricts the WHOLE run, chunking
-included. Be deliberate there: a full reindex builds a NEW collection and flips
-the alias, so a restricted `--force` produces an index containing ONLY those
-languages, and everything else disappears from search until the next
-unrestricted rebuild. On a real project that is a data-loss-shaped mistake; on a
-throwaway fixture it is exactly the right tool.
+The same flag works on `--force`, where it makes the run a SCOPED force (bd
+tea-rags-mcp-j4oww): the files of those languages are re-chunked and re-embedded
+IN PLACE on the live collection, and every other point keeps its id and payload.
+No new collection, no alias flip. `--test-file`, `--path-pattern`,
+`--file-extension` and `--files` narrow it further (conjunction). That is the
+validation tool for a chunking change that touched only part of a language —
+test-chunking revisions above all: measure non-selected points unchanged (count,
+sampled ids, payload hash) and the wall clock against a full `--force`.
 
 The recompute syncs the working tree incrementally first, so it is safe on a
 repo with uncommitted edits: changed files are re-embedded, everything else is

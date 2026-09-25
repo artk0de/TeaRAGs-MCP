@@ -14,6 +14,7 @@ Procedures for recovering from bad state and choosing the right reindex strategy
 | **Incremental** | `index_codebase` (no flags) | None | Default after code changes. `index_codebase` auto-detects an existing collection and processes only added/modified/deleted files via snapshot diff — no separate tool needed. |
 | **Seeded first index** | `index_codebase` on a new git worktree (no flags) | None | Automatic when another working tree of the repository is indexed with the same stamps: its index is cloned, only differing files are embedded, git signals are rebuilt in the background. Opt out with `seedFromWorktree: false` / `--no-worktree-seed`. See [Worktree Indexes](/usage/advanced/worktree-indexes#automatic-seeding-on-first-index). |
 | **Recompute enrichment** | `tea-rags index-codebase --force-enrichments <scope>` | None | Additive drift in enrichment-owned payload (`git.*`, `codegraph.*`). Rewrites payload in place — no re-embedding, chunk ids unchanged, minutes rather than hours. |
+| **Scoped force (in place)** | `tea-rags index-codebase --force --test-file only` (or `--path-pattern`, `--languages`, `--file-extension`, `--files`); MCP `forceReindex: true` plus `testFile` / `pathPattern` / `languages` / `fileExtension` / `files` | None | A chunk-set change that touched only some files — e.g. a test-chunking revision. Re-chunks and re-embeds just the selected files on the live collection; every other point keeps its id and payload. See [Scoped force](#scoped-force--re-chunk-a-file-set-in-place). |
 | **Force (zero-downtime)** | `index_codebase` with `forceReindex: true` | None | Model change, chunk-set drift (grammar, chunking, chunk size), suspected index corruption. New collection built alongside the old one; alias swaps on success. |
 | **Destructive** | `clear_index` then `index_codebase` | **Yes** — search unavailable during rebuild | Only when force reindex isn't enough (e.g. embedding provider unreachable and you want to start clean). **Requires explicit user confirmation**. |
 
@@ -31,6 +32,7 @@ Symptom: stale results / missing new files
 Symptom: drift report names a command
   → run the command the report names (it is already the cheapest one)
     additive, enrichment-owned keys → --force-enrichments <scope>
+    chunk-set drift in a declared file set → --force --test-file only (etc.)
     chunk-set drift / wrong embedding model → index_codebase forceReindex=true
   (force is zero-downtime; old alias stays live during rebuild)
 
@@ -51,6 +53,54 @@ Symptom: everything broken, want fresh start
   → clear_index (ASK USER FIRST — irreversible)
   → index_codebase
 ```
+
+## Scoped force — re-chunk a file set in place
+
+`--force` with any file filter does not build a new collection. It runs the
+incremental pipeline with the selected files forced into its work set: their
+points are deleted and replaced by freshly chunked and embedded ones, git and
+codegraph enrichment reruns for those files only, and every other point keeps
+its id, vector and payload.
+
+```bash
+# Re-chunk every test file (the same classification as the search testFile filter)
+tea-rags index-codebase --project myapp --force --test-file only
+
+# Re-chunk Ruby specs only
+tea-rags index-codebase --project myapp --force --languages ruby --path-pattern 'spec/**'
+
+# Re-chunk two named files
+tea-rags index-codebase --project myapp --force --files lib/a.rb,lib/b.rb
+```
+
+| Flag (CLI)            | MCP param       | Selects                                                                |
+| --------------------- | --------------- | ---------------------------------------------------------------------- |
+| `--test-file only\|exclude` | `testFile`      | test files only, or everything but test files                          |
+| `--path-pattern <glob>` | `pathPattern`   | picomatch over the relative path; a leading `!` negates                |
+| `--languages <list>`  | `languages`     | files of these languages                                               |
+| `--file-extension <list>` | `fileExtension` | files with these extensions (`.rb` or `rb`)                            |
+| `--files <list>`      | `files`         | exactly these project-relative paths                                   |
+
+Filters combine as a conjunction. Only files already in the index are
+selected; new and deleted files are handled by the same run the way an
+incremental run handles them. The filters require `--force` and cannot be
+combined with `--force-enrichments`. The project must already be indexed.
+
+The run is crash-safe. The selected files are marked stale in the snapshot
+before any point is deleted, so if the run dies part-way, the next run (a plain
+incremental or the auto-update watcher) re-chunks whatever it did not finish.
+
+After a successful scoped run, the language-version stamps advance only for the
+chunk-set bumps the selection fully covered. A run narrower than the bump — or
+one that names explicit `--files` — claims nothing, and the drift report keeps
+naming the remaining work. See
+[Drift Detection](/operations/drift-detection#remedies-and-their-cost).
+
+:::caution Changed in this release
+`--force --languages <lang>` used to build a new collection containing only
+those languages. It now re-chunks those languages' files in place and leaves
+everything else untouched.
+:::
 
 ## Zero-Downtime Force Reindex — How It Works
 

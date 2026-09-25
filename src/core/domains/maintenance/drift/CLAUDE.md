@@ -7,9 +7,12 @@
   `languageVersions` by `IndexingOps#stampLanguageVersions`
   (`api/internal/ops/indexing-ops.ts`) — and, for a collection seeded from a
   sibling worktree, the seeding build's stamp by `IndexingOps#stampWorktreeSeed`
-  (`../worktree/CLAUDE.md`); `payloadFieldKeys` by `infra/stats-cache.ts`. A
-  monitor that needs a value none of them writes has found a missing stamp, not
-  a place to compute one.
+  (`../worktree/CLAUDE.md`), and after a scoped force the chunk-set axes it
+  covered by `IndexingOps#stampRechunkedChunkSet` (coverage judged by
+  `advanceChunkSetStamp`, `chunk-set-scope.ts` — the same module the monitor
+  renders the scoped `Run:` line from); `payloadFieldKeys` by
+  `infra/stats-cache.ts`. A monitor that needs a value none of them writes has
+  found a missing stamp, not a place to compute one.
 - **`IndexDriftReporter` owns consumption.** The two consuming checks —
   `checkAndConsume` (by path) and `checkAndConsumeByCollectionName`, both of
   them search — show a collection once per REPORT SIGNATURE per process, so a
