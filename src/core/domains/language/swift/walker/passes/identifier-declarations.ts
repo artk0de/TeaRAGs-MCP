@@ -33,8 +33,8 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
-import { swiftCallSiteShape } from "../walker.js";
+} from "../../../kernel/index.js";
+import { SWIFT_SINGLE_ELEMENT_SEQUENCES, swiftCallSiteShape } from "../walker.js";
 
 /** Type bodies whose `let` / `var` members are stored properties, not locals. */
 const TYPE_BODY_TYPES = new Set(["class_body", "enum_class_body", "protocol_body"]);
@@ -96,8 +96,13 @@ const rule = (nodeType: string, collect: IdentifierDeclarationRule["collect"]): 
   collect,
 });
 
-/** Generic heads whose annotation names its first type argument, matched on the final segment (`Swift.Array`). */
-const ELEMENT_NAMING_HEADS = new Set(["Array", "Set", "Optional"]);
+/**
+ * Generic heads whose annotation names its first type argument, matched on the
+ * final segment (`Swift.Array`): the walker's single-element sequences (one
+ * vocabulary for the element slot and the lexicon), plus `Optional`, which
+ * wraps one value rather than iterating it.
+ */
+const ELEMENT_NAMING_HEADS: ReadonlySet<string> = new Set([...SWIFT_SINGLE_ELEMENT_SEQUENCES, "Optional"]);
 
 /** A `user_type`'s nominal as written, generic arguments dropped: `Dictionary<K, V>` → `Dictionary`. */
 function swiftUserTypeNominal(userType: AstNode): string | undefined {

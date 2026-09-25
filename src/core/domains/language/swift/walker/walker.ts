@@ -2652,7 +2652,12 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
  * type are absent: an argument of theirs is not what a `for` or a `forEach`
  * hands its body.
  */
-const SWIFT_SINGLE_ELEMENT_SEQUENCES: ReadonlySet<string> = new Set(["Array", "Set", "ArraySlice", "ContiguousArray"]);
+export const SWIFT_SINGLE_ELEMENT_SEQUENCES: ReadonlySet<string> = new Set([
+  "Array",
+  "Set",
+  "ArraySlice",
+  "ContiguousArray",
+]);
 
 /**
  * The element nominal a `user_type` spelling one of

@@ -19,7 +19,7 @@ import type {
   DeclaredIdentifierSite,
   IdentifierDeclarationRule,
   IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { bashCalledFunction, collectBashDefinedFunctions } from "../walker.js";
 
 /** Declaration builtins whose bare `NAME` operand declares a variable. */

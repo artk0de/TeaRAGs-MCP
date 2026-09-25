@@ -153,6 +153,6 @@ export interface GetOntologyReportResponse {
   homonyms?: OntologyHomonym[];
   outliers?: OntologyOutlier[];
   collisions?: OntologyCollision[];
-  /** Set when the index predates `cg_identifiers` (migration 031) — reindex, the report is not "clean". */
+  /** Set when the index predates `cg_identifiers` (migration 032) — reindex, the report is not "clean". */
   driftWarning?: string;
 }

@@ -17,7 +17,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { rubyCallShape } from "../call-collection.js";
 
 /** Parameter forms whose declared name is the `name` field; a bare `identifier` is its own name. */

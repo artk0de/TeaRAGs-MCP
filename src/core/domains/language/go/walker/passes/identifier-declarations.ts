@@ -29,7 +29,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { goCallSiteShape } from "../walker.js";
 
 function childrenOfType(node: AstNode | null, type: string): AstNode[] {

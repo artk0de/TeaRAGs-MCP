@@ -29,7 +29,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { javaCallSiteShape } from "../walker.js";
 
 /** `T a = …, b;` — one site per `variable_declarator`, typed by the shared declaration type. */

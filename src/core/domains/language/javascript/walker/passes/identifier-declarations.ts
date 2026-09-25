@@ -13,7 +13,7 @@ import {
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import {
   ECMASCRIPT_ARROW_PARAMETER_RULE,
   ECMASCRIPT_VARIABLE_DECLARATOR_RULE,

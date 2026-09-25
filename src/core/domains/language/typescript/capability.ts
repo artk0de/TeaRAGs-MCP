@@ -113,10 +113,68 @@ export const capability: LanguageCapability = {
   // unwraps carries the literal invoker as `functionInvokerSite`, and the
   // resolver keeps the member edge (`QdrantConnection#call`) when the receiver's
   // declared type declares that member. Function receivers unwrap as before.
+  // walker 15: bd tea-rags-mcp-4p3sb.4 — the walker publishes
+  // `identifierDeclarations` (params, locals, class fields; annotation and
+  // `new X()` types) for the naming lexicon. Rows written by walker 14 carry
+  // none, so only the recompute adds them.
+  // walker 17: the naming-lexicon branch (4p3sb.4 as 15, 4p3sb.16 as 16 there)
+  // merged with g7h1y (15 here); neither parent's index holds both.
+  // walker 18: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // function's return annotation as a `return` (an async `Promise<T>` as `T`),
+  // so a walker-17 index has no return row for call-return to join.
   // walker 16: bd tea-rags-mcp-r8hme.2. Every module reference records the
   // export names it takes (`importedExportNames`) and every source re-export
   // the names it forwards (`reexportedExportNames`), persisted on the file edge
   // (migration 030) for the facade check. No edge moves; the names fill only on
   // `--force-enrichments codegraph`.
-  versions: { chunking: 1, walker: 16, codegraphSchema: 2 },
+  // walker 19: the naming-lexicon branch (walker 18 there) rebased onto
+  // integration walker 16; neither side's index holds both extractions.
+  versions: { chunking: 1, walker: 19, codegraphSchema: 2 },
+  // Google TypeScript Style Guide: classes, interfaces, types and enums
+  // UpperCamelCase; functions, methods, parameters, locals and properties
+  // lowerCamelCase; a namespace-like module binding lowerCamelCase or
+  // UpperCamelCase; a global constant lowerCamelCase or CONSTANT_CASE.
+  naming: {
+    casing: {
+      type: ["pascal"],
+      module: ["camel", "pascal"],
+      method: ["camel"],
+      param: ["camel"],
+      local: ["camel"],
+      field: ["camel"],
+      constant: ["camel", "screamingSnake"],
+    },
+    // Primitives, top types, boxed wrappers, and the containers / utility types
+    // (`Promise`, `Record`, `Partial` …) that wrap a concept rather than name one.
+    nonConceptTypes: [
+      "string",
+      "number",
+      "boolean",
+      "bigint",
+      "symbol",
+      "unknown",
+      "any",
+      "object",
+      "void",
+      "never",
+      "undefined",
+      "null",
+      "String",
+      "Number",
+      "Boolean",
+      "Object",
+      "Function",
+      "Array",
+      "ReadonlyArray",
+      "Map",
+      "Set",
+      "Promise",
+      "Record",
+      "Partial",
+      "Required",
+      "Readonly",
+      "Pick",
+      "Omit",
+    ],
+  },
 };

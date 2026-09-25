@@ -25,7 +25,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { pythonCalleeMemberReceiver } from "../walker.js";
 
 /** Splat patterns wrap their identifier with no field name. */

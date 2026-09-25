@@ -31,7 +31,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { rustCallSiteShape } from "../walker.js";
 
 /** Pattern nodes whose bound names sit below them; literals and paths bind nothing. */

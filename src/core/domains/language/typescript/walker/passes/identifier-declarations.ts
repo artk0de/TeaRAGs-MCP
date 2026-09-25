@@ -28,7 +28,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
-} from "../../../kernel/identifier-declarations.js";
+} from "../../../kernel/index.js";
 import { typescriptCallSiteShape } from "../walker.js";
 
 /** Destructuring shapes whose bound names sit below the pattern node. */

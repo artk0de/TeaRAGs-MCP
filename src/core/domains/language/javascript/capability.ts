@@ -50,9 +50,46 @@ export const capability: LanguageCapability = {
   // walker 6: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — a class member's `#name` private access — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
+  // walker 7: bd tea-rags-mcp-4p3sb.4 — the walker publishes
+  // `identifierDeclarations` (params, locals, class fields; `new X()` types)
+  // for the naming lexicon. Rows written by walker 6 carry none, so only the
+  // recompute adds them.
   // walker 7: bd tea-rags-mcp-r8hme.2. ESM imports, `require` and dynamic
   // `import()` record the export names they take (`importedExportNames`),
   // persisted on the file edge (migration 030). Re-exports still produce no
   // edge in this walker. No edge moves.
-  versions: { chunking: 2, walker: 7, codegraphSchema: 2 },
+  // walker 9: the naming-lexicon branch (walker 8 there) rebased onto
+  // integration walker 7; neither side's index holds both extractions.
+  versions: { chunking: 2, walker: 9, codegraphSchema: 2 },
+  // Google JavaScript Style Guide — the same convention as TypeScript:
+  // classes UpperCamelCase, functions / methods / parameters / locals /
+  // properties lowerCamelCase, a module binding lowerCamelCase or
+  // UpperCamelCase, a constant lowerCamelCase or CONSTANT_CASE.
+  naming: {
+    casing: {
+      type: ["pascal"],
+      module: ["camel", "pascal"],
+      method: ["camel"],
+      param: ["camel"],
+      local: ["camel"],
+      field: ["camel"],
+      constant: ["camel", "screamingSnake"],
+    },
+    // JavaScript types come from constructors only (`new Map()`), so only the built-in ones appear.
+    nonConceptTypes: [
+      "undefined",
+      "null",
+      "String",
+      "Number",
+      "Boolean",
+      "BigInt",
+      "Symbol",
+      "Object",
+      "Function",
+      "Array",
+      "Map",
+      "Set",
+      "Promise",
+    ],
+  },
 };
