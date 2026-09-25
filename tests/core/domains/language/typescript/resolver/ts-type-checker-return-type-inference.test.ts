@@ -944,3 +944,228 @@ describe("TSCallResolver reaches the return-type inference pass for calls its tr
     expect(target).toBeNull();
   });
 });
+
+type FactorySymbolDefs = Parameters<InMemoryGlobalSymbolTable["upsertFile"]>[1];
+
+// bd tea-rags-mcp-v0207: the ANNOTATED factory idiom. `createAppContext():
+// Promise<AppContext>` returns `{ …, cleanup }`, so the checker declares
+// `ctx.cleanup` on the same-file named TYPE `AppContext`, outside the factory's
+// lines — the wr3n4 containment arm cannot reach it and the pin degrades to the
+// file-only edge. The hop: a same-file named type (interface / type alias) the
+// candidate's owner names as its return annotation accounts for the member the
+// owner defines.
+describe("TSCallResolver pins a member declared on a type an annotated same-file factory returns (bd tea-rags-mcp-v0207)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-annotated-factory-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  const CLEANUP_CALL: CallRef = { callText: "ctx.cleanup?.()", receiver: "ctx", member: "cleanup", startLine: 5 };
+
+  function writeCaller(factoryName: string): void {
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      [
+        `import { ${factoryName} } from "./factory.js";`,
+        ``,
+        `export async function run(): Promise<void> {`,
+        `  const ctx = await ${factoryName}();`,
+        `  ctx.cleanup?.();`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+  }
+
+  /** `cleanup` is also an unrelated class method elsewhere, so no short-name pass can win on cardinality. */
+  function tableWith(...defs: FactorySymbolDefs): InMemoryGlobalSymbolTable {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/factory.ts", defs);
+    symbolTable.upsertFile("src/onnx.ts", [
+      {
+        symbolId: "Onnx#cleanup",
+        fqName: "Onnx#cleanup",
+        shortName: "cleanup",
+        relPath: "src/onnx.ts",
+        scope: ["Onnx"],
+        startLine: 2,
+        endLine: 2,
+      },
+    ]);
+    return symbolTable;
+  }
+
+  function factoryCleanup(owner: string, startLine: number): FactorySymbolDefs[number] {
+    return {
+      symbolId: `${owner}.cleanup`,
+      fqName: `${owner}.cleanup`,
+      shortName: "cleanup",
+      relPath: "src/factory.ts",
+      scope: [owner],
+      startLine,
+      endLine: startLine + 2,
+    };
+  }
+
+  function resolveCleanup(factoryName: string, symbolTable: InMemoryGlobalSymbolTable) {
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, "strict", repoRoot);
+    return resolver.resolve(CLEANUP_CALL, {
+      callerFile: "src/caller.ts",
+      callerScope: ["run"],
+      imports: [{ importText: "./factory.js", startLine: 1, importedNames: [factoryName] }],
+      symbolTable,
+    });
+  }
+
+  it("pins the factory's own member when the factory annotates Promise<Interface>", () => {
+    writeSource(
+      repoRoot,
+      "src/factory.ts",
+      [
+        `export interface AppContext {`,
+        `  name: string;`,
+        `  cleanup?: () => void;`,
+        `}`,
+        ``,
+        `export async function createAppContext(): Promise<AppContext> {`,
+        `  const cleanup = () => {`,
+        `    return;`,
+        `  };`,
+        `  return { name: "x", cleanup };`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+    writeCaller("createAppContext");
+
+    const target = resolveCleanup("createAppContext", tableWith(factoryCleanup("createAppContext", 7)));
+
+    expect(target).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "createAppContext.cleanup" });
+  });
+
+  it("pins the factory's own member when the factory annotates a type-alias object literal", () => {
+    writeSource(
+      repoRoot,
+      "src/factory.ts",
+      [
+        `export type AppContext = {`,
+        `  name: string;`,
+        `  cleanup(): void;`,
+        `};`,
+        ``,
+        `export function createAppContext(): AppContext {`,
+        `  function cleanup(): void {`,
+        `    return;`,
+        `  }`,
+        `  return { name: "x", cleanup };`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+    writeCaller("createAppContext");
+
+    const target = resolveCleanup("createAppContext", tableWith(factoryCleanup("createAppContext", 7)));
+
+    expect(target).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "createAppContext.cleanup" });
+  });
+
+  it("pins the annotated factory's member, not a same-file sibling factory's namesake", () => {
+    writeSource(
+      repoRoot,
+      "src/factory.ts",
+      [
+        `export interface AppContext {`,
+        `  cleanup?: () => void;`,
+        `}`,
+        ``,
+        `export async function createAppContext(): Promise<AppContext> {`,
+        `  const cleanup = () => {`,
+        `    return;`,
+        `  };`,
+        `  return { cleanup };`,
+        `}`,
+        ``,
+        `export function createOther() {`,
+        `  const cleanup = () => {`,
+        `    return;`,
+        `  };`,
+        `  return { cleanup, other: 1 };`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+    writeCaller("createAppContext");
+
+    const target = resolveCleanup(
+      "createAppContext",
+      tableWith(factoryCleanup("createAppContext", 6), factoryCleanup("createOther", 13)),
+    );
+
+    expect(target).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: "createAppContext.cleanup" });
+  });
+
+  it("keeps the file-only edge when the only same-file namesake's owner annotates a DIFFERENT type", () => {
+    writeSource(
+      repoRoot,
+      "src/factory.ts",
+      [
+        `export interface AppContext {`,
+        `  cleanup?: () => void;`,
+        `}`,
+        ``,
+        `export interface Other {`,
+        `  cleanup(): void;`,
+        `}`,
+        ``,
+        `export function createOther(): Other {`,
+        `  const cleanup = () => {`,
+        `    return;`,
+        `  };`,
+        `  return { cleanup };`,
+        `}`,
+        ``,
+        `export declare function createAppContext(): Promise<AppContext>;`,
+        ``,
+      ].join("\n"),
+    );
+    writeCaller("createAppContext");
+
+    const target = resolveCleanup("createAppContext", tableWith(factoryCleanup("createOther", 10)));
+
+    expect(target).toEqual({ targetRelPath: "src/factory.ts", targetSymbolId: null });
+  });
+
+  it("keeps the file-only edge when the annotated type is declared in ANOTHER file than the factory", () => {
+    writeSource(
+      repoRoot,
+      "src/types.ts",
+      [`export interface AppContext {`, `  cleanup?: () => void;`, `}`, ``].join("\n"),
+    );
+    writeSource(
+      repoRoot,
+      "src/factory.ts",
+      [
+        `import type { AppContext } from "./types.js";`,
+        ``,
+        `export async function createAppContext(): Promise<AppContext> {`,
+        `  const cleanup = () => {`,
+        `    return;`,
+        `  };`,
+        `  return { cleanup };`,
+        `}`,
+        ``,
+      ].join("\n"),
+    );
+    writeCaller("createAppContext");
+
+    const target = resolveCleanup("createAppContext", tableWith(factoryCleanup("createAppContext", 4)));
+
+    expect(target).toEqual({ targetRelPath: "src/types.ts", targetSymbolId: null });
+  });
+});

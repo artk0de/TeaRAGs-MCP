@@ -118,8 +118,9 @@ collateral-damage signals.
 
 ## Step 3 — Compute collateral-damage verdict
 
-For each unique `relativePath` in results, extract from `payload.git.file.*` +
-overlay:
+For each unique `relativePath` in results, extract raw values from
+`payload.git.file.*` + labels from `rankingOverlay.file.*` (kept under metaOnly;
+payload never labelled):
 
 - `imports` score — how many modules import this file (blast radius)
 - `commitCount` — churn indicator

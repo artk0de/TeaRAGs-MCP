@@ -113,6 +113,35 @@ describe("formatProgressLine", () => {
     });
   });
 
+  describe("embedding-state (bd tea-rags-mcp-umatc: the provider wait is shown, not silent)", () => {
+    const waiting = {
+      type: "embedding-state",
+      state: "waiting",
+      url: "http://127.0.0.1:9",
+      elapsedMs: 2000,
+      budgetMs: 240_000,
+    } as const;
+
+    it("formats a wait with the URL and budget but WITHOUT elapsed, so the line renderer prints it once", () => {
+      const first = formatProgressLine(waiting);
+      const later = formatProgressLine({ ...waiting, elapsedMs: 30_000 });
+      expect(first).toContain("http://127.0.0.1:9");
+      expect(first).toContain("up to 240s");
+      expect(later).toBe(first);
+    });
+
+    it("formats the recovery with the total wait", () => {
+      const line = formatProgressLine({
+        type: "embedding-state",
+        state: "recovered",
+        url: "http://127.0.0.1:9",
+        elapsedMs: 65_000,
+      });
+      expect(line).toContain("back");
+      expect(line).toContain("65.0s");
+    });
+  });
+
   it("returns null for status/done (not progress lines)", () => {
     expect(formatProgressLine({ type: "done", result: { failed: [], degraded: [] } })).toBeNull();
     expect(formatProgressLine({ type: "status", status: { isIndexed: true, status: "indexed" } })).toBeNull();

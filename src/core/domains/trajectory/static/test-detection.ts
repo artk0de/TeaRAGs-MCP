@@ -1,38 +1,23 @@
-import { basename } from "node:path";
+import { isAbsolute } from "node:path";
+
+import { classify } from "../../../infra/file-classification/index.js";
 
 /**
- * `.test` / `.spec` before any TypeScript or JavaScript extension, the ESM /
- * CJS module formats included — `.mts` / `.cts` are indexed as TypeScript (bd
- * tea-rags-mcp-1y13c).
+ * Is this repo-relative path a test file? Delegates to the infra file
+ * classifier, the ONE owner of test classification (bd tea-rags-mcp-9ty5z).
+ * The codegraph exclusion and the enrichment policy's `skippedAs: "test"`
+ * stamp read the same patterns, so `payload.isTest` can no longer disagree
+ * with them. Path-aware: a support file under a test root (`tests/`, `spec/`,
+ * `__tests__/`) counts, not only a `*.test.ts`-shaped name.
+ *
+ * `_language` keeps the call site's shape; the classifier's patterns carry
+ * their own extensions, so the language adds nothing to the answer.
+ *
+ * A path the classifier cannot take (absolute, `..`-relative, empty; the
+ * `ignore` matcher throws on those) answers false rather than failing the
+ * payload build.
  */
-const ECMASCRIPT_TEST_FILE = /\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
-
-const TEST_PATTERNS: Record<string, RegExp> = {
-  typescript: ECMASCRIPT_TEST_FILE,
-  javascript: ECMASCRIPT_TEST_FILE,
-  python: /(^|[\\/])test_.*\.py$|_test\.py$/,
-  java: /(Test|IT)\.java$/,
-  go: /_test\.go$/,
-  rust: /_test\.rs$/,
-  ruby: /_(spec|test)\.rb$/,
-  php: /Test\.php$/,
-  c_sharp: /[Tt]ests?\.cs$/,
-  cpp: /[Tt]ests?\.(cpp|cc|cxx)$/,
-  c: /[Tt]ests?\.c$/,
-  swift: /Tests?\.swift$/,
-  kotlin: /Test\.kt$/,
-  dart: /_test\.dart$/,
-  scala: /(Spec|Test)\.scala$/,
-  clojure: /_test\.clj[s]?$/,
-};
-
-/**
- * Detect whether a file is a test/spec file based on naming convention per language.
- * Matches on file name only (not directory).
- */
-export function detectTestFile(relativePath: string, language: string): boolean {
-  const pattern = TEST_PATTERNS[language];
-  if (!pattern) return false;
-  const fileName = basename(relativePath);
-  return pattern.test(fileName);
+export function detectTestFile(relativePath: string, _language?: string): boolean {
+  if (relativePath === "" || isAbsolute(relativePath) || relativePath.startsWith("..")) return false;
+  return classify(relativePath).isTest;
 }

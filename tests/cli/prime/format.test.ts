@@ -944,6 +944,53 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     expect(out.indexOf("selfMember")).toBeLessThan(out.indexOf("constant"));
   });
 
+  // bd tea-rags-mcp-qodqg — a kind whose every site was excluded (here: no
+  // in-project def) has an empty rate denominator. summarizeCodegraphResolve
+  // reports its rate as null; the row must say "nothing to score", never a
+  // number, with the counters kept.
+  it("renders a receiver-kind row with an empty rate denominator as the marker, not a rate", () => {
+    const out = formatPrime(
+      {
+        path: "/p",
+        status: indexed({
+          codegraphResolve: {
+            resolveSuccessRate: 0.96,
+            callsAttempted: 136,
+            callsResolved: 125,
+            callsExternalSkipped: 0,
+            byReceiverKind: [
+              {
+                receiverKind: "selfMember",
+                attempted: 130,
+                resolved: 125,
+                externalSkipped: 0,
+                resolveSuccessRate: 125 / 130,
+              },
+              {
+                receiverKind: "index",
+                attempted: 6,
+                resolved: 0,
+                externalSkipped: 0,
+                unresolvable: 0,
+                callsNoInProjectDef: 6,
+                callsCoreAmbiguous: 0,
+                resolveSuccessRate: null,
+              },
+            ],
+          },
+        }),
+        metrics: monolingualMetricsFixture(),
+        drift: null,
+        update: null,
+      },
+      undefined,
+      DEBUG,
+    );
+    expect(out).toContain("index —  0/6");
+    expect(out).not.toContain("index 0 0/6");
+    expect(out).toContain("selfMember 0.96 125/130");
+  });
+
   // bd tea-rags-mcp-4vg1i — the aggregate warning says HOW MANY entry calls
   // stopped at a shared template; only the per-kind suffix says which bucket
   // carries them, which is what makes the number actionable (and what proves
@@ -1132,6 +1179,20 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     it("renders the top-level rate when there is no per-language breakdown", () => {
       const out = render(summary({ inProjectEdgeRecall: 0.957 }));
       expect(out).toContain("## Codegraph resolve\nresolve rate: 0.96\n\n");
+    });
+
+    // bd tea-rags-mcp-stpvj — the default line is shown without DEBUG, so a
+    // null (nothing scored) recall must render the marker, never "0".
+    it("renders the empty-denominator marker for a null recall, top-level and per language", () => {
+      expect(render(summary({ inProjectEdgeRecall: null }))).toContain("## Codegraph resolve\nresolve rate: —\n\n");
+      const tally = multiLanguage(0, 0);
+      const ruby = tally.byLanguage?.[1];
+      if (ruby) ruby.inProjectEdgeRecall = null;
+      expect(render(tally)).toContain("resolve rate: typescript 0.99 · ruby —\n");
+    });
+
+    it("keeps a scored zero recall as 0 in the default line", () => {
+      expect(render(summary({ inProjectEdgeRecall: 0 }))).toContain("resolve rate: 0\n");
     });
 
     // resolveSuccessRate is DEBUG-only on the producer side, so the default

@@ -431,13 +431,7 @@ export default tseslint.config(
               // `contracts` is deliberately absent: the layer matrix allows
               // adapters -> contracts, and the old zone only appeared to forbid
               // it because the "**/core/..." glob never fired.
-              //
-              // TODO(tea-rags-mcp-pn12w): "**/domains/**" belongs in this group,
-              // but enabling it today fails on adapters/qdrant/client.ts, which
-              // throws the explore-domain InvalidQueryError. Fixing that means
-              // an adapter-level error class plus a mapping in explore — a
-              // user-visible error-taxonomy change, tracked separately.
-              group: ["**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
+              group: ["**/domains/**", "**/api/**", "**/bootstrap/**", "**/mcp/**", "**/cli/**"],
               message: "adapters may import only core/{contracts,infra}.",
             },
           ],

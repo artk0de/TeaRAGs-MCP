@@ -19,6 +19,7 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolVisibilityRow,
 } from "../../contracts/types/codegraph.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
@@ -220,6 +221,32 @@ export class DuckDbSymbolStore {
           continue;
         }
         file.ranges.push({ symbolId: row.symbol_id, startLine: Number(row.start_line), endLine: Number(row.end_line) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Declared visibility per definition of the requested ids (bd
+   * tea-rags-mcp-sqqkz). NULL stays `null` — the consumer omits it, it never
+   * reads as public. Same IN-list bound as {@link getSymbolLineRangesBulk}.
+   */
+  async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
+    const unique = [...new Set(symbolIds)];
+    const out: SymbolVisibilityRow[] = [];
+    for (let i = 0; i < unique.length; i += SYMBOL_LINE_RANGE_READ_CHUNK) {
+      const chunk = unique.slice(i, i + SYMBOL_LINE_RANGE_READ_CHUNK);
+      const rows = await this.session.queryAll<{ rel_path: string; symbol_id: string; visibility: string | null }>(
+        `SELECT rel_path, symbol_id, visibility FROM cg_symbols
+           WHERE symbol_id IN (${chunk.map(() => "?").join(", ")})`,
+        [...chunk],
+      );
+      for (const row of rows) {
+        out.push({
+          relPath: row.rel_path,
+          symbolId: row.symbol_id,
+          visibility: (row.visibility as SymbolVisibilityRow["visibility"]) ?? null,
+        });
       }
     }
     return out;

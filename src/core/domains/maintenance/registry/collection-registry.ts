@@ -93,6 +93,16 @@ export class CollectionRegistry {
       // stamp would have auto-update silently clearing the reindex hint
       // (bd tea-rags-mcp-frwka).
       ...(existing?.languageVersions !== undefined ? { languageVersions: existing.languageVersions } : {}),
+      // Worktree provenance is written once, at clone time
+      // (setWorktreeProvenance), and the pipeline never passes it — yet the
+      // prescribed lifecycle indexes the clone right after `worktree create`.
+      // Dropping it here hid every indexed clone from `worktree list` (the
+      // teardown backstop's sweep) and made `worktree remove` refuse it
+      // (bd tea-rags-mcp-ghk1f). Only an entry that already carries it keeps
+      // it, so a re-record never turns an ordinary project into a clone.
+      ...(entry.worktreeOf === undefined && existing?.worktreeOf !== undefined
+        ? { worktreeOf: existing.worktreeOf, worktreeName: existing.worktreeName }
+        : {}),
     });
     // Re-registering a previously-removed collection clears its tombstone.
     this.tombstones.delete(entry.collectionName);

@@ -205,6 +205,29 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#recalc", "B#recalc"]);
   });
 
+  it("caps the fan at RUBY's own p99, not the corpus p99 a TypeScript half holds down (nbf8q)", () => {
+    // taxdome's shape: Ruby alone has p99 defs-per-member 19, the polyglot
+    // corpus 16. 985 single-def Ruby names + 15 names defined 19 times, and
+    // 3,000 single-def TypeScript names that pull the corpus p99 to the floor.
+    const rubyFiller: SymbolDefinition[] = [];
+    for (let i = 0; i < 985; i++) rubyFiller.push(sym(`F#r${i}`, `r${i}`, "app/filler.rb", ["F"]));
+    for (let j = 0; j < 15; j++) {
+      for (let k = 0; k < 19; k++) rubyFiller.push(sym(`H${k}#hot${j}`, `hot${j}`, "app/filler.rb", [`H${k}`]));
+    }
+    const tsFiller = Array.from({ length: 3000 }, (_, i) => sym(`W#t${i}`, `t${i}`, "web/filler.ts", ["W"]));
+    const fan = Array.from({ length: 18 }, (_, i): [string, SymbolDefinition[]] => [
+      `app/k${i}.rb`,
+      [sym(`K${i}#reconcile_ledger`, "reconcile_ledger", `app/k${i}.rb`, [`K${i}`])],
+    ]);
+    const symbolTable = tableWith(["app/filler.rb", rubyFiller], ["web/filler.ts", tsFiller], ...fan);
+    const outcome = resolver.resolveDispatch(
+      { callText: "entry.reconcile_ledger", receiver: "entry", member: "reconcile_ledger", startLine: 1 },
+      ctx({ symbolTable }),
+    );
+    // 18 survivors: over the corpus cap (16), within Ruby's own (19).
+    expect(edgesOf(outcome)).toHaveLength(18);
+  });
+
   // RECONCILE :162 — xlnub: unique survivor → 1.0 regardless of custom discount
   it("honours a custom dynamicReceiverConfidence from config — unique survivor → 1.0", () => {
     const symbolTable = tableWith([

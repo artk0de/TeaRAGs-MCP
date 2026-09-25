@@ -10,6 +10,7 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import { OllamaUnavailableError } from "../../../adapters/embeddings/ollama/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
@@ -1052,18 +1053,34 @@ export class IndexingOps {
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
     const collectionName = resolvePhysicalCollection(aliasName, await this.qdrant.aliases.listAliases());
 
+    // Same startup gate as the incremental and full paths, and for the same
+    // reason: the sync leg deletes a changed file's old chunks BEFORE it embeds
+    // the new ones, so a provider that is down at startup costs those files
+    // their points and then fails anyway (bd tea-rags-mcp-umatc — a scratch
+    // index went from 8 points to 2). Probing first turns that into the
+    // provider's typed "unreachable" error with nothing touched.
+    await this.checkEmbeddingHealth();
+
     // The sync leg is deliberately NOT forced: the recompute below owns the
     // forced re-extraction on this path, and forcing both meant paying for it
     // twice (bd tea-rags-mcp-6aytq).
     //
-    // The recompute is the only leg that can finish the job. It reads the chunk
-    // set back out of the index, so it is the only one holding the chunk ids a
-    // file overlay is applied through, and the only one that runs the deferred
-    // chunk pass — while its own file phase re-extracts every stored file
-    // unconditionally, no hash gate (EnrichmentCoordinator#recomputeEnrichments
-    // → FilePhase#onBatch → the provider's streamFileBatch). Forcing the repair
-    // pass as well therefore added a whole pass-1 + pass-2 over the same corpus
-    // whose result the recompute immediately rebuilt from scratch.
+    // The recompute is the only leg that can finish the PAYLOAD job. It reads
+    // the chunk set back out of the index, so it is the only one holding the
+    // chunk ids a file overlay is applied through, and the only one that runs
+    // the deferred chunk pass — and its own file phase re-extracts every
+    // stored file with no hash gate (EnrichmentCoordinator#recomputeEnrichments
+    // → FilePhase#onBatch → the provider's streamFileBatch). For the Qdrant
+    // payload that re-extraction is a rebuild. For the providers' PERSISTED
+    // STORE rows (codegraph's DuckDB edges) it is NOT: the recompute's store
+    // writes are additive, so a stale row written by older resolver code
+    // survives every recompute on an unchanged file (bd tea-rags-mcp-cneu7,
+    // live on taxdome 2026-09-21 — phantom method edges outlived two
+    // `--force-enrichments codegraph` runs). The coordinator therefore runs a
+    // FORCED provider repair — the diffing write path — for the selected store
+    // providers before its own scroll and heal, which reinstates the duplicate
+    // pass-1 the 6aytq measurement objected to: that cost is the price of
+    // actually retiring stale edges.
     //
     // Measured on taxdome 2026-08-14 17:30, `--force-enrichments codegraph
     // --languages typescript`: the forced repair ran pass-1 over 10,621 files
@@ -1217,6 +1234,12 @@ export class IndexingOps {
           await this.embeddings.embed("health");
           return;
         } catch (error) {
+          // The provider already waited the operator's recovery budget out
+          // before giving up; probing again restarts that wait and multiplies
+          // the budget by the attempt count (bd tea-rags-mcp-umatc). The retry
+          // loop exists for a probe starved of an event-loop tick, which fails
+          // at once and reports no wait.
+          if (error instanceof OllamaUnavailableError && error.recoveryWaitMs > 0) throw error;
           lastError = error;
           if (attempt < attempts) {
             await new Promise((resolve) => setTimeout(resolve, this.healthCheckRetryDelayMs));
@@ -1355,7 +1378,9 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
     filesIndexed: changeStats.filesAdded + changeStats.filesModified,
     chunksCreated: changeStats.chunksAdded,
     durationMs: changeStats.durationMs,
-    status: "completed",
+    // The pipeline downgrades to "partial" when a delete failed; hardcoding
+    // "completed" here reported a clean run over stale chunks (bd tea-rags-mcp-6l1w6).
+    status: changeStats.status,
     errors: [],
     enrichmentStatus: changeStats.enrichmentStatus,
     enrichmentDurationMs: changeStats.enrichmentDurationMs,
@@ -1370,6 +1395,10 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
       chunksAdded: changeStats.chunksAdded,
       chunksDeleted: changeStats.chunksDeleted,
       filesRetried: changeStats.filesRetried,
+      ...(changeStats.filesSkippedDueToDeleteFailure
+        ? { filesSkippedDueToDeleteFailure: changeStats.filesSkippedDueToDeleteFailure }
+        : {}),
+      ...(changeStats.filesFailedToDelete ? { filesFailedToDelete: changeStats.filesFailedToDelete } : {}),
     },
   };
 }

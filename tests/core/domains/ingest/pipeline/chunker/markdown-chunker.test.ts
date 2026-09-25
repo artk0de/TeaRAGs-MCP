@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { assignNavigationAndDocSymbolId } from "../../../../../../src/core/domains/ingest/pipeline/chunker/chunk-navigation.js";
 import { MarkdownChunker } from "../../../../../../src/core/domains/ingest/pipeline/chunker/markdown-chunker.js";
 
 const defaultConfig = { maxChunkSize: 5000 };
@@ -594,6 +595,104 @@ describe("MarkdownChunker", () => {
       for (const chunk of oauthChunks) {
         expect(chunk.content).toContain("Auth");
       }
+    });
+  });
+
+  // bd tea-rags-mcp-y5vx4 + tea-rags-mcp-308ff — an oversized section is cut
+  // between its blocks, never inside a list, table or blockquote that fits a
+  // window; each window after the first is framed by the heading path, which is
+  // the only overlap; the first window carries its breadcrumb once.
+  describe("structure-aware oversized sections (bd tea-rags-mcp-y5vx4)", () => {
+    const BUDGET = 420;
+    const block = (i: number) => ({
+      paragraph: [
+        `Paragraph ${i} explains the setting in a sentence long enough to matter.`,
+        `It wraps onto a second line ${i}.`,
+      ],
+      table: [
+        `| key ${i} | value ${i} |`,
+        "| --- | --- |",
+        `| alpha ${i} | first row of table ${i} |`,
+        `| beta ${i} | second row of table ${i} |`,
+        `| gamma ${i} | third row of table ${i} |`,
+      ],
+      list: [
+        `- item one of list ${i}`,
+        `- item two of list ${i}`,
+        `  continued under item two ${i}`,
+        `- item three of list ${i}`,
+      ],
+      quote: [`> quoted line one ${i}`, `> quoted line two ${i}`, `> quoted line three ${i}`],
+    });
+    const blocks = Array.from({ length: 5 }, (_, i) => block(i));
+    const body = blocks.flatMap((b) => [...b.paragraph, "", ...b.table, "", ...b.list, "", ...b.quote, ""]);
+    const code = ["# Doc", "", "## Section", "", ...body].join("\n");
+    const sourceLines = code.split("\n");
+
+    async function sectionWindows() {
+      const chunks = await new MarkdownChunker({ maxChunkSize: BUDGET }).chunk(code, "doc.md", "markdown");
+      return chunks.filter((c) => c.metadata.name === "Section");
+    }
+
+    const prefixOf = (c: { content: string; startLine: number; endLine: number }) => c.content.split("\n").slice(0, 1);
+
+    it("splits into several windows, each within the budget", async () => {
+      const windows = await sectionWindows();
+      expect(windows.length).toBeGreaterThan(2);
+      for (const w of windows) expect(w.content.length).toBeLessThanOrEqual(BUDGET);
+    });
+
+    it("never cuts inside a table, list or blockquote that fits a window", async () => {
+      const windows = await sectionWindows();
+      for (const b of blocks) {
+        for (const lines of [b.table, b.list, b.quote]) {
+          const marker = lines[0];
+          const holders = windows.filter((w) => w.content.split("\n").includes(marker));
+          expect(holders, marker).toHaveLength(1);
+          const holder = holders[0].content.split("\n");
+          for (const line of lines) expect(holder, `${marker} split`).toContain(line);
+        }
+      }
+    });
+
+    it("the first window carries its breadcrumb once (308ff), later windows open with the heading path", async () => {
+      const windows = await sectionWindows();
+      expect(windows[0].content.startsWith("# Doc\n# Doc")).toBe(false);
+      expect(windows[0].content.startsWith("# Doc\n## Section")).toBe(true);
+      for (const w of windows.slice(1)) {
+        expect(prefixOf(w)).toEqual(["# Doc > ## Section"]);
+        expect(w.content.split("\n").filter((l) => l === "# Doc > ## Section")).toHaveLength(1);
+      }
+    });
+
+    it("windows tile the section: own lines are the source lines, each exactly once", async () => {
+      const windows = await sectionWindows();
+      const seen = new Map<string, number>();
+      windows.forEach((w, i) => {
+        // one prefix line each: the ancestor breadcrumb on the first window, the heading path after
+        const own = w.content.split("\n").slice(1);
+        expect(own.join("\n")).toBe(sourceLines.slice(w.startLine - 1, w.endLine).join("\n"));
+        if (i > 0) expect(w.startLine).toBeGreaterThan(windows[i - 1].endLine);
+        for (const line of own) if (line.trim() !== "") seen.set(line, (seen.get(line) ?? 0) + 1);
+      });
+      for (const line of body) if (line.trim() !== "" && line !== "| --- | --- |") expect(seen.get(line), line).toBe(1);
+    });
+
+    it("navigation of a section's windows points at other symbols, never back at its own id (308ff)", async () => {
+      const chunks = await new MarkdownChunker({ maxChunkSize: BUDGET }).chunk(
+        `${code}\n## After\n\nA closing section that follows the oversized one in the document.`,
+        "/repo/doc.md",
+        "markdown",
+      );
+      assignNavigationAndDocSymbolId(chunks, "/repo");
+      for (const c of chunks) {
+        expect(c.metadata.navigation?.prevSymbolId).not.toBe(c.metadata.symbolId);
+        expect(c.metadata.navigation?.nextSymbolId).not.toBe(c.metadata.symbolId);
+      }
+      const section = chunks.filter((c) => c.metadata.name === "Section");
+      expect(section[section.length - 1].metadata.navigation?.nextSymbolId).toBe(
+        chunks.find((c) => c.metadata.name === "After")?.metadata.symbolId,
+      );
     });
   });
 });

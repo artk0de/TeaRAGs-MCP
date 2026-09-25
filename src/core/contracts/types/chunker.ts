@@ -47,7 +47,21 @@ export interface BodyChunkResult {
   isStatic?: boolean;
   /** Hook-provided parent name. */
   parentSymbolId?: string;
+  /**
+   * Hook-provided parent type. When present, the chunker uses it instead of the
+   * container node's AST type — for a chunk whose parent is not an AST node,
+   * like a test example under its {@link TEST_SCOPE_PARENT_TYPE} scope.
+   */
+  parentType?: string;
 }
+
+/**
+ * `parentType` of a test EXAMPLE chunk: its `parentSymbolId` names a test scope
+ * (`User.context 'when admin'`), which has no chunk of its own. Read by explore
+ * to draw scopes in an outline and to answer a scope id with its examples; a
+ * test chunk under any other parentType is a scope or a pre-example-era chunk.
+ */
+export const TEST_SCOPE_PARENT_TYPE = "test_scope";
 
 /** Shared mutable context passed through the hook chain */
 export interface HookContext {
@@ -172,4 +186,49 @@ export interface ChunkingHook {
    *  Return true to include, false to exclude, undefined for no opinion.
    *  Called for EACH candidate node by findChunkableNodes/findChildChunkableNodes. */
   filterNode?: (node: AstNode, code: string, filePath: string) => boolean | undefined;
+}
+
+/**
+ * One source statement of a test scope body, 1-based `sourceLine` (its first
+ * row). `delegatesExamples` marks a setup statement that RUNS examples defined
+ * elsewhere (RSpec `it_behaves_like` / `include_examples`), so a scope holding
+ * nothing but setup still counts as a test.
+ */
+export interface TestScopeLine {
+  text: string;
+  sourceLine: number;
+  delegatesExamples?: boolean;
+}
+
+/**
+ * One example of a test scope (`it` / `test` / `specify` …). `name` is the
+ * language's display form of the call (`it 'returns nil'`, `it.skip "pending"`)
+ * and becomes the last segment of the example's symbolId.
+ */
+export interface TestExample {
+  name: string;
+  text: string;
+  startLine: number;
+  endLine: number;
+}
+
+/**
+ * The language-neutral test scope tree. A language's test-scope chunker builds
+ * it from its own AST and hands it to the kernel (`produceTestScopeChunks` in
+ * `domains/language/kernel/test-scope-chunks.ts`), which owns chunk emission,
+ * symbolIds and line ranges for every language. A scope is a leaf when
+ * `children` is empty. `setupLines` are the scope's OWN setup (`let`,
+ * `beforeEach` …) — the kernel inherits ancestors' setup, a language never
+ * copies it in. `otherLines` are the body's non-DSL statements. Canonical
+ * structure: `.claude/rules/test-spec-chunking.md`.
+ */
+export interface TestScope {
+  /** Display form of the container call — `describe 'User'`, `context "when admin"`. */
+  name: string;
+  startLine: number;
+  endLine: number;
+  setupLines: TestScopeLine[];
+  otherLines: TestScopeLine[];
+  examples: TestExample[];
+  children: TestScope[];
 }

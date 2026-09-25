@@ -27,6 +27,7 @@
  * completed into `classFieldTypes`, under everything the walker typed itself.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { ClassFieldParamLink, KnownTargetCallArgs, LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 
@@ -87,10 +88,10 @@ export function foldKnownTargetParamTypes(
     }
   }
 
-  const out: KnownTargetParamTypes = {};
+  const out: KnownTargetParamTypes = createIdentifierRecord();
   for (const [target, positions] of byTarget) {
     const paramNames = paramNamesBySymbolId[target] ?? [];
-    const params: Record<string, RubyTypeRef> = {};
+    const params: Record<string, RubyTypeRef> = createIdentifierRecord();
     for (const [index, type] of positions) {
       const name = paramNames[index];
       if (name === undefined || type === CONFLICTED) continue;
@@ -124,13 +125,13 @@ export function deriveClassFieldTypesFromParams(
   paramTypes: KnownTargetParamTypes,
   declaredFields: ReadonlySet<string>,
 ): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   for (const [fqClass, fields] of Object.entries(links)) {
     for (const [ivar, link] of Object.entries(fields)) {
       if (declaredFields.has(`${fqClass}|${ivar}`)) continue;
       const type = paramTypes[`${fqClass}#${link.method}`]?.[link.param];
       if (type?.form !== "instance") continue;
-      (out[fqClass] ??= {})[ivar] = type.name;
+      (out[fqClass] ??= createIdentifierRecord())[ivar] = type.name;
     }
   }
   return out;

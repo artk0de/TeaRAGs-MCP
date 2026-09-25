@@ -12,6 +12,7 @@
  * (bd tea-rags-mcp-uetqq) with the gate and the vocabulary unchanged.
  */
 
+import { identifierEntry } from "../../../../contracts/identifier-record.js";
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { ACTIVE_RECORD_QUERY_INTERFACE } from "../dsl/rails.js";
@@ -35,7 +36,7 @@ function ancestryReaches(
   if (seen.has(className)) return false;
   seen.add(className);
   if (targets.has(className)) return true;
-  for (const ancestor of ctx.classAncestors?.[className] ?? []) {
+  for (const ancestor of identifierEntry(ctx.classAncestors, className) ?? []) {
     if (ancestryReaches(ancestor, targets, ctx, seen)) return true;
   }
   return false;

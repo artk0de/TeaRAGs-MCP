@@ -1,14 +1,16 @@
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import {
   createAncestorLinearizer,
   findMemberInAncestorChain,
+  RunScopedMemo,
   type AncestorLinearizer,
-} from "../../../kernel/ancestor-walk.js";
-import { RunScopedMemo } from "../../../kernel/run-scoped-memo.js";
+} from "../../../kernel/index.js";
 import { SWIFT_ANCESTOR_POLICY } from "../swift-ancestor-policy.js";
-import { lookupSwiftTypeMember, type SwiftResolverConfig } from "./shared.js";
+import { lookupSwiftSymbols, qualifySwiftTypeName } from "../swift-symbol-lookup.js";
+import { lookupSwiftTypeMember, swiftSelfTypeName, type SwiftResolverConfig } from "./shared.js";
 
 /**
  * `super.X()` — the enclosing class's superclass chain, entered AFTER the class
@@ -56,16 +58,34 @@ export class SwiftSuperSymbolResolutionStrategy implements SymbolResolutionStrat
     // A `super` call outside a type body is not expressible in Swift, so an
     // absent enclosing scope means the index disagrees with the language. DROP
     // rather than continue: the later passes would treat it as a bare call.
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+    const enclosing = swiftSelfTypeName(ctx);
     if (enclosing === undefined) return DROP;
 
     const scan = findMemberInAncestorChain(
       enclosing,
       this.linearizerFor(ctx),
-      (candidate) => lookupSwiftTypeMember(candidate, call.member, ctx, this.cfg.mode),
+      (candidate) => lookupSwiftTypeMember(candidate, call.member, ctx, this.cfg.mode, call),
       { startAfter: true },
     );
-    return scan.target === null ? DROP : resolved(scan.target);
+    if (scan.target !== null) return resolved(scan.target);
+    return call.member === "init" ? this.implicitInitializer(enclosing, ctx) : DROP;
+  }
+
+  /**
+   * `super.init()` when no class of the project chain declares an initializer
+   * (bd tea-rags-mcp-y99pg.21): the one that runs is the superclass's IMPLICIT
+   * initializer, which the typechecker places on the superclass itself. The
+   * edge lands on the superclass's type symbol, as a construction of a project
+   * type that declares no initializer does. A superclass the project does not
+   * declare (`NSObject`) is the SDK's initializer, and emits nothing.
+   */
+  private implicitInitializer(enclosing: string, ctx: CallContext): SymbolResolutionOutcome {
+    const base = identifierEntry(ctx.classExtends, enclosing);
+    if (base === undefined || base === enclosing) return DROP;
+    const typeId = qualifySwiftTypeName(base, ctx);
+    const [declaration] = lookupSwiftSymbols(ctx, typeId);
+    if (declaration === undefined) return DROP;
+    return resolved({ targetRelPath: declaration.relPath, targetSymbolId: typeId });
   }
 
   private linearizerFor(ctx: CallContext): AncestorLinearizer<CallContext> {

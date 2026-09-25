@@ -132,5 +132,20 @@ the user-facing benefit.
    `{ "name": ENV_NAME, "description": "<what it does>", "default": "<value>", "change": "new" | "changed" }`.
    Omit the field entirely if no env changed.
 
+10. **No markdown emphasis in any `description`.** Write plain prose — never a
+    `*` or `**` marker. The renderer owns emphasis: it bolds project terms and
+    bold-italicises languages and frameworks itself
+    (`scripts/lib/changelog-emphasis.js`). Anything you mark up is left exactly
+    as you wrote it and reads inconsistently beside what the renderer produced.
+
+11. **Backtick every CLI command, flag, env var and tool name you name.**
+    `tea-rags projects prune`, `--force-enrichments`, `QDRANT_TURBO_QUANT`,
+    `rank_chunks` — a thing the user types is code, not prose. Published notes
+    have shipped bare `tea-rags projects prune now sweeps…`, which reads as a
+    sentence that happens to start with the product name. It also matters to
+    rendering: the emphasis pass in rule 10 treats a backtick span as a wall, so
+    a backticked command is left alone while a bare one can have its first word
+    marked up.
+
 Do not emit anything to stdout. The only output is the `release-notes.json`
 file.

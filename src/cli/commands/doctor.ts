@@ -20,6 +20,8 @@ import {
   type IndexWorkerProcessProbe,
   type IndexWorkerSweepOutcome,
 } from "../index-progress/worker-sweep.js";
+import { createColorizer, type Colorizer } from "../infra/color.js";
+import { statusTag } from "../infra/status-tag.js";
 
 interface DoctorArgs {
   json?: boolean;
@@ -55,9 +57,9 @@ function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
 }
 
-function statusPrefix(ok: boolean, warn = false): string {
-  if (warn) return "[WARN]";
-  return ok ? "[OK]  " : "[FAIL]";
+function statusPrefix(c: Colorizer, ok: boolean, warn = false): string {
+  if (warn) return statusTag("warn", c);
+  return statusTag(ok ? "ok" : "fail", c);
 }
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -141,23 +143,24 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
     return;
   }
 
-  process.stdout.write(`${statusPrefix(qdrantOk)} Qdrant: ${qdrant.url}\n`);
+  const c = createColorizer();
+  process.stdout.write(`${statusPrefix(c, qdrantOk)} Qdrant: ${qdrant.url}\n`);
   process.stdout.write(
-    `${statusPrefix(embeddingsOk)} Embeddings (${embeddings.getProviderName()})${embeddingUrl ? `: ${embeddingUrl}` : ""}\n`,
+    `${statusPrefix(c, embeddingsOk)} Embeddings (${embeddings.getProviderName()})${embeddingUrl ? `: ${embeddingUrl}` : ""}\n`,
   );
-  process.stdout.write(`${statusPrefix(true)} Registry: ${projectCount} project(s)\n`);
+  process.stdout.write(`${statusPrefix(c, true)} Registry: ${projectCount} project(s)\n`);
   if (staleCount > 0) {
     process.stdout.write(
-      `${statusPrefix(true, true)} Registry: ${staleCount} stale (missing directory) → tea-rags projects prune\n`,
+      `${statusPrefix(c, true, true)} Registry: ${staleCount} stale (missing directory) → tea-rags projects prune\n`,
     );
   }
   if (recovery) {
     process.stdout.write(
-      `${statusPrefix(true)} Recovered ${recovery.recovered} entry/entries from Qdrant; paths are empty — re-register them with 'tea-rags projects register --path <dir> --name <alias>' to enable alias resolution.\n`,
+      `${statusPrefix(c, true)} Recovered ${recovery.recovered} entry/entries from Qdrant; paths are empty — re-register them with 'tea-rags projects register --path <dir> --name <alias>' to enable alias resolution.\n`,
     );
   } else if (orphanCount > 0) {
     process.stdout.write(
-      `${statusPrefix(true, true)} Registry: ${orphanCount} orphan collection(s) — run 'tea-rags doctor --recover-registry' or 'tea-rags projects orphans' to inspect\n`,
+      `${statusPrefix(c, true, true)} Registry: ${orphanCount} orphan collection(s) — run 'tea-rags doctor --recover-registry' or 'tea-rags projects orphans' to inspect\n`,
     );
   }
 }
@@ -201,22 +204,23 @@ export async function runDaemonRestartDoctor(args: { json?: boolean }, deps?: Da
     process.stdout.write("No live build-keyed codegraph daemon.\n");
     return;
   }
+  const c = createColorizer();
   for (const o of outcomes) {
     const pid = o.pid !== undefined ? `pid ${o.pid} ` : "";
     switch (o.action) {
       case "stopped":
-        process.stdout.write(`[OK]   ${pid}stopped — ${o.keyDir}\n`);
+        process.stdout.write(`${statusTag("ok", c)} ${pid}stopped — ${o.keyDir}\n`);
         break;
       case "swept":
-        process.stdout.write(`[OK]   orphaned key directory swept — ${o.keyDir}\n`);
+        process.stdout.write(`${statusTag("ok", c)} orphaned key directory swept — ${o.keyDir}\n`);
         break;
       case "exit-timeout":
         process.stdout.write(
-          `[WARN] ${pid}did not exit after the restart signal — wedged, left for manual inspection: ${o.keyDir}\n`,
+          `${statusTag("warn", c)} ${pid}did not exit after the restart signal — wedged, left for manual inspection: ${o.keyDir}\n`,
         );
         break;
       case "signal-failed":
-        process.stdout.write(`[FAIL] ${pid}could not be signalled — ${o.keyDir}\n`);
+        process.stdout.write(`${statusTag("fail", c)} ${pid}could not be signalled — ${o.keyDir}\n`);
         break;
     }
   }
@@ -286,7 +290,7 @@ function minutesSince(nowMs: number, thenMs: number): string {
   return `${Math.max(0, Math.round((nowMs - thenMs) / 60_000))}m`;
 }
 
-function describeSweptWorker(outcome: IndexWorkerSweepOutcome, nowMs: number): string {
+function describeSweptWorker(outcome: IndexWorkerSweepOutcome, nowMs: number, c: Colorizer): string {
   const { record, verdict, action } = outcome;
   const where = ` · ${record.projectPath}`;
   const why =
@@ -295,32 +299,32 @@ function describeSweptWorker(outcome: IndexWorkerSweepOutcome, nowMs: number): s
       : `supervisor ${record.supervisorPid} died before handing it off`;
   switch (action) {
     case "killed":
-      return `[KILL] pid ${record.pid} ${verdict} — ${why}; stopped${where}`;
+      return `${statusTag("kill", c)} pid ${record.pid} ${verdict} — ${why}; stopped${where}`;
     case "would-kill":
-      return `[DRY]  pid ${record.pid} ${verdict} — ${why}; would be stopped${where}`;
+      return `${statusTag("dry", c)} pid ${record.pid} ${verdict} — ${why}; would be stopped${where}`;
     case "kill-failed":
-      return `[FAIL] pid ${record.pid} ${verdict} — did not exit after SIGKILL${where}`;
+      return `${statusTag("fail", c)} pid ${record.pid} ${verdict} — did not exit after SIGKILL${where}`;
     case "pruned":
-      return `[OK]   pid ${record.pid} gone — stale record removed`;
+      return `${statusTag("ok", c)} pid ${record.pid} gone — stale record removed`;
     case "would-prune":
-      return `[DRY]  pid ${record.pid} gone — stale record would be removed`;
+      return `${statusTag("dry", c)} pid ${record.pid} gone — stale record would be removed`;
     case "kept":
       if (verdict === "stalled") {
-        return `[WARN] pid ${record.pid} stalled — ${why}; re-run with --include-stalled to stop it${where}`;
+        return `${statusTag("warn", c)} pid ${record.pid} stalled — ${why}; re-run with --include-stalled to stop it${where}`;
       }
       if (verdict === "unverified") {
         return (
-          `[WARN] pid ${record.pid} unverified — its start time could not be read, so it cannot be proven to be ` +
+          `${statusTag("warn", c)} pid ${record.pid} unverified — its start time could not be read, so it cannot be proven to be ` +
           `the worker that registered; kept, record and process${where}`
         );
       }
       if (verdict === "detached") {
         return (
-          `[OK]   pid ${record.pid} detached — enriching in the background, ` +
+          `${statusTag("ok", c)} pid ${record.pid} detached — enriching in the background, ` +
           `last progress ${minutesSince(nowMs, record.lastProgressAtMs)} ago${where}`
         );
       }
-      return `[OK]   pid ${record.pid} ${verdict} — supervisor ${record.supervisorPid} is running${where}`;
+      return `${statusTag("ok", c)} pid ${record.pid} ${verdict} — supervisor ${record.supervisorPid} is running${where}`;
   }
 }
 
@@ -342,7 +346,9 @@ export async function runWorkerSweepDoctor(
   if (deps.platform === "win32") {
     const message = "worker sweep is not supported on win32 — there is no ps to prove a pid is an index worker";
     process.stdout.write(
-      args.json ? `${JSON.stringify({ error: { code: "UNSUPPORTED_PLATFORM", message } })}\n` : `[WARN] ${message}\n`,
+      args.json
+        ? `${JSON.stringify({ error: { code: "UNSUPPORTED_PLATFORM", message } })}\n`
+        : `${statusTag("warn", createColorizer())} ${message}\n`,
     );
     return;
   }
@@ -373,7 +379,8 @@ export async function runWorkerSweepDoctor(
     process.stdout.write("No index workers registered.\n");
     return;
   }
-  for (const outcome of outcomes) process.stdout.write(`${describeSweptWorker(outcome, nowMs)}\n`);
+  const c = createColorizer();
+  for (const outcome of outcomes) process.stdout.write(`${describeSweptWorker(outcome, nowMs, c)}\n`);
   const stopped = outcomes.filter((o) => o.action === "killed").length;
   const pruned = outcomes.filter((o) => o.action === "pruned").length;
   process.stdout.write(

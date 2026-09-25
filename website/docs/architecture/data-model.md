@@ -69,7 +69,7 @@ Written by the git enrichment pipeline (phase 1) on **every chunk of the file**.
 | `git.file.ageDays` | number | recent / typical / old / legacy | Days since last modification |
 | `git.file.recentDominantAuthor` | string | — | Author with most commits in the recent commit window |
 | `git.file.recentAuthors` | string[] | — | All contributing authors in the recent commit window |
-| `git.file.recentDominantAuthorPct` | number | shared / concentrated / silo / deep-silo | % of recent-window commits by the recent dominant author (0–100) |
+| `git.file.recentDominantAuthorPct` | number | solo / shared / mixed / concentrated / silo | % of recent-window commits by the recent dominant author (0–100). A file with one recent contributor reads `solo` and is left out of the percentile ladder, which is cut over multi-contributor files only |
 | `git.file.recentContributorCount` | number | solo / pair / team / crowd | Distinct contributors in the recent commit window |
 | `git.file.blameDominantAuthor` | string | — | Author owning the most live lines according to `git blame HEAD` |
 | `git.file.blameAuthors` | string[] | — | All authors with at least one live line according to `git blame HEAD` |

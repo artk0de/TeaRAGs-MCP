@@ -10,6 +10,7 @@
  * BASE_PAYLOAD_SIGNALS is injected via payloadSignals parameter.
  */
 
+import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { RankingOverlay } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
@@ -87,21 +88,12 @@ export async function postProcess(results: SearchResult[], options: PostProcessO
 // ---------------------------------------------------------------------------
 // filterMetaOnly — metaOnly formatting
 // ---------------------------------------------------------------------------
-
-/** Check if overlay has any meaningful data. */
-function hasOverlayData(overlay: RankingOverlay): boolean {
-  return Boolean(
-    (overlay.file && Object.keys(overlay.file).length > 0) || (overlay.chunk && Object.keys(overlay.chunk).length > 0),
-  );
-}
-
-/** Build git object from ranking overlay raw signals. */
-function buildGitFromOverlay(overlay: RankingOverlay): Record<string, unknown> {
-  const git: Record<string, unknown> = {};
-  if (overlay.file && Object.keys(overlay.file).length > 0) git.file = overlay.file;
-  if (overlay.chunk && Object.keys(overlay.chunk).length > 0) git.chunk = overlay.chunk;
-  return git;
-}
+//
+// metaOnly contract: the payload is RAW, identical in form to the full payload
+// minus the fields metaOnly does not select — every value sits at its owner
+// path in its stored form, never as `{value, label}`. Labels live only on the
+// hit's `rankingOverlay` (`{preset, file, chunk}`), which the strategies keep
+// on metaOnly results. The overlay is never merged into the payload.
 
 /** Filter full git payload to only essential trajectory fields. */
 function filterGitByEssential(
@@ -128,58 +120,33 @@ function filterGitByEssential(
 }
 
 /**
- * Apply essential-signal filter + ranking overlay to a result's payload.
+ * Filter each signal namespace of a result's payload down to its essential
+ * signals, leaving every other payload field untouched.
  *
- * Trajectory-agnostic: namespace, level, and field are derived from the
- * essentialKeys list at runtime (keys shaped `<namespace>.<level>.<field>`,
- * e.g. `git.file.commitCount`). For each namespace discovered in
- * essentialKeys, the corresponding payload branch is filtered to the allowed
- * fields, and any ranking overlay's `{file, chunk}` signals are merged on top.
+ * Trajectory-agnostic: namespaces come from the essentialKeys list at runtime
+ * (keys shaped `<namespace>.<level>.<field>`, e.g. `git.file.commitCount`),
+ * each resolved to its PHYSICAL payload path first (`toPhysicalPayloadKey` —
+ * `codegraph.file.fanIn` is stored at `codegraph.symbols.file.fanIn`, bd
+ * tea-rags-mcp-0x55i). A namespace no essential key names passes through
+ * whole. The ranking overlay stays on the result, never in the payload.
  *
  * Use case: outline strategies (find_symbol) need to enforce the metaOnly
  * signal contract without losing synthetic outline fields (chunkCount,
  * mergedChunkIds). filterMetaOnly rebuilds the payload from payloadSignals
  * and would drop those synthetic fields; this helper preserves everything
  * outside the signal namespaces.
- *
- * Overlay namespace: the current RankingOverlay shape exposes only
- * `{file, chunk}` levels without namespace, so overlay signals are merged
- * into each namespace present in essentialKeys. In practice only one
- * trajectory contributes overlay at a time (rerank is single-preset), so the
- * merge is unambiguous. When multi-namespace overlay lands, this helper
- * needs a namespace hint — today's shape does not carry one.
  */
-export function applyEssentialSignalsToOverlay(result: SearchResult, essentialKeys: string[]): SearchResult {
-  const byNamespace = groupEssentialKeysByNamespace(essentialKeys);
-  const overlay = result.rankingOverlay;
-  const overlayActive = overlay ? hasOverlayData(overlay) : false;
-
-  if (byNamespace.size === 0 && !overlayActive) return result;
+export function applyEssentialSignals(result: SearchResult, essentialKeys: string[]): SearchResult {
+  const byNamespace = groupEssentialPathsByNamespace(essentialKeys);
+  if (byNamespace.size === 0) return result;
 
   const newPayload: Record<string, unknown> = { ...result.payload };
 
-  for (const [namespace, levelMap] of byNamespace) {
-    const nsData = result.payload?.[namespace] as Record<string, Record<string, unknown>> | undefined;
-    const filtered: Record<string, Record<string, unknown>> = {};
-
-    for (const [level, fields] of levelMap) {
-      const levelData = nsData?.[level];
-      const levelFiltered: Record<string, unknown> = {};
-      if (levelData) {
-        for (const field of fields) {
-          if (levelData[field] !== undefined) levelFiltered[field] = levelData[field];
-        }
-      }
-      if (Object.keys(levelFiltered).length > 0) filtered[level] = levelFiltered;
-    }
-
-    if (overlay && overlayActive) {
-      for (const level of ["file", "chunk"] as const) {
-        const overlayLevel = overlay[level];
-        if (overlayLevel && Object.keys(overlayLevel).length > 0) {
-          filtered[level] = { ...(filtered[level] ?? {}), ...overlayLevel };
-        }
-      }
+  for (const [namespace, subPaths] of byNamespace) {
+    const filtered: Record<string, unknown> = {};
+    for (const subPath of subPaths) {
+      const value = readPath(result.payload?.[namespace], subPath);
+      if (value !== undefined) writePath(filtered, subPath, value);
     }
 
     if (Object.keys(filtered).length > 0) {
@@ -189,41 +156,55 @@ export function applyEssentialSignalsToOverlay(result: SearchResult, essentialKe
     }
   }
 
-  if (overlay?.preset) newPayload.preset = overlay.preset;
-
   return { ...result, payload: newPayload };
 }
 
-/** Group `<namespace>.<level>.<field>` keys into namespace → level → fields. Flat keys (1 segment) are ignored — they live directly on the payload root and are preserved by caller. */
-function groupEssentialKeysByNamespace(essentialKeys: string[]): Map<string, Map<string, Set<string>>> {
-  const byNamespace = new Map<string, Map<string, Set<string>>>();
+/**
+ * Group essential keys by namespace, as PHYSICAL sub-paths below it. Keys with
+ * fewer than 3 logical segments are flat — they live on the payload root and
+ * are the caller's concern.
+ */
+function groupEssentialPathsByNamespace(essentialKeys: string[]): Map<string, string[][]> {
+  const byNamespace = new Map<string, string[][]>();
   for (const key of essentialKeys) {
-    const parts = key.split(".");
-    if (parts.length < 3) continue;
-    const [namespace, level, ...fieldParts] = parts;
-    const field = fieldParts.join(".");
-    let levelMap = byNamespace.get(namespace);
-    if (!levelMap) {
-      levelMap = new Map();
-      byNamespace.set(namespace, levelMap);
-    }
-    let fieldSet = levelMap.get(level);
-    if (!fieldSet) {
-      fieldSet = new Set();
-      levelMap.set(level, fieldSet);
-    }
-    fieldSet.add(field);
+    if (key.split(".").length < 3) continue;
+    const [namespace, ...subPath] = toPhysicalPayloadKey(key).split(".");
+    const paths = byNamespace.get(namespace);
+    if (paths) paths.push(subPath);
+    else byNamespace.set(namespace, [subPath]);
   }
   return byNamespace;
 }
 
+function readPath(node: unknown, path: string[]): unknown {
+  let current = node;
+  for (const segment of path) {
+    if (typeof current !== "object" || current === null || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/** Write into a tree this module built itself — no shared subtrees to protect. */
+function writePath(target: Record<string, unknown>, path: string[], value: unknown): void {
+  let node = target;
+  for (const segment of path.slice(0, -1)) {
+    const child = node[segment];
+    if (typeof child !== "object" || child === null || Array.isArray(child)) node[segment] = {};
+    node = node[segment] as Record<string, unknown>;
+  }
+  node[path[path.length - 1]] = value;
+}
+
 /**
- * Format results for metaOnly mode: extract metadata + overlay signals,
- * exclude raw content. Returns null if metaOnly is falsy (caller should
- * use full results instead).
+ * Format results for metaOnly mode: select metadata, exclude raw content.
+ * Returns the payload only — the caller carries id, score and rankingOverlay.
+ *
+ * Selection: flat payload signals at the root, git reduced to its essential
+ * fields, the codegraph branch forwarded whole — all raw.
  *
  * @param payloadSignals - Base payload signal descriptors (injected, not imported from trajectory)
- * @param essentialTrajectoryFields - Keys like "git.file.ageDays" to include without overlay
+ * @param essentialTrajectoryFields - Keys like "git.file.ageDays" to include in the git block
  */
 export function filterMetaOnly(
   results: SearchResult[],
@@ -231,38 +212,16 @@ export function filterMetaOnly(
   essentialTrajectoryFields: string[],
 ): Record<string, unknown>[] {
   return results.map((r) => {
-    const meta: Record<string, unknown> = { score: r.score };
+    // The score stays on the hit — a payload copy duplicated it (bd tea-rags-mcp-947xf).
+    const meta: Record<string, unknown> = {};
     for (const signal of payloadSignals) {
       if (r.payload?.[signal.key] !== undefined) {
         meta[signal.key] = r.payload[signal.key];
       }
     }
 
-    const overlay = r.rankingOverlay;
     const fullGit = r.payload?.git as Record<string, Record<string, unknown>> | undefined;
-
-    // Always include essential trajectory fields from full payload
-    let gitResult: Record<string, unknown> = {};
-    if (fullGit) {
-      gitResult = filterGitByEssential(fullGit, essentialTrajectoryFields);
-    }
-
-    if (overlay && hasOverlayData(overlay)) {
-      const gitFromOverlay = buildGitFromOverlay(overlay);
-      // Overlay signals take precedence over essential fields
-      for (const level of ["file", "chunk"] as const) {
-        if (gitFromOverlay[level]) {
-          gitResult[level] = {
-            ...(gitResult[level] as Record<string, unknown> | undefined),
-            ...(gitFromOverlay[level] as Record<string, unknown>),
-          };
-        }
-      }
-      meta.preset = overlay.preset;
-    } else if (overlay?.preset) {
-      meta.preset = overlay.preset;
-    }
-
+    const gitResult = fullGit ? filterGitByEssential(fullGit, essentialTrajectoryFields) : {};
     if (Object.keys(gitResult).length > 0) meta.git = gitResult;
 
     // Preserve codegraph nested section (tea-rags-mcp-0am0). MCP callers in
@@ -276,16 +235,6 @@ export function filterMetaOnly(
     const codegraph = r.payload?.codegraph;
     if (codegraph && typeof codegraph === "object") {
       meta.codegraph = codegraph;
-    }
-
-    // Preserve the file-level members outline (tea-rags-mcp-zrma). It is
-    // synthesized by FileLevelGrouper rather than declared in payloadSignals,
-    // so the rebuild above drops it — and rank_chunks defaults to
-    // metaOnly=true, which is precisely where knowing WHAT matched inside a
-    // file (not just that something did) saves the caller a second query.
-    const members = r.payload?.members;
-    if (typeof members === "string") {
-      meta.members = members;
     }
 
     return meta;

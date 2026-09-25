@@ -17,11 +17,47 @@ describe("CLI 'doctor' command", () => {
     mkdirSync(repo);
     writeFileSync(join(repo, ".keep"), "");
     process.env.TEA_RAGS_DATA_DIR = dir;
+    // Status-tag assertions read plain text: force color off regardless of the
+    // developer's terminal (FORCE_COLOR in the shell would otherwise leak in).
+    vi.stubEnv("NO_COLOR", "1");
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     delete process.env.TEA_RAGS_DATA_DIR;
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("paints status tags by role when color is on: ok for healthy, alert for down", async () => {
+    vi.stubEnv("NO_COLOR", undefined);
+    vi.stubEnv("FORCE_COLOR", "1");
+    vi.stubEnv("COLORFGBG", undefined);
+    const { createColorizer } = await import("../../../src/cli/infra/color.js");
+    const colored = createColorizer({ env: { FORCE_COLOR: "1" }, isTTY: true });
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+      await runDoctor(
+        { json: false, recoverRegistry: false },
+        {
+          qdrant: {
+            url: "http://localhost:6333",
+            checkHealth: vi.fn().mockResolvedValue(false),
+            listCollections: vi.fn().mockResolvedValue([]),
+          } as never,
+          embeddings: {
+            checkHealth: vi.fn().mockResolvedValue(true),
+            getProviderName: () => "ollama",
+            getBaseUrl: () => "http://localhost:11434",
+          },
+        },
+      );
+      const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+      expect(out).toContain(`${colored.alert("[FAIL]")} Qdrant`);
+      expect(out).toContain(`${colored.ok("[OK]")}   Embeddings`);
+    } finally {
+      stdout.mockRestore();
+    }
   });
 
   it("prints [OK] for reachable Qdrant + embedding", async () => {

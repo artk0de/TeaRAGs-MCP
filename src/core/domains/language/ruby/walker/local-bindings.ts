@@ -1,3 +1,4 @@
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import { resolveLocalBindingType, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
@@ -41,14 +42,14 @@ export function collectRubyIvarFieldTypes(
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, Record<string, string>> {
   const yardParamsByLine = code ? collectYardParamTypes(code) : new Map<number, Record<string, string>>();
-  const out: Record<string, Record<string, string>> = {};
+  const out: Record<string, Record<string, string>> = createIdentifierRecord();
   forEachClassScope(root, (node, fq) => {
     // Collect typed `@ivar = …` across THIS class's own bodies. Stop at any
     // nested class/module — those are attributed to their own fq by the
     // forEachClassScope recursion. Method bodies get a method-scoped type env
     // (YARD params + local `Const.new`/copy) so a param/local-copy or an
     // association-chain RHS types the ivar, not just `@x = Const.new`.
-    const fields: Record<string, string> = {};
+    const fields: Record<string, string> = createIdentifierRecord();
     const collectInClass = (n: AstNode): void => {
       if (n.type === "class" || n.type === "module") return;
       if (n.type === "method" || n.type === "singleton_method") {
@@ -78,7 +79,10 @@ function methodTypeEnv(
   yardParamsByLine: Map<number, Record<string, string>>,
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, string> {
-  const env: Record<string, string> = { ...(yardParamsByLine.get(method.startPosition.row + 1) ?? {}) };
+  const env: Record<string, string> = Object.assign(
+    createIdentifierRecord<string>(),
+    yardParamsByLine.get(method.startPosition.row + 1),
+  );
   const scan = (n: AstNode): void => {
     if (n.type === "class" || n.type === "module" || n.type === "method" || n.type === "singleton_method") return;
     if (n.type === "assignment") {
@@ -209,7 +213,7 @@ export function collectRubyBodyReturnTypes(
   root: AstNode,
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = createIdentifierRecord();
   walk(root, (node) => {
     if (node.type !== "method" && node.type !== "singleton_method") return;
     const nameNode = node.childForFieldName("name");
@@ -357,7 +361,7 @@ export function collectRubyScopedBodyReturnTypes(
   root: AstNode,
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, RubyTypeRef> {
-  const out: Record<string, RubyTypeRef> = {};
+  const out: Record<string, RubyTypeRef> = createIdentifierRecord();
   forEachClassScope(root, (classNode, fq) => {
     const classBody = classNode.childForFieldName("body") ?? classNode;
     const scan = (n: AstNode): void => {
@@ -412,7 +416,7 @@ export function collectRubyLocalCallBindingsForChunk(
   endLine: number,
   catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
 ): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = createIdentifierRecord();
   walk(root, (node) => {
     const line = node.startPosition.row + 1;
     if (line < startLine || line > endLine) return;

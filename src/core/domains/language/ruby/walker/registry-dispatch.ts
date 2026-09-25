@@ -14,6 +14,7 @@
  * it composes through subscript, instantiation, and member selection.
  */
 
+import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallRef, DispatchRef, DispatchTable } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
@@ -138,7 +139,7 @@ function rubyDispatchValueConstant(node: AstNode | null): string | null {
  * `collectRegistryConstantValueRefs` (which keeps emitting the chunk-ref edges).
  */
 export function collectRubyDispatchTables(root: AstNode): Record<string, DispatchTable> {
-  const out: Record<string, DispatchTable> = {};
+  const out: Record<string, DispatchTable> = createIdentifierRecord();
   walk(root, (node) => {
     if (node.type !== "assignment") return;
     const left = node.childForFieldName("left");
@@ -146,7 +147,7 @@ export function collectRubyDispatchTables(root: AstNode): Record<string, Dispatc
     const name = left.type === "scope_resolution" ? readScopeResolution(left) : left.text;
     const literal = unwrapTrailingCalls(node.childForFieldName("right"));
     if (!literal) return;
-    const entries: Record<string, string> = {};
+    const entries: Record<string, string> = createIdentifierRecord();
     if (literal.type === "hash") {
       for (const pair of literal.namedChildren) {
         if (pair.type !== "pair") continue;

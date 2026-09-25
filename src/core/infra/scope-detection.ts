@@ -9,32 +9,40 @@ export interface ScopeDetectionConfig {
   languageTestChunkCounts: Map<string, number>;
 }
 
-/** Root-level test directories shared by the TypeScript and JavaScript entries. */
-const ECMASCRIPT_TEST_DIRECTORIES = ["tests/**", "test/**", "__tests__/**"];
+/**
+ * Default test paths are DERIVED from `TEST_PATTERNS_BY_LANGUAGE`, the file
+ * classifier's per-language table: its language-agnostic `common` directories
+ * plus the language's own suffixes. A hand copy here drifted twice — it missed
+ * TypeScript's `.mts` / `.cts` suffixes (bd tea-rags-mcp-1y13c), and its
+ * root-anchored `spec/` glob disagreed with the classifier's any-depth one on
+ * nested layouts (bd tea-rags-mcp-jl3ff): a Rails-engine spec was enriched as a
+ * test while its signals landed in the SOURCE percentile bucket.
+ */
+const { common: COMMON_TEST_DIRECTORIES, ...TEST_SUFFIXES_BY_LANGUAGE } = TEST_PATTERNS_BY_LANGUAGE;
 
 /**
- * TypeScript and JavaScript take their test-file SUFFIXES from
- * `TEST_PATTERNS_BY_LANGUAGE`, the classifier's per-language source, rather
- * than a copy: the copy here missed `.mts` / `.cts` once TypeScript owned them
- * (bd tea-rags-mcp-1y13c), so a `worker.test.mts` chunk scored as source and
- * went through the secrets gate as real code.
+ * Suffix conventions for languages the classifier table does not carry yet.
+ * They stay scope-detection-only because moving them into the table would also
+ * change what the classifier calls a test — git enrichment policy and codegraph
+ * exclusion — which is a separate decision (see bd tea-rags-mcp-jl3ff).
+ * Directory conventions are NOT repeated here: `COMMON_TEST_DIRECTORIES` covers
+ * them for every language.
  */
-const DEFAULT_TEST_PATHS: Record<string, string[]> = {
-  ruby: ["spec/**", "test/**"],
-  typescript: [...ECMASCRIPT_TEST_DIRECTORIES, ...TEST_PATTERNS_BY_LANGUAGE.typescript],
-  javascript: [...ECMASCRIPT_TEST_DIRECTORIES, ...TEST_PATTERNS_BY_LANGUAGE.javascript],
-  python: ["tests/**", "test/**", "**/test_*.py", "**/*_test.py"],
-  go: ["**/*_test.go"],
-  java: ["src/test/**", "**/test/**"],
-  kotlin: ["src/test/**", "**/test/**"],
+const SCOPE_ONLY_TEST_SUFFIXES: Readonly<Record<string, readonly string[]>> = {
   csharp: ["**/*.Tests/**", "**/Tests/**", "**/*Test.cs", "**/*Tests.cs"],
   swift: ["**/Tests/**", "**/*Tests.swift"],
-  php: ["tests/**", "test/**", "**/*Test.php"],
-  elixir: ["test/**", "**/*_test.exs"],
-  scala: ["src/test/**", "**/test/**"],
+  php: ["**/*Test.php"],
+  elixir: ["**/*_test.exs"],
 };
 
-const FALLBACK_TEST_PATHS = ["test/**", "tests/**", "spec/**", "__tests__/**"];
+const DEFAULT_TEST_PATHS: Readonly<Record<string, string[]>> = Object.fromEntries(
+  Object.entries({ ...SCOPE_ONLY_TEST_SUFFIXES, ...TEST_SUFFIXES_BY_LANGUAGE }).map(([language, suffixes]) => [
+    language,
+    [...COMMON_TEST_DIRECTORIES, ...suffixes],
+  ]),
+);
+
+const FALLBACK_TEST_PATHS = [...COMMON_TEST_DIRECTORIES];
 
 export function getDefaultTestPaths(language: string): string[] {
   return DEFAULT_TEST_PATHS[language] ?? FALLBACK_TEST_PATHS;

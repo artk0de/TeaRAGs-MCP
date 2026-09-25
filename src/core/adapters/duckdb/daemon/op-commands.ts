@@ -11,6 +11,7 @@ import type {
   ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
+  TemporalCochangeSnapshot,
 } from "../../../contracts/types/codegraph.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { GraphDbClientPool } from "../pool.js";
@@ -168,6 +169,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges)),
   removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath as RelPath)),
   removeSymbolsForFile: write(async (graphDb, p) => graphDb.removeSymbolsForFile(p.relPath as RelPath)),
+  pruneDerivedForDeletedFiles: write(async (graphDb, p) =>
+    graphDb.pruneDerivedForDeletedFiles(p.relPaths as RelPath[]),
+  ),
   upsertSymbols: write(async (graphDb, p) =>
     graphDb.upsertSymbols(p.relPath as RelPath, p.definitions as SymbolDefinition[]),
   ),
@@ -192,6 +196,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // Ranks ride the wire as `[symbolId, rank][]` entries (a Map cannot
   // JSON-serialise) — rebuild the Map before delegating to the adapter.
   replacePageRanks: write(async (graphDb, p) => graphDb.replacePageRanks(new Map(p.ranks as [string, number][]))),
+  // Plain arrays on the wire — the snapshot is JSON-shaped already.
+  replaceTemporalCochange: write(async (graphDb, p) =>
+    graphDb.replaceTemporalCochange(p.snapshot as TemporalCochangeSnapshot),
+  ),
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
@@ -202,6 +210,11 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // bd tea-rags-mcp-a2ddb — the baseline the next run's drift diff reads. A
   // write, so it goes through the governed handle like every other one.
   refreshSymbolSignalsPrev: write(async (graphDb) => graphDb.refreshSymbolSignalsPrev()),
+  // bd tea-rags-mcp-dvzdm — a write (admitted in order, governed) that answers
+  // with its outcome instead of the `null` ack, so the run can log what it did.
+  // The file swap happens inside the pooled client's session: the pool entry,
+  // its symbol table and every socket stay as they are.
+  compactStorage: { access: "write", run: async (graphDb) => graphDb.compactStorage() },
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
@@ -213,6 +226,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.getAmbiguousCallersByMember(p.member as string, p.limit as number | undefined),
   ),
   findSymbolChunk: read(async (graphDb, p) => graphDb.findSymbolChunk(p.symbolId as SymbolId)),
+  getSymbolVisibilities: read(async (graphDb, p) => graphDb.getSymbolVisibilities(p.symbolIds as SymbolId[])),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),
@@ -252,7 +266,18 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // The adapter returns a `Map<string, string[]>`; serialise as entries
   // so it survives JSON framing (the client rebuilds the Map).
   listAdjacency: read(async (graphDb, p) => [...(await graphDb.listAdjacency(p.scope as CycleScope)).entries()]),
-  getPageRank: read(async (graphDb, p) => graphDb.getPageRank(p.symbolId as SymbolId)),
+  // Plain arrays on the wire — nothing to rebuild on the client.
+  readFileDependencyGraph: read(async (graphDb) => graphDb.readFileDependencyGraph()),
+  readNonPublicMemberEdges: read(async (graphDb, p) => graphDb.readNonPublicMemberEdges(p.languages as string[])),
+  readTemporalCochangeMeta: read(async (graphDb) => graphDb.readTemporalCochangeMeta()),
+  readTemporalCochangeGraph: read(async (graphDb) => graphDb.readTemporalCochangeGraph()),
+  // File-scope get_callers / get_callees (bd tea-rags-mcp-gfvr8). Plain data.
+  getFileImporters: read(async (graphDb, p) => graphDb.getFileImporters(p.relPath as RelPath)),
+  getFileImports: read(async (graphDb, p) => graphDb.getFileImports(p.relPath as RelPath)),
+  hasStaleDerivedTables: read(async (graphDb) => graphDb.hasStaleDerivedTables()),
+  getPageRank: read(async (graphDb, p) =>
+    graphDb.getPageRank(p.symbolId as SymbolId, p.relPath as RelPath | undefined),
+  ),
 
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   getSupertypes: read(async (graphDb, p) => graphDb.getSupertypes(p.fqName as string)),

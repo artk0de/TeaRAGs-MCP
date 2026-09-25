@@ -59,7 +59,7 @@ const suites = [
   { name: "edge", fn: testEdgeCases, args: ["qdrant", "embeddings"] },
   { name: "batch", fn: testBatchPipeline, args: ["qdrant", "embeddings"] },
   { name: "concurrent", fn: testConcurrentSafety, args: ["qdrant", "embeddings"] },
-  { name: "parallel", fn: testParallelSync, args: [] },
+  { name: "parallel", fn: testParallelSync, args: ["qdrant"] },
   { name: "pipeline", fn: testPipelineWorkerpool, args: ["qdrant"] },
   { name: "schema", fn: testSchemaAndDeleteOptimization, args: ["qdrant"] },
   { name: "reindex", fn: testForceReindexBehavior, args: ["qdrant", "embeddings"] },

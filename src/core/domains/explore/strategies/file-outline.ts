@@ -11,8 +11,10 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
+import type { SymbolVisibilityResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
+import { renderWithDeclaredVisibility } from "../outline-visibility.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -33,6 +35,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],
     private readonly input: FileOutlineInput,
+    private readonly visibilityResolver?: SymbolVisibilityResolver,
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
   }
@@ -72,8 +75,16 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
     if (chunks.length === 0) return [];
 
     const isDoc = chunks.some((c) => c.payload.isDocumentation);
-    const grouped = isDoc ? [DocChunkGrouper.group(chunks)] : [CodeChunkGrouper.groupFile(chunks)];
-    return grouped;
+    if (isDoc) return [DocChunkGrouper.group(chunks)];
+    // Member lines carry declared visibility (bd tea-rags-mcp-sqqkz); metaOnly
+    // strips the outline text, so there is nothing to decorate.
+    return [
+      await renderWithDeclaredVisibility(
+        (visibilityOf) => CodeChunkGrouper.groupFile(chunks, visibilityOf),
+        ctx.metaOnly ? undefined : this.visibilityResolver,
+        ctx.collectionName,
+      ),
+    ];
   }
 
   /**

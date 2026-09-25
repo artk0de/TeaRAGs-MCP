@@ -445,6 +445,60 @@ describe("superviseIndexing — JSON mode", () => {
     expect(out.join("\n")).not.toContain("error: Qdrant");
   });
 
+  it("error message with a hint carries it into the json error object (bd tea-rags-mcp-umatc)", async () => {
+    // The message says what broke; the hint says what to do. Dropping the hint
+    // left an agent with "Ollama is not reachable" and no next step.
+    const child = fakeChild();
+    const renderer = new JsonProgressRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("message", {
+      type: "error",
+      message: "Ollama is not reachable at http://127.0.0.1:9",
+      code: "INFRA_OLLAMA_UNAVAILABLE",
+      hint: "Start Ollama: open -a Ollama",
+    });
+    await p;
+
+    const objects = out.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const errorObject = objects.find((o) => o.error !== undefined);
+    expect(errorObject!.error).toEqual({
+      code: "INFRA_OLLAMA_UNAVAILABLE",
+      message: "Ollama is not reachable at http://127.0.0.1:9",
+      hint: "Start Ollama: open -a Ollama",
+    });
+  });
+
+  it("error message with a hint prints it under the error in human mode", async () => {
+    const child = fakeChild();
+    const renderer = fakeRenderer();
+    const out: string[] = [];
+    const p = superviseIndexing(child, {
+      renderer,
+      waitEnrichments: true,
+      colors: plain,
+      out: (s) => out.push(s),
+    });
+
+    child.emit("message", {
+      type: "error",
+      message: "Ollama is not reachable at http://127.0.0.1:9",
+      code: "INFRA_OLLAMA_UNAVAILABLE",
+      hint: "Start Ollama: open -a Ollama",
+    });
+    await p;
+
+    const text = out.join("\n");
+    expect(text).toContain("error: Ollama is not reachable at http://127.0.0.1:9");
+    expect(text).toContain("hint: Start Ollama: open -a Ollama");
+  });
+
   it("error message without a code falls back to UNKNOWN in the json error object", async () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();

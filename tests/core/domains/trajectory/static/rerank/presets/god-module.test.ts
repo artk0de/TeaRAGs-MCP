@@ -28,10 +28,9 @@ describe("GodModulePreset", () => {
     expect(preset.signalLevel).toBe("file");
   });
 
-  it("carries the attribution numbers in the overlay", () => {
+  it("carries file mass in the overlay and declares no chunk bucket a file-level result never emits", () => {
     expect(preset.overlayMask).toEqual({
       file: ["moduleLines", "moduleMethodCount"],
-      chunk: ["memberCount"],
     });
   });
 

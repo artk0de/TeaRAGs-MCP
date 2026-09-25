@@ -11,6 +11,7 @@
  * once.
  */
 
+import { identifierEntry } from "../../../../../contracts/identifier-record.js";
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
@@ -212,7 +213,7 @@ export function collectAncestorChain(klass: string, ctx: CallContext, visited: S
   if (visited.has(klass)) return [];
   visited.add(klass);
   const chain: string[] = [];
-  const ancestors = ctx.classAncestors?.[klass];
+  const ancestors = identifierEntry(ctx.classAncestors, klass);
   if (ancestors) {
     for (const ancestor of ancestors) {
       if (visited.has(ancestor)) continue;
@@ -245,7 +246,7 @@ function canonicalizeAncestorFq(raw: string, nestingKlass: string, ctx: CallCont
   // a symbol-table match must be UNIQUE (=== 1) so an ambiguous namespace prefix
   // never canonicalizes to the wrong FQ and fabricates a mixin edge.
   const isKnown = (name: string): boolean =>
-    ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
+    identifierEntry(ctx.classAncestors, name) !== undefined || ctx.symbolTable.lookup(name).length === 1;
   // `Module.nesting` HEAD is the declaring class itself: `class C; prepend
   // Wrapper` means `C::Wrapper` whenever that constant exists, shadowing any
   // outer or top-level `Wrapper`. Legal for COMPACT declarations too (`class
@@ -286,9 +287,12 @@ function canonicalizeMixinAlias(alias: string, includer: string, ctx: CallContex
   const nested = canonicalizeAncestorFq(alias, includer, ctx);
   if (nested !== null) return nested;
   const isKnown = (name: string): boolean =>
-    ctx.classAncestors?.[name] !== undefined || ctx.symbolTable.lookup(name).length === 1;
-  const parent = ctx.classExtends?.[includer];
-  const ancestors = [...(ctx.classAncestors?.[includer] ?? []), ...(parent === undefined ? [] : [parent])];
+    identifierEntry(ctx.classAncestors, name) !== undefined || ctx.symbolTable.lookup(name).length === 1;
+  const parent = identifierEntry(ctx.classExtends, includer);
+  const ancestors = [
+    ...(identifierEntry(ctx.classAncestors, includer) ?? []),
+    ...(parent === undefined ? [] : [parent]),
+  ];
   for (const ancestor of ancestors) {
     const ancestorFq = canonicalizeAncestorFq(ancestor, includer, ctx) ?? ancestor;
     const candidate = `${ancestorFq}::${alias}`;
@@ -322,7 +326,7 @@ export function collectResolvedAncestorChain(
   if (visited.has(klass)) return [];
   visited.add(klass);
   const chain: string[] = [];
-  const ancestors = ctx.classAncestors?.[klass];
+  const ancestors = identifierEntry(ctx.classAncestors, klass);
   if (ancestors) {
     for (const raw of ancestorsInMroOrder(klass, ancestors, ctx)) {
       const fq = canonicalizeAncestorFq(raw, klass, ctx) ?? raw;
@@ -408,7 +412,7 @@ export function resolveInstanceMethodInClassChain(
   // than the class's own file edge. Reverse order: later `prepend` wins in MRO.
   // Mirrors `resolveTypeMethod`; shared so self/super honour prepend like the
   // local-type/ivar passes already do (bd tea-rags-mcp-3jvn family).
-  const prepended = ctx.classPrependedAncestors?.[klass];
+  const prepended = identifierEntry(ctx.classPrependedAncestors, klass);
   if (prepended) {
     for (let i = prepended.length - 1; i >= 0; i--) {
       const inherited = resolveInstanceMethodInClassChain(prepended[i], member, ctx, mode, visited, excludeSymbolId);
@@ -430,7 +434,7 @@ export function resolveInstanceMethodInClassChain(
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
 
-  const ancestors = ctx.classAncestors?.[klass];
+  const ancestors = identifierEntry(ctx.classAncestors, klass);
   if (ancestors) {
     for (const ancestor of ancestorsInMroOrder(klass, ancestors, ctx)) {
       const inherited = resolveInstanceMethodInClassChain(ancestor, member, ctx, mode, visited, excludeSymbolId);
@@ -494,7 +498,7 @@ export function resolveViaSuperclassChain(
       const target = pickSingleCandidate(candidates, mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     }
-    klass = ctx.classExtends?.[klass];
+    klass = identifierEntry(ctx.classExtends, klass);
   }
   return null;
 }
@@ -588,12 +592,12 @@ export function resolveViaIncludingClasses(
  * name canonicalizes back to this very module (bd lawlq.5).
  */
 function includerAliases(moduleName: string, ctx: CallContext): { klass: string; alias: string }[] {
-  const direct = ctx.includedBy?.[moduleName] ?? [];
+  const direct = identifierEntry(ctx.includedBy, moduleName) ?? [];
   if (direct.length > 0) return direct.map((klass) => ({ klass, alias: moduleName }));
   const segment = lastConstantSegment(moduleName);
   if (segment === moduleName) return [];
   const out: { klass: string; alias: string }[] = [];
-  for (const klass of ctx.includedBy?.[segment] ?? []) {
+  for (const klass of identifierEntry(ctx.includedBy, segment) ?? []) {
     if (canonicalizeMixinAlias(segment, klass, ctx) === moduleName) out.push({ klass, alias: segment });
   }
   return out;
@@ -700,6 +704,21 @@ export function resolveSelfDispatchHookTarget(
   return target;
 }
 
+/**
+ * The enclosing type of a method symbolId — the segment before the class↔method
+ * separator: `KindOfService#call` → `KindOfService`, `KindOfService.call` →
+ * `KindOfService`, `Mod::Svc#m` → `Mod::Svc` (`::` is the namespace separator, not
+ * the method separator). `null` for a separatorless top-level function symbolId
+ * (never a template). Instance (`#`) and class (`.`) forms are both handled.
+ */
+export function enclosingTypeOf(symbolId: string): string | null {
+  const hash = symbolId.lastIndexOf("#");
+  if (hash !== -1) return symbolId.slice(0, hash);
+  const dot = symbolId.lastIndexOf(".");
+  if (dot !== -1) return symbolId.slice(0, dot);
+  return null;
+}
+
 /** Whether a resolved hook target points at a walker-marked abstract stub. */
 function targetIsAbstractStub(target: SymbolResolutionTarget, hook: string, ctx: CallContext): boolean {
   return lookupRubySymbolsByShortName(ctx, hook).some(
@@ -725,10 +744,10 @@ function resolveTypeMethodInternal(
   // skip own-file and prepend lookups and fall through to the ancestor walk.
   // Without ancestors there is nothing to resolve — return null so the caller
   // can DROP. (RC-2 fix: tea-rags-mcp-nts2b)
-  if (!targetFile && !ctx.classAncestors?.[typeName]) return null;
+  if (!targetFile && !identifierEntry(ctx.classAncestors, typeName)) return null;
 
   if (targetFile !== null) {
-    const prepended = ctx.classPrependedAncestors?.[typeName];
+    const prepended = identifierEntry(ctx.classPrependedAncestors, typeName);
     if (prepended) {
       for (let i = prepended.length - 1; i >= 0; i--) {
         const inherited = resolveTypeMethodInternal(prepended[i], member, ctx, mode, visited, symbolIdFilter);
@@ -752,7 +771,7 @@ function resolveTypeMethodInternal(
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   }
 
-  const ancestors = ctx.classAncestors?.[typeName];
+  const ancestors = identifierEntry(ctx.classAncestors, typeName);
   if (ancestors) {
     for (const ancestor of ancestorsInMroOrder(typeName, ancestors, ctx)) {
       const inherited = resolveTypeMethodInternal(ancestor, member, ctx, mode, visited, symbolIdFilter);

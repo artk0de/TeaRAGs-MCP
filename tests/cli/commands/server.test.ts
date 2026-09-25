@@ -130,4 +130,15 @@ describe("server command", () => {
 
     onSpy.mockRestore();
   });
+
+  it("hands the context cleanup to the stdio transport, which exits after it on stdin close (bd tea-rags-mcp-e6cpu)", async () => {
+    const cleanup = vi.fn();
+    vi.mocked(createAppContext).mockResolvedValue({ cleanup } as any);
+    const onSpy = vi.spyOn(process, "on").mockImplementation(() => process);
+
+    await runServer({ http: false });
+
+    expect(startStdioServer).toHaveBeenCalledWith(expect.anything(), { cleanup });
+    onSpy.mockRestore();
+  });
 });

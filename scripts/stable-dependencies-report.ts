@@ -17,11 +17,14 @@
  *
  * Usage:
  *   npx tsx scripts/stable-dependencies-report.ts --db <copy.duckdb> \
- *     [--tolerance 0.2] [--min-connection-count 5] [--top 20] [--json out.json]
+ *     [--tolerance 0.2] [--min-connection-count 5] [--judge-private-collaborators]
+ *     [--top 20] [--json out.json]
  *
  * `--tolerance` and `--min-connection-count` default to the detector's own
  * defaults (`DEFAULT_SDP_TOLERANCE`, `DEFAULT_SDP_MIN_CONNECTION_COUNT`); leave
  * them off to measure what the shipped detector reports.
+ * `--judge-private-collaborators` turns the private-collaborator exclusion off,
+ * to measure what it takes out.
  */
 
 import { existsSync, writeFileSync } from "node:fs";
@@ -33,10 +36,12 @@ import type { FileDependencyGraph } from "../src/core/contracts/types/codegraph.
 import {
   detectStableDependencyViolations,
   NO_SYMBOL_ENDPOINT_REASON,
+  PRIVATE_COLLABORATOR_REASON,
   type DependencyDirectoryRelation,
   type NoSymbolEndpointFile,
   type StableDependenciesOptions,
   type StableDependenciesReport,
+  type StableDependencyRootCause,
   type StableDependencyViolation,
 } from "../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
@@ -44,6 +49,7 @@ export interface StableDependenciesReportArgs {
   dbPath: string;
   tolerance?: number;
   minConnectionCount?: number;
+  judgePrivateCollaborators?: boolean;
   top: number;
   jsonOut?: string;
 }
@@ -82,6 +88,10 @@ export function parseArgs(argv: readonly string[]): StableDependenciesReportArgs
       case "--json":
         args.jsonOut = requireValue(flag, value);
         break;
+      case "--judge-private-collaborators":
+        args.judgePrivateCollaborators = true;
+        // A switch: no value to skip.
+        continue;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
@@ -156,6 +166,20 @@ function formatViolation(v: StableDependencyViolation): string {
   );
 }
 
+/** At most this many sources are named per root-cause line; the count carries the rest. */
+const ROOT_CAUSE_SOURCE_SAMPLE = 3;
+
+const ROOT_CAUSE_HEADER = `  count  max delta  I(tgt)  target  [cycle = references its own dependents]  <- sources`;
+
+function formatRootCause(r: StableDependencyRootCause): string {
+  const named = r.sources.slice(0, ROOT_CAUSE_SOURCE_SAMPLE).join(", ");
+  const more = r.sources.length > ROOT_CAUSE_SOURCE_SAMPLE ? `, +${r.sources.length - ROOT_CAUSE_SOURCE_SAMPLE}` : "";
+  return (
+    `  ${String(r.violationCount).padStart(5)}  ${r.maxInstabilityDelta.toFixed(3).padStart(9)}  ` +
+    `${r.targetInstability.toFixed(3)}  ${r.targetRelPath}${r.cycleWithDependents ? "  cycle" : ""}  <- ${named}${more}`
+  );
+}
+
 const VIOLATION_HEADER = `  delta  I(src) → I(tgt)    cc src/tgt    calls  relation    source -> target`;
 
 export function renderStableDependenciesReport(
@@ -174,9 +198,11 @@ export function renderStableDependenciesReport(
     `    unwalked endpoint   ${summary.excluded.unwalkedEndpoints}`,
     `    no-symbol endpoint  ${summary.excluded.noSymbolEndpoints}`,
     `    low connectionCount ${summary.excluded.lowConnectionCount}`,
+    `    private collaborator ${summary.excluded.privateCollaborators}`,
     `  edges judged        ${summary.consideredEdgeCount}`,
     `  violations          ${summary.violationCount}`,
     "",
+    PRIVATE_COLLABORATOR_REASON,
     NO_SYMBOL_ENDPOINT_REASON,
     `  files excluded      ${report.noSymbolEndpointFiles.length}`,
     `  top ${top} by edges excluded`,
@@ -194,6 +220,8 @@ export function renderStableDependenciesReport(
   for (const [language, count] of [...byLanguage].sort((a, b) => b[1] - a[1])) {
     lines.push(`  ${language.padEnd(12)} ${count}`);
   }
+  lines.push("", `top ${top} root causes (violations grouped by unstable target)`, ROOT_CAUSE_HEADER);
+  for (const rootCause of report.rootCauses.slice(0, top)) lines.push(formatRootCause(rootCause));
   lines.push("", `top ${top} violations`, VIOLATION_HEADER);
   for (const v of violations.slice(0, top)) lines.push(formatViolation(v));
   const crossModule = violations.filter((v) => v.directoryRelation === "disjoint");
@@ -208,6 +236,7 @@ async function main(): Promise<void> {
   const options: StableDependenciesOptions = {};
   if (args.tolerance !== undefined) options.tolerance = args.tolerance;
   if (args.minConnectionCount !== undefined) options.minConnectionCount = args.minConnectionCount;
+  if (args.judgePrivateCollaborators) options.judgePrivateCollaborators = true;
   const { graph, report } = await collectStableDependencies(args.dbPath, options);
   process.stdout.write(renderStableDependenciesReport(report, graph, args.top));
   if (args.jsonOut) {
@@ -216,7 +245,10 @@ async function main(): Promise<void> {
   }
 }
 
-/** The `--json` document: the text report's facts, violations in full, the no-symbol sample capped at `top`. */
+/**
+ * The `--json` document: the text report's facts, violations and root causes
+ * in full, the no-symbol sample capped at `top`.
+ */
 export function buildStableDependenciesJson(
   report: StableDependenciesReport,
   graph: FileDependencyGraph,
@@ -227,6 +259,7 @@ export function buildStableDependenciesJson(
   summary: StableDependenciesReport["summary"];
   noSymbolEndpointFiles: { reason: string; count: number; sample: NoSymbolEndpointFile[] };
   byDirectoryRelation: Record<string, number>;
+  rootCauses: StableDependencyRootCause[];
   violations: (StableDependencyViolation & { sourceLanguage?: string; targetLanguage?: string })[];
 } {
   const languages = languageIndex(graph);
@@ -239,6 +272,7 @@ export function buildStableDependenciesJson(
       sample: report.noSymbolEndpointFiles.slice(0, top),
     },
     byDirectoryRelation: Object.fromEntries(countBy(report.violations, (v) => v.directoryRelation)),
+    rootCauses: report.rootCauses,
     violations: report.violations.map((v) => ({
       ...v,
       sourceLanguage: languages.get(v.sourceRelPath),

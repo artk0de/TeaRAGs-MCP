@@ -26,6 +26,7 @@ import {
 } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
+import { AstSymbolSplitter } from "./ast-symbol-splitter.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
@@ -53,10 +54,34 @@ interface ChildChunkEmissionPass {
   overloads: SymbolIdDisambiguator;
 }
 
+/** A run of content lines cut by the `enforceMaxChunkSize` post-pass. */
+interface ContentSegment {
+  text: string;
+  firstLine: number;
+  lastLine: number;
+}
+
+/**
+ * Who the parts of one split symbol belong to. Every part is emitted as
+ * `${symbolId}#partN` with `parentSymbolId = symbolId`, so the symbol id itself
+ * names the whole and find_symbol can fold the parts back under it.
+ */
+interface SplitSymbolIdentity {
+  symbolId: string | undefined;
+  name: string | undefined;
+  chunkType: NonNullable<CodeChunk["metadata"]["chunkType"]>;
+  /** The parts' parentType; defaults to the symbol's own (unwrapped) node type. */
+  parentType?: string;
+  /** Transient classifier flag, preserved on every part. */
+  claimed?: boolean;
+}
+
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
   private readonly parserCache: Map<string, LanguageConfig> = new Map();
   private readonly fallbackChunker: CharacterChunker;
+  /** Splits an oversized symbol on statement boundaries (bd tea-rags-mcp-y5vx4). */
+  private readonly symbolSplitter: AstSymbolSplitter;
   private readonly markdownChunker: MarkdownChunker;
   /** Track loading promises to avoid duplicate loads */
   private readonly loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
@@ -174,6 +199,7 @@ export class TreeSitterChunker implements CodeChunker {
     this.symbolIds = symbolIds;
     this.languages = languages;
     this.fallbackChunker = new CharacterChunker(config);
+    this.symbolSplitter = new AstSymbolSplitter(config.maxChunkSize);
     this.markdownChunker = new MarkdownChunker({ maxChunkSize: this.config.chunkSize }, this.fallbackChunker);
     // NO parser initialization here - lazy load on demand!
   }
@@ -442,42 +468,70 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Fallback for oversized nodes without valid children — character-based chunking.
+   * Oversized node without valid children — split on its statement boundaries.
+   * The parts keep the node's identity: `chunkType: "function"` and the node's
+   * own symbolId as the base of `#partN`, so the codegraph owner rule and
+   * find_symbol both fold them back into the one symbol.
    */
-  private async chunkOversizedNode(
+  private chunkOversizedNode(
     node: AstNode,
     parentName: string | undefined,
-    parentType: string,
     code: string,
     filePath: string,
     language: string,
     chunks: CodeChunk[],
-  ): Promise<void> {
-    const content = code.substring(node.startIndex, node.endIndex);
-    const nodeMethodLines = node.endPosition.row - node.startPosition.row + 1;
-    const subChunks = await this.fallbackChunker.chunk(content, filePath, language);
-    for (const subChunk of subChunks) {
+  ): void {
+    this.emitSplitSymbol(
+      node,
+      { symbolId: this.buildSymbolId(parentName), name: parentName, chunkType: "function" },
+      code,
+      filePath,
+      language,
+      chunks,
+    );
+  }
+
+  /**
+   * Emit an oversized symbol as `#part1..#partN` — one sequence per symbol,
+   * numbered once, cut by `AstSymbolSplitter` on statement boundaries with the
+   * enclosing context as each part's prefix (bd tea-rags-mcp-y5vx4).
+   *
+   * `parentSymbolId` is the symbol itself on every part and `parentType` the
+   * symbol's own node type: a part's parent IS the symbol it was cut from. The
+   * container lineage stays readable from the base id (`Foo#bar` → `Foo`),
+   * which is what the codegraph owner rule and the symbol-mass pass already
+   * fold on.
+   */
+  private emitSplitSymbol(
+    node: AstNode,
+    identity: SplitSymbolIdentity,
+    code: string,
+    filePath: string,
+    language: string,
+    chunks: CodeChunk[],
+  ): void {
+    const parts = this.symbolSplitter.split(node, code);
+    const methodLines = node.endPosition.row - node.startPosition.row + 1;
+    const parentType = identity.parentType ?? this.unwrapDecoratedDefinition(node).type;
+    parts.forEach((part, i) => {
       chunks.push({
-        ...subChunk,
-        startLine: node.startPosition.row + 1 + subChunk.startLine - 1,
-        endLine: node.startPosition.row + 1 + subChunk.endLine - 1,
+        content: part.content,
+        startLine: part.startLine,
+        endLine: part.endLine,
         metadata: {
-          ...subChunk.metadata,
+          filePath,
+          language,
           chunkIndex: chunks.length,
-          // Inherit symbolId + chunkType from the oversized parent method so
-          // every split subChunk shares one symbolId. Without this fix the
-          // character-fallback chunker yields chunkType="block" and
-          // symbolId=undefined, breaking the "all chunks of one method
-          // share the same symbolId" invariant that the codegraph slice
-          // (and the existing MCP navigation layer) relies on.
-          symbolId: this.buildSymbolId(parentName),
-          chunkType: "function",
-          parentSymbolId: parentName,
+          chunkType: identity.chunkType,
+          name: identity.name === undefined ? undefined : `${identity.name} (part ${i + 1}/${parts.length})`,
+          symbolId: identity.symbolId === undefined ? undefined : `${identity.symbolId}#part${i + 1}`,
+          parentSymbolId: identity.symbolId,
           parentType,
-          methodLines: nodeMethodLines,
+          methodLines,
+          ...(identity.claimed ? { claimed: true } : {}),
         },
       });
-    }
+    });
   }
 
   /**
@@ -552,7 +606,7 @@ export class TreeSitterChunker implements CodeChunker {
                 chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
                 name: result.name ?? parentName,
                 parentSymbolId: result.parentSymbolId ?? parentName,
-                parentType,
+                parentType: result.parentType ?? parentType,
                 symbolId: result.symbolId ?? this.buildSymbolId(parentName),
                 lineRanges: result.lineRanges,
               },
@@ -587,7 +641,7 @@ export class TreeSitterChunker implements CodeChunker {
     const content = code.substring(node.startIndex, node.endIndex);
     const isTooLarge = content.length > this.config.maxChunkSize;
     if (isTooLarge) {
-      await this.chunkOversizedNode(node, parentName, parentType, code, filePath, language, chunks);
+      this.chunkOversizedNode(node, parentName, code, filePath, language, chunks);
       return true;
     }
 
@@ -618,7 +672,25 @@ export class TreeSitterChunker implements CodeChunker {
     // former JS `chunkSymbols` fan-out (chunkType "function") and the Go
     // method/type branches (refined chunkType) into one capability call.
     // bd tea-rags-mcp-kfzx / z95o / d1f8 / n7x5 / j2b7.
+    // An oversized node is split on its statement boundaries here, while the
+    // AST is at hand, instead of being line-cut by the `enforceMaxChunkSize`
+    // post-pass (bd tea-rags-mcp-y5vx4).
+    const oversized = content.trim().length > this.config.maxChunkSize;
+
     if (decision.kind === "emit") {
+      if (oversized) {
+        for (const c of decision.chunks) {
+          this.emitSplitSymbol(
+            node,
+            { symbolId: c.symbolId, name: c.name, chunkType: c.chunkType, claimed: true },
+            code,
+            filePath,
+            language,
+            chunks,
+          );
+        }
+        return;
+      }
       decision.chunks.forEach((c, i) => {
         chunks.push({
           content: content.trim(),
@@ -654,6 +726,17 @@ export class TreeSitterChunker implements CodeChunker {
       namespaceOwner && nodeName
         ? this.symbolIds.compose(namespaceOwner, nodeName, { scopeSeparator: langConfig.scopeSeparator })
         : this.buildSymbolId(nodeName);
+    if (oversized) {
+      this.emitSplitSymbol(
+        node,
+        { symbolId, name: nodeName, chunkType: this.getChunkType(node.type) },
+        code,
+        filePath,
+        language,
+        chunks,
+      );
+      return;
+    }
     chunks.push({
       content: content.trim(),
       startLine: node.startPosition.row + 1,
@@ -765,14 +848,32 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private enforceMaxChunkSize(chunks: CodeChunk[]): CodeChunk[] {
     const max = this.config.maxChunkSize;
+    // Pass 1 — cut every oversized chunk and count the parts each symbolId will
+    // carry, so numbering runs ONCE per symbol across all its oversized chunks
+    // (bd tea-rags-mcp-y5vx4: numbering restarted per chunk, and two oversized
+    // windows of one symbol both produced `#part1`).
+    const segmentsOf = new Map<CodeChunk, ContentSegment[]>();
+    const partTotals = new Map<string, number>();
+    for (const chunk of chunks) {
+      if (chunk.content.length <= max) continue;
+      const segments = this.splitContentIntoSegments(chunk.content, max);
+      segmentsOf.set(chunk, segments);
+      const key = chunk.metadata.symbolId ?? "";
+      partTotals.set(key, (partTotals.get(key) ?? 0) + segments.length);
+    }
+
+    const partCursor = new Map<string, number>();
     const result: CodeChunk[] = [];
     for (const chunk of chunks) {
-      if (chunk.content.length <= max) {
+      const segments = segmentsOf.get(chunk);
+      if (!segments) {
         result.push(chunk);
         continue;
       }
-      const parts = this.splitOversizedChunk(chunk, max);
-      result.push(...parts);
+      const key = chunk.metadata.symbolId ?? "";
+      const firstPart = (partCursor.get(key) ?? 0) + 1;
+      partCursor.set(key, firstPart + segments.length - 1);
+      result.push(...this.splitOversizedChunk(chunk, segments, firstPart, partTotals.get(key) ?? segments.length));
     }
     for (let i = 0; i < result.length; i++) {
       result[i].metadata.chunkIndex = i;
@@ -780,71 +881,73 @@ export class TreeSitterChunker implements CodeChunker {
     return result;
   }
 
-  private splitOversizedChunk(chunk: CodeChunk, max: number): CodeChunk[] {
-    const segments = this.splitContentIntoSegments(chunk.content, max);
-    const totalLines = Math.max(1, chunk.endLine - chunk.startLine + 1);
+  /**
+   * One oversized chunk → its parts, numbered from `firstPart` out of `partTotal`
+   * for the symbol. Line ranges are exact: content lines past the chunk's own
+   * line span are a prefix (hierarchy headers, a comment prefix), so the first
+   * `prefixLines` content lines map to no source line and every later line maps
+   * 1:1 onto `startLine..endLine`.
+   */
+  private splitOversizedChunk(
+    chunk: CodeChunk,
+    segments: ContentSegment[],
+    firstPart: number,
+    partTotal: number,
+  ): CodeChunk[] {
     const originalSymbolId = chunk.metadata.symbolId;
     const originalName = chunk.metadata.name ?? "chunk";
     const parentSymbolId = originalSymbolId ?? chunk.metadata.parentSymbolId;
+    const contentLines = chunk.content.split("\n").length;
+    const prefixLines = Math.max(0, contentLines - (chunk.endLine - chunk.startLine + 1));
+    const sourceLine = (contentLine: number): number =>
+      Math.min(chunk.endLine, chunk.startLine + Math.max(0, contentLine - prefixLines));
 
-    const parts: CodeChunk[] = [];
-    let cursor = 0;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      const segLines = Math.max(1, seg.split("\n").length);
-      const startLine = chunk.startLine + Math.round((cursor / chunk.content.length) * totalLines);
-      cursor += seg.length;
-      const endLine =
-        chunk.startLine + Math.min(totalLines - 1, Math.round((cursor / chunk.content.length) * totalLines));
-      const partSymbolId = originalSymbolId ? `${originalSymbolId}#part${i + 1}` : undefined;
-      parts.push({
-        content: seg,
-        startLine,
-        endLine: Math.max(endLine, startLine + 1),
+    return segments.map((segment, i) => {
+      const part = firstPart + i;
+      return {
+        content: segment.text,
+        startLine: sourceLine(segment.firstLine),
+        endLine: sourceLine(segment.lastLine),
         metadata: {
           ...chunk.metadata,
           chunkIndex: chunk.metadata.chunkIndex,
-          name: `${originalName} (part ${i + 1}/${segments.length})`,
-          symbolId: partSymbolId,
+          name: `${originalName} (part ${part}/${partTotal})`,
+          symbolId: originalSymbolId ? `${originalSymbolId}#part${part}` : undefined,
           parentSymbolId,
-          methodLines: chunk.metadata.methodLines ?? segLines,
+          methodLines: chunk.metadata.methodLines ?? segment.lastLine - segment.firstLine + 1,
         },
-      });
-    }
-    return parts;
+      };
+    });
   }
 
   /**
-   * Split text into segments each <= max chars, preferring line boundaries.
-   * If a single line is wider than max, it gets character-sliced.
+   * Split text into segments each <= max chars on line boundaries. A single
+   * line wider than max is character-sliced — the only mid-line cut.
+   * `firstLine` / `lastLine` are 0-based content line indices.
    */
-  private splitContentIntoSegments(content: string, max: number): string[] {
+  private splitContentIntoSegments(content: string, max: number): ContentSegment[] {
     const lines = content.split("\n");
-    const segments: string[] = [];
-    let current = "";
-    for (const line of lines) {
+    const segments: ContentSegment[] = [];
+    let current: ContentSegment | undefined;
+    lines.forEach((line, index) => {
       if (line.length > max) {
-        if (current.length > 0) {
-          segments.push(current);
-          current = "";
-        }
+        if (current) segments.push(current);
+        current = undefined;
         for (let i = 0; i < line.length; i += max) {
-          segments.push(line.slice(i, i + max));
+          segments.push({ text: line.slice(i, i + max), firstLine: index, lastLine: index });
         }
-        continue;
+        return;
       }
-      const candidate = current.length === 0 ? line : `${current}\n${line}`;
-      if (candidate.length > max) {
-        segments.push(current);
-        current = line;
-      } else {
-        current = candidate;
+      if (current && current.text.length + 1 + line.length <= max) {
+        current.text = `${current.text}\n${line}`;
+        current.lastLine = index;
+        return;
       }
-    }
-    if (current.length > 0) {
-      segments.push(current);
-    }
-    return segments.length > 0 ? segments : [content.slice(0, max)];
+      if (current) segments.push(current);
+      current = { text: line, firstLine: index, lastLine: index };
+    });
+    if (current) segments.push(current);
+    return segments;
   }
 
   supportsLanguage(language: string): boolean {
@@ -946,7 +1049,7 @@ export class TreeSitterChunker implements CodeChunker {
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
       if (childContent.length > this.config.maxChunkSize) {
-        await this.emitOversizedChild(childNode, ci, childContent, pass);
+        this.emitOversizedChild(childNode, ci, pass);
         continue;
       }
 
@@ -990,24 +1093,17 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Child too large for one chunk — split it with the character fallback.
+   * Child too large for one chunk — split it on its statement boundaries.
    *
-   * Mirrors the `chunkOversizedNode` invariant at the method scope: every
-   * sub-chunk shares the composed method symbolId (`Foo#__init__`) and
-   * `chunkType: "function"`. Before bd tea-rags-mcp-5xie, the raw fallback
-   * chunks carried `symbolId: undefined` / `chunkType: "block"`, so
-   * `find_symbol("Flask#__init__")` came up empty even though cg_symbols had
-   * the entry. See `.claude/rules/symbolid-convention.md` and the regression
-   * test in tree-sitter.oversized-symbolid.test.ts.
+   * The parts are numbered under the composed method symbolId
+   * (`Foo#__init__#part1..N`) and keep the method's chunkType. Before bd
+   * tea-rags-mcp-5xie the raw fallback chunks carried `symbolId: undefined` /
+   * `chunkType: "block"`, so `find_symbol("Flask#__init__")` came up empty even
+   * though cg_symbols had the entry; the parts still resolve under that id. See
+   * `.claude/rules/symbolid-convention.md` and oversized-symbol-split.test.ts.
    */
-  private async emitOversizedChild(
-    childNode: AstNode,
-    ci: number,
-    childContent: string,
-    pass: ChildChunkEmissionPass,
-  ): Promise<void> {
-    const { langConfig, code, filePath, language, parentName, parentType, chunks } = pass;
-    const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
+  private emitOversizedChild(childNode: AstNode, ci: number, pass: ChildChunkEmissionPass): void {
+    const { langConfig, code, filePath, language, parentName, chunks } = pass;
     const semanticNode = this.unwrapDecoratedDefinition(childNode);
     const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
     const methodKind = classifyMethod(semanticNode);
@@ -1025,31 +1121,20 @@ export class TreeSitterChunker implements CodeChunker {
     // symbolId does — otherwise a long XCTest case's parts would carry
     // `chunkType: "function"` while its short siblings carry `"test"`.
     const methodChunkType = pass.ctx.methodChunkTypes.get(ci) ?? this.getChunkType(semanticNode.type);
-    const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
-    for (const subChunk of subChunks) {
-      chunks.push({
-        ...subChunk,
-        startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
-        endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
-        metadata: {
-          ...subChunk.metadata,
-          chunkIndex: chunks.length,
-          chunkType: methodChunkType,
-          name: childName,
-          // Every split shares the composed METHOD symbolId
-          // (bd tea-rags-mcp-5xie invariant).
-          symbolId: methodSymbolId,
-          // bd tea-rags-mcp-cpbv — parts point at the CLASS as their
-          // parent, not at the method itself. The 5xie self-reference
-          // (parentSymbolId === symbolId) created a self-loop that
-          // broke MCP navigation between parts and shadowed the
-          // class lineage.
-          parentSymbolId: effectiveParent ?? parentName,
-          parentType,
-          methodLines: childMethodLines,
-        },
-      });
-    }
+    // bd tea-rags-mcp-y5vx4 — the parts are `${methodSymbolId}#partN`, one
+    // sequence per method, cut on statement boundaries. They no longer share
+    // the bare method id (5xie): the codegraph owner rule and find_symbol fold
+    // `#partN` back onto the method. The class lineage cpbv protected stays
+    // readable from the method id itself, and parentSymbolId (= the method) is
+    // no longer a self-loop because no part carries the bare id.
+    this.emitSplitSymbol(
+      childNode,
+      { symbolId: methodSymbolId, name: childName, chunkType: methodChunkType },
+      code,
+      filePath,
+      language,
+      chunks,
+    );
   }
 
   /**
@@ -1131,7 +1216,7 @@ export class TreeSitterChunker implements CodeChunker {
           chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
           name: result.name ?? childName,
           parentSymbolId: result.parentSymbolId ?? fullParentName ?? parentName,
-          parentType,
+          parentType: result.parentType ?? parentType,
           symbolId: result.symbolId ?? this.buildSymbolId(childName),
           lineRanges: result.lineRanges,
         },

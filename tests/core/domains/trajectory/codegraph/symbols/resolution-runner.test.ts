@@ -285,6 +285,37 @@ describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
 
     expect(edges.fileEdges.map((e) => e.targetRelPath).sort()).toEqual(["src/a.tsx", "src/b.tsx"]);
   });
+
+  it("unions the export names of every import collapsed into one edge (bd tea-rags-mcp-r8hme.2)", () => {
+    // `import D from "./Button"` + `import { Props } from "./Button"` +
+    // `export { Size } from "./Button"` is ONE persisted edge; dropping the
+    // later statements' names would tell the facade check the file imports
+    // only `default` from Button.
+    const resolver = {
+      resolve: () => null,
+      resolveFileEdges: () => [
+        { targetRelPath: "src/Button.tsx", importText: "./Button", importedExportNames: ["default"] },
+        { targetRelPath: "src/Button.tsx", importText: "./Button", importedExportNames: ["Props", "default"] },
+        { targetRelPath: "src/Button.tsx", importText: "./Button", reexportedExportNames: ["Size"] },
+        { targetRelPath: "src/Button.tsx", importText: "./Button" },
+        { targetRelPath: "src/plain.tsx", importText: "./plain" },
+      ],
+    };
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), new CodegraphRunState());
+
+    const edges = runner.resolve(emptyExtraction("src/Page.tsx"), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges).toEqual([
+      {
+        targetRelPath: "src/Button.tsx",
+        importText: "./Button",
+        importedExportNames: ["default", "Props"],
+        reexportedExportNames: ["Size"],
+      },
+      { targetRelPath: "src/plain.tsx", importText: "./plain" },
+    ]);
+    expect(Object.keys(edges.fileEdges[1] ?? {})).toEqual(["targetRelPath", "importText"]);
+  });
 });
 
 describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", () => {

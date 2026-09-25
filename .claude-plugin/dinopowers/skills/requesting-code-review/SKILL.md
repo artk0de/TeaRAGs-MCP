@@ -105,7 +105,10 @@ lists.
 
 ## Step 3 — Build reviewer-context bundle
 
-Aggregate by `relativePath`. Per unique file extract:
+Aggregate by `relativePath`. Per unique file extract — raw essentials (`blame*`,
+`commitCount`, `ageDays`, `taskIds`) from payload `git.file.*`; `recent*` /
+`bugFixRate` + every label from `rankingOverlay.file.*` when the rerank surfaces
+them, else absent (metaOnly payload never carries them):
 
 - `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner (must
   approve based on current code state)

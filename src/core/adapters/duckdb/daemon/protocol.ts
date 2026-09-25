@@ -10,6 +10,7 @@ import type {
   ResolveRunStatsRow,
   SymbolDefinition,
   SymbolId,
+  TemporalCochangeSnapshot,
 } from "../../../contracts/types/codegraph.js";
 
 /**
@@ -45,6 +46,8 @@ export const DAEMON_OPS = [
   "upsertFile",
   "removeFile",
   "removeSymbolsForFile",
+  // Derived-table prune on deletion (bd tea-rags-mcp-dy852).
+  "pruneDerivedForDeletedFiles",
   "upsertSymbols",
   "upsertSymbolsBulk",
   "upsertFilesBulk",
@@ -52,6 +55,8 @@ export const DAEMON_OPS = [
   "updateSymbolChunkIdsBulk",
   "replaceCycles",
   "replacePageRanks",
+  // Wholesale rewrite of the temporal co-change sub-graph (bd tea-rags-mcp-x4rpp).
+  "replaceTemporalCochange",
   "checkpoint",
   "rebuildEdgeFileTargetIndex",
   "recordRunStats",
@@ -63,6 +68,10 @@ export const DAEMON_OPS = [
   // Baseline refresh for the derived-signal drift diff (bd tea-rags-mcp-a2ddb).
   // A WRITE: it replaces both `cg_*_signals_prev` tables in one transaction.
   "refreshSymbolSignalsPrev",
+  // Rewrite the collection's graph file without its dead row versions, when
+  // enough of it is dead (bd tea-rags-mcp-dvzdm). A WRITE: admitted in write
+  // order, and the swap happens inside the daemon, which owns the file.
+  "compactStorage",
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
@@ -88,8 +97,31 @@ export const DAEMON_OPS = [
   "getFileMetricsBulk",
   "findCycles",
   "listAdjacency",
+  // Whole file dependency graph for the architecture report (bd tea-rags-mcp-94hd9).
+  // REQUIRED, not legacy-tolerated: an empty graph would read as "no violations".
+  "readFileDependencyGraph",
+  // Method edges into non-public members for the convention-privacy check
+  // (bd tea-rags-mcp-r8hme.1). REQUIRED, not legacy-tolerated: an empty answer
+  // would read as "no convention-privacy leaks".
+  "readNonPublicMemberEdges",
+  // Temporal co-change sub-graph (bd tea-rags-mcp-x4rpp): the provenance row the
+  // builder compares against HEAD, and the pair set the silent-coupling detector
+  // judges (bd tea-rags-mcp-b4dcz). REQUIRED, not legacy-tolerated: an empty
+  // graph would read as "no silent coupling".
+  "readTemporalCochangeMeta",
+  "readTemporalCochangeGraph",
+  // One file's importers / imports for file-scope get_callers / get_callees
+  // (bd tea-rags-mcp-gfvr8). REQUIRED, not legacy-tolerated: an empty answer
+  // would read as "nothing imports this file".
+  "getFileImporters",
+  "getFileImports",
+  "hasStaleDerivedTables",
   "getPageRank",
   "findSymbolChunk",
+  // Declared visibility of a batch of symbols for the graph tools and the
+  // find_symbol outline (bd tea-rags-mcp-sqqkz). REQUIRED like getFileImporters:
+  // a daemon from an older build is restarted at handshake, not asked blindly.
+  "getSymbolVisibilities",
   // Per-file symbol line ranges for the payload healer's chunk-owner rule
   // (bd tea-rags-mcp-9i2ow). Its own op, so a daemon from an older build answers
   // "unknown daemon op" — a tolerated legacy op, see `LEGACY_TOLERATED_OPS`.
@@ -110,10 +142,12 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | shutdown | ping
+    | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
+    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
+    | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
-    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
+    | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut | getFileImporters | getFileImports
     | { collection: string; relPath: RelPath; definitions: SymbolDefinition[] } // upsertSymbols
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
@@ -122,13 +156,15 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
-    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
+    | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
+    | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
-    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths
+    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths | getSymbolVisibilities
     | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks
+    | { collection: string; snapshot: TemporalCochangeSnapshot } // replaceTemporalCochange
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes

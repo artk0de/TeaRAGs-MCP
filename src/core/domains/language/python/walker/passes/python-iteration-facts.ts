@@ -27,7 +27,7 @@
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
-import type { InlineTypeSource, TypeFact } from "../../../kernel/type-facts.js";
+import type { InlineTypeSource, TypeFact } from "../../../kernel/index.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
 import { PYTHON_AST_SOURCE } from "./python-ast-type-source.js";
 import { pythonAnnotationExpression, walkPythonScopes, type PythonForStatementSite } from "./python-def-scope-walk.js";

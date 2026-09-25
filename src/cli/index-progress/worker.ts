@@ -346,6 +346,22 @@ function resolveEntryScript(): string {
   }
 }
 
+/**
+ * The IPC message for a run-phase fatal. Matching is structural, like the
+ * readiness gate's: a typed error's `code` drives the --json error object, and
+ * its `hint` — what to DO, e.g. "Start Ollama: open -a Ollama" — rides along,
+ * because the message alone only says what broke (bd tea-rags-mcp-umatc).
+ */
+function toFatalMessage(error: unknown): Extract<WorkerMessage, { type: "error" }> {
+  const typed = error as { code?: unknown; hint?: unknown } | null;
+  return {
+    type: "error",
+    message: error instanceof Error ? error.message : String(error),
+    ...(typeof typed?.code === "string" ? { code: typed.code } : {}),
+    ...(typeof typed?.hint === "string" ? { hint: typed.hint } : {}),
+  };
+}
+
 /** Bootstrap entry executed by the forked worker process. */
 export async function main(): Promise<void> {
   const raw = process.env.TEA_RAGS_INDEX_WORKER;
@@ -425,19 +441,19 @@ export async function main(): Promise<void> {
             ...(event.elapsedMs !== undefined ? { elapsedMs: event.elapsedMs } : {}),
           });
         },
+        // The embedding provider's recovery wait, shown the way the qdrant
+        // readiness wait is (bd tea-rags-mcp-umatc) — without it a run whose
+        // provider is down sits silent for the whole budget.
+        onEmbeddingRecoveryWait: (event) => {
+          send({ type: "embedding-state", ...event });
+        },
       }),
     { onWait },
   ).catch((error: unknown) => {
     // Context creation failed terminally (readiness window exhausted or a
     // non-readiness fatal) — without this, the fatal would hit the uncaught
     // handler and exit silently in --json mode.
-    send({
-      type: "error",
-      message: error instanceof Error ? error.message : String(error),
-      ...(typeof (error as { code?: unknown } | null)?.code === "string"
-        ? { code: (error as { code: string }).code }
-        : {}),
-    });
+    send(toFatalMessage(error));
     process.exit(1);
   });
   try {
@@ -452,13 +468,7 @@ export async function main(): Promise<void> {
     ctx.cleanup?.();
     process.exit(outcome.failed.length > 0 ? 1 : 0);
   } catch (error) {
-    send({
-      type: "error",
-      message: error instanceof Error ? error.message : String(error),
-      ...(typeof (error as { code?: unknown } | null)?.code === "string"
-        ? { code: (error as { code: string }).code }
-        : {}),
-    });
+    send(toFatalMessage(error));
     try {
       ctx.cleanup?.();
     } catch {

@@ -10,14 +10,21 @@ from a pre-computed table, sub-millisecond per call.
   `a.ts → b.ts → a.ts`.
 - **"Circular calls between methods" / "recursive call cycle"** →
   `find_cycles scope=method`. Members are symbol ids
-  (`Foo.bar → Baz.qux → Foo.bar`).
+  (`Foo.bar → Baz.qux → Foo.bar`). Each method cycle also carries
+  `memberLocations` — `{symbolId, relativePath}` per member, in the same order
+  as `members`. A symbol id is unique per FILE, so namesakes (two Go `init`, a
+  top-level `main` in several scripts) are only told apart by `relativePath`:
+  render the loop as `path#symbol` when two members share a name, and use that
+  `relativePath` to pick the right declaration when resolving the member with
+  `find_symbol` instead of guessing the file. An empty `relativePath` means the
+  cycle was not recomputed since the index upgrade — reindex, don't search for
+  the file.
 - **Scope the result to a module** → add `pathPattern` (picomatch glob), e.g.
   `find_cycles scope=file pathPattern="**/domains/ingest/**"`. A cycle is kept
-  if AT LEAST ONE member resolves to a matching file path, so cross-boundary
-  cycles (one file inside the scope, one outside) are RETAINED — those are
-  usually the most interesting. Markers `in/inside/within/under <X>` in the
-  request → derive the pattern (`**/<X>/**`), same scope-extraction rule as the
-  main flow.
+  if AT LEAST ONE member's own file matches, so cross-boundary cycles (one file
+  inside the scope, one outside) are RETAINED — those are usually the most
+  interesting. Markers `in/inside/within/under <X>` in the request → derive the
+  pattern (`**/<X>/**`), same scope-extraction rule as the main flow.
 
 ## Noise guard (large repos)
 

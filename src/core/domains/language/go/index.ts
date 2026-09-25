@@ -54,8 +54,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/extraction-passes.js";
-import { DefaultSymbolIdComposer } from "../kernel/symbol-id.js";
+import { composeExtractionWalker, DefaultSymbolIdComposer } from "../kernel/index.js";
 import { GoChunkClassifier } from "./chunking/index.js";
 import { goKernel } from "./kernel.js";
 import { GoCallResolver } from "./resolver/index.js";
