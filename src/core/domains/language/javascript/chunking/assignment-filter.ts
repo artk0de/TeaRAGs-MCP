@@ -5,7 +5,9 @@
  * consolidation (spec §3; bd tea-rags-mcp-cen6). Behaviour-preserving.
  *
  * Keeps `expression_statement` and `lexical_declaration` /
- * `variable_declaration` nodes ONLY when they carry a function value —
+ * `variable_declaration` nodes ONLY when they carry a function value (or, for
+ * a declaration, are a const-object namespace the engine can treat as a
+ * container — bd tea-rags-mcp-kn0vj) —
  * mirrors the codegraph `jsNameOf` shapes (in `../walker/name-of.ts`) so the
  * chunker's Qdrant payload symbolId set agrees with cg_symbols on the
  * same physical AST node.
@@ -21,7 +23,7 @@
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
-import { isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
+import { constObjectNamespaceContainerName, isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
 
 /**
  * Walk an `assignment_expression` chain (`a = b = c = fn`) and return the
@@ -136,7 +138,11 @@ export const jsAssignmentFilterHook: ChunkingHook = {
       return expressionStatementCarriesFunction(node) ? true : false;
     }
     if (node.type === "lexical_declaration" || node.type === "variable_declaration") {
-      return declarationCarriesFunction(node) ? true : false;
+      // bd tea-rags-mcp-kn0vj — a const-object namespace the engine can treat
+      // as a container is kept too, so the rows its members leave
+      // (`name: "…"`) ride the container remainder while its members keep
+      // their `X.m` ids (the same gate TypeScript's declaration filter asks).
+      return declarationCarriesFunction(node) || constObjectNamespaceContainerName(node) !== null;
     }
     return undefined; // no opinion on other node types
   },

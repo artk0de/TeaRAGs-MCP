@@ -50,12 +50,20 @@ describe("typescriptFunctionDeclarationFilterHook (bd tea-rags-mcp-grz07)", () =
     expect(filter("var older = function () {\n  return 1;\n};\n", "variable_declaration")).toBe(true);
   });
 
-  it("REJECTS a const-object namespace so the walk descends to its methods", () => {
+  it("keeps a const-object namespace as the container of its members", () => {
+    // bd tea-rags-mcp-kn0vj — the engine extracts the members as children under
+    // the same `Grouper.group` ids the 62hzr descent composed, and the rows they
+    // leave (`name: "…"`) ride the container remainder.
+    expect(filter("export const Grouper = {\n  group(a: number) {\n    return a;\n  },\n};\n")).toBe(true);
+  });
+
+  it("REJECTS a const-object namespace nesting a method outside its members, so the walk descends", () => {
     // Returning `false` rather than abstaining is what preserves the descent bd
-    // tea-rags-mcp-62hzr depends on: the member arrives at the chunker as a
-    // top-level `method_definition` only because nothing claims the declaration
-    // wrapping it.
-    expect(filter("export const Grouper = {\n  group(a: number) {\n    return a;\n  },\n};\n")).toBe(false);
+    // tea-rags-mcp-62hzr depends on for the shape the container gate declines:
+    // a container would compose `outer.deep` where the walker keeps a bare `deep`.
+    expect(filter("export const outer = {\n  inner: { deep() { return 1; } },\n  m() { return 2; },\n};\n")).toBe(
+      false,
+    );
   });
 
   it("REJECTS a data-only declaration and one bound to a call", () => {
