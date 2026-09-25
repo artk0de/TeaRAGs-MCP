@@ -38,6 +38,10 @@ const defaultConfig = { maxChunkSize: 5000 };
 
 // ── buildScopeTree ───────────────────────────────────────────────────
 
+// INVARIANT CHANGED (bd tea-rags-mcp-b55x2): buildScopeTree returns the
+// language-neutral `TestScope` of contracts/types/chunker.ts. A leaf is
+// `children.length === 0` (was `isLeaf`) and a scope's own examples are
+// `examples` (was `ownItBlocks`); the tree each case builds is unchanged.
 describe("buildScopeTree", () => {
   it("builds a single leaf scope from describe with only it blocks", () => {
     const code = `describe('User', () => {
@@ -55,9 +59,8 @@ describe("buildScopeTree", () => {
     const scope = buildScopeTree(node, code);
 
     expect(scope.name).toBe("describe 'User'");
-    expect(scope.isLeaf).toBe(true);
-    expect(scope.ownItBlocks).toHaveLength(2);
     expect(scope.children).toHaveLength(0);
+    expect(scope.examples).toHaveLength(2);
     expect(scope.setupLines).toHaveLength(0);
   });
 
@@ -80,12 +83,12 @@ describe("buildScopeTree", () => {
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
+    expect(scope.children.length).toBeGreaterThan(0);
     expect(scope.children).toHaveLength(2);
     expect(scope.children[0].name).toBe("describe 'when admin'");
-    expect(scope.children[0].isLeaf).toBe(true);
+    expect(scope.children[0].children).toHaveLength(0);
     expect(scope.children[1].name).toBe("describe 'when guest'");
-    expect(scope.children[1].isLeaf).toBe(true);
+    expect(scope.children[1].children).toHaveLength(0);
   });
 
   it("collects setup lines (beforeEach, beforeAll) at each level", () => {
@@ -132,9 +135,9 @@ describe("buildScopeTree", () => {
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
-    expect(scope.ownItBlocks).toHaveLength(1);
-    expect(scope.ownItBlocks[0].text).toContain("it('exists'");
+    expect(scope.children.length).toBeGreaterThan(0);
+    expect(scope.examples).toHaveLength(1);
+    expect(scope.examples[0].text).toContain("it('exists'");
     expect(scope.children).toHaveLength(1);
   });
 
@@ -155,14 +158,14 @@ describe("buildScopeTree", () => {
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(false);
+    expect(scope.children.length).toBeGreaterThan(0);
     const level1 = scope.children[0];
-    expect(level1.isLeaf).toBe(false);
+    expect(level1.children.length).toBeGreaterThan(0);
     const level2 = level1.children[0];
-    expect(level2.isLeaf).toBe(false);
+    expect(level2.children.length).toBeGreaterThan(0);
     const level3 = level2.children[0];
-    expect(level3.isLeaf).toBe(true);
-    expect(level3.ownItBlocks).toHaveLength(1);
+    expect(level3.children).toHaveLength(0);
+    expect(level3.examples).toHaveLength(1);
   });
 
   it("recognises member-expression DSL calls (it.skip, describe.only) as scope members", () => {
@@ -184,8 +187,8 @@ describe("buildScopeTree", () => {
 
     expect(scope.children).toHaveLength(1);
     const focused = scope.children[0];
-    expect(focused.isLeaf).toBe(true);
-    expect(focused.ownItBlocks).toHaveLength(2);
+    expect(focused.children).toHaveLength(0);
+    expect(focused.examples).toHaveLength(2);
   });
 
   it("collects context() (Mocha/Jest extension) as a container", () => {
@@ -209,7 +212,9 @@ describe("buildScopeTree", () => {
 // ── produceScopeChunks ───────────────────────────────────────────────
 
 describe("produceScopeChunks", () => {
-  it("produces a single test chunk for a leaf scope", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): the unit is the example — a
+  // leaf with two its yields two test chunks, each parented by its scope id.
+  it("produces one test chunk per example of a leaf scope", () => {
     const code = `describe('User', () => {
   it('validates name correctly with full assertion coverage', () => {
     expect(user.name).toBeDefined();
@@ -224,14 +229,13 @@ describe("produceScopeChunks", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].chunkType).toBe("test");
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map((c) => c.chunkType)).toEqual(["test", "test"]);
     expect(chunks[0].content).toContain("validates name");
-    expect(chunks[0].content).toContain("validates email");
-    expect(chunks[0].parentSymbolId).toBe("User");
+    expect(chunks[1].content).toContain("validates email");
+    expect(chunks.map((c) => c.parentSymbolId)).toEqual(["User.describe 'User'", "User.describe 'User'"]);
   });
 
   it("injects parent setup into leaf chunks", () => {
@@ -249,8 +253,7 @@ describe("produceScopeChunks", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].chunkType).toBe("test");
@@ -262,7 +265,9 @@ describe("produceScopeChunks", () => {
     expect(chunks[0].startLine).toBeGreaterThanOrEqual(5);
   });
 
-  it("produces test_setup chunk for intermediate scope with own it blocks", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): an intermediate scope's own it
+  // is an example chunk like any other, not a test_setup chunk of the scope.
+  it("emits an intermediate scope's own it as a test example chunk", () => {
     const code = `describe('User', () => {
   it('is a constructable class with sensible defaults across all envs', () => {
     expect(User).toBeDefined();
@@ -279,17 +284,19 @@ describe("produceScopeChunks", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
-    expect(testChunks).toHaveLength(1);
-    expect(setupChunks).toHaveLength(1);
-    expect(setupChunks[0].content).toContain("constructable class");
+    expect(testChunks).toHaveLength(2);
+    expect(setupChunks).toHaveLength(0);
+    expect(testChunks[0].content).toContain("constructable class");
+    expect(testChunks[0].parentSymbolId).toBe("User.describe 'User'");
   });
 
+  // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): the three per-it chunks no
+  // longer share the scope id — each is addressed by its own example id.
   it("splits oversized leaf by it blocks when exceeding maxChunkSize", () => {
     const longBody = "    expect(result).toBe('x');\n".repeat(20);
     const code = `describe('User', () => {
@@ -307,14 +314,18 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, { maxChunkSize: 300 });
+    const chunks = produceScopeChunks(node, code, { maxChunkSize: 300 });
 
     expect(chunks.length).toBe(3);
     for (const chunk of chunks) {
       expect(chunk.chunkType).toBe("test");
-      expect(chunk.symbolId).toBe("User.describe 'validations'");
+      expect(chunk.parentSymbolId).toBe("User.describe 'validations'");
     }
+    expect(chunks.map((c) => c.symbolId)).toEqual([
+      "User.describe 'validations'.it 'validates name'",
+      "User.describe 'validations'.it 'validates email'",
+      "User.describe 'validations'.it 'validates phone'",
+    ]);
   });
 
   it("produces test_setup for setup-only leaf scope", () => {
@@ -327,15 +338,16 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].chunkType).toBe("test_setup");
     expect(chunks[0].content).toContain("signIn(user)");
   });
 
-  it("uses 2-level symbolId format: TopLevelName.leafScopeName", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): 3-level example id
+  // TopLevelName.scopeName.exampleName, parented by the scope id.
+  it("uses 3-level symbolId format: TopLevelName.scopeName.exampleName", () => {
     const code = `describe('User', () => {
   describe('when admin', () => {
     it('has permissions for managing all system resources globally', () => {
@@ -347,13 +359,14 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].symbolId).toBe("User.describe 'when admin'");
-    expect(chunks[0].parentSymbolId).toBe("User");
-    expect(chunks[0].name).toBe("describe 'when admin'");
+    expect(chunks[0].symbolId).toBe(
+      "User.describe 'when admin'.it 'has permissions for managing all system resources globally'",
+    );
+    expect(chunks[0].parentSymbolId).toBe("User.describe 'when admin'");
+    expect(chunks[0].name).toBe("it 'has permissions for managing all system resources globally'");
   });
 
   it("handles identifier-name describe (describe(User, ...)) for topLevelName", () => {
@@ -366,11 +379,12 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
+    // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): the example's parent is its
+    // scope id; the top-level name `User` is that id's first segment.
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].parentSymbolId).toBe("User");
+    expect(chunks[0].parentSymbolId).toBe("User.describe User");
   });
 
   it("handles template literal name (describe with backtick + interpolation) preserving literal text", () => {
@@ -383,8 +397,7 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
     // Backticks stripped, interpolation placeholder preserved literally.
@@ -397,8 +410,7 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(0);
   });
@@ -410,9 +422,10 @@ ${longBody}    });
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
 
-    expect(scope.isLeaf).toBe(true);
+    // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): neutral TestScope fields
+    // (`children` / `examples` replace `isLeaf` / `ownItBlocks`).
     expect(scope.children).toHaveLength(0);
-    expect(scope.ownItBlocks).toHaveLength(0);
+    expect(scope.examples).toHaveLength(0);
     expect(scope.setupLines).toHaveLength(0);
   });
 
@@ -444,8 +457,7 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].content).toContain("await fetchUser");
@@ -461,8 +473,7 @@ ${longBody}    });
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].content).toContain("user.name");
@@ -481,8 +492,7 @@ describe("produceScopeChunks edge cases", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     expect(chunks).toHaveLength(0);
   });
@@ -503,8 +513,7 @@ describe("produceScopeChunks edge cases", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     expect(testChunks.length).toBeGreaterThanOrEqual(1);
@@ -531,16 +540,20 @@ describe("produceScopeChunks edge cases", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
-    expect(testChunks).toHaveLength(1);
-    expect(setupChunks).toHaveLength(1);
-    expect(setupChunks[0].content).toContain("is a class that exists");
-    expect(setupChunks[0].content).toContain("signIn(user)");
+    // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): the root's own it is an
+    // example chunk carrying the root's setup, and the nested example
+    // inherits that setup too — no test_setup chunk for a scope with examples.
+    expect(testChunks).toHaveLength(2);
+    expect(setupChunks).toHaveLength(0);
+    expect(testChunks[0].content).toContain("is a class that exists");
+    expect(testChunks[0].content).toContain("signIn(user)");
+    expect(testChunks[1].content).toContain("signIn(user)");
+    expect(testChunks[1].content).toContain("has admin role");
   });
 });
 
@@ -650,11 +663,11 @@ describe("isDslContainerCall", () => {
 // ── Multi-level intermediate scope walk ──────────────────────────────
 
 describe("produceScopeChunks intermediate-scope branches", () => {
-  it("emits test_setup for middle scope with own its AND grandchild describes (walk else-branch)", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): a middle scope's own it is an
+  // example chunk (was a test_setup chunk of the scope); the grandchild's
+  // example inherits the middle scope's setup.
+  it("emits a middle scope's own it as an example beside its grandchild describe's example", () => {
     // Structure: User → 'authenticated' (middle: own it + child) → 'admin' (leaf: it)
-    // The middle scope must trigger the non-leaf walk branch where
-    // scope.ownItBlocks.length > 0 — produces a test_setup chunk for the
-    // middle level alongside the leaf test chunk.
     const code = `describe('User', () => {
   describe('authenticated', () => {
     beforeEach(() => { signIn(user); user.token = 'abc'; });
@@ -675,29 +688,28 @@ describe("produceScopeChunks intermediate-scope branches", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     const testChunks = chunks.filter((c) => c.chunkType === "test");
     const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
 
-    // One test chunk for the deep leaf 'admin'.
-    expect(testChunks).toHaveLength(1);
-    expect(testChunks[0].content).toContain("admin role");
+    expect(setupChunks).toHaveLength(0);
+    expect(testChunks).toHaveLength(2);
 
-    // One test_setup chunk for the middle 'authenticated' scope with its
-    // own it + setup (non-leaf walk else-branch with ownItBlocks > 0).
-    expect(setupChunks.length).toBeGreaterThanOrEqual(1);
-    const middleSetup = setupChunks.find((c) => c.content.includes("has a token assigned"));
-    expect(middleSetup).toBeDefined();
-    expect(middleSetup!.content).toContain("signIn(user)");
-    expect(middleSetup!.symbolId).toContain("authenticated");
+    const middle = testChunks.find((c) => c.content.includes("has a token assigned"));
+    expect(middle).toBeDefined();
+    expect(middle!.content).toContain("signIn(user)");
+    expect(middle!.parentSymbolId).toBe("User.describe 'authenticated'");
+
+    const leaf = testChunks.find((c) => c.content.includes("admin role"));
+    expect(leaf!.content).toContain("signIn(user)");
+    expect(leaf!.parentSymbolId).toBe("User.describe 'admin'");
   });
 
-  it("includes root-level otherLines in root non-leaf chunk content", () => {
+  // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): root otherLines reach the index
+  // inside the root's own example chunk (was a root test_setup chunk).
+  it("includes root-level otherLines in the root's own example chunk", () => {
     // Root has: const declaration (otherLines), own it, AND child describe.
-    // Triggers the root non-leaf branch where rootScope.otherLines.length > 0
-    // — exercises the otherLines.map((o) => o.text/sourceLine) callbacks.
     const code = `describe('User', () => {
   const ROLES = ['admin', 'user', 'guest'];
   const DEFAULT_TIMEOUT = 30000;
@@ -717,16 +729,13 @@ describe("produceScopeChunks intermediate-scope branches", () => {
 
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
-    const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
-    const setupChunks = chunks.filter((c) => c.chunkType === "test_setup");
-    expect(setupChunks.length).toBeGreaterThanOrEqual(1);
-
-    // Root setup chunk should include otherLines (const ROLES, const DEFAULT_TIMEOUT).
-    const rootSetup = setupChunks.find((c) => c.content.includes("ROLES"));
-    expect(rootSetup).toBeDefined();
-    expect(rootSetup!.content).toContain("DEFAULT_TIMEOUT");
+    // The root example chunk includes otherLines (const ROLES, const DEFAULT_TIMEOUT).
+    const rootExample = chunks.find((c) => c.content.includes("sensible defaults"));
+    expect(rootExample).toBeDefined();
+    expect(rootExample!.content).toContain("ROLES");
+    expect(rootExample!.content).toContain("DEFAULT_TIMEOUT");
   });
 
   it("falls back to scope.name when no fitting top-level arg exists (extractTopLevelName)", () => {
@@ -743,13 +752,17 @@ describe("produceScopeChunks intermediate-scope branches", () => {
     const tree = parseTs(code);
     const node = findTopLevelCall(tree);
     const scope = buildScopeTree(node, code);
-    const chunks = produceScopeChunks(scope, code, defaultConfig);
+    const chunks = produceScopeChunks(node, code, defaultConfig);
 
     // Zero-arg-but-with-callback case: arrow_function IS a namedChild, so
     // extractTopLevelName iterates it (not identifier/string), then falls
     // back to scope.name. The scope still emits a chunk (callback body
     // has it).
+    // INVARIANT CHANGED (bd tea-rags-mcp-b55x2): the fallback name is the call
+    // alone (`describe`, never the callback text), and it is the first segment
+    // of the example's parent scope id.
     expect(chunks.length).toBeGreaterThan(0);
-    expect(chunks[0].parentSymbolId).toBe(scope.name);
+    expect(scope.name).toBe("describe");
+    expect(chunks[0].parentSymbolId).toBe(`${scope.name}.${scope.name}`);
   });
 });

@@ -112,6 +112,7 @@ language stays legal; two is an enumeration.
 | `domains/language/`                   | resolver-chain ordering, local bindings, deferral economics                          |
 | `domains/language/python/`            | persisted importText shape, single-hop receiver arms, MRO member lookup, chain order |
 | `domains/language/ruby/`              | Ruby walker/resolver/DSL specifics                                                   |
+| `domains/language/typescript/`        | Vitest/Jest test outline by example: scope-tree reading, names, parametrizers        |
 | `domains/maintenance/`                | schema drift, migrations, freshness                                                  |
 | `domains/maintenance/drift/`          | stamps compared never written, reporter-owned consumption, lattice-only remedies     |
 | `domains/maintenance/registry/`       | sticky registry fields, CAS flush, env replay                                        |

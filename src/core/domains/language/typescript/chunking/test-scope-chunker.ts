@@ -1,15 +1,15 @@
 /**
- * Test-Spec Scope Chunker — Groups Vitest/Jest/Mocha-style test specs by
- * scope hierarchy. Mirror of hooks/ruby/rspec-scope-chunker.ts adapted to
- * TypeScript AST (call_expression + arrow_function/function_expression
- * callbacks + statement_block bodies).
+ * Test-Spec Scope Chunker — reads Vitest/Jest/Mocha-style test specs into the
+ * neutral `TestScope` tree (`contracts/types/chunker.ts`) and hands it to the
+ * kernel's `produceTestScopeChunks`, which emits one chunk per EXAMPLE
+ * (bd tea-rags-mcp-b55x2, epic tea-rags-mcp-phftd). TypeScript AST:
+ * call_expression + arrow_function/function_expression callbacks +
+ * statement_block bodies.
  *
- * Instead of treating an entire describe body as one flat chunk, this
- * hook walks the AST to build a scope tree and produces focused chunks
- * per leaf scope. Each leaf chunk includes inherited setup (beforeEach,
- * beforeAll, etc.) from ancestor scopes for self-contained context.
- *
- * Chunks get a 2-level symbolId: "TopLevelDescribe.leafScopeName".
+ * This file owns only the TypeScript reading — which calls are containers,
+ * examples and hooks, what a scope or example is called, and the top-level
+ * name. Chunk shape, symbolIds, `~N` and line ranges are the kernel's
+ * (`.claude/rules/test-spec-chunking.md`).
  *
  * ── Language-list pointer (MANDATORY) ────────────────────────────────
  * This hook emits `chunkType: "test"` / `"test_setup"` for TypeScript.
@@ -30,31 +30,9 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
-import { getCallName, isTestFile } from "./test-dsl-filter.js";
-
-// ── Types ────────────────────────────────────────────────────────────
-
-export interface SetupLine {
-  text: string;
-  sourceLine: number;
-}
-
-export interface ItBlock {
-  text: string;
-  startLine: number;
-  endLine: number;
-}
-
-export interface TestScope {
-  name: string;
-  node: AstNode;
-  isLeaf: boolean;
-  setupLines: SetupLine[];
-  ownItBlocks: ItBlock[];
-  children: TestScope[];
-  otherLines: SetupLine[];
-}
+import type { BodyChunkResult, ChunkingHook, HookContext, TestScope } from "../../../../contracts/types/chunker.js";
+import { produceTestScopeChunks } from "../../kernel/test-scope-chunks.js";
+import { getCallDisplayName, getCallName, isTestFile } from "./test-dsl-filter.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -89,6 +67,10 @@ function unwrapStatementCall(node: AstNode): AstNode | null {
   return null;
 }
 
+function isCallback(node: AstNode): boolean {
+  return node.type === "arrow_function" || node.type === "function_expression";
+}
+
 /**
  * Find the callback body (statement_block) for a DSL call.
  * Returns null when the call has no arrow_function / function_expression
@@ -98,7 +80,7 @@ function findCallbackBody(node: AstNode): AstNode | null {
   const args = node.childForFieldName("arguments");
   if (!args) return null;
   for (const arg of args.namedChildren) {
-    if (arg.type === "arrow_function" || arg.type === "function_expression") {
+    if (isCallback(arg)) {
       const body = arg.childForFieldName("body");
       if (body?.type === "statement_block") return body;
     }
@@ -107,16 +89,19 @@ function findCallbackBody(node: AstNode): AstNode | null {
 }
 
 /**
- * Build the descriptive scope name: "describe 'User'", "context 'when admin'",
- * "it.skip 'pending'". Mirrors Ruby extractScopeName output format.
+ * The display name of a scope or example: the call as written plus its first
+ * argument — `describe 'User'`, `context "when admin"`, `it.skip 'pending'`,
+ * `it.each 'adds %i'`. The argument is kept verbatim (quotes included) with
+ * line breaks folded to one space, so the name is one line and still greps
+ * back to the source. A call whose first argument is its callback is named by
+ * the call alone.
  */
 function extractScopeName(node: AstNode, code: string): string {
-  const callName = getCallName(node, code) ?? "unknown";
-  const args = node.childForFieldName("arguments");
-  if (!args || args.namedChildren.length === 0) return callName;
+  const callName = getCallDisplayName(node, code) ?? "unknown";
+  const firstArg = node.childForFieldName("arguments")?.namedChildren[0];
+  if (!firstArg || isCallback(firstArg)) return callName;
 
-  const firstArg = args.namedChildren[0];
-  const argText = code.substring(firstArg.startIndex, firstArg.endIndex);
+  const argText = code.substring(firstArg.startIndex, firstArg.endIndex).replace(/\s*\n\s*/g, " ");
   return `${callName} ${argText}`;
 }
 
@@ -125,8 +110,8 @@ function extractScopeName(node: AstNode, code: string): string {
  * Identifier → its text. String/template literal → stripped of surrounding
  * quotes/backticks. Falls back to the scope's full name when no arg fits.
  */
-function extractTopLevelName(scope: TestScope, code: string): string {
-  const args = scope.node.childForFieldName("arguments");
+export function extractTopLevelName(containerNode: AstNode, code: string): string {
+  const args = containerNode.childForFieldName("arguments");
   if (args) {
     for (const arg of args.namedChildren) {
       if (arg.type === "identifier") {
@@ -138,7 +123,7 @@ function extractTopLevelName(scope: TestScope, code: string): string {
       }
     }
   }
-  return scope.name;
+  return extractScopeName(containerNode, code);
 }
 
 /** True when `node` is a DSL container call (describe / context / suite). */
@@ -150,24 +135,34 @@ export function isDslContainerCall(node: AstNode, code: string): boolean {
 
 // ── Core: buildScopeTree ─────────────────────────────────────────────
 
+/**
+ * Read a container call into the neutral scope tree. Setup is the scope's own
+ * hooks only — the kernel inherits ancestors'. No TypeScript construct runs
+ * examples defined elsewhere, so no line carries `delegatesExamples`: a
+ * parametrized `it.each(table)(name, fn)` is ONE example here, not a
+ * delegation.
+ */
 export function buildScopeTree(containerNode: AstNode, code: string): TestScope {
   const codeLines = code.split("\n");
-  const scopeName = extractScopeName(containerNode, code);
 
   const scope: TestScope = {
-    name: scopeName,
-    node: containerNode,
-    isLeaf: true,
+    name: extractScopeName(containerNode, code),
+    startLine: containerNode.startPosition.row + 1,
+    endLine: containerNode.endPosition.row + 1,
     setupLines: [],
-    ownItBlocks: [],
-    children: [],
     otherLines: [],
+    examples: [],
+    children: [],
   };
 
   const blockBody = findCallbackBody(containerNode);
   if (!blockBody) return scope;
 
   const claimedRows = new Set<number>();
+  const claim = (node: AstNode): string => {
+    for (let { row } = node.startPosition; row <= node.endPosition.row; row++) claimedRows.add(row);
+    return codeLines.slice(node.startPosition.row, node.endPosition.row + 1).join("\n");
+  };
 
   for (const child of blockBody.namedChildren) {
     const call = unwrapStatementCall(child);
@@ -181,35 +176,17 @@ export function buildScopeTree(containerNode: AstNode, code: string): TestScope 
     if (!methodName) continue;
 
     if (CONTAINER_METHODS.has(methodName)) {
-      const childScope = buildScopeTree(call, code);
-      scope.children.push(childScope);
-      scope.isLeaf = false;
-      for (let { row } = child.startPosition; row <= child.endPosition.row; row++) {
-        claimedRows.add(row);
-      }
+      scope.children.push(buildScopeTree(call, code));
+      claim(child);
     } else if (EXAMPLE_METHODS.has(methodName)) {
-      const startRow = child.startPosition.row;
-      const endRow = child.endPosition.row;
-      const itText = codeLines.slice(startRow, endRow + 1).join("\n");
-      scope.ownItBlocks.push({
-        text: itText,
-        startLine: startRow + 1,
-        endLine: endRow + 1,
+      scope.examples.push({
+        name: extractScopeName(call, code),
+        text: claim(child),
+        startLine: child.startPosition.row + 1,
+        endLine: child.endPosition.row + 1,
       });
-      for (let row = startRow; row <= endRow; row++) {
-        claimedRows.add(row);
-      }
     } else if (SETUP_METHODS.has(methodName)) {
-      const startRow = child.startPosition.row;
-      const endRow = child.endPosition.row;
-      const setupText = codeLines.slice(startRow, endRow + 1).join("\n");
-      scope.setupLines.push({
-        text: setupText,
-        sourceLine: startRow + 1,
-      });
-      for (let row = startRow; row <= endRow; row++) {
-        claimedRows.add(row);
-      }
+      scope.setupLines.push({ text: claim(child), sourceLine: child.startPosition.row + 1 });
     }
   }
 
@@ -225,10 +202,7 @@ export function buildScopeTree(containerNode: AstNode, code: string): TestScope 
     if (claimedRows.has(row)) continue;
     const lineText = codeLines[row];
     if (lineText !== undefined && lineText.trim().length > 0) {
-      scope.otherLines.push({
-        text: lineText,
-        sourceLine: row + 1,
-      });
+      scope.otherLines.push({ text: lineText, sourceLine: row + 1 });
     }
   }
 
@@ -237,168 +211,13 @@ export function buildScopeTree(containerNode: AstNode, code: string): TestScope 
 
 // ── Core: produceScopeChunks ─────────────────────────────────────────
 
+/** The chunks of one top-level container call: its scope tree, emitted by the kernel. */
 export function produceScopeChunks(
-  rootScope: TestScope,
+  containerNode: AstNode,
   code: string,
   config: { maxChunkSize: number },
 ): BodyChunkResult[] {
-  const topLevelName = extractTopLevelName(rootScope, code);
-  const results: BodyChunkResult[] = [];
-
-  function collectParentSetup(_scope: TestScope, ancestors: TestScope[]): string[] {
-    const parts: string[] = [];
-    for (const ancestor of ancestors) {
-      for (const setup of ancestor.setupLines) {
-        parts.push(setup.text);
-      }
-    }
-    return parts;
-  }
-
-  function walk(scope: TestScope, ancestors: TestScope[]): void {
-    if (scope.isLeaf) {
-      if (scope.ownItBlocks.length > 0) {
-        const parentSetup = collectParentSetup(scope, ancestors);
-        const setupParts = [...parentSetup, ...scope.setupLines.map((s) => s.text)];
-        const otherParts = scope.otherLines.map((o) => o.text);
-        const itParts = scope.ownItBlocks.map((b) => b.text);
-
-        const contentParts = [...setupParts, ...otherParts, ...itParts];
-        const content = contentParts.join("\n").trim();
-
-        if (content.length < 50) return;
-
-        // Oversized split — per-it chunks with shared setup duplicated.
-        if (content.length > config.maxChunkSize && scope.ownItBlocks.length > 1) {
-          const sharedSetup = [...setupParts, ...otherParts].join("\n").trim();
-          for (const itBlock of scope.ownItBlocks) {
-            const subContent = sharedSetup ? `${sharedSetup}\n${itBlock.text}` : itBlock.text;
-            if (subContent.trim().length < 50) continue;
-            results.push({
-              content: subContent.trim(),
-              startLine: itBlock.startLine,
-              endLine: itBlock.endLine,
-              chunkType: "test",
-              symbolId: `${topLevelName}.${scope.name}`,
-              name: scope.name,
-              parentSymbolId: topLevelName,
-            });
-          }
-          return;
-        }
-
-        // Line range derived from this scope's own lines only — ancestor
-        // setup is in the content for context but must NOT inflate the
-        // range (would break git blame + Read offsets).
-        const allLines = [
-          ...scope.setupLines.map((s) => s.sourceLine),
-          ...scope.otherLines.map((o) => o.sourceLine),
-          ...scope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
-        ];
-        const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
-        const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
-
-        results.push({
-          content,
-          startLine,
-          endLine,
-          chunkType: "test",
-          symbolId: `${topLevelName}.${scope.name}`,
-          name: scope.name,
-          parentSymbolId: topLevelName,
-        });
-      } else if (scope.setupLines.length > 0 || scope.otherLines.length > 0) {
-        const content = [...scope.setupLines.map((s) => s.text), ...scope.otherLines.map((o) => o.text)]
-          .join("\n")
-          .trim();
-
-        if (content.length < 50) return;
-
-        const allLines = [...scope.setupLines.map((s) => s.sourceLine), ...scope.otherLines.map((o) => o.sourceLine)];
-        const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
-        const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
-
-        results.push({
-          content,
-          startLine,
-          endLine,
-          chunkType: "test_setup",
-          symbolId: `${topLevelName}.${scope.name}`,
-          name: scope.name,
-          parentSymbolId: topLevelName,
-        });
-      }
-    } else {
-      const newAncestors = [...ancestors, scope];
-      for (const child of scope.children) {
-        walk(child, newAncestors);
-      }
-
-      if (scope.ownItBlocks.length > 0) {
-        const setupParts = scope.setupLines.map((s) => s.text);
-        const otherParts = scope.otherLines.map((o) => o.text);
-        const itParts = scope.ownItBlocks.map((b) => b.text);
-        const content = [...setupParts, ...otherParts, ...itParts].join("\n").trim();
-
-        if (content.length >= 50) {
-          const allLines = [
-            ...scope.setupLines.map((s) => s.sourceLine),
-            ...scope.otherLines.map((o) => o.sourceLine),
-            ...scope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
-          ];
-          const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
-          const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
-
-          results.push({
-            content,
-            startLine,
-            endLine,
-            chunkType: "test_setup",
-            symbolId: `${topLevelName}.${scope.name}`,
-            name: scope.name,
-            parentSymbolId: topLevelName,
-          });
-        }
-      }
-    }
-  }
-
-  if (rootScope.isLeaf) {
-    walk(rootScope, []);
-  } else {
-    for (const child of rootScope.children) {
-      walk(child, [rootScope]);
-    }
-
-    if (rootScope.ownItBlocks.length > 0) {
-      const setupParts = rootScope.setupLines.map((s) => s.text);
-      const otherParts = rootScope.otherLines.map((o) => o.text);
-      const itParts = rootScope.ownItBlocks.map((b) => b.text);
-      const content = [...setupParts, ...otherParts, ...itParts].join("\n").trim();
-
-      if (content.length >= 50) {
-        const allLines = [
-          ...rootScope.setupLines.map((s) => s.sourceLine),
-          ...rootScope.otherLines.map((o) => o.sourceLine),
-          ...rootScope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
-        ];
-        const startLine = allLines.length > 0 ? Math.min(...allLines) : rootScope.node.startPosition.row + 1;
-        const endLine = allLines.length > 0 ? Math.max(...allLines) : rootScope.node.endPosition.row + 1;
-
-        results.push({
-          content,
-          startLine,
-          endLine,
-          chunkType: "test_setup",
-          symbolId: `${topLevelName}.${rootScope.name}`,
-          name: rootScope.name,
-          parentSymbolId: topLevelName,
-        });
-      }
-    }
-  }
-
-  return results;
+  return produceTestScopeChunks(buildScopeTree(containerNode, code), extractTopLevelName(containerNode, code), config);
 }
 
 // ── Hook export ──────────────────────────────────────────────────────
@@ -411,8 +230,7 @@ export const testScopeChunkerHook: ChunkingHook = {
     if (ctx.containerNode.type !== "call_expression") return;
     if (!isDslContainerCall(ctx.containerNode, ctx.code)) return;
 
-    const tree = buildScopeTree(ctx.containerNode, ctx.code);
-    const chunks = produceScopeChunks(tree, ctx.code, ctx.config);
+    const chunks = produceScopeChunks(ctx.containerNode, ctx.code, ctx.config);
 
     if (chunks.length > 0) {
       ctx.bodyChunks = chunks;
