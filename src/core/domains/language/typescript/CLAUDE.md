@@ -46,6 +46,13 @@ is `.claude/rules/test-spec-chunking.md` — read it before touching a hook.
   (`makeSuite()('x', fn)`) stays non-DSL. Why: before this, a parametrized
   example inside a `describe` fell into `otherLines` and was pasted into every
   sibling example's chunk.
+- **A parenthesized conditional callee is DSL only when both arms root at one
+  word.** `(skip ? describe.skip : describe)('x', fn)` is a `describe`, named by
+  the whole conditional in one canonical layout —
+  `(skip ? describe.skip : describe) 'x'` — so which variant runs stays visible
+  and a sibling `describe 'x'` does not collide; `(c ? describe : it)` and
+  `(c ? helper : describe)` stay non-DSL (`getCallName`, `getCallDisplayName`).
+  Why: express's `'current dir'` block reached no chunk (bd tea-rags-mcp-rvuun).
 - **A DSL name alone does not make an example or a chunk.** `buildScopeTree`
   files an example-named call as an example only when its arguments carry a
   string / template title or a callback (`isExampleShaped`), so a helper call

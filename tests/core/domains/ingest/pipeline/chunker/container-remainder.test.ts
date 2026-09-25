@@ -257,4 +257,98 @@ ${tail}
       expect(chunks.some((c) => c.metadata.symbolId === "test_many_requests")).toBe(false);
     });
   });
+
+  // bd tea-rags-mcp-kn0vj — a const-object NAMESPACE (bd tea-rags-mcp-62hzr) was
+  // never a container: its declaration was descended THROUGH so each member
+  // became a top-level `X.m` chunk, and the object's non-method properties —
+  // every hook's `name: "…"` — landed in no chunk at all.
+  describe("const-object namespace (bd tea-rags-mcp-kn0vj)", () => {
+    it("keeps a TypeScript namespace's non-method properties in the namespace's own chunk", async () => {
+      const code = `export const typescriptCommentCaptureHook: ChunkingHook = {
+  name: "typescript-comment-capture",
+  priority: HOOK_PRIORITY_COMMENT_CAPTURE,
+
+  filterNode(node: AstNode, code: string): boolean | undefined {
+    if (node.type !== "comment") return undefined;
+    return code.substring(node.startIndex, node.endIndex).startsWith("/**");
+  },
+
+  process(ctx: HookContext): void {
+    for (const child of ctx.validChildren) ctx.excludedRows.add(child.startPosition.row);
+    ctx.methodPrefixes.set(0, "captured comment prefix for the first member");
+  },
+};
+`;
+      const chunks = await chunker.chunk(code, "src/comment-capture.ts", "typescript");
+
+      expectEveryLineCovered(code, chunks);
+      expectUniqueSymbolIds(chunks);
+
+      const namespace = chunks.find((c) => c.metadata.symbolId === "typescriptCommentCaptureHook");
+      expect(namespace).toBeDefined();
+      expect(namespace!.content).toContain('name: "typescript-comment-capture",');
+      expect(namespace!.content).toContain("priority: HOOK_PRIORITY_COMMENT_CAPTURE,");
+      expect(namespace!.content).not.toContain("ctx.excludedRows.add");
+
+      const members = chunks.filter((c) => c.metadata.name === "filterNode" || c.metadata.name === "process");
+      expect(members.map((c) => c.metadata.symbolId)).toEqual([
+        "typescriptCommentCaptureHook.filterNode",
+        "typescriptCommentCaptureHook.process",
+      ]);
+      for (const member of members) expect(member.metadata.parentSymbolId).toBe("typescriptCommentCaptureHook");
+    });
+
+    it("keeps a JavaScript namespace's non-method properties in the namespace's own chunk", async () => {
+      const code = `const jsTestDslFilterHook = {
+  name: "js-test-dsl-filter",
+  priority: HOOK_PRIORITY_FILTER,
+
+  filterNode(node, code, filePath) {
+    if (node.type !== "call_expression") return undefined;
+    return isTestFile(filePath) && isDslCall(node, code);
+  },
+
+  process(_ctx) {
+    // No-op — filterNode handles node-level filtering for this hook.
+  },
+};
+`;
+      const chunks = await chunker.chunk(code, "lib/test-dsl-filter.js", "javascript");
+
+      expectEveryLineCovered(code, chunks);
+      expectUniqueSymbolIds(chunks);
+
+      const namespace = chunks.find((c) => c.metadata.symbolId === "jsTestDslFilterHook");
+      expect(namespace).toBeDefined();
+      expect(namespace!.content).toContain('name: "js-test-dsl-filter",');
+      expect(namespace!.content).not.toContain("isDslCall(node, code)");
+
+      const members = chunks.filter((c) => c.metadata.name === "filterNode" || c.metadata.name === "process");
+      expect(members.map((c) => c.metadata.symbolId)).toEqual([
+        "jsTestDslFilterHook.filterNode",
+        "jsTestDslFilterHook.process",
+      ]);
+    });
+
+    it("leaves a namespace whose object nests a method outside its own members on the member-by-member path", async () => {
+      const code = `export const outer = {
+  label: "outer namespace with a nested object literal",
+  inner: {
+    deep(value: string): string {
+      // Padded so the chunk clears the 50-character content floor.
+      return value.trim().toUpperCase();
+    },
+  },
+  shallow(value: string): string {
+    // Padded so the chunk clears the 50-character content floor.
+    return value.trim().toLowerCase();
+  },
+};
+`;
+      const chunks = await chunker.chunk(code, "src/nested.ts", "typescript");
+
+      expect(chunks.find((c) => c.metadata.name === "deep")?.metadata.symbolId).toBe("deep");
+      expect(chunks.find((c) => c.metadata.name === "shallow")?.metadata.symbolId).toBe("outer.shallow");
+    });
+  });
 });

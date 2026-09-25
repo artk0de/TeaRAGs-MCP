@@ -11,11 +11,13 @@
  *
  *   - the FILTER decides whether `findChunkableNodes` claims the declaration.
  *     It must, because listing `lexical_declaration` in `chunkableTypes`
- *     unconditionally would stop the walk at EVERY module-level `const` — and
- *     the const-object namespace (`export const X = { m() {} }`) depends on the
- *     walk descending THROUGH the declaration to reach its `method_definition`
- *     (bd tea-rags-mcp-62hzr). A filter verdict of `false` restores that
- *     descent, so the two shapes coexist in one declaration node type;
+ *     unconditionally would stop the walk at EVERY module-level `const`. It
+ *     also claims a const-object namespace (`export const X = { m() {} }`)
+ *     that `constObjectNamespaceContainerName` accepts, so the engine extracts
+ *     its members as children (`X.m`, bd tea-rags-mcp-62hzr) and its other
+ *     rows ride the container remainder (bd tea-rags-mcp-kn0vj). A namespace
+ *     that gate declines gets `false`, which restores the descent THROUGH the
+ *     declaration to each `method_definition`;
  *
  *   - the CLASSIFIER supplies the name. A `lexical_declaration` carries no
  *     `name` field and no direct `identifier` child (the identifier is nested
@@ -30,27 +32,36 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkDecision, ChunkingHook, LanguageChunkClassifier } from "../../../../contracts/types/chunker.js";
-import { moduleLevelFunctionDeclarationNames } from "../../../../infra/symbolid/index.js";
+import {
+  constObjectNamespaceContainerName,
+  moduleLevelFunctionDeclarationNames,
+} from "../../../../infra/symbolid/index.js";
 
 /** The declaration node types a `variable_declarator` can sit under. */
 const DECLARATION_TYPES = new Set(["lexical_declaration", "variable_declaration"]);
 
 /**
  * Keep a `const` / `let` / `var` declaration chunkable ONLY when it declares at
- * least one module-level function. Everything else abstains — `undefined`, not
- * `false`, so the verdict composes with the sibling filter hooks the engine
- * consults in order (first non-`undefined` wins).
+ * least one module-level function, or is a const-object namespace the engine
+ * can treat as a container. Any other node type abstains — `undefined` — so
+ * the verdict composes with the sibling filter hooks the engine consults in
+ * order (first non-`undefined` wins).
  *
- * Returning `false` rather than abstaining for a non-function declaration is
- * what preserves the descent the const-object namespace needs: on `false` the
- * engine walks INTO the node's children instead of claiming it.
+ * Returning `false` rather than abstaining for any other declaration is what
+ * preserves the descent a declined namespace needs: on `false` the engine walks
+ * INTO the node's children instead of claiming it.
  */
 export const typescriptFunctionDeclarationFilterHook: ChunkingHook = {
   name: "typescript-function-declaration-filter",
 
   filterNode(node: AstNode): boolean | undefined {
     if (!DECLARATION_TYPES.has(node.type)) return undefined;
-    return moduleLevelFunctionDeclarationNames(node).length > 0;
+    if (moduleLevelFunctionDeclarationNames(node).length > 0) return true;
+    // bd tea-rags-mcp-kn0vj — a const-object namespace the engine can treat as
+    // a container is kept too: its members are then extracted as children
+    // under the same `X.m` ids, and the rows they leave (`name: "…"`) ride the
+    // container remainder instead of reaching no chunk.
+    return constObjectNamespaceContainerName(node) !== null;
   },
 
   process(): void {

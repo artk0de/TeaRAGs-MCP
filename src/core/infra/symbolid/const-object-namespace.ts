@@ -76,6 +76,42 @@ export function constObjectNamespaceOwner(method: AstNode): string | null {
 }
 
 /**
+ * The namespace a `lexical_declaration` / `variable_declaration` declares when
+ * the chunker may treat the whole declaration as that namespace's CONTAINER,
+ * or null when it must keep descending through it member by member.
+ *
+ * A container gives the object's non-method properties — a hook's
+ * `name: "…"` beside its methods — a chunk: the engine's container remainder
+ * (bd tea-rags-mcp-kn0vj). Two gates keep every member id exactly what
+ * {@link constObjectNamespaceOwner} composes on the descent path:
+ *
+ *   - ONE declarator, a const-object namespace: the container has one name to
+ *     compose its members against;
+ *   - no `method_definition` inside the object except its DIRECT members: the
+ *     engine extracts every method it finds under a container and composes it
+ *     against the container's name, while the owner declines a nested
+ *     `{ inner: { deep() {} } }` — so that shape stays on the descent path,
+ *     where `deep` keeps its bare id.
+ */
+export function constObjectNamespaceContainerName(declaration: AstNode): string | null {
+  if (declaration.type !== "lexical_declaration" && declaration.type !== "variable_declaration") return null;
+  const declarators = declaration.namedChildren.filter((child) => child.type === "variable_declarator");
+  if (declarators.length !== 1) return null;
+  const name = constObjectNamespaceName(declarators[0]);
+  if (name === null) return null;
+  const object = unwrapTypeAssertions(declarators[0].childForFieldName("value") as AstNode);
+  const nestsForeignMethod = object.namedChildren.some(
+    (member) => member.type !== "method_definition" && containsMethodDefinition(member),
+  );
+  return nestsForeignMethod ? null : name;
+}
+
+function containsMethodDefinition(node: AstNode): boolean {
+  if (node.type === "method_definition") return true;
+  return node.namedChildren.some(containsMethodDefinition);
+}
+
+/**
  * Peel the TypeScript-only wrappers that sit between a declarator's `value`
  * field and the expression underneath: `as const` / `as Shape`
  * (`as_expression`), `satisfies Shape` (`satisfies_expression`), and explicit

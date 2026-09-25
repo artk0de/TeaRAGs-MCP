@@ -75,12 +75,13 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
     // bd tea-rags-mcp-grz07 — kept ONLY when the declaration binds a
     // MODULE-LEVEL function expression (`export const fn = () => {}`), the
     // dominant declaration shape in React code, which produced no chunk at all
-    // before. `typescriptFunctionDeclarationFilterHook` rejects every other
-    // declaration so `findChunkableNodes` keeps DESCENDING through it — which is
-    // what the const-object namespace (`export const X = { m() {} }`) needs to
-    // reach its `method_definition` (bd tea-rags-mcp-62hzr). The symbolId is
-    // then composed by `typescriptChunkClassifier`, since a
-    // `lexical_declaration` carries no `name` field of its own.
+    // before. The symbolId is composed by `typescriptChunkClassifier`, since a
+    // `lexical_declaration` carries no `name` field of its own. The filter
+    // also keeps a const-object namespace (`export const X = { m() {} }`) as a
+    // container (bd tea-rags-mcp-kn0vj) and rejects every other declaration,
+    // so `findChunkableNodes` keeps DESCENDING through it — which is how a
+    // namespace the container gate declines still reaches its
+    // `method_definition` (bd tea-rags-mcp-62hzr).
     //
     // Mirrors JavaScript, which has listed both since bd tea-rags-mcp-kfzx.
     "lexical_declaration",

@@ -68,36 +68,70 @@ function parametrizerCallOf(callee: AstNode, code: string): AstNode | null {
 }
 
 /**
+ * The root identifier of a callee chain — `describe`, `it.skip`,
+ * `it.skip.each` all root at their first identifier — or null when the
+ * expression is not an identifier or a member_expression chain ending in one.
+ */
+function chainRootName(expression: AstNode, code: string): string | null {
+  let cursor: AstNode | null = expression;
+  while (cursor?.type === "member_expression") {
+    cursor = cursor.childForFieldName("object");
+  }
+  return cursor?.type === "identifier" ? code.substring(cursor.startIndex, cursor.endIndex) : null;
+}
+
+/**
+ * The conditional a `(cond ? a : b)(name, fn)` invocation's callee wraps, or
+ * null when the callee is not a parenthesized ternary. Express's
+ * `(skipRelative ? describe.skip : describe)('current dir', fn)` is the shape
+ * (bd tea-rags-mcp-rvuun).
+ */
+function conditionalCalleeOf(callee: AstNode): AstNode | null {
+  let inner: AstNode | null = callee;
+  while (inner?.type === "parenthesized_expression") inner = inner.namedChildren[0] ?? null;
+  return inner !== callee && inner?.type === "ternary_expression" ? inner : null;
+}
+
+/**
+ * The one root name BOTH arms of a conditional callee share, or null when the
+ * arms root at different names or either arm is not a callee chain.
+ * `(skip ? describe.skip : describe)` runs a `describe` whichever arm is
+ * taken, so it is that DSL call; `(skip ? describe : it)` is a container or an
+ * example depending on a runtime value, so it is neither.
+ */
+function conditionalCallName(conditional: AstNode, code: string): string | null {
+  const consequence = conditional.childForFieldName("consequence");
+  const alternative = conditional.childForFieldName("alternative");
+  if (!consequence || !alternative) return null;
+  const name = chainRootName(consequence, code);
+  return name !== null && name === chainRootName(alternative, code) ? name : null;
+}
+
+/**
  * Extract the root callee identifier of a call_expression.
  * Returns the identifier's text, or null when the callee is not a plain
- * identifier, a member_expression chain ending in one, or a parametrizer call
- * over either.
+ * identifier, a member_expression chain ending in one, a parametrizer call
+ * over either, or a parenthesized conditional whose arms share one.
  *
  * Examples:
- *   describe(...)            → "describe"
- *   it.skip(...)             → "it"           (member_expression)
- *   it.skip.each(...)        → "it"           (chained member_expression)
- *   test.each([...])(...)    → "test"         (parametrizer call, bd tea-rags-mcp-b55x2)
- *   makeSuite()(...)         → null           (callee is a non-DSL call)
+ *   describe(...)                        → "describe"
+ *   it.skip(...)                         → "it"        (member_expression)
+ *   it.skip.each(...)                    → "it"        (chained member_expression)
+ *   test.each([...])(...)                → "test"      (parametrizer call, bd tea-rags-mcp-b55x2)
+ *   (c ? describe.skip : describe)(...)  → "describe"  (conditional callee, bd tea-rags-mcp-rvuun)
+ *   (c ? describe : it)(...)             → null        (arms name different calls)
+ *   makeSuite()(...)                     → null        (callee is a non-DSL call)
  */
 export function getCallName(node: AstNode, code: string): string | null {
   if (node.type !== "call_expression") return null;
   const callee = node.childForFieldName("function");
   if (!callee) return null;
 
-  if (callee.type === "identifier") {
-    return code.substring(callee.startIndex, callee.endIndex);
-  }
+  const chainRoot = chainRootName(callee, code);
+  if (chainRoot !== null) return chainRoot;
 
-  if (callee.type === "member_expression") {
-    let cursor: AstNode | null = callee;
-    while (cursor?.type === "member_expression") {
-      cursor = cursor.childForFieldName("object");
-    }
-    if (cursor?.type === "identifier") {
-      return code.substring(cursor.startIndex, cursor.endIndex);
-    }
-  }
+  const conditional = conditionalCalleeOf(callee);
+  if (conditional) return conditionalCallName(conditional, code);
 
   const parametrizer = parametrizerCallOf(callee, code);
   if (parametrizer) return getCallName(parametrizer, code);
@@ -111,12 +145,31 @@ export function getCallName(node: AstNode, code: string): string | null {
  * `describe.only`, `test.concurrent`, `it.each`. Scopes and examples are
  * addressed by it, so `.skip` / `.only` / `.each` stay visible in their
  * symbolIds (bd tea-rags-mcp-b55x2). Null exactly where {@link getCallName} is.
+ *
+ * A conditional callee is shown as written in one canonical layout —
+ * `(skipRelative ? describe.skip : describe)`: the condition with whitespace
+ * runs folded to one space, each arm a chain with whitespace removed. It is
+ * named by the whole conditional, not the shared word, for the reason `.skip`
+ * is kept: which variant runs is what the author wrote, and a bare `describe`
+ * would collide with a sibling `describe` of the same title (bd
+ * tea-rags-mcp-rvuun).
  */
 export function getCallDisplayName(node: AstNode, code: string): string | null {
   if (getCallName(node, code) === null) return null;
   const callee = node.childForFieldName("function") as AstNode;
-  const shown = parametrizerCallOf(callee, code)?.childForFieldName("function") ?? callee;
-  return code.substring(shown.startIndex, shown.endIndex).replace(/\s+/g, "");
+  const chain = (expression: AstNode): string =>
+    code.substring(expression.startIndex, expression.endIndex).replace(/\s+/g, "");
+
+  const conditional = conditionalCalleeOf(callee);
+  if (conditional) {
+    const condition = conditional.childForFieldName("condition") as AstNode;
+    const conditionText = code.substring(condition.startIndex, condition.endIndex).replace(/\s+/g, " ");
+    const consequence = conditional.childForFieldName("consequence") as AstNode;
+    const alternative = conditional.childForFieldName("alternative") as AstNode;
+    return `(${conditionText} ? ${chain(consequence)} : ${chain(alternative)})`;
+  }
+
+  return chain(parametrizerCallOf(callee, code)?.childForFieldName("function") ?? callee);
 }
 
 /** Every node kind that opens a function body a DSL call can sit in. */

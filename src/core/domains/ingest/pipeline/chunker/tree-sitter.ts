@@ -21,6 +21,7 @@ import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   classifyMethod,
+  constObjectNamespaceContainerName,
   constObjectNamespaceOwner,
   type MethodClassification,
 } from "../../../../infra/symbolid/index.js";
@@ -567,7 +568,11 @@ export class TreeSitterChunker implements CodeChunker {
     language: string,
     chunks: CodeChunk[],
   ): Promise<boolean> {
-    const parentName = this.extractName(node, code, langConfig.nameExtractor);
+    // bd tea-rags-mcp-kn0vj — a const-object namespace declaration a filter kept
+    // as a container carries no `name` field; its name is the namespace's, so
+    // its members compose `X.m` exactly as on the 62hzr descent path.
+    const parentName =
+      this.extractName(node, code, langConfig.nameExtractor) ?? constObjectNamespaceContainerName(node) ?? undefined;
     const parentType = node.type;
 
     const childNodes = this.findChildChunkableNodes(
@@ -741,12 +746,15 @@ export class TreeSitterChunker implements CodeChunker {
     }
 
     // passthrough — generic shaping (the floor was already applied in the chunk() loop).
-    const nodeName = this.extractName(node, code);
+    // A kept const-object namespace whose members all fell under the size floor
+    // reaches here whole, named by its namespace (bd tea-rags-mcp-kn0vj).
+    const nodeName = this.extractName(node, code) ?? constObjectNamespaceContainerName(node) ?? undefined;
     // bd tea-rags-mcp-62hzr — a member of a const-object NAMESPACE
-    // (`export const X = { m() {} }`) reaches this path as a TOP-LEVEL chunkable
-    // `method_definition`: the declaration wrapping it is not a chunkable type,
-    // so `findChunkableNodes` descends through it and the member never acquires
-    // a parent. Emitting the bare `m` broke lockstep with `cg_symbols`, which
+    // (`export const X = { m() {} }`) whose declaration the language filter did
+    // not keep as a container (bd tea-rags-mcp-kn0vj) reaches this path as a
+    // TOP-LEVEL chunkable `method_definition`: `findChunkableNodes` descends
+    // through the declaration and the member never acquires a parent. Emitting
+    // the bare `m` broke lockstep with `cg_symbols`, which
     // holds `X.m` since bd tea-rags-mcp-2jhwk — `get_callers` on an id copied
     // out of a search hit returned []. The separator is the namespace one, not
     // the instance `#`: an object-literal method binds no instance.
