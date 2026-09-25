@@ -578,6 +578,72 @@ describe("OntologyReportOps#report — live false positives", () => {
     expect(outliers).toEqual([]);
   });
 
+  it("homonyms: an abbreviated role word (`ctx`, `err`) is dropped; `run` and `node` stay", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        homonyms: [
+          homonym("ctx", [
+            ["LogContext", 6, "src/a.ts"],
+            ["ProviderContext", 4, "src/b.ts"],
+            ["ReindexContext", 3, "src/c.ts"],
+          ]),
+          homonym("err", [
+            ["Error", 8, "src/a.ts"],
+            ["QuarantinableIngestError", 4, "src/b.ts"],
+            ["NodeJS.ErrnoException", 3, "src/c.ts"],
+          ]),
+          homonym("run", [
+            ["EnrichmentRunHandle", 5, "src/a.ts"],
+            ["RunMarker", 4, "src/b.ts"],
+            ["RunState", 3, "src/c.ts"],
+          ]),
+          homonym("node", [
+            ["AstNode", 6, "src/a.ts"],
+            ["Content", 4, "src/b.ts"],
+          ]),
+        ],
+      }),
+    );
+    const { homonyms } = await ops.report({ collection: "code_x", sections: ["homonyms"] });
+    expect(homonyms?.map((h) => h.name).sort()).toEqual(["node", "run"]);
+  });
+
+  it("outliers: a name is one only when its shape is weaker than the dominant's", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        outlierGroups: [
+          // TAIL against a FREE convention: the more descriptive name is not the outlier.
+          group({
+            typeName: "PhysicalCollectionName",
+            names: [
+              { name: "coll", n: 11, example: at("src/a.ts") },
+              { name: "collectionName", n: 4, example: at("src/b.ts") },
+            ],
+          }),
+          group({
+            typeName: "CodegraphChunkHandoff",
+            names: [
+              { name: "deferredChunkHandoff", n: 8, example: at("src/a.ts") },
+              { name: "handoff", n: 2, example: at("src/b.ts") },
+            ],
+          }),
+          // FREE against a TAIL convention stays an outlier.
+          group({
+            typeName: "ChunkItem",
+            names: [
+              { name: "items", n: 12, example: at("src/a.ts") },
+              { name: "fileItems", n: 2, example: at("src/c.ts") },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { outliers } = await ops.report({ collection: "code_x", sections: ["outliers"] });
+    expect(outliers?.map((o) => [o.type, o.name, o.shape, o.dominant.shape])).toEqual([
+      ["ChunkItem", "fileItems", "FREE", "TAIL"],
+    ]);
+  });
+
   it("synonyms: a type whose dominant name occurs once is a set of singleton instances, not synonyms", async () => {
     const { ops } = makeOps(async () =>
       rows({

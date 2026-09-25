@@ -36,6 +36,26 @@ import {
  */
 export type NamingShape = "EXACT" | "QUALIFIED" | "TAIL" | "VERB_TYPE" | "CALLEE_DERIVED" | "FREE";
 
+/**
+ * How much of the type a shape spells, strongest first: EXACT > QUALIFIED >
+ * TAIL > VERB_TYPE = CALLEE_DERIVED > FREE. VERB_TYPE and CALLEE_DERIVED share a
+ * rank — each derives the name from something other than the value's own type
+ * words alone (a verb, the bound callee), and neither is a subset of the other.
+ */
+const NAMING_SHAPE_STRENGTH: Record<NamingShape, number> = {
+  EXACT: 5,
+  QUALIFIED: 4,
+  TAIL: 3,
+  VERB_TYPE: 2,
+  CALLEE_DERIVED: 2,
+  FREE: 1,
+};
+
+/** True when `shape` says strictly less about the type than `than` ({@link NAMING_SHAPE_STRENGTH}). */
+export function isWeakerNamingShape(shape: NamingShape, than: NamingShape): boolean {
+  return NAMING_SHAPE_STRENGTH[shape] < NAMING_SHAPE_STRENGTH[than];
+}
+
 /** Verb words that prefix a finder / factory name: `find_x`, `getX`, `build_x`. */
 export const NAMING_VERB_PREFIXES: readonly string[] = [
   "find",

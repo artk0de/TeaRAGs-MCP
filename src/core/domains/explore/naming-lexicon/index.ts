@@ -19,6 +19,7 @@ export {
   calleeDerivedWords,
   classifyNamingShape,
   isNonConceptType,
+  isWeakerNamingShape,
   matchesTypeWords,
   shapeDistribution,
 } from "./shapes.js";

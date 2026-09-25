@@ -107,6 +107,122 @@ describe("isTypeFamilyRoleName", () => {
     ).toBe(false);
   });
 
+  it.each([
+    [
+      "ctx",
+      [
+        { typeName: "LogContext", shape: "FREE" as const },
+        { typeName: "ProviderContext", shape: "FREE" as const },
+        { typeName: "ReindexContext", shape: "FREE" as const },
+      ],
+    ],
+    [
+      "cfg",
+      [
+        { typeName: "IngestConfig", shape: "FREE" as const },
+        { typeName: "EmbeddingConfig", shape: "FREE" as const },
+      ],
+    ],
+    [
+      "req",
+      [
+        { typeName: "ActionDispatch::Request", shape: "FREE" as const },
+        { typeName: "HttpRequest", shape: "FREE" as const },
+      ],
+    ],
+    [
+      "opts",
+      [
+        { typeName: "IndexOptions", shape: "FREE" as const },
+        { typeName: "SearchOptions", shape: "FREE" as const },
+      ],
+    ],
+    [
+      "@ctx",
+      [
+        { typeName: "LogContext", shape: "FREE" as const },
+        { typeName: "Context", shape: "FREE" as const },
+      ],
+    ],
+  ])("`%s`: an abbreviation of the tail word every type shares is a role word, not a homonym", (name, types) => {
+    expect(isTypeFamilyRoleName(types, name)).toBe(true);
+  });
+
+  it("`err`: a two-word type counts when the name abbreviates its first word (NodeJS.ErrnoException)", () => {
+    expect(
+      isTypeFamilyRoleName(
+        [
+          { typeName: "Error", shape: "FREE" },
+          { typeName: "QuarantinableIngestError", shape: "FREE" },
+          { typeName: "NodeJS.ErrnoException", shape: "FREE" },
+        ],
+        "err",
+      ),
+    ).toBe(true);
+  });
+
+  it("the first-word allowance stops at two words: `err` does not abbreviate the tail of ErrnoIngestException", () => {
+    expect(
+      isTypeFamilyRoleName(
+        [
+          { typeName: "Error", shape: "FREE" },
+          { typeName: "ErrnoIngestException", shape: "FREE" },
+        ],
+        "err",
+      ),
+    ).toBe(false);
+  });
+
+  it("`run` is neither the tail nor an abbreviation of Handle / Marker / State — still a homonym", () => {
+    expect(
+      isTypeFamilyRoleName(
+        [
+          { typeName: "EnrichmentRunHandle", shape: "FREE" },
+          { typeName: "RunMarker", shape: "FREE" },
+          { typeName: "RunState", shape: "FREE" },
+        ],
+        "run",
+      ),
+    ).toBe(false);
+  });
+
+  it("`node` → AstNode / Content: one type the name neither ends nor abbreviates keeps the homonym", () => {
+    expect(
+      isTypeFamilyRoleName(
+        [
+          { typeName: "AstNode", shape: "TAIL" },
+          { typeName: "Content", shape: "FREE" },
+        ],
+        "node",
+      ),
+    ).toBe(false);
+  });
+
+  it("an abbreviation starts with the word's first letter, is shorter than it, and spans at least two letters", () => {
+    const family = (typeNames: string[]) => typeNames.map((typeName) => ({ typeName, shape: "FREE" as const }));
+    // `tx` letters appear in `context` in order, but not from its first letter.
+    expect(isTypeFamilyRoleName(family(["LogContext", "JobContext"]), "tx")).toBe(false);
+    // the full word is EXACT / TAIL territory, decided by the shape, not by abbreviation.
+    expect(isTypeFamilyRoleName(family(["LogContext", "JobContext"]), "context")).toBe(false);
+    expect(isTypeFamilyRoleName(family(["LogContext", "JobContext"]), "c")).toBe(false);
+    // out of order: `cxn` is not a subsequence of `context` (no `n` after the `x`).
+    expect(isTypeFamilyRoleName(family(["LogContext", "JobContext"]), "cxn")).toBe(false);
+    // letters only.
+    expect(isTypeFamilyRoleName(family(["LogContext", "JobContext"]), "ctx2")).toBe(false);
+  });
+
+  it("an abbreviated role word over two classes sharing a last segment is still a real homonym", () => {
+    expect(
+      isTypeFamilyRoleName(
+        [
+          { typeName: "Billing::Context", shape: "FREE" },
+          { typeName: "Search::Context", shape: "FREE" },
+        ],
+        "ctx",
+      ),
+    ).toBe(false);
+  });
+
   it("fewer than two types is no family", () => {
     expect(isTypeFamilyRoleName([{ typeName: "Invoice", shape: "EXACT" }])).toBe(false);
     expect(isTypeFamilyRoleName([])).toBe(false);

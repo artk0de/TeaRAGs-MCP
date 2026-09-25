@@ -9,9 +9,9 @@
  * The CTE chain, in order:
  *   - `resolved` — {@link resolvedIdentifiersCte}: the persisted type, or the
  *     `call-return` type of a row bound to a single-target exact call. Narrowed
- *     BEFORE the join by the language's file extensions only, so the generic
- *     filter below sees the whole project;
- *   - `concept_all` — rows whose effective type names a concept: not a
+ *     BEFORE the join by the language's file extensions;
+ *   - `concept_all` — rows under the path scope whose effective type names a
+ *     concept: not a
  *     non-concept type of the row's language, not a single capital letter;
  *     value kinds only (`param`, `local`, `field` — a `return` row's name is a
  *     method name, not a value name); a name of more than one character; not
@@ -20,9 +20,11 @@
  *     Fields keep a leading `_` (Python `_private` is a real name), and a
  *     dunder (`__init__`) is no marker;
  *   - `generic` — names bound to many types none of which dominates. Data
- *     derived, project-wide, so `result` / `data` / `item` drop out without a
- *     hardcoded list;
- *   - `evidence` — `concept_all` under the path scope, generic names removed.
+ *     derived, so `result` / `data` / `item` drop out without a hardcoded list.
+ *     Judged over the same scoped rows as every section: the summary reports
+ *     the names generic IN the scope, and a name generic elsewhere but bound to
+ *     one type here is evidence here;
+ *   - `evidence` — `concept_all` with the generic names removed.
  *
  * `name-inferred` types are never evidence: they are a query-time statistic of
  * the naming lexicon that is neither persisted nor computed here, so the audit
@@ -127,6 +129,7 @@ function ontologyBaseCte(q: OntologyReportQuery): SqlPredicate {
            AND length(${BARE_NAME_SQL}) > 1
            AND NOT (kind IN ('param', 'local') AND ${UNUSED_MARKER_SQL})
            AND NOT (${nonConcept.sql})
+           AND ${scope.sql}
       ),
       name_types AS (
         SELECT name, type_name, count(*) AS n FROM concept_all GROUP BY name, type_name
@@ -139,8 +142,7 @@ function ontologyBaseCte(q: OntologyReportQuery): SqlPredicate {
       ),
       evidence AS (
         SELECT * FROM concept_all
-         WHERE ${scope.sql}
-           AND name NOT IN (SELECT name FROM generic)
+         WHERE name NOT IN (SELECT name FROM generic)
       )`,
     params: [...resolved.params, ...nonConcept.params, ...scope.params],
   };

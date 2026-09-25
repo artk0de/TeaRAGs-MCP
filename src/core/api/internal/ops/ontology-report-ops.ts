@@ -21,7 +21,8 @@
  *     binding is noise, not a second meaning;
  *   - a synonym's dominant name needs ≥ 2 rows ({@link SYNONYM_MIN_DOMINANT_ROWS});
  *   - outliers need a convention: the top name holds ≥ 50% of the group; a
- *     name EXACT for its type is never an outlier;
+ *     name EXACT for its type is never an outlier, nor is one whose shape is at
+ *     least as strong as the dominant name's;
  *   - confidence `min(1, (n/20)^2)`, the lexicon's quadratic dampening.
  */
 
@@ -42,6 +43,7 @@ import {
   classifyNamingShape,
   detectIdentifierCasing,
   isTypeFamilyRoleName,
+  isWeakerNamingShape,
   mergeUnqualifiedTypeSpellings,
   singularizeIdentifierWord,
   splitIdentifierWords,
@@ -350,7 +352,7 @@ export class OntologyReportOps {
    * Re-judges the pooled homonym candidates: an unqualified spelling folds into
    * the qualified type it names (`Document` into `TaxPreparation::Document`), and
    * a name that is the role word of a type family (`state` for `ClientState`,
-   * `RunState`) is dropped. The rest re-rank by `(1 − top type share) ×
+   * `RunState`; `ctx` for `LogContext`, `ReindexContext`) is dropped. The rest re-rank by `(1 − top type share) ×
    * confidence`, capped at `limit` names and `namesPerItem` types.
    */
   private homonyms(rows: NonNullable<OntologyReportRows["homonyms"]>, limit: number): OntologyHomonym[] {
@@ -369,7 +371,8 @@ export class OntologyReportOps {
         example: location(type.example),
       }));
       if (types.length < 2) continue;
-      if (isTypeFamilyRoleName(types.map(({ type, shape }) => ({ typeName: type, shape })))) continue;
+      const typeShapes = types.map(({ type, shape }) => ({ typeName: type, shape }));
+      if (isTypeFamilyRoleName(typeShapes, row.name)) continue;
       const topTypeShare = types[0].n / row.n;
       const conf = confidence(row.n, t.confidenceSupport);
       judged.push({
@@ -390,10 +393,12 @@ export class OntologyReportOps {
 
   /**
    * A name is an outlier when its shape FAMILY (type-derived / callee-derived /
-   * free) differs from the family holding most of its group's rows —
+   * free) differs from the family holding most of its group's rows AND its
+   * shape is weaker than the dominant name's ({@link isWeakerNamingShape}) —
    * `tax_automation_document_ignored` (QUALIFIED) conforms to an EXACT
-   * convention, `tad` (FREE) does not. Ranked by how strong the convention is:
-   * family share × confidence.
+   * convention, `tad` (FREE) does not; `collectionName` (TAIL) against a
+   * `coll` (FREE) habit is the better name, not the deviant. Ranked by how
+   * strong the convention is: family share × confidence.
    */
   private outliers(groups: readonly OntologyTypeGroupRow[], limit: number): OntologyOutlier[] {
     const t = ONTOLOGY_REPORT_THRESHOLDS;
@@ -417,6 +422,8 @@ export class OntologyReportOps {
       for (const item of named) {
         // EXACT is the type's own spelling: canonical whatever the group's habit.
         if (item.shape === "EXACT" || shapeFamily(item.shape) === dominantFamily) continue;
+        // A name spelling more of the type than the convention does is not the one departing from it.
+        if (!isWeakerNamingShape(item.shape, dominant.shape)) continue;
         judged.push({
           type: group.typeName,
           kind: group.kind,

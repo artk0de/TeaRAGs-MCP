@@ -4,6 +4,7 @@ import type { IdentifierCasing } from "../../../../../src/core/contracts/types/l
 import {
   classifyNamingShape,
   isNonConceptType,
+  isWeakerNamingShape,
   shapeDistribution,
 } from "../../../../../src/core/domains/explore/naming-lexicon/shapes.js";
 
@@ -206,5 +207,24 @@ describe("isNonConceptType", () => {
 
   it.each(["TaxAutomationDocument", "User", "::System", "TT"])("%s is a concept", (typeName) => {
     expect(isNonConceptType(typeName, RUBY_LIKE)).toBe(false);
+  });
+});
+
+describe("isWeakerNamingShape", () => {
+  it("orders EXACT > QUALIFIED > TAIL > (VERB_TYPE = CALLEE_DERIVED) > FREE", () => {
+    expect(isWeakerNamingShape("TAIL", "FREE")).toBe(false);
+    expect(isWeakerNamingShape("FREE", "TAIL")).toBe(true);
+    expect(isWeakerNamingShape("FREE", "EXACT")).toBe(true);
+    expect(isWeakerNamingShape("TAIL", "QUALIFIED")).toBe(true);
+    expect(isWeakerNamingShape("QUALIFIED", "EXACT")).toBe(true);
+    expect(isWeakerNamingShape("CALLEE_DERIVED", "TAIL")).toBe(true);
+    expect(isWeakerNamingShape("FREE", "CALLEE_DERIVED")).toBe(true);
+    expect(isWeakerNamingShape("EXACT", "FREE")).toBe(false);
+  });
+
+  it("equal strength is not weaker: VERB_TYPE and CALLEE_DERIVED share a rank, a shape never beats itself", () => {
+    expect(isWeakerNamingShape("VERB_TYPE", "CALLEE_DERIVED")).toBe(false);
+    expect(isWeakerNamingShape("CALLEE_DERIVED", "VERB_TYPE")).toBe(false);
+    expect(isWeakerNamingShape("FREE", "FREE")).toBe(false);
   });
 });

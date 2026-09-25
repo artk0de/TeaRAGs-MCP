@@ -229,6 +229,27 @@ describe("DuckDbGraphClient#readOntologyReport", () => {
     ]);
   });
 
+  it("judges generic names inside the scope: the summary and the sections' exclusion see the same rows", async () => {
+    // `result` is generic project-wide (five types); under lib/one it is bound to one type.
+    await db.replaceIdentifiersBulk([{ relPath: "lib/one/runner.rb", rows: rows(2, typed("result", "TypeA"), 1) }]);
+
+    const outside = await db.readOntologyReport(query({ pathPrefixes: ["app/services/tax"] }));
+    expect(outside.genericNames).toEqual([]);
+    expect(outside.genericNameCount).toBe(0);
+
+    const inside = await db.readOntologyReport(query({ pathPrefixes: ["lib/one"] }));
+    expect(inside.genericNames).toEqual([]);
+    // Not generic in scope, so its rows are evidence rather than dropped.
+    expect(inside.evidenceRows).toBe(2);
+
+    const genericScope = await db.readOntologyReport(query({ pathPrefixes: ["app/services/generic"] }));
+    expect(genericScope.genericNames).toEqual([{ name: "result", typeCount: 5, n: 10 }]);
+    expect(genericScope.evidenceRows).toBe(0);
+
+    const tsOnly = await db.readOntologyReport(query({ extensions: [".ts"] }));
+    expect(tsOnly.genericNames).toEqual([]);
+  });
+
   it("drops non-concept types only in the language that declares them", async () => {
     const report = await db.readOntologyReport(
       query({ nonConceptTypes: [{ extensions: [".ts"], typeNames: ["String"] }] }),
