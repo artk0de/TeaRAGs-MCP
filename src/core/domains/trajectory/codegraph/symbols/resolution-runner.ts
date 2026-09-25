@@ -189,8 +189,9 @@ export function tallyCallSiteVerdict(
  * `resolveFileEdges` — Go, Java, Rust and Bash, whose file graph comes purely
  * from explicit imports. TypeScript, JavaScript and Python override it with
  * their import→file mappers (`member` here is a filename, so a member-keyed
- * pass can answer it with an unrelated file), and Ruby to add the Zeitwerk
- * constant channel and inheritance edges.
+ * pass can answer it with an unrelated file), Ruby to add the Zeitwerk
+ * constant channel and inheritance edges, and Swift — whose imports name
+ * modules, never files — to derive them from its resolved calls.
  */
 function defaultImportFileEdges(
   extraction: FileExtraction,
@@ -329,8 +330,11 @@ export class CallEdgeResolutionRunner {
     if (!resolver) return { fileEdges: [], methodEdges };
 
     const inputs = this.buildResolverInputs(extraction);
-    const fileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs);
+    // Call sites FIRST, file edges second (bd tea-rags-mcp-y99pg.38): a
+    // language whose imports name no file derives its file graph from where
+    // these calls land, so `resolveFileEdges` receives them.
     this.resolveMethodEdges(extraction, symbolTable, resolver, inputs, methodEdges, ambiguousFanouts);
+    const fileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
 
     // Class hierarchy (bd tea-rags-mcp-f10y). Persist this file's declared
     // inheritance edges alongside its file/method edges so cg_symbols_inheritance
@@ -471,6 +475,7 @@ export class CallEdgeResolutionRunner {
     symbolTable: GlobalSymbolTable,
     resolver: LanguageSymbolResolver,
     inputs: ResolverInputs,
+    resolvedMethodEdges: MethodEdges,
   ): GraphEdges["fileEdges"] {
     const fileEdgeCtx: CallContext = {
       ...resolverInputChannels(inputs),
@@ -484,7 +489,7 @@ export class CallEdgeResolutionRunner {
       projectRoot: this.runState.projectRoot,
     };
     const candidates = resolver.resolveFileEdges
-      ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
+      ? resolver.resolveFileEdges(extraction, fileEdgeCtx, resolvedMethodEdges)
       : defaultImportFileEdges(extraction, resolver, fileEdgeCtx);
     return dedupeFileEdgesByTarget(candidates);
   }

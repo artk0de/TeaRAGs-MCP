@@ -316,6 +316,35 @@ describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
     ]);
     expect(Object.keys(edges.fileEdges[1] ?? {})).toEqual(["targetRelPath", "importText"]);
   });
+
+  it("hands resolveFileEdges this file's already-resolved method edges (bd tea-rags-mcp-y99pg.38)", () => {
+    // A language whose imports name no file derives its file graph from where
+    // its calls land, so call sites must resolve BEFORE file edges are built.
+    const seen: unknown[] = [];
+    const resolver = {
+      resolve: () => ({ targetSymbolId: "B#go", targetRelPath: "src/b.tsx" }),
+      resolveFileEdges: (_extraction: unknown, _ctx: unknown, resolvedMethodEdges: unknown) => {
+        seen.push(resolvedMethodEdges);
+        return [];
+      },
+    };
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), new CodegraphRunState());
+    const extraction: FileExtraction = {
+      ...emptyExtraction("src/a.tsx"),
+      chunks: [
+        {
+          symbolId: "A#run",
+          scope: ["A"],
+          calls: [{ callText: "b.go()", receiver: "b", member: "go", startLine: 3 }],
+        },
+      ],
+    };
+
+    const edges = runner.resolve(extraction, { lookupByShortName: () => [] } as unknown as GlobalSymbolTable);
+
+    expect(seen).toEqual([edges.methodEdges]);
+    expect(edges.methodEdges.map((e) => e.targetRelPath)).toEqual(["src/b.tsx"]);
+  });
 });
 
 describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", () => {

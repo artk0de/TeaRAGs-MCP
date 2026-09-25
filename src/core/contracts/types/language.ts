@@ -661,8 +661,18 @@ export interface LanguageSymbolResolver {
    * Languages whose file graph is purely explicit imports omit it and the
    * provider falls back to the generic synthesised-call loop. Mirrors
    * `CallResolver.resolveFileEdges`.
+   *
+   * `resolvedMethodEdges` is this file's own method edges, already resolved —
+   * the runner resolves call sites BEFORE file edges so a language whose
+   * imports name no file (Swift imports a MODULE) can derive its file graph
+   * from where its calls actually land (bd tea-rags-mcp-y99pg.38). Import-based
+   * languages ignore it.
    */
-  resolveFileEdges?: (extraction: FileExtraction, ctx: CallContext) => GraphEdges["fileEdges"];
+  resolveFileEdges?: (
+    extraction: FileExtraction,
+    ctx: CallContext,
+    resolvedMethodEdges: GraphEdges["methodEdges"],
+  ) => GraphEdges["fileEdges"];
   /**
    * Optional: does this UNRESOLVED call target an external library / runtime
    * import rather than an in-project resolver miss? (tea-rags-mcp-ykj7). The
