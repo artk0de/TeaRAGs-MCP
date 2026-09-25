@@ -803,6 +803,7 @@ function swiftLocalValueTypeRef(
   if (spelled.closureParameter !== undefined) {
     return swiftClosureParameterType(spelled.callee, spelled.closureParameter, spelled.line, ctx, ports, members);
   }
+  if (swiftSpellingHidesOptionalMember(spelled.callee, spelled.line, ctx, members)) return undefined;
   const folded = propagateReceiverType(spelled.callee, spelled.line, ctx, ports);
   if (folded?.form !== "instance") return undefined;
   // `for request in requests`: the loop draws the sequence's element (bd tea-rags-mcp-y99pg.37).
@@ -817,6 +818,55 @@ function swiftLocalValueTypeRef(
     return payload === undefined ? undefined : { form: "instance", name: payload };
   }
   return folded;
+}
+
+/** The written-fold probe {@link swiftSpellingHidesOptionalMember} runs, built once per member lookup. */
+interface SwiftSpellingOptionalProbe {
+  readonly ports: ReceiverTypePorts;
+  readonly state: { ambiguous: boolean };
+}
+
+const SWIFT_SPELLING_OPTIONAL_PROBES = new WeakMap<SwiftMemberTypeLookup, SwiftSpellingOptionalProbe>();
+
+/**
+ * Whether folding `callee` — a SPELLING, unwrap sugar stripped — steps onto a
+ * member `Optional` itself declares while the value it steps from is an
+ * `Optional` (bd tea-rags-mcp-y99pg.39). `shortName.flatMap { … }` on a
+ * `String?` is `Optional.flatMap` as written and `String.flatMap` behind a
+ * `?`, and the spelling is the same string for both: the two readings return
+ * different types, so the local is left untyped rather than typed by a guess.
+ *
+ * The probe is the written fold (which reads a sugar-free link as written
+ * straight on the value) with its member hop instrumented. A nested fold can
+ * re-enter through a head bound to another spelling, so the flag is saved and
+ * restored around each probe.
+ */
+function swiftSpellingHidesOptionalMember(
+  callee: string,
+  line: number,
+  ctx: CallContext,
+  members: SwiftMemberTypeLookup,
+): boolean {
+  let probe = SWIFT_SPELLING_OPTIONAL_PROBES.get(members);
+  if (probe === undefined) {
+    const written = createSwiftWrittenReceiverTypePorts(members);
+    const state = { ambiguous: false };
+    const ports: ReceiverTypePorts = Object.freeze({
+      ...written,
+      memberTypeOf: (recv: TypeRef, member: string, at: CallContext): TypeRef | undefined => {
+        if (isSwiftOptionalRef(recv) && members.optionalDeclares(stripCallArgs(member), at)) state.ambiguous = true;
+        return written.memberTypeOf(recv, member, at);
+      },
+    });
+    probe = { ports, state };
+    SWIFT_SPELLING_OPTIONAL_PROBES.set(members, probe);
+  }
+  const saved = probe.state.ambiguous;
+  probe.state.ambiguous = false;
+  propagateReceiverType(callee, line, ctx, probe.ports);
+  const { ambiguous } = probe.state;
+  probe.state.ambiguous = saved;
+  return ambiguous;
 }
 
 /**

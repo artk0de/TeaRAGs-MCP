@@ -2679,12 +2679,18 @@ function swiftValueChainSpelling(node: AstNode | null, depth = 0): string | null
     }
     case "call_expression": {
       const suffix = node.children.find((c) => c.type === "call_suffix");
-      if (!suffix || suffix.children.some((c) => c.type !== "value_arguments")) return null;
+      // `tiles.filter { … }`: a trailing closure is one more argument, and the
+      // spelling strips arguments (bd tea-rags-mcp-y99pg.39).
+      if (!suffix || suffix.children.some((c) => c.type !== "value_arguments" && c.type !== "lambda_literal")) {
+        return null;
+      }
       const callee = node.namedChildren.find((c) => c.type !== "call_suffix");
       const spelled = callee?.type === "navigation_expression" ? swiftValueChainSpelling(callee, depth + 1) : null;
       // `read(\.activeRequests)`: the one argument a generic return can be
       // bound by, so the spelling keeps it (bd tea-rags-mcp-y99pg.37).
-      const keyPath = swiftLoneKeyPathArgument(suffix);
+      const keyPath = suffix.children.some((c) => c.type === "lambda_literal")
+        ? null
+        : swiftLoneKeyPathArgument(suffix);
       return spelled !== null && keyPath !== null ? `${spelled}(${keyPath})` : spelled;
     }
     default:

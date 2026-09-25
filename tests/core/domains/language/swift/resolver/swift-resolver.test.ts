@@ -3856,6 +3856,25 @@ describe("SwiftCallResolver — Optional values and unwrap sugar (bd tea-rags-mc
     expect(new SwiftCallResolver().resolve(call("box", "open"), within)?.targetSymbolId).toBe("Box#open");
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `let name = shortName.flatMap { … } ?? repo`
+  // on a `String?`: a SPELLING carries no unwrap sugar, so `flatMap` may be
+  // `Optional`'s (written straight) or `String`'s (behind `?`) — the local is
+  // left untyped rather than read as the `Array` `Sequence.flatMap` returns.
+  it("leaves a spelled local untyped where the spelling cannot tell Optional's member from the wrapped type's", () => {
+    const arrays = table({
+      "Sources/ArrayText.swift": [{ symbolId: "Array#lowercased", scope: ["Array"] }],
+    });
+    const at = ctx({
+      callerFile: "Sources/Face.swift",
+      callerScope: ["Face", "displayName"],
+      symbolTable: arrays,
+      typeDeclarations: { "Sources/ArrayText.swift": [{ typeId: "Array", reopens: true }] },
+      localBindings: { shortName: [{ line: 5, type: "String", typeRef: optional("String") }] },
+      callResultBindings: { name: [{ line: 6, callee: "shortName.flatMap" }] },
+    });
+    expect(new SwiftCallResolver().resolve(call("name", "lowercased"), at)?.targetSymbolId).toBeUndefined();
+  });
+
   it("types a property declared optional as an Optional", () => {
     const resolver = new SwiftCallResolver();
     // `completion.box` is a `Box?`: `.map` on it is `Optional.map`, never `Box#map`.

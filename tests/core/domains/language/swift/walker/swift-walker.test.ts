@@ -1472,6 +1472,27 @@ describe("swift walker — locals typed later: value-chain spellings and casts",
     expect(extract(src).chunks[0].callResultBindings).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-y99pg.39 — `let placed = tiles.filter { … }`: a closure
+  // passed as the trailing argument is an argument like any other, and the
+  // spelling strips arguments.
+  it("records the spelling of a call that passes a trailing closure", () => {
+    const src = [
+      "func go() {",
+      "  let placed = tiles.filter { $0.key == k }",
+      "  let first = xs.sorted(by: <).first { $0 > 1 }",
+      "  placed.run()",
+      "}",
+      "",
+    ].join("\n");
+    for (const bindings of [
+      extract(src).chunks[0].callResultBindings,
+      extractMaterialized(src).chunks[0].callResultBindings,
+    ]) {
+      expect(bindings?.placed).toEqual([{ line: 2, callee: "tiles.filter" }]);
+      expect(bindings?.first).toEqual([{ line: 3, callee: "xs.sorted.first" }]);
+    }
+  });
+
   it("reads the same spelling off the materialized tree", () => {
     const src = ["func go() {", "  let e = try sp?.mgr?.eval(forHost: h)", "  e.run()", "}", ""].join("\n");
     expect(extractMaterialized(src).chunks[0].callResultBindings?.e?.[0].callee).toBe("sp.mgr.eval");
