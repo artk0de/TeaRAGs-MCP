@@ -65,6 +65,7 @@ function reportHeapCeilingEnforcement(): void {
   try {
     const warning = describeUnenforcedHeapCeiling({
       declaredMaxOldGenerationSizeMb: resourceLimits.maxOldGenerationSizeMb,
+      declaredMaxYoungGenerationSizeMb: resourceLimits.maxYoungGenerationSizeMb,
       heapSizeLimitBytes: getHeapStatistics().heap_size_limit,
     });
     if (warning) process.stderr.write(`[enrichment-worker] ${warning}\n`);

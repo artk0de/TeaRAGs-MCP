@@ -80,6 +80,72 @@ describe("describeUnenforcedHeapCeiling", () => {
     expect(warning).not.toContain("\n");
   });
 
+  /**
+   * bd tea-rags-mcp-5nyzm — `heap_size_limit` is old generation PLUS young
+   * generation. Measured on node 24.14.1 with NODE_OPTIONS unset: the thread's
+   * own `resourceLimits.maxYoungGenerationSizeMb` reads 192 and every limit lands
+   * at exactly declared + 192 (256->448, 352->544, 640->832, 4096->4288). A
+   * ratio over the old generation alone flagged every enforced ceiling under
+   * ~768 MB as inert.
+   */
+  describe("young-generation allowance (5nyzm)", () => {
+    const YOUNG_MB = 192;
+    const measuredEnforced: readonly (readonly [number, number])[] = [
+      [256, 448],
+      [352, 544],
+      [640, 832],
+      [4096, 4288],
+    ];
+
+    for (const [declaredMb, actualMb] of measuredEnforced) {
+      it(`stays silent for an ENFORCED ${declaredMb} MB ceiling that V8 reports as ${actualMb} MB`, () => {
+        expect(
+          describeUnenforcedHeapCeiling({
+            declaredMaxOldGenerationSizeMb: declaredMb,
+            declaredMaxYoungGenerationSizeMb: YOUNG_MB,
+            heapSizeLimitBytes: actualMb * MB,
+          }),
+        ).toBeUndefined();
+      });
+
+      it(`still speaks when NODE_OPTIONS --max_old_space_size=8192 overrides a declared ${declaredMb} MB ceiling`, () => {
+        const warning = describeUnenforcedHeapCeiling({
+          declaredMaxOldGenerationSizeMb: declaredMb,
+          declaredMaxYoungGenerationSizeMb: YOUNG_MB,
+          heapSizeLimitBytes: 8384 * MB,
+        });
+        expect(warning).toBeDefined();
+        expect(warning).toContain(`${declaredMb} MB`);
+        expect(warning).toContain("8384 MB");
+      });
+    }
+
+    it("applies the tolerance to old + young, not to the old generation alone", () => {
+      const expectedMb = 352 + YOUNG_MB;
+      const atTolerance = expectedMb * HEAP_CEILING_ENFORCEMENT_TOLERANCE;
+      const observe = (actualMb: number) =>
+        describeUnenforcedHeapCeiling({
+          declaredMaxOldGenerationSizeMb: 352,
+          declaredMaxYoungGenerationSizeMb: YOUNG_MB,
+          heapSizeLimitBytes: actualMb * MB,
+        });
+      expect(observe(atTolerance)).toBeUndefined();
+      expect(observe(atTolerance + 1)).toBeDefined();
+    });
+
+    it("treats an unusable young-generation reading as no allowance", () => {
+      for (const declaredMaxYoungGenerationSizeMb of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(
+          describeUnenforcedHeapCeiling({
+            declaredMaxOldGenerationSizeMb: 352,
+            declaredMaxYoungGenerationSizeMb,
+            heapSizeLimitBytes: 544 * MB,
+          }),
+        ).toBeDefined();
+      }
+    });
+  });
+
   it("stays silent when V8 reports no usable heap limit", () => {
     for (const heapSizeLimitBytes of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(
