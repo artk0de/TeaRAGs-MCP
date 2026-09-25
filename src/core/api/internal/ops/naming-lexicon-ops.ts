@@ -518,7 +518,11 @@ function buildTypeEntries(
     const typeRows = rows.filter((r) => r.typeName === type);
     if (typeRows.length === 0) continue;
     const evidence: Partial<Record<NamingLexiconEvidenceSource, number>> = {};
-    for (const row of typeRows) evidence[row.typeSource] = (evidence[row.typeSource] ?? 0) + row.n;
+    // Own-key read: `constructor` is a type source and also Object.prototype's.
+    for (const row of typeRows) {
+      const seen = Object.hasOwn(evidence, row.typeSource) ? (evidence[row.typeSource] ?? 0) : 0;
+      evidence[row.typeSource] = seen + row.n;
+    }
     const total = sum(typeRows);
     entries.push({
       type,

@@ -519,6 +519,24 @@ describe("NamingLexiconOps", () => {
         { name: "memo", n: 1 },
       ]);
     });
+
+    // Live tea-rags: `StatsCache` evidence read `"constructor": "function Object() { [native code] }1"`
+    // — the `constructor` type source collided with Object.prototype.constructor.
+    it("counts the `constructor` type source as a number, not Object.prototype.constructor", async () => {
+      await write([
+        {
+          relPath: "app/cache.rb",
+          rows: [
+            local("A0#run", "cache", { typeName: "Cache", typeSource: "constructor" }),
+            local("A1#run", "cache", { typeName: "Cache", typeSource: "binding" }),
+          ],
+        },
+      ]);
+
+      const result = await ops.getNamingLexicon({ collection: "c", language: "ruby", types: ["Cache"] });
+
+      expect(result.byType[0].evidence).toEqual({ constructor: 1, binding: 1 });
+    });
   });
 
   // Live taxdome (Ruby + TypeScript): `app/**/*.rb` with a callee that has no
