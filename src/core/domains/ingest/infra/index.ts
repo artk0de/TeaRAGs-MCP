@@ -4,6 +4,8 @@ export {
   CollectionIndexingLock,
   HeldCollectionIndexingLock,
   type CollectionIndexingLockOptions,
+  type IndexingLockLiveness,
+  type IndexingLockLivenessProbe,
   type IndexingLockRecord,
 } from "./collection-indexing-lock.js";
 export { computeCollectionStats, MIN_LANGUAGE_SHARE, validateSignalDependencies } from "./collection-stats.js";

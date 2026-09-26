@@ -280,4 +280,59 @@ describe("CollectionIndexingLock", () => {
       expect(readLock().pid).toBe(4242);
     });
   });
+
+  // bd tea-rags-mcp-f93ao — the read-only verdict get_index_status asks for.
+  describe("liveness inspection", () => {
+    it("answers unknown when no lock exists — the writer may be on another host", async () => {
+      expect(await lockWith().inspectLiveness(COLLECTION)).toBe("unknown");
+    });
+
+    it("answers dead for a lock left by a dead process on this host, without removing it", async () => {
+      writeLockOfAnotherRun({ pid: 4242 });
+
+      const liveness = await lockWith({ isProcessAlive: (pid) => pid !== 4242 }).inspectLiveness(COLLECTION);
+
+      expect(liveness).toBe("dead");
+      expect(readLock().pid).toBe(4242);
+    });
+
+    it("answers alive for a lock whose pid still runs on this host — a reused pid lands here too", async () => {
+      writeLockOfAnotherRun({ pid: 4242 });
+
+      expect(await lockWith({ isProcessAlive: () => true }).inspectLiveness(COLLECTION)).toBe("alive");
+    });
+
+    it("never probes the pid of a lock written on another host", async () => {
+      writeLockOfAnotherRun({ pid: 4242, hostname: "another-machine" });
+      const isProcessAlive = vi.fn(() => false);
+
+      expect(await lockWith({ isProcessAlive }).inspectLiveness(COLLECTION)).toBe("alive");
+      expect(isProcessAlive).not.toHaveBeenCalled();
+    });
+
+    it("answers dead for a lock whose heartbeat aged past the stale threshold", async () => {
+      writeLockOfAnotherRun({ pid: 4242, hostname: "another-machine" });
+
+      const later = lockWith({ now: () => T0 + STALE_INDEXING_THRESHOLD_MS + 1 });
+
+      expect(await later.inspectLiveness(COLLECTION)).toBe("dead");
+    });
+
+    it("reports an unreadable lock as IndexingLockUnavailableError", async () => {
+      const notADir = join(dir, "not-a-dir");
+      writeFileSync(notADir, "");
+
+      await expect(lockWith({ lockDir: notADir }).inspectLiveness(COLLECTION)).rejects.toBeInstanceOf(
+        IndexingLockUnavailableError,
+      );
+    });
+
+    it("answers alive for a lock this process holds", async () => {
+      const lock = lockWith({ pid: process.pid });
+      const held = await lock.tryAcquire(COLLECTION, "force-reindex");
+
+      expect(await lock.inspectLiveness(COLLECTION)).toBe("alive");
+      await held?.release();
+    });
+  });
 });
