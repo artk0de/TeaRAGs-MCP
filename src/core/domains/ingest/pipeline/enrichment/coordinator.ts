@@ -954,6 +954,7 @@ export class EnrichmentCoordinator {
       crossPass,
       this.runContentHashes,
       runCoverage,
+      runState.languages,
     );
     runState.chunkPhase.init(runState.contexts, physicalCollectionName, runState.startedAt);
 

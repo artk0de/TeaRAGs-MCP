@@ -71,7 +71,7 @@ describe("CodegraphClientStaleBuildError (bd tea-rags-mcp-1wr7p)", () => {
       socketPath: "/tmp/cg/daemon.sock",
       clientFingerprint: "CLIENT-OLD",
       daemonFingerprint: "DISK-NEW",
-      missingOps: ["listAllPass1Aggregates"],
+      missingOps: ["listPass1Aggregates"],
     });
 
     expect(err).toBeInstanceOf(InfraError);
@@ -79,7 +79,7 @@ describe("CodegraphClientStaleBuildError (bd tea-rags-mcp-1wr7p)", () => {
     expect(err.httpStatus).toBe(503);
     expect(err.message).toContain("CLIENT-OLD");
     expect(err.message).toContain("DISK-NEW");
-    expect(err.message).toContain("listAllPass1Aggregates");
+    expect(err.message).toContain("listPass1Aggregates");
     expect(err.message).toContain("/mcp reconnect");
     expect(err.hint).toMatch(/left running/i);
     // Restarting its own server process is not something tea-rags does.

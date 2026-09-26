@@ -26,6 +26,7 @@ import type {
   GlobalSymbolTable,
   GraphDbClient,
   IdentifierRow,
+  Pass1AggregateReadScope,
   SymbolDefinition,
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
@@ -77,6 +78,7 @@ import {
   collectIdentifierFinderVocabulary,
   type IdentifierFinderVocabulary,
 } from "./identifier-rows.js";
+import { languagesSharingFamilyWith } from "./language-family-record.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
@@ -408,18 +410,30 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Every persisted per-file pass-1 aggregate slice for `collectionName` (bd
-   * tea-rags-mcp-weno4), read on the MAIN thread and injected into the worker's
-   * finalize as `FileSignalOptions.pass1Aggregates`. The main pool replaces a
-   * daemon from another build or lacking a required op; the worker pool has no
-   * respawn hook and, since bd tea-rags-mcp-39xca.4, refuses such a daemon with
-   * `CodegraphDaemonBuildSkewError` (`listAllPass1Aggregates` is required).
+   * The persisted per-file pass-1 aggregate slices a run restricted to
+   * `runLanguages` can hydrate, for `collectionName` (bd tea-rags-mcp-weno4),
+   * read on the MAIN thread and injected into the worker's finalize as
+   * `FileSignalOptions.pass1Aggregates`. The main pool replaces a daemon from
+   * another build or lacking a required op; the worker pool has no respawn hook
+   * and, since bd tea-rags-mcp-39xca.4, refuses such a daemon with
+   * `CodegraphDaemonBuildSkewError` (`listPass1Aggregates` is required).
    * Same store resolution as every other call (`getStore`).
+   *
+   * A restricted run reads its languages' FAMILIES — a TypeScript run still
+   * needs the JavaScript slices — and nothing else, so neither this thread nor
+   * the worker clone parses a foreign language's rows. An unrestricted run
+   * (`runLanguages` empty) cannot know what it walked until the worker's
+   * barrier, which keeps only its own families of these rows.
    */
   async readPersistedPass1Aggregates(
     physicalCollectionName: PhysicalCollectionName,
+    runLanguages: readonly string[],
   ): Promise<CodegraphPass1FileAggregates[]> {
-    return (await this.getStore(physicalCollectionName)).graphDb.listAllPass1Aggregates();
+    const scope: Pass1AggregateReadScope =
+      runLanguages.length === 0
+        ? { kind: "allLanguages" }
+        : { kind: "languages", languages: languagesSharingFamilyWith(runLanguages) };
+    return (await this.getStore(physicalCollectionName)).graphDb.listPass1Aggregates(scope);
   }
 
   /**
@@ -518,11 +532,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       resolveSymbolTable: async (physicalCollectionName) => (await this.getStore(physicalCollectionName)).symbolTable,
       // Injected rows WIN (bd tea-rags-mcp-weno4): `finalizeSignals` stashes what
       // the MAIN thread read, so a pipeline finalize never needs the barrier's own
-      // read. The read is the fallback for direct/test callers.
-      loadPersistedPass1Aggregates: async (physicalCollectionName) =>
+      // read. The read is the fallback for direct/test callers; the barrier
+      // filters injected rows by the same scope it hands the read.
+      loadPersistedPass1Aggregates: async (scope, physicalCollectionName) =>
         this.runState.injectedPass1Aggregates
           ? [...this.runState.injectedPass1Aggregates]
-          : (await this.getStore(physicalCollectionName)).graphDb.listAllPass1Aggregates(),
+          : (await this.getStore(physicalCollectionName)).graphDb.listPass1Aggregates(scope),
       runState: this.runState,
       nodeFlush: this.nodeFlush,
       buildSymbolDefs: (extraction) => this.buildSymbolDefs(extraction),

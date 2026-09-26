@@ -208,7 +208,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     const paths = makePaths();
     const client = rebuiltUnderClient();
     const onDisk = client.readOnDisk() as string;
-    const daemonExit = await startDaemon(paths, onDisk, withoutOps("listAllPass1Aggregates"));
+    const daemonExit = await startDaemon(paths, onDisk, withoutOps("listPass1Aggregates"));
 
     const requestShutdown = vi.spyOn(DaemonGraphDbClient.prototype, "requestShutdown");
     const respawn = vi.fn();
@@ -220,7 +220,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     expect(err).toBeInstanceOf(InfraError);
     const stale = err as CodegraphClientStaleBuildError;
     expect(stale.code).toBe("INFRA_CODEGRAPH_CLIENT_STALE_BUILD");
-    expect(stale.missingOps).toEqual(["listAllPass1Aggregates"]);
+    expect(stale.missingOps).toEqual(["listPass1Aggregates"]);
     expect(stale.message).toContain("/mcp reconnect");
     expect(stale.message).toContain(client.loaded);
     expect(stale.message).toContain(onDisk);
@@ -237,7 +237,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
   it("a pool without a respawn hook names the stale client, not the daemon, when it must refuse", async () => {
     const paths = makePaths();
     const client = rebuiltUnderClient();
-    await startDaemon(paths, client.readOnDisk() as string, withoutOps("listAllPass1Aggregates"));
+    await startDaemon(paths, client.readOnDisk() as string, withoutOps("listPass1Aggregates"));
 
     const pool = makePool(paths, client);
 

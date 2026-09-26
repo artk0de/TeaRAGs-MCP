@@ -360,7 +360,7 @@ export interface FileSignalOptions {
    * Read on the main thread because its pool REPLACES a daemon from another build
    * or one lacking a required op; the worker's pool has no respawn hook and can
    * only refuse such a daemon. Since bd tea-rags-mcp-39xca.4 that refusal is loud:
-   * `listAllPass1Aggregates` is a required op, so a daemon that cannot serve it
+   * `listPass1Aggregates` is a required op, so a daemon that cannot serve it
    * is rejected at connect or fails the call with `CodegraphDaemonBuildSkewError`,
    * never answered with an empty read.
    *
@@ -620,11 +620,14 @@ export interface EnrichmentProvider {
    */
   readPersistedFileHashes?: (physicalCollectionName: PhysicalCollectionName) => Promise<Map<string, string | null>>;
   /**
-   * Every persisted per-file pass-1 aggregate slice this provider holds for
-   * `collectionName` (bd tea-rags-mcp-weno4). Called on the MAIN-thread provider
-   * instance, whose pool replaces a skewed daemon, and threaded to the worker's
-   * finalize as {@link FileSignalOptions.pass1Aggregates} — see that field for
-   * why the read happens on this side.
+   * The persisted per-file pass-1 aggregate slices this provider holds for
+   * `collectionName` that a run restricted to `runLanguages` can use (bd
+   * tea-rags-mcp-weno4); `runLanguages` empty means an unrestricted run, the
+   * same convention as the run spec's `languages`. Called on the MAIN-thread
+   * provider instance, whose pool replaces a skewed daemon, and threaded to the
+   * worker's finalize as {@link FileSignalOptions.pass1Aggregates} — see that
+   * field for why the read happens on this side. Which languages a restriction
+   * pulls in (a TypeScript run needs JavaScript's slices) is the provider's call.
    *
    * Optional and modelled on {@link readPersistedFileHashes}: a provider with no
    * pass-1 store omits it and the injection is simply absent, which is what git
@@ -632,6 +635,7 @@ export interface EnrichmentProvider {
    */
   readPersistedPass1Aggregates?: (
     physicalCollectionName: PhysicalCollectionName,
+    runLanguages: readonly string[],
   ) => Promise<CodegraphPass1FileAggregates[]>;
   /**
    * Narrow repo-relative `paths` to the ones this provider's per-file store can

@@ -53,6 +53,17 @@ import type {
 import type { CaseSplitPathPatterns } from "./file-classification.js";
 
 /**
+ * Which `cg_pass1_aggregates` rows `GraphDbClient.listPass1Aggregates` returns.
+ * `languages` narrows the read in SQL, before any slice's JSON is parsed; an
+ * empty list reads nothing. `allLanguages` is for the caller that cannot know
+ * the walked languages yet (the main thread of an unrestricted run) — the
+ * barrier still keeps only its own families.
+ */
+export type Pass1AggregateReadScope =
+  | { readonly kind: "languages"; readonly languages: readonly string[] }
+  | { readonly kind: "allLanguages" };
+
+/**
  * One file's worth of symbol definitions, as consumed by
  * `GraphDbClient.upsertSymbolsBulk` — the batched form of
  * `upsertSymbols(relPath, definitions)` that folds many files' worth of
@@ -835,7 +846,8 @@ export interface GraphDbClient {
   listAllSymbols: () => Promise<SymbolDefinition[]>;
 
   /**
-   * Every persisted per-file pass-1 aggregate row (bd tea-rags-mcp-znxg8).
+   * The persisted per-file pass-1 aggregate rows of the languages `scope`
+   * names (bd tea-rags-mcp-znxg8).
    *
    * Read ONCE per run, at the pass-1→pass-2 barrier, so `CodegraphRunState` can
    * absorb the ancestry and self-dispatch facts of files this run did NOT walk.
@@ -844,11 +856,11 @@ export interface GraphDbClient {
    * degrading concrete service entry calls onto the shared template they
    * inherit from.
    *
-   * Sibling of {@link listAllSymbols} in every respect that matters: whole-table
-   * read, array rather than Map so it survives the daemon's JSON round trip, and
-   * the consumer decides what to do with the rows.
+   * Scoped because the rows of a language no walked family reads are pure cost:
+   * a TypeScript-only recompute on taxdome parsed and held 9,184 Ruby slices.
+   * Array rather than Map so it survives the daemon's JSON round trip.
    */
-  listAllPass1Aggregates: () => Promise<CodegraphPass1FileAggregates[]>;
+  listPass1Aggregates: (scope: Pass1AggregateReadScope) => Promise<CodegraphPass1FileAggregates[]>;
 
   /**
    * Every file row with the content hash persisted alongside it, `null` where

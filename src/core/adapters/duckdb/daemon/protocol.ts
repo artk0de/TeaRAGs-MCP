@@ -97,7 +97,7 @@ export const DAEMON_OPS = [
   "getRunStats",
   "getEdgeKindDistribution",
   "listAllSymbols",
-  "listAllPass1Aggregates",
+  "listPass1Aggregates",
   "listFileContentHashes",
   "getTransitiveImpact",
   "getFileMetricsBulk",

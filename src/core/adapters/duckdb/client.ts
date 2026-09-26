@@ -74,6 +74,7 @@ import type {
   OntologyReportQuery,
   OntologyReportSectionRows,
   OntologyReportSummaryRows,
+  Pass1AggregateReadScope,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -291,8 +292,8 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.symbols.listAllSymbols();
   }
 
-  async listAllPass1Aggregates(): Promise<CodegraphPass1FileAggregates[]> {
-    return this.fileGraph.listAllPass1Aggregates();
+  async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
+    return this.fileGraph.listPass1Aggregates(scope);
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {

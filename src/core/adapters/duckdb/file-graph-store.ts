@@ -22,6 +22,7 @@ import type {
   CodegraphPass1FileAggregates,
   GraphEdges,
   GraphFileNode,
+  Pass1AggregateReadScope,
   RelPath,
 } from "../../contracts/types/codegraph.js";
 import {
@@ -295,15 +296,22 @@ export class DuckDbFileGraphStore {
   }
 
   /**
-   * Every persisted pass-1 aggregate row, for the run-state hydration at the
-   * pass-1→pass-2 barrier (bd tea-rags-mcp-znxg8). Whole-table read, once per
-   * run — the sibling of `DuckDbSymbolStore#listAllSymbols`, and the reason the
-   * table carries no secondary index.
+   * The persisted pass-1 aggregate rows of `scope`'s languages, for the run-state
+   * hydration at the pass-1→pass-2 barrier (bd tea-rags-mcp-znxg8). Once per run;
+   * the language filter runs in SQL so a foreign language's JSON is never parsed.
+   * A scan, not an index lookup — the table carries no secondary index because
+   * nothing else reads it.
    */
-  async listAllPass1Aggregates(): Promise<CodegraphPass1FileAggregates[]> {
-    const rows = await this.session.queryAll<CgPass1AggregatesRow>(
-      `SELECT ${CG_PASS1_DEF_COLUMNS.join(", ")} FROM cg_pass1_aggregates`,
-    );
+  async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
+    const select = `SELECT ${CG_PASS1_DEF_COLUMNS.join(", ")} FROM cg_pass1_aggregates`;
+    if (scope.kind === "allLanguages") {
+      return (await this.session.queryAll<CgPass1AggregatesRow>(select)).map(fromCgPass1Row);
+    }
+    if (scope.languages.length === 0) return [];
+    const placeholders = scope.languages.map(() => "?").join(", ");
+    const rows = await this.session.queryAll<CgPass1AggregatesRow>(`${select} WHERE language IN (${placeholders})`, [
+      ...scope.languages,
+    ]);
     return rows.map(fromCgPass1Row);
   }
 

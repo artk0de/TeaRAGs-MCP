@@ -575,7 +575,7 @@ export class CompletionRunner {
     const read = ctx.provider.readPersistedPass1Aggregates;
     if (!read) return undefined;
     try {
-      return await read.call(ctx.provider, physicalCollectionName);
+      return await read.call(ctx.provider, physicalCollectionName, this.deps.filePhase.runLanguages);
     } catch (err) {
       this.pass1AggregateReadFailures.add(ctx.key);
       pipelineLog.enrichmentPhase("PASS1_AGGREGATE_READ_FAILED", {
