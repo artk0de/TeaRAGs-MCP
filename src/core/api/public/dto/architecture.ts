@@ -453,13 +453,9 @@ export interface SilentCouplingReportSummary {
     documentationEndpoints: number;
     /** Neither file is walked by the codegraph. */
     unwalkedEndpoints: number;
-    /** See `exclusionReasons.noSymbolEndpoints`. */
-    noSymbolEndpoints: number;
     /** lift ≤ 1: no more co-change than independence predicts. */
     nonPositiveLift: number;
   };
-  /** Human-readable meaning of the exclusion a reader is most likely to question. */
-  exclusionReasons: { noSymbolEndpoints: string };
   /** Strong unlinked pairs with neither file matching `pathPattern`; present only when scoped. */
   outOfScopePairCount?: number;
 }

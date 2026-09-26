@@ -50,15 +50,6 @@ export const SILENT_COUPLING_WILSON_Z = 1.96;
 /** Silent partners a file needs to be reported as a root cause. One partner is a pair, not a pattern. */
 export const SILENT_COUPLING_ROOT_CAUSE_MIN_PARTNERS = 2;
 
-/**
- * What `excluded.noSymbolEndpoints` catches, named for a report. It states the
- * scope and nothing more: the old rationale — that such a module's `import type`
- * dependencies leave no file edge — stopped holding once type-only imports got
- * their own table (bd tea-rags-mcp-r8hme.12), and `readGraph` links through it.
- */
-export const SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON =
-  "no-symbol endpoint: a barrel, type-only or object-literal module defines no symbol, and pairs with one are not judged";
-
 type ExclusionReason = keyof SilentCouplingExclusionCounts;
 
 interface Candidate {
@@ -70,8 +61,11 @@ interface Candidate {
  * Judge every stored co-change pair.
  *
  * A pair is a CANDIDATE when neither endpoint is a test, generated or
- * documentation file, at least one endpoint is walked by the codegraph, no
- * walked endpoint is a no-symbol module, and its lift is above 1. Its STRENGTH
+ * documentation file, at least one endpoint is walked by the codegraph, and its
+ * lift is above 1. A walked module that defines no symbol — a barrel, a
+ * type-only or an object-literal module — is judged like any other: its
+ * `import type` dependencies are file edges (bd tea-rags-mcp-r8hme.12), so a
+ * missing edge is evidence there too. Its STRENGTH
  * is {@link cochangeStrength}. The threshold is drawn over every candidate's
  * strength ({@link resolveMajorityFlooredOtsuThreshold}); a candidate clearing
  * it is STRONG, and a strong candidate the structural graph does not link is a
@@ -91,7 +85,6 @@ export function detectSilentCoupling(
     generatedEndpoints: 0,
     documentationEndpoints: 0,
     unwalkedEndpoints: 0,
-    noSymbolEndpoints: 0,
     nonPositiveLift: 0,
   };
   const candidates: Candidate[] = [];
@@ -207,9 +200,7 @@ function exclusionReason(
   if (classes.some((c) => c.isTest)) return "testEndpoints";
   if (classes.some((c) => c.isGenerated)) return "generatedEndpoints";
   if (isDocumentation && endpoints.some(isDocumentation)) return "documentationEndpoints";
-  const walked = endpoints.filter((p) => symbolCounts.has(p));
-  if (walked.length === 0) return "unwalkedEndpoints";
-  if (walked.some((p) => symbolCounts.get(p) === 0)) return "noSymbolEndpoints";
+  if (!endpoints.some((p) => symbolCounts.has(p))) return "unwalkedEndpoints";
   if (edge.lift <= 1) return "nonPositiveLift";
   return null;
 }
