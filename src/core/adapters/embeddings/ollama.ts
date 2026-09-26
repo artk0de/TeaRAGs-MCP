@@ -591,6 +591,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   async resolveModelInfo(): Promise<OllamaModelInfo | undefined> {
     if (this.cachedModelInfo) return this.cachedModelInfo;
 
+    // Same ordering as embed()/checkHealth(): the active URL is only decided
+    // once the constructor's failover check has settled.
+    await this.healthReady;
     const url = this.resolveActiveUrl();
     try {
       const response = await fetchWithTimeout(
@@ -630,6 +633,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async checkHealth(): Promise<boolean> {
+    // Probe the endpoint the next embed will use, which the constructor's
+    // failover check decides — read before it settles, the primary gets
+    // probed even when failover is about to flip to the fallback (jyka).
+    await this.healthReady;
     if (this.lastHealthResult !== undefined && Date.now() - this.lastHealthAt < HEALTH_CACHE_TTL_MS) {
       return this.lastHealthResult;
     }

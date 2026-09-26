@@ -73,37 +73,52 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     return spillPath;
   }
 
-  it("skips a file whose resolved edge count exceeds MAX_EDGES_PER_FILE, continuing the loop without buffering it", async () => {
-    let upsertCalls = 0;
+  // bd tea-rags-mcp-ihq7y — the cap drops the file's EDGES, not its row. A file
+  // with no `cg_symbols_files` row (or one without the run's content hash) is
+  // re-listed by the incremental repair diff on every run, forever.
+  it("persists a file past MAX_EDGES_PER_FILE as a hashed row with no edges, continuing the loop", async () => {
+    const upserted: BulkFileUpsertEntry[] = [];
     const graphDb = makeGraphDb({
       upsertFilesBulk: async (entries: readonly BulkFileUpsertEntry[]) => {
-        upsertCalls += 1;
-        expect(entries.length).toBeGreaterThan(0);
+        upserted.push(...entries);
       },
     });
     // 11 000 file edges — over the 10 000 MAX_EDGES_PER_FILE cap. Mirrors the
     // minified-bundle shape the cap exists for (ugnest 96k-edge OOM).
     const resolutionRunner = {
       prepareResolvePass: () => undefined,
-      resolve: (): GraphEdges => ({
-        fileEdges: Array.from({ length: 11000 }, (_, i) => ({ targetRelPath: `t${i}.ts`, importText: `t${i}` })),
-        methodEdges: [],
-      }),
+      resolve: (extraction: FileExtraction): GraphEdges =>
+        extraction.relPath === EXTRACTION.relPath
+          ? {
+              fileEdges: Array.from({ length: 11000 }, (_, i) => ({ targetRelPath: `t${i}.ts`, importText: `t${i}` })),
+              methodEdges: [],
+            }
+          : { fileEdges: [{ targetRelPath: "src/util.ts", importText: "./util" }], methodEdges: [] },
     } as unknown as CallEdgeResolutionRunner;
     const runState = new CodegraphRunState();
+    runState.contentHashes = new Map([
+      [EXTRACTION.relPath, "hash-bundle"],
+      ["src/a.ts", "hash-a"],
+    ]);
     const resolveStore: GraphStoreResolver = async () => ({
       graphDb,
       symbolTable: {} as GlobalSymbolTable,
     });
     const finalizer = new GraphBuildFinalizer(resolveStore, resolutionRunner, runState);
 
-    const spillPath = writeSpill([EXTRACTION]);
+    const spillPath = writeSpill([EXTRACTION, { ...EXTRACTION, relPath: "src/a.ts", language: "typescript" }]);
     await expect(finalizer.resolveAndUpsert(spillPath)).resolves.toBeUndefined();
 
-    // The oversized file was SKIPPED, not failed: no bulk upsert landed for
-    // it, and the run-global edge counters never saw its (synthetic) edges.
-    expect(upsertCalls).toBe(0);
-    expect(runState.stats.fileEdgeCount).toBe(0);
+    // Every spilled file lands exactly one row stamped with the run's hash.
+    expect(upserted.map((e) => [e.node.relPath, e.node.contentHash])).toEqual([
+      [EXTRACTION.relPath, "hash-bundle"],
+      ["src/a.ts", "hash-a"],
+    ]);
+    // None of the oversized file's edges reached the write or the counters.
+    const bundle = upserted.find((e) => e.node.relPath === EXTRACTION.relPath);
+    expect(bundle?.edges.fileEdges).toHaveLength(0);
+    expect(bundle?.edges.methodEdges).toHaveLength(0);
+    expect(runState.stats.fileEdgeCount).toBe(1);
     expect(runState.stats.methodEdgeCount).toBe(0);
   });
 

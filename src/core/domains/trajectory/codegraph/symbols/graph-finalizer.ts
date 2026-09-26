@@ -49,10 +49,12 @@ const PROGRESS_EVERY = 100;
  * (Vite/Nuxt/Webpack build artefacts that should really live behind .gitignore
  * but sometimes don't) can produce tens of thousands of method edges in one file
  * — DuckDB blows past its memory_limit trying to commit a single transaction
- * with that many INSERTs. Skipping these files is safe: a minified bundle has no
- * resolvable cross-file graph semantics anyway, and letting one pathological row
- * abort pass-2 wipes hours of work for the entire project. Cap chosen by
- * inspection of the ugnest failure (file with 96k method edges OOM'd at 1.8GB).
+ * with that many INSERTs. Dropping these files' edges is safe: a minified bundle
+ * has no resolvable cross-file graph semantics anyway, and letting one
+ * pathological row abort pass-2 wipes hours of work for the entire project. The
+ * file still gets its row, with an empty edge slice (bd tea-rags-mcp-ihq7y).
+ * Cap chosen by inspection of the ugnest failure (file with 96k method edges
+ * OOM'd at 1.8GB).
  */
 const MAX_EDGES_PER_FILE = 10000;
 /**
@@ -248,11 +250,15 @@ export class GraphBuildFinalizer {
           );
         }
         lastRelPath = extraction.relPath;
-        const edges = this.resolveOne(extraction, symbolTable, processed, lastRelPath);
-        if (this.exceedsEdgeCap(edges, extraction, processed)) {
-          processed += 1;
-          continue;
-        }
+        const resolved = this.resolveOne(extraction, symbolTable, processed, lastRelPath);
+        // Past the cap the file keeps its ROW and loses its edges (bd
+        // tea-rags-mcp-ihq7y): skipping the row entirely left it without a
+        // hashed `cg_symbols_files` row, so the incremental repair diff re-listed
+        // it on every run. The empty slice also retires any edges the file
+        // persisted while it was still under the cap.
+        const edges: GraphEdges = this.exceedsEdgeCap(resolved, extraction, processed)
+          ? { fileEdges: [], methodEdges: [] }
+          : resolved;
         // A repeat relPath already has an entry pending in this batch — flush
         // it out first so the repeat starts its own transaction instead of
         // sharing one with its own earlier self (see `bufferedRelPaths` above).
@@ -386,8 +392,9 @@ export class GraphBuildFinalizer {
 
   /**
    * True when this file's edge count is pathological (typically a minified JS
-   * bundle). The skip is recorded so operators can surface it via the marker
-   * log; the graph stays consistent because no partial state landed for the row.
+   * bundle). The drop is recorded so operators can surface it via the marker
+   * log; the graph stays consistent because the row lands with NO edges rather
+   * than a partial slice.
    */
   private exceedsEdgeCap(edges: GraphEdges, extraction: FileExtraction, processed: number): boolean {
     const totalEdges = edges.fileEdges.length + edges.methodEdges.length;
