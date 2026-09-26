@@ -162,9 +162,9 @@ export interface SignalStatsRequest {
    * one, so a zero-valued point joins the percentile sample.
    *
    * The sampler drops zeros by default because for most signals a 0 means the
-   * producer never reached the file — `git.*.commitCount` publishes 0 for every
-   * chunk of a file past `chunkMaxFileLines`, which the churn walk skips
-   * wholesale. Ratios are the opposite case: a file with eight commits and no
+   * producer never reached the file — `run-finalize.ts` falls back to
+   * `ZERO_FILE_METRICS` for a path its metrics map has no row for. Ratios are
+   * the opposite case: a file with eight commits and no
    * fix among them MEASURED `bugFixRate: 0`. Leave those out and the
    * percentiles describe P(x | x > 0) — "files that had at least one fix" —
    * so every bucket boundary sits above where the population actually is, and

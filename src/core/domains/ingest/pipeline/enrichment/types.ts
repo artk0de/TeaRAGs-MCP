@@ -159,4 +159,6 @@ export interface MissedFileChunk {
   endLine: number;
   /** The chunker's symbolId, carried into the backfill's chunk lookup entries (bd tea-rags-mcp-9i2ow). */
   symbolId?: string;
+  /** File line count, so the backfill's chunk policy sees a size-driven decline (bd tea-rags-mcp-2brzq). */
+  moduleLines?: number;
 }

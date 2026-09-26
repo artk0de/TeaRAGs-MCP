@@ -243,7 +243,6 @@ describe.skipIf(!esGitAvailable)("EsGitAdapter ⇄ GitCliAdapter equivalence —
         concurrency: 2,
         maxAgeMonths: 120,
         chunkTimeoutMs: 30_000,
-        maxFileLines: 5_000,
       });
       return { accumulators, result };
     };

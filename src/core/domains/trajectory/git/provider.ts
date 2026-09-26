@@ -266,11 +266,16 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
    * Git policy: generated files carry harmful signals (regeneration churn,
    * generator as "owner") and are huge blame targets → skip entirely.
    * Documentation keeps cheap file-level ownership but drops the per-chunk
-   * churn walk over prose. Everything else (incl. tests) enriches fully.
+   * churn walk over prose. A file past `chunkMaxFileLines` keeps its file
+   * signals and skips the chunk walk the same way, so the pipeline stamps
+   * `git.chunk.skippedAs: "oversized"` instead of the walk publishing an
+   * all-zero chunk block (bd tea-rags-mcp-2brzq). Everything else (incl.
+   * tests) enriches fully.
    */
-  shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
+  shouldEnrich(file: { relPath: string; classification: FileClassification; fileLines?: number }): EnrichmentScope {
     if (file.classification.isGenerated) return "none";
     if (file.classification.isDocumentation) return "file-only";
+    if (file.fileLines !== undefined && file.fileLines > this.config.chunkMaxFileLines) return "file-only";
     return "full";
   }
 

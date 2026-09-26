@@ -84,7 +84,6 @@ describe("walkCommits — Phase 0 discovery failure", () => {
       // <= 0 also drives the "default to 120 months" fallback in walkCommits.
       maxAgeMonths: 0,
       chunkTimeoutMs: 5000,
-      maxFileLines: 10000,
       blobReader: blobReader as never,
       commitDiscovery,
     });
@@ -137,7 +136,6 @@ describe("walkCommits — Phase 1 structuredPatch failure", () => {
       concurrency: 4,
       maxAgeMonths: 6,
       chunkTimeoutMs: 5000,
-      maxFileLines: 10000,
       blobReader: blobReader as never,
       diffMemo,
       commitDiscovery,
@@ -198,7 +196,6 @@ describe("walkCommits — Phase 2 missing accumulator", () => {
       concurrency: 4,
       maxAgeMonths: 6,
       chunkTimeoutMs: 5000,
-      maxFileLines: 10000,
       blobReader: blobReader as never,
       commitDiscovery,
     });

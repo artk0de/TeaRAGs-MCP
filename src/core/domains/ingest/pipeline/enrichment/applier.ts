@@ -141,12 +141,13 @@ type FileOpResidual = { relativePath: string; chunk: MissedFileChunk } | null;
  * (bd tea-rags-mcp-9i2ow); a block chunk has none.
  */
 function missedChunkOf(item: ChunkItem): MissedFileChunk {
-  const { symbolId } = item.chunk.metadata;
+  const { symbolId, moduleLines } = item.chunk.metadata;
   return {
     chunkId: item.chunkId,
     startLine: item.chunk.startLine,
     endLine: item.chunk.endLine,
     ...(typeof symbolId === "string" ? { symbolId } : {}),
+    ...(typeof moduleLines === "number" ? { moduleLines } : {}),
   };
 }
 

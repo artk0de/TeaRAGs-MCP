@@ -14,7 +14,7 @@ import type { ChunkItem } from "../types.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
-import { enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
+import { enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 export interface RecoveryResult {
@@ -122,7 +122,8 @@ interface RecoveredCounts {
 const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
 
 /** Payload keys recovery actually reads — everything else stays server-side. */
-const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId"];
+// `moduleLines` feeds the policy's size-driven chunk decline (bd tea-rags-mcp-2brzq).
+const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId", "moduleLines"];
 
 /**
  * Max unique file paths per provider dispatch. Bounds worker-side memory and
@@ -533,7 +534,13 @@ export class EnrichmentRecovery {
       // Per-file enrichment policy: a file the provider declined is unenriched
       // BY DESIGN. It is not a degraded miss and must not be healed — but it
       // does get stamped, so the next run's filter settles it server-side.
-      const skippedAs = enrichmentSkipReason(provider, relativePath, level);
+      const startLine = typeof point.payload?.startLine === "number" ? point.payload.startLine : undefined;
+      const endLine = typeof point.payload?.endLine === "number" ? point.payload.endLine : undefined;
+      const moduleLines = typeof point.payload?.moduleLines === "number" ? point.payload.moduleLines : undefined;
+      // One point is one chunk: its `moduleLines` is the whole file's count,
+      // so the per-point answer matches the per-file one the chunk phase gave.
+      const fileLines = endLine === undefined ? moduleLines : fileLinesOf([{ endLine, moduleLines }]);
+      const skippedAs = enrichmentSkipReason(provider, relativePath, level, { fileLines });
       if (skippedAs !== null) {
         declined.push({ id: point.id, skippedAs });
         continue;
@@ -541,8 +548,8 @@ export class EnrichmentRecovery {
       owed.push({
         id: point.id,
         relativePath,
-        startLine: typeof point.payload?.startLine === "number" ? point.payload.startLine : undefined,
-        endLine: typeof point.payload?.endLine === "number" ? point.payload.endLine : undefined,
+        startLine,
+        endLine,
         ...(typeof point.payload?.symbolId === "string" ? { symbolId: point.payload.symbolId } : {}),
       });
     }

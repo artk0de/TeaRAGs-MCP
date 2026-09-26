@@ -22,7 +22,7 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import type { EnrichmentApplier } from "./applier.js";
 import { batchDeletePayloadWithRetry, batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 import { OmittedOverlayKeyCollector } from "./omitted-overlay-keys.js";
-import { filterChunkEnrichMap, filterFileEnrichPaths } from "./policy.js";
+import { fileLinesOf, filterChunkEnrichMap, filterFileEnrichPaths } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const BATCH_SIZE = 100;
@@ -150,13 +150,14 @@ export class EnrichmentBackfiller {
           startLine: c.startLine,
           endLine: c.endLine,
           ...(c.symbolId !== undefined ? { symbolId: c.symbolId } : {}),
+          ...(c.moduleLines !== undefined ? { moduleLines: c.moduleLines } : {}),
         })),
       );
     }
     // Per-file policy: only "full"-scope files get the chunk-churn walk. Drops
-    // "file-only" (docs) so chunk backfill never resurrects the chunk signals
-    // the streaming chunk phase deliberately skipped.
-    const scoped = filterChunkEnrichMap(ctx.provider, map);
+    // "file-only" (docs, oversized files) so chunk backfill never resurrects
+    // the chunk signals the streaming chunk phase deliberately skipped.
+    const scoped = filterChunkEnrichMap(ctx.provider, map, fileLinesOf);
     if (scoped.size === 0) return;
 
     const start = Date.now();

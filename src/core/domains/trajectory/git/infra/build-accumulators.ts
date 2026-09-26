@@ -13,6 +13,8 @@ export interface AccumulatorInitResult {
   relativeChunkMap: Map<string, ChunkLookupEntry[]>;
   /** chunkId → zeroed accumulator. Empty Map if no eligible files. */
   accumulators: Map<string, ChunkAccumulator>;
+  /** Files left out because their largest chunk `endLine` exceeds `maxFileLines`. */
+  skippedLargeFiles: number;
 }
 
 /**
@@ -39,8 +41,29 @@ export function relativizeChunkMap(
   return relativeChunkMap;
 }
 
-export function buildAccumulators(repoRoot: string, chunkMap: Map<string, ChunkLookupEntry[]>): AccumulatorInitResult {
+/**
+ * A file past `maxFileLines` is dropped here, before discovery, so it gets NO
+ * accumulator and therefore no overlay — never a zeroed one. The pipeline's
+ * enrichment policy normally declines such a file first
+ * (`GitEnrichmentProvider#shouldEnrich` → `git.chunk.skippedAs: "oversized"`),
+ * so reaching this guard means a caller had no line count; an all-zero chunk
+ * block would read as "no commit ever touched this method" (bd
+ * tea-rags-mcp-2brzq).
+ */
+export function buildAccumulators(
+  repoRoot: string,
+  chunkMap: Map<string, ChunkLookupEntry[]>,
+  maxFileLines: number,
+): AccumulatorInitResult {
   const relativeChunkMap = relativizeChunkMap(repoRoot, chunkMap);
+  let skippedLargeFiles = 0;
+  for (const [relPath, entries] of relativeChunkMap) {
+    const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
+    if (maxLine > maxFileLines) {
+      relativeChunkMap.delete(relPath);
+      skippedLargeFiles++;
+    }
+  }
 
   // Per-chunk accumulators
   const accumulators = new Map<string, ChunkAccumulator>();
@@ -62,5 +85,5 @@ export function buildAccumulators(repoRoot: string, chunkMap: Map<string, ChunkL
     }
   }
 
-  return { relativeChunkMap, accumulators };
+  return { relativeChunkMap, accumulators, skippedLargeFiles };
 }

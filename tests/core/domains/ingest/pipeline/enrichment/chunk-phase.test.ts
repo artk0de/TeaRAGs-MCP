@@ -779,5 +779,37 @@ describe("ChunkPhase", () => {
       // the declined chunk must not be in it.
       expect(applySpy.mock.calls[0][4]).toEqual(new Set(["c1"]));
     });
+
+    // bd tea-rags-mcp-2brzq: the chunk walk's size cap is a POLICY decline, so
+    // an oversized file's chunks get `skippedAs: "oversized"` and no numeric
+    // chunk block — neither a walked zero overlay nor a bare `enrichedAt`.
+    it("stamps an oversized file 'oversized' from the file's line count, even for a head-only batch", async () => {
+      const qdrant = new MockQdrantManager();
+      const applier = new EnrichmentApplier(qdrant as any);
+      const stampSpy = vi.spyOn(applier, "applySkipStamps").mockResolvedValue(1);
+      const applySpy = vi.spyOn(applier, "applyChunkSignals").mockResolvedValue(1);
+      const buildChunkSignals = vi.fn().mockResolvedValue(new Map());
+      const ctx = buildCtx({
+        buildChunkSignals,
+        shouldEnrich: (f: { fileLines?: number }) =>
+          f.fileLines !== undefined && f.fileLines > 100 ? "file-only" : "full",
+      });
+      const phase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+      phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+      // Only the head chunk of a 5000-line file reached this batch: its own
+      // endLine is under the cap, the file is not.
+      const bigHead = {
+        chunkId: "b1",
+        chunk: { metadata: { filePath: "/repo/src/big.ts", moduleLines: 5000 }, startLine: 1, endLine: 10 },
+      } as any;
+      phase.onBatch("coll", "/repo", [...items, bigHead]);
+      await phase.drain();
+
+      expect(stampSpy).toHaveBeenCalledWith("coll", "git", "chunk", [{ id: "b1", skippedAs: "oversized" }]);
+      const dispatched = buildChunkSignals.mock.calls[0][1] as Map<string, unknown>;
+      expect([...dispatched.keys()]).toEqual(["src/a.ts"]);
+      expect(applySpy.mock.calls[0][4]).toEqual(new Set(["c1"]));
+    });
   });
 });

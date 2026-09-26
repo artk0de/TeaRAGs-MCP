@@ -826,7 +826,10 @@ export class EnrichmentCoordinator {
       },
       RECOMPUTE_SCROLL_HARD_CAP,
       undefined,
-      ["relativePath", "startLine", "endLine", "symbolId"],
+      // `moduleLines` is the enrichment policy's size input — without it a
+      // recompute would walk (and zero-stamp) files the policy declines by
+      // their line count (bd tea-rags-mcp-2brzq).
+      ["relativePath", "startLine", "endLine", "symbolId", "moduleLines"],
     );
 
     const items: ChunkItem[] = [];
@@ -840,15 +843,22 @@ export class EnrichmentCoordinator {
       // The chunker's symbolId is the codegraph chunk-owner rule's anchor (bd
       // tea-rags-mcp-9i2ow); a block chunk has none.
       const symbolIdField = typeof point.payload?.symbolId === "string" ? { symbolId: point.payload.symbolId } : {};
+      const moduleLinesField =
+        typeof point.payload?.moduleLines === "number" ? { moduleLines: point.payload.moduleLines } : {};
 
       items.push({
         type: "upsert",
         chunkId,
-        chunk: { content: "", startLine, endLine, metadata: { filePath: `${root}/${relativePath}`, ...symbolIdField } },
+        chunk: {
+          content: "",
+          startLine,
+          endLine,
+          metadata: { filePath: `${root}/${relativePath}`, ...symbolIdField, ...moduleLinesField },
+        },
       } as unknown as ChunkItem);
 
       const entries = chunkMap.get(relativePath) ?? [];
-      entries.push({ chunkId, startLine, endLine, ...symbolIdField });
+      entries.push({ chunkId, startLine, endLine, ...symbolIdField, ...moduleLinesField });
       chunkMap.set(relativePath, entries);
     }
 

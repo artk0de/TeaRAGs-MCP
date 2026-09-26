@@ -536,7 +536,9 @@ describe("EnrichmentRecovery", () => {
       const call = mockQdrant.scrollFiltered.mock.calls[0];
       // `symbolId` joined the projection with bd tea-rags-mcp-9i2ow: the codegraph
       // chunk-owner rule anchors on it, and recovery hands entries to that rule.
-      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId"]);
+      // `moduleLines` joined with bd tea-rags-mcp-2brzq: the policy's
+      // size-driven chunk decline reads the file's line count.
+      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId", "moduleLines"]);
     });
   });
 });
@@ -941,6 +943,28 @@ describe("EnrichmentRecovery skip stamps (tea-rags-mcp-zt6qr)", () => {
     ]);
     expect(result.recoveredChunks).toBe(0);
     expect(result.remainingUnenriched).toBe(0);
+  });
+
+  it("stamps a chunk of an oversized file 'oversized' from its moduleLines, not its own span", async () => {
+    // bd tea-rags-mcp-2brzq: the head chunk of a 5000-line file ends at line 9,
+    // yet the file is past the cap — the per-point answer must be the per-file one.
+    const sizeAware = {
+      ...policyProvider(),
+      shouldEnrich: (f: { classification: { isGenerated: boolean }; fileLines?: number }) => {
+        if (f.classification.isGenerated) return "none";
+        return f.fileLines !== undefined && f.fileLines > 100 ? "file-only" : "full";
+      },
+    };
+    const { applier, recovery } = harness([
+      { id: "big-1", payload: { relativePath: "src/big.ts", startLine: 1, endLine: 9, moduleLines: 5000 } },
+      { id: "small-1", payload: { relativePath: "src/small.ts", startLine: 1, endLine: 9, moduleLines: 40 } },
+    ]);
+
+    await recovery.recoverChunkLevel("coll", "/repo", sizeAware as any, "2026-01-01T00:00:00Z");
+
+    expect(applier.applySkipStamps).toHaveBeenCalledWith("coll", "git", "chunk", [
+      { id: "big-1", skippedAs: "oversized" },
+    ]);
   });
 
   it("writes no stamp when every scanned point is genuinely owed enrichment", async () => {

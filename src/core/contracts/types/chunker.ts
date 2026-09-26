@@ -30,6 +30,14 @@ export interface ChunkLookupEntry {
    * chunk has one.
    */
   symbolId?: string;
+  /**
+   * Physical line count of the chunk's FILE (the chunker's `moduleLines`, flat
+   * on every code chunk). Carried so the enrichment policy can decide a
+   * size-driven chunk decline per FILE even when a batch holds only some of
+   * the file's chunks (bd tea-rags-mcp-2brzq). Absent on documentation chunks
+   * and on indices predating the symbol-mass pass.
+   */
+  moduleLines?: number;
 }
 
 export interface BodyChunkResult {

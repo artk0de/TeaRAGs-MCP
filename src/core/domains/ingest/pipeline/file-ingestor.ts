@@ -221,6 +221,8 @@ export class SourceFileIngestor {
           startLine: chunk.startLine,
           endLine: chunk.endLine,
           lineRanges: chunk.metadata.lineRanges,
+          // The enrichment policy's size input (bd tea-rags-mcp-2brzq).
+          ...(chunk.metadata.moduleLines !== undefined ? { moduleLines: chunk.metadata.moduleLines } : {}),
         });
         result.chunkMap.set(filePath, entries);
       }
