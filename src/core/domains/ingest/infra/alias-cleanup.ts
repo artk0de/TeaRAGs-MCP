@@ -14,7 +14,8 @@ export type CodegraphDbRemover = (physicalCollectionName: PhysicalCollectionName
 /**
  * Enumerates the versioned codegraph DB collection names on disk for a base
  * collection (every `<base>_v<N>.duckdb` file). Injected by the composition
- * root from the codegraph pool's `listCollectionDbNames`; omitted when
+ * root from the codegraph pool's `listCollectionGenerationNames` (databases AND
+ * cross-pass input spills); omitted when
  * codegraph is disabled. Keeps the ingest domain free of any DuckDB-path
  * knowledge — the pool owns directory enumeration.
  */

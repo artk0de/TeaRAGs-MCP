@@ -525,6 +525,38 @@ describe("EnrichmentCoordinator", () => {
       coord.beginRun(runSpec("/repo", "test-col")); // an ordinary run takes no cross-pass
       expect(beginExtractionRun).not.toHaveBeenCalled();
     });
+
+    // The spill is named after the physical generation, so a run that never
+    // reached the worker's drain leaves it where no later run truncates it once
+    // the alias moves on. Completion discards it on every path.
+    it("discards the input spill once a cross-pass run's completion settles", async () => {
+      const discardExtractionRun = vi.fn();
+      const crossPassProvider: any = { ...mockProvider, discardExtractionRun };
+      const coord = new EnrichmentCoordinator(mockQdrant, crossPassProvider);
+      const run = coord.beginRun(runSpec("/repo", "test-col", { crossPass: true }));
+      await coord.awaitCompletion(run);
+      expect(discardExtractionRun).toHaveBeenCalledWith("test-col");
+    });
+
+    it("discards the input spill when the completion fails before the drain", async () => {
+      const discardExtractionRun = vi.fn();
+      const crossPassProvider: any = { ...mockProvider, discardExtractionRun };
+      const coord = new EnrichmentCoordinator(mockQdrant, crossPassProvider);
+      const run = coord.beginRun(runSpec("/repo", "test-col", { crossPass: true }));
+      const state = (coord as any).runStates.get(run);
+      vi.spyOn(state.completion, "run").mockRejectedValue(new Error("finalize boom"));
+      await expect(coord.awaitCompletion(run)).rejects.toThrow("finalize boom");
+      expect(discardExtractionRun).toHaveBeenCalledWith("test-col");
+    });
+
+    it("leaves the spill alone on a non-cross-pass run", async () => {
+      const discardExtractionRun = vi.fn();
+      const crossPassProvider: any = { ...mockProvider, discardExtractionRun };
+      const coord = new EnrichmentCoordinator(mockQdrant, crossPassProvider);
+      const run = coord.beginRun(runSpec("/repo", "test-col"));
+      await coord.awaitCompletion(run);
+      expect(discardExtractionRun).not.toHaveBeenCalled();
+    });
   });
 
   it("onChunksStored is a no-op when called before beginRun has ever run", () => {

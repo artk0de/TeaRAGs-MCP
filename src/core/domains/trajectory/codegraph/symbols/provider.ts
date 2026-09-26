@@ -14,7 +14,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname as pathDirname } from "node:path";
 
 import type { Ignore } from "ignore";
@@ -945,6 +945,26 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   endExtractionRun = async (physicalCollectionName?: PhysicalCollectionName): Promise<void> => {
     await this.nodeFlush.flushRemainder(this.collectionKey(physicalCollectionName), physicalCollectionName);
+  };
+
+  /**
+   * Cross-pass run-END seam (MAIN thread), the bookend of `beginExtractionRun`:
+   * the coordinator calls it once the run's completion settles, success or
+   * failure. The worker's drain already unlinked the spill on the happy path;
+   * this reclaims what a run that never reached the drain left behind — the
+   * spill is named after the physical generation, so once the alias moves on no
+   * later run truncates it. Idempotent; IO errors are swallowed (debug-logged).
+   */
+  discardExtractionRun = (physicalCollectionName?: PhysicalCollectionName): void => {
+    this.xpassWritten.delete(this.collectionKey(physicalCollectionName));
+    const spillPath = this.inputSpillPath(physicalCollectionName);
+    try {
+      rmSync(spillPath, { force: true });
+    } catch (err) {
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] xpass spill discard failed ${spillPath}: ${(err as Error).message}\n`);
+      }
+    }
   };
 
   /**

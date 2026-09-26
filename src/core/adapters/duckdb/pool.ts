@@ -345,6 +345,14 @@ export class GraphDbClientPool {
   }
 
   /**
+   * Every generation with a database OR a cross-pass input spill on disk — what
+   * a generation sweep enumerates (`CodegraphDbFiles#listCollectionGenerationNames`).
+   */
+  listCollectionGenerationNames(baseCollectionName: string): PhysicalCollectionName[] {
+    return this.dbFiles.listCollectionGenerationNames(baseCollectionName);
+  }
+
+  /**
    * Resolve the on-disk spill (NDJSON) path the streaming pass-1 uses
    * for a given collection + run. Exposed so the codegraph provider
    * does not duplicate the layout logic and tests can assert cleanup.
@@ -358,15 +366,11 @@ export class GraphDbClientPool {
    * file's `FileExtraction`, the codegraph worker drains it in `finalizeSignals`.
    * Lives in `.xpass`, which construction never sweeps — the worker builds its own
    * pool mid-run. No runId: main and worker pools share `rootDir` and must
-   * resolve the same path.
+   * resolve the same path. Its layout, and its removal with the generation
+   * (`removeCollection`), belong to `CodegraphDbFiles`.
    */
   inputSpillPathFor(collectionName: string): string {
-    return join(this.xpassDir, `${sanitiseCollectionName(collectionName)}.ndjson`);
-  }
-
-  /** Cross-pass input-spill directory — never purged at pool construction. */
-  private get xpassDir(): string {
-    return join(this.codegraphDir, ".xpass");
+    return this.dbFiles.inputSpillPathFor(collectionName);
   }
 
   /**

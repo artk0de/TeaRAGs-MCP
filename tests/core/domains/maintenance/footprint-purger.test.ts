@@ -1,9 +1,10 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { CodegraphDbFiles } from "../../../../src/core/adapters/duckdb/codegraph-db-files.js";
 import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
 import { CollectionFootprintPurger } from "../../../../src/core/domains/maintenance/footprint/purger.js";
@@ -172,6 +173,46 @@ describe("CollectionFootprintPurger", () => {
 
       expect([...codegraph.files]).toEqual([]);
       expect(report.codegraphDatabases.sort()).toEqual(["code_a", "code_a_v1", "code_a_v3"]);
+    });
+
+    it("reclaims a cross-pass input spill whose generation has no database and no collection", async () => {
+      // A run that died before its drain leaves `.xpass/<generation>.ndjson`
+      // behind with nothing else — invisible to a `*.duckdb` listing, so it
+      // outlived every purge. Real files, wired the way `footprint-purge.ts` is.
+      const appData = mkdtempSync(join(tmpdir(), "purge-xpass-"));
+      try {
+        const files = new CodegraphDbFiles(appData);
+        mkdirSync(files.inputSpillDir, { recursive: true });
+        writeFileSync(join(files.dir, "code_a_v3.duckdb"), "db");
+        writeFileSync(files.inputSpillPathFor("code_a_v1"), "{}\n");
+        writeFileSync(files.inputSpillPathFor("code_a_v3"), "{}\n");
+        writeFileSync(files.inputSpillPathFor("code_other_v1"), "{}\n");
+        const qdrant = fakeQdrant(["code_a_v3"], [{ aliasName: "code_a", collectionName: "code_a_v3" }]);
+        const stores = fakeStores();
+        const purger = new CollectionFootprintPurger({
+          qdrant: qdrant as never,
+          footprintFactory: new CollectionFootprintFactory({
+            qdrant: qdrant as never,
+            pool: files,
+            statsCache: stores.statsCache as never,
+            snapshotBaseDir: "/snap",
+            snapshotStoreFactory: stores.snapshotStoreFactory,
+            quarantineStoreFactory: stores.quarantineStoreFactory,
+            indexingLockStoreFactory: stores.indexingLockStoreFactory,
+          }),
+          listCodegraphDbs: (base) => files.listCollectionGenerationNames(base),
+        });
+
+        const report = await purger.purge({ logicalName: "code_a" });
+
+        expect(existsSync(files.inputSpillPathFor("code_a_v1"))).toBe(false);
+        expect(existsSync(files.inputSpillPathFor("code_a_v3"))).toBe(false);
+        expect(existsSync(files.inputSpillPathFor("code_other_v1"))).toBe(true);
+        expect(report.codegraphDatabases.sort()).toEqual(["code_a_v1", "code_a_v3"]);
+        expect(report.failures).toEqual([]);
+      } finally {
+        rmSync(appData, { recursive: true, force: true });
+      }
     });
   });
 

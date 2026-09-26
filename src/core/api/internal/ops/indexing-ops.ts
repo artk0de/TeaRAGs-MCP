@@ -620,7 +620,7 @@ export class IndexingOps {
     // all behind, and an index that later reclaimed a version number reopened
     // its old graph. Non-fatal when codegraph is disabled.
     if (this.codegraphPool) {
-      for (const physicalCollectionName of this.codegraphPool.listCollectionDbNames(aliasCollectionName)) {
+      for (const physicalCollectionName of this.codegraphPool.listCollectionGenerationNames(aliasCollectionName)) {
         await this.codegraphPool.removeCollection(physicalCollectionName);
       }
     }

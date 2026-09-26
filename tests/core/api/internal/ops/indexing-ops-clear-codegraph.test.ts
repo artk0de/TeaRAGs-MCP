@@ -49,8 +49,9 @@ describe("IndexingOps — clear removes every codegraph generation (39xca.1)", (
       resolveCollectionForPath: async () => COLLECTION,
       codegraphPool: {
         // Answers only for the collection being cleared, so removing the
-        // databases of any other base name cannot pass.
-        listCollectionDbNames: (base: string) =>
+        // databases of any other base name cannot pass. The generation listing
+        // (databases AND cross-pass input spills) is what clear enumerates.
+        listCollectionGenerationNames: (base: string) =>
           base === COLLECTION ? ["code_clear", "code_clear_v1", "code_clear_v3"] : [],
         removeCollection: async (name: string) => {
           events.push(`codegraph-removed:${name}`);
