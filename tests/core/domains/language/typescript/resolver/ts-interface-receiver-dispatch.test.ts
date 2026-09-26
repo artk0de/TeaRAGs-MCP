@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import Parser from "tree-sitter";
+import TsLang from "tree-sitter-typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -13,7 +15,9 @@ import {
   type InheritanceEdgeRow,
   type NamedSymbol,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { TypeScriptLanguage } from "../../../../../../src/core/domains/language/typescript/index.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/index.js";
+import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
+import { tsNameOf, TypeScriptLanguage } from "../../../../../../src/core/domains/language/typescript/index.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
@@ -24,6 +28,7 @@ import { TSCallResolver } from "../../../../../../src/core/domains/language/type
 import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import { buildHierarchySnapshot } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };
 const cfg: ResolverConfig = { tsOptions, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
@@ -482,4 +487,131 @@ describe("TSCallResolver.resolveDispatch — structural implementer of a checker
 
   const resolver = (root: string): TSCallResolver =>
     new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, root);
+});
+
+/**
+ * bd tea-rags-mcp-39xca.19 — an object-literal factory's members are
+ * instance-bound (`createDeletionOutcome#isFullSuccess`), and only instance-bound
+ * members make an owner conform. The table here is what the WALKER composes for
+ * the real source, so the test also fails when the walker drifts back to `.`.
+ * A helper nested in a function (`parseSnapshot.close`) is a scope, not a
+ * member: `closer?.close()` on a `Closer` must not fan out to it.
+ */
+describe("TSCallResolver.resolveDispatch — object-literal factory as a structural implementer (bd 39xca.19)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-factory-literal-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  const OUTCOME_SOURCE = [
+    `export interface DeletionOutcome {`,
+    `  markFailed: (path: string) => void;`,
+    `  isFullSuccess: () => boolean;`,
+    `}`,
+    ``,
+    `export interface Closer {`,
+    `  close: () => void;`,
+    `}`,
+    ``,
+    `export function createDeletionOutcome(attemptedPaths: string[]): DeletionOutcome {`,
+    `  const failed = new Set<string>();`,
+    `  return {`,
+    `    markFailed(path) {`,
+    `      if (attemptedPaths.includes(path)) failed.add(path);`,
+    `    },`,
+    `    isFullSuccess() {`,
+    `      return failed.size === 0;`,
+    `    },`,
+    `  };`,
+    `}`,
+  ];
+  const SCHEMA_SOURCE = [
+    `export function parseSnapshot(text: string): string[] {`,
+    `  const lines: string[] = [];`,
+    `  const close = (): void => {`,
+    `    lines.push(text);`,
+    `  };`,
+    `  close();`,
+    `  return lines;`,
+    `}`,
+  ];
+  const USE_SOURCE = [
+    `import type { Closer, DeletionOutcome } from "./outcome.js";`,
+    ``,
+    `export interface UseOptions {`,
+    `  outcome?: DeletionOutcome;`,
+    `  closer?: Closer;`,
+    `}`,
+    ``,
+    `export function use(opts: UseOptions): boolean {`,
+    `  const { outcome, closer } = opts;`,
+    `  closer?.close();`,
+    `  return outcome?.isFullSuccess() ?? false;`,
+    `}`,
+  ];
+
+  /** The rows the TypeScript walker composes for `lines`, as symbol-table entries. */
+  const walkedSymbols = (relPath: string, lines: string[]): NamedSymbol[] => {
+    const src = `${lines.join("\n")}\n`;
+    const parser = new Parser();
+    parser.setLanguage(TsLang.typescript);
+    const root = materializeTree(parser.parse(src).rootNode, src);
+    return collectSymbols({ rootNode: root }, tsNameOf, ".", false, new DefaultSymbolIdComposer()).map((range) =>
+      sym(range.symbolId, range.symbolId.split(/[#.]/u).at(-1) ?? range.symbolId, relPath, range.scope),
+    );
+  };
+
+  it("reaches createDeletionOutcome#isFullSuccess and never a nested helper", () => {
+    writeSource(repoRoot, "src/outcome.ts", OUTCOME_SOURCE);
+    writeSource(repoRoot, "src/schema.ts", SCHEMA_SOURCE);
+    writeSource(repoRoot, "src/use.ts", USE_SOURCE);
+    const table = new InMemoryGlobalSymbolTable();
+    const outcomeSymbols = walkedSymbols("src/outcome.ts", OUTCOME_SOURCE);
+    const schemaSymbols = walkedSymbols("src/schema.ts", SCHEMA_SOURCE);
+    table.upsertFile("src/outcome.ts", outcomeSymbols);
+    table.upsertFile("src/schema.ts", schemaSymbols);
+    table.upsertFile("src/use.ts", walkedSymbols("src/use.ts", USE_SOURCE));
+    const structuralRows = new TypeScriptLanguage().structuralConformance({
+      contracts: [
+        {
+          name: "DeletionOutcome",
+          members: [
+            { name: "markFailed", params: 1 },
+            { name: "isFullSuccess", params: 0 },
+          ],
+        },
+        { name: "Closer", members: [{ name: "close", params: 0 }] },
+      ],
+      memberDefinitions: [...outcomeSymbols, ...schemaSymbols],
+      nominalRows: [],
+    });
+    const ctx: CallContext = {
+      callerFile: "src/use.ts",
+      callerScope: ["use"],
+      imports: [{ importText: "./outcome.js", startLine: 1, importedNames: ["Closer", "DeletionOutcome"] }],
+      symbolTable: table,
+      hierarchy: new MapHierarchyView(buildHierarchySnapshot(structuralRows)),
+    };
+    const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+
+    expect(structuralRows.map((row) => `${row.sourceFqName} ${row.kind} ${row.ancestorFqName}`)).toEqual([
+      "createDeletionOutcome structural DeletionOutcome",
+    ]);
+    const isFullSuccess: CallRef = {
+      callText: "outcome?.isFullSuccess()",
+      receiver: "outcome",
+      member: "isFullSuccess",
+      startLine: 11,
+    };
+    expect(edgesOf(resolver.resolveDispatch(isFullSuccess, ctx))).toEqual([
+      edgeTo("src/outcome.ts", "createDeletionOutcome#isFullSuccess", 1),
+    ]);
+    const close: CallRef = { callText: "closer?.close()", receiver: "closer", member: "close", startLine: 10 };
+    expect(edgesOf(resolver.resolveDispatch(close, ctx))).toEqual([]);
+  });
 });

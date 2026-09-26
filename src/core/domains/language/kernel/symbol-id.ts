@@ -43,3 +43,12 @@ export function symbolIdNames(symbolId: string, name: string): boolean {
   if (!id.endsWith(name)) return false;
   return SEPARATOR_CHARS.has(id.charAt(id.length - name.length - 1));
 }
+
+/**
+ * Whether `symbolId` names `name` as an INSTANCE-bound member — joined to its
+ * owner with the instance separator, overload suffix stripped: `Svc#load~2`
+ * does, `Svc.load` (static, or a nested helper) and a bare `load` do not.
+ */
+export function symbolIdNamesInstanceMember(symbolId: string, name: string): boolean {
+  return symbolId.replace(OVERLOAD_SUFFIX, "").endsWith(`${INSTANCE_METHOD_SEPARATOR}${name}`);
+}

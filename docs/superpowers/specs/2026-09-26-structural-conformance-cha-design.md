@@ -13,7 +13,8 @@ interface without an `implements` clause is invisible, so its dispatch edges are
 lost. Agent B's probe on the tea-rags self corpus found 59 affected call sites.
 Among the true targets are `TrajectoryRegistry#buildMergedFilter`,
 `CollectionRegistry#findBy*`, `GitCommitDiscovery`,
-`createDeletionOutcome.isFullSuccess` and `buildSelfDispatchProbe.*`.
+`createDeletionOutcome#isFullSuccess` (`.isFullSuccess` before bd 39xca.19) and
+`buildSelfDispatchProbe#*`.
 
 The same defect exists wherever the cone runs over a structural type system:
 Python `typing.Protocol` (PEP 544) receivers dispatch to nominal subclasses
@@ -81,6 +82,16 @@ interface StructuralContractDecl {
   intersect starting from the rarest member of the contract; never contracts ×
   owners.
 - Mode independence: both inputs are complete in full and incremental runs.
+
+Only instance-bound members count (bd 39xca.19). The owner index takes a
+definition only when its id joins the owner with `#`, for every owner, class or
+factory. A contract describes what a value of the owner carries, and a static
+member is invoked on the class while a helper nested in a function is a local
+scope. The first cut counted both, so `const close = () => {}` inside
+`parseRailsSchemaSnapshot` made that function conform to every one-member
+`close()` contract and fanned a `close()` call out to 6 targets. Object-literal
+factory members now take `#` (`createDeletionOutcome#isFullSuccess`), so they
+stay in the index.
 
 ### 3. Contract and type changes
 

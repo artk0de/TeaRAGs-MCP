@@ -24,6 +24,7 @@ import {
   constObjectNamespaceContainerName,
   constObjectNamespaceOwner,
   enclosingClassScopeNames,
+  enclosingFactoryScopeNames,
   type MethodClassification,
 } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
@@ -782,9 +783,12 @@ export class TreeSitterChunker implements CodeChunker {
     // bd tea-rags-mcp-lyo4p — a member of a class EXPRESSION or of a class
     // nested in an anonymous scope reaches this path too, with no container to
     // name its class. The walker names that class, so the id carries it.
+    // bd tea-rags-mcp-39xca.19 — so does a member of the literal a
+    // declarator-bound factory returns (`const make = () => ({ m() {} })`):
+    // the walker names the declarator, `classifyMethod` supplies the `#`.
     const classOwner = this.composeParentSymbol(
       undefined,
-      enclosingClassScopeNames(node, null),
+      [...enclosingClassScopeNames(node, null), ...enclosingFactoryScopeNames(node, null)],
       langConfig.scopeSeparator,
     );
     // A `statement` decision (bd tea-rags-mcp-lyo4p): the extracted name is
@@ -1250,6 +1254,7 @@ export class TreeSitterChunker implements CodeChunker {
     const intermediateScopes = [
       ...this.collectIntermediateScopes(childNode, langConfig, code),
       ...enclosingClassScopeNames(semanticNode, pass.container),
+      ...enclosingFactoryScopeNames(semanticNode, pass.container),
     ];
     const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
     // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
@@ -1480,9 +1485,13 @@ export class TreeSitterChunker implements CodeChunker {
     // class the container does not name (`function f() { class C { m() {} } }`
     // was `f#m`, the walker's `f.C#m`): `enclosingClassScopeNames` supplies
     // those classes. Disjoint from the Ruby-style chain above by node type.
+    // bd tea-rags-mcp-39xca.19 — and the declarator-bound factory whose returned
+    // literal declares the member (`Store#build.make#read`), which is never a
+    // container of its own; it sits below every such class, so it goes last.
     const intermediateScopes = [
       ...this.collectIntermediateScopes(childNode, langConfig, code),
       ...enclosingClassScopeNames(semanticNode, pass.container),
+      ...enclosingFactoryScopeNames(semanticNode, pass.container),
     ];
     const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
     // bd tea-rags-mcp-a466 — disambiguate per-overload. The first occurrence

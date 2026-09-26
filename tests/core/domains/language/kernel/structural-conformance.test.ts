@@ -108,8 +108,8 @@ describe("deriveStructuralConformance", () => {
 
   it("reads the owner off the innermost scope segment and skips definitions with no owner or a type kind", () => {
     const factoryMember: SymbolDefinition = {
-      symbolId: "createOutcome.isFullSuccess",
-      fqName: "createOutcome.isFullSuccess",
+      symbolId: "createOutcome#isFullSuccess",
+      fqName: "createOutcome#isFullSuccess",
       shortName: "isFullSuccess",
       relPath: "src/outcome.ts",
       scope: ["createOutcome"],
@@ -129,6 +129,34 @@ describe("deriveStructuralConformance", () => {
     });
 
     expect(pairs(rows)).toEqual(["createOutcome -> Outcome"]);
+  });
+
+  // bd tea-rags-mcp-39xca.19 — an owner carries only what is invoked on its
+  // VALUE: the `#` members. A helper nested in a function (`parse.close`) is a
+  // scope, not a member, and a static (`Pool.close`) is invoked on the class.
+  // Counting either fanned `resource.close()` out to every function that
+  // declared a local `close`.
+  it("counts only instance-bound `#` members, never a nested helper or a static", () => {
+    const instanceMember = method("createOutcome", "close");
+    const nestedHelper: SymbolDefinition = {
+      ...method("parseRailsSchemaSnapshot", "close"),
+      symbolId: "parseRailsSchemaSnapshot.close",
+      fqName: "parseRailsSchemaSnapshot.close",
+      symbolKind: "function",
+    };
+    const staticMember: SymbolDefinition = {
+      ...method("Pool", "close"),
+      symbolId: "Pool.close",
+      fqName: "Pool.close",
+    };
+
+    const rows = deriveStructuralConformance({
+      contracts: [contract("Closeable", ["close", 0])],
+      memberDefinitions: [instanceMember, nestedHelper, staticMember],
+      nominalRows: [],
+    });
+
+    expect(pairs(rows)).toEqual(["createOutcome -> Closeable"]);
   });
 
   it("returns rows sorted by contract then owner whatever the input order", () => {

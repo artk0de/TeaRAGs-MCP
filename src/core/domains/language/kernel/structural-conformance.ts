@@ -14,8 +14,10 @@
  * exceed `r.params`: an implementation may accept fewer parameters than declared,
  * never require more. A member with no recorded arity matches by name.
  *
- * `O`'s members are its own definitions plus those of its NOMINAL ancestors — a
- * subclass carries what it inherits. The derived rows never feed back: a
+ * `O`'s members are its own INSTANCE-BOUND (`#`) definitions plus those of its
+ * NOMINAL ancestors — a subclass carries what it inherits. A static member and a
+ * helper nested in a function (`fn.inner`) are not carried by a value of `O`, so
+ * they never count (bd tea-rags-mcp-39xca.19). The derived rows never feed back: a
  * structural ancestor gives downward dispatch only, never implementation.
  *
  * Deliberately recall-first (owner decision): no minimum member count, so a
@@ -35,6 +37,7 @@ import {
   type SymbolDefinitionKind,
 } from "../../../contracts/types/codegraph.js";
 import type { StructuralConformanceInput } from "../../../contracts/types/language.js";
+import { symbolIdNamesInstanceMember } from "./symbol-id.js";
 
 /** A definition of one of these kinds names a TYPE, never a member an owner carries. */
 const TYPE_DEFINITION_KINDS: ReadonlySet<SymbolDefinitionKind> = new Set([
@@ -171,6 +174,7 @@ function buildOwnerMemberIndex(
     const owner = def.scope.at(-1);
     if (owner === undefined || contractNames.has(owner)) continue;
     if (def.symbolKind !== undefined && TYPE_DEFINITION_KINDS.has(def.symbolKind)) continue;
+    if (!isInstanceBound(def)) continue;
     addMember(direct, def.shortName, owner, def.arity);
   }
   const index: OwnerMemberIndex = new Map();
@@ -184,6 +188,20 @@ function buildOwnerMemberIndex(
     }
   }
   return index;
+}
+
+/**
+ * Is the definition invoked on its owner's VALUE — composed with the instance
+ * separator (bd tea-rags-mcp-39xca.19)? A contract is satisfied by what a value
+ * of the owner carries: a class's instance methods, an object-literal factory's
+ * returned members. A static (`Pool.close`) is invoked on the class, and a
+ * helper nested in a function (`parseSchema.close`) is a scope the owner never
+ * exposes; counting either fanned a `close()` out to every function with a
+ * local `close`. The separator is read from the id the producers composed
+ * through `classifyMethod`, never re-derived here.
+ */
+function isInstanceBound(def: SymbolDefinition): boolean {
+  return symbolIdNamesInstanceMember(def.fqName, def.shortName);
 }
 
 function addMember(index: OwnerMemberIndex, memberName: string, owner: string, arity: MemberArity): void {
