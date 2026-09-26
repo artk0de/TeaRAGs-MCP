@@ -16,7 +16,7 @@
  * nothing on the way in.
  */
 
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, constants as fsConstants, mkdirSync, readdirSync } from "node:fs";
 import { copyFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -196,8 +196,12 @@ export class CodegraphDbFiles {
     // before restaging (ENOENT is the normal first-run case).
     await unlink(staging).catch(() => undefined);
     await unlink(stagingWal).catch(() => undefined);
-    await copyFile(from, staging);
-    if (sourceHasWal) await copyFile(`${from}.wal`, stagingWal);
+    // Exclusive: bytes only ever go into a file this copy creates, never over
+    // an existing one — a database lands at its path by rename alone, so its
+    // inode is new and the pool's dev/ino check sees every replacement (bd
+    // tea-rags-mcp-r4veq). An existing staging file here fails the clone.
+    await copyFile(from, staging, fsConstants.COPYFILE_EXCL);
+    if (sourceHasWal) await copyFile(`${from}.wal`, stagingWal, fsConstants.COPYFILE_EXCL);
     // Publish. The old pair goes first so no intermediate state pairs a new
     // file with a stale one; the renames are atomic within the directory, WAL
     // first and the database last.
