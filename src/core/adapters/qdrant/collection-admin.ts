@@ -31,7 +31,10 @@ export interface CollectionInfo {
   hybridEnabled?: boolean;
   /** Qdrant collection health status. `yellow` indicates background optimization. */
   status: "green" | "yellow" | "red";
-  /** Optimizer state string from Qdrant (`"ok"` or `"unknown"` when absent). */
+  /**
+   * Optimizer state from Qdrant: `"ok"`, `"error: <message>"` when the
+   * optimizer failed (Qdrant's `{ error }` arm), or `"unknown"` when absent.
+   */
   optimizerStatus: string;
   /**
    * Vector quantization mode derived from `config.quantization_config`:
@@ -230,7 +233,7 @@ export class QdrantCollectionAdmin {
       distance,
       hybridEnabled,
       status: (info.status ?? "green") as "green" | "yellow" | "red",
-      optimizerStatus: typeof info.optimizer_status === "string" ? info.optimizer_status : "unknown",
+      optimizerStatus: describeOptimizerStatus(info.optimizer_status),
       quantization: mapQuantization((info.config as { quantization_config?: unknown }).quantization_config),
       ...(isJsonObject(info.config.metadata) && { metadata: info.config.metadata }),
     };
@@ -537,6 +540,18 @@ function mapQuantization(config: unknown): "turbo" | "scalar" | "none" {
     if ("scalar" in config) return "scalar";
   }
   return "none";
+}
+
+/**
+ * Render Qdrant's `OptimizersStatus` (`"ok"` | `{ error: string }`) as one
+ * string. The object arm is the failed-optimizer state; collapsing it to
+ * "unknown" hid exactly the degradation an operator must act on (ye5o).
+ */
+function describeOptimizerStatus(status: unknown): string {
+  if (typeof status === "string") return status;
+  const error = asRecord(status)?.error;
+  if (typeof error === "string") return `error: ${error}`;
+  return "unknown";
 }
 
 /** `config.metadata` is typed as a payload OR null; only a JSON object is metadata. */
