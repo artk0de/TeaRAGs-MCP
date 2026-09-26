@@ -95,6 +95,35 @@ export interface SelfDispatchMethodDecl {
    * never a wrong target.
    */
   readonly superDelegates?: true;
+  /**
+   * The method dispatches on `self` to a hook whose NAME is composed from one of
+   * its own positional parameters (bd tea-rags-mcp-emazx) — directly
+   * (`send("can_#{ability}?")`) or by forwarding that parameter, unchanged,
+   * through same-file self-shaped hops. Absent when the method composes nothing,
+   * or anything about the composition is computed. Persisted with the rest of the
+   * record, so an incremental run that did not walk the template's file still
+   * narrows entry calls through it.
+   */
+  readonly argTemplate?: SelfDispatchArgTemplate;
+}
+
+/**
+ * `prefix + <argument at positional parameter `param`> + suffix` names the hook
+ * a {@link SelfDispatchMethodDecl} dispatches to (bd tea-rags-mcp-emazx).
+ */
+export interface SelfDispatchArgTemplate {
+  readonly prefix: string;
+  readonly suffix: string;
+  /** Index into the carrying method's leading required positional parameters. */
+  readonly param: number;
+  /**
+   * The hop chain below the carrying method, outermost first, ending at the
+   * method that performs the `send` — empty when the carrier sends itself. An
+   * entry call narrows only while every hop still resolves, on the concrete
+   * receiver, to the symbol recorded here: a subclass overriding a hop breaks
+   * the chain.
+   */
+  readonly via: readonly SymbolId[];
 }
 
 /**

@@ -249,6 +249,15 @@ module Acme
     def total
       rows.map(&:amount).sum
     end
+
+    def allowed?(ability)
+      send("can_#{ability}?")
+    end
+
+    def self.check(owner, ability)
+      new(owner).allowed?(ability)
+      Policy.authorize!(owner, :read, "write")
+    end
   end
 end
 `;

@@ -785,6 +785,9 @@ export class CallEdgeResolutionRunner {
       // bd DEFECT 2 v2 — self-instantiating class methods bridge a class entry
       // to the same-named instance template. Empty ⇒ v2 branch is a no-op.
       selfInstantiatingClassMethods: this.runState.selfInstantiatingClassMethods,
+      // bd emazx — argument templates: the entry strategy composes the hook name
+      // from the call site's literal. Empty ⇒ step 2d is a no-op.
+      selfDispatchArgTemplates: this.runState.selfDispatchArgTemplates,
     };
   }
 

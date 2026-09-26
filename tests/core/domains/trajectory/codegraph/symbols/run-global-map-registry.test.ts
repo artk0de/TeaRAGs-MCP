@@ -59,6 +59,7 @@ const EXPECTED_POLICY = {
   hierarchyView: "batchOnly",
   selfDispatchTemplates: "batchOnly",
   selfInstantiatingClassMethods: "batchOnly",
+  selfDispatchArgTemplates: "batchOnly",
   schemaTables: "hydrate",
   instantiatedTypes: "batchOnly",
   ivarTypes: "batchOnly",

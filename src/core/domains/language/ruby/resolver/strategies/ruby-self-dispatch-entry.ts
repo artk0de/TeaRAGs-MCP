@@ -57,6 +57,12 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  *      IS the target — emitted unless it is an abstract stub. A mixin override
  *      that re-enters the template through `super` is a template of its own
  *      (discovery's super propagation), so it narrows through 2b instead.
+ *   2d. **The hook NAME is an argument** (bd tea-rags-mcp-emazx). `M` reaches
+ *      `send("can_#{ability}?")` with `ability` forwarded unchanged from one of
+ *      its own parameters (`ctx.selfDispatchArgTemplates`). The call site's
+ *      literal at that position composes the hook (`:manage_datev` →
+ *      `can_manage_datev?`) and the constant narrows it as in 2a. Declines on a
+ *      non-literal argument or when the constant overrides a hop of the chain.
  *   3. Every hop yields a single method-level target. The edge is entry-anchored
  *      (`enclosing(Const.member) → Const#H`), never piled at the shared template node.
  *
@@ -117,6 +123,50 @@ export class RubySelfDispatchEntrySymbolResolutionStrategy implements SymbolReso
       }
     }
 
+    // 2d — the hook NAME is an argument (bd tea-rags-mcp-emazx).
+    const composed = this.resolveArgTemplateEntry(call, receiver, mClass.targetSymbolId, ctx);
+    if (composed !== null) return composed;
+
     return CONTINUE; // not an entry we own — normal passes handle it
+  }
+
+  /**
+   * Step 2d: `M` dispatches on self to `prefix + <argument> + suffix`
+   * (`AbstractPolicy.authorize!` → `send("can_#{ability}?")`, bd
+   * tea-rags-mcp-emazx). The call site's literal at the template's position
+   * composes the hook, and the concrete constant narrows it exactly as v1 does.
+   *
+   * Two guards keep it a narrowing and never a guess:
+   *   - the argument must be a literal name — an identifier or anything
+   *     computed leaves the hook unknown;
+   *   - every hop of the template's chain must still resolve, on the concrete
+   *     constant, to the symbol the chain was built from. A receiver that
+   *     overrides a hop (its own `#result`) runs that override, which need not
+   *     reach the `send` at all.
+   * Runs only after v1/v2 declined, so no edge they produced moves.
+   */
+  private resolveArgTemplateEntry(
+    call: CallRef,
+    receiver: string,
+    templateSymbolId: string,
+    ctx: CallContext,
+  ): SymbolResolutionOutcome | null {
+    const template = ctx.selfDispatchArgTemplates?.[templateSymbolId];
+    if (template === undefined) return null;
+    const atom = call.positionalArgAtoms?.[template.param];
+    if (atom === undefined || atom === null || !("literal" in atom)) return null;
+    for (const hop of template.via) {
+      if (this.resolveHop(receiver, hop, ctx)?.targetSymbolId !== hop) return null;
+    }
+    const hook = `${template.prefix}${atom.literal}${template.suffix}`;
+    const target = resolveSelfDispatchHookTarget(receiver, hook, ctx, this.cfg.mode);
+    return target === null ? null : resolved(target);
+  }
+
+  /** Resolve one recorded hop (`Type#m` / `Type.m`) on the concrete constant, in the hop's own form. */
+  private resolveHop(receiver: string, hop: string, ctx: CallContext) {
+    const hash = hop.lastIndexOf("#");
+    if (hash > 0) return resolveTypeInstanceMethod(receiver, hop.slice(hash + 1), ctx, this.cfg.mode);
+    return resolveTypeStaticMethod(receiver, hop.slice(hop.lastIndexOf(".") + 1), ctx, this.cfg.mode);
   }
 }

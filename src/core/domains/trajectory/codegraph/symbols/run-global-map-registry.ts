@@ -117,6 +117,10 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
     policy: "batchOnly",
     reason: "derived at seal from the hydrated self-dispatch methods",
   },
+  selfDispatchArgTemplates: {
+    policy: "batchOnly",
+    reason: "derived at seal from the hydrated self-dispatch methods (argTemplate rides their persisted record)",
+  },
   instantiatedTypes: {
     policy: "batchOnly",
     reason: "RTA set; measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
