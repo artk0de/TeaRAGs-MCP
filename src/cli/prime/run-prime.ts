@@ -11,8 +11,10 @@ import {
   CollectionRegistry,
   createPathCollectionResolver,
   IndexFreshnessCheck,
+  RegistryQdrantBackendUnresolvedError,
   replayRegistryEnv,
   resolveLanguageCapabilities,
+  resolveRegistryQdrantBackend,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
@@ -53,12 +55,36 @@ async function lookupRegistryEntry(input: { path?: string; project?: string }): 
 }
 
 /**
+ * Registry-first Qdrant address: the external Qdrant the project was indexed
+ * against, or undefined when discovery (daemon.port) must answer instead.
+ *
+ * The entry's backend is `resolveRegistryQdrantBackend`'s call, not a local
+ * reading of `qdrantUrl`. An embedded entry names no durable address — the
+ * daemon rebinds an ephemeral port per lifetime, and a pre-sentinel entry still
+ * stores the frozen one. Pinging that reported a live daemon as cold, and prime
+ * then bailed before the auto-update trigger whose index run rewrites the entry
+ * (bd tea-rags-mcp-lzynm). An entry that contradicts itself degrades to
+ * discovery as well: prime never fails.
+ */
+function registryExternalQdrantUrl(entry: CollectionEntry | null): string | undefined {
+  if (!entry) return undefined;
+  try {
+    const backend = resolveRegistryQdrantBackend(entry);
+    return backend.kind === "external" ? backend.url : undefined;
+  } catch (error) {
+    if (error instanceof RegistryQdrantBackendUnresolvedError) return undefined;
+    throw error;
+  }
+}
+
+/**
  * Run prime: emit a markdown digest of index state to stdout.
  * Always exits 0 — degrades to placeholder when path missing or Qdrant cold.
  *
  * Resolution priority for path + Qdrant URL:
  *   1. Registered project entry (lookup by --project alias or --path).
- *      Uses entry.path for path and entry.qdrantUrl for Qdrant.
+ *      Uses entry.path for path and the entry's external Qdrant, if any
+ *      (registryExternalQdrantUrl).
  *   2. Heuristic: discoverQdrantUrl + the provided --path.
  */
 /**
@@ -147,20 +173,7 @@ export async function runPrime(input: {
   // envWithFallback. Legacy entries fall back to the deprecated `tuning` map.
   replayRegistryEnv(registryEntry?.env ?? registryEntry?.tuning, process.env);
   const config = parseAppConfig();
-  // Registry-first: prefer the registered qdrantUrl (the Qdrant the project was
-  // indexed against). The "embedded" sentinel (2nfdm) is not a pingable URL —
-  // resolve it through discovery (daemon.port) like a missing entry; same for
-  // legacy embedded entries whose frozen ephemeral port is stale after a
-  // daemon restart (qdrantEmbedded flag without the sentinel).
-  const registryQdrantUrl = registryEntry?.qdrantUrl;
-  const usableRegistryUrl =
-    registryQdrantUrl &&
-    registryQdrantUrl.length > 0 &&
-    registryQdrantUrl !== "embedded" &&
-    registryEntry?.qdrantEmbedded !== true
-      ? registryQdrantUrl
-      : undefined;
-  const qdrantUrl = usableRegistryUrl ?? discoverQdrantUrl(config);
+  const qdrantUrl = registryExternalQdrantUrl(registryEntry) ?? discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
     process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));

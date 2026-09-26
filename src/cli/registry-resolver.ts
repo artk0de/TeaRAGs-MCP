@@ -1,7 +1,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CollectionRegistry, ProjectNotRegisteredError, ProjectPathMissingError } from "../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  EMBEDDED_MARKER,
+  ProjectNotRegisteredError,
+  ProjectPathMissingError,
+  resolveRegistryQdrantBackend,
+  type CollectionEntry,
+} from "../core/api/public/index.js";
 
 export interface ProjectAwareArgs {
   project?: string;
@@ -14,6 +21,20 @@ export interface ProjectAwareArgs {
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
+
+/**
+ * The `--qdrant-url` an entry's backend implies. The embedded daemon comes back
+ * as the `embedded` marker the URL resolvers re-resolve against the live daemon
+ * — never as the frozen `127.0.0.1:<port>` a pre-sentinel entry stored, which
+ * is dead after the first daemon restart (bd tea-rags-mcp-lzynm).
+ *
+ * @throws RegistryQdrantBackendUnresolvedError when the entry contradicts itself.
+ */
+function registryQdrantUrlArg(entry: CollectionEntry): string | undefined {
+  const backend = resolveRegistryQdrantBackend(entry);
+  if (backend.kind === "embedded") return EMBEDDED_MARKER;
+  return backend.kind === "external" ? backend.url : undefined;
 }
 
 /**
@@ -58,7 +79,7 @@ export function applyProjectDefaults<A extends ProjectAwareArgs>(argv: A): A {
   return {
     ...argv,
     path: argv.path ?? entry.path,
-    "qdrant-url": argv["qdrant-url"] ?? (entry.qdrantUrl || undefined),
+    "qdrant-url": argv["qdrant-url"] ?? registryQdrantUrlArg(entry),
     "embedding-url": argv["embedding-url"] ?? (entry.embeddingBaseUrl || undefined),
     "embedding-fallback-url": argv["embedding-fallback-url"] ?? (entry.embeddingFallbackUrl || undefined),
     model: argv.model ?? (entry.embeddingModel || undefined),

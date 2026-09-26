@@ -6,6 +6,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import {
   PROJECT_NAME_RE,
+  registryQdrantBackendFields,
   type CollectionEntry,
   type CollectionRegistry,
   type ProjectInfo,
@@ -147,6 +148,7 @@ export class ProjectRegistryOps {
       embeddingModel: enriched.embeddingModel,
       embeddingDimensions: enriched.embeddingDimensions,
       qdrantUrl: enriched.qdrantUrl,
+      ...(enriched.qdrantEmbedded !== undefined ? { qdrantEmbedded: enriched.qdrantEmbedded } : {}),
       ...(enriched.embeddingBaseUrl !== undefined ? { embeddingBaseUrl: enriched.embeddingBaseUrl } : {}),
       ...(enriched.embeddingFallbackUrl !== undefined ? { embeddingFallbackUrl: enriched.embeddingFallbackUrl } : {}),
       indexedAt: enriched.indexedAt,
@@ -165,6 +167,7 @@ export class ProjectRegistryOps {
     embeddingModel: string;
     embeddingDimensions: number;
     qdrantUrl: string;
+    qdrantEmbedded?: boolean;
     embeddingBaseUrl?: string;
     embeddingFallbackUrl?: string;
     indexedAt: string;
@@ -256,7 +259,7 @@ export class ProjectRegistryOps {
       chunksCount,
       embeddingModel,
       embeddingDimensions,
-      qdrantUrl: qdrant.url,
+      ...registryQdrantBackendFields(qdrant),
       embeddingBaseUrl: fallback.embeddingBaseUrl,
       embeddingFallbackUrl: fallback.embeddingFallbackUrl,
       indexedAt: resolvedIndexedAt,
@@ -470,12 +473,10 @@ export class ProjectRegistryOps {
         path: "",
         embeddingModel,
         embeddingDimensions: dimensions,
-        qdrantUrl: qdrant.url,
-        // Remember WHETHER this is the embedded daemon, symmetric with
-        // recordRegistryEntry — the daemon's qdrantUrl is an ephemeral port
-        // that goes stale on restart. Without the flag, a recovered embedded
-        // entry would pin the dead port on the next index run (tea-rags-mcp-jo5yj).
-        qdrantEmbedded: qdrant.isEmbedded,
+        // Sentinel + flag, symmetric with recordRegistryEntry — the daemon's
+        // URL is an ephemeral port that goes stale on restart (tea-rags-mcp-jo5yj,
+        // tea-rags-mcp-lzynm).
+        ...registryQdrantBackendFields(qdrant),
         indexedAt,
         teaRagsVersion,
         chunksCount,

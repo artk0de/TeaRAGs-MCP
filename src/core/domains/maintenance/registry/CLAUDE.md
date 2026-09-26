@@ -68,6 +68,19 @@
 
 ## Boundaries
 
+- **An entry's Qdrant backend is read ONLY through
+  `resolveRegistryQdrantBackend` and written ONLY through
+  `registryQdrantBackendFields` (`qdrant-backend-resolution.ts`).** Never
+  compare `entry.qdrantUrl` against the sentinel or trust `qdrantEmbedded`
+  inline. Why: entries written before the sentinel still store the embedded
+  daemon's frozen ephemeral port, and only the resolver knows which writer
+  versions to distrust. `prime` and `applyProjectDefaults` each read the URL
+  inline, pinged or handed out the dead port, and prime then bailed before the
+  auto-update run that would have rewritten the entry — the stale value
+  perpetuated itself (bd tea-rags-mcp-lzynm). The ingest pipeline writer
+  (`BaseIndexingPipeline#recordRegistryEntry`) restates the write rule inline
+  because ingest may not import this domain.
+
 - **`REGISTRY_ENV_GROUPS` is one leg of a three-file contract with `bootstrap`,
   with no compile-time link.** The alias families in `REGISTRY_ENV_GROUPS`
   (`env-groups.ts`) must mirror what `bootstrap/config/parse.ts` resolves
