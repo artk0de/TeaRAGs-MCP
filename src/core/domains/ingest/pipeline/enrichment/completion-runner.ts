@@ -104,6 +104,20 @@ export interface OutOfWindowBackfillOutcome {
 }
 
 /**
+ * The out-of-window backfill (step 3) while it runs, overlapping the finalize
+ * pass (step 2). A provider's `finalizeSignals` is its run-end seam — git closes
+ * its blame pool and drops the run's blame single-flight there — so the finalize
+ * pass REQUIRES this value and holds each provider's finalize until THAT
+ * provider's own backfill settled (bd tea-rags-mcp-21sr5). Providers with no
+ * backfill are absent from `settledByProvider` and finalize without waiting.
+ */
+interface OutOfWindowBackfillInFlight {
+  /** Provider key → settles when that provider's backfill has finished. */
+  readonly settledByProvider: ReadonlyMap<string, Promise<void>>;
+  readonly outcome: Promise<OutOfWindowBackfillOutcome>;
+}
+
+/**
  * What the deferred chunk pass (step 7) took over this run. The codegraph heal
  * builds its skip set from this value and from nothing else.
  *
@@ -240,15 +254,16 @@ export class CompletionRunner {
       // before the terminal file markers read post-backfill unenriched counts.
       // `backfiller.runFor` is internally try/caught (never rejects), so the
       // in-flight promise can't surface an unhandled rejection before the await.
-      const backfillPromise = this.runBackfills(coll, contexts, runStartedAt);
+      const backfillInFlight = this.startBackfills(coll, contexts, runStartedAt);
 
       // 2. finalize-file pass — deferred whole-repo FILE overlays (codegraph graph
       //    metrics) read back after the run sink finishes, applied by the
-      //    accumulated chunkMap. git's finalizeSignals returns an empty map.
-      await this.timedStep("fileFinalize", async () => this.applyFileFinalize(coll, contexts));
+      //    accumulated chunkMap. git's finalizeSignals returns an empty map but
+      //    tears down the run's blame pool, so it waits for git's own backfill.
+      await this.timedStep("fileFinalize", async () => this.applyFileFinalize(coll, contexts, backfillInFlight));
 
       // 3. await the backfill kicked off before the finalize pass (see 2‖3 above).
-      const backfill = await this.timedStep("backfillAwait", async () => backfillPromise);
+      const backfill = await this.timedStep("backfillAwait", async () => backfillInFlight.outcome);
 
       // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
       //    Requires the backfill's outcome, so it cannot read pre-backfill counts.
@@ -394,18 +409,30 @@ export class CompletionRunner {
    * Step 2 — read back each provider's deferred whole-repo FILE overlays and
    * apply them through the accumulated chunkMap. Runs CONCURRENTLY with the
    * out-of-window backfill; see the 2‖3 note in `run`.
+   *
+   * A provider's finalize is its run-end seam, so it waits for that provider's
+   * own backfill (bd tea-rags-mcp-21sr5): git's closes the blame pool the
+   * backfill is still blaming on. Providers with a backfill in flight finalize
+   * LAST, so the ones without (codegraph) still overlap it.
    */
   private async applyFileFinalize(
     coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
+    backfillInFlight: OutOfWindowBackfillInFlight,
   ): Promise<void> {
     const { filePhase, chunkPhase, executor } = this.deps;
-    for (const ctx of contexts.values()) {
+    const { settledByProvider } = backfillInFlight;
+    // Stable sort: registration order holds within each group.
+    const finalizeOrder = [...contexts.values()].sort(
+      (a, b) => Number(settledByProvider.has(a.key)) - Number(settledByProvider.has(b.key)),
+    );
+    for (const ctx of finalizeOrder) {
       // Method-existence is no longer guarded here: runFinalize returns an
       // empty map when the provider has no finalizeSignals (executor smooths
       // over the optional method), and the size-zero branch below skips the
       // apply step — equivalent to the old `if (!finalizeSignals) continue`.
       if (filePhase.hasPrefetchFailed(ctx.key)) continue;
+      await settledByProvider.get(ctx.key);
       const root = ctx.effectiveRoot ?? "";
       // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
       // buffered node defs via `acceptExtraction` and flushed only complete
@@ -736,20 +763,29 @@ export class CompletionRunner {
    * Extracted so the completion sequence can OVERLAP it with the codegraph
    * finalize pass (see `run` step 2‖3). Skips defer-providers (codegraph) — they
    * have no miss-tracking; their overlays come from `applyFinalize`. Reports
-   * whether any missed files existed (drives the post-backfill stats re-fire).
-   * `backfiller.runFor` is internally try/caught, so this never rejects.
+   * whether any missed files existed (drives the post-backfill stats re-fire),
+   * and when each provider's own backfill settled — the finalize pass waits on
+   * that per provider (bd tea-rags-mcp-21sr5). Providers still backfill one
+   * after another. `backfiller.runFor` is internally try/caught, so this never
+   * rejects.
    */
-  private async runBackfills(
+  private startBackfills(
     coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     runStartedAt: string,
-  ): Promise<OutOfWindowBackfillOutcome> {
+  ): OutOfWindowBackfillInFlight {
     const { filePhase, backfiller, applier } = this.deps;
-    if (applier.getMissedFileChunks().size === 0) return { occurred: false };
+    const settledByProvider = new Map<string, Promise<void>>();
+    if (applier.getMissedFileChunks().size === 0) {
+      return { settledByProvider, outcome: Promise.resolve({ occurred: false }) };
+    }
+    let previous: Promise<void> = Promise.resolve();
     for (const ctx of contexts.values()) {
       if (filePhase.hasPrefetchFailed(ctx.key) || ctx.provider.defersChunkEnrichment) continue;
-      await backfiller.runFor(coll, ctx, runStartedAt);
+      const settled = previous.then(async () => backfiller.runFor(coll, ctx, runStartedAt));
+      settledByProvider.set(ctx.key, settled);
+      previous = settled;
     }
-    return { occurred: true };
+    return { settledByProvider, outcome: previous.then(() => ({ occurred: true })) };
   }
 }
