@@ -1341,6 +1341,63 @@ describe("OllamaEmbeddings", () => {
       const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
       expect(lastCall[0]).toBe("http://fallback:11434/");
     });
+
+    // bd tea-rags-mcp-jyka — `tea-rags doctor` asks for health right after
+    // construction. A dead primary that times out (rather than refusing) keeps
+    // the constructor's failover decision pending, and a probe that does not
+    // wait for it reports the endpoint the next embed will NOT use.
+    it("reports the endpoint the provider will actually use when asked before its startup failover settles", async () => {
+      let failPrimary: (error: Error) => void = () => undefined;
+      const primaryDown = new Promise<never>((_, reject) => {
+        failPrimary = reject;
+      });
+      mockFetch.mockImplementation(async (url: string) =>
+        url.startsWith("http://primary:11434") ? primaryDown : { ok: true, json: async () => ({}) },
+      );
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const health = provider.checkHealth();
+      failPrimary(new Error("primary unreachable (probe timed out)"));
+
+      expect(await health).toBe(true);
+      expect(provider.getBaseUrl()).toBe("http://fallback:11434");
+    });
+
+    it("asks the endpoint it will actually use for model info when asked before its startup failover settles", async () => {
+      let failPrimary: (error: Error) => void = () => undefined;
+      const primaryDown = new Promise<never>((_, reject) => {
+        failPrimary = reject;
+      });
+      mockFetch.mockImplementation(async (url: string) =>
+        url.startsWith("http://primary:11434") ? primaryDown : { ok: true, json: async () => ({}) },
+      );
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const info = provider.resolveModelInfo();
+      failPrimary(new Error("primary unreachable (probe timed out)"));
+      await info;
+
+      const showUrls = mockFetch.mock.calls
+        .map((c: unknown[]) => c[0] as string)
+        .filter((u: string) => u.endsWith("/api/show"));
+      expect(showUrls).toEqual(["http://fallback:11434/api/show"]);
+    });
   });
 
   describe("checkFallbackHealth", () => {
