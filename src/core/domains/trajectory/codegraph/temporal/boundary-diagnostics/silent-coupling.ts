@@ -50,9 +50,14 @@ export const SILENT_COUPLING_WILSON_Z = 1.96;
 /** Silent partners a file needs to be reported as a root cause. One partner is a pair, not a pattern. */
 export const SILENT_COUPLING_ROOT_CAUSE_MIN_PARTNERS = 2;
 
-/** What `excluded.noSymbolEndpoints` catches, named for a report. */
+/**
+ * What `excluded.noSymbolEndpoints` catches, named for a report. It states the
+ * scope and nothing more: the old rationale — that such a module's `import type`
+ * dependencies leave no file edge — stopped holding once type-only imports got
+ * their own table (bd tea-rags-mcp-r8hme.12), and `readGraph` links through it.
+ */
 export const SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON =
-  "no-symbol endpoint: a barrel, type-only or object-literal module — its type-only imports are not file edges, so a missing edge is no evidence";
+  "no-symbol endpoint: a barrel, type-only or object-literal module defines no symbol, and pairs with one are not judged";
 
 type ExclusionReason = keyof SilentCouplingExclusionCounts;
 

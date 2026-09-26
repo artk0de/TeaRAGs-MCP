@@ -264,7 +264,7 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
 `generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither
 file walked), `noSymbolEndpoints` (barrel / type-only / object-literal module —
-its `import type` deps invisible, missing edge no evidence), `nonPositiveLift`.
+not judged; its `import type` deps ARE edges), `nonPositiveLift`.
 
 `summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
 (SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`
