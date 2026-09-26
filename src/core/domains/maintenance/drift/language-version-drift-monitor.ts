@@ -72,7 +72,7 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
 
   constructor(
     private readonly registry: LanguageVersionStampReader,
-    private readonly statsCache: IndexedLanguageReader,
+    private readonly indexedLanguageReader: IndexedLanguageReader,
     private readonly currentVersions: ReadonlyMap<string, LanguageCodeVersions>,
     /**
      * Which files each chunk-set bump touched, per language (bd tea-rags-mcp-j4oww).
@@ -94,7 +94,7 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
     // An empty or missing stats cache means the language distribution is
     // unknown, so no per-language claim can be made — but `*` is in no
     // distribution to begin with and is compared regardless.
-    const stats = this.statsCache.load(collectionName);
+    const stats = this.indexedLanguageReader.load(collectionName);
     const present = Object.keys(stats?.distributions?.language ?? {});
 
     return LanguageVersionDriftMonitor.detectDrift(entry.languageVersions, this.currentVersions, present).flatMap(
