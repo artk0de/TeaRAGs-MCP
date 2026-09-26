@@ -5,8 +5,9 @@
 - **The incremental work set is `added ∪ modified ∪ quarantined`.**
   `ReindexPipeline` unions the scanner's sets with every path currently in
   `quarantine.json`, regardless of whether content changed
-  (`ReindexPipeline#prepareParallelExecution`:
-  `[...changes.added, ...changes.modified, ...retryPaths]`, and `addedFiles`).
+  (`ReindexPipeline#reindexChanges`:
+  `[...changes.added, ...changes.modified, ...retryPaths]`, and `addedFiles` in
+  `reindex-parallel-executor.ts#planReindexExecution`).
   `ReindexPipeline#computeQuarantineRetry` takes EVERY key in the store,
   filtered only to paths still on disk and not already queued — no attempts cap,
   no `permanent-fail` promotion. The early returns in
@@ -50,10 +51,13 @@
   when nothing moved (two git spawns and one meta read) and must stay so: every
   quiet reindex pays it.
 - **Finalize the alias BEFORE storing the completion marker, and signal failure
-  by THROWING.** The order in `IndexPipeline` is fixed: `#finalizeAlias` →
-  `storeIndexingMarker(…, true, …)` → `#saveSnapshot` → `#recordRegistryEntry`
-  (`IndexPipeline#indexCodebase`). Raw failures are wrapped by
-  `BaseIndexingPipeline#wrapUnexpectedError` into `IndexingFailedError`
+  by THROWING.** The order lives ONCE, in `BaseIndexingPipeline#sealRun`:
+  `promote` → `storeIndexingMarker(…, true, …)` → `persist` →
+  `#recordRegistryEntry`. `IndexPipeline#indexCodebase` supplies
+  `#finalizeAlias` as `promote` and `#saveSnapshot` as `persist`;
+  `ReindexPipeline#reindexSealSpec` has no `promote`. Every return of both
+  pipelines closes through it (bd tea-rags-mcp-7njy). Raw failures are wrapped
+  by `BaseIndexingPipeline#wrapUnexpectedError` into `IndexingFailedError`
   (`IndexPipeline#indexCodebase`) / `ReindexFailedError`
   (`ReindexPipeline#reindexChanges`) and thrown — never returned. One vestige
   survives: the defensive `!setup.ready` guard still sets

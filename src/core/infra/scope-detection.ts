@@ -1,8 +1,8 @@
+import { isAbsolute } from "node:path";
+
 import picomatch from "picomatch";
 
-import type { TestFileConventions } from "../contracts/types/file-classification.js";
-import { COMMON_TEST_DIRECTORY_PATTERNS } from "./file-classification/patterns.js";
-import { installedTestFileConventions } from "./file-classification/test-file-conventions.js";
+import { matchesTestFileConventions } from "./file-classification/classify.js";
 
 export type ChunkScope = "source" | "test" | null;
 
@@ -12,57 +12,24 @@ export interface ScopeDetectionConfig {
 }
 
 /**
- * Suffix conventions for languages the classifier's conventions do not carry
- * yet. They stay scope-detection-only because moving them into the
- * conventions would also change what the classifier calls a test — git
- * enrichment policy and codegraph exclusion — which is a separate decision
- * (see bd tea-rags-mcp-jl3ff). Only languages with no `domains/language`
- * vertical belong here (a vertical declares its masks in its own directory,
- * bd tea-rags-mcp-vjz6s), and a key the conventions also carry is overridden
- * by them. Directory conventions are NOT repeated here:
- * `COMMON_TEST_DIRECTORY_PATTERNS` covers them for every language.
+ * Whether a path is a test file by its path alone — the file classifier's
+ * answer (`classify().isTest`), not a table of its own (bd tea-rags-mcp-jl3ff).
+ *
+ * Scope detection used to keep a per-language glob table matched by picomatch.
+ * Even derived from the same conventions it answered differently: picomatch is
+ * case-sensitive and skips dot segments where the classifier's matcher is not
+ * (SwiftPM's `Tests/`, googletest's `parser_test.cc`, `tests/.helpers/`), and it
+ * carried suffixes the classifier did not. A file was then enriched as a test
+ * while its signals landed in the SOURCE percentile bucket, or the reverse.
+ * `language` is accepted for the call shape only: every test-file shape names
+ * its own extension, so the classifier's all-language union is the language's.
+ *
+ * A path that is not repo-relative is no test path; the classifier's matcher
+ * throws on one.
  */
-const SCOPE_ONLY_TEST_SUFFIXES: Readonly<Record<string, readonly string[]>> = {
-  csharp: ["**/*.Tests/**", "**/Tests/**", "**/*Test.cs", "**/*Tests.cs"],
-  elixir: ["**/*_test.exs"],
-};
-
-/** Default test paths, derived for the conventions installed when they were derived. */
-let defaultTestPaths: { conventions: TestFileConventions; byLanguage: Readonly<Record<string, string[]>> } | undefined;
-
-/**
- * Default test paths are DERIVED from the file classifier's installed
- * per-language test-file conventions: the language-agnostic test directories
- * plus the language's own file shapes. A hand copy here drifted twice — it
- * missed TypeScript's `.mts` / `.cts` suffixes (bd tea-rags-mcp-1y13c), and its
- * root-anchored `spec/` glob disagreed with the classifier's any-depth one on
- * nested layouts (bd tea-rags-mcp-jl3ff): a Rails-engine spec was enriched as a
- * test while its signals landed in the SOURCE percentile bucket.
- */
-function defaultTestPathsByLanguage(): Readonly<Record<string, string[]>> {
-  const conventions = installedTestFileConventions();
-  if (defaultTestPaths?.conventions !== conventions) {
-    const suffixes: Record<string, readonly string[]> = { ...SCOPE_ONLY_TEST_SUFFIXES };
-    for (const [language, convention] of Object.entries(conventions)) suffixes[language] = convention.patterns;
-    const byLanguage = Object.fromEntries(
-      Object.entries(suffixes).map(([language, patterns]) => [
-        language,
-        [...COMMON_TEST_DIRECTORY_PATTERNS, ...patterns],
-      ]),
-    );
-    defaultTestPaths = { conventions, byLanguage };
-  }
-  return defaultTestPaths.byLanguage;
-}
-
-export function getDefaultTestPaths(language: string): string[] {
-  return defaultTestPathsByLanguage()[language] ?? [...COMMON_TEST_DIRECTORY_PATTERNS];
-}
-
-/** Check if a relative path matches test directory patterns for the given language. */
-export function isTestPath(relativePath: string, language: string): boolean {
-  const patterns = getDefaultTestPaths(language);
-  return patterns.some((pattern) => picomatch.isMatch(relativePath, pattern));
+export function isTestPath(relativePath: string, _language?: string): boolean {
+  if (relativePath === "" || isAbsolute(relativePath) || relativePath.startsWith("..")) return false;
+  return matchesTestFileConventions(relativePath);
 }
 
 export function detectScope(
@@ -74,10 +41,11 @@ export function detectScope(
   if (chunkType === "test") return "test";
   if (chunkType === "test_setup") return null;
 
-  const testPaths = config.testPaths ?? getDefaultTestPaths(language);
-  const isTestPath = testPaths.some((pattern) => picomatch.isMatch(relativePath, pattern));
+  const pathIsTest = config.testPaths
+    ? config.testPaths.some((pattern) => picomatch.isMatch(relativePath, pattern))
+    : isTestPath(relativePath, language);
 
-  if (isTestPath) {
+  if (pathIsTest) {
     const langTestCount = config.languageTestChunkCounts.get(language) ?? 0;
     if (langTestCount > 0) {
       // Language has AST test detection — trust chunkType over path.
