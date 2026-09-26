@@ -24,6 +24,7 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   detectSilentCoupling,
+  SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON,
   SILENT_COUPLING_STRENGTH_MAJORITY,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
@@ -184,6 +185,13 @@ describe("detectSilentCoupling", () => {
       nonPositiveLift: 1,
     });
     expect(report.summary.candidateCount).toBe(0);
+  });
+
+  it("names the no-symbol exclusion without claiming type-only imports are invisible (bd tea-rags-mcp-r8hme.12)", () => {
+    // cg_symbols_edges_file_type_only links a type-only import, so a reason
+    // saying the graph cannot see one would misstate why the pair is dropped.
+    expect(SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON).toMatch(/^no-symbol endpoint: /);
+    expect(SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON).not.toMatch(/not (?:a )?file edges?|invisible|no evidence/);
   });
 
   it("keeps a pair whose other endpoint is not walked code, and says the graph cannot see it", () => {
