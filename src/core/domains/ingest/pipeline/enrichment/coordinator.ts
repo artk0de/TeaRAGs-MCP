@@ -333,8 +333,8 @@ export class EnrichmentCoordinator {
    * synchronizer's sha256 (`ParallelFileSynchronizer#hashFile`) — the scan hands
    * it in as `scanned` and the write leg stamps `runState.contentHashes` off that
    * map — so a mismatch means a changed file or no row. A converged store repairs
-   * 0 files, except files past `MAX_EDGES_PER_FILE`, which never get a row (bd
-   * tea-rags-mcp-ihq7y). Pass-2 runs inside THIS run's finalize with the root
+   * 0 files; a file past `MAX_EDGES_PER_FILE` included, since it lands a hashed
+   * row with no edges (bd tea-rags-mcp-ihq7y). Pass-2 runs inside THIS run's finalize with the root
    * bound, so TypeScript Program admission follows the live count rule
    * (`CallEdgeResolutionRunner#prepareResolvePass`): a repair is slower per file
    * when small, never less precise.
