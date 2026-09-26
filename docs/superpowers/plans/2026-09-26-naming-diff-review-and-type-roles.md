@@ -69,6 +69,21 @@ All files are owned by artk0de; no silo pairing needed.
 Wave 2 languages each re-pin versions; run `npm run pin:lang-versions` once
 after the whole wave, not per agent, to avoid pin-file conflicts.
 
+### Waves added after W2 (spec §1a, §1b — every language at once)
+
+W2 showed that no language can add interface / type alias / enum / constant
+declarations as symbols (no chunk of their own, and a same-named symbol broke
+short-name resolution). Two tasks were added, both covering all ten languages:
+
+| Wave | Task                                                      | Scope                                                                                                                                                                                                                                            |
+| ---- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 3a   | **T4a — kind roles per language** (`jqvbn`, §1a)          | each capability declares `symbolKindRoles`; the table applies the caller's policy; every resolver opts in; A/B tally on one corpus per language, every lost edge classified                                                                      |
+| 3b   | **T4b — declaration channel core** (`vi0wx`/`l2pkp`, §1b) | `TypeDeclarationFact` gains `symbolKind` + `line`; Swift adapted; run-state hydration gated to languages whose resolver reads the facts; migration 038 `cg_type_declarations`, flush + delete like `cg_identifiers`; `readTypeNameRows` reads it |
+| 3c   | **T4c-<lang> — every walker emits declaration facts**     | per language, table in §1b; one agent per language directory after T4b's contract lands; re-pin once after the wave                                                                                                                              |
+
+T4 (`readTypeNameRows`, commit bb16c19cb) keeps its query contract; T4b only
+switches its source. T5 and T7 read type and constant drafts from the facts.
+
 ---
 
 ### Task 1: Symbol kind contract, migration 035 and symbol store

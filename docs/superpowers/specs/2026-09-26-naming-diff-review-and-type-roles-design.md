@@ -38,13 +38,92 @@ and misreads PascalCase functions (Go exported functions, Python factories).
   `class | module | interface | enum | type_alias | constant | function | method`.
   NULL on rows written before the migration; readers treat NULL as unknown and
   exclude it from type-name judgement rather than guessing.
-- Each language walker writes the kind from the node type it already visits.
-  TypeScript type aliases and enums and top-level constants of every language
-  become symbols; today they are not indexed as symbols (see the TS walker's
-  `collectTypeAliases` comment).
+- Each language walker writes the kind from the node type it already visits, on
+  the chunks it already emits. No declaration becomes a NEW symbol: a codegraph
+  symbol needs a chunk with the same symbolId, and the chunker gives small type
+  declarations (TS `type` / `interface` / `enum`) no chunk of their own and
+  module-level constants none at all. Type and constant names travel in their
+  own channel instead (§1b).
 - Versions: walker axes are already above `main` for every language this release
   cycle, so no bump, only a re-pin; a codegraph recompute
   (`--force-enrichments codegraph`) rewrites `cg_symbols`.
+
+## 1a. Kind roles in call resolution (`jqvbn`)
+
+Once definitions carry a kind, a lookup for a CALLEE must not return a
+definition that cannot be called, and a same-named type must not count as a
+namesake. Which kinds can be called is a property of the LANGUAGE, not of the
+kind vocabulary: Ruby never calls a class by its bare name (`Money(x)` is a
+method, the class is only a receiver of `.new`), Go calls interfaces and type
+aliases (`Stringer(x)` is a conversion), Swift and Python call enums
+(`Color(rawValue:)`, `Color(1)`).
+
+- Each language capability declares
+  `symbolKindRoles: { callee: ReadonlySet<SymbolDefinitionKind>; receiver: ReadonlySet<SymbolDefinitionKind> }`.
+  The symbol table applies the CALLING file's policy to `lookupByShortName`,
+  `lookup(fq)` and `shortNameDefCounts`. A lookup with no role is a type lookup
+  and keeps every kind. An untagged definition (NULL kind) serves every role.
+- Per language (callee / receiver):
+
+| Language | class | module | interface / protocol / trait | enum | type_alias | constant |
+| -------- | ----- | ------ | ---------------------------- | ---- | ---------- | -------- |
+| TS / JS  | C R   | R      | —                            | R    | —          | R        |
+| Java     | C R   | —      | R                            | R    | —          | R        |
+| Swift    | C R   | —      | R                            | C R  | C R        | R        |
+| Go       | C R   | R      | C R                          | —    | C R        | R        |
+| Rust     | C R   | R      | R                            | R    | —          | R        |
+| Python   | C R   | R      | —                            | C R  | C          | R        |
+| Ruby     | R     | R      | —                            | —    | —          | R        |
+| Bash     | —     | —      | —                            | —    | —          | —        |
+
+`function` and `method` are C R everywhere they exist. A static interface member
+call (`Comparator.naturalOrder()`) makes the interface a receiver. A Rust call
+spelled with an enum's name builds a variant (`Style(s)` is a tuple variant or
+struct, never `enum Style`), so a Rust enum is a receiver only. A Ruby constant
+reference (`receiver === member`, e.g. an association class) looks up with the
+receiver role.
+
+- The first cut (commit on `worktree-naming-waves`) used one language-agnostic
+  predicate and opted in TS/JS and Rust only. This table replaces it; Go, Swift,
+  Java and Ruby join through their capability, not by being skipped.
+- Gate per language: `codegraph-chain-tally --time-only --kind-stats` before and
+  after on that language's corpus. A lost edge is inspected; it may only go if
+  it was wrong.
+
+## 1b. Type and constant declarations, every language
+
+`FileExtraction.typeDeclarations` (`TypeDeclarationFact`) already exists and
+only the Swift walker fills it, for the Swift resolver. It is generalized
+instead of adding a second channel.
+
+- The fact gains `symbolKind: SymbolDefinitionKind` and `line`. Swift's
+  `declarationKind` stays as Swift detail. `supertypes` / `conforms` carry the
+  ancestors, so roles read no join.
+- Every walker emits one fact per type-level declaration and per file-level
+  constant, whether or not it is a chunk or a symbol:
+
+| Language   | Declarations                                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| TypeScript | class, interface, type alias, enum, exported/top-level `const` that is not function-valued                |
+| JavaScript | class, top-level `const` that is not function-valued                                                      |
+| Python     | class (Enum subclass → enum), `X: TypeAlias` / `type X =` / `NewType`, module-level UPPER_CASE assignment |
+| Ruby       | class, module, constant assignment                                                                        |
+| Go         | struct / defined type (class), interface, alias, package-level `const`                                    |
+| Rust       | struct / union (class), enum, trait (interface), `type`, `const` / `static`, `mod`                        |
+| Java       | class, record (class), interface, annotation (interface), enum, `static final` field                      |
+| Swift      | class / struct / actor (class), protocol, enum, typealias; extensions stay `reopens: true`                |
+| Bash       | none                                                                                                      |
+
+- Resolution keeps what it reads today: run-state hydrates `typeDeclarations`
+  only for languages whose resolver reads them (a capability flag), so the new
+  facts of other languages do not enter the run-global maps.
+- Persistence: migration 038 adds
+  `cg_type_declarations(rel_path, language, type_id, short_name, symbol_kind, line, reopens, supertypes VARCHAR[])`,
+  replaced per file at flush and deleted with the file, like `cg_identifiers`.
+- `readTypeNameRows` (§2) reads `cg_type_declarations` (`reopens = false`) as
+  its single source, for every language.
+- Diff mode takes type and constant drafts straight from the in-memory
+  extraction's `typeDeclarations`.
 
 ## 2. Type roles
 
@@ -64,9 +143,9 @@ secondary):
    Filters one-off coincidences. k starts at 3 and is measured on the corpora
    below.
 
-Roles are computed at read time from `cg_symbols` + `cg_symbols_inheritance` by
-one store query behind a daemon op. They are not persisted: they are cheap
-aggregates, and a stored copy would go stale on every incremental run.
+Roles are computed at read time from `cg_type_declarations` (§1b) by one store
+query behind a daemon op. They are not persisted: they are cheap aggregates, and
+a stored copy would go stale on every incremental run.
 
 ## 3. Judging a type-name draft
 
