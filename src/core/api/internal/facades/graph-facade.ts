@@ -133,14 +133,14 @@ export class GraphFacade {
     // pool opens the DuckDB file the write path actually populated (see
     // resolveActiveCollection doc). No resolver, or a failed one, falls back to
     // the addressed name resolved against no aliases, rather than aborting the read.
-    const activeCollection = this.deps.resolveActiveCollection
+    const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
       : resolvePhysicalCollection(collectionName, []);
     let handle: CollectionGraphHandle | undefined;
     try {
-      handle = await this.deps.pool.acquireReader(activeCollection);
+      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (err) {
       // An empty edge list is an assertion about the code, and callers act on
       // it. Returning one for a graph we simply could not open made a read
@@ -150,7 +150,7 @@ export class GraphFacade {
       // so empty IS the honest answer there and the "codegraph optional"
       // guarantee still holds; anything else (lock held, daemon unreachable,
       // corrupt file) is a failure the caller must be told about.
-      if (this.deps.pool.hasDatabase(activeCollection)) throw err;
+      if (this.deps.pool.hasDatabase(activePhysicalCollectionName)) throw err;
       return fallback;
     }
     try {

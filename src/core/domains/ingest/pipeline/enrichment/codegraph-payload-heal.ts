@@ -190,7 +190,7 @@ export interface CodegraphPayloadHealOutcome {
  */
 export interface CodegraphPayloadHealRunner {
   run: (
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     skipRelPaths: ReadonlySet<string>,
     enrichedAt?: string,
   ) => Promise<CodegraphPayloadHealOutcome>;

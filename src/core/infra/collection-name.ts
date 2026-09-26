@@ -63,11 +63,14 @@ export function findAliasTarget(
  * alias, not a string, so a physical name cannot be versioned again into
  * `<alias>_v3_v4`.
  */
-export function versionedPhysicalCollectionName(base: CollectionAlias, version: number): PhysicalCollectionName {
+export function versionedPhysicalCollectionName(
+  aliasCollectionName: CollectionAlias,
+  version: number,
+): PhysicalCollectionName {
   if (!Number.isInteger(version) || version < 1) {
-    throw new RangeError(`Collection generation must be a positive integer, got ${version} for ${base}`);
+    throw new RangeError(`Collection generation must be a positive integer, got ${version} for ${aliasCollectionName}`);
   }
-  return `${base}_v${version}` as PhysicalCollectionName;
+  return `${aliasCollectionName}_v${version}` as PhysicalCollectionName;
 }
 
 /** One alias exactly as Qdrant describes it — the only place alias names and targets are read back. */

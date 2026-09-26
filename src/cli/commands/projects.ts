@@ -329,13 +329,15 @@ export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Pro
     // back to pre-fix behaviour (all physical names visible).
   }
 
-  const collections = await client.listCollections();
-  const orphans = collections.filter((c) => !registered.has(c) && !aliasedTargets.has(c));
+  const physicalCollectionNames = await client.listCollections();
+  const orphanPhysicalCollectionNames = physicalCollectionNames.filter(
+    (physicalCollectionName) => !registered.has(physicalCollectionName) && !aliasedTargets.has(physicalCollectionName),
+  );
 
   const rows = await Promise.all(
-    orphans.map(async (collectionName) => ({
-      collectionName,
-      chunksCount: await safeCount(client, collectionName),
+    orphanPhysicalCollectionNames.map(async (physicalCollectionName) => ({
+      collectionName: physicalCollectionName,
+      chunksCount: await safeCount(client, physicalCollectionName),
     })),
   );
 

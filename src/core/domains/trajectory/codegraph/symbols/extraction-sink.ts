@@ -92,7 +92,7 @@ export function absorbPass1FileState(
 
 export interface CodegraphSinkDeps {
   /** Resolve the in-memory symbol table for the active collection. */
-  resolveSymbolTable: (collectionName?: PhysicalCollectionName) => Promise<GlobalSymbolTable>;
+  resolveSymbolTable: (physicalCollectionName?: PhysicalCollectionName) => Promise<GlobalSymbolTable>;
   /**
    * Read back every persisted per-file pass-1 aggregate slice for the active
    * collection (bd tea-rags-mcp-znxg8). Absorbed at the barrier for the files
@@ -101,7 +101,9 @@ export interface CodegraphSinkDeps {
    * asymmetry that degraded concrete service entry calls onto the shared
    * template they inherit.
    */
-  loadPersistedPass1Aggregates: (collectionName?: PhysicalCollectionName) => Promise<CodegraphPass1FileAggregates[]>;
+  loadPersistedPass1Aggregates: (
+    physicalCollectionName?: PhysicalCollectionName,
+  ) => Promise<CodegraphPass1FileAggregates[]>;
   runState: CodegraphRunState;
   nodeFlush: SymbolNodeFlushQueue;
   /** Map a `FileExtraction` to the 9-field `SymbolDefinition` shape. */
@@ -118,8 +120,8 @@ export interface CodegraphSinkDeps {
    * Pass-2 stages. Passed as callbacks rather than a finalizer handle so the
    * provider stays the single place that decides how pass-2 is dispatched.
    */
-  resolveAndUpsert: (spillPath: string, collectionName?: PhysicalCollectionName) => Promise<void>;
-  recomputeMetrics: (collectionName?: PhysicalCollectionName) => Promise<void>;
+  resolveAndUpsert: (spillPath: string, physicalCollectionName?: PhysicalCollectionName) => Promise<void>;
+  recomputeMetrics: (physicalCollectionName?: PhysicalCollectionName) => Promise<void>;
 }
 
 /**
@@ -167,7 +169,7 @@ export interface CodegraphExtractionSink extends ExtractionSink {
 export function createCodegraphExtractionSink(
   deps: CodegraphSinkDeps,
   runId: string,
-  collectionName?: PhysicalCollectionName,
+  physicalCollectionName?: PhysicalCollectionName,
   skipDurableNodeWrite = false,
 ): CodegraphExtractionSink {
   // The spill path is `<dataDir>/codegraph/.spill/<coll>-<runId>.ndjson` —
@@ -175,7 +177,7 @@ export function createCodegraphExtractionSink(
   // across collections) get unique files. Spill files left by a CRASHED run are
   // reclaimed by the sweep every pool construction runs; a live one is spared by
   // the `.live` marker written in `ensureSpillStream` below.
-  const spillPath = deps.spillPathFor(collectionName, runId);
+  const spillPath = deps.spillPathFor(physicalCollectionName, runId);
   // Read once per sink — i.e. once per run — so a test can stub it and a run
   // cannot change its mind halfway through `finish`.
   const overlapNodeDrain = process.env.CODEGRAPH_NODE_DRAIN_OVERLAP !== "0";
@@ -224,12 +226,12 @@ export function createCodegraphExtractionSink(
   return {
     mirror: async (extraction) => {
       assertOpen("mirror");
-      const symbolTable = await deps.resolveSymbolTable(collectionName);
+      const symbolTable = await deps.resolveSymbolTable(physicalCollectionName);
       absorbPass1FileState(deps.runState, symbolTable, extraction, deps.buildSymbolDefs(extraction), "mirror");
     },
     write: async (extraction) => {
       assertOpen("write");
-      const symbolTable = await deps.resolveSymbolTable(collectionName);
+      const symbolTable = await deps.resolveSymbolTable(physicalCollectionName);
       const defs = deps.buildSymbolDefs(extraction);
       // Persist defs to both the in-memory table (for in-pass resolver lookups)
       // AND DuckDB (for cold-start hydration of a later partial reindex).
@@ -247,12 +249,12 @@ export function createCodegraphExtractionSink(
         deps.nodeFlush.buffer(
           extraction.relPath,
           defs,
-          deps.collectionKey(collectionName),
-          collectionName,
+          deps.collectionKey(physicalCollectionName),
+          physicalCollectionName,
           deps.buildIdentifierRows(extraction),
         );
       }
-      deps.indexChunkSymbolsByLine(collectionName, extraction);
+      deps.indexChunkSymbolsByLine(physicalCollectionName, extraction);
 
       const stream = await ensureSpillStream();
       const line = `${JSON.stringify(extraction)}\n`;
@@ -272,7 +274,7 @@ export function createCodegraphExtractionSink(
     },
     finish: async (options) => {
       finished = true;
-      const key = deps.collectionKey(collectionName);
+      const key = deps.collectionKey(physicalCollectionName);
       // Hand the buffered node defs to the flush chain. Owning it here makes the
       // sink self-contained — correct for every caller (incremental finalize,
       // standalone sink, cross-pass drain where the buffer is already empty so
@@ -286,7 +288,7 @@ export function createCodegraphExtractionSink(
       // keys (migration 001 omits them deliberately and says why). So
       // "nodes-before-edges" is a statement about the run's end state, which the
       // settle below still guarantees, not a precondition of the resolve.
-      deps.nodeFlush.dispatchRemainder(key, collectionName);
+      deps.nodeFlush.dispatchRemainder(key, physicalCollectionName);
       try {
         // The kill-switch shape: settle the whole chain here and pass-2 starts
         // against a fully durable `cg_symbols`, exactly as it did before.
@@ -316,11 +318,11 @@ export function createCodegraphExtractionSink(
         // describe the project, or a concrete `Service.call` whose template file
         // was not in the batch degrades onto that template.
         await deps.runState.seal(
-          async () => deps.resolveSymbolTable(collectionName),
-          async () => deps.loadPersistedPass1Aggregates(collectionName),
+          async () => deps.resolveSymbolTable(physicalCollectionName),
+          async () => deps.loadPersistedPass1Aggregates(physicalCollectionName),
         );
         if (spillWriteCount > 0) {
-          await deps.resolveAndUpsert(spillPath, collectionName);
+          await deps.resolveAndUpsert(spillPath, physicalCollectionName);
         }
         // The real nodes-before-metrics point. A latched flush error surfaces
         // here instead of before pass-2: the run still aborts on it, one stage
@@ -335,7 +337,7 @@ export function createCodegraphExtractionSink(
         // IO, resolve) DO propagate from the stage above. A language partition
         // leaves the recompute to the collection's completion owner.
         if (options?.recomputeMetrics !== false) {
-          await recomputeCodegraphMetricsBestEffort(async () => deps.recomputeMetrics(collectionName));
+          await recomputeCodegraphMetricsBestEffort(async () => deps.recomputeMetrics(physicalCollectionName));
         }
       } finally {
         // A dispatched node write must never outlive `finish`. On the success

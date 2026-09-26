@@ -415,12 +415,12 @@ export class ProjectRegistryOps {
     if (!qdrant) {
       throw new Error("recoverFromQdrant requires qdrant in deps");
     }
-    const collections = await qdrant.listCollections();
-    for (const collectionName of collections) {
-      if (this.deps.registry.get(collectionName) !== null) continue;
+    const physicalCollectionNames = await qdrant.listCollections();
+    for (const physicalCollectionName of physicalCollectionNames) {
+      if (this.deps.registry.get(physicalCollectionName) !== null) continue;
       let dimensions = 0;
       try {
-        const info = await qdrant.getCollectionInfo(collectionName);
+        const info = await qdrant.getCollectionInfo(physicalCollectionName);
         dimensions = info.vectorSize ?? 0;
       } catch {
         // ignore — fall back to default
@@ -430,7 +430,7 @@ export class ProjectRegistryOps {
       let indexedAt = "";
       try {
         const markerFilter = { must: [{ key: "_type", match: { value: "indexing_metadata" } }] };
-        const sample = await qdrant.scrollFiltered(collectionName, markerFilter, 1);
+        const sample = await qdrant.scrollFiltered(physicalCollectionName, markerFilter, 1);
         const [first] = sample;
         const payload = (first?.payload ?? {}) as {
           embeddingModel?: unknown;
@@ -461,12 +461,12 @@ export class ProjectRegistryOps {
       let chunksCount = 0;
       try {
         // Chunks only, same definition as the register path above (bd tea-rags-mcp-39xca.12).
-        chunksCount = await qdrant.countPoints(collectionName, chunkPointsFilter());
+        chunksCount = await qdrant.countPoints(physicalCollectionName, chunkPointsFilter());
       } catch {
         // ignore — keep 0
       }
       this.deps.registry.record({
-        collectionName,
+        collectionName: physicalCollectionName,
         path: "",
         embeddingModel,
         embeddingDimensions: dimensions,

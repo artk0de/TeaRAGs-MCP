@@ -85,7 +85,7 @@ function snippet(line: string): string {
 
 /** Resolve the (graphDb, symbolTable) pair for the active collection. */
 export type GraphStoreResolver = (
-  collectionName?: PhysicalCollectionName,
+  physicalCollectionName?: PhysicalCollectionName,
 ) => Promise<{ graphDb: GraphDbClient; symbolTable: GlobalSymbolTable }>;
 
 async function collectAdjacency(
@@ -149,8 +149,8 @@ export class GraphBuildFinalizer {
    * piece can do it here — before the first file, where it is a fixed cost —
    * rather than inferring the same fact from the first few hundred call sites.
    */
-  async resolveAndUpsert(spillPath: string, collectionName?: PhysicalCollectionName): Promise<void> {
-    const { graphDb, symbolTable } = await this.resolveStore(collectionName);
+  async resolveAndUpsert(spillPath: string, physicalCollectionName?: PhysicalCollectionName): Promise<void> {
+    const { graphDb, symbolTable } = await this.resolveStore(physicalCollectionName);
     const preparedAtMs = Date.now();
     this.resolutionRunner.prepareResolvePass();
     // Attributed to pass-2 with a count of ZERO files: whatever a resolver
@@ -484,10 +484,10 @@ export class GraphBuildFinalizer {
    * the failing stage in its message — a debug log alone is not enough when the
    * failure happens silently mid-run.
    */
-  async recomputeMetrics(collectionName?: PhysicalCollectionName): Promise<void> {
+  async recomputeMetrics(physicalCollectionName?: PhysicalCollectionName): Promise<void> {
     const startedAtMs = Date.now();
     try {
-      await this.runMetricsRecompute(collectionName);
+      await this.runMetricsRecompute(physicalCollectionName);
     } finally {
       // Timed around BOTH routes — the daemon delegation and the inline
       // Tarjan/PageRank — because from the run's point of view they are the
@@ -497,8 +497,8 @@ export class GraphBuildFinalizer {
   }
 
   /** The recompute itself; `recomputeMetrics` owns only its timing. */
-  private async runMetricsRecompute(collectionName?: PhysicalCollectionName): Promise<void> {
-    const { graphDb } = await this.resolveStore(collectionName);
+  private async runMetricsRecompute(physicalCollectionName?: PhysicalCollectionName): Promise<void> {
+    const { graphDb } = await this.resolveStore(physicalCollectionName);
     // Daemon-routed write path: the daemon owns the RW connection and runs
     // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
     // process never allocates the adjacency. When the handle exposes the

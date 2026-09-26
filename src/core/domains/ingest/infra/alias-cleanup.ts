@@ -9,7 +9,7 @@ import { isCollectionBuildInFlight } from "./collection-build-lease.js";
  * pool's `removeCollection`; omitted when codegraph is disabled. Keeps the ingest
  * domain free of any DuckDB-path knowledge — the pool owns path resolution.
  */
-export type CodegraphDbRemover = (collectionName: PhysicalCollectionName) => Promise<void>;
+export type CodegraphDbRemover = (physicalCollectionName: PhysicalCollectionName) => Promise<void>;
 
 /**
  * Enumerates the versioned codegraph DB collection names on disk for a base
@@ -38,11 +38,15 @@ export async function cleanupOrphanedVersions(
   removeCodegraphDb?: CodegraphDbRemover,
 ): Promise<number> {
   const aliases = await qdrant.aliases.listAliases();
-  const activeCollection = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
-  if (!activeCollection) return 0;
+  const activePhysicalCollectionName = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
+  if (!activePhysicalCollectionName) return 0;
 
-  const allCollections = await qdrant.listCollections();
-  const candidates = allCollections.filter((c) => c.startsWith(`${collectionName}_v`) && c !== activeCollection);
+  const allPhysicalCollectionNames = await qdrant.listCollections();
+  const candidatePhysicalCollectionNames = allPhysicalCollectionNames.filter(
+    (physicalCollectionName) =>
+      physicalCollectionName.startsWith(`${collectionName}_v`) &&
+      physicalCollectionName !== activePhysicalCollectionName,
+  );
 
   // Not pointed at by the alias is NOT the same as abandoned. A force reindex
   // builds its next version off to the side and only switches the alias at the
@@ -50,29 +54,34 @@ export async function cleanupOrphanedVersions(
   // Deleting it kills the run that owns it — the foreground reindex fails on its
   // next upload with "Collection … doesn't exist" while the run that deleted it
   // reports success (bd tea-rags-mcp-nrylk).
-  const orphans: PhysicalCollectionName[] = [];
-  for (const candidate of candidates) {
-    if (await isCollectionBuildInFlight(qdrant, candidate)) {
+  const orphanPhysicalCollectionNames: PhysicalCollectionName[] = [];
+  for (const candidatePhysicalCollectionName of candidatePhysicalCollectionNames) {
+    if (await isCollectionBuildInFlight(qdrant, candidatePhysicalCollectionName)) {
       if (isDebug()) {
-        console.error(`[AliasCleanup] ${candidate} is being built by a live run — leaving it alone`);
+        console.error(
+          `[AliasCleanup] ${candidatePhysicalCollectionName} is being built by a live run — leaving it alone`,
+        );
       }
       continue;
     }
-    orphans.push(candidate);
+    orphanPhysicalCollectionNames.push(candidatePhysicalCollectionName);
   }
 
-  for (const orphan of orphans) {
-    await qdrant.deleteCollection(orphan);
+  for (const orphanPhysicalCollectionName of orphanPhysicalCollectionNames) {
+    await qdrant.deleteCollection(orphanPhysicalCollectionName);
     if (removeCodegraphDb) {
-      await removeCodegraphDb(orphan).catch((err) => {
+      await removeCodegraphDb(orphanPhysicalCollectionName).catch((err) => {
         if (isDebug()) {
-          console.error(`[AliasCleanup] codegraph DB cleanup failed for orphan ${orphan} (non-fatal):`, err);
+          console.error(
+            `[AliasCleanup] codegraph DB cleanup failed for orphan ${orphanPhysicalCollectionName} (non-fatal):`,
+            err,
+          );
         }
       });
     }
   }
 
-  return orphans.length;
+  return orphanPhysicalCollectionNames.length;
 }
 
 /**
@@ -116,34 +125,40 @@ export async function cleanupOrphanedVersions(
 export async function discardFailedCollectionBuild(
   qdrant: QdrantManager,
   collectionName: string,
-  targetCollection: PhysicalCollectionName,
+  targetPhysicalCollectionName: PhysicalCollectionName,
   removeCodegraphDb?: CodegraphDbRemover,
 ): Promise<boolean> {
   try {
     // Not a versioned build off to the side — nothing safe to discard.
-    if (targetCollection === collectionName) return false;
+    if (targetPhysicalCollectionName === collectionName) return false;
 
     const aliases = await qdrant.aliases.listAliases();
-    const activeCollection = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
+    const activePhysicalCollectionName = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
 
-    if (activeCollection) {
-      if (activeCollection === targetCollection) return false;
+    if (activePhysicalCollectionName) {
+      if (activePhysicalCollectionName === targetPhysicalCollectionName) return false;
     } else if (!(await qdrant.collectionExists(collectionName))) {
       return false;
     }
 
-    await qdrant.deleteCollection(targetCollection);
+    await qdrant.deleteCollection(targetPhysicalCollectionName);
     if (removeCodegraphDb) {
-      await removeCodegraphDb(targetCollection).catch((err) => {
+      await removeCodegraphDb(targetPhysicalCollectionName).catch((err) => {
         if (isDebug()) {
-          console.error(`[AliasCleanup] codegraph DB cleanup failed for discarded ${targetCollection}:`, err);
+          console.error(
+            `[AliasCleanup] codegraph DB cleanup failed for discarded ${targetPhysicalCollectionName}:`,
+            err,
+          );
         }
       });
     }
     return true;
   } catch (err) {
     if (isDebug()) {
-      console.error(`[AliasCleanup] could not discard the failed build ${targetCollection} (non-fatal):`, err);
+      console.error(
+        `[AliasCleanup] could not discard the failed build ${targetPhysicalCollectionName} (non-fatal):`,
+        err,
+      );
     }
     return false;
   }
@@ -173,24 +188,29 @@ export async function sweepCodegraphOrphans(
   listCodegraphDbs: CodegraphDbLister,
   removeCodegraphDb: CodegraphDbRemover,
 ): Promise<number> {
-  const codegraphDbs = listCodegraphDbs(collectionName);
-  if (codegraphDbs.length === 0) return 0;
+  const codegraphPhysicalCollectionNames = listCodegraphDbs(collectionName);
+  if (codegraphPhysicalCollectionNames.length === 0) return 0;
 
   const aliases = await qdrant.aliases.listAliases();
-  const activeCollection = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
-  const liveCollections = new Set(await qdrant.listCollections());
+  const activePhysicalCollectionName = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
+  const livePhysicalCollectionNames = new Set(await qdrant.listCollections());
 
   let removed = 0;
-  for (const db of codegraphDbs) {
+  for (const physicalCollectionName of codegraphPhysicalCollectionNames) {
     // Never delete the active alias target's DB, nor one still backed by a live
     // Qdrant collection.
-    if (db === activeCollection || liveCollections.has(db)) continue;
+    if (
+      physicalCollectionName === activePhysicalCollectionName ||
+      livePhysicalCollectionNames.has(physicalCollectionName)
+    ) {
+      continue;
+    }
     try {
-      await removeCodegraphDb(db);
+      await removeCodegraphDb(physicalCollectionName);
       removed++;
     } catch (err) {
       if (isDebug()) {
-        console.error(`[AliasCleanup] codegraph orphan sweep failed for ${db} (non-fatal):`, err);
+        console.error(`[AliasCleanup] codegraph orphan sweep failed for ${physicalCollectionName} (non-fatal):`, err);
       }
     }
   }

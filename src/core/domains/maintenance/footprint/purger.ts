@@ -102,15 +102,23 @@ export class CollectionFootprintPurger {
     const logical = input.logicalName;
     const failures: CollectionPurgeFailure[] = [];
 
-    const { qdrantTargets, aliasTarget } = await this.enumerateQdrant(logical, failures);
-    const codegraphTargets = this.enumerateCodegraph(logical, failures);
+    const { qdrantTargets: qdrantTargetPhysicalCollectionNames, aliasTarget: aliasTargetPhysicalCollectionName } =
+      await this.enumerateQdrant(logical, failures);
+    const codegraphTargetPhysicalCollectionNames = this.enumerateCodegraph(logical, failures);
 
     // Union, not intersection: a DuckDB file whose Qdrant collection is already
     // gone is exactly the leak this purge exists to close (bd 6goqa / snbzk).
-    const generations = [...new Set([...qdrantTargets, ...codegraphTargets])].sort();
+    const generationPhysicalCollectionNames = [
+      ...new Set([...qdrantTargetPhysicalCollectionNames, ...codegraphTargetPhysicalCollectionNames]),
+    ].sort();
 
-    for (const generation of generations) {
-      await this.removeArtifacts("physical", this.contextFor(logical, generation, input.path), generation, failures);
+    for (const physicalCollectionName of generationPhysicalCollectionNames) {
+      await this.removeArtifacts(
+        "physical",
+        this.contextFor(logical, physicalCollectionName, input.path),
+        physicalCollectionName,
+        failures,
+      );
     }
 
     // The alias-keyed artifacts are one per collection, so they are torn down
@@ -119,16 +127,18 @@ export class CollectionFootprintPurger {
     // left to name, the logical name resolved against no aliases stands in.
     const logicalContext = this.contextFor(
       logical,
-      aliasTarget ?? generations[0] ?? resolvePhysicalCollection(logical, []),
+      aliasTargetPhysicalCollectionName ??
+        generationPhysicalCollectionNames[0] ??
+        resolvePhysicalCollection(logical, []),
       input.path,
     );
     const clearedStores = await this.removeArtifacts("logical", logicalContext, logical, failures);
 
     return {
       collectionName: logical,
-      qdrantAlias: aliasTarget,
-      qdrantCollections: await this.verifyQdrantGone(qdrantTargets, failures),
-      codegraphDatabases: this.verifyCodegraphGone(logical, codegraphTargets, failures),
+      qdrantAlias: aliasTargetPhysicalCollectionName,
+      qdrantCollections: await this.verifyQdrantGone(qdrantTargetPhysicalCollectionNames, failures),
+      codegraphDatabases: this.verifyCodegraphGone(logical, codegraphTargetPhysicalCollectionNames, failures),
       clearedStores,
       kept: this.describeKept(logical, input.path),
       failures,
@@ -149,25 +159,32 @@ export class CollectionFootprintPurger {
     failures: CollectionPurgeFailure[],
   ): Promise<{ qdrantTargets: PhysicalCollectionName[]; aliasTarget: PhysicalCollectionName | null }> {
     const pattern = new RegExp(`^${escapeRegExp(logical)}(?:_v\\d+)?$`);
-    let listed: PhysicalCollectionName[];
+    let physicalCollectionNames: PhysicalCollectionName[];
     try {
-      listed = (await this.deps.qdrant.listCollections()).filter((name) => pattern.test(name));
+      physicalCollectionNames = (await this.deps.qdrant.listCollections()).filter((physicalCollectionName) =>
+        pattern.test(physicalCollectionName),
+      );
     } catch (err) {
       failures.push({ artifact: "qdrant", target: logical, reason: describe(err) });
-      listed = [resolvePhysicalCollection(logical, [])];
+      physicalCollectionNames = [resolvePhysicalCollection(logical, [])];
     }
 
-    let aliasTarget: PhysicalCollectionName | null = null;
+    let aliasTargetPhysicalCollectionName: PhysicalCollectionName | null = null;
     try {
       const aliases = await this.deps.qdrant.aliases.listAliases();
-      aliasTarget = aliases.find((a) => a.aliasName === logical)?.collectionName ?? null;
+      aliasTargetPhysicalCollectionName = aliases.find((a) => a.aliasName === logical)?.collectionName ?? null;
     } catch {
       // Older servers have no alias API, and an unreachable one already failed
       // above. The pattern match stands on its own.
     }
 
-    const qdrantTargets = [...new Set([...listed, ...(aliasTarget ? [aliasTarget] : [])])];
-    return { qdrantTargets, aliasTarget };
+    const qdrantTargetPhysicalCollectionNames = [
+      ...new Set([
+        ...physicalCollectionNames,
+        ...(aliasTargetPhysicalCollectionName ? [aliasTargetPhysicalCollectionName] : []),
+      ]),
+    ];
+    return { qdrantTargets: qdrantTargetPhysicalCollectionNames, aliasTarget: aliasTargetPhysicalCollectionName };
   }
 
   private enumerateCodegraph(logical: string, failures: CollectionPurgeFailure[]): PhysicalCollectionName[] {
@@ -208,10 +225,14 @@ export class CollectionFootprintPurger {
    * the same collection here — there is no other side to a purge. Fields the
    * removal path does not read carry neutral values.
    */
-  private contextFor(logicalName: string, physicalName: PhysicalCollectionName, path?: string): FootprintContext {
+  private contextFor(
+    logicalName: string,
+    physicalCollectionName: PhysicalCollectionName,
+    path?: string,
+  ): FootprintContext {
     const resolved: ResolvedCollection = {
       logicalName,
-      physicalName,
+      physicalName: physicalCollectionName,
       path: path ?? "",
       embeddingModel: "",
       embeddingDimensions: 0,

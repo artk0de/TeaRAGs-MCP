@@ -618,7 +618,7 @@ export interface EnrichmentProvider {
    * a collection with no graph yet repairs everything, which is what a freshly
    * created versioned collection needs.
    */
-  readPersistedFileHashes?: (collectionName: PhysicalCollectionName) => Promise<Map<string, string | null>>;
+  readPersistedFileHashes?: (physicalCollectionName: PhysicalCollectionName) => Promise<Map<string, string | null>>;
   /**
    * Every persisted per-file pass-1 aggregate slice this provider holds for
    * `collectionName` (bd tea-rags-mcp-weno4). Called on the MAIN-thread provider
@@ -630,7 +630,9 @@ export interface EnrichmentProvider {
    * pass-1 store omits it and the injection is simply absent, which is what git
    * does. A collection with no graph yet yields an empty list, not an error.
    */
-  readPersistedPass1Aggregates?: (collectionName: PhysicalCollectionName) => Promise<CodegraphPass1FileAggregates[]>;
+  readPersistedPass1Aggregates?: (
+    physicalCollectionName: PhysicalCollectionName,
+  ) => Promise<CodegraphPass1FileAggregates[]>;
   /**
    * Narrow repo-relative `paths` to the ones this provider's per-file store can
    * ever hold a row for (bd tea-rags-mcp-65bkl). The write-side counterpart of
@@ -699,7 +701,7 @@ export interface EnrichmentProvider {
    * and, when true, drives `runFinalizeOnly` so the provider's finalize
    * recomputes. Absent ⇒ the provider keeps no such state.
    */
-  hasStaleDerivedState?: (collectionName?: PhysicalCollectionName) => Promise<boolean>;
+  hasStaleDerivedState?: (physicalCollectionName?: PhysicalCollectionName) => Promise<boolean>;
   /**
    * Optional — the whole-collection work a provider's finalize ends with, for a
    * reindex that finalized nothing (bd tea-rags-mcp-l1ot.2): a deletion-only
@@ -767,7 +769,7 @@ export interface EnrichmentProvider {
    * cross-pass (full index). Idempotent. Providers without an input spill (git)
    * omit this.
    */
-  beginExtractionRun?: (collectionName?: PhysicalCollectionName) => void;
+  beginExtractionRun?: (physicalCollectionName?: PhysicalCollectionName) => void;
   /**
    * Cross-pass end-of-file-phase seam — mirror of `beginExtractionRun`. Called by
    * `CompletionRunner` on the MAIN-thread provider AFTER the file phase drains
@@ -781,7 +783,7 @@ export interface EnrichmentProvider {
    * the MAIN↔WORKER instance boundary. Providers without an input spill (git) omit
    * this.
    */
-  endExtractionRun?: (collectionName?: PhysicalCollectionName) => Promise<void>;
+  endExtractionRun?: (physicalCollectionName?: PhysicalCollectionName) => Promise<void>;
   /**
    * Pass-1 fan-out, extraction half. Parse + walk `paths` and return the
    * records — nothing else. MUST be pure with respect to everything the

@@ -32,8 +32,11 @@ export interface QuarantineArtifactStore {
  * side effects at construction.
  */
 export interface CodegraphFootprintStore {
-  cloneDatabase: (sourceCollection: PhysicalCollectionName, targetCollection: PhysicalCollectionName) => Promise<void>;
-  removeCollection: (collectionName: PhysicalCollectionName) => Promise<boolean>;
+  cloneDatabase: (
+    sourcePhysicalCollectionName: PhysicalCollectionName,
+    targetPhysicalCollectionName: PhysicalCollectionName,
+  ) => Promise<void>;
+  removeCollection: (physicalCollectionName: PhysicalCollectionName) => Promise<boolean>;
   /** Every `<base>.duckdb` / `<base>_v<N>.duckdb` on disk, as collection names. */
   listCollectionDbNames: (baseCollectionName: string) => PhysicalCollectionName[];
 }

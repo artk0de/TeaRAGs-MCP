@@ -93,7 +93,7 @@ export class TracePathOps {
 
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
     // No resolver, or a failed one: the addressed name, resolved against no aliases.
-    const active = this.deps.resolveActiveCollection
+    const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
@@ -101,7 +101,7 @@ export class TracePathOps {
 
     let handle: CollectionGraphHandle | undefined;
     try {
-      handle = await this.deps.pool.acquireReader(active);
+      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch {
       return EMPTY;
     }
@@ -141,7 +141,7 @@ export class TracePathOps {
     const nodes = [...new Set(paths.flat())];
     const symbolIds = [...new Set(nodes.map((key) => parseFileScopedSymbolKey(key).symbolId))];
     const chunks = await this.deps.qdrant.scrollBySymbolIds(
-      active,
+      activePhysicalCollectionName,
       symbolIds,
       nodes.length * HYDRATION_SCROLL_HEADROOM,
     );

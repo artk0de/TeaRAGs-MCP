@@ -109,7 +109,8 @@ async function listVersionsOf(qdrant: QdrantManager, collection: string): Promis
   try {
     const prefix = `${collection}_v`;
     return (await qdrant.listCollections()).filter(
-      (name) => name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)),
+      (physicalCollectionName) =>
+        physicalCollectionName.startsWith(prefix) && /^\d+$/.test(physicalCollectionName.slice(prefix.length)),
     );
   } catch {
     return [];
@@ -162,18 +163,18 @@ export async function claimVersionedCollection(args: {
   qdrant: QdrantManager;
   baseCollectionName: CollectionAlias;
   firstVersion: number;
-  createLeasedCollection: (versionedName: PhysicalCollectionName) => Promise<void>;
+  createLeasedCollection: (physicalCollectionName: PhysicalCollectionName) => Promise<void>;
 }): Promise<ClaimedCollectionVersion> {
-  const { qdrant, baseCollectionName, firstVersion, createLeasedCollection } = args;
+  const { qdrant, baseCollectionName: aliasCollectionName, firstVersion, createLeasedCollection } = args;
 
   for (let version = firstVersion; version < firstVersion + VERSION_CLAIM_ATTEMPT_LIMIT; version++) {
-    const versionedName = versionedPhysicalCollectionName(baseCollectionName, version);
+    const physicalCollectionName = versionedPhysicalCollectionName(aliasCollectionName, version);
 
-    if (await qdrant.collectionExists(versionedName)) {
-      if (await isCollectionBuildInFlight(qdrant, versionedName)) {
+    if (await qdrant.collectionExists(physicalCollectionName)) {
+      if (await isCollectionBuildInFlight(qdrant, physicalCollectionName)) {
         if (isDebug()) {
           console.error(
-            `[CollectionBuildLease] ${versionedName} is being built by a live run — trying the next version`,
+            `[CollectionBuildLease] ${physicalCollectionName} is being built by a live run — trying the next version`,
           );
         }
         continue;
@@ -181,21 +182,23 @@ export async function claimVersionedCollection(args: {
       // Nobody holds the lease: a crashed run's leftover, or a completed build
       // the alias has moved off. Reclaim the number rather than climb past it.
       if (isDebug()) {
-        console.error(`[CollectionBuildLease] ${versionedName} is dead (no live lease) — reclaiming it`);
+        console.error(`[CollectionBuildLease] ${physicalCollectionName} is dead (no live lease) — reclaiming it`);
       }
-      await qdrant.deleteCollection(versionedName);
+      await qdrant.deleteCollection(physicalCollectionName);
     }
 
     try {
-      await createLeasedCollection(versionedName);
-      return { collectionName: versionedName, version };
+      await createLeasedCollection(physicalCollectionName);
+      return { collectionName: physicalCollectionName, version };
     } catch (err) {
       if (!(err instanceof CollectionAlreadyExistsError)) throw err;
       if (isDebug()) {
-        console.error(`[CollectionBuildLease] lost the create race for ${versionedName} — trying the next version`);
+        console.error(
+          `[CollectionBuildLease] lost the create race for ${physicalCollectionName} — trying the next version`,
+        );
       }
     }
   }
 
-  throw new VersionedCollectionClaimError(baseCollectionName, firstVersion, VERSION_CLAIM_ATTEMPT_LIMIT);
+  throw new VersionedCollectionClaimError(aliasCollectionName, firstVersion, VERSION_CLAIM_ATTEMPT_LIMIT);
 }

@@ -339,7 +339,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   constructor(
     private readonly socketPath: string,
-    private readonly collection: PhysicalCollectionName,
+    private readonly physicalCollectionName: PhysicalCollectionName,
     opts?: DaemonClientOptions,
   ) {
     this.connectTimeoutMs = opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -450,7 +450,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
-    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } });
+    const frame = encodeFrame({ id, op, params: { collection: this.physicalCollectionName, ...params } });
     // A non-replayable call starts out as if already retried: a connection loss
     // settles it rather than re-sending it.
     const retried = options.replayable === false;
@@ -580,7 +580,9 @@ export class DaemonGraphDbClient implements GraphDbClient {
       return;
     }
     if (silentForMs >= this.livenessProbeIntervalMs) {
-      this.sock?.write(encodeFrame({ id: this.nextId++, op: "ping", params: { collection: this.collection } }));
+      this.sock?.write(
+        encodeFrame({ id: this.nextId++, op: "ping", params: { collection: this.physicalCollectionName } }),
+      );
     }
   }
 

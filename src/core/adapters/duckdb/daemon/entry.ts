@@ -348,8 +348,8 @@ async function startOwnedDaemon(
     resources: options.resources,
     // A closed client takes its governor entry with it (bd tea-rags-mcp-amh78),
     // so a client replacing it for the same collection is raised on its own.
-    onCollectionClientClosed: (collectionName) => {
-      governor.forgetCollection(collectionName);
+    onCollectionClientClosed: (physicalCollectionName) => {
+      governor.forgetCollection(physicalCollectionName);
     },
     // Per-collection idle eviction (bd tea-rags-mcp-nlls): the process-level
     // idle timer watches SOCKET clients, so with any MCP server connected it

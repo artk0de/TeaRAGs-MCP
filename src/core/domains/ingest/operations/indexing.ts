@@ -72,7 +72,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       errors: [],
     };
 
-    const { absolutePath, collectionName } = await this.resolveContext(path);
+    const { absolutePath, collectionName: aliasCollectionName } = await this.resolveContext(path);
     // Held outside the try so the failure path knows which versioned collection
     // this run created and can discard it (bd tea-rags-mcp-8pymz).
     let build: SetupResult | undefined;
@@ -89,7 +89,12 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // "qdrant-setup" stage (csyve) = collection exists-check / version bump /
       // create / schema init / alias bookkeeping before any chunk is ingested.
       const qdrantSetupStart = Date.now();
-      const setup = await this.setupCollection(collectionName, absolutePath, options, overrides?.modelInfo?.dimensions);
+      const setup = await this.setupCollection(
+        aliasCollectionName,
+        absolutePath,
+        options,
+        overrides?.modelInfo?.dimensions,
+      );
       build = setup;
       pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
       /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
@@ -105,7 +110,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // Poison-pill quarantine is bound to the base collection's snapshot dir.
       // A full reindex (forceReindex) wipes the slate; otherwise broken files
       // recorded on this pass are retried by the next reindex_changes.
-      const quarantineStore = new QuarantineStore(this.snapshotDir, collectionName);
+      const quarantineStore = new QuarantineStore(this.snapshotDir, aliasCollectionName);
       if (options?.forceReindex) {
         await quarantineStore.clearAll();
       }
@@ -116,7 +121,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // synchronizer is held for `saveSnapshot` below, which reuses the cached
       // result instead of hashing everything a second time. Without the stamp
       // every row lands NULL and the NEXT run repairs the entire corpus.
-      const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
+      const synchronizer = this.deps.createSynchronizer(absolutePath, aliasCollectionName);
       const contentHashes = await synchronizer.computeContentHashes(files);
 
       const ctx = this.initProcessing(
@@ -183,10 +188,10 @@ export class IndexPipeline extends BaseIndexingPipeline {
             totalFinal: true,
           });
 
-          await this.finalizeAlias(collectionName, setup);
+          await this.finalizeAlias(aliasCollectionName, setup);
           await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
           await this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion);
-          await this.recordRegistryEntry(collectionName, absolutePath);
+          await this.recordRegistryEntry(aliasCollectionName, absolutePath);
 
           const enrichmentResult = getEnrichmentStatus();
           stats.enrichmentStatus = enrichmentResult.status;
@@ -202,11 +207,16 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // still served by something else, so an interrupted FIRST index keeps the
       // only data it has (bd tea-rags-mcp-8pymz).
       if (build?.ready) {
-        await discardFailedCollectionBuild(this.qdrant, collectionName, build.targetCollection, this.codegraphRemover);
+        await discardFailedCollectionBuild(
+          this.qdrant,
+          aliasCollectionName,
+          build.targetCollection,
+          this.codegraphRemover,
+        );
       }
       this.wrapUnexpectedError(error, IndexingFailedError);
     } finally {
-      const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
+      const cleaner = new SnapshotCleaner(this.snapshotDir, aliasCollectionName);
       await cleaner.cleanupAfterIndexing();
     }
   }
@@ -263,19 +273,19 @@ export class IndexPipeline extends BaseIndexingPipeline {
   }
 
   private async setupCollection(
-    collectionName: CollectionAlias,
+    aliasCollectionName: CollectionAlias,
     absolutePath: string,
     options?: IndexOptions,
     dimensionsOverride?: number,
   ): Promise<SetupResult> {
-    const exists = await this.qdrant.collectionExists(collectionName);
+    const exists = await this.qdrant.collectionExists(aliasCollectionName);
 
     /* v8 ignore next 8 -- defensive guard: facade handles exists-without-force via reindexChanges */
     if (exists && !options?.forceReindex) {
       return {
         ready: false,
         // Never addressed — a not-ready setup indexes nothing.
-        targetCollection: resolvePhysicalCollection(collectionName, []),
+        targetCollection: resolvePhysicalCollection(aliasCollectionName, []),
         aliasVersion: 0,
         isFirstIndex: false,
         isMigration: false,
@@ -286,11 +296,11 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // be lost and hand back a colliding version). The snapshot is still
     // loaded/written elsewhere for sync purposes — it is just no longer the
     // version source. See version-resolver.ts.
-    const isAlias = exists ? await this.qdrant.aliases.isAlias(collectionName) : false;
-    const aliasTargetCollection = isAlias
-      ? findAliasTarget(collectionName, await this.qdrant.aliases.listAliases())
+    const isAlias = exists ? await this.qdrant.aliases.isAlias(aliasCollectionName) : false;
+    const aliasTargetPhysicalCollectionName = isAlias
+      ? findAliasTarget(aliasCollectionName, await this.qdrant.aliases.listAliases())
       : undefined;
-    const allCollections = await this.qdrant.listCollections();
+    const allPhysicalCollectionNames = await this.qdrant.listCollections();
 
     // Detect migration: real collection exists but is not an alias
     const isMigration = exists && !isAlias;
@@ -299,25 +309,25 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // collections (orphans), so a new version never re-collides with state Qdrant
     // already holds.
     const computedVersion = computeNewVersion({
-      collectionName,
-      aliasTargetCollection,
-      allCollections,
+      collectionName: aliasCollectionName,
+      aliasTargetCollection: aliasTargetPhysicalCollectionName,
+      allCollections: allPhysicalCollectionNames,
       isMigration,
     });
     // The collection to switch the alias away from is exactly what the alias
     // currently points to (undefined on first index / migration).
-    const previousCollection = aliasTargetCollection;
+    const previousPhysicalCollectionName = aliasTargetPhysicalCollectionName;
 
     // Orphan cleanup before creating new version — also drops the per-version
     // codegraph DuckDB file for each deleted orphan (best-effort, non-fatal).
-    await cleanupOrphanedVersions(this.qdrant, collectionName, this.codegraphRemover);
+    await cleanupOrphanedVersions(this.qdrant, aliasCollectionName, this.codegraphRemover);
 
     // Ancient-orphan sweep: reclaim `<base>_v<N>.duckdb` files whose Qdrant
     // collection is already gone (invisible to cleanupOrphanedVersions, which
     // only iterates live Qdrant collections). Skips the active alias target and
     // any DB still backed by a live Qdrant collection. Best-effort, non-fatal.
     if (this.codegraphLister && this.codegraphRemover) {
-      await sweepCodegraphOrphans(this.qdrant, collectionName, this.codegraphLister, this.codegraphRemover);
+      await sweepCodegraphOrphans(this.qdrant, aliasCollectionName, this.codegraphLister, this.codegraphRemover);
     }
 
     // Take the version. `computedVersion` is only a starting point: it comes
@@ -329,11 +339,11 @@ export class IndexPipeline extends BaseIndexingPipeline {
     const vectorSize = await this.resolveVectorSize(dimensionsOverride);
     const claim = await claimVersionedCollection({
       qdrant: this.qdrant,
-      baseCollectionName: collectionName,
+      baseCollectionName: aliasCollectionName,
       firstVersion: computedVersion,
-      createLeasedCollection: async (name) => {
+      createLeasedCollection: async (physicalCollectionName) => {
         await this.qdrant.createCollection(
-          name,
+          physicalCollectionName,
           vectorSize,
           "Cosine",
           this.config.enableHybridSearch,
@@ -343,25 +353,32 @@ export class IndexPipeline extends BaseIndexingPipeline {
         // Publish the lease immediately: until this marker lands, no other run
         // can tell this collection apart from an abandoned one. Schema init
         // waits — it is a dozen round trips of blind window otherwise.
-        await storeIndexingMarker(this.qdrant, this.embeddings, name, false, undefined, this.teaRagsVersion);
+        await storeIndexingMarker(
+          this.qdrant,
+          this.embeddings,
+          physicalCollectionName,
+          false,
+          undefined,
+          this.teaRagsVersion,
+        );
       },
     });
-    const versionedName = claim.collectionName;
+    const targetPhysicalCollectionName = claim.collectionName;
 
     if (isDebug()) {
       console.error(
-        `[Index] Setup: version=${claim.version} (computed ${computedVersion}), target=${versionedName}, ` +
-          `previous=${previousCollection ?? "none"}, migration=${isMigration}`,
+        `[Index] Setup: version=${claim.version} (computed ${computedVersion}), target=${targetPhysicalCollectionName}, ` +
+          `previous=${previousPhysicalCollectionName ?? "none"}, migration=${isMigration}`,
       );
     }
 
-    const schemaManager = this.deps.createSchemaManager(versionedName);
-    await schemaManager.initializeSchema(versionedName);
+    const schemaManager = this.deps.createSchemaManager(targetPhysicalCollectionName);
+    await schemaManager.initializeSchema(targetPhysicalCollectionName);
 
     return {
       ready: true,
-      targetCollection: versionedName,
-      previousCollection,
+      targetCollection: targetPhysicalCollectionName,
+      previousCollection: previousPhysicalCollectionName,
       aliasVersion: claim.version,
       // First index: nothing exists yet (no alias, no real collection).
       isFirstIndex: !exists && !isMigration,
@@ -401,11 +418,11 @@ export class IndexPipeline extends BaseIndexingPipeline {
    * swallowed (logged in debug) so codegraph cleanup never aborts finalization.
    * No-op when codegraph is disabled (no remover wired).
    */
-  private async removeCodegraphDb(collectionName: PhysicalCollectionName): Promise<void> {
+  private async removeCodegraphDb(physicalCollectionName: PhysicalCollectionName): Promise<void> {
     if (!this.codegraphRemover) return;
-    await this.codegraphRemover(collectionName).catch((err) => {
+    await this.codegraphRemover(physicalCollectionName).catch((err) => {
       if (isDebug()) {
-        console.error(`[Index] codegraph DB cleanup failed for ${collectionName} (non-fatal):`, err);
+        console.error(`[Index] codegraph DB cleanup failed for ${physicalCollectionName} (non-fatal):`, err);
       }
     });
   }

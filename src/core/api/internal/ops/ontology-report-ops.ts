@@ -273,7 +273,7 @@ export class OntologyReportOps {
     const query = this.buildQuery(req, language);
 
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
-    const active = this.deps.resolveActiveCollection
+    const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
@@ -281,7 +281,7 @@ export class OntologyReportOps {
 
     let handle: Awaited<ReturnType<GraphDbClientPool["acquireReader"]>>;
     try {
-      handle = await this.deps.pool.acquireReader(active);
+      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (error) {
       // An unreadable graph must not pass for a clean project.
       const message = error instanceof Error ? error.message : String(error);

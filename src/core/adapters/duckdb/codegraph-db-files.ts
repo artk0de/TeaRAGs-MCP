@@ -75,8 +75,8 @@ export class CodegraphDbFiles {
   }
 
   /** Resolve the disk path for a given collection name. */
-  pathFor(collectionName: PhysicalCollectionName): string {
-    return join(this.dir, `${sanitiseCollectionName(collectionName)}.duckdb`);
+  pathFor(physicalCollectionName: PhysicalCollectionName): string {
+    return join(this.dir, `${sanitiseCollectionName(physicalCollectionName)}.duckdb`);
   }
 
   /**
@@ -92,13 +92,19 @@ export class CodegraphDbFiles {
    * able to ask Qdrant. It cannot see an alias whose generations have no graph
    * file yet; the `PhysicalCollectionName` brand is what covers that.
    */
-  writablePathFor(collectionName: PhysicalCollectionName): string {
-    const dbPath = this.pathFor(collectionName);
+  writablePathFor(physicalCollectionName: PhysicalCollectionName): string {
+    const dbPath = this.pathFor(physicalCollectionName);
     if (existsSync(dbPath)) return dbPath;
-    const base = sanitiseCollectionName(collectionName);
-    const generations = this.listCollectionDbNames(collectionName).filter((name) => name !== base);
-    if (generations.length > 0) {
-      throw new CodegraphShadowDatabaseRefusedError({ collectionName, dbPath, generations });
+    const base = sanitiseCollectionName(physicalCollectionName);
+    const generationPhysicalCollectionNames = this.listCollectionDbNames(physicalCollectionName).filter(
+      (candidatePhysicalCollectionName) => candidatePhysicalCollectionName !== base,
+    );
+    if (generationPhysicalCollectionNames.length > 0) {
+      throw new CodegraphShadowDatabaseRefusedError({
+        collectionName: physicalCollectionName,
+        dbPath,
+        generations: generationPhysicalCollectionNames,
+      });
     }
     return dbPath;
   }
@@ -113,15 +119,15 @@ export class CodegraphDbFiles {
    * happens to drop such a WAL when it creates the file; the pool does not rely
    * on a driver version for it. No-op when the database exists or no WAL does.
    */
-  async discardOrphanedWal(collectionName: PhysicalCollectionName): Promise<void> {
-    const dbPath = this.pathFor(collectionName);
+  async discardOrphanedWal(physicalCollectionName: PhysicalCollectionName): Promise<void> {
+    const dbPath = this.pathFor(physicalCollectionName);
     if (existsSync(dbPath)) return;
     await unlink(`${dbPath}.wal`).catch(() => undefined);
   }
 
   /** Whether a graph database file exists for this collection. */
-  has(collectionName: PhysicalCollectionName): boolean {
-    return existsSync(this.pathFor(collectionName));
+  has(physicalCollectionName: PhysicalCollectionName): boolean {
+    return existsSync(this.pathFor(physicalCollectionName));
   }
 
   /**
@@ -182,12 +188,12 @@ export class CodegraphDbFiles {
    * what keeps that state honest.
    */
   async cloneDatabase(
-    sourceCollection: PhysicalCollectionName,
-    targetCollection: PhysicalCollectionName,
+    sourcePhysicalCollectionName: PhysicalCollectionName,
+    targetPhysicalCollectionName: PhysicalCollectionName,
   ): Promise<void> {
-    const from = this.pathFor(sourceCollection);
+    const from = this.pathFor(sourcePhysicalCollectionName);
     if (!existsSync(from)) return;
-    const to = this.writablePathFor(targetCollection);
+    const to = this.writablePathFor(targetPhysicalCollectionName);
     mkdirSync(dirname(to), { recursive: true });
     const staging = `${to}${CLONE_TMP_SUFFIX}`;
     const stagingWal = `${staging}.wal`;
@@ -217,8 +223,8 @@ export class CodegraphDbFiles {
    * own cache eviction; callers without a pool are responsible for making sure
    * nothing in THIS process still holds the file.
    */
-  async removeFiles(collectionName: PhysicalCollectionName): Promise<void> {
-    const dbPath = this.pathFor(collectionName);
+  async removeFiles(physicalCollectionName: PhysicalCollectionName): Promise<void> {
+    const dbPath = this.pathFor(physicalCollectionName);
     await unlink(dbPath).catch(() => undefined);
     await unlink(`${dbPath}.wal`).catch(() => undefined);
     // An interrupted compaction's staging copy belongs to this database too.
@@ -231,8 +237,8 @@ export class CodegraphDbFiles {
    * `CodegraphFootprintStore` shape: there is no client cache to evict, so the
    * "was a cached entry evicted" answer is always false.
    */
-  async removeCollection(collectionName: PhysicalCollectionName): Promise<boolean> {
-    await this.removeFiles(collectionName);
+  async removeCollection(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
+    await this.removeFiles(physicalCollectionName);
     return false;
   }
 }

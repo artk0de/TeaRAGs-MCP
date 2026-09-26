@@ -35,7 +35,7 @@ const BATCH_SIZE = 100;
  */
 async function writeOverlayOps(
   qdrant: QdrantManager,
-  coll: PhysicalCollectionName,
+  physicalCollectionName: PhysicalCollectionName,
   ops: BatchPayloadOp[],
   levelKey: string,
   optionalKeys: readonly string[] | undefined,
@@ -43,10 +43,10 @@ async function writeOverlayOps(
   const omissions = new OmittedOverlayKeyCollector(levelKey, optionalKeys ?? []);
   for (let i = 0; i < ops.length; i += BATCH_SIZE) {
     const batch = ops.slice(i, i + BATCH_SIZE);
-    if (!(await batchSetPayloadWithRetry(qdrant, coll, batch))) continue;
+    if (!(await batchSetPayloadWithRetry(qdrant, physicalCollectionName, batch))) continue;
     for (const op of batch) omissions.add(op.payload, op.points);
   }
-  await batchDeletePayloadWithRetry(qdrant, coll, omissions.toOps());
+  await batchDeletePayloadWithRetry(qdrant, physicalCollectionName, omissions.toOps());
 }
 
 export class EnrichmentBackfiller {
@@ -56,7 +56,11 @@ export class EnrichmentBackfiller {
     private readonly executor: EnrichmentExecutor,
   ) {}
 
-  async runFor(coll: PhysicalCollectionName, ctx: ProviderContext, runStartedAt: string): Promise<void> {
+  async runFor(
+    physicalCollectionName: PhysicalCollectionName,
+    ctx: ProviderContext,
+    runStartedAt: string,
+  ): Promise<void> {
     const missed = this.applier.getMissedFileChunks();
     if (missed.size === 0) return;
     if (!ctx.effectiveRoot) return;
@@ -83,7 +87,7 @@ export class EnrichmentBackfiller {
       // collection-scoped provider) backfills the right per-collection
       // store, not a stale default one.
       backfillData = await this.executor.runFileSignalsRecovery(ctx.provider, root, missedPaths, {
-        collectionName: coll,
+        collectionName: physicalCollectionName,
       });
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
@@ -115,7 +119,7 @@ export class EnrichmentBackfiller {
       backfilledPaths.push(relPath);
     }
 
-    await writeOverlayOps(this.qdrant, coll, ops, fileKey, ctx.provider.optionalOverlayKeys?.file);
+    await writeOverlayOps(this.qdrant, physicalCollectionName, ops, fileKey, ctx.provider.optionalOverlayKeys?.file);
 
     this.applier.markBackfilled(backfilledPaths);
 
@@ -128,11 +132,11 @@ export class EnrichmentBackfiller {
       durationMs: Date.now() - start,
     });
 
-    await this.backfillChunkSignals(coll, ctx, backfillData, runStartedAt);
+    await this.backfillChunkSignals(physicalCollectionName, ctx, backfillData, runStartedAt);
   }
 
   private async backfillChunkSignals(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
     backfillData: Map<string, FileSignalOverlay>,
     runStartedAt: string,
@@ -168,7 +172,9 @@ export class EnrichmentBackfiller {
 
     let overlays: Map<string, Map<string, ChunkSignalOverlay>>;
     try {
-      overlays = await this.executor.runChunkBatch(ctx.provider, root, scoped, { collectionName: coll });
+      overlays = await this.executor.runChunkBatch(ctx.provider, root, scoped, {
+        collectionName: physicalCollectionName,
+      });
     } catch (error) {
       pipelineLog.enrichmentPhase("CHUNK_BACKFILL_FAILED", {
         provider: ctx.key,
@@ -199,7 +205,7 @@ export class EnrichmentBackfiller {
       }
     }
 
-    await writeOverlayOps(this.qdrant, coll, ops, chunkKey, ctx.provider.optionalOverlayKeys?.chunk);
+    await writeOverlayOps(this.qdrant, physicalCollectionName, ops, chunkKey, ctx.provider.optionalOverlayKeys?.chunk);
 
     pipelineLog.enrichmentPhase("CHUNK_BACKFILL_COMPLETE", {
       provider: ctx.key,
