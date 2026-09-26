@@ -95,7 +95,10 @@ import {
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
-import { collectSchemaColumnSources } from "../src/core/domains/trajectory/codegraph/exclusion.js";
+import {
+  collectSchemaColumnSources,
+  collectStructuralConformanceDerivers,
+} from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { absorbPass1FileState } from "../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
@@ -466,7 +469,11 @@ const SYMBOL_TABLE_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAG
  * this harness's by construction (bd tea-rags-mcp-pkfi7).
  */
 function newProductionRunState(root: string, factory: LanguageFactory): CodegraphRunState {
-  const state = new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
+  const state = new CodegraphRunState(
+    collectSchemaColumnSources(factory),
+    collectDependencyManifestSources(factory),
+    collectStructuralConformanceDerivers(factory),
+  );
   state.bindProjectRoot(root);
   state.loadGemfile(root);
   state.loadDeclaredDependencies(root);

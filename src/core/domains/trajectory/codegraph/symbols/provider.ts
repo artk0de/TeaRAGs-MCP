@@ -62,6 +62,7 @@ import type { CodegraphCollectionCompletionHook } from "../collection-completion
 import {
   buildCodegraphExclusionFilter,
   collectSchemaColumnSources,
+  collectStructuralConformanceDerivers,
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
 import { CodegraphChunkSignalPass } from "./chunk-signal-pass.js";
@@ -307,6 +308,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runState = new CodegraphRunState(
       collectSchemaColumnSources(deps.languageFactory),
       collectDependencyManifestSources(deps.languageFactory),
+      collectStructuralConformanceDerivers(deps.languageFactory),
     );
     this.identifierFinderVocabulary = collectIdentifierFinderVocabulary(deps.languageFactory);
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);

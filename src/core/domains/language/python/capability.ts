@@ -84,6 +84,9 @@ export const capability: LanguageCapability = {
   // Same walker 9, bd tea-rags-mcp-r8hme.12: an import inside an
   // `if TYPE_CHECKING:` body is flagged `typeOnly`, so its file edge moves from
   // `cg_symbols_edges_file` to `cg_symbols_edges_file_type_only`.
+  // Same walker 9, bd tea-rags-mcp-39xca.14: `typing.Protocol` classes are
+  // emitted as `structuralContracts`, and a Protocol-typed receiver's cone
+  // reaches the classes that satisfy it without subclassing it.
   versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level

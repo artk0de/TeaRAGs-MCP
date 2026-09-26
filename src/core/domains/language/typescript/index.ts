@@ -40,8 +40,10 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  StructuralConformanceDeriver,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/index.js";
+import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/index.js";
+import { isEcmascriptSourcePath } from "../shared/ecmascript-symbol-lookup.js";
 import { typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
@@ -111,6 +113,14 @@ export class TypeScriptLanguage implements LanguageProvider {
     passes: TYPESCRIPT_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;
+  /**
+   * Interfaces are structural (bd tea-rags-mcp-39xca.14): a class or factory
+   * carrying an interface's members satisfies it without `implements`. The
+   * ECMAScript family's owners only — a `.js` implementer counts, a Ruby
+   * namesake does not.
+   */
+  readonly structuralConformance: StructuralConformanceDeriver = (input) =>
+    deriveStructuralConformance(input, isEcmascriptSourcePath);
 
   /**
    * The resolver currently bound, with the root it was built for. Single-entry

@@ -97,6 +97,9 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   paramNames: { policy: "hydrate", sliceField: "methodParamNames" },
   classFieldParamLinks: { policy: "hydrate", sliceField: "classFieldParamLinks" },
   typedClassFields: { policy: "hydrate", sliceField: "typedClassFields" },
+  // Structural contracts (bd 39xca.14): the barrier derives conformers of every
+  // contract in the family, so an unwalked interface file still counts.
+  structuralContracts: { policy: "hydrate", sliceField: "structuralContracts" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",

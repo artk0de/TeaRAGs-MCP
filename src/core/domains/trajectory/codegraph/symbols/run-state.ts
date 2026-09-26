@@ -32,6 +32,7 @@ import type {
   RelPath,
   ResolveRunScope,
   ResolveRunStatsRow,
+  StructuralContractDecl,
   SymbolDefinition,
   TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
@@ -39,6 +40,7 @@ import type {
   DependencyManifestSource,
   RubyTypeRef,
   SchemaColumnAccessorSource,
+  StructuralConformanceDeriver,
 } from "../../../../contracts/types/language.js";
 import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
 import { readDeclaredDependencies } from "../../../../infra/dependency-manifests.js";
@@ -281,13 +283,31 @@ const EMPTY_ANCESTRY: Readonly<Record<string, readonly string[]>> =
 /** The hierarchy a family with no inheritance rows sees — stateless, so one instance serves every run. */
 const EMPTY_HIERARCHY_VIEW: HierarchyView = new MapHierarchyView(buildHierarchySnapshot([]));
 
-/** One hierarchy view per family's rows, built at the barrier (bd tea-rags-mcp-qea83). */
+/**
+ * One hierarchy view per family, built at the barrier (bd tea-rags-mcp-qea83):
+ * the family's declared rows plus the `structural` rows derived for it (bd
+ * tea-rags-mcp-39xca.14).
+ */
 function buildHierarchyViewsPerFamily(
   rowsByFamily: ReadonlyMap<string, readonly InheritanceEdgeRow[]>,
+  structuralRowsByFamily: ReadonlyMap<string, readonly InheritanceEdgeRow[]>,
 ): Map<string, HierarchyView> {
   const out = new Map<string, HierarchyView>();
-  for (const [family, rows] of rowsByFamily) out.set(family, new MapHierarchyView(buildHierarchySnapshot(rows)));
+  for (const family of new Set([...rowsByFamily.keys(), ...structuralRowsByFamily.keys()])) {
+    const rows = [...(rowsByFamily.get(family) ?? []), ...(structuralRowsByFamily.get(family) ?? [])];
+    out.set(family, new MapHierarchyView(buildHierarchySnapshot(rows)));
+  }
   return out;
+}
+
+/**
+ * One file's structural contracts with the language that declared them (bd
+ * tea-rags-mcp-39xca.14) — the language names the family the barrier derives
+ * the contracts' conformers in.
+ */
+export interface StructuralContractFile {
+  readonly language: string;
+  readonly contracts: readonly StructuralContractDecl[];
 }
 
 function buildIncludedByPerFamily(
@@ -361,6 +381,12 @@ export class CodegraphRunState {
      * never runs and every framework vocabulary stays active.
      */
     private readonly dependencyManifestSources: readonly DependencyManifestSource[] = [],
+    /**
+     * Structural-conformance derivers of the registered languages, by language
+     * (bd tea-rags-mcp-39xca.14), collected the same way. A family whose
+     * languages offer none derives no `structural` rows.
+     */
+    private readonly structuralConformanceByLanguage: ReadonlyMap<string, StructuralConformanceDeriver> = new Map(),
   ) {}
 
   /**
@@ -621,6 +647,23 @@ export class CodegraphRunState {
   typeDeclarations: Record<string, readonly TypeDeclarationFact[]> = createIdentifierRecord();
 
   /**
+   * Per-run `FileExtraction.structuralContracts`, keyed by the relPath that
+   * declares them, with that file's language (bd tea-rags-mcp-39xca.14). Same
+   * grain and lifecycle as `typeDeclarations`: a re-walk REPLACES the file's
+   * entry and a walk that finds none deletes it. The barrier derives the
+   * family's `structural` hierarchy rows from every entry.
+   */
+  structuralContracts: Record<string, StructuralContractFile> = createIdentifierRecord();
+
+  /**
+   * The `structural` rows the barrier derived, by family (bd
+   * tea-rags-mcp-39xca.14). Kept apart from {@link inheritanceRowsByFamily} on
+   * purpose: those rows are what pass-2 persists and what the nominal
+   * diagnostic reports, and a derived row is neither.
+   */
+  private structuralRowsByFamily = new Map<string, InheritanceEdgeRow[]>();
+
+  /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table NAME
    * (bd tea-rags-mcp-n0zj); several files may declare one name, and the resolver
    * disambiguates by the caller's import map. Re-walking a file replaces its own
@@ -684,7 +727,9 @@ export class CodegraphRunState {
       built.all =
         only !== undefined && rest.length === 0
           ? only
-          : new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
+          : new MapHierarchyView(
+              buildHierarchySnapshot([...this.inheritanceRows, ...[...this.structuralRowsByFamily.values()].flat()]),
+            );
     }
     return built.all;
   }
@@ -971,6 +1016,14 @@ export class CodegraphRunState {
     typedClassFields: (slice) => {
       for (const coordinate of slice.typedClassFields ?? []) this.typedClassFields.add(coordinate);
     },
+    // Batch-wins on the DECLARING relPath, as `typeDeclarations` (bd
+    // tea-rags-mcp-39xca.14). The derivation at the barrier reads the map
+    // unconditionally, so no `markContributed`.
+    structuralContracts: (slice) => {
+      if (slice.structuralContracts !== undefined && !(slice.relPath in this.structuralContracts)) {
+        this.structuralContracts[slice.relPath] = { language: slice.language, contracts: slice.structuralContracts };
+      }
+    },
   };
 
   /**
@@ -1195,6 +1248,50 @@ export class CodegraphRunState {
   }
 
   /**
+   * The `structural` rows of every family that declares a contract and whose
+   * language offers a deriver (bd tea-rags-mcp-39xca.14). The owners come from
+   * the project-wide symbol table — one short-name lookup per distinct member
+   * name, never a scan — so an incremental run sees every implementer, walked or
+   * not. The table is resolved only when some family has work.
+   */
+  private async deriveStructuralRows(
+    resolveSymbolTable: () => Promise<GlobalSymbolTable>,
+  ): Promise<Map<string, InheritanceEdgeRow[]>> {
+    const contractsByFamily = new Map<string, StructuralContractDecl[]>();
+    for (const { language, contracts } of Object.values(this.structuralContracts)) {
+      const family = languageFamilyOf(language);
+      const bucket = contractsByFamily.get(family);
+      if (bucket === undefined) contractsByFamily.set(family, [...contracts]);
+      else bucket.push(...contracts);
+    }
+    const out = new Map<string, InheritanceEdgeRow[]>();
+    let symbolTable: GlobalSymbolTable | undefined;
+    for (const [family, contracts] of contractsByFamily) {
+      const derive = this.structuralDeriverFor(family);
+      if (derive === undefined) continue;
+      symbolTable ??= await resolveSymbolTable();
+      const memberNames = new Set(contracts.flatMap((contract) => contract.members.map((member) => member.name)));
+      const table = symbolTable;
+      const memberDefinitions = [...memberNames].flatMap((name) => table.lookupByShortName(name));
+      const rows = derive({
+        contracts,
+        memberDefinitions,
+        nominalRows: this.inheritanceRowsByFamily.get(family) ?? [],
+      });
+      if (rows.length > 0) out.set(family, rows);
+    }
+    return out;
+  }
+
+  /** A deriver offered by any language of `family`, or `undefined`. */
+  private structuralDeriverFor(family: string): StructuralConformanceDeriver | undefined {
+    for (const [language, derive] of this.structuralConformanceByLanguage) {
+      if (languageFamilyOf(language) === family) return derive;
+    }
+    return undefined;
+  }
+
+  /**
    * Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2): the
    * run-global maps are frozen, so build the hierarchy view and include-by index
    * ONCE, then discover the self-dispatch templates.
@@ -1213,7 +1310,13 @@ export class CodegraphRunState {
     if (loadPersistedPass1Aggregates !== undefined) {
       await this.hydratePersistedPass1Aggregates(loadPersistedPass1Aggregates);
     }
-    this.hierarchyByFamily = { perFamily: buildHierarchyViewsPerFamily(this.inheritanceRowsByFamily) };
+    // Structural conformance (bd tea-rags-mcp-39xca.14): derived from the
+    // hydrated contracts and the nominal rows, so it runs after hydration and
+    // before the views are built — the cone reads it through `getDescendants`.
+    this.structuralRowsByFamily = await this.deriveStructuralRows(resolveSymbolTable);
+    this.hierarchyByFamily = {
+      perFamily: buildHierarchyViewsPerFamily(this.inheritanceRowsByFamily, this.structuralRowsByFamily),
+    };
     this.includedByFamily = buildIncludedByPerFamily(this.ancestorsByFamily, this.prependedAncestorsByFamily);
     // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo): only here are the
     // ancestry map (which classes are models) and the `self.table_name` overrides
@@ -1340,6 +1443,8 @@ export class CodegraphRunState {
       this.moduleReexports = createIdentifierRecord();
       this.buildConstraintsByFile = createIdentifierRecord();
       this.typeDeclarations = createIdentifierRecord();
+      this.structuralContracts = createIdentifierRecord();
+      this.structuralRowsByFamily = new Map();
       this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
       this.dispatchTables = createIdentifierRecord();
       this.callbackParams = createIdentifierRecord();
@@ -1531,6 +1636,8 @@ export class CodegraphRunState {
     this.moduleReexports = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
+    this.structuralContracts = createIdentifierRecord();
+    this.structuralRowsByFamily = new Map();
     this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
     this.dispatchTables = createIdentifierRecord();
     this.callbackParams = createIdentifierRecord();
@@ -1576,6 +1683,8 @@ export class CodegraphRunState {
     this.moduleReexports = createIdentifierRecord();
     this.buildConstraintsByFile = createIdentifierRecord();
     this.typeDeclarations = createIdentifierRecord();
+    this.structuralContracts = createIdentifierRecord();
+    this.structuralRowsByFamily = new Map();
     this.structuredReturnTypesByFamily = new LanguageFamilyRecord();
     this.dispatchTables = createIdentifierRecord();
     this.callbackParams = createIdentifierRecord();
@@ -1706,6 +1815,13 @@ export class CodegraphRunState {
       this.typeDeclarations[extraction.relPath] = extraction.typeDeclarations;
     } else if (extraction.relPath in this.typeDeclarations) {
       delete this.typeDeclarations[extraction.relPath];
+    }
+    // The file's structural contracts under its own path (bd
+    // tea-rags-mcp-39xca.14), same replace-or-drop lifecycle.
+    if (extraction.structuralContracts !== undefined && extraction.structuralContracts.length > 0) {
+      this.structuralContracts[extraction.relPath] = { language, contracts: extraction.structuralContracts };
+    } else if (extraction.relPath in this.structuralContracts) {
+      delete this.structuralContracts[extraction.relPath];
     }
     // Program-wide instantiation set for the cone resolver's RTA pruning (bd
     // tea-rags-mcp-pffv), regardless of which file instantiates the type.

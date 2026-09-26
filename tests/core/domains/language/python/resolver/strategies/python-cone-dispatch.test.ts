@@ -10,7 +10,10 @@ import {
   type InheritanceEdge,
   type NamedSymbol,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import { PythonLanguage } from "../../../../../../../src/core/domains/language/python/index.js";
 import { PythonCallResolver } from "../../../../../../../src/core/domains/language/python/resolver/index.js";
+import { MapHierarchyView } from "../../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import { buildHierarchySnapshot } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): NamedSymbol => ({
@@ -197,5 +200,41 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
       if (prev === undefined) delete process.env.CODEGRAPH_PY_CONE_MAX;
       else process.env.CODEGRAPH_PY_CONE_MAX = prev;
     }
+  });
+});
+
+/**
+ * bd tea-rags-mcp-39xca.14 — a receiver typed by a `typing.Protocol` reaches the
+ * classes that satisfy it WITHOUT subclassing it: the Python language's deriver
+ * adds their `structural` rows and the unchanged cone fans out over them.
+ */
+describe("PythonCallResolver.resolveDispatch — Protocol receiver, structural implementers (39xca.14)", () => {
+  it("fans a Protocol-typed call out to every structural implementer", () => {
+    const speaker: [string, NamedSymbol[]] = [
+      "app/protocols.py",
+      [
+        sym("Speaker", "Speaker", "app/protocols.py", []),
+        sym("Speaker#speak", "speak", "app/protocols.py", ["Speaker"]),
+      ],
+    ];
+    const symbolTable = tableWith(speaker, dog, cat);
+    const rows = new PythonLanguage().structuralConformance({
+      contracts: [{ name: "Speaker", members: [{ name: "speak", params: 0 }] }],
+      memberDefinitions: symbolTable.lookupByShortName("speak"),
+      nominalRows: [],
+    });
+    const hierarchy = new MapHierarchyView(buildHierarchySnapshot(rows));
+
+    const out = edgesOf(
+      new PythonCallResolver(DEFAULT_AMBIGUOUS_RESOLVE_MODE).resolveDispatch(
+        call,
+        ctx({ symbolTable, localBindings: { pet: [{ line: 1, type: "Speaker" }] }, hierarchy }),
+      ),
+    );
+
+    expect(sortEdges(out).map((edge) => [edge.targetSymbolId, edge.edgeKind, edge.confidence])).toEqual([
+      ["Cat#speak", "cone", 0.5],
+      ["Dog#speak", "cone", 0.5],
+    ]);
   });
 });

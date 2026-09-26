@@ -71,6 +71,7 @@ const EXPECTED_POLICY = {
   paramNames: "hydrate",
   classFieldParamLinks: "hydrate",
   typedClassFields: "hydrate",
+  structuralContracts: "hydrate",
   paramTypes: "batchOnly",
   derivedClassFieldTypes: "batchOnly",
 } as const satisfies Record<RunGlobalMapField, "hydrate" | "batchOnly">;
@@ -106,6 +107,8 @@ const PERSISTED_KEY_ORDER = [
   "methodParamNames",
   "classFieldParamLinks",
   "typedClassFields",
+  // bd 39xca.14 — appended after the parameter family, so older rows keep their bytes.
+  "structuralContracts",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -133,6 +136,7 @@ function everyChannelExtraction(): FileExtraction {
     knownTargetCallArgs: [{ targets: ["Firm#initialize"], argTypes: [{ form: "instance", name: "Account" }] }],
     classFieldParamLinks: { Account: { "@firm": { method: "initialize", param: "firm" } } },
     classFieldTypes: { Account: { "@name": "String" } },
+    structuralContracts: [{ name: "Billable", members: [{ name: "charge", params: 1 }] }],
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     instantiatedTypes: ["Account"],
