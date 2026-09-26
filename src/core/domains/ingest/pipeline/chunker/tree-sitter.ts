@@ -128,6 +128,12 @@ export class TreeSitterChunker implements CodeChunker {
   private static readonly MERGE_GAP = 2;
   /** Chunk types eligible for merging */
   private static readonly MERGEABLE_TYPES = new Set(["block", "interface"]);
+  /**
+   * Node types that declare a type and nothing executable — interfaces,
+   * traits, protocols, type aliases. Their oversized parts keep the
+   * declaration's own chunkType instead of `"function"` (bd tea-rags-mcp-xdt5u).
+   */
+  private static readonly TYPE_ONLY_DECLARATION = /interface|trait|protocol_declaration|type_alias/;
 
   /**
    * Build symbolId from name and optional parentName.
@@ -505,9 +511,16 @@ export class TreeSitterChunker implements CodeChunker {
 
   /**
    * Oversized node without valid children — split on its statement boundaries.
-   * The parts keep the node's identity: `chunkType: "function"` and the node's
-   * own symbolId as the base of `#partN`, so the codegraph owner rule and
-   * find_symbol both fold them back into the one symbol.
+   * The parts keep the node's identity: its chunkType and its own symbolId as
+   * the base of `#partN`, so the codegraph owner rule and find_symbol both fold
+   * them back into the one symbol.
+   *
+   * The chunkType is `"function"` — the executable body this path mostly
+   * sees — except for a type-only declaration, whose parts carry the chunkType
+   * the unsplit declaration gets (bd tea-rags-mcp-xdt5u). Stamping an
+   * interface's parts `"function"` passed them through `coreLogic`, and
+   * `decomposition` then ranked a 400-line interface as a god-method by its
+   * `methodLines`: splitting is a size decision, never a kind decision.
    */
   private chunkOversizedNode(
     node: AstNode,
@@ -517,9 +530,12 @@ export class TreeSitterChunker implements CodeChunker {
     language: string,
     chunks: CodeChunk[],
   ): void {
+    const chunkType = TreeSitterChunker.TYPE_ONLY_DECLARATION.test(node.type)
+      ? this.getChunkType(node.type)
+      : "function";
     this.emitSplitSymbol(
       node,
-      { symbolId: this.buildSymbolId(parentName), name: parentName, chunkType: "function" },
+      { symbolId: this.buildSymbolId(parentName), name: parentName, chunkType },
       code,
       filePath,
       language,
