@@ -849,7 +849,7 @@ describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_s
 //
 // znxg8 made the pass-1→pass-2 barrier hydrate its run-global registries from
 // `cg_pass1_aggregates` for every file the run did not walk. That read goes through
-// `GraphDbClient.listAllPass1Aggregates`, a NEW daemon op — and codegraph enrichment
+// `GraphDbClient.listPass1Aggregates`, a NEW daemon op — and codegraph enrichment
 // runs in a worker thread whose `GraphDbClientPool` is built WITHOUT a `daemonRestart`
 // hook (`codegraph/factory.ts`; only `bootstrap/factory.ts` wires one). A pool with no
 // respawn hook deliberately TOLERATES a daemon built from other source
@@ -857,7 +857,7 @@ describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_s
 // daemon that has no such op at all:
 //
 //   [tea-rags] codegraph pass-1 aggregate hydration failed:
-//   unknown daemon op: listAllPass1Aggregates
+//   unknown daemon op: listPass1Aggregates
 //
 // The existing guard catches it and the run continues — which silently turns the whole
 // znxg8 repair back into the batch-scoped registry it was written to replace. Observed
@@ -942,7 +942,7 @@ describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stal
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("narrows the entry from INJECTED rows when the daemon has no listAllPass1Aggregates op", async () => {
+  it("narrows the entry from INJECTED rows when the daemon has no listPass1Aggregates op", async () => {
     const paths = writeFixture();
     // Run 1 — full corpus. This is the run that WRITES `cg_pass1_aggregates`.
     await provider.streamFileBatch(root, paths, { collectionName: COLLECTION });
@@ -955,12 +955,12 @@ describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stal
 
     // What the MAIN thread does before dispatching finalize to the worker: read the
     // persisted slices off its own respawn-capable pool.
-    const injected = await provider.readPersistedPass1Aggregates(COLLECTION);
+    const injected = await provider.readPersistedPass1Aggregates(COLLECTION, []);
     expect(injected.length).toBeGreaterThan(0);
 
     // The stale daemon: the op the worker's own read would call does not exist.
-    client.listAllPass1Aggregates = async () => {
-      throw new Error("unknown daemon op: listAllPass1Aggregates");
+    client.listPass1Aggregates = async () => {
+      throw new Error("unknown daemon op: listPass1Aggregates");
     };
 
     // Run 2 — the caller alone changed, which is what an incremental reindex walks.

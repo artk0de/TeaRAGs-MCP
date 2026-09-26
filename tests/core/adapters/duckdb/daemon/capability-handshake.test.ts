@@ -172,19 +172,17 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     const advertised = (res as { result: DaemonHandshakeResult }).result.supportedOps ?? [];
     expect([...advertised].sort()).toEqual([...DAEMON_OPS].sort());
 
-    const trimmed = new CodegraphDaemonServer(pool, "fp", undefined, withoutOps("listAllPass1Aggregates"));
+    const trimmed = new CodegraphDaemonServer(pool, "fp", undefined, withoutOps("listPass1Aggregates"));
     const trimmedRes = await trimmed.handle({
       id: 2,
       op: "handshake",
       params: { collection: "code_caps_trim_v1", buildFingerprint: "fp" },
     });
-    expect((trimmedRes as { result: DaemonHandshakeResult }).result.supportedOps).not.toContain(
-      "listAllPass1Aggregates",
-    );
+    expect((trimmedRes as { result: DaemonHandshakeResult }).result.supportedOps).not.toContain("listPass1Aggregates");
     // What it advertises is what it dispatches: the op is genuinely gone.
     const call = await trimmed.handle({
       id: 3,
-      op: "listAllPass1Aggregates",
+      op: "listPass1Aggregates",
       params: { collection: "code_caps_trim_v1" },
     });
     expect(call.ok).toBe(false);
@@ -207,7 +205,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     expect(new Set([...REQUIRED_DAEMON_OPS, ...LEGACY_TOLERATED_OPS])).toEqual(new Set(DAEMON_OPS));
     expect(REQUIRED_DAEMON_OPS.filter((op) => LEGACY_TOLERATED_OPS.has(op))).toEqual([]);
     // The weno4 op — its silent degrade is what corrupted a live run.
-    expect(REQUIRED_DAEMON_OPS).toContain("listAllPass1Aggregates");
+    expect(REQUIRED_DAEMON_OPS).toContain("listPass1Aggregates");
   });
 
   // bd tea-rags-mcp-1wr7p: a client whose build predates the daemon's may only
@@ -240,7 +238,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
 
   it("a pool without a respawn hook refuses a daemon lacking a required op, before handing out a handle", async () => {
     const paths = makePaths();
-    await startDaemon(paths, "OLD-BUILD", withoutOps("listAllPass1Aggregates"));
+    await startDaemon(paths, "OLD-BUILD", withoutOps("listPass1Aggregates"));
 
     const initHook = vi.fn<CollectionInitHook>(async () => undefined);
     const pool = makePool(paths, { buildFingerprint: "NEW-BUILD" }, initHook);
@@ -248,7 +246,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     const err = await pool.acquireWrite("code_caps_hookless_v1").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CodegraphDaemonBuildSkewError);
     expect(err).toBeInstanceOf(InfraError);
-    expect((err as CodegraphDaemonBuildSkewError).missingOps).toEqual(["listAllPass1Aggregates"]);
+    expect((err as CodegraphDaemonBuildSkewError).missingOps).toEqual(["listPass1Aggregates"]);
     expect((err as CodegraphDaemonBuildSkewError).hint).toMatch(/restart/i);
     expect((err as CodegraphDaemonBuildSkewError).hint).toMatch(/reconnect/i);
     // No handle, so no run work: the symbol-table hydration never ran.
@@ -277,7 +275,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
 
   it("a pool WITH a respawn hook replaces a daemon lacking a required op, even at a matching build fingerprint", async () => {
     const paths = makePaths();
-    await startDaemon(paths, "SAME-BUILD", withoutOps("listAllPass1Aggregates"));
+    await startDaemon(paths, "SAME-BUILD", withoutOps("listPass1Aggregates"));
 
     let respawns = 0;
     const pool = makePool(paths, {
@@ -292,7 +290,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     const handle = await pool.acquireWrite("code_caps_hooked_v1");
     expect(respawns).toBe(1);
     // The op is live on the replacement — a real round-trip, not merely a connect.
-    await expect(handle.graphDb.listAllPass1Aggregates()).resolves.toEqual([]);
+    await expect(handle.graphDb.listPass1Aggregates({ kind: "allLanguages" })).resolves.toEqual([]);
 
     await pool.closeAll();
   });
@@ -321,16 +319,16 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     const dir = makeRoot();
     const socketPath = join(dir, "d.sock");
     await fakeDaemon(socketPath, (r) =>
-      r.op === "listAllPass1Aggregates" ? new Error("unknown daemon op: listAllPass1Aggregates") : null,
+      r.op === "listPass1Aggregates" ? new Error("unknown daemon op: listPass1Aggregates") : null,
     );
 
     const client = new DaemonGraphDbClient(socketPath, "code_caps_required_v1");
     await client.init();
-    const err = await client.listAllPass1Aggregates().catch((e: unknown) => e);
+    const err = await client.listPass1Aggregates({ kind: "allLanguages" }).catch((e: unknown) => e);
     await client.close();
 
     expect(err).toBeInstanceOf(CodegraphDaemonBuildSkewError);
-    expect((err as CodegraphDaemonBuildSkewError).missingOps).toEqual(["listAllPass1Aggregates"]);
+    expect((err as CodegraphDaemonBuildSkewError).missingOps).toEqual(["listPass1Aggregates"]);
     expect((err as CodegraphDaemonBuildSkewError).cause?.message).toMatch(/unknown daemon op/);
   });
 });

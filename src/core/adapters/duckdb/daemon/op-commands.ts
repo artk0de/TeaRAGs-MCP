@@ -10,6 +10,7 @@ import type {
   IdentifierBoundCallee,
   IdentifierReplaceEntry,
   OntologyReportQuery,
+  Pass1AggregateReadScope,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -307,7 +308,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   getRunStats: read(async (graphDb) => graphDb.getRunStats()),
   getEdgeKindDistribution: read(async (graphDb) => graphDb.getEdgeKindDistribution()),
   listAllSymbols: read(async (graphDb) => graphDb.listAllSymbols()),
-  listAllPass1Aggregates: read(async (graphDb) => graphDb.listAllPass1Aggregates()),
+  listPass1Aggregates: read(async (graphDb, p) => graphDb.listPass1Aggregates(p.scope as Pass1AggregateReadScope)),
   listFileContentHashes: read(async (graphDb) => graphDb.listFileContentHashes()),
   getTransitiveImpact: read(async (graphDb, p) =>
     graphDb.getTransitiveImpact(p.relPath as RelPath, p.maxDepth as number | undefined),

@@ -17,7 +17,7 @@
  * raw maps.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { NoopGlobalSymbolTable } from "../../../../../../src/core/adapters/duckdb/daemon/noop-symbol-table.js";
 import type {
@@ -366,5 +366,40 @@ describe("CodegraphRunState keeps each file's type declarations under its own pa
 
     runState.absorb(walkedFile("Sources/World.swift"), []);
     expect(runState.typeDeclarations).toEqual({});
+  });
+});
+
+/**
+ * A TypeScript-only recompute on taxdome hydrated 9,184 persisted Ruby slices
+ * into the TypeScript worker's run-global maps. Every name-keyed map is
+ * partitioned by language family and pass-2 hands a file only its own family's
+ * partition, so no edge moved — but the worker parsed and held every foreign
+ * slice at the barrier. The barrier asks for, and absorbs, only the families
+ * this run walked.
+ */
+describe("CodegraphRunState.seal hydrates only the language families this run walked", () => {
+  const tsFile = (relPath: string): FileExtraction => walkedFile(relPath, { language: "typescript" });
+
+  it("skips a persisted Ruby slice in a TypeScript-only run and still absorbs the ecmascript ones", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(tsFile("src/app.ts"), []);
+
+    await runState.seal(noopTable, async () => [
+      { relPath: "src/base.ts", language: "typescript", classExtends: { Service: "BaseService" } },
+      { relPath: "src/legacy.js", language: "javascript", classExtends: { Legacy: "Base" } },
+      { relPath: "app/models/firm.rb", language: "ruby", classExtends: { Firm: "ApplicationRecord" } },
+    ]);
+
+    expect(runState.classExtends).toEqual({ Service: "BaseService", Legacy: "Base" });
+  });
+
+  it("asks the loader for the walked families' languages only", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(tsFile("src/app.ts"), []);
+    const load = vi.fn(async () => []);
+
+    await runState.seal(noopTable, load);
+
+    expect(load).toHaveBeenCalledWith({ kind: "languages", languages: ["typescript", "javascript"] });
   });
 });

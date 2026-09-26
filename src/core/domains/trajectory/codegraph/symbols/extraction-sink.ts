@@ -40,6 +40,7 @@ import type {
   FileExtraction,
   GlobalSymbolTable,
   IdentifierRow,
+  Pass1AggregateReadScope,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
@@ -94,14 +95,16 @@ export interface CodegraphSinkDeps {
   /** Resolve the in-memory symbol table for the active collection. */
   resolveSymbolTable: (physicalCollectionName?: PhysicalCollectionName) => Promise<GlobalSymbolTable>;
   /**
-   * Read back every persisted per-file pass-1 aggregate slice for the active
-   * collection (bd tea-rags-mcp-znxg8). Absorbed at the barrier for the files
-   * this run did NOT walk, so an incremental run resolves against a project-wide
-   * ancestry / self-dispatch registry rather than a batch-sized one — the
-   * asymmetry that degraded concrete service entry calls onto the shared
-   * template they inherit.
+   * Read back the persisted per-file pass-1 aggregate slices of `scope`'s
+   * languages for the active collection (bd tea-rags-mcp-znxg8). Absorbed at the
+   * barrier for the files this run did NOT walk, so an incremental run resolves
+   * against a project-wide ancestry / self-dispatch registry rather than a
+   * batch-sized one — the asymmetry that degraded concrete service entry calls
+   * onto the shared template they inherit. `seal` names the scope: the families
+   * this run walked.
    */
   loadPersistedPass1Aggregates: (
+    scope: Pass1AggregateReadScope,
     physicalCollectionName?: PhysicalCollectionName,
   ) => Promise<CodegraphPass1FileAggregates[]>;
   runState: CodegraphRunState;
@@ -319,7 +322,7 @@ export function createCodegraphExtractionSink(
         // was not in the batch degrades onto that template.
         await deps.runState.seal(
           async () => deps.resolveSymbolTable(physicalCollectionName),
-          async () => deps.loadPersistedPass1Aggregates(physicalCollectionName),
+          async (scope) => deps.loadPersistedPass1Aggregates(scope, physicalCollectionName),
         );
         if (spillWriteCount > 0) {
           await deps.resolveAndUpsert(spillPath, physicalCollectionName);

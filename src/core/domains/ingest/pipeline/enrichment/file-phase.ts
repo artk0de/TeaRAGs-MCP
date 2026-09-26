@@ -93,6 +93,7 @@ export class FilePhase {
   private contentHashes?: ReadonlyMap<string, string>;
   /** What part of the corpus the run resolves (bd tea-rags-mcp-xpmwg). */
   private coverage: EnrichmentRunCoverage = "subset";
+  private languages: readonly string[] = [];
   private chunkPhase: ChunkPhase | null = null;
 
   constructor(
@@ -118,6 +119,7 @@ export class FilePhase {
     crossPass = false,
     contentHashes?: ReadonlyMap<string, string>,
     runCoverage: EnrichmentRunCoverage = "subset",
+    runLanguages: readonly string[] = [],
   ): void {
     this.contexts = new Map(contexts);
     this.coll = physicalCollectionName;
@@ -126,6 +128,7 @@ export class FilePhase {
     this.crossPass = crossPass;
     this.contentHashes = contentHashes;
     this.coverage = runCoverage;
+    this.languages = runLanguages;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
   }
@@ -147,6 +150,16 @@ export class FilePhase {
    */
   get runCoverage(): EnrichmentRunCoverage {
     return this.coverage;
+  }
+
+  /**
+   * The languages this run is restricted to, empty when it spans the whole
+   * collection — the run spec's `languages`, same convention. `CompletionRunner`
+   * hands it to the persisted pass-1 aggregate read, so a restricted run does not
+   * read, parse and ship to its worker the slices of languages it never walks.
+   */
+  get runLanguages(): readonly string[] {
+    return this.languages;
   }
 
   /**

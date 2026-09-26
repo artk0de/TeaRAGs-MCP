@@ -28,6 +28,7 @@ import type {
   InheritanceEdgeRow,
   KnownTargetCallArgs,
   ModuleReexport,
+  Pass1AggregateReadScope,
   RelPath,
   ResolveRunScope,
   ResolveRunStatsRow,
@@ -49,7 +50,7 @@ import {
   type KnownTargetParamTypes,
 } from "./call-arg-param-types.js";
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
-import { languageFamilyOf, LanguageFamilyRecord } from "./language-family-record.js";
+import { languageFamilyOf, LanguageFamilyRecord, languagesSharingFamilyWith } from "./language-family-record.js";
 import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import {
@@ -1142,17 +1143,24 @@ export class CodegraphRunState {
    *    coordinates still empty.
    *  - **Nothing here counts as an extraction.** `extractedFilesByLanguage` and the
    *    path lists drive run stats and the deferred chunk pass.
+   *  - **Only the families this partition walked hydrate.** Pass-2 resolves only
+   *    the files in `extractedRelPathsByLanguage`, and every name-keyed map hands
+   *    a resolver its own family's partition, so a foreign family's slice moves no
+   *    edge — it only costs a JSON parse and heap at the barrier (a TypeScript-only
+   *    taxdome recompute held 9,184 Ruby slices). The scope is handed to `load` so
+   *    a store read filters in SQL; injected rows are filtered here all the same.
    *
    * A read failure degrades to a batch-scoped registry with a stderr line rather
    * than aborting the run — losing the repair costs recall, losing the run costs
    * the index (same guard as the symbol-table hydration in `codegraph/factory.ts`).
    */
   private async hydratePersistedPass1Aggregates(
-    load: () => Promise<readonly CodegraphPass1FileAggregates[]>,
+    load: (scope: Pass1AggregateReadScope) => Promise<readonly CodegraphPass1FileAggregates[]>,
   ): Promise<void> {
+    const languages = languagesSharingFamilyWith(this.extractedRelPathsByLanguage.keys());
     let persisted: readonly CodegraphPass1FileAggregates[];
     try {
-      persisted = await load();
+      persisted = await load({ kind: "languages", languages });
     } catch (err) {
       process.stderr.write(
         `[tea-rags] codegraph pass-1 aggregate hydration failed: ${(err as Error).message}\n` +
@@ -1162,7 +1170,11 @@ export class CodegraphRunState {
     }
     const walked = new Set<string>(this.mirroredRelPaths);
     for (const relPaths of this.extractedRelPathsByLanguage.values()) for (const p of relPaths) walked.add(p);
-    const hydratable = selectHydratablePass1Aggregates(persisted, walked);
+    const inScope = new Set(languages);
+    const hydratable = selectHydratablePass1Aggregates(
+      persisted.filter((row) => inScope.has(row.language)),
+      walked,
+    );
     if (hydratable.length === 0) return;
 
     // Which maps absorb a slice is `RUN_GLOBAL_MAP_PERSISTENCE`'s call, not this
@@ -1194,7 +1206,7 @@ export class CodegraphRunState {
    */
   async seal(
     resolveSymbolTable: () => Promise<GlobalSymbolTable>,
-    loadPersistedPass1Aggregates?: () => Promise<readonly CodegraphPass1FileAggregates[]>,
+    loadPersistedPass1Aggregates?: (scope: Pass1AggregateReadScope) => Promise<readonly CodegraphPass1FileAggregates[]>,
   ): Promise<void> {
     // Pass-2 starts here, so a new run scope does too (bd tea-rags-mcp-39xca.6).
     this.beginRunScope();

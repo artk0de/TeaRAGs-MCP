@@ -202,8 +202,11 @@ describe("the pass-1 aggregate slice is derived from the registry's hydrate entr
     const [relPath, language, json] = toCgPass1Row(slice) as [string, string, string];
     const persisted = fromCgPass1Row({ rel_path: relPath, language, aggregates_json: json });
 
-    // A run that walked nothing: every fact below can only have come from the row.
+    // A run that walked one factless file of the slice's language — the barrier
+    // hydrates only walked families — so every fact below can only have come
+    // from the row.
     const state = new CodegraphRunState();
+    state.absorb({ relPath: "app/walked.rb", language, imports: [], fileScope: [], chunks: [] }, []);
     await state.seal(noopTable, async () => [persisted]);
 
     for (const [field, entry] of Object.entries(RUN_GLOBAL_MAP_PERSISTENCE)) {
