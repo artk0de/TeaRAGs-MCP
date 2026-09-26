@@ -6,8 +6,8 @@
  * `ts.preProcessFile` scans each file's specifiers (imports, export-from,
  * `require` in JavaScript, `/// <reference path|types|lib>`), and
  * `ts.resolveModuleName` / `ts.resolveTypeReferenceDirective` map them to files
- * over the SAME `ts.ModuleResolutionCache` the batch Programs later resolve
- * through, so the planning walk warms the cache instead of duplicating it. The
+ * through the SAME `TSModuleResolutionMemo` the batch Programs later resolve
+ * through, so the planning walk warms the memo instead of duplicating it. The
  * graph can only UNDER-state a Program: a JSDoc `import("x")` type in a
  * JavaScript file is invisible to the scanner but not to the compiler. That
  * errs on the safe side — a batch's Program still holds every file its roots
@@ -36,6 +36,8 @@ import { dirname, posix, resolve as resolvePath } from "node:path";
 
 import ts from "typescript";
 
+import type { TSModuleResolutionMemo } from "./ts-module-resolution-memo.js";
+
 /** One file of the graph: project source, dependency declaration or lib. */
 export interface TSProgramImportGraphNode {
   /** Compiler path — forward slashes, the form `ts.SourceFile.fileName` reports. */
@@ -59,7 +61,7 @@ export interface TSProgramImportGraphInput {
   /** The host the batch Programs use, so both see the same files and probe memos. */
   readonly host: ts.CompilerHost;
   /** Shared with the batch Programs' module resolution. */
-  readonly moduleResolutionCache: ts.ModuleResolutionCache;
+  readonly moduleResolution: TSModuleResolutionMemo;
 }
 
 /** What classification found in one file, for the prelude decision. */
@@ -187,12 +189,11 @@ class ImportGraphWalk {
    * JSON module needs `resolveJsonModule`, which the resolver does not set.
    */
   private resolveModule(specifier: string, containingFile: string): string | undefined {
-    const { resolvedModule } = ts.resolveModuleName(
+    const { resolvedModule } = this.input.moduleResolution.resolve(
       specifier,
       containingFile,
+      undefined,
       this.input.compilerOptions,
-      this.input.host,
-      this.input.moduleResolutionCache,
     );
     if (resolvedModule === undefined) return undefined;
     const { extension, isExternalLibraryImport, resolvedFileName } = resolvedModule;

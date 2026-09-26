@@ -13,6 +13,7 @@ import { basename, dirname, join } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { TSModuleResolutionMemo } from "../../../../../../src/core/domains/language/typescript/resolver/ts-module-resolution-memo.js";
 import {
   buildTSProgramImportGraph,
   type TSProgramImportGraph,
@@ -52,7 +53,7 @@ describe("buildTSProgramImportGraph (bd tea-rags-mcp-vtuu4)", () => {
       rootNames,
       compilerOptions,
       host,
-      moduleResolutionCache: ts.createModuleResolutionCache(repoRoot, (name) => name, compilerOptions),
+      moduleResolution: new TSModuleResolutionMemo(compilerOptions, host),
     });
   }
 
