@@ -388,6 +388,41 @@ describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags
     expect(edges.fileEdges).toEqual([{ targetRelPath: "src/runner.ts", importText: "./runner" }]);
     expect(edges).not.toHaveProperty("typeOnlyFileEdges");
   });
+
+  it("routes an import flagged typeOnly on imports[] (Python `if TYPE_CHECKING:`) to typeOnlyFileEdges", () => {
+    const seenImports: string[][] = [];
+    const recordingResolver = {
+      resolve: () => null,
+      resolveFileEdges: (ext: FileExtraction) => {
+        seenImports.push(ext.imports.map((i) => i.importText));
+        return importDrivenResolver.resolveFileEdges(ext);
+      },
+    };
+    const pythonRunner = new CallEdgeResolutionRunner(
+      {
+        supported: () => ["python"],
+        create: () => ({ resolver: recordingResolver }),
+      } as unknown as LanguageFactoryDescriptor,
+      new CodegraphRunState(),
+    );
+    const edges = pythonRunner.resolve(
+      {
+        relPath: "src/views.py",
+        language: "python",
+        imports: [
+          { importText: "./forms", startLine: 1 },
+          { importText: "./models", startLine: 3, typeOnly: true },
+        ],
+        fileScope: [],
+        chunks: [],
+      },
+      {} as GlobalSymbolTable,
+    );
+
+    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/forms.ts", importText: "./forms" }]);
+    expect(edges.typeOnlyFileEdges).toEqual([{ targetRelPath: "src/models.ts", importText: "./models" }]);
+    expect(seenImports).toEqual([["./forms"], ["./models"]]);
+  });
 });
 
 describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", () => {

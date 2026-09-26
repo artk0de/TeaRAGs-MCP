@@ -715,6 +715,16 @@ export interface ClassFieldParamLink {
 export interface ImportRef {
   /** Raw import path as written, e.g. `"./utils"`, `"@/lib/foo"`, `"react"`. */
   importText: string;
+  /**
+   * The import binds names for type facts but loads nothing at runtime
+   * (bd tea-rags-mcp-r8hme.12) — Python's `if TYPE_CHECKING:` block. It stays on
+   * `imports[]` because a resolver reads its bindings to type annotations; the
+   * resolution runner routes its FILE edge to the type-only table instead of
+   * the runtime file graph. Contrast {@link FileExtraction.typeOnlyImports},
+   * which holds type-only imports a resolver must not see at all. Absent on
+   * every runtime import.
+   */
+  typeOnly?: true;
   /** Lexical position used by resolvers that need it (TS aliases, Python
    *  relative imports). 1-based line number. */
   startLine: number;

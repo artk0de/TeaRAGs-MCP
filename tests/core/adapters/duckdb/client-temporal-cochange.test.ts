@@ -186,6 +186,22 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
       expect(await linkedPairs()).toEqual({ "protocol.ts|server.ts": true, "server.ts|shapes.ts": false });
     });
 
+    it("links a Python pair joined only by an `if TYPE_CHECKING:` import", async () => {
+      await db.upsertFile({ relPath: "pkg/models.py", language: "python" }, { fileEdges: [], methodEdges: [] });
+      await db.upsertFile(
+        { relPath: "pkg/views.py", language: "python" },
+        {
+          fileEdges: [],
+          methodEdges: [],
+          typeOnlyFileEdges: [{ targetRelPath: "pkg/models.py", importText: ".models" }],
+        },
+      );
+      await db.replaceTemporalCochange(snapshot([edge("pkg/models.py", "pkg/views.py")]));
+
+      expect(await linkedPairs()).toEqual({ "pkg/models.py|pkg/views.py": true });
+      expect(await db.getFanOut("pkg/views.py")).toBe(0);
+    });
+
     it("leaves file fanIn / fanOut and the runtime file graph untouched", async () => {
       await writeServer(["protocol.ts"]);
 

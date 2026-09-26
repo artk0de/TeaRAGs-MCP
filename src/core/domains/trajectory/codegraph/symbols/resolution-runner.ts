@@ -479,16 +479,24 @@ export class CallEdgeResolutionRunner {
     inputs: ResolverInputs,
     resolvedMethodEdges: MethodEdges,
   ): GraphEdges["fileEdges"] {
-    const fileEdgeCtx = this.fileEdgeContext(extraction, symbolTable, inputs);
+    // An import flagged `typeOnly` (Python `if TYPE_CHECKING:`) loads nothing at
+    // runtime, so the runtime file graph is built without it. The same object
+    // is handed on when nothing is flagged — the common case, and the only one
+    // for a language that derives file edges from more than its imports.
+    const runtime = extraction.imports.some((imp) => imp.typeOnly)
+      ? { ...extraction, imports: extraction.imports.filter((imp) => !imp.typeOnly) }
+      : extraction;
+    const fileEdgeCtx = this.fileEdgeContext(runtime, symbolTable, inputs);
     const candidates = resolver.resolveFileEdges
-      ? resolver.resolveFileEdges(extraction, fileEdgeCtx, resolvedMethodEdges)
-      : defaultImportFileEdges(extraction, resolver, fileEdgeCtx);
+      ? resolver.resolveFileEdges(runtime, fileEdgeCtx, resolvedMethodEdges)
+      : defaultImportFileEdges(runtime, resolver, fileEdgeCtx);
     return dedupeFileEdgesByTarget(candidates);
   }
 
   /**
    * The files this one reaches ONLY through type-only imports
-   * (bd tea-rags-mcp-r8hme.12). The type-only list is resolved by the very
+   * (bd tea-rags-mcp-r8hme.12): the `typeOnlyImports` channel plus every
+   * `imports[]` entry flagged `typeOnly`. That list is resolved by the very
    * import→file path the runtime list takes — handed to the same resolver as if
    * it were the file's imports — so a specifier maps to the same file either
    * way. What comes back is kept apart from `fileEdges`: a target a runtime
@@ -503,7 +511,10 @@ export class CallEdgeResolutionRunner {
     inputs: ResolverInputs,
     runtimeFileEdges: GraphEdges["fileEdges"],
   ): NonNullable<GraphEdges["typeOnlyFileEdges"]> {
-    const typeOnlyImports = extraction.typeOnlyImports ?? [];
+    const typeOnlyImports = [
+      ...extraction.imports.filter((imp) => imp.typeOnly),
+      ...(extraction.typeOnlyImports ?? []),
+    ];
     if (typeOnlyImports.length === 0) return [];
     const typeOnlyExtraction: FileExtraction = { ...extraction, imports: typeOnlyImports };
     const ctx = this.fileEdgeContext(typeOnlyExtraction, symbolTable, inputs);
