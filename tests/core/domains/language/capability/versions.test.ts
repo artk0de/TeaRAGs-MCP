@@ -485,10 +485,14 @@ describe("seeded support versions", () => {
       // longer takes its callee's name as its symbolId, so an index built by
       // chunking 1 holds statement blocks claiming the id of the function they
       // call.
+      // ruby chunking 2: bd tea-rags-mcp-j4jrn — the class-body grouper budgets
+      // the reserved header prefix, so groups the header pushed over the cap are
+      // no longer line-cut into `#partN` windows.
       const CHUNKING_BUMPED = new Map([
         ["javascript", 2],
         ["swift", 4],
         ["bash", 2],
+        ["ruby", 2],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

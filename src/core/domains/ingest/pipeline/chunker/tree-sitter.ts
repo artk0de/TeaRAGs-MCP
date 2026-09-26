@@ -647,9 +647,9 @@ export class TreeSitterChunker implements CodeChunker {
         const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
         if (hasHookChain) {
           for (const result of ctx.bodyChunks) {
-            const bodyContent = `${this.bodyChunkPrefix([], containerHeader, result.content)}${result.content}`;
+            const body = this.composeBodyChunkContent([], containerHeader, result.content);
             chunks.push({
-              content: bodyContent,
+              content: body.content,
               startLine: result.startLine,
               endLine: result.endLine,
               metadata: {
@@ -662,6 +662,7 @@ export class TreeSitterChunker implements CodeChunker {
                 parentType: result.parentType ?? parentType,
                 symbolId: result.symbolId ?? this.buildSymbolId(parentName),
                 lineRanges: result.lineRanges,
+                contextPrefix: body.contextPrefix,
               },
             });
           }
@@ -927,7 +928,7 @@ export class TreeSitterChunker implements CodeChunker {
     const partTotals = new Map<string, number>();
     for (const chunk of chunks) {
       if (chunk.content.length <= max) continue;
-      const segments = this.splitContentIntoSegments(chunk.content, max);
+      const segments = this.segmentUnderContextPrefix(chunk, max);
       segmentsOf.set(chunk, segments);
       const key = chunk.metadata.symbolId ?? "";
       partTotals.set(key, (partTotals.get(key) ?? 0) + segments.length);
@@ -948,8 +949,32 @@ export class TreeSitterChunker implements CodeChunker {
     }
     for (let i = 0; i < result.length; i++) {
       result[i].metadata.chunkIndex = i;
+      delete result[i].metadata.contextPrefix;
     }
     return result;
+  }
+
+  /**
+   * Cut an oversized chunk into line segments. A chunk that names its container
+   * through a `contextPrefix` (a hook body chunk: hierarchy + container header)
+   * gets that prefix on EVERY segment, cut out of each segment's budget — a bare
+   * line cut left `#part2+` naming nothing (bd tea-rags-mcp-j4jrn: an RSpec
+   * setup chunk, a Ruby body group with a row wider than its budget). Segment
+   * line indices stay indices into the chunk's content, so the line mapping of
+   * `splitOversizedChunk` reads them unchanged. A prefix taking half the budget
+   * or more is not repeated, as in `emitSplitSymbol`.
+   */
+  private segmentUnderContextPrefix(chunk: CodeChunk, max: number): ContentSegment[] {
+    const prefix = chunk.metadata.contextPrefix;
+    if (!prefix || prefix.length * 2 >= max || !chunk.content.startsWith(prefix)) {
+      return this.splitContentIntoSegments(chunk.content, max);
+    }
+    const prefixLines = prefix.split("\n").length - 1;
+    return this.splitContentIntoSegments(chunk.content.slice(prefix.length), max - prefix.length).map((segment) => ({
+      text: `${prefix}${segment.text}`,
+      firstLine: segment.firstLine + prefixLines,
+      lastLine: segment.lastLine + prefixLines,
+    }));
   }
 
   /**
@@ -1063,7 +1088,22 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private extractContainerHeader(node: AstNode, code: string): string {
     const lines = code.substring(node.startIndex, node.endIndex).split("\n");
-    return lines[0].trim();
+    return lines[this.containerHeaderRow(node) - node.startPosition.row].trim();
+  }
+
+  /**
+   * 0-based row that NAMES the container: the row its `name` starts on, not
+   * its first row. A declaration opening with attribute / decorator /
+   * annotation rows (`@NSApplicationMain`, `@dataclass`, `@Component({...})`)
+   * took the attribute as its header, so no member chunk named the class (bd
+   * tea-rags-mcp-j4jrn). A container with no `name` field (an RSpec
+   * `describe` call, a const-object namespace) keeps its first row.
+   */
+  private containerHeaderRow(node: AstNode): number {
+    const nameRow = this.unwrapDecoratedDefinition(node).childForFieldName("name")?.startPosition.row;
+    return nameRow !== undefined && nameRow > node.startPosition.row && nameRow <= node.endPosition.row
+      ? nameRow
+      : node.startPosition.row;
   }
 
   /**
@@ -1076,7 +1116,7 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * The prefix a hook's body chunk is emitted under: the enclosing hierarchy,
+   * A hook's body chunk as emitted, under its prefix: the enclosing hierarchy,
    * then the container's own header — unless the chunk already opens with the
    * container's first row. A class-body hook writes that row verbatim
    * (`export class X extends Y {`, `class Foo < Bar`), and prefixing the
@@ -1085,10 +1125,22 @@ export class TreeSitterChunker implements CodeChunker {
    * full prefix either way (`bodyChunkPrefixLength`), so dropping the header
    * can only shorten a chunk.
    */
-  private bodyChunkPrefix(hierarchyHeaders: string[], containerHeader: string, content: string): string {
-    const firstRow = content.split("\n", 1)[0].trim();
-    const carriesHeader = firstRow === containerHeader || firstRow.endsWith(` ${containerHeader}`);
-    return `${this.buildHierarchyPrefix(hierarchyHeaders)}${carriesHeader ? "" : `${containerHeader}\n`}`;
+  private composeBodyChunkContent(
+    hierarchyHeaders: string[],
+    containerHeader: string,
+    content: string,
+  ): { content: string; contextPrefix: string } {
+    const firstRow = content.split("\n", 1)[0];
+    const trimmedFirstRow = firstRow.trim();
+    const carriesHeader = trimmedFirstRow === containerHeader || trimmedFirstRow.endsWith(` ${containerHeader}`);
+    const prefix = `${this.buildHierarchyPrefix(hierarchyHeaders)}${carriesHeader ? "" : `${containerHeader}\n`}`;
+    // The rows naming the container — the engine's prefix, plus the hook's own
+    // header row when it wrote one. The `enforceMaxChunkSize` post-pass repeats
+    // them on every part it cuts from this chunk (bd tea-rags-mcp-j4jrn).
+    return {
+      content: `${prefix}${content}`,
+      contextPrefix: carriesHeader ? `${prefix}${firstRow}\n` : prefix,
+    };
   }
 
   /**
@@ -1305,12 +1357,12 @@ export class TreeSitterChunker implements CodeChunker {
 
     // Body chunks from hook chain for this nested container
     for (const result of childCtx.bodyChunks) {
-      const bodyContent =
+      const body =
         hierarchyHeaders.length > 0
-          ? `${this.bodyChunkPrefix(hierarchyHeaders, childHeader, result.content)}${result.content}`
-          : result.content;
+          ? this.composeBodyChunkContent(hierarchyHeaders, childHeader, result.content)
+          : { content: result.content, contextPrefix: undefined };
       chunks.push({
-        content: bodyContent,
+        content: body.content,
         startLine: result.startLine,
         endLine: result.endLine,
         metadata: {
@@ -1323,6 +1375,7 @@ export class TreeSitterChunker implements CodeChunker {
           parentType: result.parentType ?? parentType,
           symbolId: result.symbolId ?? this.buildSymbolId(childName),
           lineRanges: result.lineRanges,
+          ...(body.contextPrefix === undefined ? {} : { contextPrefix: body.contextPrefix }),
         },
       });
     }
@@ -1658,6 +1711,7 @@ export class TreeSitterChunker implements CodeChunker {
       containerEndRow: containerNode.endPosition.row,
       coveredRows,
       containerHeader: this.extractContainerHeader(containerNode, ctx.code),
+      containerHeaderRow: this.containerHeaderRow(containerNode),
       hierarchyPrefix: this.buildHierarchyPrefix(hierarchyHeaders),
       maxChunkSize: this.config.maxChunkSize,
       minContentLength: 50,

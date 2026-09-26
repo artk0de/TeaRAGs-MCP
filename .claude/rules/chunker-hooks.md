@@ -101,6 +101,20 @@ leading comment takes the same split path instead of being line-cut by the
 prefix. Several chunks sharing one symbolId (class-body groups, accessor pairs)
 is by design — never uniquify them.
 
+Every OTHER `#partN` tail names its container too (bd tea-rags-mcp-j4jrn):
+
+- A hook sizes its body chunks with `bodyChunkContentBudget(ctx.config)`, not
+  `maxChunkSize` — the reservation already counts a header row the hook writes
+  itself, so a group fits whole instead of being line-cut.
+- A container remainder's windows after the one holding the header row open with
+  the hierarchy prefix plus the container header.
+- A hook body chunk that still overflows (a setup-only test chunk, a row wider
+  than the budget) is cut by the `enforceMaxChunkSize` post-pass with its
+  transient `contextPrefix` (hierarchy + header rows) repeated on every part.
+- The header is the row the container's `name` starts on, not its first row — a
+  leading attribute / decorator / annotation row (`@NSApplicationMain`) is never
+  the header.
+
 ## What NOT to put in the chain
 
 - Hooks reading `ctx.bodyChunks` after another hook wrote them (post-processing,

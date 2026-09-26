@@ -41,8 +41,17 @@ export interface ContainerRemainderInput {
   containerEndRow: number;
   /** 0-based rows some other chunk already carries (children, body chunks, captured comments). */
   coveredRows: ReadonlySet<number>;
-  /** The container's first row, trimmed — prefixed only when that row is itself covered. */
+  /**
+   * The container's header row, trimmed — prefixed when that row is itself
+   * covered, and on every window after the one that carries it.
+   */
   containerHeader: string;
+  /**
+   * 0-based row `containerHeader` was read from — the row naming the container,
+   * which follows any attribute rows (bd tea-rags-mcp-j4jrn). Defaults to
+   * `containerStartRow`.
+   */
+  containerHeaderRow?: number;
   /** Enclosing containers' headers, already rendered (empty for a top-level container). */
   hierarchyPrefix: string;
   maxChunkSize: number;
@@ -82,10 +91,12 @@ function collectRuns(input: ContainerRemainderInput): number[][] {
  * remainder is empty, is only the header line, or is below the noise floor;
  * one part when it fits
  * `maxChunkSize`; otherwise consecutive windows cut on row boundaries, each
- * carrying the same prefix and its own exact `lineRanges`.
+ * with its own exact `lineRanges`, and every window after the one holding the
+ * header row opening with the hierarchy prefix plus the container header.
  */
 export function planContainerRemainder(input: ContainerRemainderInput): ContainerRemainderPart[] {
-  const { codeLines, containerStartRow, coveredRows, containerHeader, hierarchyPrefix, maxChunkSize } = input;
+  const { codeLines, coveredRows, containerHeader, hierarchyPrefix, maxChunkSize } = input;
+  const headerRow = input.containerHeaderRow ?? input.containerStartRow;
   const runs = collectRuns(input);
   const rows = runs.flat();
   if (rows.length === 0) return [];
@@ -95,7 +106,7 @@ export function planContainerRemainder(input: ContainerRemainderInput): Containe
   // under that same header as its hierarchy prefix. Emitting it anyway turned
   // every constructor-only error class into a `class X extends Y {` + `}` chunk.
   const substantiveRows = rows.filter((row) => !PUNCTUATION_ONLY_ROW.test(codeLines[row]));
-  if (!substantiveRows.some((row) => row !== containerStartRow)) return [];
+  if (!substantiveRows.some((row) => row !== headerRow)) return [];
   const substantive = substantiveRows
     .map((row) => codeLines[row])
     .join("\n")
@@ -105,40 +116,51 @@ export function planContainerRemainder(input: ContainerRemainderInput): Containe
   // The header row is part of the remainder unless something else carries it
   // (a child starting on the container's own first row); then it rides along
   // as context, the same convention child chunks follow.
-  const headerPrefix = coveredRows.has(containerStartRow) ? `${containerHeader}\n` : "";
-  const prefix = `${hierarchyPrefix}${headerPrefix}`;
+  // A window after the one carrying the header row names the container through
+  // the same header prefix — otherwise a top-level container's `#part2+` named
+  // nothing at all (bd tea-rags-mcp-j4jrn).
+  const headerPrefix = `${containerHeader}\n`;
+  const ownHeaderPrefix = coveredRows.has(headerRow) ? headerPrefix : "";
+  const tailPrefix = `${hierarchyPrefix}${headerPrefix}`;
 
   // Cut windows on row boundaries. A blank row inside a run is kept in the
   // text so the code reads as written; the window never starts or ends on one.
-  const windows: number[][][] = [];
+  const windows: { prefix: string; pieces: number[][] }[] = [];
   let window: number[][] = [];
+  let prefix = `${hierarchyPrefix}${ownHeaderPrefix}`;
   let size = prefix.length;
+  let lastPlacedRow = -1;
   for (const run of runs) {
     let piece: number[] = [];
     for (let row = run[0]; row <= run[run.length - 1]; row++) {
       const length = (codeLines[row] ?? "").length + 1;
       if (size + length > maxChunkSize && (piece.length > 0 || window.length > 0)) {
         if (piece.length > 0) window.push(piece);
-        windows.push(window);
+        windows.push({ prefix, pieces: window });
         window = [];
         piece = [];
+        prefix = lastPlacedRow >= headerRow ? tailPrefix : `${hierarchyPrefix}${ownHeaderPrefix}`;
         size = prefix.length;
       }
       piece.push(row);
+      lastPlacedRow = row;
       size += length;
     }
     if (piece.length > 0) window.push(piece);
   }
-  if (window.length > 0) windows.push(window);
+  if (window.length > 0) windows.push({ prefix, pieces: window });
 
   return windows
-    .map((pieces) => pieces.map(trimBlankEdges(codeLines)).filter((piece) => piece.length > 0))
-    .filter((pieces) => pieces.length > 0)
-    .map((pieces) => {
+    .map((w) => ({
+      prefix: w.prefix,
+      pieces: w.pieces.map(trimBlankEdges(codeLines)).filter((piece) => piece.length > 0),
+    }))
+    .filter((w) => w.pieces.length > 0)
+    .map(({ prefix: windowPrefix, pieces }) => {
       const text = pieces.map((piece) => piece.map((row) => codeLines[row]).join("\n")).join("\n");
       const lineRanges = pieces.map((piece) => ({ start: piece[0] + 1, end: piece[piece.length - 1] + 1 }));
       return {
-        content: `${prefix}${text}`.trimEnd(),
+        content: `${windowPrefix}${text}`.trimEnd(),
         startLine: lineRanges[0].start,
         endLine: lineRanges[lineRanges.length - 1].end,
         lineRanges,

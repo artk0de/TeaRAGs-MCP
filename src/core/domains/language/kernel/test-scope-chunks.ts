@@ -32,6 +32,7 @@
  */
 
 import {
+  bodyChunkContentBudget,
   TEST_SCOPE_PARENT_TYPE,
   type BodyChunkResult,
   type HookChunkingConfig,
@@ -58,7 +59,7 @@ export function produceTestScopeChunks(
 ): BodyChunkResult[] {
   // The engine emits every chunk under the container header(s); the example
   // has only what is left of the cap (bd tea-rags-mcp-pi1cl).
-  const contentBudget = config.maxChunkSize - (config.bodyChunkPrefixLength ?? 0);
+  const contentBudget = bodyChunkContentBudget(config);
   const occurrences = new Map<string, number>();
   const disambiguate = (baseId: string): string => {
     const next = (occurrences.get(baseId) ?? 0) + 1;
