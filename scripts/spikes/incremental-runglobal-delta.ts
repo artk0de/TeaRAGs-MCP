@@ -725,6 +725,11 @@ async function main(): Promise<void> {
   const samplePct = Number(flag("--sample-pct", "5"));
   const seed = Number(flag("--seed", "1"));
   const examplesOut = Number(flag("--examples", "10"));
+  // `--dump-full-edges <path>` writes the FULL side's call-edge answers as NDJSON
+  // (`{site, targets}` per call site) so two checkouts can be diffed edge for
+  // edge — a before/after A/B of a resolver change (bd tea-rags-mcp-emazx).
+  const dumpFullEdges = flag("--dump-full-edges", undefined);
+  const dumpedFullAnswers: CallSiteAnswers = new Map();
 
   const factory = new LanguageFactory();
   const composer = new DefaultSymbolIdComposer();
@@ -873,6 +878,7 @@ async function main(): Promise<void> {
     addInto(fullTotals, subtractKinds(snapshotKinds(fullState, language), before));
     addInto(incTotals, snapshotKinds(incState, language));
     addEdgeDiff(edgeTotals, diffCallEdges(fullAnswers, incAnswers));
+    if (dumpFullEdges !== undefined) for (const [site, answers] of fullAnswers) dumpedFullAnswers.set(site, answers);
     const columns = diffSchemaColumnEdges(fullAnswers, incAnswers, fullColumnIds, incTable.schemaColumnIds(), declared);
     columnTotals.fullColumnEdges += columns.fullColumnEdges;
     columnTotals.incColumnEdges += columns.incColumnEdges;
@@ -971,6 +977,13 @@ async function main(): Promise<void> {
       `  examples (missing):\n${exampleRows.join("\n") || "    —"}\n` +
       `  examples (INC-only):\n${phantomRows.join("\n") || "    —"}\n`,
   );
+
+  if (dumpFullEdges !== undefined) {
+    const lines = [...dumpedFullAnswers].map(([site, answers]) =>
+      JSON.stringify({ site: site.replaceAll("\0", " · "), targets: [...answers.keys()].sort() }),
+    );
+    writeFileSync(dumpFullEdges, `${lines.join("\n")}\n`);
+  }
 
   if (jsonOut !== undefined) {
     writeFileSync(

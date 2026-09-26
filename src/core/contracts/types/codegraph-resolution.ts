@@ -24,6 +24,7 @@ import type {
 import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
+import type { SelfDispatchArgTemplate } from "./codegraph-pass1.js";
 import type { GlobalSymbolTable, RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -519,6 +520,15 @@ export interface CallContext {
    * Plain array for NDJSON-spill parity with the other run-global maps.
    */
   selfInstantiatingClassMethods?: readonly string[];
+  /**
+   * Run-global `methodSymbolId → argument template` registry (bd
+   * tea-rags-mcp-emazx), built at the pass-1→pass-2 barrier by
+   * `collectSelfDispatchArgTemplates`. A method listed here dispatches on self to
+   * a hook named `prefix + <argument at position param> + suffix`; the Ruby entry
+   * strategy's step 2d reads the call site's literal at that position to compose
+   * the hook and narrow `Const.member` to `Const#<hook>`.
+   */
+  selfDispatchArgTemplates?: Readonly<Record<string, SelfDispatchArgTemplate>>;
   /**
    * Run-global `tableName → DispatchTableDef[]` map propagated from every
    * file's `FileExtraction.dispatchTables` (bd tea-rags-mcp-n0zj). Keyed

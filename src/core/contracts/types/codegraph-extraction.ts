@@ -1027,6 +1027,34 @@ export interface CallRef {
   hasKwargSplat?: boolean;
   /** Call passes a block (`{ … }` / `do … end`) (bd d9o7o). */
   passesBlock?: boolean;
+  /**
+   * Per-POSITION argument atoms (bd tea-rags-mcp-emazx): a name-shaped Symbol /
+   * String literal, or a bare identifier; `null` for anything else. Truncated at
+   * the first argument that breaks positional correspondence (splat, keyword
+   * pair, block-pass), trailing nulls trimmed, absent when every slot is null.
+   * Read by the self-dispatch argument channel: at a call site a literal
+   * composes a hook name, inside a template body an identifier names the
+   * parameter it forwards.
+   */
+  positionalArgAtoms?: readonly (CallArgAtom | null)[];
+  /**
+   * The dispatched-name TEMPLATE of a `send` / `public_send` / `__send__` whose
+   * name is an interpolated string or symbol with exactly ONE interpolation of a
+   * bare identifier — `send("can_#{ability}?")` →
+   * `{ prefix: "can_", suffix: "?", identifier: "ability" }` (bd
+   * tea-rags-mcp-emazx). Absent for anything computed.
+   */
+  sendNameTemplate?: SendNameTemplate;
+}
+
+/** One positional call argument, as far as the self-dispatch argument channel reads it (bd emazx). */
+export type CallArgAtom = { readonly literal: string } | { readonly identifier: string };
+
+/** `prefix#{identifier}suffix` — the dispatched name a dynamic `send` composes (bd emazx). */
+export interface SendNameTemplate {
+  readonly prefix: string;
+  readonly suffix: string;
+  readonly identifier: string;
 }
 
 /**

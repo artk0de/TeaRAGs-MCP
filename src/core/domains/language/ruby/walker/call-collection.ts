@@ -22,7 +22,13 @@ import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import { readScopeResolution } from "./ast-utils.js";
 import { collectMethodLocalBindings, isBareIdentifierCallSite } from "./bare-call-detection.js";
 import { emitDslEdges } from "./dsl-edge-emitters.js";
-import { computeArgCount, computeCallKwargs, computeCallPassesBlock } from "./method-signatures.js";
+import {
+  computeArgCount,
+  computeCallKwargs,
+  computeCallPassesBlock,
+  computePositionalArgAtoms,
+  computeSendNameTemplate,
+} from "./method-signatures.js";
 import { emitRegistryConstantRefs, exprToRubyDispatchRef } from "./registry-dispatch.js";
 
 /**
@@ -242,6 +248,14 @@ function emitMethodCallRef(
   if (kw.hasKwargSplat !== undefined) callRef.hasKwargSplat = kw.hasKwargSplat;
   // Block presence (bd d9o7o) — only set when true (undefined = no block).
   if (computeCallPassesBlock(node)) callRef.passesBlock = true;
+  // The self-dispatch ARGUMENT channel (bd tea-rags-mcp-emazx): positional name
+  // literals / identifiers everywhere, the name template on a dynamic send only.
+  const atoms = computePositionalArgAtoms(node);
+  if (atoms !== undefined) callRef.positionalArgAtoms = atoms;
+  if (dynamicSend) {
+    const template = computeSendNameTemplate(node);
+    if (template !== undefined) callRef.sendNameTemplate = template;
+  }
   out.push(callRef);
 }
 
@@ -396,6 +410,10 @@ function extractLiteralSymbolOrString(callNode: AstNode): string | null {
     return firstArg.text.startsWith(":") ? firstArg.text.slice(1) : firstArg.text;
   }
   if (firstArg.type === "string" || firstArg.type === "string_literal") {
+    // An interpolated name is NOT a literal: `send("can_#{ability}?")` used to
+    // unwrap to its first text fragment, a phantom `can_` call (bd emazx). It is
+    // a dynamic send whose name template the argument channel reads instead.
+    if (firstArg.namedChildren.some((c) => c.type === "interpolation")) return null;
     const inner = firstArg.namedChildren.find((c) => c.type === "string_content");
     return inner ? inner.text : firstArg.text.replace(/^["']|["']$/g, "");
   }

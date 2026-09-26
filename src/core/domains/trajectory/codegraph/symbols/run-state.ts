@@ -32,6 +32,7 @@ import type {
   RelPath,
   ResolveRunScope,
   ResolveRunStatsRow,
+  SelfDispatchArgTemplate,
   StructuralContractDecl,
   SymbolDefinition,
   TypeDeclarationFact,
@@ -63,6 +64,7 @@ import {
 import { collectSchemaColumnModels, synthesizeSchemaColumnDefs } from "./schema-column-synthesis.js";
 import {
   buildSelfDispatchProbe,
+  collectSelfDispatchArgTemplates,
   collectSelfInstantiatingClassMethods,
   deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
@@ -770,6 +772,14 @@ export class CodegraphRunState {
   selfInstantiatingClassMethods: string[] = [];
 
   /**
+   * Run-global `methodSymbolId → argument template` registry (bd
+   * tea-rags-mcp-emazx), built at the barrier from the walked AND hydrated
+   * self-dispatch methods: the Ruby entry strategy's step 2d composes the hook
+   * name from the call site's literal argument. Empty until the barrier runs.
+   */
+  selfDispatchArgTemplates: Record<string, SelfDispatchArgTemplate> = createIdentifierRecord();
+
+  /**
    * Per-run known-target call-site argument types (bd tea-rags-mcp-bvalc), DEDUPED
    * by (targets, argTypes): the fold over agreement is idempotent, so identical
    * sites contribute one record while disagreeing sites still conflict. Ruby only.
@@ -1345,6 +1355,7 @@ export class CodegraphRunState {
         selfDispatchAncestors(selfDispatchHierarchy),
       );
       this.selfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.selfDispatchMethods);
+      this.selfDispatchArgTemplates = collectSelfDispatchArgTemplates(this.selfDispatchMethods);
       // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf): the walker types
       // the SHARED template's return, call sites name a CONCRETE entry constant,
       // and only here are both the return facts and the wiring hierarchy complete.
@@ -1460,6 +1471,7 @@ export class CodegraphRunState {
       this.selfDispatchMethods = [];
       this.selfDispatchTemplates = createIdentifierRecord();
       this.selfInstantiatingClassMethods = [];
+      this.selfDispatchArgTemplates = createIdentifierRecord();
       this.resetInterprocParamState();
       // The wide reset emptied every run-global map, so every flag goes with it.
       this.clearContributed();
@@ -1654,6 +1666,7 @@ export class CodegraphRunState {
     this.selfDispatchMethods = [];
     this.selfDispatchTemplates = createIdentifierRecord();
     this.selfInstantiatingClassMethods = [];
+    this.selfDispatchArgTemplates = createIdentifierRecord();
     this.resetInterprocParamState();
     this.clearContributed();
   }
@@ -1702,6 +1715,7 @@ export class CodegraphRunState {
     this.selfDispatchMethods = [];
     this.selfDispatchTemplates = createIdentifierRecord();
     this.selfInstantiatingClassMethods = [];
+    this.selfDispatchArgTemplates = createIdentifierRecord();
     this.resetInterprocParamState();
     this.clearContributed();
   }
