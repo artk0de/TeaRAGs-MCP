@@ -593,4 +593,102 @@ describe("CompletionRunner", () => {
 
     expect(((await marker.read("coll"))!.codegraph as any).symbols.file.status).toBe("completed");
   });
+
+  // bd tea-rags-mcp-21sr5 — a provider's finalizeSignals is its run-end seam:
+  // git closes its blame pool and drops the run's blame single-flight there. The
+  // out-of-window backfill blames on that pool, so the provider's finalize must
+  // wait for ITS OWN backfill. Another provider's finalize (codegraph) must still
+  // overlap the backfill — that overlap is the whole point of step 2‖3.
+  it("finalizes a provider only after its own backfill settled, still overlapping other providers' finalize", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    let backfillInFlight = false;
+    let releaseBackfill!: () => void;
+    const backfillGate = new Promise<void>((resolve) => (releaseBackfill = resolve));
+    // Streaming goes through streamFileBatch; buildFileSignals is the backfill's
+    // whole-set read only.
+    const gitBuildFileSignals = vi.fn(async (_root: string, _options?: { paths?: string[] }) => {
+      backfillInFlight = true;
+      await backfillGate;
+      backfillInFlight = false;
+      return new Map();
+    });
+    const gitFinalizeSawBackfillInFlight: boolean[] = [];
+    const codegraphFinalizeSawBackfillInFlight: boolean[] = [];
+    const gitCtx = {
+      key: "git",
+      provider: {
+        key: "git",
+        buildFileSignals: gitBuildFileSignals,
+        streamFileBatch: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        finalizeSignals: vi.fn(async () => {
+          gitFinalizeSawBackfillInFlight.push(backfillInFlight);
+          return new Map();
+        }),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const codegraphCtx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        defersChunkEnrichment: true,
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        streamFileBatch: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        finalizeSignals: vi.fn(async () => {
+          codegraphFinalizeSawBackfillInFlight.push(backfillInFlight);
+          // The git backfill can only settle once codegraph's finalize ran:
+          // a runner that serializes backfill before every finalize deadlocks
+          // here instead of passing.
+          releaseBackfill();
+          return new Map();
+        }),
+        resolveRoot: (p: string) => p,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    // git registered first, as in production.
+    const contexts = new Map<string, any>([
+      [gitCtx.key, gitCtx],
+      [codegraphCtx.key, codegraphCtx],
+    ]);
+
+    filePhase.init(contexts, "coll", "run-21sr5", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    await marker.markRunStart("coll", ["git", "codegraph.symbols"], "run-21sr5", "ts");
+
+    // A streamed chunk whose file got no overlay — the out-of-window miss the
+    // backfill re-enriches.
+    filePhase.onBatch("coll", "/repo", [
+      { chunkId: "c-missed", chunk: { metadata: { filePath: "/repo/missed.ts" }, startLine: 1, endLine: 5 } } as any,
+    ]);
+    await filePhase.drain();
+
+    await runner.run("coll", contexts, Date.now());
+
+    expect(gitBuildFileSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ paths: ["missed.ts"] }));
+    expect(codegraphFinalizeSawBackfillInFlight).toEqual([true]);
+    expect(gitFinalizeSawBackfillInFlight).toEqual([false]);
+  });
 });
