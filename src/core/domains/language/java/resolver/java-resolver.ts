@@ -34,10 +34,14 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { JavaImportFileMapper } from "./java-import-file-mapper.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,
   JavaFieldTypeSymbolResolutionStrategy,
@@ -48,11 +52,14 @@ import {
   mapJavaImportToFile,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { javaImportMatchesReceiver } from "./strategies/java-import-receiver.js";
 
 export { mapJavaImportToFile };
 
 export class JavaCallResolver implements CallResolver {
   readonly language = "java";
+  /** The ONE import → file answer the call chain and the file graph share. */
+  private readonly importFileMapper = new JavaImportFileMapper();
   private readonly strategies: SymbolResolutionStrategy[];
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
@@ -61,7 +68,7 @@ export class JavaCallResolver implements CallResolver {
       new JavaThisMemberSymbolResolutionStrategy(cfg),
       new JavaFieldTypeSymbolResolutionStrategy(cfg),
       new JavaLocalBindingSymbolResolutionStrategy(cfg),
-      new JavaImportReceiverSymbolResolutionStrategy(cfg),
+      new JavaImportReceiverSymbolResolutionStrategy(cfg, this.importFileMapper),
       new JavaEnclosingBareCallSymbolResolutionStrategy(cfg),
       new JavaGlobalShortNameSymbolResolutionStrategy(cfg),
     ];
@@ -69,5 +76,29 @@ export class JavaCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * File edges straight from the import → file seam (bd tea-rags-mcp-vfmfg).
+   * The runner's default synthesised `{ receiver: Bar, member: Bar }` call
+   * answered through `importReceiver`, whose file-only fallback named the
+   * synthesised path — a file no Maven-layout project and no JDK import has.
+   */
+  resolveFileEdges(extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] {
+    return resolveImportFileEdges(extraction, this.importFileMapper, ctx);
+  }
+
+  /**
+   * An UNRESOLVED call whose receiver is bound by an import the project holds
+   * no file for — the call `importReceiver` drops as leaving the project.
+   */
+  targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
+    const { receiver } = call;
+    if (receiver === null) return false;
+    const match = ctx.imports.find((imp) => javaImportMatchesReceiver(imp.importText, receiver));
+    return (
+      match !== undefined &&
+      this.importFileMapper.mapImportToFile(match.importText, ctx.callerFile, ctx).kind === "external"
+    );
   }
 }

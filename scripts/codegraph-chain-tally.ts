@@ -53,7 +53,7 @@
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
  *     [--defer globalShortName] [--limit N] [--samples 10] [--json out.json] \
- *     [--kind-stats]
+ *     [--kind-stats] [--persisted]
  *
  *   env -u NODE_OPTIONS npx tsx scripts/codegraph-chain-tally.ts \
  *     --corpus <abs path> --lang ruby --quiet --time-only [--ts-checker=off]
@@ -377,6 +377,17 @@ export function tallyChainOutput(targets: readonly (SymbolResolutionTarget | nul
   return tally;
 }
 
+/**
+ * Baseline edges whose `targetRelPath` names no file of the corpus — the
+ * phantom external targets of bd tea-rags-mcp-vfmfg. `fileOnly` picks the
+ * `targetSymbolId === null` half, else the symbol-bearing half.
+ */
+export function countPhantomTargets(rows: readonly CallSiteRow[], fileOnly: boolean): number {
+  return rows.filter(
+    (r) => r.baseline !== null && !r.baselineTargetInProject && (r.baseline.targetSymbolId === null) === fileOnly,
+  ).length;
+}
+
 /** Same target? Both null, or both naming the same file and the same symbol. */
 export function sameTarget(a: SymbolResolutionTarget | null, b: SymbolResolutionTarget | null): boolean {
   if (a === null || b === null) return a === b;
@@ -513,6 +524,21 @@ export interface RunResult {
   kindStats?: Record<ReceiverKind, ReceiverKindTally>;
   /** Under `--kind-stats`: a few `missWithInProjectDef` sites per kind, for diagnosis. */
   kindSamples?: Record<ReceiverKind, string[]>;
+  /** Under `--persisted`: the rows `CallEdgeResolutionRunner#resolve` would persist. */
+  persisted?: PersistedEdgeTally;
+}
+
+/**
+ * What production would WRITE for the scored files (bd tea-rags-mcp-vfmfg): the
+ * file and method edges `CallEdgeResolutionRunner#resolve` returns, and how many
+ * of each name a `targetRelPath` no corpus file carries — the phantom targets
+ * every file-granularity signal (fanIn/fanOut/instability/PageRank) would read.
+ */
+export interface PersistedEdgeTally {
+  fileEdges: number;
+  fileEdgesPhantom: number;
+  methodEdges: number;
+  methodEdgesPhantom: number;
 }
 
 /**
@@ -536,6 +562,8 @@ export interface ChainTallyRunOptions {
   timing?: boolean;
   /** Recompute the per-receiver-kind run stats offline (bd tea-rags-mcp-1v12o.3). */
   kindStats?: boolean;
+  /** Also resolve every scored file through the runner and tally its persisted edges. */
+  persisted?: boolean;
 }
 
 /** Residual-miss examples printed per kind. Enough to name the shape, not a dump. */
@@ -726,6 +754,18 @@ export async function run(
   }
   const pass2Ms = performance.now() - pass2Start;
 
+  let persisted: PersistedEdgeTally | undefined;
+  if (opts.persisted === true) {
+    persisted = { fileEdges: 0, fileEdgesPhantom: 0, methodEdges: 0, methodEdgesPhantom: 0 };
+    for (const extraction of scored) {
+      const edges = runner.resolve(extraction, symbolTable);
+      persisted.fileEdges += edges.fileEdges.length;
+      persisted.fileEdgesPhantom += edges.fileEdges.filter((e) => !corpusFiles.has(e.targetRelPath)).length;
+      persisted.methodEdges += edges.methodEdges.length;
+      persisted.methodEdgesPhantom += edges.methodEdges.filter((e) => !corpusFiles.has(e.targetRelPath)).length;
+    }
+  }
+
   // AFTER pass 2, so this second read pollutes neither number. Counted over the
   // SCORED files only: the normalization is "this language's seconds per this
   // language's lines", and a polyglot corpus's other files are symbol-table
@@ -756,6 +796,7 @@ export async function run(
     fanoutPolicy: dispatchFanoutPolicyFor(symbolTable),
     kindStats: kindStats ?? undefined,
     kindSamples: kindSamples ?? undefined,
+    persisted,
     timeOnly,
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
@@ -782,6 +823,7 @@ export function parseArgs(argv: readonly string[]) {
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
     kindStats: argv.includes("--kind-stats"),
+    persisted: argv.includes("--persisted"),
     // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
     // should not need a second flag to print them. `--timing` alone stays legal
     // so a python `--defer` run can also be timed.
@@ -802,6 +844,7 @@ async function main(): Promise<void> {
     timeOnly: opts.timeOnly,
     timing: opts.timing,
     kindStats: opts.kindStats,
+    persisted: opts.persisted,
   });
   // The chain A/B scores only the sites production runs the exact chain on; a
   // dispatch-table site has no chain answer to count as "unresolved".
@@ -822,6 +865,8 @@ async function main(): Promise<void> {
     "",
     "CHAIN OUTPUT (what the resolver emitted)",
     `  baseline  edges ${baseline.edges} (of which file-only ${baseline.fileOnly}) · unresolved ${baseline.unresolved}`,
+    `  baseline  targets naming no corpus file (bd tea-rags-mcp-vfmfg): file-only ${countPhantomTargets(chainRows, true)}` +
+      ` · symbol-bearing ${countPhantomTargets(chainRows, false)}`,
   ];
   // Printed apart from the chain block and never summed into it (D3): a fan
   // edge is a hypothesis set at `discount / m`, not a claim the chain made.
@@ -858,6 +903,15 @@ async function main(): Promise<void> {
           `\n      deferred ${describe(row.variant)}`,
       );
     }
+  }
+  if (result.persisted !== undefined) {
+    const p = result.persisted;
+    out.push(
+      "",
+      "PERSISTED EDGES (CallEdgeResolutionRunner#resolve over the scored files)",
+      `  file edges ${p.fileEdges} (naming no corpus file ${p.fileEdgesPhantom})` +
+        ` · method edges ${p.methodEdges} (naming no corpus file ${p.methodEdgesPhantom})`,
+    );
   }
   if (result.kindStats !== undefined) out.push(...formatKindStatsBlock(result.kindStats, result.kindSamples));
   if (result.timing !== undefined) {

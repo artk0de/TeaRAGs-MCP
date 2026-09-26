@@ -49,6 +49,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -117,6 +118,12 @@ export class JavaLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      // Forwarded, or the runner never sees them: it reads this facade, not the
+      // `CallResolver` behind it (bd tea-rags-mcp-x9qsh, vfmfg).
+      resolveFileEdges: (extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] =>
+        callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
+      targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsExternalImport?.(call, ctx) ?? false,
     };
   }
 }
