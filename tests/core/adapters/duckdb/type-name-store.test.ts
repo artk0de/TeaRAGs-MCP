@@ -141,6 +141,22 @@ describe("readTypeNameRows", () => {
     const paths = (await db.readTypeNameRows(query())).map((r) => r.relPath);
     expect(paths).not.toContain("src/stores/extensions.ts");
   });
+
+  // The primary-type pick breaks ties by the first declared type of a file.
+  it("returns a file's types in declaration-line order, not by id", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "src/explore/reranker.ts",
+        rows: [
+          decl("ResolvedMode", "type_alias", { line: 30 }),
+          decl("Reranker", "class", { line: 50 }),
+          decl("RerankOptions", "interface", { line: 10 }),
+        ],
+      },
+    ]);
+    const rows = await db.readTypeNameRows(query({ pathPrefixes: ["src/explore/"] }));
+    expect(rows.map((r) => r.symbolId)).toEqual(["RerankOptions", "ResolvedMode", "Reranker"]);
+  });
 });
 
 /**

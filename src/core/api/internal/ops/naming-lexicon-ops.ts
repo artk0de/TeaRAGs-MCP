@@ -39,6 +39,17 @@
  *   6. Names. The project shape prior (a bounded sample) and return verbs
  *      license fallbacks; homonymy and collision are evidence; the verdict is
  *      `judgeDraftName`.
+ *   7. Type names (`kind: "type"` drafts, bd tea-rags-mcp-vi0wx). One read of
+ *      the project's type and constant declarations (`cg_type_declarations`,
+ *      production files) → roles, the modifier vocabulary and head spellings;
+ *      per draft a concept search (its `concept`, the request's, else its own
+ *      words) samples the type names nearest its meaning for term alignment;
+ *      the verdict is `judgeTypeDraft`. A failed search is a notice, the draft
+ *      is still judged.
+ *
+ * Every evidence read honours the answer's `excludePaths`
+ * (`NamingLexiconEvidenceScope`, diff mode's changed files): the reader is
+ * wrapped once ({@link excludingEvidence}), so no stage can read around it.
  *
  * Every evidence row (byType, byCallee, the shape prior's sample) is read split
  * by its file language and classified in THAT language's casing — a mixed Ruby
@@ -61,6 +72,7 @@ import type {
   IdentifierLanguageCountRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeMultiplicity,
+  TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type {
@@ -74,9 +86,15 @@ import {
   isNonConceptType,
   judgeDraftName,
   judgeGenericNames,
+  judgeTypeDraft,
   mergedSameTypeSiblingN,
   shapeDistribution,
   splitIdentifierWords,
+  TYPE_DRAFT_KINDS,
+  typeDraftPopulation,
+  typeNameEvidence,
+  typeNameLastSegment,
+  typeNameWords,
   type ConceptTerm,
   type ConceptTermHolder,
   type JudgedGenericName,
@@ -85,6 +103,9 @@ import {
   type NamingReturnVerbShare,
   type NamingShapeDistribution,
   type NamingShapeRow,
+  type NamingVerdict,
+  type TypeDraftPopulation,
+  type TypeNameEvidence,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
@@ -94,16 +115,19 @@ import type { ExploreResponse, SemanticSearchRequest } from "../../public/dto/ex
 import type {
   NamingLexiconCalleeEntry,
   NamingLexiconDraftName,
+  NamingLexiconEvidenceScope,
   NamingLexiconEvidenceSource,
   NamingLexiconKindProfile,
   NamingLexiconNameVerdict,
   NamingLexiconRequest,
   NamingLexiconResult,
+  NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
 import {
   GENERIC_NAME_BAR,
+  ontologyNonProductionPaths,
   ontologyReportQuery,
   ontologyRowCasing,
   type OntologyLanguageProfile,
@@ -127,6 +151,13 @@ const CONCEPT_RERANK = { custom: { similarity: 0.7, chunkFanIn: 0.15, fanIn: 0.1
 const CONCEPT_FIELDS = ["symbolId", "relativePath", "parentSymbolId"];
 /** Casing when neither a descriptor nor the observed names decide one. */
 const FALLBACK_CASING: IdentifierCasing = "snake";
+
+/** Declaration kinds the type-name read loads: the type-level kinds and constants, one read for both populations. */
+const TYPE_NAME_READ_KINDS = [...TYPE_DRAFT_KINDS, "constant"] as const;
+
+export const NAMING_LEXICON_TYPE_DECLARATIONS_EMPTY =
+  "cg_type_declarations is empty — type and constant names are judged without project evidence; " +
+  "recompute the codegraph (--force-enrichments codegraph) to populate it";
 
 export const NAMING_LEXICON_DRIFT_WARNING =
   "cg_identifiers is empty while the codegraph holds files — the index predates the identifier table; " +
@@ -165,7 +196,15 @@ type IdentifierReader = Pick<
   | "sampleIdentifierShapes"
   | "hasData"
   | "readOntologyReportSummary"
+  | "readTypeNameRows"
 >;
+
+/** A value draft: `kind` absent or a declaration kind. */
+type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDeclarationKind };
+
+function isTypeDraft(draft: NamingLexiconDraftName): boolean {
+  return draft.kind === "type";
+}
 
 /** One byType row after recovery: a store row or a `name-inferred` one. */
 interface LexiconTypeRow {
@@ -211,7 +250,14 @@ const KIND_ROLE: Record<IdentifierDeclarationKind, IdentifierRole> = {
 export class NamingLexiconOps {
   constructor(private readonly deps: NamingLexiconOpsDeps) {}
 
-  async getNamingLexicon(req: NamingLexiconRequest): Promise<NamingLexiconResult> {
+  /**
+   * `scope` is internal (not a request field): diff mode passes the changed
+   * files as `excludePaths`, and every evidence read then skips them.
+   */
+  async getNamingLexicon(
+    req: NamingLexiconRequest,
+    scope: NamingLexiconEvidenceScope = {},
+  ): Promise<NamingLexiconResult> {
     validateRequest(req);
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
     const active = this.deps.resolveActiveCollection
@@ -232,14 +278,16 @@ export class NamingLexiconOps {
       };
     }
     try {
-      return await this.answer(handle.graphDb, req);
+      return await this.answer(excludingEvidence(handle.graphDb, scope.excludePaths), req);
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
   }
 
   private async answer(graphDb: IdentifierReader, req: NamingLexiconRequest): Promise<NamingLexiconResult> {
-    const drafts = req.names ?? [];
+    const allDrafts = req.names ?? [];
+    const drafts = allDrafts.filter((d): d is NamingLexiconValueDraft => !isTypeDraft(d));
+    const typeDrafts = allDrafts.filter(isTypeDraft) as NamingLexiconTypeDraft[];
     const notices: string[] = [];
 
     // 1. Types: asked ∪ anchors' param / return types ∪ drafts' types.
@@ -315,7 +363,7 @@ export class NamingLexiconOps {
     }
 
     // 6. Names.
-    const names =
+    const valueVerdicts =
       drafts.length === 0
         ? []
         : await judgeDrafts(graphDb, drafts, {
@@ -328,6 +376,11 @@ export class NamingLexiconOps {
             pathPrefixes,
             ontologyLanguages: this.deps.ontologyLanguages,
           });
+
+    // 7. Type names.
+    const typeVerdicts =
+      typeDrafts.length === 0 ? [] : await this.judgeTypeDrafts(graphDb, req, typeDrafts, language, notices);
+    const names = inDraftOrder(allDrafts, valueVerdicts, typeVerdicts);
 
     return {
       scope: scope.prefix,
@@ -368,6 +421,102 @@ export class NamingLexiconOps {
     if (domain !== undefined && holders.length < MIN_CONCEPT_HOLDERS) holders = await search(undefined);
     return extractConceptTerms(holders);
   }
+
+  /**
+   * Stage 7: one read of the project's declarations, then per draft a concept
+   * search and {@link judgeTypeDraft}. The first failed search is a notice and
+   * stops further searches; the drafts are still judged, without alignment.
+   */
+  private async judgeTypeDrafts(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    drafts: readonly NamingLexiconTypeDraft[],
+    language: string | undefined,
+    notices: string[],
+  ): Promise<NamingLexiconNameVerdict[]> {
+    const rows = await graphDb.readTypeNameRows({
+      pathPrefixes: [],
+      kinds: TYPE_NAME_READ_KINDS,
+      nonProductionPaths: ontologyNonProductionPaths(),
+    });
+    if (rows.length === 0) notices.push(NAMING_LEXICON_TYPE_DECLARATIONS_EMPTY);
+    const evidence: Record<TypeDraftPopulation, TypeNameEvidence> = {
+      type: typeNameEvidence(rows, "type"),
+      constant: typeNameEvidence(rows, "constant"),
+    };
+
+    let searchFailure: string | undefined;
+    const verdicts: NamingLexiconNameVerdict[] = [];
+    for (const draft of drafts) {
+      const population = typeDraftPopulation(draft);
+      const draftLanguage = this.languageOfPath(draft.path) ?? language;
+      let conceptNames: string[] = [];
+      if (rows.length > 0 && searchFailure === undefined) {
+        try {
+          conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence[population].rows);
+        } catch (error) {
+          if (error instanceof InputValidationError) throw error;
+          searchFailure = errorMessage(error);
+        }
+      }
+      const verdict = judgeTypeDraft({
+        name: draft.name,
+        path: draft.path,
+        ...(draft.extends !== undefined ? { extends: draft.extends } : {}),
+        casing: this.typeCasing(draftLanguage, population),
+        evidence: evidence[population],
+        conceptNames,
+      });
+      verdicts.push(typeDraftVerdict(draft, verdict, evidence[population].rows));
+    }
+    if (searchFailure !== undefined) notices.push(`type-name alignment skipped: ${searchFailure}`);
+    return verdicts;
+  }
+
+  /**
+   * The type names of the code nearest the draft's meaning, one list entry per
+   * hit and name: the namespace segments of each hit's symbolId that are a
+   * declared short name of the draft's population. The query is the draft's
+   * `concept`, the request's, else the draft's own words.
+   */
+  private async conceptTypeNames(
+    req: NamingLexiconRequest,
+    draft: NamingLexiconTypeDraft,
+    language: string | undefined,
+    population: readonly TypeNameRow[],
+  ): Promise<string[]> {
+    const response = await this.deps.explore.semanticSearch({
+      ...collectionRef(req),
+      query: draft.concept ?? req.concept ?? typeNameWords(draft.name).join(" "),
+      ...(language ? { language } : {}),
+      filter: { presets: "production" },
+      rerank: CONCEPT_RERANK,
+      limit: CONCEPT_SEARCH_LIMIT,
+      metaOnly: true,
+      fields: CONCEPT_FIELDS,
+    });
+    const known = new Set(population.map((row) => row.shortName));
+    return response.results.flatMap((r) => {
+      const symbolId = r.payload?.symbolId;
+      if (typeof symbolId !== "string") return [];
+      return [...new Set(symbolId.split(/::|#|\./))].filter((segment) => known.has(segment));
+    });
+  }
+
+  /** The language a path's extension routes to, from the ontology's language profiles. */
+  private languageOfPath(relPath: string): string | undefined {
+    const dot = relPath.lastIndexOf(".");
+    if (dot < 0) return undefined;
+    const extension = relPath.slice(dot).toLowerCase();
+    return this.deps.ontologyLanguages?.find((profile) => profile.extensions.includes(extension))?.language;
+  }
+
+  /** The canonical casing of the draft's role (`type` / `constant`) in its language; Pascal / SCREAMING otherwise. */
+  private typeCasing(language: string | undefined, population: TypeDraftPopulation): IdentifierCasing {
+    const role: IdentifierRole = population === "constant" ? "constant" : "type";
+    const convention = language ? this.deps.namingConventions.get(language) : undefined;
+    return convention?.casing[role][0] ?? (population === "constant" ? "screamingSnake" : "pascal");
+  }
 }
 
 // ── request ──────────────────────────────────────────────────────────────
@@ -380,6 +529,8 @@ function validateRequest(req: NamingLexiconRequest): void {
     (req.concept ?? "").length > 0;
   if (!asked) throw new MissingArgumentError(["types | anchors | concept | names"]);
   if (req.concept && !req.language) throw new InvalidParameterError("concept", "requires 'language'");
+  const pathless = (req.names ?? []).findIndex((draft) => isTypeDraft(draft) && !draft.path);
+  if (pathless >= 0) throw new InvalidParameterError(`names[${pathless}].path`, "required with kind 'type'");
 }
 
 function collectionRef(req: NamingLexiconRequest): Pick<SemanticSearchRequest, "collection" | "project" | "path"> {
@@ -683,7 +834,7 @@ async function genericDraftNames(
 
 async function judgeDrafts(
   graphDb: IdentifierReader,
-  drafts: readonly NamingLexiconDraftName[],
+  drafts: readonly NamingLexiconValueDraft[],
   ctx: DraftJudgementContext,
 ): Promise<NamingLexiconNameVerdict[]> {
   const draftNames = unique(drafts.map((d) => d.name));
@@ -881,6 +1032,75 @@ function dominantRowLanguage(rows: readonly { language?: string | null; n: numbe
     if (!best || entry[1] > best[1] || (entry[1] === best[1] && entry[0] < best[0])) best = entry;
   }
   return best?.[0];
+}
+
+// ── type names ───────────────────────────────────────────────────────────
+
+/**
+ * A type draft's verdict with its evidence: `n` = the population's
+ * declarations already carrying the short name, `example` = the colliding
+ * declaration or the role's first example, `collision` = a COLLISION verdict.
+ */
+function typeDraftVerdict(
+  draft: NamingLexiconTypeDraft,
+  verdict: NamingVerdict,
+  population: readonly TypeNameRow[],
+): NamingLexiconNameVerdict {
+  const shortName = typeNameLastSegment(draft.name);
+  const example =
+    verdict.verdict === "COLLISION"
+      ? verdict.existing.symbolId
+      : verdict.verdict === "MISFIT"
+        ? verdict.role?.examples[0]
+        : undefined;
+  return {
+    name: draft.name,
+    ...verdict,
+    evidence: {
+      n: population.filter((row) => row.shortName === shortName).length,
+      ...(example !== undefined ? { example } : {}),
+      boundTypes: 0,
+      collision: verdict.verdict === "COLLISION",
+    },
+  };
+}
+
+/** The value and type verdicts back in the order the drafts were asked. */
+function inDraftOrder(
+  drafts: readonly NamingLexiconDraftName[],
+  valueVerdicts: readonly NamingLexiconNameVerdict[],
+  typeVerdicts: readonly NamingLexiconNameVerdict[],
+): NamingLexiconNameVerdict[] {
+  let value = 0;
+  let type = 0;
+  return drafts.map((draft) => (isTypeDraft(draft) ? typeVerdicts[type++] : valueVerdicts[value++]));
+}
+
+// ── evidence scope ───────────────────────────────────────────────────────
+
+/**
+ * The reader with `excludePaths` bound into every evidence read (spec §6.4) —
+ * one wrapper, so no stage can read the changed files by forgetting to pass
+ * them. `anchorIdentifierTypes` (the caller's own anchors) and `hasData` read
+ * no evidence and pass through. No paths → the reader itself.
+ */
+function excludingEvidence(reader: IdentifierReader, paths: readonly string[] | undefined): IdentifierReader {
+  if (paths === undefined || paths.length === 0) return reader;
+  const excludePaths = [...paths];
+  return {
+    aggregateIdentifiersByType: async (q) => reader.aggregateIdentifiersByType({ ...q, excludePaths }),
+    aggregateIdentifiersByCallee: async (q) => reader.aggregateIdentifiersByCallee({ ...q, excludePaths }),
+    aggregateIdentifiersByName: async (q) => reader.aggregateIdentifiersByName({ ...q, excludePaths }),
+    anchorIdentifierTypes: async (symbolIds) => reader.anchorIdentifierTypes(symbolIds),
+    identifierNameTypes: async (names) => reader.identifierNameTypes(names, excludePaths),
+    existingSymbolShortNames: async (names) => reader.existingSymbolShortNames(names, excludePaths),
+    countIdentifiers: async (q) => reader.countIdentifiers({ ...q, excludePaths }),
+    identifierLanguageCounts: async (q) => reader.identifierLanguageCounts({ ...q, excludePaths }),
+    sampleIdentifierShapes: async (q) => reader.sampleIdentifierShapes({ ...q, excludePaths }),
+    hasData: async () => reader.hasData(),
+    readOntologyReportSummary: async (q) => reader.readOntologyReportSummary({ ...q, excludePaths }),
+    readTypeNameRows: async (q) => reader.readTypeNameRows({ ...q, excludePaths }),
+  };
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────

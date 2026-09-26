@@ -20,7 +20,11 @@ import { InputValidationError, InvalidParameterError } from "../../../../../src/
 import { NamingLexiconOps } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import { ontologyLanguageProfiles } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
-import type { IdentifierReplaceEntry, IdentifierRow } from "../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  IdentifierReplaceEntry,
+  IdentifierRow,
+  TypeDeclarationRow,
+} from "../../../../../src/core/contracts/types/codegraph.js";
 import type { IdentifierNamingConvention } from "../../../../../src/core/contracts/types/language.js";
 import { capability as rubyCapability } from "../../../../../src/core/domains/language/ruby/capability.js";
 import { capability as typescriptCapability } from "../../../../../src/core/domains/language/typescript/capability.js";
@@ -832,6 +836,175 @@ describe("NamingLexiconOps", () => {
       });
       expect(summary).toHaveBeenCalledTimes(1);
       expect(summary.mock.calls[0][0].names).toEqual(["result"]);
+    });
+  });
+
+  // bd tea-rags-mcp-vi0wx (spec §3–4): type and constant drafts judged against cg_type_declarations.
+  describe("type drafts — roles, collisions and term alignment", () => {
+    const decl = (typeId: string, symbolKind: TypeDeclarationRow["symbolKind"], supertypes: string[] = []) => ({
+      language: "typescript",
+      typeId,
+      shortName: typeId,
+      symbolKind,
+      line: 1,
+      reopens: false,
+      supertypes,
+    });
+    const holder = (symbolId: string, relativePath: string) => ({
+      id: symbolId,
+      score: 1,
+      payload: { symbolId, relativePath },
+    });
+
+    beforeEach(async () => {
+      const fillers = Array.from({ length: 20 }, (_, i) => ({
+        relPath: `src/f${i}/x.ts`,
+        rows: [decl(`Filler${String.fromCharCode(97 + i)}`, "class")],
+      }));
+      await db.replaceTypeDeclarationsBulk([
+        ...fillers,
+        { relPath: "src/lang/ts/strategy.ts", rows: [decl("TsStrategy", "class", ["SymbolResolutionStrategy"])] },
+        { relPath: "src/lang/py/strategy.ts", rows: [decl("PyStrategy", "class", ["SymbolResolutionStrategy"])] },
+        { relPath: "src/git/commit.ts", rows: [decl("Commit", "class")] },
+        { relPath: "src/templates/predefined.ts", rows: [decl("PredefinedTemplate", "class")] },
+        { relPath: "src/fields/predefined.ts", rows: [decl("PredefinedField", "class")] },
+        // One constant per file: a directory role counts files, not declarations.
+        { relPath: "src/infra/spec-patterns.ts", rows: [decl("SPEC_PATTERN", "constant")] },
+        { relPath: "src/infra/test-patterns.ts", rows: [decl("TEST_PATTERN", "constant")] },
+        { relPath: "src/infra/fixture-patterns.ts", rows: [decl("FIXTURE_PATTERN", "constant")] },
+      ]);
+    });
+
+    it("judges each draft by its population: MISFIT by family, COLLISION, a constant by its directory", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        names: [
+          {
+            name: "ResolutionOutcome",
+            kind: "type",
+            path: "src/core/domains/language/x/strategies/new.ts",
+            extends: "SymbolResolutionStrategy",
+          },
+          { name: "Commit", kind: "type", path: "src/vcs/commit.ts" },
+          { name: "VENDOR_GLOB", kind: "type", path: "src/infra/patterns.ts" },
+        ],
+      });
+      expect(result.names).toEqual([
+        expect.objectContaining({
+          name: "ResolutionOutcome",
+          verdict: "MISFIT",
+          suggestion: "ResolutionOutcomeStrategy",
+        }),
+        expect.objectContaining({
+          name: "Commit",
+          verdict: "COLLISION",
+          existing: { symbolId: "Commit", relPath: "src/git/commit.ts" },
+        }),
+        expect.objectContaining({ name: "VENDOR_GLOB", verdict: "MISFIT", suggestion: "VENDOR_GLOB_PATTERN" }),
+      ]);
+    });
+
+    it("aligns terms through a concept search of the draft's own words; nothing found is a plain NEW_TERM", async () => {
+      semanticSearch.mockResolvedValueOnce({
+        driftWarning: null,
+        results: [
+          holder("PredefinedTemplate#render", "src/templates/predefined.ts"),
+          holder("PredefinedField#value", "src/fields/predefined.ts"),
+        ],
+      });
+      const aligned = await ops.getNamingLexicon({
+        collection: "c",
+        names: [{ name: "CalculatedDoc", kind: "type", path: "src/docs/calculated.ts" }],
+      });
+      expect(semanticSearch).toHaveBeenCalledWith(expect.objectContaining({ query: "calculated doc" }));
+      expect(aligned.names[0]).toMatchObject({ verdict: "NEW_TERM", alternatives: [{ word: "predefined" }] });
+
+      const novel = await ops.getNamingLexicon({
+        collection: "c",
+        names: [{ name: "CalculatedDoc", kind: "type", path: "src/docs/calculated.ts", concept: "billing math" }],
+      });
+      expect(semanticSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "billing math" }));
+      expect(novel.names[0]).toMatchObject({ verdict: "NEW_TERM", topTerms: [] });
+      expect(novel.names[0]).not.toHaveProperty("alternatives");
+    });
+
+    it("a failing alignment search is a notice, and the draft is still judged", async () => {
+      semanticSearch.mockRejectedValue(new Error("ollama unreachable"));
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        names: [{ name: "Commit", kind: "type", path: "src/vcs/commit.ts" }],
+      });
+      expect(result.names[0]).toMatchObject({ verdict: "COLLISION" });
+      expect(result.notices).toEqual(["type-name alignment skipped: ollama unreachable"]);
+    });
+
+    it("an empty declaration table → a notice naming the codegraph recompute", async () => {
+      await db.run("DELETE FROM cg_type_declarations");
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        names: [{ name: "Commit", kind: "type", path: "src/vcs/commit.ts" }],
+      });
+      expect(result.notices?.[0]).toMatch(/cg_type_declarations is empty.*--force-enrichments codegraph/);
+    });
+
+    it("a type draft without a path is rejected", async () => {
+      await expect(
+        ops.getNamingLexicon({ collection: "c", names: [{ name: "Commit", kind: "type" }] }),
+      ).rejects.toBeInstanceOf(InvalidParameterError);
+    });
+  });
+
+  // bd tea-rags-mcp-vi0wx (spec §6.4): a changed file never votes for itself.
+  describe("excludePaths reaches every evidence read", () => {
+    it("type rows, by-type, by-name, callee, prior sample, homonymy, collisions and generic names", async () => {
+      await seedTaxdome();
+      const excludePaths = ["app/services/tax/sync_0.rb"];
+      const spies = {
+        readTypeNameRows: vi.spyOn(db, "readTypeNameRows"),
+        aggregateIdentifiersByType: vi.spyOn(db, "aggregateIdentifiersByType"),
+        aggregateIdentifiersByName: vi.spyOn(db, "aggregateIdentifiersByName"),
+        aggregateIdentifiersByCallee: vi.spyOn(db, "aggregateIdentifiersByCallee"),
+        countIdentifiers: vi.spyOn(db, "countIdentifiers"),
+        sampleIdentifierShapes: vi.spyOn(db, "sampleIdentifierShapes"),
+        readOntologyReportSummary: vi.spyOn(db, "readOntologyReportSummary"),
+      };
+      const nameTypes = vi.spyOn(db, "identifierNameTypes");
+      const shortNames = vi.spyOn(db, "existingSymbolShortNames");
+      const graphDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === "close") return async () => undefined;
+          const value: unknown = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+      const excluding = new NamingLexiconOps({
+        pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async (name: string) => name as never,
+        explore: { semanticSearch },
+        namingConventions: NAMING,
+        ontologyLanguages: ontologyLanguageProfiles(),
+      });
+
+      await excluding.getNamingLexicon(
+        {
+          collection: "c",
+          language: "ruby",
+          names: [
+            { name: "row", type: DOC },
+            { name: "row", callee: { member: "find_tax_automation_document!" } },
+            { name: "Commit", kind: "type", path: "app/models/commit.rb" },
+          ],
+        },
+        { excludePaths },
+      );
+
+      for (const [read, spy] of Object.entries(spies)) {
+        expect(spy, read).toHaveBeenCalled();
+        for (const [query] of spy.mock.calls) expect(query, read).toMatchObject({ excludePaths });
+      }
+      expect(nameTypes).toHaveBeenCalledWith(expect.anything(), excludePaths);
+      expect(shortNames).toHaveBeenCalledWith(expect.anything(), excludePaths);
     });
   });
 });

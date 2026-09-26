@@ -25,6 +25,13 @@ export interface ModifierUse {
 /** An established modifier offered in place of the draft's own qualifier. */
 export interface TermAlternative {
   word: string;
+  /**
+   * `head`: the project's dominant spelling of the draft's head word
+   * (`doc` for `…Document`) — `heads` is then empty, `domains` the directories
+   * of the types ending in it, `lift` its count over the draft spelling's.
+   * Absent: a qualifier alternative.
+   */
+  slot?: "head";
   heads: string[];
   domains: string[];
   lift: number;

@@ -122,6 +122,104 @@ describe("deriveTypeRoles / expectedRoleFor", () => {
     expect(expectedRoleFor(noRoles, { path: "src/b/new.ts" })).toBeUndefined();
   });
 
+  // Live on the self-index, explore/errors.ts (many `*Error` classes in ONE file) gave
+  // all of domains/explore/ the role `error`. Directory evidence counts FILES.
+  it("one file of many `*Error` classes is no directory role", () => {
+    const errors = Array.from({ length: 10 }, (_, i) => t(`${FILLER_HEADS[i]}Error`, "src/explore/errors.ts", []));
+    const rows = [...errors, ...fillers("src/explore", 0, 6)];
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/calculated-doc.ts" })).toBeUndefined();
+  });
+
+  it("`*Error` in 3 of 6 files is the directory's role", () => {
+    const rows = [
+      t("ParseError", "src/explore/parse.ts", []),
+      t("OtherParseError", "src/explore/parse.ts", []),
+      t("QueryError", "src/explore/query.ts", []),
+      t("ScrollError", "src/explore/scroll.ts", []),
+      ...fillers("src/explore", 0, 3),
+    ];
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/new.ts" })).toMatchObject({
+      role: "error",
+      evidence: "directory",
+    });
+  });
+
+  it("a project suffix counts files: three `*Store` types in one file plus one elsewhere is none", () => {
+    const rows = [
+      t("SymbolStore", "src/a/stores.ts", []),
+      t("EdgeStore", "src/a/stores.ts", []),
+      t("NodeStore", "src/a/stores.ts", []),
+      ...fillers("src/a", 0, 12),
+      t("FileStore", "src/b/file-store.ts", []),
+      ...fillers("src/b", 12, 2),
+    ];
+    expect(deriveTypeRoles(rows).filter((r) => r.evidence === "projectSuffix")).toEqual([]);
+  });
+
+  // Live on the self-index, explore/ then got `options`: four modules each declare a
+  // `<Primary>Options` beside their primary type. Each file contributes ONE type to
+  // directory and suffix evidence — the one whose words overlap its file stem most.
+  describe("a file contributes only its primary type", () => {
+    it("`<Primary>` + `<Primary>Options` in 4 of 7 files → no `options` role", () => {
+      const rows = ["Reranker", "RankModule", "SearchConfidence", "PostProcess"].flatMap((primary, i) => [
+        t(primary, `src/explore/m${i}.ts`, []),
+        t(`${primary}Options`, `src/explore/m${i}.ts`, []),
+      ]);
+      const all = [...rows, ...fillers("src/explore", 0, 3)];
+      expect(expectedRoleFor(deriveTypeRoles(all), { path: "src/explore/calculated-doc.ts" })).toBeUndefined();
+    });
+
+    it("`*Options` as the file's own subject in 3 of 5 files → the role holds", () => {
+      const rows = [
+        t("SearchOptions", "src/options/search-options.ts", []),
+        t("IndexOptions", "src/options/index-options.ts", []),
+        t("RenderOptions", "src/options/render-options.ts", []),
+        ...fillers("src/options", 0, 2),
+      ];
+      expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/options/new.ts" })).toMatchObject({
+        role: "options",
+        evidence: "directory",
+      });
+    });
+
+    it("a stem-overlap tie goes to the first declared type: `SearchConfidence` over `SearchConfidenceOptions`", () => {
+      const rows = [
+        t("SearchConfidence", "src/explore/confidence.ts", []),
+        t("SearchConfidenceOptions", "src/explore/confidence.ts", []),
+        t("PostProcess", "src/explore/post_process.py", []),
+        t("PostProcessOptions", "src/explore/post_process.py", []),
+        ...fillers("src/explore", 0, 2),
+      ];
+      expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/new.ts" })).toBeUndefined();
+    });
+
+    it("reranker.ts and rank-module.ts contribute Reranker and RankModule, not their `*Options`", () => {
+      const rows = [
+        t("Reranker", "src/explore/reranker.ts", []),
+        t("RerankOptions", "src/explore/reranker.ts", []),
+        t("ResolvedMode", "src/explore/reranker.ts", []),
+        t("RankModule", "src/explore/rank-module.ts", []),
+        t("RankOptions", "src/explore/rank-module.ts", []),
+        ...fillers("src/explore", 0, 2),
+      ];
+      expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/new.ts" })).toBeUndefined();
+    });
+
+    it("a plural stem matches a singular head: errors.ts contributes one `*Error`", () => {
+      const rows = [
+        t("Alpha", "src/explore/errors.ts", []),
+        t("ExploreError", "src/explore/errors.ts", []),
+        t("QueryError", "src/explore/query.ts", []),
+        ...fillers("src/explore", 1, 3),
+      ];
+      // errors.ts's primary is ExploreError (stem `errors` ~ `error`), not Alpha, so `error` holds 2 of 5 files.
+      expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/new.ts" })).toMatchObject({
+        role: "error",
+        evidence: "directory",
+      });
+    });
+  });
+
   it("a family's role is the tail word its members share; support counts them", () => {
     const rows = [
       t("TechDebtPreset", "src/a/x.ts", ["RerankPreset"]),

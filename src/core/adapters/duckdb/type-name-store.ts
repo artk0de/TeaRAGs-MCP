@@ -26,7 +26,7 @@ import type {
   TypeNameRow,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
-import { pathPrefixPredicate, type SqlPredicate } from "./identifier-store.js";
+import { excludedPathsPredicate, pathPrefixPredicate } from "./identifier-store.js";
 import { compileNonProductionPathPredicate } from "./non-production-path-sql.js";
 import { placeholders } from "./sql-binding.js";
 
@@ -73,11 +73,6 @@ function typeDeclarationFileFingerprint(rows: readonly (readonly unknown[])[]): 
     .map((cells) => JSON.stringify(cells))
     .sort()
     .join("\n");
-}
-
-function excludedPathsPredicate(paths: readonly string[] | undefined): SqlPredicate {
-  if (paths === undefined || paths.length === 0) return { sql: "TRUE", params: [] };
-  return { sql: `rel_path NOT IN (${placeholders(paths)})`, params: [...paths] };
 }
 
 export class DuckDbTypeNameStore {
@@ -146,7 +141,7 @@ export class DuckDbTypeNameStore {
           AND ${prefix.sql}
           AND NOT ${nonProduction("rel_path")}
           AND ${excluded.sql}
-        ORDER BY rel_path, type_id`,
+        ORDER BY rel_path, line, type_id`,
       [...q.kinds, ...prefix.params, ...excluded.params],
     );
     return rows.map((r) => ({

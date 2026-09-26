@@ -104,6 +104,26 @@ export function pathPrefixPredicate(prefixes: readonly string[] | undefined): Sq
 }
 
 /**
+ * `rel_path` outside `paths` (`IdentifierEvidenceExclusion.excludePaths`) —
+ * a bind list, bounded by the diff cap; `TRUE` when there is none.
+ */
+export function excludedPathsPredicate(paths: readonly string[] | undefined): SqlPredicate {
+  if (paths === undefined || paths.length === 0) return { sql: "TRUE", params: [] };
+  return { sql: `rel_path NOT IN (${placeholders(paths)})`, params: [...paths] };
+}
+
+/** An evidence read's file scope: under any of `pathPrefixes` AND outside `excludePaths`. */
+export function evidenceScopePredicate(
+  pathPrefixes: readonly string[] | undefined,
+  excludePaths: readonly string[] | undefined,
+): SqlPredicate {
+  const prefix = pathPrefixPredicate(pathPrefixes);
+  const excluded = excludedPathsPredicate(excludePaths);
+  if (excluded.params.length === 0) return prefix;
+  return { sql: `(${prefix.sql} AND ${excluded.sql})`, params: [...prefix.params, ...excluded.params] };
+}
+
+/**
  * The SQL pieces that split an aggregate by file language (`groupByLanguage`):
  * `from` wraps a row source carrying `rel_path` with its `cg_symbols_files`
  * language as `file_language` (null for a file with no files row); `column` is
@@ -348,7 +368,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     if (q.types.length === 0) return [];
-    const cte = resolvedIdentifiersCte(pathPrefixPredicate(q.pathPrefixes));
+    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths));
     const siblings = sameTypeSiblingPieces(q.countSameTypeSiblings, q.types);
     const lang = fileLanguageGrouping(siblings.from, q.groupByLanguage);
     const multiplicity = q.groupByMultiplicity ? ", type_multiplicity" : "";
@@ -389,7 +409,7 @@ export class DuckDbIdentifierStore {
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
     if (q.types.length === 0) return 0;
-    const cte = resolvedIdentifiersCte(pathPrefixPredicate(q.pathPrefixes));
+    const cte = resolvedIdentifiersCte(evidenceScopePredicate(q.pathPrefixes, q.excludePaths));
     const rows = await this.session.queryAll<{ n: number | string }>(
       `${cte.sql}
        SELECT count(*) AS n FROM resolved WHERE type_name IN (${placeholders(q.types)})`,
@@ -400,7 +420,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
     if (q.callees.length === 0) return [];
-    const scope = pathPrefixPredicate(q.pathPrefixes);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
     const calleeParams: unknown[] = [];
     const calleeSql = q.callees
       .map((callee) => {
@@ -459,10 +479,17 @@ export class DuckDbIdentifierStore {
     return out;
   }
 
-  async identifierNameTypes(names: readonly string[]): Promise<IdentifierNameTypeRow[]> {
+  async identifierNameTypes(
+    names: readonly string[],
+    excludePaths?: readonly string[],
+  ): Promise<IdentifierNameTypeRow[]> {
     const out: IdentifierNameTypeRow[] = [];
+    const excluded = excludedPathsPredicate(excludePaths);
     for (const chunk of chunked([...new Set(names)])) {
-      const cte = resolvedIdentifiersCte({ sql: `name IN (${placeholders(chunk)})`, params: chunk });
+      const cte = resolvedIdentifiersCte({
+        sql: `name IN (${placeholders(chunk)}) AND ${excluded.sql}`,
+        params: [...chunk, ...excluded.params],
+      });
       const rows = await this.session.queryAll<{ name: string; type_name: string | null; n: number | string }>(
         `${cte.sql}
          SELECT name, type_name, count(*) AS n FROM resolved
@@ -477,7 +504,7 @@ export class DuckDbIdentifierStore {
 
   async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
     const out: IdentifierNameKindTypeRow[] = [];
-    const scope = pathPrefixPredicate(q.pathPrefixes);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
     for (const chunk of chunked([...new Set(q.names)])) {
       const cte = resolvedIdentifiersCte({
         sql: `name IN (${placeholders(chunk)}) AND ${scope.sql}`,
@@ -514,7 +541,7 @@ export class DuckDbIdentifierStore {
   }
 
   async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
-    const scope = pathPrefixPredicate(q.pathPrefixes);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
     const suffix = pathSuffixPredicate(q.pathSuffixes);
     const rows = await this.session.queryAll<{ language: string | null; n: number | string }>(
       `SELECT f.language, count(*) AS n
@@ -529,7 +556,7 @@ export class DuckDbIdentifierStore {
   }
 
   async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
-    const scope = pathPrefixPredicate(q.pathPrefixes);
+    const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
     // The reservoir size is inlined: DuckDB takes no bind parameter there. It is
     // coerced to a positive integer first, so no caller value reaches the SQL text.
     const limit = Math.max(1, Math.floor(Number(q.limit) || 1));
@@ -568,12 +595,15 @@ export class DuckDbIdentifierStore {
     }));
   }
 
-  async existingSymbolShortNames(names: readonly string[]): Promise<string[]> {
+  async existingSymbolShortNames(names: readonly string[], excludePaths?: readonly string[]): Promise<string[]> {
     const out: string[] = [];
+    const excluded = excludedPathsPredicate(excludePaths);
     for (const chunk of chunked([...new Set(names)])) {
       const rows = await this.session.queryAll<{ short_name: string }>(
-        `SELECT DISTINCT short_name FROM cg_symbols WHERE short_name IN (${placeholders(chunk)}) ORDER BY short_name`,
-        chunk,
+        `SELECT DISTINCT short_name FROM cg_symbols
+          WHERE short_name IN (${placeholders(chunk)}) AND ${excluded.sql}
+          ORDER BY short_name`,
+        [...chunk, ...excluded.params],
       );
       for (const r of rows) out.push(r.short_name);
     }

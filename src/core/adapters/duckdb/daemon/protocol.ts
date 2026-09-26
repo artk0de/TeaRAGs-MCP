@@ -205,15 +205,34 @@ export interface DaemonRequest {
         collection: string;
         types: string[];
         pathPrefixes?: string[];
+        excludePaths?: string[];
         groupByLanguage?: boolean;
         groupByMultiplicity?: boolean;
         countSameTypeSiblings?: boolean;
       } // aggregateIdentifiersByType | countIdentifiers
-    | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByCallee
-    | { collection: string; names: string[] } // identifierNameTypes | existingSymbolShortNames
-    | { collection: string; names: string[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByName
-    | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[] } // identifierLanguageCounts
-    | { collection: string; limit: number; pathPrefixes?: string[]; groupByLanguage?: boolean } // sampleIdentifierShapes
+    | {
+        collection: string;
+        callees: IdentifierBoundCallee[];
+        pathPrefixes?: string[];
+        excludePaths?: string[];
+        groupByLanguage?: boolean;
+      } // aggregateIdentifiersByCallee
+    | { collection: string; names: string[]; excludePaths?: string[] } // identifierNameTypes | existingSymbolShortNames
+    | {
+        collection: string;
+        names: string[];
+        pathPrefixes?: string[];
+        excludePaths?: string[];
+        groupByLanguage?: boolean;
+      } // aggregateIdentifiersByName
+    | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[]; excludePaths?: string[] } // identifierLanguageCounts
+    | {
+        collection: string;
+        limit: number;
+        pathPrefixes?: string[];
+        excludePaths?: string[];
+        groupByLanguage?: boolean;
+      } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
     | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] } // readOntologyReportSections
     | { collection: string; query: TypeNameQuery }; // readTypeNameRows

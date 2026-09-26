@@ -1,7 +1,8 @@
 /**
  * Naming-lexicon DTOs — request / response of the `get_naming_lexicon` tool
  * (bd tea-rags-mcp-4p3sb.11): how THIS project names values of a type, values
- * bound to a call, and a concept, plus a verdict per draft name.
+ * bound to a call, and a concept, plus a verdict per draft name — value names
+ * and, with `kind: "type"`, type and constant names (bd tea-rags-mcp-vi0wx).
  */
 
 import type {
@@ -9,14 +10,20 @@ import type {
   IdentifierDeclarationKind,
   IdentifierTypeSource,
 } from "../../../contracts/types/codegraph-extraction.js";
+import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
 import type { ConceptTerm, NamingShapeShare, NamingVerdict } from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRef } from "./explore.js";
 
-/** A name the caller is about to write, with whatever it knows about the value. */
+/**
+ * A name the caller is about to write, with whatever it knows about it. A value
+ * name (`kind` absent or a declaration kind) uses `type` / `typeMultiplicity` /
+ * `callee`; a type or constant name (`kind: "type"`) uses `path` (required),
+ * `extends`, `concept` and `symbolKind` — see {@link NamingLexiconTypeDraft}.
+ */
 export interface NamingLexiconDraftName {
   name: string;
-  /** Defaults to `local`. */
-  kind?: IdentifierDeclarationKind;
+  /** Defaults to `local`; `type` = a type or constant declaration. */
+  kind?: IdentifierDeclarationKind | "type";
   type?: string;
   /**
    * `many` when the value is a collection of `type` (`Item[]`, `list[Item]`):
@@ -26,6 +33,31 @@ export interface NamingLexiconDraftName {
   typeMultiplicity?: "one" | "many";
   /** The call the value is bound to — drives `byCallee` when `type` is absent. */
   callee?: IdentifierBoundCallee;
+  /** `kind: "type"`: the file the declaration will live in — its directory's role and its language's casing. */
+  path?: string;
+  /** `kind: "type"`: the planned ancestor — its family's role. Ignored for a constant. */
+  extends?: string;
+  /** `kind: "type"`: the meaning, for term alignment; absent → the request's `concept`, else the name's own words. */
+  concept?: string;
+  /**
+   * `kind: "type"`: the declaration kind, when known (diff mode knows it). A
+   * `constant` is judged against the project's constants; absent → a
+   * SCREAMING_SNAKE name is a constant, any other a type.
+   */
+  symbolKind?: SymbolDefinitionKind;
+}
+
+/** A type or constant draft (`kind: "type"`), as the ops layer judges it once `path` is validated. */
+export type NamingLexiconTypeDraft = Omit<NamingLexiconDraftName, "kind" | "path"> & { kind: "type"; path: string };
+
+/**
+ * The evidence scope of one answer — internal, not a request field: diff mode
+ * (bd tea-rags-mcp-fdef2) passes the changed files, and EVERY evidence read
+ * skips them (spec §6.4), so a change an incremental reindex already stored
+ * cannot vote for itself.
+ */
+export interface NamingLexiconEvidenceScope {
+  excludePaths?: readonly string[];
 }
 
 /** At least one of `types` / `anchors` / `concept` / `names`; `concept` requires `language`. */
@@ -113,7 +145,7 @@ export interface NamingLexiconResult {
   byCallee?: NamingLexiconCalleeEntry[];
   concept?: { terms: ConceptTerm[] };
   names: NamingLexiconNameVerdict[];
-  /** e.g. `concept step skipped: …` when embeddings are unavailable. */
+  /** e.g. `concept step skipped: …` when embeddings are unavailable, or an empty type-declaration table. */
   notices?: string[];
   /** Set when the index predates the identifier table — names the reindex. */
   driftWarning?: string;

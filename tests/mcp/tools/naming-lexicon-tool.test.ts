@@ -122,6 +122,48 @@ describe("get_naming_lexicon", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-vi0wx: type and constant names are drafts of kind `type`, judged by the file they live in.
+  it("accepts a type draft with path and extends, and rejects one without a path", () => {
+    const { inputSchema } = registered().config;
+    expect(
+      inputSchema.safeParse({
+        project: "p",
+        names: [
+          {
+            name: "ResolutionOutcome",
+            kind: "type",
+            path: "src/x/strategies/new.ts",
+            extends: "SymbolResolutionStrategy",
+          },
+          { name: "MAX_RETRIES", kind: "type", path: "src/x/limits.ts" },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(inputSchema.safeParse({ project: "p", names: [{ name: "Commit", kind: "type" }] }).success).toBe(false);
+  });
+
+  it("tells an agent the type-draft verdicts and fields", () => {
+    const { config } = registered();
+    const draft = (
+      toJsonSchemaCompat(config.inputSchema) as {
+        properties: { names: { items: { properties: Record<string, { description?: string; enum?: string[] }> } } };
+      }
+    ).properties.names.items.properties;
+    expect(draft.kind.enum).toContain("type");
+    expect(draft.path).toBeDefined();
+    expect(draft.extends).toBeDefined();
+    expect(config.description).toMatch(/COLLISION/);
+    expect(config.description).toMatch(/alternatives/);
+  });
+
+  it("forwards a type draft unchanged", async () => {
+    const { handler, app } = registered();
+    vi.mocked(app.getNamingLexicon).mockResolvedValue({ scope: "", byType: [], names: [] });
+    const names = [{ name: "Commit", kind: "type", path: "src/vcs/commit.ts", extends: "Base" }];
+    await handler({ collection: "c", names });
+    expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0].names).toEqual(names);
+  });
+
   it("keeps one-line field descriptions and no examples", () => {
     const { properties } = toJsonSchemaCompat(registered().config.inputSchema) as {
       properties: Record<string, { description?: string; examples?: unknown }>;

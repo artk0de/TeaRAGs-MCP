@@ -180,32 +180,34 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
  */
 const NAMING_LEXICON_DESCRIPTION =
   "Project naming vocabulary from the codegraph. `types`/`anchors` → names per kind + shape; " +
-  "`names[]` (attribute: kind field; method: kind return) → CONFORMS | MISFIT{suggestion} | NEW_TERM{topTerms}, " +
-  "+genericName if generic; `concept`+`language` → project terms.";
+  "`names[]` (attribute: kind field; method: return; class/const: type+path) → CONFORMS | MISFIT{suggestion} | " +
+  "NEW_TERM{topTerms,alternatives} | COLLISION, +genericName; `concept`+`language` → terms.";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
     name: z.string().min(1),
     kind: z
-      .enum(["param", "local", "field", "return"])
+      .enum(["param", "local", "field", "return", "type"])
       .optional()
-      .describe("ivar/attribute/property: field; method: return, type=result type"),
+      .describe("default local; ivar/attribute/property: field; method: return, type=result type"),
     type: z.string().optional(),
     typeMultiplicity: z.enum(["one", "many"]).optional().describe("many: collection; type=element"),
     callee: z
       .object({ member: z.string().min(1), receiver: z.string().optional() })
       .optional()
       .describe("Bound call"),
+    path: z.string().optional(),
+    extends: z.string().optional(),
   });
   return z
     .object({
       ...collectionPathFields(),
-      pathPattern: z.string().optional().describe("Glob scope; widens under 5 rows"),
-      language: z.string().optional().describe("Casing source; required with concept"),
+      pathPattern: z.string().optional().describe("Glob; widens under 5 rows"),
+      language: z.string().optional().describe("Casing; needed with concept"),
       types: z.array(z.string()).optional(),
-      anchors: z.array(z.string()).optional().describe("SymbolIds whose param/return types to add"),
-      concept: z.string().optional().describe("Domain description, not a name"),
-      names: z.array(draftName).optional().describe("Drafts; kind default local"),
+      anchors: z.array(z.string()).optional().describe("SymbolIds: add param/return types"),
+      concept: z.string().optional().describe("Domain, not a name"),
+      names: z.array(draftName).optional(),
     })
     .refine(
       (req) =>
@@ -218,6 +220,10 @@ function buildNamingLexiconInputSchema() {
     .refine((req) => req.concept === undefined || req.language !== undefined, {
       message: "concept requires language",
       path: ["language"],
+    })
+    .refine((req) => (req.names ?? []).every((draft) => draft.kind !== "type" || draft.path !== undefined), {
+      message: "a kind 'type' draft requires path",
+      path: ["names"],
     });
 }
 

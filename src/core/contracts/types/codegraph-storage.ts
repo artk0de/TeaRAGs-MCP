@@ -146,10 +146,21 @@ export interface TypeDeclarationReplaceEntry {
 }
 
 /**
+ * Files an evidence read never reads (bd tea-rags-mcp-vi0wx, spec §6.4): diff
+ * mode's changed files, so a changed file is judged against the project and
+ * not against the copy of itself an incremental reindex already stored.
+ * Bounded by the diff cap (200 files), so it travels as a bind list; absent or
+ * empty = no file is excluded.
+ */
+export interface IdentifierEvidenceExclusion {
+  excludePaths?: readonly string[];
+}
+
+/**
  * The scope of an identifier read: the effective types asked for, optionally
  * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
  */
-export interface IdentifierTypeScopeQuery {
+export interface IdentifierTypeScopeQuery extends IdentifierEvidenceExclusion {
   types: readonly string[];
   pathPrefixes?: readonly string[];
 }
@@ -196,7 +207,7 @@ export interface IdentifierLanguageGroupedRow {
  * without `receiver` matches the member under ANY receiver, receiverless
  * included.
  */
-export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery {
+export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion {
   callees: readonly IdentifierBoundCallee[];
   pathPrefixes?: readonly string[];
 }
@@ -250,7 +261,7 @@ export interface IdentifierNameTypeRow {
 }
 
 /** A read over every identifier row, optionally narrowed to files under any of `pathPrefixes`. */
-export interface IdentifierScopeQuery {
+export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion {
   pathPrefixes?: readonly string[];
 }
 
@@ -377,7 +388,7 @@ export interface OntologyReportThresholds {
  * the scope is a generic candidate (thresholds); the names the caller judges
  * generic are excluded from every section.
  */
-export interface OntologyReportQuery {
+export interface OntologyReportQuery extends IdentifierEvidenceExclusion {
   /** Literal `rel_path` prefixes; empty / absent = the whole project. */
   pathPrefixes?: readonly string[];
   /** File extensions (`.rb`, lowercase) a row's file must carry — the language filter. */
@@ -999,11 +1010,11 @@ export interface GraphDbClient {
   /** The typed `param` and `return` rows of the given owner symbols. */
   anchorIdentifierTypes: (symbolIds: readonly SymbolId[]) => Promise<AnchorIdentifierTypeRow[]>;
 
-  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped). */
-  identifierNameTypes: (names: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
+  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped); `excludePaths` files unread. */
+  identifierNameTypes: (names: readonly string[], excludePaths?: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
 
-  /** Collision: the given names that are already a `cg_symbols.short_name`. */
-  existingSymbolShortNames: (names: readonly string[]) => Promise<string[]>;
+  /** Collision: the given names that are already a `cg_symbols.short_name` outside the `excludePaths` files. */
+  existingSymbolShortNames: (names: readonly string[], excludePaths?: readonly string[]) => Promise<string[]>;
 
   /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
   countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;
@@ -1050,7 +1061,8 @@ export interface GraphDbClient {
    * The type-level symbols of the scope with their inheritance ancestors, for
    * type-role derivation (bd tea-rags-mcp-vi0wx). Rows of unknown kind, the
    * `excludePaths` files and non-production paths are never read. Ordered by
-   * `rel_path`, then `symbol_id`.
+   * `rel_path`, then declaration line, then `symbol_id`: within a file the rows
+   * arrive in declaration order, which the primary-type pick relies on.
    */
   readTypeNameRows: (q: TypeNameQuery) => Promise<TypeNameRow[]>;
 

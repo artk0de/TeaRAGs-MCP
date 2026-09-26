@@ -178,13 +178,15 @@ export interface OntologyReadScope {
 /**
  * The non-production masks every ontology read scopes by — the tooling
  * directories plus every language's test shapes, which `domains/language` owns
- * (bd tea-rags-mcp-vjz6s). Built once: the store compiles its SQL per object.
+ * (bd tea-rags-mcp-vjz6s). The naming lexicon's type-name read takes the same
+ * masks, so the two audits agree on what "the project" is. Built once: the
+ * store compiles its SQL per object.
  */
-let ontologyNonProductionPaths: CaseSplitPathPatterns | undefined;
+let cachedNonProductionPaths: CaseSplitPathPatterns | undefined;
 
-function nonProductionPaths(): CaseSplitPathPatterns {
-  ontologyNonProductionPaths ??= nonProductionPathPatterns(languageTestFileConventions());
-  return ontologyNonProductionPaths;
+export function ontologyNonProductionPaths(): CaseSplitPathPatterns {
+  cachedNonProductionPaths ??= nonProductionPathPatterns(languageTestFileConventions());
+  return cachedNonProductionPaths;
 }
 
 /**
@@ -207,7 +209,7 @@ export function ontologyReportQuery(
       extensions: [...p.extensions],
       typeNames: [...p.naming.nonConceptTypes],
     })),
-    nonProductionPaths: nonProductionPaths(),
+    nonProductionPaths: ontologyNonProductionPaths(),
     shadowsMethodExtensions: languages.filter((p) => p.naming.implicitSelf).flatMap((p) => [...p.extensions]),
     sections: [...sections],
     limit,

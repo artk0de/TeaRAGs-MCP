@@ -245,6 +245,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.aggregateIdentifiersByType({
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      excludePaths: p.excludePaths as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       groupByMultiplicity: p.groupByMultiplicity as boolean | undefined,
       countSameTypeSiblings: p.countSameTypeSiblings as boolean | undefined,
@@ -254,20 +255,30 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.aggregateIdentifiersByCallee({
       callees: p.callees as IdentifierBoundCallee[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      excludePaths: p.excludePaths as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),
   anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
-  identifierNameTypes: read(async (graphDb, p) => graphDb.identifierNameTypes(p.names as string[])),
-  existingSymbolShortNames: read(async (graphDb, p) => graphDb.existingSymbolShortNames(p.names as string[])),
+  identifierNameTypes: read(async (graphDb, p) =>
+    graphDb.identifierNameTypes(p.names as string[], p.excludePaths as string[] | undefined),
+  ),
+  existingSymbolShortNames: read(async (graphDb, p) =>
+    graphDb.existingSymbolShortNames(p.names as string[], p.excludePaths as string[] | undefined),
+  ),
   countIdentifiers: read(async (graphDb, p) =>
-    graphDb.countIdentifiers({ types: p.types as string[], pathPrefixes: p.pathPrefixes as string[] | undefined }),
+    graphDb.countIdentifiers({
+      types: p.types as string[],
+      pathPrefixes: p.pathPrefixes as string[] | undefined,
+      excludePaths: p.excludePaths as string[] | undefined,
+    }),
   ),
   // Naming-lexicon scope reads (bd tea-rags-mcp-4p3sb.11).
   aggregateIdentifiersByName: read(async (graphDb, p) =>
     graphDb.aggregateIdentifiersByName({
       names: p.names as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      excludePaths: p.excludePaths as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),
@@ -275,12 +286,14 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.identifierLanguageCounts({
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       pathSuffixes: p.pathSuffixes as string[] | undefined,
+      excludePaths: p.excludePaths as string[] | undefined,
     }),
   ),
   sampleIdentifierShapes: read(async (graphDb, p) =>
     graphDb.sampleIdentifierShapes({
       limit: p.limit as number,
       pathPrefixes: p.pathPrefixes as string[] | undefined,
+      excludePaths: p.excludePaths as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
     }),
   ),

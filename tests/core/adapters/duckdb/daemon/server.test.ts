@@ -1267,3 +1267,59 @@ describe("CodegraphDaemonServer.handle — type-name rows", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-vi0wx (spec §6.4): the daemon ops hand excludePaths to the store.
+describe("CodegraphDaemonServer.handle — excludePaths on the naming evidence reads", () => {
+  it("drops the excluded file's rows from every identifier read", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ident_exclude_v1";
+    const doc = (name: string) => ({
+      ownerSymbolId: "A#run",
+      kind: "local",
+      name,
+      line: 2,
+      typeName: "Doc",
+      typeSource: "binding",
+      boundMember: "find",
+    });
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: {
+        collection: c,
+        entries: [
+          { relPath: "a.rb", rows: [doc("doc")] },
+          { relPath: "b.rb", rows: [doc("meta")] },
+        ],
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "b.rb",
+        definitions: [{ symbolId: "Meta", fqName: "Meta", shortName: "Meta", relPath: "b.rb", scope: [] }],
+      },
+    });
+    const excludePaths = ["b.rb"];
+    const result = async (op: string, params: Record<string, unknown>): Promise<unknown> =>
+      ((await server.handle({ id: 3, op, params: { collection: c, ...params } } as never)) as { result: unknown })
+        .result;
+    const names = (rows: unknown) => (rows as { name: string }[]).map((r) => r.name);
+
+    expect(names(await result("aggregateIdentifiersByType", { types: ["Doc"], excludePaths }))).toEqual(["doc"]);
+    expect(await result("countIdentifiers", { types: ["Doc"], excludePaths })).toBe(1);
+    expect(
+      names(await result("aggregateIdentifiersByCallee", { callees: [{ member: "find" }], excludePaths })),
+    ).toEqual(["doc"]);
+    expect(names(await result("aggregateIdentifiersByName", { names: ["doc", "meta"], excludePaths }))).toEqual([
+      "doc",
+    ]);
+    expect(names(await result("sampleIdentifierShapes", { limit: 10, excludePaths }))).toEqual(["doc"]);
+    expect(names(await result("identifierNameTypes", { names: ["doc", "meta"], excludePaths }))).toEqual(["doc"]);
+    expect(await result("existingSymbolShortNames", { names: ["Meta"], excludePaths })).toEqual([]);
+    expect(await result("identifierLanguageCounts", { excludePaths })).toEqual([{ language: null, n: 1 }]);
+    await pool.closeAll();
+  });
+});

@@ -127,6 +127,7 @@ export type {
   // Naming lexicon (get_naming_lexicon)
   NamingLexiconCalleeEntry,
   NamingLexiconDraftName,
+  NamingLexiconEvidenceScope,
   NamingLexiconEvidenceSource,
   NamingLexiconGenericName,
   NamingLexiconKindProfile,
@@ -135,6 +136,7 @@ export type {
   NamingLexiconNameVerdict,
   NamingLexiconRequest,
   NamingLexiconResult,
+  NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
 } from "./naming-lexicon.js";
 

@@ -43,9 +43,13 @@ export { extractConceptTerms } from "./terms.js";
 export type { ConceptTerm, ConceptTermHolder } from "./terms.js";
 export { TYPE_ROLE_THRESHOLDS, deriveTypeRoles, expectedRoleFor } from "./type-roles.js";
 export type { TypeNameRow, TypeRoleAssignment, TypeRoleEvidence, TypeRoleThresholds } from "./type-roles.js";
-export { judgeDraftName } from "./verdicts.js";
+export { TYPE_DRAFT_KINDS, judgeDraftName, judgeTypeDraft, typeDraftPopulation, typeNameEvidence } from "./verdicts.js";
 export type {
   DraftNameJudgementInput,
+  NamingExpectedTypeRole,
+  TypeDraftJudgementInput,
+  TypeDraftPopulation,
+  TypeNameEvidence,
   NamingByCalleeRow,
   NamingByTypeRow,
   NamingReturnVerbShare,

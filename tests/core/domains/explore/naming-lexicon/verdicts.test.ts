@@ -5,7 +5,13 @@ import type {
   NamingShapeDistribution,
   NamingShapeShare,
 } from "../../../../../src/core/domains/explore/naming-lexicon/shapes.js";
-import { judgeDraftName } from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
+import type { TypeNameRow } from "../../../../../src/core/domains/explore/naming-lexicon/type-roles.js";
+import {
+  judgeDraftName,
+  judgeTypeDraft,
+  typeDraftPopulation,
+  typeNameEvidence,
+} from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
 
 const TYPE = "TaxAutomationDocument";
 const OWNER = "TaxPreparation::TaxAutomations::Syncer#call";
@@ -700,5 +706,222 @@ describe("judgeDraftName — nothing to judge against", () => {
 
   it("no type, callee or terms conforms", () => {
     expect(judgeDraftName({ name: "row", casing: "snake" })).toEqual({ verdict: "CONFORMS" });
+  });
+});
+
+/**
+ * Type and constant drafts (bd tea-rags-mcp-vi0wx, spec §3–4): MISFIT when the
+ * family or directory role is missing, COLLISION on an existing type's short
+ * name in another module, NEW_TERM (soft, with `alternatives` when term
+ * alignment finds candidates) otherwise unless role and terms align.
+ */
+describe("judgeTypeDraft", () => {
+  function row(
+    shortName: string,
+    relPath: string,
+    ancestors: string[] = [],
+    symbolKind: TypeNameRow["symbolKind"] = "class",
+  ): TypeNameRow {
+    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors };
+  }
+  /** Distinct single-word types spread over their own directories: population without roles. */
+  function filler(count: number): TypeNameRow[] {
+    return Array.from({ length: count }, (_, i) =>
+      row(`Filler${String.fromCharCode(97 + (i % 26))}${i}`, `src/f${i}/x.ts`),
+    );
+  }
+  const STRATEGIES = [
+    row("TsStrategy", "src/lang/ts/strategy.ts", ["SymbolResolutionStrategy"]),
+    row("PyStrategy", "src/lang/py/strategy.ts", ["SymbolResolutionStrategy"]),
+    row("RubyStrategy", "src/lang/rb/strategy.ts", ["SymbolResolutionStrategy"]),
+  ];
+  const judge = (
+    rows: readonly TypeNameRow[],
+    draft: { name: string; path: string; extends?: string; symbolKind?: TypeNameRow["symbolKind"] },
+    conceptNames: readonly string[] = [],
+  ) =>
+    judgeTypeDraft({
+      ...draft,
+      casing: "pascal",
+      evidence: typeNameEvidence(rows, typeDraftPopulation(draft)),
+      conceptNames,
+    });
+
+  // A project-wide popular suffix with no inheritance or directory anchor is a guess, not an expected role.
+  describe("the project suffix only confirms", () => {
+    // `options` is a project suffix (3 primary files, 3 dirs); src/explore/ has no directory role.
+    const OPTIONS_ELSEWHERE = [
+      row("PostProcessOptions", "src/explore/post-process.ts"),
+      ...["Alpha", "Bravo", "Charlie", "Delta", "Echo"].map((name) =>
+        row(name, `src/explore/${name.toLowerCase()}.ts`),
+      ),
+      row("IndexOptions", "src/a/index-options.ts"),
+      row("RenderOptions", "src/b/render-options.ts"),
+    ];
+
+    it("`CalculatedDoc` in a directory with no directory role → not MISFIT", () => {
+      expect(
+        judge(OPTIONS_ELSEWHERE, { name: "CalculatedDoc", path: "src/explore/calculated-doc.ts" }).verdict,
+      ).not.toBe("MISFIT");
+    });
+
+    it("`SearchOptions` there → CONFORMS", () => {
+      expect(judge(OPTIONS_ELSEWHERE, { name: "SearchOptions", path: "src/explore/search-options.ts" })).toEqual({
+        verdict: "CONFORMS",
+      });
+    });
+
+    it("`SearchOptions` in a directory where no type carries the suffix → CONFORMS", () => {
+      expect(judge(OPTIONS_ELSEWHERE, { name: "SearchOptions", path: "src/z/search-options.ts" })).toEqual({
+        verdict: "CONFORMS",
+      });
+    });
+  });
+
+  it("a draft extending a family without the family's role → MISFIT naming name + role", () => {
+    expect(
+      judge(STRATEGIES, {
+        name: "ResolutionOutcome",
+        path: "src/core/domains/language/x/strategies/new.ts",
+        extends: "SymbolResolutionStrategy",
+      }),
+    ).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "ResolutionOutcomeStrategy",
+      role: { word: "strategy", evidence: "inheritance" },
+    });
+  });
+
+  it("a draft carrying the family role with established terms → CONFORMS", () => {
+    expect(
+      judge(STRATEGIES, { name: "GoStrategy", path: "src/lang/go/strategy.ts", extends: "SymbolResolutionStrategy" }),
+    ).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a short name that already exists as a type in another module → COLLISION naming it", () => {
+    const rows = [...filler(6), row("Commit", "src/git/commit.ts")];
+    expect(judge(rows, { name: "Commit", path: "src/vcs/commit.ts" })).toEqual({
+      verdict: "COLLISION",
+      existing: { symbolId: "Commit", relPath: "src/git/commit.ts" },
+    });
+  });
+
+  it("the draft's own file and ambient `.d.ts` declarations are no collision", () => {
+    const rows = [...filler(6), row("Commit", "src/vcs/commit.ts"), row("Commit", "types/global.d.ts")];
+    expect(judge(rows, { name: "Commit", path: "src/vcs/commit.ts" }).verdict).not.toBe("COLLISION");
+  });
+
+  it("a duplicate (relPath, typeId) row — a Rust associated const in two impls — counts once", () => {
+    // One `FooStore` read twice is not two types: no directory role from it.
+    const rows = [...filler(3), row("FooStore", "src/stores/foo.ts"), row("FooStore", "src/stores/foo.ts")];
+    expect(typeNameEvidence(rows, "type").roles).toEqual([]);
+  });
+
+  it("an unestablished qualifier with an established modifier lifted in the concept code → NEW_TERM + alternatives", () => {
+    const rows = [
+      ...filler(20),
+      row("PredefinedTemplate", "src/templates/predefined.ts"),
+      row("PredefinedField", "src/fields/predefined.ts"),
+      row("InvoiceDoc", "src/docs/invoice.ts"),
+    ];
+    const verdict = judge(rows, { name: "CalculatedDoc", path: "src/docs/calculated.ts" }, [
+      "PredefinedTemplate",
+      "PredefinedField",
+    ]);
+    expect(verdict).toMatchObject({ verdict: "NEW_TERM" });
+    expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives?.[0] : undefined).toMatchObject({
+      word: "predefined",
+      heads: ["field", "template"],
+      domains: ["src/fields", "src/templates"],
+    });
+  });
+
+  it("offers no qualifier the draft already carries, and at most the three most lifted", () => {
+    // Live on the self-index `CalculatedDoc` drew 17 alternatives, the first being its own head `doc`.
+    const modifiers = ["Doc", "Alpha", "Bravo", "Charlie", "Delta"];
+    const rows = [
+      ...filler(40),
+      ...modifiers.flatMap((word) => [
+        row(`${word}Template`, `src/t/${word}.ts`),
+        row(`${word}Field`, `src/f/${word}.ts`),
+      ]),
+    ];
+    // Lift order: Alpha ×4, Bravo ×3, Charlie ×2, Delta ×1 hits, and `Doc` above them all.
+    const conceptNames = [
+      ...Array.from({ length: 5 }, () => "DocTemplate"),
+      ...Array.from({ length: 4 }, () => "AlphaTemplate"),
+      ...Array.from({ length: 3 }, () => "BravoTemplate"),
+      ...Array.from({ length: 2 }, () => "CharlieTemplate"),
+      "DeltaTemplate",
+    ];
+    const verdict = judge(rows, { name: "CalculatedDoc", path: "src/c/calculated.ts" }, conceptNames);
+    expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives?.map((a) => a.word) : undefined).toEqual([
+      "alpha",
+      "bravo",
+      "charlie",
+    ]);
+  });
+
+  it("nothing similar in the concept code → NEW_TERM with no alternatives", () => {
+    const rows = [
+      ...filler(20),
+      row("PredefinedTemplate", "src/templates/p.ts"),
+      row("PredefinedField", "src/fields/p.ts"),
+    ];
+    const verdict = judge(rows, { name: "CalculatedDoc", path: "src/docs/calculated.ts" }, []);
+    expect(verdict).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+
+  it("a head spelled against the project's dominant spelling → NEW_TERM with a head alternative, never MISFIT", () => {
+    const docs = Array.from({ length: 12 }, (_, i) => row(`Kind${i}Doc`, `src/docs/k${i}.ts`));
+    const rows = [...filler(6), ...docs, row("RawDocument", "src/raw/raw.ts")];
+    const verdict = judge(rows, { name: "CalculatedDocument", path: "src/calc/calculated.ts" });
+    expect(verdict.verdict).toBe("NEW_TERM");
+    expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives : undefined).toContainEqual(
+      expect.objectContaining({ word: "doc", slot: "head" }),
+    );
+  });
+
+  describe("constants — judged against the constant population, directory and suffix evidence only", () => {
+    const constant = (name: string, relPath: string) => row(name, relPath, ["Ignored"], "constant");
+    const PATTERNS = [
+      constant("SPEC_PATTERN", "src/infra/patterns/spec.ts"),
+      constant("TEST_PATTERN", "src/infra/patterns/test.ts"),
+      constant("FIXTURE_PATTERN", "src/infra/patterns/fixture.ts"),
+    ];
+
+    it("a SCREAMING draft in a directory of `*_PATTERN` constants → MISFIT in the draft's casing", () => {
+      const rows = [...filler(6), ...PATTERNS];
+      expect(
+        judgeTypeDraft({
+          name: "VENDOR_GLOB",
+          path: "src/infra/patterns/vendor.ts",
+          casing: "screamingSnake",
+          evidence: typeNameEvidence(rows, typeDraftPopulation({ name: "VENDOR_GLOB" })),
+          conceptNames: [],
+        }),
+      ).toMatchObject({ verdict: "MISFIT", suggestion: "VENDOR_GLOB_PATTERN", role: { evidence: "directory" } });
+    });
+
+    it("never reads constants as an inheritance family, and never reports a COLLISION", () => {
+      const rows = [...filler(6), ...PATTERNS, constant("DEFAULT_LIMIT", "src/a/limits.ts")];
+      const evidence = typeNameEvidence(rows, "constant");
+      expect(evidence.roles.map((r) => r.evidence)).not.toContain("inheritance");
+      expect(
+        judgeTypeDraft({
+          name: "DEFAULT_LIMIT",
+          path: "src/b/limits.ts",
+          casing: "screamingSnake",
+          evidence,
+          conceptNames: [],
+        }).verdict,
+      ).not.toBe("COLLISION");
+    });
+
+    it("the draft population: an explicit symbolKind, else SCREAMING casing → constant", () => {
+      expect(typeDraftPopulation({ name: "MAX_RETRIES" })).toBe("constant");
+      expect(typeDraftPopulation({ name: "maxRetries", symbolKind: "constant" })).toBe("constant");
+      expect(typeDraftPopulation({ name: "RetryPolicy" })).toBe("type");
+    });
   });
 });

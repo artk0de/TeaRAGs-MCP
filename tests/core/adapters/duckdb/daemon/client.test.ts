@@ -1036,3 +1036,40 @@ describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)"
     });
   });
 });
+
+// bd tea-rags-mcp-vi0wx (spec §6.4): diff mode excludes the changed files from every evidence read.
+describe("DaemonGraphDbClient — excludePaths on the naming evidence reads", () => {
+  it("forwards excludePaths on every identifier read that takes it", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "countIdentifiers" ? 0 : [];
+    });
+    const excludePaths = ["src/changed.ts"];
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.aggregateIdentifiersByType({ types: ["Doc"], excludePaths });
+    await client.countIdentifiers({ types: ["Doc"], excludePaths });
+    await client.aggregateIdentifiersByCallee({ callees: [{ member: "find" }], excludePaths });
+    await client.aggregateIdentifiersByName({ names: ["doc"], excludePaths });
+    await client.identifierLanguageCounts({ excludePaths });
+    await client.sampleIdentifierShapes({ limit: 5, excludePaths });
+    await client.identifierNameTypes(["doc"], excludePaths);
+    await client.existingSymbolShortNames(["Doc"], excludePaths);
+    await client.close();
+    for (const op of [
+      "aggregateIdentifiersByType",
+      "countIdentifiers",
+      "aggregateIdentifiersByCallee",
+      "aggregateIdentifiersByName",
+      "identifierLanguageCounts",
+      "sampleIdentifierShapes",
+      "identifierNameTypes",
+      "existingSymbolShortNames",
+    ]) {
+      expect(seen.find((r) => r.op === op)?.params, op).toMatchObject({ excludePaths });
+    }
+  });
+});

@@ -11,8 +11,17 @@ import type {
   IdentifierDeclarationKind,
   IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph-extraction.js";
+import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
 import type { IdentifierCasing } from "../../../contracts/types/language.js";
-import { joinIdentifierWords, singularizeIdentifierWord, splitIdentifierWords, typeNameWords } from "./casing.js";
+import {
+  detectIdentifierCasing,
+  joinIdentifierWords,
+  singularizeIdentifierWord,
+  splitIdentifierWords,
+  typeNameLastSegment,
+  typeNameWords,
+} from "./casing.js";
+import { splitNameSlots } from "./name-slots.js";
 import {
   calleeDerivedName,
   classifyNamingShape,
@@ -26,12 +35,35 @@ import {
   type NamingShapeDistribution,
   type NamingShapeRow,
 } from "./shapes.js";
+import {
+  alignHead,
+  alignQualifiers,
+  establishedModifiers,
+  modifierLift,
+  type ModifierUse,
+  type TermAlternative,
+} from "./term-alignment.js";
 import type { ConceptTerm } from "./terms.js";
+import {
+  deriveTypeRoles,
+  expectedRoleFor,
+  type TypeNameRow,
+  type TypeRoleAssignment,
+  type TypeRoleEvidence,
+} from "./type-roles.js";
+
+/** The role a type draft was expected to carry: its word, the evidence behind it, example type names. */
+export interface NamingExpectedTypeRole {
+  word: string;
+  evidence: TypeRoleEvidence;
+  examples: string[];
+}
 
 export type NamingVerdict =
   | { verdict: "CONFORMS" }
-  | { verdict: "MISFIT"; suggestion: string; holder?: string }
-  | { verdict: "NEW_TERM"; topTerms: string[] };
+  | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
+  | { verdict: "NEW_TERM"; topTerms: string[]; alternatives?: TermAlternative[] }
+  | { verdict: "COLLISION"; existing: { symbolId: string; relPath: string } };
 
 /** One `byType` aggregate row: a name bound to the draft's type `n` times. */
 export interface NamingByTypeRow {
@@ -426,4 +458,204 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   // with no comparable row — is no evidence of conformance.
   if (typeName !== undefined) return { verdict: "NEW_TERM", topTerms: [] };
   return { verdict: "CONFORMS" };
+}
+
+// ── type and constant drafts (bd tea-rags-mcp-vi0wx) ─────────────────────────
+
+/** The declaration kinds a TYPE draft is judged against; a constant draft is judged against `constant`. */
+export const TYPE_DRAFT_KINDS: readonly SymbolDefinitionKind[] = ["class", "module", "interface", "enum", "type_alias"];
+
+/** Which population a `kind: "type"` draft belongs to: the project's types, or its constants. */
+export type TypeDraftPopulation = "type" | "constant";
+
+/** Term alignment's default lift floor: a modifier must be over-represented 2× in the concept code. */
+const DEFAULT_LIFT_FLOOR = 2;
+/** Directories listed on a head alternative. */
+const MAX_HEAD_DOMAINS = 5;
+/**
+ * Qualifier alternatives offered, most lifted first. Live on the self-index
+ * (3,600 declarations) an unbounded list ran to 17 for `CalculatedDoc`; an agent
+ * reads the top few.
+ */
+const MAX_QUALIFIER_ALTERNATIVES = 3;
+/** An ambient declaration file (`declare global`, `declare module "x"`) augments; it declares nothing new. */
+const AMBIENT_DECLARATION_FILE = /\.d\.[cm]?ts$/;
+
+/**
+ * A draft is a constant when the caller says so (`symbolKind`), else when it
+ * is written in SCREAMING_SNAKE — the one casing no language gives a type.
+ */
+export function typeDraftPopulation(draft: { name: string; symbolKind?: SymbolDefinitionKind }): TypeDraftPopulation {
+  if (draft.symbolKind !== undefined) return draft.symbolKind === "constant" ? "constant" : "type";
+  return detectIdentifierCasing(draft.name) === "screamingSnake" ? "constant" : "type";
+}
+
+/** Everything a type draft is judged against, derived once per population from the store's rows. */
+export interface TypeNameEvidence {
+  population: TypeDraftPopulation;
+  /** The population's rows, one per (relPath, symbolId). */
+  rows: readonly TypeNameRow[];
+  roles: readonly TypeRoleAssignment[];
+  /** Modifiers standing before ≥ 2 heads in ≥ 2 directories. */
+  established: readonly ModifierUse[];
+  /** Names per head word (a name's last word). */
+  headCounts: ReadonlyMap<string, number>;
+  /** Directories of the names per head word. */
+  headDirs: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+function directoryOfPath(relPath: string): string {
+  const slash = relPath.lastIndexOf("/");
+  return slash < 0 ? "" : relPath.slice(0, slash);
+}
+
+/**
+ * The evidence of one population. A (relPath, symbolId) read twice — a Rust
+ * associated const declared in two trait impls of one file — is one
+ * declaration. Constants carry no ancestors: their roles come from directory
+ * and project-suffix evidence only.
+ */
+export function typeNameEvidence(rows: readonly TypeNameRow[], population: TypeDraftPopulation): TypeNameEvidence {
+  const seen = new Set<string>();
+  const members: TypeNameRow[] = [];
+  for (const row of rows) {
+    if ((row.symbolKind === "constant") !== (population === "constant")) continue;
+    const key = `${row.relPath}\u0000${row.symbolId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    members.push(population === "constant" ? { ...row, ancestors: [] } : row);
+  }
+
+  const modifiers = new Map<string, { heads: Set<string>; dirs: Set<string>; count: number }>();
+  const headCounts = new Map<string, number>();
+  const headDirs = new Map<string, Set<string>>();
+  for (const row of members) {
+    const words = typeNameWords(row.shortName);
+    const head = words.at(-1);
+    if (head === undefined) continue;
+    const dir = directoryOfPath(row.relPath);
+    headCounts.set(head, (headCounts.get(head) ?? 0) + 1);
+    headDirs.set(head, (headDirs.get(head) ?? new Set<string>()).add(dir));
+    for (const word of new Set(words.slice(0, -1))) {
+      const use = modifiers.get(word) ?? { heads: new Set<string>(), dirs: new Set<string>(), count: 0 };
+      use.heads.add(head);
+      use.dirs.add(dir);
+      use.count += 1;
+      modifiers.set(word, use);
+    }
+  }
+
+  return {
+    population,
+    rows: members,
+    roles: deriveTypeRoles(members),
+    established: establishedModifiers([...modifiers].map(([word, use]) => ({ word, ...use }))),
+    headCounts,
+    headDirs,
+  };
+}
+
+export interface TypeDraftJudgementInput {
+  name: string;
+  /** The file the declaration will live in. */
+  path: string;
+  /** The planned ancestor — a type draft's family; ignored for a constant. */
+  extends?: string;
+  /** The casing a suggestion is rendered in when the draft's own is indeterminate (the language's role casing). */
+  casing: IdentifierCasing;
+  /** Built by {@link typeNameEvidence} for the draft's {@link typeDraftPopulation}. */
+  evidence: TypeNameEvidence;
+  /** Type names in the code nearest the draft's concept — the term-alignment lift sample. */
+  conceptNames: readonly string[];
+  liftFloor?: number;
+}
+
+/** The first existing TYPE with the draft's short name in another, non-ambient file. */
+function collidingType(input: TypeDraftJudgementInput): { symbolId: string; relPath: string } | undefined {
+  if (input.evidence.population !== "type") return undefined;
+  const shortName = typeNameLastSegment(input.name);
+  const hit = input.evidence.rows
+    .filter(
+      (row) => row.shortName === shortName && row.relPath !== input.path && !AMBIENT_DECLARATION_FILE.test(row.relPath),
+    )
+    .sort((a, b) => a.relPath.localeCompare(b.relPath) || a.symbolId.localeCompare(b.symbolId))[0];
+  return hit ? { symbolId: hit.symbolId, relPath: hit.relPath } : undefined;
+}
+
+/**
+ * Qualifier alternatives (established modifiers lifted in the concept code,
+ * never a word the draft already carries, at most three), then the head's
+ * dominant spelling.
+ */
+function termAlternatives(input: TypeDraftJudgementInput, words: readonly string[]): TermAlternative[] {
+  const { evidence } = input;
+  const slots = splitNameSlots(words.join("_"), new Set(evidence.headCounts.keys()));
+  const lift = modifierLift(evidence.established, input.conceptNames, evidence.rows.length);
+  const alternatives = alignQualifiers(slots, evidence.established, lift, input.liftFloor ?? DEFAULT_LIFT_FLOOR)
+    .filter((alternative) => !words.includes(alternative.word))
+    .slice(0, MAX_QUALIFIER_ALTERNATIVES);
+  const head = alignHead(slots, evidence.headCounts);
+  if (head !== undefined) {
+    const draftHeadCount = evidence.headCounts.get(slots.head.at(-1) ?? "") ?? 0;
+    alternatives.push({
+      word: head,
+      slot: "head",
+      heads: [],
+      domains: [...(evidence.headDirs.get(head) ?? [])].sort().slice(0, MAX_HEAD_DOMAINS),
+      lift: (evidence.headCounts.get(head) ?? 0) / Math.max(1, draftHeadCount),
+    });
+  }
+  return alternatives;
+}
+
+/**
+ * Judges a type or constant draft (spec §3–4), strongest evidence first:
+ *
+ * 1. MISFIT — the family role (via `extends`, types only), else the
+ *    directory's, and the name's last word is not that role; suggestion = the
+ *    name + the role, in the draft's own casing. A project suffix never sets
+ *    an expected role: popular elsewhere, unanchored here, it is a guess;
+ * 2. COLLISION — a TYPE draft whose short name another module already declares
+ *    as a type (the draft's own file and ambient `*.d.ts` files excluded);
+ *    constants never collide — `VERSION` in two modules is routine;
+ * 3. NEW_TERM with `alternatives` — term alignment found an established
+ *    modifier over-represented in the concept code, or the project's dominant
+ *    spelling of the head; soft, never MISFIT;
+ * 4. CONFORMS — the name carries its expected role, or its head is a project
+ *    suffix (the suffix confirms, never demands), or its head is a known head
+ *    and every qualifier an established modifier;
+ * 5. otherwise NEW_TERM with no alternatives — a new concept, a legitimate outcome.
+ */
+export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
+  const words = typeNameWords(input.name);
+  const draftCasing = detectIdentifierCasing(input.name) ?? input.casing;
+  const role = expectedRoleFor(input.evidence.roles, {
+    path: input.path,
+    ...(input.evidence.population === "type" && input.extends !== undefined ? { extends: input.extends } : {}),
+  });
+  // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms.
+  const expected = role?.evidence === "projectSuffix" ? undefined : role;
+  if (expected && words.at(-1) !== expected.role) {
+    return {
+      verdict: "MISFIT",
+      suggestion: joinIdentifierWords([...words, expected.role], draftCasing),
+      role: { word: expected.role, evidence: expected.evidence, examples: expected.examples },
+    };
+  }
+
+  const existing = collidingType(input);
+  if (existing) return { verdict: "COLLISION", existing };
+
+  const alternatives = termAlternatives(input, words);
+  if (alternatives.length > 0) return { verdict: "NEW_TERM", topTerms: [], alternatives };
+  if (expected) return { verdict: "CONFORMS" };
+  const head = words.at(-1);
+  if (input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
+    return { verdict: "CONFORMS" };
+  }
+
+  const establishedWords = new Set(input.evidence.established.map((use) => use.word));
+  const headKnown = (input.evidence.headCounts.get(words.at(-1) ?? "") ?? 0) > 0;
+  const aligned = headKnown && words.slice(0, -1).every((word) => establishedWords.has(word));
+  return aligned ? { verdict: "CONFORMS" } : { verdict: "NEW_TERM", topTerms: [] };
 }

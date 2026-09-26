@@ -71,7 +71,7 @@ import type {
 import type { DuckDbGraphSession } from "./graph-session.js";
 import {
   DECLARED_IDENTIFIER_SQL,
-  pathPrefixPredicate,
+  evidenceScopePredicate,
   resolvedIdentifiersCte,
   type SqlPredicate,
 } from "./identifier-store.js";
@@ -172,12 +172,12 @@ function notExcludedNamePredicate(excludedGenericNames: readonly string[]): SqlP
 }
 
 /**
- * The audit's file scope: the caller's path prefixes AND production files only
+ * The audit's file scope: the caller's path prefixes, minus its `excludePaths`, AND production files only
  * (`OntologyReportQuery.nonProductionPaths` compiled to SQL — the architecture
  * report's classification).
  */
 function ontologyScopePredicate(q: OntologyReportQuery): SqlPredicate {
-  const prefix = pathPrefixPredicate(q.pathPrefixes);
+  const prefix = evidenceScopePredicate(q.pathPrefixes, q.excludePaths);
   const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
   return { sql: `(${prefix.sql} AND NOT ${nonProduction("rel_path")})`, params: prefix.params };
 }
