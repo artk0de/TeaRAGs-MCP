@@ -32,6 +32,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -81,31 +82,6 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   };
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   return out;
-}
-
-/**
- * Rust associated functions conventionally used as constructors. A
- * `let y = Worker::new()` binds `y` to `Worker` ONLY when the assoc-fn is
- * one of these well-known constructor names AND the receiving type is
- * CapWords. Any other assoc fn (`Worker::query()`, `Config::load()`)
- * returns a value whose type we can't know from the call alone — recording
- * it would fabricate a wrong binding, so we SKIP. `with_*` covers the
- * common `Foo::with_capacity(n)` builder shape.
- */
-function isRustConstructorAssocFn(name: string): boolean {
-  return name === "new" || name === "from" || name === "default" || name.startsWith("with_");
-}
-
-/**
- * PEP8-style CapWords gate, mirroring the Python walker's
- * `isCapWordsConstructor`. Rust types are UpperCamelCase
- * (`Worker`, `HashMap`); modules are snake_case (`mymod`). A lowercase
- * scoped-identifier path segment is a MODULE path (`mymod::new()`), not a
- * type constructor — recording it would attribute `Foo#method` to a module
- * name. Gate on the leading character of the receiving type segment.
- */
-function isCapWordsType(name: string): boolean {
-  return /^[A-Z]/.test(name);
 }
 
 /**

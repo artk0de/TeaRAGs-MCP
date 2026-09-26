@@ -27,9 +27,14 @@
  *   1. selfMethod (self.X same-file — intra-impl call)
  *   2. selfField (self.field.X via declared field type — terminal guard)
  *   3. localBinding (obj.X via walker-bound type — terminal guard on miss)
- *   4. importMatch (receiver ∈ use import → suffix basename match)
- *   5. bareSelfMethod (bare X() inside impl → enclosing-type probe)
- *   6. globalShortName (global short-name fallback)
+ *   4. typeReceiver (Type::X / Self::X / Type::new().X via an in-project
+ *      type — terminal guard on miss). After localBinding because a local
+ *      binding is the more specific evidence for a bare identifier; before
+ *      importMatch and globalShortName because both would otherwise answer a
+ *      type-path call by member name alone (bd tea-rags-mcp-7266).
+ *   5. importMatch (receiver ∈ use import → suffix basename match)
+ *   6. bareSelfMethod (bare X() inside impl → enclosing-type probe)
+ *   7. globalShortName (global short-name fallback)
  */
 
 import {
@@ -49,6 +54,7 @@ import {
   RustLocalBindingSymbolResolutionStrategy,
   RustSelfFieldSymbolResolutionStrategy,
   RustSelfMethodSymbolResolutionStrategy,
+  RustTypeReceiverSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
 
@@ -62,6 +68,7 @@ export class RustCallResolver implements CallResolver {
       new RustSelfMethodSymbolResolutionStrategy(cfg),
       new RustSelfFieldSymbolResolutionStrategy(cfg),
       new RustLocalBindingSymbolResolutionStrategy(cfg),
+      new RustTypeReceiverSymbolResolutionStrategy(cfg),
       new RustImportMatchSymbolResolutionStrategy(cfg),
       new RustBareSelfMethodSymbolResolutionStrategy(cfg),
       new RustGlobalShortNameSymbolResolutionStrategy(cfg),

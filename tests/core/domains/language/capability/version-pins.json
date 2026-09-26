@@ -70,7 +70,7 @@
   "rust": {
     "walker": {
       "version": 4,
-      "digest": "sha256:c557eb4a721a50434643e156f0a3adb7e00fad56cc6f4fc40775503d05dead09"
+      "digest": "sha256:e9ff75ec9f18488472f51f9afaf52b55b56ebfd79cb44c926bc9a17567079db6"
     }
   },
   "swift": {
