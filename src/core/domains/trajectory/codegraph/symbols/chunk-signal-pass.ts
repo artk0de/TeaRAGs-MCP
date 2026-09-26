@@ -160,16 +160,17 @@ export class CodegraphChunkSignalPass {
 
 /**
  * The symbol→startLine input of {@link computeSymbolChunkIds}, projected from
- * the walker's per-file ranges exactly as the pre-9i2ow startLine-keyed line map
- * produced it: one symbol per start line, the LAST walked chunk at a line
- * winning, in first-seen line order. Kept that way on purpose — the join's
- * semantics are not part of the chunk-owner change (bd tea-rags-mcp-9i2ow).
+ * the walker's per-file ranges: EVERY walked symbol keeps its own start line, so
+ * symbols that share one — the accessors a Ruby `has_many` / `belongs_to` /
+ * multi-name `delegate` mints on the macro's line — each join the chunk covering
+ * it. The pre-9i2ow projection went through a startLine-keyed map and kept only
+ * the last symbol walked at a line, which left the others with a NULL
+ * `chunk_id` (bd tea-rags-mcp-63l69). A symbol walked at several ranges keeps
+ * its last one, as before.
  */
 function symbolStartLinesOf(ranges: readonly SymbolLineRange[]): Map<SymbolId, number> {
-  const symbolByStartLine = new Map<number, SymbolId>();
-  for (const range of ranges) symbolByStartLine.set(range.startLine, range.symbolId);
   const out = new Map<SymbolId, number>();
-  for (const [startLine, symbolId] of symbolByStartLine) out.set(symbolId, startLine);
+  for (const range of ranges) out.set(range.symbolId, range.startLine);
   return out;
 }
 
