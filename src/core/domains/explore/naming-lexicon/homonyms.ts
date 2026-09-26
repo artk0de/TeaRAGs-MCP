@@ -57,7 +57,7 @@ export function mergeUnqualifiedTypeSpellings<T extends HomonymTypeCount>(types:
  * and it is 2+ letters and shorter than the word — `ctx` / Context, `cfg` /
  * Config, `opts` / Options. Letters only: `ctx2` abbreviates nothing.
  */
-function isWordAbbreviation(abbreviation: string, word: string): boolean {
+export function isWordAbbreviation(abbreviation: string, word: string): boolean {
   const abbr = abbreviation.toLowerCase();
   const full = word.toLowerCase();
   if (!/^[a-z]+$/.test(abbr) || abbr.length < 2 || abbr.length >= full.length) return false;
