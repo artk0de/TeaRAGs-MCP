@@ -52,6 +52,7 @@ import {
   pythonDispatchRefOf,
   type PythonDispatchScope,
 } from "./passes/python-dispatch-tables.js";
+import { collectPythonStructuralContracts } from "./python-structural-contracts.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -257,6 +258,10 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // legacy `classExtends` stays (resolver-forward path).
   const inheritanceEdges = collectPythonInheritanceEdges(root);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
+  // bd tea-rags-mcp-39xca.14 — `typing.Protocol` classes, which the barrier
+  // matches against owners to add `structural` hierarchy rows.
+  const structuralContracts = collectPythonStructuralContracts(root, defSignatures);
+  if (structuralContracts.length > 0) out.structuralContracts = structuralContracts;
   return out;
 }
 

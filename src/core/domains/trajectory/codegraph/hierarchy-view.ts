@@ -13,8 +13,17 @@ import type {
   InheritanceKind,
 } from "../../../contracts/types/codegraph.js";
 
-// MRO precedence: prepend (highest) ▸ include/extend ▸ implements ▸ super (lowest).
-export const MRO_RANK: Record<InheritanceKind, number> = { prepend: 0, include: 1, extend: 1, implements: 2, super: 3 };
+// MRO precedence: prepend (highest) ▸ include/extend ▸ implements ▸ super ▸
+// structural (lowest). A structural ancestor is derived, never declared, so it
+// sorts after every nominal one; MRO walks exclude it by kind anyway.
+export const MRO_RANK: Record<InheritanceKind, number> = {
+  prepend: 0,
+  include: 1,
+  extend: 1,
+  implements: 2,
+  super: 3,
+  structural: 4,
+};
 
 export class MapHierarchyView implements HierarchyView {
   constructor(private readonly snapshot: HierarchySnapshot) {}

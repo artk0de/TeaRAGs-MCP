@@ -14,8 +14,48 @@
  * Class-hierarchy edge kind (bd tea-rags-mcp-f10y). `super`/`include`/`extend`/
  * `prepend` mirror Ruby's MRO inputs; `implements` covers TS/Java interface
  * heritage (and TS `interface X extends Y`). Single vocabulary across languages.
+ *
+ * `structural` (bd tea-rags-mcp-39xca.14) is the one DERIVED kind: an owner
+ * whose members satisfy a structural contract (a TypeScript interface, a Python
+ * `Protocol`) without declaring it. The barrier derives these rows every run
+ * and never persists them. A structural ancestor contributes DOWNWARD dispatch
+ * only (the CHA cone reaches the implementer); it never contributes inherited
+ * implementation, so MRO, `super` and member lookup read
+ * {@link NOMINAL_INHERITANCE_KINDS}.
  */
-export type InheritanceKind = "super" | "include" | "extend" | "prepend" | "implements";
+export type InheritanceKind = "super" | "include" | "extend" | "prepend" | "implements" | "structural";
+
+/**
+ * Every kind a walker DECLARES — the hierarchy an ancestor linearization, a
+ * `super` hop or an up-the-MRO member lookup may walk. Excludes `structural`.
+ */
+export const NOMINAL_INHERITANCE_KINDS: readonly InheritanceKind[] = [
+  "super",
+  "include",
+  "extend",
+  "prepend",
+  "implements",
+];
+
+/**
+ * One structural contract a walker declares (bd tea-rags-mcp-39xca.14): a type
+ * that any owner carrying its members satisfies, declared or not. `name` is the
+ * contract's name as the hierarchy keys it; `members` are its REQUIRED callable
+ * members only — optional members, data properties, index and call signatures
+ * are left out because the symbol table carries no definition to check them
+ * against. `params` is the declared positional parameter count: a conforming
+ * owner's member may require fewer, never more.
+ */
+export interface StructuralContractDecl {
+  name: string;
+  members: StructuralContractMember[];
+}
+
+/** One required member of a {@link StructuralContractDecl}. */
+export interface StructuralContractMember {
+  name: string;
+  params: number;
+}
 
 /**
  * Walker emission shape — one row per declared inheritance relation, BEFORE

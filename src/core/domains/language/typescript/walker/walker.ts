@@ -35,6 +35,7 @@ import {
   exportNamesField,
   moduleCallExportNames,
 } from "../../shared/ecmascript-export-names.js";
+import { collectTypescriptCallableArities, collectTypescriptStructuralContracts } from "./structural-contracts.js";
 
 export interface ExtractInput {
   tree: MaterializedTree;
@@ -97,6 +98,10 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   const variableBindings = collectVariableBindings(input.tree.rootNode, typeAliases);
   const allBindings = [...paramBindings, ...variableBindings].sort((a, b) => a.startLine - b.startLine);
   const bindingOwnership = assignParamBindingsToInnermostChunks(allBindings, input.chunks);
+  // bd tea-rags-mcp-39xca.14 — positional arity per callable, joined to its
+  // chunk by the declaring line, so structural conformance can reject an
+  // implementer requiring more arguments than the contract passes.
+  const callableArities = collectTypescriptCallableArities(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -105,6 +110,8 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const arity = callableArities.get(c.startLine);
+    if (arity !== undefined) chunk.arity = arity;
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
     return chunk;
@@ -134,6 +141,10 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // classExtends deliberately omits as "type-only, no runtime dispatch".
   const inheritanceEdges = collectInheritanceEdges(input.tree.rootNode);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
+  // bd tea-rags-mcp-39xca.14 — interfaces and object type aliases, which the
+  // barrier matches against owners to add `structural` hierarchy rows.
+  const structuralContracts = collectTypescriptStructuralContracts(input.tree.rootNode);
+  if (structuralContracts.length > 0) out.structuralContracts = structuralContracts;
   return out;
 }
 

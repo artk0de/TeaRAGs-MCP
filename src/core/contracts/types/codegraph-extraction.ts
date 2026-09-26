@@ -12,7 +12,7 @@
  */
 
 import type { DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
-import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
+import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
@@ -235,6 +235,15 @@ export interface FileExtraction {
    * Plain array for NDJSON-spill round-trip.
    */
   inheritanceEdges?: InheritanceEdgeDecl[];
+  /**
+   * Optional structural contracts the file declares (bd tea-rags-mcp-39xca.14):
+   * TypeScript interfaces and object type aliases, Python `Protocol` classes.
+   * The pass-1→pass-2 barrier matches them against the symbol table's owners
+   * and adds a derived `structural` hierarchy row for every owner that conforms
+   * without declaring it, so the CHA cone reaches it. Undefined for a file
+   * declaring none and for languages without structural types.
+   */
+  structuralContracts?: StructuralContractDecl[];
   /**
    * Optional per-class instance-variable type map: `fqClassName → ivarName →
    * typeName`, built from DECLARED ivar types — `RubyTypeFact` entries of

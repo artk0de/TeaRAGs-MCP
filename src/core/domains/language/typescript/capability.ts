@@ -136,6 +136,10 @@ export const capability: LanguageCapability = {
   // Same walker 12, bd tea-rags-mcp-r8hme.12: statement-level `import type` /
   // `export type … from` are emitted on `typeOnlyImports` and persisted to
   // `cg_symbols_edges_file_type_only` instead of being dropped.
+  // Same walker 12, bd tea-rags-mcp-39xca.14: interfaces and object type
+  // aliases are emitted as `structuralContracts` and every callable chunk
+  // carries its `arity`, so an interface receiver's cone reaches the classes
+  // and object-literal factories that satisfy it without `implements`.
   versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties

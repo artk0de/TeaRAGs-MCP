@@ -85,7 +85,10 @@ import type {
   SymbolDefinition,
 } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
-import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+import {
+  collectSchemaColumnSources,
+  collectStructuralConformanceDerivers,
+} from "../../src/core/domains/trajectory/codegraph/exclusion.js";
 import { absorbPass1FileState } from "../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { buildPass1Aggregates } from "../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
@@ -147,7 +150,11 @@ function bindRunStart(state: CodegraphRunState, root: string): void {
  * active.
  */
 function newRunState(factory: LanguageFactory): CodegraphRunState {
-  return new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
+  return new CodegraphRunState(
+    collectSchemaColumnSources(factory),
+    collectDependencyManifestSources(factory),
+    collectStructuralConformanceDerivers(factory),
+  );
 }
 
 /** Production gates self-dispatch discovery on Ruby in both of its call sites; so does this. */

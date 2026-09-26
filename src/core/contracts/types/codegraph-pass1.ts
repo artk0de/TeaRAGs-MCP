@@ -67,7 +67,7 @@ import type {
   ModuleReexport,
   TypeDeclarationFact,
 } from "./codegraph-extraction.js";
-import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
+import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -289,4 +289,13 @@ export interface CodegraphPass1FileAggregates {
   methodParamNames?: Record<SymbolId, readonly string[]>;
   classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
   typedClassFields?: readonly string[];
+  /**
+   * The file's structural contracts verbatim (bd tea-rags-mcp-39xca.14). The
+   * barrier derives `structural` hierarchy rows from EVERY contract of the
+   * family against the project-wide symbol table, so an incremental run that
+   * did not walk the interface's file still needs its declaration. Keyed by the
+   * declaring relPath and replaced on a re-walk, like `typeDeclarations`.
+   * Persisted after the Ruby parameter family, so older rows keep their bytes.
+   */
+  structuralContracts?: readonly StructuralContractDecl[];
 }

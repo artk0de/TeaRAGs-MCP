@@ -339,3 +339,51 @@ describe("ConeDispatchResolver — RTA prune (bd pffv)", () => {
     expect(edges.map((e) => e.targetSymbolId)).toEqual(["A#m"]);
   });
 });
+
+describe("ConeDispatchResolver — structural ancestors never define (bd 39xca.14)", () => {
+  it("finds an instantiated type's nearest definer through nominal ancestors only", () => {
+    // A and B extend Base and override m; Base does not define m. X extends Base
+    // and defines nothing, but CONFORMS structurally to A. A structural ancestor
+    // gives downward dispatch only, so X has no nearest definer: the RTA prune
+    // finds no evidence and the soundness floor keeps the whole cone. Walking
+    // the structural row would have kept A alone.
+    const row = (source: string, ancestor: string, kind: InheritanceEdgeRow["kind"]): InheritanceEdgeRow => ({
+      sourceFqName: source,
+      sourceSymbolId: null,
+      ancestorFqName: ancestor,
+      ancestorSymbolId: null,
+      kind,
+      ordinal: 0,
+    });
+    const rows = [
+      row("A", "Base", "super"),
+      row("B", "Base", "super"),
+      row("X", "Base", "super"),
+      row("X", "A", "structural"),
+    ];
+    const snapshot: HierarchySnapshot = {
+      ancestorsBySource: { A: [rows[0]], B: [rows[1]], X: [rows[2], rows[3]] },
+      descendantsByAncestor: { Base: rows.slice(0, 3), A: [rows[3]] },
+    };
+    const locator: ConeTypeLocator = {
+      resolveTypeFile: (t) => `${t.toLowerCase()}.ts`,
+      findDirectMethod: (t, member): SymbolResolutionTarget | null =>
+        member === "m" && (t === "A" || t === "B")
+          ? { targetRelPath: `${t.toLowerCase()}.ts`, targetSymbolId: `${t}#m` }
+          : null,
+    };
+    const structuralCtx = {
+      callerFile: "caller.ts",
+      callerScope: [],
+      imports: [],
+      symbolTable: {} as never,
+      localBindings: { obj: [{ line: 1, type: "Base" }] },
+      hierarchy: new MapHierarchyView(snapshot),
+      instantiatedTypes: new Set(["X"]),
+    } as unknown as CallContext;
+
+    const edges = edgesOf(new ConeDispatchResolver(locator, 8).resolveDispatch(rtaCall, structuralCtx));
+
+    expect(edges.map((e) => e.targetSymbolId).sort()).toEqual(["A#m", "B#m"]);
+  });
+});

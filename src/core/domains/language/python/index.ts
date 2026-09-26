@@ -51,11 +51,13 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  StructuralConformanceDeriver,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/index.js";
+import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/index.js";
 import { pythonKernel } from "./kernel.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";
+import { isPythonSourcePath } from "./vocabulary/source-extensions.js";
 import { pyNameOf } from "./walker/name-of.js";
 import { PYTHON_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromPythonFile, type PythonExtractInput } from "./walker/walker.js";
@@ -106,6 +108,13 @@ export class PythonLanguage implements LanguageProvider {
    * (bd tea-rags-mcp-w205u.1).
    */
   readonly dependencyManifest: DependencyManifestSource = PYTHON_DEPENDENCY_MANIFEST;
+  /**
+   * `typing.Protocol` is structural (PEP 544, bd tea-rags-mcp-39xca.14): a class
+   * carrying a Protocol's methods satisfies it without subclassing it. Python
+   * owners only.
+   */
+  readonly structuralConformance: StructuralConformanceDeriver = (input) =>
+    deriveStructuralConformance(input, isPythonSourcePath);
   readonly walker: LanguageWalker = composeExtractionWalker({
     // `WalkInput.declaredDependencies` rides through structurally, so the Django
     // class-body facet composes against THIS project's manifests; undefined →

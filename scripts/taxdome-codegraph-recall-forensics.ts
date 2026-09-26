@@ -6002,6 +6002,8 @@ function superDefinersIn(chain: readonly string[], member: string, ctx: CallCont
 /** Heritage channel from `enclosingClass` to `definer` (direct edge kind). */
 function superChannelTo(enclosingClass: string, definer: string, ctx: CallContext): SuperMissRecord["channel"] {
   for (const edge of hierarchyView.getAncestors(enclosingClass)) {
+    // `super` travels declared heritage only; a derived structural row is no channel (bd 39xca.14).
+    if (edge.kind === "structural") continue;
     const fq = canonFqForOracle(edge.ancestorFqName, enclosingClass, ctx);
     if (fq === definer) return edge.kind;
     if (collectResolvedAncestorChain(fq, ctx).includes(definer)) return edge.kind;

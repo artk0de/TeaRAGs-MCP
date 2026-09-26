@@ -13,6 +13,7 @@ import {
   type InheritanceEdgeRow,
   type NamedSymbol,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { TypeScriptLanguage } from "../../../../../../src/core/domains/language/typescript/index.js";
 import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
@@ -406,4 +407,79 @@ describe("TSCallResolver — builtin-typed receiver with a uniquely named projec
         .kind,
     ).toBe("continue");
   });
+});
+
+/**
+ * bd tea-rags-mcp-39xca.14 — a class that satisfies the interface WITHOUT an
+ * `implements` clause is a structural descendant. The barrier derives the row
+ * from the interface's contract and the symbol table, and the same cone reaches
+ * the implementer. `RunMemo` carries both names too, but requires more
+ * arguments than the port passes, so it never conforms.
+ */
+describe("TSCallResolver.resolveDispatch — structural implementer of a checker-typed interface (bd 39xca.14)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-structural-receiver-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  const arity = (minRequired: number, maxPositional: number) => ({ minRequired, maxPositional, hasSplat: false });
+
+  it("fans memo?.set out to the class that conforms without implements, and not to one requiring more arguments", () => {
+    writeMemoFixture(repoRoot);
+    // `Memo` drops its `implements` clause: only structure connects it now.
+    writeSource(repoRoot, "src/memo.ts", [
+      `export class Memo {`,
+      `  get(key: string): number[] | undefined {`,
+      `    return key.length > 0 ? [] : undefined;`,
+      `  }`,
+      ``,
+      `  set(key: string, value: number[]): void {`,
+      `    void key;`,
+      `    void value;`,
+      `  }`,
+      `}`,
+    ]);
+    const memo = [
+      sym("Memo", "Memo", "src/memo.ts", []),
+      { ...sym("Memo#get", "get", "src/memo.ts", ["Memo"]), arity: arity(1, 1) },
+      { ...sym("Memo#set", "set", "src/memo.ts", ["Memo"]), arity: arity(2, 2) },
+    ];
+    const runMemo = [
+      sym("RunMemo", "RunMemo", "src/run-memo.ts", []),
+      { ...sym("RunMemo#get", "get", "src/run-memo.ts", ["RunMemo"]), arity: arity(2, 2) },
+      { ...sym("RunMemo#set", "set", "src/run-memo.ts", ["RunMemo"]), arity: arity(3, 3) },
+    ];
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
+    table.upsertFile("src/memo.ts", memo);
+    table.upsertFile("src/run-memo.ts", runMemo);
+    const structuralRows = new TypeScriptLanguage().structuralConformance({
+      contracts: [
+        {
+          name: "MemoPort",
+          members: [
+            { name: "get", params: 1 },
+            { name: "set", params: 2 },
+          ],
+        },
+      ],
+      memberDefinitions: [...table.lookupByShortName("get"), ...table.lookupByShortName("set")],
+      nominalRows: [],
+    });
+
+    const ctx = walkCtx(table, { hierarchy: new MapHierarchyView(buildHierarchySnapshot(structuralRows)) });
+
+    expect(structuralRows.map((row) => `${row.sourceFqName} ${row.kind} ${row.ancestorFqName}`)).toEqual([
+      "Memo structural MemoPort",
+    ]);
+    expect(edgesOf(resolver(repoRoot).resolveDispatch(SET_CALL, ctx))).toEqual([edgeTo("src/memo.ts", "Memo#set", 1)]);
+  });
+
+  const resolver = (root: string): TSCallResolver =>
+    new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, root);
 });
