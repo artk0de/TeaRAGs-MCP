@@ -35,17 +35,67 @@
  * keeps hydration exact and language-neutral.
  */
 
-import type { CodegraphPass1FileAggregates, SelfDispatchMethodDecl } from "../../../../contracts/types/codegraph.js";
+import type {
+  CodegraphPass1FileAggregates,
+  FileExtraction,
+  SelfDispatchMethodDecl,
+} from "../../../../contracts/types/codegraph.js";
 import { PASS1_AGGREGATE_SLICE_FIELDS, type Pass1AggregateSlice } from "./run-global-map-registry.js";
 
 /**
- * The extraction fields the persisted slice carries: every slice field except
- * the self-dispatch list, which is derived from the chunks and handed in beside
- * the extraction. Derived from the registry's hydrate entries (bd
- * tea-rags-mcp-39xca.6), so a new hydrate channel is a new source field here
- * without an edit.
+ * Slice fields that are not an extraction field of the same name: the
+ * self-dispatch list is handed in beside the extraction, and the two Ruby
+ * parameter-family indexes are derived from it (see {@link rubyParamFamilyOf}).
  */
-type Pass1AggregateSource = Omit<Pass1AggregateSlice, "selfDispatchMethods">;
+type DerivedSliceField = "selfDispatchMethods" | "methodParamNames" | "typedClassFields";
+
+/**
+ * The extraction fields the persisted slice carries: every slice field except
+ * the derived ones, plus the extraction fields those derive from. Derived from
+ * the registry's hydrate entries (bd tea-rags-mcp-39xca.6), so a new hydrate
+ * channel is a new source field here without an edit.
+ */
+type Pass1AggregateSource = Omit<Pass1AggregateSlice, DerivedSliceField> &
+  Pick<FileExtraction, "chunks" | "classFieldTypes">;
+
+/** The language whose walker feeds the parameter-type fold, as `CodegraphRunState#absorb` gates it. */
+const PARAM_FAMILY_LANGUAGE = "ruby";
+
+/**
+ * The Ruby parameter family's slice fields (bd tea-rags-mcp-39xca.15), exactly
+ * the facts `CodegraphRunState#absorb` merges from the same extraction: the
+ * call-site argument types and `@ivar = <param>` links verbatim, the chunks'
+ * positional parameter names by symbolId, and the `"fqClass|@ivar"` coordinates
+ * the walker typed on its own. Every field is `undefined` for another language,
+ * because absorb ignores them there and a hydrated fact the full run never had
+ * would make the two runs disagree the other way.
+ */
+function rubyParamFamilyOf(
+  extraction: Pass1AggregateSource,
+): Pick<Pass1AggregateSlice, "knownTargetCallArgs" | "methodParamNames" | "classFieldParamLinks" | "typedClassFields"> {
+  if (extraction.language !== PARAM_FAMILY_LANGUAGE) {
+    return {
+      knownTargetCallArgs: undefined,
+      methodParamNames: undefined,
+      classFieldParamLinks: undefined,
+      typedClassFields: undefined,
+    };
+  }
+  const methodParamNames: Record<string, readonly string[]> = {};
+  for (const chunk of extraction.chunks) {
+    if (chunk.paramNames !== undefined) methodParamNames[chunk.symbolId] = chunk.paramNames;
+  }
+  const typedClassFields: string[] = [];
+  for (const [fqClass, fields] of Object.entries(extraction.classFieldTypes ?? {})) {
+    for (const ivar of Object.keys(fields)) typedClassFields.push(`${fqClass}|${ivar}`);
+  }
+  return {
+    knownTargetCallArgs: extraction.knownTargetCallArgs,
+    methodParamNames,
+    classFieldParamLinks: extraction.classFieldParamLinks,
+    typedClassFields,
+  };
+}
 
 /**
  * Build one file's persisted slice, or `undefined` when the file declares
@@ -68,7 +118,7 @@ export function buildPass1Aggregates(
 ): Pass1AggregateSlice | undefined {
   // One view over every slice field, so the loop needs no per-field branch: the
   // self-dispatch list simply joins the extraction's own fields.
-  const source: Pass1AggregateSlice = { ...extraction, selfDispatchMethods };
+  const source: Pass1AggregateSlice = { ...extraction, ...rubyParamFamilyOf(extraction), selfDispatchMethods };
   const slice: Pass1AggregateSlice = { relPath: extraction.relPath, language: extraction.language };
   // Registry order IS the persisted key order — see RUN_GLOBAL_MAP_PERSISTENCE.
   for (const field of PASS1_AGGREGATE_SLICE_FIELDS) {
