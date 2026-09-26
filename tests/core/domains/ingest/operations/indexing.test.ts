@@ -728,6 +728,7 @@ function third() {
       const codegraphPool = {
         removeCollection: vi.fn().mockResolvedValue(true),
         listCollectionDbNames: vi.fn().mockReturnValue([]),
+        listCollectionGenerationNames: vi.fn().mockReturnValue([]),
       };
       const cgIngest = new IngestFacade({
         qdrant: qdrant as any,
@@ -753,6 +754,7 @@ function third() {
       const codegraphPool = {
         removeCollection: vi.fn().mockResolvedValue(true),
         listCollectionDbNames: vi.fn().mockReturnValue([]),
+        listCollectionGenerationNames: vi.fn().mockReturnValue([]),
       };
       const cgIngest = new IngestFacade({
         qdrant: qdrant as any,

@@ -21,6 +21,7 @@
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 
 const ECMASCRIPT_FAMILY = "ecmascript";
+const ECMASCRIPT_LANGUAGES: readonly string[] = ["typescript", "javascript"];
 
 /**
  * The family whose class namespace `language`'s walker writes into. Idempotent
@@ -28,7 +29,22 @@ const ECMASCRIPT_FAMILY = "ecmascript";
  * column types) may pass it wherever a language is expected.
  */
 export function languageFamilyOf(language: string): string {
-  return language === "typescript" || language === "javascript" ? ECMASCRIPT_FAMILY : language;
+  return ECMASCRIPT_LANGUAGES.includes(language) ? ECMASCRIPT_FAMILY : language;
+}
+
+/**
+ * Every language whose walker writes into the same families as `languages` —
+ * the inverse of {@link languageFamilyOf}, deduplicated in first-seen order. A
+ * TypeScript-only run still needs the JavaScript files' persisted pass-1 slices,
+ * because a TS class may extend a JS one.
+ */
+export function languagesSharingFamilyWith(languages: Iterable<string>): string[] {
+  const members = new Set<string>();
+  for (const language of languages) {
+    const familyMembers = languageFamilyOf(language) === ECMASCRIPT_FAMILY ? ECMASCRIPT_LANGUAGES : [language];
+    for (const member of familyMembers) members.add(member);
+  }
+  return [...members];
 }
 
 /**

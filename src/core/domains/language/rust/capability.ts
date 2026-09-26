@@ -13,7 +13,7 @@ export const capability: LanguageCapability = {
   testFiles,
   codegraph: {
     tier: "moderate",
-    tech: "6-strategy; trait-based dispatch",
+    tech: "7-strategy; trait-based dispatch",
     // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
     // A tuple struct is called (`Point(1, 2)`). A call spelled with an enum's name
     // builds a VARIANT (`SpecValue::Style(style)`), never the enum, so an enum is a
@@ -41,7 +41,12 @@ export const capability: LanguageCapability = {
   // walker 8: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
   // fn's return type as a `return` (`Self` as the impl's type), so a walker-7
   // index has no return row for call-return to join.
-  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // Also under walker 8 (same release cycle, re-pinned, no second bump): bd
+  // tea-rags-mcp-7266 — the `typeReceiver` pass resolves `Type::f()`,
+  // `Self::f()` and `Type::new().m()` through an in-project type.
+  // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 3.
+  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

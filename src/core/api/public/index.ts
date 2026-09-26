@@ -85,6 +85,7 @@ export {
   InvalidParameterError,
   ProjectNotRegisteredError,
   ProjectNameNotUniqueError,
+  ProjectEnvKeyUnknownError,
   ProjectNameInvalidError,
   ProjectPathAlreadyRegisteredError,
   PathDoesNotExistError,
@@ -116,6 +117,7 @@ export { CollectionRegistry } from "../../domains/maintenance/registry/index.js"
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
 export { canonicalRegistryEnvKeys, registryEnvGroupMembers } from "../../domains/maintenance/registry/index.js";
+export { editRegistryEnv } from "../../domains/maintenance/registry/index.js";
 export {
   outerEnvForRegistryEntry,
   pickRegistryEntry,

@@ -7,9 +7,10 @@
  *     conditional co-change rate; "strong" = at or above Otsu's cut over every
  *     candidate AND strictly above 0.5, the 0.5 floor alone below 8 candidates;
  *   - only an UNLINKED strong pair is a violation, with its evidence;
- *   - tests, generated code, documentation, pairs with no walked endpoint,
- *     pairs with a no-symbol walked endpoint and pairs with lift ≤ 1 are
- *     excluded and counted, by the first reason that applies;
+ *   - tests, generated code, documentation, pairs with no walked endpoint and
+ *     pairs with lift ≤ 1 are excluded and counted, by the first reason that
+ *     applies; a no-symbol walked endpoint is judged like any other, since its
+ *     type-only imports are file edges (bd tea-rags-mcp-r8hme.12);
  *   - a file with two or more silent partners is a root cause;
  *   - `pathPattern` scopes the judged pairs by either endpoint, never the cut;
  *   - no build is reported as not built, not as a clean bill of health.
@@ -164,13 +165,9 @@ describe("detectSilentCoupling", () => {
         pair("src/a.ts", "src/api.generated.ts"),
         pair("README.md", "src/a.ts"),
         pair("config/a.yml", "config/b.yml"),
-        pair("src/a.ts", "src/types.ts"),
         pair("src/a.ts", "src/b.ts", { lift: 1 }),
       ]),
-      [
-        ...files("src/a.ts", "src/b.ts", "src/api.generated.ts"),
-        { relPath: "src/types.ts", language: "typescript", symbolCount: 0 },
-      ],
+      files("src/a.ts", "src/b.ts", "src/api.generated.ts"),
       { isDocumentation: (relPath) => relPath.endsWith(".md") },
     );
 
@@ -180,10 +177,23 @@ describe("detectSilentCoupling", () => {
       generatedEndpoints: 1,
       documentationEndpoints: 1,
       unwalkedEndpoints: 1,
-      noSymbolEndpoints: 1,
       nonPositiveLift: 1,
     });
     expect(report.summary.candidateCount).toBe(0);
+  });
+
+  it("judges a pair with a no-symbol endpoint: a type-only import links it, no import at all is silent (bd tea-rags-mcp-r8hme.12)", () => {
+    // cg_symbols_edges_file_type_only makes an `import type` a file edge, so a
+    // barrel / type-only / object-literal module's missing edge IS evidence.
+    const report = detectSilentCoupling(
+      built([pair("src/a.ts", "src/types.ts"), pair("src/b.ts", "src/types.ts", { structurallyLinked: true })]),
+      [...files("src/a.ts", "src/b.ts"), { relPath: "src/types.ts", language: "typescript", symbolCount: 0 }],
+    );
+
+    expect(report.violations.map((v) => `${v.relPathA}|${v.relPathB}`)).toEqual(["src/a.ts|src/types.ts"]);
+    expect(report.violations[0]?.structuralVisibility).toBe("both-walked");
+    expect(report.summary).toMatchObject({ candidateCount: 2, strongCount: 2, strongLinkedCount: 1 });
+    expect(report.summary.excluded).not.toHaveProperty("noSymbolEndpoints");
   });
 
   it("keeps a pair whose other endpoint is not walked code, and says the graph cannot see it", () => {

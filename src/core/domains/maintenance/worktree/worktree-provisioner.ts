@@ -70,7 +70,7 @@ export class WorktreeProvisioner {
     const occupant = registry.findByPath(worktreePath);
     if (occupant) throw new WorktreeCollectionExistsError(occupant.collectionName);
 
-    const targetLogical = resolveCollectionName(worktreePath);
+    const targetAliasCollectionName = resolveCollectionName(worktreePath);
 
     // By NAME: the mirror case — an entry whose collectionName IS this hash but
     // whose path has moved away reads as a FREE directory, yet the clone would
@@ -78,13 +78,13 @@ export class WorktreeProvisioner {
     // `record` overwrites the live project's entry, `setName` takes its alias,
     // and `setWorktreeProvenance` stamps it a clone — and `worktreeOf` is the
     // only thing standing between `worktree remove` and a real project.
-    if (registry.get(targetLogical)) throw new WorktreeCollectionExistsError(targetLogical);
+    if (registry.get(targetAliasCollectionName)) throw new WorktreeCollectionExistsError(targetAliasCollectionName);
 
-    const srcPhysical = await qdrant.aliases.resolveActive(sourceEntry.collectionName);
+    const sourcePhysicalCollectionName = await qdrant.aliases.resolveActive(sourceEntry.collectionName);
 
     const source: ResolvedCollection = {
       logicalName: sourceEntry.collectionName,
-      physicalName: srcPhysical,
+      physicalName: sourcePhysicalCollectionName,
       path: sourceEntry.path,
       embeddingModel: sourceEntry.embeddingModel,
       embeddingDimensions: sourceEntry.embeddingDimensions,
@@ -94,9 +94,9 @@ export class WorktreeProvisioner {
 
     const target: ResolvedCollection = {
       ...source,
-      logicalName: targetLogical,
+      logicalName: targetAliasCollectionName,
       // A clone is a brand-new collection: its first generation.
-      physicalName: versionedPhysicalCollectionName(targetLogical, 1),
+      physicalName: versionedPhysicalCollectionName(targetAliasCollectionName, 1),
       path: worktreePath,
     };
 
@@ -123,7 +123,7 @@ export class WorktreeProvisioner {
     const alias = `${sourceEntry.name ?? sourceEntry.collectionName}-worktree-${input.name}`;
 
     registry.record({
-      collectionName: targetLogical,
+      collectionName: targetAliasCollectionName,
       path: worktreePath,
       embeddingModel: source.embeddingModel,
       embeddingDimensions: source.embeddingDimensions,
@@ -155,8 +155,8 @@ export class WorktreeProvisioner {
       teaRagsVersion: sourceEntry.teaRagsVersion,
       chunksCount: sourceEntry.chunksCount,
     });
-    registry.setName(targetLogical, alias);
-    registry.setWorktreeProvenance(targetLogical, sourceEntry.collectionName, input.name);
+    registry.setName(targetAliasCollectionName, alias);
+    registry.setWorktreeProvenance(targetAliasCollectionName, sourceEntry.collectionName, input.name);
     // The clone's points ARE the source's — `cloneCollectionFootprint` copied
     // them — so the source's corpus-wide language stamp describes the clone as
     // exactly as it describes the source. It cannot ride along in `record()`:
@@ -166,11 +166,11 @@ export class WorktreeProvisioner {
     // tells the user to `--force` a full rebuild of data that is already
     // current — which is the one thing cloning exists to avoid.
     if (sourceEntry.languageVersions) {
-      registry.stampLanguageVersions(targetLogical, sourceEntry.languageVersions);
+      registry.stampLanguageVersions(targetAliasCollectionName, sourceEntry.languageVersions);
     }
 
     return {
-      collectionName: targetLogical,
+      collectionName: targetAliasCollectionName,
       alias,
       sourceProject: sourceEntry.name ?? sourceEntry.collectionName,
       worktreePath,
@@ -183,7 +183,7 @@ export class WorktreeProvisioner {
     const entry = registry.findWorktree(input.name);
     if (!entry) throw new WorktreeNotFoundError(input.name);
 
-    const srcPhysical = await qdrant.aliases
+    const sourcePhysicalCollectionName = await qdrant.aliases
       .resolveActive(entry.worktreeOf as string)
       .catch(() => resolvePhysicalCollection(entry.worktreeOf as string, []));
 
@@ -193,7 +193,7 @@ export class WorktreeProvisioner {
 
     const source: ResolvedCollection = {
       logicalName: entry.worktreeOf as string,
-      physicalName: srcPhysical,
+      physicalName: sourcePhysicalCollectionName,
       path: sourceRepoRoot ?? "",
       embeddingModel: entry.embeddingModel,
       embeddingDimensions: entry.embeddingDimensions,
@@ -201,14 +201,14 @@ export class WorktreeProvisioner {
       codegraphEnabled: entry.codegraphEnabled ?? false,
     };
 
-    const targetPhysical = await qdrant.aliases
+    const targetPhysicalCollectionName = await qdrant.aliases
       .resolveActive(entry.collectionName)
       .catch(() => versionedPhysicalCollectionName(collectionAliasOfRegistryEntry(entry), 1));
 
     const target: ResolvedCollection = {
       ...source,
       logicalName: entry.collectionName,
-      physicalName: targetPhysical,
+      physicalName: targetPhysicalCollectionName,
       path: entry.path,
     };
 

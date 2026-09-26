@@ -241,6 +241,13 @@ export function defaultEnrichmentWorkerCpuProfileDir(): string | undefined {
  * for the same reason as the CPU profile beside it, only more so: writing a
  * multi-gigabyte snapshot takes minutes and is the last thing a healthy run
  * should risk.
+ *
+ * The sampling alternative — `ENRICHMENT_WORKER_HEAP_PROFILE_DIR` /
+ * `ENRICHMENT_WORKER_HEAP_PROFILE_SEC` /
+ * `ENRICHMENT_WORKER_HEAP_PROFILE_SAMPLING_BYTES`, see
+ * `../enrichment/infra/chunked-heap-profiler.ts` — dumps the cumulative
+ * live-object sampling profile on an interval from inside the worker, so the
+ * last dump before the OOM kill survives it. Independent of this hook.
  */
 export function defaultEnrichmentWorkerHeapSnapshotDir(): string | undefined {
   const raw = process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR;

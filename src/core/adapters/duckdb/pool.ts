@@ -130,7 +130,7 @@ export interface GraphDbClientPoolOptions {
    * that handle drops it here; the daemon wires its `DaemonMemoryGovernor`
    * (bd tea-rags-mcp-amh78).
    */
-  onCollectionClientClosed?: (collectionName: PhysicalCollectionName) => void;
+  onCollectionClientClosed?: (physicalCollectionName: PhysicalCollectionName) => void;
   /**
    * Per-collection idle eviction (bd tea-rags-mcp-nlls). When wired, a cached
    * read-write client whose collection has had no op for `idleMs` — and none
@@ -317,8 +317,8 @@ export class GraphDbClientPool {
   }
 
   /** Resolve the disk path for a given collection name. Exposed for tests. */
-  pathFor(collectionName: PhysicalCollectionName): string {
-    return this.dbFiles.pathFor(collectionName);
+  pathFor(physicalCollectionName: PhysicalCollectionName): string {
+    return this.dbFiles.pathFor(physicalCollectionName);
   }
 
   /**
@@ -330,8 +330,8 @@ export class GraphDbClientPool {
    * whose graph is there but unreadable (lock held, daemon down, corruption),
    * where an empty edge list would be a false statement about the code.
    */
-  hasDatabase(collectionName: PhysicalCollectionName): boolean {
-    return this.dbFiles.has(collectionName);
+  hasDatabase(physicalCollectionName: PhysicalCollectionName): boolean {
+    return this.dbFiles.has(physicalCollectionName);
   }
 
   /**
@@ -343,6 +343,14 @@ export class GraphDbClientPool {
    */
   listCollectionDbNames(baseCollectionName: string): PhysicalCollectionName[] {
     return this.dbFiles.listCollectionDbNames(baseCollectionName);
+  }
+
+  /**
+   * Every generation with a database OR a cross-pass input spill on disk — what
+   * a generation sweep enumerates (`CodegraphDbFiles#listCollectionGenerationNames`).
+   */
+  listCollectionGenerationNames(baseCollectionName: string): PhysicalCollectionName[] {
+    return this.dbFiles.listCollectionGenerationNames(baseCollectionName);
   }
 
   /**
@@ -359,15 +367,11 @@ export class GraphDbClientPool {
    * file's `FileExtraction`, the codegraph worker drains it in `finalizeSignals`.
    * Lives in `.xpass`, which construction never sweeps — the worker builds its own
    * pool mid-run. No runId: main and worker pools share `rootDir` and must
-   * resolve the same path.
+   * resolve the same path. Its layout, and its removal with the generation
+   * (`removeCollection`), belong to `CodegraphDbFiles`.
    */
   inputSpillPathFor(collectionName: string): string {
-    return join(this.xpassDir, `${sanitiseCollectionName(collectionName)}.ndjson`);
-  }
-
-  /** Cross-pass input-spill directory — never purged at pool construction. */
-  private get xpassDir(): string {
-    return join(this.codegraphDir, ".xpass");
+    return this.dbFiles.inputSpillPathFor(collectionName);
   }
 
   /**
@@ -381,9 +385,9 @@ export class GraphDbClientPool {
    * path is opened again, which a synchronous call cannot do. It stays for the
    * next `acquire` to replace in that order (bd tea-rags-mcp-amh78).
    */
-  peek(collectionName: PhysicalCollectionName): CollectionGraphHandle | undefined {
-    const cached = this.clients.get(collectionName);
-    return cached && this.holdsOpenedDatabaseFile(collectionName, cached) ? cached : undefined;
+  peek(physicalCollectionName: PhysicalCollectionName): CollectionGraphHandle | undefined {
+    const cached = this.clients.get(physicalCollectionName);
+    return cached && this.holdsOpenedDatabaseFile(physicalCollectionName, cached) ? cached : undefined;
   }
 
   /**
@@ -399,23 +403,23 @@ export class GraphDbClientPool {
    * through here, so this is the check every holder of a pool shares (bd
    * tea-rags-mcp-amh78).
    */
-  async acquire(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+  async acquire(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     // The idle-eviction clock starts here even for acquires that bypass
     // `runCollectionOp` (the daemon handshake's open-and-drop), so an opened
     // collection nobody ever ops against still becomes evictable.
-    if (this.options.idleEviction) this.lastUsedByCollection.set(collectionName, Date.now());
-    const cached = this.clients.get(collectionName);
-    if (cached && this.holdsOpenedDatabaseFile(collectionName, cached)) return cached;
-    const inflight = this.inflight.get(collectionName);
+    if (this.options.idleEviction) this.lastUsedByCollection.set(physicalCollectionName, Date.now());
+    const cached = this.clients.get(physicalCollectionName);
+    if (cached && this.holdsOpenedDatabaseFile(physicalCollectionName, cached)) return cached;
+    const inflight = this.inflight.get(physicalCollectionName);
     if (inflight) return inflight;
 
     const promise = (async (): Promise<CollectionGraphHandle> => {
-      if (cached) await this.retireStaleClient(collectionName, cached);
-      return this.openCollection(collectionName);
+      if (cached) await this.retireStaleClient(physicalCollectionName, cached);
+      return this.openCollection(physicalCollectionName);
     })().finally(() => {
-      this.inflight.delete(collectionName);
+      this.inflight.delete(physicalCollectionName);
     });
-    this.inflight.set(collectionName, promise);
+    this.inflight.set(physicalCollectionName, promise);
     return promise;
   }
 
@@ -423,10 +427,10 @@ export class GraphDbClientPool {
    * Whether `collectionName`'s path still names the database file `entry`
    * opened. One `statSync` per cached return — no directory scan on the hot path.
    */
-  private holdsOpenedDatabaseFile(collectionName: PhysicalCollectionName, entry: PoolEntry): boolean {
+  private holdsOpenedDatabaseFile(physicalCollectionName: PhysicalCollectionName, entry: PoolEntry): boolean {
     const opened = entry.graphDb.openedDatabaseFile();
     if (!opened) return false;
-    const current = statSync(this.pathFor(collectionName), { bigint: true, throwIfNoEntry: false });
+    const current = statSync(this.pathFor(physicalCollectionName), { bigint: true, throwIfNoEntry: false });
     return current?.dev === opened.dev && current.ino === opened.ino;
   }
 
@@ -442,12 +446,12 @@ export class GraphDbClientPool {
    *    the file is not ours any more.
    * 3. Announce it (`onCollectionClientClosed`).
    */
-  private async retireStaleClient(collectionName: PhysicalCollectionName, entry: PoolEntry): Promise<void> {
-    this.clients.delete(collectionName);
+  private async retireStaleClient(physicalCollectionName: PhysicalCollectionName, entry: PoolEntry): Promise<void> {
+    this.clients.delete(physicalCollectionName);
     if (isDebug()) {
       process.stderr.write(
-        `[tea-rags] codegraph pool: database file of ${collectionName} was removed or replaced under its ` +
-          `cached client — closing it and opening ${this.pathFor(collectionName)} again\n`,
+        `[tea-rags] codegraph pool: database file of ${physicalCollectionName} was removed or replaced under its ` +
+          `cached client — closing it and opening ${this.pathFor(physicalCollectionName)} again\n`,
       );
     }
     try {
@@ -455,11 +459,11 @@ export class GraphDbClientPool {
     } catch (err) {
       if (isDebug()) {
         process.stderr.write(
-          `[tea-rags] codegraph pool: closing the stale client of ${collectionName} failed: ${(err as Error).message}\n`,
+          `[tea-rags] codegraph pool: closing the stale client of ${physicalCollectionName} failed: ${(err as Error).message}\n`,
         );
       }
     }
-    this.options.onCollectionClientClosed?.(collectionName);
+    this.options.onCollectionClientClosed?.(physicalCollectionName);
   }
 
   /**
@@ -467,11 +471,11 @@ export class GraphDbClientPool {
    * processes) when `daemonSocketPath` is configured, else the in-process RW
    * handle (`acquire`).
    */
-  async acquireWrite(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+  async acquireWrite(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
-      return this.acquireDaemonHandle(collectionName);
+      return this.acquireDaemonHandle(physicalCollectionName);
     }
-    return this.acquire(collectionName);
+    return this.acquire(physicalCollectionName);
   }
 
   /**
@@ -479,8 +483,8 @@ export class GraphDbClientPool {
    * `close()` is a no-op: the pool owns the socket (`closeAll`), and a caller's
    * `finally` close must not tear it down under other in-flight callers.
    */
-  private async acquireDaemonHandle(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const entry = await this.acquireDaemonClient(collectionName);
+  private async acquireDaemonHandle(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    const entry = await this.acquireDaemonClient(physicalCollectionName);
     return { graphDb: entry.wrapped, symbolTable: entry.symbolTable };
   }
 
@@ -489,17 +493,17 @@ export class GraphDbClientPool {
    * collection (plus its stable no-op-close wrapper). Concurrent first-callers
    * share one init pass via `daemonInflight`.
    */
-  private async acquireDaemonClient(collectionName: PhysicalCollectionName): Promise<DaemonClientEntry> {
-    const cached = this.daemonClients.get(collectionName);
+  private async acquireDaemonClient(physicalCollectionName: PhysicalCollectionName): Promise<DaemonClientEntry> {
+    const cached = this.daemonClients.get(physicalCollectionName);
     if (cached?.client.isConnected()) return cached;
     if (cached) {
       // A cached client routinely outlives its daemon (30s idle exit). Drop it
       // and cold-spawn: `respawn` is single-flighted and alive-checked, so it is
       // a no-op when a daemon is in fact running.
-      this.daemonClients.delete(collectionName);
+      this.daemonClients.delete(physicalCollectionName);
       this.options.daemonRestart?.respawn?.();
     }
-    const inflight = this.daemonInflight.get(collectionName);
+    const inflight = this.daemonInflight.get(physicalCollectionName);
     if (inflight) return inflight;
 
     const socketPath = this.options.daemonSocketPath;
@@ -511,8 +515,8 @@ export class GraphDbClientPool {
       // meeting a legacy-layout daemon drains it, then clears the layout. Runs
       // inside the shared inflight pass, so concurrent first-callers race it
       // once.
-      if (this.options.daemonStorageDir) await this.migrateLegacyDaemon(collectionName);
-      const client = await this.connectWithBuildHandshake(socketPath, collectionName);
+      if (this.options.daemonStorageDir) await this.migrateLegacyDaemon(physicalCollectionName);
+      const client = await this.connectWithBuildHandshake(socketPath, physicalCollectionName);
       const wrapped = wrapNoopClose(client);
       // Hydrate like `openCollection`, so resolution sees symbols from files not
       // re-walked this run. Non-fatal: the table starts empty and the next ingest
@@ -520,20 +524,20 @@ export class GraphDbClientPool {
       const symbolTable = this.options.symbolTableFactory();
       if (this.options.initHook) {
         try {
-          await this.options.initHook({ collectionName, graphDb: wrapped, symbolTable });
+          await this.options.initHook({ collectionName: physicalCollectionName, graphDb: wrapped, symbolTable });
         } catch (err) {
           process.stderr.write(
-            `[tea-rags] codegraph daemon init-hook failed for ${collectionName}: ${(err as Error).message}\n`,
+            `[tea-rags] codegraph daemon init-hook failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
           );
         }
       }
       const entry: DaemonClientEntry = { client, wrapped, symbolTable };
-      this.daemonClients.set(collectionName, entry);
+      this.daemonClients.set(physicalCollectionName, entry);
       return entry;
     })().finally(() => {
-      this.daemonInflight.delete(collectionName);
+      this.daemonInflight.delete(physicalCollectionName);
     });
-    this.daemonInflight.set(collectionName, promise);
+    this.daemonInflight.set(physicalCollectionName, promise);
     return promise;
   }
 
@@ -548,7 +552,7 @@ export class GraphDbClientPool {
    * A dead (or unreadable) legacy pid's files are unlinked directly. Idempotent
    * and effectively free once the layout is gone: two `existsSync` calls.
    */
-  private async migrateLegacyDaemon(collectionName: PhysicalCollectionName): Promise<void> {
+  private async migrateLegacyDaemon(physicalCollectionName: PhysicalCollectionName): Promise<void> {
     const dir = this.options.daemonStorageDir;
     /* v8 ignore next 2 -- the only caller checks the option first */
     if (!dir) return;
@@ -567,7 +571,7 @@ export class GraphDbClientPool {
       // window buys nothing — the caller treats an unreachable socket as a
       // failure, which is the honest answer.
       const { DaemonGraphDbClient } = await import("./daemon/client.js");
-      const client = new DaemonGraphDbClient(legacy.socketPath, collectionName, { connectTimeoutMs: 1_500 });
+      const client = new DaemonGraphDbClient(legacy.socketPath, physicalCollectionName, { connectTimeoutMs: 1_500 });
       await client.init();
       await this.drainStaleDaemon(client, legacy.socketPath);
     }
@@ -597,7 +601,7 @@ export class GraphDbClientPool {
    */
   private async connectWithBuildHandshake(
     socketPath: string,
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
   ): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
     const { DaemonGraphDbClient, assessDaemonCapability, isClientStale, isDaemonRefusedWithoutRespawn } =
@@ -612,7 +616,7 @@ export class GraphDbClientPool {
     // The on-disk reader goes along so a refused replay names the stale side
     // the way this handshake does (bd tea-rags-mcp-1wr7p).
     const clientOptions = { onConnectionLost: restart?.respawn, readOnDiskBuildFingerprint: readOnDisk };
-    const first = new DaemonGraphDbClient(socketPath, collectionName, clientOptions);
+    const first = new DaemonGraphDbClient(socketPath, physicalCollectionName, clientOptions);
     try {
       await first.init();
     } catch (err) {
@@ -692,7 +696,7 @@ export class GraphDbClientPool {
 
       // Reconnect (init retries the connect while the fresh daemon boots) and
       // re-verify build and capabilities.
-      const next = new DaemonGraphDbClient(socketPath, collectionName, clientOptions);
+      const next = new DaemonGraphDbClient(socketPath, physicalCollectionName, clientOptions);
       await next.init();
       const nextVerdict = assessDaemonCapability(await next.handshake(localFingerprint), localFingerprint);
       if (!needsDaemonReplacement(nextVerdict)) return next;
@@ -821,8 +825,8 @@ export class GraphDbClientPool {
    * `DuckDbOpenFailedError`, like the RW path — optional read consumers
    * degrade on that class, not on driver message text (bd tea-rags-mcp-a43tr).
    */
-  async acquireRead(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    const dbPath = this.pathFor(collectionName);
+  async acquireRead(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    const dbPath = this.pathFor(physicalCollectionName);
     const graphDb = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
     try {
       await graphDb.init();
@@ -848,17 +852,17 @@ export class GraphDbClientPool {
    *
    * @throws CodegraphDatabaseMissingError when the collection has no database.
    */
-  async acquireReader(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
-    if (!this.hasDatabase(collectionName)) {
-      throw new CodegraphDatabaseMissingError(this.pathFor(collectionName));
+  async acquireReader(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    if (!this.hasDatabase(physicalCollectionName)) {
+      throw new CodegraphDatabaseMissingError(this.pathFor(physicalCollectionName));
     }
     if (this.options.daemonSocketPath) {
-      return this.acquireDaemonHandle(collectionName);
+      return this.acquireDaemonHandle(physicalCollectionName);
     }
-    return this.acquireRead(collectionName);
+    return this.acquireRead(physicalCollectionName);
   }
 
-  private async openCollection(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+  private async openCollection(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     // Bounded open retry (bd tea-rags-mcp-42hno): two build-keyed daemons
     // serve the same on-disk collections, so a loser's first open loses the
     // DuckDB RW lock to the winner's still-cached client. The wait is bounded
@@ -868,7 +872,7 @@ export class GraphDbClientPool {
     const deadline = retry ? Date.now() + retry.maxMs : 0;
     for (;;) {
       try {
-        return await this.openCollectionOnce(collectionName);
+        return await this.openCollectionOnce(physicalCollectionName);
       } catch (err) {
         const intervalMs = retry?.intervalMs ?? DEFAULT_OPEN_RETRY_INTERVAL_MS;
         if (!retry || !(err instanceof DuckDbOpenFailedError) || Date.now() + intervalMs > deadline) {
@@ -876,7 +880,7 @@ export class GraphDbClientPool {
         }
         if (isDebug()) {
           process.stderr.write(
-            `[tea-rags] codegraph pool: open of ${this.pathFor(collectionName)} failed (lock held) — ` +
+            `[tea-rags] codegraph pool: open of ${this.pathFor(physicalCollectionName)} failed (lock held) — ` +
               `retrying until ${new Date(deadline).toISOString()} (bd tea-rags-mcp-42hno)\n`,
           );
         }
@@ -886,13 +890,13 @@ export class GraphDbClientPool {
   }
 
   /** ONE open attempt for `openCollection` — no retry, no cache check. */
-  private async openCollectionOnce(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+  private async openCollectionOnce(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     // The one read-write open in the codebase — the daemon's pool reaches it too —
     // so this is where a shadow `<alias>.duckdb` would be created. Refused there.
-    const dbPath = this.dbFiles.writablePathFor(collectionName);
+    const dbPath = this.dbFiles.writablePathFor(physicalCollectionName);
     // A WAL without its database is what a client writing into an unlinked file
     // leaves behind; it must never reach the driver as this file's log (amh78).
-    await this.dbFiles.discardOrphanedWal(collectionName);
+    await this.dbFiles.discardOrphanedWal(physicalCollectionName);
     const graphDb = new DuckDbGraphClient({
       path: dbPath,
       resources: {
@@ -918,18 +922,18 @@ export class GraphDbClientPool {
     const symbolTable = this.options.symbolTableFactory();
     if (this.options.initHook) {
       try {
-        await this.options.initHook({ collectionName, graphDb, symbolTable });
+        await this.options.initHook({ collectionName: physicalCollectionName, graphDb, symbolTable });
       } catch (err) {
         // Non-fatal: the DB is open, the symbol table just starts empty and the
         // next ingest pass repopulates affected files.
         process.stderr.write(
-          `[tea-rags] codegraph init-hook failed for ${collectionName}: ${(err as Error).message}\n`,
+          `[tea-rags] codegraph init-hook failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
         );
       }
     }
 
     const entry: PoolEntry = { graphDb, symbolTable };
-    this.clients.set(collectionName, entry);
+    this.clients.set(physicalCollectionName, entry);
     return entry;
   }
 
@@ -943,21 +947,24 @@ export class GraphDbClientPool {
    * on a client whose connection is executing.
    */
   async runCollectionOp<T>(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     op: (handle: CollectionGraphHandle) => Promise<T>,
   ): Promise<T> {
     if (this.options.idleEviction) {
-      this.lastUsedByCollection.set(collectionName, Date.now());
-      this.opsInFlightByCollection.set(collectionName, (this.opsInFlightByCollection.get(collectionName) ?? 0) + 1);
+      this.lastUsedByCollection.set(physicalCollectionName, Date.now());
+      this.opsInFlightByCollection.set(
+        physicalCollectionName,
+        (this.opsInFlightByCollection.get(physicalCollectionName) ?? 0) + 1,
+      );
     }
     try {
-      return await op(await this.acquire(collectionName));
+      return await op(await this.acquire(physicalCollectionName));
     } finally {
       if (this.options.idleEviction) {
-        this.lastUsedByCollection.set(collectionName, Date.now());
-        const remaining = (this.opsInFlightByCollection.get(collectionName) ?? 1) - 1;
-        if (remaining <= 0) this.opsInFlightByCollection.delete(collectionName);
-        else this.opsInFlightByCollection.set(collectionName, remaining);
+        this.lastUsedByCollection.set(physicalCollectionName, Date.now());
+        const remaining = (this.opsInFlightByCollection.get(physicalCollectionName) ?? 1) - 1;
+        if (remaining <= 0) this.opsInFlightByCollection.delete(physicalCollectionName);
+        else this.opsInFlightByCollection.set(physicalCollectionName, remaining);
       }
     }
   }
@@ -980,15 +987,15 @@ export class GraphDbClientPool {
     const eviction = this.options.idleEviction;
     if (!eviction) return;
     const now = Date.now();
-    for (const collectionName of [...this.clients.keys()]) {
-      if ((this.opsInFlightByCollection.get(collectionName) ?? 0) > 0) continue;
-      const lastUsed = this.lastUsedByCollection.get(collectionName);
+    for (const physicalCollectionName of [...this.clients.keys()]) {
+      if ((this.opsInFlightByCollection.get(physicalCollectionName) ?? 0) > 0) continue;
+      const lastUsed = this.lastUsedByCollection.get(physicalCollectionName);
       if (lastUsed === undefined || now - lastUsed < eviction.idleMs) continue;
       const idleSeconds = Math.round((now - lastUsed) / 1000);
-      const evicted = await this.release(collectionName);
+      const evicted = await this.release(physicalCollectionName);
       if (evicted) {
         process.stderr.write(
-          `[tea-rags] codegraph pool: evicted idle pool entry for ${collectionName} after ${idleSeconds}s idle\n`,
+          `[tea-rags] codegraph pool: evicted idle pool entry for ${physicalCollectionName} after ${idleSeconds}s idle\n`,
         );
       }
     }
@@ -998,13 +1005,13 @@ export class GraphDbClientPool {
    * Drop the cached client for a collection (close + forget), e.g. to release the
    * file lock between test scenarios. Returns true when an entry was evicted.
    */
-  async release(collectionName: PhysicalCollectionName): Promise<boolean> {
-    const entry = this.clients.get(collectionName);
+  async release(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
+    const entry = this.clients.get(physicalCollectionName);
     if (!entry) return false;
-    this.clients.delete(collectionName);
-    this.lastUsedByCollection.delete(collectionName);
+    this.clients.delete(physicalCollectionName);
+    this.lastUsedByCollection.delete(physicalCollectionName);
     await entry.graphDb.close().catch(() => undefined);
-    this.options.onCollectionClientClosed?.(collectionName);
+    this.options.onCollectionClientClosed?.(physicalCollectionName);
     return true;
   }
 
@@ -1023,11 +1030,11 @@ export class GraphDbClientPool {
    * than assumed empty.
    */
   async cloneDatabase(
-    sourceCollection: PhysicalCollectionName,
-    targetCollection: PhysicalCollectionName,
+    sourcePhysicalCollectionName: PhysicalCollectionName,
+    targetPhysicalCollectionName: PhysicalCollectionName,
   ): Promise<void> {
-    await this.release(sourceCollection);
-    await this.dbFiles.cloneDatabase(sourceCollection, targetCollection);
+    await this.release(sourcePhysicalCollectionName);
+    await this.dbFiles.cloneDatabase(sourcePhysicalCollectionName, targetPhysicalCollectionName);
   }
 
   /**
@@ -1044,22 +1051,22 @@ export class GraphDbClientPool {
    *
    * Returns true when a cached entry was evicted; disk cleanup runs regardless.
    */
-  async removeCollection(collectionName: PhysicalCollectionName): Promise<boolean> {
-    const dbPath = this.pathFor(collectionName);
-    const entry = this.clients.get(collectionName);
+  async removeCollection(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
+    const dbPath = this.pathFor(physicalCollectionName);
+    const entry = this.clients.get(physicalCollectionName);
     let evicted = false;
     if (entry) {
-      this.clients.delete(collectionName);
+      this.clients.delete(physicalCollectionName);
       try {
         await entry.graphDb.close();
       } catch (err) {
         throw new DuckDbCloseFailedError(dbPath, err instanceof Error ? err : undefined);
       } finally {
-        this.options.onCollectionClientClosed?.(collectionName);
+        this.options.onCollectionClientClosed?.(physicalCollectionName);
       }
       evicted = true;
     }
-    await this.dbFiles.removeFiles(collectionName);
+    await this.dbFiles.removeFiles(physicalCollectionName);
     return evicted;
   }
 
@@ -1076,9 +1083,9 @@ export class GraphDbClientPool {
     const daemons = [...this.daemonClients.values()];
     this.daemonClients.clear();
     await Promise.all([
-      ...all.map(async ([collectionName, e]) => {
+      ...all.map(async ([physicalCollectionName, e]) => {
         await e.graphDb.close().catch(() => undefined);
-        this.options.onCollectionClientClosed?.(collectionName);
+        this.options.onCollectionClientClosed?.(physicalCollectionName);
       }),
       ...daemons.map(async (e) => e.client.close().catch(() => undefined)),
     ]);

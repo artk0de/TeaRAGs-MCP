@@ -37,13 +37,13 @@ describe("enrichment run against a daemon from another build — real worker poo
   }
 
   it("refuses a daemon lacking a required op before the run writes graph data, and fails the run naming the op", async () => {
-    harness = await startEnrichmentLifecycleHarness({ daemonOpCommands: daemonOpsWithout("listAllPass1Aggregates") });
+    harness = await startEnrichmentLifecycleHarness({ daemonOpCommands: daemonOpsWithout("listPass1Aggregates") });
 
     const outcome = await runOnce(harness);
 
     // Loud: the run's completion fails with the skew, naming the op the daemon lacks.
     expect(outcome).toBeInstanceOf(Error);
-    expect((outcome as Error).message).toMatch(/runs an older build without op listAllPass1Aggregates/);
+    expect((outcome as Error).message).toMatch(/runs an older build without op listPass1Aggregates/);
     // Refused before any run work: nothing reached the graph, and no chunk got codegraph signals.
     expect(await harness.persistedSymbols()).toEqual([]);
     expect(harness.qdrant.chunkSignalWrites.filter((write) => "fanIn" in write.payload)).toEqual([]);
@@ -59,7 +59,7 @@ describe("enrichment run against a daemon from another build — real worker poo
     // status read in_progress / stalled instead of failed.
     for (const level of [codegraph?.file, codegraph?.chunk]) {
       expect(level?.status).toBe("failed");
-      expect(level?.errorMessage).toMatch(/runs an older build without op listAllPass1Aggregates/);
+      expect(level?.errorMessage).toMatch(/runs an older build without op listPass1Aggregates/);
     }
   });
 

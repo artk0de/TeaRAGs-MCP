@@ -320,18 +320,23 @@ export class StatusModule {
     // collection. Prefer the exact name, then the Qdrant alias target, then the
     // sole version; bail (undefined) on ambiguity rather than guessing.
     const base = collection.replace(/_v\d+$/, "");
-    const dbNames = this.codegraphPool.listCollectionDbNames(base);
-    if (dbNames.length === 0) return undefined;
+    const physicalCollectionNames = this.codegraphPool.listCollectionDbNames(base);
+    if (physicalCollectionNames.length === 0) return undefined;
     // Every candidate comes off the directory listing, so whatever is chosen is a
     // name a database was actually opened under (bd tea-rags-mcp-39xca.1).
-    let target: PhysicalCollectionName | undefined = dbNames.find((name) => name === collection);
-    if (!target) {
+    let physicalCollectionName: PhysicalCollectionName | undefined = physicalCollectionNames.find(
+      (candidatePhysicalCollectionName) => candidatePhysicalCollectionName === collection,
+    );
+    if (!physicalCollectionName) {
       const aliasTarget = await this.getAliasTarget(base).catch(() => undefined);
-      target = dbNames.find((name) => name === aliasTarget) ?? (dbNames.length === 1 ? dbNames[0] : undefined);
+      physicalCollectionName =
+        physicalCollectionNames.find(
+          (candidatePhysicalCollectionName) => candidatePhysicalCollectionName === aliasTarget,
+        ) ?? (physicalCollectionNames.length === 1 ? physicalCollectionNames[0] : undefined);
     }
-    if (!target) return undefined;
+    if (!physicalCollectionName) return undefined;
     try {
-      const handle = await this.codegraphPool.acquireReader(target);
+      const handle = await this.codegraphPool.acquireReader(physicalCollectionName);
       try {
         const [rows, edgeCounts] = await Promise.all([
           handle.graphDb.getRunStats(),
@@ -355,13 +360,13 @@ export class StatusModule {
    */
   async getIndexStatus(path: string): Promise<IndexStatus> {
     const absolutePath = await validatePath(path);
-    const collectionName = await this.resolveCollectionForPath(absolutePath);
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
 
     // Find the latest versioned collection (highest _vN)
-    const latestVersioned = await this.findLatestVersionedCollection(collectionName);
+    const latestVersioned = await this.findLatestVersionedCollection(aliasCollectionName);
 
     // Check if alias/real collection exists
-    const exists = await this.qdrant.collectionExists(collectionName);
+    const exists = await this.qdrant.collectionExists(aliasCollectionName);
 
     if (!exists && !latestVersioned) {
       return { isIndexed: false, status: "not_indexed" };
@@ -373,26 +378,26 @@ export class StatusModule {
     // rotation (force-reindex deleted the old alias target and left _vN
     // behind), and must not shadow the real alias target.
     if (latestVersioned) {
-      const aliasTarget = exists ? await this.getAliasTarget(collectionName) : undefined;
+      const aliasTarget = exists ? await this.getAliasTarget(aliasCollectionName) : undefined;
       if (aliasTarget !== latestVersioned) {
         if (!exists) {
           // No alias/real collection at all — latestVersioned is the only source
           // (first index in progress, or first index that completed but alias was
           // never created).
-          return this.getStatusFromCollection(latestVersioned, collectionName);
+          return this.getStatusFromCollection(latestVersioned, aliasCollectionName);
         }
         const rawPoint = await this.qdrant.getPoint(latestVersioned, INDEXING_METADATA_ID).catch(() => null);
         const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
         if (!marker?.indexingComplete) {
           // In-progress or crashed mid-index — report from this collection
-          return this.getStatusFromCollection(latestVersioned, collectionName);
+          return this.getStatusFromCollection(latestVersioned, aliasCollectionName);
         }
         // Otherwise it's a completed orphan; fall through to read from alias.
       }
     }
 
     // Alias points to latest version (or legacy real collection) — read from alias
-    return this.getStatusFromCollection(collectionName, collectionName);
+    return this.getStatusFromCollection(aliasCollectionName, aliasCollectionName);
   }
 
   /**
@@ -401,29 +406,29 @@ export class StatusModule {
    */
   async clearIndex(path: string): Promise<void> {
     const absolutePath = await validatePath(path);
-    const collectionName = await this.resolveCollectionForPath(absolutePath);
-    const exists = await this.qdrant.collectionExists(collectionName);
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
+    const exists = await this.qdrant.collectionExists(aliasCollectionName);
 
     if (exists) {
-      const isAlias = await this.qdrant.aliases.isAlias(collectionName);
+      const isAlias = await this.qdrant.aliases.isAlias(aliasCollectionName);
       if (isAlias) {
         // Alias-based: find underlying collection, delete alias + collection + orphans
         const aliases = await this.qdrant.aliases.listAliases();
-        const activeCollection = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
-        await this.qdrant.aliases.deleteAlias(collectionName);
-        if (activeCollection) {
-          await this.qdrant.deleteCollection(activeCollection);
+        const activePhysicalCollectionName = aliases.find((a) => a.aliasName === aliasCollectionName)?.collectionName;
+        await this.qdrant.aliases.deleteAlias(aliasCollectionName);
+        if (activePhysicalCollectionName) {
+          await this.qdrant.deleteCollection(activePhysicalCollectionName);
         }
         // Clean up any orphaned versioned collections
-        const allCollections = await this.qdrant.listCollections();
-        for (const c of allCollections) {
-          if (c.startsWith(`${collectionName}_v`)) {
-            await this.qdrant.deleteCollection(c);
+        const allPhysicalCollectionNames = await this.qdrant.listCollections();
+        for (const physicalCollectionName of allPhysicalCollectionNames) {
+          if (physicalCollectionName.startsWith(`${aliasCollectionName}_v`)) {
+            await this.qdrant.deleteCollection(physicalCollectionName);
           }
         }
       } else {
         // Legacy: real collection, just delete it
-        await this.qdrant.deleteCollection(collectionName);
+        await this.qdrant.deleteCollection(aliasCollectionName);
       }
     }
 
@@ -431,12 +436,12 @@ export class StatusModule {
     try {
       /* v8 ignore next -- fallback for backward compat */
       const dir = this.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
-      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, dir);
+      const synchronizer = new ParallelFileSynchronizer(absolutePath, aliasCollectionName, dir);
       await synchronizer.deleteSnapshot();
       // The quarantine and stats caches live as siblings of the snapshot dir, so
       // the snapshot delete above does not reach them — drop them explicitly.
-      await new QuarantineStore(dir, collectionName).clearAll();
-      new StatsCache(dir).invalidate(collectionName);
+      await new QuarantineStore(dir, aliasCollectionName).clearAll();
+      new StatsCache(dir).invalidate(aliasCollectionName);
     } catch (_error) {
       // Ignore snapshot deletion errors
     }
@@ -477,18 +482,18 @@ export class StatusModule {
    * Returns undefined if no versioned collections exist.
    */
   private async findLatestVersionedCollection(collectionName: string): Promise<string | undefined> {
-    const allCollections = await this.qdrant.listCollections();
+    const allPhysicalCollectionNames = await this.qdrant.listCollections();
     const versionedPattern = new RegExp(`^${collectionName}_v(\\d+)$`);
     let maxVersion = 0;
     let latest: string | undefined;
 
-    for (const c of allCollections) {
-      const match = c.match(versionedPattern);
+    for (const physicalCollectionName of allPhysicalCollectionNames) {
+      const match = physicalCollectionName.match(versionedPattern);
       if (match) {
         const version = parseInt(match[1], 10);
         if (version > maxVersion) {
           maxVersion = version;
-          latest = c;
+          latest = physicalCollectionName;
         }
       }
     }

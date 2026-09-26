@@ -28,8 +28,8 @@
 
 import {
   canonicalRegistryEnvKeys,
+  editRegistryEnv,
   REGISTRY_ENV_ALLOWLIST,
-  registryEnvGroupMembers,
   type CollectionRegistry,
 } from "../../core/api/public/index.js";
 
@@ -71,16 +71,12 @@ export function mergeTunedEnvIntoRegistry(
   if (measuredKeys.length === 0) return 0;
   const entry = registry.findByName(projectName);
   if (!entry) return 0;
-  const env: Record<string, string> = { ...(entry.env ?? entry.tuning) };
-  // Drop the deprecated spellings of every family we measured before writing
-  // the canonical value — a leftover alias would otherwise be replayed first
-  // (insertion order) and shadow the fresh measurement.
-  for (const canonical of measuredKeys) {
-    for (const sibling of registryEnvGroupMembers(canonical)) {
-      if (sibling !== canonical) delete env[sibling];
-    }
-  }
+  // `editRegistryEnv` drops the deprecated spellings of every family we
+  // measured before writing the canonical value — a leftover alias would
+  // otherwise be replayed first (insertion order) and shadow the fresh
+  // measurement. Same edit `tea-rags projects set-env` applies.
+  const env = editRegistryEnv(entry.env ?? entry.tuning ?? {}, { set: measured });
   const { name: _name, ...recordable } = entry;
-  registry.record({ ...recordable, env: { ...env, ...measured } });
+  registry.record({ ...recordable, env });
   return measuredKeys.length;
 }

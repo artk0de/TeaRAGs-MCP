@@ -52,13 +52,13 @@ describe("collectTypeDeclarationReaders", () => {
 
 describe("CodegraphRunState bound to the type-declaration readers", () => {
   it("keeps a reading language's declarations in the run-global map", () => {
-    const runState = new CodegraphRunState([], [], new Set(["swift"]));
+    const runState = new CodegraphRunState([], [], new Map(), new Set(["swift"]));
     runState.absorb(extraction("Sources/Account.swift", "swift"), []);
     expect(runState.typeDeclarations).toEqual({ "Sources/Account.swift": DECLARATIONS });
   });
 
   it("leaves another language's declarations out of the run-global map", () => {
-    const runState = new CodegraphRunState([], [], new Set(["swift"]));
+    const runState = new CodegraphRunState([], [], new Map(), new Set(["swift"]));
     runState.absorb(extraction("app/models/account.rb", "ruby"), []);
     expect(runState.typeDeclarations).toEqual({});
   });
@@ -66,7 +66,7 @@ describe("CodegraphRunState bound to the type-declaration readers", () => {
 
 describe("CallEdgeResolutionRunner persists type declarations only for a reading language", () => {
   function sliceOf(language: string, relPath: string) {
-    const runState = new CodegraphRunState([], [], new Set(["swift"]));
+    const runState = new CodegraphRunState([], [], new Map(), new Set(["swift"]));
     const runner = new CallEdgeResolutionRunner(resolvingFactory([language]), runState);
     return runner.resolve(extraction(relPath, language), EMPTY_TABLE).pass1Aggregates;
   }

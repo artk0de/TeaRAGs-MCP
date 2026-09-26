@@ -37,8 +37,9 @@ import {
   type CodegraphMetricsStage,
 } from "../../errors.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
-import type { CallEdgeResolutionRunner } from "./resolution-runner.js";
+import type { CallEdgeResolutionRunner, CodegraphResolveVisitPlan } from "./resolution-runner.js";
 import type { CodegraphRunState } from "./run-state.js";
+import { indexSpillLines, SpillLineReader, type SpillLineSpan } from "./spill-line-index.js";
 
 /** Files processed between DuckDB checkpoints — keeps the WAL bounded. */
 const CHECKPOINT_EVERY = 500;
@@ -87,7 +88,7 @@ function snippet(line: string): string {
 
 /** Resolve the (graphDb, symbolTable) pair for the active collection. */
 export type GraphStoreResolver = (
-  collectionName?: PhysicalCollectionName,
+  physicalCollectionName?: PhysicalCollectionName,
 ) => Promise<{ graphDb: GraphDbClient; symbolTable: GlobalSymbolTable }>;
 
 async function collectAdjacency(
@@ -108,6 +109,59 @@ async function collectAdjacency(
     }
   }
   return { adjacency, edgeWeights };
+}
+
+/**
+ * The runner as pass-2 uses it. `resolveVisitPlans` is optional: a runner
+ * without it streams the spill in write order, exactly as before closure-batch
+ * ordering existed (bd tea-rags-mcp-vtuu4).
+ */
+export type Pass2ResolutionRunner = Omit<CallEdgeResolutionRunner, "resolveVisitPlans"> &
+  Partial<Pick<CallEdgeResolutionRunner, "resolveVisitPlans">>;
+
+/**
+ * Feed `processLine` every spill line in the order `plans` ask for (bd
+ * tea-rags-mcp-vtuu4): lines of files no plan names first, in spill order,
+ * then each plan's groups in turn. A relPath the spill holds twice has both
+ * lines visited together, in spill order, so the later write still wins.
+ *
+ * After each group the plan's `endGroup` releases what served it, and the loop
+ * yields one macrotask, so the released Program can be collected and pending
+ * I/O callbacks run before the next group's Program is built.
+ */
+async function visitInPlanOrder(
+  spillPath: string,
+  plans: readonly CodegraphResolveVisitPlan[],
+  processLine: (line: string) => Promise<void>,
+): Promise<void> {
+  const spans = await indexSpillLines(spillPath);
+  const spansOf = new Map<string, SpillLineSpan[]>();
+  for (const span of spans) {
+    const held = spansOf.get(span.relPath);
+    if (held === undefined) spansOf.set(span.relPath, [span]);
+    else held.push(span);
+  }
+  const planned = new Set<string>();
+  for (const plan of plans) for (const group of plan.groups) for (const relPath of group) planned.add(relPath);
+
+  const reader = await SpillLineReader.open(spillPath);
+  try {
+    for (const span of spans) if (!planned.has(span.relPath)) await processLine(await reader.read(span));
+    const visited = new Set<string>();
+    for (const plan of plans) {
+      for (const group of plan.groups) {
+        for (const relPath of group) {
+          if (visited.has(relPath)) continue;
+          visited.add(relPath);
+          for (const span of spansOf.get(relPath) ?? []) await processLine(await reader.read(span));
+        }
+        plan.endGroup();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+  } finally {
+    await reader.close();
+  }
 }
 
 export class GraphBuildFinalizer {
@@ -131,7 +185,7 @@ export class GraphBuildFinalizer {
    */
   constructor(
     private readonly resolveStore: GraphStoreResolver,
-    private readonly resolutionRunner: CallEdgeResolutionRunner,
+    private readonly resolutionRunner: Pass2ResolutionRunner,
     private readonly runState: CodegraphRunState,
     private readonly timings: CodegraphPhaseTimings = new CodegraphPhaseTimings(),
   ) {}
@@ -151,8 +205,8 @@ export class GraphBuildFinalizer {
    * piece can do it here — before the first file, where it is a fixed cost —
    * rather than inferring the same fact from the first few hundred call sites.
    */
-  async resolveAndUpsert(spillPath: string, collectionName?: PhysicalCollectionName): Promise<void> {
-    const { graphDb, symbolTable } = await this.resolveStore(collectionName);
+  async resolveAndUpsert(spillPath: string, physicalCollectionName?: PhysicalCollectionName): Promise<void> {
+    const { graphDb, symbolTable } = await this.resolveStore(physicalCollectionName);
     const preparedAtMs = Date.now();
     this.resolutionRunner.prepareResolvePass();
     // Attributed to pass-2 with a count of ZERO files: whatever a resolver
@@ -230,98 +284,104 @@ export class GraphBuildFinalizer {
       void started.catch(() => undefined);
       inFlightFlush = started;
     };
-    try {
-      reader = createInterface({
-        input: createReadStream(spillPath, { encoding: "utf8" }),
-        crlfDelay: Number.POSITIVE_INFINITY,
+    const processLine = async (line: string): Promise<void> => {
+      if (!line) return;
+      let extraction: FileExtraction;
+      try {
+        extraction = JSON.parse(line) as FileExtraction;
+      } catch (err) {
+        const wrapped = err instanceof Error ? err : new Error(String(err));
+        throw new CodegraphResolveError(
+          processed,
+          Object.assign(wrapped, {
+            message: `JSON.parse failed on spill line at file #${processed + 1}: '${snippet(line)}': ${wrapped.message}`,
+          }),
+        );
+      }
+      lastRelPath = extraction.relPath;
+      const resolved = this.resolveOne(extraction, symbolTable, processed, lastRelPath);
+      // Past the cap the file keeps its ROW and loses its edges (bd
+      // tea-rags-mcp-ihq7y): skipping the row entirely left it without a
+      // hashed `cg_symbols_files` row, so the incremental repair diff re-listed
+      // it on every run. The empty slice also retires any edges the file
+      // persisted while it was still under the cap.
+      const edges: GraphEdges = this.exceedsEdgeCap(resolved, extraction, processed)
+        ? { fileEdges: [], methodEdges: [] }
+        : resolved;
+      // A repeat relPath already has an entry pending in this batch — flush
+      // it out first so the repeat starts its own transaction instead of
+      // sharing one with its own earlier self (see `bufferedRelPaths` above).
+      if (bufferedRelPaths.has(extraction.relPath)) await dispatchFlush();
+      // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
+      // instead of one transaction per file.
+      buffer.push({
+        node: {
+          relPath: extraction.relPath,
+          language: extraction.language,
+          // Stamp the row with the run's hash so the next run can tell a
+          // CURRENT row from one that merely exists (bd tea-rags-mcp-6goqa).
+          // Undefined persists as NULL, which the repair check reads as
+          // "unknown, re-extract" rather than assuming the row is fresh.
+          contentHash: this.runState.contentHashes?.get(extraction.relPath),
+          // The file's type-abstractness census (bd tea-rags-mcp-r8hme.8);
+          // absent persists as NULL — not measured.
+          ...(extraction.typeAbstractness ? { typeAbstractness: extraction.typeAbstractness } : {}),
+        },
+        edges,
       });
-      for await (const line of reader) {
-        if (!line) continue;
-        let extraction: FileExtraction;
-        try {
-          extraction = JSON.parse(line) as FileExtraction;
-        } catch (err) {
-          const wrapped = err instanceof Error ? err : new Error(String(err));
-          throw new CodegraphResolveError(
+      bufferedRelPaths.add(extraction.relPath);
+      this.runState.stats.fileEdgeCount += edges.fileEdges.length;
+      this.runState.stats.methodEdgeCount += edges.methodEdges.length;
+      processed += 1;
+      // Per-N debug log so a slow run shows where it stalled — and, since
+      // bd tea-rags-mcp-6aytq, WHAT it stalled in. Emitted as one JSON line
+      // (not an inspected object) for two reasons: the phase split nests
+      // three levels deep, past `console.error`'s default inspect depth, and
+      // a run killed at a wall-clock budget leaves these lines as the only
+      // record of where its time went — they have to be parseable.
+      if (processed % PROGRESS_EVERY === 0 && isDebug()) {
+        const elapsedMs = this.timings.elapsedMs();
+        console.error(
+          "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS",
+          JSON.stringify({
             processed,
-            Object.assign(wrapped, {
-              message: `JSON.parse failed on spill line at file #${processed + 1}: '${snippet(line)}': ${wrapped.message}`,
-            }),
-          );
-        }
-        lastRelPath = extraction.relPath;
-        const resolved = this.resolveOne(extraction, symbolTable, processed, lastRelPath);
-        // Past the cap the file keeps its ROW and loses its edges (bd
-        // tea-rags-mcp-ihq7y): skipping the row entirely left it without a
-        // hashed `cg_symbols_files` row, so the incremental repair diff re-listed
-        // it on every run. The empty slice also retires any edges the file
-        // persisted while it was still under the cap.
-        const edges: GraphEdges = this.exceedsEdgeCap(resolved, extraction, processed)
-          ? { fileEdges: [], methodEdges: [] }
-          : resolved;
-        // A repeat relPath already has an entry pending in this batch — flush
-        // it out first so the repeat starts its own transaction instead of
-        // sharing one with its own earlier self (see `bufferedRelPaths` above).
-        if (bufferedRelPaths.has(extraction.relPath)) await dispatchFlush();
-        // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
-        // instead of one transaction per file.
-        buffer.push({
-          node: {
-            relPath: extraction.relPath,
-            language: extraction.language,
-            // Stamp the row with the run's hash so the next run can tell a
-            // CURRENT row from one that merely exists (bd tea-rags-mcp-6goqa).
-            // Undefined persists as NULL, which the repair check reads as
-            // "unknown, re-extract" rather than assuming the row is fresh.
-            contentHash: this.runState.contentHashes?.get(extraction.relPath),
-            // The file's type-abstractness census (bd tea-rags-mcp-r8hme.8);
-            // absent persists as NULL — not measured.
-            ...(extraction.typeAbstractness ? { typeAbstractness: extraction.typeAbstractness } : {}),
-          },
-          edges,
+            lastRelPath,
+            fileEdges: this.runState.stats.fileEdgeCount,
+            methodEdges: this.runState.stats.methodEdgeCount,
+            elapsedMs,
+            filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
+            phases: this.timings.toSummary(),
+            // What each language's run-scoped caches are doing, which wall
+            // clock alone cannot say (bd tea-rags-mcp-6aytq): a TypeScript
+            // pass paying per-entry `ts.createProgram` calls and one served
+            // entirely off the whole-project Program differ by 4x and look
+            // identical in every other field of this line.
+            resolvers: this.resolutionRunner.resolverDiagnostics(),
+          }),
+        );
+      }
+      if (buffer.length >= this.bulkFiles) await dispatchFlush();
+      if (processed % this.checkpointEvery === 0) {
+        // Flush the buffered files before the checkpoint so the bounded WAL
+        // reflects the whole processed window. Both steps are needed: the
+        // dispatch settles the PREVIOUS window's write, the settle waits on
+        // this one — a CHECKPOINT issued with a write still open would bound
+        // a WAL that does not yet hold the window it claims to cover.
+        await dispatchFlush();
+        await settleFlush();
+        await this.checkpoint(graphDb);
+      }
+    };
+    try {
+      const visitPlans = this.resolutionRunner.resolveVisitPlans?.() ?? [];
+      if (visitPlans.length === 0) {
+        reader = createInterface({
+          input: createReadStream(spillPath, { encoding: "utf8" }),
+          crlfDelay: Number.POSITIVE_INFINITY,
         });
-        bufferedRelPaths.add(extraction.relPath);
-        this.runState.stats.fileEdgeCount += edges.fileEdges.length;
-        this.runState.stats.methodEdgeCount += edges.methodEdges.length;
-        processed += 1;
-        // Per-N debug log so a slow run shows where it stalled — and, since
-        // bd tea-rags-mcp-6aytq, WHAT it stalled in. Emitted as one JSON line
-        // (not an inspected object) for two reasons: the phase split nests
-        // three levels deep, past `console.error`'s default inspect depth, and
-        // a run killed at a wall-clock budget leaves these lines as the only
-        // record of where its time went — they have to be parseable.
-        if (processed % PROGRESS_EVERY === 0 && isDebug()) {
-          const elapsedMs = this.timings.elapsedMs();
-          console.error(
-            "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS",
-            JSON.stringify({
-              processed,
-              lastRelPath,
-              fileEdges: this.runState.stats.fileEdgeCount,
-              methodEdges: this.runState.stats.methodEdgeCount,
-              elapsedMs,
-              filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
-              phases: this.timings.toSummary(),
-              // What each language's run-scoped caches are doing, which wall
-              // clock alone cannot say (bd tea-rags-mcp-6aytq): a TypeScript
-              // pass paying per-entry `ts.createProgram` calls and one served
-              // entirely off the whole-project Program differ by 4x and look
-              // identical in every other field of this line.
-              resolvers: this.resolutionRunner.resolverDiagnostics(),
-            }),
-          );
-        }
-        if (buffer.length >= this.bulkFiles) await dispatchFlush();
-        if (processed % this.checkpointEvery === 0) {
-          // Flush the buffered files before the checkpoint so the bounded WAL
-          // reflects the whole processed window. Both steps are needed: the
-          // dispatch settles the PREVIOUS window's write, the settle waits on
-          // this one — a CHECKPOINT issued with a write still open would bound
-          // a WAL that does not yet hold the window it claims to cover.
-          await dispatchFlush();
-          await settleFlush();
-          await this.checkpoint(graphDb);
-        }
+        for await (const line of reader) await processLine(line);
+      } else {
+        await visitInPlanOrder(spillPath, visitPlans, processLine);
       }
       // Flush the sub-batch remainder, wait for it to land, then a final
       // checkpoint for any files written since the last one.
@@ -491,10 +551,10 @@ export class GraphBuildFinalizer {
    * the failing stage in its message — a debug log alone is not enough when the
    * failure happens silently mid-run.
    */
-  async recomputeMetrics(collectionName?: PhysicalCollectionName): Promise<void> {
+  async recomputeMetrics(physicalCollectionName?: PhysicalCollectionName): Promise<void> {
     const startedAtMs = Date.now();
     try {
-      await this.runMetricsRecompute(collectionName);
+      await this.runMetricsRecompute(physicalCollectionName);
     } finally {
       // Timed around BOTH routes — the daemon delegation and the inline
       // Tarjan/PageRank — because from the run's point of view they are the
@@ -504,8 +564,8 @@ export class GraphBuildFinalizer {
   }
 
   /** The recompute itself; `recomputeMetrics` owns only its timing. */
-  private async runMetricsRecompute(collectionName?: PhysicalCollectionName): Promise<void> {
-    const { graphDb } = await this.resolveStore(collectionName);
+  private async runMetricsRecompute(physicalCollectionName?: PhysicalCollectionName): Promise<void> {
+    const { graphDb } = await this.resolveStore(physicalCollectionName);
     // Daemon-routed write path: the daemon owns the RW connection and runs
     // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
     // process never allocates the adjacency. When the handle exposes the

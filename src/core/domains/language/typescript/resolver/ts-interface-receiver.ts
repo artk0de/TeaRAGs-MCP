@@ -77,16 +77,17 @@ export function receiverProjectInterfaceNames(
  *
  * A candidate is consistent with the declared type when its owner IS one of
  * those interfaces (a member the table carries under the interface's own name)
- * or a class the run hierarchy records implementing one, transitively. Anything
- * else — an unrelated class that happens to own the project's only `set`, a
- * top-level function named like the member, an object-literal member no
- * `implements` clause connects — has no evidence behind it but its name.
+ * or an owner the run hierarchy records descending from one, transitively.
+ * Anything else — an unrelated class that happens to own the project's only
+ * `set`, a top-level function named like the member — has no evidence behind it
+ * but its name.
  *
- * Structural implementers without an `implements` clause fall in that last
- * group on purpose: telling one from a look-alike needs the candidate's own
- * declaration in the caller's Program, which a coverage Program (every
- * incremental run) does not carry, so the edge set would depend on how the
- * run was scheduled.
+ * "Descending" includes the `structural` rows the barrier derives (bd
+ * tea-rags-mcp-39xca.14): a class or object-literal factory carrying every
+ * required member of the interface is its descendant without an `implements`
+ * clause. The derivation reads the symbol table and the hydrated contracts, not
+ * the caller's Program, so the edge set does not depend on how the run was
+ * scheduled.
  */
 export function interfaceReceiverExcludesCandidate(
   call: CallRef,

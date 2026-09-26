@@ -24,8 +24,9 @@ export class DuckDbHierarchyReader {
       ancestorFqName: string;
       ancestorSymbolId: string | null;
       kind: InheritanceKind;
+      ordinal: number | bigint;
     }>(
-      `SELECT ancestor_fq_name AS "ancestorFqName", ancestor_symbol_id AS "ancestorSymbolId", kind
+      `SELECT ancestor_fq_name AS "ancestorFqName", ancestor_symbol_id AS "ancestorSymbolId", kind, ordinal
          FROM cg_symbols_inheritance WHERE source_fq_name = ? ORDER BY ordinal, ancestor_fq_name`,
       [fqName],
     );
@@ -35,6 +36,7 @@ export class DuckDbHierarchyReader {
       ancestorSymbolId: r.ancestorSymbolId,
       kind: r.kind,
       depth: 1,
+      ordinal: Number(r.ordinal),
     }));
   }
 

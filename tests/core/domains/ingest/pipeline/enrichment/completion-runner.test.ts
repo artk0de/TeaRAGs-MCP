@@ -504,7 +504,7 @@ describe("CompletionRunner", () => {
         buildFileSignals: vi.fn().mockResolvedValue(new Map()),
         buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
         finalizeSignals,
-        readPersistedPass1Aggregates: vi.fn().mockRejectedValue(new Error("unknown daemon op: listAllPass1Aggregates")),
+        readPersistedPass1Aggregates: vi.fn().mockRejectedValue(new Error("unknown daemon op: listPass1Aggregates")),
         resolveRoot: (p: string) => p,
         fileSignalTransform: undefined,
       } as any,
@@ -562,7 +562,7 @@ describe("CompletionRunner", () => {
 
     const readPersistedPass1Aggregates = vi
       .fn()
-      .mockRejectedValueOnce(new Error("unknown daemon op: listAllPass1Aggregates"))
+      .mockRejectedValueOnce(new Error("unknown daemon op: listPass1Aggregates"))
       .mockResolvedValue([]);
     const ctx = {
       key: "codegraph.symbols",
@@ -690,5 +690,56 @@ describe("CompletionRunner", () => {
     expect(gitBuildFileSignals).toHaveBeenCalledWith("/repo", expect.objectContaining({ paths: ["missed.ts"] }));
     expect(codegraphFinalizeSawBackfillInFlight).toEqual([true]);
     expect(gitFinalizeSawBackfillInFlight).toEqual([false]);
+  });
+
+  // A `--languages typescript` recompute on taxdome read 9,184 Ruby slices on the
+  // main thread and cloned them into the TypeScript worker. The read has to know
+  // the run's restriction; an unrestricted run hands the provider an empty list.
+  it("hands the provider's pass-1 aggregate read the run's language restriction", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    const readPersistedPass1Aggregates = vi.fn().mockResolvedValue([]);
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        finalizeSignals: vi.fn().mockResolvedValue(new Map()),
+        readPersistedPass1Aggregates,
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+
+    filePhase.init(contexts, "coll", "run-ts", "ts", false, undefined, "wholeCorpus", ["typescript"]);
+    chunkPhase.init(contexts, "coll", "ts");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-ts", "ts");
+    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-ts");
+    expect(readPersistedPass1Aggregates).toHaveBeenLastCalledWith("coll", ["typescript"]);
+
+    filePhase.init(contexts, "coll", "run-all", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-all", "ts");
+    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-all");
+    expect(readPersistedPass1Aggregates).toHaveBeenLastCalledWith("coll", []);
   });
 });

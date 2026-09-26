@@ -99,6 +99,8 @@ describe("run-global return-type maps are partitioned by language family (qea83)
   it("hydrates persisted return types into the slice's family, batch-wins per family", async () => {
     const state = new CodegraphRunState();
     state.absorb(file("app/repo.rb", "ruby", { functionReturnTypes: { get: "RubyRecord" } }), []);
+    // The Go caller below is walked too: the barrier hydrates only walked families.
+    state.absorb(file("pkg/x.go", "go"), []);
     const slices: CodegraphPass1FileAggregates[] = [
       { relPath: "pkg/repo.go", language: "go", functionReturnTypes: { get: "GoRecord" } },
       { relPath: "app/old_repo.rb", language: "ruby", functionReturnTypes: { get: "StaleRecord" } },
@@ -140,6 +142,8 @@ describe("the run-global class hierarchy is partitioned by language family (qea8
 
   it("hydrates persisted inheritance into the slice's family", async () => {
     const state = new CodegraphRunState();
+    // The Ruby caller below is walked: the barrier hydrates only walked families.
+    state.absorb(file("app/x.rb", "ruby"), []);
     const slices: CodegraphPass1FileAggregates[] = [
       { relPath: "web/errors.ts", language: "typescript", inheritanceEdges: tsErrors.inheritanceEdges },
       { relPath: "app/errors.rb", language: "ruby", classExtends: { NotFound: "Error" } },

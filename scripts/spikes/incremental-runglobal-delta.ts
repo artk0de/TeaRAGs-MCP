@@ -34,6 +34,12 @@
  * A delta inside the noise floor means nothing is left worth persisting; a delta
  * concentrated in one receiver kind names the map that is.
  *
+ * `--ablate all` is the instrument's self-check: with every batch-only channel
+ * handed over, FULL and INC must agree edge for edge. Until bd 39xca.15 they did
+ * not — both sides absorbed through `CodegraphRunState#absorb` alone and skipped
+ * the sink's inheritance rows (see `absorbWalkedFile`), and every number this
+ * sweep reported before then carries that hierarchy asymmetry.
+ *
  * ── Why the EDGE-SET diff exists alongside the counts ──
  * `Δresolved` is a count, and the defect this whole line of work chases is a
  * MIS-resolution: an entry call that lands on the shared mixin's own method
@@ -79,7 +85,11 @@ import type {
   SymbolDefinition,
 } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
-import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+import {
+  collectSchemaColumnSources,
+  collectStructuralConformanceDerivers,
+} from "../../src/core/domains/trajectory/codegraph/exclusion.js";
+import { absorbPass1FileState } from "../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import { buildPass1Aggregates } from "../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import {
@@ -140,12 +150,35 @@ function bindRunStart(state: CodegraphRunState, root: string): void {
  * active.
  */
 function newRunState(factory: LanguageFactory): CodegraphRunState {
-  return new CodegraphRunState(collectSchemaColumnSources(factory), collectDependencyManifestSources(factory));
+  return new CodegraphRunState(
+    collectSchemaColumnSources(factory),
+    collectDependencyManifestSources(factory),
+    collectStructuralConformanceDerivers(factory),
+  );
 }
 
 /** Production gates self-dispatch discovery on Ruby in both of its call sites; so does this. */
 function selfDispatchFor(extraction: FileExtraction): ReturnType<typeof extractSelfDispatchMethods> {
   return extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [];
+}
+
+/**
+ * Absorb one walked file EXACTLY as the production sink does — through the
+ * sink's own `absorbPass1FileState`: symbol-table entry, run-global merge AND
+ * the inheritance rows (bd tea-rags-mcp-39xca.15).
+ *
+ * Calling `CodegraphRunState#absorb` alone skipped `absorbInheritanceRows`, so
+ * a walked file contributed NO hierarchy rows on either side: FULL resolved
+ * against an EMPTY hierarchy, INC against the rows hydration carried for the
+ * files it did not walk. Every hierarchy consumer then disagreed between the
+ * two for reasons no persistence policy explains — the convention tier's
+ * "no declared subtypes" gate passed on FULL (`agent` → `Agent`, exact) and
+ * failed on INC (dynamic fan-out onto every `#events`), and the CHA cone had
+ * descendants on one side only. Those disagreements were reported as the
+ * batch-only maps' residue.
+ */
+function absorbWalkedFile(state: CodegraphRunState, table: GlobalSymbolTable, extraction: FileExtraction): void {
+  absorbPass1FileState(state, table, extraction, buildSymbolDefs(extraction), "own");
 }
 
 /**
@@ -358,6 +391,15 @@ export interface CallEdgeDiff {
   retargeted: number;
   missingByKind: Record<string, number>;
   extraByKind: Record<string, number>;
+  /** Every disagreeing site with both answer sets — what names the map behind a residue. */
+  sites: DisagreeingSite[];
+}
+
+/** One call site the two runs answered differently (`[]` = that run did not answer it). */
+export interface DisagreeingSite {
+  site: string;
+  full: string[];
+  inc: string[];
 }
 
 const emptyEdgeDiff = (): CallEdgeDiff => ({
@@ -371,6 +413,7 @@ const emptyEdgeDiff = (): CallEdgeDiff => ({
   retargeted: 0,
   missingByKind: {},
   extraByKind: {},
+  sites: [],
 });
 
 export function diffCallEdges(full: CallSiteAnswers, inc: CallSiteAnswers): CallEdgeDiff {
@@ -386,6 +429,7 @@ export function diffCallEdges(full: CallSiteAnswers, inc: CallSiteAnswers): Call
     if (incAnswers === undefined) {
       diff.lost += fullAnswers.size;
       for (const kind of fullAnswers.values()) bump(diff.missingByKind, kind);
+      diff.sites.push({ site, full: describeAnswers(fullAnswers), inc: [] });
       continue;
     }
     diff.sharedSites += 1;
@@ -401,6 +445,9 @@ export function diffCallEdges(full: CallSiteAnswers, inc: CallSiteAnswers): Call
       extra += 1;
       bump(diff.extraByKind, kind);
     }
+    if (missing + extra > 0) {
+      diff.sites.push({ site, full: describeAnswers(fullAnswers), inc: describeAnswers(incAnswers) });
+    }
     const paired = Math.min(missing, extra);
     diff.retargeted += paired;
     diff.lost += missing - paired;
@@ -413,8 +460,14 @@ export function diffCallEdges(full: CallSiteAnswers, inc: CallSiteAnswers): Call
     if (full.has(site)) continue;
     diff.phantom += incAnswers.size;
     for (const kind of incAnswers.values()) bump(diff.extraByKind, kind);
+    diff.sites.push({ site, full: [], inc: describeAnswers(incAnswers) });
   }
   return diff;
+}
+
+/** `target (edgeKind)`, sorted — stable across runs so two sweeps diff cleanly. */
+function describeAnswers(answers: ReadonlyMap<string, string>): string[] {
+  return [...answers].map(([target, kind]) => `${target} (${kind})`).sort();
 }
 
 function addEdgeDiff(target: CallEdgeDiff, delta: CallEdgeDiff): void {
@@ -432,6 +485,7 @@ function addEdgeDiff(target: CallEdgeDiff, delta: CallEdgeDiff): void {
   for (const [kind, n] of Object.entries(delta.extraByKind)) {
     target.extraByKind[kind] = (target.extraByKind[kind] ?? 0) + n;
   }
+  target.sites.push(...delta.sites);
 }
 
 // ---------------------------------------------------------------------------
@@ -538,6 +592,8 @@ const ABLATIONS = [
   "cft",
   "reexp",
   "schema",
+  "cfcr",
+  "rawparams",
   "all",
 ] as const;
 type Ablation = (typeof ABLATIONS)[number];
@@ -551,6 +607,18 @@ type Ablation = (typeof ABLATIONS)[number];
 function ablateBeforeSeal(inc: CodegraphRunState, full: CodegraphRunState, which: Ablation): void {
   if (which === "all" || which === "schema") {
     Object.assign(inc.schemaTables, full.schemaTables);
+  }
+  // `rawparams` hands over the param family's RAW channels — the ones `seal`
+  // folds into `paramTypes` / `derivedClassFieldTypes` — so the barrier derives
+  // from complete inputs exactly as a full run's does (bd 39xca.15). `params`
+  // copies the DERIVED maps after the seal instead, which misses what the fold
+  // itself decides from the raw set: `typedClassFields` suppresses a derived
+  // field, and a conflicting `knownTargetCallArgs` record vetoes a param type.
+  if (which === "all" || which === "rawparams") {
+    for (const [key, record] of full.knownTargetCallArgs) inc.knownTargetCallArgs.set(key, record);
+    Object.assign(inc.paramNames, full.paramNames);
+    Object.assign(inc.classFieldParamLinks, full.classFieldParamLinks);
+    for (const coordinate of full.typedClassFields) inc.typedClassFields.add(coordinate);
   }
 }
 
@@ -616,6 +684,11 @@ function ablate(inc: CodegraphRunState, full: CodegraphRunState, which: Ablation
   if (wants("reexp")) {
     Object.assign(inc.moduleReexports, full.moduleReexports);
   }
+  // Read at resolve time (folded against `structuredReturnTypes` per call), so
+  // a post-seal hand-over is the faithful grain.
+  if (wants("cfcr")) {
+    Object.assign(inc.classFieldCallResults, full.classFieldCallResults);
+  }
 }
 
 function flag(name: string, fallback: string | undefined): string | undefined {
@@ -652,6 +725,11 @@ async function main(): Promise<void> {
   const samplePct = Number(flag("--sample-pct", "5"));
   const seed = Number(flag("--seed", "1"));
   const examplesOut = Number(flag("--examples", "10"));
+  // `--dump-full-edges <path>` writes the FULL side's call-edge answers as NDJSON
+  // (`{site, targets}` per call site) so two checkouts can be diffed edge for
+  // edge — a before/after A/B of a resolver change (bd tea-rags-mcp-emazx).
+  const dumpFullEdges = flag("--dump-full-edges", undefined);
+  const dumpedFullAnswers: CallSiteAnswers = new Map();
 
   const factory = new LanguageFactory();
   const composer = new DefaultSymbolIdComposer();
@@ -692,10 +770,8 @@ async function main(): Promise<void> {
     if (extraction.classSchemaTables !== undefined && Object.keys(extraction.classSchemaTables).length > 0) {
       schemaOverrideFiles.add(relPath);
     }
-    symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
-    const selfDispatch = selfDispatchFor(extraction);
-    fullState.absorb(extraction, selfDispatch);
-    const slice = buildPass1Aggregates(extraction, selfDispatch);
+    absorbWalkedFile(fullState, symbolTable, extraction);
+    const slice = buildPass1Aggregates(extraction, selfDispatchFor(extraction));
     if (slice !== undefined) slices.push(slice);
     walked += 1;
   }
@@ -777,7 +853,7 @@ async function main(): Promise<void> {
     bindRunStart(incState, root);
     let extracted = 0;
     for (const e of extractWindow()) {
-      incState.absorb(e, selfDispatchFor(e));
+      absorbWalkedFile(incState, incTable, e);
       extracted += 1;
     }
     ablateBeforeSeal(incState, fullState, ablation);
@@ -802,6 +878,7 @@ async function main(): Promise<void> {
     addInto(fullTotals, subtractKinds(snapshotKinds(fullState, language), before));
     addInto(incTotals, snapshotKinds(incState, language));
     addEdgeDiff(edgeTotals, diffCallEdges(fullAnswers, incAnswers));
+    if (dumpFullEdges !== undefined) for (const [site, answers] of fullAnswers) dumpedFullAnswers.set(site, answers);
     const columns = diffSchemaColumnEdges(fullAnswers, incAnswers, fullColumnIds, incTable.schemaColumnIds(), declared);
     columnTotals.fullColumnEdges += columns.fullColumnEdges;
     columnTotals.incColumnEdges += columns.incColumnEdges;
@@ -846,6 +923,14 @@ async function main(): Promise<void> {
     const parts = Object.entries(bucket).sort(([, a], [, b]) => b - a);
     return parts.length === 0 ? "—" : parts.map(([k, n]) => `${k} ${n}`).join(", ");
   };
+  const siteRows =
+    edgeTotals.sites
+      .slice(0, examplesOut)
+      .map(
+        (d) =>
+          `    ${d.site.replaceAll("\0", " · ")}\n      FULL ${d.full.join(", ") || "—"}\n      INC  ${d.inc.join(", ") || "—"}`,
+      )
+      .join("\n") || "    —";
   process.stdout.write(
     `\ncall-edge set diff — keyed by (caller relPath, caller symbolId, call expression)\n` +
       `  full ${edgeTotals.fullEdges} edges over ${edgeTotals.fullSites} sites · ` +
@@ -853,7 +938,8 @@ async function main(): Promise<void> {
       `${edgeTotals.sharedSites} shared sites\n` +
       `  lost ${edgeTotals.lost} · phantom ${edgeTotals.phantom} · retargeted ${edgeTotals.retargeted}\n` +
       `  missing by edgeKind: ${kindBreakdown(edgeTotals.missingByKind)}\n` +
-      `  extra   by edgeKind: ${kindBreakdown(edgeTotals.extraByKind)}\n`,
+      `  extra   by edgeKind: ${kindBreakdown(edgeTotals.extraByKind)}\n` +
+      `  disagreeing sites (first ${examplesOut} of ${edgeTotals.sites.length}):\n${siteRows}\n`,
   );
 
   // Schema-column slice, grouped by the model whose accessor went missing.
@@ -891,6 +977,13 @@ async function main(): Promise<void> {
       `  examples (missing):\n${exampleRows.join("\n") || "    —"}\n` +
       `  examples (INC-only):\n${phantomRows.join("\n") || "    —"}\n`,
   );
+
+  if (dumpFullEdges !== undefined) {
+    const lines = [...dumpedFullAnswers].map(([site, answers]) =>
+      JSON.stringify({ site: site.replaceAll("\0", " · "), targets: [...answers.keys()].sort() }),
+    );
+    writeFileSync(dumpFullEdges, `${lines.join("\n")}\n`);
+  }
 
   if (jsonOut !== undefined) {
     writeFileSync(

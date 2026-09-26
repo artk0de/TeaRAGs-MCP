@@ -39,7 +39,7 @@ import { SQL_033_CG_IDENTIFIERS } from "./033-cg-identifiers.js";
 import { SQL_034_CG_IDENTIFIERS_TYPE_MULTIPLICITY } from "./034-cg-identifiers-type-multiplicity.js";
 import { SQL_035_CG_SYMBOLS_SYMBOL_KIND } from "./035-cg-symbols-symbol-kind.js";
 import { SQL_036_CG_IDENTIFIERS_CALL_UNWRAP } from "./036-cg-identifiers-call-unwrap.js";
-// 037 is reserved by the cg-cluster branch.
+import { SQL_037_CG_TYPE_ONLY_FILE_EDGES } from "./037-cg-type-only-file-edges.js";
 import { SQL_038_CG_TYPE_DECLARATIONS } from "./038-cg-type-declarations.js";
 
 export interface DatabaseMigration {
@@ -84,5 +84,6 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "034-cg-identifiers-type-multiplicity.sql", sql: SQL_034_CG_IDENTIFIERS_TYPE_MULTIPLICITY },
   { filename: "035-cg-symbols-symbol-kind.sql", sql: SQL_035_CG_SYMBOLS_SYMBOL_KIND },
   { filename: "036-cg-identifiers-call-unwrap.sql", sql: SQL_036_CG_IDENTIFIERS_CALL_UNWRAP },
+  { filename: "037-cg-type-only-file-edges.sql", sql: SQL_037_CG_TYPE_ONLY_FILE_EDGES },
   { filename: "038-cg-type-declarations.sql", sql: SQL_038_CG_TYPE_DECLARATIONS },
 ];

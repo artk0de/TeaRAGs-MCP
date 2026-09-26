@@ -33,6 +33,7 @@ import type {
   GlobalSymbolTable,
   HierarchyView,
   InheritanceKind,
+  SelfDispatchArgTemplate,
   SelfDispatchMethodDecl,
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
@@ -148,6 +149,7 @@ export const SELF_DISPATCH_LANGUAGE = "ruby";
  * chunk's lexical scope joined — the FQ of the declaring class/module.
  */
 export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): SelfDispatchMethod[] {
+  const argTemplates = foldFileArgTemplates(chunks);
   const methods: SelfDispatchMethod[] = [];
   for (const chunk of chunks) {
     const split = splitMethodSymbolId(chunk.symbolId);
@@ -158,16 +160,153 @@ export function extractSelfDispatchMethods(chunks: readonly ChunkExtraction[]): 
       if (isSelfReceiver(call.receiver)) hooks.add(call.member);
       else if (isSuperReceiver(call.receiver) && call.member === split.member) superDelegates = true;
     }
-    if (hooks.size > 0 || superDelegates) {
+    const argTemplate = argTemplates.get(chunk.symbolId);
+    if (hooks.size > 0 || superDelegates || argTemplate !== undefined) {
       methods.push({
         symbolId: chunk.symbolId,
         enclosingType: chunk.scope.join("::"),
         selfHookCandidates: [...hooks],
         ...(superDelegates ? { superDelegates: true as const } : {}),
+        ...(argTemplate !== undefined ? { argTemplate } : {}),
       });
     }
   }
   return methods;
+}
+
+/** The SAME instance a method runs on (`H` / `self.H`) — the receivers a `send` template dispatches on. */
+function isSameSelf(receiver: string | null): boolean {
+  return receiver === null || receiver === "self";
+}
+
+/** A self-instantiation receiver (`new.H`, `self.class.new(…).H`) — the hop lands on the INSTANCE form. */
+function isSelfInstantiation(receiver: string | null): boolean {
+  return receiver !== null && isSelfReceiver(receiver) && receiver !== "self";
+}
+
+/** One same-file self hop that forwards a caller parameter into the callee's parameter position. */
+interface ArgForwardHop {
+  readonly target: string;
+  readonly calleeArg: number;
+  readonly callerParam: number;
+}
+
+/**
+ * The per-file ARGUMENT-template fold (bd tea-rags-mcp-emazx), keyed by method
+ * symbolId.
+ *
+ * Seeds: a method whose self-`send` names its hook as `prefix#{p}suffix`, `p`
+ * one of its leading positional parameters. Hops: a self-shaped call whose
+ * positional argument is a bare parameter of the caller, landing on a method of
+ * the SAME type that this file defines — the instance form after a
+ * self-instantiation (`new(...).authorize!(ability)`), the caller's own form
+ * otherwise (`result(ability)`). Iterated to a fixpoint so declaration order
+ * does not matter.
+ *
+ * Deliberately file-local: the delegation chain of the idiom this serves lives
+ * in one class body, and a chain that crosses files would need the run-global
+ * fixpoint the owner decision left to bd tea-rags-mcp-h2clg. A method that
+ * reaches two different templates, or one template through two different
+ * parameter positions, gets none — a guess would pick a hook the call might not
+ * reach.
+ */
+function foldFileArgTemplates(chunks: readonly ChunkExtraction[]): Map<string, SelfDispatchArgTemplate> {
+  const bySymbol = new Map<string, ChunkExtraction>();
+  for (const chunk of chunks) bySymbol.set(chunk.symbolId, chunk);
+  const resolved = new Map<string, SelfDispatchArgTemplate>();
+  const declined = new Set<string>();
+  const hopsOf = new Map<string, ArgForwardHop[]>();
+
+  for (const chunk of chunks) {
+    const split = splitMethodSymbolId(chunk.symbolId);
+    if (split === null) continue;
+    const params = chunk.paramNames ?? [];
+    const seeds: SelfDispatchArgTemplate[] = [];
+    const hops: ArgForwardHop[] = [];
+    for (const call of chunk.calls) {
+      const template = call.sendNameTemplate;
+      if (template !== undefined && isSameSelf(call.receiver)) {
+        const param = params.indexOf(template.identifier);
+        if (param === -1) {
+          declined.add(chunk.symbolId); // the name is computed from something other than a parameter
+        } else {
+          seeds.push({ prefix: template.prefix, suffix: template.suffix, param, via: [] });
+        }
+        continue;
+      }
+      if (!isSelfReceiver(call.receiver) || call.positionalArgAtoms === undefined) continue;
+      const separator = isSelfInstantiation(call.receiver) || !split.classForm ? "#" : ".";
+      const target = `${split.type}${separator}${call.member}`;
+      if (target === chunk.symbolId || !bySymbol.has(target)) continue;
+      call.positionalArgAtoms.forEach((atom, calleeArg) => {
+        if (atom === null || !("identifier" in atom)) return;
+        const callerParam = params.indexOf(atom.identifier);
+        if (callerParam !== -1) hops.push({ target, calleeArg, callerParam });
+      });
+    }
+    if (declined.has(chunk.symbolId)) continue;
+    const distinct = uniqueArgTemplate(seeds);
+    if (distinct === null) declined.add(chunk.symbolId);
+    else if (distinct !== undefined) resolved.set(chunk.symbolId, distinct);
+    if (hops.length > 0) hopsOf.set(chunk.symbolId, hops);
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [symbolId, hops] of hopsOf) {
+      if (resolved.has(symbolId) || declined.has(symbolId)) continue;
+      const reached: SelfDispatchArgTemplate[] = [];
+      for (const hop of hops) {
+        const below = resolved.get(hop.target);
+        if (below?.param !== hop.calleeArg) continue;
+        reached.push({
+          prefix: below.prefix,
+          suffix: below.suffix,
+          param: hop.callerParam,
+          via: [hop.target, ...below.via],
+        });
+      }
+      const distinct = uniqueArgTemplate(reached);
+      if (distinct === null) {
+        declined.add(symbolId);
+      } else if (distinct !== undefined) {
+        resolved.set(symbolId, distinct);
+        changed = true;
+      }
+    }
+  }
+  return resolved;
+}
+
+/**
+ * The one template a method reaches: `undefined` for none, `null` when the
+ * candidates disagree on the composed name or the parameter position. Two
+ * routes to the same name through the same position agree; the first route's
+ * hop chain is kept.
+ */
+function uniqueArgTemplate(candidates: readonly SelfDispatchArgTemplate[]): SelfDispatchArgTemplate | null | undefined {
+  if (candidates.length === 0) return undefined;
+  const [first] = candidates;
+  const agree = candidates.every(
+    (c) => c.prefix === first.prefix && c.suffix === first.suffix && c.param === first.param,
+  );
+  return agree ? first : null;
+}
+
+/**
+ * The run-global `symbolId → argument template` registry the Ruby entry
+ * strategy's step 2d reads (bd tea-rags-mcp-emazx), built at the barrier from
+ * the walked AND hydrated self-dispatch methods.
+ */
+export function collectSelfDispatchArgTemplates(
+  methods: readonly SelfDispatchMethod[],
+): Record<string, SelfDispatchArgTemplate> {
+  const registry: Record<string, SelfDispatchArgTemplate> = createIdentifierRecord();
+  for (const method of methods) {
+    if (method.argTemplate !== undefined) registry[method.symbolId] = method.argTemplate;
+  }
+  return registry;
 }
 
 /**

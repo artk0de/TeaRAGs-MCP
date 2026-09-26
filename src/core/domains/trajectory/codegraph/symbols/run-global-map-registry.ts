@@ -90,6 +90,16 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   schemaTables: { policy: "hydrate", sliceField: "classSchemaTables" },
   buildConstraintsByFile: { policy: "hydrate", sliceField: "buildConstraint" },
   typeDeclarations: { policy: "hydrate", sliceField: "typeDeclarations" },
+  // The Ruby parameter family (bd 39xca.15): the raw channels the barrier folds
+  // into `paramTypes` / `derivedClassFieldTypes`, each declared by a different
+  // file than the one it types. Appended last, so older rows keep their bytes.
+  knownTargetCallArgs: { policy: "hydrate", sliceField: "knownTargetCallArgs" },
+  paramNames: { policy: "hydrate", sliceField: "methodParamNames" },
+  classFieldParamLinks: { policy: "hydrate", sliceField: "classFieldParamLinks" },
+  typedClassFields: { policy: "hydrate", sliceField: "typedClassFields" },
+  // Structural contracts (bd 39xca.14): the barrier derives conformers of every
+  // contract in the family, so an unwalked interface file still counts.
+  structuralContracts: { policy: "hydrate", sliceField: "structuralContracts" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",
@@ -98,6 +108,10 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   extractedRelPathsByLanguage: {
     policy: "batchOnly",
     reason: "the walked set itself: hydration skips these files and the deferred chunk pass maps them",
+  },
+  extractedCallSitesByRelPath: {
+    policy: "batchOnly",
+    reason: "per-file call counts of the walked set, read by pass-2's plan; hydrated files are not re-resolved",
   },
   mirroredRelPaths: {
     policy: "batchOnly",
@@ -110,23 +124,29 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
     policy: "batchOnly",
     reason: "derived at seal from the hydrated self-dispatch methods",
   },
-  instantiatedTypes: { policy: "batchOnly", reason: "RTA set; measured zero recovered edges (bd 8qyax, bd 4yvms)" },
+  selfDispatchArgTemplates: {
+    policy: "batchOnly",
+    reason: "derived at seal from the hydrated self-dispatch methods (argTemplate rides their persisted record)",
+  },
+  instantiatedTypes: {
+    policy: "batchOnly",
+    reason: "RTA set; measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
+  },
   ivarTypes: { policy: "batchOnly", reason: "no type source emits ivar facts yet (bd wr7ku), so unmeasurable" },
   classFieldCallResults: {
     policy: "batchOnly",
-    reason: "rides walker 5's unreleased delta; an index without it resolves exactly as before",
+    reason: "measured zero recovered edges with --ablate cfcr on huginn / octokit.rb / sinatra (bd 39xca.15)",
   },
-  dispatchTables: { policy: "batchOnly", reason: "measured zero recovered edges (bd 8qyax, bd 4yvms)" },
-  callbackParams: { policy: "batchOnly", reason: "measured zero recovered edges (bd 8qyax, bd 4yvms)" },
-  knownTargetCallArgs: { policy: "batchOnly", reason: "param family; measured zero recovered edges (bd 8qyax)" },
-  paramNames: { policy: "batchOnly", reason: "param family; measured zero recovered edges (bd 8qyax)" },
-  classFieldParamLinks: { policy: "batchOnly", reason: "param family; measured zero recovered edges (bd 8qyax)" },
-  typedClassFields: { policy: "batchOnly", reason: "gate of the param family fold; measured zero (bd 8qyax)" },
-  paramTypes: { policy: "batchOnly", reason: "derived at seal from the param family; measured zero (bd 8qyax)" },
-  derivedClassFieldTypes: {
+  dispatchTables: {
     policy: "batchOnly",
-    reason: "derived at seal from the param family; measured zero (bd 8qyax)",
+    reason: "measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
   },
+  callbackParams: {
+    policy: "batchOnly",
+    reason: "measured zero recovered edges (bd 8qyax, bd 4yvms; re-measured 39xca.15)",
+  },
+  paramTypes: { policy: "batchOnly", reason: "derived at seal from the hydrated param family" },
+  derivedClassFieldTypes: { policy: "batchOnly", reason: "derived at seal from the hydrated param family" },
 } as const satisfies Record<RunGlobalMapField, RunGlobalMapPersistence>;
 
 type RegistryEntry = (typeof RUN_GLOBAL_MAP_PERSISTENCE)[RunGlobalMapField];

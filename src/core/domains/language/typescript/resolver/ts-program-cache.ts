@@ -37,27 +37,38 @@
  * nothing: 2.64 ms/file over the complete corpus, zero further builds, 467,308
  * acquires all served off coverage. What is saved is module resolution, which
  * `ts.createProgram` re-runs in full per call; the checker is under 1%.
- * {@link TSProgramCacheOptions.strategy} selects between the two, and `auto` —
- * the default — takes the whole Program whenever the project is small enough to
- * hold in memory.
+ * {@link TSProgramCacheOptions.strategy} selects between the per-entry path and
+ * the whole-project one, and `auto` — the default — takes the whole-project one
+ * for a bulk pass.
  *
- * **The whole Program is SEGMENTED, and whether it runs at all is decided
- * against the isolate's actual heap.** A Program's build cost is paid once; its
- * CHECKER's is not — checker state is monotonic, and on taxdome it grows 1.69 GB
- * across the resolve, taking a 2.6 GB post-build live set to 4.31 GB by the last
- * file. So the whole strategy retires its Program every
- * {@link TSProgramCacheOptions.wholeSegmentFiles} files served and builds a
- * fresh one from the same roots, which caps that term at one segment's worth
- * (projected peak ~3.4 GB) for the cost of two extra builds on a 10,912-file
- * corpus. Parses are not re-read: the shared host hands the successor the same
- * SourceFiles. And before ANY build, {@link TSProgramCacheOptions.heapBudget}
- * projects the peak against `v8.getHeapStatistics().heap_size_limit` — a
- * projection that does not fit degrades to coverage, or, below coverage mode's
- * own floor, to no Program at all. The reason that is worth a gate rather than a
- * comment is the failure mode: a V8 heap OOM kills the worker isolate outright,
- * the `try/catch` in {@link TSProgramCache.buildFrom} never runs, and the run
- * loses every codegraph signal it had accumulated with no retry
- * (`./ts-program-heap-admission.ts` carries the measurements).
+ * **The whole project is covered in CLOSURE BATCHES, not one Program** (bd
+ * tea-rags-mcp-vtuu4). The corpus outgrew the whole Program: on taxdome it held
+ * 24,772 files and 117.6 MB of source text, and pass-2 died at ~5.4 GB with
+ * `ERR_WORKER_OUT_OF_MEMORY` (parsed ASTs 2.3 GB, binder 1.2 GB, checker
+ * ~1 GB). Heap follows TEXT and resolved CALL SITES, not file count, so
+ * `TSProgramBatchPlanner` packs the corpus roots into batches whose closure
+ * union stays under {@link TSProgramCacheOptions.batchTextBytes} and whose call
+ * sites stay under {@link TSProgramCacheOptions.batchCallSites}. Each batch
+ * Program holds its roots' FULL forward closure plus the PRELUDE — the libs,
+ * global scripts and global-changing dependency declarations every file's types
+ * may read (`./ts-program-import-graph.ts`) — so resolution matches the whole
+ * Program. Pass-2 visits files in batch order ({@link planResolveVisits}); one
+ * batch Program is alive at a time and is released before the next is built,
+ * while the shared parse cache hands the next batch the parses it shares with
+ * this one — already bound. Roots whose own closure exceeds the text budget run
+ * last, one Program each, after the parse cache is cleared down to the prelude.
+ * Measured sequentially over taxdome at 40 MB / 15k: 33 Programs, max live heap
+ * 1,881 MB, 418,216 of 418,367 call sites covered.
+ *
+ * **Whether any Program runs at all is decided against the isolate's actual
+ * heap.** Before the first batch, {@link TSProgramCacheOptions.heapBudget}
+ * projects the largest batch against `v8.getHeapStatistics().heap_size_limit`,
+ * and each oversize root is projected before its own build; a projection that
+ * does not fit resolves without the checker. The reason that is worth a gate
+ * rather than a comment is the failure mode: a V8 heap OOM kills the worker
+ * isolate outright, the `try/catch` in {@link TSProgramCache.buildFrom} never
+ * runs, and the run loses every codegraph signal it had accumulated with no
+ * retry (`./ts-program-heap-admission.ts` carries the measurements).
  *
  * **Which is why the per-entry path is keyed by COVERAGE, not by entry file
  * alone.** If
@@ -130,6 +141,7 @@ import { dirname, isAbsolute, posix, relative, resolve as resolvePath, sep } fro
 import ts from "typescript";
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
+import { TSParsedSourceLru } from "./ts-parsed-source-lru.js";
 import {
   createProjectFileProbe,
   mapImportToFile,
@@ -137,16 +149,28 @@ import {
   type TsCompilerOptions,
 } from "./ts-path-mapper.js";
 import {
-  assessTSProgramAdmission,
+  TS_PROGRAM_BATCH_CALL_SITES_DEFAULT,
+  TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT,
+  TSProgramBatchPlanner,
+  type TSProgramBatchPlan,
+} from "./ts-program-batch-planner.js";
+import {
+  assessTSProgramBatchAdmission,
+  assessTSProgramCoverageAdmission,
   describeTSProgramTypecheckerDowngrade,
+  fitsTSProgramHeap,
+  projectTSProgramUnitHeapMb,
   readHeapSizeLimitMb,
   TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
-  TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_CALL_SITES_MB_DEFAULT,
   TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT,
   TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
   type TSProgramAdmissionAssessment,
   type TSProgramHeapBudget,
+  type TSProgramUnitShape,
 } from "./ts-program-heap-admission.js";
+import { buildTSProgramImportGraph, type TSProgramImportGraph } from "./ts-program-import-graph.js";
 
 /** Max Programs retained before the least-recently-used one is dropped. */
 export const TS_PROGRAM_CACHE_MAX_DEFAULT = 8;
@@ -187,13 +211,24 @@ export const TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT = 8000;
  */
 export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 256 * 1024 * 1024;
 /**
+ * Source text (bytes) the shared parse cache may retain outside the pinned
+ * prelude and the default lib. Default
+ * {@link TSProgramCacheOptions.maxParsedSourceTextBytes} rationale.
+ *
+ * 40 MiB, the batch text budget (bd tea-rags-mcp-vtuu4): the spike's
+ * sequential closure batches over taxdome kept 1.2–1.45 GB retained between
+ * batches at this size with 80–95% of each batch's parses served as hits.
+ */
+export const TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT = 40 * 1024 * 1024;
+/**
  * How the cache gets its Programs.
  *
  * - `coverage` — one `ts.createProgram` per entry file whose closure no
  *   retained Program already covers. The original behaviour.
- * - `whole` — ONE Program over every file the project's tsconfig claims,
- *   built on first use and serving every acquire that lands inside it.
- * - `auto` — `whole` when the root set fits
+ * - `whole` — the whole project, covered by closure-batch Programs planned on
+ *   first use (bd tea-rags-mcp-vtuu4; one Program per run before it). The name
+ *   is the strategy's scope, not a count of Programs.
+ * - `auto` — `whole` for a bulk pass whose root set fits
  *   {@link TSProgramCacheOptions.wholeRootFilesMax}, `coverage` otherwise.
  */
 export type TSProgramStrategy = "coverage" | "whole" | "auto";
@@ -226,39 +261,9 @@ export const TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT = 20000;
  * wants the whole Program from the first acquire sets the gate to 1.
  */
 export const TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT = 200;
-/**
- * Files ONE whole-project Program serves before it is rebuilt from the same
- * roots and the old one released.
- *
- * The Program's own cost is paid once; its CHECKER's is not. Checker state is
- * monotonic — every type it computes, every symbol link it caches, stays for
- * the life of that checker — and measured on taxdome it grows 1.69 GB across
- * the resolve, taking a 2.6 GB post-build live set to 4.31 GB by the last file.
- * That growth is what kills a 4096-declared worker at about file 6,500.
- *
- * None of it is needed across independent files: file 9,000 does not read the
- * types file 12 asked for. So the run is cut into segments — after 5,000
- * DISTINCT files the cache drops every Program it holds and rebuilds the
- * whole-project one from the same roots, which caps the checker term at one
- * segment's worth and takes the projected peak from ~4.3 GB to ~3.4 GB. Parses
- * are NOT re-read: the shared `ts.CompilerHost` hands the new Programs the same
- * SourceFiles, so what a boundary pays for is module resolution, not the AST.
- *
- * Every Program goes, not only the whole one, and the reason is that the
- * per-entry LRU is not empty even under the whole strategy: the tsconfig's
- * world and the indexed corpus are different sets, so files outside the
- * project's declared root set still opened per-entry Programs. The root union
- * (see {@link TSProgramCache.wholeRootSet}) closes most of that gap, and what
- * survives it is exactly the population a retirement keyed on the whole Program
- * alone would leave growing.
- *
- * A counter is deliberately the whole mechanism: checker state cannot be
- * shared, migrated or partially evicted across Programs, so there is nothing
- * cleverer to be done than to decide when to start over. Raising it past the
- * corpus size disables segmentation, which is what an operator with a large
- * heap and no interest in the rebuilds should do.
- */
-export const TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT = 5000;
+export { TS_PROGRAM_BATCH_CALL_SITES_DEFAULT, TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT };
+/** Name of the host-only prelude lib-reference file, under the repo root — see {@link TSProgramCache}. */
+const PRELUDE_LIB_REFERENCES_FILE = "__tea_rags_prelude_libs__.d.ts";
 
 export interface TSProgramCacheOptions {
   /** Absolute project root every `RelPath` is resolved against. */
@@ -331,6 +336,19 @@ export interface TSProgramCacheOptions {
    */
   maxRetainedSourceTextBytes?: number;
   /**
+   * Source text, in bytes, the shared parse cache may hold outside the pinned
+   * prelude and the default lib, least recently used evicted first. Default
+   * {@link TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT} (bd tea-rags-mcp-vtuu4).
+   *
+   * The count caps beside it ({@link maxParsedFiles},
+   * {@link maxDependencyFiles}) bound how many parses are held, and nothing
+   * about their weight; heap follows TEXT — AST plus binder state is ≈ 30 MB
+   * per MB of source. Least recently used because consecutive closure batches
+   * share most of their files, so the parses the next batch needs are the ones
+   * the current batch just touched.
+   */
+  maxParsedSourceTextBytes?: number;
+  /**
    * How Programs are obtained. Default {@link TS_PROGRAM_STRATEGY_DEFAULT}.
    *
    * The per-entry default was never cheap, it was merely bounded: measured over
@@ -363,11 +381,16 @@ export interface TSProgramCacheOptions {
    */
   wholeMinEntries?: number;
   /**
-   * Files one whole-project Program serves before it is replaced. Default
-   * {@link TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT}, whose docblock carries the
-   * measurement; a value past the project's size disables segmentation.
+   * Source text one closure-batch Program may hold, prelude included. Default
+   * {@link TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT} (bd tea-rags-mcp-vtuu4) — see
+   * `./ts-program-batch-planner.ts` for the measurement.
    */
-  wholeSegmentFiles?: number;
+  batchTextBytes?: number;
+  /**
+   * Call sites one closure-batch Program may resolve — the checker's heap term.
+   * Default {@link TS_PROGRAM_BATCH_CALL_SITES_DEFAULT}.
+   */
+  batchCallSites?: number;
   /**
    * Terms of the heap projection admission is decided on. Default
    * {@link TS_PROGRAM_HEAP_BASE_MB_DEFAULT} and friends.
@@ -465,6 +488,29 @@ interface CacheEntry {
   derived: Map<string, TSProgramHandle>;
 }
 
+/** One Program the batch plan builds: a closure batch or one oversize root. */
+interface BatchUnit {
+  /** Roots the Program is handed besides the prelude — compiler paths. */
+  readonly rootNames: readonly string[];
+  /** Corpus files resolved against this unit — compiler paths. */
+  readonly resolves: readonly string[];
+  readonly shape: TSProgramUnitShape;
+  readonly oversize: boolean;
+}
+
+/** A run's batch plan in the form {@link TSProgramCache} serves from. */
+interface BatchUnits {
+  /** Batches in pack order, then the oversize roots. */
+  readonly units: readonly BatchUnit[];
+  /** Compiler path of a corpus file → index of the unit that resolves it. */
+  readonly unitOf: ReadonlyMap<string, number>;
+  /** Handed to every unit's Program ahead of its own roots. */
+  readonly preludeRootNames: readonly string[];
+  readonly preludeFiles: number;
+  readonly preludeTextBytes: number;
+  readonly batchCount: number;
+}
+
 /**
  * Compiler options for the isolated per-file Programs. Deliberately minimal:
  * `noEmit` (nothing is written), `skipLibCheck` (diagnostics are never read),
@@ -534,7 +580,9 @@ export class TSProgramCache {
   private readonly strategy: TSProgramStrategy;
   private readonly wholeRootFilesMax: number;
   private readonly wholeMinEntries: number;
-  private readonly wholeSegmentFiles: number;
+  private readonly batchTextBytes: number;
+  private readonly batchCallSites: number;
+  private readonly maxParsedSourceTextBytes: number;
   private readonly heapBudget: TSProgramHeapBudget;
   private readonly readHeapSizeLimitMb: () => number;
   private readonly projectRoots: () => readonly string[];
@@ -556,32 +604,41 @@ export class TSProgramCache {
    */
   private corpusRoots: readonly string[] = [];
   /**
-   * Whole-project builds this instance has performed — the first and every
-   * segment rebuild after it. The observable that says segmentation ran.
+   * Call sites pass-1 counted per corpus file, keyed like {@link corpusRoots} —
+   * the batch planner's call-cap input. A file with no entry counts zero.
+   */
+  private corpusCallSites = new Map<string, number>();
+  /**
+   * Closure-batch Programs this instance has built — batches and oversize
+   * roots alike. The observable that says the whole-project strategy ran.
    */
   private wholeBuilds = 0;
   /** `acquire` calls this instance has answered — the diagnostics denominator. */
   private acquires = 0;
-  /** Acquires served off the whole-project Program. */
+  /** Acquires served off a closure-batch Program. */
   private wholeHits = 0;
-  /** Acquires served off a per-entry Program's coverage, whole one excluded. */
+  /** Acquires served off a per-entry Program's coverage, batch ones excluded. */
   private coverageHits = 0;
-  /** Per-entry `ts.createProgram` calls — what the whole strategy exists to drive to zero. */
+  /** Per-entry `ts.createProgram` calls — what the whole-project strategy exists to drive to zero. */
   private entryBuilds = 0;
   /**
-   * Distinct files acquired since the current segment began — what
-   * {@link TSProgramCacheOptions.wholeSegmentFiles} counts.
-   *
-   * Run-wide rather than per-Program: what checker state tracks is how far the
-   * RUN has got, whichever Program is answering, and under the per-entry
-   * strategy — or in the stretch before a whole build — that is not the whole
-   * Program's own served set. A counter keyed on `wholeEntry.derived` would
-   * measure only one of the several Programs whose checkers are growing.
-   *
-   * A Set rather than a counter because production acquires ~43 times per file
-   * (467,308 over 10,912) — counting acquires would rotate every ~116 files.
+   * The run's closure-batch plan, once the whole-project strategy has been
+   * decided on (bd tea-rags-mcp-vtuu4) — `null` on the per-entry path.
    */
-  private readonly segmentFiles = new Set<RelPath>();
+  private batchPlan: BatchUnits | null = null;
+  /**
+   * The ONE closure-batch Program alive at a time, held OUTSIDE {@link entries}
+   * on purpose: neither retention bound may evict the Program every file of the
+   * current batch is about to be served off. Released — never retained beside
+   * its successor — before the next unit is built.
+   */
+  private currentUnit: { readonly index: number; readonly entry: CacheEntry } | null = null;
+  /** Oversize roots admission refused: resolved without the checker, counted, reported once. */
+  private readonly uncheckedOversizeUnits = new Set<number>();
+  /** Units whose `ts.createProgram` failed: their files fall through to the per-entry path. */
+  private readonly failedUnits = new Set<number>();
+  /** Has an oversize refusal already been reported? One line per run. */
+  private oversizeReported = false;
   /**
    * Has admission refused every Program for the rest of this run? Latched
    * rather than re-decided, because the verdict is a heap projection over the
@@ -598,22 +655,8 @@ export class TSProgramCache {
    */
   private entriesSeen: Set<RelPath> | null = new Set();
   /**
-   * The whole-project Program, once built — held OUTSIDE {@link entries} on
-   * purpose.
-   *
-   * It answers to neither retention bound. The count LRU would rotate it out
-   * after `maxEntries` per-entry misses, and the byte budget would evict it
-   * first (it is the largest thing the cache holds, and the least recently
-   * INSERTED), which in both cases discards the one Program every remaining
-   * file of the run is about to be served off. That is the same reasoning
-   * {@link evictOverflow} already applies to the newest build, one level up:
-   * a cache policy must not evict the thing that makes the next thousand
-   * lookups free.
-   */
-  private wholeEntry: CacheEntry | null = null;
-  /**
-   * Has the whole-project build been decided? Set before the attempt, not
-   * after, so a strategy that declines — or a build that fails — costs one
+   * Has the whole-project plan been decided? Set before the attempt, not after,
+   * so a strategy that declines — or a plan that yields nothing — costs one
    * decision for the run rather than one per acquire.
    */
   private wholeAttempted = false;
@@ -710,6 +753,37 @@ export class TSProgramCache {
   private readonly hostRealpath = new Map<string, string>();
   private readonly host: ts.CompilerHost;
   /**
+   * The byte-bounded recency index over {@link sourceFiles} — see
+   * {@link TSProgramCacheOptions.maxParsedSourceTextBytes}. Holds names and
+   * sizes; {@link evictParsedOverflow} drops what it returns from the map.
+   */
+  private readonly parsedText: TSParsedSourceLru;
+  /**
+   * One module-resolution cache for every Program this instance builds, and
+   * for the batch planner's graph walk (bd tea-rags-mcp-vtuu4).
+   *
+   * `ts.createProgram` otherwise creates a private cache per call, so each
+   * Program re-resolves every specifier of every file it holds. Resolution
+   * depends only on the containing directory, the specifier and the options,
+   * all fixed for the run, so the answers are shareable across Programs.
+   */
+  private readonly moduleResolutionCache: ts.ModuleResolutionCache;
+  /**
+   * A file that exists only in this host: one `/// <reference lib>` line per
+   * lib the prelude carries (bd tea-rags-mcp-vtuu4).
+   *
+   * Libs reach a batch through a reference directive, never as root names, for
+   * the same reason they reach the whole Program that way: the compiler sorts
+   * the files it loads as DEFAULT LIBRARIES into its lib order ahead of every
+   * other file, and a lib handed over as a root is an ordinary source file,
+   * processed where the roots are. Declaration merge order decides which
+   * global overload wins — the `lib.webworker.d.ts` vs `lib.dom.d.ts` picks
+   * the prelude exists to preserve.
+   */
+  private readonly preludeLibFileName: string;
+  private preludeLibSource: ts.SourceFile | undefined;
+  private preludeLibText: string | null = null;
+  /**
    * `repoRoot` as a directory prefix, in the separator the COMPILER reports.
    * `ts` normalizes every `SourceFile.fileName` to forward slashes whatever the
    * platform, so the membership test in {@link build} compares like with like
@@ -739,18 +813,28 @@ export class TSProgramCache {
     this.strategy = options.strategy ?? TS_PROGRAM_STRATEGY_DEFAULT;
     this.wholeRootFilesMax = options.wholeRootFilesMax ?? TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT;
     this.wholeMinEntries = options.wholeMinEntries ?? TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT;
-    this.wholeSegmentFiles = options.wholeSegmentFiles ?? TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT;
+    this.batchTextBytes = options.batchTextBytes ?? TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT;
+    this.batchCallSites = options.batchCallSites ?? TS_PROGRAM_BATCH_CALL_SITES_DEFAULT;
+    this.maxParsedSourceTextBytes = options.maxParsedSourceTextBytes ?? TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT;
     this.heapBudget = options.heapBudget ?? {
       baseMb: TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
+      perTextMb: TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT,
+      perThousandCallSitesMb: TS_PROGRAM_HEAP_PER_1K_CALL_SITES_MB_DEFAULT,
       perThousandRootsMb: TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
-      checkerPerThousandFilesMb: TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
       usableHeapPct: TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
     };
     this.readHeapSizeLimitMb = options.readHeapSizeLimitMb ?? readHeapSizeLimitMb;
     this.projectRoots = options.projectRoots ?? ((): readonly string[] => []);
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
     this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
+    this.preludeLibFileName = `${this.inRootPrefix}${PRELUDE_LIB_REFERENCES_FILE}`;
+    this.parsedText = new TSParsedSourceLru(this.maxParsedSourceTextBytes);
     this.host = this.buildHost();
+    this.moduleResolutionCache = ts.createModuleResolutionCache(
+      this.host.getCurrentDirectory(),
+      (fileName) => this.host.getCanonicalFileName(fileName),
+      this.compilerOptions,
+    );
     // Read off the host rather than guessed: it is the same lookup the compiler
     // itself uses to find the lib, so the exempt directory is exactly the one
     // whose files `ts.createProgram` will ask this cache to parse.
@@ -759,38 +843,29 @@ export class TSProgramCache {
   }
 
   /**
-   * Programs currently retained — the per-entry LRU plus the whole-project
-   * Program when one has been built. Both are things `acquire` can be served
-   * off, which is what this count is read for.
+   * Programs currently retained — the per-entry LRU plus the current
+   * closure-batch Program when one is alive. Both are things `acquire` can be
+   * served off, which is what this count is read for.
    */
   get size(): number {
-    return this.entries.size + (this.wholeEntry === null ? 0 : 1);
+    return this.entries.size + (this.currentUnit === null ? 0 : 1);
   }
 
   /**
-   * Non-lib files the whole-project Program holds, or `0` when the cache is on
-   * the per-entry strategy. The observable that says which strategy a run
-   * actually took.
+   * Non-lib files the current closure-batch Program holds, or `0` when none is
+   * alive — on the per-entry strategy, or between two batches. The observable
+   * that says which strategy a run actually took.
    */
   get wholeProgramFileCount(): number {
-    return this.wholeEntry?.coveredTextBytes.size ?? 0;
+    return this.currentUnit?.entry.coveredTextBytes.size ?? 0;
   }
 
   /**
-   * Whole-project builds performed so far: one per segment. `0` on the
-   * per-entry strategy, `1` when segmentation never triggered.
+   * Closure-batch Programs built so far, oversize roots included. `0` on the
+   * per-entry strategy.
    */
   get wholeProgramBuildCount(): number {
     return this.wholeBuilds;
-  }
-
-  /**
-   * Distinct files acquired since the current segment began — the counter
-   * {@link TSProgramCacheOptions.wholeSegmentFiles} bounds. Exposed because a
-   * build count alone cannot say whether a run is approaching a rotation.
-   */
-  get segmentFileCount(): number {
-    return this.segmentFiles.size;
   }
 
   /**
@@ -821,6 +896,15 @@ export class TSProgramCache {
    * quantity {@link TSProgramCacheOptions.maxDependencyFiles} bounds. The
    * default lib is excluded, matching what that bound counts.
    */
+  /**
+   * Source text the shared parse cache holds outside the pinned prelude and the
+   * default lib — the quantity {@link TSProgramCacheOptions.maxParsedSourceTextBytes}
+   * bounds.
+   */
+  get parsedSourceTextBytes(): number {
+    return this.parsedText.textBytes;
+  }
+
   get parsedDependencyFileCount(): number {
     return this.parsedDependencySources.size;
   }
@@ -877,9 +961,6 @@ export class TSProgramCache {
     // entry-keyed check under it never sees the change, and `ts.createProgram`
     // would be handed the previous revision out of the host.
     this.forgetStaleParse(absolute, mtimeMs);
-    // Before anything is looked up, so the file that opens a new segment is
-    // served off the fresh Programs rather than the ones being retired.
-    this.rotateSegmentWhenFull(relPath);
 
     const cached = this.entries.get(relPath);
     if (cached?.entryMtimeMs === mtimeMs) {
@@ -891,16 +972,33 @@ export class TSProgramCache {
     }
     if (cached) this.invalidate(relPath);
 
-    // Runs before the coverage lookup rather than as a miss handler: the whole
-    // Program exists to make that lookup hit, so priming it after a miss would
-    // build it for a file that then paid a per-entry build anyway.
-    this.ensureWholeProgram(relPath);
+    // Runs before the coverage lookup rather than as a miss handler: the batch
+    // plan exists to make that lookup hit, so planning after a miss would plan
+    // for a file that then paid a per-entry build anyway.
+    this.ensureBatchPlan(relPath);
     // That call is also where admission is assessed, and its verdict can be
     // "no Program at all" — do not fall through to a per-entry build the
     // projection has just refused.
     if (this.typecheckerOff) return null;
 
-    const covering = this.findCovering(this.toCompilerPath(absolute), absolute, mtimeMs);
+    const compilerPath = this.toCompilerPath(absolute);
+    const unitIndex = this.batchPlan?.unitOf.get(compilerPath);
+    if (unitIndex !== undefined) {
+      const unitState = this.enterUnit(unitIndex);
+      // A refused oversize root resolves without the checker. Falling through
+      // to a per-entry build would construct the very closure admission just
+      // projected past the heap.
+      if (unitState === "refused") return null;
+      if (unitState === "ready" && this.currentUnit !== null) {
+        const served = this.serveFrom(this.currentUnit.entry, compilerPath, absolute, mtimeMs);
+        if (served) {
+          this.wholeHits += 1;
+          return served;
+        }
+      }
+    }
+
+    const covering = this.findCovering(compilerPath, absolute, mtimeMs);
     if (covering) return covering;
 
     this.entryBuilds += 1;
@@ -932,11 +1030,10 @@ export class TSProgramCache {
    * entry mtime check above.
    */
   private findCovering(compilerPath: string, entryAbsolute: string, mtimeMs: number): TSProgramHandle | null {
-    // The whole-project Program first: when one exists it covers essentially
-    // every acquire, so asking it first turns the common case into one map
-    // lookup instead of a walk over the per-entry LRU that will miss.
-    if (this.wholeEntry !== null) {
-      const served = this.serveFrom(this.wholeEntry, compilerPath, entryAbsolute, mtimeMs);
+    // The current batch Program first: it holds a whole closure union, so it is
+    // the likeliest holder of a file no batch names.
+    if (this.currentUnit !== null) {
+      const served = this.serveFrom(this.currentUnit.entry, compilerPath, entryAbsolute, mtimeMs);
       if (served) {
         this.wholeHits += 1;
         return served;
@@ -986,78 +1083,91 @@ export class TSProgramCache {
   }
 
   /**
-   * Build the whole-project Program, once, if the configured strategy and the
+   * Plan the closure batches, once, if the configured strategy and the
    * project's size both call for it — the ACQUIRE-side entry, where the only
    * evidence available is the run's own history.
    *
    * The warm-up gate is the one non-terminal exit here: it is waiting for
    * evidence, not deciding, so it deliberately leaves {@link wholeAttempted}
    * unset and re-asks on the next acquire. Every terminal exit belongs to
-   * {@link buildWholeProgram}. A caller that knows the run's size up front
-   * skips the wait entirely — {@link primeForExpectedEntries}.
+   * {@link planBatches}. A caller that knows the run's size up front skips the
+   * wait entirely — {@link primeForExpectedEntries}.
    */
-  private ensureWholeProgram(relPath: RelPath): void {
+  private ensureBatchPlan(relPath: RelPath): void {
     if (this.wholeAttempted || this.strategy === "coverage") return;
     if (this.strategy === "auto" && !this.warmedUp(relPath)) return;
-    this.buildWholeProgram();
+    this.planBatches();
   }
 
   /**
-   * Build the whole-project Program NOW, on a caller that already knows this
-   * run is a bulk pass — skipping the warm-up gate, which exists only to infer
-   * exactly that (bd tea-rags-mcp-6aytq).
+   * Plan the closure batches NOW, on a caller that already knows this run is a
+   * bulk pass — skipping the warm-up gate, which exists only to infer exactly
+   * that (bd tea-rags-mcp-6aytq) — and build the first batch.
    *
    * `expectedEntries` is measured against the SAME threshold the gate waits
    * for, so this can only make the decision EARLIER, never different: a
    * declared volume below `wholeMinEntries` returns without recording an
    * attempt, leaving the per-acquire gate in charge and an incremental reindex
    * behaving exactly as it did before this method existed. Every other
-   * eligibility rule — strategy, root-set size, one attempt per run,
-   * fall-back-to-coverage on failure — is
-   * {@link buildWholeProgram}'s and applies unchanged.
+   * eligibility rule — strategy, root-set size, one attempt per run, admission
+   * — is {@link planBatches}'s and applies unchanged.
    *
-   * What it saves is the warm-up itself. On a full taxdome run the gate opens
-   * only after 200 distinct entry files, and reaching them costs 66 per-entry
-   * `ts.createProgram` builds — 9-13 s of a 58.8 s pass plus their allocation
-   * churn — spent constructing slices of the very Program that is about to
-   * replace them.
+   * `callSites` is pass-1's count per corpus file, the planner's call-cap input
+   * (bd tea-rags-mcp-vtuu4). A file it does not name counts zero.
    */
-  primeForExpectedEntries(expectedEntries: number, corpusRelPaths?: readonly RelPath[]): void {
+  primeForExpectedEntries(
+    expectedEntries: number,
+    corpusRelPaths?: readonly RelPath[],
+    callSites?: ReadonlyMap<RelPath, number>,
+  ): void {
     if (this.typecheckerOff) return;
     // Recorded before any early return, because the corpus is a FACT about the
     // run and not a consequence of the decision below it: a volume under the
     // gate leaves the lazy warm-up in charge, and when that eventually fires it
-    // must build the same union this call declared.
+    // must plan over the same union this call declared.
     if (corpusRelPaths !== undefined) {
       this.corpusRoots = corpusRelPaths.map((relPath) => this.toCompilerPath(this.toAbsolute(relPath)));
     }
+    if (callSites !== undefined) {
+      this.corpusCallSites = new Map();
+      for (const [relPath, count] of callSites) {
+        this.corpusCallSites.set(this.toCompilerPath(this.toAbsolute(relPath)), count);
+      }
+    }
     if (this.strategy === "coverage") {
-      // No whole build to decide, but coverage mode has a floor of its own —
+      // No batch plan to decide, but coverage mode has a floor of its own —
       // one covering Program over the main connectivity component, which a
       // 2048-declared worker died building on taxdome. A BULK run is the only
       // shape that reaches it, and the declared volume is what says so: it is
       // the run's own count, and asking the tsconfig walk (~750 ms) purely to
       // refuse a build would pay for a number this one already supports.
-      if (expectedEntries >= this.wholeMinEntries) this.admit(expectedEntries);
+      if (expectedEntries >= this.wholeMinEntries) this.admitCoverage(expectedEntries);
       return;
     }
     if (this.wholeAttempted) return;
     // An explicit `whole` primes on first use however small the run, and this
     // is that first use — the gate is documented as ignored for it.
     if (this.strategy === "auto" && expectedEntries < this.wholeMinEntries) return;
-    this.buildWholeProgram();
+    this.planBatches();
+    // The first batch is built here rather than on the first acquire, so the
+    // resolve loop starts on a Program that already exists.
+    const first = this.batchPlan?.units[0];
+    if (first !== undefined && !first.oversize) this.enterUnit(0);
   }
 
   /**
-   * The whole-project build proper, once per run whoever asked for it.
+   * The batch plan proper, once per run whoever asked for it (bd
+   * tea-rags-mcp-vtuu4).
    *
-   * {@link wholeAttempted} is set BEFORE the attempt, so an empty root set, an
-   * over-cap project and a failed build each cost one decision per run rather
-   * than one per acquire — and a failure degrades to the per-entry path rather
-   * than retrying a build that just returned null, matching {@link build}'s
-   * contract.
+   * {@link wholeAttempted} is set BEFORE the attempt, so an empty root set and
+   * an over-cap project each cost one decision per run rather than one per
+   * acquire. The import graph is walked over the whole root set, so the
+   * prelude sees every global the project declares; only the corpus roots are
+   * packed, because only they are resolved. Admission is judged on the
+   * largest batch before any Program is built, and a refusal latches the run
+   * without the checker.
    */
-  private buildWholeProgram(): void {
+  private planBatches(): void {
     this.wholeAttempted = true;
     this.entriesSeen = null;
 
@@ -1066,15 +1176,195 @@ export class TSProgramCache {
     // `auto` is the size-aware choice; an explicit `whole` is an operator who
     // has already made it, and is not second-guessed.
     if (this.strategy === "auto" && roots.length > this.wholeRootFilesMax) return;
-    // Admission IS second-guessed for an explicit `whole`, and the asymmetry is
-    // deliberate: the root ceiling above encodes a preference between two
-    // working strategies, while this one says the build does not fit the
-    // isolate. An operator can prefer a slower trade; nobody can opt into
-    // ERR_WORKER_OUT_OF_MEMORY and the loss of the run's whole graph.
-    if (this.admit(roots.length) !== "whole") return;
 
-    this.wholeEntry = this.buildFrom(roots, roots[0]);
-    if (this.wholeEntry !== null) this.wholeBuilds += 1;
+    const graph = buildTSProgramImportGraph({
+      rootNames: roots,
+      compilerOptions: this.compilerOptions,
+      host: this.host,
+      moduleResolutionCache: this.moduleResolutionCache,
+    });
+    const packed = this.corpusRoots.length > 0 ? this.corpusRoots : roots;
+    const plan = new TSProgramBatchPlanner({
+      textBudgetBytes: this.batchTextBytes,
+      callSiteCap: this.batchCallSites,
+    }).plan(
+      graph,
+      packed.map((fileName) => ({ fileName, callSites: this.corpusCallSites.get(fileName) ?? 0 })),
+    );
+
+    // Admission IS second-guessed for an explicit `whole`: the root ceiling
+    // above encodes a preference between two working strategies, while this
+    // says the build does not fit the isolate. Nobody can opt into
+    // ERR_WORKER_OUT_OF_MEMORY and the loss of the run's whole graph.
+    const assessment = assessTSProgramBatchAdmission({
+      batches: plan.batches,
+      retainedTextBytes: Math.min(this.maxParsedSourceTextBytes, totalTextOf(graph)),
+      heapSizeLimitMb: this.readHeapSizeLimitMb(),
+      budget: this.heapBudget,
+    });
+    if (assessment.verdict === "typecheckerOff") {
+      this.disableTypeChecker(assessment);
+      return;
+    }
+
+    // The per-entry Programs a warm-up built are superseded by the batches.
+    this.entries.clear();
+    this.batchPlan = this.toBatchUnits(plan);
+    this.parsedText.pin(plan.prelude.files);
+  }
+
+  /**
+   * The plan as the units {@link enterUnit} builds — batches in pack order,
+   * then one unit per oversize root — plus the prelude root names each Program
+   * is handed.
+   *
+   * Libs are NOT handed over as root names. A lib given as a root is an
+   * ordinary source file, processed where the roots are, while the whole
+   * Program loads it as a DEFAULT LIBRARY, sorted ahead of every other file —
+   * and declaration merge order decides which global overload wins. The
+   * default lib arrives on its own; every other lib the prelude needs rides a
+   * host-only file of `/// <reference lib>` lines ({@link preludeLibFileName}).
+   */
+  private toBatchUnits(plan: TSProgramBatchPlan): BatchUnits {
+    const units: BatchUnit[] = [
+      ...plan.batches.map((batch) => ({
+        rootNames: batch.rootNames,
+        resolves: batch.resolves,
+        shape: { textBytes: batch.textBytes, callSites: batch.callSites },
+        oversize: false,
+      })),
+      ...plan.oversize.map((root) => ({
+        rootNames: [root.rootName],
+        resolves: [root.rootName],
+        shape: { textBytes: root.textBytes, callSites: root.callSites },
+        oversize: true,
+      })),
+    ];
+    const unitOf = new Map<string, number>();
+    units.forEach((unit, index) => {
+      for (const fileName of unit.resolves) if (!unitOf.has(fileName)) unitOf.set(fileName, index);
+    });
+
+    const defaultLib = this.toCompilerPath(this.host.getDefaultLibFileName(this.compilerOptions));
+    const libReferences: string[] = [];
+    const preludeRootNames: string[] = [];
+    for (const rootName of plan.prelude.rootNames) {
+      if (posix.dirname(rootName) !== this.defaultLibCompilerDir) preludeRootNames.push(rootName);
+      else if (rootName !== defaultLib) libReferences.push(libReferenceNameOf(rootName));
+    }
+    this.preludeLibSource = undefined;
+    this.preludeLibText = null;
+    if (libReferences.length > 0) {
+      this.preludeLibText = libReferences.map((name) => `/// <reference lib="${name}" />\n`).join("");
+      preludeRootNames.push(this.preludeLibFileName);
+    }
+
+    return {
+      units,
+      unitOf,
+      preludeRootNames,
+      preludeFiles: plan.prelude.files.length,
+      preludeTextBytes: plan.prelude.textBytes,
+      batchCount: plan.batches.length,
+    };
+  }
+
+  /**
+   * Make unit `index` the current Program, building it when it is not — or say
+   * why it cannot be.
+   *
+   * The current unit is released BEFORE the build starts: holding two
+   * generations across `ts.createProgram` would put a batch boundary at the
+   * very peak batching exists to remove. The outgoing Program survives only as
+   * long as the handles already handed out.
+   *
+   * An oversize unit runs after every batch, over its full closure. The parse
+   * cache is emptied down to the prelude first — nothing a later batch shares
+   * is left to keep — and the unit is projected on its own text, since the
+   * cache it would otherwise sit beside is now empty. A projection past the
+   * heap resolves that root without the checker: counted, reported once.
+   */
+  private enterUnit(index: number): "ready" | "refused" | "failed" {
+    const plan = this.batchPlan;
+    if (plan === null) return "failed";
+    if (this.currentUnit?.index === index) return "ready";
+    if (this.uncheckedOversizeUnits.has(index)) return "refused";
+    if (this.failedUnits.has(index)) return "failed";
+    const unit = plan.units[index];
+    this.currentUnit = null;
+
+    if (unit.oversize) {
+      this.entries.clear();
+      for (const fileName of this.parsedText.evictAll()) this.forgetParse(fileName);
+      const projectionMb = projectTSProgramUnitHeapMb(unit.shape, 0, this.heapBudget);
+      const heapSizeLimitMb = this.readHeapSizeLimitMb();
+      const { requiredMb, fits } = fitsTSProgramHeap(projectionMb, heapSizeLimitMb, this.heapBudget);
+      if (!fits) {
+        this.uncheckedOversizeUnits.add(index);
+        this.reportUncheckedOversize(unit, projectionMb, requiredMb, heapSizeLimitMb);
+        return "refused";
+      }
+    }
+
+    const entry = this.buildFrom([...plan.preludeRootNames, ...unit.rootNames], unit.rootNames[0]);
+    if (entry === null) {
+      // Degrades to the per-entry path, matching {@link build}'s contract,
+      // rather than retrying a build that just failed on every acquire.
+      this.failedUnits.add(index);
+      return "failed";
+    }
+    this.wholeBuilds += 1;
+    this.currentUnit = { index, entry };
+    return "ready";
+  }
+
+  /**
+   * One `[enrichment-worker]` line for the first oversize root admission
+   * refuses; later ones are counted in {@link diagnostics} only.
+   */
+  private reportUncheckedOversize(
+    unit: BatchUnit,
+    projectionMb: number,
+    requiredMb: number,
+    heapSizeLimitMb: number,
+  ): void {
+    if (this.oversizeReported) return;
+    this.oversizeReported = true;
+    const rootName = unit.rootNames[0];
+    process.stderr.write(
+      `[enrichment-worker] TypeScript oversize root ${this.toRelPath(rootName) ?? rootName} resolves without ` +
+        `the type checker: its closure projects ${projectionMb} MB and needs ${requiredMb} MB with headroom, ` +
+        `against this isolate's ${heapSizeLimitMb} MB heap ceiling. Further oversize roots refused this run ` +
+        `are counted in the TS Program diagnostics (oversizeRootsWithoutChecker). ` +
+        `Raise ENRICHMENT_WORKER_MEMORY_LIMIT_MB to give them a Program.\n`,
+    );
+  }
+
+  /**
+   * Pass-2's visit order under a batch plan (bd tea-rags-mcp-vtuu4): one group
+   * per unit, batches first and oversize roots last, each group the corpus
+   * files that unit resolves. `undefined` when there is no plan — the
+   * per-entry strategy, an incremental run, or a refused admission — and the
+   * caller keeps its own order.
+   */
+  planResolveVisits(): RelPath[][] | undefined {
+    const plan = this.batchPlan;
+    if (plan === null) return undefined;
+    return plan.units.map((unit) =>
+      unit.resolves.flatMap((fileName) => {
+        const relPath = this.toRelPath(fileName);
+        return relPath === null ? [] : [relPath];
+      }),
+    );
+  }
+
+  /**
+   * Pass-2 finished one group of {@link planResolveVisits}: release its
+   * Program, so the next unit is built with nothing but the parse cache
+   * beside it.
+   */
+  endResolveVisitGroup(): void {
+    this.currentUnit = null;
   }
 
   /**
@@ -1120,9 +1410,14 @@ export class TSProgramCache {
       strategy: this.strategy,
       wholeProgramFiles: this.wholeProgramFileCount,
       wholeProgramBuilds: this.wholeBuilds,
-      wholeRoots: this.wholeEntry?.handle.rootFiles.length ?? 0,
+      wholeRoots: this.currentUnit?.entry.handle.rootFiles.length ?? 0,
       corpusRoots: this.corpusRoots.length,
-      segmentFiles: this.segmentFiles.size,
+      batches: this.batchPlan?.batchCount ?? 0,
+      oversizeRoots: this.batchPlan === null ? 0 : this.batchPlan.units.length - this.batchPlan.batchCount,
+      oversizeRootsWithoutChecker: this.uncheckedOversizeUnits.size,
+      preludeFiles: this.batchPlan?.preludeFiles ?? 0,
+      preludeTextBytes: this.batchPlan?.preludeTextBytes ?? 0,
+      parsedSourceTextBytes: this.parsedText.textBytes,
       acquires: this.acquires,
       wholeHits: this.wholeHits,
       coverageHits: this.coverageHits,
@@ -1135,62 +1430,16 @@ export class TSProgramCache {
   }
 
   /**
-   * Start a new segment when `relPath` is the file that overflows the current
-   * one — releasing every checker the cache holds and rebuilding the
-   * whole-project Program from the same roots. The bound described by
-   * {@link TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT}.
-   *
-   * EVERY retained Program goes, not just the whole one. Checker state is
-   * monotonic in whichever Program answers, and on this corpus the per-entry
-   * LRU answers most acquires (see {@link segmentFiles}) — retiring only the
-   * whole Program would leave eight growing checkers behind and bound nothing.
-   * The parses survive in the shared host map, so what a segment boundary costs
-   * is module resolution: one whole build plus however many per-entry closures
-   * the next stretch re-opens, measured at ~42 builds per 5,000 files.
-   *
-   * The retiring entries are dropped BEFORE the new build starts. Holding both
-   * generations across `ts.createProgram` would put the segment boundary at the
-   * very peak this exists to remove; the outgoing Programs survive only as long
-   * as the handles already handed out, which callers release as they finish
-   * their files. A rebuild that fails leaves no whole Program and the run
-   * degrades to per-entry coverage, exactly as a failed first build does.
+   * May a bulk COVERAGE pass run on this isolate's heap? Latches the refusal
+   * when not. Assessed once per run, where the run declares its volume.
    */
-  private rotateSegmentWhenFull(relPath: RelPath): void {
-    if (this.segmentFiles.size < this.wholeSegmentFiles || this.segmentFiles.has(relPath)) {
-      this.segmentFiles.add(relPath);
-      return;
-    }
-    this.segmentFiles.clear();
-    this.segmentFiles.add(relPath);
-
-    const retiring = this.wholeEntry;
-    this.entries.clear();
-    this.wholeEntry = null;
-    if (retiring === null) return;
-    const roots = retiring.handle.rootFiles;
-    this.wholeEntry = this.buildFrom(roots, roots[0]);
-    if (this.wholeEntry !== null) this.wholeBuilds += 1;
-  }
-
-  /**
-   * Which Program strategy this isolate's heap admits, latching the refusal
-   * when the answer is none.
-   *
-   * Assessed at most once per run, at the same point the whole-project
-   * decision is made, because both need the root count and neither may be
-   * re-derived per acquire. The verdict is returned as well as latched so the
-   * caller can tell "build the whole Program" from "fall through to per-entry
-   * coverage" without re-reading state.
-   */
-  private admit(rootCount: number): TSProgramAdmissionAssessment["verdict"] {
-    const assessment = assessTSProgramAdmission({
+  private admitCoverage(rootCount: number): void {
+    const assessment = assessTSProgramCoverageAdmission({
       rootCount,
-      segmentFiles: this.wholeSegmentFiles,
       heapSizeLimitMb: this.readHeapSizeLimitMb(),
       budget: this.heapBudget,
     });
     if (assessment.verdict === "typecheckerOff") this.disableTypeChecker(assessment);
-    return assessment.verdict;
   }
 
   /**
@@ -1210,7 +1459,8 @@ export class TSProgramCache {
     this.typecheckerOff = true;
     this.wholeAttempted = true;
     this.entriesSeen = null;
-    this.wholeEntry = null;
+    this.batchPlan = null;
+    this.currentUnit = null;
     this.entries.clear();
     if (this.downgradeReported) return;
     this.downgradeReported = true;
@@ -1254,18 +1504,24 @@ export class TSProgramCache {
   /** Drop every retained Program — the run-boundary reset. */
   reset(): void {
     this.entries.clear();
-    // Including the whole-project one, and the decision that produced it: a
-    // reset means the tree may have moved underneath the run, and the root set
-    // is as re-derivable as the parses are.
-    this.wholeEntry = null;
+    // Including the batch plan and the decision that produced it: a reset means
+    // the tree may have moved underneath the run, and the plan is as
+    // re-derivable as the parses are.
+    this.batchPlan = null;
+    this.currentUnit = null;
+    this.uncheckedOversizeUnits.clear();
+    this.failedUnits.clear();
+    this.oversizeReported = false;
+    this.preludeLibText = null;
+    this.preludeLibSource = undefined;
     this.wholeAttempted = false;
     this.wholeBuilds = 0;
-    this.segmentFiles.clear();
     this.entriesSeen = new Set();
     // The corpus belonged to ONE pass. A reset means the next pass declares its
     // own, and carrying the previous one over would root the next Program at
     // files that run is not going to resolve.
     this.corpusRoots = [];
+    this.corpusCallSites = new Map();
     this.acquires = 0;
     this.wholeHits = 0;
     this.coverageHits = 0;
@@ -1285,6 +1541,8 @@ export class TSProgramCache {
     this.hostFileExists.clear();
     this.hostDirectoryExists.clear();
     this.hostRealpath.clear();
+    this.parsedText.clear();
+    this.moduleResolutionCache.clear();
   }
 
   /**
@@ -1381,7 +1639,12 @@ export class TSProgramCache {
   private rememberParse(fileName: string, parsed: ts.SourceFile | undefined): void {
     this.sourceFiles.set(fileName, parsed);
     this.parsedAtMs.set(fileName, Date.now());
-    this.populationOf(fileName)?.add(fileName);
+    const population = this.populationOf(fileName);
+    if (population === null) return;
+    population.add(fileName);
+    // The default lib answered `null` above and never reaches the byte index;
+    // a pinned prelude file is refused by the index itself.
+    if (parsed !== undefined) this.parsedText.remember(fileName, parsed.text.length);
   }
 
   /**
@@ -1408,9 +1671,10 @@ export class TSProgramCache {
    * {@link findCovering} applies to whole Programs, applied per file.
    */
   private pinnedParseOf(fileName: string): ts.SourceFile | undefined {
-    // The whole-project Program pins by far the largest population, so it is
+    // The current batch Program pins by far the largest population, so it is
     // the likeliest holder of any parse the shared map has evicted.
-    const candidates = this.wholeEntry === null ? this.entries.values() : [this.wholeEntry, ...this.entries.values()];
+    const candidates =
+      this.currentUnit === null ? this.entries.values() : [this.currentUnit.entry, ...this.entries.values()];
     for (const entry of candidates) {
       const pinned = entry.handle.program.getSourceFile(fileName);
       if (!pinned) continue;
@@ -1427,6 +1691,7 @@ export class TSProgramCache {
     this.parsedAtMs.delete(fileName);
     this.parsedProjectSources.delete(fileName);
     this.parsedDependencySources.delete(fileName);
+    this.parsedText.forget(fileName);
   }
 
   /**
@@ -1485,7 +1750,14 @@ export class TSProgramCache {
     const base = ts.createCompilerHost(this.compilerOptions, true);
     const getSourceFile = base.getSourceFile.bind(base);
     base.getSourceFile = (fileName, languageVersionOrOptions, onError, shouldCreate) => {
-      if (this.sourceFiles.has(fileName)) return this.sourceFiles.get(fileName);
+      if (fileName === this.preludeLibFileName && this.preludeLibText !== null) {
+        this.preludeLibSource ??= ts.createSourceFile(fileName, this.preludeLibText, languageVersionOrOptions);
+        return this.preludeLibSource;
+      }
+      if (this.sourceFiles.has(fileName)) {
+        this.parsedText.touch(fileName);
+        return this.sourceFiles.get(fileName);
+      }
       const pinned = this.pinnedParseOf(fileName);
       if (pinned) return pinned;
       const parsed = getSourceFile(fileName, languageVersionOrOptions, onError, shouldCreate);
@@ -1493,7 +1765,26 @@ export class TSProgramCache {
       this.evictParsedOverflow();
       return parsed;
     };
-    base.fileExists = memoizeHostProbe(base.fileExists.bind(base), this.hostFileExists);
+    // Every Program resolves through ONE cache instead of a private one per
+    // `ts.createProgram` (bd tea-rags-mcp-vtuu4) — the call the compiler makes
+    // itself, with the shared cache in place of its own.
+    base.resolveModuleNameLiterals = (literals, containingFile, redirectedReference, options, containingSourceFile) =>
+      literals.map((literal) =>
+        ts.resolveModuleName(
+          literal.text,
+          containingFile,
+          options,
+          base,
+          this.moduleResolutionCache,
+          redirectedReference,
+          ts.getModeForUsageLocation(containingSourceFile, literal, options),
+        ),
+      );
+    const fileExists = memoizeHostProbe(base.fileExists.bind(base), this.hostFileExists);
+    // The prelude lib-reference file exists only in this host — see
+    // {@link preludeLibFileName}.
+    base.fileExists = (fileName) =>
+      (fileName === this.preludeLibFileName && this.preludeLibText !== null) || fileExists(fileName);
     // Both are optional on `ts.CompilerHost`. `createCompilerHost` supplies
     // them on Node, but the type is the contract — wrap what is there rather
     // than asserting it into existence.
@@ -1531,6 +1822,9 @@ export class TSProgramCache {
   private evictParsedOverflow(): void {
     this.trimPopulation(this.parsedProjectSources, this.maxParsedFiles);
     this.trimPopulation(this.parsedDependencySources, this.maxDependencyFiles);
+    // The byte bound over what the counts left (bd tea-rags-mcp-vtuu4). Least
+    // recently used first; the prelude is pinned and the lib never indexed.
+    for (const fileName of this.parsedText.overflow()) this.forgetParse(fileName);
   }
 
   /**
@@ -1699,6 +1993,21 @@ function memoizeHostProbe<T>(probe: (path: string) => T, answers: Map<string, T>
  */
 function isDependencyPath(relPath: RelPath): boolean {
   return relPath === "node_modules" || relPath.startsWith("node_modules/") || relPath.includes("/node_modules/");
+}
+
+/** Source text of every file the graph reached, libs included. */
+function totalTextOf(graph: TSProgramImportGraph): number {
+  let total = 0;
+  for (const node of graph.nodes) total += node.textBytes;
+  return total;
+}
+
+/** `/// <reference lib>` name of a lib file: `lib.es2015.promise.d.ts` → `es2015.promise`. */
+function libReferenceNameOf(libFileName: string): string {
+  return posix
+    .basename(libFileName)
+    .replace(/^lib\./, "")
+    .replace(/\.d\.ts$/, "");
 }
 
 /** Entry-file mtime, or `null` when the path is not a readable file. */

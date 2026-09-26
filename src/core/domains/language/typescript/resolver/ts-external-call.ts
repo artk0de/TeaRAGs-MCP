@@ -33,6 +33,7 @@ import {
 } from "../../shared/ecmascript-globals.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
+import { jsxTagMemberDeclarations } from "./strategies/ts-type-checker-jsx-component.js";
 import {
   calledMemberDeclarations,
   findReceiverExpression,
@@ -90,7 +91,10 @@ import { typeConstituents } from "./ts-type-constituents.js";
  *   9. a `super` call whose base the checker declares outside the project — see
  *      {@link superBaseDeclaredOutsideProject} (bd tea-rags-mcp-t5cji);
  *  10. a `this` member the checker declares outside the project — see
- *      {@link thisMemberDeclaredOutsideProject} (bd tea-rags-mcp-t5cji).
+ *      {@link thisMemberDeclaredOutsideProject} (bd tea-rags-mcp-t5cji);
+ *  11. a dotted JSX tag whose member the checker declares outside the project
+ *      (`<ThemeContext.Provider>`) — see
+ *      {@link jsxTagMemberDeclaredOutsideProject} (bd tea-rags-mcp-vo9gl).
  *
  * PRECISION: cases 3 and 4 are mutually exclusive BY CONSTRUCTION, and that is
  * the load-bearing detail. A receiver whose type IS known decides the question
@@ -146,7 +150,33 @@ export function targetsExternalImport(
     receiverIsImportedBuiltinContainer(call, ctx) ||
     receiverIsExternalInstance(call, ctx, tsOptions, programCache, fileExists) ||
     calleeIsExternalLocalBinding(call, ctx, programCache) ||
-    checkerResolvesCalleeOutsideProject(call, ctx, programCache)
+    checkerResolvesCalleeOutsideProject(call, ctx, programCache) ||
+    jsxTagMemberDeclaredOutsideProject(call, ctx, programCache)
+  );
+}
+
+/**
+ * Case 11 (bd tea-rags-mcp-vo9gl): a dotted JSX tag whose MEMBER the checker
+ * declares entirely outside the project — `<ThemeContext.Provider>`, where
+ * `ThemeContext` is a project `createContext(...)` value and `Provider` is
+ * `React.Context#Provider`. Cases 4b and 8 locate the call by
+ * `CallExpression`, which a JSX element is not, so neither ever saw it; the
+ * import passes then parked a file-only edge onto the module DECLARING the
+ * context. One in-project declaration keeps the tag internal, and no Program or
+ * no locatable tag is no evidence.
+ */
+function jsxTagMemberDeclaredOutsideProject(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): boolean {
+  if (programCache === null || call.jsx !== true || call.receiver === null) return false;
+  const handle = programCache.acquire(ctx.callerFile);
+  if (handle === null) return false;
+  const declarations = jsxTagMemberDeclarations(handle.sourceFile, handle.checker, call.startLine, call.member);
+  return (
+    declarations.length > 0 &&
+    declarations.every((declaration) => !programCache.isProjectSourceFile(declaration.getSourceFile().fileName))
   );
 }
 

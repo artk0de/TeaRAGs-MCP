@@ -79,6 +79,18 @@ export interface HookChunkingConfig {
   bodyChunkPrefixLength?: number;
 }
 
+/**
+ * The characters a hook may spend on a body chunk's OWN rows: the cap less the
+ * prefix the engine reserves for the container header(s). A hook that writes the
+ * container header row itself (a class-body hook) spends from this budget only
+ * on the rows below it — the reservation already counts that row (bd
+ * tea-rags-mcp-j4jrn: the Ruby grouper sized groups to the whole cap, so the
+ * header pushed them over and the post-pass line-cut them).
+ */
+export function bodyChunkContentBudget(config: HookChunkingConfig): number {
+  return config.maxChunkSize - (config.bodyChunkPrefixLength ?? 0);
+}
+
 /** Shared mutable context passed through the hook chain */
 export interface HookContext {
   // Read-only inputs

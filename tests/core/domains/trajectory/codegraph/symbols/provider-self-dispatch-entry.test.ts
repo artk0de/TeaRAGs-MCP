@@ -849,7 +849,7 @@ describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_s
 //
 // znxg8 made the pass-1→pass-2 barrier hydrate its run-global registries from
 // `cg_pass1_aggregates` for every file the run did not walk. That read goes through
-// `GraphDbClient.listAllPass1Aggregates`, a NEW daemon op — and codegraph enrichment
+// `GraphDbClient.listPass1Aggregates`, a NEW daemon op — and codegraph enrichment
 // runs in a worker thread whose `GraphDbClientPool` is built WITHOUT a `daemonRestart`
 // hook (`codegraph/factory.ts`; only `bootstrap/factory.ts` wires one). A pool with no
 // respawn hook deliberately TOLERATES a daemon built from other source
@@ -857,7 +857,7 @@ describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_s
 // daemon that has no such op at all:
 //
 //   [tea-rags] codegraph pass-1 aggregate hydration failed:
-//   unknown daemon op: listAllPass1Aggregates
+//   unknown daemon op: listPass1Aggregates
 //
 // The existing guard catches it and the run continues — which silently turns the whole
 // znxg8 repair back into the batch-scoped registry it was written to replace. Observed
@@ -942,7 +942,7 @@ describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stal
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("narrows the entry from INJECTED rows when the daemon has no listAllPass1Aggregates op", async () => {
+  it("narrows the entry from INJECTED rows when the daemon has no listPass1Aggregates op", async () => {
     const paths = writeFixture();
     // Run 1 — full corpus. This is the run that WRITES `cg_pass1_aggregates`.
     await provider.streamFileBatch(root, paths, { collectionName: COLLECTION });
@@ -955,12 +955,12 @@ describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stal
 
     // What the MAIN thread does before dispatching finalize to the worker: read the
     // persisted slices off its own respawn-capable pool.
-    const injected = await provider.readPersistedPass1Aggregates(COLLECTION);
+    const injected = await provider.readPersistedPass1Aggregates(COLLECTION, []);
     expect(injected.length).toBeGreaterThan(0);
 
     // The stale daemon: the op the worker's own read would call does not exist.
-    client.listAllPass1Aggregates = async () => {
-      throw new Error("unknown daemon op: listAllPass1Aggregates");
+    client.listPass1Aggregates = async () => {
+      throw new Error("unknown daemon op: listPass1Aggregates");
     };
 
     // Run 2 — the caller alone changed, which is what an incremental reindex walks.
@@ -985,5 +985,162 @@ describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stal
     expect(
       edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService")),
     ).toEqual([]);
+  });
+});
+
+// bd tea-rags-mcp-emazx — the ARGUMENT channel, end to end. The taxdome policy
+// idiom: a class method self-instantiates and delegates, and two hops down the
+// hook is named by interpolating the ability argument, `send("can_#{ability}?")`.
+// Before emazx every `FirmPolicy.authorize!(…, :manage_datev, …)` stopped at the
+// shared `AbstractPolicy.authorize!` (1780 taxdome edges); the honest target is
+// the concrete `FirmPolicy#can_manage_datev?`, which the literal fully determines.
+describe("CodegraphEnrichmentProvider — argument-template entry narrowing (emazx)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  const callerSource = (touched: boolean): string =>
+    [
+      "class C",
+      "  def go",
+      ...(touched ? ["    # touched"] : []),
+      "    FirmPolicy.authorize!(@user, @actor, :manage_datev, @firm)",
+      "  end",
+      "  def dyn(ability)",
+      "    FirmPolicy.authorize!(@user, @actor, ability, @firm)",
+      "  end",
+      "  def kw",
+      "    FirmPolicy.authorize_kw(@user, ability: :read)",
+      "  end",
+      "  def two",
+      "    FirmPolicy.check_pair(:x, :y)",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "app"), { recursive: true });
+    writeFileSync(
+      join(root, "app", "abstract_policy.rb"),
+      [
+        "class AbstractPolicy",
+        "  class << self",
+        "    def authorize!(user, actor, ability, resource = nil, options = {})",
+        "      Array.wrap(resource).each do |res|",
+        "        new(user, actor, res, options).authorize!(ability)",
+        "      end",
+        "    end",
+        "    def authorize_kw(user, ability:)",
+        "      new(user, nil).result(ability)",
+        "    end",
+        "    def check_pair(a, b)",
+        "      new(nil, nil).pair(a, b)",
+        "    end",
+        "  end",
+        "  def initialize(user, actor, resource = nil, options = {})",
+        "    @user = user",
+        "  end",
+        "  def result(ability)",
+        "    return accept if admin?",
+        '    send("can_#{ability}?")',
+        "  end",
+        "  def pair(a, b)",
+        '    send("can_#{a}_#{b}")',
+        "  end",
+        "  def authorize!(ability)",
+        "    result = result(ability)",
+        "    raise result.exception unless result.successful?",
+        "  end",
+        "  def accept",
+        "    :ok",
+        "  end",
+        "  def admin?",
+        "    false",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(root, "app", "firm_policy.rb"),
+      [
+        "class FirmPolicy < AbstractPolicy",
+        "  def can_manage_datev?",
+        "    accept",
+        "  end",
+        "  def can_read?",
+        "    accept",
+        "  end",
+        "  def can_x_y",
+        "    accept",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(root, "app", "c.rb"), callerSource(false));
+    return ["app/abstract_policy.rb", "app/firm_policy.rb", "app/c.rb"];
+  };
+
+  const edgesFrom = async (source: string): Promise<MethodEdge[]> =>
+    client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method WHERE source_symbol_id = ?",
+      [source],
+    );
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-arg-template-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-arg-template-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("lands `FirmPolicy.authorize!(…, :manage_datev, …)` on the concrete `FirmPolicy#can_manage_datev?`", async () => {
+    await provider.streamFileBatch(root, writeFixture());
+    await provider.finalizeSignals(root);
+
+    const goEdges = await edgesFrom("C#go");
+    expect(goEdges.map((e) => e.target_symbol_id)).toEqual(["FirmPolicy#can_manage_datev?"]);
+  });
+
+  it("keeps today's target for a non-literal argument, a keyword pass-through and a two-hole template", async () => {
+    await provider.streamFileBatch(root, writeFixture());
+    await provider.finalizeSignals(root);
+
+    const targets = async (source: string): Promise<string[]> =>
+      (await edgesFrom(source)).map((e) => e.target_symbol_id);
+    expect(await targets("C#dyn")).toEqual(["AbstractPolicy.authorize!"]);
+    expect(await targets("C#kw")).toEqual(["AbstractPolicy.authorize_kw"]);
+    expect(await targets("C#two")).toEqual(["AbstractPolicy.check_pair"]);
+  });
+
+  it("keeps the composed edge when an incremental run re-walks only the caller", async () => {
+    await provider.streamFileBatch(root, writeFixture());
+    await provider.finalizeSignals(root);
+
+    // Run 2 — only the caller changed. The template's file and the concrete
+    // policy's are hydrated from the persisted pass-1 slice, never walked.
+    writeFileSync(join(root, "app", "c.rb"), callerSource(true));
+    await provider.streamFileBatch(root, ["app/c.rb"]);
+    await provider.finalizeSignals(root);
+
+    const goEdges = await edgesFrom("C#go");
+    expect(goEdges.map((e) => e.target_symbol_id)).toEqual(["FirmPolicy#can_manage_datev?"]);
   });
 });

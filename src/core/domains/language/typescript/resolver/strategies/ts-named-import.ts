@@ -4,6 +4,7 @@ import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../..
 import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
+import type { TSProgramCache } from "../ts-program-cache.js";
 import { reexportOriginFile, type ResolverConfig } from "./shared.js";
 
 /**
@@ -32,10 +33,22 @@ import { reexportOriginFile, type ResolverConfig } from "./shared.js";
  * (bd tea-rags-mcp-4kx9f): `YARD_CONST.test(text)` maps to the file DECLARING
  * the constant, and the call enters `RegExp.prototype` instead, so there is no
  * file worth parking.
+ *
+ * The same holds for any imported project VALUE whose member the checker places
+ * outside the project (bd tea-rags-mcp-vo9gl): `ROLES.includes(x)` on a constant
+ * array (`includes` / `slice` are left out of the container vocabulary because a
+ * namespace object may own them), zustand's `useStore.getState()`, React's
+ * `<ThemeContext.Provider>`. On taxdome those parked 318 phantom edges onto the
+ * module declaring the receiver; with the resolver's `TSProgramCache` the guard
+ * reads the receiver's type and the member's declaration, and a member the
+ * checker declares IN the project keeps its park.
  */
 export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namedImport";
-  constructor(private readonly cfg: ResolverConfig) {}
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly programCache: TSProgramCache | null = null,
+  ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
@@ -66,7 +79,10 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     // already won above, so this can only ever drop a file-level edge, never a
     // pinned one. CONTINUE and not a park: this is the one case where we know
     // the module answer is wrong, and parking a wrong file is worse than none.
-    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, null, this.cfg.fileExists)) return CONTINUE;
+    // The Program is passed for the reason `importBasename` takes it (bd
+    // tea-rags-mcp-83iz5, vo9gl): without it the guard asked one argument short
+    // of the answer the miss classifier already had.
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }

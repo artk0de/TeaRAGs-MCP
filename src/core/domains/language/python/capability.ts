@@ -86,7 +86,15 @@ export const capability: LanguageCapability = {
   // 030). No edge moves.
   // walker 17: the naming-lexicon branch (walker 16 there) rebased onto
   // integration walker 14; neither side's index holds both extractions.
-  versions: { chunking: 1, walker: 17, codegraphSchema: 2 },
+  // walker 9: release v1.44.2 shipped walker 8 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 9.
+  // Same walker 9, bd tea-rags-mcp-r8hme.12: an import inside an
+  // `if TYPE_CHECKING:` body is flagged `typeOnly`, so its file edge moves from
+  // `cg_symbols_edges_file` to `cg_symbols_edges_file_type_only`.
+  // Same walker 9, bd tea-rags-mcp-39xca.14: `typing.Protocol` classes are
+  // emitted as `structuralContracts`, and a Protocol-typed receiver's cone
+  // reaches the classes that satisfy it without subclassing it.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level
   // constants SCREAMING_SNAKE.

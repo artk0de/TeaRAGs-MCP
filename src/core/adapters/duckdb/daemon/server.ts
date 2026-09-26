@@ -96,25 +96,25 @@ export class CodegraphDaemonServer {
    * next session's.
    */
   private async admitWrite<T>(
-    collection: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     op: string,
     signal: AbortSignal | undefined,
     write: () => Promise<T>,
   ): Promise<T> {
-    const previous = this.writeTails.get(collection) ?? Promise.resolve();
+    const previous = this.writeTails.get(physicalCollectionName) ?? Promise.resolve();
     let finished!: () => void;
     const settled = new Promise<void>((resolve) => {
       finished = resolve;
     });
     const tail = previous.then(async () => settled);
-    this.writeTails.set(collection, tail);
+    this.writeTails.set(physicalCollectionName, tail);
     try {
       await previous;
       if (signal?.aborted) throw new CodegraphDaemonRequestAbortedError(op);
       return await write();
     } finally {
       finished();
-      if (this.writeTails.get(collection) === tail) this.writeTails.delete(collection);
+      if (this.writeTails.get(physicalCollectionName) === tail) this.writeTails.delete(physicalCollectionName);
     }
   }
 
@@ -137,20 +137,20 @@ export class CodegraphDaemonServer {
     }
 
     // The client held a PhysicalCollectionName; the wire erased the brand.
-    const collection = physicalCollectionNameFromDaemonRequest(p.collection);
+    const physicalCollectionName = physicalCollectionNameFromDaemonRequest(p.collection);
     if (command.access === "write") {
-      return this.admitWrite(collection, req.op, signal, async () =>
-        this.pool.runCollectionOp(collection, async ({ graphDb }) => {
+      return this.admitWrite(physicalCollectionName, req.op, signal, async () =>
+        this.pool.runCollectionOp(physicalCollectionName, async ({ graphDb }) => {
           // The FIRST write of a burst raises memory_limit to the governor
           // ceiling (`onWrite` is a no-op for already-raised collections — one
           // live SET per burst). `finalizeReindex` does NOT route through here:
           // it only unlinks the superseded DB file, so there is no open handle
           // to govern.
-          await this.governor?.onWrite(collection, graphDb);
+          await this.governor?.onWrite(physicalCollectionName, graphDb);
           return command.run(graphDb, p, signal);
         }),
       );
     }
-    return this.pool.runCollectionOp(collection, async ({ graphDb }) => command.run(graphDb, p, signal));
+    return this.pool.runCollectionOp(physicalCollectionName, async ({ graphDb }) => command.run(graphDb, p, signal));
   }
 }

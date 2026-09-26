@@ -66,6 +66,33 @@ export function compactionStagingPath(dbPath: string): string {
   return `${dbPath}${COMPACTION_TMP_SUFFIX}`;
 }
 
+/** Extension of a generation's cross-pass input spill under `.xpass`. */
+const INPUT_SPILL_EXTENSION = ".ndjson";
+
+/**
+ * Stems of the entries in `dir` named `<base>` or `<base>_v<N>` plus
+ * `extension`. Scoped to `^<base>(_v\d+)?$` so it never matches another
+ * project's files or a sidecar (`.wal`, staging copies). Empty when `dir` is
+ * missing.
+ */
+function listGenerationStems(dir: string, baseCollectionName: string, extension: string): string[] {
+  const base = sanitiseCollectionName(baseCollectionName);
+  const pattern = new RegExp(`^(${escapeRegExp(base)}(?:_v\\d+)?)${escapeRegExp(extension)}$`);
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    // Directory missing (never constructed / removed) — nothing to list.
+    return [];
+  }
+  const stems: string[] = [];
+  for (const entry of entries) {
+    const match = entry.match(pattern);
+    if (match) stems.push(match[1]);
+  }
+  return stems;
+}
+
 export class CodegraphDbFiles {
   constructor(private readonly rootDir: string) {}
 
@@ -75,8 +102,8 @@ export class CodegraphDbFiles {
   }
 
   /** Resolve the disk path for a given collection name. */
-  pathFor(collectionName: PhysicalCollectionName): string {
-    return join(this.dir, `${sanitiseCollectionName(collectionName)}.duckdb`);
+  pathFor(physicalCollectionName: PhysicalCollectionName): string {
+    return join(this.dir, `${sanitiseCollectionName(physicalCollectionName)}.duckdb`);
   }
 
   /**
@@ -92,13 +119,19 @@ export class CodegraphDbFiles {
    * able to ask Qdrant. It cannot see an alias whose generations have no graph
    * file yet; the `PhysicalCollectionName` brand is what covers that.
    */
-  writablePathFor(collectionName: PhysicalCollectionName): string {
-    const dbPath = this.pathFor(collectionName);
+  writablePathFor(physicalCollectionName: PhysicalCollectionName): string {
+    const dbPath = this.pathFor(physicalCollectionName);
     if (existsSync(dbPath)) return dbPath;
-    const base = sanitiseCollectionName(collectionName);
-    const generations = this.listCollectionDbNames(collectionName).filter((name) => name !== base);
-    if (generations.length > 0) {
-      throw new CodegraphShadowDatabaseRefusedError({ collectionName, dbPath, generations });
+    const base = sanitiseCollectionName(physicalCollectionName);
+    const generationPhysicalCollectionNames = this.listCollectionDbNames(physicalCollectionName).filter(
+      (candidatePhysicalCollectionName) => candidatePhysicalCollectionName !== base,
+    );
+    if (generationPhysicalCollectionNames.length > 0) {
+      throw new CodegraphShadowDatabaseRefusedError({
+        collectionName: physicalCollectionName,
+        dbPath,
+        generations: generationPhysicalCollectionNames,
+      });
     }
     return dbPath;
   }
@@ -113,15 +146,15 @@ export class CodegraphDbFiles {
    * happens to drop such a WAL when it creates the file; the pool does not rely
    * on a driver version for it. No-op when the database exists or no WAL does.
    */
-  async discardOrphanedWal(collectionName: PhysicalCollectionName): Promise<void> {
-    const dbPath = this.pathFor(collectionName);
+  async discardOrphanedWal(physicalCollectionName: PhysicalCollectionName): Promise<void> {
+    const dbPath = this.pathFor(physicalCollectionName);
     if (existsSync(dbPath)) return;
     await unlink(`${dbPath}.wal`).catch(() => undefined);
   }
 
   /** Whether a graph database file exists for this collection. */
-  has(collectionName: PhysicalCollectionName): boolean {
-    return existsSync(this.pathFor(collectionName));
+  has(physicalCollectionName: PhysicalCollectionName): boolean {
+    return existsSync(this.pathFor(physicalCollectionName));
   }
 
   /**
@@ -138,23 +171,43 @@ export class CodegraphDbFiles {
    * WAL/spill sidecars. Empty when the codegraph dir is missing.
    */
   listCollectionDbNames(baseCollectionName: string): PhysicalCollectionName[] {
-    const base = sanitiseCollectionName(baseCollectionName);
-    const pattern = new RegExp(`^(${escapeRegExp(base)}(?:_v\\d+)?)\\.duckdb$`);
-    let entries: string[];
-    try {
-      entries = readdirSync(this.dir);
-    } catch {
-      // Codegraph dir missing (never constructed / removed) — nothing to sweep.
-      return [];
-    }
-    const names: string[] = [];
-    for (const entry of entries) {
-      const match = entry.match(pattern);
-      if (match) names.push(match[1]);
-    }
     // Read back from the directory the databases live in: each stem IS the
     // name its generation was opened under.
-    return physicalCollectionNamesListedByStorage(names);
+    return physicalCollectionNamesListedByStorage(listGenerationStems(this.dir, baseCollectionName, ".duckdb"));
+  }
+
+  /**
+   * Every generation of a base collection that has ANY codegraph file on disk —
+   * a database (`listCollectionDbNames`) or a cross-pass input spill
+   * (`inputSpillPathFor`) — as collection names.
+   *
+   * This is what a generation sweep enumerates, not `listCollectionDbNames`: a
+   * run that wrote its spill and never reached finalize leaves a spill with no
+   * database beside it, and a sweep that only reads `*.duckdb` never sees it.
+   * That is how `.xpass` accumulated one ~80 MB file per abandoned generation.
+   */
+  listCollectionGenerationNames(baseCollectionName: string): PhysicalCollectionName[] {
+    const stems = new Set([
+      ...listGenerationStems(this.dir, baseCollectionName, ".duckdb"),
+      ...listGenerationStems(this.inputSpillDir, baseCollectionName, INPUT_SPILL_EXTENSION),
+    ]);
+    return physicalCollectionNamesListedByStorage([...stems]);
+  }
+
+  /** Cross-pass input-spill directory. Never swept at pool construction (see `inputSpillPathFor`). */
+  get inputSpillDir(): string {
+    return join(this.dir, ".xpass");
+  }
+
+  /**
+   * Deterministic cross-pass INPUT spill of one generation (yl9tv): the main
+   * thread appends each file's `FileExtraction`, the codegraph worker drains and
+   * unlinks it in `finalizeSignals`. No runId — main and worker must resolve the
+   * same path. Keyed by the PHYSICAL name like the database, so it belongs to the
+   * generation and `removeFiles` takes it with the database.
+   */
+  inputSpillPathFor(physicalCollectionName: string): string {
+    return join(this.inputSpillDir, `${sanitiseCollectionName(physicalCollectionName)}${INPUT_SPILL_EXTENSION}`);
   }
 
   /**
@@ -182,12 +235,12 @@ export class CodegraphDbFiles {
    * what keeps that state honest.
    */
   async cloneDatabase(
-    sourceCollection: PhysicalCollectionName,
-    targetCollection: PhysicalCollectionName,
+    sourcePhysicalCollectionName: PhysicalCollectionName,
+    targetPhysicalCollectionName: PhysicalCollectionName,
   ): Promise<void> {
-    const from = this.pathFor(sourceCollection);
+    const from = this.pathFor(sourcePhysicalCollectionName);
     if (!existsSync(from)) return;
-    const to = this.writablePathFor(targetCollection);
+    const to = this.writablePathFor(targetPhysicalCollectionName);
     mkdirSync(dirname(to), { recursive: true });
     const staging = `${to}${CLONE_TMP_SUFFIX}`;
     const stagingWal = `${staging}.wal`;
@@ -208,7 +261,8 @@ export class CodegraphDbFiles {
   }
 
   /**
-   * Unlink the collection's DuckDB file and its WAL sidecar. Idempotent —
+   * Unlink the collection's DuckDB file, its WAL sidecar and its cross-pass
+   * input spill. Idempotent —
    * ENOENT means "already gone". Other unlink errors are swallowed too: a stale
    * file on disk is preferable to aborting a best-effort teardown, and the next
    * open simply overwrites it.
@@ -217,22 +271,26 @@ export class CodegraphDbFiles {
    * own cache eviction; callers without a pool are responsible for making sure
    * nothing in THIS process still holds the file.
    */
-  async removeFiles(collectionName: PhysicalCollectionName): Promise<void> {
-    const dbPath = this.pathFor(collectionName);
+  async removeFiles(physicalCollectionName: PhysicalCollectionName): Promise<void> {
+    const dbPath = this.pathFor(physicalCollectionName);
     await unlink(dbPath).catch(() => undefined);
     await unlink(`${dbPath}.wal`).catch(() => undefined);
     // An interrupted compaction's staging copy belongs to this database too.
     const staging = compactionStagingPath(dbPath);
     await unlink(staging).catch(() => undefined);
     await unlink(`${staging}.wal`).catch(() => undefined);
+    // The generation's cross-pass input spill, left behind by a run that never
+    // reached the drain. Its lifetime is one run, but its NAME is the
+    // generation, so no later run truncates it once the alias moves on.
+    await unlink(this.inputSpillPathFor(physicalCollectionName)).catch(() => undefined);
   }
 
   /**
    * `CodegraphFootprintStore` shape: there is no client cache to evict, so the
    * "was a cached entry evicted" answer is always false.
    */
-  async removeCollection(collectionName: PhysicalCollectionName): Promise<boolean> {
-    await this.removeFiles(collectionName);
+  async removeCollection(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
+    await this.removeFiles(physicalCollectionName);
     return false;
   }
 }

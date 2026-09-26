@@ -140,7 +140,8 @@
           "receiver": null,
           "member": "attr_reader",
           "startLine": 16,
-          "argCount": 1
+          "argCount": 1,
+          "positionalArgAtoms": [{ "literal": "user" }]
         }
       ],
       "symbolKind": "method"
@@ -169,7 +170,8 @@
           "receiver": null,
           "member": "new",
           "startLine": 20,
-          "argCount": 1
+          "argCount": 1,
+          "positionalArgAtoms": [{ "identifier": "params" }]
         }
       ],
       "symbolKind": "method",
@@ -200,7 +202,8 @@
           "receiver": "Audit",
           "member": "record",
           "startLine": 27,
-          "argCount": 1
+          "argCount": 1,
+          "positionalArgAtoms": [{ "identifier": "limit" }]
         }
       ],
       "symbolKind": "method",
@@ -241,7 +244,8 @@
           "receiver": "HANDLERS",
           "member": "fetch",
           "startLine": 31,
-          "argCount": 1
+          "argCount": 1,
+          "positionalArgAtoms": [{ "identifier": "kind" }]
         }
       ],
       "symbolKind": "method",

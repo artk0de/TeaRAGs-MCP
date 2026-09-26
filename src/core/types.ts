@@ -653,6 +653,15 @@ export interface CodeChunk {
      * selects explicit fields).
      */
     claimed?: boolean;
+
+    /**
+     * Transient. The leading text of `content` that names the chunk's container
+     * and maps to no row of its own — the hierarchy headers plus the container
+     * header — set by the engine on hook body chunks. The `enforceMaxChunkSize`
+     * post-pass repeats it on every `#partN` it cuts and then removes the field,
+     * so it never leaves the chunker (bd tea-rags-mcp-j4jrn).
+     */
+    contextPrefix?: string;
   };
 }
 

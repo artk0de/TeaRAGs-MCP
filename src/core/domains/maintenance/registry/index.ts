@@ -26,6 +26,14 @@ export {
   registryEnvGroupMembers,
 } from "./env-groups.js";
 export type { EnvConsequence, RegistryEnvGroup } from "./env-groups.js";
+export {
+  applyRegistryEnvEdit,
+  editRegistryEnv,
+  INDEX_RECORDED_ENV_KEYS,
+  isIndexRecordedEnvKey,
+  parseRegistryEnvBoolean,
+} from "./env-edit.js";
+export type { RegistryEnvEdit } from "./env-edit.js";
 export { outerEnvForRegistryStamp, replayRegistryEnv } from "./env-replay.js";
 export type { AmbientEnvRole } from "./env-replay.js";
 export { outerEnvForRegistryEntry, pickRegistryEntry, resolveRegistryEnv } from "./env-resolution.js";

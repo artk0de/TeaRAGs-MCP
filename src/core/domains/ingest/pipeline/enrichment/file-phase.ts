@@ -93,6 +93,7 @@ export class FilePhase {
   private contentHashes?: ReadonlyMap<string, string>;
   /** What part of the corpus the run resolves (bd tea-rags-mcp-xpmwg). */
   private coverage: EnrichmentRunCoverage = "subset";
+  private languages: readonly string[] = [];
   private chunkPhase: ChunkPhase | null = null;
 
   constructor(
@@ -112,20 +113,22 @@ export class FilePhase {
 
   init(
     contexts: ReadonlyMap<string, ProviderContext>,
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     runId: string,
     runStartedAt: string,
     crossPass = false,
     contentHashes?: ReadonlyMap<string, string>,
     runCoverage: EnrichmentRunCoverage = "subset",
+    runLanguages: readonly string[] = [],
   ): void {
     this.contexts = new Map(contexts);
-    this.coll = coll;
+    this.coll = physicalCollectionName;
     this.runId = runId;
     this.runStartedAt = runStartedAt;
     this.crossPass = crossPass;
     this.contentHashes = contentHashes;
     this.coverage = runCoverage;
+    this.languages = runLanguages;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
   }
@@ -147,6 +150,16 @@ export class FilePhase {
    */
   get runCoverage(): EnrichmentRunCoverage {
     return this.coverage;
+  }
+
+  /**
+   * The languages this run is restricted to, empty when it spans the whole
+   * collection — the run spec's `languages`, same convention. `CompletionRunner`
+   * hands it to the persisted pass-1 aggregate read, so a restricted run does not
+   * read, parse and ship to its worker the slices of languages it never walks.
+   */
+  get runLanguages(): readonly string[] {
+    return this.languages;
   }
 
   /**
@@ -180,7 +193,11 @@ export class FilePhase {
    * apply the (empty) result and do NOT miss-track — file overlays are read
    * back once the graph is finalized via finalizeSignals → applyFinalize.
    */
-  onBatch(coll: PhysicalCollectionName, absolutePath: string, items: ChunkItem[]): Map<string, Promise<void>> {
+  onBatch(
+    physicalCollectionName: PhysicalCollectionName,
+    absolutePath: string,
+    items: ChunkItem[],
+  ): Map<string, Promise<void>> {
     const perProvider = new Map<string, Promise<void>>();
     for (const ctx of this.contexts.values()) {
       const state = this.states.get(ctx.key);
@@ -196,7 +213,7 @@ export class FilePhase {
       // — every path below drops them silently, and a point that ends the run
       // carrying neither terminal marker is a recovery candidate for the NEXT
       // run (bd tea-rags-mcp-okra9).
-      const stampWork = this.stampDeclinedFiles(coll, ctx, items, root);
+      const stampWork = this.stampDeclinedFiles(physicalCollectionName, ctx, items, root);
       if (stampWork) state.fileWork.push(stampWork);
 
       const enrichPaths = this.enrichablePaths(ctx, items, root);
@@ -212,7 +229,7 @@ export class FilePhase {
 
       const work = ctx.provider.defersChunkEnrichment
         ? this.startDeferredExtraction(ctx, state, root, enrichPaths)
-        : this.startStreamingApply(coll, ctx, state, root, items, enrichPaths);
+        : this.startStreamingApply(physicalCollectionName, ctx, state, root, items, enrichPaths);
       // Undefined only on the defer-without-streamFileBatch skip — that
       // provider contributes neither file work nor a gate entry.
       if (!work) continue;
@@ -277,7 +294,7 @@ export class FilePhase {
 
   /** Stream this batch's file signals for a non-deferring provider and apply them. */
   private async startStreamingApply(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
     state: FilePhaseState,
     root: string,
@@ -298,7 +315,7 @@ export class FilePhase {
       })
       .then(async (overlays) => {
         await this.applier.applyFileSignals(
-          coll,
+          physicalCollectionName,
           ctx.key,
           overlays,
           root,
@@ -326,7 +343,7 @@ export class FilePhase {
    * accumulated chunkMap (relPath → ChunkLookupEntry[]) from ChunkPhase.
    */
   async applyFinalize(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
     fileOverlays: Map<string, FileSignalOverlay>,
     chunkMap: ReadonlyMap<
@@ -338,7 +355,7 @@ export class FilePhase {
     if (!state) return;
     const start = Date.now();
     await this.applier.applyFinalizeFile(
-      coll,
+      physicalCollectionName,
       ctx.key,
       fileOverlays,
       chunkMap,
@@ -456,7 +473,7 @@ export class FilePhase {
    *   undefined when the batch has nothing declined.
    */
   private stampDeclinedFiles(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
     items: ChunkItem[],
     root: string,
@@ -475,7 +492,7 @@ export class FilePhase {
     }
     if (stamps.length === 0) return undefined;
     return this.applier
-      .applySkipStamps(coll, ctx.key, "file", stamps)
+      .applySkipStamps(physicalCollectionName, ctx.key, "file", stamps)
       .then(() => undefined)
       .catch((error: unknown) => {
         console.error(`[Enrichment:${ctx.key}] file skip-stamp write failed (${stamps.length} points):`, error);

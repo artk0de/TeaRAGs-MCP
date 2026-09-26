@@ -40,8 +40,10 @@ import type {
   LanguageProvider,
   LanguageSymbolResolver,
   LanguageWalker,
+  StructuralConformanceDeriver,
 } from "../../../contracts/types/language.js";
-import { composeExtractionWalker } from "../kernel/index.js";
+import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/index.js";
+import { isEcmascriptSourcePath } from "../shared/ecmascript-symbol-lookup.js";
 import { typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
@@ -111,6 +113,14 @@ export class TypeScriptLanguage implements LanguageProvider {
     passes: TYPESCRIPT_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;
+  /**
+   * Interfaces are structural (bd tea-rags-mcp-39xca.14): a class or factory
+   * carrying an interface's members satisfies it without `implements`. The
+   * ECMAScript family's owners only — a `.js` implementer counts, a Ruby
+   * namesake does not.
+   */
+  readonly structuralConformance: StructuralConformanceDeriver = (input) =>
+    deriveStructuralConformance(input, isEcmascriptSourcePath);
 
   /**
    * The resolver currently bound, with the root it was built for. Single-entry
@@ -162,6 +172,12 @@ export class TypeScriptLanguage implements LanguageProvider {
       // project pass-2 is about to resolve, not against the fallback root.
       prepareResolvePass: (plan: SymbolResolutionPassPlan): void => {
         this.resolverForRoot(plan.projectRoot ?? this.repoRoot).prepareResolvePass?.(plan);
+      },
+      // Off the BOUND resolver, like `diagnostics`: the order is the batch plan
+      // the prepare call above just built (bd tea-rags-mcp-vtuu4).
+      planResolveVisits: () => this.bound?.resolver.planResolveVisits?.(),
+      endResolveVisitGroup: (): void => {
+        this.bound?.resolver.endResolveVisitGroup?.();
       },
       // Reported off the BOUND resolver, never a freshly built one: the numbers
       // belong to the cache the run has been resolving through, and binding a

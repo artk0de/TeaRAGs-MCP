@@ -349,13 +349,13 @@ export class IndexingOps {
     // one, so only a file that is actually there is removed (bd tea-rags-mcp-39xca.1).
     // Non-fatal when codegraph is disabled.
     if (options?.forceReindex && this.codegraphPool) {
-      const logicalName = await this.resolveCollectionForPath(path);
+      const aliasCollectionName = await this.resolveCollectionForPath(path);
       // Compared as text on purpose: the one database this looks for is the file
       // that carries the LOGICAL name, which the brands otherwise keep apart.
-      const logicalDb = this.codegraphPool
-        .listCollectionDbNames(logicalName)
-        .find((name: string) => name === logicalName);
-      if (logicalDb) await this.codegraphPool.removeCollection(logicalDb);
+      const physicalCollectionName = this.codegraphPool
+        .listCollectionDbNames(aliasCollectionName)
+        .find((name: string) => name === aliasCollectionName);
+      if (physicalCollectionName) await this.codegraphPool.removeCollection(physicalCollectionName);
     }
     const stats = await this.fullIndex(path, options, progressCallback);
     return worktreeSeed ? { ...stats, worktreeSeed } : stats;
@@ -382,11 +382,11 @@ export class IndexingOps {
    * A refusal at 2 or 3 gives back everything already taken.
    */
   private async claimCollectionForIndexing(path: string, options: IndexOptions | undefined): Promise<string> {
-    const collectionName = await this.resolveCollectionForPath(await validatePath(path));
-    if (!(await this.tryClaimCollection(collectionName, describeIndexOperation(options)))) {
+    const aliasCollectionName = await this.resolveCollectionForPath(await validatePath(path));
+    if (!(await this.tryClaimCollection(aliasCollectionName, describeIndexOperation(options)))) {
       throw new IndexingAlreadyInProgressError(path);
     }
-    return collectionName;
+    return aliasCollectionName;
   }
 
   /**
@@ -447,13 +447,13 @@ export class IndexingOps {
    */
   private async releaseCollectionWhenEnrichmentSettles(collectionName: string): Promise<void> {
     try {
-      let runCollection = resolvePhysicalCollection(collectionName, []);
+      let physicalCollectionName = resolvePhysicalCollection(collectionName, []);
       try {
-        runCollection = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
+        physicalCollectionName = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
       } catch {
         // No alias listing: the run addressed the collection under this name.
       }
-      await this.enrichment.whenCompletionsSettled(runCollection);
+      await this.enrichment.whenCompletionsSettled(physicalCollectionName);
       // Awaited only when there is one: the release must land in the same tick
       // as before for every run that started nothing afterwards.
       const trailing = this.trailingEnrichment.get(collectionName);
@@ -518,11 +518,11 @@ export class IndexingOps {
     // profiler here too so "embed-warmup" survives to the stage summary (csyve).
     pipelineLog.resetProfiler();
     await this.checkEmbeddingHealth();
-    const collectionName = await this.resolveCollectionForPath(await validatePath(path));
+    const aliasCollectionName = await this.resolveCollectionForPath(await validatePath(path));
     const result = await this.reindex.reindexChanges(
       path,
       progressCallback,
-      await this.syncChunkingOverrides(collectionName),
+      await this.syncChunkingOverrides(aliasCollectionName),
     );
     await this.refreshStats(path);
     return result;
@@ -537,7 +537,7 @@ export class IndexingOps {
    * that just want a boolean can still use `qdrant.checkHealth()` directly.
    */
   async getStatus(path: string): Promise<IndexStatus> {
-    const collectionName = await this.resolveCollectionForPath(path);
+    const aliasCollectionName = await this.resolveCollectionForPath(path);
 
     // Real Qdrant call — serves as the health probe.
     // Throws a typed error (QdrantStartingError / QdrantRecoveringError /
@@ -546,7 +546,7 @@ export class IndexingOps {
     //   - embedded daemon alive but HTTP not bound → Starting/Recovering
     //   - external Qdrant down → Unavailable (no daemon probe available)
     // Only if this call succeeds do we mark qdrant.available = true below.
-    const exists = await this.qdrant.collectionExists(collectionName);
+    const exists = await this.qdrant.collectionExists(aliasCollectionName);
 
     const embeddingHealthy = await this.embeddings.checkHealth();
     // Track BOTH primary and fallback embedding endpoints. Symmetric with
@@ -592,11 +592,11 @@ export class IndexingOps {
     // external Qdrant or on any fs error; quantization comes from the same
     // getCollectionInfo round-trip that yields status / optimizerStatus.
     if (exists) {
-      const info = await this.qdrant.getCollectionInfo(collectionName);
+      const info = await this.qdrant.getCollectionInfo(aliasCollectionName);
       infraHealth.qdrant.status = info.status;
       infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
       infraHealth.qdrant.quantization = info.quantization;
-      const indexSizeBytes = await this.qdrant.getCollectionDiskBytes(collectionName);
+      const indexSizeBytes = await this.qdrant.getCollectionDiskBytes(aliasCollectionName);
       if (indexSizeBytes !== undefined) infraHealth.qdrant.indexSizeBytes = indexSizeBytes;
     }
 
@@ -606,8 +606,8 @@ export class IndexingOps {
 
   /** Drop all indexed data for a codebase and invalidate the model-guard cache. */
   async clear(path: string): Promise<void> {
-    const collectionName = await this.resolveCollectionForPath(path);
-    this.modelGuard?.invalidate(collectionName);
+    const aliasCollectionName = await this.resolveCollectionForPath(path);
+    this.modelGuard?.invalidate(aliasCollectionName);
     await this.status.clearIndex(path);
     // Drop the codegraph databases once Qdrant has released the collection.
     // Order matters: Qdrant first — if it fails, keeping the databases is safe
@@ -620,8 +620,8 @@ export class IndexingOps {
     // all behind, and an index that later reclaimed a version number reopened
     // its old graph. Non-fatal when codegraph is disabled.
     if (this.codegraphPool) {
-      for (const generation of this.codegraphPool.listCollectionDbNames(collectionName)) {
-        await this.codegraphPool.removeCollection(generation);
+      for (const physicalCollectionName of this.codegraphPool.listCollectionGenerationNames(aliasCollectionName)) {
+        await this.codegraphPool.removeCollection(physicalCollectionName);
       }
     }
   }
@@ -779,8 +779,8 @@ export class IndexingOps {
     rechunk?: RechunkFileSelector,
   ): Promise<IndexStats | undefined> {
     const absolutePath = await validatePath(path);
-    const collectionName = await this.resolveCollectionForPath(absolutePath);
-    const exists = await this.qdrant.collectionExists(collectionName);
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
+    const exists = await this.qdrant.collectionExists(aliasCollectionName);
     if (!exists) return undefined;
 
     // Model guard before health check — the guard compares the stored model
@@ -790,10 +790,10 @@ export class IndexingOps {
     // found the provider down after its recovery wait fails the run here: the
     // health check would only wait the same budget out again (bd
     // tea-rags-mcp-umatc).
-    await this.modelGuard?.ensureMatch(collectionName, { failOnProviderOutage: true });
+    await this.modelGuard?.ensureMatch(aliasCollectionName, { failOnProviderOutage: true });
     await this.checkEmbeddingHealth();
 
-    const overrides = await this.syncChunkingOverrides(collectionName);
+    const overrides = await this.syncChunkingOverrides(aliasCollectionName);
 
     // Await recovery BEFORE the reindex (not fire-and-forget). Recovery
     // re-enriches stale/unenriched points left by prior runs; running it first
@@ -811,11 +811,14 @@ export class IndexingOps {
     // stamps the chunks enriched — with no signals (bd tea-rags-mcp-snbzk /
     // 6goqa). Qdrant resolves aliases server-side, so recovery's Qdrant writes
     // land on the same points; everything else here stays alias-keyed.
-    const recoveryCollection = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
+    const recoveryPhysicalCollectionName = resolvePhysicalCollection(
+      aliasCollectionName,
+      await this.qdrant.aliases.listAliases(),
+    );
     // A deferring provider's owed chunks come back instead of being healed
     // before any walk (bd tea-rags-mcp-fxio5); the reindex below walks their
     // files and settles them in its own deferred chunk pass.
-    const deferredChunkHandoff = await this.dispatchRecovery(recoveryCollection, absolutePath);
+    const deferredChunkHandoff = await this.dispatchRecovery(recoveryPhysicalCollectionName, absolutePath);
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, {
       ...overrides,
@@ -831,7 +834,7 @@ export class IndexingOps {
     // A scoped force rebuilt the chunk set of its selection, which may cover
     // pending chunk-set bumps in full (bd tea-rags-mcp-j4oww). A partial run left
     // files on their old chunks, so it claims nothing.
-    if (rechunk && changeStats.status === "completed") this.stampRechunkedChunkSet(collectionName, rechunk);
+    if (rechunk && changeStats.status === "completed") this.stampRechunkedChunkSet(aliasCollectionName, rechunk);
     // Otherwise nothing corpus-wide was rebuilt, so the stamp stays put — but the payload
     // of every CHANGED file was rewritten by the current build, so the reader
     // deserves a fresh verdict rather than the one this session already spent.
@@ -840,7 +843,7 @@ export class IndexingOps {
     // registry's entry, not the path hash (waj6k): the consumption set being
     // re-armed is keyed by what the reader resolved, so re-arming any other
     // name leaves the one it actually consumed still spent.
-    this.driftReporter?.reset(collectionName);
+    this.driftReporter?.reset(aliasCollectionName);
     return toIndexStats(changeStats);
   }
 
@@ -889,7 +892,7 @@ export class IndexingOps {
     }
 
     const absolutePath = await validatePath(path);
-    const collectionName = await this.resolveCollectionForPath(absolutePath);
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
     // What the seed will owe, recorded by the clone itself on the target's
     // marker before the target is addressable — a death at any later point
     // leaves a clone the next run resumes (`resumePendingWorktreeSeed`).
@@ -899,7 +902,7 @@ export class IndexingOps {
     };
     const attempt = await this.worktreeSeed.seed({
       targetPath: absolutePath,
-      targetCollection: collectionName,
+      targetCollection: aliasCollectionName,
       build: this.seedBuildIdentity(this.allPayloadSignals),
       pending,
       claimSource: async (source) => this.claimSeedSource(source),
@@ -910,7 +913,7 @@ export class IndexingOps {
     try {
       stats = await this.tryIncrementalIndex(path, progressCallback);
     } catch (error) {
-      await this.dropFailedSeed(path, collectionName);
+      await this.dropFailedSeed(path, aliasCollectionName);
       throw error;
     }
     if (!stats) {
@@ -932,7 +935,7 @@ export class IndexingOps {
       };
     }
 
-    const gitRefresh = this.settleWorktreeSeed(path, absolutePath, collectionName, pending);
+    const gitRefresh = this.settleWorktreeSeed(path, absolutePath, aliasCollectionName, pending);
     return { stats: { ...stats, worktreeSeed: seededWorktreeReport(attempt, stats, gitRefresh) } };
   }
 
@@ -946,10 +949,10 @@ export class IndexingOps {
    */
   private async resumePendingWorktreeSeed(path: string): Promise<void> {
     const absolutePath = await validatePath(path);
-    const collectionName = await this.resolveCollectionForPath(absolutePath);
-    const pending = await readWorktreeSeedPending(this.qdrant, collectionName);
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
+    const pending = await readWorktreeSeedPending(this.qdrant, aliasCollectionName);
     if (!pending) return;
-    this.settleWorktreeSeed(path, absolutePath, collectionName, pending);
+    this.settleWorktreeSeed(path, absolutePath, aliasCollectionName, pending);
   }
 
   /**
@@ -1078,8 +1081,8 @@ export class IndexingOps {
     try {
       // Physical, never the alias — the recompute's run state and any codegraph
       // read address the generation by its literal name (bd tea-rags-mcp-snbzk).
-      const physical = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
-      await this.enrichment.recomputeEnrichments(physical, absolutePath, ["git"]);
+      const physicalCollectionName = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
+      await this.enrichment.recomputeEnrichments(physicalCollectionName, absolutePath, ["git"]);
       await this.refreshStats(path);
       this.driftReporter?.reset(collectionName);
     } catch (error) {
@@ -1114,8 +1117,8 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
   ): Promise<IndexStats> {
     const absolutePath = await validatePath(path);
-    const aliasName = await this.resolveCollectionForPath(absolutePath);
-    if (!(await this.qdrant.collectionExists(aliasName))) {
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
+    if (!(await this.qdrant.collectionExists(aliasCollectionName))) {
       throw new NotIndexedError(path);
     }
     // Address the PHYSICAL collection, never the alias. Qdrant resolves aliases
@@ -1125,7 +1128,10 @@ export class IndexingOps {
     // recompute's graph writes, `cg_run_stats` included, then land in a file
     // prime does not read and the resolve breakdown looks like it vanished
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
-    const collectionName = resolvePhysicalCollection(aliasName, await this.qdrant.aliases.listAliases());
+    const physicalCollectionName = resolvePhysicalCollection(
+      aliasCollectionName,
+      await this.qdrant.aliases.listAliases(),
+    );
 
     // Same startup gate as the incremental and full paths, and for the same
     // reason: the sync leg deletes a changed file's old chunks BEFORE it embeds
@@ -1173,14 +1179,14 @@ export class IndexingOps {
     const changeStats = await this.reindex.reindexChanges(
       path,
       progressCallback,
-      await this.syncChunkingOverrides(aliasName),
+      await this.syncChunkingOverrides(aliasCollectionName),
     );
     // A seed a dead process left pending (bd tea-rags-mcp-k8gac): its stamp is
     // paid now, ahead of the recompute's own — see `payPendingSeedStamp`.
-    const pendingSeed = await this.payPendingSeedStamp(aliasName);
+    const pendingSeed = await this.payPendingSeedStamp(aliasCollectionName);
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
-      collectionName,
+      physicalCollectionName,
       absolutePath,
       selectors,
       languages,
@@ -1192,18 +1198,18 @@ export class IndexingOps {
     // advance. Claiming `grammar` / `chunking` here would silence a hint that
     // is still true. A git-only recompute touches no language layer at all.
     if (selectors.some(isCodegraphSelector)) {
-      this.stampLanguageVersions(aliasName, languages, "codegraph");
+      this.stampLanguageVersions(aliasCollectionName, languages, "codegraph");
     }
     // A git rebuild of every point is the rest of what the seed owed, so the
     // next incremental must not redo it. Anything narrower leaves it pending.
     if (pendingSeed && this.dischargesSeedGitDebt(selectors, languages)) {
-      await clearWorktreeSeedPending(this.qdrant, aliasName);
+      await clearWorktreeSeedPending(this.qdrant, aliasCollectionName);
     }
     // Keyed by the LOGICAL name a search request resolves to, never the
     // physical target resolved above: the reporter's consumption set and the
     // registry entry are both addressed that way, so re-arming or stamping the
     // physical name would clear and claim entries nobody ever recorded.
-    this.driftReporter?.reset(aliasName);
+    this.driftReporter?.reset(aliasCollectionName);
 
     // Report the RECOMPUTE's own numbers, not the sync's. The sync leg is a
     // near-no-op here, so inheriting its (empty) enrichment fields would state
@@ -1237,9 +1243,9 @@ export class IndexingOps {
     // pipeline resolves the same way, so for a path nothing has registered the
     // two agree on the hash, and for a relocated project both land on the entry
     // the run actually rewrote (bd tea-rags-mcp-dxa9w).
-    const collectionName = await this.resolveCollectionForPath(path);
-    this.stampLanguageVersions(collectionName, options?.languages, "all");
-    this.driftReporter?.reset(collectionName);
+    const aliasCollectionName = await this.resolveCollectionForPath(path);
+    this.stampLanguageVersions(aliasCollectionName, options?.languages, "all");
+    this.driftReporter?.reset(aliasCollectionName);
     return result;
   }
 
@@ -1382,7 +1388,7 @@ export class IndexingOps {
   }
 
   private async dispatchRecovery(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
   ): Promise<DeferredChunkRecoveryHandoff> {
     // Awaited, best-effort. runRecovery is cheap when there's no work:
@@ -1400,7 +1406,7 @@ export class IndexingOps {
     // need the walker's line map, which only the run's own repair walk writes.
     // No recovery configured, or a failed one, hands nothing off.
     try {
-      return (await this.enrichment.runRecovery(collectionName, absolutePath)) ?? new Map();
+      return (await this.enrichment.runRecovery(physicalCollectionName, absolutePath)) ?? new Map();
     } catch (error) {
       console.error("[IndexingOps] pre-reindex enrichment recovery failed (continuing with reindex):", error);
       return new Map();

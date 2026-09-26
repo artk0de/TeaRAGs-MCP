@@ -565,25 +565,25 @@ export function createIndexRunDaemonGuard(deps: {
   /** The daemon socket the keep-alive connects to. */
   socketPath: string;
   /** Respawn-capable handshake for the run's collection — the main-thread pool's `acquireWrite`. */
-  verifyDaemonBuild: (collectionName: PhysicalCollectionName) => Promise<unknown>;
+  verifyDaemonBuild: (physicalCollectionName: PhysicalCollectionName) => Promise<unknown>;
   /** Upper bound on `begin`; defaults to `INDEX_RUN_DAEMON_GUARD_BEGIN_TIMEOUT_MS`. */
   beginTimeoutMs?: number;
 }): IndexRunDaemonGuard {
   const timeoutMs = deps.beginTimeoutMs ?? INDEX_RUN_DAEMON_GUARD_BEGIN_TIMEOUT_MS;
   const noopRelease = async (): Promise<void> => {};
 
-  const acquireKeepAlive = async (collectionName: PhysicalCollectionName): Promise<DaemonKeepAliveSocket> => {
+  const acquireKeepAlive = async (physicalCollectionName: PhysicalCollectionName): Promise<DaemonKeepAliveSocket> => {
     deps.ensure();
-    await deps.verifyDaemonBuild(collectionName);
+    await deps.verifyDaemonBuild(physicalCollectionName);
     const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
-    const client = new DaemonGraphDbClient(deps.socketPath, collectionName);
+    const client = new DaemonGraphDbClient(deps.socketPath, physicalCollectionName);
     await client.init(); // bounded 5s connect retry absorbs the spawn race
     return client;
   };
 
   return {
-    begin: async (collectionName: PhysicalCollectionName) => {
-      const acquisition = acquireKeepAlive(collectionName);
+    begin: async (physicalCollectionName: PhysicalCollectionName) => {
+      const acquisition = acquireKeepAlive(physicalCollectionName);
       let timer: NodeJS.Timeout | undefined;
       const expired = new Promise<"expired">((resolve) => {
         timer = setTimeout(() => {
@@ -595,7 +595,7 @@ export function createIndexRunDaemonGuard(deps: {
         const outcome = await Promise.race([acquisition, expired]);
         if (outcome === "expired") {
           process.stderr.write(
-            `[tea-rags] codegraph daemon keep-alive for ${collectionName} timed out after ${timeoutMs}ms — ` +
+            `[tea-rags] codegraph daemon keep-alive for ${physicalCollectionName} timed out after ${timeoutMs}ms — ` +
               "the run continues without it\n",
           );
           void acquisition.then(closeKeepAliveSocket, () => undefined);
@@ -604,7 +604,7 @@ export function createIndexRunDaemonGuard(deps: {
         return async () => closeKeepAliveSocket(outcome);
       } catch (err) {
         process.stderr.write(
-          `[tea-rags] codegraph daemon keep-alive failed for ${collectionName}: ${(err as Error).message}\n`,
+          `[tea-rags] codegraph daemon keep-alive failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
         );
         return noopRelease;
       } finally {
@@ -757,7 +757,7 @@ export function wireCodegraph(
     // the streaming upsert path (sink.finish() → graphDb.upsertSymbols)
     // keeps it current. Empty result on first run (fresh DB) is the
     // no-op fast path.
-    initHook: async ({ collectionName, graphDb, symbolTable }) => {
+    initHook: async ({ collectionName: physicalCollectionName, graphDb, symbolTable }) => {
       try {
         const persisted = await graphDb.listAllSymbols();
         if (persisted.length > 0) symbolTable.hydrate(persisted);
@@ -769,7 +769,7 @@ export function wireCodegraph(
         if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
       } catch (err) {
         process.stderr.write(
-          `[tea-rags] codegraph symbol-table hydration failed for ${collectionName}: ${(err as Error).message}\n`,
+          `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
         );
       }
     },
@@ -797,16 +797,16 @@ export function wireCodegraph(
     spawnCodegraphDaemon();
   };
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
-  pool.acquireWrite = async (collectionName: PhysicalCollectionName) => {
+  pool.acquireWrite = async (physicalCollectionName: PhysicalCollectionName) => {
     ensure();
-    return originalAcquireWrite(collectionName);
+    return originalAcquireWrite(physicalCollectionName);
   };
   const originalAcquireReader = pool.acquireReader.bind(pool);
-  pool.acquireReader = async (collectionName: PhysicalCollectionName) => {
+  pool.acquireReader = async (physicalCollectionName: PhysicalCollectionName) => {
     // A collection with no database is refused by the reader itself (bd
     // tea-rags-mcp-kn2cb) — spawning a daemon only to be refused is waste.
-    if (pool.hasDatabase(collectionName)) ensure();
-    return originalAcquireReader(collectionName);
+    if (pool.hasDatabase(physicalCollectionName)) ensure();
+    return originalAcquireReader(physicalCollectionName);
   };
 
   // Codegraph worker-pool descriptor (tea-rags-mcp-dz7f). `collection-affinity`
@@ -885,7 +885,7 @@ export function wireCodegraph(
   const indexRunDaemonGuard = createIndexRunDaemonGuard({
     ensure,
     socketPath: daemonPaths.socketPath,
-    verifyDaemonBuild: async (collectionName) => pool.acquireWrite(collectionName),
+    verifyDaemonBuild: async (physicalCollectionName) => pool.acquireWrite(physicalCollectionName),
   });
 
   return { deps, graphFacade, pool, indexRunDaemonGuard };

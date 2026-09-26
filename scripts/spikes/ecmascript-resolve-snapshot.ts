@@ -133,7 +133,8 @@ async function snapshot(opts: SnapshotOptions): Promise<void> {
   const ts = (await import("typescript")).default;
   const { DefaultSymbolIdComposer, LanguageFactory } = await import("../../src/core/domains/language/index.js");
   const { collectDependencyManifestSources } = await import("../../src/core/infra/dependency-manifests.js");
-  const { collectSchemaColumnSources } = await import("../../src/core/domains/trajectory/codegraph/exclusion.js");
+  const { collectSchemaColumnSources, collectStructuralConformanceDerivers } =
+    await import("../../src/core/domains/trajectory/codegraph/exclusion.js");
   const { CODEGRAPH_SUPPORTED_EXTENSIONS, extensionOf } =
     await import("../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js");
   const { normalizeInheritanceEdges } =
@@ -176,9 +177,13 @@ async function snapshot(opts: SnapshotOptions): Promise<void> {
   walk(root);
   files.sort();
 
+  // The provider's own construction, structural-conformance derivers included
+  // (bd tea-rags-mcp-39xca.14) — without them the barrier derives no
+  // `structural` rows and the snapshot is blind to that edge family.
   const runState = new CodegraphRunState(
     collectSchemaColumnSources(factory),
     collectDependencyManifestSources(factory),
+    collectStructuralConformanceDerivers(factory),
   );
   runState.bindProjectRoot(root);
   runState.loadGemfile(root);

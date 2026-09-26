@@ -14,7 +14,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname as pathDirname } from "node:path";
 
 import type { Ignore } from "ignore";
@@ -26,6 +26,7 @@ import type {
   GlobalSymbolTable,
   GraphDbClient,
   IdentifierRow,
+  Pass1AggregateReadScope,
   SymbolDefinition,
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
@@ -61,6 +62,7 @@ import type { CodegraphCollectionCompletionHook } from "../collection-completion
 import {
   buildCodegraphExclusionFilter,
   collectSchemaColumnSources,
+  collectStructuralConformanceDerivers,
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
 import { CodegraphChunkSignalPass } from "./chunk-signal-pass.js";
@@ -77,6 +79,7 @@ import {
   collectIdentifierFinderVocabulary,
   type IdentifierFinderVocabulary,
 } from "./identifier-rows.js";
+import { languagesSharingFamilyWith } from "./language-family-record.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
@@ -246,7 +249,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * at each run-reset seam.
    */
   private readonly nodeFlush = new SymbolNodeFlushQueue(
-    async (collectionName) => this.getStore(collectionName),
+    async (physicalCollectionName) => this.getStore(physicalCollectionName),
     nodeFlushFilesFromEnv(),
   );
   /**
@@ -307,12 +310,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runState = new CodegraphRunState(
       collectSchemaColumnSources(deps.languageFactory),
       collectDependencyManifestSources(deps.languageFactory),
+      collectStructuralConformanceDerivers(deps.languageFactory),
       collectTypeDeclarationReaders(deps.languageFactory),
     );
     this.identifierFinderVocabulary = collectIdentifierFinderVocabulary(deps.languageFactory);
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
     this.graphFinalizer = new GraphBuildFinalizer(
-      async (collectionName) => this.getStore(collectionName),
+      async (physicalCollectionName) => this.getStore(physicalCollectionName),
       this.resolutionRunner,
       this.runState,
       this.phaseTimings,
@@ -386,7 +390,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * cross-process READ_ONLY attach would throw). A collection with no graph yet
    * yields an empty map — the fresh-`_vN` case, where every file needs extracting.
    */
-  async readPersistedFileHashes(collectionName: PhysicalCollectionName): Promise<Map<string, string | null>> {
+  async readPersistedFileHashes(physicalCollectionName: PhysicalCollectionName): Promise<Map<string, string | null>> {
     const hashes = new Map<string, string | null>();
     if (!this.deps.pool) {
       const rows = await (this.deps.graphDb as GraphDbClient).listFileContentHashes();
@@ -395,7 +399,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     let handle;
     try {
-      handle = await this.deps.pool.acquireReader(collectionName);
+      handle = await this.deps.pool.acquireReader(physicalCollectionName);
     } catch {
       // No DuckDB file for this collection yet — nothing persisted.
       return hashes;
@@ -411,16 +415,30 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Every persisted per-file pass-1 aggregate slice for `collectionName` (bd
-   * tea-rags-mcp-weno4), read on the MAIN thread and injected into the worker's
-   * finalize as `FileSignalOptions.pass1Aggregates`. The main pool replaces a
-   * daemon from another build or lacking a required op; the worker pool has no
-   * respawn hook and, since bd tea-rags-mcp-39xca.4, refuses such a daemon with
-   * `CodegraphDaemonBuildSkewError` (`listAllPass1Aggregates` is required).
+   * The persisted per-file pass-1 aggregate slices a run restricted to
+   * `runLanguages` can hydrate, for `collectionName` (bd tea-rags-mcp-weno4),
+   * read on the MAIN thread and injected into the worker's finalize as
+   * `FileSignalOptions.pass1Aggregates`. The main pool replaces a daemon from
+   * another build or lacking a required op; the worker pool has no respawn hook
+   * and, since bd tea-rags-mcp-39xca.4, refuses such a daemon with
+   * `CodegraphDaemonBuildSkewError` (`listPass1Aggregates` is required).
    * Same store resolution as every other call (`getStore`).
+   *
+   * A restricted run reads its languages' FAMILIES — a TypeScript run still
+   * needs the JavaScript slices — and nothing else, so neither this thread nor
+   * the worker clone parses a foreign language's rows. An unrestricted run
+   * (`runLanguages` empty) cannot know what it walked until the worker's
+   * barrier, which keeps only its own families of these rows.
    */
-  async readPersistedPass1Aggregates(collectionName: PhysicalCollectionName): Promise<CodegraphPass1FileAggregates[]> {
-    return (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates();
+  async readPersistedPass1Aggregates(
+    physicalCollectionName: PhysicalCollectionName,
+    runLanguages: readonly string[],
+  ): Promise<CodegraphPass1FileAggregates[]> {
+    const scope: Pass1AggregateReadScope =
+      runLanguages.length === 0
+        ? { kind: "allLanguages" }
+        : { kind: "languages", languages: languagesSharingFamilyWith(runLanguages) };
+    return (await this.getStore(physicalCollectionName)).graphDb.listPass1Aggregates(scope);
   }
 
   /**
@@ -429,19 +447,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Pool mode without `collectionName` throws — a broken call surface must fail at
    * the wire-up boundary, not write rows to the wrong DB.
    */
-  private async getStore(collectionName?: PhysicalCollectionName): Promise<{
+  private async getStore(physicalCollectionName?: PhysicalCollectionName): Promise<{
     graphDb: GraphDbClient;
     symbolTable: GlobalSymbolTable;
   }> {
     if (this.deps.pool) {
-      if (!collectionName) {
+      if (!physicalCollectionName) {
         throw new Error(
           "CodegraphEnrichmentProvider: pool mode requires options.collectionName — caller did not thread it through",
         );
       }
       // The FULL versioned name (no strip): writes and reads must open the same
       // per-version DuckDB file (`acquireWrite` is daemon-backed when configured).
-      return this.deps.pool.acquireWrite(collectionName);
+      return this.deps.pool.acquireWrite(physicalCollectionName);
     }
     // Direct mode — both fields validated in the constructor.
     return {
@@ -477,8 +495,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /** Whether a deletion pruned cycles / PageRank since their last recompute (bd tea-rags-mcp-dy852). */
-  async hasStaleDerivedState(collectionName?: PhysicalCollectionName): Promise<boolean> {
-    return (await this.getStore(collectionName)).graphDb.hasStaleDerivedTables();
+  async hasStaleDerivedState(physicalCollectionName?: PhysicalCollectionName): Promise<boolean> {
+    return (await this.getStore(physicalCollectionName)).graphDb.hasStaleDerivedTables();
   }
 
   /**
@@ -502,8 +520,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * skips the durable `cg_symbols` write already issued by the eager flush
    * (`drainInputSpill` passes true).
    */
-  asExtractionSink(collectionName?: PhysicalCollectionName, skipDurableNodeWrite = false): CodegraphExtractionSink {
-    return createCodegraphExtractionSink(this.sinkDeps, randomUUID(), collectionName, skipDurableNodeWrite);
+  asExtractionSink(
+    physicalCollectionName?: PhysicalCollectionName,
+    skipDurableNodeWrite = false,
+  ): CodegraphExtractionSink {
+    return createCodegraphExtractionSink(this.sinkDeps, randomUUID(), physicalCollectionName, skipDurableNodeWrite);
   }
 
   /**
@@ -513,14 +534,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private get sinkDeps(): CodegraphSinkDeps {
     return {
-      resolveSymbolTable: async (collectionName) => (await this.getStore(collectionName)).symbolTable,
+      resolveSymbolTable: async (physicalCollectionName) => (await this.getStore(physicalCollectionName)).symbolTable,
       // Injected rows WIN (bd tea-rags-mcp-weno4): `finalizeSignals` stashes what
       // the MAIN thread read, so a pipeline finalize never needs the barrier's own
-      // read. The read is the fallback for direct/test callers.
-      loadPersistedPass1Aggregates: async (collectionName) =>
+      // read. The read is the fallback for direct/test callers; the barrier
+      // filters injected rows by the same scope it hands the read.
+      loadPersistedPass1Aggregates: async (scope, physicalCollectionName) =>
         this.runState.injectedPass1Aggregates
           ? [...this.runState.injectedPass1Aggregates]
-          : (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates(),
+          : (await this.getStore(physicalCollectionName)).graphDb.listPass1Aggregates(scope),
       runState: this.runState,
       nodeFlush: this.nodeFlush,
       buildSymbolDefs: (extraction) => this.buildSymbolDefs(extraction),
@@ -536,8 +558,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             // the test's working directory under a hidden subdir to avoid
             // polluting the project root.
             join(process.cwd(), ".tea-rags-codegraph-spill", `direct-${runId}.ndjson`),
-      resolveAndUpsert: async (spillPath, collectionName) => this.streamingResolveAndUpsert(spillPath, collectionName),
-      recomputeMetrics: async (collectionName) => this.recomputeGraphMetricsStreaming(collectionName),
+      resolveAndUpsert: async (spillPath, physicalCollectionName) =>
+        this.streamingResolveAndUpsert(spillPath, physicalCollectionName),
+      recomputeMetrics: async (physicalCollectionName) => this.recomputeGraphMetricsStreaming(physicalCollectionName),
     };
   }
 
@@ -546,8 +569,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * each line against the complete symbol table, bulk-upsert, checkpoint on a
    * cadence. O(1) memory in the spill size — one JSON line resident at a time.
    */
-  private async streamingResolveAndUpsert(spillPath: string, collectionName?: PhysicalCollectionName): Promise<void> {
-    await this.graphFinalizer.resolveAndUpsert(spillPath, collectionName);
+  private async streamingResolveAndUpsert(
+    spillPath: string,
+    physicalCollectionName?: PhysicalCollectionName,
+  ): Promise<void> {
+    await this.graphFinalizer.resolveAndUpsert(spillPath, physicalCollectionName);
   }
 
   /**
@@ -555,11 +581,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * pass-2 settles (`GraphBuildFinalizer#recomputeMetrics`).
    */
   private async recomputeGraphMetricsStreaming(
-    collectionName?: PhysicalCollectionName,
+    physicalCollectionName?: PhysicalCollectionName,
     resolvers?: ResolverDiagnosticsByLanguage,
   ): Promise<void> {
     try {
-      await this.graphFinalizer.recomputeMetrics(collectionName);
+      await this.graphFinalizer.recomputeMetrics(physicalCollectionName);
     } finally {
       // The recompute is the last pass-2 stage, so this is the run's closing
       // wall-clock statement (bd tea-rags-mcp-6aytq) — from `finally`, because the
@@ -824,7 +850,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private ensureRunSink(
     key: string,
-    collectionName?: PhysicalCollectionName,
+    physicalCollectionName?: PhysicalCollectionName,
     skipDurableNodeWrite = false,
   ): { sink: CodegraphExtractionSink; extracted: Set<string> } {
     let sink = this.runSinks.get(key);
@@ -835,7 +861,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // follows (bd tea-rags-mcp-sgo8v); a run that never got that far must not
       // hand them to this one.
       this.runExtractedPaths.delete(key);
-      sink = this.asExtractionSink(collectionName, skipDurableNodeWrite);
+      sink = this.asExtractionSink(physicalCollectionName, skipDurableNodeWrite);
       this.runSinks.set(key, sink);
     }
     let extracted = this.runExtractedPaths.get(key);
@@ -896,15 +922,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `coordinator.beginRun` ONLY on cross-pass (full-index) runs. Idempotent;
    * tolerates a missing dir/file (creates them).
    */
-  beginExtractionRun = (collectionName?: PhysicalCollectionName): void => {
-    const key = this.collectionKey(collectionName);
+  beginExtractionRun = (physicalCollectionName?: PhysicalCollectionName): void => {
+    const key = this.collectionKey(physicalCollectionName);
     // bd tea-rags-mcp-svhqp — a run-START seam that bypasses `ensureRunSink`, so it
     // must zero the tally and run-global maps itself: the cached provider would
     // otherwise leak a prior run's counts into this run's `recordRunStats`.
     this.runState.resetTally();
     this.clearRunState(key);
     this.xpassWritten.set(key, new Set());
-    const spillPath = this.inputSpillPath(collectionName);
+    const spillPath = this.inputSpillPath(physicalCollectionName);
     try {
       mkdirSync(pathDirname(spillPath), { recursive: true });
       writeFileSync(spillPath, "", "utf8");
@@ -923,8 +949,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * across the instance boundary, and rethrows a latched flush error before pass-2.
    * No-op off cross-pass (the buffer is empty).
    */
-  endExtractionRun = async (collectionName?: PhysicalCollectionName): Promise<void> => {
-    await this.nodeFlush.flushRemainder(this.collectionKey(collectionName), collectionName);
+  endExtractionRun = async (physicalCollectionName?: PhysicalCollectionName): Promise<void> => {
+    await this.nodeFlush.flushRemainder(this.collectionKey(physicalCollectionName), physicalCollectionName);
+  };
+
+  /**
+   * Cross-pass run-END seam (MAIN thread), the bookend of `beginExtractionRun`:
+   * the coordinator calls it once the run's completion settles, success or
+   * failure. The worker's drain already unlinked the spill on the happy path;
+   * this reclaims what a run that never reached the drain left behind — the
+   * spill is named after the physical generation, so once the alias moves on no
+   * later run truncates it. Idempotent; IO errors are swallowed (debug-logged).
+   */
+  discardExtractionRun = (physicalCollectionName?: PhysicalCollectionName): void => {
+    this.xpassWritten.delete(this.collectionKey(physicalCollectionName));
+    const spillPath = this.inputSpillPath(physicalCollectionName);
+    try {
+      rmSync(spillPath, { force: true });
+    } catch (err) {
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] xpass spill discard failed ${spillPath}: ${(err as Error).message}\n`);
+      }
+    }
   };
 
   /**
@@ -944,11 +990,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * run's sink, with the durable node write skipped (hoisted into
    * `acceptExtraction`'s eager flush). See `drainCrossPassInputSpill`.
    */
-  private async drainInputSpill(key: string, collectionName?: PhysicalCollectionName): Promise<void> {
+  private async drainInputSpill(key: string, physicalCollectionName?: PhysicalCollectionName): Promise<void> {
     await drainCrossPassInputSpill(
-      this.inputSpillPath(collectionName),
-      () => this.ensureRunSink(key, collectionName, true),
-      async () => this.nodeFlush.flushRemainder(key, collectionName),
+      this.inputSpillPath(physicalCollectionName),
+      () => this.ensureRunSink(key, physicalCollectionName, true),
+      async () => this.nodeFlush.flushRemainder(key, physicalCollectionName),
     );
   }
 

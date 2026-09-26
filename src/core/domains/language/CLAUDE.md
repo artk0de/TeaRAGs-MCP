@@ -57,7 +57,11 @@
   JavaScript's `resolveFileEdges` delegates there too, through
   `JavascriptImportFileMapper` (the same `hasFile` membership), so a JS file
   edge lands only on a file the index holds; its call path still reads the
-  unverified head, `mapJavascriptImportToFile`. TypeScript keeps
+  unverified head, `mapJavascriptImportToFile`. Java's `JavaImportFileMapper`
+  finds the file whose path ENDS in the synthesised `com/foo/Bar.java` (a source
+  root prefixes it), and its `external` verdict makes `importReceiver` DROP —
+  the synthesised path used to be the edge target, naming no file in a Maven
+  layout or for any JDK import (bd tea-rags-mcp-vfmfg). TypeScript keeps
   `ts-path-mapper` for now (it probes disk); migrating it is a follow-up. There
   an ASSET import — an existing as-written file no source candidate named (a CSS
   module, an image, JSON) — maps to `null`: no file edge, and a call on its

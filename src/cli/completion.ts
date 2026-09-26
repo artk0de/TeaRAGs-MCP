@@ -9,7 +9,7 @@ import { recallCallToolNames } from "./call/tool-name-cache.js";
  * (completion welcome). `register` is excluded because there the name is a
  * brand-new value the user is inventing.
  */
-const NAME_FLAG_EXISTS_SUBCOMMANDS = new Set(["unregister", "info"]);
+const NAME_FLAG_EXISTS_SUBCOMMANDS = new Set(["unregister", "info", "set-env", "unset-env"]);
 
 /**
  * Return the list of project alias names from the local registry. Empty
@@ -36,7 +36,7 @@ export function listProjectNames(): string[] {
  *
  * Triggers when the previous token is one of:
  *   --project / -p           any command (tune, prime)
- *   --name / -n              ONLY under `projects unregister` / `projects info`
+ *   --name / -n              ONLY under `projects unregister` / `info` / `set-env` / `unset-env`
  *
  * `tokens` is `process.argv` minus runtime + script path (i.e. the args yargs
  * actually parses). yargs's completion fn passes `argv._` for parsed

@@ -129,7 +129,7 @@ function writesAt(writes: MarkerWrite[], level: "file" | "chunk"): MarkerWrite[]
 describe("CompletionRunner — a completion that throws settles its unwritten terminal markers as failed", () => {
   it("a finalize failure (step 2) marks file AND chunk failed for every provider, and rejects with the original error", async () => {
     const { runner, contexts, executor, marker, writes } = await buildHarness();
-    const skew = new Error("codegraph daemon runs an older build without op listAllPass1Aggregates");
+    const skew = new Error("codegraph daemon runs an older build without op listPass1Aggregates");
     vi.spyOn(executor, "runFinalize").mockRejectedValue(skew);
 
     const outcome = await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1").then(

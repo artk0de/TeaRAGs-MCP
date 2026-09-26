@@ -145,9 +145,14 @@ async function* gitRecords(args: string[]): AsyncGenerator<string> {
   if (code !== 0) throw new Error(`git log exited ${code}: ${stderr.slice(0, 400)}`);
 }
 
-/** Commit record after both passes, files interned to ids, chronological order. */
-interface Commit {
+/**
+ * One commit of the gate corpus after both passes, files interned to ids,
+ * chronological order. Not `CommitInfo`: `ts` is the COMMITTER date (`%ct`),
+ * where `CommitInfo.timestamp` is the author date (`%at`).
+ */
+interface InternedCommit {
   sha: string;
+  /** Committer epoch seconds (`%ct`). */
   ts: number;
   author: string;
   subject: string;
@@ -188,10 +193,10 @@ async function readFixFlags(): Promise<Map<string, boolean>> {
 }
 
 /** Pass 2 — name-only diffs. Merge commits emit no file list and drop out. */
-async function readCommits(fixFlags: Map<string, boolean>): Promise<Commit[]> {
+async function readCommits(fixFlags: Map<string, boolean>): Promise<InternedCommit[]> {
   const args = ["--no-renames", "--name-only", `--format=${RS}%H${FS}%ct${FS}%an${FS}%s`];
   if (SINCE) args.push(`--since=${SINCE}`);
-  const out: Commit[] = [];
+  const out: InternedCommit[] = [];
   for await (const rec of gitRecords(args)) {
     const lines = rec.split("\n").filter((l) => l.length > 0);
     if (lines.length === 0) continue;
@@ -227,9 +232,9 @@ interface Bundle {
   files: number[];
 }
 
-function bundleBySession(commits: Commit[], gapMinutes: number): Bundle[] {
+function bundleBySession(commits: InternedCommit[], gapMinutes: number): Bundle[] {
   const gapSec = gapMinutes * 60;
-  const byAuthor = new Map<string, Commit[]>();
+  const byAuthor = new Map<string, InternedCommit[]>();
   for (const c of commits) {
     const list = byAuthor.get(c.author);
     if (list) list.push(c);
@@ -258,12 +263,15 @@ function bundleBySession(commits: Commit[], gapMinutes: number): Bundle[] {
 }
 
 /** Each commit is its own bundle — the no-squash sensitivity variant. */
-function bundlePerCommit(commits: Commit[]): Bundle[] {
+function bundlePerCommit(commits: InternedCommit[]): Bundle[] {
   return commits.map((c) => ({ endTs: c.ts, files: c.files }));
 }
 
 /** Fidelity: our bundling must produce the same session count as production's. */
-function sessionParity(commits: Commit[], gapMinutes: number): { ours: number; real: number } {
+function sessionParity(commits: InternedCommit[], gapMinutes: number): { ours: number; real: number } {
+  // Feeds committer dates into the author-date session API on purpose: both
+  // sides of the parity see the same `ts`, so the check stays self-consistent;
+  // it only mirrors production where author and committer dates agree.
   const asCommitInfo: CommitInfo[] = commits.map((c) => ({
     sha: c.sha,
     author: c.author,
@@ -289,7 +297,7 @@ interface Case {
   gapSec: number;
 }
 
-function buildCorpus(commits: Commit[]): { cases: Case[]; rejected: Record<string, number> } {
+function buildCorpus(commits: InternedCommit[]): { cases: Case[]; rejected: Record<string, number> } {
   // Per-file ascending list of commit indices — the anchor search space.
   const occurrences = new Map<number, number[]>();
   for (let i = 0; i < commits.length; i++) {
@@ -543,7 +551,7 @@ interface VariantOutcome {
 }
 
 function evaluate(
-  commits: Commit[],
+  commits: InternedCommit[],
   cases: Case[],
   params: VariantParams,
   firstSeen: Map<number, number>,

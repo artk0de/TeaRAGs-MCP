@@ -132,6 +132,27 @@ describe("rubyYardTypeSource — exotic tags", () => {
       expect(facts.find((f) => f.kind === "return" && f.methodName === "unrelated_helper")).toBeUndefined();
     });
 
+    // bd tea-rags-mcp-djg73: a paragraph break ends the directive's block, so a
+    // LATER method's `@return` must neither mint a spurious attr fact nor be
+    // swallowed by the attribute's ownership guard.
+    it.each([
+      ["an empty comment line", "#"],
+      ["a blank line", ""],
+    ])("does NOT pair @!attribute with a later method's @return across %s", (_label, separator) => {
+      const code = [
+        "# @!attribute [rw] name",
+        separator,
+        "# @param opts [Hash]",
+        "# @return [String]",
+        "def update(opts)",
+        "end",
+      ].join("\n");
+      const facts = rubyYardTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.kind === "attr")).toEqual([]);
+      const ret = facts.find((f) => f.kind === "return" && f.methodName === "update");
+      expect(ret?.type).toEqual({ form: "instance", name: "String" });
+    });
+
     it("STILL keys the @return on a reader def of the SAME name as the attribute", () => {
       // `def full_name` IS the attribute reader — its @return is genuinely correct.
       const code = [

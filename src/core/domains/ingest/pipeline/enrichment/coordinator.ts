@@ -340,7 +340,7 @@ export class EnrichmentCoordinator {
    * when small, never less precise.
    */
   async runRepairPass(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     root: string,
     scanned: ReadonlyMap<string, string>,
     /**
@@ -377,13 +377,13 @@ export class EnrichmentCoordinator {
 
       let persisted: Map<string, string | null> | undefined;
       try {
-        persisted = await readPersisted.call(provider, collectionName);
+        persisted = await readPersisted.call(provider, physicalCollectionName);
       } catch (err) {
         // An unreadable store does not abort the run (the next one retries), but
         // a permanently broken provider must not stay silent: pipeline log.
         pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
           provider: provider.key,
-          collection: collectionName,
+          collection: physicalCollectionName,
           error: err instanceof Error ? err.message : String(err),
         });
         // The drift check needs the store; the forced walk does not, and the
@@ -403,12 +403,12 @@ export class EnrichmentCoordinator {
       // to touch. The env knob keeps pruning — its eligibility is the full
       // working-tree scan, where an out-of-set row really is an orphan.
       if (!forcedBySelector && orphans.length > 0) {
-        await provider.handleDeletedPaths?.(orphans, { collectionName });
+        await provider.handleDeletedPaths?.(orphans, { collectionName: physicalCollectionName });
       }
       if (repair.length > 0) {
         pipelineLog.enrichmentPhase("REPAIR_PASS", {
           provider: provider.key,
-          collection: collectionName,
+          collection: physicalCollectionName,
           repaired: repair.length,
           orphaned: forcedBySelector ? 0 : orphans.length,
           // Attributes a profile to a forced run; omitted when off, keeping the
@@ -425,7 +425,10 @@ export class EnrichmentCoordinator {
         // file that also reaches the run another way is deduped, not resolved
         // twice. The recovery path is isolated by design (enrichment-executor.ts)
         // and would pay a whole-graph overlay read per file this caller discards.
-        await this.executor.runFileBatch(provider, root, repair, { collectionName, contentHashes: scanned });
+        await this.executor.runFileBatch(provider, root, repair, {
+          collectionName: physicalCollectionName,
+          contentHashes: scanned,
+        });
         repaired += repair.length;
       }
     }
@@ -438,17 +441,17 @@ export class EnrichmentCoordinator {
    * reindex with nothing to chunk still owes `runFinalizeOnly`. A provider whose
    * store cannot be read counts as not stale.
    */
-  async hasStaleDerivedState(collectionName: PhysicalCollectionName): Promise<boolean> {
+  async hasStaleDerivedState(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
     for (const provider of this.providers) {
       if (!provider.hasStaleDerivedState) continue;
       try {
-        if (await provider.hasStaleDerivedState(collectionName)) return true;
+        if (await provider.hasStaleDerivedState(physicalCollectionName)) return true;
       } catch (err) {
         // An unreadable store must not turn every later no-op reindex into a
         // finalize; the run that can reach it again asks again.
         pipelineLog.enrichmentPhase("STALE_DERIVED_READ_FAILED", {
           provider: provider.key,
-          collection: collectionName,
+          collection: physicalCollectionName,
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -470,8 +473,8 @@ export class EnrichmentCoordinator {
    * A run that DID finalize reaches the same work through `completeRun` (bd
    * tea-rags-mcp-vtuu4), never through the provider's finalize.
    */
-  async runCollectionCompletion(absolutePath: string, collectionName: PhysicalCollectionName): Promise<void> {
-    await this.completeCollectionOf(this.providers, absolutePath, collectionName);
+  async runCollectionCompletion(absolutePath: string, physicalCollectionName: PhysicalCollectionName): Promise<void> {
+    await this.completeCollectionOf(this.providers, absolutePath, physicalCollectionName);
   }
 
   /**
@@ -486,14 +489,16 @@ export class EnrichmentCoordinator {
   private async completeCollectionOf(
     providers: readonly EnrichmentProvider[],
     absolutePath: string,
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
   ): Promise<void> {
     for (const provider of providers) {
       if (!provider.completeCollection) continue;
       const startedAt = Date.now();
       const heapUsedBefore = process.memoryUsage().heapUsed;
       try {
-        await provider.completeCollection(provider.resolveRoot(absolutePath), { collectionName });
+        await provider.completeCollection(provider.resolveRoot(absolutePath), {
+          collectionName: physicalCollectionName,
+        });
       } catch (err) {
         process.stderr.write(
           `[tea-rags] ${provider.key} collection completion failed: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -501,7 +506,7 @@ export class EnrichmentCoordinator {
       } finally {
         pipelineLog.enrichmentPhase("COLLECTION_COMPLETION", {
           provider: provider.key,
-          collection: collectionName,
+          collection: physicalCollectionName,
           durationMs: Date.now() - startedAt,
           heapUsedDeltaBytes: process.memoryUsage().heapUsed - heapUsedBefore,
         });
@@ -525,7 +530,7 @@ export class EnrichmentCoordinator {
    */
   async runFinalizeOnly(
     absolutePath: string,
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     /**
      * Chunks pre-reindex recovery handed to this run, already narrowed by
      * `narrowDeferredChunkHandoff`, so their files are ones the repair walked
@@ -534,7 +539,7 @@ export class EnrichmentCoordinator {
      */
     deferredChunkHandoff?: DeferredChunkRecoveryHandoff,
   ): Promise<EnrichmentMetrics> {
-    const run = this.beginRun(finalizeOnlyRunSpec({ absolutePath, collection: collectionName }));
+    const run = this.beginRun(finalizeOnlyRunSpec({ absolutePath, collection: physicalCollectionName }));
     if (deferredChunkHandoff) this.seedDeferredChunks(run, deferredChunkHandoff);
     return this.awaitCompletion(run);
   }
@@ -607,7 +612,7 @@ export class EnrichmentCoordinator {
    * Called by the sync layer BEFORE `qdrant.deletePoints`: orphan graph edges are
    * silent corruption, orphan Qdrant points only clutter.
    */
-  async notifyDeletions(paths: string[], collectionName?: PhysicalCollectionName): Promise<void> {
+  async notifyDeletions(paths: string[], physicalCollectionName?: PhysicalCollectionName): Promise<void> {
     if (paths.length === 0) return;
     await Promise.all(
       this.providers.map(async (provider) => {
@@ -616,7 +621,10 @@ export class EnrichmentCoordinator {
           // Forward the collection so collection-scoped providers (codegraph)
           // prune the right per-collection DB; without one, a pool-mode provider
           // fails loud.
-          await provider.handleDeletedPaths(paths, collectionName ? { collectionName } : undefined);
+          await provider.handleDeletedPaths(
+            paths,
+            physicalCollectionName ? { collectionName: physicalCollectionName } : undefined,
+          );
         } catch (err) {
           pipelineLog.enrichmentPhase("DELETE_HOOK_FAILED", {
             provider: provider.key,
@@ -638,7 +646,7 @@ export class EnrichmentCoordinator {
    * construction time.
    */
   async runRecovery(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
   ): Promise<DeferredChunkRecoveryHandoff | undefined> {
     if (!this.recovery) return undefined;
@@ -647,14 +655,14 @@ export class EnrichmentCoordinator {
     // cannot spawn a daemon that idle-exited — the provider would report `failed`.
     // begin never rejects per the guard contract; the catch keeps a stray
     // rejection from going unhandled.
-    const release = await this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE);
+    const release = await this.daemonGuard.begin(physicalCollectionName).catch(() => NOOP_RELEASE);
     try {
       // A transient context map suffices: recovery completes per collection
       // before any run opens, so no RunState is needed.
       const contexts = new Map<string, ProviderContext>(
         this.providers.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
       );
-      return await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
+      return await this.recovery.recoverAll(physicalCollectionName, absolutePath, contexts, this.markerStore);
     } finally {
       // Never let a failing release mask the recovery outcome.
       await release().catch(() => undefined);
@@ -677,7 +685,7 @@ export class EnrichmentCoordinator {
    * the last line.
    */
   async recomputeEnrichments(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
     selectors: readonly string[],
     /**
@@ -701,7 +709,7 @@ export class EnrichmentCoordinator {
       const waitStartedAt = Date.now();
       await previousCompletion;
       pipelineLog.enrichmentPhase("RECOMPUTE_AWAIT_PREVIOUS_RUN", {
-        collection: collectionName,
+        collection: physicalCollectionName,
         durationMs: Date.now() - waitStartedAt,
       });
     }
@@ -711,9 +719,9 @@ export class EnrichmentCoordinator {
     // of the whole selected corpus, and a silent phase that long reads as a hang
     // (bd tea-rags-mcp-6aytq).
     const scrollStartedAt = Date.now();
-    const stored = await this.scrollStoredChunks(collectionName, absolutePath, languages);
+    const stored = await this.scrollStoredChunks(physicalCollectionName, absolutePath, languages);
     pipelineLog.enrichmentPhase("RECOMPUTE_SCROLL", {
-      collection: collectionName,
+      collection: physicalCollectionName,
       chunks: stored.items.length,
       files: stored.fileCount,
       durationMs: Date.now() - scrollStartedAt,
@@ -747,7 +755,7 @@ export class EnrichmentCoordinator {
         providers: [...forceProviderSet],
         files: eligibilityMap.size,
       });
-      await this.runRepairPass(collectionName, absolutePath, eligibilityMap, undefined, forceProviderSet);
+      await this.runRepairPass(physicalCollectionName, absolutePath, eligibilityMap, undefined, forceProviderSet);
       // The synthetic eligibility map must not DISPLACE the run's hash stamp:
       // `runRepairPass` captures its `scanned` as `runContentHashes`, and this
       // run's finalize stamps that map onto every `cg_symbols_files` row — a
@@ -771,7 +779,7 @@ export class EnrichmentCoordinator {
     const run = this.beginRun(
       recomputeRunSpec({
         absolutePath,
-        collection: collectionName,
+        collection: physicalCollectionName,
         fileCount: stored.fileCount,
         onlyProviderKeys: matched,
         languages: languages ?? ALL_LANGUAGES,
@@ -867,7 +875,14 @@ export class EnrichmentCoordinator {
    * for the entry point that opens the run (`run-spec.ts`).
    */
   beginRun(spec: EnrichmentRunSpec): EnrichmentRunHandle {
-    const { absolutePath, collection: collectionName, crossPass, fileCount, onlyProviderKeys, ignoreFilter } = spec;
+    const {
+      absolutePath,
+      collection: physicalCollectionName,
+      crossPass,
+      fileCount,
+      onlyProviderKeys,
+      ignoreFilter,
+    } = spec;
     // Never CLEARS the hashes: omitted keeps what `runRepairPass` captured, or
     // the incremental path would lose its own stamp (bd tea-rags-mcp-o317j).
     if (spec.contentHashes) this.runContentHashes = spec.contentHashes;
@@ -884,7 +899,7 @@ export class EnrichmentCoordinator {
     // enrichRemaining, deferred codegraph, recovery — from one place. Two
     // consumers: the throttled `_run` heartbeat and the per-run progress sink.
     runState.applier.onApply = (event) => {
-      if (collectionName) this.maybeHeartbeat(collectionName, runState);
+      if (physicalCollectionName) this.maybeHeartbeat(physicalCollectionName, runState);
       this.emitProgress(runState, event);
     };
 
@@ -920,8 +935,8 @@ export class EnrichmentCoordinator {
     // + reset its dedup set BEFORE the chunk pass starts feeding extractions.
     // Runs on the MAIN-thread provider instances (same instances `onFileExtraction`
     // calls `acceptExtraction` on); only the codegraph provider implements it.
-    if (crossPass && collectionName) {
-      for (const provider of this.providers) provider.beginExtractionRun?.(collectionName);
+    if (crossPass && physicalCollectionName) {
+      for (const provider of this.providers) provider.beginExtractionRun?.(physicalCollectionName);
     }
 
     // The executor's run-start seam, mirror of the provider reset above: the
@@ -933,23 +948,24 @@ export class EnrichmentCoordinator {
 
     runState.filePhase.init(
       runState.contexts,
-      collectionName,
+      physicalCollectionName,
       runState.runId,
       runState.startedAt,
       crossPass,
       this.runContentHashes,
       runCoverage,
+      runState.languages,
     );
-    runState.chunkPhase.init(runState.contexts, collectionName, runState.startedAt);
+    runState.chunkPhase.init(runState.contexts, physicalCollectionName, runState.startedAt);
 
     // markRunStart writes ONLY the `_run` pointer ({runId, startedAt,
     // lastProgressAt, providers}) — the single pre-completion write. No
     // per-level in_progress/pending is persisted (terminal-only model). The
     // promise is tracked on the run so awaitCompletion gates on it before the
     // terminal writes, keeping `_run` present before they land.
-    runState.markRunStartPromise = collectionName
+    runState.markRunStartPromise = physicalCollectionName
       ? this.markerStore
-          .markRunStart(collectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
+          .markRunStart(physicalCollectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
           .catch(() => undefined)
       : Promise.resolve();
 
@@ -959,8 +975,8 @@ export class EnrichmentCoordinator {
     // less or anonymous run has nothing to keep alive. begin never rejects
     // (guard contract), but .catch keeps a stray rejection from going unhandled.
     runState.daemonReleasePromise =
-      collectionName && this.providers.length > 0
-        ? this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE)
+      physicalCollectionName && this.providers.length > 0
+        ? this.daemonGuard.begin(physicalCollectionName).catch(() => NOOP_RELEASE)
         : Promise.resolve(NOOP_RELEASE);
     return runState.handle;
   }
@@ -975,7 +991,7 @@ export class EnrichmentCoordinator {
   onChunksStored(handle: EnrichmentRunHandle, items: ChunkItem[]): void {
     const run = this.runStates.get(handle);
     if (!run) return;
-    const { collection: collectionName, absolutePath } = handle;
+    const { collection: physicalCollectionName, absolutePath } = handle;
 
     // Accumulate the chunk-level denominator from this batch's chunk count.
     // File-level denominator is grandFileCount (the spec's fileCount — known up
@@ -1015,14 +1031,14 @@ export class EnrichmentCoordinator {
     // with the file work as the dispatch gate. ChunkPhase marks streaming coverage
     // synchronously (so the post-flush snapshot excludes this batch) and defers
     // only the walk; deferring the whole call left late batches walked twice.
-    const fileWorkByProvider = run.filePhase.onBatch(collectionName, absolutePath, items);
+    const fileWorkByProvider = run.filePhase.onBatch(physicalCollectionName, absolutePath, items);
     for (const [providerKey, fileDone] of fileWorkByProvider) {
-      run.chunkPhase.onBatchProvider(providerKey, collectionName, absolutePath, items, fileDone);
+      run.chunkPhase.onBatchProvider(providerKey, physicalCollectionName, absolutePath, items, fileDone);
     }
     // Advance the run-pointer heartbeat on real apply progress (throttled). A
     // hung run stops producing batches → lastProgressAt freezes → the health
     // mapper derives stalled/crashed instead of a stuck in_progress.
-    this.maybeHeartbeat(collectionName, run);
+    this.maybeHeartbeat(physicalCollectionName, run);
   }
 
   /**
@@ -1040,9 +1056,9 @@ export class EnrichmentCoordinator {
   onFileExtraction(handle: EnrichmentRunHandle, extraction: FileExtraction): void {
     const run = this.runStates.get(handle);
     if (!run) return;
-    const collectionName = handle.collection;
+    const physicalCollectionName = handle.collection;
     for (const ctx of run.contexts.values()) {
-      ctx.provider.acceptExtraction?.(extraction, { collectionName });
+      ctx.provider.acceptExtraction?.(extraction, { collectionName: physicalCollectionName });
     }
     if (run.crossPass && this.progressCb && this.acceptsExtractions()) {
       run.codegraphSymbolsApplied += 1;
@@ -1153,14 +1169,14 @@ export class EnrichmentCoordinator {
   async awaitCompletion(handle: EnrichmentRunHandle): Promise<EnrichmentMetrics> {
     const run = this.runStates.get(handle);
     if (!run || run.contexts.size === 0) return EMPTY_METRICS;
-    const collectionName = handle.collection;
-    const completion = this.completeRun(run, collectionName);
+    const physicalCollectionName = handle.collection;
+    const completion = this.completeRun(run, physicalCollectionName);
     const inFlight = completion.then(
       () => undefined,
       () => undefined,
     );
     run.inFlightCompletion = inFlight;
-    this.trackInFlightCompletion(collectionName, inFlight);
+    this.trackInFlightCompletion(physicalCollectionName, inFlight);
     try {
       return await completion;
     } finally {
@@ -1175,8 +1191,8 @@ export class EnrichmentCoordinator {
    * (bd tea-rags-mcp-62pgi). An index operation holds its collection until this
    * settles for the collection it wrote.
    */
-  async whenCompletionsSettled(collectionName: PhysicalCollectionName): Promise<void> {
-    const inFlight = this.inFlightCompletionsByCollection.get(collectionName);
+  async whenCompletionsSettled(physicalCollectionName: PhysicalCollectionName): Promise<void> {
+    const inFlight = this.inFlightCompletionsByCollection.get(physicalCollectionName);
     if (inFlight) await Promise.all([...inFlight]);
   }
 
@@ -1193,19 +1209,20 @@ export class EnrichmentCoordinator {
   }
 
   /** The completion sequence proper for `run`, ending with the executor and daemon releases. */
-  private async completeRun(run: RunState, collectionName: PhysicalCollectionName): Promise<EnrichmentMetrics> {
+  private async completeRun(run: RunState, physicalCollectionName: PhysicalCollectionName): Promise<EnrichmentMetrics> {
     // Block until the run's `_run` pointer has persisted, so the terminal
     // writes (which carry this run's runId) land against a present run-pointer
     // and the health mapper's runId comparison is meaningful.
     await run.markRunStartPromise;
     try {
       const metrics = await run.completion.run(
-        collectionName,
+        physicalCollectionName,
         run.contexts,
         run.startTime,
         // `run.languages`, not `this.currentRun` — the terminal count is scoped
         // by the run being closed out, even if a newer run has already begun.
-        async (coll, provider, level) => this.countSettledUnenriched(coll, provider, level, run.languages),
+        async (targetPhysicalCollectionName, provider, level) =>
+          this.countSettledUnenriched(targetPhysicalCollectionName, provider, level, run.languages),
         run.startedAt,
         run.runId,
       );
@@ -1224,13 +1241,23 @@ export class EnrichmentCoordinator {
       // ran a 17k-file TypeScript repository's worker out of heap right after
       // the file finalize. Only the run's own providers: a recompute that did
       // not open codegraph owes it nothing, as its finalize never ran either.
-      await this.completeCollectionOf(providers, run.handle.absolutePath, collectionName);
+      await this.completeCollectionOf(providers, run.handle.absolutePath, physicalCollectionName);
       run.resolveDone(metrics);
       return metrics;
     } catch (error) {
       run.rejectDone(error);
       throw error;
     } finally {
+      // The cross-pass input spill lives for ONE run, but it is named after the
+      // physical generation, so a run that never reached the worker's drain (a
+      // failed completion, a provider whose prefetch failed and was skipped)
+      // leaves it where no later run truncates it once the alias moves on —
+      // one full-corpus NDJSON per abandoned generation. Discard it on every
+      // path; after a successful drain it is already gone. Mirrors the
+      // `beginExtractionRun` call in `beginRun`, on the same instances.
+      if (run.crossPass) {
+        for (const provider of this.providers) provider.discardExtractionRun?.(physicalCollectionName);
+      }
       // Release the daemon keep-alive on EVERY path (success, error, crash).
       // Skipping this would pin the daemon's refcount > 0 forever and defeat
       // its idle shutdown. The release is idempotent and swallows its own

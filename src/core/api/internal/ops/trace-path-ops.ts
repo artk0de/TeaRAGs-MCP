@@ -93,7 +93,7 @@ export class TracePathOps {
 
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
     // No resolver, or a failed one: the addressed name, resolved against no aliases.
-    const active = this.deps.resolveActiveCollection
+    const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
@@ -101,14 +101,14 @@ export class TracePathOps {
 
     let handle: CollectionGraphHandle | undefined;
     try {
-      handle = await this.deps.pool.acquireReader(active);
+      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (err) {
       // GraphFacade#withReadHandle's contract (bd tea-rags-mcp-kn2cb): "no
       // path" asserts something about the code, so it is only answered when
       // there is no graph database at all. A graph that exists but cannot be
       // read (lock held, unreadable or corrupt file, daemon down) is a failure
       // the caller must see — not an empty result it would act on.
-      if (this.deps.pool.hasDatabase(active)) throw err;
+      if (this.deps.pool.hasDatabase(activePhysicalCollectionName)) throw err;
       return EMPTY;
     }
 
@@ -147,7 +147,7 @@ export class TracePathOps {
     const nodes = [...new Set(paths.flat())];
     const symbolIds = [...new Set(nodes.map((key) => parseFileScopedSymbolKey(key).symbolId))];
     const chunks = await this.deps.qdrant.scrollBySymbolIds(
-      active,
+      activePhysicalCollectionName,
       symbolIds,
       nodes.length * HYDRATION_SCROLL_HEADROOM,
     );

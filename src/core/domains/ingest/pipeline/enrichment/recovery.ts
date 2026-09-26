@@ -164,17 +164,19 @@ export class EnrichmentRecovery {
    * for the traversal this shares with the chunk level.
    */
   async recoverFileLevel(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
     provider: EnrichmentProvider,
     enrichedAt: string,
     scope: RecoveryScope = "unenriched",
   ): Promise<RecoveryResult> {
-    return this.recoverLevel(collectionName, absolutePath, provider, "file", scope, async (batch, root) => {
+    return this.recoverLevel(physicalCollectionName, absolutePath, provider, "file", scope, async (batch, root) => {
       // Batched recovery — must NOT route through streamFileBatch; the
       // streaming extraction side-effects belong to the live file phase, not
       // to post-hoc recovery.
-      const signals = await this.executor.runFileSignalsRecovery(provider, root, [...batch.paths], { collectionName });
+      const signals = await this.executor.runFileSignalsRecovery(provider, root, [...batch.paths], {
+        collectionName: physicalCollectionName,
+      });
 
       // Build ChunkItem-like objects for applyFileSignals
       const items = batch.points.map((point) => ({
@@ -191,7 +193,7 @@ export class EnrichmentRecovery {
       }));
 
       await this.applier.applyFileSignals(
-        collectionName,
+        physicalCollectionName,
         provider.key,
         signals,
         root,
@@ -222,7 +224,7 @@ export class EnrichmentRecovery {
    * them (bd tea-rags-mcp-fxio5).
    */
   async recoverChunkLevel(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
     provider: EnrichmentProvider,
     enrichedAt: string,
@@ -230,7 +232,7 @@ export class EnrichmentRecovery {
   ): Promise<ChunkLevelRecoveryResult> {
     const deferredChunks = new Map<string, ChunkLookupEntry[]>();
     const result = await this.recoverLevel(
-      collectionName,
+      physicalCollectionName,
       absolutePath,
       provider,
       "chunk",
@@ -270,9 +272,11 @@ export class EnrichmentRecovery {
         // codegraph settles these non-extractable chunks explicitly, so a
         // chunk it omits is not stamped here either.
         const batchChunkIds = bareStampableChunkIds(provider, chunkMap);
-        const chunkSignals = await this.executor.runChunkBatch(provider, root, chunkMap, { collectionName });
+        const chunkSignals = await this.executor.runChunkBatch(provider, root, chunkMap, {
+          collectionName: physicalCollectionName,
+        });
         const applied = await this.applier.applyChunkSignals(
-          collectionName,
+          physicalCollectionName,
           provider.key,
           chunkSignals,
           enrichedAt,
@@ -411,7 +415,7 @@ export class EnrichmentRecovery {
    * see `recoverChunkLevel` and `DeferredChunkRecoveryHandoff`.
    */
   async recoverAll(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
     contexts: ReadonlyMap<string, ProviderContext>,
     markerStore: EnrichmentMarkerStore,
@@ -420,16 +424,28 @@ export class EnrichmentRecovery {
     const enrichedAt = new Date().toISOString();
     const handoff = new Map<string, ReadonlyMap<string, ChunkLookupEntry[]>>();
     for (const ctx of contexts.values()) {
-      const baselineRunId = await markerStore.getRunId(coll, ctx.key);
+      const baselineRunId = await markerStore.getRunId(physicalCollectionName, ctx.key);
 
-      const fileResult = await this.recoverFileLevel(coll, absolutePath, ctx.provider, enrichedAt, scope);
-      const chunkResult = await this.recoverChunkLevel(coll, absolutePath, ctx.provider, enrichedAt, scope);
+      const fileResult = await this.recoverFileLevel(
+        physicalCollectionName,
+        absolutePath,
+        ctx.provider,
+        enrichedAt,
+        scope,
+      );
+      const chunkResult = await this.recoverChunkLevel(
+        physicalCollectionName,
+        absolutePath,
+        ctx.provider,
+        enrichedAt,
+        scope,
+      );
       // Collected BEFORE the runId guard: the guard protects the marker from a
       // concurrent run's fresher counts, and the handed-off chunks stay owed
       // whichever run wrote the marker last.
       if (chunkResult.deferredChunks) handoff.set(ctx.key, chunkResult.deferredChunks);
 
-      const currentRunId = await markerStore.getRunId(coll, ctx.key);
+      const currentRunId = await markerStore.getRunId(physicalCollectionName, ctx.key);
       if (baselineRunId !== currentRunId) {
         // A concurrent run has rewritten the marker; our counts are stale.
         // Skip the marker write to avoid clobbering the fresher state.
@@ -442,9 +458,9 @@ export class EnrichmentRecovery {
       // would never match `_run.runId` and the health mapper would re-derive
       // "crashed" forever. `_run.runId` is the identity the mapper compares
       // against, so stamping it makes the recovered terminal status render.
-      const activeRunId = await markerStore.getActiveRunId(coll);
+      const activeRunId = await markerStore.getActiveRunId(physicalCollectionName);
 
-      await markerStore.markRecoveryResult(coll, ctx.key, {
+      await markerStore.markRecoveryResult(physicalCollectionName, ctx.key, {
         runId: activeRunId ?? baselineRunId ?? "",
         fileStatus: fileResult.remainingUnenriched === 0 ? "completed" : "failed",
         fileUnenriched: fileResult.remainingUnenriched,

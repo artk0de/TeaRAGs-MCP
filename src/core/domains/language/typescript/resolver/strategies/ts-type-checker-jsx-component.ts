@@ -200,6 +200,24 @@ export function findJsxTagName(
 }
 
 /**
+ * The declarations the checker gives the MEMBER of a dotted JSX tag —
+ * `Provider` in `<ThemeContext.Provider>` — alias followed, or `[]` when the
+ * tag is not locatable, not dotted, or names no symbol. The JSX twin of
+ * `calledMemberDeclarations`, which only locates `recv.m()` call expressions
+ * (bd tea-rags-mcp-vo9gl).
+ */
+export function jsxTagMemberDeclarations(
+  sourceFile: ts.SourceFile,
+  checker: ts.TypeChecker,
+  startLine: number,
+  member: string,
+): readonly ts.Declaration[] {
+  const tag = findJsxTagName(sourceFile, startLine, member);
+  if (tag === null || !ts.isPropertyAccessExpression(tag)) return [];
+  return resolveAlias(checker, checker.getSymbolAtLocation(tag.name))?.getDeclarations() ?? [];
+}
+
+/**
  * Every JSX component tag of one SourceFile, keyed `${startLine}:${member}`.
  * Same lifetime argument as {@link callSiteAt}'s index in
  * `./ts-type-checker-shared.ts`: `TSProgramCache` owns SourceFile lifetime, so

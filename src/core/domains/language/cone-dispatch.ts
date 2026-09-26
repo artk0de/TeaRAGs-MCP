@@ -1,4 +1,5 @@
 import {
+  NOMINAL_INHERITANCE_KINDS,
   resolveLocalBindingType,
   type CallContext,
   type CallRef,
@@ -146,7 +147,14 @@ export class ConeDispatchResolver implements DispatchResolverComponent {
   private nearestDefiner(typeName: string, member: string, ctx: CallContext): string | null {
     if (this.locator.findDirectMethod(typeName, member, ctx)) return typeName;
     if (!ctx.hierarchy) return null;
-    for (const edge of ctx.hierarchy.getAncestors(typeName, { ordered: true, transitive: true })) {
+    // Nominal kinds only (bd tea-rags-mcp-39xca.14): a structural ancestor is
+    // a contract the type satisfies, never a class it inherits code from.
+    const mro = ctx.hierarchy.getAncestors(typeName, {
+      ordered: true,
+      transitive: true,
+      kinds: NOMINAL_INHERITANCE_KINDS,
+    });
+    for (const edge of mro) {
       if (this.locator.findDirectMethod(edge.ancestorFqName, member, ctx)) return edge.ancestorFqName;
     }
     return null;

@@ -54,11 +54,13 @@ const EXPECTED_POLICY = {
   moduleReexports: "hydrate",
   extractedFilesByLanguage: "batchOnly",
   extractedRelPathsByLanguage: "batchOnly",
+  extractedCallSitesByRelPath: "batchOnly",
   mirroredRelPaths: "batchOnly",
   includedBy: "batchOnly",
   hierarchyView: "batchOnly",
   selfDispatchTemplates: "batchOnly",
   selfInstantiatingClassMethods: "batchOnly",
+  selfDispatchArgTemplates: "batchOnly",
   schemaTables: "hydrate",
   instantiatedTypes: "batchOnly",
   ivarTypes: "batchOnly",
@@ -67,10 +69,11 @@ const EXPECTED_POLICY = {
   typeDeclarations: "hydrate",
   dispatchTables: "batchOnly",
   callbackParams: "batchOnly",
-  knownTargetCallArgs: "batchOnly",
-  paramNames: "batchOnly",
-  classFieldParamLinks: "batchOnly",
-  typedClassFields: "batchOnly",
+  knownTargetCallArgs: "hydrate",
+  paramNames: "hydrate",
+  classFieldParamLinks: "hydrate",
+  typedClassFields: "hydrate",
+  structuralContracts: "hydrate",
   paramTypes: "batchOnly",
   derivedClassFieldTypes: "batchOnly",
 } as const satisfies Record<RunGlobalMapField, "hydrate" | "batchOnly">;
@@ -100,6 +103,14 @@ const PERSISTED_KEY_ORDER = [
   // Appended LAST (bd tea-rags-mcp-y99pg.1): only files declaring a type carry
   // it, and every other row keeps its bytes.
   "typeDeclarations",
+  // Appended LAST (bd tea-rags-mcp-39xca.15): the Ruby parameter family, only
+  // on Ruby rows that carry a call site, a parameter list, a link or a typed field.
+  "knownTargetCallArgs",
+  "methodParamNames",
+  "classFieldParamLinks",
+  "typedClassFields",
+  // bd 39xca.14 — appended after the parameter family, so older rows keep their bytes.
+  "structuralContracts",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -111,7 +122,7 @@ function everyChannelExtraction(): FileExtraction {
     language: "ruby",
     imports: [],
     fileScope: [],
-    chunks: [],
+    chunks: [{ symbolId: "Account#initialize", scope: [], calls: [], paramNames: ["firm"] }],
     classAncestors: { Account: ["ApplicationRecord"] },
     classPrependedAncestors: { Account: ["Auditable"] },
     classExtends: { Account: "ApplicationRecord" },
@@ -124,6 +135,10 @@ function everyChannelExtraction(): FileExtraction {
     classSchemaTables: { Account: "billing_accounts" },
     buildConstraint: "!nomsgpack",
     typeDeclarations: [{ typeId: "Account", reopens: false, conforms: ["ApplicationRecord"] }],
+    knownTargetCallArgs: [{ targets: ["Firm#initialize"], argTypes: [{ form: "instance", name: "Account" }] }],
+    classFieldParamLinks: { Account: { "@firm": { method: "initialize", param: "firm" } } },
+    classFieldTypes: { Account: { "@name": "String" } },
+    structuralContracts: [{ name: "Billable", members: [{ name: "charge", params: 1 }] }],
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     instantiatedTypes: ["Account"],
@@ -193,8 +208,11 @@ describe("the pass-1 aggregate slice is derived from the registry's hydrate entr
     const [relPath, language, json] = toCgPass1Row(slice) as [string, string, string];
     const persisted = fromCgPass1Row({ rel_path: relPath, language, aggregates_json: json });
 
-    // A run that walked nothing: every fact below can only have come from the row.
+    // A run that walked one factless file of the slice's language — the barrier
+    // hydrates only walked families — so every fact below can only have come
+    // from the row.
     const state = new CodegraphRunState();
+    state.absorb({ relPath: "app/walked.rb", language, imports: [], fileScope: [], chunks: [] }, []);
     await state.seal(noopTable, async () => [persisted]);
 
     for (const [field, entry] of Object.entries(RUN_GLOBAL_MAP_PERSISTENCE)) {

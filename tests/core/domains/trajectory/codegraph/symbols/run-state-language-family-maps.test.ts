@@ -101,6 +101,8 @@ describe("run-global ancestry maps are partitioned by language family (nbf8q)", 
   it("hydrates a persisted slice into ITS language's partition, batch-wins per family", async () => {
     const state = new CodegraphRunState();
     state.absorb(file("app/errors.rb", "ruby", { classExtends: { Error: "StandardError" } }), []);
+    // The TypeScript caller below is walked too: the barrier hydrates only walked families.
+    state.absorb(file("web/app.ts", "typescript"), []);
     const slices: CodegraphPass1FileAggregates[] = [
       { relPath: "web/errors.ts", language: "typescript", classExtends: { Error: "BaseError" } },
       { relPath: "app/old_errors.rb", language: "ruby", classExtends: { Error: "RuntimeError" } },

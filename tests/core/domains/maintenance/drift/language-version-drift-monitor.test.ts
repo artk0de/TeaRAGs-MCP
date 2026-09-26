@@ -129,13 +129,13 @@ describe("LanguageVersionDriftMonitor — the remedy each moved axis renders", (
             : { languageVersions: input.languageVersions }
           : input.entry) as never,
     };
-    const statsCache = {
+    const indexedLanguageReader = {
       load: () =>
         (input.stats === undefined
           ? { distributions: { language: input.languages ?? { typescript: 10 } } }
           : input.stats) as never,
     };
-    return new LanguageVersionDriftMonitor(registry, statsCache, current);
+    return new LanguageVersionDriftMonitor(registry, indexedLanguageReader, current);
   }
 
   it("returns the routed hint when a stamped axis is behind", () => {
@@ -254,13 +254,13 @@ describe("LanguageVersionDriftMonitor — the shared * pseudo-language", () => {
     stats?: unknown;
   }) {
     const registry = { get: () => ({ languageVersions: input.languageVersions }) as never };
-    const statsCache = {
+    const indexedLanguageReader = {
       load: () =>
         (input.stats === undefined
           ? { distributions: { language: input.languages ?? { ruby: 10 } } }
           : input.stats) as never,
     };
-    return new LanguageVersionDriftMonitor(registry, statsCache, currentWithShared);
+    return new LanguageVersionDriftMonitor(registry, indexedLanguageReader, currentWithShared);
   }
 
   it("compares * regardless of which languages the index holds", () => {

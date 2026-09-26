@@ -307,3 +307,97 @@ describe("RubySelfDispatchEntrySymbolResolutionStrategy — constant overrides t
     expect(strat.attempt(entryCall("Create"), v2Ctx({ selfDispatchTemplates: {} })).kind).toBe("continue");
   });
 });
+
+// bd tea-rags-mcp-emazx — step 2d, the ARGUMENT channel. The taxdome policy
+// shape: `AbstractPolicy.authorize!(user, actor, ability, …)` self-instantiates
+// and reaches `send("can_#{ability}?")` two hops down, so the hook NAME is the
+// call site's third argument. `FirmPolicy.authorize!(u, a, :manage_datev, f)`
+// has exactly one honest target, `FirmPolicy#can_manage_datev?`.
+const AP_FILE = "app/policies/abstract_policy.rb";
+const FIRM_FILE = "app/policies/firm_policy.rb";
+const OWN_FILE = "app/policies/own_result_policy.rb";
+
+const policyCtx = (over: Partial<CallContext> = {}): CallContext =>
+  ctx({
+    symbolTable: tableWith(
+      [
+        AP_FILE,
+        [
+          sym("AbstractPolicy", "AbstractPolicy", AP_FILE, []),
+          sym("AbstractPolicy.authorize!", "authorize!", AP_FILE, ["AbstractPolicy"]),
+          sym("AbstractPolicy#authorize!", "authorize!", AP_FILE, ["AbstractPolicy"]),
+          sym("AbstractPolicy#result", "result", AP_FILE, ["AbstractPolicy"]),
+        ],
+      ],
+      [
+        FIRM_FILE,
+        [
+          sym("FirmPolicy", "FirmPolicy", FIRM_FILE, []),
+          sym("FirmPolicy#can_manage_datev?", "can_manage_datev?", FIRM_FILE, ["FirmPolicy"]),
+        ],
+      ],
+      [
+        OWN_FILE,
+        [
+          sym("OwnResultPolicy", "OwnResultPolicy", OWN_FILE, []),
+          sym("OwnResultPolicy#result", "result", OWN_FILE, ["OwnResultPolicy"]),
+          sym("OwnResultPolicy#can_read?", "can_read?", OWN_FILE, ["OwnResultPolicy"]),
+        ],
+      ],
+    ),
+    classAncestors: { FirmPolicy: ["AbstractPolicy"], OwnResultPolicy: ["AbstractPolicy"] },
+    selfDispatchTemplates: {},
+    selfInstantiatingClassMethods: ["AbstractPolicy.authorize!"],
+    selfDispatchArgTemplates: {
+      "AbstractPolicy.authorize!": {
+        prefix: "can_",
+        suffix: "?",
+        param: 2,
+        via: ["AbstractPolicy#authorize!", "AbstractPolicy#result"],
+      },
+    },
+    ...over,
+  });
+
+const authorizeCall = (receiver: string, atoms: CallRef["positionalArgAtoms"]): CallRef => ({
+  callText: `${receiver}.authorize!(@user, @actor, :x, @firm)`,
+  receiver,
+  member: "authorize!",
+  startLine: 7,
+  ...(atoms !== undefined ? { positionalArgAtoms: atoms } : {}),
+});
+
+describe("RubySelfDispatchEntrySymbolResolutionStrategy — argument-template entry (emazx step 2d)", () => {
+  it("composes the hook from the literal argument and narrows to the concrete `FirmPolicy#can_manage_datev?`", () => {
+    const outcome = strat.attempt(authorizeCall("FirmPolicy", [null, null, { literal: "manage_datev" }]), policyCtx());
+    expect(outcome.kind === "resolved" && outcome.target).toEqual({
+      targetRelPath: FIRM_FILE,
+      targetSymbolId: "FirmPolicy#can_manage_datev?",
+    });
+  });
+
+  it("CONTINUES when the argument at the template's position is not a literal", () => {
+    const call = authorizeCall("FirmPolicy", [null, null, { identifier: "ability" }]);
+    expect(strat.attempt(call, policyCtx()).kind).toBe("continue");
+  });
+
+  it("CONTINUES when the call site carries no argument at the template's position", () => {
+    expect(strat.attempt(authorizeCall("FirmPolicy", [{ identifier: "u" }]), policyCtx()).kind).toBe("continue");
+    expect(strat.attempt(authorizeCall("FirmPolicy", undefined), policyCtx()).kind).toBe("continue");
+  });
+
+  it("CONTINUES when the composed hook is not defined on the concrete receiver", () => {
+    const call = authorizeCall("FirmPolicy", [null, null, { literal: "destroy" }]);
+    expect(strat.attempt(call, policyCtx()).kind).toBe("continue");
+  });
+
+  it("CONTINUES when the receiver overrides a hop of the chain — its own `#result` never reaches the send", () => {
+    const call = authorizeCall("OwnResultPolicy", [null, null, { literal: "read" }]);
+    expect(strat.attempt(call, policyCtx()).kind).toBe("continue");
+  });
+
+  it("CONTINUES when no argument-template registry is present", () => {
+    const call = authorizeCall("FirmPolicy", [null, null, { literal: "manage_datev" }]);
+    expect(strat.attempt(call, policyCtx({ selfDispatchArgTemplates: undefined })).kind).toBe("continue");
+  });
+});

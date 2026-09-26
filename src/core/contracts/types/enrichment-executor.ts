@@ -181,5 +181,5 @@ export interface IndexRunDaemonGuard {
    * and logs, so it never blocks indexing. The returned release MUST be called
    * when the run ends (success, error, or crash) or the daemon never idle-dies.
    */
-  begin: (collectionName: PhysicalCollectionName) => Promise<IndexRunDaemonRelease>;
+  begin: (physicalCollectionName: PhysicalCollectionName) => Promise<IndexRunDaemonRelease>;
 }

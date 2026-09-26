@@ -1,8 +1,15 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type {
+  ImportFileMapper,
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+} from "../../../../../contracts/types/language.js";
 import { capability } from "../../capability.js";
+import { JavaImportFileMapper, mapJavaImportToFile } from "../java-import-file-mapper.js";
 import type { ResolverConfig } from "./shared.js";
+
+export { mapJavaImportToFile };
 
 /**
  * Well-known `java.lang` public top-level classes/interfaces. The JLS
@@ -73,20 +80,25 @@ const JAVA_LANG_AUTO_IMPORTED_TYPES: ReadonlySet<string> = new Set([
  * (bd tea-rags-mcp-86qfb, measured; contract in `contracts/resolution.ts`). The
  * only pass that could ever beat a park here is 6, `globalShortName` — pass 5
  * declines every receiver-present call — and that is precisely the fall-through
- * the guard above exists to forbid. `mapJavaImportToFile` synthesises a path for
- * EVERY import without probing disk, so for a JDK import the file-only edge is
- * this resolver's "the call leaves the project" marker; replacing it with an
- * in-project symbol of the same short name does not sharpen an edge, it invents
- * one. Measured with `scripts/codegraph-chain-tally.ts --lang java --defer
- * importReceiver` over commons-lang: 599 fabricated in-project edges (6.1% of
- * all its Java edges), zero same-file upgrades — 494 of them
- * `Objects.requireNonNull(...)` reattributed to a project helper, 56 of them
- * self-loops such as `Array.newInstance` landing on `ArrayUtils.newInstance` in
- * the calling file.
+ * the guard above exists to forbid. At measurement time the file-only edge on a
+ * JDK import's synthesised path (`java/util/Objects.java`) was this resolver's
+ * "the call leaves the project" marker; replacing it with an in-project symbol
+ * of the same short name does not sharpen an edge, it invents one. Measured
+ * with `scripts/codegraph-chain-tally.ts --lang java --defer importReceiver`
+ * over commons-lang: 599 fabricated in-project edges (6.1% of all its Java
+ * edges), zero same-file upgrades — 494 of them `Objects.requireNonNull(...)`
+ * reattributed to a project helper, 56 of them self-loops such as
+ * `Array.newInstance` landing on `ArrayUtils.newInstance` in the calling file.
+ * That marker named a file the project does not hold, so it now is a terminal
+ * DROP classified external instead (bd tea-rags-mcp-vfmfg) — still terminal,
+ * so the 86qfb verdict stands.
  */
 export class JavaImportReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "importReceiver";
-  constructor(private readonly cfg: ResolverConfig) {}
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly mapper: ImportFileMapper = new JavaImportFileMapper(),
+  ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
@@ -94,7 +106,16 @@ export class JavaImportReceiverSymbolResolutionStrategy implements SymbolResolut
 
     const match = ctx.imports.find((imp) => javaImportMatchesReceiver(imp.importText, receiver));
     if (match) {
-      const targetFile = mapJavaImportToFile(match.importText);
+      const mapped = this.mapper.mapImportToFile(match.importText, ctx.callerFile, ctx);
+      // The import names a class the project does not hold: the call leaves the
+      // project. Terminal DROP, never a fall-through (the guard above) — and
+      // never the synthesised path as a target, which names no file (bd
+      // tea-rags-mcp-vfmfg). `JavaCallResolver#targetsExternalImport` counts it
+      // out of the recall denominator.
+      if (mapped.kind === "external") return DROP;
+      // `unknown` (an empty table, one class under two source roots) keeps the
+      // pre-mapper answer, per the `ImportFileTarget` contract.
+      const targetFile = mapped.kind === "project" ? mapped.relPath : mapJavaImportToFile(match.importText);
       if (targetFile) {
         const candidates = ctx.symbolTable
           .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
@@ -137,27 +158,7 @@ export class JavaImportReceiverSymbolResolutionStrategy implements SymbolResolut
   }
 }
 
-export function mapJavaImportToFile(importText: string): string | null {
-  // Strip wildcards — they point at directories, not specific files.
-  if (importText.endsWith(".*")) return null;
-  // Static import: drop trailing `.methodName` (the part after the
-  // last segment whose first letter is uppercase signifies the class).
-  const segments = importText.split(".");
-  // Find the class segment (first uppercase-leading segment).
-  let classIdx = -1;
-  for (let i = 0; i < segments.length; i++) {
-    const s = segments[i] ?? "";
-    if (s.length > 0 && s[0] >= "A" && s[0] <= "Z") {
-      classIdx = i;
-      break;
-    }
-  }
-  if (classIdx === -1) return null;
-  const pathSegments = segments.slice(0, classIdx + 1);
-  return `${pathSegments.join("/")}.java`;
-}
-
-function javaImportMatchesReceiver(importText: string, receiver: string): boolean {
+export function javaImportMatchesReceiver(importText: string, receiver: string): boolean {
   // Wildcard imports — receiver might match any class in that package
   // but we can't pin a specific one here. Reject so caller falls
   // through to global lookup.

@@ -31,9 +31,9 @@ describe("038 creates cg_type_declarations", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("is registered right after 036", () => {
+  it("is registered right after 037", () => {
     const names = DATABASE_MIGRATIONS.map((m) => m.filename);
-    expect(names.indexOf(MIGRATION)).toBe(names.indexOf("036-cg-identifiers-call-unwrap.sql") + 1);
+    expect(names.indexOf(MIGRATION)).toBe(names.indexOf("037-cg-type-only-file-edges.sql") + 1);
   });
 
   it("creates the table with the spec's columns and types", async () => {

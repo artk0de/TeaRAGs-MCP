@@ -70,7 +70,7 @@ export interface CompletionRunnerDeps {
  * whether it is worth it — the runner only says when.
  */
 export interface CodegraphStorageCompactionRunner {
-  run: (coll: PhysicalCollectionName) => Promise<CodegraphStorageCompactionOutcome>;
+  run: (physicalCollectionName: PhysicalCollectionName) => Promise<CodegraphStorageCompactionOutcome>;
 }
 
 /** How the codegraph storage compaction (step 10) settled. Best-effort, like the heal. */
@@ -88,7 +88,7 @@ export type CodegraphCompactionStepOutcome =
  * decoupled from Recovery. Resolves to 0 when recovery is unavailable.
  */
 export type UnenrichedReader = (
-  coll: PhysicalCollectionName,
+  physicalCollectionName: PhysicalCollectionName,
   provider: EnrichmentProvider,
   level: "file" | "chunk",
 ) => Promise<number>;
@@ -221,7 +221,7 @@ export class CompletionRunner {
   }
 
   async run(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     startTime: number,
     unenrichedReader?: UnenrichedReader,
@@ -254,20 +254,22 @@ export class CompletionRunner {
       // before the terminal file markers read post-backfill unenriched counts.
       // `backfiller.runFor` is internally try/caught (never rejects), so the
       // in-flight promise can't surface an unhandled rejection before the await.
-      const backfillInFlight = this.startBackfills(coll, contexts, runStartedAt);
+      const backfillInFlight = this.startBackfills(physicalCollectionName, contexts, runStartedAt);
 
       // 2. finalize-file pass — deferred whole-repo FILE overlays (codegraph graph
       //    metrics) read back after the run sink finishes, applied by the
       //    accumulated chunkMap. git's finalizeSignals returns an empty map but
       //    tears down the run's blame pool, so it waits for git's own backfill.
-      await this.timedStep("fileFinalize", async () => this.applyFileFinalize(coll, contexts, backfillInFlight));
+      await this.timedStep("fileFinalize", async () =>
+        this.applyFileFinalize(physicalCollectionName, contexts, backfillInFlight),
+      );
 
       // 3. await the backfill kicked off before the finalize pass (see 2‖3 above).
       const backfill = await this.timedStep("backfillAwait", async () => backfillInFlight.outcome);
 
       // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
       //    Requires the backfill's outcome, so it cannot read pre-backfill counts.
-      terminalMarkers = await this.markFileTerminals(coll, contexts, readUnenriched, runId, backfill);
+      terminalMarkers = await this.markFileTerminals(physicalCollectionName, contexts, readUnenriched, runId, backfill);
 
       // 5. aggregate metrics
       const metrics = this.buildMetrics(contexts, startTime);
@@ -287,20 +289,22 @@ export class CompletionRunner {
       // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
       // codegraph.chunk phase potentially reporting "stalled" during a long
       // PageRank/resolve pass is resolved: the applier-site hook covers it.
-      const deferredPass = await this.timedStep("deferredChunk", async () => this.runDeferredChunkPass(coll, contexts));
+      const deferredPass = await this.timedStep("deferredChunk", async () =>
+        this.runDeferredChunkPass(physicalCollectionName, contexts),
+      );
 
       // 7b. codegraph payload heal — the run's chunk map covers the files that
       //     CHANGED; these are the ones that did not, and whose fanIn / fanOut /
       //     pageRank moved because the graph around them did. Times itself, and
       //     only when it applies.
-      const codegraphHeal = await this.runCodegraphHeal(coll, deferredPass, runStartedAt);
+      const codegraphHeal = await this.runCodegraphHeal(physicalCollectionName, deferredPass, runStartedAt);
 
       const finalChunkMetrics = chunkPhase.getMetrics();
       metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
 
       // 8. markChunkFinal per ctx — requires the heal's outcome (see 7b).
       terminalMarkers = await this.markChunkTerminals(
-        coll,
+        physicalCollectionName,
         contexts,
         readUnenriched,
         runId,
@@ -313,19 +317,26 @@ export class CompletionRunner {
       // contract; this is a strictly-later second fire so listeners (StatsCache)
       // reflect post-backfill state. Listeners must be idempotent.
       if (backfill.occurred) {
-        await chunkPhase.fireOnComplete(coll);
+        await chunkPhase.fireOnComplete(physicalCollectionName);
       }
 
       // 10. codegraph storage compaction — after every graph write of the run,
       //     the heal's baseline refresh last. After the terminal markers too: it
       //     changes no payload, and a multi-second file rewrite on a large graph
       //     must not hold the run's verdict back. Times itself when it applies.
-      await this.runCodegraphStorageCompaction(coll, codegraphHeal);
+      await this.runCodegraphStorageCompaction(physicalCollectionName, codegraphHeal);
 
       pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
       return metrics;
     } catch (error) {
-      await this.settleUnwrittenTerminalsAsFailed(coll, contexts, readUnenriched, runId, terminalMarkers, error);
+      await this.settleUnwrittenTerminalsAsFailed(
+        physicalCollectionName,
+        contexts,
+        readUnenriched,
+        runId,
+        terminalMarkers,
+        error,
+      );
       throw error;
     }
   }
@@ -346,7 +357,7 @@ export class CompletionRunner {
    * chunk), whatever they had reached when the step threw.
    */
   private async settleUnwrittenTerminalsAsFailed(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
@@ -358,9 +369,14 @@ export class CompletionRunner {
     for (const level of unwrittenTerminalLevels(terminalMarkers)) {
       for (const ctx of contexts.values()) {
         try {
-          const unenrichedChunks = await this.readUnenrichedOrZero(readUnenriched, coll, ctx.provider, level);
+          const unenrichedChunks = await this.readUnenrichedOrZero(
+            readUnenriched,
+            physicalCollectionName,
+            ctx.provider,
+            level,
+          );
           if (level === "file") {
-            await markerStore.markFileFinal(coll, ctx.key, {
+            await markerStore.markFileFinal(physicalCollectionName, ctx.key, {
               runId,
               status: "failed",
               durationMs: filePhase.getPrefetchDurationMs(ctx.key),
@@ -371,7 +387,7 @@ export class CompletionRunner {
               errorMessage,
             });
           } else {
-            await markerStore.markChunkFinal(coll, ctx.key, {
+            await markerStore.markChunkFinal(physicalCollectionName, ctx.key, {
               runId,
               status: "failed",
               durationMs: chunkPhase.getMetrics().providerDurationsMs[ctx.key] ?? 0,
@@ -381,7 +397,7 @@ export class CompletionRunner {
           }
         } catch (err) {
           pipelineLog.enrichmentPhase("COMPLETION_FAILURE_MARKER_FAILED", {
-            collection: coll,
+            collection: physicalCollectionName,
             provider: ctx.key,
             level,
             error: err instanceof Error ? err.message : String(err),
@@ -394,12 +410,12 @@ export class CompletionRunner {
   /** The failure path's unenriched count: 0 when the read throws, synchronously or not. */
   private async readUnenrichedOrZero(
     readUnenriched: UnenrichedReader,
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
   ): Promise<number> {
     try {
-      return await readUnenriched(coll, provider, level);
+      return await readUnenriched(physicalCollectionName, provider, level);
     } catch {
       return 0;
     }
@@ -416,7 +432,7 @@ export class CompletionRunner {
    * LAST, so the ones without (codegraph) still overlap it.
    */
   private async applyFileFinalize(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     backfillInFlight: OutOfWindowBackfillInFlight,
   ): Promise<void> {
@@ -444,7 +460,7 @@ export class CompletionRunner {
       // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
       // (incremental finalize runs on this same instance and owns its own flush)
       // and for providers without the seam (git omits it).
-      if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
+      if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(physicalCollectionName || undefined);
       // bd tea-rags-mcp-weno4 — read the persisted pass-1 aggregate slices HERE,
       // on the MAIN instance, and inject them into the finalize below. This
       // instance's pool replaces a daemon from another build or one lacking a
@@ -452,13 +468,13 @@ export class CompletionRunner {
       // since 39xca.4, refuses such a daemon with `CodegraphDaemonBuildSkewError`
       // rather than silently degrading the znxg8 repair. Providers with no
       // pass-1 store (git) omit the method.
-      const pass1Aggregates = await this.readPass1Aggregates(coll, ctx);
+      const pass1Aggregates = await this.readPass1Aggregates(physicalCollectionName, ctx);
       // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
       // drains the main-written input spill (pass-1) before resolving (pass-2),
       // instead of relying on a streamFileBatch that no-opped. Other providers
       // (git) ignore the flag.
       const fileOverlays = await executor.runFinalize(ctx.provider, root, {
-        collectionName: coll || undefined,
+        collectionName: physicalCollectionName || undefined,
         crossPass: filePhase.crossPassEnabled,
         // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
         // run can never fall back to the provider's direct-caller default.
@@ -473,7 +489,12 @@ export class CompletionRunner {
         ...(pass1Aggregates ? { pass1Aggregates } : {}),
       });
       if (fileOverlays.size > 0) {
-        await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
+        await filePhase.applyFinalize(
+          physicalCollectionName,
+          ctx,
+          fileOverlays,
+          chunkPhase.getDeferredChunkMap(ctx.key),
+        );
       }
     }
     await filePhase.drain();
@@ -494,7 +515,7 @@ export class CompletionRunner {
    * unhealed diff still stands for the next run to retry.
    */
   async runCodegraphHeal(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     deferredPass: DeferredChunkPassOutcome,
     runStartedAt: string,
   ): Promise<CodegraphHealStepOutcome> {
@@ -503,14 +524,22 @@ export class CompletionRunner {
     const skipRelPaths = deferredPass.wholeFileRelPaths;
     return this.timedStep("codegraphHeal", async (): Promise<CodegraphHealStepOutcome> => {
       try {
-        const { pointsRewritten, filesTouched } = await healer.run(coll, skipRelPaths, runStartedAt || undefined);
+        const { pointsRewritten, filesTouched } = await healer.run(
+          physicalCollectionName,
+          skipRelPaths,
+          runStartedAt || undefined,
+        );
         if (pointsRewritten > 0 || filesTouched > 0) {
-          pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL", { collection: coll, pointsRewritten, filesTouched });
+          pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL", {
+            collection: physicalCollectionName,
+            pointsRewritten,
+            filesTouched,
+          });
         }
         return { kind: "healed", pointsRewritten, filesTouched };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_FAILED", { collection: coll, error });
+        pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_FAILED", { collection: physicalCollectionName, error });
         return { kind: "failed", error };
       }
     });
@@ -529,21 +558,27 @@ export class CompletionRunner {
    * the run completes and the next run retries.
    */
   async runCodegraphStorageCompaction(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     codegraphHeal: CodegraphHealStepOutcome,
   ): Promise<CodegraphCompactionStepOutcome> {
     const compaction = this.deps.codegraphCompaction;
     if (!compaction || codegraphHeal.kind === "notApplicable") return { kind: "notApplicable" };
     return this.timedStep("codegraphCompaction", async (): Promise<CodegraphCompactionStepOutcome> => {
       try {
-        const outcome = await compaction.run(coll);
+        const outcome = await compaction.run(physicalCollectionName);
         if (outcome.kind === "compacted") {
-          pipelineLog.enrichmentPhase("CODEGRAPH_STORAGE_COMPACTED", { collection: coll, ...outcome });
+          pipelineLog.enrichmentPhase("CODEGRAPH_STORAGE_COMPACTED", {
+            collection: physicalCollectionName,
+            ...outcome,
+          });
         }
         return { kind: "settled", outcome };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        pipelineLog.enrichmentPhase("CODEGRAPH_STORAGE_COMPACTION_FAILED", { collection: coll, error });
+        pipelineLog.enrichmentPhase("CODEGRAPH_STORAGE_COMPACTION_FAILED", {
+          collection: physicalCollectionName,
+          error,
+        });
         return { kind: "failed", error };
       }
     });
@@ -563,18 +598,18 @@ export class CompletionRunner {
    * recorded: absence is not a failure.
    */
   private async readPass1Aggregates(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
   ): Promise<readonly CodegraphPass1FileAggregates[] | undefined> {
     const read = ctx.provider.readPersistedPass1Aggregates;
     if (!read) return undefined;
     try {
-      return await read.call(ctx.provider, coll);
+      return await read.call(ctx.provider, physicalCollectionName, this.deps.filePhase.runLanguages);
     } catch (err) {
       this.pass1AggregateReadFailures.add(ctx.key);
       pipelineLog.enrichmentPhase("PASS1_AGGREGATE_READ_FAILED", {
         provider: ctx.key,
-        collection: coll,
+        collection: physicalCollectionName,
         error: err instanceof Error ? err.message : String(err),
       });
       return undefined;
@@ -602,7 +637,7 @@ export class CompletionRunner {
    * running before the backfill settles. Times itself (see `timedStep`).
    */
   private async markFileTerminals(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
@@ -614,7 +649,7 @@ export class CompletionRunner {
       let writeMs = 0;
       for (const ctx of contexts.values()) {
         const scanStartedAt = Date.now();
-        const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
+        const fileUnenriched = await readUnenriched(physicalCollectionName, ctx.provider, "file");
         scanMs += Date.now() - scanStartedAt;
         const writeStartedAt = Date.now();
         // A failed pass-1 aggregate read (bd tea-rags-mcp-weno4) degrades the run
@@ -627,7 +662,7 @@ export class CompletionRunner {
           : fileUnenriched > 0 || this.pass1AggregateReadFailures.has(ctx.key)
             ? "degraded"
             : "completed";
-        await markerStore.markFileFinal(coll, ctx.key, {
+        await markerStore.markFileFinal(physicalCollectionName, ctx.key, {
           runId,
           status: fileStatus,
           durationMs: filePhase.getPrefetchDurationMs(ctx.key),
@@ -690,7 +725,7 @@ export class CompletionRunner {
    * count even though its pass is skipped. See `DeferredChunkPassOutcome`.
    */
   async runDeferredChunkPass(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
   ): Promise<DeferredChunkPassOutcome> {
     const { filePhase, chunkPhase } = this.deps;
@@ -705,7 +740,7 @@ export class CompletionRunner {
       }
       if (filePhase.hasPrefetchFailed(ctx.key)) continue;
       if (cm.size > 0) {
-        await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
+        await chunkPhase.runDeferredChunk(physicalCollectionName, ctx, ctx.effectiveRoot ?? "", cm);
       }
     }
     return wholeFileRelPaths ? { kind: "deferred", wholeFileRelPaths } : { kind: "noDeferringProvider" };
@@ -718,7 +753,7 @@ export class CompletionRunner {
    * Times itself (see `timedStep`).
    */
   private async markChunkTerminals(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
@@ -731,7 +766,7 @@ export class CompletionRunner {
       let writeMs = 0;
       for (const ctx of contexts.values()) {
         const scanStartedAt = Date.now();
-        const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
+        const chunkUnenriched = await readUnenriched(physicalCollectionName, ctx.provider, "chunk");
         scanMs += Date.now() - scanStartedAt;
         const writeStartedAt = Date.now();
         let chunkStatus: ChunkFinalInput["status"];
@@ -742,7 +777,7 @@ export class CompletionRunner {
         } else {
           chunkStatus = "completed";
         }
-        await markerStore.markChunkFinal(coll, ctx.key, {
+        await markerStore.markChunkFinal(physicalCollectionName, ctx.key, {
           runId,
           status: chunkStatus,
           // iqpuu: per-provider wall span — the marker no longer inherits the
@@ -770,7 +805,7 @@ export class CompletionRunner {
    * rejects.
    */
   private startBackfills(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     runStartedAt: string,
   ): OutOfWindowBackfillInFlight {
@@ -782,7 +817,7 @@ export class CompletionRunner {
     let previous: Promise<void> = Promise.resolve();
     for (const ctx of contexts.values()) {
       if (filePhase.hasPrefetchFailed(ctx.key) || ctx.provider.defersChunkEnrichment) continue;
-      const settled = previous.then(async () => backfiller.runFor(coll, ctx, runStartedAt));
+      const settled = previous.then(async () => backfiller.runFor(physicalCollectionName, ctx, runStartedAt));
       settledByProvider.set(ctx.key, settled);
       previous = settled;
     }

@@ -260,7 +260,7 @@ export class NamingLexiconOps {
   ): Promise<NamingLexiconResult> {
     validateRequest(req);
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
-    const active = this.deps.resolveActiveCollection
+    const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
@@ -268,7 +268,7 @@ export class NamingLexiconOps {
 
     let handle: { graphDb: GraphDbClient };
     try {
-      handle = await this.deps.pool.acquireReader(active);
+      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (error) {
       return {
         scope: "",

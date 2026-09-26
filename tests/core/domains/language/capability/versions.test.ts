@@ -84,7 +84,7 @@ describe("resolveLanguageCodeVersions", () => {
     // boundaries into `#part1..N` with context prefixes; markdown and the
     // character fallback cut between blocks / syntax-neutral units. Same bump:
     // bd tea-rags-mcp-msv3l — test files chunked by example.
-    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 5, codegraphSchema: 2 });
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 2, walker: 3, codegraphSchema: 2 });
     // `*` parses nothing of its own, so there is no grammar package to read —
     // and borrowing one language's would make the axis a lie for every other.
     expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
@@ -94,7 +94,7 @@ describe("resolveLanguageCodeVersions", () => {
     const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
     if (stamp) stamp.walker = 99;
 
-    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(5);
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(3);
   });
 });
 
@@ -453,17 +453,20 @@ describe("seeded support versions", () => {
       // swift 66: the naming-lexicon branch (swift 65 there) rebased onto main's
       // swift walker 64, which changed its extraction under the same number (bd
       // tea-rags-mcp-y99pg.39), so again neither side's index holds both.
+      // swift 7: release v1.44.2 shipped swift walker 6 and a release cycle gets
+      // ONE walker bump, so the branch-local 7..66 collapse into 7.
       // Every other language is still at its seed.
+      // Every walker collapses to (release v1.44.2) + 1: one bump per release cycle.
       const WALKER_BUMPED = new Map([
-        ["typescript", 19],
-        ["javascript", 9],
-        ["python", 17],
-        ["ruby", 10],
-        ["java", 9],
-        ["rust", 8],
-        ["go", 9],
-        ["swift", 66],
-        ["bash", 3],
+        ["typescript", 12],
+        ["javascript", 4],
+        ["python", 9],
+        ["ruby", 5],
+        ["java", 3],
+        ["rust", 3],
+        ["go", 5],
+        ["swift", 7],
+        ["bash", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
@@ -482,10 +485,14 @@ describe("seeded support versions", () => {
       // longer takes its callee's name as its symbolId, so an index built by
       // chunking 1 holds statement blocks claiming the id of the function they
       // call.
+      // ruby chunking 2: bd tea-rags-mcp-j4jrn — the class-body grouper budgets
+      // the reserved header prefix, so groups the header pushed over the cap are
+      // no longer line-cut into `#partN` windows.
       const CHUNKING_BUMPED = new Map([
         ["javascript", 2],
         ["swift", 4],
         ["bash", 2],
+        ["ruby", 2],
       ]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);

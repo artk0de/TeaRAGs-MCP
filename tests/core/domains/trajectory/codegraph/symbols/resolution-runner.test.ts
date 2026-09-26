@@ -347,6 +347,84 @@ describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
   });
 });
 
+describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags-mcp-r8hme.12)", () => {
+  // Maps every import the extraction it is handed carries, by the same
+  // import→file path either channel goes through.
+  const importDrivenResolver = {
+    resolve: () => null,
+    resolveFileEdges: (extraction: FileExtraction) =>
+      extraction.imports.map((imp) => ({
+        targetRelPath: `src/${imp.importText.slice(2)}.ts`,
+        importText: imp.importText,
+      })),
+  };
+  const runner = () =>
+    new CallEdgeResolutionRunner(
+      {
+        supported: () => ["typescript"],
+        create: () => ({ resolver: importDrivenResolver }),
+      } as unknown as LanguageFactoryDescriptor,
+      new CodegraphRunState(),
+    );
+  const extraction = (imports: string[], typeOnlyImports: string[]): FileExtraction => ({
+    relPath: "src/server.ts",
+    language: "typescript",
+    imports: imports.map((importText) => ({ importText, startLine: 1 })),
+    typeOnlyImports: typeOnlyImports.map((importText) => ({ importText, startLine: 1 })),
+    fileScope: [],
+    chunks: [],
+  });
+
+  it("resolves type-only imports onto typeOnlyFileEdges and keeps them out of fileEdges", () => {
+    const edges = runner().resolve(extraction(["./runner"], ["./protocol", "./protocol"]), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/runner.ts", importText: "./runner" }]);
+    expect(edges.typeOnlyFileEdges).toEqual([{ targetRelPath: "src/protocol.ts", importText: "./protocol" }]);
+  });
+
+  it("drops a type-only edge whose target a runtime import already reaches, and a self-edge", () => {
+    const edges = runner().resolve(extraction(["./runner"], ["./runner", "./server"]), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/runner.ts", importText: "./runner" }]);
+    expect(edges).not.toHaveProperty("typeOnlyFileEdges");
+  });
+
+  it("routes an import flagged typeOnly on imports[] (Python `if TYPE_CHECKING:`) to typeOnlyFileEdges", () => {
+    const seenImports: string[][] = [];
+    const recordingResolver = {
+      resolve: () => null,
+      resolveFileEdges: (ext: FileExtraction) => {
+        seenImports.push(ext.imports.map((i) => i.importText));
+        return importDrivenResolver.resolveFileEdges(ext);
+      },
+    };
+    const pythonRunner = new CallEdgeResolutionRunner(
+      {
+        supported: () => ["python"],
+        create: () => ({ resolver: recordingResolver }),
+      } as unknown as LanguageFactoryDescriptor,
+      new CodegraphRunState(),
+    );
+    const edges = pythonRunner.resolve(
+      {
+        relPath: "src/views.py",
+        language: "python",
+        imports: [
+          { importText: "./forms", startLine: 1 },
+          { importText: "./models", startLine: 3, typeOnly: true },
+        ],
+        fileScope: [],
+        chunks: [],
+      },
+      {} as GlobalSymbolTable,
+    );
+
+    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/forms.ts", importText: "./forms" }]);
+    expect(edges.typeOnlyFileEdges).toEqual([{ targetRelPath: "src/models.ts", importText: "./models" }]);
+    expect(seenImports).toEqual([["./forms"], ["./models"]]);
+  });
+});
+
 describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", () => {
   function absorbFiles(runState: CodegraphRunState, language: string, count: number): void {
     for (let i = 0; i < count; i++) {
@@ -438,5 +516,95 @@ describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", 
     expect(() => {
       runner.prepareResolvePass();
     }).not.toThrow();
+  });
+});
+
+describe("CallEdgeResolutionRunner closure-batch visit order (bd tea-rags-mcp-vtuu4)", () => {
+  function extraction(relPath: string, language: string, callCount: number): FileExtraction {
+    return {
+      relPath,
+      language,
+      imports: [],
+      fileScope: [],
+      chunks: [
+        {
+          symbolId: "f",
+          scope: [],
+          calls: Array.from({ length: callCount }, (_, i) => ({
+            callText: `g${i}()`,
+            receiver: null,
+            member: `g${i}`,
+            startLine: i,
+          })),
+        },
+      ],
+    };
+  }
+
+  it("passes pass-1 call-site counts on the resolve plan", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(extraction("a.ts", "typescript", 3), []);
+    runState.absorb(extraction("b.ts", "typescript", 0), []);
+    runState.absorb(extraction("c.rb", "ruby", 2), []);
+    const plans: Record<string, SymbolResolutionPassPlan> = {};
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver: {
+          resolve: () => null,
+          prepareResolvePass: (plan: SymbolResolutionPassPlan) => {
+            plans[language] = plan;
+          },
+        },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    new CallEdgeResolutionRunner(languageFactory, runState).prepareResolvePass();
+
+    // Per language, and only files that have calls: a file the map does not
+    // name counts zero.
+    expect(plans["typescript"]?.expectedCallSites).toEqual(new Map([["a.ts", 3]]));
+    expect(plans["ruby"]?.expectedCallSites).toEqual(new Map([["c.rb", 2]]));
+  });
+
+  it("hands each language's visit plan to pass-2 and forwards group ends", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(extraction("a.ts", "typescript", 0), []);
+    runState.absorb(extraction("c.rb", "ruby", 0), []);
+    let groupEnds = 0;
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver:
+          language === "typescript"
+            ? {
+                resolve: () => null,
+                planResolveVisits: () => [["a.ts"], ["big.ts"]],
+                endResolveVisitGroup: () => {
+                  groupEnds += 1;
+                },
+              }
+            : { resolve: () => null },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    const plans = new CallEdgeResolutionRunner(languageFactory, runState).resolveVisitPlans();
+
+    expect(plans.map(({ language, groups }) => ({ language, groups }))).toEqual([
+      { language: "typescript", groups: [["a.ts"], ["big.ts"]] },
+    ]);
+    plans[0]?.endGroup();
+    expect(groupEnds).toBe(1);
+  });
+
+  it("offers no visit plan for a resolver that answers without one", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(extraction("a.ts", "typescript", 0), []);
+    const languageFactory = {
+      supported: () => ["typescript"],
+      create: () => ({ resolver: { resolve: () => null, planResolveVisits: () => undefined } }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    expect(new CallEdgeResolutionRunner(languageFactory, runState).resolveVisitPlans()).toEqual([]);
   });
 });

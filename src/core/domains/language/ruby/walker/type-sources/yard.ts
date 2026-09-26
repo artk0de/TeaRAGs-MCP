@@ -249,6 +249,7 @@ export function collectYardReturnTypes(code: string): Record<string, string> {
       seenAttrName = null;
       continue;
     }
+    if (endsYardParagraph(raw)) seenAttrName = null;
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
     const defMatch = defRegex.exec(raw);
     // defMatch[1] is the method name (\w+) when the line is a `def`. An
@@ -402,6 +403,7 @@ function collectYardReturnFacts(input: RubyExtractInput): RubyTypeFact[] {
       seenAttrName = null;
       continue;
     }
+    if (endsYardParagraph(raw)) seenAttrName = null;
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
     const defMatch = defRegex.exec(raw);
     // An attribute-owned `@return` attaches only to the same-named reader def;
@@ -537,9 +539,20 @@ function collectYardLocalTypeFacts(code: string): RubyTypeFact[] {
 }
 
 /**
+ * A blank line or an empty comment line (`#`) — the paragraph break that ends a
+ * `@!attribute` directive's block. A `@return` past it belongs to the next
+ * paragraph (typically a method's docstring), never to the directive
+ * (bd tea-rags-mcp-djg73).
+ */
+function endsYardParagraph(raw: string): boolean {
+  return /^\s*#?\s*$/.test(raw);
+}
+
+/**
  * Parse `# @!attribute [r|w|rw] name` / `# @return [TYPE]` pairs and emit
- * `kind:"attr"` facts. The two tags must appear as consecutive comment lines
- * (other comments may intervene; a blank line or non-comment line resets).
+ * `kind:"attr"` facts. The two tags must appear in one comment paragraph
+ * (other comments may intervene; a blank line, an empty `#` line or a
+ * non-comment line resets).
  * The `@return [TYPE]` line provides the type; `@!attribute` provides the name.
  * Conservative: only emits when both tags are present and type passes yardBracketToRef.
  */
@@ -571,8 +584,14 @@ function collectYardAttrFacts(code: string): RubyTypeFact[] {
       pendingAttrName = null;
       continue;
     }
-    // Blank or other comment line — preserve pendingAttrName across non-return comment lines.
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    // A paragraph break ends the directive's block (bd tea-rags-mcp-djg73): the
+    // next `@return` documents whatever the following paragraph documents.
+    if (endsYardParagraph(raw)) {
+      pendingAttrName = null;
+      continue;
+    }
+    // Other comment line — preserve pendingAttrName across non-return comment lines.
+    if (raw.trim().startsWith("#")) continue;
     // Non-comment, non-blank line resets state.
     pendingAttrName = null;
   }

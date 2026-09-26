@@ -341,7 +341,8 @@ export class IngestFacade {
             // The PHYSICAL collection name the run already resolved — the pool
             // resolves whatever string it is handed literally, so re-resolving
             // (or passing an alias) opens a second, empty shadow database.
-            acquireGraphDb: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb,
+            acquireGraphDb: async (physicalCollectionName) =>
+              (await codegraphPool.acquireWrite(physicalCollectionName)).graphDb,
           })
         : undefined;
     // bd tea-rags-mcp-dvzdm — the graph store keeps every row version an
@@ -350,7 +351,10 @@ export class IngestFacade {
     // the store decides whether the file is worth rewriting.
     const codegraphCompaction: CodegraphStorageCompactionRunner | undefined =
       codegraphPool && deferringProvider
-        ? { run: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb.compactStorage() }
+        ? {
+            run: async (physicalCollectionName) =>
+              (await codegraphPool.acquireWrite(physicalCollectionName)).graphDb.compactStorage(),
+          }
         : undefined;
     const enrichment = new EnrichmentCoordinator(
       qdrant,
@@ -371,14 +375,16 @@ export class IngestFacade {
     // Wired from the pool's removeCollection (closes any cached handle, then
     // unlinks `<collection>.duckdb` + `.wal`); undefined when codegraph is off.
     const codegraphRemover: PipelineRegistryDeps["codegraphRemover"] = codegraphPool
-      ? async (orphan) => {
-          await codegraphPool.removeCollection(orphan);
+      ? async (orphanPhysicalCollectionName) => {
+          await codegraphPool.removeCollection(orphanPhysicalCollectionName);
         }
       : undefined;
-    // Enumerates on-disk versioned codegraph DBs for the base collection so the
-    // ancient-orphan sweep can reclaim files whose Qdrant collection is gone.
+    // Enumerates every on-disk codegraph generation of the base collection — a
+    // database OR a cross-pass input spill — so the ancient-orphan sweep can
+    // reclaim files whose Qdrant collection is gone. A spill-only generation is
+    // the abandoned run that never reached its drain.
     const codegraphLister: PipelineRegistryDeps["codegraphLister"] = codegraphPool
-      ? (base) => codegraphPool.listCollectionDbNames(base)
+      ? (base) => codegraphPool.listCollectionGenerationNames(base)
       : undefined;
     const registryDeps: PipelineRegistryDeps = {
       registry: deps.collectionRegistry,

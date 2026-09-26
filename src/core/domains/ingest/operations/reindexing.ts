@@ -89,16 +89,16 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     },
   ): Promise<ChangeStats> {
     const startTime = Date.now();
-    const { absolutePath, collectionName } = await this.resolveContext(path);
+    const { absolutePath, collectionName: aliasCollectionName } = await this.resolveContext(path);
     // Orphan sweep (55xk2): versioned targets left by killed runs
     // (`<base>_vN` no alias points at) used to survive every INCREMENTAL
     // reindex — only the force path cleaned them at setup, so they piled up
     // between force runs. Same cleanup here, best-effort: a sweep failure
     // must never abort an incremental reindex.
     try {
-      await cleanupOrphanedVersions(this.qdrant, collectionName, this.codegraphRemover);
+      await cleanupOrphanedVersions(this.qdrant, aliasCollectionName, this.codegraphRemover);
       if (this.codegraphLister && this.codegraphRemover) {
-        await sweepCodegraphOrphans(this.qdrant, collectionName, this.codegraphLister, this.codegraphRemover);
+        await sweepCodegraphOrphans(this.qdrant, aliasCollectionName, this.codegraphLister, this.codegraphRemover);
       }
     } catch (err) {
       if (isDebug()) {
@@ -119,7 +119,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     };
 
     try {
-      const ctx = await this.prepareReindexContext(absolutePath, collectionName);
+      const ctx = await this.prepareReindexContext(absolutePath, aliasCollectionName);
       if (overrides?.rechunk) {
         stats.filesRechunked = await this.invalidateRechunkWorkSet(ctx, overrides.rechunk);
       }
@@ -260,7 +260,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       this.wrapUnexpectedError(error, ReindexFailedError);
     } finally {
       this.stopHeartbeat();
-      const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
+      const cleaner = new SnapshotCleaner(this.snapshotDir, aliasCollectionName);
       await cleaner.cleanupAfterIndexing();
     }
   }
@@ -288,9 +288,19 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const scanner = this.createScanner();
     const currentFiles = await this.scanFiles(absolutePath, scanner);
 
-    const targetCollection = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
+    const targetPhysicalCollectionName = resolvePhysicalCollection(
+      collectionName,
+      await this.qdrant.aliases.listAliases(),
+    );
 
-    return { absolutePath, collectionName, targetCollection, synchronizer, scanner, currentFiles };
+    return {
+      absolutePath,
+      collectionName,
+      targetCollection: targetPhysicalCollectionName,
+      synchronizer,
+      scanner,
+      currentFiles,
+    };
   }
 
   private async runMigrations(collectionName: string, absolutePath: string): Promise<void> {

@@ -18,7 +18,12 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { AritySignature, KwargSignature } from "../../../../contracts/types/codegraph.js";
+import type {
+  AritySignature,
+  CallArgAtom,
+  KwargSignature,
+  SendNameTemplate,
+} from "../../../../contracts/types/codegraph.js";
 import { attachedBlockOf, walk } from "./ast-utils.js";
 import { positionalParamNames } from "./param-arg-types.js";
 
@@ -441,4 +446,74 @@ export function computeArgCount(callNode: AstNode): number | undefined {
     if (!NON_POSITIONAL_ARG_TYPES.has(child.type)) count += 1;
   }
   return count;
+}
+
+/** A Ruby method name as a Symbol/String literal can spell one: `read`, `manage_datev`, `valid?`, `save!`. */
+const NAME_LITERAL_RE = /^[A-Za-z_][A-Za-z0-9_]*[?!=]?$/;
+
+/**
+ * The name a positional argument spells as a LITERAL — `:read`, `"read"`,
+ * `'read'` → `read` — or null for anything else (interpolated, escaped, or not
+ * name-shaped).
+ */
+function nameLiteralOf(arg: AstNode): string | null {
+  const [onlyPart] = arg.namedChildren;
+  let text: string | null = null;
+  if (arg.type === "simple_symbol") text = arg.text.slice(1);
+  else if (arg.type === "string" && arg.namedChildren.length === 1 && onlyPart.type === "string_content") {
+    ({ text } = onlyPart);
+  }
+  return text !== null && NAME_LITERAL_RE.test(text) ? text : null;
+}
+
+/**
+ * Per-POSITION argument atoms at a call site (bd tea-rags-mcp-emazx) — the call
+ * side of the pair whose definition side is `positionalParamNames`. A slot holds
+ * a name literal or a bare identifier, else null; the list stops at the first
+ * argument that breaks positional correspondence (splat, keyword pair,
+ * block-pass), trailing nulls are trimmed, and `undefined` means no slot carries
+ * an atom.
+ */
+export function computePositionalArgAtoms(callNode: AstNode): (CallArgAtom | null)[] | undefined {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return undefined;
+  const atoms: (CallArgAtom | null)[] = [];
+  for (const child of args.namedChildren) {
+    if (child.type === "comment") continue;
+    if (child.type === "splat_argument" || NON_POSITIONAL_ARG_TYPES.has(child.type)) break;
+    const literal = nameLiteralOf(child);
+    if (literal !== null) atoms.push({ literal });
+    else if (child.type === "identifier") atoms.push({ identifier: child.text });
+    else atoms.push(null);
+  }
+  while (atoms.length > 0 && atoms[atoms.length - 1] === null) atoms.pop();
+  return atoms.length > 0 ? atoms : undefined;
+}
+
+/**
+ * The dispatched-name TEMPLATE of a dynamic `send` (bd tea-rags-mcp-emazx): the
+ * first argument is an interpolated string or symbol whose parts are plain text
+ * around EXACTLY ONE interpolation of a bare identifier. Anything else — two
+ * holes, a computed hole, an escape sequence — returns undefined.
+ */
+export function computeSendNameTemplate(callNode: AstNode): SendNameTemplate | undefined {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  const first = args?.namedChildren[0];
+  if (first === undefined || (first.type !== "string" && first.type !== "delimited_symbol")) return undefined;
+  let prefix = "";
+  let suffix = "";
+  let identifier: string | undefined;
+  for (const part of first.namedChildren) {
+    if (part.type === "string_content") {
+      if (identifier === undefined) prefix += part.text;
+      else suffix += part.text;
+    } else if (part.type === "interpolation") {
+      const inner = part.namedChildren;
+      if (identifier !== undefined || inner.length !== 1 || inner[0].type !== "identifier") return undefined;
+      identifier = inner[0].text;
+    } else {
+      return undefined;
+    }
+  }
+  return identifier === undefined ? undefined : { prefix, suffix, identifier };
 }

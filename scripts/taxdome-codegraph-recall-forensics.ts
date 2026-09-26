@@ -166,6 +166,7 @@ import {
 } from "../src/core/domains/trajectory/codegraph/symbols/schema-column-synthesis.js";
 import {
   buildSelfDispatchProbe,
+  collectSelfDispatchArgTemplates,
   collectSelfInstantiatingClassMethods,
   deriveServiceEntryReturnTypes,
   discoverSelfDispatchTemplates,
@@ -588,6 +589,8 @@ const SELF_DISPATCH_ENABLED = process.env.CODEGRAPH_SELF_DISPATCH === "1";
 const runSelfDispatchMethods: SelfDispatchMethod[] = [];
 let runSelfDispatchTemplates: Record<string, string> = {};
 let runSelfInstantiatingClassMethods: string[] = [];
+// bd tea-rags-mcp-emazx — argument templates, built at the barrier like production.
+let runSelfDispatchArgTemplates: ReturnType<typeof collectSelfDispatchArgTemplates> = {};
 // Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc). Env-gated
 // A/B like self-dispatch: pass-1 accumulation and the barrier fold ALWAYS run
 // (so the derived counts are reported), but the products only reach ctx when
@@ -891,6 +894,7 @@ function resolvePass2(extraction: FileExtraction): void {
         instantiatedTypes: instantiatedForResolver,
         selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
         selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
+        selfDispatchArgTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchArgTemplates : undefined,
       };
       let resolved = false;
       // The fan-out outcome, kept for the signature-gap oracle: an EMPTY outcome
@@ -3484,6 +3488,7 @@ function fxResolvePass(extractions: FileExtraction[], env: FxEnv): FxPassResult 
           instantiatedTypes: instantiatedForResolver,
           selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
           selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
+          selfDispatchArgTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchArgTemplates : undefined,
         };
         let resolved = false;
         const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
@@ -6002,6 +6007,8 @@ function superDefinersIn(chain: readonly string[], member: string, ctx: CallCont
 /** Heritage channel from `enclosingClass` to `definer` (direct edge kind). */
 function superChannelTo(enclosingClass: string, definer: string, ctx: CallContext): SuperMissRecord["channel"] {
   for (const edge of hierarchyView.getAncestors(enclosingClass)) {
+    // `super` travels declared heritage only; a derived structural row is no channel (bd 39xca.14).
+    if (edge.kind === "structural") continue;
     const fq = canonFqForOracle(edge.ancestorFqName, enclosingClass, ctx);
     if (fq === definer) return edge.kind;
     if (collectResolvedAncestorChain(fq, ctx).includes(definer)) return edge.kind;
@@ -9583,6 +9590,7 @@ function ccBuildContext(
     instantiatedTypes: file.instantiated,
     selfDispatchTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchTemplates : undefined,
     selfInstantiatingClassMethods: SELF_DISPATCH_ENABLED ? runSelfInstantiatingClassMethods : undefined,
+    selfDispatchArgTemplates: SELF_DISPATCH_ENABLED ? runSelfDispatchArgTemplates : undefined,
   };
 }
 
@@ -13102,6 +13110,7 @@ async function main(): Promise<void> {
     discoverSelfDispatchTemplates(runSelfDispatchMethods, selfDispatchProbe),
   );
   runSelfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(runSelfDispatchMethods);
+  runSelfDispatchArgTemplates = collectSelfDispatchArgTemplates(runSelfDispatchMethods);
   // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf) — the production
   // barrier composes it right here, between the self-dispatch discovery and the
   // schema value-type merge. The harness used to skip the step entirely, so its

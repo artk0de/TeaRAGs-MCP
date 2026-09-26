@@ -43,6 +43,7 @@ import type {
   OntologyReportQuery,
   OntologyReportSectionRows,
   OntologyReportSummaryRows,
+  Pass1AggregateReadScope,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -118,7 +119,8 @@ type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  *   "unknown daemon op" answer is itself the proof of life the probe asks for.
  *
  * An op whose fallback is wrong data stays required — weno4's
- * `listAllPass1Aggregates` degraded a live repair to a batch-scoped registry.
+ * pass-1 aggregate read (now `listPass1Aggregates`) degraded a live repair to a
+ * batch-scoped registry.
  */
 export const LEGACY_TOLERATED_OPS: ReadonlySet<DaemonOp> = new Set<DaemonOp>(LEGACY_TOLERATED_OP_LIST);
 
@@ -342,7 +344,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   constructor(
     private readonly socketPath: string,
-    private readonly collection: PhysicalCollectionName,
+    private readonly physicalCollectionName: PhysicalCollectionName,
     opts?: DaemonClientOptions,
   ) {
     this.connectTimeoutMs = opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -453,7 +455,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
-    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } });
+    const frame = encodeFrame({ id, op, params: { collection: this.physicalCollectionName, ...params } });
     // A non-replayable call starts out as if already retried: a connection loss
     // settles it rather than re-sending it.
     const retried = options.replayable === false;
@@ -583,7 +585,9 @@ export class DaemonGraphDbClient implements GraphDbClient {
       return;
     }
     if (silentForMs >= this.livenessProbeIntervalMs) {
-      this.sock?.write(encodeFrame({ id: this.nextId++, op: "ping", params: { collection: this.collection } }));
+      this.sock?.write(
+        encodeFrame({ id: this.nextId++, op: "ping", params: { collection: this.physicalCollectionName } }),
+      );
     }
   }
 
@@ -1152,8 +1156,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return (await this.call("listAllSymbols", {})) as SymbolDefinition[];
   }
 
-  async listAllPass1Aggregates(): Promise<CodegraphPass1FileAggregates[]> {
-    return (await this.call("listAllPass1Aggregates", {})) as CodegraphPass1FileAggregates[];
+  async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
+    return (await this.call("listPass1Aggregates", { scope })) as CodegraphPass1FileAggregates[];
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {

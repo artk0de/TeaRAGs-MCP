@@ -34,6 +34,10 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import {
+  resolveInheritedMemberDefiner,
+  type InheritedMemberGraph,
+} from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../../public/dto/architecture.js";
@@ -103,6 +107,39 @@ function graphTarget(req: { symbolId?: SymbolId; relativePath?: string }): Graph
   throw new MissingArgumentError(["symbolId or relativePath"]);
 }
 
+/** Edges read for a symbol target, and the definer id they were read under when it was aliased. */
+interface SymbolEdgeRead<E> {
+  edges: E[];
+  queriedSymbolId: SymbolId;
+  resolvedSymbolId?: SymbolId;
+}
+
+/**
+ * Read `symbolId`'s edges; when it has none, fall back to the member's definer
+ * up the persisted hierarchy (bd tea-rags-mcp-63l69) — a host-class id such as
+ * `Account.suspended` for a member a concern defines. An id with edges of its
+ * own is answered as-is, and one with its own node is never aliased
+ * (`resolveInheritedMemberDefiner` checks that). The alias walk is a fallback
+ * over a read that already answered: if it fails, the direct answer stands,
+ * which is exactly the pre-aliasing behaviour.
+ */
+async function readSymbolEdges<E>(
+  graphDb: InheritedMemberGraph,
+  symbolId: SymbolId,
+  read: (id: SymbolId) => Promise<E[]>,
+): Promise<SymbolEdgeRead<E>> {
+  const direct = await read(symbolId);
+  if (direct.length > 0) return { edges: direct, queriedSymbolId: symbolId };
+  const definer = await resolveInheritedMemberDefiner(graphDb, symbolId).catch(() => null);
+  if (definer === null) return { edges: direct, queriedSymbolId: symbolId };
+  return { edges: await read(definer), queriedSymbolId: definer, resolvedSymbolId: definer };
+}
+
+/** `{ resolvedSymbolId }` when the answer was aliased, `{}` otherwise — the field is omitted, never null. */
+function resolvedField(read: SymbolEdgeRead<unknown>): { resolvedSymbolId?: SymbolId } {
+  return read.resolvedSymbolId === undefined ? {} : { resolvedSymbolId: read.resolvedSymbolId };
+}
+
 export class GraphFacade {
   private readonly architectureReport = new ArchitectureReportOps();
   private readonly fileImports = new FileImportOps();
@@ -134,14 +171,14 @@ export class GraphFacade {
     // pool opens the DuckDB file the write path actually populated (see
     // resolveActiveCollection doc). No resolver, or a failed one, falls back to
     // the addressed name resolved against no aliases, rather than aborting the read.
-    const activeCollection = this.deps.resolveActiveCollection
+    const activePhysicalCollectionName = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
           .catch(() => resolvePhysicalCollection(collectionName, []))
       : resolvePhysicalCollection(collectionName, []);
     let handle: CollectionGraphHandle | undefined;
     try {
-      handle = await this.deps.pool.acquireReader(activeCollection);
+      handle = await this.deps.pool.acquireReader(activePhysicalCollectionName);
     } catch (err) {
       // An empty edge list is an assertion about the code, and callers act on
       // it. Returning one for a graph we simply could not open made a read
@@ -151,7 +188,7 @@ export class GraphFacade {
       // so empty IS the honest answer there and the "codegraph optional"
       // guarantee still holds; anything else (lock held, daemon unreachable,
       // corrupt file) is a failure the caller must be told about.
-      if (this.deps.pool.hasDatabase(activeCollection)) throw err;
+      if (this.deps.pool.hasDatabase(activePhysicalCollectionName)) throw err;
       return fallback;
     }
     try {
@@ -178,11 +215,12 @@ export class GraphFacade {
     return this.withReadHandle(
       req,
       async (handle) => {
-        const edges = await handle.graphDb.getCallers(symbolId);
-        const visible = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallers(id));
+        const resolved = resolvedField(read);
+        const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
         // Declared visibility of the queried symbol and every caller, one
         // batched read (bd tea-rags-mcp-sqqkz); unknown levels leave the field out.
-        const { queried, callers } = await decorateCallers(handle.graphDb, symbolId, visible);
+        const { queried, callers } = await decorateCallers(handle.graphDb, read.queriedSymbolId, visible);
         // Lazy ambiguous expansion (bd f2jsb A4) — opt-in only, and only when
         // the target has a member segment (text after the last `#` or `.`,
         // per symbolid-convention; splitMethodSymbol is the adapter's own
@@ -190,9 +228,10 @@ export class GraphFacade {
         // was persisted under). Bare symbols skip the lookup; the DEFAULT
         // (flag absent) response stays byte-identical to the pre-flag shape.
         const member = req.includeAmbiguous ? splitMethodSymbol(symbolId)?.member : undefined;
-        if (member === undefined) return { ...queried, callers };
+        if (member === undefined) return { ...resolved, ...queried, callers };
         const sites = await handle.graphDb.getAmbiguousCallersByMember(member);
         return {
+          ...resolved,
           ...queried,
           callers,
           ambiguousCallers: sites.map((s) => ({
@@ -221,9 +260,9 @@ export class GraphFacade {
     return this.withReadHandle(
       req,
       async (handle) => {
-        const edges = await handle.graphDb.getCallees(symbolId);
-        const visible = edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
-        return { callees: await decorateCallees(handle.graphDb, visible) };
+        const read = await readSymbolEdges(handle.graphDb, symbolId, async (id) => handle.graphDb.getCallees(id));
+        const visible = read.edges.filter(isNavigationVisibleEdge).slice(0, req.limit ?? DEFAULT_LIMIT);
+        return { ...resolvedField(read), callees: await decorateCallees(handle.graphDb, visible) };
       },
       { callees: [] },
     );

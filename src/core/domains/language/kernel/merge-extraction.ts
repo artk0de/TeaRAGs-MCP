@@ -119,8 +119,10 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   typeAbstractness: (base, pass) => base ?? pass,
   // Append-only arrays: native entries first, pass entries after, order kept.
   imports: (base, pass) => [...base, ...pass],
+  typeOnlyImports: (base, pass) => [...(base ?? []), ...pass],
   fileScope: (base, pass) => [...base, ...pass],
   inheritanceEdges: (base, pass) => [...(base ?? []), ...pass],
+  structuralContracts: (base, pass) => [...(base ?? []), ...pass],
   knownTargetCallArgs: (base, pass) => [...(base ?? []), ...pass],
   moduleReexports: (base, pass) => [...(base ?? []), ...pass],
   typeDeclarations: (base, pass) => [...(base ?? []), ...pass],

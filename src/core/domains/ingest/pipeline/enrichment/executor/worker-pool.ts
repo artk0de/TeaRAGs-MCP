@@ -266,13 +266,13 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     if (!provider.workerDescriptor) {
       return this.inlineFallback.runFileBatch(provider, root, paths, options);
     }
-    const collectionName = options?.collectionName;
-    const request = buildCallRequest(provider.workerDescriptor, "runFileBatch", root, collectionName, {
+    const physicalCollectionName = options?.collectionName;
+    const request = buildCallRequest(provider.workerDescriptor, "runFileBatch", root, physicalCollectionName, {
       paths,
       options,
     });
     const plan = this.languagePlanFor(provider.workerDescriptor, options);
-    const routingKey = routingKeyFor(provider.workerDescriptor, collectionName);
+    const routingKey = routingKeyFor(provider.workerDescriptor, physicalCollectionName);
     const fanout = this.canFanOutExtraction(provider.workerDescriptor, options) ? this.extractionFanout : null;
     let response: EnrichmentWorkerResponse;
     if (plan && fanout) response = await fanout.runPartitionedFileBatch(request, plan);
@@ -298,30 +298,30 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     descriptor: WorkerEnrichmentDescriptor,
     options?: FileSignalOptions | ChunkSignalOptions,
   ): LanguageAffinityPlan | null {
-    const collectionName = options?.collectionName;
+    const physicalCollectionName = options?.collectionName;
     const affinity = descriptor.languageAffinity;
     // The cache is per collection, so a provider that never declared language
     // affinity must not pick up the plan another provider's first call made.
-    if (collectionName === undefined || affinity === undefined) return null;
-    const cached = this.languagePlanByCollection.get(collectionName);
+    if (physicalCollectionName === undefined || affinity === undefined) return null;
+    const cached = this.languagePlanByCollection.get(physicalCollectionName);
     if (cached !== undefined) return cached;
-    const runRelPaths = this.runRelPathsByCollection.get(collectionName);
+    const runRelPaths = this.runRelPathsByCollection.get(physicalCollectionName);
     const eligible =
       this.languageAffinityEnabled && runRelPaths !== undefined && this.canFanOutExtraction(descriptor, options);
     const plan =
       eligible && runRelPaths
         ? planLanguageAffinity({
-            collectionName,
+            collectionName: physicalCollectionName,
             runRelPaths,
             partitionByExtension: affinity.partitionByExtension,
             minFilesPerPartition: this.filesPerThread,
             maxPartitions: Math.min(MAX_LANGUAGE_AFFINITY_PARTITIONS, this.poolSize),
           })
         : null;
-    this.languagePlanByCollection.set(collectionName, plan);
+    this.languagePlanByCollection.set(physicalCollectionName, plan);
     if (eligible) {
       pipelineLog.enrichmentPhase("CODEGRAPH_LANGUAGE_AFFINITY", {
-        collection: collectionName,
+        collection: physicalCollectionName,
         partitions: plan
           ? plan.partitions.map((p) => ({
               label: p.label,
@@ -364,12 +364,18 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     if (!provider.workerDescriptor) {
       return this.inlineFallback.runFileSignalsRecovery(provider, root, paths, options);
     }
-    const collectionName = options?.collectionName;
-    const request = buildCallRequest(provider.workerDescriptor, "runFileSignalsRecovery", root, collectionName, {
-      paths,
-      options,
-    });
-    const routingKey = routingKeyFor(provider.workerDescriptor, collectionName);
+    const physicalCollectionName = options?.collectionName;
+    const request = buildCallRequest(
+      provider.workerDescriptor,
+      "runFileSignalsRecovery",
+      root,
+      physicalCollectionName,
+      {
+        paths,
+        options,
+      },
+    );
+    const routingKey = routingKeyFor(provider.workerDescriptor, physicalCollectionName);
     const response = await this.pool.dispatch(request, routingKey);
     this.throwIfErr(response);
     return response.fileOverlay ?? new Map();
@@ -384,15 +390,15 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     if (!provider.workerDescriptor) {
       return this.inlineFallback.runChunkBatch(provider, root, chunkMap, options);
     }
-    const collectionName = options?.collectionName;
-    const request = buildCallRequest(provider.workerDescriptor, "runChunkBatch", root, collectionName, {
+    const physicalCollectionName = options?.collectionName;
+    const request = buildCallRequest(provider.workerDescriptor, "runChunkBatch", root, physicalCollectionName, {
       chunkMap,
       options,
     });
     const plan = this.languagePlanFor(provider.workerDescriptor, options);
     const response = plan
       ? await this.languageAffinity.runChunkBatch(request, plan)
-      : await this.pool.dispatch(request, routingKeyFor(provider.workerDescriptor, collectionName));
+      : await this.pool.dispatch(request, routingKeyFor(provider.workerDescriptor, physicalCollectionName));
     this.throwIfErr(response);
     return response.chunkOverlay ?? new Map();
   }
@@ -405,26 +411,28 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     if (!provider.workerDescriptor) {
       return this.inlineFallback.runFinalize(provider, root, options);
     }
-    const collectionName = options?.collectionName;
-    const request = buildCallRequest(provider.workerDescriptor, "runFinalize", root, collectionName, { options });
+    const physicalCollectionName = options?.collectionName;
+    const request = buildCallRequest(provider.workerDescriptor, "runFinalize", root, physicalCollectionName, {
+      options,
+    });
     const plan = this.languagePlanFor(provider.workerDescriptor, options);
     const response = plan
       ? await this.languageAffinity.runFinalize(request, plan)
-      : await this.pool.dispatch(request, routingKeyFor(provider.workerDescriptor, collectionName));
+      : await this.pool.dispatch(request, routingKeyFor(provider.workerDescriptor, physicalCollectionName));
     this.throwIfErr(response);
     return response.fileOverlay ?? new Map();
   }
 
   async releaseRun(providers: EnrichmentProvider[], run: EnrichmentRunHandle): Promise<void> {
-    const { collection } = run;
-    const latestRunId = this.latestRunIdByCollection.get(collection);
+    const { collection: physicalCollectionName } = run;
+    const latestRunId = this.latestRunIdByCollection.get(physicalCollectionName);
     // A newer run on this collection is still reading the pinned provider state;
     // evicting it now would hand that run an empty symbol table mid-flight.
     if (latestRunId !== undefined && latestRunId !== run.runId) return;
-    this.latestRunIdByCollection.delete(collection);
-    const plan = this.languagePlanByCollection.get(collection) ?? null;
-    this.languagePlanByCollection.delete(collection);
-    this.runRelPathsByCollection.delete(collection);
+    this.latestRunIdByCollection.delete(physicalCollectionName);
+    const plan = this.languagePlanByCollection.get(physicalCollectionName) ?? null;
+    this.languagePlanByCollection.delete(physicalCollectionName);
+    this.runRelPathsByCollection.delete(physicalCollectionName);
     await Promise.all(
       providers.map(async (provider) => {
         const descriptor = provider.workerDescriptor;
@@ -438,16 +446,16 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
         // release to the unbound collection key would pin (and spawn) a worker
         // only to evict nothing.
         if (plan && descriptor.languageAffinity) {
-          await this.languageAffinity.release(descriptor.providerModulePath, collection, plan);
+          await this.languageAffinity.release(descriptor.providerModulePath, physicalCollectionName, plan);
           for (const partition of plan.partitions) this.pool.releaseAffinity(partition.routingKey);
           return;
         }
         const request: EnrichmentReleaseRequest = {
           type: "release",
           providerModulePath: descriptor.providerModulePath,
-          collectionName: collection,
+          collectionName: physicalCollectionName,
         };
-        const routingKey = routingKeyFor(descriptor, collection);
+        const routingKey = routingKeyFor(descriptor, physicalCollectionName);
         try {
           await this.pool.dispatch(request, routingKey);
         } catch (err) {
@@ -469,7 +477,7 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     // Drop the fan-out's per-collection bookkeeping with the binding it belongs
     // to. `beginRun` is what guarantees a fresh run starts clean; this is the
     // memory half of the same lifecycle.
-    this.extractionFanout?.releaseCollection(collection);
+    this.extractionFanout?.releaseCollection(physicalCollectionName);
   }
 
   async shutdown(): Promise<void> {

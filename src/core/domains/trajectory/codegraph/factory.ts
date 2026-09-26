@@ -193,7 +193,7 @@ export async function createCodegraphEnrichmentProvider(
     // Hydrate the per-collection symbol table from disk on first open —
     // identical to wireCodegraph. Without it an incremental reindex of file A
     // cannot resolve calls into an unchanged file B.
-    initHook: async ({ collectionName, graphDb, symbolTable }) => {
+    initHook: async ({ collectionName: physicalCollectionName, graphDb, symbolTable }) => {
       try {
         const persisted = await graphDb.listAllSymbols();
         if (persisted.length > 0) symbolTable.hydrate(persisted);
@@ -205,7 +205,7 @@ export async function createCodegraphEnrichmentProvider(
         if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
       } catch (err) {
         process.stderr.write(
-          `[tea-rags] codegraph symbol-table hydration failed for ${collectionName}: ${(err as Error).message}\n`,
+          `[tea-rags] codegraph symbol-table hydration failed for ${physicalCollectionName}: ${(err as Error).message}\n`,
         );
       }
     },

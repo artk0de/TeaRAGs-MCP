@@ -381,6 +381,99 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(thrown?.message).toContain("after 1 files");
     expect(thrown?.message).toContain(badLine);
   });
+
+  describe("closure-batch visit order (bd tea-rags-mcp-vtuu4)", () => {
+    /** A runner stub recording each resolved file as `relPath#imports`, with the given visit plans. */
+    function orderedRunner(
+      events: string[],
+      plans: { language: string; groups: string[][] }[] | undefined,
+    ): CallEdgeResolutionRunner {
+      return {
+        prepareResolvePass: () => undefined,
+        resolveVisitPlans:
+          plans === undefined
+            ? undefined
+            : () =>
+                plans.map((plan) => ({
+                  ...plan,
+                  endGroup: () => {
+                    events.push("end");
+                    // Queued now; runs before the next file only if the
+                    // finalizer yields a macrotask after the group end.
+                    setImmediate(() => events.push("tick"));
+                  },
+                })),
+        resolve: (extraction: FileExtraction): GraphEdges => {
+          events.push(`${extraction.relPath}#${extraction.imports.length}`);
+          return { fileEdges: [], methodEdges: [] };
+        },
+      } as unknown as CallEdgeResolutionRunner;
+    }
+
+    function finalizerWith(runner: CallEdgeResolutionRunner): GraphBuildFinalizer {
+      return new GraphBuildFinalizer(
+        async () => ({ graphDb: makeGraphDb(), symbolTable: {} as GlobalSymbolTable }),
+        runner,
+        new CodegraphRunState(),
+      );
+    }
+
+    const ts = (relPath: string): FileExtraction => ({ ...EXTRACTION, relPath, language: "typescript" });
+
+    it("visits a language's files batch by batch, oversize roots last", async () => {
+      const events: string[] = [];
+      const spillPath = writeSpill([
+        ts("src/big.ts"),
+        ts("src/b.ts"),
+        { ...EXTRACTION, relPath: "lib/x.rb", language: "ruby" },
+        ts("src/a.ts"),
+      ]);
+
+      await finalizerWith(
+        orderedRunner(events, [{ language: "typescript", groups: [["src/a.ts", "src/b.ts"], ["src/big.ts"]] }]),
+      ).resolveAndUpsert(spillPath);
+
+      // Files no plan names go first, in spill order; then each group.
+      expect(events.filter((event) => event.includes("#"))).toEqual([
+        "lib/x.rb#0",
+        "src/a.ts#0",
+        "src/b.ts#0",
+        "src/big.ts#0",
+      ]);
+    });
+
+    it("yields a macrotask and ends the group between batches", async () => {
+      const events: string[] = [];
+      const spillPath = writeSpill([ts("src/a.ts"), ts("src/b.ts")]);
+
+      await finalizerWith(
+        orderedRunner(events, [{ language: "typescript", groups: [["src/a.ts"], ["src/b.ts"]] }]),
+      ).resolveAndUpsert(spillPath);
+
+      expect(events).toEqual(["src/a.ts#0", "end", "tick", "src/b.ts#0", "end", "tick"]);
+    });
+
+    it("streams the spill unchanged when no resolver asks for an order", async () => {
+      const events: string[] = [];
+      const spillPath = writeSpill([ts("src/b.ts"), ts("src/a.ts")]);
+
+      await finalizerWith(orderedRunner(events, [])).resolveAndUpsert(spillPath);
+
+      expect(events).toEqual(["src/b.ts#0", "src/a.ts#0"]);
+    });
+
+    it("keeps a repeated relPath's spill lines in their original order", async () => {
+      const events: string[] = [];
+      const reimport = { source: "./z", importedNames: [] } as unknown as FileExtraction["imports"][number];
+      const spillPath = writeSpill([ts("src/a.ts"), ts("src/b.ts"), { ...ts("src/a.ts"), imports: [reimport] }]);
+
+      await finalizerWith(
+        orderedRunner(events, [{ language: "typescript", groups: [["src/b.ts", "src/a.ts"]] }]),
+      ).resolveAndUpsert(spillPath);
+
+      expect(events.filter((event) => event.includes("#"))).toEqual(["src/b.ts#0", "src/a.ts#0", "src/a.ts#1"]);
+    });
+  });
 });
 
 describe("GraphBuildFinalizer.recomputeMetrics", () => {

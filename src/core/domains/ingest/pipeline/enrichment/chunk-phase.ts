@@ -112,7 +112,7 @@ export class ChunkPhase {
   private readonly semaphore = new Semaphore(CHUNK_ENRICHMENT_CONCURRENCY);
   private contexts: Map<string, ProviderContext> = new Map();
   private runStartedAt = "";
-  private onComplete?: (coll: PhysicalCollectionName) => Promise<void>;
+  private onComplete?: (physicalCollectionName: PhysicalCollectionName) => Promise<void>;
   /**
    * One batch blob reader for the whole run, shared across every per-batch
    * chunk walk so the backend (git pack / repository handle) is opened once
@@ -159,7 +159,11 @@ export class ChunkPhase {
     private readonly blobReaderFactory?: BlobReaderFactory,
   ) {}
 
-  init(contexts: ReadonlyMap<string, ProviderContext>, _coll: PhysicalCollectionName, runStartedAt: string): void {
+  init(
+    contexts: ReadonlyMap<string, ProviderContext>,
+    _physicalCollectionName: PhysicalCollectionName,
+    runStartedAt: string,
+  ): void {
     this.contexts = new Map(contexts);
     this.runStartedAt = runStartedAt;
     this.states.clear();
@@ -174,7 +178,7 @@ export class ChunkPhase {
     this.runChurnWalkThread = undefined;
   }
 
-  setOnComplete(cb: (coll: PhysicalCollectionName) => Promise<void>): void {
+  setOnComplete(cb: (physicalCollectionName: PhysicalCollectionName) => Promise<void>): void {
     this.onComplete = cb;
   }
 
@@ -184,11 +188,11 @@ export class ChunkPhase {
    * No-op if no callback is bound. Errors are caught and logged with the same
    * semantics as the streaming-end fire site.
    */
-  async fireOnComplete(coll: PhysicalCollectionName): Promise<void> {
+  async fireOnComplete(physicalCollectionName: PhysicalCollectionName): Promise<void> {
     const cb = this.onComplete;
     if (!cb) return;
     try {
-      await cb(coll);
+      await cb(physicalCollectionName);
     } catch (error) {
       console.error("[Enrichment] onChunkEnrichmentComplete (post-backfill) callback failed:", error);
     }
@@ -211,9 +215,9 @@ export class ChunkPhase {
    * drives providers individually via onBatchProvider so each provider's chunk
    * work gates only on its own file work.
    */
-  onBatch(coll: PhysicalCollectionName, absolutePath: string, items: ChunkItem[]): void {
+  onBatch(physicalCollectionName: PhysicalCollectionName, absolutePath: string, items: ChunkItem[]): void {
     for (const ctx of this.contexts.values()) {
-      this.onBatchProvider(ctx.key, coll, absolutePath, items);
+      this.onBatchProvider(ctx.key, physicalCollectionName, absolutePath, items);
     }
   }
 
@@ -234,7 +238,7 @@ export class ChunkPhase {
    */
   onBatchProvider(
     providerKey: string,
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
     items: ChunkItem[],
     fileWorkGate?: Promise<void>,
@@ -251,7 +255,7 @@ export class ChunkPhase {
     // filters them out silently. Both do, so without this the run ends with
     // those points carrying neither terminal marker and the NEXT run's recovery
     // scan is what settles them (bd tea-rags-mcp-okra9).
-    this.stampDeclinedChunks(coll, ctx, state, map);
+    this.stampDeclinedChunks(physicalCollectionName, ctx, state, map);
     if (ctx.provider.defersChunkEnrichment) {
       // Fully-deferred provider (codegraph): accumulate the batch's chunkMap
       // once the provider's file work settles (parity with the pre-7gnre
@@ -275,7 +279,7 @@ export class ChunkPhase {
     for (const rel of covered.keys()) state.streamingEnrichedFiles.add(rel);
 
     if (!fileWorkGate) {
-      void this.runChunkSignals(ctx, state, coll, root, covered, /* useSemaphore */ true);
+      void this.runChunkSignals(ctx, state, physicalCollectionName, root, covered, /* useSemaphore */ true);
       return;
     }
     // Gate only the DISPATCH on the provider's own file work (the walk reads
@@ -286,14 +290,18 @@ export class ChunkPhase {
         // File work may have failed while this batch waited on the gate — a
         // failed provider dispatches nothing (backfill/recovery covers).
         if (state.prefetchFailed) return;
-        await this.runChunkSignals(ctx, state, coll, root, covered, /* useSemaphore */ true);
+        await this.runChunkSignals(ctx, state, physicalCollectionName, root, covered, /* useSemaphore */ true);
       })
       .catch(() => undefined);
     state.chunkWork.push(work);
   }
 
   /** Post-flush catch-up entry — applied to files NOT covered by streaming. */
-  enrichRemaining(coll: PhysicalCollectionName, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
+  enrichRemaining(
+    physicalCollectionName: PhysicalCollectionName,
+    absolutePath: string,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+  ): void {
     const providerPromises: Promise<boolean>[] = [];
 
     for (const ctx of this.contexts.values()) {
@@ -332,7 +340,9 @@ export class ChunkPhase {
         streamingEnrichedFiles: state.streamingEnrichedFiles.size,
       });
 
-      providerPromises.push(this.runChunkSignals(ctx, state, coll, root, remaining, /* useSemaphore */ false));
+      providerPromises.push(
+        this.runChunkSignals(ctx, state, physicalCollectionName, root, remaining, /* useSemaphore */ false),
+      );
     }
 
     if (providerPromises.length > 0 && this.onComplete) {
@@ -352,7 +362,7 @@ export class ChunkPhase {
           return;
         }
         try {
-          await cb(coll);
+          await cb(physicalCollectionName);
         } catch (error) {
           console.error("[Enrichment] onChunkEnrichmentComplete callback failed:", error);
         }
@@ -423,7 +433,7 @@ export class ChunkPhase {
    * resolved edges as the graph grows would let part of this overlap embedding.
    */
   async runDeferredChunk(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
@@ -454,10 +464,16 @@ export class ChunkPhase {
     if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = Date.now();
     try {
       const overlays = await this.executor.runChunkBatch(ctx.provider, root, scoped, {
-        collectionName: coll,
+        collectionName: physicalCollectionName,
         skipCache: true,
       });
-      const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
+      const applied = await this.applier.applyChunkSignals(
+        physicalCollectionName,
+        ctx.key,
+        overlays,
+        this.runStartedAt,
+        allChunkIds,
+      );
       state.chunkLastEndAt = Date.now();
       pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_COMPLETE", {
         provider: ctx.key,
@@ -543,7 +559,7 @@ export class ChunkPhase {
   private async runChunkSignals(
     ctx: ProviderContext,
     state: ChunkPhaseState,
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     root: string,
     inputChunkMap: Map<string, ChunkLookupEntry[]>,
     useSemaphore: boolean,
@@ -620,11 +636,11 @@ export class ChunkPhase {
     }
 
     // Carry the active collection on every chunk-signal call so codegraph
-    // routes per-collection DuckDB lookups correctly. `coll` is the
+    // routes per-collection DuckDB lookups correctly. `physicalCollectionName` is the
     // ChunkPhase's bound collection name from `init`.
     const opts: ChunkSignalOptions = useSemaphore
-      ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
-      : { skipCache: true, collectionName: coll };
+      ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: physicalCollectionName }
+      : { skipCache: true, collectionName: physicalCollectionName };
     if (this.runBlobReader) opts.blobReader = await this.runBlobReader;
     opts.diffMemo = this.runDiffMemo;
     // 82va1: attach ONLY for providers that declare the hook — a provider
@@ -650,7 +666,13 @@ export class ChunkPhase {
     const work = this.executor
       .runChunkBatch(ctx.provider, root, chunkMap, opts)
       .then(async (overlays: Map<string, Map<string, ChunkSignalOverlay>>) => {
-        const applied = await this.applier.applyChunkSignals(coll, ctx.key, overlays, this.runStartedAt, allChunkIds);
+        const applied = await this.applier.applyChunkSignals(
+          physicalCollectionName,
+          ctx.key,
+          overlays,
+          this.runStartedAt,
+          allChunkIds,
+        );
         state.chunkLastEndAt = Date.now();
         pipelineLog.enrichmentPhase(
           useSemaphore ? "STREAMING_CHUNK_ENRICHMENT_COMPLETE" : "CHUNK_ENRICHMENT_COMPLETE",
@@ -684,7 +706,7 @@ export class ChunkPhase {
    * joins `chunkWork` so `drain` awaits it.
    */
   private stampDeclinedChunks(
-    coll: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     ctx: ProviderContext,
     state: ChunkPhaseState,
     map: ReadonlyMap<string, ChunkLookupEntry[]>,
@@ -699,7 +721,7 @@ export class ChunkPhase {
     if (stamps.length === 0) return;
     state.chunkWork.push(
       this.applier
-        .applySkipStamps(coll, ctx.key, "chunk", stamps)
+        .applySkipStamps(physicalCollectionName, ctx.key, "chunk", stamps)
         .then(() => undefined)
         .catch((error: unknown) => {
           console.error(`[Enrichment:${ctx.key}] chunk skip-stamp write failed (${stamps.length} points):`, error);

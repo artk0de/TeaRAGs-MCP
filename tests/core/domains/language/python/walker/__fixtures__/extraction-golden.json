@@ -1,6 +1,9 @@
 {
   "type-declarations.py": {
     "relPath": "pkg/type-declarations.py",
+    "structuralContracts": [
+      { "name": "Readable", "members": [{ "name": "read", "params": 0 }] }
+    ],
     "language": "python",
     "imports": [
       {

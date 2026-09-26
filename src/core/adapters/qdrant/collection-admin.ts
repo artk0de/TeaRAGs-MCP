@@ -401,8 +401,8 @@ export class QdrantCollectionAdmin {
       // The status reports the alias (e.g. `code_<hash>`); the on-disk directory
       // is the active PHYSICAL collection it points at (`code_<hash>_vN`). Resolve
       // the alias before stat-ing, or we'd read a non-existent dir → undefined.
-      const physical = await this.connection.aliases.resolveActive(collectionName);
-      return await sumDirBytes(join(storagePath, "collections", physical));
+      const physicalCollectionName = await this.connection.aliases.resolveActive(collectionName);
+      return await sumDirBytes(join(storagePath, "collections", physicalCollectionName));
     } catch {
       return undefined;
     }

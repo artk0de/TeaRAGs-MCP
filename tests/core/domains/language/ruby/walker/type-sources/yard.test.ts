@@ -221,6 +221,18 @@ describe("collectYardReturnTypes", () => {
     expect(collectYardReturnTypes(code)).toEqual({ name: "String", count: "Integer" });
   });
 
+  it("a paragraph break ends the @!attribute block — a later method's @return binds to its def (djg73)", () => {
+    const code = [
+      "# @!attribute [rw] name",
+      "#",
+      "# @param opts [Hash]",
+      "# @return [String]",
+      "def update(opts)",
+      "end",
+    ].join("\n");
+    expect(collectYardReturnTypes(code)).toEqual({ update: "String" });
+  });
+
   it("@!attribute with rw mode is also recognized", () => {
     const code = ["# @!attribute [rw] status", "# @return [Symbol]", "def status", "end"].join("\n");
     expect(collectYardReturnTypes(code)).toEqual({ status: "Symbol" });

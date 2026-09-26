@@ -67,12 +67,6 @@ export interface SilentCouplingExclusionCounts {
   documentationEndpoints: number;
   /** Neither endpoint is walked by the codegraph: nothing structural to compare against. */
   unwalkedEndpoints: number;
-  /**
-   * A walked endpoint defines no symbol — a barrel, a type-only or an
-   * object-literal module. Its dependencies are mostly `import type`, which the
-   * file graph does not record, so a missing edge is no evidence.
-   */
-  noSymbolEndpoints: number;
   /** lift ≤ 1: the pair co-changes no more than independence predicts. */
   nonPositiveLift: number;
 }

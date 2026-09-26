@@ -20,8 +20,10 @@ import type {
   DispatchFanoutOutcome,
   FileExtraction,
   GraphEdges,
+  InheritanceEdgeRow,
   NamedSymbol,
   RelPath,
+  StructuralContractDecl,
   SymbolDefinition,
   SymbolDefinitionKind,
   SymbolKindRoles,
@@ -672,6 +674,14 @@ export interface LanguageSymbolResolver {
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
+   * Optional: pass-2's visit order for this language, as groups (bd
+   * tea-rags-mcp-vtuu4); `undefined` keeps the spill order. Mirrors
+   * `CallResolver.planResolveVisits`.
+   */
+  planResolveVisits?: () => readonly (readonly RelPath[])[] | undefined;
+  /** Optional: pass-2 finished one visit group. Mirrors `CallResolver.endResolveVisitGroup`. */
+  endResolveVisitGroup?: () => void;
+  /**
    * Optional: this resolver's run-scoped cache observables, as an opaque
    * JSON-able record for the pass-2 progress log (bd tea-rags-mcp-6aytq). Read
    * once per progress line, never per call. Mirrors `CallResolver.diagnostics`.
@@ -798,7 +808,39 @@ export interface LanguageProvider {
    * `typeSource: "finder"`. Absent → the language contributes no finder stage.
    */
   identifierFinderMethods?: readonly string[];
+  /**
+   * Optional structural-conformance deriver (bd tea-rags-mcp-39xca.14) — present
+   * on a language whose type system is structural (TypeScript interfaces, Python
+   * `Protocol`). The barrier hands it the family's contracts, the family's
+   * symbol-table definitions named like a contract member and the family's
+   * nominal rows, and adds the `structural` rows it returns to the family's
+   * hierarchy view. The algorithm is the kernel's; the language opting in is
+   * what gates it. Absent → the family derives nothing.
+   */
+  structuralConformance?: StructuralConformanceDeriver;
 }
+
+/** Everything {@link StructuralConformanceDeriver} reads, all within ONE language family. */
+export interface StructuralConformanceInput {
+  readonly contracts: readonly StructuralContractDecl[];
+  /**
+   * Every symbol-table definition whose short name is some contract member's
+   * name — ACROSS languages, because `SymbolDefinition` carries no language and
+   * only the language knows its own files. The deriver keeps its family's, reads
+   * each one's OWNER off its innermost scope segment — the class `O` of `O#m`,
+   * the factory `createX` of `createX.m` — and extends an owner's members down
+   * the nominal rows to its descendants.
+   */
+  readonly memberDefinitions: readonly SymbolDefinition[];
+  /** The family's declared hierarchy — never a `structural` row. */
+  readonly nominalRows: readonly InheritanceEdgeRow[];
+}
+
+/**
+ * Derive the `structural` hierarchy rows of one family. Pure and deterministic:
+ * the same input yields the same rows in the same order.
+ */
+export type StructuralConformanceDeriver = (input: StructuralConformanceInput) => InheritanceEdgeRow[];
 
 /**
  * How one language declares its dependencies. `matchesManifestFile` is asked per

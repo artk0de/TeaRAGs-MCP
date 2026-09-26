@@ -216,8 +216,8 @@ export abstract class BaseIndexingPipeline {
     collectionName: CollectionAlias;
   }> {
     const absolutePath = await validatePath(path);
-    const collectionName = await this.resolveCollectionForPath(absolutePath);
-    return { absolutePath, collectionName };
+    const aliasCollectionName = await this.resolveCollectionForPath(absolutePath);
+    return { absolutePath, collectionName: aliasCollectionName };
   }
 
   // ── Scanner ──────────────────────────────────────────────
@@ -245,7 +245,7 @@ export abstract class BaseIndexingPipeline {
   // ── Processing lifecycle ─────────────────────────────────
 
   protected initProcessing(
-    collectionName: PhysicalCollectionName,
+    physicalCollectionName: PhysicalCollectionName,
     absolutePath: string,
     scanner: FileScanner,
     chunkSizeOverride?: number,
@@ -259,7 +259,7 @@ export abstract class BaseIndexingPipeline {
     contentHashes?: ReadonlyMap<string, string>,
   ): ProcessingContext {
     const chunkerPool = this.createChunkerPool(chunkSizeOverride, this.readGemfile(absolutePath), absolutePath);
-    const chunkPipeline = this.createChunkPipeline(collectionName);
+    const chunkPipeline = this.createChunkPipeline(physicalCollectionName);
     // "codegraph-init" stage (csyve) = enrichment beginRun: per-provider context
     // build + (cross-pass) codegraph beginExtractionRun spill reset + phase init.
     // The DuckDB daemon connect is fire-and-forget inside beginRun and overlaps
@@ -267,7 +267,7 @@ export abstract class BaseIndexingPipeline {
     const codegraphInitStart = Date.now();
     const enrichmentRun = this.setupEnrichmentHooks(chunkPipeline, {
       absolutePath,
-      collection: collectionName,
+      collection: physicalCollectionName,
       fileCount,
       ignoreFilter: scanner.getIgnoreFilter(),
       contentHashes,

@@ -12,7 +12,7 @@
  */
 
 import type { DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
-import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
+import type { InheritanceEdgeDecl, StructuralContractDecl } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
@@ -27,6 +27,16 @@ export interface FileExtraction {
   relPath: RelPath;
   language: string;
   imports: ImportRef[];
+  /**
+   * Imports that bring in types only and load nothing at runtime
+   * (bd tea-rags-mcp-r8hme.12) — TypeScript's statement-level `import type` /
+   * `export type … from`. Kept OUT of {@link FileExtraction.imports}: nothing
+   * that reads the runtime import list (receiver binding, dispatch gates, the
+   * file graph's fanIn / fanOut) may see them. Resolved through the same
+   * import→file path into `GraphEdges.typeOnlyFileEdges`, which only the
+   * structure-vs-history judgement reads. Absent when the file has none.
+   */
+  typeOnlyImports?: ImportRef[];
   chunks: ChunkExtraction[];
   /** Lexical scope chain at file top level — usually `[]` for TS, may be
    *  e.g. `["module Acme"]` for Ruby (slice 3). */
@@ -225,6 +235,15 @@ export interface FileExtraction {
    * Plain array for NDJSON-spill round-trip.
    */
   inheritanceEdges?: InheritanceEdgeDecl[];
+  /**
+   * Optional structural contracts the file declares (bd tea-rags-mcp-39xca.14):
+   * TypeScript interfaces and object type aliases, Python `Protocol` classes.
+   * The pass-1→pass-2 barrier matches them against the symbol table's owners
+   * and adds a derived `structural` hierarchy row for every owner that conforms
+   * without declaring it, so the CHA cone reaches it. Undefined for a file
+   * declaring none and for languages without structural types.
+   */
+  structuralContracts?: StructuralContractDecl[];
   /**
    * Optional per-class instance-variable type map: `fqClassName → ivarName →
    * typeName`, built from DECLARED ivar types — `RubyTypeFact` entries of
@@ -737,6 +756,16 @@ export interface ClassFieldParamLink {
 export interface ImportRef {
   /** Raw import path as written, e.g. `"./utils"`, `"@/lib/foo"`, `"react"`. */
   importText: string;
+  /**
+   * The import binds names for type facts but loads nothing at runtime
+   * (bd tea-rags-mcp-r8hme.12) — Python's `if TYPE_CHECKING:` block. It stays on
+   * `imports[]` because a resolver reads its bindings to type annotations; the
+   * resolution runner routes its FILE edge to the type-only table instead of
+   * the runtime file graph. Contrast {@link FileExtraction.typeOnlyImports},
+   * which holds type-only imports a resolver must not see at all. Absent on
+   * every runtime import.
+   */
+  typeOnly?: true;
   /** Lexical position used by resolvers that need it (TS aliases, Python
    *  relative imports). 1-based line number. */
   startLine: number;
@@ -1014,6 +1043,34 @@ export interface CallRef {
   hasKwargSplat?: boolean;
   /** Call passes a block (`{ … }` / `do … end`) (bd d9o7o). */
   passesBlock?: boolean;
+  /**
+   * Per-POSITION argument atoms (bd tea-rags-mcp-emazx): a name-shaped Symbol /
+   * String literal, or a bare identifier; `null` for anything else. Truncated at
+   * the first argument that breaks positional correspondence (splat, keyword
+   * pair, block-pass), trailing nulls trimmed, absent when every slot is null.
+   * Read by the self-dispatch argument channel: at a call site a literal
+   * composes a hook name, inside a template body an identifier names the
+   * parameter it forwards.
+   */
+  positionalArgAtoms?: readonly (CallArgAtom | null)[];
+  /**
+   * The dispatched-name TEMPLATE of a `send` / `public_send` / `__send__` whose
+   * name is an interpolated string or symbol with exactly ONE interpolation of a
+   * bare identifier — `send("can_#{ability}?")` →
+   * `{ prefix: "can_", suffix: "?", identifier: "ability" }` (bd
+   * tea-rags-mcp-emazx). Absent for anything computed.
+   */
+  sendNameTemplate?: SendNameTemplate;
+}
+
+/** One positional call argument, as far as the self-dispatch argument channel reads it (bd emazx). */
+export type CallArgAtom = { readonly literal: string } | { readonly identifier: string };
+
+/** `prefix#{identifier}suffix` — the dispatched name a dynamic `send` composes (bd emazx). */
+export interface SendNameTemplate {
+  readonly prefix: string;
+  readonly suffix: string;
+  readonly identifier: string;
 }
 
 /**

@@ -76,7 +76,7 @@ export interface CodegraphPayloadHealRunnerDeps {
    * (the 6goqa / snbzk class of incident) and the diff comes back saying
    * nothing ever changed.
    */
-  acquireGraphDb: (collectionName: PhysicalCollectionName) => Promise<GraphDbClient>;
+  acquireGraphDb: (physicalCollectionName: PhysicalCollectionName) => Promise<GraphDbClient>;
   /** The codegraph provider's own key, so the heal addresses the same payload subtree the applier does. */
   providerKey: string;
 }
@@ -89,11 +89,11 @@ export interface CodegraphPayloadHealRunnerDeps {
 export function createCodegraphPayloadHealRunner(deps: CodegraphPayloadHealRunnerDeps): CodegraphPayloadHealRunner {
   return {
     run: async (
-      collectionName: PhysicalCollectionName,
+      physicalCollectionName: PhysicalCollectionName,
       skipRelPaths: ReadonlySet<string>,
       enrichedAt?: string,
     ): Promise<CodegraphPayloadHealOutcome> => {
-      const graphDb = await deps.acquireGraphDb(collectionName);
+      const graphDb = await deps.acquireGraphDb(physicalCollectionName);
       const changed = await graphDb.diffSymbolSignals();
       if (changed.symbols.length === 0 && changed.files.length === 0) {
         // Nothing moved. The baseline already equals the current graph, so
@@ -112,7 +112,7 @@ export function createCodegraphPayloadHealRunner(deps: CodegraphPayloadHealRunne
           settlementTally,
         ),
       });
-      const outcome = await healer.heal(collectionName, changed, skipRelPaths, enrichedAt);
+      const outcome = await healer.heal(physicalCollectionName, changed, skipRelPaths, enrichedAt);
       // Unconditional and once per run: an unsettled point keeps a payload the
       // graph no longer agrees with, and nothing else says so.
       const unsettled = settlementTally.describeUnsettled("payload heal");

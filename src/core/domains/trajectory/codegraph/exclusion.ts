@@ -22,7 +22,11 @@
 
 import ignore from "ignore";
 
-import type { LanguageFactoryDescriptor, SchemaColumnAccessorSource } from "../../../contracts/types/language.js";
+import type {
+  LanguageFactoryDescriptor,
+  SchemaColumnAccessorSource,
+  StructuralConformanceDeriver,
+} from "../../../contracts/types/language.js";
 import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../infra/file-classification/index.js";
 
 /**
@@ -108,6 +112,25 @@ export function buildCodegraphExclusionFilter(
  * (tests / fixtures) yields no sources, so the schema pre-pass no-ops.
  * bd tea-rags-mcp-8l5fo.
  */
+/**
+ * Every registered language's structural-conformance deriver
+ * (`LanguageProvider.structuralConformance`), keyed by language (bd
+ * tea-rags-mcp-39xca.14). The barrier runs one per family that declares a
+ * contract; the engine knows THAT a language is structurally typed, never how
+ * its files are named. Omitting the factory yields none.
+ */
+export function collectStructuralConformanceDerivers(
+  languageFactory?: LanguageFactoryDescriptor,
+): Map<string, StructuralConformanceDeriver> {
+  const derivers = new Map<string, StructuralConformanceDeriver>();
+  if (!languageFactory) return derivers;
+  for (const lang of languageFactory.supported()) {
+    const derive = languageFactory.create(lang).structuralConformance;
+    if (derive !== undefined) derivers.set(lang, derive);
+  }
+  return derivers;
+}
+
 export function collectSchemaColumnSources(
   languageFactory?: LanguageFactoryDescriptor,
 ): readonly SchemaColumnAccessorSource[] {

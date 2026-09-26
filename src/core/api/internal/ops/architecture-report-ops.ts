@@ -42,7 +42,6 @@ import {
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   detectSilentCoupling,
-  SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON,
   type SilentCouplingReport,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
@@ -354,7 +353,6 @@ function summariseSilentCoupling(report: SilentCouplingReport): SilentCouplingRe
       ? {}
       : { strengthSeparability: Math.round(summary.strengthSeparability * 1000) / 1000 }),
     excluded: { ...summary.excluded },
-    exclusionReasons: { noSymbolEndpoints: SILENT_COUPLING_NO_SYMBOL_ENDPOINT_REASON },
     ...(summary.scope ? { outOfScopePairCount: summary.scope.outOfScopePairCount } : {}),
   };
 }
