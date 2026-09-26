@@ -241,6 +241,51 @@ Both `--path` and `--name` are required. On success prints
 `Registered '<name>' -> <collectionName>` (and `(already indexed)` when the
 collection already had chunks).
 
+`--env KEY=VALUE` (repeatable) stores per-project env with the alias, the same
+env `tea-rags projects set-env` edits (below). The env is validated before
+anything is written, so a rejected key registers nothing:
+
+```bash
+tea-rags projects register --path /src/shop-backend --name shop-backend \
+  --env CODEGRAPH_ENABLED=true --env INGEST_CHUNK_SIZE=2500
+```
+
+### `tea-rags projects set-env` / `unset-env`
+
+```bash
+tea-rags projects set-env --name shop-backend CODEGRAPH_ENABLED=true TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS=24
+# Set env of 'shop-backend': CODEGRAPH_ENABLED=true TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS=24
+tea-rags projects unset-env --name shop-backend TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS
+```
+
+Every index run of a project replays the env its registry entry stores, with
+the precedence `outer env > registry env > code default`. These two commands
+edit that stored env as configuration, without running an index. The change
+applies from the project's next index run. A key that shapes the indexed data
+(chunking, history windows, codegraph) reaches existing chunks only through the
+matching reindex.
+
+- **Accepted keys** are the ones an index run reads per project: the canonical
+  names and their deprecated spellings. A deprecated spelling is stored under its
+  canonical name, and any other spelling of the same key is dropped. An unknown
+  key fails with `INPUT_PROJECT_ENV_KEY_UNKNOWN`. Secrets (API keys) and
+  server/process settings are never stored per project.
+- **Values** are checked against the same config schema the index run parses
+  them with (`INGEST_CHUNK_SIZE=abc` or `GIT_ADAPTER=cli` fails with
+  `INPUT_INVALID_PARAMETER`). An empty value is rejected; use `unset-env` to go
+  back to the default.
+- **`CODEGRAPH_ENABLED`, `EMBEDDING_BASE_URL`, `EMBEDDING_FALLBACK_URL`** are
+  stored in their dedicated entry fields (`codegraphEnabled`,
+  `embeddingBaseUrl`, `embeddingFallbackUrl`), which is where replay reads them.
+- **`EMBEDDING_MODEL` and `QDRANT_URL`** are refused. They record what the
+  existing index was built with and where it lives, so only the index run
+  writes them. To change either, re-index with the variable exported.
+- `unset-env` takes any spelling and removes every spelling of that key.
+
+An ambient variable set when an index run starts still beats the stored value,
+following the precedence rule above. Under the long-lived MCP server, only its
+runtime settings (endpoints, pool and batch sizes) take precedence this way.
+
 ### `tea-rags projects list`
 
 ```bash
@@ -284,9 +329,16 @@ tea-rags projects info --name shop-backend
 # chunksCount:         3832
 # indexedAt:           2026-05-13T01:15:45.019Z
 # teaRagsVersion:      1.24.0
+# codegraphEnabled:    true
+# env:
+#                      INGEST_CHUNK_SIZE=2500
+#                      TRAJECTORY_GIT_ENABLED=true
 ```
 
-Add `--json` for a machine-readable single-entry dump. Exits 1 with
+`embeddingBaseUrl`, `embeddingFallbackUrl` and `codegraphEnabled` appear when
+the entry has them. The `env:` block lists the stored per-project env, one
+`KEY=VALUE` per line. After an index run it holds the run's full effective env,
+defaults included. Add `--json` for a machine-readable single-entry dump. Exits 1 with
 `'<name>' was not registered` on stderr when the name is unknown.
 
 **Realpath divergence and missing paths.** `projects info` calls

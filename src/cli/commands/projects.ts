@@ -4,8 +4,10 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
+import { assertRegistryEnvValueParses } from "../../bootstrap/config/parse.js";
 import {
   CollectionRegistry,
+  InvalidParameterError,
   PROJECT_NAME_RE,
   ProjectRegistryOps,
   QdrantManager,
@@ -18,6 +20,16 @@ import { formatOrphansTable, formatProjectInfo, formatProjectsTable } from "./pr
 interface RegisterArgs {
   path: string;
   name: string;
+  /** Repeatable `--env KEY=VALUE`. */
+  env?: string[];
+}
+interface SetEnvArgs {
+  name: string;
+  assignments: string[];
+}
+interface UnsetEnvArgs {
+  name: string;
+  keys: string[];
 }
 /** Exactly one of `name` / `path` / `collection` — yargs enforces it, and the op re-checks. */
 interface UnregisterArgs {
@@ -56,7 +68,23 @@ function resolveDataDir(): string {
 
 function newOps(): { registry: CollectionRegistry; ops: ProjectRegistryOps } {
   const registry = new CollectionRegistry(resolveDataDir());
-  return { registry, ops: new ProjectRegistryOps({ registry }) };
+  return { registry, ops: new ProjectRegistryOps({ registry, validateEnvValue: assertRegistryEnvValueParses }) };
+}
+
+/**
+ * `KEY=VALUE` tokens → a map, split on the FIRST `=` so a value may carry one.
+ * A repeated key keeps its last value, as a shell `export` would.
+ *
+ * @throws InvalidParameterError on a token with no `=` or an empty key.
+ */
+export function parseEnvAssignments(tokens: readonly string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const token of tokens) {
+    const eq = token.indexOf("=");
+    if (eq <= 0) throw new InvalidParameterError("env", `'${token}' is not KEY=VALUE`);
+    env[token.slice(0, eq)] = token.slice(eq + 1);
+  }
+  return env;
 }
 
 /** Colors for stderr lines — gated on stderr's own TTY, not stdout's. */
@@ -67,13 +95,48 @@ function stderrColorizer(): Colorizer {
 export async function runRegister(args: RegisterArgs): Promise<void> {
   const { ops } = newOps();
   try {
-    const out = await ops.register({ path: args.path, name: args.name });
+    const env = args.env && args.env.length > 0 ? parseEnvAssignments(args.env) : undefined;
+    const out = await ops.register({ path: args.path, name: args.name, ...(env ? { env } : {}) });
     const c = createColorizer();
     process.stdout.write(
       `${c.ok(`Registered '${args.name}'`)} -> ${out.collectionName}${out.alreadyIndexed ? c.dim(" (already indexed)") : ""}\n`,
     );
   } catch (err) {
     process.stderr.write(`${stderrColorizer().alert(`projects register failed: ${(err as Error).message}`)}\n`);
+    process.exit(1);
+  }
+}
+
+/**
+ * `tea-rags projects set-env --name <alias> KEY=VALUE...` — configure the env
+ * the project's next index run replays (bd tea-rags-mcp-5uk75).
+ */
+export function runSetEnv(args: SetEnvArgs): void {
+  editProjectEnv(args.name, "set-env", () => ({ set: parseEnvAssignments(args.assignments) }));
+}
+
+/** `tea-rags projects unset-env --name <alias> KEY...` — drop keys back to their defaults. */
+export function runUnsetEnv(args: UnsetEnvArgs): void {
+  editProjectEnv(args.name, "unset-env", () => ({ unset: args.keys }));
+}
+
+function editProjectEnv(
+  name: string,
+  verb: "set-env" | "unset-env",
+  buildEdit: () => { set?: Record<string, string>; unset?: string[] },
+): void {
+  const { ops } = newOps();
+  try {
+    const edit = buildEdit();
+    ops.editEnv({ name, ...edit });
+    const changed = edit.set ? Object.entries(edit.set).map(([k, v]) => `${k}=${v}`) : (edit.unset ?? []);
+    const c = createColorizer();
+    process.stdout.write(
+      `${c.ok(`${verb === "set-env" ? "Set" : "Unset"} env of '${name}':`)} ${changed.join(" ")}\n` +
+        `${c.dim(`Applies from the next index run. See 'tea-rags projects info --name ${name}'.`)}\n`,
+    );
+  } catch (err) {
+    process.stderr.write(`${stderrColorizer().alert(`projects ${verb} failed: ${(err as Error).message}`)}\n`);
     process.exit(1);
   }
 }
@@ -523,13 +586,14 @@ async function defaultQdrant(): Promise<QdrantManager> {
 }
 
 /**
- * `tea-rags projects [register|list|unregister|info|orphans|prune]` — grouped
+ * `tea-rags projects [register|set-env|unset-env|list|unregister|info|orphans|prune]` — grouped
  * subcommands for project registry management. `list` is the default when no
  * subcommand is given.
  */
 export const projectsCommand: CommandModule = {
   command: "projects",
-  describe: "Manage registered projects (register | list | unregister | info | orphans | prune). Defaults to list.",
+  describe:
+    "Manage registered projects (register | set-env | unset-env | list | unregister | info | orphans | prune). Defaults to list.",
   builder: (yargs: Argv) =>
     yargs
       .command<RegisterArgs>(
@@ -546,8 +610,36 @@ export const projectsCommand: CommandModule = {
               type: "string",
               demandOption: true,
               describe: `Short name to register (regex ${PROJECT_NAME_RE.source})`,
+            })
+            .option("env", {
+              type: "string",
+              array: true,
+              describe: "Per-project env the index runs replay, as KEY=VALUE (repeatable)",
             }),
-        async (argv) => runRegister({ path: argv.path, name: argv.name }),
+        async (argv) =>
+          runRegister({ path: argv.path, name: argv.name, ...(argv.env !== undefined ? { env: argv.env } : {}) }),
+      )
+      .command<SetEnvArgs>(
+        "set-env <assignments..>",
+        "Set per-project env (KEY=VALUE...) the project's index runs replay",
+        (y) =>
+          y
+            .option("name", { type: "string", demandOption: true, describe: "Project name" })
+            .positional("assignments", { type: "string", array: true, describe: "KEY=VALUE pairs" }),
+        (argv) => {
+          runSetEnv({ name: argv.name, assignments: argv.assignments.map(String) });
+        },
+      )
+      .command<UnsetEnvArgs>(
+        "unset-env <keys..>",
+        "Remove per-project env keys, falling back to the default",
+        (y) =>
+          y
+            .option("name", { type: "string", demandOption: true, describe: "Project name" })
+            .positional("keys", { type: "string", array: true, describe: "Env keys (any spelling of the family)" }),
+        (argv) => {
+          runUnsetEnv({ name: argv.name, keys: argv.keys.map(String) });
+        },
       )
       .command<UnregisterArgs>(
         "unregister",

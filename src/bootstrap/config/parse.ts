@@ -245,6 +245,26 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
   };
 }
 
+/**
+ * Refuse a per-project env value the config schema would reject when the
+ * project's next index run replays it (bd tea-rags-mcp-5uk75). Parses the key
+ * in isolation — every other key at its default — through the same
+ * `parseAppConfigZod` the run uses, so there is no second value schema.
+ *
+ * A missing API key is not the value's fault: secrets are never persisted per
+ * project, and the run supplies them from its own env.
+ *
+ * @throws ConfigValueInvalidError when the schema refuses the value.
+ */
+export function assertRegistryEnvValueParses(key: string, value: string): void {
+  try {
+    parseAppConfigZod({ [key]: value });
+  } catch (err) {
+    if (err instanceof ConfigValueMissingError) return;
+    throw err;
+  }
+}
+
 export function printDeprecationWarnings(notices: DeprecationNotice[]): void {
   if (notices.length === 0) return;
   const lines = notices.map((n) => `  - ${n.oldName} -> use ${n.newName} instead`).join("\n");
