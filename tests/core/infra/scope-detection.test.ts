@@ -1,8 +1,22 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { languageTestFileConventions } from "../../../src/core/domains/language/capability/native.js";
+import { classify } from "../../../src/core/infra/file-classification/index.js";
 import { COMMON_TEST_DIRECTORY_PATTERNS } from "../../../src/core/infra/file-classification/patterns.js";
-import { detectScope, getDefaultTestPaths, isTestPath } from "../../../src/core/infra/scope-detection.js";
+import { detectScope, isTestPath } from "../../../src/core/infra/scope-detection.js";
+
+/** The classification corpus of the vjz6s parity baseline: every test pattern at depth, in three casings, plus near-misses. */
+const CLASSIFICATION_CORPUS = (
+  JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "file-classification/fixtures/test-path-classification-baseline.json"),
+      "utf8",
+    ),
+  ) as { corpus: string[] }
+).corpus;
 
 describe("detectScope", () => {
   const noTestChunks = new Map<string, number>();
@@ -56,16 +70,67 @@ describe("detectScope", () => {
   });
 });
 
-describe("getDefaultTestPaths", () => {
-  it("returns ruby-specific paths for ruby", () => {
-    const paths = getDefaultTestPaths("ruby");
-    expect(paths).toContain("**/spec/**");
-    expect(paths).toContain("**/test/**");
+describe("default test-path detection answers exactly what the file classifier answers (bd tea-rags-mcp-jl3ff)", () => {
+  // One question — "is this path a test file?" — one answer. Scope detection
+  // kept its own per-language glob table matched by picomatch, so it disagreed
+  // with `classify().isTest` wherever the two matchers differ: case (SwiftPM's
+  // `Tests/`, googletest's `parser_test.cc`), dot segments, and suffixes only
+  // the scope table declared. The file was enriched as a test while its
+  // signals landed in the SOURCE percentile bucket, or the reverse.
+  const noTestChunks = new Map<string, number>();
+
+  it.each([
+    ["Tests/Helpers/Util.swift", "swift", true],
+    ["Spec/models/user.rb", "ruby", true],
+    ["src/Test/Foo.java", "java", true],
+    ["src/parser_test.cc", "cpp", true],
+    ["src/parser_test.c", "c", true],
+    ["src/foo.TEST.ts", "typescript", true],
+    ["tests/.helpers/x.py", "python", true],
+    [".github/tests/run.ts", "typescript", true],
+    ["lib/foo_test.exs", "elixir", false],
+    ["lib/Latest.java", "java", false],
+  ])("%s (%s) is a test path iff the classifier calls it a test", (relPath, language, expected) => {
+    expect(classify(relPath).isTest).toBe(expected);
+    expect(isTestPath(relPath, language)).toBe(expected);
+    expect(detectScope("function", relPath, language, { languageTestChunkCounts: noTestChunks })).toBe(
+      expected ? "test" : "source",
+    );
   });
 
-  it("returns typescript-specific paths for typescript", () => {
-    const paths = getDefaultTestPaths("typescript");
-    expect(paths).toContain("**/__tests__/**");
+  it("agrees with classify().isTest on the whole classification corpus, for every language", () => {
+    const languages = [...Object.keys(languageTestFileConventions()), "bash", "markdown", "brainfuck"];
+    for (const relPath of CLASSIFICATION_CORPUS) {
+      const expected = classify(relPath).isTest;
+      for (const language of languages) {
+        expect(isTestPath(relPath, language), `${language} ${relPath}`).toBe(expected);
+      }
+    }
+  });
+
+  it("treats an empty path as not a test path", () => {
+    expect(isTestPath("", "ruby")).toBe(false);
+    expect(detectScope("function", "", "ruby", { languageTestChunkCounts: noTestChunks })).toBe("source");
+  });
+});
+
+/** A concrete path a `**`-prefixed test glob matches, at depth. */
+function samplePathFor(pattern: string): string {
+  return pattern
+    .replace("**/*", "src/sample")
+    .replace(/^\*\*\//, "pkg/")
+    .replace(/\/\*\*$/, "/sample.x")
+    .replaceAll("*", "sample");
+}
+
+describe("isTestPath", () => {
+  it("flags ruby's spec and test directories", () => {
+    expect(isTestPath("spec/models/user.rb", "ruby")).toBe(true);
+    expect(isTestPath("test/models/user.rb", "ruby")).toBe(true);
+  });
+
+  it("flags typescript's __tests__ directory", () => {
+    expect(isTestPath("src/__tests__/app.ts", "typescript")).toBe(true);
   });
 
   it("gives TypeScript's ESM / CJS module formats the TypeScript test suffixes (bd tea-rags-mcp-1y13c)", () => {
@@ -97,14 +162,15 @@ describe("getDefaultTestPaths", () => {
     }
   });
 
-  it("derives every classifier language's test paths from the installed language conventions (bd tea-rags-mcp-jl3ff)", () => {
+  it("flags every installed language's test shapes and the shared test directories (bd tea-rags-mcp-jl3ff)", () => {
     // One table answers "is this path a test file in language X" for both the
     // file classifier and scope detection: the shared directory conventions
     // plus the language's own suffixes. A hand copy here drifted to
     // root-anchored globs and disagreed with the classifier on nested layouts.
-    const common = COMMON_TEST_DIRECTORY_PATTERNS;
     for (const [language, { patterns: suffixes }] of Object.entries(languageTestFileConventions())) {
-      expect(getDefaultTestPaths(language), language).toEqual([...common, ...suffixes]);
+      for (const pattern of [...COMMON_TEST_DIRECTORY_PATTERNS, ...suffixes]) {
+        expect(isTestPath(samplePathFor(pattern), language), `${language} ${pattern}`).toBe(true);
+      }
     }
   });
 
@@ -119,11 +185,9 @@ describe("getDefaultTestPaths", () => {
   });
 
   it("falls back to the language-agnostic test directories for an unknown language", () => {
-    expect(getDefaultTestPaths("brainfuck")).toEqual([...COMMON_TEST_DIRECTORY_PATTERNS]);
-  });
-
-  it("returns fallback paths for unknown language", () => {
-    const paths = getDefaultTestPaths("brainfuck");
-    expect(paths.length).toBeGreaterThan(0);
+    for (const pattern of COMMON_TEST_DIRECTORY_PATTERNS) {
+      expect(isTestPath(samplePathFor(pattern), "brainfuck"), pattern).toBe(true);
+    }
+    expect(isTestPath("src/sample.bf", "brainfuck")).toBe(false);
   });
 });
