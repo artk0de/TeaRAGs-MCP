@@ -62,7 +62,15 @@
  * migration 033 → `driftWarning` naming the reindex, not a silent empty answer.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import {
+  listChangedFiles,
+  readAddedLineRangesOfFiles,
+  type AddedLineRange,
+} from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   GraphDbClient,
   IdentifierBoundCallee,
@@ -123,10 +131,18 @@ import type {
   NamingLexiconResult,
   NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
+  NamingReviewFinding,
+  NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
+import type {
+  NamingReviewExtractor,
+  NamingReviewFileDeclarations,
+  NamingReviewFileExtractor,
+} from "./naming-review-extraction.js";
 import {
   GENERIC_NAME_BAR,
+  ontologyNonProductionPathFilter,
   ontologyNonProductionPaths,
   ontologyReportQuery,
   ontologyRowCasing,
@@ -151,6 +167,17 @@ const CONCEPT_RERANK = { custom: { similarity: 0.7, chunkFanIn: 0.15, fanIn: 0.1
 const CONCEPT_FIELDS = ["symbolId", "relativePath", "parentSymbolId"];
 /** Casing when neither a descriptor nor the observed names decide one. */
 const FALLBACK_CASING: IdentifierCasing = "snake";
+
+/** Diff mode: changed files one call reviews; the rest are reported as `truncated`. */
+const DIFF_FILE_CAP = 200;
+/**
+ * Diff mode: characters of a type declaration's enclosing chunk its concept
+ * query carries (spec §4.1) — the head of the chunk, where the declaration and
+ * its first members are; the embedding reads a bounded query anyway.
+ */
+const DIFF_CONCEPT_CODE_CHARS = 1500;
+/** Diff mode's base when the request names none: the working tree against HEAD (spec §6). */
+const DIFF_DEFAULT_BASE = "HEAD";
 
 /** Declaration kinds the type-name read loads: the type-level kinds and constants, one read for both populations. */
 const TYPE_NAME_READ_KINDS = [...TYPE_DRAFT_KINDS, "constant"] as const;
@@ -181,6 +208,48 @@ export interface NamingLexiconOpsDeps {
    * `genericName`. Absent → no generic judgement is read.
    */
   ontologyLanguages?: readonly OntologyLanguageProfile[];
+  /**
+   * Diff mode (`changes` / `files`): a changed file's declarations from its
+   * working-tree text (`createNamingReviewExtractor`). Absent → every changed
+   * file counts as not judged.
+   */
+  extractDeclarations?: NamingReviewExtractor;
+}
+
+/** Diff mode: one changed file's added lines, its working-tree text and its declarations. */
+interface DiffFile {
+  relPath: string;
+  ranges: readonly AddedLineRange[];
+  text: string;
+  declarations: NamingReviewFileDeclarations;
+}
+
+/** Diff mode's reads: the reviewed files, the evidence they are excluded from, and the files not judged. */
+interface DiffRead {
+  base: string;
+  /** The files under the cap — what `excludePaths` carries. */
+  files: string[];
+  judged: DiffFile[];
+  notJudged: number;
+  skipped: number;
+}
+
+/** One added declaration as a draft, with where it was declared. */
+interface ReviewDraft {
+  relPath: string;
+  line: number;
+  language: string;
+  kind: string;
+  type?: string;
+  draft: NamingLexiconDraftName;
+}
+
+/**
+ * Term-alignment searches share one fate per request: the first failure is one
+ * notice and stops the later searches, across every judgement the request runs.
+ */
+interface TypeAlignmentState {
+  failure?: string;
 }
 
 type IdentifierReader = Pick<
@@ -259,7 +328,10 @@ export class NamingLexiconOps {
     scope: NamingLexiconEvidenceScope = {},
   ): Promise<NamingLexiconResult> {
     validateRequest(req);
-    const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
+    const { collectionName, path: repoRoot } = resolveCollection(this.deps.collectionRegistry, req);
+    // Diff mode reads the change first: its files are the evidence every read excludes.
+    const diff = isDiffRequest(req) ? await this.readDiff(req, repoRoot) : undefined;
+    const excludePaths = [...(scope.excludePaths ?? []), ...(diff?.files ?? [])];
     const active = this.deps.resolveActiveCollection
       ? await this.deps
           .resolveActiveCollection(collectionName)
@@ -278,13 +350,132 @@ export class NamingLexiconOps {
       };
     }
     try {
-      return await this.answer(excludingEvidence(handle.graphDb, scope.excludePaths), req);
+      const graphDb = excludingEvidence(handle.graphDb, excludePaths);
+      const alignment: TypeAlignmentState = {};
+      const answer = asksLexicon(req)
+        ? await this.answer(graphDb, req, alignment)
+        : { scope: "", byType: [], names: [] };
+      if (diff === undefined) return answer;
+      const { review, notices } = await this.review(graphDb, req, diff, alignment);
+      const allNotices = unique([...(answer.notices ?? []), ...notices]);
+      return { ...answer, ...(allNotices.length > 0 ? { notices: allNotices } : {}), review };
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
   }
 
-  private async answer(graphDb: IdentifierReader, req: NamingLexiconRequest): Promise<NamingLexiconResult> {
+  /**
+   * Diff mode's git reads (spec §6.1–6.3): the changed files against the base —
+   * `files` when given, else `git diff --name-only` plus untracked files —
+   * capped at {@link DIFF_FILE_CAP}; per file its added line ranges and, when
+   * something was added and a codegraph language walks it, its declarations.
+   */
+  private async readDiff(req: NamingLexiconRequest, repoRoot: string | undefined): Promise<DiffRead> {
+    if (!repoRoot) {
+      throw new InvalidParameterError("path", "changes / files review the working tree: pass project or path");
+    }
+    const base = req.changes?.base ?? DIFF_DEFAULT_BASE;
+    const all = await gitRead(base, async () => (req.files ? unique(req.files) : listChangedFiles(repoRoot, base)));
+    const files = all.slice(0, DIFF_FILE_CAP);
+    const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(repoRoot, base, files));
+
+    const nonProduction = ontologyNonProductionPathFilter();
+    const extract = this.deps.extractDeclarations?.forWorkingTree(repoRoot);
+    const judged: DiffFile[] = [];
+    let notJudged = 0;
+    for (const relPath of files) {
+      const added = ranges.get(relPath) ?? [];
+      if (added.length === 0) continue;
+      const file = nonProduction.ignores(relPath) ? null : readDiffFile(extract, repoRoot, relPath, added);
+      if (file === null) notJudged++;
+      else judged.push(file);
+    }
+    return { base, files, judged, notJudged, skipped: all.length - files.length };
+  }
+
+  /**
+   * Diff mode's judgement (spec §6.4–6.5): every added declaration becomes the
+   * draft an agent would pass, judged by the same stages as `names[]` — one
+   * answer per language, so each draft is cased in its own file's language.
+   * Identical drafts of one directory are judged once and their verdict fanned
+   * out to each declaration: a large diff does not multiply the per-type-draft
+   * concept search.
+   */
+  private async review(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    diff: DiffRead,
+    alignment: TypeAlignmentState,
+  ): Promise<{ review: NamingReviewResult; notices: string[] }> {
+    const drafts = diff.judged.flatMap(reviewDrafts);
+    const groups = new Map<string, { drafts: NamingLexiconDraftName[]; index: Map<string, number> }>();
+    const slot: { language: string; at: number }[] = [];
+    for (const d of drafts) {
+      const group = groups.get(d.language) ?? { drafts: [], index: new Map<string, number>() };
+      groups.set(d.language, group);
+      const key = reviewDraftKey(d);
+      let at = group.index.get(key);
+      if (at === undefined) {
+        at = group.drafts.push(d.draft) - 1;
+        group.index.set(key, at);
+      }
+      slot.push({ language: d.language, at });
+    }
+
+    const notices: string[] = [];
+    const verdicts = new Map<string, NamingLexiconNameVerdict[]>();
+    for (const [language, group] of groups) {
+      const answer = await this.answer(graphDb, { ...collectionRef(req), language, names: group.drafts }, alignment);
+      verdicts.set(language, answer.names);
+      notices.push(...(answer.notices ?? []));
+    }
+
+    const findings: NamingReviewFinding[] = [];
+    let conforming = 0;
+    let novel = 0;
+    drafts.forEach((d, i) => {
+      const judged = verdicts.get(slot[i].language)?.[slot[i].at];
+      if (judged === undefined) return;
+      const { name: _name, evidence: _evidence, genericName, ...verdict } = judged;
+      if (genericName === undefined && verdict.verdict === "CONFORMS") {
+        conforming++;
+        return;
+      }
+      if (genericName === undefined && isNovelVerdict(verdict)) {
+        novel++;
+        return;
+      }
+      findings.push({
+        relPath: d.relPath,
+        line: d.line,
+        name: d.draft.name,
+        kind: d.kind,
+        ...(d.type !== undefined ? { type: d.type } : {}),
+        ...verdict,
+        ...(genericName !== undefined ? { genericName } : {}),
+      });
+    });
+    findings.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line);
+
+    return {
+      review: {
+        base: diff.base,
+        checked: drafts.length,
+        conforming,
+        novel,
+        findings,
+        notJudged: diff.notJudged,
+        ...(diff.skipped > 0 ? { truncated: { cap: DIFF_FILE_CAP, skipped: diff.skipped } } : {}),
+      },
+      notices,
+    };
+  }
+
+  private async answer(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    alignment: TypeAlignmentState = {},
+  ): Promise<NamingLexiconResult> {
     const allDrafts = req.names ?? [];
     const drafts = allDrafts.filter((d): d is NamingLexiconValueDraft => !isTypeDraft(d));
     const typeDrafts = allDrafts.filter(isTypeDraft) as NamingLexiconTypeDraft[];
@@ -379,7 +570,7 @@ export class NamingLexiconOps {
 
     // 7. Type names.
     const typeVerdicts =
-      typeDrafts.length === 0 ? [] : await this.judgeTypeDrafts(graphDb, req, typeDrafts, language, notices);
+      typeDrafts.length === 0 ? [] : await this.judgeTypeDrafts(graphDb, req, typeDrafts, language, notices, alignment);
     const names = inDraftOrder(allDrafts, valueVerdicts, typeVerdicts);
 
     return {
@@ -425,7 +616,8 @@ export class NamingLexiconOps {
   /**
    * Stage 7: one read of the project's declarations, then per draft a concept
    * search and {@link judgeTypeDraft}. The first failed search is a notice and
-   * stops further searches; the drafts are still judged, without alignment.
+   * stops further searches — for the whole request, through `alignment`; the
+   * drafts are still judged, without alignment.
    */
   private async judgeTypeDrafts(
     graphDb: IdentifierReader,
@@ -433,6 +625,7 @@ export class NamingLexiconOps {
     drafts: readonly NamingLexiconTypeDraft[],
     language: string | undefined,
     notices: string[],
+    alignment: TypeAlignmentState,
   ): Promise<NamingLexiconNameVerdict[]> {
     const rows = await graphDb.readTypeNameRows({
       pathPrefixes: [],
@@ -445,18 +638,18 @@ export class NamingLexiconOps {
       constant: typeNameEvidence(rows, "constant"),
     };
 
-    let searchFailure: string | undefined;
+    const failedBefore = alignment.failure !== undefined;
     const verdicts: NamingLexiconNameVerdict[] = [];
     for (const draft of drafts) {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
       let conceptNames: string[] = [];
-      if (rows.length > 0 && searchFailure === undefined) {
+      if (rows.length > 0 && alignment.failure === undefined) {
         try {
           conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence[population].rows);
         } catch (error) {
           if (error instanceof InputValidationError) throw error;
-          searchFailure = errorMessage(error);
+          alignment.failure = errorMessage(error);
         }
       }
       const verdict = judgeTypeDraft({
@@ -469,7 +662,9 @@ export class NamingLexiconOps {
       });
       verdicts.push(typeDraftVerdict(draft, verdict, evidence[population].rows));
     }
-    if (searchFailure !== undefined) notices.push(`type-name alignment skipped: ${searchFailure}`);
+    if (!failedBefore && alignment.failure !== undefined) {
+      notices.push(`type-name alignment skipped: ${alignment.failure}`);
+    }
     return verdicts;
   }
 
@@ -521,13 +716,25 @@ export class NamingLexiconOps {
 
 // ── request ──────────────────────────────────────────────────────────────
 
-function validateRequest(req: NamingLexiconRequest): void {
-  const asked =
+/** The request asks the lexicon itself — types, anchors, drafts or a concept — not only a diff review. */
+function asksLexicon(req: NamingLexiconRequest): boolean {
+  return (
     (req.types?.length ?? 0) > 0 ||
     (req.anchors?.length ?? 0) > 0 ||
     (req.names?.length ?? 0) > 0 ||
-    (req.concept ?? "").length > 0;
-  if (!asked) throw new MissingArgumentError(["types | anchors | concept | names"]);
+    (req.concept ?? "").length > 0
+  );
+}
+
+/** Diff mode: `changes`, or a non-empty `files`. */
+function isDiffRequest(req: NamingLexiconRequest): boolean {
+  return req.changes !== undefined || (req.files?.length ?? 0) > 0;
+}
+
+function validateRequest(req: NamingLexiconRequest): void {
+  if (!asksLexicon(req) && !isDiffRequest(req)) {
+    throw new MissingArgumentError(["types | anchors | concept | names | changes | files"]);
+  }
   if (req.concept && !req.language) throw new InvalidParameterError("concept", "requires 'language'");
   const pathless = (req.names ?? []).findIndex((draft) => isTypeDraft(draft) && !draft.path);
   if (pathless >= 0) throw new InvalidParameterError(`names[${pathless}].path`, "required with kind 'type'");
@@ -1074,6 +1281,145 @@ function inDraftOrder(
   let value = 0;
   let type = 0;
   return drafts.map((draft) => (isTypeDraft(draft) ? typeVerdicts[type++] : valueVerdicts[value++]));
+}
+
+// ── diff mode ────────────────────────────────────────────────────────────
+
+/** A git read of diff mode; a failure (unknown base, not a repository) is the caller's input. */
+async function gitRead<T>(base: string, read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw new InvalidParameterError("changes.base", `git diff against '${base}' failed: ${errorMessage(error)}`);
+  }
+}
+
+/**
+ * One changed file with its text and declarations; `null` = not judged — no
+ * extractor, no codegraph language for the path, or the file is unreadable or
+ * unparsable.
+ */
+function readDiffFile(
+  extract: NamingReviewFileExtractor | undefined,
+  repoRoot: string,
+  relPath: string,
+  ranges: readonly AddedLineRange[],
+): DiffFile | null {
+  if (!extract) return null;
+  try {
+    const text = readFileSync(join(repoRoot, relPath), "utf8");
+    const declarations = extract(relPath, text);
+    return declarations === null ? null : { relPath, ranges, text, declarations };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A verdict with nothing to act on: NEW_TERM with no top terms and no
+ * alternatives — the project has nothing to compare the name with. Diff mode
+ * counts it (`novel`) instead of listing it.
+ */
+function isNovelVerdict(verdict: NamingVerdict): boolean {
+  return verdict.verdict === "NEW_TERM" && verdict.topTerms.length === 0 && (verdict.alternatives?.length ?? 0) === 0;
+}
+
+/**
+ * The code of the innermost chunk enclosing `line`, its first
+ * {@link DIFF_CONCEPT_CODE_CHARS} characters; `""` when no chunk encloses it.
+ */
+function enclosingChunkCode(file: DiffFile, line: number): string {
+  let enclosing: { startLine: number; endLine: number } | undefined;
+  for (const chunk of file.declarations.chunks) {
+    if (line < chunk.startLine || line > chunk.endLine) continue;
+    if (!enclosing || chunk.endLine - chunk.startLine < enclosing.endLine - enclosing.startLine) enclosing = chunk;
+  }
+  if (!enclosing) return "";
+  return file.text
+    .split("\n")
+    .slice(enclosing.startLine - 1, enclosing.endLine)
+    .join("\n")
+    .slice(0, DIFF_CONCEPT_CODE_CHARS);
+}
+
+function inRanges(line: number, ranges: readonly AddedLineRange[]): boolean {
+  return ranges.some((range) => line >= range.start && line <= range.end);
+}
+
+/**
+ * The drafts of one file's ADDED declarations (spec §6.2–6.3): each value row
+ * as `{ name, kind, type, typeMultiplicity, callee }`, each own type or
+ * constant declaration (a re-opening declares nothing) as a `kind: "type"`
+ * draft with its first supertype as `extends`.
+ */
+function reviewDrafts(file: DiffFile): ReviewDraft[] {
+  const { relPath, ranges, declarations } = file;
+  const { language } = declarations;
+  const drafts: ReviewDraft[] = [];
+  for (const row of declarations.values) {
+    if (!inRanges(row.line, ranges)) continue;
+    drafts.push({
+      relPath,
+      line: row.line,
+      language,
+      kind: row.kind,
+      ...(row.typeName !== undefined ? { type: row.typeName } : {}),
+      draft: {
+        name: row.name,
+        kind: row.kind,
+        ...(row.typeName !== undefined ? { type: row.typeName } : {}),
+        ...(row.typeMultiplicity !== undefined ? { typeMultiplicity: row.typeMultiplicity } : {}),
+        ...(row.boundMember !== undefined
+          ? {
+              callee: {
+                member: row.boundMember,
+                ...(row.boundReceiver !== undefined ? { receiver: row.boundReceiver } : {}),
+              },
+            }
+          : {}),
+      },
+    });
+  }
+  for (const fact of declarations.types) {
+    if (fact.reopens || !inRanges(fact.line, ranges)) continue;
+    const ancestor = fact.conforms?.[0];
+    const name = typeNameLastSegment(fact.typeId);
+    const code = enclosingChunkCode(file, fact.line);
+    const words = typeNameWords(name).join(" ");
+    drafts.push({
+      relPath,
+      line: fact.line,
+      language,
+      kind: fact.symbolKind,
+      draft: {
+        name,
+        kind: "type",
+        path: relPath,
+        symbolKind: fact.symbolKind,
+        ...(ancestor !== undefined ? { extends: ancestor } : {}),
+        // Spec §4.1: in diff mode the concept query also carries the declaration's enclosing code.
+        concept: code === "" ? words : `${words}\n${code}`,
+      },
+    });
+  }
+  return drafts;
+}
+
+/**
+ * Drafts sharing this key get one verdict: same draft (name, kind, type, callee,
+ * ancestor, symbol kind) in the same directory — what a verdict reads is the
+ * draft and its directory, never its file (the changed files are excluded).
+ * The concept (the enclosing code) is left out: identical declarations in one
+ * directory share the first one's alignment search.
+ */
+function reviewDraftKey(d: ReviewDraft): string {
+  const { path: _path, concept: _concept, ...draft } = d.draft;
+  return `${directoryOf(d.relPath)}\u0000${JSON.stringify(draft)}`;
+}
+
+function directoryOf(relPath: string): string {
+  const slash = relPath.lastIndexOf("/");
+  return slash < 0 ? "" : relPath.slice(0, slash);
 }
 
 // ── evidence scope ───────────────────────────────────────────────────────

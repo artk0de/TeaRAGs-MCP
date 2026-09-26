@@ -67,7 +67,11 @@ import {
 } from "../../../domains/language/capability/native.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import { nonProductionPathPatterns } from "../../../infra/file-classification/index.js";
+import {
+  buildNonProductionPathFilter,
+  nonProductionPathPatterns,
+  type PathFilter,
+} from "../../../infra/file-classification/index.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
 import { InvalidParameterError } from "../../errors.js";
 import type {
@@ -187,6 +191,18 @@ let cachedNonProductionPaths: CaseSplitPathPatterns | undefined;
 export function ontologyNonProductionPaths(): CaseSplitPathPatterns {
   cachedNonProductionPaths ??= nonProductionPathPatterns(languageTestFileConventions());
   return cachedNonProductionPaths;
+}
+
+let cachedNonProductionPathFilter: PathFilter | undefined;
+
+/**
+ * The same masks as a path matcher — for a path the store never read: the
+ * naming review's changed files (bd tea-rags-mcp-fdef2), so its draft side
+ * skips exactly the files its evidence side excludes.
+ */
+export function ontologyNonProductionPathFilter(): PathFilter {
+  cachedNonProductionPathFilter ??= buildNonProductionPathFilter(languageTestFileConventions());
+  return cachedNonProductionPathFilter;
 }
 
 /**

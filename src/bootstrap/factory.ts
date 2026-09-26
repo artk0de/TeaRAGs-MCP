@@ -34,6 +34,7 @@ import {
 import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { NamingLexiconOps } from "../core/api/internal/ops/naming-lexicon-ops.js";
+import { createNamingReviewExtractor } from "../core/api/internal/ops/naming-review-extraction.js";
 import { ontologyLanguageProfiles, OntologyReportOps } from "../core/api/internal/ops/ontology-report-ops.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
@@ -159,6 +160,8 @@ interface CompositionContext {
   languageCodeVersions: ReturnType<typeof createComposition>["languageCodeVersions"];
   languageChunkSetBumpScopes: ReturnType<typeof createComposition>["languageChunkSetBumpScopes"];
   namingConventions: ReturnType<typeof createComposition>["namingConventions"];
+  /** The composition's language factory — the naming review walks changed files with it. */
+  languageFactory: ReturnType<typeof createComposition>["languageFactory"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -341,6 +344,7 @@ function wireComposition(
     languageCodeVersions,
     languageChunkSetBumpScopes,
     namingConventions,
+    languageFactory,
   } = createComposition({
     // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
     git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
@@ -356,6 +360,7 @@ function wireComposition(
     languageCodeVersions,
     languageChunkSetBumpScopes,
     namingConventions,
+    languageFactory,
     schemaBuilder,
   };
 }
@@ -1290,6 +1295,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         namingConventions: composition.namingConventions,
         // The ontology report's profiles: a draft named generically there carries `genericName`.
         ontologyLanguages: ontologyLanguageProfiles(),
+        // Diff mode (bd tea-rags-mcp-fdef2): changed files walked in memory by the same languages.
+        extractDeclarations: createNamingReviewExtractor(composition.languageFactory),
       })
     : undefined;
   const app = createApp({

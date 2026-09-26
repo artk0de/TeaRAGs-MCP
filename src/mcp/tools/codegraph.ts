@@ -179,9 +179,10 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
  * ≤ 1.5 KB serialized.
  */
 const NAMING_LEXICON_DESCRIPTION =
-  "Project naming vocabulary from the codegraph. `types`/`anchors` → names per kind + shape; " +
-  "`names[]` (attribute: kind field; method: return; class/const: type+path) → CONFORMS | MISFIT{suggestion} | " +
-  "NEW_TERM{topTerms,alternatives} | COLLISION, +genericName; `concept`+`language` → terms.";
+  "Codegraph naming vocabulary. `types`/`anchors` → names/kind+shape; " +
+  "`names[]` (attribute: kind field; method: return; class/const: type+path) → CONFORMS|MISFIT{suggestion}|" +
+  "NEW_TERM{topTerms,alternatives}|COLLISION,+genericName; `concept`+`language` → terms; " +
+  "`changes{base=HEAD}`/`files` → diff review.";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
@@ -189,33 +190,34 @@ function buildNamingLexiconInputSchema() {
     kind: z
       .enum(["param", "local", "field", "return", "type"])
       .optional()
-      .describe("default local; ivar/attribute/property: field; method: return, type=result type"),
+      .describe("ivar/attribute/property: field; method: return, type=result type"),
     type: z.string().optional(),
-    typeMultiplicity: z.enum(["one", "many"]).optional().describe("many: collection; type=element"),
-    callee: z
-      .object({ member: z.string().min(1), receiver: z.string().optional() })
-      .optional()
-      .describe("Bound call"),
+    typeMultiplicity: z.enum(["one", "many"]).optional().describe("many: type=element"),
+    callee: z.object({ member: z.string().min(1), receiver: z.string().optional() }).optional(),
     path: z.string().optional(),
     extends: z.string().optional(),
   });
   return z
     .object({
       ...collectionPathFields(),
-      pathPattern: z.string().optional().describe("Glob; widens under 5 rows"),
-      language: z.string().optional().describe("Casing; needed with concept"),
+      pathPattern: z.string().optional().describe("Glob"),
+      language: z.string().optional(),
       types: z.array(z.string()).optional(),
-      anchors: z.array(z.string()).optional().describe("SymbolIds: add param/return types"),
+      anchors: z.array(z.string()).optional().describe("SymbolIds: +param/return types"),
       concept: z.string().optional().describe("Domain, not a name"),
       names: z.array(draftName).optional(),
+      changes: z.object({ base: z.string().optional() }).optional(),
+      files: z.array(z.string()).optional(),
     })
     .refine(
       (req) =>
         (req.types?.length ?? 0) > 0 ||
         (req.anchors?.length ?? 0) > 0 ||
         (req.names?.length ?? 0) > 0 ||
-        (req.concept ?? "").length > 0,
-      { message: "Provide at least one of types, anchors, concept, names" },
+        (req.concept ?? "").length > 0 ||
+        req.changes !== undefined ||
+        (req.files?.length ?? 0) > 0,
+      { message: "Provide at least one of types, anchors, concept, names, changes, files" },
     )
     .refine((req) => req.concept === undefined || req.language !== undefined, {
       message: "concept requires language",
@@ -413,7 +415,7 @@ export function registerCodegraphTools(
       inputSchema: buildNamingLexiconInputSchema(),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, pathPattern, language, types, anchors, concept, names }) => {
+    async ({ project, collection, path, pathPattern, language, types, anchors, concept, names, changes, files }) => {
       const response = await app.getNamingLexicon({
         project,
         collection,
@@ -424,6 +426,8 @@ export function registerCodegraphTools(
         anchors,
         concept,
         names,
+        changes,
+        files,
       });
       return formatMcpText(JSON.stringify(response, null, 2));
     },

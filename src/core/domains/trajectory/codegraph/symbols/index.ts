@@ -56,6 +56,11 @@ export {
   type InMemoryExtractionContext,
   type InMemoryExtractionDeps,
 } from "./in-memory-extraction.js";
+export {
+  buildIdentifierRows,
+  collectIdentifierFinderVocabulary,
+  type IdentifierFinderVocabulary,
+} from "./identifier-rows.js";
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";
 export { codegraphFilters } from "./filters.js";

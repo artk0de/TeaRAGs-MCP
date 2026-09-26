@@ -60,7 +60,11 @@ export interface NamingLexiconEvidenceScope {
   excludePaths?: readonly string[];
 }
 
-/** At least one of `types` / `anchors` / `concept` / `names`; `concept` requires `language`. */
+/**
+ * At least one of `types` / `anchors` / `concept` / `names` / `changes` /
+ * `files`; `concept` requires `language`. `changes` and `files` (diff mode, bd
+ * tea-rags-mcp-fdef2) need the project's working tree — a `project` or `path`.
+ */
 export interface NamingLexiconRequest extends CollectionRef {
   /** Glob; its literal prefix (before the first `*?{[`) scopes the rows read. */
   pathPattern?: string;
@@ -71,6 +75,14 @@ export interface NamingLexiconRequest extends CollectionRef {
   anchors?: string[];
   concept?: string;
   names?: NamingLexiconDraftName[];
+  /**
+   * Diff mode: review the declarations the working tree ADDS against `base`
+   * (default `HEAD` — the working tree against HEAD, untracked files included).
+   * The answer carries `review`.
+   */
+  changes?: { base?: string };
+  /** Diff mode over these files only: their lines added against `changes.base` (default `HEAD`); an untracked file whole. */
+  files?: string[];
 }
 
 /** Where a row's type came from: a persisted source, the query-time `call-return` join, or the `name-inferred` statistic. */
@@ -136,6 +148,53 @@ export type NamingLexiconNameVerdict = {
   genericName?: NamingLexiconGenericName;
 } & NamingVerdict;
 
+/**
+ * One reviewed declaration that did not simply conform: a verdict other than
+ * CONFORMS, or a CONFORMS on a name judged generic (`genericName`).
+ */
+export type NamingReviewFinding = {
+  relPath: string;
+  /** 1-based line of the declared name. */
+  line: number;
+  name: string;
+  /** A value's declaration kind (`param`, `local`, `field`, `return`) or a type's symbol kind (`class`, `constant`, …). */
+  kind: string;
+  /** A value's declared type, when it has one. */
+  type?: string;
+  genericName?: NamingLexiconGenericName;
+} & NamingVerdict;
+
+/** The naming review of a diff (`changes` / `files`, bd tea-rags-mcp-fdef2). */
+export interface NamingReviewResult {
+  /** The ref the change was read against. */
+  base: string;
+  /**
+   * Declarations judged: the added ones, in production files a codegraph
+   * language walks. `checked = conforming + novel + findings.length`.
+   */
+  checked: number;
+  /** Of `checked`, CONFORMS on a name that is not generic — not listed. */
+  conforming: number;
+  /**
+   * Of `checked`, NEW_TERM with no `topTerms` and no `alternatives` on a name
+   * that is not generic: the project has nothing to compare it with, so there
+   * is nothing to act on — not listed.
+   */
+  novel: number;
+  /** Everything else: a verdict to act on, or a generic name (`genericName`). */
+  findings: NamingReviewFinding[];
+  /**
+   * Changed files with added lines whose declarations were not judged: a
+   * non-production file (tests, scripts, fixtures — the masks the evidence side
+   * excludes), no codegraph language walks the extension, or the file is gone
+   * from the working tree or failed to parse. Their declarations are not in
+   * `checked`.
+   */
+  notJudged: number;
+  /** Set when more files changed than one call reviews (200): the files past the cap, in path order, are skipped. */
+  truncated?: { cap: number; skipped: number };
+}
+
 export interface NamingLexiconResult {
   /** The rel_path prefix actually read — after widening; `""` = the whole project. */
   scope: string;
@@ -149,4 +208,6 @@ export interface NamingLexiconResult {
   notices?: string[];
   /** Set when the index predates the identifier table — names the reindex. */
   driftWarning?: string;
+  /** Diff mode's answer, when the request carried `changes` or `files`. */
+  review?: NamingReviewResult;
 }
