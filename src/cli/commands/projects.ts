@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import {
+  chunkPointsFilter,
   CollectionRegistry,
   PROJECT_NAME_RE,
   ProjectRegistryOps,
@@ -500,9 +501,10 @@ async function purgeOneFootprint(
   }
 }
 
+/** Chunk count of a collection — service points excluded, as get_index_status counts. */
 async function safeCount(client: Pick<QdrantManager, "countPoints">, collectionName: string): Promise<number> {
   try {
-    return await client.countPoints(collectionName);
+    return await client.countPoints(collectionName, chunkPointsFilter());
   } catch {
     return 0;
   }
