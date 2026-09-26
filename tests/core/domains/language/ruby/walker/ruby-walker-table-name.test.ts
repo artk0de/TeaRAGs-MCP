@@ -31,6 +31,26 @@ describe("extractFromRubyFile — self.table_name capture (bd tea-rags-mcp-8l5fo
     });
   });
 
+  it("records a symbol-form override (bd tea-rags-mcp-39xca.17 — mastodon FollowRecommendation)", () => {
+    expect(
+      tablesOf(
+        "class FollowRecommendation < ApplicationRecord\n  self.table_name = :global_follow_recommendations\nend\n",
+      ),
+    ).toEqual({ FollowRecommendation: "global_follow_recommendations" });
+  });
+
+  it("records a quoted-symbol override", () => {
+    expect(tablesOf('class Firm < ApplicationRecord\n  self.table_name = :"legacy.companies"\nend\n')).toEqual({
+      Firm: "legacy.companies",
+    });
+  });
+
+  it("ignores an interpolated quoted symbol (no guess)", () => {
+    expect(
+      tablesOf('class Firm < ApplicationRecord\n  self.table_name = :"#{prefix}_companies"\nend\n'),
+    ).toBeUndefined();
+  });
+
   it("keys a nested class by its fully-qualified name", () => {
     const src = [
       "module Admin",

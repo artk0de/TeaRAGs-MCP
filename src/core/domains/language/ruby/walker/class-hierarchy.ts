@@ -260,9 +260,18 @@ function schemaTableOverrideFromStatement(node: AstNode): string | null {
   const right = node.childForFieldName("right");
   if (!left || !right) return null;
   if (left.text.replace(/\s+/g, "") !== "self.table_name") return null;
-  const literal = /^["']([A-Za-z0-9_.]+)["']$/.exec(right.text.trim());
+  // String (`"companies"`), symbol (`:companies`) and quoted-symbol
+  // (`:"legacy.companies"`) forms all name the table; an interpolated or computed
+  // value is not guessed (bd tea-rags-mcp-39xca.17).
+  const literal = TABLE_NAME_LITERAL_FORMS.map((form) => form.exec(right.text.trim())).find(Boolean);
   return literal?.[1] ?? null;
 }
+
+const TABLE_NAME_LITERAL_FORMS: readonly RegExp[] = [
+  /^["']([A-Za-z0-9_.]+)["']$/,
+  /^:([A-Za-z_][A-Za-z0-9_]*)$/,
+  /^:["']([A-Za-z0-9_.]+)["']$/,
+];
 
 const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);
 
