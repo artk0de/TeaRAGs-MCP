@@ -217,89 +217,88 @@
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
-- **By default it builds ONE whole-project Program, not one per entry file, and
-  that Program answers to NEITHER retention bound.**
-  `CODEGRAPH_TS_PROGRAM_STRATEGY` = `coverage` | `whole` | `auto` (default).
-  `auto` primes from the UNION of `loadTsConfigFileNames` — the tsconfig's own
-  include/exclude expansion, i.e. the set `tsc` compiles — and the RUN's own
-  corpus, threaded in as `SymbolResolutionPassPlan.expectedRelPaths`, once the
-  run has touched `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` distinct files (200)
-  and the union fits `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` (20,000). Neither
-  half contains the other and the union is what both the root cap AND the heap
-  admission are measured against: on taxdome the tsconfig names 12,335 files,
-  the run resolves 10,912, they share 9,976, and the union is 13,271. The 936
-  corpus files outside the tsconfig are what a whole-Program run was still
-  paying `ts.createProgram` for — 42 builds, 10.2s, 22% of a 46.4s pass
-  (measured offline, `scripts/spikes/ts-live-resolve-harness.ts --config A`). Do
-  NOT drop either half: dropping the tsconfig half loses the declaration files
-  the corpus never names, dropping the corpus half restores the 42 builds. It is
-  held OUTSIDE `entries`, so `evictOverflow` cannot reach it, and its text is
-  excluded from `retainedSourceTextBytes`. Do NOT "unify" it into the LRU, and
-  do NOT derive the root set by accumulating acquired files. Why: measured on
-  taxdome (bd 6aytq), per-entry cost 86.1 ms/file and RISES with corpus position
-  (14.6 → 71.6 over 2,200-file segments) while the union of those Programs
-  parses 12,798 project files — the run rebuilds the whole project in slices.
-  One Program costs 10.1 s and then serves everything: at shipping defaults the
-  full corpus resolves in 58.8 s, 5.39 ms/file, 16x, with resolution parity
-  (92,253 of 167,182 against 92,269). Putting it in the LRU evicts the one
-  Program every remaining file is about to be served off; a growing root set
-  rebuilds it repeatedly; and without the warm-up gate a three-file incremental
-  reindex pays the 10.1 s build and ~4 GB of heap to resolve three files.
-- **The run is SEGMENTED, and admission decides whether the whole Program is
-  built at all.** `CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES` (5,000) counts
-  DISTINCT files acquired since the segment began — `segmentFiles`, a run-wide
-  Set, never the acquire count and never the whole Program's own `derived.size`
-  — and the file that overflows it drops EVERY retained Program (`entries`
-  cleared as well as `wholeEntry`) and rebuilds the whole one from the same
-  roots, old dropped BEFORE `buildFrom` so the two generations are never live
-  together. A counter keyed on `wholeEntry.derived.size` would see only ONE of
-  the growing checkers — the warm-up stretch before any whole build, and every
-  corpus file the root set still misses, are answered by per-entry Programs
-  whose checkers grow just the same. Separately, `TSProgramCache` reads
-  `v8.getHeapStatistics().heap_size_limit` in its own isolate and projects the
-  peak (`ts-program-heap-admission.ts`): above the whole requirement → whole,
-  between the two → coverage, below coverage's floor → `typecheckerOff`, which
-  latches `acquire()` to `null` for the run and emits one `[enrichment-worker]`
-  line. Admission overrides an explicit `whole`, unlike `wholeRootFilesMax`.
-  Why: checker state is monotonic (+1.69 GB over taxdome's 10,912 files, 2.6 GB
-  build → 4.31 GB live set), so an unsegmented 4096-declared worker dies at
-  ~file 6,500; and a V8 heap OOM kills the ISOLATE — `buildFrom`'s try/catch
-  never runs, the dispatch rejects `ERR_WORKER_OUT_OF_MEMORY`, and the run loses
-  every codegraph signal with no retry. Counting acquires instead of distinct
-  files would rebuild every ~116 files (production acquires ~43x per file);
-  keeping the old entry alive across the rebuild would put the boundary at the
-  peak the segmentation exists to remove. Validated offline at declared 4096 (V8
-  reports 4288) over the full 10,912-file corpus: completes, 6.97 ms/file, one
-  rotation at ~file 5,900, sampled peak 3,995 MB dropping to 2,885 MB across the
-  boundary, 92,269 of 167,182 calls resolved — the same resolution the
-  unsegmented run produced.
+- **A bulk pass is covered by CLOSURE-BATCH Programs, one alive at a time — not
+  one whole-project Program and not one per entry file** (bd vtuu4).
+  `CODEGRAPH_TS_PROGRAM_STRATEGY` = `coverage` | `whole` | `auto` (default);
+  `whole` / `auto` name the whole-PROJECT strategy, not a Program count. The
+  plan is made once per run (`TSProgramCache#planBatches`): the import graph
+  (`ts-program-import-graph.ts`) is walked over the UNION of
+  `loadTsConfigFileNames` and the run's corpus
+  (`SymbolResolutionPassPlan.expectedRelPaths`), and `TSProgramBatchPlanner`
+  packs only the CORPUS roots — DFS postorder, each batch's closure union under
+  `CODEGRAPH_TS_PROGRAM_BATCH_TEXT_MB` (40) and its call sites
+  (`expectedCallSites`) under `CODEGRAPH_TS_PROGRAM_BATCH_CALLS` (15,000). Every
+  batch Program holds its roots' FULL forward closure plus the PRELUDE: project
+  and dependency global scripts / `declare global` / ambient `declare module`
+  files as roots, and every non-default lib through a host-only
+  `/// <reference lib>` file. Do NOT hand libs over as root names. Why: a lib
+  given as a root is an ordinary source file, processed where the roots are,
+  while the whole Program loads it as a DEFAULT LIBRARY ahead of every file —
+  declaration merge order picks the global overload. The current batch is held
+  OUTSIDE `entries` (`currentUnit`) and released BEFORE the next is built;
+  pass-2 visits files group by group (`planResolveVisits`, oversize roots last)
+  and ends each group (`endResolveVisitGroup`). Why: the whole Program OOMed
+  taxdome's pass-2 worker at ~5.4 GB (117.6 MB of text, 24,772 files — ASTs 2.3
+  GB, binder 1.2 GB, checker ~1 GB); heap follows TEXT (~30 MB per MB) and
+  resolved CALL SITES (~30 KB each), not file count, and the spike ran taxdome's
+  33 sequential batches at 1,881 MB max live with 418,216 of 418,367 call sites
+  covered. The production path, measured by
+  `scripts/spikes/ts-batched-program-parity.ts`, ran 37 batches + 5 oversize
+  roots at 2,716 MB max live while a shared `ts.ModuleResolutionCache` held ~545
+  MB of failed-lookup trails; with `TSModuleResolutionMemo` in its place and the
+  25 MB parse budget it runs in a 2,304 MB isolate at 1,807 MB max live. The
+  group-0 floor (~1.4 GB) is that Program's own AST and binder state, not run
+  state. Under a loose heap cap one group can read ~2.2 GB after a forced GC and
+  not reproduce under the 2,304 MB cap — compare runs at the same cap. Files no
+  batch names (an incremental run under the warm-up gate, an explicit
+  `coverage`, a file outside the plan) still take the per-entry coverage path.
+- **Roots whose own closure exceeds the text budget run LAST, one Program each,
+  after the parse cache is emptied down to the pinned prelude, and admission is
+  judged per unit.** Before the first batch, `ts-program-heap-admission.ts`
+  projects the LARGEST batch — base 110 MB + 30 MB per MB of text (the batch's
+  own or the retained parse budget, whichever is larger) + 30 MB per 1,000 call
+  sites — against this isolate's `heap_size_limit` at 80% usable; a refusal
+  latches `typecheckerOff` for the run with one `[enrichment-worker]` line. Each
+  oversize root is projected on its own closure before its build; a refused one
+  resolves without the checker, is counted (`oversizeRootsWithoutChecker` in the
+  resolver diagnostics) and reported once. Admission overrides an explicit
+  `whole`. Why: a V8 heap OOM kills the ISOLATE — `buildFrom`'s try/catch never
+  runs, the dispatch rejects `ERR_WORKER_OUT_OF_MEMORY`, and the run loses every
+  codegraph signal with no retry.
 - **A BULK pass skips the warm-up and primes up front, from a count pass-1
   already has.** `CallEdgeResolutionRunner#prepareResolvePass` — pass-2's first
   act, before the spill is read — hands each language a
-  `SymbolResolutionPassPlan { expectedFileCount, expectedRelPaths, projectRoot }`
-  off `CodegraphRunState#extractedFilesByLanguage` and its `…RelPaths…` twin,
-  and `TSProgramCache#primeForExpectedEntries` builds immediately when that
-  count clears the SAME `wholeMinEntries` threshold. The count and the LIST do
-  different jobs: the count decides WHETHER to build, the list decides what to
-  build OVER (the root union above). A count BELOW the threshold returns without
-  recording an attempt — but still records the corpus, so the lazy warm-up gate
-  builds the same union later — so the per-acquire gate still governs an
-  incremental run. Keep it that way, and keep both per LANGUAGE. Why: the gate
-  can only learn a run is bulk by resolving 200 distinct files first, and on
-  taxdome reaching them costs 66 per-entry `ts.createProgram` builds, 9–13 s of
-  a 58.8 s pass, spent constructing slices of the Program about to replace them;
-  while a run-wide count would build a whole TS Program for a Ruby-dominated run
-  that happens to touch 40 `.ts` files.
+  `SymbolResolutionPassPlan { expectedFileCount, expectedRelPaths, expectedCallSites, projectRoot }`
+  off `CodegraphRunState#extractedFilesByLanguage`, its `…RelPaths…` twin and
+  `extractedCallSitesByRelPath`, and `TSProgramCache#primeForExpectedEntries`
+  plans the batches and builds the first when that count clears the SAME
+  `wholeMinEntries` threshold. The count, the LIST and the call counts do
+  different jobs: the count decides WHETHER to plan, the list decides what to
+  pack, the call counts cap each batch's checker load. A count BELOW the
+  threshold returns without recording an attempt — but still records the corpus,
+  so the lazy warm-up gate plans over the same union later — so the per-acquire
+  gate still governs an incremental run. Keep it that way, and keep both per
+  LANGUAGE. Why: the gate can only learn a run is bulk by resolving 200 distinct
+  files first, and on taxdome reaching them costs 66 per-entry
+  `ts.createProgram` builds, 9–13 s of a 58.8 s pass, spent constructing slices
+  of the Program about to replace them; while a run-wide count would plan TS
+  batches for a Ruby-dominated run that happens to touch 40 `.ts` files.
 - **Its shared parse cache holds THREE populations, each with its own rule:**
   project sources capped by `maxParsedFiles`, dependency `.d.ts` capped by
-  `maxDependencyFiles`, and the default lib capped by neither. `populationOf`
-  MUST test lib membership before dependency membership — with the compiler
-  installed under the indexed root the lib lives inside `node_modules` and would
-  otherwise read as an ordinary dependency. Why: exempting dependencies
-  wholesale alongside the lib (the bd qb2s3 shape) is what made a real run climb
-  ~1.8 MB per resolved file with the Program LRU and project-source count both
-  already pinned at their caps — `node_modules` is discovered one import at a
-  time, so it bounds the map only in a limit the run never reaches (bd 8qf86).
+  `maxDependencyFiles`, and the default lib capped by neither. Over the first
+  two, `TSParsedSourceLru` bounds retained TEXT
+  (`CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB`, 25), least recently used first, with
+  the prelude pinned; every Program resolves modules through one shared
+  `TSModuleResolutionMemo`, which keeps resolved modules only. Why: consecutive
+  batches share 80–95% of their parses, so the parses the next batch needs are
+  the ones this batch touched. `populationOf` MUST test lib membership before
+  dependency membership — with the compiler installed under the indexed root the
+  lib lives inside `node_modules` and would otherwise read as an ordinary
+  dependency. Why: exempting dependencies wholesale alongside the lib (the bd
+  qb2s3 shape) is what made a real run climb ~1.8 MB per resolved file with the
+  Program LRU and project-source count both already pinned at their caps —
+  `node_modules` is discovered one import at a time, so it bounds the map only
+  in a limit the run never reaches (bd 8qf86).
 - **Capacity eviction reads through to retained Programs (`pinnedParseOf`)
   before re-parsing, and the Programs answer to `maxRetainedSourceTextBytes` — a
   union-counted non-lib text budget, newest build always kept.** Do NOT

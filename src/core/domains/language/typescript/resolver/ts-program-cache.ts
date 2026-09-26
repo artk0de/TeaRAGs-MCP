@@ -141,6 +141,7 @@ import { dirname, isAbsolute, posix, relative, resolve as resolvePath, sep } fro
 import ts from "typescript";
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
+import { TSModuleResolutionMemo } from "./ts-module-resolution-memo.js";
 import { TSParsedSourceLru } from "./ts-parsed-source-lru.js";
 import {
   createProjectFileProbe,
@@ -215,11 +216,14 @@ export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 256 * 1024 * 1024;
  * prelude and the default lib. Default
  * {@link TSProgramCacheOptions.maxParsedSourceTextBytes} rationale.
  *
- * 40 MiB, the batch text budget (bd tea-rags-mcp-vtuu4): the spike's
- * sequential closure batches over taxdome kept 1.2–1.45 GB retained between
- * batches at this size with 80–95% of each batch's parses served as hits.
+ * 25 MiB (bd tea-rags-mcp-vtuu4). Swept over taxdome with
+ * `scripts/spikes/ts-batched-program-parity.ts`, the module-resolution memo in
+ * place: at 40 MiB a 2304 MB worker isolate OOMs while the first batch is
+ * primed; at 25 MiB it finishes with 1,807 MB max live and full parity. Wall
+ * clock did not rise at 25 (149 s against 165 s for 40, load ~7 both), and
+ * 15 MiB bought nothing further.
  */
-export const TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT = 40 * 1024 * 1024;
+export const TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT = 25 * 1024 * 1024;
 /**
  * How the cache gets its Programs.
  *
@@ -759,15 +763,17 @@ export class TSProgramCache {
    */
   private readonly parsedText: TSParsedSourceLru;
   /**
-   * One module-resolution cache for every Program this instance builds, and
+   * One module-resolution memo for every Program this instance builds, and
    * for the batch planner's graph walk (bd tea-rags-mcp-vtuu4).
    *
    * `ts.createProgram` otherwise creates a private cache per call, so each
    * Program re-resolves every specifier of every file it holds. Resolution
    * depends only on the containing directory, the specifier and the options,
-   * all fixed for the run, so the answers are shareable across Programs.
+   * all fixed for the run, so the answers are shareable across Programs. A
+   * memo rather than a `ts.ModuleResolutionCache`: the cache also retains every
+   * lookup trail, ~545 MB on taxdome — see `./ts-module-resolution-memo.ts`.
    */
-  private readonly moduleResolutionCache: ts.ModuleResolutionCache;
+  private readonly moduleResolution: TSModuleResolutionMemo;
   /**
    * A file that exists only in this host: one `/// <reference lib>` line per
    * lib the prelude carries (bd tea-rags-mcp-vtuu4).
@@ -830,11 +836,7 @@ export class TSProgramCache {
     this.preludeLibFileName = `${this.inRootPrefix}${PRELUDE_LIB_REFERENCES_FILE}`;
     this.parsedText = new TSParsedSourceLru(this.maxParsedSourceTextBytes);
     this.host = this.buildHost();
-    this.moduleResolutionCache = ts.createModuleResolutionCache(
-      this.host.getCurrentDirectory(),
-      (fileName) => this.host.getCanonicalFileName(fileName),
-      this.compilerOptions,
-    );
+    this.moduleResolution = new TSModuleResolutionMemo(this.compilerOptions, this.host);
     // Read off the host rather than guessed: it is the same lookup the compiler
     // itself uses to find the lib, so the exempt directory is exactly the one
     // whose files `ts.createProgram` will ask this cache to parse.
@@ -1181,8 +1183,9 @@ export class TSProgramCache {
       rootNames: roots,
       compilerOptions: this.compilerOptions,
       host: this.host,
-      moduleResolutionCache: this.moduleResolutionCache,
+      moduleResolution: this.moduleResolution,
     });
+    this.moduleResolution.releaseLookups();
     const packed = this.corpusRoots.length > 0 ? this.corpusRoots : roots;
     const plan = new TSProgramBatchPlanner({
       textBudgetBytes: this.batchTextBytes,
@@ -1542,7 +1545,7 @@ export class TSProgramCache {
     this.hostDirectoryExists.clear();
     this.hostRealpath.clear();
     this.parsedText.clear();
-    this.moduleResolutionCache.clear();
+    this.moduleResolution.clear();
   }
 
   /**
@@ -1765,19 +1768,17 @@ export class TSProgramCache {
       this.evictParsedOverflow();
       return parsed;
     };
-    // Every Program resolves through ONE cache instead of a private one per
+    // Every Program resolves through ONE memo instead of a private cache per
     // `ts.createProgram` (bd tea-rags-mcp-vtuu4) — the call the compiler makes
-    // itself, with the shared cache in place of its own.
+    // itself, answered without the lookup trail.
     base.resolveModuleNameLiterals = (literals, containingFile, redirectedReference, options, containingSourceFile) =>
       literals.map((literal) =>
-        ts.resolveModuleName(
+        this.moduleResolution.resolve(
           literal.text,
           containingFile,
-          options,
-          base,
-          this.moduleResolutionCache,
-          redirectedReference,
           ts.getModeForUsageLocation(containingSourceFile, literal, options),
+          options,
+          redirectedReference,
         ),
       );
     const fileExists = memoizeHostProbe(base.fileExists.bind(base), this.hostFileExists);
@@ -1887,6 +1888,9 @@ export class TSProgramCache {
       program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });
     } catch {
       return null;
+    } finally {
+      // The build's lookup trail goes with the build; the answers stay.
+      this.moduleResolution.releaseLookups();
     }
     const builtAtMs = Date.now();
     const sourceFile = program.getSourceFile(entryAbsolute);

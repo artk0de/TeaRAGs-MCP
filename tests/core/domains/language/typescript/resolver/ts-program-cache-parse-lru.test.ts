@@ -77,8 +77,9 @@ describe("TSProgramCache parse text budget (bd tea-rags-mcp-vtuu4)", () => {
     expect(cache.parsedSourceTextBytes).toBe(a.length + b.length);
   });
 
-  it("defaults the budget to 40 MB of source text", () => {
-    expect(TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT).toBe(40 * 1024 * 1024);
+  it("defaults the budget to 25 MB of source text", () => {
+    // 40 MB OOMs a 2304 MB worker isolate on taxdome before the first batch; 25 MB does not.
+    expect(TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT).toBe(25 * 1024 * 1024);
   });
 });
 
