@@ -64,9 +64,58 @@ export const capability: LanguageCapability = {
   // `missWithInProjectDef`. No edge moves; the persisted resolve rate does.
   // walker 13: the two branches above bumped 10 -> 11 independently and were
   // merged, so neither parent's index holds the merged extraction.
+  // walker 14: bd tea-rags-mcp-4p3sb.3 — the walker publishes
+  // `identifierDeclarations` (params, locals, `self.<attr>` fields, annotation
+  // and CapWords-constructor types) for the naming lexicon. Rows written by
+  // walker 13 carry none, so only the recompute adds them.
+  // walker 16: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // def's return annotation as a `return`, so a walker-15 index has no return
+  // row for a module-level def (the structured channel keys it by file).
   // walker 14: bd tea-rags-mcp-r8hme.2. Every import records the names it
   // takes from the module (`importedExportNames`: the imported spelling, `*`
   // for a star import or `import m`), persisted on the file edge (migration
   // 030). No edge moves.
-  versions: { chunking: 1, walker: 14, codegraphSchema: 2 },
+  // walker 17: the naming-lexicon branch (walker 16 there) rebased onto
+  // integration walker 14; neither side's index holds both extractions.
+  versions: { chunking: 1, walker: 17, codegraphSchema: 2 },
+  // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
+  // functions, methods, variables and attributes snake_case, module-level
+  // constants SCREAMING_SNAKE.
+  naming: {
+    casing: {
+      type: ["pascal"],
+      module: ["snake"],
+      method: ["snake"],
+      param: ["snake"],
+      local: ["snake"],
+      field: ["snake"],
+      constant: ["screamingSnake"],
+    },
+    // Builtins, plus the `typing` wrappers that name a container rather than a concept.
+    nonConceptTypes: [
+      "str",
+      "int",
+      "float",
+      "complex",
+      "bool",
+      "bytes",
+      "bytearray",
+      "dict",
+      "list",
+      "set",
+      "frozenset",
+      "tuple",
+      "type",
+      "object",
+      "None",
+      "Any",
+      "Optional",
+      "Union",
+      "Callable",
+      "Dict",
+      "List",
+      "Set",
+      "Tuple",
+    ],
+  },
 };

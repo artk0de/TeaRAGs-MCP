@@ -103,6 +103,14 @@ Skip when codegraph off (graph tools not registered) — ownership bundle from
 Step 2/3 still stands; note caller-impact not computed. Never invent caller
 lists.
 
+## Step 2.6 — Naming pre-check (codegraph only)
+
+`get_naming_lexicon(names=<identifiers the diff declares>, pathPattern=<diff dirs>)`
+— settle naming against the project vocabulary before a reviewer spends a
+comment on it. `MISFIT` → rename to `suggestion` before sending (or list it
+under risk flags with the holder); `NEW_TERM` → one-line justification in the
+bundle. Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+
 ## Step 3 — Build reviewer-context bundle
 
 Aggregate by `relativePath`. Per unique file extract — raw essentials (`blame*`,

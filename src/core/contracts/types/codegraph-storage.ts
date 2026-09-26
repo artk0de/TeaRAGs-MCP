@@ -12,6 +12,13 @@
  */
 
 import type {
+  IdentifierBoundCallee,
+  IdentifierDeclarationKind,
+  IdentifierTypeMultiplicity,
+  IdentifierTypeSource,
+  PersistedIdentifierTypeSource,
+} from "./codegraph-extraction.js";
+import type {
   AmbiguousCallerSite,
   CalleeEdge,
   CallerEdge,
@@ -75,6 +82,369 @@ export interface SymbolChunkIdJoinEntry {
   relPath: RelPath;
   chunkIds: ReadonlyMap<SymbolId, string>;
 }
+
+/**
+ * One `cg_identifiers` row (bd tea-rags-mcp-4p3sb.8): a declared identifier of
+ * `ownerSymbolId`, with its best-known type and — for a local or field bound to
+ * a call — that call's callee and its `CallRef.callText`
+ * (`boundCallExpression`, the edge table's join key). Built at sink time from a
+ * file's `FileExtraction`; the file is implied by the entry carrying it.
+ */
+export interface IdentifierRow {
+  ownerSymbolId: SymbolId;
+  kind: IdentifierDeclarationKind;
+  name: string;
+  line: number;
+  typeName?: string;
+  typeSource?: PersistedIdentifierTypeSource;
+  /** Persisted as `type_multiplicity`; absent is written as `one` (bd tea-rags-mcp-4p3sb.26). */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+  boundMember?: string;
+  boundReceiver?: string;
+  boundCallExpression?: string;
+}
+
+/** One file's identifier rows, as consumed by `GraphDbClient.replaceIdentifiersBulk`. */
+export interface IdentifierReplaceEntry {
+  relPath: RelPath;
+  rows: readonly IdentifierRow[];
+}
+
+/**
+ * The scope of an identifier read: the effective types asked for, optionally
+ * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
+ */
+export interface IdentifierTypeScopeQuery {
+  types: readonly string[];
+  pathPrefixes?: readonly string[];
+}
+
+/**
+ * Opt-in on an identifier aggregate: split every group by its file language
+ * (`cg_symbols_files.language`) and report it per row as `language`. A reader
+ * that cases each row in its own language (a mixed Ruby + TypeScript project)
+ * asks for it; without it rows carry no `language` key.
+ */
+export interface IdentifierLanguageGroupingQuery {
+  groupByLanguage?: boolean;
+}
+
+/** {@link IdentifierTypeScopeQuery} for the type aggregate, which may group by file language. */
+export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, IdentifierLanguageGroupingQuery {
+  /**
+   * Split every group by `type_multiplicity` and report it per row as
+   * `typeMultiplicity` — a `Doc` value and a `Doc[]` value are judged apart
+   * (bd tea-rags-mcp-4p3sb.26). Without it rows carry no `typeMultiplicity` key.
+   */
+  groupByMultiplicity?: boolean;
+}
+
+/**
+ * The file language of an aggregate row read with `groupByLanguage`: null for a
+ * file with no `cg_symbols_files` row; absent when the read did not group.
+ */
+export interface IdentifierLanguageGroupedRow {
+  language?: string | null;
+}
+
+/**
+ * Callees asked for by `GraphDbClient.aggregateIdentifiersByCallee`. A callee
+ * without `receiver` matches the member under ANY receiver, receiverless
+ * included.
+ */
+export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery {
+  callees: readonly IdentifierBoundCallee[];
+  pathPrefixes?: readonly string[];
+}
+
+/**
+ * One (type, kind, name, typeSource) group of the type aggregate. `typeSource`
+ * is `call-return` for a row the query typed through its bound call's single
+ * exact target. `exampleOwner` is the smallest owner symbolId of the group.
+ */
+export interface IdentifierTypeAggregateRow extends IdentifierLanguageGroupedRow {
+  typeName: string;
+  kind: IdentifierDeclarationKind;
+  name: string;
+  typeSource: IdentifierTypeSource;
+  /** `cg_identifiers.type_multiplicity`, for a read that groups by it; absent otherwise. */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+  n: number;
+  exampleOwner: SymbolId;
+}
+
+/**
+ * One (callee, kind, name, persisted type) group of the callee aggregate;
+ * `receiver` is null for a receiverless call. `typeName` is the rows' PERSISTED
+ * type (a `finder` row carries its receiver constant) and is absent for untyped
+ * rows — the callee path answers for values the type path cannot name.
+ */
+export interface IdentifierCalleeAggregateRow extends IdentifierLanguageGroupedRow {
+  member: string;
+  receiver: string | null;
+  kind: IdentifierDeclarationKind;
+  name: string;
+  n: number;
+  exampleOwner: SymbolId;
+  typeName?: string;
+}
+
+/** A typed `param` / `return` row of an anchor symbol. */
+export interface AnchorIdentifierTypeRow {
+  ownerSymbolId: SymbolId;
+  kind: "param" | "return";
+  typeName: string;
+}
+
+/** How many rows bind `name` to `typeName` (null: untyped even after the call-return join). */
+export interface IdentifierNameTypeRow {
+  name: string;
+  typeName: string | null;
+  n: number;
+}
+
+/** A read over every identifier row, optionally narrowed to files under any of `pathPrefixes`. */
+export interface IdentifierScopeQuery {
+  pathPrefixes?: readonly string[];
+}
+
+/** Names asked for by `GraphDbClient.aggregateIdentifiersByName`, scoped like {@link IdentifierScopeQuery}. */
+export interface IdentifierNameScopeQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
+  names: readonly string[];
+}
+
+/**
+ * One (name, kind, effective type) group of the name aggregate. `typeName` is
+ * null for rows untyped even after the call-return join — the rows the naming
+ * lexicon's `name-inferred` stage may type.
+ */
+export interface IdentifierNameKindTypeRow extends IdentifierLanguageGroupedRow {
+  name: string;
+  kind: IdentifierDeclarationKind;
+  typeName: string | null;
+  /** `cg_identifiers.type_multiplicity`, for a read that groups by it; absent otherwise. */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+  n: number;
+  exampleOwner: SymbolId;
+}
+
+/**
+ * The language-count read's scope: {@link IdentifierScopeQuery}, further
+ * narrowed to rel_paths ending in any of `pathSuffixes` (`.rb`) — the file
+ * extension a request's path pattern pins. Absent or empty → no suffix narrowing.
+ */
+export interface IdentifierLanguageCountQuery extends IdentifierScopeQuery {
+  pathSuffixes?: readonly string[];
+}
+
+/** Identifier rows per file language (`cg_symbols_files.language`; null for a file with no files row). */
+export interface IdentifierLanguageCountRow {
+  language: string | null;
+  n: number;
+}
+
+/** A bounded sample of the scope's evidence-carrying rows (`GraphDbClient.sampleIdentifierShapes`). */
+export interface IdentifierShapeSampleQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
+  /** Reservoir size in rows; a scope with fewer rows is read whole. */
+  limit: number;
+}
+
+/**
+ * One (kind, name, persisted type, bound callee) group of the sampled rows. A
+ * sampled row carries a persisted type or a bound callee — a row with neither
+ * can only classify as a role name, so it is not evidence of a convention.
+ */
+export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
+  kind: IdentifierDeclarationKind;
+  name: string;
+  typeName: string | null;
+  /** `cg_identifiers.type_multiplicity`, for a read that groups by it; absent otherwise. */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+  boundMember: string | null;
+  boundReceiver: string | null;
+  n: number;
+}
+
+// ── Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20) ──
+
+/** A section of the project-wide naming ontology audit ({@link GraphDbClient.readOntologyReportSections}). */
+export type OntologyReportSection = "synonyms" | "homonyms" | "outliers" | "collisions";
+
+/** How a declared name collides with a symbol the graph already holds. */
+export type OntologyCollisionRule =
+  /** A typed value named after a type-like symbol that is neither its type nor related to it by inheritance. */
+  | "namesOtherType"
+  /** A local named like an instance method of its owner's class. */
+  | "shadowsMethod";
+
+/**
+ * Type names that carry no domain concept, for the files with any of
+ * `extensions` (`.rb`) — one entry per language, from its naming descriptor.
+ */
+export interface OntologyNonConceptTypes {
+  extensions: readonly string[];
+  typeNames: readonly string[];
+}
+
+/** The judging thresholds of {@link OntologyReportQuery}; policy, owned by the caller. */
+export interface OntologyReportThresholds {
+  /** Rows a (type, kind) group or a name needs before it is judged at all. */
+  minSupport: number;
+  /** Synonyms: a group whose top name holds at least this share of its rows is consistent. */
+  synonymDominantShareCeiling: number;
+  /** Generic name: bound to at least this many distinct concept types… */
+  genericMinTypes: number;
+  /** …none of which holds this share of the name's rows. */
+  genericMaxTopTypeShare: number;
+  /** Homonyms: a type counts for a name when it holds at least this many rows… */
+  homonymMinTypeRows: number;
+  /** …and at least this share of the name's rows. */
+  homonymMinTypeShare: number;
+  /** Outliers: a group is a convention when its top name holds at least this share. */
+  outlierMinDominantShare: number;
+  /** `k` of the `(n/k)^2` confidence the sections rank by. */
+  confidenceSupport: number;
+  /** Names returned per synonym / outlier group; types per homonym, applied by the caller after its judgement. */
+  namesPerItem: number;
+  /**
+   * Candidate (type, kind) groups read for synonyms and outliers, and candidate
+   * names read for homonyms, before the caller's plural / spelling merge and
+   * shape judgement narrow them to `limit`.
+   */
+  groupPool: number;
+}
+
+/**
+ * Scope and policy of one ontology read. Rows count as evidence only when their
+ * EFFECTIVE type (persisted or `call-return`) is a concept type — not a
+ * `nonConceptTypes` entry of the row's language, not a single capital letter —
+ * and their kind is `param`, `local` or `field`. A name bound to many types in
+ * the scope is a generic candidate (thresholds); the names the caller judges
+ * generic are excluded from every section.
+ */
+export interface OntologyReportQuery {
+  /** Literal `rel_path` prefixes; empty / absent = the whole project. */
+  pathPrefixes?: readonly string[];
+  /** File extensions (`.rb`, lowercase) a row's file must carry — the language filter. */
+  extensions?: readonly string[];
+  /**
+   * Only rows carrying one of these names — the naming lexicon asks whether
+   * its drafts are generic without reading the project's every candidate.
+   * Per-name aggregates are unchanged by it; absent = every name.
+   */
+  names?: readonly string[];
+  nonConceptTypes: readonly OntologyNonConceptTypes[];
+  sections: readonly OntologyReportSection[];
+  /** Items per section (collisions: per rule). */
+  limit: number;
+  thresholds: OntologyReportThresholds;
+}
+
+/** Where one example row of an ontology finding sits. */
+export interface OntologyLocationRow {
+  relPath: RelPath;
+  line: number;
+  ownerSymbolId: SymbolId;
+}
+
+/** Rows behind a finding per effective type source; `untyped` only for `shadowsMethod` collisions. */
+export type OntologyEvidenceCounts = Partial<Record<IdentifierTypeSource | "untyped", number>>;
+
+/** One name of a group with its row count and the example row. */
+export interface OntologyNameCountRow {
+  name: string;
+  n: number;
+  example: OntologyLocationRow;
+}
+
+/** A (type, kind) group: its names, most frequent first, capped at `namesPerItem`. */
+export interface OntologyTypeGroupRow {
+  typeName: string;
+  kind: Exclude<IdentifierDeclarationKind, "return">;
+  /**
+   * `cg_identifiers.type_multiplicity`, for a read that groups by it — a `Doc`
+   * group and a `Doc[]` group are different roles (bd tea-rags-mcp-4p3sb.26);
+   * absent otherwise.
+   */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+  n: number;
+  distinctNames: number;
+  /** Share of the group's rows its top name holds. */
+  dominantShare: number;
+  /** Shannon entropy of the name distribution over ALL names, normalised by `ln(distinctNames)` to 0..1. */
+  entropy: number;
+  names: OntologyNameCountRow[];
+  evidence: OntologyEvidenceCounts;
+}
+
+/** A name bound to two or more concept types, each with non-trivial support. */
+export interface OntologyHomonymRow {
+  name: string;
+  n: number;
+  /** Share of the name's rows its most frequent type holds. */
+  topTypeShare: number;
+  types: { typeName: string; n: number; example: OntologyLocationRow }[];
+  evidence: OntologyEvidenceCounts;
+}
+
+/** A declared name that collides with a symbol short name. */
+export interface OntologyCollisionRow {
+  rule: OntologyCollisionRule;
+  name: string;
+  /** The collided symbol: a type-like short name (`namesOtherType`) or the method's symbolId (`shadowsMethod`). */
+  symbol: string;
+  /** The declared type — always set for `namesOtherType`, absent for `shadowsMethod`. */
+  typeName?: string;
+  n: number;
+  example: OntologyLocationRow;
+  evidence: OntologyEvidenceCounts;
+}
+
+/** One type a generic-name candidate is bound to; `relPath` is an example file, for the language casing. */
+export interface OntologyGenericNameTypeRow {
+  typeName: string;
+  n: number;
+  relPath: string;
+}
+
+/**
+ * A generic-name candidate — generic by type count alone. The caller drops the
+ * types the name spells (`form` over `ActionForm`, `ClientForm`), keeps it only
+ * when the unrelated types still make it generic, and passes the names it kept
+ * to {@link GraphDbClient.readOntologyReportSections} as the exclusion.
+ */
+export interface OntologyGenericNameRow {
+  name: string;
+  typeCount: number;
+  n: number;
+  /** Every type the name is bound to, largest first. */
+  types: OntologyGenericNameTypeRow[];
+}
+
+/** What {@link GraphDbClient.readOntologyReportSummary} read. */
+export interface OntologyReportSummaryRows {
+  /** Whole-table counts, unscoped — `identifierRows: 0` beside `symbolRows > 0` is an index predating the table. */
+  totals: { identifierRows: number; symbolRows: number };
+  /** Generic-name candidates — `genericNames.length`. */
+  genericNameCount: number;
+  /** Every generic-name candidate of the scope, most frequent first, uncapped: the caller judges and caps them. */
+  genericNames: OntologyGenericNameRow[];
+}
+
+/** What {@link GraphDbClient.readOntologyReportSections} read; a section is present only when requested. */
+export interface OntologyReportSectionRows {
+  /** Concept-typed rows of the scope minus the excluded generic names — the evidence every section draws from. */
+  evidenceRows: number;
+  synonyms?: OntologyTypeGroupRow[];
+  /** Candidate names (up to `groupPool`, every qualifying type); the caller judges and caps them. */
+  homonyms?: OntologyHomonymRow[];
+  /** Candidate groups (a dominant name exists); the caller judges shapes. */
+  outlierGroups?: OntologyTypeGroupRow[];
+  collisions?: OntologyCollisionRow[];
+}
+
+/** Both phases of one ontology read, as the caller assembles them. */
+export type OntologyReportRows = OntologyReportSummaryRows & OntologyReportSectionRows;
 
 /**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
@@ -497,6 +867,80 @@ export interface GraphDbClient {
    * Callers bound the set themselves — one call is one IPC frame on the daemon.
    */
   getSymbolLineRangesBulk: (relPaths: readonly RelPath[]) => Promise<Map<RelPath, PersistedSymbolLineRanges>>;
+
+  // ── Identifier declarations (naming lexicon, bd tea-rags-mcp-4p3sb.8) ──
+
+  /**
+   * Make `cg_identifiers` EQUAL each entry's rows for every file the entries
+   * name, in one transaction; last-wins per relPath, and an entry with no rows
+   * clears its file. A file no entry names is untouched. Empty entries is a
+   * no-op.
+   */
+  replaceIdentifiersBulk: (entries: readonly IdentifierReplaceEntry[]) => Promise<void>;
+
+  /**
+   * Rows whose EFFECTIVE type is in `q.types`, grouped by (type, kind, name,
+   * typeSource) and counted. The effective type of an untyped row bound to a
+   * call is its callee's `return` type when the call has exactly one `exact`
+   * edge — reported as `typeSource: "call-return"`. Empty `types` reads nothing.
+   */
+  aggregateIdentifiersByType: (q: IdentifierTypeAggregateQuery) => Promise<IdentifierTypeAggregateRow[]>;
+
+  /**
+   * Rows bound to one of `q.callees`, grouped by (member, receiver, kind, name)
+   * and counted — typed or not. Empty `callees` reads nothing.
+   */
+  aggregateIdentifiersByCallee: (q: IdentifierCalleeScopeQuery) => Promise<IdentifierCalleeAggregateRow[]>;
+
+  /** The typed `param` and `return` rows of the given owner symbols. */
+  anchorIdentifierTypes: (symbolIds: readonly SymbolId[]) => Promise<AnchorIdentifierTypeRow[]>;
+
+  /** Homonymy: per name, which effective types it is bound to and how often (`null` = untyped). */
+  identifierNameTypes: (names: readonly string[]) => Promise<IdentifierNameTypeRow[]>;
+
+  /** Collision: the given names that are already a `cg_symbols.short_name`. */
+  existingSymbolShortNames: (names: readonly string[]) => Promise<string[]>;
+
+  /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
+  countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;
+
+  /**
+   * Rows named one of `q.names` in scope, grouped by (name, kind, effective
+   * type) and counted — untyped rows included (`typeName: null`). The effective
+   * type is the one {@link aggregateIdentifiersByType} reports. Empty `names`
+   * reads nothing.
+   */
+  aggregateIdentifiersByName: (q: IdentifierNameScopeQuery) => Promise<IdentifierNameKindTypeRow[]>;
+
+  /** Row count in scope per file language, largest first; empty when the scope holds no rows. */
+  identifierLanguageCounts: (q: IdentifierLanguageCountQuery) => Promise<IdentifierLanguageCountRow[]>;
+
+  /**
+   * A reservoir sample of at most `q.limit` scoped rows that carry a persisted
+   * type or a bound callee, grouped and counted. Persisted types only — no
+   * call-return join: the sample measures how the project names what it binds.
+   */
+  sampleIdentifierShapes: (q: IdentifierShapeSampleQuery) => Promise<IdentifierShapeSampleRow[]>;
+
+  /**
+   * Phase 1 of the project-wide naming ontology audit (bd tea-rags-mcp-4p3sb.20):
+   * whole-table totals and every generic-name CANDIDATE of the scope with its
+   * types, for the caller to judge. Throws when `cg_identifiers` does not exist.
+   */
+  readOntologyReportSummary: (q: OntologyReportQuery) => Promise<OntologyReportSummaryRows>;
+
+  /**
+   * Phase 2 of the audit: every requested section aggregated in DuckDB, one
+   * query per section, each item with its counts and one example row, over the
+   * scope's concept rows minus every row named in `excludedGenericNames` — the
+   * caller's JUDGED generic names, so the sections and the summary agree on
+   * which names are generic. See {@link OntologyReportQuery} for what counts as
+   * evidence. Throws when `cg_identifiers` does not exist.
+   */
+  readOntologyReportSections: (
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ) => Promise<OntologyReportSectionRows>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

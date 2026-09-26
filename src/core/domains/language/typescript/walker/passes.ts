@@ -6,6 +6,8 @@
  *   1. declared visibility (bd tea-rags-mcp-jwjyr.1) — a class member's
  *      `private` / `protected` / `#name` access level on
  *      `ChunkExtraction.visibility`, which the monolith never fills.
+ *   2. identifier declarations (bd tea-rags-mcp-4p3sb.4) — params, locals and
+ *      class fields with their syntactic type, for the naming lexicon.
  *
  * A new TypeScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -14,11 +16,13 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { typescriptDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { typescriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   typescriptDeclaredVisibilityFacetPass,
   typescriptTypeAbstractnessFacetPass,
+  createIdentifierDeclarationFacetPass(TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX),
 ];

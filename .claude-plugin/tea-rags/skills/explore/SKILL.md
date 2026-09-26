@@ -39,12 +39,19 @@ to that sub-pattern — checks run AFTER risk-assessment but **BEFORE** the
 EXPLAIN/TRACE/PRE-GEN/EXEMPLAR table (edge truth beats content matching for
 graph shape). Evaluate top-to-bottom; first match wins.
 
-| Priority | Intent contains                                                                 | Sub-pattern                                                                |
-| -------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                      | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
-| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow"       | [references/usage-pattern.md](./references/usage-pattern.md)               |
-| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts" | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
-| 4        | "архитектура", "structure", "backbone", "что центральное", "how X is organized" | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+| Priority | Intent contains                                                                  | Sub-pattern                                                                |
+| -------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1        | "циклы", "cycle", "circular dependency", "dependency loop"                       | [references/cycle-pattern.md](./references/cycle-pattern.md)               |
+| 2        | "кто использует/вызывает X", "callers of X", "callees of X", "trace flow"        | [references/usage-pattern.md](./references/usage-pattern.md)               |
+| 3        | "где начинается", "entry point", "main flow", "входная точка", "where X starts"  | [references/entry-point-pattern.md](./references/entry-point-pattern.md)   |
+| 4        | "архитектура", "structure", "backbone", "что центральное", "how X is organized"  | [references/architecture-pattern.md](./references/architecture-pattern.md) |
+| 5        | "как в проекте называют X", "what does the project call X", "is this name right" | `get_naming_lexicon` — see below                                           |
+
+**Naming (row 5):** `get_naming_lexicon(concept+language | types | names)` —
+concept for "what do we call X", `types` for "how are values of T named",
+`names[]` for a verdict. Answer = dominant shape + top names / terms with their
+holders; reading and codegraph-off fallback:
+`../data-driven-generation/SKILL.md` Step 5 "Naming (lexicon)".
 
 **Match on intent phrasing, not symbol substrings.** Classify by request's verb
 frame, NOT by characters inside symbol name. "what does X call?" / "who calls
@@ -109,7 +116,8 @@ Apply Intent Classification table above. Then:
 
 1. If risk intent matches → delegate to `risk-assessment/SKILL.md`.
 2. If Codegraph intent row matches → follow that sub-pattern (cycle / usage /
-   entry-point / architecture). Run BEFORE EXEMPLAR/EXPLAIN/TRACE/PRE-GEN.
+   entry-point / architecture / naming). Run BEFORE
+   EXEMPLAR/EXPLAIN/TRACE/PRE-GEN.
 3. If EXEMPLAR row matches → delegate per
    [references/exemplar-pattern.md](./references/exemplar-pattern.md)
    (refactoring-scan for broad antipattern, pattern-search otherwise).

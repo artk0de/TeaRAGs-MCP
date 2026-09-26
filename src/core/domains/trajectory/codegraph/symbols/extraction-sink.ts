@@ -39,6 +39,7 @@ import type {
   ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
+  IdentifierRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
@@ -105,6 +106,8 @@ export interface CodegraphSinkDeps {
   nodeFlush: SymbolNodeFlushQueue;
   /** Map a `FileExtraction` to the 9-field `SymbolDefinition` shape. */
   buildSymbolDefs: (extraction: FileExtraction) => SymbolDefinition[];
+  /** Map a `FileExtraction` to its `cg_identifiers` rows (bd tea-rags-mcp-4p3sb.9). */
+  buildIdentifierRows: (extraction: FileExtraction) => IdentifierRow[];
   /** Index this file's (startLine -> symbolId) map for the deferred chunk pass. */
   indexChunkSymbolsByLine: (collectionName: string | undefined, extraction: FileExtraction) => void;
   /** Collection key (`__direct__` sentinel in direct/test mode). */
@@ -241,7 +244,13 @@ export function createCodegraphExtractionSink(
       // unconditional (the resolver needs it in this context).
       absorbPass1FileState(deps.runState, symbolTable, extraction, defs, "own");
       if (!skipDurableNodeWrite) {
-        deps.nodeFlush.buffer(extraction.relPath, defs, deps.collectionKey(collectionName), collectionName);
+        deps.nodeFlush.buffer(
+          extraction.relPath,
+          defs,
+          deps.collectionKey(collectionName),
+          collectionName,
+          deps.buildIdentifierRows(extraction),
+        );
       }
       deps.indexChunkSymbolsByLine(collectionName, extraction);
 

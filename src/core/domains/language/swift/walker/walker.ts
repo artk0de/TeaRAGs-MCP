@@ -965,53 +965,63 @@ function stripImportKeywords(text: string): string {
 function collectSwiftCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
-    // `Protected<[T]>(…)`: a construction the grammar does not call a call.
-    if (node.type === "constructor_expression") {
-      const name = swiftConstructedGenericFact(node).nominal;
-      const constructorSuffix = node.children.find((c) => c.type === "constructor_suffix");
-      if (name && !name.includes(".")) {
-        out.push({
-          callText: node.text,
-          receiver: null,
-          member: name,
-          startLine: node.startPosition.row + 1,
-          ...(constructorSuffix ? swiftCallArguments(constructorSuffix) : {}),
-        });
-      }
-      return;
-    }
-    if (node.type !== "call_expression") return;
-    const suffix = node.children.find((c) => c.type === "call_suffix");
-    // Bracketed suffix = subscript read (`items[i]`, `dict["k"]`), not a call.
-    if (!suffix || suffix.text.startsWith("[")) return;
-    const callee = node.namedChildren.find((c) => c !== suffix);
-    if (!callee) return;
-    const startLine = node.startPosition.row + 1;
-    const signature = swiftCallArguments(suffix);
-    if (callee.type === "simple_identifier") {
-      // Invoking a closure VALUE calls no declared symbol (bd tea-rags-mcp-y99pg.8).
-      if (node.children.some((c) => c.type === "?") || isSwiftLocalValueName(callee.text, node)) return;
-      out.push({ callText: node.text, receiver: null, member: callee.text, startLine, ...signature });
-      return;
-    }
-    if (callee.type !== "navigation_expression") return;
-    const target = callee.childForFieldName("target");
-    const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
-    if (!target || !member) return;
-    const targetText = swiftReceiverTargetText(target);
-    const receiver = normalizeSwiftReceiver(targetText);
-    // `a?.c()` puts its `?` beside the target, not inside it (bd tea-rags-mcp-y99pg.33).
-    const written = callee.children.some((c) => c.type === "?") ? `${targetText}?` : targetText;
+    const shape = swiftCallSiteShape(node);
+    if (shape === null) return;
+    // The argument list: a construction's `constructor_suffix`, a call's `call_suffix`.
+    const suffix = node.children.find((c) => c.type === "constructor_suffix" || c.type === "call_suffix");
     out.push({
       callText: node.text,
-      receiver,
-      ...(written === receiver ? {} : { writtenReceiver: written }),
-      member: member.text,
-      startLine,
-      ...signature,
+      receiver: shape.receiver,
+      ...(shape.writtenReceiver === undefined ? {} : { writtenReceiver: shape.writtenReceiver }),
+      member: shape.member,
+      startLine: node.startPosition.row + 1,
+      ...(suffix ? swiftCallArguments(suffix) : {}),
     });
   });
   return out;
+}
+
+/** The `{ receiver, member }` pair a Swift `CallRef` carries. */
+export interface SwiftCallShape {
+  receiver: string | null;
+  /** The receiver as written when it differs from `receiver` (`a?` for `a?.c()`). */
+  writtenReceiver?: string;
+  member: string;
+}
+
+/**
+ * The `{ receiver, member }` of the `CallRef` {@link collectSwiftCalls} emits
+ * for `node`, or null when it emits none. Read by the identifier-declaration
+ * pass so a declaration's bound callee matches that `CallRef` by construction
+ * (bd tea-rags-mcp-4p3sb.16).
+ *
+ * `Protected<[T]>(…)` is a construction the grammar does not call a call: a
+ * bare call named by the constructed nominal, when it is undotted. A bracketed
+ * suffix is a subscript read (`items[i]`, `dict["k"]`), not a call. Invoking a
+ * closure VALUE calls no declared symbol (bd tea-rags-mcp-y99pg.8).
+ */
+export function swiftCallSiteShape(node: AstNode): SwiftCallShape | null {
+  if (node.type === "constructor_expression") {
+    const name = swiftConstructedGenericFact(node).nominal;
+    return name && !name.includes(".") ? { receiver: null, member: name } : null;
+  }
+  if (node.type !== "call_expression") return null;
+  const suffix = node.children.find((c) => c.type === "call_suffix");
+  if (!suffix || suffix.text.startsWith("[")) return null;
+  const callee = node.namedChildren.find((c) => c !== suffix);
+  if (callee?.type === "simple_identifier") {
+    if (node.children.some((c) => c.type === "?") || isSwiftLocalValueName(callee.text, node)) return null;
+    return { receiver: null, member: callee.text };
+  }
+  if (callee?.type !== "navigation_expression") return null;
+  const target = callee.childForFieldName("target");
+  const member = callee.childForFieldName("suffix")?.childForFieldName("suffix");
+  if (!target || !member) return null;
+  const targetText = swiftReceiverTargetText(target);
+  const receiver = normalizeSwiftReceiver(targetText);
+  // `a?.c()` puts its `?` beside the target, not inside it (bd tea-rags-mcp-y99pg.33).
+  const written = callee.children.some((c) => c.type === "?") ? `${targetText}?` : targetText;
+  return { receiver, ...(written === receiver ? {} : { writtenReceiver: written }), member: member.text };
 }
 
 /**
@@ -2642,7 +2652,12 @@ function swiftTypeFactOf(typeNode: AstNode | null): SwiftTypeFact {
  * type are absent: an argument of theirs is not what a `for` or a `forEach`
  * hands its body.
  */
-const SWIFT_SINGLE_ELEMENT_SEQUENCES: ReadonlySet<string> = new Set(["Array", "Set", "ArraySlice", "ContiguousArray"]);
+export const SWIFT_SINGLE_ELEMENT_SEQUENCES: ReadonlySet<string> = new Set([
+  "Array",
+  "Set",
+  "ArraySlice",
+  "ContiguousArray",
+]);
 
 /**
  * The element nominal a `user_type` spelling one of

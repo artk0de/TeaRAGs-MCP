@@ -357,6 +357,19 @@ export interface FileExtraction {
    * census ran and found no type; absent for a language with no census pass.
    */
   typeAbstractness?: TypeAbstractnessCensus;
+  /**
+   * Every named value a symbol declares — parameters, locals, fields — with the
+   * type the SYNTAX states, when it states one (bd tea-rags-mcp-4p3sb.1).
+   *
+   * Syntactic facts only: the kernel identifier-declaration pass never sees the
+   * native walker's type channels, so a declaration typed only by a binding, a
+   * field type or a return type is joined at sink time, not here. File-scope
+   * declarations (no owning chunk) are out of scope.
+   *
+   * Plain array (NOT Map) for NDJSON-spill round-trip. Undefined for a file
+   * declaring nothing, and for languages whose passes do not collect it.
+   */
+  identifierDeclarations?: readonly IdentifierDeclaration[];
 }
 
 /** A file's type-abstractness census ({@link FileExtraction.typeAbstractness}). */
@@ -365,6 +378,85 @@ export interface TypeAbstractnessCensus {
   abstractTypeCount: number;
   /** Types that implement behaviour. */
   concreteTypeCount: number;
+}
+
+/**
+ * What a declared identifier is to its owning symbol. `return` is the symbol's
+ * own declared return type: the pass emits it from a syntactic return
+ * annotation, the sink-time row builder from the language's return-type
+ * channels.
+ */
+export type IdentifierDeclarationKind = "param" | "local" | "field" | "return";
+
+/**
+ * Where a declared identifier's type came from. The pass emits `annotation` and
+ * `constructor`; the sink-time row builder joins `binding`, `field-type` and
+ * `return-type` from the language's type channels (a `return` row always
+ * persists as `return-type`, whichever producer typed it) and derives `finder` from the
+ * bound callee and the language's finder vocabulary. `call-return` is never
+ * persisted: the `cg_identifiers` reads compute it by joining the bound call to
+ * its single exact target's `return` row.
+ */
+export type IdentifierTypeSource =
+  | "annotation"
+  | "constructor"
+  | "binding"
+  | "field-type"
+  | "return-type"
+  | "finder"
+  | "call-return";
+
+/** The type sources a `cg_identifiers` row may carry on disk — every one but the query-time join. */
+export type PersistedIdentifierTypeSource = Exclude<IdentifierTypeSource, "call-return">;
+
+/**
+ * How many values of its type a declared identifier holds (bd
+ * tea-rags-mcp-4p3sb.26). A collection annotation is read as its ELEMENT
+ * (`candidates: Doc[]` → `Doc`) so the lexicon groups `candidates` with `Doc`;
+ * `many` is what keeps it apart from a `fallback: Doc`, which holds one. Absent
+ * means `one`.
+ */
+export type IdentifierTypeMultiplicity = "one" | "many";
+
+/** One identifier declaration (`FileExtraction.identifierDeclarations`). */
+export interface IdentifierDeclaration {
+  /** A `return` declaration's name is the function's own short name. */
+  readonly name: string;
+  /**
+   * `return` (bd tea-rags-mcp-4p3sb.21): the function's written return
+   * annotation. Always typed — an unannotated function declares no return — and
+   * owned by the chunk that IS the function, never by an enclosing one.
+   */
+  readonly kind: IdentifierDeclarationKind;
+  /** 1-based line of the declared name. */
+  readonly line: number;
+  /** The innermost chunk containing the declaration; for a `return`, the function's own chunk. */
+  readonly ownerSymbolId: string;
+  readonly typeName?: string;
+  readonly typeSource?: Extract<IdentifierTypeSource, "annotation" | "constructor">;
+  /**
+   * `many` when `typeName` was read through a collection — the annotation or
+   * constructor named its element (`Doc[]`, `list[Doc]`, `[]Doc{}`), or the
+   * declaration itself collects its values (`...rest`, `*args`, `opts ...T`).
+   * Set only with `typeName`; absent means `one`.
+   */
+  readonly typeMultiplicity?: IdentifierTypeMultiplicity;
+  /**
+   * The OUTERMOST call a `local` / `field` is bound to, split the way the
+   * language's walker splits that call's `CallRef` — so the sink-time row builder
+   * finds the `CallRef` (and its `callText`) by `(startLine, member, receiver)`.
+   * `x = find_x!(id)` → `{ member: "find_x!" }`, `row = Doc.find(id)` →
+   * `{ member: "find", receiver: "Doc" }`. Absent on params, on values that are
+   * not a call, and on calls the walker emits no `CallRef` for.
+   */
+  readonly boundCallee?: IdentifierBoundCallee;
+}
+
+/** The callee a declared identifier is bound to — a `CallRef`'s `member` / `receiver` pair. */
+export interface IdentifierBoundCallee {
+  readonly member: string;
+  /** Absent for a receiverless call (`CallRef.receiver === null`). */
+  readonly receiver?: string;
 }
 
 /** The keyword a type's own declaration is written with ({@link TypeDeclarationFact.declarationKind}). */

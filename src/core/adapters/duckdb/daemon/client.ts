@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 
 import type {
   AmbiguousCallerSite,
+  AnchorIdentifierTypeRow,
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
@@ -24,8 +25,24 @@ import type {
   GraphEdges,
   GraphFileNode,
   HierarchySnapshot,
+  IdentifierCalleeAggregateRow,
+  IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountQuery,
+  IdentifierLanguageCountRow,
+  IdentifierNameKindTypeRow,
+  IdentifierNameScopeQuery,
+  IdentifierNameTypeRow,
+  IdentifierReplaceEntry,
+  IdentifierShapeSampleQuery,
+  IdentifierShapeSampleRow,
+  IdentifierTypeAggregateQuery,
+  IdentifierTypeAggregateRow,
+  IdentifierTypeScopeQuery,
   InheritanceEdge,
   NonPublicMemberEdge,
+  OntologyReportQuery,
+  OntologyReportSectionRows,
+  OntologyReportSummaryRows,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -840,6 +857,84 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getSymbolVisibilities(symbolIds: readonly SymbolId[]): Promise<SymbolVisibilityRow[]> {
     return (await this.call("getSymbolVisibilities", { symbolIds: [...symbolIds] })) as SymbolVisibilityRow[];
+  }
+
+  // ── Identifier declarations (naming lexicon, bd tea-rags-mcp-4p3sb.8) ──
+
+  async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
+    await this.call("replaceIdentifiersBulk", { entries: [...entries] });
+  }
+
+  async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
+    return (await this.call("aggregateIdentifiersByType", {
+      types: [...q.types],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
+    })) as IdentifierTypeAggregateRow[];
+  }
+
+  async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
+    return (await this.call("aggregateIdentifiersByCallee", {
+      callees: [...q.callees],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
+    })) as IdentifierCalleeAggregateRow[];
+  }
+
+  async anchorIdentifierTypes(symbolIds: readonly SymbolId[]): Promise<AnchorIdentifierTypeRow[]> {
+    return (await this.call("anchorIdentifierTypes", { symbolIds: [...symbolIds] })) as AnchorIdentifierTypeRow[];
+  }
+
+  async identifierNameTypes(names: readonly string[]): Promise<IdentifierNameTypeRow[]> {
+    return (await this.call("identifierNameTypes", { names: [...names] })) as IdentifierNameTypeRow[];
+  }
+
+  async existingSymbolShortNames(names: readonly string[]): Promise<string[]> {
+    return (await this.call("existingSymbolShortNames", { names: [...names] })) as string[];
+  }
+
+  async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
+    return (await this.call("countIdentifiers", {
+      types: [...q.types],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+    })) as number;
+  }
+
+  async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
+    return (await this.call("aggregateIdentifiersByName", {
+      names: [...q.names],
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
+    })) as IdentifierNameKindTypeRow[];
+  }
+
+  async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
+    return (await this.call("identifierLanguageCounts", {
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      pathSuffixes: q.pathSuffixes === undefined ? undefined : [...q.pathSuffixes],
+    })) as IdentifierLanguageCountRow[];
+  }
+
+  async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
+    return (await this.call("sampleIdentifierShapes", {
+      limit: q.limit,
+      pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
+      groupByLanguage: q.groupByLanguage,
+    })) as IdentifierShapeSampleRow[];
+  }
+
+  async readOntologyReportSummary(q: OntologyReportQuery): Promise<OntologyReportSummaryRows> {
+    return (await this.call("readOntologyReportSummary", { query: q })) as OntologyReportSummaryRows;
+  }
+
+  async readOntologyReportSections(
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ): Promise<OntologyReportSectionRows> {
+    return (await this.call("readOntologyReportSections", {
+      query: q,
+      excludedGenericNames: [...excludedGenericNames],
+    })) as OntologyReportSectionRows;
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

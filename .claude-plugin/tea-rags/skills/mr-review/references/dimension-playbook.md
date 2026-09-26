@@ -15,8 +15,8 @@ and labels never survive into it (`delivery-contract.md` → "Speak human").
 
 Every dimension block below ends with `fix:` — the shape its suggestion takes.
 
-Codegraph gating: prime `## Enrichment` lists `codegraph.symbols` → D1 + D7 run
-on the graph. Absent → D7 skipped ("not assessed" in summary, cycles have no
+Codegraph gating: prime `## Enrichment` lists `codegraph.symbols` → D1 + D7 + D8
+run on the graph. Absent → D7 and D8 skipped ("not assessed" in summary, no
 substitute); D1 runs in name-match mode (see its block). D5 follows
 tests-as-context preflight.
 
@@ -158,6 +158,21 @@ cycles → narrow pathPattern by subdomain.
 fix: name the import to invert or the piece to extract so the closing edge goes
 away.
 
+## D8 naming (codegraph-gated)
+
+```text
+get_naming_lexicon names=[<identifiers the diff declares: {name, kind, type?}>]
+                   pathPattern=<touched-dirs glob> language=<lang> project=<alias>
+severity: MISFIT → minor; NEW_TERM → minor only when topTerms holds a term for
+          the same concept; CONFORMS → nothing
+```
+
+Catches: names off the project vocabulary. Reading the answer:
+`../../data-driven-generation/SKILL.md` Step 5 "Naming (lexicon)". Evidence =
+`suggestion` + the `holder` where the project already uses it.
+
+fix: the suggested name, citing the holder file as precedent.
+
 ## Phase 4 CLASSIFY rules (applied over all dimension findings)
 
 1. Dedup by file:line — keep highest severity; two findings on one symbol merge.
@@ -177,7 +192,7 @@ away.
 ## Call budget
 
 ≤30 tea-rags calls typical MR (≤15 files): MAP ≤15 find_symbol + D1 ≤10
-get_callers + D2 1 find_similar + D4 ≤2 + D5 ≤3 + D6 ≤5 + D7 1. D1 in name-match
-mode costs the same ≤10 (hybrid_search) plus confirmation find_symbol calls —
-cap those at 10 too, dropping the least-promising hits rather than exceeding.
-Exceeded → narrow scope with user, never silently truncate coverage.
+get_callers + D2 1 find_similar + D4 ≤2 + D5 ≤3 + D6 ≤5 + D7 1 + D8 1. D1 in
+name-match mode costs the same ≤10 (hybrid_search) plus confirmation find_symbol
+calls — cap those at 10 too, dropping the least-promising hits rather than
+exceeding. Exceeded → narrow scope with user, never silently truncate coverage.

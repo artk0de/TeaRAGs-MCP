@@ -69,6 +69,7 @@ describe("createCodegraphExtractionSink", () => {
         flushRemainder: vi.fn().mockResolvedValue(undefined),
       } as unknown as SymbolNodeFlushQueue,
       buildSymbolDefs: () => [],
+      buildIdentifierRows: () => [],
       indexChunkSymbolsByLine: () => undefined,
       collectionKey: (c) => c ?? "__direct__",
       spillPathFor: (_c, runId) => join(tmp, `${runId}.ndjson`),

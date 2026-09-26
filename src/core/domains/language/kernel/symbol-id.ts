@@ -26,3 +26,20 @@ export class DefaultSymbolIdComposer implements SymbolIdComposer {
     return `${prefix}${sep}${localName}`;
   }
 }
+
+/** The suffix a composed id carries for a second same-named declaration (`load~2`). */
+const OVERLOAD_SUFFIX = /~\d+$/;
+const SEPARATOR_CHARS = new Set(["#", ".", ":"]);
+
+/**
+ * Whether `symbolId` NAMES `name`: the id, overload suffix stripped, is the name
+ * or ends with it right after a separator — `Svc#load~2`, `Svc.load`,
+ * `Svc::load` and `load` all name `load`. How a pass recognises the chunk
+ * `collectSymbols` produced for a declaration it met on the AST.
+ */
+export function symbolIdNames(symbolId: string, name: string): boolean {
+  const id = symbolId.replace(OVERLOAD_SUFFIX, "");
+  if (id === name) return true;
+  if (!id.endsWith(name)) return false;
+  return SEPARATOR_CHARS.has(id.charAt(id.length - name.length - 1));
+}

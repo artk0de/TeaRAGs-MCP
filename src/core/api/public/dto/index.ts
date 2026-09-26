@@ -123,6 +123,39 @@ export type {
   StableDependencyViolationEvidence,
 } from "./architecture.js";
 
+export type {
+  // Naming lexicon (get_naming_lexicon)
+  NamingLexiconCalleeEntry,
+  NamingLexiconDraftName,
+  NamingLexiconEvidenceSource,
+  NamingLexiconGenericName,
+  NamingLexiconKindProfile,
+  NamingLexiconNameCount,
+  NamingLexiconNameEvidence,
+  NamingLexiconNameVerdict,
+  NamingLexiconRequest,
+  NamingLexiconResult,
+  NamingLexiconTypeEntry,
+} from "./naming-lexicon.js";
+
+export type {
+  // Naming ontology audit (get_ontology_report)
+  GetOntologyReportRequest,
+  GetOntologyReportResponse,
+  OntologyCollision,
+  OntologyCollisionRule,
+  OntologyEvidence,
+  OntologyHomonym,
+  OntologyLocation,
+  OntologyNameCount,
+  OntologyNamingShape,
+  OntologyOutlier,
+  OntologyReportSectionName,
+  OntologyReportSummary,
+  OntologySynonym,
+  OntologyValueKind,
+} from "./ontology.js";
+
 export { projectSearchResultPayloads } from "./payload-projection.js";
 export type { PayloadProjectionOutcome } from "./payload-projection.js";
 

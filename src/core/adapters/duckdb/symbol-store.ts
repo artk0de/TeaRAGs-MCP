@@ -41,6 +41,12 @@ import { lastNameSegment } from "./symbol-id-text.js";
  */
 const SYMBOL_LINE_RANGE_READ_CHUNK = 200;
 
+/**
+ * The method-edge columns naming its target, in {@link CG_SYMBOLS_KEY_COLUMNS}
+ * order — so a deleted `cg_symbols` key matches the edges pointing at it.
+ */
+const METHOD_EDGE_TARGET_COLUMNS = ["target_rel_path", "target_symbol_id"] as const;
+
 export class DuckDbSymbolStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
@@ -77,7 +83,7 @@ export class DuckDbSymbolStore {
     for (const definitions of lastByRelPath.values()) {
       for (const def of definitions) rows.push(toCgSymbolsRow(def));
     }
-    return this.session.transaction(async () =>
+    return this.session.transaction(async () => {
       // A DIFF, not a DELETE+re-INSERT of the same keys (bd tea-rags-mcp-tslvq).
       // Two reasons, and the first is a crash:
       //
@@ -99,15 +105,23 @@ export class DuckDbSymbolStore {
       // `chunk_id` is outside both the key and the value columns, so an
       // unchanged row keeps the join the deferred chunk pass wrote. Retiring a
       // stale join is that pass's own job — see `updateSymbolChunkIdsBulk`.
-      this.session.applyScopedRowDiff(
+      const removed = await this.session.applyScopedRowDiff(
         "cg_symbols",
         "rel_path",
         [...lastByRelPath.keys()],
         CG_SYMBOLS_KEY_COLUMNS,
         CG_SYMBOLS_VALUE_COLUMNS,
         rows,
-      ),
-    );
+      );
+      // A symbol that left a still-present file takes its INCOMING method edges
+      // with it (epic tea-rags-mcp-4p3sb). Edges are reconciled per SOURCE file,
+      // so a caller in an unchanged file is never re-walked and would keep
+      // pointing at the dead `(rel_path, symbol_id)` — served by `get_callees`
+      // and fed to PageRank as a vertex. `removeFile` applies the same rule to a
+      // deleted file. Only rows this diff deleted are followed, so an edge whose
+      // target never had a symbol row is not touched.
+      await this.session.deleteByKeyBatched("cg_symbols_edges_method", METHOD_EDGE_TARGET_COLUMNS, removed);
+    });
   }
 
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {

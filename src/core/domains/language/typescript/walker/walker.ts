@@ -549,12 +549,12 @@ function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySe
   // The resolver routes `{receiver: "ClassName", member: "constructor"}`
   // via the capitalized-receiver branch to `ClassName#constructor`.
   if (node.type === "new_expression") {
-    const ctorNode = node.childForFieldName("constructor");
-    if (!ctorNode) return;
+    const shape = newExpressionShape(node);
+    if (!shape) return;
     out.push({
       callText: node.text,
-      receiver: ctorNode.text,
-      member: "constructor",
+      receiver: shape.receiver,
+      member: shape.member,
       startLine: node.startPosition.row + 1,
     });
     return;
@@ -584,25 +584,16 @@ function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySe
 
   // Normal call — plus a scan of its arguments for dispatch candidate-sets
   // passed positionally (the callback-param channel).
-  const shape = calleeToCallShape(callee);
-  let ref: CallRef;
-  if (shape) {
-    ref = { callText: node.text, receiver: shape.receiver, member: shape.member, startLine };
-  } else if (callee.type === "member_expression") {
-    // Malformed member access (a partial parse with no object or property):
-    // no receiver, no member, nothing to emit. Dropped, as before.
-    return;
-  } else if (callee.type === "subscript_expression") {
-    // A computed callee whose index is not a string literal (`obj[key]()`) is
-    // the one callee shape with no knowable member (bd tea-rags-mcp-f2u54).
-    // Keep the edge but tag it `dynamicSend` so it leaves the
-    // resolveSuccessRate denominator instead of sitting in the bare-call
-    // bucket as an unresolvable `obj[key]` short name — the same accounting
-    // the Ruby walker gives `send(var)`.
-    ref = { callText: node.text, receiver: null, member: callee.text, startLine, dynamicSend: true };
-  } else {
-    ref = { callText: node.text, receiver: null, member: callee.text, startLine };
-  }
+  // A computed callee whose index is not a string literal (`obj[key]()`) is the
+  // one callee shape with no knowable member (bd tea-rags-mcp-f2u54): the edge
+  // is kept but tagged `dynamicSend` so it leaves the resolveSuccessRate
+  // denominator instead of sitting in the bare-call bucket as an unresolvable
+  // `obj[key]` short name — the same accounting the Ruby walker gives
+  // `send(var)`. A malformed member access emits nothing, as before.
+  const shape = plainCallShape(callee);
+  if (!shape) return;
+  const ref: CallRef = { callText: node.text, receiver: shape.receiver, member: shape.member, startLine };
+  if (shape.dynamicSend) ref.dynamicSend = true;
 
   const argsNode = node.childForFieldName("arguments");
   if (argsNode) {
@@ -803,29 +794,88 @@ export const FUNCTION_INVOKER_MEMBERS = new Set(["call", "apply", "bind"]);
  * it. Still one ref, so still one edge.
  */
 function emitFunctionInvokerUnwrap(node: AstNode, callee: AstNode, startLine: number, out: CallRef[]): boolean {
-  if (callee.type !== "member_expression") return false;
+  const shape = functionInvokerShape(callee);
+  if (shape === undefined) return false;
+  const ref: CallRef = { callText: node.text, receiver: shape.receiver, member: shape.member, startLine };
+  if (shape.functionInvokerSite) ref.functionInvokerSite = shape.functionInvokerSite;
+  if (shape.dynamicSend) ref.dynamicSend = true;
+  out.push(ref);
+  return true;
+}
+
+/**
+ * The unwrapped shape of a `.call` / `.apply` / `.bind` callee; undefined when
+ * the callee is no invoker. An unwrapped shape carries the literal invoker as
+ * `functionInvokerSite` (bd tea-rags-mcp-g7h1y); one with no static name to
+ * unwrap to keeps the literal member, tagged `dynamicSend`.
+ */
+function functionInvokerShape(callee: AstNode): FunctionInvokerCallShape | undefined {
+  if (callee.type !== "member_expression") return undefined;
   const obj = callee.childForFieldName("object");
   const prop = callee.childForFieldName("property");
-  if (!obj || !prop || !FUNCTION_INVOKER_MEMBERS.has(prop.text)) return false;
+  if (!obj || !prop || !FUNCTION_INVOKER_MEMBERS.has(prop.text)) return undefined;
   const invoked = calleeToCallShape(obj);
-  out.push(
-    invoked
-      ? {
-          callText: node.text,
-          receiver: invoked.receiver,
-          member: invoked.member,
-          startLine,
-          functionInvokerSite: { receiver: obj.text, member: prop.text },
-        }
-      : { callText: node.text, receiver: obj.text, member: prop.text, startLine, dynamicSend: true },
-  );
-  return true;
+  return invoked
+    ? {
+        receiver: invoked.receiver,
+        member: invoked.member,
+        functionInvokerSite: { receiver: obj.text, member: prop.text },
+      }
+    : { receiver: obj.text, member: prop.text, dynamicSend: true };
 }
 
 /** The `{ receiver, member }` pair a `CallRef` carries for one call site. */
 interface CallShape {
   receiver: string | null;
   member: string;
+}
+
+/** A {@link CallShape} plus the `dynamicSend` tag a site with no static target name carries. */
+interface CallSiteShape extends CallShape {
+  dynamicSend?: true;
+}
+
+/** A {@link CallSiteShape} of an unwrapped `.call` / `.apply` / `.bind`, with the literal invoker it came through. */
+interface FunctionInvokerCallShape extends CallSiteShape {
+  functionInvokerSite?: { receiver: string; member: string };
+}
+
+/**
+ * An ordinary (non-invoker, non-dispatch) call's shape: the callee's static
+ * name, else — for a computed index that is not a string literal — the callee
+ * text tagged `dynamicSend` (bd tea-rags-mcp-f2u54), else the callee text; null
+ * for a malformed member access (a partial parse with no object or property),
+ * which emits nothing.
+ */
+function plainCallShape(callee: AstNode): CallSiteShape | null {
+  const shape = calleeToCallShape(callee);
+  if (shape) return shape;
+  if (callee.type === "member_expression") return null;
+  if (callee.type === "subscript_expression") return { receiver: null, member: callee.text, dynamicSend: true };
+  return { receiver: null, member: callee.text };
+}
+
+/** `new X(…)` → `{ receiver: "X", member: "constructor" }`, the shape the resolver routes to `X#constructor`. */
+function newExpressionShape(node: AstNode): CallShape | null {
+  const ctorNode = node.childForFieldName("constructor");
+  return ctorNode ? { receiver: ctorNode.text, member: "constructor" } : null;
+}
+
+/**
+ * The `{ receiver, member }` of the `CallRef` {@link emitCall} puts on a
+ * `new_expression` or a `call_expression` whose callee is no dispatch candidate
+ * set — null when it emits none. Read by the identifier-declaration pass so a
+ * declaration's bound callee matches that `CallRef` by construction (bd
+ * tea-rags-mcp-4p3sb.16). A dispatch call is not reproduced: its shape needs
+ * the file's dispatch scopes, and its member is best-effort anyway.
+ */
+export function typescriptCallSiteShape(node: AstNode): CallShape | null {
+  if (node.type === "new_expression") return newExpressionShape(node);
+  if (node.type !== "call_expression") return null;
+  const callee = node.childForFieldName("function");
+  if (!callee) return null;
+  const shape = functionInvokerShape(callee) ?? plainCallShape(callee);
+  return shape ? { receiver: shape.receiver, member: shape.member } : null;
 }
 
 /**

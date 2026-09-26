@@ -102,6 +102,15 @@ describe("mergeExtraction — arrays concat, base first", () => {
     expect(merged.inheritanceEdges).toHaveLength(1);
     expect(merged.knownTargetCallArgs).toHaveLength(1);
   });
+
+  it("concatenates identifierDeclarations base-first", () => {
+    const decl = (name: string, line: number) => ({ name, kind: "local" as const, line, ownerSymbolId: "f" });
+    const base = baseExtraction({ identifierDeclarations: [decl("a", 1)] });
+    const merged = mergeExtraction(base, {
+      identifierDeclarations: [decl("b", 2)],
+    });
+    expect(merged.identifierDeclarations?.map((d) => d.name)).toEqual(["a", "b"]);
+  });
 });
 
 describe("mergeExtraction — set-like arrays dedupe on the FIRST occurrence", () => {

@@ -777,3 +777,175 @@ describe("DaemonGraphDbClient — readNonPublicMemberEdges (bd tea-rags-mcp-r8hm
     });
   });
 });
+
+describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)", () => {
+  it("proxies the identifier write and reads through the daemon socket with their params", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const aggregate = [
+      { typeName: "Doc", kind: "local", name: "doc", typeSource: "binding", n: 1, exampleOwner: "A#x" },
+    ];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "aggregateIdentifiersByType") return aggregate;
+      if (r.op === "countIdentifiers") return 3;
+      if (r.op === "existingSymbolShortNames") return ["doc"];
+      if (r.op === "identifierNameTypes" || r.op === "anchorIdentifierTypes") return [];
+      if (r.op === "aggregateIdentifiersByCallee") return [];
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const entries = [
+      { relPath: "a.rb", rows: [{ ownerSymbolId: "A#x", kind: "local" as const, name: "doc", line: 1 }] },
+    ];
+    await client.replaceIdentifiersBulk(entries);
+    const byType = await client.aggregateIdentifiersByType({ types: ["Doc"], pathPrefixes: ["app/"] });
+    const byCallee = await client.aggregateIdentifiersByCallee({ callees: [{ member: "find", receiver: "Doc" }] });
+    const count = await client.countIdentifiers({ types: ["Doc"] });
+    const names = await client.identifierNameTypes(["doc"]);
+    const anchors = await client.anchorIdentifierTypes(["A#x"]);
+    const taken = await client.existingSymbolShortNames(["doc"]);
+    await client.close();
+
+    expect(byType).toEqual(aggregate);
+    expect(byCallee).toEqual([]);
+    expect(count).toBe(3);
+    expect(names).toEqual([]);
+    expect(anchors).toEqual([]);
+    expect(taken).toEqual(["doc"]);
+    const params = (op: string) => seen.find((r) => r.op === op)?.params;
+    expect(params("replaceIdentifiersBulk")).toMatchObject({ collection: "code_x_v1", entries });
+    expect(params("aggregateIdentifiersByType")).toMatchObject({ types: ["Doc"], pathPrefixes: ["app/"] });
+    expect(params("aggregateIdentifiersByCallee")).toMatchObject({ callees: [{ member: "find", receiver: "Doc" }] });
+    expect(params("countIdentifiers")).toMatchObject({ types: ["Doc"] });
+    expect(params("identifierNameTypes")).toMatchObject({ names: ["doc"] });
+    expect(params("anchorIdentifierTypes")).toMatchObject({ symbolIds: ["A#x"] });
+    expect(params("existingSymbolShortNames")).toMatchObject({ names: ["doc"] });
+  });
+
+  it("proxies the naming-lexicon scope reads with their params (bd tea-rags-mcp-4p3sb.11)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const byName = [{ name: "doc", kind: "local", typeName: null, n: 2, exampleOwner: "A#x" }];
+    const languages = [{ language: "ruby", n: 7 }];
+    const sample = [{ kind: "local", name: "doc", typeName: "Doc", boundMember: null, boundReceiver: null, n: 1 }];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "aggregateIdentifiersByName") return byName;
+      if (r.op === "identifierLanguageCounts") return languages;
+      if (r.op === "sampleIdentifierShapes") return sample;
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    expect(await client.aggregateIdentifiersByName({ names: ["doc"], pathPrefixes: ["app/"] })).toEqual(byName);
+    expect(await client.identifierLanguageCounts({ pathPrefixes: ["app/"] })).toEqual(languages);
+    expect(await client.sampleIdentifierShapes({ limit: 50 })).toEqual(sample);
+    await client.close();
+
+    const params = (op: string) => seen.find((r) => r.op === op)?.params;
+    expect(params("aggregateIdentifiersByName")).toMatchObject({ names: ["doc"], pathPrefixes: ["app/"] });
+    expect(params("identifierLanguageCounts")).toMatchObject({ pathPrefixes: ["app/"] });
+    expect(params("sampleIdentifierShapes")).toMatchObject({ collection: "code_x_v1", limit: 50 });
+  });
+
+  it("forwards identifierLanguageCounts' path suffixes", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return [];
+    });
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.identifierLanguageCounts({ pathPrefixes: ["app/"], pathSuffixes: [".rb"] });
+    await client.close();
+    expect(seen.find((r) => r.op === "identifierLanguageCounts")?.params).toMatchObject({
+      pathPrefixes: ["app/"],
+      pathSuffixes: [".rb"],
+    });
+  });
+
+  it("forwards groupByLanguage on the type, callee, name and sample reads", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return [];
+    });
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.aggregateIdentifiersByType({ types: ["Doc"], groupByLanguage: true });
+    await client.aggregateIdentifiersByCallee({ callees: [{ member: "find" }], groupByLanguage: true });
+    await client.aggregateIdentifiersByName({ names: ["doc"], groupByLanguage: true });
+    await client.sampleIdentifierShapes({ limit: 5, groupByLanguage: true });
+    await client.close();
+    for (const op of [
+      "aggregateIdentifiersByType",
+      "aggregateIdentifiersByCallee",
+      "aggregateIdentifiersByName",
+      "sampleIdentifierShapes",
+    ]) {
+      expect(seen.find((r) => r.op === op)?.params, op).toMatchObject({ groupByLanguage: true });
+    }
+  });
+});
+
+describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)", () => {
+  it("proxies both ontology report reads through the daemon socket with the whole query and the excluded names", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const summaryRows = { totals: { identifierRows: 2, symbolRows: 1 }, genericNameCount: 0, genericNames: [] };
+    const sectionRows = { evidenceRows: 2, homonyms: [] };
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "readOntologyReportSummary") return summaryRows;
+      return r.op === "readOntologyReportSections" ? sectionRows : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const q = {
+      pathPrefixes: ["app/"],
+      extensions: [".rb"],
+      nonConceptTypes: [{ extensions: [".rb"], typeNames: ["String"] }],
+      sections: ["homonyms" as const],
+      limit: 5,
+      thresholds: {
+        minSupport: 5,
+        synonymDominantShareCeiling: 0.8,
+        genericMinTypes: 5,
+        genericMaxTopTypeShare: 0.5,
+        homonymMinTypeRows: 2,
+        homonymMinTypeShare: 0.1,
+        outlierMinDominantShare: 0.5,
+        confidenceSupport: 20,
+        namesPerItem: 6,
+        groupPool: 20,
+      },
+    };
+    const summary = await client.readOntologyReportSummary(q);
+    const sections = await client.readOntologyReportSections(q, ["actor", "data"]);
+    await client.close();
+
+    expect(summary).toEqual(summaryRows);
+    expect(sections).toEqual(sectionRows);
+    expect(seen.find((r) => r.op === "readOntologyReportSummary")?.params).toEqual({
+      collection: "code_x_v1",
+      query: q,
+    });
+    expect(seen.find((r) => r.op === "readOntologyReportSections")?.params).toEqual({
+      collection: "code_x_v1",
+      query: q,
+      excludedGenericNames: ["actor", "data"],
+    });
+  });
+});

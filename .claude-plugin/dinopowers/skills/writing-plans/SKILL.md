@@ -180,6 +180,12 @@ title/description mentions code generation/modification — heuristic keywords:
 
 4. If `locality = "none"`, attach diagnostic verbatim so plan reader knows Task
    has no proven precedent in project.
+5. New symbol names the Task fixes (codegraph on) →
+   `get_naming_lexicon(names, concept+language, pathPattern=pathPatternL1)`
+   before they enter the plan: `MISFIT` → the plan uses `suggestion`; `NEW_TERM`
+   → a `topTerms` / `concept.terms` word if it means the same, else the Task
+   carries a one-line justification. Reading: `tea-rags:data-driven-generation`
+   Step 5 "Naming (lexicon)".
 
 Runs BEFORE Step 4 so per-Task enrichment visible to superpowers:writing-plans
 authoring cycle, surfaces in final plan document.

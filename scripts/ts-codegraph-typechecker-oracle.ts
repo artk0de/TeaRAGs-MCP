@@ -1604,6 +1604,8 @@ export function extractFile(
   composer: DefaultSymbolIdComposer,
   factory: LanguageFactory,
   declaredDependencies?: ReadonlySet<string>,
+  /** Told WHY a file came back `null` from a throw — a census reports the reason, not only the count. */
+  onError?: (error: unknown) => void,
 ): FileExtraction | null {
   const config = CODEGRAPH_LANGUAGES[extensionOf(relPath)];
   if (!config) return null;
@@ -1630,7 +1632,8 @@ export function extractFile(
       composer,
     );
     return walker.walk({ tree, code, relPath, language: config.language, chunks, declaredDependencies });
-  } catch {
+  } catch (error) {
+    onError?.(error);
     return null;
   }
 }

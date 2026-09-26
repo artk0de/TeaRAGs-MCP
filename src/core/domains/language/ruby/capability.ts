@@ -50,7 +50,74 @@ export const capability: LanguageCapability = {
   // one: taxdome 19, not 16. Fans of 17–19 survivors a walker-7 index recorded as
   // `ambiguous` become edges. Bumped past an unreleased 7 because a worktree
   // build may already have stamped an index at it.
-  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-4p3sb.3 — the walker publishes `identifierDeclarations`
+  // (params, locals, ivar fields, `X.new` constructor types) for the naming
+  // lexicon. Rows written by walker 7 carry none, so only the recompute adds them.
+  // walker 10: the naming-lexicon branch (4p3sb.3 as 8, 4p3sb.16 as 9 there)
+  // merged with nbf8q item 4 (8 here); neither parent's index holds both.
+  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
+  // Ruby Style Guide: classes and modules CamelCase, methods and variables
+  // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
+  // module value is CamelCase, so pascal is accepted there too.
+  naming: {
+    casing: {
+      type: ["pascal"],
+      module: ["pascal"],
+      method: ["snake"],
+      param: ["snake"],
+      local: ["snake"],
+      field: ["snake"],
+      constant: ["screamingSnake", "pascal"],
+    },
+    // Core classes, plus the YARD spellings (`Boolean`, `nil`, `void`) the YARD type source emits.
+    nonConceptTypes: [
+      "String",
+      "Integer",
+      "Float",
+      "Numeric",
+      "Symbol",
+      "Hash",
+      "Array",
+      "Set",
+      "NilClass",
+      "TrueClass",
+      "FalseClass",
+      "Object",
+      "BasicObject",
+      "Proc",
+      "Boolean",
+      "nil",
+      "void",
+      // Core value types: a variable holding one is named by its role (`expires_at`, `cutoff`), not the type.
+      "Time",
+      "Date",
+      "DateTime",
+      "BigDecimal",
+      "Rational",
+      "Complex",
+      "Range",
+      "Regexp",
+      "MatchData",
+      "Struct",
+      "OpenStruct",
+      // Meta types: a class or method passed as a value is named by role (`handler`, `worker_klass`).
+      "Class",
+      "Module",
+      "Method",
+      "UnboundMethod",
+      // IO and resource handles: named by what they hold (`entry_file`, `tmp_file`), not a concept.
+      "IO",
+      "File",
+      "Tempfile",
+      "StringIO",
+      "Pathname",
+      // ActiveSupport containers and values, listed qualified because the match is exact: role-named too (`payload`, `params`).
+      "ActiveSupport::HashWithIndifferentAccess",
+      "ActiveSupport::TimeWithZone",
+      "ActiveSupport::Duration",
+      "ActiveSupport::SafeBuffer",
+    ],
+  },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

@@ -25,6 +25,7 @@
 import type { AstNode } from "../../../contracts/types/ast.js";
 import type { ChunkExtraction, FileExtraction } from "../../../contracts/types/codegraph.js";
 import type { ExtractionFacetPass } from "./extraction-passes.js";
+import { symbolIdNames } from "./symbol-id.js";
 
 export type DeclaredVisibility = NonNullable<ChunkExtraction["visibility"]>;
 
@@ -41,16 +42,6 @@ export interface DeclaredVisibilityReading {
  * package-private member, a Python `_name`).
  */
 export type DeclaredVisibilityReader = (node: AstNode) => DeclaredVisibilityReading | null;
-
-const OVERLOAD_SUFFIX = /~\d+$/;
-const SEPARATOR_CHARS = new Set(["#", ".", ":"]);
-
-function idNames(symbolId: string, name: string): boolean {
-  const id = symbolId.replace(OVERLOAD_SUFFIX, "");
-  if (id === name) return true;
-  if (!id.endsWith(name)) return false;
-  return SEPARATOR_CHARS.has(id.charAt(id.length - name.length - 1));
-}
 
 export function declaredVisibilityFacetPass(read: DeclaredVisibilityReader): ExtractionFacetPass {
   return {
@@ -71,7 +62,7 @@ export function declaredVisibilityFacetPass(read: DeclaredVisibilityReader): Ext
       if (readingsByLine.size === 0) return {};
       const chunks: ChunkExtraction[] = [];
       for (const chunk of ctx.chunks) {
-        const hit = readingsByLine.get(chunk.startLine)?.find((r) => idNames(chunk.symbolId, r.name));
+        const hit = readingsByLine.get(chunk.startLine)?.find((r) => symbolIdNames(chunk.symbolId, r.name));
         if (hit !== undefined) {
           chunks.push({ symbolId: chunk.symbolId, scope: chunk.scope, calls: [], visibility: hit.visibility });
         }

@@ -150,6 +150,30 @@ describe("pythonDocstringTypeSource — out of scope and empty", () => {
   it("files nothing for a def with no docstring", () => {
     expect(facts(`def f(req):\n    pass\n`)).toEqual([]);
   });
+
+  it("a splat entry binds nothing, and a later section header ends Args:", () => {
+    const src = [
+      "def f(req, other, *args):",
+      '    """Do it.',
+      "",
+      "    Args:",
+      "        req (Request): the request",
+      "        *args (int): extra values",
+      "",
+      "    Raises:",
+      "        other (Other): an entry of another section, not a param",
+      '    """',
+      "    pass",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([
+      expect.objectContaining({ kind: "param", name: "req", type: { form: "instance", name: "Request" } }),
+    ]);
+  });
+
+  it("an `:rtype: None` names no return type", () => {
+    expect(facts(`def f():\n    """Do it.\n\n    :rtype: None\n    """\n    pass\n`)).toEqual([]);
+  });
 });
 
 describe("pythonDocstringText", () => {
@@ -165,6 +189,11 @@ describe("pythonDocstringText", () => {
 
   it("strips a prefixed raw string's quotes too", () => {
     expect(pythonDocstringText(defNode(`def f():\n    r"""Do \\it."""\n`))).toBe("Do \\it.");
+  });
+
+  it("strips single-quoted docstrings, triple and plain", () => {
+    expect(pythonDocstringText(defNode(`def f():\n    '''Do it.'''\n`))).toBe("Do it.");
+    expect(pythonDocstringText(defNode(`def f():\n    'Do it.'\n`))).toBe("Do it.");
   });
 
   it("returns undefined when the def has no docstring", () => {

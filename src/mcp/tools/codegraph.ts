@@ -116,6 +116,22 @@ const GetArchitectureReportInputShape = {
 };
 
 /**
+ * `get_ontology_report` input (bd tea-rags-mcp-4p3sb.20). Call contract only —
+ * when to call is the search cascade's job; the budget is pinned by
+ * `ontology-report-tool.test.ts`.
+ */
+const GetOntologyReportInputShape = {
+  ...collectionPathFields(),
+  pathPattern: z.string().optional().describe("Glob scope; its literal prefix filters files. Omit for whole project."),
+  language: z.string().optional().describe("Only this language's files."),
+  sections: z
+    .array(z.enum(["synonyms", "homonyms", "outliers", "collisions"]))
+    .optional()
+    .describe("Sections to compute (default all)."),
+  limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
+};
+
+/**
  * Build the `trace_path` input shape. The `rerank` field is a curated preset
  * ENUM derived from the registry (presets that tag `"trace_path"` in their
  * `tools[]`), NOT a free string — a bad preset is rejected at the MCP boundary
@@ -153,6 +169,56 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe("Max paths returned (default 10; danger-sorted only when rerank passed)"),
   };
+}
+
+/**
+ * `get_naming_lexicon` (bd tea-rags-mcp-4p3sb.12) — COMPACT by contract: the
+ * description states the call contract only (when to call is selection policy,
+ * owned by the search cascade), each field one line, no examples. A test holds
+ * the description ≤ 300 chars and the input schema, as clients receive it,
+ * ≤ 1.5 KB serialized.
+ */
+const NAMING_LEXICON_DESCRIPTION =
+  "Project naming vocabulary from the codegraph. `types`/`anchors` → names per kind + shape; " +
+  "`names[]` (attribute: kind field; method: kind return) → CONFORMS | MISFIT{suggestion} | NEW_TERM{topTerms}, " +
+  "+genericName if generic; `concept`+`language` → project terms.";
+
+function buildNamingLexiconInputSchema() {
+  const draftName = z.object({
+    name: z.string().min(1),
+    kind: z
+      .enum(["param", "local", "field", "return"])
+      .optional()
+      .describe("ivar/attribute/property: field; method: return, type=result type"),
+    type: z.string().optional(),
+    typeMultiplicity: z.enum(["one", "many"]).optional().describe("many: collection; type=element"),
+    callee: z
+      .object({ member: z.string().min(1), receiver: z.string().optional() })
+      .optional()
+      .describe("Bound call"),
+  });
+  return z
+    .object({
+      ...collectionPathFields(),
+      pathPattern: z.string().optional().describe("Glob scope; widens under 5 rows"),
+      language: z.string().optional().describe("Casing source; required with concept"),
+      types: z.array(z.string()).optional(),
+      anchors: z.array(z.string()).optional().describe("SymbolIds whose param/return types to add"),
+      concept: z.string().optional().describe("Domain description, not a name"),
+      names: z.array(draftName).optional().describe("Drafts; kind default local"),
+    })
+    .refine(
+      (req) =>
+        (req.types?.length ?? 0) > 0 ||
+        (req.anchors?.length ?? 0) > 0 ||
+        (req.names?.length ?? 0) > 0 ||
+        (req.concept ?? "").length > 0,
+      { message: "Provide at least one of types, anchors, concept, names" },
+    )
+    .refine((req) => req.concept === undefined || req.language !== undefined, {
+      message: "concept requires language",
+      path: ["language"],
+    });
 }
 
 export function registerCodegraphTools(
@@ -275,6 +341,32 @@ export function registerCodegraphTools(
 
   registerToolSafe(
     server,
+    "get_ontology_report",
+    {
+      title: "Get Ontology Report",
+      description:
+        "Project-wide naming ontology audit from the codegraph. synonyms: one type, many names; " +
+        "homonyms: one name, many types; outliers: names off their type's dominant shape; " +
+        "collisions: names equal to other symbols. Ranked, with counts and an example each.",
+      inputSchema: GetOntologyReportInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, pathPattern, language, sections, limit }) => {
+      const response = await app.getOntologyReport({
+        project,
+        collection,
+        path,
+        pathPattern,
+        language,
+        sections,
+        limit,
+      });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
     "trace_path",
     {
       title: "Trace Path",
@@ -301,6 +393,31 @@ export function registerCodegraphTools(
         rerank: preset,
         maxDepth,
         maxPaths,
+      });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "get_naming_lexicon",
+    {
+      title: "Get Naming Lexicon",
+      description: NAMING_LEXICON_DESCRIPTION,
+      inputSchema: buildNamingLexiconInputSchema(),
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ project, collection, path, pathPattern, language, types, anchors, concept, names }) => {
+      const response = await app.getNamingLexicon({
+        project,
+        collection,
+        path,
+        pathPattern,
+        language,
+        types,
+        anchors,
+        concept,
+        names,
       });
       return formatMcpText(JSON.stringify(response, null, 2));
     },

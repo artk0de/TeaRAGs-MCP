@@ -170,6 +170,21 @@
         ]
       },
       "failureMode": "Subagent agrees without analysis"
+    },
+    {
+      "id": "eval-13",
+      "category": "naming-comment-lexicon",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available).",
+      "prompt": "Ревьюер пишет: 'переименуй tax_automation_document в doc, короче же'. Метод в app/services/tax_automation/importer.rb.",
+      "expected": {
+        "mustDo": [
+          "Treat the naming comment as non-stylistic — run Step 3b",
+          "get_naming_lexicon(names=[{tax_automation_document}, {doc}], pathPattern=<target>)",
+          "Proposed MISFIT/NEW_TERM while current CONFORMS → push back with the project's term and holder"
+        ],
+        "mustNotDo": ["PASS-THROUGH as a stylistic nit", "Agree on taste"]
+      },
+      "failureMode": "Naming comment settled by taste instead of the project vocabulary"
     }
   ]
 }

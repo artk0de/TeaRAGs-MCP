@@ -136,13 +136,78 @@ function emitDynamicSendUnwrap(
   out: CallRef[],
 ): "unwrapped" | "dynamic" | "plain" {
   if (!RUBY_DYNAMIC_DISPATCH.has(method.text)) return "plain";
-  const unwrapped = extractLiteralSymbolOrString(node);
+  const unwrapped = unwrappedSendShape(node, receiver, receiverText);
   if (unwrapped !== null) {
-    const unwrappedReceiver = receiverText === null || receiver?.type === "self" ? null : receiverText;
-    out.push({ callText: node.text, receiver: unwrappedReceiver, member: unwrapped, startLine });
+    out.push({ callText: node.text, receiver: unwrapped.receiver, member: unwrapped.member, startLine });
     return "unwrapped";
   }
   return "dynamic";
+}
+
+/** The `{ receiver, member }` pair a Ruby `CallRef` carries. */
+export interface RubyCallShape {
+  receiver: string | null;
+  member: string;
+}
+
+/** A call's receiver as its `CallRef` spells it: a scope resolution through `readScopeResolution`, else verbatim. */
+function rubyCallReceiverText(receiver: AstNode | null): string | null {
+  if (!receiver) return null;
+  return receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+}
+
+/**
+ * The direct call a `send(:m)` with a LITERAL target unwraps to — receiver
+ * normalised to null for a bare or `self` receiver — or null for a
+ * non-literal target.
+ */
+function unwrappedSendShape(
+  node: AstNode,
+  receiver: AstNode | null,
+  receiverText: string | null,
+): RubyCallShape | null {
+  const unwrapped = extractLiteralSymbolOrString(node);
+  if (unwrapped === null) return null;
+  return { receiver: receiverText === null || receiver?.type === "self" ? null : receiverText, member: unwrapped };
+}
+
+function enclosingRubyMethod(node: AstNode): AstNode | null {
+  for (let current = node.parent; current !== null; current = current.parent) {
+    if (current.type === "method" || current.type === "singleton_method") return current;
+  }
+  return null;
+}
+
+/**
+ * The `{ receiver, member }` of the OWN `CallRef` {@link collectRubyCalls}
+ * emits for `node` — the call edge the source writes, not the synthetic DSL or
+ * block-pass edges beside it — or null when the walk emits none for it. The
+ * identifier-declaration pass reads it so a declaration's bound callee matches
+ * that `CallRef` by construction (bd tea-rags-mcp-4p3sb.16).
+ *
+ * `super` is left out: its member is the enclosing method's own name, a fact
+ * about the caller rather than a callee a name was chosen after.
+ */
+export function rubyCallShape(node: AstNode): RubyCallShape | null {
+  if (node.type === "identifier") {
+    const method = enclosingRubyMethod(node);
+    const isCall =
+      method !== null &&
+      method.childForFieldName("name") !== null &&
+      isBareIdentifierCallSite(node) &&
+      !collectMethodLocalBindings(method).has(node.text);
+    return isCall ? { receiver: null, member: node.text } : null;
+  }
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  const method = node.childForFieldName("method");
+  if (!method || method.type === "super") return null;
+  const receiver = node.childForFieldName("receiver");
+  const receiverText = rubyCallReceiverText(receiver);
+  if (RUBY_DYNAMIC_DISPATCH.has(method.text)) {
+    const unwrapped = unwrappedSendShape(node, receiver, receiverText);
+    if (unwrapped !== null) return unwrapped;
+  }
+  return { receiver: receiverText, member: method.text };
 }
 
 /**
@@ -272,11 +337,7 @@ export function collectRubyCalls(
         return;
       }
 
-      const receiverText = receiver
-        ? receiver.type === "scope_resolution"
-          ? readScopeResolution(receiver)
-          : receiver.text
-        : null;
+      const receiverText = rubyCallReceiverText(receiver);
 
       // Dynamic dispatch unwrap (bd tea-rags-mcp-8ss5 / cai0): `obj.send(:save)`
       // / `public_send("save")` / bare or `self.send(:save)`.

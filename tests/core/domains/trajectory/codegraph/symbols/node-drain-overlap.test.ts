@@ -110,6 +110,7 @@ describe("codegraph node-drain / pass-2 overlap", () => {
             onFlush?.(entries);
             log.push("flush:end");
           },
+          replaceIdentifiersBulk: async () => undefined,
         } as unknown as GraphDbClient,
       }),
       // Cadence high enough that `write` never auto-flushes: the drain under
@@ -124,6 +125,7 @@ describe("codegraph node-drain / pass-2 overlap", () => {
       runState: new CodegraphRunState(),
       nodeFlush,
       buildSymbolDefs: () => [{ relPath: "src/a.ts", symbolId: "A#m", fqName: "A#m", shortName: "m", scope: [] }],
+      buildIdentifierRows: () => [],
       indexChunkSymbolsByLine: () => undefined,
       collectionKey: (c) => c ?? "__direct__",
       spillPathFor: (_c, runId) => join(tmp, `${runId}.ndjson`),

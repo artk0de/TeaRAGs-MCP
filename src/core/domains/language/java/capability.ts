@@ -18,5 +18,58 @@ export const capability: LanguageCapability = {
   // enter the graph they were excluded from, and lose `skippedAs: "test"`.
   // `payload.isTest` moves too but is chunker-owned static payload, which only
   // `--force` rewrites; not bumping `chunking` for a false-positive repair.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-4p3sb.6 — the walker publishes
+  // `identifierDeclarations` (params, locals, fields; annotation and `new X()`
+  // types) for the naming lexicon. Rows written by walker 5 carry none, so only
+  // the recompute adds them.
+  // walker 8: bd tea-rags-mcp-4p3sb.17 — an `identifierDeclarations` annotation
+  // of `List / Set / Collection / Iterable / Optional / Stream<T>` names its
+  // element, so a walker-7 row types `docs` as `List`.
+  // walker 9: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // method's declared return type as a `return`, so a walker-8 index has no
+  // return row for call-return to join.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // Google Java Style / Oracle conventions: classes and interfaces
+  // UpperCamelCase, methods / parameters / locals / non-constant fields
+  // lowerCamelCase, `static final` constants CONSTANT_CASE. A package name is
+  // all-lowercase dotted words without underscores; `snake` is the nearest
+  // casing (a single lowercase word classifies as it).
+  naming: {
+    casing: {
+      type: ["pascal"],
+      module: ["snake"],
+      method: ["camel"],
+      param: ["camel"],
+      local: ["camel"],
+      field: ["camel"],
+      constant: ["screamingSnake"],
+    },
+    // Primitives, their boxes, `Object`, `var`; maps keep their head through
+    // collection unwrapping, so the map heads are listed too.
+    nonConceptTypes: [
+      "String",
+      "int",
+      "long",
+      "short",
+      "byte",
+      "char",
+      "float",
+      "double",
+      "boolean",
+      "void",
+      "var",
+      "Object",
+      "Integer",
+      "Long",
+      "Short",
+      "Byte",
+      "Character",
+      "Float",
+      "Double",
+      "Boolean",
+      "Void",
+      "Map",
+      "HashMap",
+    ],
+  },
 };

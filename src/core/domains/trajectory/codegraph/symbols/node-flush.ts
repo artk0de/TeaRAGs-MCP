@@ -28,7 +28,13 @@
  * — the provider processes one collection per instance at a time.
  */
 
-import type { BulkSymbolUpsertEntry, GraphDbClient, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import type {
+  BulkSymbolUpsertEntry,
+  GraphDbClient,
+  IdentifierReplaceEntry,
+  IdentifierRow,
+  SymbolDefinition,
+} from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../../infra/runtime.js";
 
@@ -38,8 +44,18 @@ import { isDebug } from "../../../../infra/runtime.js";
  */
 export type GraphDbResolver = (collectionName?: PhysicalCollectionName) => Promise<{ graphDb: GraphDbClient }>;
 
+/**
+ * One buffered file: its symbol defs and, when the caller built them, its
+ * `cg_identifiers` rows (bd tea-rags-mcp-4p3sb.9). `identifiers: undefined`
+ * means "this caller does not write identifiers" and leaves the file's rows
+ * alone; `[]` means "the file declares nothing" and clears them.
+ */
+interface SymbolNodeFlushEntry extends BulkSymbolUpsertEntry {
+  identifiers?: IdentifierRow[];
+}
+
 export class SymbolNodeFlushQueue {
-  private readonly pending = new Map<string, BulkSymbolUpsertEntry[]>();
+  private readonly pending = new Map<string, SymbolNodeFlushEntry[]>();
   private readonly flushedFiles = new Map<string, Set<string>>();
   private chain: Promise<void> = Promise.resolve();
   /**
@@ -58,15 +74,18 @@ export class SymbolNodeFlushQueue {
    * Buffer one file's durable symbol defs — the single seam BOTH entry points
    * share. Appends to the per-collection buffer and enqueues a flush at the
    * cadence. Order-independent: `upsertSymbolsBulk` is last-wins per relPath.
+   * `identifiers` rides the same entry into `replaceIdentifiersBulk`, also
+   * last-wins per relPath.
    */
   buffer(
     relPath: BulkSymbolUpsertEntry["relPath"],
     defs: SymbolDefinition[],
     key: string,
     collectionName?: PhysicalCollectionName,
+    identifiers?: IdentifierRow[],
   ): void {
     const buf = this.pending.get(key) ?? [];
-    buf.push({ relPath, definitions: defs });
+    buf.push(identifiers === undefined ? { relPath, definitions: defs } : { relPath, definitions: defs, identifiers });
     this.pending.set(key, buf);
     if (buf.length >= this.flushFiles) this.chainFlush(buf.splice(0, buf.length), key, collectionName);
   }
@@ -149,7 +168,7 @@ export class SymbolNodeFlushQueue {
    * accept→drain window and, on Node >=22 with no `unhandledRejection` handler,
    * terminate the indexer process.
    */
-  private chainFlush(batch: BulkSymbolUpsertEntry[], key: string, collectionName?: PhysicalCollectionName): void {
+  private chainFlush(batch: SymbolNodeFlushEntry[], key: string, collectionName?: PhysicalCollectionName): void {
     this.chain = this.chain
       .then(async () => this.flushBatch(batch, key, collectionName))
       .catch((e: unknown) => {
@@ -159,18 +178,26 @@ export class SymbolNodeFlushQueue {
 
   /**
    * One durable batched node write: `graphDb.upsertSymbolsBulk(batch)` (one
-   * transaction, a row diff scoped by rel_path, last-wins per relPath).
-   * Records the flushed relPaths per collection (once-per-file invariant +
-   * honest cumulative count) and emits a DEBUG-gated flush log.
+   * transaction, a row diff scoped by rel_path, last-wins per relPath), then the
+   * batch's identifier rows through `replaceIdentifiersBulk` for every file
+   * buffered WITH identifiers — an empty list included, so a file that lost its
+   * declarations is cleared. Records the flushed relPaths per collection
+   * (once-per-file invariant + honest cumulative count) and emits a DEBUG-gated
+   * flush log.
    */
   private async flushBatch(
-    batch: BulkSymbolUpsertEntry[],
+    batch: SymbolNodeFlushEntry[],
     key: string,
     collectionName?: PhysicalCollectionName,
   ): Promise<void> {
     if (batch.length === 0) return;
     const { graphDb } = await this.resolveStore(collectionName);
-    await graphDb.upsertSymbolsBulk(batch);
+    await graphDb.upsertSymbolsBulk(batch.map(({ relPath, definitions }) => ({ relPath, definitions })));
+    const identifierEntries: IdentifierReplaceEntry[] = [];
+    for (const e of batch) {
+      if (e.identifiers !== undefined) identifierEntries.push({ relPath: e.relPath, rows: e.identifiers });
+    }
+    if (identifierEntries.length > 0) await graphDb.replaceIdentifiersBulk(identifierEntries);
     const flushed = this.flushedFiles.get(key) ?? new Set<string>();
     for (const e of batch) flushed.add(e.relPath);
     this.flushedFiles.set(key, flushed);

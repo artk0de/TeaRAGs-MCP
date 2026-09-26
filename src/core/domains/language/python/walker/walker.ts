@@ -1219,35 +1219,36 @@ function collectPythonCalls(out: CallRef[], dispatch: PythonDispatchScope | null
     // A candidate set passed positionally feeds the callback-param join.
     const dispatchArgs = dispatch === null ? [] : pythonDispatchArgs(node, dispatch);
     const withDispatchArgs = dispatchArgs.length > 0 ? { dispatchArgs } : {};
-    if (fn.type === "attribute") {
-      // `obj.method(...)` — receiver = object's leftmost identifier,
-      // member = property text. For chained accesses like `a.b.c()`,
-      // the receiver is `a.b` (full attribute text minus the final
-      // property), which mirrors the TS walker's behaviour for
-      // member_expression chains.
-      const obj = fn.childForFieldName("object");
-      const attr = fn.childForFieldName("attribute");
-      if (!obj || !attr) return;
-      out.push({
-        callText: node.text,
-        receiver: normalizePythonReceiverText(obj),
-        member: attr.text,
-        startLine,
-        ...pythonCallShape(node),
-        ...withDispatchArgs,
-      });
-    } else {
-      // Bare call like `foo(...)`.
-      out.push({
-        callText: node.text,
-        receiver: null,
-        member: fn.text,
-        startLine,
-        ...pythonCallShape(node),
-        ...withDispatchArgs,
-      });
-    }
+    const callee = pythonCalleeMemberReceiver(fn);
+    if (callee === null) return;
+    out.push({ callText: node.text, ...callee, startLine, ...pythonCallShape(node), ...withDispatchArgs });
   };
+}
+
+/** The `{ receiver, member }` pair a Python `CallRef` carries. */
+export interface PythonCallMemberReceiver {
+  receiver: string | null;
+  member: string;
+}
+
+/**
+ * The receiver / member split of a NON-dispatch call's callee, as
+ * `collectPythonCalls` puts it on the `CallRef` — null for a malformed
+ * attribute, which emits nothing. The identifier-declaration pass reads it so a
+ * declaration's bound callee matches that `CallRef` by construction (bd
+ * tea-rags-mcp-4p3sb.16).
+ *
+ * `obj.method(...)` — receiver = the object's text, member = the attribute. For
+ * chained accesses like `a.b.c()` the receiver is `a.b` (full attribute text
+ * minus the final property), which mirrors the TS walker's behaviour for
+ * member_expression chains. Any other callee is a bare call named by its text.
+ */
+export function pythonCalleeMemberReceiver(fn: AstNode): PythonCallMemberReceiver | null {
+  if (fn.type !== "attribute") return { receiver: null, member: fn.text };
+  const obj = fn.childForFieldName("object");
+  const attr = fn.childForFieldName("attribute");
+  if (!obj || !attr) return null;
+  return { receiver: normalizePythonReceiverText(obj), member: attr.text };
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {

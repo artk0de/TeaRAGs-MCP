@@ -256,6 +256,20 @@
         ]
       },
       "failureMode": "Agent inflates guard payload to include content"
+    },
+    {
+      "id": "eval-16",
+      "category": "rename-task-naming",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Task 4: 'rename local row → envelope in TaxAutomation::Importer#call' (pure refactor).",
+      "prompt": "Выполни Task 4.",
+      "expected": {
+        "mustDo": [
+          "Classify as Refactor only — skip Step 5 (DDG)",
+          "Check the new name via get_naming_lexicon(names=[{name: envelope, kind: local}]) before the Edit; MISFIT → use suggestion"
+        ],
+        "mustNotDo": ["Apply the plan-fixed name without a lexicon verdict"]
+      },
+      "failureMode": "Rename Task introduces a name off the project vocabulary"
     }
   ]
 }

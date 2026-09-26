@@ -177,12 +177,12 @@ function emitJsCall(
   // walker — `new_expression` with `constructor` field. JS parser
   // shares this node type with tree-sitter-typescript.
   if (node.type === "new_expression") {
-    const ctorNode = node.childForFieldName("constructor");
-    if (!ctorNode) return;
+    const shape = javascriptCallSiteShape(node);
+    if (!shape) return;
     out.push({
       callText: node.text,
-      receiver: ctorNode.text,
-      member: "constructor",
+      receiver: shape.receiver,
+      member: shape.member,
       startLine: node.startPosition.row + 1,
     });
     return;
@@ -202,29 +202,9 @@ function emitJsCall(
     return;
   }
 
-  let ref: CallRef;
-  if (callee.type === "member_expression") {
-    const obj = callee.childForFieldName("object");
-    const prop = callee.childForFieldName("property");
-    if (!obj || !prop) return;
-    ref = { callText: node.text, receiver: obj.text, member: prop.text, startLine };
-  } else if (callee.type === "super") {
-    // Bare `super(arg)` in a constructor (bd tea-rags-mcp-3a84). The
-    // tree-sitter grammar emits `super` as the callee node type (no
-    // member access). Without this branch, the walker emitted
-    // `{ receiver: null, member: "super" }` which the resolver then
-    // tried to look up by short-name (always fails). Re-shape to the
-    // super-method form so js-resolver's `super` branch routes the
-    // call to the PARENT class's constructor via classExtends.
-    // Mirrors typescript-walker's identical branch.
-    ref = { callText: node.text, receiver: "super", member: "constructor", startLine };
-  } else if (callee.type === "identifier") {
-    // Skip require/import — these are tracked as imports, not calls.
-    if (callee.text === "require" || callee.text === "import") return;
-    ref = { callText: node.text, receiver: null, member: callee.text, startLine };
-  } else {
-    return;
-  }
+  const shape = javascriptCallSiteShape(node);
+  if (!shape) return;
+  const ref: CallRef = { callText: node.text, receiver: shape.receiver, member: shape.member, startLine };
 
   // A dispatch candidate-set passed positionally — the callback-param channel
   // the resolver joins against the callee's invoked parameters.
@@ -238,6 +218,45 @@ function emitJsCall(
     if (dispatchArgs.length > 0) ref.dispatchArgs = dispatchArgs;
   }
   out.push(ref);
+}
+
+/** The `{ receiver, member }` pair a JavaScript `CallRef` carries. */
+export interface JavascriptCallShape {
+  receiver: string | null;
+  member: string;
+}
+
+/**
+ * The `{ receiver, member }` of the `CallRef` {@link emitJsCall} puts on a
+ * `new_expression` or on a `call_expression` whose callee is no dispatch
+ * candidate set — null when it emits none. Read by the identifier-declaration
+ * pass so a declaration's bound callee matches that `CallRef` by construction
+ * (bd tea-rags-mcp-4p3sb.16); a dispatch call needs the file's dispatch scopes
+ * and is not reproduced.
+ *
+ * `new X()` → `{ "X", "constructor" }` (bd tea-rags-mcp-i252). A bare
+ * `super(arg)` is re-shaped to the super-method form so js-resolver's `super`
+ * branch routes it to the PARENT class's constructor via classExtends (bd
+ * tea-rags-mcp-3a84), mirroring the TypeScript walker. `require` / `import`
+ * are tracked as imports, not calls; any other callee shape emits nothing.
+ */
+export function javascriptCallSiteShape(node: AstNode): JavascriptCallShape | null {
+  if (node.type === "new_expression") {
+    const ctorNode = node.childForFieldName("constructor");
+    return ctorNode ? { receiver: ctorNode.text, member: "constructor" } : null;
+  }
+  if (node.type !== "call_expression") return null;
+  const callee = node.childForFieldName("function");
+  if (callee?.type === "member_expression") {
+    const obj = callee.childForFieldName("object");
+    const prop = callee.childForFieldName("property");
+    return obj && prop ? { receiver: obj.text, member: prop.text } : null;
+  }
+  if (callee?.type === "super") return { receiver: "super", member: "constructor" };
+  if (callee?.type === "identifier" && callee.text !== "require" && callee.text !== "import") {
+    return { receiver: null, member: callee.text };
+  }
+  return null;
 }
 
 /**

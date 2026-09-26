@@ -54,7 +54,7 @@ Compose:
 If no area mentioned or derivable: skip to Step 4 with empty enrichment. Report
 "no area identifiable — proceeding without tea-rags enrichment".
 
-## Step 2 — Three tea-rags enrichment calls (four with codegraph)
+## Step 2 — Three tea-rags enrichment calls (five with codegraph)
 
 Run these three `mcp__tea-rags__semantic_search` calls **in parallel** (same
 tool call block), each with `metaOnly: true` (want signals, not content):
@@ -70,6 +70,11 @@ Call D runs ONLY when codegraph active (prime `## Enrichment` lists
 `codegraph.symbols`). When that line absent, omit Call D — run A/B/C only, note
 structural backbone not assessed (do NOT substitute a similarity-ranked list as
 "the hubs"). See search-cascade "Graph navigation".
+
+**Call E — vocabulary (codegraph only, same parallel block):**
+`get_naming_lexicon(concept=<Step 1 query>, language, pathPattern)` →
+`concept.terms` = the words the project already uses for this area. Reading:
+`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 Exact parameters per call:
 
@@ -124,6 +129,8 @@ From three result sets, compose compact block (max ~15 lines):
 **Tech debt (legacy + churn):**
 - <relativePath> — ageDays <N>, commitCount <N>, relativeChurn <X>
 - ... (top 3)
+
+**Project vocabulary (Call E):** <term> (<holder>), ... (top 5)
 ```
 
 Cap each section at 3 entries. If a file appears in multiple sections, note
@@ -140,7 +147,11 @@ Invoke `Skill` tool with `superpowers:brainstorming`. Prepend enrichment block
 from Step 3 as context. Phrase handoff as:
 
 > "Before exploring, note these risk signals in the target area: …<block>… Use
-> them to pressure-test ideas — especially around the hotspot files.
+> them to pressure-test ideas — especially around the hotspot files. A name the
+> design proposes for a new symbol goes through
+> `get_naming_lexicon(names, language)` before the design fixes it: `MISFIT` →
+> take `suggestion`; `NEW_TERM` → a vocabulary term if it means the same,
+> otherwise justify the new word.
 >
 > Chaining rule reminder: if your cycle would next invoke a `superpowers:Y`
 > skill (writing-plans, test-driven-development, etc.), invoke the

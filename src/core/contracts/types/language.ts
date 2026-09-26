@@ -757,6 +757,14 @@ export interface LanguageProvider {
    * bd tea-rags-mcp-w205u.1.
    */
   dependencyManifest?: DependencyManifestSource;
+  /**
+   * Optional finder vocabulary for the naming lexicon (bd tea-rags-mcp-4p3sb.9) —
+   * member names that, called on a CONSTANT receiver, return an instance of that
+   * constant (Rails `Doc.find(id)`, `Doc.find_by!(…)`). The codegraph row builder
+   * types an untyped local or field bound to such a call as the receiver, with
+   * `typeSource: "finder"`. Absent → the language contributes no finder stage.
+   */
+  identifierFinderMethods?: readonly string[];
 }
 
 /**
@@ -994,6 +1002,41 @@ export interface LanguageCapability {
    * registry stamp copies `versions` verbatim, and a scope is not a version.
    */
   chunkSetBumpScopes?: ChunkSetBumpScopes;
+  /**
+   * This language's static naming facts, read by the naming lexicon: how it
+   * cases an identifier in each role (the community style guide's convention;
+   * per role the FIRST casing is canonical, the one a name is rendered in, any
+   * others are accepted spellings) and which of its type names carry no domain
+   * concept (primitives, top types, wrapper / utility types). Absent only for a language without identifiers
+   * (markdown); `tests/navigator-enumerations.test.ts` derives that it is
+   * declared by exactly the languages whose walker publishes
+   * `identifierDeclarations`. Sigils and predicate / bang suffixes are not
+   * casing — the lexicon strips them before classifying.
+   */
+  naming?: IdentifierNamingConvention;
   /** README prose extras (humans only). */
   notes?: string;
+}
+
+/** An identifier's letter-case shape: `snake_case`, `camelCase`, `PascalCase`, `SCREAMING_SNAKE`. */
+export type IdentifierCasing = "snake" | "camel" | "pascal" | "screamingSnake";
+
+/** The role an identifier plays, as far as a language's casing convention distinguishes it. */
+export type IdentifierRole = "type" | "module" | "method" | "param" | "local" | "field" | "constant";
+
+/**
+ * A language's static naming facts, read by the naming lexicon — see
+ * {@link LanguageCapability.naming}.
+ */
+export interface IdentifierNamingConvention {
+  /** Accepted casings per {@link IdentifierRole}; the FIRST is canonical (the one a name is rendered in). */
+  readonly casing: Readonly<Record<IdentifierRole, readonly IdentifierCasing[]>>;
+  /**
+   * Type names that carry no domain concept in this language — primitives, top
+   * types, and wrapper / utility types (`Promise`, `Record`) — spelled exactly as
+   * the language writes them; matched exactly, no case folding. The lexicon
+   * excludes them from `byType` and judges a draft typed with one as untyped.
+   * Single-letter generics (`T`) are a universal rule the lexicon owns, not listed.
+   */
+  readonly nonConceptTypes: readonly string[];
 }

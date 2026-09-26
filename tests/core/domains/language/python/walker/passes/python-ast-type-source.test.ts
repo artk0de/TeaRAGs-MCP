@@ -155,6 +155,41 @@ describe("pythonAstTypeSource — what it declines", () => {
     expect(facts(src)).toEqual([]);
   });
 
+  it.each([
+    ["tuple unpacking", ["def build(pair):", "    w = Widget()", "    w, n = pair", "    return w", ""]],
+    ["an augmented assignment", ["def build():", "    w = Widget()", "    w += other", "    return w", ""]],
+    [
+      "a for loop rebinding it",
+      ["def build(items):", "    w = Widget()", "    for w in items:", "        pass", "    return w", ""],
+    ],
+  ])("is silent on a local also rebound by %s", (_shape, lines) => {
+    expect(facts(lines.join("\n"))).toEqual([]);
+  });
+
+  it("a nested def's assignment to the same name does not rebind the outer local", () => {
+    const src = [
+      "def build():",
+      "    w = Widget()",
+      "    def helper():",
+      "        w = Gadget()",
+      "    return w",
+      "",
+    ].join("\n");
+    expect(structuredReturnTypes(src)).toEqual({ [moduleKey("build")]: instance("Widget") });
+  });
+
+  it("a method-local annotation or a non-self attribute annotation types no field", () => {
+    const src = [
+      "class Repo:",
+      "    def handle(self, other):",
+      "        s: Session = open_session()",
+      "        other.session: Session = s",
+      "        return self.session",
+      "",
+    ].join("\n");
+    expect(facts(src)).toEqual([]);
+  });
+
   it("loses to an annotation on the same def", () => {
     const src = ["class Factory:", "    def build(self) -> Gadget:", "        return Widget()", ""].join("\n");
     expect(structuredReturnTypes(src)).toEqual({ "Factory#build": instance("Gadget") });

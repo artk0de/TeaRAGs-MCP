@@ -7,6 +7,9 @@
  *      the resolver follows for method promotion and field chains.
  *   2. declared visibility (bd tea-rags-mcp-jwjyr.1) — exported vs
  *      package-private on `ChunkExtraction.visibility`.
+ *   3. identifier declarations (bd tea-rags-mcp-4p3sb.5) — params, `:=` / `var`
+ *      locals and struct fields with their syntactic type, for the naming
+ *      lexicon.
  *
  * A new Go extraction facet is added HERE, one `ExtractionFacetPass` at a time,
  * rather than by growing the monolith. What a pass can and cannot express —
@@ -15,8 +18,9 @@
  * `kernel/extraction-passes.ts`.
  */
 
-import type { ExtractionFacetPass } from "../../kernel/index.js";
+import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
 import { goDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
+import { GO_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { goStructFieldTypesFacetPass } from "./passes/struct-field-types.js";
 import { goTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
@@ -24,4 +28,5 @@ export const GO_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   goStructFieldTypesFacetPass,
   goDeclaredVisibilityFacetPass,
   goTypeAbstractnessFacetPass,
+  createIdentifierDeclarationFacetPass(GO_IDENTIFIER_DECLARATION_SYNTAX),
 ];

@@ -35,6 +35,8 @@ import { SQL_029_CG_DERIVED_STALE } from "./029-cg-derived-stale.js";
 import { SQL_030_CG_FILE_EDGE_EXPORT_NAMES } from "./030-cg-file-edge-export-names.js";
 import { SQL_031_CG_TEMPORAL_INIT } from "./031-cg-temporal-init.js";
 import { SQL_032_CG_SYMBOLS_FILES_TYPE_ABSTRACTNESS } from "./032-cg-symbols-files-type-abstractness.js";
+import { SQL_033_CG_IDENTIFIERS } from "./033-cg-identifiers.js";
+import { SQL_034_CG_IDENTIFIERS_TYPE_MULTIPLICITY } from "./034-cg-identifiers-type-multiplicity.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -74,4 +76,6 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "030-cg-file-edge-export-names.sql", sql: SQL_030_CG_FILE_EDGE_EXPORT_NAMES },
   { filename: "031-cg-temporal-init.sql", sql: SQL_031_CG_TEMPORAL_INIT },
   { filename: "032-cg-symbols-files-type-abstractness.sql", sql: SQL_032_CG_SYMBOLS_FILES_TYPE_ABSTRACTNESS },
+  { filename: "033-cg-identifiers.sql", sql: SQL_033_CG_IDENTIFIERS },
+  { filename: "034-cg-identifiers-type-multiplicity.sql", sql: SQL_034_CG_IDENTIFIERS_TYPE_MULTIPLICITY },
 ];

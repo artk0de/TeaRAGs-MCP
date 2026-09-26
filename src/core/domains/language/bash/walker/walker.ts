@@ -77,8 +77,22 @@ function collectBashImports(root: AstNode): ImportRef[] {
 }
 
 function collectBashFunctionCalls(root: AstNode): CallRef[] {
-  // Collect the set of function names DEFINED in this file so we can
-  // distinguish "internal call" from "external binary invocation".
+  const defined = collectBashDefinedFunctions(root);
+  const out: CallRef[] = [];
+  walk(root, (node) => {
+    const member = bashCalledFunction(node, defined);
+    if (member !== null) {
+      out.push({ callText: node.text, receiver: null, member, startLine: node.startPosition.row + 1 });
+    }
+  });
+  return out;
+}
+
+/**
+ * The set of function names DEFINED in this file, which is what tells an
+ * "internal call" from an "external binary invocation".
+ */
+export function collectBashDefinedFunctions(root: AstNode): Set<string> {
   const defined = new Set<string>();
   walk(root, (node) => {
     if (node.type === "function_definition") {
@@ -86,19 +100,21 @@ function collectBashFunctionCalls(root: AstNode): CallRef[] {
       if (id) defined.add(id.text);
     }
   });
-  const out: CallRef[] = [];
-  walk(root, (node) => {
-    if (node.type !== "command") return;
-    const nameNode = node.childForFieldName("name");
-    if (!nameNode) return;
-    const name = nameNode.text;
-    // Skip source/. — they're imports.
-    if (name === "source" || name === ".") return;
-    // Only emit if the name is one we know was defined in the file.
-    if (!defined.has(name)) return;
-    out.push({ callText: node.text, receiver: null, member: name, startLine: node.startPosition.row + 1 });
-  });
-  return out;
+  return defined;
+}
+
+/**
+ * The function a `command` node calls — the `CallRef` member
+ * {@link collectBashFunctionCalls} emits for it — or null: `source` / `.` are
+ * imports, and only a name defined in the file is a call. Read by the
+ * identifier-declaration pass so a declaration's bound callee matches that
+ * `CallRef` by construction (bd tea-rags-mcp-4p3sb.16).
+ */
+export function bashCalledFunction(node: AstNode, defined: ReadonlySet<string>): string | null {
+  if (node.type !== "command") return null;
+  const name = node.childForFieldName("name")?.text;
+  if (name === undefined || name === "source" || name === ".") return null;
+  return defined.has(name) ? name : null;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {

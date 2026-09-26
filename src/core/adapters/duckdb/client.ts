@@ -23,6 +23,8 @@
  * | `DuckDbGraphAnalyticsStore`  | adjacency out, cycles + PageRank back in        |
  * | `DuckDbRunStatsStore`        | `cg_run_stats` + edge-kind distribution         |
  * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
+ * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
+ * | `DuckDbOntologyReportStore`  | `cg_identifiers` ontology audit reads           |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -32,6 +34,7 @@
 
 import type {
   AmbiguousCallerSite,
+  AnchorIdentifierTypeRow,
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CalleeEdge,
@@ -53,8 +56,24 @@ import type {
   GraphEdges,
   GraphFileNode,
   HierarchySnapshot,
+  IdentifierCalleeAggregateRow,
+  IdentifierCalleeScopeQuery,
+  IdentifierLanguageCountQuery,
+  IdentifierLanguageCountRow,
+  IdentifierNameKindTypeRow,
+  IdentifierNameScopeQuery,
+  IdentifierNameTypeRow,
+  IdentifierReplaceEntry,
+  IdentifierShapeSampleQuery,
+  IdentifierShapeSampleRow,
+  IdentifierTypeAggregateQuery,
+  IdentifierTypeAggregateRow,
+  IdentifierTypeScopeQuery,
   InheritanceEdge,
   NonPublicMemberEdge,
+  OntologyReportQuery,
+  OntologyReportSectionRows,
+  OntologyReportSummaryRows,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -72,7 +91,9 @@ import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
 import { DuckDbGraphAnalyticsStore } from "./graph-analytics-store.js";
 import { DuckDbGraphSession, type DuckDbGraphSessionOptions, type OpenedDatabaseFile } from "./graph-session.js";
 import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
+import { DuckDbIdentifierStore } from "./identifier-store.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
+import { DuckDbOntologyReportStore } from "./ontology-report-store.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
@@ -105,6 +126,8 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly runStats: DuckDbRunStatsStore;
   private readonly signalDrift: DuckDbSignalDriftStore;
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
+  private readonly identifiers: DuckDbIdentifierStore;
+  private readonly ontology: DuckDbOntologyReportStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -117,6 +140,8 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.runStats = new DuckDbRunStatsStore(this.session);
     this.signalDrift = new DuckDbSignalDriftStore(this.session);
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
+    this.identifiers = new DuckDbIdentifierStore(this.session);
+    this.ontology = new DuckDbOntologyReportStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -288,6 +313,59 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbols.getSymbolLineRangesBulk(relPaths);
+  }
+
+  // ── Identifier declarations (naming lexicon) ──
+
+  async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
+    return this.identifiers.replaceIdentifiersBulk(entries);
+  }
+
+  async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
+    return this.identifiers.aggregateIdentifiersByType(q);
+  }
+
+  async aggregateIdentifiersByCallee(q: IdentifierCalleeScopeQuery): Promise<IdentifierCalleeAggregateRow[]> {
+    return this.identifiers.aggregateIdentifiersByCallee(q);
+  }
+
+  async anchorIdentifierTypes(symbolIds: readonly SymbolId[]): Promise<AnchorIdentifierTypeRow[]> {
+    return this.identifiers.anchorIdentifierTypes(symbolIds);
+  }
+
+  async identifierNameTypes(names: readonly string[]): Promise<IdentifierNameTypeRow[]> {
+    return this.identifiers.identifierNameTypes(names);
+  }
+
+  async existingSymbolShortNames(names: readonly string[]): Promise<string[]> {
+    return this.identifiers.existingSymbolShortNames(names);
+  }
+
+  async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {
+    return this.identifiers.countIdentifiers(q);
+  }
+
+  async aggregateIdentifiersByName(q: IdentifierNameScopeQuery): Promise<IdentifierNameKindTypeRow[]> {
+    return this.identifiers.aggregateIdentifiersByName(q);
+  }
+
+  async identifierLanguageCounts(q: IdentifierLanguageCountQuery): Promise<IdentifierLanguageCountRow[]> {
+    return this.identifiers.identifierLanguageCounts(q);
+  }
+
+  async sampleIdentifierShapes(q: IdentifierShapeSampleQuery): Promise<IdentifierShapeSampleRow[]> {
+    return this.identifiers.sampleIdentifierShapes(q);
+  }
+
+  async readOntologyReportSummary(q: OntologyReportQuery): Promise<OntologyReportSummaryRows> {
+    return this.ontology.readOntologyReportSummary(q);
+  }
+
+  async readOntologyReportSections(
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ): Promise<OntologyReportSectionRows> {
+    return this.ontology.readOntologyReportSections(q, excludedGenericNames);
   }
 
   // ── Method-edge / chunk-signal reads ──

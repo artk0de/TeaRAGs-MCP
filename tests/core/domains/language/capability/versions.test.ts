@@ -419,16 +419,51 @@ describe("seeded support versions", () => {
       // type `for request in mutableState.read(\.activeRequests)`.
       // bd tea-rags-mcp-r8hme.8's per-file type-abstractness census ships under
       // each language's existing release bump below (re-pinned, not bumped).
+      // Numbered on the naming-lexicon branch (bd tea-rags-mcp-4p3sb), before
+      // its merge with the waves above:
+      // ruby 8, python 14: bd tea-rags-mcp-4p3sb.3 publishes
+      // `identifierDeclarations`, so an index built by the previous walker
+      // holds no declaration for the naming lexicon.
+      // typescript 15, javascript 7: bd tea-rags-mcp-4p3sb.4, the same channel.
+      // go 7, rust 5: bd tea-rags-mcp-4p3sb.5, the same channel.
+      // java 6, swift 44, bash 2: bd tea-rags-mcp-4p3sb.6, the same channel.
+      // ruby 9, python 15, typescript 16, javascript 8, go 8, rust 6, java 7,
+      // swift 45, bash 3: bd tea-rags-mcp-4p3sb.16 binds each call-valued local
+      // and field to its callee (`boundCallee`), and Python / TypeScript name a
+      // collection annotation's element, so an index built by the previous
+      // walker holds neither.
+      // ruby 10, typescript 17, swift 48: the naming-lexicon branch (ruby 9,
+      // typescript 16, swift 45 on its branch) merged with nbf8q (ruby 8),
+      // g7h1y (typescript 15) and y99pg.29-.31 (swift 47), so neither parent's
+      // index holds the merged extraction.
+      // rust 7, java 8, swift 49: bd tea-rags-mcp-4p3sb.17 names the element of a
+      // collection / wrapper annotation on `identifierDeclarations`, so an index
+      // built by the previous walker types those rows by the container.
+      // swift 55: the naming-lexicon branch (swift 49 on its branch) merged with
+      // y99pg.32 / .34 (swift 54), so neither parent's index holds the merged
+      // extraction.
+      // typescript 18, python 16, java 9, rust 8, go 9, swift 56: bd
+      // tea-rags-mcp-4p3sb.21 publishes each function's return annotation as a
+      // `return` declaration, so an index built by the previous walker holds no
+      // return row for the call-return join to read.
+      // typescript 19, javascript 9, python 17, swift 65: the naming-lexicon
+      // branch (typescript 18, javascript 8, python 16, swift 56 there) rebased
+      // onto integration walkers 16 / 7 / 14 / 64 (r8hme.2, y99pg.35-.37), so
+      // neither side's index holds both extractions.
+      // swift 66: the naming-lexicon branch (swift 65 there) rebased onto main's
+      // swift walker 64, which changed its extraction under the same number (bd
+      // tea-rags-mcp-y99pg.39), so again neither side's index holds both.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 16],
-        ["javascript", 7],
-        ["python", 14],
-        ["ruby", 8],
-        ["java", 5],
-        ["rust", 4],
-        ["go", 6],
-        ["swift", 64],
+        ["typescript", 19],
+        ["javascript", 9],
+        ["python", 17],
+        ["ruby", 10],
+        ["java", 9],
+        ["rust", 8],
+        ["go", 9],
+        ["swift", 66],
+        ["bash", 3],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope

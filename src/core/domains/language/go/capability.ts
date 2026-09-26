@@ -29,5 +29,54 @@ export const capability: LanguageCapability = {
   // walker 6: bd tea-rags-mcp-jwjyr.1. The walker records the DECLARED
   // visibility on `ChunkExtraction.visibility` — exported vs package-private — persisted in
   // `cg_symbols.visibility`. Needs `--force-enrichments codegraph` to fill.
-  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
+  // walker 7: bd tea-rags-mcp-4p3sb.5 — the walker publishes
+  // `identifierDeclarations` (params, locals, struct fields; annotation and
+  // composite-literal types) for the naming lexicon. Rows written by walker 6
+  // carry none, so only the recompute adds them.
+  // walker 9: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // func's FIRST result type as a `return`, so a walker-8 index has no return
+  // row for a multi-value func, which `functionReturnTypes` omits.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // Effective Go: MixedCaps everywhere, never underscores. The first letter's
+  // case is Go's EXPORT marker, not a style choice, so every package-level role
+  // (type, method, field, constant) accepts both — canonical by role: types
+  // exported (pascal), members and constants unexported (camel). Parameters and
+  // locals cannot be exported. A package name is a single lowercase word;
+  // `snake` is the nearest casing (a single lowercase word classifies as it).
+  naming: {
+    casing: {
+      type: ["pascal", "camel"],
+      module: ["snake"],
+      method: ["camel", "pascal"],
+      param: ["camel"],
+      local: ["camel"],
+      field: ["camel", "pascal"],
+      constant: ["camel", "pascal"],
+    },
+    // Predeclared types (the Go spec's universe block) plus the empty interface.
+    nonConceptTypes: [
+      "string",
+      "int",
+      "int8",
+      "int16",
+      "int32",
+      "int64",
+      "uint",
+      "uint8",
+      "uint16",
+      "uint32",
+      "uint64",
+      "uintptr",
+      "float32",
+      "float64",
+      "complex64",
+      "complex128",
+      "bool",
+      "byte",
+      "rune",
+      "error",
+      "any",
+      "interface{}",
+    ],
+  },
 };

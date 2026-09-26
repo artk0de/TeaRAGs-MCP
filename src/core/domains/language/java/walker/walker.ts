@@ -120,18 +120,30 @@ function collectJavaImports(root: AstNode): ImportRef[] {
 function collectJavaCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
-    if (node.type !== "method_invocation") return;
-    const object = node.childForFieldName("object");
-    const name = node.childForFieldName("name");
-    if (!name) return;
-    const startLine = node.startPosition.row + 1;
-    if (object) {
-      out.push({ callText: node.text, receiver: object.text, member: name.text, startLine });
-    } else {
-      out.push({ callText: node.text, receiver: null, member: name.text, startLine });
-    }
+    const shape = javaCallSiteShape(node);
+    if (shape) out.push({ callText: node.text, ...shape, startLine: node.startPosition.row + 1 });
   });
   return out;
+}
+
+/** The `{ receiver, member }` pair a Java `CallRef` carries. */
+export interface JavaCallShape {
+  receiver: string | null;
+  member: string;
+}
+
+/**
+ * The `{ receiver, member }` of the `CallRef` {@link collectJavaCalls} emits for
+ * `node` — a `method_invocation` only: `obj.m()` → `obj` / `m`, a bare `m()` →
+ * `m`. An object creation (`new X()`) emits no `CallRef`, so it answers null.
+ * Read by the identifier-declaration pass so a declaration's bound callee
+ * matches that `CallRef` by construction (bd tea-rags-mcp-4p3sb.16).
+ */
+export function javaCallSiteShape(node: AstNode): JavaCallShape | null {
+  if (node.type !== "method_invocation") return null;
+  const name = node.childForFieldName("name");
+  if (!name) return null;
+  return { receiver: node.childForFieldName("object")?.text ?? null, member: name.text };
 }
 
 interface JavaParamBinding {

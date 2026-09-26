@@ -75,3 +75,33 @@ needed.
 - **Step 5 MANDATORY under pressure**: eval-13 passes with-rule but real-world
   pressure ("hotfix, be fast") may erode. Consider adding a hotfix-pressure eval
   case.
+
+## 2026-09-25 — naming lexicon + symbol-risk VERIFY (cases only, not run)
+
+SKILL.md change (tea-rags 0.36.0, beads tea-rags-mcp-4p3sb.13 / .15): Step 5
+STYLE gains one `get_naming_lexicon` call, Step 6 names from its vocabulary
+(`NEW_TERM` justified), Step 7 VERIFY drops the identifier-existence sweep for
+symbol risks via `find_symbol(rerank: "criticalPath")`.
+
+Superseded (kept in `evals.json`, not scored):
+
+| Case    | Superseded by                         | Reason                                            |
+| ------- | ------------------------------------- | ------------------------------------------------- |
+| eval-6  | `extract-project-patterns/evals.json` | Step 2 delegates template search and quality gate |
+| eval-11 | `verify-symbol-risk`                  | Step 7 identifier check removed                   |
+| eval-12 | `codegraph-impact/benchmark.md`       | IMPACT = blastRadius when codegraph is on (TR4)   |
+| eval-13 | `naming-modify-scope`                 | Step 7 identifier check removed                   |
+| eval-14 | `verify-symbol-risk`                  | Step 7 identifier check removed                   |
+
+New cases (13): `naming-type-misfit`, `naming-second-binding-qualifier`,
+`naming-callee-derived-untyped`, `naming-concept-new-term`,
+`naming-concept-backedge`, `naming-new-term-justified`, `naming-conforms`,
+`naming-free-dominant-role`, `naming-camelcase-language`,
+`naming-codegraph-off`, `naming-modify-scope`, `verify-symbol-risk`,
+`verify-central-modified`. New cases carry a `context` field — the environment
+the harness sets up (prime enrichment, lexicon answer) — so the `prompt` stays
+neutral user framing.
+
+Run deferred: the with-rule vs baseline measurement waits until
+`get_naming_lexicon` ships (heavy-measurement phase at the end of the epic). No
+`runs[]` entry yet.

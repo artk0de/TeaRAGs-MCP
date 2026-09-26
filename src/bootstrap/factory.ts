@@ -33,6 +33,8 @@ import {
 } from "../core/api/index.js";
 import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
+import { NamingLexiconOps } from "../core/api/internal/ops/naming-lexicon-ops.js";
+import { ontologyLanguageProfiles, OntologyReportOps } from "../core/api/internal/ops/ontology-report-ops.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
 import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
@@ -156,6 +158,7 @@ interface CompositionContext {
   signalFloors: ReturnType<typeof createComposition>["signalFloors"];
   languageCodeVersions: ReturnType<typeof createComposition>["languageCodeVersions"];
   languageChunkSetBumpScopes: ReturnType<typeof createComposition>["languageChunkSetBumpScopes"];
+  namingConventions: ReturnType<typeof createComposition>["namingConventions"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -337,6 +340,7 @@ function wireComposition(
     signalFloors,
     languageCodeVersions,
     languageChunkSetBumpScopes,
+    namingConventions,
   } = createComposition({
     // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
     git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
@@ -351,6 +355,7 @@ function wireComposition(
     signalFloors,
     languageCodeVersions,
     languageChunkSetBumpScopes,
+    namingConventions,
     schemaBuilder,
   };
 }
@@ -1071,6 +1076,18 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
       })
     : undefined;
 
+  // get_ontology_report (bd tea-rags-mcp-4p3sb.20): reads cg_identifiers through
+  // the codegraph pool, so it exists only when codegraph is wired — omitted
+  // (→ App.getOntologyReport empty-result fallback) when disabled.
+  const ontologyReportOps = codegraphContext
+    ? new OntologyReportOps({
+        pool: codegraphContext.pool,
+        collectionRegistry,
+        resolveActiveCollection,
+        languages: ontologyLanguageProfiles(),
+      })
+    : undefined;
+
   const statsCache = new StatsCache(config.paths.snapshots);
 
   const registryWatchStop = collectionRegistry.startWatching();
@@ -1260,6 +1277,21 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     // git then has no git row on either surface (bd tea-rags-mcp-uebug).
     enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
   });
+  // NamingLexiconOps (bd tea-rags-mcp-4p3sb.12) reads cg_identifiers through the
+  // same pool as TracePathOps, under the same codegraphContext guard, and runs
+  // its concept step through the explore facade — so it is built only once
+  // `explore` exists. Absent → App.getNamingLexicon answers empty.
+  const namingLexiconOps = codegraphContext
+    ? new NamingLexiconOps({
+        pool: codegraphContext.pool,
+        collectionRegistry,
+        resolveActiveCollection,
+        explore,
+        namingConventions: composition.namingConventions,
+        // The ontology report's profiles: a draft named generically there carries `genericName`.
+        ontologyLanguages: ontologyLanguageProfiles(),
+      })
+    : undefined;
   const app = createApp({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -1274,6 +1306,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     modelGuard: infra.modelGuard,
     graphFacade: codegraphContext?.graphFacade,
     tracePathOps,
+    namingLexiconOps,
+    ontologyReportOps,
     codegraphPool: codegraphContext?.pool,
     registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });

@@ -265,49 +265,53 @@ function collectRustImports(root: AstNode): ImportRef[] {
 function collectRustCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
-    // bd tea-rags-mcp-jyzb — macro_invocation (`println!()`, `my_macro!()`)
-    // is a separate node type in tree-sitter-rust, not a `call_expression`.
-    // The macro name lives on the `macro` field (an `identifier` or
-    // `scoped_identifier`). We treat the macro name as the call member
-    // with no receiver — usually unresolvable (std-lib macros), but
-    // user-defined `macro_rules!` symbols emit a definition (see
-    // `rustNameOf`) so the resolver can link them.
-    if (node.type === "macro_invocation") {
-      const macroField = node.childForFieldName("macro");
-      if (!macroField) return;
-      const startLine = node.startPosition.row + 1;
-      if (macroField.type === "scoped_identifier") {
-        const path = macroField.childForFieldName("path");
-        const name = macroField.childForFieldName("name");
-        if (!name) return;
-        out.push({ callText: node.text, receiver: path?.text ?? null, member: name.text, startLine });
-        return;
-      }
-      // Plain `identifier` — bare macro name.
-      out.push({ callText: node.text, receiver: null, member: macroField.text, startLine });
-      return;
-    }
-    if (node.type !== "call_expression") return;
-    const fn = node.childForFieldName("function");
-    if (!fn) return;
-    const startLine = node.startPosition.row + 1;
-    if (fn.type === "field_expression") {
-      const value = fn.childForFieldName("value");
-      const field = fn.childForFieldName("field");
-      if (!value || !field) return;
-      out.push({ callText: node.text, receiver: value.text, member: field.text, startLine });
-    } else if (fn.type === "scoped_identifier") {
-      // foo::bar::baz() — receiver = foo::bar, member = baz.
-      const path = fn.childForFieldName("path");
-      const name = fn.childForFieldName("name");
-      if (!name) return;
-      const receiver = path?.text ?? null;
-      out.push({ callText: node.text, receiver, member: name.text, startLine });
-    } else if (fn.type === "identifier") {
-      out.push({ callText: node.text, receiver: null, member: fn.text, startLine });
-    }
+    const shape = rustCallSiteShape(node);
+    if (shape) out.push({ callText: node.text, ...shape, startLine: node.startPosition.row + 1 });
   });
   return out;
+}
+
+/** The `{ receiver, member }` pair a Rust `CallRef` carries. */
+export interface RustCallShape {
+  receiver: string | null;
+  member: string;
+}
+
+/**
+ * The `{ receiver, member }` of the `CallRef` {@link collectRustCalls} emits for
+ * `node`, or null when it emits none. Read by the identifier-declaration pass
+ * so a declaration's bound callee matches that `CallRef` by construction (bd
+ * tea-rags-mcp-4p3sb.16).
+ *
+ * bd tea-rags-mcp-jyzb — `macro_invocation` (`println!()`, `my_macro!()`) is a
+ * separate node type in tree-sitter-rust, not a `call_expression`. The macro
+ * name lives on the `macro` field (an `identifier` or `scoped_identifier`) and
+ * is treated as the call member — usually unresolvable (std-lib macros), but
+ * user-defined `macro_rules!` symbols emit a definition (see `rustNameOf`) so
+ * the resolver can link them. A call: `value.field()` → the value and field;
+ * `foo::bar::baz()` → receiver `foo::bar`, member `baz`; a bare `f()` → `f`;
+ * any other callee (a generic function, a closure call) emits nothing.
+ */
+export function rustCallSiteShape(node: AstNode): RustCallShape | null {
+  if (node.type === "macro_invocation") {
+    const macroField = node.childForFieldName("macro");
+    if (!macroField) return null;
+    if (macroField.type !== "scoped_identifier") return { receiver: null, member: macroField.text };
+    const name = macroField.childForFieldName("name");
+    return name ? { receiver: macroField.childForFieldName("path")?.text ?? null, member: name.text } : null;
+  }
+  if (node.type !== "call_expression") return null;
+  const fn = node.childForFieldName("function");
+  if (fn?.type === "field_expression") {
+    const value = fn.childForFieldName("value");
+    const field = fn.childForFieldName("field");
+    return value && field ? { receiver: value.text, member: field.text } : null;
+  }
+  if (fn?.type === "scoped_identifier") {
+    const name = fn.childForFieldName("name");
+    return name ? { receiver: fn.childForFieldName("path")?.text ?? null, member: name.text } : null;
+  }
+  return fn?.type === "identifier" ? { receiver: null, member: fn.text } : null;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {

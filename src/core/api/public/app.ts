@@ -28,6 +28,8 @@ import { ArchitectureReportOps } from "../internal/ops/architecture-report-ops.j
 import { CollectionOps } from "../internal/ops/collection-ops.js";
 import { DocumentMetadataSchemaCompiler } from "../internal/ops/document-metadata-schema.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
+import type { NamingLexiconOps } from "../internal/ops/naming-lexicon-ops.js";
+import { OntologyReportOps } from "../internal/ops/ontology-report-ops.js";
 import type { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
 import type { TracePathOps } from "../internal/ops/trace-path-ops.js";
 import type {
@@ -49,11 +51,15 @@ import type {
   GetCalleesResponse,
   GetCallersRequest,
   GetCallersResponse,
+  GetOntologyReportRequest,
+  GetOntologyReportResponse,
   HybridSearchRequest,
   IndexMetrics,
   IndexOptions,
   IndexStats,
   IndexStatus,
+  NamingLexiconRequest,
+  NamingLexiconResult,
   PathTraceResult,
   PresetDescriptors,
   PresetDetail,
@@ -152,6 +158,10 @@ export interface App {
   /** Architecture diagnostics (bd tea-rags-mcp-94hd9) — Stable Dependencies violations, root causes, exclusions. */
   getArchitectureReport: (request: GetArchitectureReportRequest) => Promise<GetArchitectureReportResponse>;
   tracePath: (request: TracePathRequest) => Promise<PathTraceResult>;
+  /** Naming lexicon (bd tea-rags-mcp-4p3sb.12) — the project's names per type / callee / concept, verdicts on drafts. */
+  getNamingLexicon: (request: NamingLexiconRequest) => Promise<NamingLexiconResult>;
+  /** Naming ontology audit (bd tea-rags-mcp-4p3sb.20) — synonyms, homonyms, outliers, symbol collisions. */
+  getOntologyReport: (request: GetOntologyReportRequest) => Promise<GetOntologyReportResponse>;
 
   // -- Provider availability — sync query used by MCP tool registrars to
   // skip registration when a required trajectory provider is not loaded.
@@ -191,6 +201,10 @@ export interface AppDeps {
   graphFacade?: GraphFacade;
   /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
   tracePathOps?: TracePathOps;
+  /** Optional — present when codegraph is wired (built in bootstrap alongside tracePathOps). */
+  namingLexiconOps?: NamingLexiconOps;
+  /** Optional — present when codegraph is wired (built in bootstrap alongside graphFacade). */
+  ontologyReportOps?: OntologyReportOps;
   /**
    * Per-collection DuckDB pool — present when codegraph is wired.
    * CollectionOps uses it to delete the per-collection DuckDB file when
@@ -350,6 +364,10 @@ export function createApp(deps: AppDeps): App {
     getArchitectureReport: async (req) =>
       deps.graphFacade ? deps.graphFacade.getArchitectureReport(req) : ArchitectureReportOps.empty(req),
     tracePath: async (req) => (deps.tracePathOps ? deps.tracePathOps.tracePath(req) : { paths: [], truncated: false }),
+    getNamingLexicon: async (req) =>
+      deps.namingLexiconOps ? deps.namingLexiconOps.getNamingLexicon(req) : { scope: "", byType: [], names: [] },
+    getOntologyReport: async (req) =>
+      deps.ontologyReportOps ? deps.ontologyReportOps.report(req) : OntologyReportOps.empty(req),
 
     // -- Provider availability — backs MCP tool-registrar gating. Source
     // of truth is `registeredProviderKeys` populated by composition from

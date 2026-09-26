@@ -464,6 +464,15 @@ export const capability: LanguageCapability = {
   // inside a type whose hierarchy the SDK declares the member on and the
   // project does not (implicit `self.map` inside a `Publisher`); an index
   // built by any earlier walker holds neither branch's extraction whole.
+  // walker 44: bd tea-rags-mcp-4p3sb.6 — the walker publishes
+  // `identifierDeclarations` (params, locals, stored properties; positional
+  // annotation and CapWords-constructor types) for the naming lexicon. Rows
+  // written by walker 43 carry none, so only the recompute adds them.
+  // walker 48: the naming-lexicon branch (4p3sb.6 as 44, 4p3sb.16 as 45 there)
+  // merged with y99pg.29-.31 (47 here); neither parent's index holds both.
+  // walker 49: bd tea-rags-mcp-4p3sb.17 — an `identifierDeclarations` annotation
+  // of `Array<T> / Set<T> / Optional<T>` names its element, so a walker-48 row
+  // types `jobs: Array<Job>` as `Array`.
   // walker 48: bd tea-rags-mcp-y99pg.32 — a `Set<T>` / `Array<T>` spelling
   // carries its element like `[T]` does, so `for x in set` and
   // `set.forEach { $0… }` type their item (a closure parameter declared
@@ -510,6 +519,11 @@ export const capability: LanguageCapability = {
   // Alamofire TOTAL 0.991 -> 0.992 (1252/1263 -> 1252/1262), Quick unchanged,
   // WRONG 8 -> 8; edges +0 / -0; HTTPHeaders.swift:383 `….last.map` proved an
   // SDK member (swiftc: Optional.map).
+  // walker 55: the naming-lexicon branch (4p3sb.17 as 49 there) merged with
+  // y99pg.32 / .34 (54 here); neither parent's index holds both.
+  // walker 56: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
+  // func's return type as a `return` (`Self` in a type body as that type), so
+  // a walker-55 index types an `[T]` return by no row and a `-> Self` as `Self`.
   // walkers 55-58: bd tea-rags-mcp-y99pg.33, built as 48-51 on a parallel
   // branch off walker 47 and renumbered at the merge with y99pg.32 / .34; the
   // measurements below are that branch's own, taken without either.
@@ -670,7 +684,47 @@ export const capability: LanguageCapability = {
   // `clockModel.map(…)` is `Optional.map`. Measured: pixelclocktiles TOTAL
   // 0.967 (3125/3231) unchanged, edges +0 / -0, two receivers retyped
   // Optional; Alamofire 1256/1256 and Quick 375/375 unchanged, oracle WRONG 0.
-  versions: { chunking: 4, walker: 64, codegraphSchema: 2 },
+  // walker 66: the naming-lexicon branch (walker 65 there, identifier
+  // declarations) rebased onto main's walker 64 (bd tea-rags-mcp-y99pg.39);
+  // neither side's index holds both extractions.
+  versions: { chunking: 4, walker: 66, codegraphSchema: 2 },
+  // Swift API Design Guidelines: types and protocols UpperCamelCase, everything
+  // else lowerCamelCase — constants included (no SCREAMING_SNAKE). A module is
+  // named like a type (`Alamofire`, `Foundation`).
+  naming: {
+    casing: {
+      type: ["pascal"],
+      module: ["pascal"],
+      method: ["camel"],
+      param: ["camel"],
+      local: ["camel"],
+      field: ["camel"],
+      constant: ["camel"],
+    },
+    // Standard-library scalars, top types, `Self`; `Dictionary` keeps its head through unwrapping.
+    nonConceptTypes: [
+      "String",
+      "Int",
+      "Int8",
+      "Int16",
+      "Int32",
+      "Int64",
+      "UInt",
+      "UInt8",
+      "UInt16",
+      "UInt32",
+      "UInt64",
+      "Double",
+      "Float",
+      "Bool",
+      "Character",
+      "Any",
+      "AnyObject",
+      "Void",
+      "Self",
+      "Dictionary",
+    ],
+  },
   notes:
     "Type bodies (class/struct/enum/extension/actor) are scope containers whose funcs/inits extract as member chunks; extension methods attribute to the extended type. Computed/stored properties, subscripts, deinit and typealiases are not chunked. Codegraph resolves a receiver only where the walker PROVED a type — an annotation, a CapWords initializer, a stored property, self/Self, a guard-let/if-let unwrap of any of those, a same-file declared return type, or the element type of an [T] collection in a for-in — because Swift imports name modules, never symbols, so there is no import table to narrow anything else. Recall is therefore structurally capped below Java's; the remaining gap is cross-file return types and conformance MRO, a typing problem rather than a chain-ordering one. `super.X()` is the one receiver the LANGUAGE types rather than the walker: it dispatches on the first inheritance specifier, which Swift requires to be the superclass, and it is terminal — a miss drops instead of falling through to a namesake. Its own ceiling is ownership rather than inference: a class rooted in UIKit or XCTest has no project superclass to resolve into, which is most of what it cannot answer. A type re-opened by a same-file extension is counted once, so construction into it resolves; the same type re-opened ACROSS files stays ambiguous, because nothing in a symbol definition says which file carries the body.",
 };
