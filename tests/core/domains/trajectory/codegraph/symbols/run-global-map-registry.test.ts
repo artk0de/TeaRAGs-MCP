@@ -67,10 +67,10 @@ const EXPECTED_POLICY = {
   typeDeclarations: "hydrate",
   dispatchTables: "batchOnly",
   callbackParams: "batchOnly",
-  knownTargetCallArgs: "batchOnly",
-  paramNames: "batchOnly",
-  classFieldParamLinks: "batchOnly",
-  typedClassFields: "batchOnly",
+  knownTargetCallArgs: "hydrate",
+  paramNames: "hydrate",
+  classFieldParamLinks: "hydrate",
+  typedClassFields: "hydrate",
   paramTypes: "batchOnly",
   derivedClassFieldTypes: "batchOnly",
 } as const satisfies Record<RunGlobalMapField, "hydrate" | "batchOnly">;
@@ -100,6 +100,12 @@ const PERSISTED_KEY_ORDER = [
   // Appended LAST (bd tea-rags-mcp-y99pg.1): only files declaring a type carry
   // it, and every other row keeps its bytes.
   "typeDeclarations",
+  // Appended LAST (bd tea-rags-mcp-39xca.15): the Ruby parameter family, only
+  // on Ruby rows that carry a call site, a parameter list, a link or a typed field.
+  "knownTargetCallArgs",
+  "methodParamNames",
+  "classFieldParamLinks",
+  "typedClassFields",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -111,7 +117,7 @@ function everyChannelExtraction(): FileExtraction {
     language: "ruby",
     imports: [],
     fileScope: [],
-    chunks: [],
+    chunks: [{ symbolId: "Account#initialize", scope: [], calls: [], paramNames: ["firm"] }],
     classAncestors: { Account: ["ApplicationRecord"] },
     classPrependedAncestors: { Account: ["Auditable"] },
     classExtends: { Account: "ApplicationRecord" },
@@ -124,6 +130,9 @@ function everyChannelExtraction(): FileExtraction {
     classSchemaTables: { Account: "billing_accounts" },
     buildConstraint: "!nomsgpack",
     typeDeclarations: [{ typeId: "Account", reopens: false, conforms: ["ApplicationRecord"] }],
+    knownTargetCallArgs: [{ targets: ["Firm#initialize"], argTypes: [{ form: "instance", name: "Account" }] }],
+    classFieldParamLinks: { Account: { "@firm": { method: "initialize", param: "firm" } } },
+    classFieldTypes: { Account: { "@name": "String" } },
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     instantiatedTypes: ["Account"],

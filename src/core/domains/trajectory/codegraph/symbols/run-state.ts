@@ -328,6 +328,16 @@ const RUN_GLOBAL_MAP_NAMES: readonly RunGlobalMapName[] = [
   "structuredReturnTypes",
 ];
 
+/**
+ * The dedupe key of one known-target call-site record (bd tea-rags-mcp-bvalc):
+ * identical sites contribute one record, disagreeing ones stay separate so the
+ * fold still sees the conflict. Shared by `absorb` and the seal's hydration,
+ * so a walked record and its persisted twin collapse into one.
+ */
+function knownTargetCallArgsKey(record: KnownTargetCallArgs): string {
+  return `${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`;
+}
+
 let lastResolveRunSeq = 0;
 
 /** A fresh {@link ResolveRunScope}; see `CodegraphRunState#runScope`. */
@@ -931,6 +941,34 @@ export class CodegraphRunState {
       if (slice.typeDeclarations !== undefined && !(slice.relPath in this.typeDeclarations)) {
         this.typeDeclarations[slice.relPath] = slice.typeDeclarations;
       }
+    },
+    // The Ruby parameter family (bd tea-rags-mcp-39xca.15): the raw channels the
+    // fold at the end of `seal` reads, so hydrating them BEFORE it is what makes
+    // `paramTypes` / `derivedClassFieldTypes` project-wide. Each merges at the
+    // grain `absorb` does. Call-site records are keyed by their content, so a
+    // record already walked is the same record. Parameter names are keyed by the
+    // declaring method, and a walked definition wins. Links union per field
+    // across a reopened class's files, a walked file's field winning, and
+    // typed coordinates are a set. No `markContributed`: none of the four is a
+    // `RunGlobalMapName`, and the fold reads them unconditionally.
+    knownTargetCallArgs: (slice) => {
+      for (const record of slice.knownTargetCallArgs ?? []) {
+        const key = knownTargetCallArgsKey(record);
+        if (!this.knownTargetCallArgs.has(key)) this.knownTargetCallArgs.set(key, record);
+      }
+    },
+    paramNames: (slice) => {
+      for (const [symbolId, names] of Object.entries(slice.methodParamNames ?? {})) {
+        if (!(symbolId in this.paramNames)) this.paramNames[symbolId] = names;
+      }
+    },
+    classFieldParamLinks: (slice) => {
+      for (const [fqClass, fields] of Object.entries(slice.classFieldParamLinks ?? {})) {
+        this.classFieldParamLinks[fqClass] = { ...fields, ...identifierEntry(this.classFieldParamLinks, fqClass) };
+      }
+    },
+    typedClassFields: (slice) => {
+      for (const coordinate of slice.typedClassFields ?? []) this.typedClassFields.add(coordinate);
     },
   };
 
@@ -1690,7 +1728,7 @@ export class CodegraphRunState {
     // derivation's gate). Ruby-only, like the consuming fold and resolver paths.
     if (extraction.language === "ruby") {
       for (const record of extraction.knownTargetCallArgs ?? []) {
-        this.knownTargetCallArgs.set(`${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`, record);
+        this.knownTargetCallArgs.set(knownTargetCallArgsKey(record), record);
       }
       for (const chunk of extraction.chunks) {
         if (chunk.paramNames !== undefined) this.paramNames[chunk.symbolId] = chunk.paramNames;

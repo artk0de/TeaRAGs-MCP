@@ -34,14 +34,16 @@
  * call site, and they are small: a Ruby file declares one or two classes.
  *
  * The type-inference family that `RunState#absorb` also merges run-globally —
- * `ivarTypes`, `instantiatedTypes`, `dispatchTables`, `callbackParams`,
- * `knownTargetCallArgs`, `paramNames` — has the SAME batch-scoped lifetime and
- * therefore the same class of incremental divergence, but every one of them was
- * measured at exactly ZERO recovered edges (bd tea-rags-mcp-8qyax on a Ruby
- * corpus, bd tea-rags-mcp-4yvms on three Python ones). They are left unpersisted
+ * `ivarTypes`, `instantiatedTypes`, `dispatchTables`, `callbackParams` — has the
+ * SAME batch-scoped lifetime and therefore the same class of incremental
+ * divergence, but every one of them measures at exactly ZERO recovered edges
+ * (bd tea-rags-mcp-8qyax on a Ruby corpus, bd tea-rags-mcp-4yvms on three Python
+ * ones, re-measured by bd tea-rags-mcp-39xca.15 on huginn / octokit.rb / sinatra
+ * / flask once the harness absorbed like the sink). They are left unpersisted
  * on the strength of those numbers, not on the per-method size argument that
  * first deferred them — see `structuredReturnTypes` below for how that argument
- * fared.
+ * fared. The Ruby parameter family was in that list until the re-measurement
+ * refuted its zero; see `knownTargetCallArgs` below.
  *
  * ── Why the fields are stored verbatim rather than derived back ──
  * `cg_symbols_inheritance` already persists every ancestry fact, so inverting
@@ -59,7 +61,12 @@
  * Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
-import type { ModuleReexport, TypeDeclarationFact } from "./codegraph-extraction.js";
+import type {
+  ClassFieldParamLink,
+  KnownTargetCallArgs,
+  ModuleReexport,
+  TypeDeclarationFact,
+} from "./codegraph-extraction.js";
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
@@ -126,7 +133,8 @@ export interface CodegraphPass1FileAggregates {
    * additive. Every OTHER type-inference family recovers exactly ZERO:
    * `instantiatedTypes`, `dispatchTables` + `callbackParams`, and the whole
    * param family (`paramNames`, `paramTypes`, `classFieldParamLinks`,
-   * `derivedClassFieldTypes`). Those stay batch-scoped, deliberately.
+   * `derivedClassFieldTypes`). Those stayed batch-scoped, deliberately — the
+   * param family only until bd 39xca.15 found that zero to be a harness artefact.
    *
    * The size objection that deferred them did not survive contact either: on
    * the same corpus `structuredReturnTypes` holds 6518 entries and
@@ -243,4 +251,42 @@ export interface CodegraphPass1FileAggregates {
    * change. Persisted LAST, so every other row keeps its bytes.
    */
   typeDeclarations?: readonly TypeDeclarationFact[];
+  /**
+   * The Ruby interprocedural PARAMETER family (bd tea-rags-mcp-bvalc), persisted
+   * by bd tea-rags-mcp-39xca.15. The barrier folds these four raw channels into
+   * `paramTypes` / `derivedClassFieldTypes`, and each lives in a DIFFERENT file
+   * from the one it types: the argument types at the CALLER's call site
+   * (`knownTargetCallArgs`), the positional parameter names of the CALLEE
+   * (`methodParamNames`, `symbolId → names`, from `ChunkExtraction.paramNames`),
+   * the `@ivar = <param>` links and the `"fqClass|@ivar"` coordinates a walker
+   * typed on its own (`classFieldParamLinks` / `typedClassFields`, the class's
+   * files — several for a reopened class; the latter derived from
+   * `FileExtraction.classFieldTypes`).
+   *
+   * The 8qyax "zero" that kept them batch-scoped was measured by a harness that
+   * absorbed walked files without their inheritance rows. Re-measured with
+   * `scripts/spikes/incremental-runglobal-delta.ts` (windows 4x40) after that
+   * fix, the family is the WHOLE incremental residue on the Ruby corpora:
+   * huginn 1 lost / 1 phantom / 3 retargeted (a caller-typed `@agent` degrading
+   * from a pinned edge to dynamic fan-outs) and octokit.rb 2 phantom (a
+   * disagreeing call site's veto lost, so the convention tier typed `gist` as
+   * `Octokit::Gist`); `--ablate rawparams` brings both to 0. Persisted RAW rather
+   * than as the folded result because the fold's veto and its typed-field gate
+   * are decided over the whole run's records, which no one file's row can carry.
+   *
+   * Cost, dominated by `methodParamNames` (one entry per Ruby method with a
+   * positional parameter — the only per-METHOD channel here): huginn 151 → 175
+   * rows, 72 KB → 110 KB of `aggregates_json`, 521 names against 184 ancestry
+   * keys; octokit.rb 76 → 80 rows, 78 KB → 123 KB, 543 names against 46. Kept
+   * whole rather than narrowed to the coordinates today's walker names as
+   * targets (`#initialize` / class methods), so the slice cannot drift from
+   * what `absorb` feeds the fold.
+   *
+   * Ruby rows only — the fold and every reader of its products are Ruby's.
+   * Persisted LAST, so every other row keeps its bytes.
+   */
+  knownTargetCallArgs?: readonly KnownTargetCallArgs[];
+  methodParamNames?: Record<SymbolId, readonly string[]>;
+  classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
+  typedClassFields?: readonly string[];
 }
