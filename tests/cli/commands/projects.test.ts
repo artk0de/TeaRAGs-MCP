@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { projectsCommand, runInfo, runList, runRegister, runUnregister } from "../../../src/cli/commands/projects.js";
 import { createColorizer } from "../../../src/cli/infra/color.js";
+import { SERVICE_POINT_TYPES } from "../../../src/core/adapters/qdrant/service-points.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
 
@@ -1079,6 +1080,71 @@ describe("CLI 'projects' command group", () => {
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         const parsed = JSON.parse(out.trim());
         expect(parsed.realpath).toBeUndefined();
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
+
+  describe("chunk counts leave out service points (bd tea-rags-mcp-39xca.16)", () => {
+    const CHUNK_POINTS = 5;
+
+    /**
+     * A collection holding CHUNK_POINTS chunks plus one point per service
+     * `_type`. `countPoints` honors `must_not` `_type` matches the way Qdrant
+     * does, so the reported number depends only on the filter the CLI passes.
+     */
+    function collectionWithServicePoints(collections: string[]) {
+      const payloads: Record<string, unknown>[] = [
+        ...SERVICE_POINT_TYPES.map((type) => ({ _type: type })),
+        ...Array.from({ length: CHUNK_POINTS }, (_, i) => ({ relativePath: `src/f${i}.ts` })),
+      ];
+      const live = new Set(collections);
+      return {
+        listCollections: vi.fn(async () => [...live]),
+        deleteCollection: vi.fn(async (name: string) => {
+          live.delete(name);
+        }),
+        countPoints: vi.fn(async (_name: string, filter?: Record<string, unknown>) => {
+          const mustNot = (filter?.must_not ?? []) as { key: string; match: { value: unknown } }[];
+          return payloads.filter((p) => !mustNot.some((c) => p[c.key] === c.match.value)).length;
+        }),
+        aliases: { listAliases: vi.fn(async () => []), deleteAlias: vi.fn(async () => undefined) },
+      };
+    }
+
+    it("orphans reports the chunk count, not the point count", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: true }, collectionWithServicePoints(["code_orphan"]));
+        const rows = JSON.parse(stdout.mock.calls.map((c) => String(c[0])).join("")) as {
+          chunksCount: number;
+        }[];
+        expect(rows).toEqual([{ collectionName: "code_orphan", chunksCount: CHUNK_POINTS }]);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("unregister --purge reports the chunk count of the deleted collection", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_counted",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: CHUNK_POINTS,
+        });
+        reg.setName("code_counted", "counted");
+        await runUnregister({ name: "counted", purge: true }, collectionWithServicePoints(["code_counted"]) as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain(`(${CHUNK_POINTS} chunks)`);
       } finally {
         stdout.mockRestore();
       }
