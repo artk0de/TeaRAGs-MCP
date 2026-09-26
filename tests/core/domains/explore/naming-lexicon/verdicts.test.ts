@@ -437,6 +437,79 @@ describe("judgeDraftName — concept terms", () => {
   });
 });
 
+describe("judgeDraftName — a value draft whose type has only return rows (the live GitFileSignals shape)", () => {
+  const conceptTerms = [{ term: "chunk", score: 2, holders: [OWNER] }];
+  const ret = (name: string, n: number, exampleOwner: string, casing?: IdentifierCasing) => ({
+    kind: "return" as const,
+    name,
+    n,
+    exampleOwner,
+    ...(casing ? { casing } : {}),
+  });
+  // On the self-index GitFileSignals has exactly these two rows, both returns.
+  const byTypeRows = [
+    ret("computeFileSignals", 1, "GitProvider#computeFileSignals"),
+    ret("assembleFileSignals", 1, "Assembler#assembleFileSignals"),
+  ];
+  const draft = { typeName: "GitFileSignals", casing: "camel" as const, byTypeRows, conceptTerms };
+
+  it("a name that does not spell the type is a MISFIT naming the noun the returns use", () => {
+    expect(judgeDraftName({ ...draft, name: "meta" })).toEqual({
+      verdict: "MISFIT",
+      suggestion: "fileSignals",
+      holder: "GitProvider#computeFileSignals",
+    });
+  });
+
+  it("a name that spells the type conforms", () => {
+    for (const name of ["fileSignals", "signals", "gitFileSignals"]) {
+      expect(judgeDraftName({ ...draft, name }), name).toEqual({ verdict: "CONFORMS" });
+    }
+  });
+
+  it("the most frequent noun wins, weighted by n; a return named after the type gives its full form", () => {
+    expect(
+      judgeDraftName({
+        ...draft,
+        name: "meta",
+        byTypeRows: [ret("computeFileSignals", 1, "A#m"), ret("gitFileSignals", 3, "B#gitFileSignals")],
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "gitFileSignals", holder: "B#gitFileSignals" });
+  });
+
+  it("the noun is rendered in the return row's own casing", () => {
+    expect(
+      judgeDraftName({
+        ...draft,
+        name: "meta",
+        byTypeRows: [ret("compute_file_signals", 2, "R#compute_file_signals", "snake")],
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "file_signals", holder: "R#compute_file_signals" });
+  });
+
+  it("returns carrying no type tail give nothing comparable: NEW_TERM with no terms, never CONFORMS", () => {
+    expect(
+      judgeDraftName({
+        ...draft,
+        name: "meta",
+        byTypeRows: [ret("narrow", 2, "A#narrow"), ret("lookup", 1, "B#lookup")],
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+
+  it("with no comparable type row, bound-callee rows still judge before the NEW_TERM", () => {
+    expect(
+      judgeDraftName({
+        ...draft,
+        name: "meta",
+        byTypeRows: [ret("narrow", 2, "A#narrow")],
+        callee: { member: "load" },
+        byCalleeRows: [{ member: "load", kind: "local", name: "signals", n: 5, exampleOwner: "C#run" }],
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "signals", holder: "C#run" });
+  });
+});
+
 describe("judgeDraftName — a typed draft whose type has history only in other kinds", () => {
   const conceptTerms = [
     { term: "chunk", score: 2, holders: [OWNER] },

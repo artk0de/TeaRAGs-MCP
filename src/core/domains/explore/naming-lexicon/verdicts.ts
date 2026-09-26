@@ -20,6 +20,7 @@ import {
   matchesTypeWords,
   shapeDistribution,
   spellsTypeName,
+  typeTailWords,
   type NamingShapeDistribution,
   type NamingShapeRow,
 } from "./shapes.js";
@@ -214,6 +215,38 @@ function mergeRowsByName(rows: readonly NamingByTypeRow[]): NamingByTypeRow[] {
   return [...merged.values()].map(({ row }) => row);
 }
 
+/**
+ * A value draft whose type is held only by `return` rows: the project's noun
+ * for the type is the type tail those return names end in, weighted by `n` —
+ * `computeFileSignals` / `assembleFileSignals` → `fileSignals` for
+ * `GitFileSignals`, in the row's own casing. A draft that spells the type
+ * conforms; any other name is a MISFIT naming the noun, held by the heaviest
+ * return row carrying it. No return name ends in a type tail → `undefined`.
+ */
+function judgeByReturnNoun(
+  input: DraftNameJudgementInput,
+  kind: IdentifierDeclarationKind,
+  typeName: string,
+  returnRows: readonly NamingByTypeRow[],
+): NamingStageOutcome {
+  const nouns = new Map<string, { noun: string; n: number; holder: NamingByTypeRow }>();
+  for (const row of returnRows) {
+    const tail = typeTailWords(row.name, typeName);
+    if (tail === undefined) continue;
+    const key = tail.join("_");
+    const entry = nouns.get(key) ?? { noun: joinIdentifierWords(tail, row.casing ?? input.casing), n: 0, holder: row };
+    entry.n += row.n;
+    if (row.n > entry.holder.n) entry.holder = row;
+    nouns.set(key, entry);
+  }
+  let best: { noun: string; n: number; holder: NamingByTypeRow } | undefined;
+  for (const entry of nouns.values()) if (!best || entry.n > best.n) best = entry;
+  if (!best) return undefined;
+  const shape = classifyNamingShape({ name: input.name, kind, casing: input.casing, typeName });
+  if (spellsTypeName(shape)) return { verdict: "CONFORMS" };
+  return { verdict: "MISFIT", suggestion: best.noun, holder: best.holder.exampleOwner };
+}
+
 function judgeByType(
   input: DraftNameJudgementInput,
   kind: IdentifierDeclarationKind,
@@ -225,7 +258,8 @@ function judgeByType(
   if (kind !== "return") {
     // No rows of the draft's kind: the type's value rows of the other kinds, one row per name.
     const otherKindRows = mergeRowsByName(typeRows.filter((row) => row.kind !== "return"));
-    return otherKindRows.length > 0 ? judgeAgainstRows(input, kind, { rows: otherKindRows, typeName }) : undefined;
+    if (otherKindRows.length > 0) return judgeAgainstRows(input, kind, { rows: otherKindRows, typeName });
+    return judgeByReturnNoun(input, kind, typeName, typeRows);
   }
   if (typeRows.length === 0) return undefined;
   // A known type with no return history: the project's own dominant verb, if it has one.
@@ -283,9 +317,13 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  *    `local`, `field`) with no rows of its kind → the type's value rows of the
  *    OTHER kinds, one row per name with `n` summed across kinds, judged the
  *    same way (a local `meta: GitFileSignals` against params and fields named
- *    `fileSignals` is a MISFIT); a `many` draft that spells its type must also
- *    agree in number with the spelling rows (`item: Item[]` against `items`
- *    is a MISFIT) — the caller passes rows of the draft's multiplicity only;
+ *    `fileSignals` is a MISFIT); a value draft whose type has ONLY `return`
+ *    rows → the project's noun for the type, the type tail those return names
+ *    end in weighted by `n` (`computeFileSignals` → `fileSignals`): a draft
+ *    spelling the type CONFORMS, any other a MISFIT naming the noun; a `many`
+ *    draft that spells its type must also agree in number with the spelling
+ *    rows (`item: Item[]` against `items` is a MISFIT) — the caller passes rows
+ *    of the draft's multiplicity only;
  * 2. bound to a callee → the `byCallee` rows of that member / receiver and kind,
  *    judged the same way (rows carry their own recovered type); with no rows, a
  *    `local` / `field` whose callee derives a name (`find_x!` → `x`) must be
@@ -294,8 +332,10 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  *    prior confidence ≥ 0.5 — `CALLEE_DERIVED` for the kind, or the top return
  *    verb) → NEW_TERM with the concept's top terms, no suggestion;
  * 4. concept terms → NEW_TERM when no draft word appears in the top 5 terms;
- * 5. a concept type with no history at all → NEW_TERM with no terms;
- * 6. otherwise CONFORMS — nothing to judge against.
+ * 5. a concept type none of the above could compare with — no history at all,
+ *    or history with no comparable row (return names carrying no type tail)
+ *    → NEW_TERM with no terms, never a false CONFORMS;
+ * 6. otherwise (untyped, or a non-concept type) CONFORMS — nothing to judge against.
  *
  * Concept terms (3, 4) speak only for an untyped draft or a typed one whose
  * type has no history at all: a type the project already holds is judged by
@@ -322,6 +362,8 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
 
   if (conceptTerms && conceptTerms.length > 0) return judgeByConcept(input.name, conceptTerms);
 
-  if (typeName !== undefined && input.byTypeRows?.length === 0) return { verdict: "NEW_TERM", topTerms: [] };
+  // A concept type nothing above could compare with — no history, or history
+  // with no comparable row — is no evidence of conformance.
+  if (typeName !== undefined) return { verdict: "NEW_TERM", topTerms: [] };
   return { verdict: "CONFORMS" };
 }

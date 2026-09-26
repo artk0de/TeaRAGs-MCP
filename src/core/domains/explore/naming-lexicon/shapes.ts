@@ -162,6 +162,23 @@ function endsWithQualifiedTypeTail(nameWords: readonly string[], typeWords: read
 }
 
 /**
+ * The longest run of `name`'s LAST words that is a suffix of `typeName`'s words
+ * (the last word singular or plural), as the name spells it:
+ * `computeFileSignals` / `GitFileSignals` → `[file, signals]`,
+ * `gitFileSignals` → `[git, file, signals]`; `undefined` when the name does not
+ * end in any tail of the type (`narrow`). The same tail matching TAIL and
+ * QUALIFIED names are classified by ({@link matchesTypeWords}).
+ */
+export function typeTailWords(name: string, typeName: string): string[] | undefined {
+  const nameWords = splitIdentifierWords(name);
+  const typeWords = typeNameWords(typeName);
+  for (let k = Math.min(typeWords.length, nameWords.length); k >= 1; k--) {
+    if (matchesTypeWords(nameWords.slice(-k), typeWords.slice(-k))) return nameWords.slice(-k);
+  }
+  return undefined;
+}
+
+/**
  * The words of a callee member with a leading verb word and `!` / `?` dropped:
  * `find_tax_automation_document!` / `findTaxAutomationDocument` →
  * `[tax, automation, document]`; a bare verb (`find`) → `[]`.
