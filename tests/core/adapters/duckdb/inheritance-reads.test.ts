@@ -47,6 +47,28 @@ describe("hierarchy reads", () => {
     expect(sup.map((e) => e.ancestorFqName)).toEqual(["Dog"]);
   });
 
+  it("getSupertypes carries each row's declaration ordinal (bd tea-rags-mcp-63l69)", async () => {
+    // Per-kind ordinal counters: `include A` and `extend B` both record 0.
+    await db.upsertFile(
+      { relPath: "host.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        inheritance: [
+          { ...row("Host", "A", "include"), ordinal: 0 },
+          { ...row("Host", "B", "extend"), ordinal: 0 },
+          { ...row("Host", "C", "include"), ordinal: 1 },
+        ],
+      },
+    );
+    const sup = await db.getSupertypes("Host");
+    expect(sup.map((e) => [e.ancestorFqName, e.kind, e.ordinal])).toEqual([
+      ["A", "include", 0],
+      ["B", "extend", 0],
+      ["C", "include", 1],
+    ]);
+  });
+
   it("getTransitiveSubtypes walks the chain Animal -> Dog -> Puppy", async () => {
     const subs = await db.getTransitiveSubtypes("Animal");
     expect(subs.map((e) => e.sourceFqName).sort()).toEqual(["Dog", "Puppy"]);

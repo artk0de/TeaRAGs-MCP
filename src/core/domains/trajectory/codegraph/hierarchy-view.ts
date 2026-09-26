@@ -14,7 +14,7 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 
 // MRO precedence: prepend (highest) ▸ include/extend ▸ implements ▸ super (lowest).
-const MRO_RANK: Record<InheritanceKind, number> = { prepend: 0, include: 1, extend: 1, implements: 2, super: 3 };
+export const MRO_RANK: Record<InheritanceKind, number> = { prepend: 0, include: 1, extend: 1, implements: 2, super: 3 };
 
 export class MapHierarchyView implements HierarchyView {
   constructor(private readonly snapshot: HierarchySnapshot) {}

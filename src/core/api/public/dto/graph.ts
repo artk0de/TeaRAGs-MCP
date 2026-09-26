@@ -113,7 +113,19 @@ export interface FileImportsResponse extends FileScopeResponseBase {
   imports: FileImportResult[];
 }
 
-export interface SymbolCallersResponse {
+/**
+ * Host-class aliasing (bd tea-rags-mcp-63l69). A member a mixin, concern or
+ * superclass defines is keyed by its DEFINER; a request naming the host
+ * (`Account.suspended`) with no node or edges of its own is answered through
+ * the first definer up the persisted hierarchy in MRO order
+ * (`Account::Suspensions.suspended`). PRESENT only when that happened — the
+ * definer id actually queried; absent on every unaliased answer.
+ */
+export interface ResolvedSymbolIdField {
+  resolvedSymbolId?: SymbolId;
+}
+
+export interface SymbolCallersResponse extends ResolvedSymbolIdField {
   /**
    * The QUERIED symbol's declared visibility — present only when every
    * definition of the symbolId (namesakes included) states the same level.
@@ -153,7 +165,7 @@ export interface CalleeResult extends DeclaredVisibilityField {
   callExpression: string;
 }
 
-export interface SymbolCalleesResponse {
+export interface SymbolCalleesResponse extends ResolvedSymbolIdField {
   callees: CalleeResult[];
 }
 
