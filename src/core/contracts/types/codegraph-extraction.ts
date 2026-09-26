@@ -409,6 +409,15 @@ export type IdentifierTypeSource =
 /** The type sources a `cg_identifiers` row may carry on disk — every one but the query-time join. */
 export type PersistedIdentifierTypeSource = Exclude<IdentifierTypeSource, "call-return">;
 
+/**
+ * How many values of its type a declared identifier holds (bd
+ * tea-rags-mcp-4p3sb.26). A collection annotation is read as its ELEMENT
+ * (`candidates: Doc[]` → `Doc`) so the lexicon groups `candidates` with `Doc`;
+ * `many` is what keeps it apart from a `fallback: Doc`, which holds one. Absent
+ * means `one`.
+ */
+export type IdentifierTypeMultiplicity = "one" | "many";
+
 /** One identifier declaration (`FileExtraction.identifierDeclarations`). */
 export interface IdentifierDeclaration {
   /** A `return` declaration's name is the function's own short name. */
@@ -425,6 +434,13 @@ export interface IdentifierDeclaration {
   readonly ownerSymbolId: string;
   readonly typeName?: string;
   readonly typeSource?: Extract<IdentifierTypeSource, "annotation" | "constructor">;
+  /**
+   * `many` when `typeName` was read through a collection — the annotation or
+   * constructor named its element (`Doc[]`, `list[Doc]`, `[]Doc{}`), or the
+   * declaration itself collects its values (`...rest`, `*args`, `opts ...T`).
+   * Set only with `typeName`; absent means `one`.
+   */
+  readonly typeMultiplicity?: IdentifierTypeMultiplicity;
   /**
    * The OUTERMOST call a `local` / `field` is bound to, split the way the
    * language's walker splits that call's `CallRef` — so the sink-time row builder

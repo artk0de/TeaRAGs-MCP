@@ -73,7 +73,15 @@ describe("Swift walker — identifier declarations", () => {
         typeSource: "constructor",
         boundCallee: { member: "Cache" },
       },
-      { name: "items", kind: "field", line: 4, ownerSymbolId: "Svc", typeName: "Item", typeSource: "annotation" },
+      {
+        name: "items",
+        kind: "field",
+        line: 4,
+        ownerSymbolId: "Svc",
+        typeName: "Item",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "id", kind: "param", line: 5, ...owner, typeName: "String", typeSource: "annotation" },
       { name: "doc", kind: "param", line: 5, ...owner, typeName: "Doc", typeSource: "annotation" },
       { name: "opts", kind: "param", line: 5, ...owner, typeName: "Options", typeSource: "annotation" },
@@ -172,7 +180,15 @@ describe("Swift walker — identifier declarations", () => {
     ]);
     expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
       { name: "load", kind: "return", line: 2, ownerSymbolId: "Store#load", typeName: "Doc", typeSource: "annotation" },
-      { name: "all", kind: "return", line: 3, ownerSymbolId: "Store#all", typeName: "Job", typeSource: "annotation" },
+      {
+        name: "all",
+        kind: "return",
+        line: 3,
+        ownerSymbolId: "Store#all",
+        typeName: "Job",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       // `Self` in a type body names the declaring type; a generic parameter and `Void` name none.
       {
         name: "make",
@@ -204,5 +220,40 @@ describe("Swift walker — identifier declarations", () => {
       k: "Tag",
       l: "Repo",
     });
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — array sugar and sequences name their element AND say they hold many.
+describe("Swift walker — identifier type multiplicity", () => {
+  it("marks [T], Array / Set and an optional array many; T?, Optional<T> and a dictionary stay one", () => {
+    const src = [
+      "class Svc {",
+      "  var items: [Item] = []",
+      "  func pick(candidates: [Item], fallback: Item, set: Set<Item>, opt: Item?, opts: [Item]?,",
+      "            wrapped: Optional<Item>, arr: Array<Item>, byId: [String: Item], rest: Item...) -> [Item] {",
+      "    let seen: Set<Item> = []",
+      "    return []",
+      "  }",
+      "}",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "Svc", startLine: 1, endLine: 8, scope: [] },
+      { symbolId: "Svc#pick", startLine: 3, endLine: 7, scope: ["Svc"] },
+    ];
+    const declarations = declarationsOf(src, chunks) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.typeName, d.typeMultiplicity ?? "one"])).toEqual([
+      ["field", "items", "Item", "many"],
+      ["return", "pick", "Item", "many"],
+      ["param", "candidates", "Item", "many"],
+      ["param", "fallback", "Item", "one"],
+      ["param", "set", "Item", "many"],
+      ["param", "opt", "Item", "one"],
+      ["param", "opts", "Item", "many"],
+      ["param", "wrapped", "Item", "one"],
+      ["param", "arr", "Item", "many"],
+      ["param", "byId", undefined, "one"],
+      ["param", "rest", "Item", "many"],
+      ["local", "seen", "Item", "many"],
+    ]);
   });
 });

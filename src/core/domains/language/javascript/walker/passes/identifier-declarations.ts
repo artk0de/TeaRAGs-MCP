@@ -18,7 +18,7 @@ import {
   ECMASCRIPT_ARROW_PARAMETER_RULE,
   ECMASCRIPT_VARIABLE_DECLARATOR_RULE,
   ecmascriptBindingSites,
-  ecmascriptConstructorTypeName,
+  ecmascriptConstructorType,
   ecmascriptOutermostCall,
 } from "../../../typescript/walker/passes/identifier-declarations.js";
 import { javascriptCallSiteShape } from "../walker.js";
@@ -38,7 +38,7 @@ export const JAVASCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSynt
     ECMASCRIPT_VARIABLE_DECLARATOR_RULE,
     fieldRule("field_definition", "field", { name: "property", value: "value" }),
   ],
-  annotationTypeName: () => undefined,
-  constructorTypeName: ecmascriptConstructorTypeName,
+  annotationType: () => undefined,
+  constructorType: ecmascriptConstructorType,
   boundCalleeOf: (value) => boundCalleeFromCallShape(javascriptCallSiteShape(ecmascriptOutermostCall(value))),
 };

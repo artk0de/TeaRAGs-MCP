@@ -62,13 +62,16 @@ export {
 } from "./fanout-policy.js";
 export {
   boundCalleeFromCallShape,
+  combineTypeMultiplicity,
   createIdentifierDeclarationFacetPass,
+  elementOfCollection,
   fieldRule,
   innermostChunkSymbolId,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationField,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "./identifier-declarations.js";
 export { mergeExtraction, type ExtractionChannelMerger, type ExtractionMergeRulebook } from "./merge-extraction.js";
 export { methodKindFromClassify } from "./method-kind.js";

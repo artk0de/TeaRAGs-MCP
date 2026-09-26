@@ -8,6 +8,8 @@
  * tuple and `Optional` name their ELEMENT (`list[Job]` → `Job`,
  * `Optional[Repo]` → `Repo`) — the lexicon groups `jobs` with `Job`, as Go's
  * slices and Java's arrays already do; a mapping keeps its head (`dict`). A
+ * collection's element is marked `many`, as is a `*args` / `**kwargs` parameter,
+ * which collects its annotation's values (bd tea-rags-mcp-4p3sb.26). A
  * local or field bound to a call carries that call's callee, split the way the
  * walker splits its `CallRef`, `await` seen through. A constructor is a call
  * whose final segment is
@@ -21,10 +23,12 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
   boundCalleeFromCallShape,
+  elementOfCollection,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { pythonCalleeMemberReceiver } from "../walker.js";
 
@@ -43,7 +47,7 @@ function parameterSite(param: AstNode): DeclaredIdentifierSite | null {
     case "list_splat_pattern":
     case "dictionary_splat_pattern": {
       const nameNode = splatName(param);
-      return nameNode ? { nameNode, kind: "param" } : null;
+      return nameNode ? { nameNode, kind: "param", typeMultiplicity: "many" } : null;
     }
     case "default_parameter":
     case "typed_default_parameter": {
@@ -52,11 +56,15 @@ function parameterSite(param: AstNode): DeclaredIdentifierSite | null {
     }
     case "typed_parameter": {
       // The name is the first named child, not a field: `repo: Repo`, `*args: int`.
+      // A splat collects its annotation's values: `*args: Doc` holds many `Doc`s.
       const head = param.namedChild(0);
-      const nameNode = head && SPLAT_PATTERN_TYPES.has(head.type) ? splatName(head) : head;
-      return nameNode?.type === "identifier"
-        ? { nameNode, kind: "param", typeNode: param.childForFieldName("type") }
-        : null;
+      const isSplat = head !== null && SPLAT_PATTERN_TYPES.has(head.type);
+      const nameNode = isSplat ? splatName(head) : head;
+      if (nameNode?.type !== "identifier") return null;
+      const typeNode = param.childForFieldName("type");
+      return isSplat
+        ? { nameNode, kind: "param", typeNode, typeMultiplicity: "many" }
+        : { nameNode, kind: "param", typeNode };
     }
     default:
       return null;
@@ -80,18 +88,13 @@ const assignmentRule: IdentifierDeclarationRule = {
   },
 };
 
-/** Generic heads whose annotation names its first type argument, matched on the final segment (`typing.List`). */
-const ELEMENT_NAMING_HEADS = new Set([
-  "list",
-  "List",
-  "Sequence",
-  "Iterable",
-  "set",
-  "Set",
-  "tuple",
-  "Tuple",
-  "Optional",
-]);
+/**
+ * Generic heads whose annotation names its first type argument, matched on the
+ * final segment (`typing.List`): the collections, which hold MANY of it, and
+ * `Optional`, which wraps one.
+ */
+const COLLECTION_HEADS = new Set(["list", "List", "Sequence", "Iterable", "set", "Set", "tuple", "Tuple"]);
+const ELEMENT_NAMING_HEADS = new Set([...COLLECTION_HEADS, "Optional"]);
 
 /** The first type argument: `generic_type`'s `type_parameter` list, or a `subscript`'s first index. */
 function firstTypeArgument(node: AstNode): AstNode | null {
@@ -104,29 +107,33 @@ function firstTypeArgument(node: AstNode): AstNode | null {
 /**
  * The type an annotation names: `Repo`, `models.Repo`, `"Repo"` → `Repo`, a
  * generic by its head (`dict[str, Job]` → `dict`) — except a sequence / set /
- * tuple / `Optional`, which names its element (`list[Job]` → `Job`).
+ * tuple / `Optional`, which names its element (`list[Job]` → `Job`) — many for
+ * a collection, one for `Optional` (bd tea-rags-mcp-4p3sb.26).
  */
-function pythonAnnotationTypeName(typeNode: AstNode): string | undefined {
+function pythonAnnotationType(typeNode: AstNode): IdentifierSyntacticType | undefined {
   const inner = typeNode.type === "type" ? typeNode.namedChild(0) : typeNode;
   if (inner === null) return undefined;
   switch (inner.type) {
     case "identifier":
     case "attribute":
     case "dotted_name":
-      return inner.text;
+      return { typeName: inner.text };
     case "subscript":
     case "generic_type": {
       const head = inner.childForFieldName("value") ?? inner.namedChild(0);
-      const headName = head === null ? undefined : pythonAnnotationTypeName(head);
-      if (headName === undefined || !ELEMENT_NAMING_HEADS.has(headName.slice(headName.lastIndexOf(".") + 1))) {
-        return headName;
-      }
+      const headRead = head === null ? undefined : pythonAnnotationType(head);
+      if (headRead === undefined) return undefined;
+      const finalSegment = headRead.typeName.slice(headRead.typeName.lastIndexOf(".") + 1);
+      if (!ELEMENT_NAMING_HEADS.has(finalSegment)) return headRead;
       const element = firstTypeArgument(inner);
-      return element === null ? undefined : pythonAnnotationTypeName(element);
+      return elementOfCollection(
+        element === null ? undefined : pythonAnnotationType(element),
+        COLLECTION_HEADS.has(finalSegment),
+      );
     }
     case "string": {
       const unquoted = /^(["'])([A-Za-z_][\w.]*)(?:\[.*\])?\1$/.exec(inner.text);
-      return unquoted?.[2];
+      return unquoted === null ? undefined : { typeName: unquoted[2] };
     }
     default:
       return undefined;
@@ -134,12 +141,12 @@ function pythonAnnotationTypeName(typeNode: AstNode): string | undefined {
 }
 
 /** `Document()` / `models.Invoice()` → the callee as written, gated on a CapWords final segment. */
-function pythonConstructorTypeName(value: AstNode): string | undefined {
+function pythonConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
   if (value.type !== "call") return undefined;
   const callee = value.childForFieldName("function");
   if (callee?.type !== "identifier" && callee?.type !== "attribute") return undefined;
   const finalSegment = callee.text.slice(callee.text.lastIndexOf(".") + 1);
-  return /^[A-Z]/.test(finalSegment) ? callee.text : undefined;
+  return /^[A-Z]/.test(finalSegment) ? { typeName: callee.text } : undefined;
 }
 
 /** `f(x)` / `obj.m(x)` / `await obj.m(x)` → the callee as the walker's `CallRef` splits it. */
@@ -164,7 +171,7 @@ export const PYTHON_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax =
     assignmentRule,
     returnRule,
   ],
-  annotationTypeName: pythonAnnotationTypeName,
-  constructorTypeName: pythonConstructorTypeName,
+  annotationType: pythonAnnotationType,
+  constructorType: pythonConstructorType,
   boundCalleeOf: pythonBoundCallee,
 };

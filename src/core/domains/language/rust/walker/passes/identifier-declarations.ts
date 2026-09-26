@@ -15,7 +15,8 @@
  * (`std::sync::Pool`) — except that a collection or wrapper
  * (`Vec / VecDeque / HashSet / BTreeSet / Option / Box / Rc / Arc<T>`) and a
  * slice (`&[T]`) name their ELEMENT (bd tea-rags-mcp-4p3sb.17): the lexicon
- * groups `items` with `Item`. A map keeps its head; an element with no nominal
+ * groups `items` with `Item`, and a collection or slice marks it `many` where
+ * a wrapper of one value does not (bd tea-rags-mcp-4p3sb.26). A map keeps its head; an element with no nominal
  * name (a tuple, a `dyn` trait) gives no type. By constructor: a struct literal (`X { … }`) and a
  * `X::new(…)` call (the path before `::new`, turbofish dropped); any other
  * associated function (`Default::default()`) is joined at sink time. A `let`
@@ -27,10 +28,12 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
   boundCalleeFromCallShape,
+  elementOfCollection,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { rustCallSiteShape } from "../walker.js";
 
@@ -110,8 +113,13 @@ const letRule: IdentifierDeclarationRule = {
     ),
 };
 
-/** Generic heads whose annotation names its first type argument, matched on the final path segment. */
-const ELEMENT_NAMING_HEADS = new Set(["Vec", "VecDeque", "HashSet", "BTreeSet", "Option", "Box", "Rc", "Arc"]);
+/**
+ * Generic heads whose annotation names its first type argument, matched on the
+ * final path segment: the collections, which hold MANY of it, and the wrappers
+ * of one value.
+ */
+const COLLECTION_HEADS = new Set(["Vec", "VecDeque", "HashSet", "BTreeSet"]);
+const ELEMENT_NAMING_HEADS = new Set([...COLLECTION_HEADS, "Option", "Box", "Rc", "Arc"]);
 
 /** The first type argument of a `generic_type`, lifetimes skipped; read positionally. */
 function firstTypeArgument(generic: AstNode): AstNode | null {
@@ -122,24 +130,27 @@ function firstTypeArgument(generic: AstNode): AstNode | null {
 /**
  * `Repo` / `&'a mut Db` / `HashMap<K, V>` → `HashMap` / `std::sync::Pool` → the
  * nominal name; a collection or wrapper (`Vec<Item>`, `Option<Box<Repo>>`) and a
- * slice (`&[Item]`) → the element; tuples, fixed arrays, fns → none.
+ * slice (`&[Item]`) → the element, many for a collection or a slice (bd
+ * tea-rags-mcp-4p3sb.26); tuples, fixed arrays, fns → none.
  */
-function rustAnnotationTypeName(node: AstNode): string | undefined {
+function rustAnnotationType(node: AstNode): IdentifierSyntacticType | undefined {
   switch (node.type) {
     case "type_identifier":
     case "primitive_type":
     case "scoped_type_identifier":
-      return node.text;
+      return { typeName: node.text };
     case "reference_type": {
       const inner = node.childForFieldName("type");
-      return inner ? rustAnnotationTypeName(inner) : undefined;
+      return inner ? rustAnnotationType(inner) : undefined;
     }
     case "generic_type": {
       const base = node.childForFieldName("type");
-      const head = base ? rustAnnotationTypeName(base) : undefined;
-      if (head === undefined || !ELEMENT_NAMING_HEADS.has(head.slice(head.lastIndexOf(":") + 1))) return head;
+      const head = base ? rustAnnotationType(base)?.typeName : undefined;
+      if (head === undefined) return undefined;
+      const finalSegment = head.slice(head.lastIndexOf(":") + 1);
+      if (!ELEMENT_NAMING_HEADS.has(finalSegment)) return { typeName: head };
       const element = firstTypeArgument(node);
-      return element ? rustAnnotationTypeName(element) : undefined;
+      return elementOfCollection(element ? rustAnnotationType(element) : undefined, COLLECTION_HEADS.has(finalSegment));
     }
     case "array_type": {
       // A slice `[T]` only — a fixed array `[T; N]` carries its `;`. The element
@@ -148,7 +159,7 @@ function rustAnnotationTypeName(node: AstNode): string | undefined {
       // across every grammar.
       if (node.children.some((child) => child.type === ";")) return undefined;
       const element = node.namedChildren[0];
-      return element ? rustAnnotationTypeName(element) : undefined;
+      return elementOfCollection(element ? rustAnnotationType(element) : undefined, true);
     }
     default:
       return undefined;
@@ -171,6 +182,12 @@ function constructorPathName(path: AstNode): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** The constructed type, by its path — `Vec::new()` constructs a `Vec`, never a collection's element. */
+function rustConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
+  const typeName = rustConstructorTypeName(value);
+  return typeName === undefined ? undefined : { typeName };
 }
 
 function rustConstructorTypeName(value: AstNode): string | undefined {
@@ -226,7 +243,8 @@ const returnRule: IdentifierDeclarationRule = {
     const nameNode = node.childForFieldName("name");
     if (nameNode === null) return [];
     const written = node.childForFieldName("return_type");
-    const typeNode = written !== null && rustAnnotationTypeName(written) === "Self" ? enclosingImplType(node) : written;
+    const typeNode =
+      written !== null && rustAnnotationType(written)?.typeName === "Self" ? enclosingImplType(node) : written;
     return [{ nameNode, kind: "return", typeNode }];
   },
 };
@@ -239,7 +257,7 @@ export const RUST_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     fieldRule("field_declaration", "field", { name: "name", type: "type" }),
     returnRule,
   ],
-  annotationTypeName: rustAnnotationTypeName,
-  constructorTypeName: rustConstructorTypeName,
+  annotationType: rustAnnotationType,
+  constructorType: rustConstructorType,
   boundCalleeOf: rustBoundCallee,
 };

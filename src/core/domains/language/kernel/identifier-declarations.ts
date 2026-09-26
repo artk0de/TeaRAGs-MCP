@@ -24,6 +24,7 @@ import type {
   IdentifierBoundCallee,
   IdentifierDeclaration,
   IdentifierDeclarationKind,
+  IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph.js";
 import type { WalkContext } from "../../../contracts/types/language.js";
 import type { ExtractionFacetPass } from "./extraction-passes.js";
@@ -44,6 +45,40 @@ export interface DeclaredIdentifierSite {
   typeNode?: AstNode | null;
   /** Initializer, for constructor typing and — on a local / field — the bound callee. */
   valueNode?: AstNode | null;
+  /**
+   * `many` when the declaration itself collects values of its annotation — a
+   * variadic / rest / splat parameter (`opts ...T`, `*args: T`, `T... rest`),
+   * whose annotation names the element with no collection in sight.
+   */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+}
+
+/**
+ * The type a syntax reads off an annotation or a constructor: the nominal name,
+ * and `many` when the reading went through a collection to its element
+ * (`Doc[]`, `list[Doc]`, `Vec<Doc>`, `[]Doc{}` → `Doc`, many). A wrapper of one
+ * value (`Optional<Doc>`, `Box<Doc>`, a pointer) names its element as `one`.
+ */
+export interface IdentifierSyntacticType {
+  typeName: string;
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+}
+
+/** `many` when either reading holds many — a collection nested in a wrapper, or a wrapper in a collection. */
+export function combineTypeMultiplicity(
+  outer: IdentifierTypeMultiplicity | undefined,
+  inner: IdentifierTypeMultiplicity | undefined,
+): IdentifierTypeMultiplicity | undefined {
+  return outer === "many" || inner === "many" ? "many" : undefined;
+}
+
+/** The element's reading, marked `many` when the unwrapped head is a collection. */
+export function elementOfCollection(
+  element: IdentifierSyntacticType | undefined,
+  headIsCollection: boolean,
+): IdentifierSyntacticType | undefined {
+  if (element === undefined || !headIsCollection) return element;
+  return { typeName: element.typeName, typeMultiplicity: "many" };
 }
 
 /** Recognises one declaration node type and lists the names it declares. */
@@ -55,10 +90,10 @@ export interface IdentifierDeclarationRule {
 /** A language's declaration syntax — the only language knowledge the pass needs. */
 export interface IdentifierDeclarationSyntax {
   rules: readonly IdentifierDeclarationRule[];
-  /** Type name from an annotation node's text (strip `:`, generics, pointers). */
-  annotationTypeName: (typeNode: AstNode) => string | undefined;
+  /** Type read off an annotation node (strip `:`, generics, pointers; a collection names its element, many). */
+  annotationType: (typeNode: AstNode) => IdentifierSyntacticType | undefined;
   /** `X.new` / `new X()` / `X()` / `&X{}` / `X::new` → "X"; else undefined. */
-  constructorTypeName: (valueNode: AstNode) => string | undefined;
+  constructorType: (valueNode: AstNode) => IdentifierSyntacticType | undefined;
   /**
    * The OUTERMOST call `valueNode` is, as the `{ member, receiver }` the
    * language's walker puts on that call's `CallRef` — read through the walker's
@@ -169,17 +204,28 @@ function returnOwnerSymbolId(line: number, name: string, chunks: WalkContext["ch
   );
 }
 
-function typeOf(
+type DeclarationTypeFields = Pick<IdentifierDeclaration, "typeName" | "typeSource" | "typeMultiplicity">;
+
+/** The declaration's type fields; `typeMultiplicity` is written only as `many` (absent means one). */
+function declarationType(
+  read: IdentifierSyntacticType,
+  typeSource: "annotation" | "constructor",
   site: DeclaredIdentifierSite,
-  syntax: IdentifierDeclarationSyntax,
-): Pick<IdentifierDeclaration, "typeName" | "typeSource"> {
+): DeclarationTypeFields {
+  const typeMultiplicity = combineTypeMultiplicity(site.typeMultiplicity, read.typeMultiplicity);
+  return typeMultiplicity === "many"
+    ? { typeName: read.typeName, typeSource, typeMultiplicity }
+    : { typeName: read.typeName, typeSource };
+}
+
+function typeOf(site: DeclaredIdentifierSite, syntax: IdentifierDeclarationSyntax): DeclarationTypeFields {
   if (site.typeNode) {
-    const typeName = syntax.annotationTypeName(site.typeNode);
-    if (typeName !== undefined) return { typeName, typeSource: "annotation" };
+    const read = syntax.annotationType(site.typeNode);
+    if (read !== undefined) return declarationType(read, "annotation", site);
   }
   if (site.valueNode) {
-    const typeName = syntax.constructorTypeName(site.valueNode);
-    if (typeName !== undefined) return { typeName, typeSource: "constructor" };
+    const read = syntax.constructorType(site.valueNode);
+    if (read !== undefined) return declarationType(read, "constructor", site);
   }
   return {};
 }

@@ -21,6 +21,12 @@
  * written annotation), then `structuredReturnTypes`, then the flat
  * `functionReturnTypes` channel. Every `return` row persists as `return-type`.
  *
+ * Every stage that reads a collection as its element keeps that the row holds
+ * MANY of it (`typeMultiplicity: "many"`, bd tea-rags-mcp-4p3sb.26): the
+ * syntactic declaration's own flag, a container binding fact, a container
+ * structured return. The field-type and flat return channels are bare strings
+ * that carry no such fact, so their rows stay one.
+ *
  * Two types are never persisted. A constructor publishes no `return` row: what
  * it "returns" is its own class, not a naming choice, and the row would pollute
  * every return-kind vocabulary. A value constant (`APP_ROOTS_FOR_LOOKUP`) is
@@ -39,6 +45,7 @@ import type {
   FileExtraction,
   IdentifierDeclaration,
   IdentifierRow,
+  IdentifierTypeMultiplicity,
   LocalBinding,
   PersistedIdentifierTypeSource,
 } from "../../../../contracts/types/codegraph.js";
@@ -121,15 +128,24 @@ function normalizeTypeName(typeName: string): string {
   return typeName.startsWith("::") ? typeName.slice(2) : typeName;
 }
 
+/** A recovered type: its nominal name and — only when it holds many — its multiplicity. */
+interface RecoveredIdentifierType {
+  typeName: string;
+  typeMultiplicity?: IdentifierTypeMultiplicity;
+}
+
 /**
  * The single nominal name of a return ref: a class / instance names itself, a
- * container its element. A union — nilable ones included — and `nil` have no
- * single name and yield nothing (same rule as the language kernel's flat
- * return channels).
+ * container its element — marked `many` (bd tea-rags-mcp-4p3sb.26). A union —
+ * nilable ones included — and `nil` have no single name and yield nothing (same
+ * rule as the language kernel's flat return channels).
  */
-function singleNominalName(ref: TypeRef): string | undefined {
-  if (ref.form === "class" || ref.form === "instance") return ref.name;
-  if (ref.form === "container") return singleNominalName(ref.element);
+function singleNominalType(ref: TypeRef): RecoveredIdentifierType | undefined {
+  if (ref.form === "class" || ref.form === "instance") return { typeName: ref.name };
+  if (ref.form === "container") {
+    const element = singleNominalType(ref.element);
+    return element === undefined ? undefined : { typeName: element.typeName, typeMultiplicity: "many" };
+  }
   return undefined;
 }
 
@@ -154,14 +170,25 @@ function ownerChunkOf(chunks: readonly ChunkExtraction[] | undefined, line: numb
   );
 }
 
-/** The binding on the declaration's line, else the nearest preceding one; an empty type is no binding. */
-function bindingTypeAt(bindings: readonly LocalBinding[] | undefined, line: number): string | undefined {
+/**
+ * The binding on the declaration's line, else the nearest preceding one; an
+ * empty type is no binding. A binding whose richer `typeRef` is a container
+ * (`posts = Post.where(…)` binds `container<instance Post>`, its `type` already
+ * the element) holds many.
+ */
+function bindingTypeAt(
+  bindings: readonly LocalBinding[] | undefined,
+  line: number,
+): RecoveredIdentifierType | undefined {
   let best: LocalBinding | undefined;
   for (const binding of bindings ?? []) {
     if (binding.type === "" || binding.line > line) continue;
     if (best === undefined || binding.line > best.line) best = binding;
   }
-  return best?.type;
+  if (best === undefined) return undefined;
+  return best.typeRef?.form === "container"
+    ? { typeName: best.type, typeMultiplicity: "many" }
+    : { typeName: best.type };
 }
 
 /** Class keys a field's owner may be recorded under: short name, `::`-qualified, dotted. */
@@ -222,17 +249,22 @@ function recoveredType(
   chunk: ChunkExtraction | undefined,
   decl: IdentifierDeclaration,
   finders: ReadonlySet<string> | undefined,
-): { typeName: string; typeSource: PersistedIdentifierTypeSource } | undefined {
+): (RecoveredIdentifierType & { typeSource: PersistedIdentifierTypeSource }) | undefined {
   // A return declaration IS the function's declared return type, whichever reader produced it.
-  if (decl.kind === "return") return decl.typeName ? { typeName: decl.typeName, typeSource: "return-type" } : undefined;
-  if (decl.typeName) return { typeName: decl.typeName, typeSource: decl.typeSource ?? "annotation" };
+  if (decl.typeName) {
+    const typeSource = decl.kind === "return" ? "return-type" : (decl.typeSource ?? "annotation");
+    return decl.typeMultiplicity === "many"
+      ? { typeName: decl.typeName, typeSource, typeMultiplicity: "many" }
+      : { typeName: decl.typeName, typeSource };
+  }
+  if (decl.kind === "return") return undefined;
   if (decl.kind === "field") {
     const fieldType = fieldTypeOf(extraction, chunk, decl.name);
     if (fieldType) return { typeName: fieldType, typeSource: "field-type" };
   } else {
     // Own-key read: a local named `constructor` would index Object.prototype (live taxdome crash).
     const bound = bindingTypeAt(identifierEntry(chunk?.localBindings, decl.name), decl.line);
-    if (bound) return { typeName: bound, typeSource: "binding" };
+    if (bound) return { ...bound, typeSource: "binding" };
   }
   const callee = decl.boundCallee;
   if (callee?.receiver && finders?.has(callee.member) && CONSTANT_RECEIVER.test(callee.receiver)) {
@@ -253,6 +285,7 @@ function declarationRow(
   if (type && !isValueConstantName(type.typeName)) {
     row.typeName = normalizeTypeName(type.typeName);
     row.typeSource = type.typeSource;
+    if (type.typeMultiplicity === "many") row.typeMultiplicity = "many";
   }
   if (decl.boundCallee) {
     row.boundMember = decl.boundCallee.member;
@@ -263,15 +296,17 @@ function declarationRow(
   return row;
 }
 
-function channelReturnRow(chunk: ChunkExtraction, typeName: string): IdentifierRow {
-  return {
+function channelReturnRow(chunk: ChunkExtraction, type: RecoveredIdentifierType): IdentifierRow {
+  const row: IdentifierRow = {
     ownerSymbolId: chunk.symbolId,
     kind: "return",
     name: memberNameOf(chunk.symbolId),
     line: chunk.startLine ?? 0,
-    typeName: normalizeTypeName(typeName),
+    typeName: normalizeTypeName(type.typeName),
     typeSource: "return-type",
   };
+  if (type.typeMultiplicity === "many") row.typeMultiplicity = "many";
+  return row;
 }
 
 /** One row per chunk with a single-name structured return type, skipping owners already typed. */
@@ -281,10 +316,10 @@ function structuredReturnRows(extraction: FileExtraction, typedOwners: Set<strin
   const rows: IdentifierRow[] = [];
   for (const chunk of extraction.chunks) {
     if (typedOwners.has(chunk.symbolId) || !Object.hasOwn(returnTypes, chunk.symbolId)) continue;
-    const typeName = singleNominalName(returnTypes[chunk.symbolId]);
-    if (!typeName || isValueConstantName(typeName)) continue;
+    const type = singleNominalType(returnTypes[chunk.symbolId]);
+    if (!type || isValueConstantName(type.typeName)) continue;
     typedOwners.add(chunk.symbolId);
-    rows.push(channelReturnRow(chunk, typeName));
+    rows.push(channelReturnRow(chunk, type));
   }
   return rows;
 }
@@ -329,7 +364,7 @@ function flatReturnRows(extraction: FileExtraction, typedOwners: Set<string>): I
     const typeName = flatTypeName(recorded);
     if (typedOwners.has(chunk.symbolId) || isValueConstantName(typeName)) continue;
     typedOwners.add(chunk.symbolId);
-    rows.push(channelReturnRow(chunk, typeName));
+    rows.push(channelReturnRow(chunk, { typeName }));
   }
   return rows;
 }

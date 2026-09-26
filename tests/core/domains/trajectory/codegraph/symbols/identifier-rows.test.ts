@@ -8,6 +8,8 @@
  * fed by its own convention would confirm itself.
  */
 
+import Parser from "tree-sitter";
+import RbLang from "tree-sitter-ruby";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -20,6 +22,7 @@ import type {
   LanguageFactoryDescriptor,
   LanguageProvider,
 } from "../../../../../../src/core/contracts/types/language.js";
+import { RubyLanguage } from "../../../../../../src/core/domains/language/ruby/index.js";
 import {
   buildIdentifierRows,
   collectIdentifierFinderVocabulary,
@@ -177,7 +180,16 @@ describe("buildIdentifierRows", () => {
       }),
     );
     expect(rows).toEqual([
-      { ownerSymbolId: "Repo.all", kind: "return", name: "all", line: 3, typeName: "Doc", typeSource: "return-type" },
+      {
+        ownerSymbolId: "Repo.all",
+        kind: "return",
+        name: "all",
+        line: 3,
+        typeName: "Doc",
+        typeSource: "return-type",
+        // bd tea-rags-mcp-4p3sb.26: the container is read as its element AND as many of it.
+        typeMultiplicity: "many",
+      },
     ]);
   });
 
@@ -695,5 +707,104 @@ describe("buildIdentifierRows — a SCREAMING_SNAKE constant is never a type", (
       );
       expect(rows[0], type).toMatchObject({ typeName: type, typeSource: "binding" });
     }
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — a row keeps whether its type names ONE value or MANY of them.
+describe("buildIdentifierRows — type multiplicity", () => {
+  it("carries a syntactic many onto the row; a non-collection annotation stays one", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "typescript",
+        chunks: [chunk({ symbolId: "Svc#pick" })],
+        identifierDeclarations: [
+          decl({
+            name: "candidates",
+            kind: "param",
+            ownerSymbolId: "Svc#pick",
+            typeName: "SymbolDefinition",
+            typeSource: "annotation",
+            typeMultiplicity: "many",
+          }),
+          decl({
+            name: "fallback",
+            kind: "param",
+            ownerSymbolId: "Svc#pick",
+            typeName: "SymbolDefinition",
+            typeSource: "annotation",
+          }),
+        ],
+      }),
+    );
+    expect(rows.map((r) => [r.name, r.typeName, r.typeMultiplicity ?? "one"])).toEqual([
+      ["candidates", "SymbolDefinition", "many"],
+      ["fallback", "SymbolDefinition", "one"],
+    ]);
+  });
+
+  it("reads many off a container binding fact, one off a plain binding", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({
+            symbolId: "ProcessEvent#call",
+            localBindings: {
+              posts: [
+                { line: 5, type: "Post", typeRef: { form: "container", element: { form: "instance", name: "Post" } } },
+              ],
+              post: [{ line: 6, type: "Post" }],
+            },
+          }),
+        ],
+        identifierDeclarations: [decl({ name: "posts" }), decl({ name: "post", line: 6 })],
+      }),
+    );
+    expect(rows.map((r) => [r.name, r.typeName, r.typeSource, r.typeMultiplicity ?? "one"])).toEqual([
+      ["posts", "Post", "binding", "many"],
+      ["post", "Post", "binding", "one"],
+    ]);
+  });
+
+  it("does not let a value-constant type leave a many behind on an untyped row", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [chunk({ symbolId: "ProcessEvent#call" })],
+        identifierDeclarations: [
+          decl({ name: "roots", typeName: "APP_ROOTS", typeSource: "annotation", typeMultiplicity: "many" }),
+        ],
+      }),
+    );
+    expect(rows).toEqual([{ ownerSymbolId: "ProcessEvent#call", kind: "local", name: "roots", line: 5 }]);
+  });
+
+  it("Ruby end to end: a relation-returning finder types many, a record finder one", () => {
+    const src = [
+      "class Post < ApplicationRecord",
+      "end",
+      "class S",
+      "  def call",
+      "    posts = Post.where(a: 1)",
+      "    post = Post.find(1)",
+      "  end",
+      "end",
+    ].join("\n");
+    const parser = new Parser();
+    parser.setLanguage(RbLang);
+    const rubyExtraction = new RubyLanguage().walker.walk({
+      tree: parser.parse(src),
+      code: src,
+      relPath: "app/services/s.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "Post", startLine: 1, endLine: 2, scope: [] },
+        { symbolId: "S", startLine: 3, endLine: 8, scope: [] },
+        { symbolId: "S#call", startLine: 4, endLine: 7, scope: ["S"] },
+      ],
+    });
+    const locals = buildIdentifierRows(rubyExtraction).filter((r) => r.kind === "local");
+    expect(locals.map((r) => [r.name, r.typeName, r.typeMultiplicity ?? "one"])).toEqual([
+      ["posts", "Post", "many"],
+      ["post", "Post", "one"],
+    ]);
   });
 });

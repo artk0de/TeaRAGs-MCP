@@ -14,6 +14,7 @@
 import type {
   IdentifierBoundCallee,
   IdentifierDeclarationKind,
+  IdentifierTypeMultiplicity,
   IdentifierTypeSource,
   PersistedIdentifierTypeSource,
 } from "./codegraph-extraction.js";
@@ -96,6 +97,8 @@ export interface IdentifierRow {
   line: number;
   typeName?: string;
   typeSource?: PersistedIdentifierTypeSource;
+  /** Persisted as `type_multiplicity`; absent is written as `one` (bd tea-rags-mcp-4p3sb.26). */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   boundMember?: string;
   boundReceiver?: string;
   boundCallExpression?: string;
@@ -157,6 +160,8 @@ export interface IdentifierTypeAggregateRow extends IdentifierLanguageGroupedRow
   kind: IdentifierDeclarationKind;
   name: string;
   typeSource: IdentifierTypeSource;
+  /** `cg_identifiers.type_multiplicity`, for a read that groups by it; absent otherwise. */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   n: number;
   exampleOwner: SymbolId;
 }
@@ -210,6 +215,8 @@ export interface IdentifierNameKindTypeRow extends IdentifierLanguageGroupedRow 
   name: string;
   kind: IdentifierDeclarationKind;
   typeName: string | null;
+  /** `cg_identifiers.type_multiplicity`, for a read that groups by it; absent otherwise. */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   n: number;
   exampleOwner: SymbolId;
 }
@@ -244,6 +251,8 @@ export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
   kind: IdentifierDeclarationKind;
   name: string;
   typeName: string | null;
+  /** `cg_identifiers.type_multiplicity`, for a read that groups by it; absent otherwise. */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   boundMember: string | null;
   boundReceiver: string | null;
   n: number;
@@ -311,6 +320,12 @@ export interface OntologyReportQuery {
   pathPrefixes?: readonly string[];
   /** File extensions (`.rb`, lowercase) a row's file must carry — the language filter. */
   extensions?: readonly string[];
+  /**
+   * Only rows carrying one of these names — the naming lexicon asks whether
+   * its drafts are generic without reading the project's every candidate.
+   * Per-name aggregates are unchanged by it; absent = every name.
+   */
+  names?: readonly string[];
   nonConceptTypes: readonly OntologyNonConceptTypes[];
   sections: readonly OntologyReportSection[];
   /** Items per section (collisions: per rule). */
@@ -339,6 +354,12 @@ export interface OntologyNameCountRow {
 export interface OntologyTypeGroupRow {
   typeName: string;
   kind: Exclude<IdentifierDeclarationKind, "return">;
+  /**
+   * `cg_identifiers.type_multiplicity`, for a read that groups by it — a `Doc`
+   * group and a `Doc[]` group are different roles (bd tea-rags-mcp-4p3sb.26);
+   * absent otherwise.
+   */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   n: number;
   distinctNames: number;
   /** Share of the group's rows its top name holds. */

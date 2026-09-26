@@ -34,7 +34,15 @@ describe("Rust walker — identifier declarations", () => {
     const chunks = [{ symbolId: "Svc", startLine: 1, endLine: 6, scope: [] }];
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "repo", kind: "field", line: 2, ownerSymbolId: "Svc", typeName: "Repo", typeSource: "annotation" },
-      { name: "cache", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "Item", typeSource: "annotation" },
+      {
+        name: "cache",
+        kind: "field",
+        line: 3,
+        ownerSymbolId: "Svc",
+        typeName: "Item",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "db", kind: "field", line: 4, ownerSymbolId: "Svc", typeName: "Db", typeSource: "annotation" },
       { name: "pair", kind: "field", line: 5, ownerSymbolId: "Svc" },
     ]);
@@ -64,7 +72,15 @@ describe("Rust walker — identifier declarations", () => {
     const owner = { ownerSymbolId: "Svc#load" };
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "id", kind: "param", line: 2, ...owner, typeName: "str", typeSource: "annotation" },
-      { name: "xs", kind: "param", line: 2, ...owner, typeName: "Doc", typeSource: "annotation" },
+      {
+        name: "xs",
+        kind: "param",
+        line: 2,
+        ...owner,
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "a", kind: "param", line: 2, ...owner },
       { name: "b", kind: "param", line: 2, ...owner },
       { name: "pool", kind: "param", line: 2, ...owner, typeName: "std::sync::Pool", typeSource: "annotation" },
@@ -197,7 +213,15 @@ describe("Rust walker — identifier declarations", () => {
         typeSource: "annotation",
       },
       { name: "load", kind: "return", line: 3, ownerSymbolId: "Svc#load", typeName: "Doc", typeSource: "annotation" },
-      { name: "all", kind: "return", line: 4, ownerSymbolId: "Svc#all", typeName: "Job", typeSource: "annotation" },
+      {
+        name: "all",
+        kind: "return",
+        line: 4,
+        ownerSymbolId: "Svc#all",
+        typeName: "Job",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "maybe", kind: "return", line: 5, ownerSymbolId: "Svc#maybe", typeName: "Svc", typeSource: "annotation" },
       // A `Result` keeps its head, as a `Result` parameter does.
       { name: "fetch", kind: "return", line: 9, ownerSymbolId: "fetch", typeName: "Result", typeSource: "annotation" },
@@ -231,5 +255,32 @@ describe("Rust walker — identifier declarations", () => {
       q: undefined,
       s: "RefCell",
     });
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — a collection or slice names its element AND says it holds many.
+describe("Rust walker — identifier type multiplicity", () => {
+  it("marks Vec / VecDeque / sets / slices many; Option, Box and a map stay one", () => {
+    const src = [
+      "fn pick(candidates: Vec<Item>, fallback: Item, slice: &[Item], set: HashSet<Item>, opt: Option<Item>,",
+      "        boxed: Box<Item>, nested: Option<Vec<Item>>, map: HashMap<K, Item>) -> Vec<Item> {",
+      "    let queue: VecDeque<Item> = VecDeque::new();",
+      "    let one = Item::new();",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(src, [{ symbolId: "pick", startLine: 1, endLine: 5, scope: [] }]) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.typeName, d.typeMultiplicity ?? "one"])).toEqual([
+      ["return", "pick", "Item", "many"],
+      ["param", "candidates", "Item", "many"],
+      ["param", "fallback", "Item", "one"],
+      ["param", "slice", "Item", "many"],
+      ["param", "set", "Item", "many"],
+      ["param", "opt", "Item", "one"],
+      ["param", "boxed", "Item", "one"],
+      ["param", "nested", "Item", "many"],
+      ["param", "map", "HashMap", "one"],
+      ["local", "queue", "Item", "many"],
+      ["local", "one", "Item", "one"],
+    ]);
   });
 });

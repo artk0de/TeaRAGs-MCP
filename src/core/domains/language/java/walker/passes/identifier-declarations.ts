@@ -17,7 +17,9 @@
  * `Widget`, as Go's slices do. A collection or wrapper
  * (`List / Set / Collection / Iterable / Optional / Stream<T>`) names its
  * element the same way (bd tea-rags-mcp-4p3sb.17); a map keeps its head, an
- * unbounded `?` element gives no type. A local or field initialized by a method call
+ * unbounded `?` element gives no type. An array, a collection, a stream and a
+ * varargs parameter mark the element `many`; `Optional` wraps one (bd
+ * tea-rags-mcp-4p3sb.26). A local or field initialized by a method call
  * carries its callee, split the way the walker splits its `CallRef`; `new X()`
  * carries none, because the walker emits no `CallRef` for an object creation.
  */
@@ -25,10 +27,12 @@
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import {
   boundCalleeFromCallShape,
+  elementOfCollection,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { javaCallSiteShape } from "../walker.js";
 
@@ -55,7 +59,8 @@ const spreadParameterRule: IdentifierDeclarationRule = {
     const declarator = node.namedChildren.find((child) => child.type === "variable_declarator");
     const nameNode = declarator?.childForFieldName("name");
     const typeNode = node.namedChildren.find((child) => child.type !== "modifiers") ?? null;
-    return nameNode ? [{ nameNode, kind: "param", typeNode }] : [];
+    // `Item... more` is an `Item[]`, though its type node names only the element.
+    return nameNode ? [{ nameNode, kind: "param", typeNode, typeMultiplicity: "many" }] : [];
   },
 };
 
@@ -83,13 +88,18 @@ const catchParameterRule: IdentifierDeclarationRule = {
   },
 };
 
-/** Generic heads whose annotation names its first type argument, matched on the final segment (`java.util.List`). */
-const ELEMENT_NAMING_HEADS = new Set(["List", "Set", "Collection", "Iterable", "Optional", "Stream"]);
+/**
+ * Generic heads whose annotation names its first type argument, matched on the
+ * final segment (`java.util.List`): the collections and streams, which hold
+ * MANY of it, and `Optional`, which wraps one.
+ */
+const COLLECTION_HEADS = new Set(["List", "Set", "Collection", "Iterable", "Stream"]);
+const ELEMENT_NAMING_HEADS = new Set([...COLLECTION_HEADS, "Optional"]);
 
 /** A generic's head as written: `Repo<Doc>` → `Repo`, `java.util.List<Doc>` → `java.util.List`. */
 function javaGenericHeadName(generic: AstNode): string | undefined {
   const base = generic.namedChildren[0];
-  return base ? javaAnnotationTypeName(base) : undefined;
+  return base ? javaAnnotationType(base)?.typeName : undefined;
 }
 
 /** The first type argument, read positionally; a bounded wildcard (`? extends Doc`) by its bound. */
@@ -104,27 +114,29 @@ function firstTypeArgument(generic: AstNode): AstNode | null {
  * `int`; a collection or wrapper (`List<Doc>`, `Optional<Doc>`) → the element;
  * `var` and an unbounded `?` → none.
  */
-function javaAnnotationTypeName(node: AstNode): string | undefined {
+function javaAnnotationType(node: AstNode): IdentifierSyntacticType | undefined {
   switch (node.type) {
     case "type_identifier":
-      return node.text === "var" ? undefined : node.text;
+      return node.text === "var" ? undefined : { typeName: node.text };
     case "scoped_type_identifier":
     case "integral_type":
     case "floating_point_type":
     case "boolean_type":
-      return node.text;
+      return { typeName: node.text };
     case "generic_type": {
       const head = javaGenericHeadName(node);
-      if (head === undefined || !ELEMENT_NAMING_HEADS.has(head.slice(head.lastIndexOf(".") + 1))) return head;
+      if (head === undefined) return undefined;
+      const finalSegment = head.slice(head.lastIndexOf(".") + 1);
+      if (!ELEMENT_NAMING_HEADS.has(finalSegment)) return { typeName: head };
       const element = firstTypeArgument(node);
-      return element ? javaAnnotationTypeName(element) : undefined;
+      return elementOfCollection(element ? javaAnnotationType(element) : undefined, COLLECTION_HEADS.has(finalSegment));
     }
     case "array_type": {
       // The element is the first named child (then `dimensions`). Read by position,
       // not as the `element` field: the materialization guard surveys field names
       // across every grammar, and Swift's `array_type.element` is lost.
       const element = node.namedChildren[0];
-      return element ? javaAnnotationTypeName(element) : undefined;
+      return elementOfCollection(element ? javaAnnotationType(element) : undefined, true);
     }
     default:
       return undefined;
@@ -136,11 +148,13 @@ function javaAnnotationTypeName(node: AstNode): string | undefined {
  * type, generic args dropped. The created class is named by its head even when
  * it is a collection: `new ArrayList<Doc>()` constructs an `ArrayList`.
  */
-function javaConstructorTypeName(value: AstNode): string | undefined {
+function javaConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
   if (value.type !== "object_creation_expression") return undefined;
   const typeNode = value.childForFieldName("type");
   if (!typeNode) return undefined;
-  return typeNode.type === "generic_type" ? javaGenericHeadName(typeNode) : javaAnnotationTypeName(typeNode);
+  if (typeNode.type !== "generic_type") return javaAnnotationType(typeNode);
+  const head = javaGenericHeadName(typeNode);
+  return head === undefined ? undefined : { typeName: head };
 }
 
 export const JAVA_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
@@ -157,7 +171,7 @@ export const JAVA_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     // tea-rags-mcp-4p3sb.21); `void` reads as no type, so it declares nothing.
     fieldRule("method_declaration", "return", { name: "name", type: "type" }),
   ],
-  annotationTypeName: javaAnnotationTypeName,
-  constructorTypeName: javaConstructorTypeName,
+  annotationType: javaAnnotationType,
+  constructorType: javaConstructorType,
   boundCalleeOf: (value) => boundCalleeFromCallShape(javaCallSiteShape(value)),
 };

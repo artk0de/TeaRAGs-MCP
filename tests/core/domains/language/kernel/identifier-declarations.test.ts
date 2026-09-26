@@ -24,9 +24,14 @@ const syntax: IdentifierDeclarationSyntax = {
       value: "value",
     }),
   ],
-  annotationTypeName: (n: AstNode) => n.text.replace(/^:\s*/, "").split("<")[0].trim() || undefined,
-  constructorTypeName: (v: AstNode) =>
-    v.type === "new_expression" ? v.childForFieldName("constructor")?.text : undefined,
+  annotationType: (n: AstNode) => {
+    const typeName = n.text.replace(/^:\s*/, "").split("<")[0].trim();
+    return typeName === "" ? undefined : { typeName };
+  },
+  constructorType: (v: AstNode) => {
+    const typeName = v.type === "new_expression" ? v.childForFieldName("constructor")?.text : undefined;
+    return typeName === undefined ? undefined : { typeName };
+  },
 };
 
 function run(src: string, chunks: WalkContext["chunks"]) {
@@ -128,6 +133,58 @@ describe("identifier declaration pass", () => {
       { name: "a", kind: "param", line: 1, ownerSymbolId: "f" },
       { name: "x", kind: "local", line: 1, ownerSymbolId: "f", boundCallee: { member: "h", receiver: "r" } },
       { name: "y", kind: "local", line: 1, ownerSymbolId: "f" },
+    ]);
+  });
+
+  // bd tea-rags-mcp-4p3sb.26 — a collection read as its element keeps that it holds many.
+  it("carries `many` from the syntax's reading, and from a site that collects its annotation", () => {
+    const manyAware: IdentifierDeclarationSyntax = {
+      ...syntax,
+      rules: [
+        ...syntax.rules,
+        {
+          nodeType: "rest_pattern",
+          collect: (node) => {
+            const nameNode = node.namedChild(0);
+            const typeNode = node.parent?.childForFieldName("type") ?? null;
+            return nameNode === null ? [] : [{ nameNode, kind: "param", typeNode, typeMultiplicity: "many" }];
+          },
+        },
+      ],
+      annotationType: (n: AstNode) => {
+        const text = n.text.replace(/^:\s*/, "").trim();
+        return text.endsWith("[]") ? { typeName: text.slice(0, -2), typeMultiplicity: "many" } : { typeName: text };
+      },
+    };
+    const p = new Parser();
+    p.setLanguage(TS.typescript);
+    const code = "function f(candidates: Doc[], fallback: Doc, ...rest: Doc) {}";
+    const out = createIdentifierDeclarationFacetPass(manyAware).run(p.parse(code).rootNode, {
+      code,
+      relPath: "a.ts",
+      language: "typescript",
+      chunks: [{ symbolId: "f", startLine: 1, endLine: 1, scope: [] }],
+    });
+    expect(out.identifierDeclarations).toEqual([
+      {
+        name: "candidates",
+        kind: "param",
+        line: 1,
+        ownerSymbolId: "f",
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
+      { name: "fallback", kind: "param", line: 1, ownerSymbolId: "f", typeName: "Doc", typeSource: "annotation" },
+      {
+        name: "rest",
+        kind: "param",
+        line: 1,
+        ownerSymbolId: "f",
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
     ]);
   });
 

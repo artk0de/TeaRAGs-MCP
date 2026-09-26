@@ -36,8 +36,24 @@ describe("Go walker — identifier declarations", () => {
     const chunks = [{ symbolId: "Svc", startLine: 2, endLine: 8, scope: [] }];
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "repo", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "Repo", typeSource: "annotation" },
-      { name: "a", kind: "field", line: 4, ownerSymbolId: "Svc", typeName: "Item", typeSource: "annotation" },
-      { name: "b", kind: "field", line: 4, ownerSymbolId: "Svc", typeName: "Item", typeSource: "annotation" },
+      {
+        name: "a",
+        kind: "field",
+        line: 4,
+        ownerSymbolId: "Svc",
+        typeName: "Item",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
+      {
+        name: "b",
+        kind: "field",
+        line: 4,
+        ownerSymbolId: "Svc",
+        typeName: "Item",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "cache", kind: "field", line: 5, ownerSymbolId: "Svc" },
       { name: "pool", kind: "field", line: 6, ownerSymbolId: "Svc", typeName: "sync.Pool", typeSource: "annotation" },
     ]);
@@ -63,10 +79,26 @@ describe("Go walker — identifier declarations", () => {
     const owner = { ownerSymbolId: "Svc#Load" };
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "id", kind: "param", line: 2, ...owner, typeName: "string", typeSource: "annotation" },
-      { name: "xs", kind: "param", line: 2, ...owner, typeName: "Doc", typeSource: "annotation" },
+      {
+        name: "xs",
+        kind: "param",
+        line: 2,
+        ...owner,
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "n", kind: "param", line: 2, ...owner, typeName: "int", typeSource: "annotation" },
       { name: "m", kind: "param", line: 2, ...owner, typeName: "int", typeSource: "annotation" },
-      { name: "opts", kind: "param", line: 2, ...owner, typeName: "Option", typeSource: "annotation" },
+      {
+        name: "opts",
+        kind: "param",
+        line: 2,
+        ...owner,
+        typeName: "Option",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "doc", kind: "local", line: 3, ...owner, typeName: "Document", typeSource: "constructor" },
       { name: "row", kind: "local", line: 4, ...owner, boundCallee: { member: "Get", receiver: "s.repo" } },
       { name: "err", kind: "local", line: 4, ...owner },
@@ -105,7 +137,15 @@ describe("Go walker — identifier declarations", () => {
       { name: "NewSvc", kind: "return", line: 2, ownerSymbolId: "NewSvc", typeName: "Svc", typeSource: "annotation" },
       // `doc, err := s.Load(id)` binds `doc` — the first result — to the call.
       { name: "Load", kind: "return", line: 3, ownerSymbolId: "Svc#Load", typeName: "Doc", typeSource: "annotation" },
-      { name: "All", kind: "return", line: 4, ownerSymbolId: "Svc#All", typeName: "Doc", typeSource: "annotation" },
+      {
+        name: "All",
+        kind: "return",
+        line: 4,
+        ownerSymbolId: "Svc#All",
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       {
         name: "Client",
         kind: "return",
@@ -155,5 +195,33 @@ describe("Go walker — identifier declarations", () => {
         );
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — a slice / array names its element AND says it holds many.
+describe("Go walker — identifier type multiplicity", () => {
+  it("marks slices, arrays, variadics and slice literals many; a pointer stays one", () => {
+    const src = [
+      "package p",
+      "func Pick(candidates []Doc, fallback Doc, ptrs []*Doc, arr [4]Doc, p *Doc, opts ...Doc) []Doc {",
+      "\tdocs := []Doc{}",
+      "\tone := Doc{}",
+      "\tvar more []Doc",
+      "\treturn nil",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(src, [{ symbolId: "Pick", startLine: 2, endLine: 7, scope: [] }]) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.typeName, d.typeMultiplicity ?? "one"])).toEqual([
+      ["return", "Pick", "Doc", "many"],
+      ["param", "candidates", "Doc", "many"],
+      ["param", "fallback", "Doc", "one"],
+      ["param", "ptrs", "Doc", "many"],
+      ["param", "arr", "Doc", "many"],
+      ["param", "p", "Doc", "one"],
+      ["param", "opts", "Doc", "many"],
+      ["local", "docs", "Doc", "many"],
+      ["local", "one", "Doc", "one"],
+      ["local", "more", "Doc", "many"],
+    ]);
   });
 });

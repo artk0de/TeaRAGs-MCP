@@ -17,6 +17,7 @@ import {
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { rubyCallShape } from "../call-collection.js";
 
@@ -59,10 +60,12 @@ const assignmentRule: IdentifierDeclarationRule = {
 };
 
 /** `X.new` / `Foo::Bar.new` → the receiver as written; anything else is not a constructor. */
-function rubyConstructorTypeName(value: AstNode): string | undefined {
+function rubyConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
   if (value.type !== "call" || value.childForFieldName("method")?.text !== "new") return undefined;
   const receiver = value.childForFieldName("receiver");
-  return receiver?.type === "constant" || receiver?.type === "scope_resolution" ? receiver.text : undefined;
+  return receiver?.type === "constant" || receiver?.type === "scope_resolution"
+    ? { typeName: receiver.text }
+    : undefined;
 }
 
 export const RUBY_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
@@ -71,7 +74,7 @@ export const RUBY_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     { nodeType: "lambda_parameters", collect: parameterSites },
     assignmentRule,
   ],
-  annotationTypeName: () => undefined,
-  constructorTypeName: rubyConstructorTypeName,
+  annotationType: () => undefined,
+  constructorType: rubyConstructorType,
   boundCalleeOf: (value) => boundCalleeFromCallShape(rubyCallShape(value)),
 };

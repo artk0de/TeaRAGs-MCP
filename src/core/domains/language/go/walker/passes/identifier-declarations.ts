@@ -15,7 +15,8 @@
  * not — so only that name carries the bound callee.
  *
  * The declaration type unwraps pointers AND slices / arrays to the element
- * (`[]*Doc` → `Doc`) — the lexicon groups `docs` with `Doc`. That is
+ * (`[]*Doc` → `Doc`) — the lexicon groups `docs` with `Doc`, and a slice / array
+ * (or a variadic `...Doc`) marks it `many` (bd tea-rags-mcp-4p3sb.26). That is
  * deliberately not `goFieldTypeName`'s reading, which records a slice field as
  * no single nominal type for the resolver. A package qualifier is kept
  * (`sync.Pool`), type arguments dropped. Only a composite literal (`X{}`,
@@ -26,9 +27,11 @@
 import { isSameAstNode, type AstNode } from "../../../../../contracts/types/ast.js";
 import {
   boundCalleeFromCallShape,
+  elementOfCollection,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { goCallSiteShape } from "../walker.js";
 
@@ -48,6 +51,11 @@ function parameterSites(node: AstNode): DeclaredIdentifierSite[] {
   if (isReceiver(node)) return [];
   const typeNode = node.childForFieldName("type");
   return childrenOfType(node, "identifier").map((nameNode) => ({ nameNode, kind: "param", typeNode }));
+}
+
+/** `opts ...T` — `opts` is a `[]T`, though its type node names only the element. */
+function variadicParameterSites(node: AstNode): DeclaredIdentifierSite[] {
+  return parameterSites(node).map((site) => ({ ...site, typeMultiplicity: "many" }));
 }
 
 /**
@@ -102,36 +110,40 @@ const rule = (nodeType: string, collect: IdentifierDeclarationRule["collect"]): 
   collect,
 });
 
-/** `*Repo` / `[]*Doc` / `[4]Item` / `List[T]` → the element's nominal name; maps, funcs, channels → none. */
-function goDeclarationTypeName(node: AstNode): string | undefined {
+/**
+ * `*Repo` / `[]*Doc` / `[4]Item` / `List[T]` → the element's nominal name —
+ * many through a slice or an array, one through a pointer (bd
+ * tea-rags-mcp-4p3sb.26); maps, funcs, channels → none.
+ */
+function goDeclarationType(node: AstNode): IdentifierSyntacticType | undefined {
   switch (node.type) {
     case "type_identifier":
     case "qualified_type":
-      return node.text;
+      return { typeName: node.text };
     case "pointer_type":
     case "slice_type":
     case "array_type": {
       const element = node.namedChildren.at(-1);
-      return element ? goDeclarationTypeName(element) : undefined;
+      return elementOfCollection(element ? goDeclarationType(element) : undefined, node.type !== "pointer_type");
     }
     case "generic_type": {
       const base = node.childForFieldName("type");
-      return base ? goDeclarationTypeName(base) : undefined;
+      return base ? goDeclarationType(base) : undefined;
     }
     default:
       return undefined;
   }
 }
 
-/** `X{}` / `pkg.X{}` / `List[int]{}` / `&X{}` → the literal's type name. */
-function goConstructorTypeName(value: AstNode): string | undefined {
+/** `X{}` / `pkg.X{}` / `List[int]{}` / `&X{}` / `[]X{}` → the literal's type, many for a slice literal. */
+function goConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
   if (value.type === "unary_expression") {
     const operand = value.childForFieldName("operand");
-    return operand?.type === "composite_literal" ? goConstructorTypeName(operand) : undefined;
+    return operand?.type === "composite_literal" ? goConstructorType(operand) : undefined;
   }
   if (value.type !== "composite_literal") return undefined;
   const typeNode = value.childForFieldName("type");
-  return typeNode ? goDeclarationTypeName(typeNode) : undefined;
+  return typeNode ? goDeclarationType(typeNode) : undefined;
 }
 
 /**
@@ -156,7 +168,7 @@ function returnSites(node: AstNode): DeclaredIdentifierSite[] {
 export const GO_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [
     rule("parameter_declaration", parameterSites),
-    rule("variadic_parameter_declaration", parameterSites),
+    rule("variadic_parameter_declaration", variadicParameterSites),
     rule("short_var_declaration", shortVarSites),
     rule("var_spec", varSpecSites),
     rule("range_clause", rangeClauseSites),
@@ -164,7 +176,7 @@ export const GO_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
     rule("function_declaration", returnSites),
     rule("method_declaration", returnSites),
   ],
-  annotationTypeName: goDeclarationTypeName,
-  constructorTypeName: goConstructorTypeName,
+  annotationType: goDeclarationType,
+  constructorType: goConstructorType,
   boundCalleeOf: (value) => boundCalleeFromCallShape(goCallSiteShape(value)),
 };

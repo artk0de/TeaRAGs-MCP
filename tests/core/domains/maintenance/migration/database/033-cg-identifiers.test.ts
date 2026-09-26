@@ -48,6 +48,8 @@ describe("033 cg identifiers migration", () => {
       bound_member: true,
       bound_receiver: true,
       bound_call_expression: true,
+      // Added by 034 (bd tea-rags-mcp-4p3sb.26); DuckDB refuses NOT NULL on an added column.
+      type_multiplicity: true,
     });
     const indexes = await db.queryAll("SELECT index_name FROM duckdb_indexes() WHERE table_name = 'cg_identifiers'");
     expect(indexes).toEqual([]);

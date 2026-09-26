@@ -30,9 +30,11 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
   boundCalleeFromCallShape,
+  elementOfCollection,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { SWIFT_SINGLE_ELEMENT_SEQUENCES, swiftCallSiteShape } from "../walker.js";
 
@@ -44,12 +46,19 @@ function nodeAfter(node: AstNode, separator: string): AstNode | null {
   return at === -1 ? null : (node.children[at + 1] ?? null);
 }
 
-/** `id: String` / `_ doc: Doc` / `with opts: Options? = nil` — the name is the identifier before `:`. */
+/**
+ * `id: String` / `_ doc: Doc` / `with opts: Options? = nil` — the name is the
+ * identifier before `:`. A variadic `rest: Item...` is an `[Item]`, though its
+ * type node names only the element.
+ */
 function parameterSites(node: AstNode): DeclaredIdentifierSite[] {
   const at = node.children.findIndex((child) => child.type === ":");
   const nameNode = at > 0 ? node.children[at - 1] : null;
   if (nameNode?.type !== "simple_identifier") return [];
-  return [{ nameNode, kind: "param", typeNode: node.children[at + 1] ?? null }];
+  const typeNode = node.children[at + 1] ?? null;
+  return node.children.some((child) => child.type === "...")
+    ? [{ nameNode, kind: "param", typeNode, typeMultiplicity: "many" }]
+    : [{ nameNode, kind: "param", typeNode }];
 }
 
 /** The identifiers a `pattern` binds: itself when it wraps one name, each name of a tuple pattern. */
@@ -113,30 +122,34 @@ function swiftUserTypeNominal(userType: AstNode): string | undefined {
 /**
  * `Foo` / `Dictionary<K, V>` → `Dictionary` / `Outer.Inner`, seen through `?`,
  * `any` / `some` and `[Element]`; `Array<T>` / `Set<T>` / `Optional<T>` → the
- * element. The type arguments are the `user_type`'s trailing child, read by
- * position like every other read here.
+ * element — many for `[T]` and a sequence, one for `Optional` (bd
+ * tea-rags-mcp-4p3sb.26). The type arguments are the `user_type`'s trailing
+ * child, read by position like every other read here.
  */
-function swiftAnnotationTypeName(node: AstNode): string | undefined {
+function swiftAnnotationType(node: AstNode): IdentifierSyntacticType | undefined {
   switch (node.type) {
     // A class / struct / enum declaration's own name — what a `-> Self` return reads.
     case "type_identifier":
-      return node.text;
+      return { typeName: node.text };
     case "user_type": {
       const nominal = swiftUserTypeNominal(node);
-      if (nominal === undefined || !ELEMENT_NAMING_HEADS.has(nominal.slice(nominal.lastIndexOf(".") + 1))) {
-        return nominal;
-      }
+      if (nominal === undefined) return undefined;
+      const finalSegment = nominal.slice(nominal.lastIndexOf(".") + 1);
+      if (!ELEMENT_NAMING_HEADS.has(finalSegment)) return { typeName: nominal };
       const args = node.namedChildren.at(-1);
-      if (args?.type !== "type_arguments") return nominal;
+      if (args?.type !== "type_arguments") return { typeName: nominal };
       const element = args.namedChildren[0];
-      return element ? swiftAnnotationTypeName(element) : undefined;
+      return elementOfCollection(
+        element ? swiftAnnotationType(element) : undefined,
+        SWIFT_SINGLE_ELEMENT_SEQUENCES.has(finalSegment),
+      );
     }
     case "optional_type":
     case "existential_type":
     case "opaque_type":
     case "array_type": {
       const inner = node.namedChildren[0];
-      return inner ? swiftAnnotationTypeName(inner) : undefined;
+      return elementOfCollection(inner ? swiftAnnotationType(inner) : undefined, node.type === "array_type");
     }
     default:
       return undefined;
@@ -148,17 +161,18 @@ function swiftAnnotationTypeName(node: AstNode): string | undefined {
  * constructed type, by its head even for a collection: `Array<Job>()` constructs
  * an `Array`.
  */
-function swiftConstructorTypeName(value: AstNode): string | undefined {
+function swiftConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
   if (value.type === "constructor_expression") {
     const constructed = value.namedChildren.find((child) => child.type === "user_type");
-    return constructed ? swiftUserTypeNominal(constructed) : undefined;
+    const nominal = constructed ? swiftUserTypeNominal(constructed) : undefined;
+    return nominal === undefined ? undefined : { typeName: nominal };
   }
   if (value.type !== "call_expression") return undefined;
   const callee = value.namedChildren.find((child) => child.type !== "call_suffix");
   if (callee?.type !== "simple_identifier" && callee?.type !== "navigation_expression") return undefined;
   if (!/^[\w.]+$/.test(callee.text)) return undefined;
   const finalSegment = callee.text.slice(callee.text.lastIndexOf(".") + 1);
-  return /^_*[A-Z]/.test(finalSegment) ? callee.text : undefined;
+  return /^_*[A-Z]/.test(finalSegment) ? { typeName: callee.text } : undefined;
 }
 
 /** `try f()` / `try? f()` / `await f()` / `try await f()` → the call `f()`. */
@@ -196,7 +210,7 @@ function returnSites(node: AstNode): DeclaredIdentifierSite[] {
   if (nameNode === null) return [];
   const written = nodeAfter(node, "->");
   const declaring = node.parent && TYPE_BODY_TYPES.has(node.parent.type) ? node.parent.parent : null;
-  const typeName = written === null ? undefined : swiftAnnotationTypeName(written);
+  const typeName = written === null ? undefined : swiftAnnotationType(written)?.typeName;
   let typeNode: AstNode | null = written;
   if (typeName === "Self") {
     typeNode = declaring?.type === "class_declaration" ? declaring.childForFieldName("name") : null;
@@ -218,7 +232,7 @@ export const SWIFT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = 
     rule("function_declaration", returnSites),
     rule("protocol_function_declaration", returnSites),
   ],
-  annotationTypeName: swiftAnnotationTypeName,
-  constructorTypeName: swiftConstructorTypeName,
+  annotationType: swiftAnnotationType,
+  constructorType: swiftConstructorType,
   boundCalleeOf: swiftBoundCallee,
 };

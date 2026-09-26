@@ -86,7 +86,15 @@ describe("TypeScript walker — identifier declarations", () => {
       { name: "id", kind: "param", line: 5, ownerSymbolId: "Svc#load", typeName: "string", typeSource: "annotation" },
       { name: "a", kind: "param", line: 5, ownerSymbolId: "Svc#load" },
       { name: "c", kind: "param", line: 5, ownerSymbolId: "Svc#load" },
-      { name: "more", kind: "param", line: 5, ownerSymbolId: "Svc#load", typeName: "string", typeSource: "annotation" },
+      {
+        name: "more",
+        kind: "param",
+        line: 5,
+        ownerSymbolId: "Svc#load",
+        typeName: "string",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       {
         name: "doc",
         kind: "local",
@@ -209,9 +217,18 @@ describe("TypeScript walker — identifier declarations", () => {
         ownerSymbolId: "fetchAll",
         typeName: "Job",
         typeSource: "annotation",
+        typeMultiplicity: "many",
       },
       { name: "ids", kind: "return", line: 6, ownerSymbolId: "ids", typeName: "Generator", typeSource: "annotation" },
-      { name: "find", kind: "return", line: 8, ownerSymbolId: "Svc#find", typeName: "Doc", typeSource: "annotation" },
+      {
+        name: "find",
+        kind: "return",
+        line: 8,
+        ownerSymbolId: "Svc#find",
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "load", kind: "return", line: 9, ownerSymbolId: "Svc#load", typeName: "Repo", typeSource: "annotation" },
       {
         name: "build",
@@ -273,5 +290,41 @@ describe("TypeScript walker — identifier declarations", () => {
         );
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — a collection annotation names its element AND says it holds many.
+describe("TypeScript walker — identifier type multiplicity", () => {
+  const multiplicityOf = (src: string) =>
+    (declarationsOf(src, [{ symbolId: "pick", startLine: 1, endLine: 3, scope: [] }]) ?? []).map((d) => [
+      d.kind,
+      d.name,
+      d.typeName,
+      d.typeMultiplicity ?? "one",
+    ]);
+
+  it("marks every element-naming annotation many and a plain one one", () => {
+    const src = [
+      "function pick(candidates: SymbolDefinition[], fallback: SymbolDefinition, defs: Array<SymbolDefinition>,",
+      "  ro: readonly SymbolDefinition[], all: ReadonlyArray<SymbolDefinition>, seen: Set<SymbolDefinition>,",
+      "  pending: Promise<SymbolDefinition>, ...rest: SymbolDefinition[]): SymbolDefinition[] { const one: SymbolDefinition = fallback; }",
+    ].join("\n");
+    expect(multiplicityOf(src)).toEqual([
+      ["return", "pick", "SymbolDefinition", "many"],
+      ["param", "candidates", "SymbolDefinition", "many"],
+      ["param", "fallback", "SymbolDefinition", "one"],
+      ["param", "defs", "SymbolDefinition", "many"],
+      ["param", "ro", "SymbolDefinition", "many"],
+      ["param", "all", "SymbolDefinition", "many"],
+      ["param", "seen", "SymbolDefinition", "many"],
+      ["param", "pending", "Promise", "one"],
+      ["param", "rest", "SymbolDefinition", "many"],
+      ["local", "one", "SymbolDefinition", "one"],
+    ]);
+  });
+
+  it("keeps `many` through an async function's awaited Promise<T[]>", () => {
+    const src = "async function pick(): Promise<Doc[]> {}";
+    expect(multiplicityOf(src)).toEqual([["return", "pick", "Doc", "many"]]);
   });
 });

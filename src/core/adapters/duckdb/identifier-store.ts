@@ -57,6 +57,7 @@ const CG_IDENTIFIERS_COLUMNS = [
   "bound_member",
   "bound_receiver",
   "bound_call_expression",
+  "type_multiplicity",
 ] as const;
 
 /**
@@ -148,6 +149,8 @@ function toWriteRow(relPath: RelPath, row: IdentifierRow): unknown[] {
     row.boundMember ?? null,
     row.boundReceiver ?? null,
     row.boundCallExpression ?? null,
+    // Written explicitly: the column's DEFAULT only covers rows predating 034, and the diff read compares it.
+    row.typeMultiplicity ?? "one",
   ];
 }
 

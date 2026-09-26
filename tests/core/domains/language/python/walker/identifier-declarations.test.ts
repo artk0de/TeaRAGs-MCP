@@ -84,7 +84,15 @@ describe("Python walker — identifier declarations", () => {
     expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
       // `async def … -> Doc` already names what `await load()` yields.
       { name: "load", kind: "return", line: 2, ownerSymbolId: "Svc.load", typeName: "Doc", typeSource: "annotation" },
-      { name: "many", kind: "return", line: 4, ownerSymbolId: "Svc.many", typeName: "Job", typeSource: "annotation" },
+      {
+        name: "many",
+        kind: "return",
+        line: 4,
+        ownerSymbolId: "Svc.many",
+        typeName: "Job",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "repo", kind: "return", line: 7, ownerSymbolId: "Svc.repo", typeName: "Repo", typeSource: "annotation" },
       { name: "top", kind: "return", line: 11, ownerSymbolId: "top", typeName: "Widget", typeSource: "annotation" },
     ]);
@@ -103,7 +111,15 @@ describe("Python walker — identifier declarations", () => {
     const chunks = [{ symbolId: "run", startLine: 1, endLine: 7, scope: [] }];
     expect(declarationsOf(src, chunks)).toEqual([
       { name: "n", kind: "param", line: 1, ownerSymbolId: "run" },
-      { name: "m", kind: "param", line: 1, ownerSymbolId: "run", typeName: "Job", typeSource: "annotation" },
+      {
+        name: "m",
+        kind: "param",
+        line: 1,
+        ownerSymbolId: "run",
+        typeName: "Job",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "args", kind: "param", line: 1, ownerSymbolId: "run" },
       { name: "kw", kind: "param", line: 1, ownerSymbolId: "run" },
       { name: "total", kind: "local", line: 2, ownerSymbolId: "run", typeName: "int", typeSource: "annotation" },
@@ -184,5 +200,30 @@ describe("Python walker — identifier declarations", () => {
         );
       expect(onLine).toContainEqual(declaration.boundCallee);
     }
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — a collection annotation names its element AND says it holds many.
+describe("Python walker — identifier type multiplicity", () => {
+  it("marks sequences, sets, tuples and splat parameters many; Optional and a mapping stay one", () => {
+    const src = [
+      "def pick(candidates: list[Doc], fallback: Doc, defs: typing.List[Doc], seq: Sequence[Doc],",
+      "         opt: Optional[Doc], opts: Optional[list[Doc]], lookup: dict[str, Doc], *args: Doc, **kwargs: Doc) -> list[Doc]:",
+      "    seen: set[Doc] = set()",
+    ].join("\n");
+    const declarations = declarationsOf(src, [{ symbolId: "pick", startLine: 1, endLine: 3, scope: [] }]) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.typeName, d.typeMultiplicity ?? "one"])).toEqual([
+      ["return", "pick", "Doc", "many"],
+      ["param", "candidates", "Doc", "many"],
+      ["param", "fallback", "Doc", "one"],
+      ["param", "defs", "Doc", "many"],
+      ["param", "seq", "Doc", "many"],
+      ["param", "opt", "Doc", "one"],
+      ["param", "opts", "Doc", "many"],
+      ["param", "lookup", "dict", "one"],
+      ["param", "args", "Doc", "many"],
+      ["param", "kwargs", "Doc", "many"],
+      ["local", "seen", "Doc", "many"],
+    ]);
   });
 });

@@ -102,7 +102,7 @@ function bashBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
 
 export const BASH_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   rules: [assignmentRule, declarationCommandRule, forRule],
-  annotationTypeName: () => undefined,
-  constructorTypeName: () => undefined,
+  annotationType: () => undefined,
+  constructorType: () => undefined,
   boundCalleeOf: bashBoundCallee,
 };

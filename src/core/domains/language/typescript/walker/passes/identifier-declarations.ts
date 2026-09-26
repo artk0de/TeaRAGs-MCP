@@ -14,7 +14,9 @@
  *
  * An array or set annotation names its ELEMENT (`Job[]`, `Array<Job>`,
  * `ReadonlyArray<Job>`, `Set<Job>` → `Job`) — the lexicon groups `jobs` with
- * `Job`, as Go's slices and Java's arrays already do. `Promise<Job>` and maps
+ * `Job`, as Go's slices and Java's arrays already do — and marks it `many`, so
+ * `jobs: Job[]` and `job: Job` stay two roles (bd tea-rags-mcp-4p3sb.26). A rest
+ * parameter is many through its own array annotation. `Promise<Job>` and maps
  * keep their head: a `docPromise` is not a `doc`. A local or field bound to a
  * call carries that call's callee, split the way the walker splits its
  * `CallRef`, `await` and a non-null `!` seen through.
@@ -24,10 +26,12 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { IdentifierBoundCallee } from "../../../../../contracts/types/codegraph.js";
 import {
   boundCalleeFromCallShape,
+  elementOfCollection,
   fieldRule,
   type DeclaredIdentifierSite,
   type IdentifierDeclarationRule,
   type IdentifierDeclarationSyntax,
+  type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
 import { typescriptCallSiteShape } from "../walker.js";
 
@@ -125,31 +129,40 @@ const ELEMENT_NAMING_HEADS = new Set(["Array", "ReadonlyArray", "Set"]);
 /**
  * Nominal annotations only: `Repo`, `ns.Repo`, `Repo<Doc>` → `Repo`, `string`;
  * `Job[]` / `readonly Job[]` / `Array<Job>` / `ReadonlyArray<Job>` / `Set<Job>`
- * → `Job`; unions, tuples, literals → none.
+ * → `Job`, many (bd tea-rags-mcp-4p3sb.26); unions, tuples, literals → none.
+ * `readonly` alone collects nothing: `readonly Job[]` is many through its array.
  */
-function typescriptAnnotationTypeName(typeNode: AstNode): string | undefined {
+function typescriptAnnotationType(typeNode: AstNode): IdentifierSyntacticType | undefined {
   const inner = typeNode.type === "type_annotation" ? typeNode.namedChild(0) : typeNode;
   if (inner === null) return undefined;
   switch (inner.type) {
     case "type_identifier":
     case "nested_type_identifier":
     case "predefined_type":
-      return inner.text;
+      return { typeName: inner.text };
     case "array_type":
     case "readonly_type": {
       const element = inner.namedChild(0);
-      return element === null ? undefined : typescriptAnnotationTypeName(element);
+      const read = element === null ? undefined : typescriptAnnotationType(element);
+      return elementOfCollection(read, inner.type === "array_type");
     }
     case "generic_type": {
       const head = inner.childForFieldName("name")?.text;
-      if (head === undefined || !ELEMENT_NAMING_HEADS.has(head)) return head;
+      if (head === undefined) return undefined;
+      if (!ELEMENT_NAMING_HEADS.has(head)) return { typeName: head };
       // Positional: the argument list is the `type_arguments` child.
       const element = inner.namedChildren.find((child) => child.type === "type_arguments")?.namedChild(0) ?? null;
-      return element === null ? undefined : typescriptAnnotationTypeName(element);
+      return elementOfCollection(element === null ? undefined : typescriptAnnotationType(element), true);
     }
     default:
       return undefined;
   }
+}
+
+/** `new X()` read as a constructed type, never a collection — JavaScript reads it too. */
+export function ecmascriptConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
+  const typeName = ecmascriptConstructorTypeName(value);
+  return typeName === undefined ? undefined : { typeName };
 }
 
 /** The call an initializer IS: `await f()` and `f()!` are the call `f()`. */
@@ -233,7 +246,7 @@ export const TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSynt
     boundFunctionReturnRule("variable_declarator"),
     boundFunctionReturnRule("public_field_definition"),
   ],
-  annotationTypeName: typescriptAnnotationTypeName,
-  constructorTypeName: ecmascriptConstructorTypeName,
+  annotationType: typescriptAnnotationType,
+  constructorType: ecmascriptConstructorType,
   boundCalleeOf: typescriptBoundCallee,
 };

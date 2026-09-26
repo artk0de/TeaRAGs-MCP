@@ -48,8 +48,24 @@ describe("Java walker — identifier declarations", () => {
       { name: "a", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "int", typeSource: "annotation" },
       { name: "b", kind: "field", line: 3, ownerSymbolId: "Svc", typeName: "int", typeSource: "annotation" },
       { name: "id", kind: "param", line: 4, ...owner, typeName: "String", typeSource: "annotation" },
-      { name: "xs", kind: "param", line: 4, ...owner, typeName: "Doc", typeSource: "annotation" },
-      { name: "more", kind: "param", line: 4, ...owner, typeName: "Item", typeSource: "annotation" },
+      {
+        name: "xs",
+        kind: "param",
+        line: 4,
+        ...owner,
+        typeName: "Doc",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
+      {
+        name: "more",
+        kind: "param",
+        line: 4,
+        ...owner,
+        typeName: "Item",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "doc", kind: "local", line: 5, ...owner, typeName: "Document", typeSource: "annotation" },
       { name: "row", kind: "local", line: 6, ...owner, boundCallee: { member: "get", receiver: "repo" } },
       { name: "p", kind: "local", line: 7, ...owner, typeName: "com.acme.Panel", typeSource: "constructor" },
@@ -60,6 +76,7 @@ describe("Java walker — identifier declarations", () => {
         ...owner,
         typeName: "Widget",
         typeSource: "annotation",
+        typeMultiplicity: "many",
         boundCallee: { member: "make", receiver: "factory" },
       },
       // Pre-order: the statement declares `r` and `s` before its lambdas are visited.
@@ -141,7 +158,15 @@ describe("Java walker — identifier declarations", () => {
         typeName: "Document",
         typeSource: "annotation",
       },
-      { name: "jobs", kind: "return", line: 3, ownerSymbolId: "Svc.jobs", typeName: "Job", typeSource: "annotation" },
+      {
+        name: "jobs",
+        kind: "return",
+        line: 3,
+        ownerSymbolId: "Svc.jobs",
+        typeName: "Job",
+        typeSource: "annotation",
+        typeMultiplicity: "many",
+      },
       { name: "get", kind: "return", line: 7, ownerSymbolId: "Api#get", typeName: "Thing", typeSource: "annotation" },
     ]);
   });
@@ -176,5 +201,36 @@ describe("Java walker — identifier declarations", () => {
       o: "Map",
       q: "HashSet",
     });
+  });
+});
+
+// bd tea-rags-mcp-4p3sb.26 — an array or collection names its element AND says it holds many.
+describe("Java walker — identifier type multiplicity", () => {
+  it("marks arrays, collections, streams and varargs many; Optional and a map stay one", () => {
+    const src = [
+      "class S {",
+      "  List<Doc> pick(Doc[] candidates, Doc fallback, List<Doc> defs, Optional<Doc> opt, Map<String, Doc> byId, Doc... rest) {",
+      "    Set<Doc> seen = new HashSet<>();",
+      "    Stream<Doc> flow = null;",
+      "    return null;",
+      "  }",
+      "}",
+    ].join("\n");
+    const chunks = [
+      { symbolId: "S", startLine: 1, endLine: 7, scope: [] },
+      { symbolId: "S#pick", startLine: 2, endLine: 6, scope: ["S"] },
+    ];
+    const declarations = declarationsOf(src, chunks) ?? [];
+    expect(declarations.map((d) => [d.kind, d.name, d.typeName, d.typeMultiplicity ?? "one"])).toEqual([
+      ["return", "pick", "Doc", "many"],
+      ["param", "candidates", "Doc", "many"],
+      ["param", "fallback", "Doc", "one"],
+      ["param", "defs", "Doc", "many"],
+      ["param", "opt", "Doc", "one"],
+      ["param", "byId", "Map", "one"],
+      ["param", "rest", "Doc", "many"],
+      ["local", "seen", "Doc", "many"],
+      ["local", "flow", "Doc", "many"],
+    ]);
   });
 });

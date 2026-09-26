@@ -33,7 +33,7 @@ describe("Go walker — range clauses that assign rather than declare", () => {
     const owner = { ownerSymbolId: "run" };
     const int = { typeName: "int", typeSource: "annotation" };
     expect(declarationsOf(src, chunks)).toEqual([
-      { name: "xs", kind: "param", line: 2, ...owner, ...int },
+      { name: "xs", kind: "param", line: 2, ...owner, ...int, typeMultiplicity: "many" },
       { name: "i", kind: "local", line: 3, ...owner, ...int },
       { name: "v", kind: "local", line: 3, ...owner, ...int },
       // line 4 (`=`) re-declares nothing
