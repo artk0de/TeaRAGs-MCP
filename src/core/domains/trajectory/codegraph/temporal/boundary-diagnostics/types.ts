@@ -67,13 +67,6 @@ export interface SilentCouplingExclusionCounts {
   documentationEndpoints: number;
   /** Neither endpoint is walked by the codegraph: nothing structural to compare against. */
   unwalkedEndpoints: number;
-  /**
-   * A walked endpoint defines no symbol — a barrel, a type-only or an
-   * object-literal module. Its type-only imports DO link the pair
-   * (`cg_symbols_edges_file_type_only`, bd tea-rags-mcp-r8hme.12), so this is a
-   * scope decision, not a gap in the structural graph.
-   */
-  noSymbolEndpoints: number;
   /** lift ≤ 1: the pair co-changes no more than independence predicts. */
   nonPositiveLift: number;
 }

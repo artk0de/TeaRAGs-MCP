@@ -1,21 +1,24 @@
 /**
  * silent-coupling-type-only-census.ts (bd tea-rags-mcp-r8hme.12 follow-up)
  *
- * How much of the silent-coupling `noSymbolEndpoints` exclusion type-only file
- * edges explain. The exclusion drops every co-change pair with a walked
- * endpoint that defines no symbol, on the premise that such a module's
- * dependencies are `import type` and so invisible to the file graph. r8hme.12
- * made them visible (`cg_symbols_edges_file_type_only`), which voids the premise
- * for TypeScript and Python — this spike measures by how much.
+ * What removing the silent-coupling no-symbol-endpoint exclusion changed. The
+ * exclusion dropped every co-change pair with a walked endpoint that defines no
+ * symbol, on the premise that such a module's dependencies are `import type`
+ * and so invisible to the file graph. r8hme.12 made them visible
+ * (`cg_symbols_edges_file_type_only`), which voided the premise, and the
+ * exclusion was removed. The production detector no longer has it, so the
+ * spike EMULATES it by dropping those pairs from the graph before detection
+ * (an excluded pair was never a candidate, so the threshold population is
+ * identical).
  *
  * It works on a COPY of a codegraph DuckDB file that predates r8hme.12:
  *   1. read the production file graph and the co-change graph, run the detector
- *      (baseline — the type-only table is empty);
- *   2. walk the corpus with the production walkers + `CallEdgeResolutionRunner`
- *      and insert every `GraphEdges.typeOnlyFileEdges` row into the copy;
- *   3. re-read the co-change graph (production `readGraph` UNION) and re-run the
- *      detector, then two what-ifs: the exclusion narrowed to endpoints in a
- *      language with no type-only channel, and the exclusion removed.
+ *      with the emulated exclusion (baseline — the type-only table is empty);
+ *   2. walk the corpus's type-only-capable files with the production walkers +
+ *      `CallEdgeResolutionRunner` and insert every
+ *      `GraphEdges.typeOnlyFileEdges` row into the copy;
+ *   3. re-read the co-change graph (production `readGraph` UNION) and run the
+ *      detector with the emulated exclusion and as production runs it.
  *
  * Usage (the copy is MUTATED — never point it at ~/.tea-rags/codegraph):
  *   env -u NODE_OPTIONS npx tsx scripts/spikes/silent-coupling-type-only-census.ts \
@@ -27,10 +30,10 @@ import { extname, resolve } from "node:path";
 
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import type {
-  FileDependencyGraphFile,
   FileExtraction,
   RelPath,
   TemporalCochangeEdgeWithLinkage,
+  TemporalCochangeGraph,
 } from "../../src/core/contracts/types/codegraph.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../src/core/domains/ingest/pipeline/chunker/config.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
@@ -58,6 +61,28 @@ import {
 
 /** Languages whose walker records type-only imports (r8hme.12). */
 const TYPE_ONLY_CHANNEL_LANGUAGES = new Set(["typescript", "python"]);
+
+/**
+ * Extensions walked for type-only edges: the channel's languages plus
+ * JavaScript, whose modules a TypeScript import may name. Nothing else can
+ * emit a type-only edge, and skipping it keeps a large polyglot corpus
+ * (a Rails monolith) walkable in one process.
+ */
+const TYPE_ONLY_WALK_EXTENSIONS = Object.entries(CODEGRAPH_LANGUAGES)
+  .filter(([, config]) => TYPE_ONLY_CHANNEL_LANGUAGES.has(config.language) || config.language === "javascript")
+  .map(([ext]) => ext);
+
+/** The removed exclusion, emulated: drop every pair with a walked no-symbol endpoint. */
+function withNoSymbolExclusion(graph: TemporalCochangeGraph, symbolCounts: ReadonlyMap<RelPath, number>) {
+  return { ...graph, edges: graph.edges.filter((e) => !hasNoSymbolEndpoint(e, symbolCounts)) };
+}
+
+function hasNoSymbolEndpoint(
+  edge: Pick<TemporalCochangeEdgeWithLinkage, "relPathA" | "relPathB">,
+  symbolCounts: ReadonlyMap<RelPath, number>,
+): boolean {
+  return [edge.relPathA, edge.relPathB].some((p) => symbolCounts.get(p) === 0);
+}
 
 function isDocumentationPath(relPath: RelPath): boolean {
   const language = LANGUAGE_MAP[extname(relPath).toLowerCase()];
@@ -94,7 +119,7 @@ async function computeTypeOnlyEdges(
     root,
     root,
     await buildCorpusExclusionFilter(root, factory),
-    Object.keys(CODEGRAPH_LANGUAGES),
+    TYPE_ONLY_WALK_EXTENSIONS,
   );
   const extractions: FileExtraction[] = [];
   for (const relPath of selection.kept) {
@@ -123,7 +148,7 @@ function summaryLine(label: string, r: SilentCouplingReport): string {
     `${label}: pairs=${s.pairCount} candidates=${s.candidateCount} strong=${s.strongCount} ` +
     `strongLinked=${s.strongLinkedCount} violations=${s.violationCount} rootCauses=${s.rootCauseCount} ` +
     `threshold=${s.strengthThreshold.toFixed(4)} (${s.strengthThresholdMethod}) ` +
-    `excluded.noSymbol=${s.excluded.noSymbolEndpoints} excluded.nonPositiveLift=${s.excluded.nonPositiveLift}`
+    `excluded.nonPositiveLift=${s.excluded.nonPositiveLift}`
   );
 }
 
@@ -147,20 +172,21 @@ async function main(): Promise<void> {
     const preexisting = await client.queryAll<{ n: bigint }>(
       "SELECT count(*) AS n FROM cg_symbols_edges_file_type_only",
     );
-    process.stderr.write(`type-only rows already in copy: ${Number(preexisting[0]?.n ?? 0)}\n`);
+    process.stderr.write(`type-only rows already in copy (replaced by the walk): ${Number(preexisting[0]?.n ?? 0)}\n`);
+    await client.exec("DELETE FROM cg_symbols_edges_file_type_only");
 
     const nonProduction = buildNonProductionPathFilter();
     const {
       graph: { files },
     } = excludeNonProductionFiles(await client.readFileDependencyGraph(), nonProduction);
     const byPath = new Map(files.map((f) => [f.relPath, f]));
+    const symbolCounts = new Map(files.map((f) => [f.relPath, f.symbolCount]));
     const opts = { isDocumentation: isDocumentationPath };
 
     const graphBefore = await client.readTemporalCochangeGraph();
-    const before = detectSilentCoupling(graphBefore, files, opts);
+    const before = detectSilentCoupling(withNoSymbolExclusion(graphBefore, symbolCounts), files, opts);
 
     const typeOnly = await computeTypeOnlyEdges(corpus);
-    await client.exec("DELETE FROM cg_symbols_edges_file_type_only");
     for (const row of typeOnly) {
       await client.run(
         "INSERT OR IGNORE INTO cg_symbols_edges_file_type_only (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)",
@@ -169,24 +195,11 @@ async function main(): Promise<void> {
     }
 
     const graphAfter = await client.readTemporalCochangeGraph();
-    const after = detectSilentCoupling(graphAfter, files, opts);
+    const after = detectSilentCoupling(withNoSymbolExclusion(graphAfter, symbolCounts), files, opts);
+    // Production: the exclusion is gone.
+    const removed = detectSilentCoupling(graphAfter, files, opts);
 
-    // What-ifs: flip a zero symbolCount to 1 so the exclusion no longer fires.
-    const lift = (predicate: (f: FileDependencyGraphFile) => boolean): FileDependencyGraphFile[] =>
-      files.map((f) => (f.symbolCount === 0 && predicate(f) ? { ...f, symbolCount: 1 } : f));
-    const narrowed = detectSilentCoupling(
-      graphAfter,
-      lift((f) => TYPE_ONLY_CHANNEL_LANGUAGES.has(f.language) && !f.relPath.endsWith(".d.ts")),
-      opts,
-    );
-    const removed = detectSilentCoupling(
-      graphAfter,
-      lift(() => true),
-      opts,
-    );
-
-    // Pair-level census of the pairs the exclusion drops (after-state linkage).
-    const symbolCounts = new Map(files.map((f) => [f.relPath, f.symbolCount]));
+    // Pair-level census of the pairs the exclusion used to drop (after-state linkage).
     const beforeLinked = new Map(graphBefore.edges.map((e) => [`${e.relPathA}\0${e.relPathB}`, e.structurallyLinked]));
     const excludedPairs: (TemporalCochangeEdgeWithLinkage & { linkedBefore: boolean })[] = [];
     for (const e of graphAfter.edges) {
@@ -194,9 +207,7 @@ async function main(): Promise<void> {
       const classes = eps.map((p) => classify(p));
       if (classes.some((c) => c.isTest || c.isGenerated)) continue;
       if (eps.some(isDocumentationPath)) continue;
-      const walked = eps.filter((p) => symbolCounts.has(p));
-      if (walked.length === 0) continue;
-      if (!walked.some((p) => symbolCounts.get(p) === 0)) continue;
+      if (!hasNoSymbolEndpoint(e, symbolCounts)) continue;
       excludedPairs.push({ ...e, linkedBefore: beforeLinked.get(`${e.relPathA}\0${e.relPathB}`) ?? false });
     }
     let linkedBefore = 0;
@@ -235,12 +246,11 @@ async function main(): Promise<void> {
     for (const f of files) if (f.symbolCount === 0) bump(noSymbolFileKinds, endpointKind(f.relPath, f.language));
 
     const out = [
-      summaryLine("before (type-only table empty)", before),
-      summaryLine("after  (type-only edges)       ", after),
-      summaryLine("after + narrowed exclusion     ", narrowed),
-      summaryLine("after + exclusion removed      ", removed),
+      summaryLine("exclusion, type-only table empty   ", before),
+      summaryLine("exclusion, type-only edges         ", after),
+      summaryLine("production (no exclusion, type-only)", removed),
       "",
-      `noSymbolEndpoints pairs: ${excludedPairs.length}`,
+      `no-symbol-endpoint pairs (formerly excluded): ${excludedPairs.length}`,
       `  structurally linked before type-only: ${linkedBefore}`,
       `  structurally linked after  type-only: ${linkedAfter} (newly linked: ${newlyLinked})`,
       `  still unlinked: ${excludedPairs.length - linkedAfter} (lift>1: ${unlinkedPositiveLift}, strong under the removed-exclusion threshold: ${unlinkedAboveThreshold})`,
@@ -253,26 +263,17 @@ async function main(): Promise<void> {
       "strong still-unlinked samples:",
       ...unlinkedStrongSamples.map((s) => `    ${s}`),
       "",
-      "violations only when the exclusion is removed (top 25):",
+      "violations only without the exclusion (top 40):",
       ...removed.violations
         .filter((v) => !after.violations.some((a) => a.relPathA === v.relPathA && a.relPathB === v.relPathB))
-        .slice(0, 25)
-        .map((v) => `    ${v.strength.toFixed(3)} ${v.relPathA} <-> ${v.relPathB}`),
-      "violations only under the narrowed exclusion (top 25):",
-      ...narrowed.violations
-        .filter((v) => !after.violations.some((a) => a.relPathA === v.relPathA && a.relPathB === v.relPathB))
-        .slice(0, 25)
-        .map((v) => `    ${v.strength.toFixed(3)} ${v.relPathA} <-> ${v.relPathB}`),
+        .slice(0, 40)
+        .map((v) => `    ${v.strength.toFixed(3)} ${v.relPathA} <-> ${v.relPathB} (support ${v.support})`),
     ];
     process.stdout.write(`${out.join("\n")}\n`);
     if (json) {
       writeFileSync(
         json,
-        JSON.stringify(
-          { before: before.summary, after: after.summary, narrowed: narrowed.summary, removed: removed.summary },
-          null,
-          2,
-        ),
+        JSON.stringify({ before: before.summary, after: after.summary, production: removed.summary }, null, 2),
       );
     }
   } finally {

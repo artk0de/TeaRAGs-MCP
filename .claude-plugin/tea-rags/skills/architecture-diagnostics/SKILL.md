@@ -263,8 +263,8 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
 `generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither
-file walked), `noSymbolEndpoints` (barrel / type-only / object-literal module —
-not judged; its `import type` deps ARE edges), `nonPositiveLift`.
+file walked), `nonPositiveLift`. A barrel / type-only / object-literal module IS
+judged — its `import type` deps are edges, so a missing edge is evidence.
 
 `summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
 (SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`

@@ -500,7 +500,10 @@ describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)
       strengthThresholdMethod: "majority",
       excluded: { documentationEndpoints: 1 },
     });
-    expect(summary.exclusionReasons.noSymbolEndpoints).toMatch(/no-symbol endpoint/);
+    // A no-symbol endpoint is judged since type-only imports are file edges
+    // (bd tea-rags-mcp-r8hme.12): no counter, no reason to explain.
+    expect(summary.excluded).not.toHaveProperty("noSymbolEndpoints");
+    expect(summary).not.toHaveProperty("exclusionReasons");
   });
 
   it("says the co-change graph is not built rather than reporting a clean history", async () => {
