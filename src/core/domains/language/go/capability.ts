@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "go",
@@ -9,6 +10,7 @@ export const capability: LanguageCapability = {
     hooks: [{ name: "GoChunkClassifier", short: "func/type split" }],
   },
   tests: { tier: "medium", detection: "*_test.go", tech: "generic AST" },
+  testFiles,
   codegraph: {
     tier: "moderate",
     summary:

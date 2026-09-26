@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "ruby",
@@ -18,6 +19,7 @@ export const capability: LanguageCapability = {
     detection: "*_test.rb / *_spec.rb",
     tech: "RSpec scope chunker (one chunk per example, ancestor setup injected)",
   },
+  testFiles,
   codegraph: {
     tier: { untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" },
     summary:
@@ -66,6 +68,9 @@ export const capability: LanguageCapability = {
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.
   naming: {
+    // A bare call resolves against `self`, so a local named like a method
+    // shadows it at the call site.
+    implicitSelf: true,
     casing: {
       type: ["pascal"],
       module: ["pascal"],

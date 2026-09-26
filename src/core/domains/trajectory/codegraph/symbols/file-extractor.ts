@@ -22,9 +22,8 @@ import type {
   LanguageKernel,
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
-import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
+import { extractCodeFileFromText } from "../../../../infra/code-file-extraction.js";
 import type { PathFilter } from "../../../../infra/file-classification/index.js";
-import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CodegraphRunState } from "./run-state.js";
@@ -395,41 +394,23 @@ export class CodegraphFileExtractor {
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
     parser.setLanguage(await this.grammarFor(ext));
-    // Materialize the native tree right after parse so collectSymbols and the walk
-    // both see the deterministic plain-JS AstNode tree, as at the chunker boundary
-    // (rdv7d).
-    const nativeTree = parser.parse(code);
-    // bd tea-rags-mcp-1v12o.2.4 — a file bearing none of the node types the walker
-    // reads yields the empty extraction; ask the NATIVE tree before materializing
-    // it, the most expensive thing pass-1 does on generated data tables.
-    if (fileIsInertForExtraction(nativeTree.rootNode, walker.extractionBearingNodeTypes)) {
-      return { relPath, language: langConfig.language, imports: [], chunks: [], fileScope: [] };
-    }
-    const materializedTree = { rootNode: materializeTree(nativeTree.rootNode, code) };
-    const chunks = this.deps.collectSymbols(
-      materializedTree,
-      // Gem-gated declares (bd tea-rags-mcp-o5kwh): bind the run's Gemfile so the
-      // Ruby nameOf gates class-body macro DECLARES to this project's gems.
-      // undefined runGemfileContent -> FULL catalogue (other languages ignore it).
-      (node) => walker.nameOf(node, runState.gemfileContent),
-      langConfig.scopeSeparator,
-      langConfig.disambiguateOverloads ?? false,
-      this.deps.composer,
+    return extractCodeFileFromText(
+      { parser, walker, collectSymbols: this.deps.collectSymbols, composer: this.deps.composer },
+      {
+        relPath,
+        text: code,
+        language: langConfig.language,
+        scopeSeparator: langConfig.scopeSeparator,
+        disambiguateOverloads: langConfig.disambiguateOverloads ?? false,
+        // Gem-gated DSL grammar at extraction time (adx5p.1b, o5kwh): the run's
+        // Gemfile, read once in loadGemfile. undefined → FULL catalogue.
+        gemfileContent: runState.gemfileContent,
+        // Vocabulary gating at extraction time (bd tea-rags-mcp-w205u.1): the run's
+        // declared dependencies, walked once in loadDeclaredDependencies.
+        // undefined → no manifest anywhere → FULL catalogue.
+        declaredDependencies: runState.declaredDependencies,
+      },
     );
-    return walker.walk({
-      tree: materializedTree,
-      code,
-      relPath,
-      language: langConfig.language,
-      chunks,
-      // Gem-gated DSL grammar at extraction time (adx5p.1b): the run's Gemfile,
-      // read once in loadGemfile. undefined → FULL catalogue.
-      gemfileContent: runState.gemfileContent,
-      // Vocabulary gating at extraction time (bd tea-rags-mcp-w205u.1): the run's
-      // declared dependencies, walked once in loadDeclaredDependencies.
-      // undefined → no manifest anywhere → FULL catalogue.
-      declaredDependencies: runState.declaredDependencies,
-    });
   }
 
   private async grammarFor(extension: string): Promise<Parser.Language> {

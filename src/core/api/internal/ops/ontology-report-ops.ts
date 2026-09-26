@@ -46,6 +46,7 @@ import type {
   OntologyTypeGroupRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import type { CaseSplitPathPatterns } from "../../../contracts/types/file-classification.js";
 import type { IdentifierCasing, IdentifierNamingConvention } from "../../../contracts/types/language.js";
 import {
   classifyNamingShape,
@@ -53,7 +54,6 @@ import {
   isTypeFamilyRoleName,
   isWeakerNamingShape,
   judgeGenericNames,
-  mergeUnqualifiedTypeSpellings,
   singularizeIdentifierWord,
   spellsTypeName,
   splitIdentifierWords,
@@ -61,9 +61,14 @@ import {
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
-import { nativeLanguageCapabilities } from "../../../domains/language/capability/native.js";
+import {
+  languageTestFileConventions,
+  nativeLanguageCapabilities,
+} from "../../../domains/language/capability/native.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { nonProductionPathPatterns } from "../../../infra/file-classification/index.js";
+import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
 import { InvalidParameterError } from "../../errors.js";
 import type {
   GetOntologyReportRequest,
@@ -111,9 +116,6 @@ const ALL_SECTIONS: readonly OntologyReportSectionName[] = ["synonyms", "homonym
 
 /** One judged generic name of the summary. */
 type OntologyGenericName = OntologyReportSummary["genericNames"][number];
-
-/** Glob metacharacters that end a pathPattern's literal prefix. */
-const GLOB_META = /[*?{[]/;
 
 /** One language's naming facts and the file extensions they apply to. */
 export interface OntologyLanguageProfile {
@@ -173,7 +175,24 @@ export interface OntologyReadScope {
   names?: readonly string[];
 }
 
-/** The store query for `scope`: every language's non-concept types, the report's thresholds. */
+/**
+ * The non-production masks every ontology read scopes by — the tooling
+ * directories plus every language's test shapes, which `domains/language` owns
+ * (bd tea-rags-mcp-vjz6s). Built once: the store compiles its SQL per object.
+ */
+let ontologyNonProductionPaths: CaseSplitPathPatterns | undefined;
+
+function nonProductionPaths(): CaseSplitPathPatterns {
+  ontologyNonProductionPaths ??= nonProductionPathPatterns(languageTestFileConventions());
+  return ontologyNonProductionPaths;
+}
+
+/**
+ * The store query for `scope`: every language's non-concept types, the
+ * non-production masks, the files `shadowsMethod` may read — those of the
+ * languages declaring `implicitSelf`, the only ones where a local can shadow a
+ * method (bd tea-rags-mcp-1hj3o) — and the report's thresholds.
+ */
 export function ontologyReportQuery(
   languages: readonly OntologyLanguageProfile[],
   scope: OntologyReadScope,
@@ -188,6 +207,8 @@ export function ontologyReportQuery(
       extensions: [...p.extensions],
       typeNames: [...p.naming.nonConceptTypes],
     })),
+    nonProductionPaths: nonProductionPaths(),
+    shadowsMethodExtensions: languages.filter((p) => p.naming.implicitSelf).flatMap((p) => [...p.extensions]),
     sections: [...sections],
     limit,
     thresholds: { ...ONTOLOGY_REPORT_THRESHOLDS, groupPool: limit * GROUP_POOL_FACTOR },
@@ -200,13 +221,6 @@ export interface OntologyReportOpsDeps {
   /** Alias → active versioned collection (see `GraphFacadeDeps.resolveActiveCollection`). */
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
   languages: readonly OntologyLanguageProfile[];
-}
-
-/** Literal `rel_path` prefix of a glob: everything before the first metacharacter. */
-function pathPatternPrefix(pathPattern: string | undefined): string {
-  if (!pathPattern) return "";
-  const meta = pathPattern.search(GLOB_META);
-  return (meta === -1 ? pathPattern : pathPattern.slice(0, meta)).replace(/^\.\//, "");
 }
 
 function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSectionName[] {
@@ -341,7 +355,7 @@ export class OntologyReportOps {
     language: OntologyLanguageProfile | undefined,
   ): OntologyReportQuery {
     const limit = Math.min(MAX_ONTOLOGY_REPORT_LIMIT, Math.max(1, req.limit ?? DEFAULT_ONTOLOGY_REPORT_LIMIT));
-    const prefix = pathPatternPrefix(req.pathPattern);
+    const prefix = pathPatternLiteralPrefix(req.pathPattern);
     return ontologyReportQuery(
       this.deps.languages,
       { ...(prefix ? { pathPrefixes: [prefix] } : {}), ...(language ? { extensions: language.extensions } : {}) },
@@ -468,17 +482,20 @@ export class OntologyReportOps {
   }
 
   /**
-   * Re-judges the pooled homonym candidates: an unqualified spelling folds into
-   * the qualified type it names (`Document` into `TaxPreparation::Document`), and
-   * a name that is the role word of a type family (`state` for `ClientState`,
-   * `RunState`; `ctx` for `LogContext`, `ReindexContext`) is dropped. The rest re-rank by `(1 − top type share) ×
-   * confidence`, capped at `limit` names and `namesPerItem` types.
+   * Re-judges the pooled homonym candidates: a name that is the role word of a
+   * type family (`state` for `ClientState`, `RunState`; `ctx` for `LogContext`,
+   * `ReindexContext`) is dropped. The rest re-rank by `(1 − top type share) ×
+   * confidence`, capped at `limit` names and `namesPerItem` types. Spellings of
+   * one symbol (`Document` / `TaxPreparation::Document`) arrive already folded:
+   * the store decides that from the type names and `cg_symbols` (bd
+   * tea-rags-mcp-1hj3o), and folding again here by spelling alone would merge
+   * two declared types the store kept apart.
    */
   private homonyms(rows: NonNullable<OntologyReportRows["homonyms"]>, limit: number): OntologyHomonym[] {
     const t = ONTOLOGY_REPORT_THRESHOLDS;
     const judged: (OntologyHomonym & { score: number })[] = [];
     for (const row of rows) {
-      const types = mergeUnqualifiedTypeSpellings(row.types).map((type) => ({
+      const types = row.types.map((type) => ({
         type: type.typeName,
         n: type.n,
         shape: classifyNamingShape({
@@ -586,7 +603,7 @@ const MISSING_TABLE_WARNING = `cg_identifiers does not exist: ${STALE_INDEX_HINT
 
 function scopeOf(req: Pick<GetOntologyReportRequest, "pathPattern" | "language">): GetOntologyReportResponse["scope"] {
   return {
-    pathPrefix: pathPatternPrefix(req.pathPattern),
+    pathPrefix: pathPatternLiteralPrefix(req.pathPattern),
     ...(req.language ? { language: req.language.trim().toLowerCase() } : {}),
   };
 }

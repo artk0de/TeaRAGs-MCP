@@ -1,14 +1,17 @@
 export { classify, type FileClassification, type ClassifyOptions } from "./classify.js";
 export { isCompiledJsContent, isJsFamilyPath, maxLineLength, DEFAULT_MINIFIED_LINE_LENGTH } from "./compiled-js.js";
-export { buildNonProductionPathFilter } from "./non-production-path-filter.js";
+export { buildNonProductionPathFilter, nonProductionPathPatterns } from "./non-production-path-filter.js";
 export { buildTestPathFilter, type PathFilter } from "./test-path-filter.js";
 export {
+  installTestFileConventions,
+  installedTestFileConventions,
+  testPathPatterns,
+  type TestPathPatternSets,
+} from "./test-file-conventions.js";
+export {
+  COMMON_TEST_DIRECTORY_PATTERNS,
   GENERATED_PATTERNS,
   NON_PRODUCTION_PATTERNS,
-  TEST_PATTERNS,
-  CASE_SENSITIVE_TEST_PATTERNS,
-  CASE_INSENSITIVE_TEST_PATTERNS,
-  TEST_PATTERNS_BY_LANGUAGE,
   GENERATED_CONTENT_MARKERS,
   USER_GENERATED_PATTERNS,
 } from "./patterns.js";

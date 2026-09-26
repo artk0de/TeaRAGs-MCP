@@ -29,8 +29,10 @@ import type {
   OntologyReportRows,
   OntologyReportThresholds,
 } from "../../../../src/core/contracts/types/codegraph.js";
+import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
+import { nonProductionPathPatterns } from "../../../../src/core/infra/file-classification/index.js";
 
 const THRESHOLDS: OntologyReportThresholds = {
   minSupport: 5,
@@ -45,9 +47,15 @@ const THRESHOLDS: OntologyReportThresholds = {
   groupPool: 40,
 };
 
+/** The masks the ops layer hands the store: the language domain's test shapes plus the tooling directories. */
+const NON_PRODUCTION_PATHS = nonProductionPathPatterns(languageTestFileConventions());
+
 function query(partial: Partial<OntologyReportQuery> = {}): OntologyReportQuery {
   return {
     nonConceptTypes: [{ extensions: [".rb"], typeNames: ["String"] }],
+    nonProductionPaths: NON_PRODUCTION_PATHS,
+    // Ruby is the fixture's implicit-self language: a local there can shadow a method.
+    shadowsMethodExtensions: [".rb"],
     sections: ["synonyms", "homonyms", "outliers", "collisions"],
     limit: 20,
     thresholds: THRESHOLDS,
@@ -574,6 +582,215 @@ describe("DuckDbGraphClient#readOntologyReportSummary / #readOntologyReportSecti
       ["tag", "TAG"],
       ["uri", "URI"],
     ]);
+  });
+
+  describe("shadowsMethod is an implicit-self collision (bd tea-rags-mcp-1hj3o)", () => {
+    beforeEach(async () => {
+      // The same shape as the Ruby fixture, in TypeScript: a local `title` inside
+      // `Widget#render` beside `Widget#title`. `this.title()` cannot be shadowed.
+      await db.replaceIdentifiersBulk([
+        { relPath: "web/widget.ts", rows: [{ ownerSymbolId: "Widget#render", kind: "local", name: "title", line: 7 }] },
+      ]);
+      await db.upsertSymbols("web/widget.ts", [
+        { symbolId: "Widget#title", fqName: "Widget#title", shortName: "title", relPath: "web/widget.ts", scope: [] },
+        {
+          symbolId: "Widget#render",
+          fqName: "Widget#render",
+          shortName: "render",
+          relPath: "web/widget.ts",
+          scope: [],
+        },
+      ]);
+    });
+
+    it("reads only the files of the languages the query names", async () => {
+      const { collisions } = await readReport(query({ sections: ["collisions"] }));
+      expect(collisions?.filter((c) => c.rule === "shadowsMethod").map((c) => c.symbol)).toEqual(["Report#title"]);
+    });
+
+    it("is off when no language has implicit self", async () => {
+      const { collisions } = await readReport(query({ sections: ["collisions"], shadowsMethodExtensions: [] }));
+      expect(collisions?.some((c) => c.rule === "shadowsMethod")).toBe(false);
+      // The other rule is untouched.
+      expect(collisions?.map((c) => c.rule)).toEqual(["namesOtherType"]);
+    });
+  });
+
+  it("collisions: a PascalCase FUNCTION is no type — a symbol owning a `return` row is callable", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "pkg/client/client.go",
+        rows: [
+          // `NewClient` is a Go constructor function, not a type: its return row says so.
+          {
+            ownerSymbolId: "NewClient",
+            kind: "return",
+            name: "NewClient",
+            line: 3,
+            typeName: "Client",
+            typeSource: "annotation",
+          },
+          ...rows(1, typed("new_client", "Config"), 10),
+          // `Ledger` is a class: it owns fields, never a return row.
+          ...rows(1, typed("ledger", "Journal"), 20),
+        ],
+      },
+    ]);
+    await db.upsertSymbols("pkg/client/client.go", [
+      {
+        symbolId: "NewClient",
+        fqName: "NewClient",
+        shortName: "NewClient",
+        relPath: "pkg/client/client.go",
+        scope: [],
+      },
+      { symbolId: "Ledger", fqName: "Ledger", shortName: "Ledger", relPath: "pkg/client/client.go", scope: [] },
+    ]);
+
+    const { collisions } = await readReport(query({ sections: ["collisions"] }));
+    const namesOtherType = (collisions ?? [])
+      .filter((c) => c.rule === "namesOtherType")
+      .map((c) => [c.name, c.symbol])
+      .sort();
+    expect(namesOtherType).toEqual([
+      ["invoice", "Invoice"],
+      ["ledger", "Ledger"],
+    ]);
+  });
+
+  // bd tea-rags-mcp-bjzaf — a wrapper-only `return` row (`-> Result<(), E>`, an async
+  // `Promise<void>`) feeds the call-return join; it is no declared identifier.
+  it("totals do not count a wrapper-only return row as an identifier", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "src/store.rs",
+        rows: [{ ownerSymbolId: "save", kind: "return", name: "save", line: 1, returnWrapper: "Result" }],
+      },
+    ]);
+    const report = await readReport(query());
+    expect(report.totals).toEqual({ identifierRows: 56, symbolRows: 3 });
+  });
+
+  it("collisions: a PascalCase fn whose only return row is wrapper-only is still callable, never a type", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "src/app.ts",
+        rows: [
+          // `async function Bootstrap(): Promise<void>` — declared return, no nameable value.
+          { ownerSymbolId: "Bootstrap", kind: "return", name: "Bootstrap", line: 1, returnWrapper: "Promise" },
+          ...rows(1, typed("bootstrap", "Config"), 10),
+        ],
+      },
+    ]);
+    await db.upsertSymbols("src/app.ts", [
+      { symbolId: "Bootstrap", fqName: "Bootstrap", shortName: "Bootstrap", relPath: "src/app.ts", scope: [] },
+    ]);
+
+    const { collisions } = await readReport(query({ sections: ["collisions"] }));
+    expect((collisions ?? []).filter((c) => c.symbol === "Bootstrap")).toEqual([]);
+  });
+
+  describe("homonyms: one symbol spelled qualified and unqualified is one type (bd tea-rags-mcp-1hj3o)", () => {
+    const homonymTypes = async (name: string) => {
+      const { homonyms } = await readReport(query({ sections: ["homonyms"] }));
+      return homonyms?.find((h) => h.name === name);
+    };
+
+    it("an unqualified spelling folds into the one qualified type sharing its last segment", async () => {
+      // Moved from the ops layer, which merged spellings after the read; the
+      // store now merges them before any section counts.
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "app/a.rb",
+          rows: [
+            ...rows(27, typed("@document", "TaxPreparation::Document"), 1),
+            ...rows(5, typed("request", "Request"), 100),
+          ],
+        },
+        {
+          relPath: "app/b.rb",
+          rows: [...rows(10, typed("@document", "Document"), 1), ...rows(4, typed("request", "Invoice"), 100)],
+        },
+        { relPath: "app/c.rb", rows: rows(3, typed("request", "ActionDispatch::Request"), 1) },
+      ]);
+      const { homonyms } = await readReport(query({ sections: ["homonyms"] }));
+      expect(homonyms?.map((h) => h.name)).not.toContain("@document");
+      const request = homonyms?.find((h) => h.name === "request");
+      expect(request?.types.map((t) => [t.typeName, t.n])).toEqual([
+        ["ActionDispatch::Request", 8],
+        ["Invoice", 4],
+      ]);
+      expect(request?.topTypeShare).toBeCloseTo(8 / 12);
+      // The merged type keeps the qualified spelling's example.
+      expect(request?.types[0].example.relPath).toBe("app/c.rb");
+    });
+
+    it("a dotted namespace (`ts.Type`) folds the same way", async () => {
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "src/checker.ts",
+          rows: [
+            ...rows(4, typed("type", "ts.Type"), 1),
+            ...rows(3, typed("type", "Type"), 10),
+            ...rows(3, typed("type", "TypeRef"), 20),
+          ],
+        },
+      ]);
+      expect((await homonymTypes("type"))?.types.map((t) => [t.typeName, t.n])).toEqual([
+        ["ts.Type", 7],
+        ["TypeRef", 3],
+      ]);
+    });
+
+    it("two DECLARED symbols stay two types, whatever their spelling", async () => {
+      await db.replaceIdentifiersBulk([
+        { relPath: "app/bar.rb", rows: [...rows(3, typed("bar", "Foo::Bar"), 1), ...rows(3, typed("bar", "Bar"), 10)] },
+      ]);
+      await db.upsertSymbols("app/bar.rb", [
+        { symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "app/bar.rb", scope: [] },
+        { symbolId: "Foo::Bar", fqName: "Foo::Bar", shortName: "Bar", relPath: "app/bar.rb", scope: [] },
+      ]);
+      expect((await homonymTypes("bar"))?.types.map((t) => t.typeName).sort()).toEqual(["Bar", "Foo::Bar"]);
+    });
+
+    it("an unqualified spelling two qualified types share folds into neither", async () => {
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "app/item.rb",
+          rows: [
+            ...rows(3, typed("item_ref", "A::Item"), 1),
+            ...rows(3, typed("item_ref", "B::Item"), 10),
+            ...rows(3, typed("item_ref", "Item"), 20),
+          ],
+        },
+      ]);
+      expect((await homonymTypes("item_ref"))?.types.map((t) => t.typeName).sort()).toEqual([
+        "A::Item",
+        "B::Item",
+        "Item",
+      ]);
+    });
+
+    it("never folds across languages: a Ruby `Widget` is not a TypeScript `ui.Widget`", async () => {
+      await db.replaceIdentifiersBulk([
+        { relPath: "app/widget.rb", rows: rows(3, typed("widget", "Widget"), 1) },
+        { relPath: "web/widget.ts", rows: rows(3, typed("widget", "ui.Widget"), 1) },
+      ]);
+      const q = query({
+        sections: ["homonyms"],
+        nonConceptTypes: [
+          { extensions: [".rb"], typeNames: ["String"] },
+          { extensions: [".ts"], typeNames: ["string"] },
+        ],
+      });
+      const { homonyms } = await readReport(q);
+      expect(
+        homonyms
+          ?.find((h) => h.name === "widget")
+          ?.types.map((t) => t.typeName)
+          .sort(),
+      ).toEqual(["Widget", "ui.Widget"]);
+    });
   });
 
   it("an empty table yields empty sections and zero counts", async () => {

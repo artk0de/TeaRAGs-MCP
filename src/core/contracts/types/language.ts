@@ -26,6 +26,7 @@ import type {
   SymbolResolutionPassPlan,
   SymbolResolutionTarget,
 } from "./codegraph.js";
+import type { TestFileConvention } from "./file-classification.js";
 import type { ChunkSetBumpScopes } from "./rechunk.js";
 import type { SignalFloors } from "./trajectory.js";
 
@@ -981,6 +982,13 @@ export interface LanguageCapability {
     grammarPackage?: string;
   };
   tests: { tier: "high" | "medium" | "low" | "na"; detection: string; tech: string };
+  /**
+   * How this language names a test FILE (bd tea-rags-mcp-vjz6s) — the source of
+   * the file classifier's per-language test shapes, aggregated by
+   * `languageTestFileConventions()` and injected into `infra`. Absent for a
+   * language with no test-file convention (bash, markdown).
+   */
+  testFiles?: TestFileConvention;
   codegraph: {
     tier: CodegraphTier | TypingTieredCodegraph;
     tech: string;
@@ -1039,4 +1047,13 @@ export interface IdentifierNamingConvention {
    * Single-letter generics (`T`) are a universal rule the lexicon owns, not listed.
    */
   readonly nonConceptTypes: readonly string[];
+  /**
+   * A bare name inside a method body reaches the enclosing type's members —
+   * Ruby's implicit `self`, Swift's implicit `self.` — in the one namespace
+   * locals live in, so a local named like a member hides it. The ontology
+   * report's `shadowsMethod` collision holds only here. Absent: a member is
+   * reached through an explicit receiver (`this.m`, `self.m`) or lives in its
+   * own namespace (Java's `m()`), and no local can shadow it.
+   */
+  readonly implicitSelf?: true;
 }

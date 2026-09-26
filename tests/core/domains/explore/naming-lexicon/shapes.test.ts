@@ -226,6 +226,43 @@ describe("shapeDistribution", () => {
     ]);
   });
 
+  describe("QUALIFIED co-occurrence (a second binding of the type in the same owner)", () => {
+    const context = { typeName: TYPE, kind: "local" as const, casing: "snake" as const };
+
+    it("a QUALIFIED row is QUALIFIED only for the rows whose owner holds a sibling; the rest are FREE", () => {
+      const d = shapeDistribution([{ name: "source_tax_automation_document", n: 10, sameTypeSiblingN: 4 }], context);
+      expect(d.shares).toEqual([
+        { shape: "FREE", share: 0.6 },
+        { shape: "QUALIFIED", share: 0.4 },
+      ]);
+      expect(d.n).toBe(10);
+    });
+
+    it("a QUALIFIED row every one of whose owners holds a sibling stays wholly QUALIFIED", () => {
+      const d = shapeDistribution([{ name: "source_tax_automation_document", n: 3, sameTypeSiblingN: 3 }], context);
+      expect(d.shares).toEqual([{ shape: "QUALIFIED", share: 1 }]);
+    });
+
+    it("a row without the co-occurrence count is classified lexically", () => {
+      const d = shapeDistribution([{ name: "source_tax_automation_document", n: 3 }], context);
+      expect(d.shares).toEqual([{ shape: "QUALIFIED", share: 1 }]);
+    });
+
+    it("the count never moves a row of another shape", () => {
+      const d = shapeDistribution(
+        [
+          { name: "tax_automation_document", n: 2, sameTypeSiblingN: 0 },
+          { name: "document", n: 2, sameTypeSiblingN: 0 },
+        ],
+        context,
+      );
+      expect(d.shares).toEqual([
+        { shape: "EXACT", share: 0.5 },
+        { shape: "TAIL", share: 0.5 },
+      ]);
+    });
+  });
+
   it("a row's own casing overrides the context (a row from another language's file)", () => {
     const d = shapeDistribution(
       [

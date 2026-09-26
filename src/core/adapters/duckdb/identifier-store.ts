@@ -59,6 +59,8 @@ const CG_IDENTIFIERS_COLUMNS = [
   "bound_receiver",
   "bound_call_expression",
   "type_multiplicity",
+  "bound_call_unwrapped",
+  "return_wrapper",
 ] as const;
 
 /**
@@ -66,6 +68,14 @@ const CG_IDENTIFIERS_COLUMNS = [
  * caller's large batch never becomes one wide literal filter.
  */
 const IDENTIFIER_IN_LIST_CHUNK = 200;
+
+/**
+ * A row that is a DECLARATION: every row but a wrapper-only `return` (bd
+ * tea-rags-mcp-bjzaf), which carries a `return_wrapper` and no type and exists
+ * for the call-return join alone. Reads that report or count declarations
+ * filter on it, so they see the rows they saw before such rows existed.
+ */
+export const DECLARED_IDENTIFIER_SQL = "NOT (kind = 'return' AND type_name IS NULL)";
 
 /** Fixed reservoir seed, so the same table state yields the same shape sample. */
 const SHAPE_SAMPLE_SEED = 42;
@@ -129,6 +139,30 @@ function languageField(
   return grouped === true ? { language: row.file_language ?? null } : {};
 }
 
+/**
+ * The SQL pieces behind `countSameTypeSiblings`: `from` marks each `resolved`
+ * row of the asked types with `has_sibling` — its (file, owner, type) holds at
+ * least two distinct non-`return` names — computed over the asked types only;
+ * `column` sums the marks per group, NULL for a `return` group. Not counting →
+ * `resolved` as-is and empty pieces, so the plain read is byte-identical.
+ */
+function sameTypeSiblingPieces(
+  counted: boolean | undefined,
+  types: readonly string[],
+): { from: string; column: string; params: unknown[] } {
+  if (counted !== true) return { from: "resolved", column: "", params: [] };
+  const valueName = "CASE WHEN kind <> 'return' THEN name END";
+  return {
+    from: `(SELECT r.*, (min(${valueName}) OVER owner_type <> max(${valueName}) OVER owner_type) AS has_sibling
+              FROM resolved r
+             WHERE type_name IN (${placeholders(types)})
+            WINDOW owner_type AS (PARTITION BY rel_path, owner_symbol_id, type_name))`,
+    column: `, CASE WHEN kind = 'return' THEN NULL
+                   ELSE sum(CASE WHEN has_sibling THEN 1 ELSE 0 END) END AS same_type_sibling_n`,
+    params: [...types],
+  };
+}
+
 /** `rel_path` ends in any of `suffixes`; `TRUE` when none is given. `%` / `_` in a suffix match literally. */
 function pathSuffixPredicate(suffixes: readonly string[] | undefined): SqlPredicate {
   if (suffixes === undefined || suffixes.length === 0) return { sql: "TRUE", params: [] };
@@ -152,6 +186,10 @@ function toWriteRow(relPath: RelPath, row: IdentifierRow): unknown[] {
     row.boundCallExpression ?? null,
     // Written explicitly: the column's DEFAULT only covers rows predating 034, and the diff read compares it.
     row.typeMultiplicity ?? "one",
+    // A bound local always states whether it unwrapped its call; NULL is kept for
+    // rows with no bound call, and for rows written before migration 036.
+    row.boundMember === undefined ? null : row.boundCallUnwrapped === true,
+    row.returnWrapper ?? null,
   ];
 }
 
@@ -164,10 +202,10 @@ function rowFingerprint(cells: readonly unknown[]): string {
   return JSON.stringify(cells.map(fingerprintCell));
 }
 
-/** Every `cg_identifiers` column is VARCHAR or INTEGER, so a cell is a string, a number or NULL. */
+/** Every `cg_identifiers` column is VARCHAR, INTEGER or BOOLEAN, so a cell is a string, a number, a boolean or NULL. */
 function fingerprintCell(cell: unknown): string | null {
   if (typeof cell === "string") return cell;
-  if (typeof cell === "number" || typeof cell === "bigint") return cell.toString();
+  if (typeof cell === "number" || typeof cell === "bigint" || typeof cell === "boolean") return cell.toString();
   return null;
 }
 
@@ -183,11 +221,26 @@ function fileFingerprint(rowFingerprints: string[]): string {
  * A call's targets are counted over its `exact` edges only; two of them (a
  * method defined in two files) type nothing. A target whose `return` rows
  * disagree on the type types nothing either.
+ *
+ * A target's type is what its callers hold once they consume its wrapper
+ * (`Result<T, E>` → `T` through `?`, an async `Promise<T>` → `T` through
+ * `await`). A local that states it did NOT consume it (`bound_call_unwrapped =
+ * false`) is typed as the target's `return_wrapper` instead, multiplicity one
+ * (bd tea-rags-mcp-bjzaf). NULL on either side — a row predating migration 036
+ * — reads the target's `T`, as before the columns existed.
+ *
+ * A wrapper around no nameable value (`Result<(), E>`, an async
+ * `Promise<void>`) is a `return` row with `return_wrapper` and NO `type_name`.
+ * It feeds `return_types` only: a caller that consumed the wrapper binds
+ * nothing and stays untyped, one that did not holds the wrapper. It is never a
+ * declaration a read reports — {@link DECLARED_IDENTIFIER_SQL} drops it from
+ * `scoped` — so every consumer of `resolved` sees exactly the rows it saw
+ * before such rows existed.
  */
 export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
   return {
     sql: `WITH scoped AS (
-        SELECT * FROM cg_identifiers WHERE ${scope.sql}
+        SELECT * FROM cg_identifiers WHERE (${scope.sql}) AND ${DECLARED_IDENTIFIER_SQL}
       ),
       call_targets AS (
         SELECT e.source_rel_path, e.source_symbol_id, e.call_expression,
@@ -207,24 +260,25 @@ export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
       ),
       return_types AS (
         SELECT rel_path, owner_symbol_id, min(type_name) AS type_name,
-               CASE WHEN bool_or(type_multiplicity = 'many') THEN 'many' ELSE 'one' END AS type_multiplicity
+               CASE WHEN bool_or(type_multiplicity = 'many') THEN 'many' ELSE 'one' END AS type_multiplicity,
+               -- Rows disagreeing on the wrapper keep none: the caller then reads the T.
+               CASE WHEN count(DISTINCT COALESCE(return_wrapper, '')) = 1 THEN min(return_wrapper) END AS return_wrapper
           FROM cg_identifiers
-         WHERE kind = 'return' AND type_name IS NOT NULL
+         WHERE kind = 'return' AND (type_name IS NOT NULL OR return_wrapper IS NOT NULL)
          GROUP BY rel_path, owner_symbol_id
-        HAVING count(DISTINCT type_name) = 1
+        -- count(DISTINCT) skips NULL: a wrapper-only row ('Result<(), E>') adds no type,
+        -- so typed rows that agree stay typed, and a wrapper-only target counts 0.
+        HAVING count(DISTINCT type_name) <= 1
       ),
-      resolved AS (
-        SELECT s.rel_path, s.owner_symbol_id, s.kind, s.name, s.line,
-               COALESCE(s.type_name, r.type_name) AS type_name,
-               CASE
-                 WHEN s.type_name IS NOT NULL THEN s.type_source
-                 WHEN r.type_name IS NOT NULL THEN 'call-return'
-               END AS type_source,
-               -- A call-return row holds what its target returns; an untyped row, one.
-               CASE
-                 WHEN s.type_name IS NULL AND r.type_name IS NOT NULL THEN r.type_multiplicity
-                 ELSE COALESCE(s.type_multiplicity, 'one')
-               END AS type_multiplicity
+      call_return AS (
+        -- A local that bound the call WITHOUT consuming its wrapper ('load()', not
+        -- 'load()?' / 'await load()') holds the wrapper itself, one of it. Only an
+        -- explicit false reads so: a row written before migration 036 carries NULL
+        -- and keeps the target's T (bd tea-rags-mcp-bjzaf).
+        SELECT s.*,
+               (s.bound_call_unwrapped = false AND r.return_wrapper IS NOT NULL) AS holds_wrapper,
+               r.type_name AS return_type_name, r.type_multiplicity AS return_type_multiplicity,
+               r.return_wrapper AS return_wrapper_name
           FROM scoped s
           LEFT JOIN call_targets t
             ON s.type_name IS NULL
@@ -234,6 +288,22 @@ export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
           LEFT JOIN return_types r
             ON r.rel_path = t.target_rel_path
            AND r.owner_symbol_id = t.target_symbol_id
+      ),
+      resolved AS (
+        SELECT c.rel_path, c.owner_symbol_id, c.kind, c.name, c.line,
+               COALESCE(c.type_name, CASE WHEN c.holds_wrapper THEN c.return_wrapper_name ELSE c.return_type_name END)
+                 AS type_name,
+               CASE
+                 WHEN c.type_name IS NOT NULL THEN c.type_source
+                 WHEN c.holds_wrapper OR c.return_type_name IS NOT NULL THEN 'call-return'
+               END AS type_source,
+               -- A call-return row holds what its target returns; an untyped row, one.
+               CASE
+                 WHEN c.type_name IS NULL AND c.holds_wrapper THEN 'one'
+                 WHEN c.type_name IS NULL AND c.return_type_name IS NOT NULL THEN c.return_type_multiplicity
+                 ELSE COALESCE(c.type_multiplicity, 'one')
+               END AS type_multiplicity
+          FROM call_return c
       )`,
     params: scope.params,
   };
@@ -283,7 +353,8 @@ export class DuckDbIdentifierStore {
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {
     if (q.types.length === 0) return [];
     const cte = resolvedIdentifiersCte(pathPrefixPredicate(q.pathPrefixes));
-    const lang = fileLanguageGrouping("resolved", q.groupByLanguage);
+    const siblings = sameTypeSiblingPieces(q.countSameTypeSiblings, q.types);
+    const lang = fileLanguageGrouping(siblings.from, q.groupByLanguage);
     const multiplicity = q.groupByMultiplicity ? ", type_multiplicity" : "";
     const rows = await this.session.queryAll<{
       type_name: string;
@@ -294,15 +365,16 @@ export class DuckDbIdentifierStore {
       n: number | string;
       example_owner: string;
       file_language?: string | null;
+      same_type_sibling_n?: number | string | bigint | null;
     }>(
       `${cte.sql}
        SELECT type_name, kind, name, type_source${multiplicity}, count(*) AS n,
-              min(owner_symbol_id) AS example_owner${lang.column}
+              min(owner_symbol_id) AS example_owner${siblings.column}${lang.column}
          FROM ${lang.from}
         WHERE type_name IN (${placeholders(q.types)})
         GROUP BY type_name, kind, name, type_source${multiplicity}${lang.column}
         ORDER BY n DESC, type_name, kind, name, type_source${multiplicity}${lang.order}`,
-      [...cte.params, ...q.types],
+      [...cte.params, ...siblings.params, ...q.types],
     );
     return rows.map((r) => ({
       typeName: r.type_name,
@@ -312,6 +384,9 @@ export class DuckDbIdentifierStore {
       ...(q.groupByMultiplicity && r.type_multiplicity ? { typeMultiplicity: r.type_multiplicity } : {}),
       n: Number(r.n),
       exampleOwner: r.example_owner,
+      ...(r.same_type_sibling_n !== undefined && r.same_type_sibling_n !== null
+        ? { sameTypeSiblingN: Number(r.same_type_sibling_n) }
+        : {}),
       ...languageField(q.groupByLanguage, r),
     }));
   }
@@ -447,7 +522,8 @@ export class DuckDbIdentifierStore {
     const suffix = pathSuffixPredicate(q.pathSuffixes);
     const rows = await this.session.queryAll<{ language: string | null; n: number | string }>(
       `SELECT f.language, count(*) AS n
-         FROM (SELECT rel_path FROM cg_identifiers WHERE ${scope.sql} AND ${suffix.sql}) i
+         FROM (SELECT rel_path FROM cg_identifiers
+                WHERE ${scope.sql} AND ${suffix.sql} AND ${DECLARED_IDENTIFIER_SQL}) i
          LEFT JOIN cg_symbols_files f ON f.rel_path = i.rel_path
         GROUP BY f.language
         ORDER BY n DESC, f.language NULLS LAST`,

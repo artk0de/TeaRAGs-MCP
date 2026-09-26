@@ -192,7 +192,14 @@ export interface DaemonRequest {
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes
     | { collection: string; entries: IdentifierReplaceEntry[] } // replaceIdentifiersBulk
-    | { collection: string; types: string[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByType | countIdentifiers
+    | {
+        collection: string;
+        types: string[];
+        pathPrefixes?: string[];
+        groupByLanguage?: boolean;
+        groupByMultiplicity?: boolean;
+        countSameTypeSiblings?: boolean;
+      } // aggregateIdentifiersByType | countIdentifiers
     | { collection: string; callees: IdentifierBoundCallee[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByCallee
     | { collection: string; names: string[] } // identifierNameTypes | existingSymbolShortNames
     | { collection: string; names: string[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByName

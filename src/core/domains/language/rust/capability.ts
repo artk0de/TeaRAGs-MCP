@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "rust",
@@ -9,6 +10,7 @@ export const capability: LanguageCapability = {
     hooks: [{ name: "nameExtractor", short: "named-item extraction" }],
   },
   tests: { tier: "medium", detection: "*_test.rs", tech: "generic AST (#[test] attrs not preserved)" },
+  testFiles,
   codegraph: { tier: "moderate", tech: "7-strategy; trait-based dispatch" },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2: bd tea-rags-mcp-f11nz — innermost-chunk call attribution. Every

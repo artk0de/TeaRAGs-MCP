@@ -1,0 +1,2 @@
+
+ALTER TABLE cg_symbols ADD COLUMN IF NOT EXISTS symbol_kind VARCHAR;

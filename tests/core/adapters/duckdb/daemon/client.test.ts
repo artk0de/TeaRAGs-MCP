@@ -826,6 +826,31 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
     expect(params("existingSymbolShortNames")).toMatchObject({ names: ["doc"] });
   });
 
+  it("forwards the type aggregate's multiplicity split and same-type sibling count", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return [];
+    });
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await client.aggregateIdentifiersByType({
+      types: ["Doc"],
+      groupByLanguage: true,
+      groupByMultiplicity: true,
+      countSameTypeSiblings: true,
+    });
+    await client.close();
+    expect(seen.find((r) => r.op === "aggregateIdentifiersByType")?.params).toMatchObject({
+      types: ["Doc"],
+      groupByLanguage: true,
+      groupByMultiplicity: true,
+      countSameTypeSiblings: true,
+    });
+  });
+
   it("proxies the naming-lexicon scope reads with their params (bd tea-rags-mcp-4p3sb.11)", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");

@@ -106,6 +106,7 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   kwargs: (base, pass) => base ?? pass,
   acceptsBlock: (base, pass) => base ?? pass,
   isAbstractStub: (base, pass) => base ?? pass,
+  symbolKind: (base, pass) => base ?? pass,
 };
 
 const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = {

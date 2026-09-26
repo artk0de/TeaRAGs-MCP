@@ -5,7 +5,9 @@
  * included), `const` / `let` / `var` declarators and class fields — and each
  * function's return annotation as a `return` of the function itself (bd
  * tea-rags-mcp-4p3sb.21), read by the same annotation reader, an async
- * function's `Promise<T>` naming `T` (see `typescriptReturnTypeNode`).
+ * function's `Promise<T>` naming `T` with `Promise` as its wrapper (see
+ * `typescriptReturnType`), and a local bound to an awaited call marked
+ * unwrapped.
  *
  * The binding-pattern reader and the `new X()` reading are ECMAScript, not
  * TypeScript, and JavaScript's syntax imports both from here. A destructuring
@@ -176,31 +178,62 @@ function typescriptBoundCallee(value: AstNode): IdentifierBoundCallee | undefine
   return boundCalleeFromCallShape(typescriptCallSiteShape(ecmascriptOutermostCall(value)));
 }
 
+/** `await f()` consumes the Promise `f` returns (bd tea-rags-mcp-bjzaf); `f()!` only asserts it non-null. */
+function typescriptBoundCallUnwraps(value: AstNode): boolean {
+  return value.type === "await_expression";
+}
+
+/** The head of an async function's return, the wrapper its callers' `await` consumes. */
+const PROMISE_WRAPPER = "Promise";
+
 /**
- * The annotation a function's return declaration is read from. An `async`
- * function's `Promise<T>` names `T`: the call-return join types `const doc =
- * await load()` through `load`'s return row and never sees the `await`, and
- * awaiting is what an async function's callers do. A non-async `Promise<T>`
- * keeps its head — returned as a value, it is a promise.
+ * The annotation a function's return declaration is read from, and the wrapper
+ * it was read out of. An `async` function's `Promise<T>` names `T` with
+ * `Promise` as its wrapper: `const doc = await load()` is a `T`, and awaiting
+ * is what an async function's callers do, while `const p = load()` holds the
+ * `Promise` — the call-return join decides off the caller's row (bd
+ * tea-rags-mcp-bjzaf). An async `Promise<void>` (or any `T` naming no single
+ * value) keeps the wrapper with no type: awaited it binds nothing, unawaited it
+ * is still a Promise. A non-async `Promise<T>` keeps its head and no wrapper —
+ * returned as a value, it is a promise.
  */
-function typescriptReturnTypeNode(fn: AstNode): AstNode | null {
+function typescriptReturnType(fn: AstNode): { typeNode: AstNode | null; wrapper?: string } {
   const annotation = fn.childForFieldName("return_type");
-  if (annotation === null) return null;
+  if (annotation === null) return { typeNode: null };
   const inner = annotation.type === "type_annotation" ? annotation.namedChild(0) : annotation;
   const isAsync = fn.children.some((child) => child.type === "async");
-  if (!isAsync || inner?.type !== "generic_type" || inner.childForFieldName("name")?.text !== "Promise") {
-    return namesNoValue(inner) ? null : annotation;
+  if (!isAsync || inner?.type !== "generic_type" || inner.childForFieldName("name")?.text !== PROMISE_WRAPPER) {
+    return { typeNode: namesNoValue(inner) ? null : annotation };
   }
   // Positional: the argument list is the `type_arguments` child.
   const awaited = inner.namedChildren.find((child) => child.type === "type_arguments")?.namedChild(0) ?? null;
-  return namesNoValue(awaited) ? null : awaited;
+  // `Promise<void>` resolves to nothing, but the call is still a Promise until awaited.
+  return { typeNode: namesNoValue(awaited) ? null : awaited, wrapper: PROMISE_WRAPPER };
 }
 
-/** Returns nothing a local could hold: `void`, `never`, `undefined`. */
-const VALUELESS_RETURN_TYPES = new Set(["void", "never", "undefined"]);
+/** A `return` site of `fn`, named by `nameNode`, carrying the wrapper its type was read out of. */
+function returnSite(nameNode: AstNode, fn: AstNode): DeclaredIdentifierSite {
+  const { typeNode, wrapper } = typescriptReturnType(fn);
+  return wrapper === undefined
+    ? { nameNode, kind: "return", typeNode }
+    : { nameNode, kind: "return", typeNode, returnWrapper: wrapper };
+}
 
+/** Keywords returning nothing a local could hold: `void`, `never`. */
+const VALUELESS_PREDEFINED_TYPES = new Set(["void", "never"]);
+
+/** Literal types holding no value to name a local after: `undefined`, `null`. */
+const VALUELESS_LITERAL_TYPES = new Set(["undefined", "null"]);
+
+/**
+ * Returns nothing a local could hold. tree-sitter spells `void` / `never` as a
+ * `predefined_type` but `undefined` / `null` as a `literal_type` wrapping the
+ * keyword node (bd tea-rags-mcp-1hj3o), so each is matched in its own shape.
+ */
 function namesNoValue(type: AstNode | null): boolean {
-  return type?.type === "predefined_type" && VALUELESS_RETURN_TYPES.has(type.text);
+  if (type?.type === "predefined_type") return VALUELESS_PREDEFINED_TYPES.has(type.text);
+  if (type?.type === "literal_type") return VALUELESS_LITERAL_TYPES.has(type.namedChild(0)?.type ?? "");
+  return false;
 }
 
 /** A declaration that names itself: `function f(): T`, `m(): T`, `get(): T;` in an interface. */
@@ -209,7 +242,7 @@ function namedFunctionReturnRule(nodeType: string): IdentifierDeclarationRule {
     nodeType,
     collect: (node) => {
       const nameNode = node.childForFieldName("name");
-      return nameNode === null ? [] : [{ nameNode, kind: "return", typeNode: typescriptReturnTypeNode(node) }];
+      return nameNode === null ? [] : [returnSite(nameNode, node)];
     },
   };
 }
@@ -225,7 +258,7 @@ function boundFunctionReturnRule(nodeType: string): IdentifierDeclarationRule {
       const nameNode = node.childForFieldName("name");
       const value = node.childForFieldName("value");
       if (nameNode === null || value === null || !FUNCTION_VALUE_TYPES.has(value.type)) return [];
-      return [{ nameNode, kind: "return", typeNode: typescriptReturnTypeNode(value) }];
+      return [returnSite(nameNode, value)];
     },
   };
 }
@@ -249,4 +282,5 @@ export const TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSynt
   annotationType: typescriptAnnotationType,
   constructorType: ecmascriptConstructorType,
   boundCalleeOf: typescriptBoundCallee,
+  boundCallUnwraps: typescriptBoundCallUnwraps,
 };

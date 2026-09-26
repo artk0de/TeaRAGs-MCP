@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { TEST_PATTERNS_BY_LANGUAGE } from "../../../src/core/infra/file-classification/patterns.js";
+import { languageTestFileConventions } from "../../../src/core/domains/language/capability/native.js";
+import { COMMON_TEST_DIRECTORY_PATTERNS } from "../../../src/core/infra/file-classification/patterns.js";
 import { detectScope, getDefaultTestPaths, isTestPath } from "../../../src/core/infra/scope-detection.js";
 
 describe("detectScope", () => {
@@ -89,20 +90,20 @@ describe("getDefaultTestPaths", () => {
     // Every suffix the file classifier calls a test in these languages is a
     // test path here too — one fact, so the two answers cannot drift apart.
     for (const language of ["typescript", "javascript"]) {
-      for (const pattern of TEST_PATTERNS_BY_LANGUAGE[language]) {
+      for (const pattern of languageTestFileConventions()[language].patterns) {
         const relPath = pattern.replace("**/*", "src/sample");
         expect(isTestPath(relPath, language), `${language} ${relPath}`).toBe(true);
       }
     }
   });
 
-  it("derives every classifier language's test paths from TEST_PATTERNS_BY_LANGUAGE (bd tea-rags-mcp-jl3ff)", () => {
+  it("derives every classifier language's test paths from the installed language conventions (bd tea-rags-mcp-jl3ff)", () => {
     // One table answers "is this path a test file in language X" for both the
     // file classifier and scope detection: the shared directory conventions
     // plus the language's own suffixes. A hand copy here drifted to
     // root-anchored globs and disagreed with the classifier on nested layouts.
-    const { common, ...byLanguage } = TEST_PATTERNS_BY_LANGUAGE;
-    for (const [language, suffixes] of Object.entries(byLanguage)) {
+    const common = COMMON_TEST_DIRECTORY_PATTERNS;
+    for (const [language, { patterns: suffixes }] of Object.entries(languageTestFileConventions())) {
       expect(getDefaultTestPaths(language), language).toEqual([...common, ...suffixes]);
     }
   });
@@ -118,7 +119,7 @@ describe("getDefaultTestPaths", () => {
   });
 
   it("falls back to the language-agnostic test directories for an unknown language", () => {
-    expect(getDefaultTestPaths("brainfuck")).toEqual([...TEST_PATTERNS_BY_LANGUAGE.common]);
+    expect(getDefaultTestPaths("brainfuck")).toEqual([...COMMON_TEST_DIRECTORY_PATTERNS]);
   });
 
   it("returns fallback paths for unknown language", () => {

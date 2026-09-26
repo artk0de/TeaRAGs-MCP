@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "javascript",
@@ -17,6 +18,7 @@ export const capability: LanguageCapability = {
     detection: "*.test.js / *.spec.jsx",
     tech: "testScopeChunker (describe/it scopes, one addressable chunk per example)",
   },
+  testFiles,
   codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
   // chunking 2: bd tea-rags-mcp-1etj8 — `jsTestDslFilterHook` +
   // `jsTestScopeChunkerHook` composed into the hook chain and

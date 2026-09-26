@@ -20,6 +20,11 @@
  * symbol, strongest producer first: the syntactic `return` declaration (the
  * written annotation), then `structuredReturnTypes`, then the flat
  * `functionReturnTypes` channel. Every `return` row persists as `return-type`.
+ * Only the syntactic one can carry a `returnWrapper` (`Result`, `Promise`), and
+ * a bound local carries whether its call was unwrapped — the pair the join
+ * reads to type `load()?` as `T` and `load()` as the wrapper (bd
+ * tea-rags-mcp-bjzaf). A wrapper around no nameable value (`Result<(), E>`,
+ * an async `Promise<void>`) yields a `return` row with the wrapper and NO type.
  *
  * Every stage that reads a collection as its element keeps that the row holds
  * MANY of it (`typeMultiplicity: "many"`, bd tea-rags-mcp-4p3sb.26): the
@@ -29,8 +34,9 @@
  *
  * Two types are never persisted. A constructor publishes no `return` row: what
  * it "returns" is its own class, not a naming choice, and the row would pollute
- * every return-kind vocabulary. A value constant (`APP_ROOTS_FOR_LOOKUP`) is
- * never a type: a stage that answers with one leaves the row untyped.
+ * every return-kind vocabulary. A value constant (`APP_ROOTS_FOR_LOOKUP`) and a
+ * `Self` marker are never types: a stage that answers with one leaves the row
+ * untyped, and a return channel answering with one publishes no row.
  *
  * Invariant: every row is a declaration or a declared return type. A name a
  * naming convention could type but nothing declares yields no row, and no stage
@@ -121,6 +127,25 @@ const SCREAMING_SNAKE = /^_*[A-Z][A-Z0-9]*(?:_+[A-Z0-9]+)+_*$/;
 function isValueConstantName(typeName: string): boolean {
   const segments = typeName.split(/::|[./]/);
   return SCREAMING_SNAKE.test(segments[segments.length - 1] ?? typeName);
+}
+
+/**
+ * `Self` — and an associated type rooted at it (`Self::Item`, `Self.Element`)
+ * — names the RECEIVER's type, which only a resolver's fold knows: Swift's
+ * `SWIFT_SELF_RETURN` and Python's `PYTHON_SELF_RETURN` are markers published
+ * for exactly that substitution (bd tea-rags-mcp-1hj3o). Where the syntax pins
+ * `Self` to a type — a Swift type body, a Rust `impl` — the language's pass
+ * writes that type itself, so whatever reaches the row builder as `Self` is one
+ * no syntax could pin (a protocol's `-> Self`), and persisting it would group
+ * every such identifier under one fake type.
+ */
+function isSelfTypeMarker(typeName: string): boolean {
+  return typeName.split(/::|\./)[0] === "Self";
+}
+
+/** Names that answer a type stage without naming a type: a value constant, a `Self` marker. */
+function namesNoType(typeName: string): boolean {
+  return isValueConstantName(typeName) || isSelfTypeMarker(typeName);
 }
 
 /** Drop the root-namespace marker: `::System` and `System` name one type. */
@@ -282,16 +307,19 @@ function declarationRow(
   const chunk = ownerChunkOf(chunksBySymbol.get(decl.ownerSymbolId), decl.line);
   const row: IdentifierRow = { ownerSymbolId: decl.ownerSymbolId, kind: decl.kind, name: decl.name, line: decl.line };
   const type = recoveredType(extraction, chunk, decl, finders);
-  if (type && !isValueConstantName(type.typeName)) {
+  if (type && !namesNoType(type.typeName)) {
     row.typeName = normalizeTypeName(type.typeName);
     row.typeSource = type.typeSource;
     if (type.typeMultiplicity === "many") row.typeMultiplicity = "many";
   }
+  // Travels with or without a type: a `Result<(), E>` return is the wrapper alone.
+  if (decl.kind === "return" && decl.returnWrapper !== undefined) row.returnWrapper = decl.returnWrapper;
   if (decl.boundCallee) {
     row.boundMember = decl.boundCallee.member;
     if (decl.boundCallee.receiver !== undefined) row.boundReceiver = decl.boundCallee.receiver;
     const callExpression = boundCallExpressionOf(chunk, decl);
     if (callExpression !== undefined) row.boundCallExpression = callExpression;
+    if (decl.boundCallUnwrapped === true) row.boundCallUnwrapped = true;
   }
   return row;
 }
@@ -317,7 +345,7 @@ function structuredReturnRows(extraction: FileExtraction, typedOwners: Set<strin
   for (const chunk of extraction.chunks) {
     if (typedOwners.has(chunk.symbolId) || !Object.hasOwn(returnTypes, chunk.symbolId)) continue;
     const type = singleNominalType(returnTypes[chunk.symbolId]);
-    if (!type || isValueConstantName(type.typeName)) continue;
+    if (!type || namesNoType(type.typeName)) continue;
     typedOwners.add(chunk.symbolId);
     rows.push(channelReturnRow(chunk, type));
   }
@@ -362,7 +390,7 @@ function flatReturnRows(extraction: FileExtraction, typedOwners: Set<string>): I
     if (candidates?.length !== 1 || recorded === "") continue;
     const [chunk] = candidates;
     const typeName = flatTypeName(recorded);
-    if (typedOwners.has(chunk.symbolId) || isValueConstantName(typeName)) continue;
+    if (typedOwners.has(chunk.symbolId) || namesNoType(typeName)) continue;
     typedOwners.add(chunk.symbolId);
     rows.push(channelReturnRow(chunk, { typeName }));
   }

@@ -1,6 +1,8 @@
 import picomatch from "picomatch";
 
-import { TEST_PATTERNS_BY_LANGUAGE } from "./file-classification/patterns.js";
+import type { TestFileConventions } from "../contracts/types/file-classification.js";
+import { COMMON_TEST_DIRECTORY_PATTERNS } from "./file-classification/patterns.js";
+import { installedTestFileConventions } from "./file-classification/test-file-conventions.js";
 
 export type ChunkScope = "source" | "test" | null;
 
@@ -10,42 +12,51 @@ export interface ScopeDetectionConfig {
 }
 
 /**
- * Default test paths are DERIVED from `TEST_PATTERNS_BY_LANGUAGE`, the file
- * classifier's per-language table: its language-agnostic `common` directories
- * plus the language's own suffixes. A hand copy here drifted twice — it missed
- * TypeScript's `.mts` / `.cts` suffixes (bd tea-rags-mcp-1y13c), and its
+ * Suffix conventions for languages the classifier's conventions do not carry
+ * yet. They stay scope-detection-only because moving them into the
+ * conventions would also change what the classifier calls a test — git
+ * enrichment policy and codegraph exclusion — which is a separate decision
+ * (see bd tea-rags-mcp-jl3ff). Only languages with no `domains/language`
+ * vertical belong here (a vertical declares its masks in its own directory,
+ * bd tea-rags-mcp-vjz6s), and a key the conventions also carry is overridden
+ * by them. Directory conventions are NOT repeated here:
+ * `COMMON_TEST_DIRECTORY_PATTERNS` covers them for every language.
+ */
+const SCOPE_ONLY_TEST_SUFFIXES: Readonly<Record<string, readonly string[]>> = {
+  csharp: ["**/*.Tests/**", "**/Tests/**", "**/*Test.cs", "**/*Tests.cs"],
+  elixir: ["**/*_test.exs"],
+};
+
+/** Default test paths, derived for the conventions installed when they were derived. */
+let defaultTestPaths: { conventions: TestFileConventions; byLanguage: Readonly<Record<string, string[]>> } | undefined;
+
+/**
+ * Default test paths are DERIVED from the file classifier's installed
+ * per-language test-file conventions: the language-agnostic test directories
+ * plus the language's own file shapes. A hand copy here drifted twice — it
+ * missed TypeScript's `.mts` / `.cts` suffixes (bd tea-rags-mcp-1y13c), and its
  * root-anchored `spec/` glob disagreed with the classifier's any-depth one on
  * nested layouts (bd tea-rags-mcp-jl3ff): a Rails-engine spec was enriched as a
  * test while its signals landed in the SOURCE percentile bucket.
  */
-const { common: COMMON_TEST_DIRECTORIES, ...TEST_SUFFIXES_BY_LANGUAGE } = TEST_PATTERNS_BY_LANGUAGE;
-
-/**
- * Suffix conventions for languages the classifier table does not carry yet.
- * They stay scope-detection-only because moving them into the table would also
- * change what the classifier calls a test — git enrichment policy and codegraph
- * exclusion — which is a separate decision (see bd tea-rags-mcp-jl3ff).
- * Directory conventions are NOT repeated here: `COMMON_TEST_DIRECTORIES` covers
- * them for every language.
- */
-const SCOPE_ONLY_TEST_SUFFIXES: Readonly<Record<string, readonly string[]>> = {
-  csharp: ["**/*.Tests/**", "**/Tests/**", "**/*Test.cs", "**/*Tests.cs"],
-  swift: ["**/Tests/**", "**/*Tests.swift"],
-  php: ["**/*Test.php"],
-  elixir: ["**/*_test.exs"],
-};
-
-const DEFAULT_TEST_PATHS: Readonly<Record<string, string[]>> = Object.fromEntries(
-  Object.entries({ ...SCOPE_ONLY_TEST_SUFFIXES, ...TEST_SUFFIXES_BY_LANGUAGE }).map(([language, suffixes]) => [
-    language,
-    [...COMMON_TEST_DIRECTORIES, ...suffixes],
-  ]),
-);
-
-const FALLBACK_TEST_PATHS = [...COMMON_TEST_DIRECTORIES];
+function defaultTestPathsByLanguage(): Readonly<Record<string, string[]>> {
+  const conventions = installedTestFileConventions();
+  if (defaultTestPaths?.conventions !== conventions) {
+    const suffixes: Record<string, readonly string[]> = { ...SCOPE_ONLY_TEST_SUFFIXES };
+    for (const [language, convention] of Object.entries(conventions)) suffixes[language] = convention.patterns;
+    const byLanguage = Object.fromEntries(
+      Object.entries(suffixes).map(([language, patterns]) => [
+        language,
+        [...COMMON_TEST_DIRECTORY_PATTERNS, ...patterns],
+      ]),
+    );
+    defaultTestPaths = { conventions, byLanguage };
+  }
+  return defaultTestPaths.byLanguage;
+}
 
 export function getDefaultTestPaths(language: string): string[] {
-  return DEFAULT_TEST_PATHS[language] ?? FALLBACK_TEST_PATHS;
+  return defaultTestPathsByLanguage()[language] ?? [...COMMON_TEST_DIRECTORY_PATTERNS];
 }
 
 /** Check if a relative path matches test directory patterns for the given language. */

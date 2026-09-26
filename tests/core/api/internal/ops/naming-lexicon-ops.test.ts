@@ -713,6 +713,58 @@ describe("NamingLexiconOps", () => {
     });
   });
 
+  describe("QUALIFIED is a second binding of the type in the same owner (bd tea-rags-mcp-1hj3o)", () => {
+    beforeEach(async () => {
+      const node = { typeName: "Node", typeSource: "annotation" as const };
+      await write(
+        [
+          {
+            relPath: "src/graph.ts",
+            rows: [
+              ...[0, 1, 2, 3, 4, 5].map((i) => local(`Graph${i}#walk`, "node", { ...node, line: i + 1 })),
+              // `sourceNode` beside the param `node`: a confirmed qualifier.
+              ...[0, 1, 2].flatMap((i) => [
+                { ...local(`Graph${i}#link`, "node", { ...node, line: 20 + i }), kind: "param" as const },
+                local(`Graph${i}#link`, "sourceNode", { ...node, line: 30 + i }),
+              ]),
+              // `resultNode` alone in its owner: an arbitrary prefix, a role name.
+              ...[0, 1, 2].map((i) => local(`Graph${i}#find`, "resultNode", { ...node, line: 40 + i })),
+            ],
+          },
+        ],
+        "typescript",
+      );
+    });
+
+    it("byType counts a qualified local as QUALIFIED only beside a second Node, FREE otherwise", async () => {
+      const result = await ops.getNamingLexicon({ collection: "c", language: "typescript", types: ["Node"] });
+      expect(result.byType[0].shapes.local).toEqual([
+        { shape: "EXACT", share: 0.5 },
+        { shape: "QUALIFIED", share: 0.25 },
+        { shape: "FREE", share: 0.25 },
+      ]);
+    });
+
+    it("a known lone qualifier conforms; a novel FREE local is a NEW_TERM with the type's names", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "typescript",
+        names: [
+          { name: "resultNode", type: "Node" },
+          { name: "targetNode", type: "Node" },
+          { name: "x", type: "Node" },
+        ],
+      });
+      expect(result.names[0]).toMatchObject({ name: "resultNode", verdict: "CONFORMS" });
+      expect(result.names[1]).toMatchObject({ name: "targetNode", verdict: "CONFORMS" });
+      expect(result.names[2]).toMatchObject({
+        name: "x",
+        verdict: "NEW_TERM",
+        topTerms: ["node", "resultNode", "sourceNode"],
+      });
+    });
+  });
+
   describe("a draft named with a judged generic name carries a caveat", () => {
     function buildWithOntology(): NamingLexiconOps {
       const graphDb = new Proxy(db, {

@@ -8,15 +8,17 @@
 import { DuckDBInstance } from "@duckdb/node-api";
 import { describe, expect, it } from "vitest";
 
-import {
-  compileNonProductionPathPredicate,
-  NON_PRODUCTION_PATH_SQL,
-} from "../../../../src/core/adapters/duckdb/non-production-path-sql.js";
+import { compileNonProductionPathPredicate } from "../../../../src/core/adapters/duckdb/non-production-path-sql.js";
 import {
   buildNonProductionPathFilter,
+  installedTestFileConventions,
   NON_PRODUCTION_PATTERNS,
-  TEST_PATTERNS,
+  nonProductionPathPatterns,
+  testPathPatterns,
 } from "../../../../src/core/infra/file-classification/index.js";
+
+/** The predicate the ontology report compiles from the installed conventions. */
+const nonProductionPathSql = compileNonProductionPathPredicate(nonProductionPathPatterns());
 
 /** A concrete spelling of one pattern's single segment: `*` → `foo`, `?` → `q`. */
 function sampleSegment(pattern: string): { segment: string; directory: boolean } {
@@ -32,7 +34,7 @@ function sampleSegment(pattern: string): { segment: string; directory: boolean }
 
 function corpus(): string[] {
   const paths = new Set<string>();
-  for (const pattern of [...NON_PRODUCTION_PATTERNS, ...TEST_PATTERNS]) {
+  for (const pattern of [...NON_PRODUCTION_PATTERNS, ...testPathPatterns(installedTestFileConventions()).all]) {
     const { segment, directory } = sampleSegment(pattern);
     const upper = segment.toUpperCase();
     const lower = segment.toLowerCase();
@@ -69,7 +71,7 @@ function corpus(): string[] {
   return [...paths];
 }
 
-describe("NON_PRODUCTION_PATH_SQL", () => {
+describe("compileNonProductionPathPredicate over the installed non-production patterns", () => {
   it("agrees with buildNonProductionPathFilter on every corpus path, evaluated in DuckDB", async () => {
     const paths = corpus();
     const connection = await (await DuckDBInstance.create(":memory:")).connect();
@@ -77,7 +79,7 @@ describe("NON_PRODUCTION_PATH_SQL", () => {
       await connection.run("CREATE TABLE p (rel_path VARCHAR)");
       for (const path of paths) await connection.run("INSERT INTO p VALUES ($1)", [path]);
       const reader = await connection.runAndReadAll(
-        `SELECT rel_path, (${NON_PRODUCTION_PATH_SQL("rel_path")}) AS non_production FROM p`,
+        `SELECT rel_path, (${nonProductionPathSql("rel_path")}) AS non_production FROM p`,
       );
       const filter = buildNonProductionPathFilter();
       const mismatches = reader
@@ -94,7 +96,7 @@ describe("NON_PRODUCTION_PATH_SQL", () => {
   });
 
   it("is constant SQL: no bound parameters, no per-path list", () => {
-    const sql = NON_PRODUCTION_PATH_SQL("rel_path");
+    const sql = nonProductionPathSql("rel_path");
     // Only `(?i)` carries a `?`: no `?` / `$n` placeholder is left to bind.
     expect(sql.replaceAll("(?i)", "")).not.toMatch(/\?|\$\d/);
     expect(sql).not.toMatch(/ IN \(/);
