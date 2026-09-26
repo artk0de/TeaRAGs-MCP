@@ -41,7 +41,8 @@ import type {
   InheritanceEdge,
   NonPublicMemberEdge,
   OntologyReportQuery,
-  OntologyReportRows,
+  OntologyReportSectionRows,
+  OntologyReportSummaryRows,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -922,8 +923,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
     })) as IdentifierShapeSampleRow[];
   }
 
-  async readOntologyReport(q: OntologyReportQuery): Promise<OntologyReportRows> {
-    return (await this.call("readOntologyReport", { query: q })) as OntologyReportRows;
+  async readOntologyReportSummary(q: OntologyReportQuery): Promise<OntologyReportSummaryRows> {
+    return (await this.call("readOntologyReportSummary", { query: q })) as OntologyReportSummaryRows;
+  }
+
+  async readOntologyReportSections(
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ): Promise<OntologyReportSectionRows> {
+    return (await this.call("readOntologyReportSections", {
+      query: q,
+      excludedGenericNames: [...excludedGenericNames],
+    })) as OntologyReportSectionRows;
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

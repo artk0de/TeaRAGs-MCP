@@ -899,20 +899,16 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
 });
 
 describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)", () => {
-  it("proxies readOntologyReport through the daemon socket with the whole query", async () => {
+  it("proxies both ontology report reads through the daemon socket with the whole query and the excluded names", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");
-    const rows = {
-      totals: { identifierRows: 2, symbolRows: 1 },
-      evidenceRows: 2,
-      genericNameCount: 0,
-      genericNames: [],
-      homonyms: [],
-    };
+    const summaryRows = { totals: { identifierRows: 2, symbolRows: 1 }, genericNameCount: 0, genericNames: [] };
+    const sectionRows = { evidenceRows: 2, homonyms: [] };
     const seen: DaemonRequest[] = [];
     await echoServer(socketPath, (r) => {
       seen.push(r);
-      return r.op === "readOntologyReport" ? rows : null;
+      if (r.op === "readOntologyReportSummary") return summaryRows;
+      return r.op === "readOntologyReportSections" ? sectionRows : null;
     });
 
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
@@ -936,10 +932,20 @@ describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)"
         groupPool: 20,
       },
     };
-    const report = await client.readOntologyReport(q);
+    const summary = await client.readOntologyReportSummary(q);
+    const sections = await client.readOntologyReportSections(q, ["actor", "data"]);
     await client.close();
 
-    expect(report).toEqual(rows);
-    expect(seen.find((r) => r.op === "readOntologyReport")?.params).toEqual({ collection: "code_x_v1", query: q });
+    expect(summary).toEqual(summaryRows);
+    expect(sections).toEqual(sectionRows);
+    expect(seen.find((r) => r.op === "readOntologyReportSummary")?.params).toEqual({
+      collection: "code_x_v1",
+      query: q,
+    });
+    expect(seen.find((r) => r.op === "readOntologyReportSections")?.params).toEqual({
+      collection: "code_x_v1",
+      query: q,
+      excludedGenericNames: ["actor", "data"],
+    });
   });
 });

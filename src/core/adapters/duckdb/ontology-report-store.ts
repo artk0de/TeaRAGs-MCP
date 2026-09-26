@@ -2,6 +2,16 @@
  * The project-wide naming ontology audit over `cg_identifiers`
  * (bd tea-rags-mcp-4p3sb.20) — the reads behind `get_ontology_report`.
  *
+ * Two reads, one per phase of a report. The summary read
+ * ({@link DuckDbOntologyReportStore#readOntologyReportSummary}) returns the
+ * totals and the generic-name CANDIDATES; the caller judges them and passes the
+ * names it keeps to the sections read
+ * ({@link DuckDbOntologyReportStore#readOntologyReportSections}), which drops
+ * exactly those names from its evidence. The store holds no naming-shape
+ * classifier, so it cannot judge a candidate, and the sections must exclude the
+ * judged set, not the candidates: `form` over 729 `*Form` classes is a
+ * candidate, a role word once judged, and its rows are evidence.
+ *
  * Every section aggregates in DuckDB: one query per section over a shared CTE
  * chain, one row per finding, names and types folded into `list(...)` columns.
  * Nothing scrolls the table into JS — a large project holds ~10^5–10^6 rows.
@@ -19,15 +29,14 @@
  *     TS / Ruby / Rust / Python convention for a binding the body ignores.
  *     Fields keep a leading `_` (Python `_private` is a real name), and a
  *     dunder (`__init__`) is no marker;
- *   - `generic` — names bound to many types none of which dominates. Data
- *     derived, so `result` / `data` / `item` drop out without a hardcoded list.
- *     Judged over the same scoped rows as every section: the summary reports
- *     the names generic IN the scope, and a name generic elsewhere but bound to
- *     one type here is evidence here. Generic by type count alone: the summary
- *     hands each name over with its types, and the ops layer — which owns the
- *     naming-shape classifier — drops the types the name spells (a type family's
- *     role word, `form` over `*Form`) before it reports the name as generic;
- *   - `evidence` — `concept_all` with the generic names removed.
+ *   - summary read: `generic` — the candidates, names bound to many types none
+ *     of which dominates. Data derived, so `result` / `data` / `item` surface
+ *     without a hardcoded list. Over the same scoped rows as every section: a
+ *     name generic elsewhere but bound to one type here is no candidate here.
+ *     Generic by type count alone — each goes out with its types, and the ops
+ *     layer drops the types the name spells before it calls the name generic;
+ *   - sections read: `evidence` — `concept_all` minus the rows of the caller's
+ *     excluded generic names.
  *
  * `name-inferred` types are never evidence: they are a query-time statistic of
  * the naming lexicon that is neither persisted nor computed here, so the audit
@@ -48,7 +57,8 @@ import type {
   OntologyLocationRow,
   OntologyNameCountRow,
   OntologyReportQuery,
-  OntologyReportRows,
+  OntologyReportSectionRows,
+  OntologyReportSummaryRows,
   OntologyTypeGroupRow,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
@@ -126,12 +136,17 @@ function nonConceptPredicate(q: OntologyReportQuery): SqlPredicate {
   return parts.length === 0 ? { sql: "FALSE", params: [] } : { sql: parts.join(" OR "), params };
 }
 
-/** The shared CTE chain — see the module doc. Ends with `evidence`; `resolved` and `generic` stay addressable. */
-function ontologyBaseCte(q: OntologyReportQuery): SqlPredicate {
+/** `name NOT IN (…)` over the excluded generic names; `TRUE` when there are none. */
+function notExcludedNamePredicate(excludedGenericNames: readonly string[]): SqlPredicate {
+  if (excludedGenericNames.length === 0) return { sql: "TRUE", params: [] };
+  return { sql: `name NOT IN (${placeholders(excludedGenericNames)})`, params: [...excludedGenericNames] };
+}
+
+/** The shared CTE chain up to `concept_all` — see the module doc. `resolved` stays addressable. */
+function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
   const resolved = resolvedIdentifiersCte(extensionPredicate(q.extensions));
   const nonConcept = nonConceptPredicate(q);
   const scope = pathPrefixPredicate(q.pathPrefixes);
-  const t = q.thresholds;
   return {
     sql: `${resolved.sql},
       concept_all AS (
@@ -144,21 +159,21 @@ function ontologyBaseCte(q: OntologyReportQuery): SqlPredicate {
            AND NOT (kind IN ('param', 'local') AND ${UNUSED_MARKER_SQL})
            AND NOT (${nonConcept.sql})
            AND ${scope.sql}
-      ),
-      name_types AS (
-        SELECT name, type_name, count(*) AS n FROM concept_all GROUP BY name, type_name
-      ),
-      generic AS (
-        SELECT name, count(*) AS type_count, sum(n) AS n
-          FROM name_types
-         GROUP BY name
-        HAVING count(*) >= ${int(t.genericMinTypes)} AND max(n) < ${num(t.genericMaxTopTypeShare)} * sum(n)
-      ),
-      evidence AS (
-        SELECT * FROM concept_all
-         WHERE name NOT IN (SELECT name FROM generic)
       )`,
     params: [...resolved.params, ...nonConcept.params, ...scope.params],
+  };
+}
+
+/** {@link ontologyConceptCte}, then `evidence`: the concept rows minus the excluded generic names. */
+function ontologyEvidenceCte(q: OntologyReportQuery, excludedGenericNames: readonly string[]): SqlPredicate {
+  const concept = ontologyConceptCte(q);
+  const kept = notExcludedNamePredicate(excludedGenericNames);
+  return {
+    sql: `${concept.sql},
+      evidence AS (
+        SELECT * FROM concept_all WHERE ${kept.sql}
+      )`,
+    params: [...concept.params, ...kept.params],
   };
 }
 
@@ -204,37 +219,48 @@ interface TypeGroupSelection {
 export class DuckDbOntologyReportStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
-  async readOntologyReport(q: OntologyReportQuery): Promise<OntologyReportRows> {
-    const sections = new Set(q.sections);
+  /** Phase 1: the totals and every generic-name candidate of the scope, with its types. */
+  async readOntologyReportSummary(q: OntologyReportQuery): Promise<OntologyReportSummaryRows> {
     const totals = await this.readTotals();
-    const summary = await this.readSummary(q);
+    const genericNames = await this.readGenericCandidates(q);
+    return { totals, genericNameCount: genericNames.length, genericNames };
+  }
+
+  /** Phase 2: the requested sections over the scope's evidence, the `excludedGenericNames` rows dropped. */
+  async readOntologyReportSections(
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ): Promise<OntologyReportSectionRows> {
+    const sections = new Set(q.sections);
+    const base = ontologyEvidenceCte(q, excludedGenericNames);
     const t = q.thresholds;
     const confidence = `least(1.0, power(total / ${num(t.confidenceSupport)}, 2))`;
     return {
-      totals,
-      ...summary,
+      evidenceRows: await this.readEvidenceRowCount(base),
       ...(sections.has("synonyms")
         ? {
-            synonyms: await this.readTypeGroups(q, {
+            synonyms: await this.readTypeGroups(q, base, {
               where: `top_n < ${num(t.synonymDominantShareCeiling)} * total`,
               score: `(1 - top_n / total) * ${confidence}`,
             }),
           }
         : {}),
-      ...(sections.has("homonyms") ? { homonyms: await this.readHomonyms(q) } : {}),
+      ...(sections.has("homonyms") ? { homonyms: await this.readHomonyms(q, base) } : {}),
       ...(sections.has("outliers")
         ? {
-            outlierGroups: await this.readTypeGroups(q, {
+            outlierGroups: await this.readTypeGroups(q, base, {
               where: `top_n >= ${num(t.outlierMinDominantShare)} * total`,
               score: `(top_n / total) * ${confidence}`,
             }),
           }
         : {}),
-      ...(sections.has("collisions") ? { collisions: await this.readCollisions(q) } : {}),
+      ...(sections.has("collisions")
+        ? { collisions: await this.readCollisions(q, base, notExcludedNamePredicate(excludedGenericNames)) }
+        : {}),
     };
   }
 
-  private async readTotals(): Promise<OntologyReportRows["totals"]> {
+  private async readTotals(): Promise<OntologyReportSummaryRows["totals"]> {
     const [row] = await this.session.queryAll<Row>(
       `SELECT (SELECT count(*) FROM cg_identifiers) AS identifier_rows,
               (SELECT count(*) FROM cg_symbols) AS symbol_rows`,
@@ -242,12 +268,29 @@ export class DuckDbOntologyReportStore {
     return { identifierRows: count(row?.identifier_rows), symbolRows: count(row?.symbol_rows) };
   }
 
-  private async readSummary(
-    q: OntologyReportQuery,
-  ): Promise<Pick<OntologyReportRows, "evidenceRows" | "genericNameCount" | "genericNames">> {
-    const base = ontologyBaseCte(q);
+  private async readEvidenceRowCount(base: SqlPredicate): Promise<number> {
     const [row] = await this.session.queryAll<Row>(
-      `${base.sql},
+      `${base.sql}
+       SELECT count(*) AS evidence_rows FROM evidence`,
+      base.params,
+    );
+    return count(row?.evidence_rows);
+  }
+
+  private async readGenericCandidates(q: OntologyReportQuery): Promise<OntologyGenericNameRow[]> {
+    const concept = ontologyConceptCte(q);
+    const t = q.thresholds;
+    const [row] = await this.session.queryAll<Row>(
+      `${concept.sql},
+       name_types AS (
+         SELECT name, type_name, count(*) AS n FROM concept_all GROUP BY name, type_name
+       ),
+       generic AS (
+         SELECT name, count(*) AS type_count, sum(n) AS n
+           FROM name_types
+          GROUP BY name
+         HAVING count(*) >= ${int(t.genericMinTypes)} AND max(n) < ${num(t.genericMaxTopTypeShare)} * sum(n)
+       ),
        generic_types AS (
          SELECT name, type_name, count(*) AS n, arg_min(rel_path, ${EXAMPLE_KEY_SQL}) AS ex_path
            FROM concept_all
@@ -261,33 +304,29 @@ export class DuckDbOntologyReportStore {
            FROM generic g JOIN generic_types t USING (name)
           GROUP BY g.name, g.type_count, g.n
        )
-       SELECT (SELECT count(*) FROM evidence) AS evidence_rows,
-              (SELECT count(*) FROM generic) AS generic_count,
-              (SELECT list({'name': name, 'typeCount': CAST(type_count AS INTEGER), 'n': CAST(n AS INTEGER),
+       SELECT (SELECT list({'name': name, 'typeCount': CAST(type_count AS INTEGER), 'n': CAST(n AS INTEGER),
                             'types': types} ORDER BY n DESC, name)
                  FROM generic_pool) AS generic_names`,
-      base.params,
+      concept.params,
     );
-    const genericNames: OntologyGenericNameRow[] = ((row?.generic_names as Row[] | null) ?? []).map((g) => ({
+    return ((row?.generic_names as Row[] | null) ?? []).map((g) => ({
       name: g.name as string,
       typeCount: count(g.typeCount),
       n: count(g.n),
-      types: ((g.types as Row[] | null) ?? []).map((t) => ({
-        typeName: t.typeName as string,
-        n: count(t.n),
-        relPath: t.relPath as string,
+      types: ((g.types as Row[] | null) ?? []).map((type) => ({
+        typeName: type.typeName as string,
+        n: count(type.n),
+        relPath: type.relPath as string,
       })),
     }));
-    return {
-      evidenceRows: count(row?.evidence_rows),
-      genericNameCount: count(row?.generic_count),
-      genericNames,
-    };
   }
 
   /** (type, kind) groups of two or more names, ranked by `selection.score`, capped at `groupPool`. */
-  private async readTypeGroups(q: OntologyReportQuery, selection: TypeGroupSelection): Promise<OntologyTypeGroupRow[]> {
-    const base = ontologyBaseCte(q);
+  private async readTypeGroups(
+    q: OntologyReportQuery,
+    base: SqlPredicate,
+    selection: TypeGroupSelection,
+  ): Promise<OntologyTypeGroupRow[]> {
     const t = q.thresholds;
     const rows = await this.session.queryAll<Row>(
       `${base.sql},
@@ -345,8 +384,7 @@ export class DuckDbOntologyReportStore {
    * the ops layer drops type-family role words and merged spellings, then caps
    * at `limit` and `namesPerItem`.
    */
-  private async readHomonyms(q: OntologyReportQuery): Promise<OntologyHomonymRow[]> {
-    const base = ontologyBaseCte(q);
+  private async readHomonyms(q: OntologyReportQuery, base: SqlPredicate): Promise<OntologyHomonymRow[]> {
     const t = q.thresholds;
     const rows = await this.session.queryAll<Row>(
       `${base.sql},
@@ -410,8 +448,11 @@ export class DuckDbOntologyReportStore {
    *     class (`Report#render` declaring `title` beside `Report#title`); typed
    *     or not, since the collision is with the name, not the value.
    */
-  private async readCollisions(q: OntologyReportQuery): Promise<OntologyCollisionRow[]> {
-    const base = ontologyBaseCte(q);
+  private async readCollisions(
+    q: OntologyReportQuery,
+    base: SqlPredicate,
+    notExcluded: SqlPredicate,
+  ): Promise<OntologyCollisionRow[]> {
     const scope = pathPrefixPredicate(q.pathPrefixes);
     const nameKey = (column: string) => `lower(replace(regexp_replace(${column}, '^(@@|@|\\$)', ''), '_', ''))`;
     const lastSegment = (column: string) => `regexp_extract(${column}, '([^:.#]+)$', 1)`;
@@ -449,7 +490,7 @@ export class DuckDbOntologyReportStore {
           WHERE kind = 'local'
             AND ${scope.sql}
             AND length(${BARE_NAME_SQL}) > 1
-            AND name NOT IN (SELECT name FROM generic)
+            AND ${notExcluded.sql}
        ),
        shadows_method AS (
          SELECT 'shadowsMethod' AS rule, l.name, l.owner_class || '#' || l.name AS symbol, NULL AS type_name,
@@ -475,7 +516,7 @@ export class DuckDbOntologyReportStore {
        SELECT * EXCLUDE (rn) FROM ranked
         WHERE rn <= ${int(q.limit)}
         ORDER BY CASE rule WHEN 'namesOtherType' THEN 0 ELSE 1 END, rn`,
-      [...base.params, ...scope.params],
+      [...base.params, ...scope.params, ...notExcluded.params],
     );
     return rows.map((r) => ({
       rule: r.rule as OntologyCollisionRule,

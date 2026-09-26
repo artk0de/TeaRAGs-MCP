@@ -277,7 +277,12 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     }),
   ),
   // Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20).
-  readOntologyReport: read(async (graphDb, p) => graphDb.readOntologyReport(p.query as OntologyReportQuery)),
+  readOntologyReportSummary: read(async (graphDb, p) =>
+    graphDb.readOntologyReportSummary(p.query as OntologyReportQuery),
+  ),
+  readOntologyReportSections: read(async (graphDb, p) =>
+    graphDb.readOntologyReportSections(p.query as OntologyReportQuery, p.excludedGenericNames as string[]),
+  ),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),

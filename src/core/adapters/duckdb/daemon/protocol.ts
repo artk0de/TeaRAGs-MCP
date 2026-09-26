@@ -148,7 +148,10 @@ export const DAEMON_OPS = [
   "sampleIdentifierShapes",
   // Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20). REQUIRED for
   // the same reason: an older daemon's empty answer would read as a clean project.
-  "readOntologyReport",
+  // Two phases: the summary's generic candidates, judged by the caller, become
+  // the sections read's `excludedGenericNames`.
+  "readOntologyReportSummary",
+  "readOntologyReportSections",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   "getSupertypes",
   "getSubtypes",
@@ -195,7 +198,8 @@ export interface DaemonRequest {
     | { collection: string; names: string[]; pathPrefixes?: string[]; groupByLanguage?: boolean } // aggregateIdentifiersByName
     | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[] } // identifierLanguageCounts
     | { collection: string; limit: number; pathPrefixes?: string[]; groupByLanguage?: boolean } // sampleIdentifierShapes
-    | { collection: string; query: OntologyReportQuery }; // readOntologyReport
+    | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
+    | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] }; // readOntologyReportSections
 }
 
 /**

@@ -3,8 +3,13 @@
  * `get_ontology_report`: turns the DuckDB aggregate rows into the ranked
  * sections, judging naming shapes with the language's canonical casing.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
+import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import {
   ONTOLOGY_REPORT_THRESHOLDS,
   ontologyLanguageProfiles,
@@ -14,8 +19,12 @@ import {
 import type {
   OntologyReportQuery,
   OntologyReportRows,
+  OntologyReportSectionRows,
+  OntologyReportSummaryRows,
   OntologyTypeGroupRow,
 } from "../../../../../src/core/contracts/types/codegraph.js";
+import { DATABASE_MIGRATIONS } from "../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
+import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const RUBY: OntologyLanguageProfile = {
   language: "ruby",
@@ -97,8 +106,28 @@ function group(partial: Partial<OntologyTypeGroupRow> & Pick<OntologyTypeGroupRo
   };
 }
 
+/**
+ * A reader over one canned `OntologyReportRows`, served in the two phases the
+ * store reads it in: the summary (totals + generic candidates), then the
+ * sections with the judged generic names excluded.
+ */
+function twoPhaseGraphDb(read: (q: OntologyReportQuery) => Promise<OntologyReportRows>) {
+  return {
+    readOntologyReportSummary: vi.fn(async (q: OntologyReportQuery): Promise<OntologyReportSummaryRows> => {
+      const { totals, genericNameCount, genericNames } = await read(q);
+      return { totals, genericNameCount, genericNames };
+    }),
+    readOntologyReportSections: vi.fn(
+      async (q: OntologyReportQuery, _excludedGenericNames: readonly string[]): Promise<OntologyReportSectionRows> => {
+        const { totals: _t, genericNameCount: _c, genericNames: _g, ...sections } = await read(q);
+        return sections;
+      },
+    ),
+  };
+}
+
 function makeOps(read: (q: OntologyReportQuery) => Promise<OntologyReportRows>) {
-  const graphDb = { readOntologyReport: vi.fn(read), close: vi.fn(async () => undefined) };
+  const graphDb = { ...twoPhaseGraphDb(read), close: vi.fn(async () => undefined) };
   const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
   const ops = new OntologyReportOps({
     pool: pool as never,
@@ -120,7 +149,7 @@ describe("OntologyReportOps#report — request → query", () => {
       limit: 7,
     });
 
-    const q = graphDb.readOntologyReport.mock.calls[0][0];
+    const q = graphDb.readOntologyReportSections.mock.calls[0][0];
     expect(q.pathPrefixes).toEqual(["app/services/"]);
     expect(q.extensions).toEqual([".rb"]);
     expect(q.nonConceptTypes).toEqual([
@@ -137,7 +166,7 @@ describe("OntologyReportOps#report — request → query", () => {
   it("defaults to every section, limit 20 and the whole project", async () => {
     const { ops, graphDb } = makeOps(async () => rows());
     const res = await ops.report({ collection: "code_x" });
-    const q = graphDb.readOntologyReport.mock.calls[0][0];
+    const q = graphDb.readOntologyReportSections.mock.calls[0][0];
     expect(q.sections).toEqual(["synonyms", "homonyms", "outliers", "collisions"]);
     expect(q.limit).toBe(20);
     expect(q.pathPrefixes).toBeUndefined();
@@ -448,7 +477,7 @@ describe("OntologyReportOps#report — ranking and resilience", () => {
 
   it("an alias that cannot be resolved falls back to the physical name; a failing close never masks the report", async () => {
     const graphDb = {
-      readOntologyReport: vi.fn(async () => rows({ homonyms: [] })),
+      ...twoPhaseGraphDb(async () => rows({ homonyms: [] })),
       close: vi.fn(async () => {
         throw new Error("already closed");
       }),
@@ -672,7 +701,7 @@ describe("OntologyReportOps#report — live false positives", () => {
       }),
     );
     const { homonyms } = await ops.report({ collection: "code_x", sections: ["homonyms"], limit: 1 });
-    expect(graphDb.readOntologyReport.mock.calls[0][0].thresholds.groupPool).toBeGreaterThan(1);
+    expect(graphDb.readOntologyReportSections.mock.calls[0][0].thresholds.groupPool).toBeGreaterThan(1);
     expect(homonyms?.map((h) => h.name)).toEqual(["record"]);
     expect(homonyms?.[0].types).toHaveLength(ONTOLOGY_REPORT_THRESHOLDS.namesPerItem);
   });
@@ -786,6 +815,96 @@ describe("OntologyReportOps#report — live false positives", () => {
     );
     const { synonyms } = await ops.report({ collection: "code_x", sections: ["synonyms"] });
     expect(synonyms).toEqual([]);
+  });
+});
+
+describe("OntologyReportOps#report — the sections exclude the JUDGED generic names", () => {
+  it("reads the summary once, then the sections excluding every judged name, uncapped by limit", async () => {
+    const unrelated = (count: number): [string, number, string][] =>
+      ["TypeA", "TypeB", "TypeC", "TypeD", "TypeE"].map((t) => [t, count, "app/a.rb"]);
+    const { ops, graphDb } = makeOps(async () =>
+      rows({
+        genericNames: [
+          genericCandidate(
+            "form",
+            ["SignupForm", "ActionForm", "ClientForm", "InvoiceForm", "TaskForm"].map((f) => [f, 4, "app/forms/x.rb"]),
+          ),
+          genericCandidate("actor", unrelated(3)),
+          genericCandidate("data", unrelated(2)),
+        ],
+        genericNameCount: 3,
+      }),
+    );
+    const res = await ops.report({ collection: "code_x", limit: 1 });
+
+    expect(res.summary.genericNames).toEqual([{ name: "actor", typeCount: 5, n: 15 }]);
+    expect(res.summary.genericNameCount).toBe(2);
+    expect(graphDb.readOntologyReportSummary).toHaveBeenCalledTimes(1);
+    expect(graphDb.readOntologyReportSections).toHaveBeenCalledTimes(1);
+    // `form` is a role word, not generic: its rows stay evidence. The cap on the summary is not the exclusion.
+    expect(graphDb.readOntologyReportSections.mock.calls[0][1]).toEqual(["actor", "data"]);
+    expect(graphDb.readOntologyReportSections.mock.calls[0][0]).toEqual(
+      graphDb.readOntologyReportSummary.mock.calls[0][0],
+    );
+  });
+
+  it("end to end over DuckDB: a role word stays in the sections, a generic name leaves them", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ontology-ops-"));
+    const db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
+    try {
+      await db.init();
+      await runMigrations(db, DATABASE_MIGRATIONS);
+      const local = (name: string, typeName: string, line: number) => ({
+        ownerSymbolId: "Svc#run",
+        kind: "local" as const,
+        name,
+        line,
+        typeName,
+        typeSource: "binding" as const,
+      });
+      const repeat = (count: number, name: string, typeName: string, firstLine: number) =>
+        Array.from({ length: count }, (_, i) => local(name, typeName, firstLine + i));
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "app/forms/signup.rb",
+          rows: [
+            ...repeat(3, "form", "SignupForm", 1),
+            ...repeat(1, "signup", "SignupForm", 10),
+            ...repeat(1, "registration", "SignupForm", 20),
+            ...["ActionForm", "ClientForm", "InvoiceForm", "TaskForm"].flatMap((t, i) =>
+              repeat(2, "form", t, 100 + 10 * i),
+            ),
+          ],
+        },
+        {
+          relPath: "app/actors/actor.rb",
+          rows: [
+            ...["Person", "Robot", "Queue", "Mailer", "Clock"].flatMap((t, i) => repeat(2, "actor", t, 10 * (i + 1))),
+            ...repeat(2, "person", "Person", 100),
+            ...repeat(1, "human", "Person", 110),
+          ],
+        },
+      ]);
+      const ops = new OntologyReportOps({
+        pool: { acquireReader: async () => ({ graphDb: db, symbolTable: {} }) } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async (n: string) => n as never,
+        languages: [RUBY, TS],
+      });
+
+      const res = await ops.report({ collection: "code_x", sections: ["synonyms", "homonyms"] });
+
+      expect(res.summary.genericNames.map((g) => g.name)).toEqual(["actor"]);
+      // 11 form + signup + registration + 2 person + human; the 10 actor rows are not evidence.
+      expect(res.summary.evidenceRows).toBe(16);
+      const signup = res.synonyms?.find((s) => s.type === "SignupForm");
+      expect(signup?.dominant).toMatchObject({ name: "form", n: 3 });
+      expect(res.synonyms?.map((s) => s.type)).not.toContain("Person");
+      expect(res.homonyms?.map((h) => h.name)).not.toContain("actor");
+    } finally {
+      await db.close().catch(() => undefined);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

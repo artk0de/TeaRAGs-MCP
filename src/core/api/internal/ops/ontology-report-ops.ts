@@ -3,8 +3,9 @@
  * (bd tea-rags-mcp-4p3sb.20): a project-wide audit of how declared values are
  * named against their types.
  *
- * DuckDB does the aggregation (`GraphDbClient#readOntologyReport`, one query per
- * section); this class owns the POLICY — the thresholds, which language's
+ * DuckDB does the aggregation in two reads (`GraphDbClient#readOntologyReportSummary`,
+ * then `#readOntologyReportSections`, one query per section, with the names this
+ * class judged generic excluded); this class owns the POLICY — the thresholds, which language's
  * non-concept types and casing apply to which file — and the naming-shape
  * judgement, which is the naming lexicon's pure classifier fed the canonical
  * casing of the row's language. Lives in `api/internal` because it bridges the
@@ -17,8 +18,10 @@
  *     rows is consistent; the share the lexicon's name inference trusts;
  *   - generic = bound to ≥ 5 types, none holding half of the name's rows — a
  *     name that denotes nothing in particular (`result`, `data`, `item`). The
- *     summary counts only the types the name does not spell: a role word over
- *     a type family (`form` over `*Form`) denotes something precise;
+ *     judgement counts only the types the name does not spell: a role word over
+ *     a type family (`form` over `*Form`) denotes something precise. Every
+ *     section excludes exactly the names judged generic, so a role word's rows
+ *     stay evidence;
  *   - homonym types need ≥ 2 rows and ≥ 10% of the name's rows — one stray
  *     binding is noise, not a second meaning;
  *   - a synonym's dominant name needs ≥ 2 rows ({@link SYNONYM_MIN_DOMINANT_ROWS});
@@ -210,8 +213,18 @@ export class OntologyReportOps {
     }
 
     let rows: OntologyReportRows;
+    let genericNames: OntologyGenericName[];
     try {
-      rows = await handle.graphDb.readOntologyReport(query);
+      // Two phases over one reader: judge the summary's generic candidates, then
+      // read the sections with exactly the judged names excluded — the summary
+      // and every section agree on which names are generic.
+      const summary = await handle.graphDb.readOntologyReportSummary(query);
+      genericNames = this.genericNames(summary.genericNames);
+      const sections = await handle.graphDb.readOntologyReportSections(
+        query,
+        genericNames.map((g) => g.name),
+      );
+      rows = { ...summary, ...sections };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("cg_identifiers") && message.includes("does not exist")) {
@@ -221,7 +234,7 @@ export class OntologyReportOps {
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
-    return this.shape(req, rows);
+    return this.shape(req, rows, genericNames);
   }
 
   /** The report for a collection with no readable codegraph: nothing read, requested sections empty. */
@@ -267,9 +280,12 @@ export class OntologyReportOps {
     };
   }
 
-  private shape(req: GetOntologyReportRequest, rows: OntologyReportRows): GetOntologyReportResponse {
+  private shape(
+    req: GetOntologyReportRequest,
+    rows: OntologyReportRows,
+    genericNames: readonly OntologyGenericName[],
+  ): GetOntologyReportResponse {
     const limit = Math.min(MAX_ONTOLOGY_REPORT_LIMIT, Math.max(1, req.limit ?? DEFAULT_ONTOLOGY_REPORT_LIMIT));
-    const genericNames = this.genericNames(rows.genericNames);
     const response: GetOntologyReportResponse = {
       scope: scopeOf(req),
       summary: {

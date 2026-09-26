@@ -251,7 +251,7 @@ export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
 
 // ── Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20) ──
 
-/** A section of the project-wide naming ontology audit ({@link GraphDbClient.readOntologyReport}). */
+/** A section of the project-wide naming ontology audit ({@link GraphDbClient.readOntologyReportSections}). */
 export type OntologyReportSection = "synonyms" | "homonyms" | "outliers" | "collisions";
 
 /** How a declared name collides with a symbol the graph already holds. */
@@ -302,8 +302,9 @@ export interface OntologyReportThresholds {
  * Scope and policy of one ontology read. Rows count as evidence only when their
  * EFFECTIVE type (persisted or `call-return`) is a concept type — not a
  * `nonConceptTypes` entry of the row's language, not a single capital letter —
- * and their kind is `param`, `local` or `field`. A name bound to many unrelated
- * types project-wide is generic (thresholds) and is judged nowhere.
+ * and their kind is `param`, `local` or `field`. A name bound to many types in
+ * the scope is a generic candidate (thresholds); the names the caller judges
+ * generic are excluded from every section.
  */
 export interface OntologyReportQuery {
   /** Literal `rel_path` prefixes; empty / absent = the whole project. */
@@ -379,10 +380,10 @@ export interface OntologyGenericNameTypeRow {
 }
 
 /**
- * A name the generic filter removed from every section — generic by type count
- * alone. A candidate: the ops layer drops the types the name spells (`form`
- * over `ActionForm`, `ClientForm`) and keeps it only when the unrelated types
- * still make it generic.
+ * A generic-name candidate — generic by type count alone. The caller drops the
+ * types the name spells (`form` over `ActionForm`, `ClientForm`), keeps it only
+ * when the unrelated types still make it generic, and passes the names it kept
+ * to {@link GraphDbClient.readOntologyReportSections} as the exclusion.
  */
 export interface OntologyGenericNameRow {
   name: string;
@@ -392,16 +393,20 @@ export interface OntologyGenericNameRow {
   types: OntologyGenericNameTypeRow[];
 }
 
-/** What {@link GraphDbClient.readOntologyReport} read; a section is present only when requested. */
-export interface OntologyReportRows {
+/** What {@link GraphDbClient.readOntologyReportSummary} read. */
+export interface OntologyReportSummaryRows {
   /** Whole-table counts, unscoped — `identifierRows: 0` beside `symbolRows > 0` is an index predating the table. */
   totals: { identifierRows: number; symbolRows: number };
-  /** Concept-typed, non-generic rows of the scope — the evidence every section draws from. */
-  evidenceRows: number;
-  /** Names the generic filter removed — `genericNames.length`. */
+  /** Generic-name candidates — `genericNames.length`. */
   genericNameCount: number;
-  /** Every name the generic filter removed, most frequent first, uncapped: the caller judges and caps them. */
+  /** Every generic-name candidate of the scope, most frequent first, uncapped: the caller judges and caps them. */
   genericNames: OntologyGenericNameRow[];
+}
+
+/** What {@link GraphDbClient.readOntologyReportSections} read; a section is present only when requested. */
+export interface OntologyReportSectionRows {
+  /** Concept-typed rows of the scope minus the excluded generic names — the evidence every section draws from. */
+  evidenceRows: number;
   synonyms?: OntologyTypeGroupRow[];
   /** Candidate names (up to `groupPool`, every qualifying type); the caller judges and caps them. */
   homonyms?: OntologyHomonymRow[];
@@ -409,6 +414,9 @@ export interface OntologyReportRows {
   outlierGroups?: OntologyTypeGroupRow[];
   collisions?: OntologyCollisionRow[];
 }
+
+/** Both phases of one ontology read, as the caller assembles them. */
+export type OntologyReportRows = OntologyReportSummaryRows & OntologyReportSectionRows;
 
 /**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
@@ -887,12 +895,24 @@ export interface GraphDbClient {
   sampleIdentifierShapes: (q: IdentifierShapeSampleQuery) => Promise<IdentifierShapeSampleRow[]>;
 
   /**
-   * The project-wide naming ontology audit (bd tea-rags-mcp-4p3sb.20): every
-   * requested section aggregated in DuckDB, one query per section, each item
-   * with its counts and one example row. See {@link OntologyReportQuery} for
-   * what counts as evidence. Throws when `cg_identifiers` does not exist.
+   * Phase 1 of the project-wide naming ontology audit (bd tea-rags-mcp-4p3sb.20):
+   * whole-table totals and every generic-name CANDIDATE of the scope with its
+   * types, for the caller to judge. Throws when `cg_identifiers` does not exist.
    */
-  readOntologyReport: (q: OntologyReportQuery) => Promise<OntologyReportRows>;
+  readOntologyReportSummary: (q: OntologyReportQuery) => Promise<OntologyReportSummaryRows>;
+
+  /**
+   * Phase 2 of the audit: every requested section aggregated in DuckDB, one
+   * query per section, each item with its counts and one example row, over the
+   * scope's concept rows minus every row named in `excludedGenericNames` — the
+   * caller's JUDGED generic names, so the sections and the summary agree on
+   * which names are generic. See {@link OntologyReportQuery} for what counts as
+   * evidence. Throws when `cg_identifiers` does not exist.
+   */
+  readOntologyReportSections: (
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ) => Promise<OntologyReportSectionRows>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

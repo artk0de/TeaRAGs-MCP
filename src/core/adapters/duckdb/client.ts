@@ -72,7 +72,8 @@ import type {
   InheritanceEdge,
   NonPublicMemberEdge,
   OntologyReportQuery,
-  OntologyReportRows,
+  OntologyReportSectionRows,
+  OntologyReportSummaryRows,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -356,8 +357,15 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.identifiers.sampleIdentifierShapes(q);
   }
 
-  async readOntologyReport(q: OntologyReportQuery): Promise<OntologyReportRows> {
-    return this.ontology.readOntologyReport(q);
+  async readOntologyReportSummary(q: OntologyReportQuery): Promise<OntologyReportSummaryRows> {
+    return this.ontology.readOntologyReportSummary(q);
+  }
+
+  async readOntologyReportSections(
+    q: OntologyReportQuery,
+    excludedGenericNames: readonly string[],
+  ): Promise<OntologyReportSectionRows> {
+    return this.ontology.readOntologyReportSections(q, excludedGenericNames);
   }
 
   // ── Method-edge / chunk-signal reads ──
