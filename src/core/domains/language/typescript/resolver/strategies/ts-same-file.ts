@@ -49,15 +49,17 @@ export class TSSameFileSymbolResolutionStrategy implements SymbolResolutionStrat
 
     if (receiver === null) {
       // bare call: helper()
-      candidates = lookupEcmascriptSymbolsByShortName(ctx, member).filter((d) => d.relPath === ctx.callerFile);
+      candidates = lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" }).filter(
+        (d) => d.relPath === ctx.callerFile,
+      );
     } else if (member === "constructor" && IS_CLASS_RECEIVER.test(receiver)) {
       // same-file new X(): target X#constructor in the caller file
-      candidates = lookupEcmascriptSymbolsByShortName(ctx, "constructor")
+      candidates = lookupEcmascriptSymbolsByShortName(ctx, "constructor", { role: "callee" })
         // scope[-1] === receiver: top-level defs (scope=[]) yield undefined !== receiver → filtered out; narrows to enclosing class.
         .filter((d) => d.relPath === ctx.callerFile && d.scope[d.scope.length - 1] === receiver);
     } else if (IS_CLASS_RECEIVER.test(receiver)) {
       // same-file Class.staticMember()
-      candidates = lookupEcmascriptSymbolsByShortName(ctx, member)
+      candidates = lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" })
         // scope[-1] === receiver: top-level defs (scope=[]) yield undefined !== receiver → filtered out; narrows to enclosing class.
         .filter((d) => d.relPath === ctx.callerFile && d.scope[d.scope.length - 1] === receiver);
     } else {

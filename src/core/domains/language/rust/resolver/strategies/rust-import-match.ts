@@ -24,7 +24,7 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       const suffix = rustImportSuffix(match.importText);
       if (suffix) {
         const candidates = ctx.symbolTable
-          .lookupByShortName(call.member)
+          .lookupByShortName(call.member, { role: "callee" })
           .filter((def) => def.relPath.endsWith(`${suffix}.rs`) || def.relPath.endsWith(`${suffix}/mod.rs`));
         const target = pickSingleCandidate(candidates, this.cfg.mode);
         if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });

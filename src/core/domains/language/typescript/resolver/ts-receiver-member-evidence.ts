@@ -55,7 +55,12 @@
 import ts from "typescript";
 
 import { identifierEntry } from "../../../../contracts/identifier-record.js";
-import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  SymbolDefinition,
+  SymbolLookupRole,
+} from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
 import { calledMemberDeclarations, declarationOwnerName } from "./strategies/ts-type-checker-shared.js";
@@ -229,7 +234,9 @@ function anchorBaseClass(
   const root = segments[0];
   if (
     segments.length === 1 &&
-    lookupEcmascriptSymbols(ctx, written).some((def) => def.relPath === fromFile && def.scope.length === 0)
+    lookupEcmascriptSymbols(ctx, written, { role: "receiver" }).some(
+      (def) => def.relPath === fromFile && def.scope.length === 0,
+    )
   ) {
     return { name: written, file: fromFile };
   }
@@ -240,7 +247,7 @@ function anchorBaseClass(
   if (mappedFile === null) return null;
   const name =
     segments.length > 1 ? (segments.at(-1) ?? root) : (identifierEntry(binding.importedBindings, root) ?? root);
-  return { name, file: reexportOriginFile(name, mappedFile, ctx, cfg.mode) ?? mappedFile };
+  return { name, file: reexportOriginFile(name, mappedFile, ctx, cfg.mode, "receiver") ?? mappedFile };
 }
 
 /**
@@ -288,13 +295,14 @@ function importBindingAccountsFor(
   if (binding === undefined) return false;
   const mappedFile = mapImportToFile(binding.importText, ctx.callerFile, cfg.tsOptions, cfg.fileExists);
   if (mappedFile === null) return false;
-  const declaringFileOf = (name: string): string => reexportOriginFile(name, mappedFile, ctx, cfg.mode) ?? mappedFile;
+  const declaringFileOf = (name: string, role: SymbolLookupRole): string =>
+    reexportOriginFile(name, mappedFile, ctx, cfg.mode, role) ?? mappedFile;
   const exportedName = identifierEntry(binding.importedBindings, receiver);
   if (exportedName !== undefined) {
-    return candidate.scope.at(-1) === exportedName && declaringFileOf(exportedName) === candidate.relPath;
+    return candidate.scope.at(-1) === exportedName && declaringFileOf(exportedName, "receiver") === candidate.relPath;
   }
-  if (candidate.scope.length === 0) return declaringFileOf(member) === candidate.relPath;
-  return candidate.scope.at(-1) === receiver && declaringFileOf(receiver) === candidate.relPath;
+  if (candidate.scope.length === 0) return declaringFileOf(member, "callee") === candidate.relPath;
+  return candidate.scope.at(-1) === receiver && declaringFileOf(receiver, "receiver") === candidate.relPath;
 }
 
 /** `new X(` — the receiver text the walker emits for a call on a fresh instance. */

@@ -44,15 +44,17 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
 
     const importedFile = mapImportToFile(named.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
     if (!importedFile) return CONTINUE;
-    const targetFile = reexportOriginFile(call.receiver, importedFile, ctx, this.cfg.mode) ?? importedFile;
+    const targetFile = reexportOriginFile(call.receiver, importedFile, ctx, this.cfg.mode, "receiver") ?? importedFile;
 
-    const scopedCandidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter(
+    const scopedCandidates = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
       (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver,
     );
     const scopedHit = pickSingleCandidate(scopedCandidates, this.cfg.mode);
     if (scopedHit) return resolved({ targetRelPath: scopedHit.relPath, targetSymbolId: scopedHit.symbolId });
 
-    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === targetFile);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
+      (def) => def.relPath === targetFile,
+    );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
 

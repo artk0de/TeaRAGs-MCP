@@ -99,7 +99,7 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
           // Fall back to the file of any method whose scope is the ancestor —
           // covers files that only have method symbols (the class declaration
           // itself wasn't indexed as a top-level symbol, only its methods).
-          for (const def of lookupEcmascriptSymbolsByShortName(ctx, member)) {
+          for (const def of lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" })) {
             if (def.scope[def.scope.length - 1] === current) {
               fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };
               break;
@@ -110,7 +110,7 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
             // `current`. Captures the case where the parent class has arbitrary
             // indexed members (constructor, fields, etc.) but no match for
             // `member` and no top-level Base symbol.
-            const scopeProbe = lookupEcmascriptSymbolsByShortName(ctx, "constructor");
+            const scopeProbe = lookupEcmascriptSymbolsByShortName(ctx, "constructor", { role: "callee" });
             for (const def of scopeProbe) {
               if (def.scope[def.scope.length - 1] === current) {
                 fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };

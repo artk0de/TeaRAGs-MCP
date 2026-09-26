@@ -52,7 +52,7 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
-    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
+    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" });
     if (fallback.length <= 1 || ctx.imports.length === 0) return CONTINUE;
 
     // The receiver's head identifier is the hop name (bd tea-rags-mcp-4pa9o):

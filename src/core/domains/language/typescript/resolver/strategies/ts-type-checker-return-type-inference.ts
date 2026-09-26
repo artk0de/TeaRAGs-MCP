@@ -161,7 +161,7 @@ export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements
       const exact = lookupEcmascriptSymbols(ctx, composed).filter((def) => def.relPath === targetRelPath);
       if (exact.length > 0) return exact[0].symbolId;
     }
-    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member).filter(
+    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" }).filter(
       (def) => def.relPath === targetRelPath && declarationAccountsFor(declaration, def, ctx, this.programCache),
     );
     return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;

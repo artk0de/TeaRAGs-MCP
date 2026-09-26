@@ -49,7 +49,7 @@ export function receiverProjectInterfaceNames(
   const { receiver } = call;
   if (programCache === null || receiver === null || receiver.length === 0) return [];
   if (receiver === "this" || receiver === "super" || call.member.length === 0) return [];
-  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return [];
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return [];
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return [];
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);

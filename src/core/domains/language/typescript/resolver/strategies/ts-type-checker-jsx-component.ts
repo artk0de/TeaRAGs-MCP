@@ -131,7 +131,7 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
     const inFile = (candidateName: string): string | null => {
       const exact = lookupEcmascriptSymbols(ctx, candidateName).filter((def) => def.relPath === targetRelPath);
       if (exact.length > 0) return exact[0].symbolId;
-      const byShortName = lookupEcmascriptSymbolsByShortName(ctx, candidateName).filter(
+      const byShortName = lookupEcmascriptSymbolsByShortName(ctx, candidateName, { role: "callee" }).filter(
         (def) => def.relPath === targetRelPath,
       );
       return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;

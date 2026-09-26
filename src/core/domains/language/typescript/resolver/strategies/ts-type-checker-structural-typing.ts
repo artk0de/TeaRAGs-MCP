@@ -207,7 +207,9 @@ export class TSStructuralTypingSymbolResolutionStrategy implements SymbolResolut
       const symbolId = ownerExactSymbolId(site, member, ctx);
       if (symbolId !== null) return symbolId;
     }
-    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member).filter((def) => def.relPath === targetRelPath);
+    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" }).filter(
+      (def) => def.relPath === targetRelPath,
+    );
     return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
   }
 }

@@ -177,7 +177,7 @@ export class TSTypeCheckerUnionReceiverDispatchResolver implements DispatchResol
     if (targetRelPath === null) return null;
 
     const ownerName = declarationOwnerName(declaration);
-    const candidates = lookupEcmascriptSymbolsByShortName(ctx, member).filter(
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" }).filter(
       (def) => def.relPath === targetRelPath && (ownerName === null || def.scope.at(-1) === ownerName),
     );
 

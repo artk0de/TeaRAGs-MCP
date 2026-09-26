@@ -48,7 +48,9 @@ export class TSImportBasenameSymbolResolutionStrategy implements SymbolResolutio
     const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
     if (!targetFile) return CONTINUE;
 
-    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === targetFile);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
+      (def) => def.relPath === targetFile,
+    );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     // Same guard, and the same placement rationale, as `namedImport` (bd

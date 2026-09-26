@@ -6,7 +6,7 @@
     },
     "walker": {
       "version": 5,
-      "digest": "sha256:df2040007b45b7047930a4ee1395c223da45e1bab78886078b950e10f4eb2a85"
+      "digest": "sha256:c46f90624173808e41d90a12974e2e093a976600baae3b7f8f04301a85547c10"
     }
   },
   "bash": {
@@ -42,7 +42,7 @@
     },
     "walker": {
       "version": 9,
-      "digest": "sha256:1c6d4a7219dc97faf1995d059935788a5a1401330f9502499e737c6b99a1dd05"
+      "digest": "sha256:eac420c6428ab80f21f9af2a868499c720e09435015acf01474bc84e659fc4c7"
     }
   },
   "markdown": {
@@ -70,7 +70,7 @@
   "rust": {
     "walker": {
       "version": 8,
-      "digest": "sha256:a3d09733e4ffa5a6ac09175811b02cc1c5bae1af5e918136de8bdbbe655958f4"
+      "digest": "sha256:b5f232547ed1dc381b48d30148077f0dedf77c86faa65ab1363e6d5c71894935"
     }
   },
   "swift": {
@@ -90,7 +90,7 @@
     },
     "walker": {
       "version": 19,
-      "digest": "sha256:6900047917a96b068db7be3cace5fac7463e783b57c4f3223bea80e6102cd90d"
+      "digest": "sha256:f48b41f63eca802a9911b63e843ba14216db6f3e5d6da66d0b9cbea96e616016"
     }
   }
 }

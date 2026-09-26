@@ -92,7 +92,7 @@ export class JavascriptCallResolver implements CallResolver {
         const staticFqName = `${enclosing}.${call.member}`;
         const staticHit = lookupEcmascriptSymbols(ctx, staticFqName).find((def) => def.relPath === ctx.callerFile);
         if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-        const sameFile = lookupEcmascriptSymbolsByShortName(ctx, call.member).find(
+        const sameFile = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).find(
           (def) => def.relPath === ctx.callerFile,
         );
         if (sameFile) return { targetRelPath: sameFile.relPath, targetSymbolId: sameFile.symbolId };
@@ -103,7 +103,7 @@ export class JavascriptCallResolver implements CallResolver {
       if (match) {
         const targetFile = mapJavascriptImportToFile(match.importText, ctx.callerFile);
         if (targetFile) {
-          const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter(
+          const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
             (def) => def.relPath === targetFile,
           );
           const target = pickSingleCandidate(candidates, this.mode);
@@ -121,7 +121,7 @@ export class JavascriptCallResolver implements CallResolver {
     if (call.receiver !== null) return null;
     // ECMAScript family only (bd tea-rags-mcp-t5cji): a bare `ping()` whose one
     // project namesake is Ruby's `Worker#ping` is not a call into Ruby.
-    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
+    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" });
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
@@ -187,14 +187,14 @@ export class JavascriptCallResolver implements CallResolver {
         if (ancestorDef) {
           fileOnlyFallback = { targetRelPath: ancestorDef.relPath, targetSymbolId: null };
         } else {
-          for (const def of lookupEcmascriptSymbolsByShortName(ctx, member)) {
+          for (const def of lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" })) {
             if (def.scope[def.scope.length - 1] === current) {
               fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };
               break;
             }
           }
           if (fileOnlyFallback === null) {
-            const scopeProbe = lookupEcmascriptSymbolsByShortName(ctx, "constructor");
+            const scopeProbe = lookupEcmascriptSymbolsByShortName(ctx, "constructor", { role: "callee" });
             for (const def of scopeProbe) {
               if (def.scope[def.scope.length - 1] === current) {
                 fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };
@@ -265,7 +265,7 @@ export class JavascriptCallResolver implements CallResolver {
    * Python declares is no edge this resolver can produce.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupEcmascriptSymbolsByShortName(ctx, call.member).length > 0;
+    return lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length > 0;
   }
 }
 

@@ -96,14 +96,15 @@ function populationPolicyFor(
 /**
  * Defs-per-shortName counted over `population`'s definitions only; a name the
  * population never defines is not one of its members. Reads through the
- * DEFAULT `lookupByShortName`, the same view `shortNameDefCounts` counts —
- * schema-synthesized columns stay out, as they do from the corpus scan.
+ * `role: "callee"` lookup, the same view `shortNameDefCounts` counts —
+ * schema-synthesized columns and non-callable kinds stay out, as they do from
+ * the corpus scan (bd tea-rags-mcp-jqvbn).
  */
 function populationDefCounts(table: GlobalSymbolTable, population: DispatchFanoutPopulation): number[] {
   const counts: number[] = [];
   for (const name of table.shortNameDefCounts().keys()) {
     let n = 0;
-    for (const def of table.lookupByShortName(name)) if (population.ownsPath(def.relPath)) n++;
+    for (const def of table.lookupByShortName(name, { role: "callee" })) if (population.ownsPath(def.relPath)) n++;
     if (n > 0) counts.push(n);
   }
   return counts;

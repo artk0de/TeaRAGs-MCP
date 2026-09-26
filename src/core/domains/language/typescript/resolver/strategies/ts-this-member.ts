@@ -51,7 +51,7 @@ export class TSThisMemberSymbolResolutionStrategy implements SymbolResolutionStr
     // answers a `this` member (bd tea-rags-mcp-nj8i6); without it `Form`'s
     // `this.setState` landed on `Panel#setState` when both classes sat in one
     // file.
-    const sameFile = lookupEcmascriptSymbolsByShortName(ctx, call.member).find(
+    const sameFile = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).find(
       (def) => def.relPath === ctx.callerFile && thisHierarchyAccountsFor(call.member, ctx, this.cfg, def),
     );
     if (sameFile) return resolved({ targetRelPath: sameFile.relPath, targetSymbolId: sameFile.symbolId });

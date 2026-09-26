@@ -126,7 +126,7 @@ export function receiverIsUnpinnableLocalValueBinding(
   const { receiver } = call;
   if (programCache === null || receiver === null || call.member.length === 0) return false;
   if (!isBareIdentifierText(receiver)) return false;
-  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);

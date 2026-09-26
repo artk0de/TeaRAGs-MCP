@@ -100,7 +100,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
-    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
+    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" });
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (!hit) return CONTINUE;
     // After the pick, so the checker is asked only when a match would commit.

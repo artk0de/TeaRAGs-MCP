@@ -62,7 +62,7 @@ export class TSConeTypeLocator implements ConeTypeLocator {
   findDirectMethod(typeName: string, member: string, ctx: CallContext): SymbolResolutionTarget | null {
     const file = this.resolveTypeFile(typeName, ctx);
     if (!file) return null;
-    const candidates = lookupEcmascriptSymbolsByShortName(ctx, member).filter((def) => {
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, member, { role: "callee" }).filter((def) => {
       if (def.relPath !== file) return false;
       return def.scope[def.scope.length - 1] === typeName;
     });

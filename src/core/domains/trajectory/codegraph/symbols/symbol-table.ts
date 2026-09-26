@@ -17,11 +17,13 @@
  * lands.
  */
 
-import type {
-  GlobalSymbolTable,
-  RelPath,
-  SymbolDefinition,
-  SymbolLookupOptions,
+import {
+  isCallTargetSymbolKind,
+  symbolKindServesLookupRole,
+  type GlobalSymbolTable,
+  type RelPath,
+  type SymbolDefinition,
+  type SymbolLookupOptions,
 } from "../../../../contracts/types/codegraph.js";
 
 export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
@@ -114,18 +116,18 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     return this.dirRefCounts.has(normalized);
   }
 
-  lookup(fqName: string): SymbolDefinition[] {
-    return (this.byFq.get(fqName) ?? []).slice();
+  lookup(fqName: string, options?: Pick<SymbolLookupOptions, "role">): SymbolDefinition[] {
+    return servingRole(this.byFq.get(fqName), options?.role);
   }
 
   lookupByShortName(name: string, options?: SymbolLookupOptions): SymbolDefinition[] {
-    const declared = (this.byShort.get(name) ?? []).slice();
+    const declared = servingRole(this.byShort.get(name), options?.role);
     if (options?.includeSchemaColumns !== true) return declared;
     // Declared definitions stay FIRST: a real `def name` shadows the AR-generated
     // attribute method in Ruby, and callers that pick a single candidate rely on
     // the declared-before-synthesized order.
     const columns = this.schemaColumnsByShort.get(name);
-    return columns === undefined ? declared : [...declared, ...columns];
+    return columns === undefined ? declared : [...declared, ...servingRole(columns, options.role)];
   }
 
   setSchemaColumns(definitions: SymbolDefinition[]): void {
@@ -140,9 +142,19 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     return n;
   }
 
+  /**
+   * The callee view (bd tea-rags-mcp-jqvbn) — see the contract. A name every
+   * definition of which is a type or a constant has no call target and is left
+   * out, rather than counted as zero, so the distribution's population is the
+   * set of names a call can resolve to.
+   */
   shortNameDefCounts(): ReadonlyMap<string, number> {
     const counts = new Map<string, number>();
-    for (const [name, defs] of this.byShort) counts.set(name, defs.length);
+    for (const [name, defs] of this.byShort) {
+      let n = 0;
+      for (const def of defs) if (isCallTargetSymbolKind(def.symbolKind)) n++;
+      if (n > 0) counts.set(name, n);
+    }
     return counts;
   }
 
@@ -183,6 +195,20 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
       this.upsertFile(relPath, []);
     }
   }
+}
+
+/**
+ * A copy of `defs` narrowed to the definitions whose kind serves `role` — the
+ * copy the lookups have always returned, so a caller mutating its answer never
+ * reaches the index. No role copies everything.
+ */
+function servingRole(
+  defs: readonly SymbolDefinition[] | undefined,
+  role: SymbolLookupOptions["role"],
+): SymbolDefinition[] {
+  if (defs === undefined) return [];
+  if (role === undefined) return defs.slice();
+  return defs.filter((def) => symbolKindServesLookupRole(def.symbolKind, role));
 }
 
 /** Every ancestor directory of a repo-relative path, shallowest first. */

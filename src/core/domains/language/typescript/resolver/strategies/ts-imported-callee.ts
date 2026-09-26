@@ -77,7 +77,7 @@ export class TSImportedCalleeSymbolResolutionStrategy implements SymbolResolutio
       if (exportedName === undefined) continue;
       const importedFile = mapImportToFile(imp.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
       if (!importedFile) continue;
-      const targetFile = reexportOriginFile(exportedName, importedFile, ctx, this.cfg.mode) ?? importedFile;
+      const targetFile = reexportOriginFile(exportedName, importedFile, ctx, this.cfg.mode, "callee") ?? importedFile;
       const hit = this.pinInFile(exportedName, targetFile, ctx);
       if (hit) return resolved(hit);
     }
@@ -95,7 +95,9 @@ export class TSImportedCalleeSymbolResolutionStrategy implements SymbolResolutio
    * continues down the chain unanswered rather than picking a side.
    */
   private pinInFile(exportedName: string, targetFile: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const inFile = lookupEcmascriptSymbolsByShortName(ctx, exportedName).filter((def) => def.relPath === targetFile);
+    const inFile = lookupEcmascriptSymbolsByShortName(ctx, exportedName, { role: "callee" }).filter(
+      (def) => def.relPath === targetFile,
+    );
     const topLevel = pickSingleCandidate(
       inFile.filter((def) => def.scope.length === 0),
       this.cfg.mode,

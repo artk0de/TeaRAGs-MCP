@@ -25,6 +25,13 @@
  * among them since bd tea-rags-mcp-1y13c walks the ESM / CJS module formats —
  * so a new ECMAScript extension there needs a matching line here.
  * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment.
+ *
+ * Every lookup of a name a CALL spells passes a `role` (bd tea-rags-mcp-jqvbn):
+ * `"callee"` for the invoked member, `"receiver"` for the value it is invoked
+ * on. `interface` / `enum` / `type` declarations are codegraph symbols, and
+ * without the role a type sharing a function's or a class's name reads as a
+ * second candidate. A lookup of a TYPE name (an annotation, a CHA locator, an
+ * `extends` target) passes none and sees every kind.
  */
 
 import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../../contracts/types/codegraph.js";
@@ -60,6 +67,10 @@ export function lookupEcmascriptSymbolsByShortName(
  * method `Report#render` exactly as TypeScript does, and a top-level class's
  * fqName is its bare name in every language.
  */
-export function lookupEcmascriptSymbols(ctx: CallContext, fqName: string): SymbolDefinition[] {
-  return ctx.symbolTable.lookup(fqName).filter((def) => isEcmascriptSourcePath(def.relPath));
+export function lookupEcmascriptSymbols(
+  ctx: CallContext,
+  fqName: string,
+  options?: Pick<SymbolLookupOptions, "role">,
+): SymbolDefinition[] {
+  return ctx.symbolTable.lookup(fqName, options).filter((def) => isEcmascriptSourcePath(def.relPath));
 }

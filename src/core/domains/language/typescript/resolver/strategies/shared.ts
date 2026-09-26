@@ -7,7 +7,7 @@
  * orchestrator's dispatch path share — factored here so it lives once.
  */
 
-import type { AmbiguousResolveMode, CallContext } from "../../../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode, CallContext, SymbolLookupRole } from "../../../../../contracts/types/codegraph.js";
 import { reexportOriginFile as kernelReexportOriginFile } from "../../../kernel/index.js";
 import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
@@ -62,7 +62,7 @@ export function collectImportedFiles(
     if (!file) continue;
     files.add(file);
     if (hopName && imp.importedNames?.includes(hopName)) {
-      const origin = reexportOriginFile(hopName, file, ctx, mode);
+      const origin = reexportOriginFile(hopName, file, ctx, mode, "receiver");
       if (origin) files.add(origin);
     }
   }
@@ -75,12 +75,17 @@ export function collectImportedFiles(
  * ECMAScript family's lookup (bd tea-rags-mcp-t5cji), so a TypeScript barrel
  * can never be followed onto a Ruby or Python namesake. `ts-named-import`,
  * `ts-imported-callee` and `strategies/index.ts` keep importing it from here.
+ *
+ * `role` is the part the re-exported name plays in the call (bd
+ * tea-rags-mcp-jqvbn): the hop follows a VALUE, so an `interface` or `type`
+ * declared under the same name elsewhere must not make the origin ambiguous.
  */
 export function reexportOriginFile(
   name: string,
   importedFile: string,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
+  role: SymbolLookupRole,
 ): string | null {
-  return kernelReexportOriginFile(name, importedFile, ctx, mode, lookupEcmascriptSymbols);
+  return kernelReexportOriginFile(name, importedFile, ctx, mode, (c, n) => lookupEcmascriptSymbols(c, n, { role }));
 }

@@ -229,7 +229,7 @@ function checkerResolvesCalleeOutsideProject(
   programCache: TSProgramCache | null,
 ): boolean {
   if (programCache === null || call.member.length === 0) return false;
-  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
@@ -268,7 +268,7 @@ function receiverIsImportedBuiltinContainer(call: CallRef, ctx: CallContext): bo
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
   if (!ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS.has(call.member)) return false;
-  if (lookupEcmascriptSymbols(ctx, receiver).length > 0) return false;
+  if (lookupEcmascriptSymbols(ctx, receiver, { role: "receiver" }).length > 0) return false;
   return ctx.imports.some(
     (imp) => imp.importedNames?.includes(receiver) || importSpecifierNamesReceiver(imp.importText, receiver),
   );
@@ -543,7 +543,7 @@ function thisMemberDeclaredOutsideProject(
   programCache: TSProgramCache | null,
 ): boolean {
   if (programCache === null || call.member.length === 0) return false;
-  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const declarations = calledMemberDeclarations(handle.sourceFile, handle.checker, call.startLine, call.member);

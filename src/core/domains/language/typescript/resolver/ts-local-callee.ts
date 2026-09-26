@@ -78,7 +78,7 @@ export function calleeIsLocalValueBinding(
   programCache: TSProgramCache | null,
 ): boolean {
   if (call.receiver !== null) return false;
-  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length === 0) return false;
   return classifyLocalCallee(call, ctx, programCache) !== "notLocalBinding";
 }
 

@@ -23,7 +23,7 @@ export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutio
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const receiverHits = lookupEcmascriptSymbols(ctx, call.receiver);
+    const receiverHits = lookupEcmascriptSymbols(ctx, call.receiver, { role: "receiver" });
     if (receiverHits.length === 0) return CONTINUE;
 
     const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.mode, this.cfg.fileExists);
@@ -34,7 +34,7 @@ export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutio
     if (receiverFiles.size !== 1) return CONTINUE;
 
     const targetFile = receiverFiles.values().next().value as string;
-    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter(
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
       (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver,
     );
     const target = pickSingleCandidate(candidates, this.cfg.mode);

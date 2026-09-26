@@ -116,7 +116,9 @@ export class JavascriptTableDispatchResolver implements DispatchResolverComponen
    * narrow; otherwise drop.
    */
   private resolveCandidateName(name: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const candidates = lookupEcmascriptSymbolsByShortName(ctx, name).filter((def) => def.scope.length === 0);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, name, { role: "callee" }).filter(
+      (def) => def.scope.length === 0,
+    );
     const sole = pickSingleCandidate(candidates, this.mode);
     if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
     if (candidates.length > 1) {
