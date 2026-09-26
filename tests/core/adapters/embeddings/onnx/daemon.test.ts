@@ -967,6 +967,128 @@ describe("OnnxDaemon", () => {
     });
   });
 
+  // bd tea-rags-mcp-a3wk — a model load that FAILS must fail the handshake
+  // promptly, not leave the client waiting out its 120s connect timeout, and
+  // must not wedge the daemon for every later connect.
+  describe("model load failure", () => {
+    /** Worker whose init fails `failuresBeforeReady` times, then loads. */
+    function createFlakyInitWorkerFactory(
+      mode: "initFailed" | "exitBeforeReady",
+      failuresBeforeReady: number,
+    ): {
+      factory: () => EventEmitter & { postMessage: (m: WorkerRequest) => void; terminate: () => Promise<number> };
+      spawned: () => number;
+    } {
+      let spawned = 0;
+      class FlakyInitWorker extends EventEmitter {
+        private readonly fails = spawned++ < failuresBeforeReady;
+        postMessage(msg: WorkerRequest): void {
+          if (msg.type !== "init") return;
+          if (!this.fails) {
+            setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
+            return;
+          }
+          if (mode === "initFailed") {
+            setImmediate(() =>
+              this.emit("message", {
+                type: "initFailed",
+                message: "Exception during initialization: InsertedPrecisionFreeCast_",
+              } satisfies WorkerResponse),
+            );
+          } else {
+            setImmediate(() => this.emit("exit", 1));
+          }
+        }
+        async terminate(): Promise<number> {
+          this.emit("exit", 0);
+          return Promise.resolve(0);
+        }
+      }
+      return { factory: () => new FlakyInitWorker(), spawned: () => spawned };
+    }
+
+    async function firstResponseWithin(
+      client: ReturnType<typeof createPersistentClient>,
+      ms: number,
+    ): Promise<DaemonResponse | "no-response"> {
+      return Promise.race([
+        client.waitForResponse(),
+        new Promise<"no-response">((resolve) =>
+          setTimeout(() => {
+            resolve("no-response");
+          }, ms),
+        ),
+      ]);
+    }
+
+    it("answers the connect with the load error when the worker reports an init failure", async () => {
+      const { factory } = createFlakyInitWorkerFactory("initFailed", Number.POSITIVE_INFINITY);
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: factory,
+      });
+      await daemon.start();
+
+      const client = createPersistentClient(socketPath);
+      client.send({ type: "connect", model: "test-model-fp16", device: "cpu" });
+      const resp = await firstResponseWithin(client, 2000);
+
+      expect(resp).toMatchObject({ type: "error" });
+      expect(resp !== "no-response" && resp.type === "error" ? resp.message : "").toContain(
+        "InsertedPrecisionFreeCast_",
+      );
+
+      await client.close();
+    });
+
+    it("answers the connect with an error when the worker dies before becoming ready", async () => {
+      const { factory } = createFlakyInitWorkerFactory("exitBeforeReady", Number.POSITIVE_INFINITY);
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: factory,
+      });
+      await daemon.start();
+
+      const client = createPersistentClient(socketPath);
+      client.send({ type: "connect", model: "test-model", device: "cpu" });
+      const resp = await firstResponseWithin(client, 2000);
+
+      expect(resp).toMatchObject({ type: "error" });
+
+      await client.close();
+    });
+
+    it("re-attempts the load on the next connect instead of staying wedged", async () => {
+      const flaky = createFlakyInitWorkerFactory("initFailed", 1);
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: flaky.factory,
+      });
+      await daemon.start();
+
+      const first = createPersistentClient(socketPath);
+      first.send({ type: "connect", model: "test-model", device: "cpu" });
+      expect(await firstResponseWithin(first, 2000)).toMatchObject({ type: "error" });
+      await first.close();
+
+      const second = createPersistentClient(socketPath);
+      second.send({ type: "connect", model: "test-model", device: "cpu" });
+      expect(await firstResponseWithin(second, 2000)).toMatchObject({ type: "connected", model: "test-model" });
+      expect(flaky.spawned()).toBe(2);
+
+      await second.close();
+    });
+  });
+
   it("should start without pidFile config", async () => {
     daemon = new OnnxDaemon({
       socketPath,

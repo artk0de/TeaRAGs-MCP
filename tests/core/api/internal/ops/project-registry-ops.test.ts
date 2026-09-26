@@ -555,6 +555,9 @@ describe("ProjectRegistryOps", () => {
         const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
         await recOps.recoverFromQdrant();
         expect(registry.get("code_emb")?.qdrantEmbedded).toBe(true);
+        // The daemon's port is ephemeral: persisting it pins a dead address on
+        // the next daemon restart (bd tea-rags-mcp-lzynm). Only the sentinel is durable.
+        expect(registry.get("code_emb")?.qdrantUrl).toBe("embedded");
       } finally {
         rmSync(recDir, { recursive: true, force: true });
       }
@@ -583,9 +586,47 @@ describe("ProjectRegistryOps", () => {
         const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
         await recOps.recoverFromQdrant();
         expect(registry.get("code_ext")?.qdrantEmbedded).toBe(false);
+        expect(registry.get("code_ext")?.qdrantUrl).toBe("http://localhost:6333");
       } finally {
         rmSync(recDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe("register() backend address (bd tea-rags-mcp-lzynm)", () => {
+    function liveQdrant(url: string, isEmbedded: boolean): QdrantManager {
+      return {
+        url,
+        isEmbedded,
+        collectionExists: vi.fn().mockResolvedValue(true),
+        countPoints: vi.fn().mockResolvedValue(0),
+        getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+        scrollFiltered: vi.fn().mockResolvedValue([]),
+      } as unknown as QdrantManager;
+    }
+
+    it("persists the embedded sentinel, never the daemon's ephemeral port", async () => {
+      const registry = new CollectionRegistry(dir);
+      await new ProjectRegistryOps({ registry, qdrant: liveQdrant("http://127.0.0.1:58372", true) }).register({
+        path: realPath,
+        name: "alpha",
+      });
+
+      const stored = registry.list()[0];
+      expect(stored.qdrantUrl).toBe("embedded");
+      expect(stored.qdrantEmbedded).toBe(true);
+    });
+
+    it("persists an external Qdrant's address as-is", async () => {
+      const registry = new CollectionRegistry(dir);
+      await new ProjectRegistryOps({ registry, qdrant: liveQdrant("http://qdrant.internal:6333", false) }).register({
+        path: realPath,
+        name: "alpha",
+      });
+
+      const stored = registry.list()[0];
+      expect(stored.qdrantUrl).toBe("http://qdrant.internal:6333");
+      expect(stored.qdrantEmbedded).toBe(false);
     });
   });
 

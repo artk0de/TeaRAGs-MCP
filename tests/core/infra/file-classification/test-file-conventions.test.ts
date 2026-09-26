@@ -31,20 +31,17 @@ describe("installTestFileConventions / installedTestFileConventions", () => {
   });
 
   it("classify and scope detection answer from what was installed", async () => {
-    const { installTestFileConventions, classify, getDefaultTestPaths, isTestPath } = await freshModules();
+    const { installTestFileConventions, classify, isTestPath } = await freshModules();
     installTestFileConventions(GO_ONLY);
     expect(classify("pkg/repo_test.go").isTest).toBe(true);
     // Not installed: no TypeScript mask, only the language-agnostic directories.
     expect(classify("src/app.test.ts").isTest).toBe(false);
     expect(classify("tests/app.ts").isTest).toBe(true);
-    expect(getDefaultTestPaths("go")).toEqual([
-      "**/tests/**",
-      "**/test/**",
-      "**/__tests__/**",
-      "**/spec/**",
-      "**/*_test.go",
-    ]);
+    for (const dir of ["tests", "test", "__tests__", "spec"]) {
+      expect(isTestPath(`${dir}/repo.go`, "go"), dir).toBe(true);
+    }
     expect(isTestPath("pkg/repo_test.go", "go")).toBe(true);
+    expect(isTestPath("src/app.test.ts", "typescript")).toBe(false);
   });
 
   it("a re-install replaces the conventions every reader answers from", async () => {

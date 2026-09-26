@@ -32,6 +32,8 @@
  * `FileExtraction` alongside the chunks — eliminating the main-thread re-parse.
  */
 
+import { isMainThread } from "node:worker_threads";
+
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type {
   CollectSymbolsFn,
@@ -120,10 +122,13 @@ const runtime = createWorkerRuntime<ChunkerConfig, WorkerRequest>();
 // the first request is serviced: requests that arrive during load queue behind
 // the promise, preserving order.
 const chunkerPromise = runtime.init().then(async (config) => buildChunker(config));
-// ThreadWorkerRuntime.onShutdown closes parentPort (clean NAPI-destructor exit);
-// process.exit(0) is for the future process path. Both registered; only the
-// active transport's handler fires.
-runtime.onShutdown(() => process.exit(0));
+// ThreadWorkerRuntime.onShutdown closes parentPort (clean NAPI-destructor exit),
+// after which the thread drains and ends on its own. process.exit(0) belongs to
+// the forked-process path ONLY: from a worker thread it would terminate the
+// HOST process (bd tea-rags-mcp-m9g7k), so it is gated on owning the process.
+runtime.onShutdown(() => {
+  if (isMainThread) process.exit(0);
+});
 runtime.onRequest((request) => {
   void (async () => {
     try {

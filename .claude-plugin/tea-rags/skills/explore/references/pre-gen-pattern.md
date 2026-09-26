@@ -30,12 +30,18 @@ embedding).
 find_symbol:
   symbolId: <symbol name from PG-1>
   path: <project>
-  rerank: "techDebt"          ← labels in rankingOverlay, for preset's overlayMask fields
+  rerank: "techDebt"          ← its overlayMask labels the PG-2 fields; do not swap presets
   metaOnly: false             ← full raw payload: recent*, churnVolatility are non-essential
 ```
 
 Labels → `rankingOverlay.{file,chunk}.<field>.label`; raw values →
 `payload.git.{file,chunk}.<field>` (never labelled).
+
+The overlay is preset-specific: `rankingOverlay` carries only the fields in the
+chosen preset's `overlayMask`. `techDebt` is used here because its mask covers
+the labelled PG-2 fields (ageDays, commitCount, bugFixRate, churnVolatility,
+blameDominantAuthorPct, recentDominantAuthorPct). Another preset silently drops
+some of them — `hotspots`, for example, has no `commitCount` label.
 
 Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
 blameDominantAuthor, blameDominantAuthorPct (live-line owner — used for silo

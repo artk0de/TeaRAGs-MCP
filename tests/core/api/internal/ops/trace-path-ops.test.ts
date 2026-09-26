@@ -97,6 +97,28 @@ describe("TracePathOps.tracePath", () => {
     expect(res.truncated).toBe(false);
   });
 
+  // Same empty-vs-error contract as GraphFacade#withReadHandle (bd
+  // tea-rags-mcp-kn2cb): "no path" is an assertion about the code, so it may
+  // only be answered when the graph was actually read — or when there is no
+  // graph database at all (codegraph never ran for this collection).
+  it("surfaces the failure when the graph database exists but cannot be read", async () => {
+    const pool = {
+      acquireReader: vi.fn().mockRejectedValue(new Error("lock held")),
+      hasDatabase: vi.fn().mockReturnValue(true),
+    };
+    const ops = makeOps({ pool });
+    await expect(ops.tracePath({ collection: "c", from: "A", to: "C" })).rejects.toThrow(/lock held/);
+  });
+
+  it("returns empty paths when the collection has no graph database at all", async () => {
+    const pool = {
+      acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),
+      hasDatabase: vi.fn().mockReturnValue(false),
+    };
+    const ops = makeOps({ pool });
+    expect(await ops.tracePath({ collection: "c", from: "A", to: "C" })).toEqual({ paths: [], truncated: false });
+  });
+
   it("passes reorder:false to the reranker (annotate-only)", async () => {
     const reranker = {
       rerank: vi.fn(async (r: unknown[]) =>

@@ -36,13 +36,14 @@
   `createCollection`, and the marker is first written by
   `storeIndexingMarker(…, complete=false, …)` in
   `IndexPipeline#setupCollection`, which publishes the lease as soon as the
-  collection exists. `IndexPipeline#indexCodebase` and
-  `ReindexPipeline#closeRun` (reached from three sites) all pass `complete=true`
-  — they UPDATE that marker, they never create it. The two creation paths are
-  DISJOINT: `create_collection` (`createApp` → `CollectionOps#create`) is
-  `recordModel`'s only caller, while an index run creates its collection and the
-  lease directly (`IndexPipeline#setupCollection`) and never touches the guard —
-  that collection's verdict is first cached on its first `ensureMatch`, not at
+  collection exists. `BaseIndexingPipeline#sealRun` — which closes every return
+  of both `IndexPipeline#indexCodebase` and `ReindexPipeline#reindexChanges` —
+  passes `complete=true`: it UPDATES that marker, it never creates it. The two
+  creation paths are DISJOINT: `create_collection` (`createApp` →
+  `CollectionOps#create`) is `recordModel`'s only caller, while an index run
+  creates its collection and the lease directly
+  (`IndexPipeline#setupCollection`) and never touches the guard — that
+  collection's verdict is first cached on its first `ensureMatch`, not at
   creation. Reading either path off the completing calls puts the creation in
   the wrong place entirely.
 

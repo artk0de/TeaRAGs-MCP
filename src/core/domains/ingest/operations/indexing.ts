@@ -161,34 +161,22 @@ export class IndexPipeline extends BaseIndexingPipeline {
             message: "Finalizing embeddings and storage...",
           });
 
-          const getEnrichmentStatus = await this.finalizeProcessing(ctx, result.chunkMap);
-          this.logPipelineCompletion(ctx);
-
-          // Final embedding flush: pipeline has drained, emit current===total.
-          // Use chunksQueued as denominator — same as in-loop updates — so the
-          // progress bar total never jumps. Under quarantine chunksQueued may
-          // exceed itemsProcessed, making percentage < 100 (truthful).
-          const finalPipelineStats = ctx.chunkPipeline.getStats();
-          progressCallback?.({
-            phase: "embedding",
-            current: finalPipelineStats.itemsProcessed,
-            total: result.chunksQueued,
-            percentage:
-              result.chunksQueued > 0
-                ? Math.round((finalPipelineStats.itemsProcessed / result.chunksQueued) * 100)
-                : 100,
-            message: `Embedding: ${finalPipelineStats.itemsProcessed}/${result.chunksQueued} chunks`,
-            throughput: finalPipelineStats.throughput,
-            // Chunking has completed by now → chunksQueued is the final denominator.
-            totalFinal: true,
-          });
-
-          await this.finalizeAlias(collectionName, setup);
-          await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
-          await this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion);
-          await this.recordRegistryEntry(collectionName, absolutePath);
-
-          const enrichmentResult = getEnrichmentStatus();
+          const enrichmentResult = await this.completePipeline(
+            ctx,
+            result.chunkMap,
+            {
+              targetCollection: setup.targetCollection,
+              collectionAlias: collectionName,
+              absolutePath,
+              modelInfo: overrides?.modelInfo,
+              promote: async () => this.finalizeAlias(collectionName, setup),
+              persist: async () => this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion),
+            },
+            () => {
+              this.logPipelineCompletion(ctx);
+              this.reportFinalEmbeddingProgress(ctx, result.chunksQueued, progressCallback);
+            },
+          );
           stats.enrichmentStatus = enrichmentResult.status;
           stats.enrichmentMetrics = enrichmentResult.metrics;
           stats.durationMs = Date.now() - startTime;
@@ -535,6 +523,30 @@ export class IndexPipeline extends BaseIndexingPipeline {
           `${finalPipelineStats.throughput.toFixed(1)} chunks/s`,
       );
     }
+  }
+
+  /**
+   * Final embedding push once the pipeline has drained: current === total.
+   * Uses chunksQueued as denominator — same as in-loop updates — so the
+   * progress bar total never jumps. Under quarantine chunksQueued may exceed
+   * itemsProcessed, making percentage < 100 (truthful).
+   */
+  private reportFinalEmbeddingProgress(
+    ctx: ProcessingContext,
+    chunksQueued: number,
+    progressCallback?: ProgressCallback,
+  ): void {
+    const finalPipelineStats = ctx.chunkPipeline.getStats();
+    progressCallback?.({
+      phase: "embedding",
+      current: finalPipelineStats.itemsProcessed,
+      total: chunksQueued,
+      percentage: chunksQueued > 0 ? Math.round((finalPipelineStats.itemsProcessed / chunksQueued) * 100) : 100,
+      message: `Embedding: ${finalPipelineStats.itemsProcessed}/${chunksQueued} chunks`,
+      throughput: finalPipelineStats.throughput,
+      // Chunking has completed by now → chunksQueued is the final denominator.
+      totalFinal: true,
+    });
   }
 
   /**

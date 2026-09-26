@@ -190,6 +190,9 @@ export type {
 // the public facade rather than importing core/adapters directly.
 export type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 export { QdrantManager } from "../../adapters/qdrant/client.js";
+// The one definition of "chunk points only" — every CLI chunk count passes it
+// to countPoints so it agrees with get_index_status (bd tea-rags-mcp-39xca.16).
+export { chunkPointsFilter } from "../../adapters/qdrant/service-points.js";
 export { resolveQdrantUrl, EMBEDDED_MARKER } from "../../adapters/qdrant/embedded/daemon.js";
 // Repo identity — lets the CLI tell that two paths are working trees of ONE
 // repository (a checkout and its linked worktrees), so it can inherit config.

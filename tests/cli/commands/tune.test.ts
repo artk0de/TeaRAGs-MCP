@@ -16,6 +16,7 @@ vi.mock("node:child_process", () => ({
 // Mock the embedded-daemon resolver so tests never touch the real Qdrant
 // binary, port files, or network.
 vi.mock("../../../src/core/adapters/qdrant/embedded/daemon.js", () => ({
+  EMBEDDED_MARKER: "embedded",
   resolveQdrantUrl: vi.fn(),
 }));
 
