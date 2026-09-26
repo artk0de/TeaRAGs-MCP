@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
-import { SQL_035_CG_TYPE_ONLY_FILE_EDGES } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/035-cg-type-only-file-edges.js";
+import { SQL_037_CG_TYPE_ONLY_FILE_EDGES } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/037-cg-type-only-file-edges.js";
 import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // bd tea-rags-mcp-r8hme.12 — type-only file dependencies live in their own
 // table, keyed like `cg_symbols_edges_file`, so no runtime-graph reader sees them.
-describe("035 cg type-only file edges migration", () => {
+describe("037 cg type-only file edges migration", () => {
   let dir: string;
   let db: DuckDbGraphClient;
 
@@ -28,9 +28,9 @@ describe("035 cg type-only file edges migration", () => {
 
   it("creates cg_symbols_edges_file_type_only keyed by (source, target), and is idempotent", async () => {
     const first = await runMigrations(db, DATABASE_MIGRATIONS);
-    expect(first.applied).toContain("035-cg-type-only-file-edges.sql");
+    expect(first.applied).toContain("037-cg-type-only-file-edges.sql");
     const second = await runMigrations(db, DATABASE_MIGRATIONS);
-    expect(second.skipped).toContain("035-cg-type-only-file-edges.sql");
+    expect(second.skipped).toContain("037-cg-type-only-file-edges.sql");
 
     const columns = await db.queryAll<{ column_name: string; is_nullable: boolean }>(
       "SELECT column_name, is_nullable FROM duckdb_columns() WHERE table_name = 'cg_symbols_edges_file_type_only'",
@@ -47,7 +47,7 @@ describe("035 cg type-only file edges migration", () => {
   });
 
   it("is registered in DATABASE_MIGRATIONS with the .ts export as its sql", () => {
-    const entry = DATABASE_MIGRATIONS.find((m) => m.filename === "035-cg-type-only-file-edges.sql");
-    expect(entry?.sql).toBe(SQL_035_CG_TYPE_ONLY_FILE_EDGES);
+    const entry = DATABASE_MIGRATIONS.find((m) => m.filename === "037-cg-type-only-file-edges.sql");
+    expect(entry?.sql).toBe(SQL_037_CG_TYPE_ONLY_FILE_EDGES);
   });
 });

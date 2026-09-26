@@ -68,7 +68,7 @@ const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
 // Migration 030 (bd tea-rags-mcp-r8hme.2): the export names are VALUES, so a
 // re-walk that changes only them rewrites the row instead of keeping the first.
 const FILE_EDGE_VALUES = ["import_text", "imported_export_names", "reexported_export_names"] as const;
-// Migration 035 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
+// Migration 037 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
 const TYPE_ONLY_FILE_EDGE_VALUES = ["import_text"] as const;
 const METHOD_EDGE_KEYS = [
   "source_symbol_id",

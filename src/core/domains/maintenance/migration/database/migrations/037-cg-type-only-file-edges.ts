@@ -18,7 +18,7 @@
  *
  * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
  */
-export const SQL_035_CG_TYPE_ONLY_FILE_EDGES = `
+export const SQL_037_CG_TYPE_ONLY_FILE_EDGES = `
 CREATE TABLE IF NOT EXISTS cg_symbols_edges_file_type_only (
   source_rel_path  VARCHAR NOT NULL,
   target_rel_path  VARCHAR NOT NULL,
