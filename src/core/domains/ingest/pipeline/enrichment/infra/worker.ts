@@ -38,6 +38,7 @@ import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 import type { EnrichmentProvider } from "../../../../../contracts/types/provider.js";
 import { applyWorkerDebug } from "../../infra/worker-debug.js";
 import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
+import { chunkedHeapProfilerConfigFromEnv, startChunkedHeapProfiler } from "./chunked-heap-profiler.js";
 import { describeUnenforcedHeapCeiling } from "./heap-ceiling-enforcement.js";
 import { enrichmentProviderCacheKey, invokeEnrichmentMethod } from "./worker-invoke.js";
 import type { EnrichmentReleaseRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "./worker-protocol.js";
@@ -85,6 +86,14 @@ reportHeapCeilingEnforcement();
  * diagnostics session; `stop()` is awaited on shutdown for the final chunk.
  */
 const chunkedCpuProfiler = startChunkedCpuProfiler(chunkedCpuProfilerConfigFromEnv());
+
+/**
+ * Opt-in sampling heap profile of THIS thread (bd tea-rags-mcp-vtuu4). Resolves
+ * to `undefined` unless `ENRICHMENT_WORKER_HEAP_PROFILE_DIR` is set. Exists for
+ * the heap-OOM kill, which no `catch` and no `--heap-prof` flush survives; see
+ * `./chunked-heap-profiler.ts`. Same not-awaited start as the CPU profiler.
+ */
+const chunkedHeapProfiler = startChunkedHeapProfiler(chunkedHeapProfilerConfigFromEnv());
 
 /**
  * Factory shape — providers expose this as the named export referenced by
@@ -176,6 +185,7 @@ if (parentPort) {
           // Final profile chunk before the port closes — a graceful shutdown is
           // the one exit where the last window is not already lost.
           await (await chunkedCpuProfiler)?.stop();
+          await (await chunkedHeapProfiler)?.stop();
           parentPort?.close();
           return;
         }
