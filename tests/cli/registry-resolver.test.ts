@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyProjectDefaults } from "../../src/cli/registry-resolver.js";
 import { ProjectNotRegisteredError } from "../../src/core/api/errors.js";
+import { RegistryQdrantBackendUnresolvedError } from "../../src/core/api/public/index.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
 
 describe("applyProjectDefaults", () => {
@@ -141,6 +142,65 @@ describe("applyProjectDefaults embedding endpoints (tea-rags-mcp-5jstr)", () => 
     const out = applyProjectDefaults({ project: "bare" });
     expect(out["embedding-url"]).toBeUndefined();
     expect(out["embedding-fallback-url"]).toBeUndefined();
+  });
+});
+
+describe("applyProjectDefaults qdrant backend (bd tea-rags-mcp-lzynm)", () => {
+  // `tune --project X` hands `qdrant-url` to its benchmark child as an
+  // explicit address. The entry's backend is resolveRegistryQdrantBackend's
+  // call: a pre-sentinel entry pinning the embedded daemon's frozen ephemeral
+  // port must come back as the `embedded` marker (re-resolved against the
+  // live daemon), never as the dead port.
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cli-rr-qdrant-"));
+    process.env.TEA_RAGS_DATA_DIR = dir;
+  });
+
+  afterEach(() => {
+    delete process.env.TEA_RAGS_DATA_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function register(fields: { qdrantUrl: string; teaRagsVersion: string; qdrantEmbedded?: boolean }): void {
+    const r = new CollectionRegistry(dir);
+    r.record({
+      collectionName: "code_market",
+      path: "/repo/market",
+      embeddingModel: "jina",
+      embeddingDimensions: 768,
+      indexedAt: "2026-05-26T19:08:57.669Z",
+      chunksCount: 306,
+      ...fields,
+    });
+    r.setName("code_market", "market");
+  }
+
+  it("maps a frozen embedded-daemon port on a pre-sentinel entry to the embedded marker", () => {
+    register({ qdrantUrl: "http://127.0.0.1:58372", teaRagsVersion: "1.28.0" });
+    expect(applyProjectDefaults({ project: "market" })["qdrant-url"]).toBe("embedded");
+  });
+
+  it("keeps the embedded sentinel as the embedded marker", () => {
+    register({ qdrantUrl: "embedded", qdrantEmbedded: true, teaRagsVersion: "1.44.2" });
+    expect(applyProjectDefaults({ project: "market" })["qdrant-url"]).toBe("embedded");
+  });
+
+  it("keeps an external Qdrant's address", () => {
+    register({ qdrantUrl: "http://qdrant.internal:6333", teaRagsVersion: "1.28.0" });
+    expect(applyProjectDefaults({ project: "market" })["qdrant-url"]).toBe("http://qdrant.internal:6333");
+  });
+
+  it("explicit --qdrant-url wins over the registry backend", () => {
+    register({ qdrantUrl: "http://127.0.0.1:58372", teaRagsVersion: "1.28.0" });
+    const out = applyProjectDefaults({ project: "market", "qdrant-url": "http://explicit:6333" });
+    expect(out["qdrant-url"]).toBe("http://explicit:6333");
+  });
+
+  it("throws the typed unresolved-backend error when the entry contradicts itself", () => {
+    register({ qdrantUrl: "http://qdrant.internal:6333", qdrantEmbedded: true, teaRagsVersion: "1.33.0" });
+    expect(() => applyProjectDefaults({ project: "market" })).toThrow(RegistryQdrantBackendUnresolvedError);
   });
 });
 

@@ -194,6 +194,9 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     });
 
     const pool = makePool(paths, { buildFingerprint: "SAME-BUILD" });
+    // A reader only attaches to a database that exists (bd tea-rags-mcp-kn2cb);
+    // the fake daemon never opens it, so an empty placeholder is enough.
+    writeFileSync(pool.pathFor("code_hs_gone_v1"), "");
 
     const first = await pool.acquireReader("code_hs_gone_v1");
     await expect(first.graphDb.hasData()).rejects.toThrow(/connection/i);

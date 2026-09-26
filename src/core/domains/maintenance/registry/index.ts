@@ -32,5 +32,5 @@ export { outerEnvForRegistryEntry, pickRegistryEntry, resolveRegistryEnv } from 
 export type { RegistryLookup } from "./env-resolution.js";
 export { RegistryQdrantBackendUnresolvedError } from "./errors.js";
 export type { RegistryQdrantBackendClaim } from "./errors.js";
-export { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
-export type { RegistryQdrantBackend } from "./qdrant-backend-resolution.js";
+export { registryQdrantBackendFields, resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
+export type { RegistryQdrantBackend, RegistryQdrantBackendFields } from "./qdrant-backend-resolution.js";

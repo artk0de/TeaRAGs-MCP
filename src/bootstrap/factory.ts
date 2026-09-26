@@ -803,7 +803,9 @@ export function wireCodegraph(
   };
   const originalAcquireReader = pool.acquireReader.bind(pool);
   pool.acquireReader = async (collectionName: PhysicalCollectionName) => {
-    ensure();
+    // A collection with no database is refused by the reader itself (bd
+    // tea-rags-mcp-kn2cb) — spawning a daemon only to be refused is waste.
+    if (pool.hasDatabase(collectionName)) ensure();
     return originalAcquireReader(collectionName);
   };
 
