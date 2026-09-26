@@ -585,6 +585,24 @@ describe("QdrantManager", () => {
       expect(info.optimizerStatus).toBe("unknown");
     });
 
+    // bd tea-rags-mcp-ye5o — Qdrant reports a failed optimizer as the OBJECT
+    // arm of OptimizersStatus (`{ error: string }`), not a string. That is the
+    // degraded state an operator has to see, so it must not read as "unknown".
+    it("surfaces an optimizer failure and its message instead of 'unknown'", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "degraded",
+        points_count: 10,
+        status: "red",
+        optimizer_status: { error: "Service internal error: segment optimization failed" },
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      const info = await manager.getCollectionInfo("degraded");
+
+      expect(info.status).toBe("red");
+      expect(info.optimizerStatus).toBe("error: Service internal error: segment optimization failed");
+    });
+
     it("maps quantization to 'turbo' when the config carries a turbo block", async () => {
       mockClient.getCollection.mockResolvedValue({
         collection_name: "turbo-col",
