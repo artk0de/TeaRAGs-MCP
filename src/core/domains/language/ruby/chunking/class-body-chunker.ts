@@ -9,7 +9,12 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { BodyChunkResult, ChunkingHook } from "../../../../contracts/types/chunker.js";
+import {
+  bodyChunkContentBudget,
+  type BodyChunkResult,
+  type ChunkingHook,
+  type HookChunkingConfig,
+} from "../../../../contracts/types/chunker.js";
 import { RUBY_DSL, type DslCategory } from "../dsl/index.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
@@ -482,10 +487,14 @@ export function extractBodyChunks(
   childNodes: AstNode[],
   code: string,
   excludedRows: Set<number>,
-  config: { maxChunkSize: number },
+  config: HookChunkingConfig,
 ): BodyChunkResult[] {
   const bodyLines = extractContainerBodyLines(containerNode, childNodes, code, excludedRows);
-  const groups = bodyGrouper.groupLines(bodyLines, config.maxChunkSize);
+  // The group rows get the class header (written below) and the engine's
+  // hierarchy on top; `bodyChunkPrefixLength` reserves both, so a group sized to
+  // what is left fits the cap whole instead of being line-cut by the post-pass
+  // into a headerless `#part2` (bd tea-rags-mcp-j4jrn).
+  const groups = bodyGrouper.groupLines(bodyLines, bodyChunkContentBudget(config));
   const classHeader = extractClassHeader(containerNode, code);
 
   const results: BodyChunkResult[] = [];

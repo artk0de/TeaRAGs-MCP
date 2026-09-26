@@ -57,7 +57,11 @@ export const capability: LanguageCapability = {
   // merged with nbf8q item 4 (8 here); neither parent's index holds both.
   // walker 5: release v1.44.2 shipped walker 4 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 5.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  // chunking 2: bd tea-rags-mcp-j4jrn — the class-body grouper sizes groups to
+  // the cap less the reserved header prefix, so a group that the header used to
+  // push over the cap is no longer line-cut into `#partN` windows; the cut
+  // points and chunk ids of such classes move.
+  versions: { chunking: 2, walker: 5, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.
