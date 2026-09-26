@@ -62,6 +62,8 @@ Tunable via `EMBEDDING_TUNE_RETRY_ATTEMPTS` (default `3`) and `EMBEDDING_TUNE_RE
 
 `OllamaUnavailableError.withFallback` and `OllamaEmbeddings#switchToFallback` let the indexer switch to ONNX mid-run if Ollama becomes unreachable. The fallback is **opt-in** via configuration — no silent provider swaps without user intent.
 
+With `EMBEDDING_FALLBACK_URL` set, `OllamaEmbeddings#switchToFallback` fires on three triggers: the startup health check fails, the 30s background probe finds the primary dead, or `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` (default `3`) embed calls in a row fail on the primary while its `GET /` still answers. Only endpoint-side failures count toward the last one: transport errors, timeouts, 5xx and malformed responses. A 4xx input error would fail on any endpoint, so it neither counts nor resets the run; any successful embed on the primary resets it. The way back is always the background probe, gated by the 60s recovery cooldown.
+
 ## MCP Tool Error Contract
 
 **Tool handlers never contain `try/catch`.** All error handling is centralized in `errorHandlerMiddleware` via `registerToolSafe`. This guarantees:

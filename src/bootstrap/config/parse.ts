@@ -94,6 +94,7 @@ function buildEnvInputs(env: EnvReader) {
       "EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS",
       "EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS",
     ),
+    failoverConsecutiveFailures: env("EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES"),
   };
 
   const embedding = {

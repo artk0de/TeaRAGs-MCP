@@ -21,6 +21,13 @@ export interface RateLimitConfig {
   unavailableRetryMaxWaitMs?: number;
   /** Base backoff (ms) between connection-recovery attempts; exponential, capped. Ollama-only. */
   unavailableRetryBaseDelayMs?: number;
+  /**
+   * Consecutive failed embed calls on the primary (transport error, timeout,
+   * 5xx, malformed response — never a caller-side 4xx) after which the provider
+   * fails over to its configured fallback endpoint, even while the primary
+   * still passes its health probe. 0 disables. Ollama-only; default 3.
+   */
+  failoverConsecutiveFailures?: number;
 }
 
 export interface EmbeddingProvider {
