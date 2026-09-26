@@ -70,6 +70,14 @@
   pool in the app and by `adapters/duckdb/codegraph-db-files.ts` in the purge.
   Why: "reuse the pool, it already has these methods" is the obvious move and it
   silently sabotages another process.
+- **A codegraph generation is more than its `.duckdb`.** The cross-pass input
+  spill (`CodegraphDbFiles#inputSpillPathFor`, under `.xpass`) is keyed by the
+  same physical name, so `CodegraphDbFiles#removeFiles` unlinks it with the
+  database, and every generation sweep enumerates through
+  `listCollectionGenerationNames` (databases AND spills), never
+  `listCollectionDbNames`. Why: a run that dies before the worker's drain leaves
+  a spill with no database beside it; a `*.duckdb`-only listing never sees it,
+  and `.xpass` grew to 32 files / 717 MB of abandoned generations that way.
 - **`QdrantArtifact#remove` swallows the alias delete and NOT the collection
   delete.** A logical name that was never an alias 404s on `deleteAlias` as a
   matter of course, so that step is best-effort and must never block the one

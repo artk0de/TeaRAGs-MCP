@@ -28,7 +28,7 @@ export interface CollectionFootprintPurgerDeps {
   qdrant: PurgeQdrantSurface;
   /** Builds the artifact saga; the purge drives the same artifacts a worktree teardown does. */
   footprintFactory: CollectionFootprintFactory;
-  /** Enumerates codegraph DB generations on disk (the pool's `listCollectionDbNames`). */
+  /** Enumerates codegraph generations on disk, database or cross-pass input spill (`listCollectionGenerationNames`). */
   listCodegraphDbs: (baseCollectionName: string) => PhysicalCollectionName[];
   /** Used only to name worktree clones derived from the purged project — never mutated. */
   registry?: { listWorktrees: () => CollectionEntry[] };

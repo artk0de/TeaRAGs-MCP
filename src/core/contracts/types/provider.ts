@@ -789,6 +789,16 @@ export interface EnrichmentProvider {
    */
   endExtractionRun?: (physicalCollectionName?: PhysicalCollectionName) => Promise<void>;
   /**
+   * Cross-pass run-END seam — the other bookend of `beginExtractionRun`. Called
+   * by the coordinator on the MAIN-thread provider once a cross-pass run's
+   * completion settles, on success AND failure, ONLY when the run is cross-pass.
+   * Deletes the run's input spill: the worker's drain already removed it on the
+   * happy path, so this reclaims what a run that never reached the drain left
+   * behind. Synchronous, idempotent, never throws. Providers without an input
+   * spill (git) omit this.
+   */
+  discardExtractionRun?: (physicalCollectionName?: PhysicalCollectionName) => void;
+  /**
    * Pass-1 fan-out, extraction half. Parse + walk `paths` and return the
    * records — nothing else. MUST be pure with respect to everything the
    * collection-pinned worker owns: no store write, no symbol-table upsert, no

@@ -379,10 +379,12 @@ export class IngestFacade {
           await codegraphPool.removeCollection(orphanPhysicalCollectionName);
         }
       : undefined;
-    // Enumerates on-disk versioned codegraph DBs for the base collection so the
-    // ancient-orphan sweep can reclaim files whose Qdrant collection is gone.
+    // Enumerates every on-disk codegraph generation of the base collection — a
+    // database OR a cross-pass input spill — so the ancient-orphan sweep can
+    // reclaim files whose Qdrant collection is gone. A spill-only generation is
+    // the abandoned run that never reached its drain.
     const codegraphLister: PipelineRegistryDeps["codegraphLister"] = codegraphPool
-      ? (base) => codegraphPool.listCollectionDbNames(base)
+      ? (base) => codegraphPool.listCollectionGenerationNames(base)
       : undefined;
     const registryDeps: PipelineRegistryDeps = {
       registry: deps.collectionRegistry,

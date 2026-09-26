@@ -65,7 +65,7 @@ export function createCollectionFootprintPurger(deps: FootprintPurgeDeps): Colle
   return new CollectionFootprintPurger({
     qdrant: deps.qdrant,
     footprintFactory,
-    listCodegraphDbs: (base) => codegraphFiles.listCollectionDbNames(base),
+    listCodegraphDbs: (base) => codegraphFiles.listCollectionGenerationNames(base),
     registry: deps.registry,
     daemon: readCodegraphDaemonLiveness(deps.appDataDir),
   });

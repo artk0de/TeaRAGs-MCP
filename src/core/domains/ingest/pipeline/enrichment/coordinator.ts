@@ -1248,6 +1248,16 @@ export class EnrichmentCoordinator {
       run.rejectDone(error);
       throw error;
     } finally {
+      // The cross-pass input spill lives for ONE run, but it is named after the
+      // physical generation, so a run that never reached the worker's drain (a
+      // failed completion, a provider whose prefetch failed and was skipped)
+      // leaves it where no later run truncates it once the alias moves on —
+      // one full-corpus NDJSON per abandoned generation. Discard it on every
+      // path; after a successful drain it is already gone. Mirrors the
+      // `beginExtractionRun` call in `beginRun`, on the same instances.
+      if (run.crossPass) {
+        for (const provider of this.providers) provider.discardExtractionRun?.(physicalCollectionName);
+      }
       // Release the daemon keep-alive on EVERY path (success, error, crash).
       // Skipping this would pin the daemon's refcount > 0 forever and defeat
       // its idle shutdown. The release is idempotent and swallows its own

@@ -69,6 +69,56 @@ describe("CodegraphDbFiles", () => {
     expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.wal"))).toBe(false);
   });
 
+  describe("cross-pass input spill (.xpass)", () => {
+    function seedSpill(name: string): string {
+      const xpass = join(codegraphDir, ".xpass");
+      mkdirSync(xpass, { recursive: true });
+      const path = join(xpass, `${name}.ndjson`);
+      writeFileSync(path, "{}\n");
+      return path;
+    }
+
+    it("resolves the spill path under .xpass, keyed by the physical generation", () => {
+      expect(files.inputSpillPathFor("code_a_v3")).toBe(join(codegraphDir, ".xpass", "code_a_v3.ndjson"));
+    });
+
+    it("removing a generation removes its spill with it", async () => {
+      seed("code_a_v1");
+      const spill = seedSpill("code_a_v1");
+      const other = seedSpill("code_a_v2");
+
+      await files.removeCollection("code_a_v1");
+
+      expect(existsSync(spill)).toBe(false);
+      expect(existsSync(other)).toBe(true);
+    });
+
+    it("removes a spill whose generation has no database at all", async () => {
+      const spill = seedSpill("code_a_v7");
+
+      await files.removeCollection("code_a_v7");
+
+      expect(existsSync(spill)).toBe(false);
+    });
+
+    it("lists spill-only generations beside database generations, scoped to the base", () => {
+      seed("code_a_v1");
+      seedSpill("code_a_v1");
+      seedSpill("code_a_v5");
+      seedSpill("code_ab_v1");
+      seedSpill("code_a_worktree_v1");
+
+      expect(files.listCollectionGenerationNames("code_a").sort()).toEqual(["code_a_v1", "code_a_v5"]);
+      // The DB listing stays database-only: a spill is not a graph.
+      expect(files.listCollectionDbNames("code_a")).toEqual(["code_a_v1"]);
+    });
+
+    it("lists generations when only the database directory exists", () => {
+      seed("code_a_v2");
+      expect(files.listCollectionGenerationNames("code_a")).toEqual(["code_a_v2"]);
+    });
+  });
+
   it("is idempotent — removing an absent collection resolves", async () => {
     await expect(files.removeCollection("code_never")).resolves.not.toThrow();
   });
