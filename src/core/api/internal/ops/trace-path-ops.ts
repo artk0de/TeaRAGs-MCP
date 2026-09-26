@@ -102,7 +102,13 @@ export class TracePathOps {
     let handle: CollectionGraphHandle | undefined;
     try {
       handle = await this.deps.pool.acquireReader(active);
-    } catch {
+    } catch (err) {
+      // GraphFacade#withReadHandle's contract (bd tea-rags-mcp-kn2cb): "no
+      // path" asserts something about the code, so it is only answered when
+      // there is no graph database at all. A graph that exists but cannot be
+      // read (lock held, unreadable or corrupt file, daemon down) is a failure
+      // the caller must see — not an empty result it would act on.
+      if (this.deps.pool.hasDatabase(active)) throw err;
       return EMPTY;
     }
 

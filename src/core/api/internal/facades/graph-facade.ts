@@ -120,8 +120,9 @@ export class GraphFacade {
    * READ_ONLY attach throws "Conflicting lock is held" while the daemon holds
    * RW); in direct/test mode an in-process READ_ONLY attach. The handle is
    * NON-cached and MUST be closed, so every read opens-queries-closes in one
-   * bounded scope. Returns `fallback` only on pool-level acquire failure (daemon
-   * unreachable, lock held, missing file, init error).
+   * bounded scope. Returns `fallback` only when the collection has no graph
+   * database at all; an acquire failure on a database that exists (daemon
+   * unreachable, lock held, unreadable or corrupt file) is rethrown.
    */
   private async withReadHandle<T>(
     addr: GraphAddressing,

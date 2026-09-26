@@ -43,6 +43,7 @@ import {
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
   CodegraphDaemonUnreachableError,
+  CodegraphDatabaseMissingError,
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
   isDaemonDrainRefusal,
@@ -838,8 +839,19 @@ export class GraphDbClientPool {
    * "Conflicting lock is held" while the daemon holds RW. Direct/test mode
    * attaches READ_ONLY in-process (`acquireRead`). Calling `close()` is safe
    * either way (a no-op in daemon mode).
+   *
+   * A reader never CREATES a database (bd tea-rags-mcp-kn2cb): the daemon opens
+   * collections read-write, so proxying a read of a collection with no file
+   * materialized an empty one, and from then on the collection claimed a graph
+   * it never had — `hasDatabase` turned true and the empty-vs-error contract
+   * of every graph read flipped for it.
+   *
+   * @throws CodegraphDatabaseMissingError when the collection has no database.
    */
   async acquireReader(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    if (!this.hasDatabase(collectionName)) {
+      throw new CodegraphDatabaseMissingError(this.pathFor(collectionName));
+    }
     if (this.options.daemonSocketPath) {
       return this.acquireDaemonHandle(collectionName);
     }

@@ -13,7 +13,7 @@
  */
 
 import type * as ChildProcessModule from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { wireCodegraph } from "../../src/bootstrap/factory.js";
 import { daemonRuntimeOptionsFromEnv } from "../../src/core/adapters/duckdb/daemon/entry.js";
+import { CodegraphDatabaseMissingError } from "../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../src/core/adapters/duckdb/index.js";
 import type { CollectionGraphHandle } from "../../src/core/adapters/duckdb/pool.js";
 import type { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
@@ -78,8 +79,12 @@ describe("wireCodegraph — daemon spawn settings (8qzyb)", () => {
     vi.spyOn(GraphDbClientPool.prototype, "acquireReader").mockResolvedValue({} as CollectionGraphHandle);
     const ctx = wireWithConfiguredCeiling();
     expect(ctx).toBeDefined();
+    // The wrap spawns only for a collection that has a database (bd
+    // tea-rags-mcp-kn2cb); an empty placeholder stands in for one.
+    const collection = fixturePhysicalCollectionName("code_respawn_v1");
+    writeFileSync(ctx!.pool.pathFor(collection), "");
 
-    await ctx!.pool.acquireReader(fixturePhysicalCollectionName("code_respawn_v1"));
+    await ctx!.pool.acquireReader(collection);
     const { daemonRestart } = (ctx!.pool as unknown as { options: { daemonRestart: { respawn: () => void } } }).options;
     daemonRestart.respawn();
 
@@ -90,5 +95,15 @@ describe("wireCodegraph — daemon spawn settings (8qzyb)", () => {
     expect(respawn.debug).toBe(lazySpawn.debug);
     expect(respawn.rootDir).toBe(lazySpawn.rootDir);
     expect(respawn.paths.storageDir).toBe(lazySpawn.paths.storageDir);
+  });
+
+  it("does not spawn a daemon for a read of a collection with no database (bd tea-rags-mcp-kn2cb)", async () => {
+    const ctx = wireWithConfiguredCeiling();
+    expect(ctx).toBeDefined();
+
+    await expect(ctx!.pool.acquireReader(fixturePhysicalCollectionName("code_absent_v1"))).rejects.toBeInstanceOf(
+      CodegraphDatabaseMissingError,
+    );
+    expect(spawned.envs).toHaveLength(0);
   });
 });

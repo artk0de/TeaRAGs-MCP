@@ -32,6 +32,24 @@ export class DuckDbOpenFailedError extends InfraError {
 }
 
 /**
+ * A READ addressed a collection that has no codegraph database on disk (bd
+ * tea-rags-mcp-kn2cb). Readers never create one: the daemon opens collections
+ * read-write, so a proxied read used to materialize an empty file, after which
+ * the collection claimed a graph it never had. Optional read consumers treat
+ * this class as "codegraph never ran here" and answer empty.
+ */
+export class CodegraphDatabaseMissingError extends InfraError {
+  constructor(dbPath: string) {
+    super({
+      code: "INFRA_CODEGRAPH_DATABASE_MISSING",
+      message: `No codegraph database at ${dbPath}`,
+      hint: "The collection was not indexed with codegraph. Enable CODEGRAPH_ENABLED and re-index to build it.",
+      httpStatus: 404,
+    });
+  }
+}
+
+/**
  * The codegraph store refused to CREATE `<base>.duckdb` because
  * `<base>_v<N>.duckdb` generations already sit beside it (bd tea-rags-mcp-39xca.1).
  *
