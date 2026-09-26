@@ -115,7 +115,14 @@ export type {
   CodegraphCollectionCompletionContext,
   CodegraphCollectionCompletionHook,
 } from "./collection-completion-hook.js";
-export { CODEGRAPH_LANGUAGE_BY_EXTENSION, CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./symbols/index.js";
+export {
+  CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  CODEGRAPH_LANGUAGES,
+  type CodegraphLanguageConfig,
+  extractFileInMemory,
+  type InMemoryExtractionContext,
+  type InMemoryExtractionDeps,
+} from "./symbols/index.js";
 export { buildCodegraphExclusionFilter } from "./exclusion.js";
 export type { CodegraphExclusionOptions } from "./exclusion.js";
 export { createCodegraphEnrichmentProvider } from "./factory.js";

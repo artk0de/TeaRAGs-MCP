@@ -9,6 +9,8 @@
  */
 
 import { execFile, execFileSync, spawn, type ExecFileOptions } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { resolveGitExecutable } from "../../../../infra/git-executable.js";
 import { isDebug } from "../../../../infra/runtime.js";
@@ -654,6 +656,86 @@ export async function listWorktreeDeletions(repoRoot: string, timeoutMs = TREE_L
 
 function splitNulTerminated(out: string): string[] {
   return out.split("\0").filter((p) => p.length > 0);
+}
+
+/** Lines of a file the working tree ADDED against a base: 1-based, inclusive on both ends. */
+export interface AddedLineRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * Files the working tree changed against `base`, repo-relative and sorted: every
+ * tracked path whose content differs from `base` (staged or not, `--no-renames`
+ * so a move lists its new side) plus every untracked, non-ignored file. Paths
+ * the working tree deleted are not listed — a naming review has nothing to read
+ * in them.
+ */
+export async function listChangedFiles(
+  repoRoot: string,
+  base: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<string[]> {
+  const [tracked, untracked] = await Promise.all([
+    execWithStallGuard(
+      resolveGitExecutable(),
+      ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", "--diff-filter=d", base, "--"],
+      { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+    ),
+    listUntrackedFiles(repoRoot, [], timeoutMs),
+  ]);
+  return [...new Set([...splitNulTerminated(tracked), ...untracked])].sort();
+}
+
+/**
+ * The line ranges `relPath` gained against `base`, read from the hunk headers of
+ * `git diff -U0` (`@@ -a,b +c,d @@` → `c..c+d-1`; `d` omitted means 1, `d = 0`
+ * is a pure deletion and adds nothing). An untracked file was added whole, so it
+ * reads as one range over every line it has.
+ */
+export async function readAddedLineRanges(
+  repoRoot: string,
+  base: string,
+  relPath: string,
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<AddedLineRange[]> {
+  if ((await listUntrackedFiles(repoRoot, [relPath], timeoutMs)).length > 0) {
+    const lineCount = countLines(readFileSync(join(repoRoot, relPath), "utf8"));
+    return lineCount > 0 ? [{ start: 1, end: lineCount }] : [];
+  }
+  const diff = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["diff", "--no-ext-diff", "--no-color", "--no-renames", "-U0", base, "--", relPath],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  return parseAddedHunkRanges(diff);
+}
+
+async function listUntrackedFiles(repoRoot: string, pathspec: string[], timeoutMs: number): Promise<string[]> {
+  const out = await execWithStallGuard(
+    resolveGitExecutable(),
+    ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspec],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  return splitNulTerminated(out);
+}
+
+const ADDED_HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm;
+
+function parseAddedHunkRanges(diff: string): AddedLineRange[] {
+  const ranges: AddedLineRange[] = [];
+  for (const match of diff.matchAll(ADDED_HUNK_HEADER)) {
+    const start = Number(match[1]);
+    const count = match[2] === undefined ? 1 : Number(match[2]);
+    if (count > 0) ranges.push({ start, end: start + count - 1 });
+  }
+  return ranges;
+}
+
+function countLines(text: string): number {
+  if (text.length === 0) return 0;
+  const newlines = text.split("\n").length - 1;
+  return text.endsWith("\n") ? newlines : newlines + 1;
 }
 
 /** Run a single pathspec-filtered git log and parse the output. */

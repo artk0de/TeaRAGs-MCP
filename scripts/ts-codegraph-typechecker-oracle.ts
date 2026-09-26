@@ -166,7 +166,6 @@ import { readdir } from "node:fs/promises";
 import { join, relative, resolve as resolvePath, sep } from "node:path";
 
 import ignore, { type Ignore } from "ignore";
-import Parser from "tree-sitter";
 import ts from "typescript";
 
 import {
@@ -191,16 +190,14 @@ import type {
 } from "../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescript/walker/walker.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
-import { loadCodegraphGrammarSync } from "../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
+import { extractFileInMemory } from "../src/core/domains/trajectory/codegraph/symbols/in-memory-extraction.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { symbolDefinitionsOf } from "../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { collectDependencyManifestSources, readDeclaredDependencies } from "../src/core/infra/dependency-manifests.js";
-import { fileIsInertForExtraction } from "../src/core/infra/extraction-fast-path.js";
 import type { PathFilter } from "../src/core/infra/file-classification/index.js";
-import { materializeTree } from "../src/core/infra/materialize.js";
 import {
   DECLARATION_FILE_SUFFIXES,
   diffResolution,
@@ -1614,24 +1611,13 @@ export function extractFile(
 
   try {
     const code = readFileSync(join(repoRoot, relPath), "utf8");
-    const parser = new Parser();
-    parser.setLanguage(loadCodegraphGrammarSync(factory, extensionOf(relPath)));
-    const nativeRoot = parser.parse(code).rootNode;
-    // The production fast path (bd tea-rags-mcp-1v12o.2.4), mirrored here because
-    // the tally measures THIS function: a harness that materialized what
-    // production skips would report a wall production never pays.
-    if (fileIsInertForExtraction(nativeRoot, walker.extractionBearingNodeTypes)) {
-      return { relPath, language: config.language, imports: [], chunks: [], fileScope: [] };
-    }
-    const tree = { rootNode: materializeTree(nativeRoot, code) };
-    const chunks = collectSymbols(
-      tree,
-      (node) => walker.nameOf(node),
-      config.scopeSeparator,
-      config.disambiguateOverloads ?? false,
-      composer,
-    );
-    return walker.walk({ tree, code, relPath, language: config.language, chunks, declaredDependencies });
+    // Production's walk from text, inert-file fast path included (bd
+    // tea-rags-mcp-1v12o.2.4): the tally measures THIS function, and a harness
+    // that materialized what production skips would report a wall production
+    // never pays.
+    return extractFileInMemory({ languageFactory: factory, collectSymbols, composer }, relPath, code, {
+      declaredDependencies,
+    });
   } catch (error) {
     onError?.(error);
     return null;
