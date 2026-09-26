@@ -640,6 +640,14 @@ export interface LanguageSymbolResolver {
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
+   * Optional: pass-2's visit order for this language, as groups (bd
+   * tea-rags-mcp-vtuu4); `undefined` keeps the spill order. Mirrors
+   * `CallResolver.planResolveVisits`.
+   */
+  planResolveVisits?: () => readonly (readonly RelPath[])[] | undefined;
+  /** Optional: pass-2 finished one visit group. Mirrors `CallResolver.endResolveVisitGroup`. */
+  endResolveVisitGroup?: () => void;
+  /**
    * Optional: this resolver's run-scoped cache observables, as an opaque
    * JSON-able record for the pass-2 progress log (bd tea-rags-mcp-6aytq). Read
    * once per progress line, never per call. Mirrors `CallResolver.diagnostics`.

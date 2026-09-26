@@ -87,6 +87,7 @@ import {
   type DispatchTableDef,
   type FileExtraction,
   type GraphEdges,
+  type RelPath,
   type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
@@ -550,7 +551,21 @@ export class TSCallResolver implements CallResolver {
     // The corpus goes with the count: the tsconfig root set the cache would
     // otherwise build from misses the files a run resolves but the project
     // excludes — 936 of taxdome's 10,912 (bd tea-rags-mcp-6aytq).
-    this.programCache?.primeForExpectedEntries(plan.expectedFileCount, plan.expectedRelPaths);
+    // Call counts cap each closure batch's checker load (bd tea-rags-mcp-vtuu4).
+    this.programCache?.primeForExpectedEntries(plan.expectedFileCount, plan.expectedRelPaths, plan.expectedCallSites);
+  }
+
+  /**
+   * Pass-2's visit order: the Program cache's closure batches, oversize roots
+   * last (bd tea-rags-mcp-vtuu4). `undefined` without a batch plan.
+   */
+  planResolveVisits(): RelPath[][] | undefined {
+    return this.programCache?.planResolveVisits();
+  }
+
+  /** Pass-2 finished one batch group: release its Program. */
+  endResolveVisitGroup(): void {
+    this.programCache?.endResolveVisitGroup();
   }
 
   /**

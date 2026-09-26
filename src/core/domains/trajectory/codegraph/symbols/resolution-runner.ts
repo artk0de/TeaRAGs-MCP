@@ -21,6 +21,7 @@ import {
   type FileExtraction,
   type GlobalSymbolTable,
   type GraphEdges,
+  type RelPath,
 } from "../../../../contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor, LanguageSymbolResolver } from "../../../../contracts/types/language.js";
 import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
@@ -41,6 +42,15 @@ type ChunkExtraction = FileExtraction["chunks"][number];
 type CallRef = ChunkExtraction["calls"][number];
 type MethodEdges = GraphEdges["methodEdges"];
 type AmbiguousFanouts = NonNullable<GraphEdges["ambiguousFanouts"]>;
+
+/** One language's pass-2 visit order (bd tea-rags-mcp-vtuu4) — see `CallEdgeResolutionRunner#resolveVisitPlans`. */
+export interface CodegraphResolveVisitPlan {
+  readonly language: string;
+  /** Visited in order; files no group names are visited before the first. */
+  readonly groups: readonly (readonly RelPath[])[];
+  /** Pass-2 finished one group: tell the language's resolver. */
+  readonly endGroup: () => void;
+}
 
 /**
  * The "run-global if any file contributed, else this file's own" selection,
@@ -275,16 +285,59 @@ export class CallEdgeResolutionRunner {
     for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
       if (!supported.has(language)) continue;
       const { resolver } = this.languageFactory.create(language);
+      const expectedRelPaths = this.runState.extractedRelPathsByLanguage.get(language);
+      const expectedCallSites = this.callSitesOf(expectedRelPaths);
       resolver?.prepareResolvePass?.({
         expectedFileCount,
         // The corpus itself, not only its size: a resolver priming a
         // whole-project cache has to build it over the files this pass will
         // ask for, and the project's own declared file set is a different one
         // (bd tea-rags-mcp-6aytq).
-        expectedRelPaths: this.runState.extractedRelPathsByLanguage.get(language),
+        expectedRelPaths,
+        // Present only when some file has calls, so a plan with nothing to
+        // count carries no empty map (bd tea-rags-mcp-vtuu4).
+        ...(expectedCallSites.size > 0 ? { expectedCallSites } : {}),
         projectRoot: this.runState.projectRoot,
       });
     }
+  }
+
+  /** Pass-1's call-site counts for `relPaths`, files without calls omitted. */
+  private callSitesOf(relPaths: readonly RelPath[] | undefined): Map<RelPath, number> {
+    const counts = new Map<RelPath, number>();
+    for (const relPath of relPaths ?? []) {
+      const callSites = this.runState.extractedCallSitesByRelPath.get(relPath);
+      if (callSites !== undefined) counts.set(relPath, callSites);
+    }
+    return counts;
+  }
+
+  /**
+   * Each language's pass-2 visit order, for the languages whose resolver asks
+   * for one (bd tea-rags-mcp-vtuu4) — read once, after
+   * {@link prepareResolvePass}, which is what built the order. Empty when no
+   * language asks, and pass-2 then streams its spill unchanged.
+   *
+   * `endGroup` forwards the group end to the language's resolver, so pass-2
+   * never holds a resolver reference of its own.
+   */
+  resolveVisitPlans(): CodegraphResolveVisitPlan[] {
+    const supported = new Set(this.languageFactory.supported());
+    const plans: CodegraphResolveVisitPlan[] = [];
+    for (const language of this.runState.extractedFilesByLanguage.keys()) {
+      if (!supported.has(language)) continue;
+      const { resolver } = this.languageFactory.create(language);
+      const groups = resolver?.planResolveVisits?.();
+      if (groups === undefined) continue;
+      plans.push({
+        language,
+        groups,
+        endGroup: (): void => {
+          resolver?.endResolveVisitGroup?.();
+        },
+      });
+    }
+    return plans;
   }
 
   /**

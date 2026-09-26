@@ -387,6 +387,13 @@ export class CodegraphRunState {
   readonly extractedRelPathsByLanguage = new Map<string, RelPath[]>();
 
   /**
+   * Call sites of each walked file that has any (bd tea-rags-mcp-vtuu4): the
+   * per-file input TypeScript's closure-batch planner caps a batch's checker
+   * load with. Absent means zero. Released at both clear seams.
+   */
+  readonly extractedCallSitesByRelPath = new Map<RelPath, number>();
+
+  /**
    * Files this run walked that ANOTHER language partition owns (bd
    * tea-rags-mcp-sgo8v): absorbed as `mirror` records, so their pass-1 state is
    * current in the maps above while their graph rows are another worker's to
@@ -1495,6 +1502,7 @@ export class CodegraphRunState {
     this.ancestorsByFamily = new LanguageFamilyRecord();
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
+    this.extractedCallSitesByRelPath.clear();
     this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
@@ -1541,6 +1549,7 @@ export class CodegraphRunState {
     this.ancestorsByFamily = new LanguageFamilyRecord();
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
+    this.extractedCallSitesByRelPath.clear();
     this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
@@ -1605,6 +1614,9 @@ export class CodegraphRunState {
       const relPaths = this.extractedRelPathsByLanguage.get(extraction.language);
       if (relPaths === undefined) this.extractedRelPathsByLanguage.set(extraction.language, [extraction.relPath]);
       else relPaths.push(extraction.relPath);
+      let callSites = 0;
+      for (const chunk of extraction.chunks) callSites += chunk.calls.length;
+      if (callSites > 0) this.extractedCallSitesByRelPath.set(extraction.relPath, callSites);
     }
     // Class-name maps land in the file's language FAMILY (bd tea-rags-mcp-nbf8q).
     const { language } = extraction;

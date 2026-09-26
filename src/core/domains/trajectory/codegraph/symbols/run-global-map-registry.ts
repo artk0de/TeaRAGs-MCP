@@ -106,6 +106,10 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
     policy: "batchOnly",
     reason: "the walked set itself: hydration skips these files and the deferred chunk pass maps them",
   },
+  extractedCallSitesByRelPath: {
+    policy: "batchOnly",
+    reason: "per-file call counts of the walked set, read by pass-2's plan; hydrated files are not re-resolved",
+  },
   mirroredRelPaths: {
     policy: "batchOnly",
     reason: "files another language partition owns and this one walked as mirrors; hydration skips them too",

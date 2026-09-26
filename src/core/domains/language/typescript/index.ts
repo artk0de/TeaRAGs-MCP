@@ -163,6 +163,12 @@ export class TypeScriptLanguage implements LanguageProvider {
       prepareResolvePass: (plan: SymbolResolutionPassPlan): void => {
         this.resolverForRoot(plan.projectRoot ?? this.repoRoot).prepareResolvePass?.(plan);
       },
+      // Off the BOUND resolver, like `diagnostics`: the order is the batch plan
+      // the prepare call above just built (bd tea-rags-mcp-vtuu4).
+      planResolveVisits: () => this.bound?.resolver.planResolveVisits?.(),
+      endResolveVisitGroup: (): void => {
+        this.bound?.resolver.endResolveVisitGroup?.();
+      },
       // Reported off the BOUND resolver, never a freshly built one: the numbers
       // belong to the cache the run has been resolving through, and binding a
       // new root here would answer with a cache that has done nothing.

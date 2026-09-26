@@ -518,3 +518,93 @@ describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", 
     }).not.toThrow();
   });
 });
+
+describe("CallEdgeResolutionRunner closure-batch visit order (bd tea-rags-mcp-vtuu4)", () => {
+  function extraction(relPath: string, language: string, callCount: number): FileExtraction {
+    return {
+      relPath,
+      language,
+      imports: [],
+      fileScope: [],
+      chunks: [
+        {
+          symbolId: "f",
+          scope: [],
+          calls: Array.from({ length: callCount }, (_, i) => ({
+            callText: `g${i}()`,
+            receiver: null,
+            member: `g${i}`,
+            startLine: i,
+          })),
+        },
+      ],
+    };
+  }
+
+  it("passes pass-1 call-site counts on the resolve plan", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(extraction("a.ts", "typescript", 3), []);
+    runState.absorb(extraction("b.ts", "typescript", 0), []);
+    runState.absorb(extraction("c.rb", "ruby", 2), []);
+    const plans: Record<string, SymbolResolutionPassPlan> = {};
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver: {
+          resolve: () => null,
+          prepareResolvePass: (plan: SymbolResolutionPassPlan) => {
+            plans[language] = plan;
+          },
+        },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    new CallEdgeResolutionRunner(languageFactory, runState).prepareResolvePass();
+
+    // Per language, and only files that have calls: a file the map does not
+    // name counts zero.
+    expect(plans["typescript"]?.expectedCallSites).toEqual(new Map([["a.ts", 3]]));
+    expect(plans["ruby"]?.expectedCallSites).toEqual(new Map([["c.rb", 2]]));
+  });
+
+  it("hands each language's visit plan to pass-2 and forwards group ends", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(extraction("a.ts", "typescript", 0), []);
+    runState.absorb(extraction("c.rb", "ruby", 0), []);
+    let groupEnds = 0;
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver:
+          language === "typescript"
+            ? {
+                resolve: () => null,
+                planResolveVisits: () => [["a.ts"], ["big.ts"]],
+                endResolveVisitGroup: () => {
+                  groupEnds += 1;
+                },
+              }
+            : { resolve: () => null },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    const plans = new CallEdgeResolutionRunner(languageFactory, runState).resolveVisitPlans();
+
+    expect(plans.map(({ language, groups }) => ({ language, groups }))).toEqual([
+      { language: "typescript", groups: [["a.ts"], ["big.ts"]] },
+    ]);
+    plans[0]?.endGroup();
+    expect(groupEnds).toBe(1);
+  });
+
+  it("offers no visit plan for a resolver that answers without one", () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(extraction("a.ts", "typescript", 0), []);
+    const languageFactory = {
+      supported: () => ["typescript"],
+      create: () => ({ resolver: { resolve: () => null, planResolveVisits: () => undefined } }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    expect(new CallEdgeResolutionRunner(languageFactory, runState).resolveVisitPlans()).toEqual([]);
+  });
+});

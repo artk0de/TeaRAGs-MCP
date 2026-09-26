@@ -65,6 +65,14 @@ export interface SymbolResolutionPassPlan {
    */
   expectedRelPaths?: readonly RelPath[];
   /**
+   * Call sites pass-1 counted per file of {@link expectedRelPaths}, for files
+   * that have any (bd tea-rags-mcp-vtuu4) — a file the map does not name counts
+   * zero. TypeScript's closure-batch planner caps each batch's call sites with
+   * it, because the checker's heap grows with the calls resolved against it.
+   * Optional on the same terms as the list.
+   */
+  expectedCallSites?: ReadonlyMap<RelPath, number>;
+  /**
    * Project root the pass resolves against — the same value every
    * `CallContext` of the pass carries. Present here because a resolver bound
    * lazily to a root (TypeScript: `tsconfig.json`, the file probe, the
@@ -92,6 +100,25 @@ export interface CallResolver {
    * Mirrors `LanguageSymbolResolver.prepareResolvePass`.
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
+  /**
+   * Optional: the order pass-2 should visit this language's files in, as
+   * groups (bd tea-rags-mcp-vtuu4). Read once, after `prepareResolvePass`.
+   * Pass-2 visits every group in order and calls
+   * {@link endResolveVisitGroup} after each; files no group names are visited
+   * first, in spill order. `undefined` keeps the spill order — the answer of a
+   * resolver that primed nothing order-dependent.
+   *
+   * TypeScript answers with its closure batches: each group is served off one
+   * `ts.Program`, so visiting a group together builds each Program once.
+   * Mirrors `LanguageSymbolResolver.planResolveVisits`.
+   */
+  planResolveVisits?: () => readonly (readonly RelPath[])[] | undefined;
+  /**
+   * Optional: pass-2 finished one group of {@link planResolveVisits}, so the
+   * state serving it may be released. Mirrors
+   * `LanguageSymbolResolver.endResolveVisitGroup`.
+   */
+  endResolveVisitGroup?: () => void;
   /**
    * Optional: what this resolver's run-scoped caches did, as a JSON-able record
    * for the pass's progress log (bd tea-rags-mcp-6aytq).
