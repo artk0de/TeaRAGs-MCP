@@ -12,7 +12,7 @@ import { dirname } from "node:path";
 import { parentPort } from "node:worker_threads";
 
 import { DEFAULT_GPU_BATCH_SIZE, PROBE_BATCH_SIZES, PROBE_PRESSURE_THRESHOLD } from "./constants.js";
-import { detectDevice } from "./device.js";
+import { detectDevice, graphOptimizationLevelFor } from "./device.js";
 import { OnnxPackageMissingError } from "./errors.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
@@ -196,7 +196,7 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
 
     const pipelineOpts: Record<string, unknown> = {
       session_options: {
-        graphOptimizationLevel: "all",
+        graphOptimizationLevel: graphOptimizationLevelFor(resolvedDevice, dtype),
         enableCpuMemArena: true,
         enableMemPattern: true,
         ...(resolvedDevice === "webgpu" ? { enableGraphCapture: true } : {}),
@@ -234,7 +234,7 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     const raw = error instanceof Error ? error.message : String(error);
     const isAuthError = raw.includes("Unauthorized") || raw.includes("401") || raw.includes("403");
     const message = isAuthError ? formatAuthError(baseModel) : raw;
-    post({ type: "error", id: -1, message });
+    post({ type: "initFailed", message });
   }
 }
 

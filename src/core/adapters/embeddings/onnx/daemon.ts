@@ -38,6 +38,9 @@ interface WorkerLike extends EventEmitter {
   terminate: () => Promise<number>;
 }
 
+/** How one model load ended, as seen by the connects waiting on it. */
+type ModelLoadOutcome = { ok: true } | { ok: false; message: string };
+
 interface ClientState {
   socket: Socket;
   connected: boolean; // has sent "connect" message
@@ -58,8 +61,11 @@ export class OnnxDaemon {
   private loadedModel = "";
   private loadedDevice = "";
   private workerReady = false;
-  private workerReadyPromise: Promise<void> | null = null;
-  private workerReadyResolve: (() => void) | null = null;
+  /** Settles once per model load: `ok` on "ready", the failure otherwise. An
+   *  outcome rather than a rejection, so a load that fails with no connect
+   *  waiting on it is not an unhandled rejection. */
+  private workerReadyPromise: Promise<ModelLoadOutcome> | null = null;
+  private workerReadySettle: ((outcome: ModelLoadOutcome) => void) | null = null;
 
   // Pending embed callbacks: id → (response) => void
   private readonly pendingEmbeds = new Map<number, (resp: WorkerResponse) => void>();
@@ -277,8 +283,8 @@ export class OnnxDaemon {
       this.loadedDevice = device;
 
       // Create ready promise
-      this.workerReadyPromise = new Promise<void>((resolve) => {
-        this.workerReadyResolve = resolve;
+      this.workerReadyPromise = new Promise<ModelLoadOutcome>((resolve) => {
+        this.workerReadySettle = resolve;
       });
 
       // Send init to worker
@@ -287,7 +293,11 @@ export class OnnxDaemon {
 
     // Wait for worker to be ready
     if (!this.workerReady && this.workerReadyPromise) {
-      await this.workerReadyPromise;
+      const outcome = await this.workerReadyPromise;
+      if (!outcome.ok) {
+        this.send(socket, { type: "error", message: `ONNX model load failed: ${outcome.message}` });
+        return;
+      }
     }
 
     state.connected = true;
@@ -379,12 +389,40 @@ export class OnnxDaemon {
       console.error(`[OnnxDaemon] Worker error: ${err.message}`);
     });
 
-    worker.on("exit", (_code: number) => {
+    worker.on("exit", (code: number) => {
+      // A superseded worker (already dropped by failModelLoad) exiting late
+      // must not clear the state of the one that replaced it.
+      if (this.worker !== worker) return;
+      if (this.workerReadySettle) {
+        this.failModelLoad(`worker exited with code ${code} before the model loaded`);
+        return;
+      }
       this.worker = null;
       this.workerReady = false;
     });
 
     return worker;
+  }
+
+  /**
+   * End a model load that will never reach "ready": answer every connect
+   * waiting on it, drop the worker, and forget the model so the next connect
+   * spawns a fresh load (bd tea-rags-mcp-a3wk). Without this the waiters hang
+   * until the client's handshake timeout and the daemon stays wedged on a
+   * load that already failed.
+   */
+  private failModelLoad(message: string): void {
+    const settle = this.workerReadySettle;
+    const { worker } = this;
+    this.workerReadySettle = null;
+    this.workerReadyPromise = null;
+    this.worker = null;
+    this.workerReady = false;
+    this.loadedModel = "";
+    this.loadedDevice = "";
+    console.error(`[OnnxDaemon] Model load failed: ${message}`);
+    if (worker) void worker.terminate().catch(() => undefined);
+    settle?.({ ok: false, message });
   }
 
   private handleWorkerMessage(msg: WorkerResponse): void {
@@ -393,11 +431,15 @@ export class OnnxDaemon {
         this.workerReady = true;
         if (msg.dimensions !== undefined) this.modelDimensions = msg.dimensions;
         if (msg.contextLength !== undefined) this.modelContextLength = msg.contextLength;
-        if (this.workerReadyResolve) {
-          this.workerReadyResolve();
-          this.workerReadyResolve = null;
+        if (this.workerReadySettle) {
+          this.workerReadySettle({ ok: true });
+          this.workerReadySettle = null;
           this.workerReadyPromise = null;
         }
+        break;
+
+      case "initFailed":
+        this.failModelLoad(msg.message);
         break;
 
       case "calibrated": {
