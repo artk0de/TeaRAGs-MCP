@@ -453,6 +453,8 @@ describe("seeded support versions", () => {
       // swift 66: the naming-lexicon branch (swift 65 there) rebased onto main's
       // swift walker 64, which changed its extraction under the same number (bd
       // tea-rags-mcp-y99pg.39), so again neither side's index holds both.
+      // swift 7: release v1.44.2 shipped swift walker 6 and a release cycle gets
+      // ONE walker bump, so the branch-local 7..66 collapse into 7.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 19],
@@ -462,7 +464,7 @@ describe("seeded support versions", () => {
         ["java", 9],
         ["rust", 8],
         ["go", 9],
-        ["swift", 66],
+        ["swift", 7],
         ["bash", 3],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;

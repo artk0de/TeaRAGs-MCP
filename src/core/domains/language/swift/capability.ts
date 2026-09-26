@@ -687,7 +687,10 @@ export const capability: LanguageCapability = {
   // walker 66: the naming-lexicon branch (walker 65 there, identifier
   // declarations) rebased onto main's walker 64 (bd tea-rags-mcp-y99pg.39);
   // neither side's index holds both extractions.
-  versions: { chunking: 4, walker: 66, codegraphSchema: 2 },
+  // walker 7: release v1.44.2 shipped walker 6, and a release cycle gets ONE
+  // walker bump. Every branch-local number above (7…66) collapses into this
+  // one; the history stays as the record of what an index built by 6 lacks.
+  versions: { chunking: 4, walker: 7, codegraphSchema: 2 },
   // Swift API Design Guidelines: types and protocols UpperCamelCase, everything
   // else lowerCamelCase — constants included (no SCREAMING_SNAKE). A module is
   // named like a type (`Alamofire`, `Foundation`).
