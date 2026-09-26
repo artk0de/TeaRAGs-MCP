@@ -33,7 +33,7 @@ import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
 import { INDEXING_HEARTBEAT_INTERVAL_MS } from "./indexing-marker-codec.js";
-import { updateHeartbeat } from "./indexing-marker.js";
+import { storeIndexingMarker, updateHeartbeat } from "./indexing-marker.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { defaultChunkerPoolSize } from "./infra/pool-defaults.js";
 import { FileScanner } from "./scanner.js";
@@ -49,6 +49,31 @@ export interface ProcessingContext {
 export interface EnrichmentStatusResult {
   status: "completed" | "background" | "skipped";
   metrics?: EnrichmentMetrics;
+}
+
+/**
+ * How a run closes, as handed to `BaseIndexingPipeline#sealRun`. The steps are
+ * the pipeline's own; their ORDER is the base's (bd tea-rags-mcp-7njy).
+ */
+export interface IndexingRunSealSpec {
+  /** Physical collection that receives the completion marker. */
+  targetCollection: PhysicalCollectionName;
+  /**
+   * Stable name the registry entry is recorded under — the alias, never the
+   * versioned target, so the entry survives a version bump.
+   */
+  collectionAlias: string;
+  absolutePath: string;
+  /** Model capabilities learnt during the run, carried onto the marker. */
+  modelInfo?: { model: string; contextLength: number; dimensions: number };
+  /**
+   * Make the collection the one readers see (the force path's alias
+   * create/switch). Runs BEFORE the marker: a failed promotion must leave no
+   * collection marked complete behind an alias that still points elsewhere.
+   */
+  promote?: () => Promise<void>;
+  /** Persist the run's sync state (snapshot, checkpoint) once the marker landed. */
+  persist: () => Promise<void>;
 }
 
 export interface PipelineTuning {
@@ -258,6 +283,39 @@ export abstract class BaseIndexingPipeline {
   ): Promise<() => EnrichmentStatusResult> {
     await this.flushAndShutdown(ctx.chunkPipeline, ctx.chunkerPool);
     return this.startEnrichment(chunkMap, ctx.enrichmentRun);
+  }
+
+  /**
+   * The closing skeleton every run shares, whatever work it did:
+   * `promote` → completion marker → `persist` → registry entry. The order is
+   * the invariant (operations/CLAUDE.md): the alias is finalized BEFORE the
+   * marker, so a promotion failure — thrown, never returned — leaves the new
+   * collection unmarked for orphan cleanup instead of marked complete behind an
+   * alias that still points at the previous version.
+   */
+  protected async sealRun(spec: IndexingRunSealSpec): Promise<void> {
+    await spec.promote?.();
+    await storeIndexingMarker(this.qdrant, this.embeddings, spec.targetCollection, true, spec.modelInfo);
+    await spec.persist();
+    await this.recordRegistryEntry(spec.collectionAlias, spec.absolutePath);
+  }
+
+  /**
+   * Close a run that streamed chunks: drain the processing context and start
+   * enrichment, let the caller report the drained pipeline (`onFlushed`), seal
+   * the run, and only then read the enrichment status — so the status reflects
+   * whatever enrichment managed while the run was being sealed.
+   */
+  protected async completePipeline(
+    ctx: ProcessingContext,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+    seal: IndexingRunSealSpec,
+    onFlushed?: () => void,
+  ): Promise<EnrichmentStatusResult> {
+    const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap);
+    onFlushed?.();
+    await this.sealRun(seal);
+    return getEnrichmentStatus();
   }
 
   /**
