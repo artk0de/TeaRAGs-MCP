@@ -131,6 +131,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   AritySignature,
   CallRef,
@@ -149,7 +150,10 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { symbolIdNames } from "../../kernel/symbol-id.js";
 import { swiftTypeFieldKey } from "../type-field-address.js";
+import { swiftNameOf } from "./name-of.js";
+import { symbolKindOf } from "./symbol-kind.js";
 
 export interface SwiftExtractInput {
   tree: MaterializedTree;
@@ -166,7 +170,7 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
   const evidence = collectSwiftFileTypeEvidence(root);
   const bindingOwnership = assignBindingsToInnermostChunks(collectSwiftTypedBindings(root, evidence), input.chunks);
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const signatures = collectSwiftCallableSignatures(root, input.chunks);
+  const { signatures, symbolKinds } = collectSwiftChunkDeclarations(root, input.chunks);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -177,6 +181,8 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
     };
     // A type chunk's own calls run inside the type (`swiftNameOf` opts in).
     if (c.bodyScope !== undefined) chunk.bodyScope = c.bodyScope;
+    const symbolKind = symbolKinds.get(chunkIndex);
+    if (symbolKind !== undefined) chunk.symbolKind = symbolKind;
     const signature = signatures.get(chunkIndex);
     if (signature) {
       chunk.arity = signature.arity;
@@ -816,15 +822,26 @@ function collectSwiftStructuredReturnTypes(
   return out;
 }
 
+/** Per chunk index: the callable signature and the declaration kind of the node the chunk IS. */
+interface SwiftChunkDeclarations {
+  readonly signatures: Map<number, SwiftCallableSignature>;
+  readonly symbolKinds: Map<number, SymbolDefinitionKind>;
+}
+
 /**
  * chunk index → the argument-label signature of the `func` / `init` that chunk
  * IS, matched the way {@link collectSwiftStructuredReturnTypes} matches a
  * declaration to its chunk: same start line, final id segment naming it.
+ *
+ * The same walk stamps each chunk's symbol kind (tea-rags-mcp-vi0wx): every node
+ * `swiftNameOf` names is joined to its chunk on (start line, id names the
+ * node's name), and `symbolKindOf` reads its kind — so the kind costs no extra
+ * traversal of the file.
  */
-function collectSwiftCallableSignatures(
+function collectSwiftChunkDeclarations(
   root: AstNode,
   chunks: readonly { symbolId: string; startLine: number }[],
-): Map<number, SwiftCallableSignature> {
+): SwiftChunkDeclarations {
   const indicesByLine = new Map<number, number[]>();
   chunks.forEach((chunk, index) => {
     const at = indicesByLine.get(chunk.startLine);
@@ -832,7 +849,22 @@ function collectSwiftCallableSignatures(
     else indicesByLine.set(chunk.startLine, [index]);
   });
   const out = new Map<number, SwiftCallableSignature>();
+  const symbolKinds = new Map<number, SymbolDefinitionKind>();
   walk(root, (node) => {
+    const named = swiftNameOf(node);
+    if (named !== null) {
+      const kind = symbolKindOf(node.type, {
+        atTopLevel: !hasEnclosingSwiftTypeDeclaration(node),
+        typeKeyword: swiftTypeDeclarationKind(node),
+      });
+      const index =
+        kind === undefined
+          ? undefined
+          : indicesByLine
+              .get(node.startPosition.row + 1)
+              ?.find((i) => !symbolKinds.has(i) && symbolIdNames(chunks[i].symbolId, named.name));
+      if (index !== undefined && kind !== undefined) symbolKinds.set(index, kind);
+    }
     if (
       node.type !== "function_declaration" &&
       node.type !== "protocol_function_declaration" &&
@@ -845,7 +877,15 @@ function collectSwiftCallableSignatures(
     const index = indicesByLine.get(node.startPosition.row + 1)?.find((i) => composedIdNames(chunks[i].symbolId, name));
     if (index !== undefined && !out.has(index)) out.set(index, swiftCallableSignature(node));
   });
-  return out;
+  return { signatures: out, symbolKinds };
+}
+
+/** Whether a type, extension or protocol declaration encloses `node` — a `func` there is a method. */
+function hasEnclosingSwiftTypeDeclaration(node: AstNode): boolean {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === "class_declaration" || current.type === "protocol_declaration") return true;
+  }
+  return false;
 }
 
 /** Whether a composed id's final segment is `name`, an overload suffix aside. */

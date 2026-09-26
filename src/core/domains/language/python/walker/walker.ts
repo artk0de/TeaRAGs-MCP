@@ -28,6 +28,7 @@
 
 import { createIdentifierRecord, identifierEntry } from "../../../../contracts/identifier-record.js";
 import { isSameAstNode, type AstNode, type MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
   CallResultBinding,
@@ -52,6 +53,7 @@ import {
   pythonDispatchRefOf,
   type PythonDispatchScope,
 } from "./passes/python-dispatch-tables.js";
+import { collectPythonSymbolKinds } from "./symbol-kind.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -119,6 +121,9 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   const dispatchScope = createPythonDispatchScope(root, dispatchTables);
   const dispatch = dispatchScope.tableNames.size > 0 ? dispatchScope : null;
   const callbackParamSites = new Map<number, Set<number>>();
+  // bd tea-rags-mcp-vi0wx — each declaration's kind, keyed by its start line and
+  // joined to the chunk below the same way `defSignatures` is.
+  const symbolKinds = new Map<number, SymbolDefinitionKind>();
   const flatVisitors: PythonNodeVisitor[] = [
     collectPythonImports(scan),
     ...(dispatch === null ? [] : [collectPythonDispatchBindings(dispatch)]),
@@ -127,6 +132,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     collectPythonDecoratorCalls(decoratorCalls),
     collectPythonClassExtends(classExtends),
     collectPythonClassFieldTypes(classFieldTypes),
+    collectPythonSymbolKinds(symbolKinds),
   ];
   if (trackTypes) flatVisitors.push(collectPythonLocalBindingSites(localBindingSites));
   walkOnce(root, flatVisitors);
@@ -215,6 +221,8 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const symbolKind = symbolKinds.get(c.startLine);
+    if (symbolKind !== undefined) base.symbolKind = symbolKind;
     const signature = defSignatures.get(c.startLine);
     if (signature !== undefined) {
       base.arity = signature.arity;

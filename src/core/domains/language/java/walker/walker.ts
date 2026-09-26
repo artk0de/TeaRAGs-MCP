@@ -32,6 +32,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -40,6 +41,9 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { javaNameOf } from "./name-of.js";
+import { symbolKindOf } from "./symbol-kind.js";
 
 export interface JavaExtractInput {
   tree: MaterializedTree;
@@ -69,6 +73,7 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
   // scope, once from the class chunk under the class's (or, for a top-level
   // class, an EMPTY) scope — the second copy resolving against the wrong caller.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const symbolKinds = collectJavaSymbolKindsByLine(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -77,6 +82,8 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const symbolKind = symbolKinds.get(c.startLine)?.find((k) => symbolIdNames(c.symbolId, k.name))?.kind;
+    if (symbolKind !== undefined) chunk.symbolKind = symbolKind;
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
     return chunk;
@@ -98,6 +105,34 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
     for (const [cls, fields] of classFieldTypes) record[cls] = Object.fromEntries(fields);
     out.classFieldTypes = record;
   }
+  return out;
+}
+
+interface JavaSymbolKindReading {
+  readonly name: string;
+  readonly kind: SymbolDefinitionKind;
+}
+
+/**
+ * The declaration kind of every node `javaNameOf` names, keyed by its start
+ * line (tea-rags-mcp-vi0wx). A chunk carries no node, only the range and id
+ * `collectSymbols` built from that same `javaNameOf` reading, so the kind joins
+ * back on (start line, id names the reading's name) — the join the
+ * declared-visibility facet makes. Two declarations on one line
+ * (`class P { void a() {} void b() {} }`) are told apart by name.
+ */
+function collectJavaSymbolKindsByLine(root: AstNode): Map<number, JavaSymbolKindReading[]> {
+  const out = new Map<number, JavaSymbolKindReading[]>();
+  walk(root, (node) => {
+    const named = javaNameOf(node);
+    if (named === null) return;
+    const kind = symbolKindOf(node.type);
+    if (kind === undefined) return;
+    const line = node.startPosition.row + 1;
+    const onLine = out.get(line);
+    if (onLine === undefined) out.set(line, [{ name: named.name, kind }]);
+    else onLine.push({ name: named.name, kind });
+  });
   return out;
 }
 

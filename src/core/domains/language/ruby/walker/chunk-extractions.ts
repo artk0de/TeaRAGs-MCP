@@ -21,6 +21,7 @@ import type { RubyFileTypeEnv } from "./file-type-env.js";
 import { bindCompoundReceiverChains, collectRubyLocalCallBindingsForChunk } from "./local-bindings.js";
 import { collectRubyMethodSignatures } from "./method-signatures.js";
 import type { KnownTargetCallSite } from "./param-arg-types.js";
+import { rubyChunkSymbolKinds } from "./symbol-kind.js";
 import type { RubyExtractInput } from "./walker.js";
 
 export interface RubyChunkPassOutput {
@@ -54,6 +55,8 @@ export function buildRubyChunkExtractions(
   // site can be typed against the bindings of the chunk that OWNS its line
   // (bd tea-rags-mcp-bvalc). Filled during the chunk loop, read after it.
   const chunkSites: (KnownTargetCallSite & { startLine: number; endLine: number })[] = [];
+  // Declaration kind per chunk (bd tea-rags-mcp-vi0wx), in `input.chunks` order.
+  const symbolKinds = rubyChunkSymbolKinds(input.tree.rootNode, input.chunks, catalogue);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -62,6 +65,8 @@ export function buildRubyChunkExtractions(
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const symbolKind = symbolKinds[chunkIndex];
+    if (symbolKind !== undefined) base.symbolKind = symbolKind;
     const sig = c.startLine !== undefined ? methodSigs.get(c.startLine) : undefined;
     if (sig !== undefined) {
       base.arity = sig.arity;

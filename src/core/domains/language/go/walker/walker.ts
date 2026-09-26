@@ -22,6 +22,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
   CallResultBinding,
@@ -31,9 +32,12 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { symbolIdNames } from "../../kernel/symbol-id.js";
 import { goImportBoundName, goImportNameClaims, goImportsByClaimedName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 import { goFunctionReturnTypesKey, goPackageDirOf, goQualifiedTypeName } from "../type-name.js";
+import { goNameOf } from "./name-of.js";
+import { symbolKindOf } from "./symbol-kind.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -57,6 +61,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   // set is unmoved — the kernel call makes that a property of the walker rather
   // than of the current nameOf.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const symbolKinds = collectGoSymbolKindsByLine(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -65,6 +70,8 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const symbolKind = symbolKinds.get(c.startLine)?.find((k) => symbolIdNames(c.symbolId, k.name))?.kind;
+    if (symbolKind !== undefined) base.symbolKind = symbolKind;
     // bd tea-rags-mcp-e6xx / 6g9c — per-chunk bindings. `localBindings`
     // (varName → TYPE) covers receivers, params, `var x Foo`, `x := Foo{}`.
     // `callResultBindings` (varName → positioned CALLED FUNC) covers
@@ -93,6 +100,36 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const buildConstraint = readGoBuildConstraint(input.tree.rootNode);
   if (buildConstraint !== undefined) extraction.buildConstraint = buildConstraint;
   return extraction;
+}
+
+interface GoSymbolKindReading {
+  readonly name: string;
+  readonly kind: SymbolDefinitionKind;
+}
+
+/**
+ * The declaration kind of every node `goNameOf` names, keyed by its start line
+ * (tea-rags-mcp-vi0wx). A chunk carries no node, only the range and id
+ * `collectSymbols` built from that same `goNameOf` reading, so the kind joins
+ * back on (start line, id names the reading's name) — the join the
+ * declared-visibility facet makes. Two specs on one line
+ * (`type ( A struct{}; B = A )`) are told apart by name.
+ */
+function collectGoSymbolKindsByLine(root: AstNode): Map<number, GoSymbolKindReading[]> {
+  const out = new Map<number, GoSymbolKindReading[]>();
+  const stack: AstNode[] = [root];
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    for (const child of node.children) stack.push(child);
+    const named = goNameOf(node);
+    if (named === null) continue;
+    const kind = symbolKindOf(node.type, { typeBody: node.childForFieldName("type")?.type });
+    if (kind === undefined) continue;
+    const line = node.startPosition.row + 1;
+    const onLine = out.get(line);
+    if (onLine === undefined) out.set(line, [{ name: named.name, kind }]);
+    else onLine.push({ name: named.name, kind });
+  }
+  return out;
 }
 
 const GO_BUILD_DIRECTIVE = /^\/\/go:build[ \t]+/;

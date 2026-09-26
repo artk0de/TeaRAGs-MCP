@@ -8,6 +8,8 @@
  *      `ChunkExtraction.visibility`, which the monolith never fills.
  *   2. identifier declarations (bd tea-rags-mcp-4p3sb.4) — params, locals and
  *      class fields with their syntactic type, for the naming lexicon.
+ *   3. symbol kind (bd tea-rags-mcp-vi0wx) — each named chunk's declaration
+ *      kind on `ChunkExtraction.symbolKind`.
  *
  * A new TypeScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -17,12 +19,15 @@
  */
 
 import { createIdentifierDeclarationFacetPass, type ExtractionFacetPass } from "../../kernel/index.js";
+import { tsNameOf } from "./name-of.js";
 import { typescriptDeclaredVisibilityFacetPass } from "./passes/declared-visibility.js";
 import { TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
+import { ecmascriptSymbolKindFacetPass } from "./passes/symbol-kind.js";
 import { typescriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
 
 export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   typescriptDeclaredVisibilityFacetPass,
   typescriptTypeAbstractnessFacetPass,
   createIdentifierDeclarationFacetPass(TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX),
+  ecmascriptSymbolKindFacetPass(tsNameOf),
 ];

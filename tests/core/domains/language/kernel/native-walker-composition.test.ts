@@ -39,11 +39,16 @@
  * declaration, so a fixture whose method states its return type is pinned as
  * the merge plus exactly that one declaration (`declarationFacet`). The
  * identity branch stays for a language that joins with an empty pass list.
+ *
+ * TypeScript and JavaScript gained the symbol-kind facet (bd tea-rags-mcp-vi0wx):
+ * a case carrying `symbolKindFacet` is pinned as the merge plus exactly those
+ * chunks' `symbolKind`, including the implicit `Class#constructor`.
  */
 
 import Parser from "tree-sitter";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import type { SymbolDefinitionKind } from "../../../../../src/core/contracts/types/codegraph-symbols.js";
 import type { FileExtraction } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageWalker, WalkInput } from "../../../../../src/core/contracts/types/language.js";
 import { BASH_EXTRACTION_PASSES } from "../../../../../src/core/domains/language/bash/walker/passes.js";
@@ -77,6 +82,8 @@ interface LanguageCase {
   readonly visibilityFacet?: Readonly<Record<string, string>>;
   /** The `identifierDeclarations` the identifier-declaration facet adds. Absent ⇒ none. */
   readonly declarationFacet?: FileExtraction["identifierDeclarations"];
+  /** symbolId → the `symbolKind` the symbol-kind facet adds. Absent ⇒ no symbol-kind facet. */
+  readonly symbolKindFacet?: Readonly<Record<string, SymbolDefinitionKind>>;
 }
 
 /** Each fixture declares exactly one concrete type (class / struct) and no abstraction. */
@@ -89,6 +96,20 @@ function withVisibility(native: FileExtraction, facet: Readonly<Record<string, s
     chunks: native.chunks.map((chunk) => {
       const visibility = facet[chunk.symbolId] as FileExtraction["chunks"][number]["visibility"];
       return visibility === undefined ? chunk : { ...chunk, visibility };
+    }),
+  };
+}
+
+/** The extraction with exactly the facet's `symbolKind` added to its chunks. */
+function withSymbolKinds(
+  extraction: FileExtraction,
+  facet: Readonly<Record<string, SymbolDefinitionKind>>,
+): FileExtraction {
+  return {
+    ...extraction,
+    chunks: extraction.chunks.map((chunk) => {
+      const symbolKind = facet[chunk.symbolId];
+      return symbolKind === undefined ? chunk : { ...chunk, symbolKind };
     }),
   };
 }
@@ -120,6 +141,7 @@ const CASES: readonly LanguageCase[] = [
     native: extractFromTypescriptFile,
     visibilityFacet: { "Svc#run": "public" },
     declarationFacet: returnOf("Svc#run", "run", 4, "string"),
+    symbolKindFacet: { Svc: "class", "Svc#run": "method", "Svc#constructor": "method" },
   },
   {
     language: "javascript",
@@ -128,6 +150,7 @@ const CASES: readonly LanguageCase[] = [
     passes: JAVASCRIPT_EXTRACTION_PASSES,
     native: extractFromJavascriptFile,
     visibilityFacet: { "Svc#run": "public" },
+    symbolKindFacet: { Svc: "class", "Svc#run": "method", "Svc#constructor": "method" },
   },
   {
     language: "java",
@@ -186,7 +209,7 @@ describe("native walkers composed through the extraction pass-runner", () => {
   });
 
   for (const testCase of CASES) {
-    const { language, passes, native, visibilityFacet, declarationFacet } = testCase;
+    const { language, passes, native, visibilityFacet, declarationFacet, symbolKindFacet } = testCase;
 
     if (passes.length === 0) {
       it(`${language}: the composer returns the native extraction BY IDENTITY under its own pass list`, () => {
@@ -203,7 +226,10 @@ describe("native walkers composed through the extraction pass-runner", () => {
         const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
         expect(composed.walk(input)).toEqual({
-          ...withDeclarations(withVisibility(sentinel, visibilityFacet ?? {}), declarationFacet),
+          ...withDeclarations(
+            withSymbolKinds(withVisibility(sentinel, visibilityFacet ?? {}), symbolKindFacet ?? {}),
+            declarationFacet,
+          ),
           ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
         });
       });
@@ -214,7 +240,10 @@ describe("native walkers composed through the extraction pass-runner", () => {
       const viaFactory = factory.create(language).walker.walk(input);
 
       expect(viaFactory).toEqual({
-        ...withDeclarations(withVisibility(native(input), visibilityFacet ?? {}), declarationFacet),
+        ...withDeclarations(
+          withSymbolKinds(withVisibility(native(input), visibilityFacet ?? {}), symbolKindFacet ?? {}),
+          declarationFacet,
+        ),
         ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
       });
       expect(viaFactory.chunks.length).toBeGreaterThan(0);

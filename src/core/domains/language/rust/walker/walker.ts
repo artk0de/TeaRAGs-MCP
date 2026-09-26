@@ -24,6 +24,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
   ChunkExtraction,
@@ -32,6 +33,9 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { rustNameOf } from "./name-of.js";
+import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -55,6 +59,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   // every in-method call once per ENCLOSING chunk as well — an `impl` inside a
   // `mod` gave three copies, each resolving against a different caller scope.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const symbolKindReadings = collectRustSymbolKindReadings(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -63,6 +68,8 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const symbolKind = symbolKindOfChunk(symbolKindReadings, c);
+    if (symbolKind !== undefined) base.symbolKind = symbolKind;
     // bd tea-rags-mcp-q1pl — per-chunk `varName → typeName` bindings so
     // the resolver's `localBindings[receiver]` branch fires for real.
     // Three sources, attributed to the innermost function chunk:
@@ -81,6 +88,60 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   };
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   return out;
+}
+
+interface RustSymbolKindReading {
+  readonly name: string;
+  readonly scopeKey: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  /** Undefined for a node `rustNameOf` names but that declares nothing (`impl`, `macro_rules!`). */
+  readonly kind: SymbolDefinitionKind | undefined;
+}
+
+/**
+ * Every node `rustNameOf` names, in the pre-order `collectSymbols` visits them,
+ * with the scope (enclosing names) it composes and its declaration kind
+ * (tea-rags-mcp-vi0wx). A chunk carries no node, only the range, scope and id
+ * `collectSymbols` built from this same reading, so the kind joins back on
+ * (range, scope, id names the reading's name). An `impl` block is recorded too,
+ * with no kind: `collectSymbols` keeps the FIRST node per id, so `struct Foo;
+ * impl Foo {}` on one line yields one `Foo` chunk, the struct's — and a lone
+ * `impl Remote` yields a `Remote` chunk that must stay untagged.
+ */
+function collectRustSymbolKindReadings(root: AstNode): RustSymbolKindReading[] {
+  const out: RustSymbolKindReading[] = [];
+  const visit = (node: AstNode, scope: readonly string[]): void => {
+    const named = rustNameOf(node);
+    if (named !== null) {
+      out.push({
+        name: named.name,
+        scopeKey: scope.join("\u0000"),
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        kind: symbolKindOf(node.type, { ownerItem: rustOwnerItemOf(node) }),
+      });
+    }
+    const childScope = named === null ? scope : [...scope, named.name];
+    for (const child of node.children) visit(child, childScope);
+  };
+  visit(root, []);
+  return out;
+}
+
+/** The kind of the first reading `chunk` was built from — first, as `collectSymbols` keeps the first node per id. */
+function symbolKindOfChunk(
+  readings: readonly RustSymbolKindReading[],
+  chunk: RustExtractInput["chunks"][number],
+): SymbolDefinitionKind | undefined {
+  const scopeKey = chunk.scope.join("\u0000");
+  return readings.find(
+    (r) =>
+      r.startLine === chunk.startLine &&
+      r.endLine === chunk.endLine &&
+      r.scopeKey === scopeKey &&
+      symbolIdNames(chunk.symbolId, r.name),
+  )?.kind;
 }
 
 /**

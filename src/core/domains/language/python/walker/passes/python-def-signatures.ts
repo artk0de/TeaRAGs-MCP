@@ -96,7 +96,7 @@ function paramName(node: AstNode): string {
  * `classChain`, which a def nested inside a method also inherits: `def inner(self)`
  * inside a method takes its `self` explicitly and must keep it.
  */
-function isPythonMethodDef(node: AstNode): boolean {
+export function isPythonMethodDef(node: AstNode): boolean {
   const outer = node.parent?.type === "decorated_definition" ? node.parent : node;
   return outer.parent?.type === "block" && outer.parent.parent?.type === "class_definition";
 }

@@ -21,8 +21,12 @@
  */
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
+import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { bashNameOf } from "./name-of.js";
+import { symbolKindOf } from "./symbol-kind.js";
 
 export interface BashExtractInput {
   tree: MaterializedTree;
@@ -34,7 +38,8 @@ export interface BashExtractInput {
 
 export function extractFromBashFile(input: BashExtractInput): FileExtraction {
   const imports = collectBashImports(input.tree.rootNode);
-  const calls = collectBashFunctionCalls(input.tree.rootNode);
+  const defined = collectBashDefinedFunctions(input.tree.rootNode);
+  const { calls, symbolKinds } = collectBashCallsAndSymbolKinds(input.tree.rootNode, defined);
   // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
   // containing range, ties broken by deeper scope (python bd tea-rags-mcp-invuy).
   // The pure-containment filter this replaces gave a call to EVERY chunk spanning
@@ -43,13 +48,22 @@ export function extractFromBashFile(input: BashExtractInput): FileExtraction {
   // the emitted call set is unmoved — the kernel call makes that a property of
   // the walker rather than of the current nameOf.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => ({
-    symbolId: c.symbolId,
-    scope: c.scope,
-    startLine: c.startLine,
-    endLine: c.endLine,
-    calls: callOwnership.get(chunkIndex) ?? [],
-  }));
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
+    const base: ChunkExtraction = {
+      symbolId: c.symbolId,
+      scope: c.scope,
+      startLine: c.startLine,
+      endLine: c.endLine,
+      calls: callOwnership.get(chunkIndex) ?? [],
+    };
+    // bd tea-rags-mcp-vi0wx — a chunk carries no node, only the range and id
+    // `collectSymbols` built from the same `bashNameOf` reading, so the kind
+    // joins back on (start line, id names the reading's name) — nested
+    // functions on distinct lines (`outer`/`inner`) are told apart by name.
+    const symbolKind = symbolKinds.get(c.startLine)?.find((k) => symbolIdNames(c.symbolId, k.name))?.kind;
+    if (symbolKind !== undefined) base.symbolKind = symbolKind;
+    return base;
+  });
   return {
     relPath: input.relPath,
     language: input.language,
@@ -76,16 +90,40 @@ function collectBashImports(root: AstNode): ImportRef[] {
   return out;
 }
 
-function collectBashFunctionCalls(root: AstNode): CallRef[] {
-  const defined = collectBashDefinedFunctions(root);
-  const out: CallRef[] = [];
+interface BashSymbolKindReading {
+  readonly name: string;
+  readonly kind: SymbolDefinitionKind;
+}
+
+/**
+ * Calls AND symbol kinds (bd tea-rags-mcp-vi0wx) in ONE walk over the tree —
+ * folded together rather than added as a second full traversal, since this walk
+ * already visits every node to find call sites. `defined` is computed once by
+ * the caller and threaded in, so the file is walked exactly as many times as
+ * before this change.
+ */
+function collectBashCallsAndSymbolKinds(
+  root: AstNode,
+  defined: ReadonlySet<string>,
+): { calls: CallRef[]; symbolKinds: Map<number, BashSymbolKindReading[]> } {
+  const calls: CallRef[] = [];
+  const symbolKinds = new Map<number, BashSymbolKindReading[]>();
   walk(root, (node) => {
     const member = bashCalledFunction(node, defined);
     if (member !== null) {
-      out.push({ callText: node.text, receiver: null, member, startLine: node.startPosition.row + 1 });
+      calls.push({ callText: node.text, receiver: null, member, startLine: node.startPosition.row + 1 });
     }
+    const named = bashNameOf(node);
+    if (named === null) return;
+    const kind = symbolKindOf(node.type);
+    if (kind === undefined) return;
+    const line = node.startPosition.row + 1;
+    const reading: BashSymbolKindReading = { name: named.name, kind };
+    const onLine = symbolKinds.get(line);
+    if (onLine === undefined) symbolKinds.set(line, [reading]);
+    else onLine.push(reading);
   });
-  return out;
+  return { calls, symbolKinds };
 }
 
 /**
@@ -105,7 +143,7 @@ export function collectBashDefinedFunctions(root: AstNode): Set<string> {
 
 /**
  * The function a `command` node calls — the `CallRef` member
- * {@link collectBashFunctionCalls} emits for it — or null: `source` / `.` are
+ * {@link collectBashCallsAndSymbolKinds} emits for it — or null: `source` / `.` are
  * imports, and only a name defined in the file is a call. Read by the
  * identifier-declaration pass so a declaration's bound callee matches that
  * `CallRef` by construction (bd tea-rags-mcp-4p3sb.16).
