@@ -31,7 +31,9 @@ export const capability: LanguageCapability = {
   // Also under walker 8 (same release cycle, re-pinned, no second bump): bd
   // tea-rags-mcp-7266 — the `typeReceiver` pass resolves `Type::f()`,
   // `Self::f()` and `Type::new().m()` through an in-project type.
-  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
+  // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 3.
+  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
   // Rust API Guidelines (RFC 430): types and traits UpperCamelCase, modules,
   // functions, methods, locals and fields snake_case, `const` / `static`
   // SCREAMING_SNAKE_CASE.

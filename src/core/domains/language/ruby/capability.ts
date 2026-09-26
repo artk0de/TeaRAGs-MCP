@@ -55,7 +55,9 @@ export const capability: LanguageCapability = {
   // lexicon. Rows written by walker 7 carry none, so only the recompute adds them.
   // walker 10: the naming-lexicon branch (4p3sb.3 as 8, 4p3sb.16 as 9 there)
   // merged with nbf8q item 4 (8 here); neither parent's index holds both.
-  versions: { chunking: 1, walker: 10, codegraphSchema: 2 },
+  // walker 5: release v1.44.2 shipped walker 4 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 5.
+  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
   // Ruby Style Guide: classes and modules CamelCase, methods and variables
   // snake_case, constants SCREAMING_SNAKE — though a constant naming a class or
   // module value is CamelCase, so pascal is accepted there too.

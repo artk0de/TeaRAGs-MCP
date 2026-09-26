@@ -77,7 +77,9 @@ export const capability: LanguageCapability = {
   // 030). No edge moves.
   // walker 17: the naming-lexicon branch (walker 16 there) rebased onto
   // integration walker 14; neither side's index holds both extractions.
-  versions: { chunking: 1, walker: 17, codegraphSchema: 2 },
+  // walker 9: release v1.44.2 shipped walker 8 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 9.
+  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level
   // constants SCREAMING_SNAKE.

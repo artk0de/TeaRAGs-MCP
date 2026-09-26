@@ -28,7 +28,9 @@ export const capability: LanguageCapability = {
   // walker 9: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
   // method's declared return type as a `return`, so a walker-8 index has no
   // return row for call-return to join.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 3.
+  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
   // Google Java Style / Oracle conventions: classes and interfaces
   // UpperCamelCase, methods / parameters / locals / non-constant fields
   // lowerCamelCase, `static final` constants CONSTANT_CASE. A package name is

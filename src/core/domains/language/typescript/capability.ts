@@ -129,7 +129,9 @@ export const capability: LanguageCapability = {
   // `--force-enrichments codegraph`.
   // walker 19: the naming-lexicon branch (walker 18 there) rebased onto
   // integration walker 16; neither side's index holds both extractions.
-  versions: { chunking: 1, walker: 19, codegraphSchema: 2 },
+  // walker 12: release v1.44.2 shipped walker 11 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 12.
+  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or

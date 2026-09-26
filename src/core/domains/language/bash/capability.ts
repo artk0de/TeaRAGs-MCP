@@ -12,7 +12,9 @@ export const capability: LanguageCapability = {
   // `identifierDeclarations` (a function's assignments, `local` / `declare`
   // names, loop variables) for the naming lexicon. Rows written by walker 1
   // carry none, so only the recompute adds them.
-  versions: { chunking: 2, walker: 3, codegraphSchema: 2 },
+  // walker 2: release v1.44.2 shipped walker 1 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 2.
+  versions: { chunking: 2, walker: 2, codegraphSchema: 2 },
   // Google Shell Style Guide: functions and variables lower snake_case,
   // constants and exported environment variables SCREAMING_SNAKE. Bash has no
   // types, modules or fields; those roles take the variable casing so the

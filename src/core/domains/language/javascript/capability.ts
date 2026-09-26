@@ -60,7 +60,9 @@ export const capability: LanguageCapability = {
   // edge in this walker. No edge moves.
   // walker 9: the naming-lexicon branch (walker 8 there) rebased onto
   // integration walker 7; neither side's index holds both extractions.
-  versions: { chunking: 2, walker: 9, codegraphSchema: 2 },
+  // walker 4: release v1.44.2 shipped walker 3 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 4.
+  versions: { chunking: 2, walker: 4, codegraphSchema: 2 },
   // Google JavaScript Style Guide — the same convention as TypeScript:
   // classes UpperCamelCase, functions / methods / parameters / locals /
   // properties lowerCamelCase, a module binding lowerCamelCase or

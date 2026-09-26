@@ -36,7 +36,9 @@ export const capability: LanguageCapability = {
   // walker 9: bd tea-rags-mcp-4p3sb.21 — `identifierDeclarations` carries each
   // func's FIRST result type as a `return`, so a walker-8 index has no return
   // row for a multi-value func, which `functionReturnTypes` omits.
-  versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
+  // walker 5: release v1.44.2 shipped walker 4 and a release cycle gets ONE
+  // walker bump, so every branch-local number above collapses into 5.
+  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
   // Effective Go: MixedCaps everywhere, never underscores. The first letter's
   // case is Go's EXPORT marker, not a style choice, so every package-level role
   // (type, method, field, constant) accepts both — canonical by role: types
