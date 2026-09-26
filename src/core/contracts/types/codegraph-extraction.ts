@@ -27,6 +27,16 @@ export interface FileExtraction {
   relPath: RelPath;
   language: string;
   imports: ImportRef[];
+  /**
+   * Imports that bring in types only and load nothing at runtime
+   * (bd tea-rags-mcp-r8hme.12) — TypeScript's statement-level `import type` /
+   * `export type … from`. Kept OUT of {@link FileExtraction.imports}: nothing
+   * that reads the runtime import list (receiver binding, dispatch gates, the
+   * file graph's fanIn / fanOut) may see them. Resolved through the same
+   * import→file path into `GraphEdges.typeOnlyFileEdges`, which only the
+   * structure-vs-history judgement reads. Absent when the file has none.
+   */
+  typeOnlyImports?: ImportRef[];
   chunks: ChunkExtraction[];
   /** Lexical scope chain at file top level — usually `[]` for TS, may be
    *  e.g. `["module Acme"]` for Ruby (slice 3). */

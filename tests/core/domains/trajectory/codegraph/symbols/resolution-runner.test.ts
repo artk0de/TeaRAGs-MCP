@@ -347,6 +347,49 @@ describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
   });
 });
 
+describe("CallEdgeResolutionRunner.resolve — type-only file edges (bd tea-rags-mcp-r8hme.12)", () => {
+  // Maps every import the extraction it is handed carries, by the same
+  // import→file path either channel goes through.
+  const importDrivenResolver = {
+    resolve: () => null,
+    resolveFileEdges: (extraction: FileExtraction) =>
+      extraction.imports.map((imp) => ({
+        targetRelPath: `src/${imp.importText.slice(2)}.ts`,
+        importText: imp.importText,
+      })),
+  };
+  const runner = () =>
+    new CallEdgeResolutionRunner(
+      {
+        supported: () => ["typescript"],
+        create: () => ({ resolver: importDrivenResolver }),
+      } as unknown as LanguageFactoryDescriptor,
+      new CodegraphRunState(),
+    );
+  const extraction = (imports: string[], typeOnlyImports: string[]): FileExtraction => ({
+    relPath: "src/server.ts",
+    language: "typescript",
+    imports: imports.map((importText) => ({ importText, startLine: 1 })),
+    typeOnlyImports: typeOnlyImports.map((importText) => ({ importText, startLine: 1 })),
+    fileScope: [],
+    chunks: [],
+  });
+
+  it("resolves type-only imports onto typeOnlyFileEdges and keeps them out of fileEdges", () => {
+    const edges = runner().resolve(extraction(["./runner"], ["./protocol", "./protocol"]), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/runner.ts", importText: "./runner" }]);
+    expect(edges.typeOnlyFileEdges).toEqual([{ targetRelPath: "src/protocol.ts", importText: "./protocol" }]);
+  });
+
+  it("drops a type-only edge whose target a runtime import already reaches, and a self-edge", () => {
+    const edges = runner().resolve(extraction(["./runner"], ["./runner", "./server"]), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges).toEqual([{ targetRelPath: "src/runner.ts", importText: "./runner" }]);
+    expect(edges).not.toHaveProperty("typeOnlyFileEdges");
+  });
+});
+
 describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", () => {
   function absorbFiles(runState: CodegraphRunState, language: string, count: number): void {
     for (let i = 0; i < count; i++) {

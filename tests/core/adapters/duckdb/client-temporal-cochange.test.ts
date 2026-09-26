@@ -155,4 +155,56 @@ describe("DuckDbGraphClient — temporal co-change store (bd tea-rags-mcp-x4rpp)
     );
     expect(linked).toEqual({ "a.ts|impl.ts": true, "a.ts|helper.ts": false });
   });
+
+  describe("type-only file edges (bd tea-rags-mcp-r8hme.12)", () => {
+    // server.ts reaches protocol.ts ONLY through `import type` — the daemon
+    // server / wire protocol pair that ranked as silent coupling at 0.62.
+    const writeServer = async (typeOnlyTargets: string[]) =>
+      db.upsertFile(
+        { relPath: "server.ts", language: "typescript" },
+        {
+          fileEdges: [{ targetRelPath: "runner.ts", importText: "./runner" }],
+          methodEdges: [],
+          typeOnlyFileEdges: typeOnlyTargets.map((t) => ({ targetRelPath: t, importText: `./${t}` })),
+        },
+      );
+    const linkedPairs = async () =>
+      Object.fromEntries(
+        (await db.readTemporalCochangeGraph()).edges.map((e) => [`${e.relPathA}|${e.relPathB}`, e.structurallyLinked]),
+      );
+
+    beforeEach(async () => {
+      for (const relPath of ["protocol.ts", "runner.ts", "shapes.ts"]) {
+        await db.upsertFile({ relPath, language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      }
+      await db.replaceTemporalCochange(snapshot([edge("protocol.ts", "server.ts"), edge("server.ts", "shapes.ts")]));
+    });
+
+    it("marks a pair joined only by a type-only import as structurally linked", async () => {
+      await writeServer(["protocol.ts"]);
+
+      expect(await linkedPairs()).toEqual({ "protocol.ts|server.ts": true, "server.ts|shapes.ts": false });
+    });
+
+    it("leaves file fanIn / fanOut and the runtime file graph untouched", async () => {
+      await writeServer(["protocol.ts"]);
+
+      expect(await db.getFanOut("server.ts")).toBe(1);
+      expect(await db.getFanIn("protocol.ts")).toBe(0);
+      const graph = await db.readFileDependencyGraph();
+      expect(graph.edges.map((e) => `${e.sourceRelPath}->${e.targetRelPath}`)).toEqual(["server.ts->runner.ts"]);
+    });
+
+    it("replaces the importing file's type-only rows on re-walk and drops them with the file", async () => {
+      await writeServer(["protocol.ts"]);
+      await writeServer(["shapes.ts"]);
+
+      expect(await linkedPairs()).toEqual({ "protocol.ts|server.ts": false, "server.ts|shapes.ts": true });
+
+      await db.removeFile("shapes.ts");
+      expect(await db.queryAll("SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file_type_only")).toEqual(
+        [],
+      );
+    });
+  });
 });

@@ -577,6 +577,43 @@ describe("extractFromTypescriptFile", () => {
     });
   });
 
+  // bd tea-rags-mcp-r8hme.12 — a type-only import is not a runtime dependency
+  // (m19a keeps it out of imports[]), but it IS structure: a wire protocol and
+  // the server that consumes it only through `import type` are coupled by
+  // declaration. It rides its own channel so no runtime-graph consumer sees it.
+  describe("type-only imports channel (bd tea-rags-mcp-r8hme.12)", () => {
+    const extract = (code: string) =>
+      extractFromTypescriptFile({
+        tree: parse(code),
+        code,
+        relPath: "src/server.ts",
+        language: "typescript",
+        chunks: [],
+      });
+
+    it("records `import type` and `export type … from` on typeOnlyImports, never on imports", () => {
+      const extraction = extract(
+        [
+          'import type { DaemonOp } from "./protocol.js";',
+          'export type { Shape } from "./shapes.js";',
+          'import { run } from "./runner.js";',
+          "",
+        ].join("\n"),
+      );
+      expect(extraction.imports.map((i) => i.importText)).toEqual(["./runner.js"]);
+      expect(extraction.typeOnlyImports).toEqual([
+        { importText: "./protocol.js", startLine: 1 },
+        { importText: "./shapes.js", startLine: 2 },
+      ]);
+    });
+
+    it("leaves typeOnlyImports absent when the file has no type-only import", () => {
+      const extraction = extract('import { type X, Y } from "./y";\n');
+      expect(extraction.typeOnlyImports).toBeUndefined();
+      expect(extraction.imports.map((i) => i.importText)).toEqual(["./y"]);
+    });
+  });
+
   // bd tea-rags-mcp-i252 — `new ClassName(args)` is a constructor call,
   // not a free expression. The walker must emit a CallRef with
   // receiver=ClassName, member="constructor" so the resolver can route
