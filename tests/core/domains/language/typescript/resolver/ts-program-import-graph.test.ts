@@ -99,10 +99,10 @@ describe("buildTSProgramImportGraph (bd tea-rags-mcp-vtuu4)", () => {
     expect(graph.nodes.find((node) => node.fileName === entry)?.textBytes).toBe(text.length);
   });
 
-  it("marks global scripts, declare-global files and ambient module declarations", () => {
+  it("marks project declaration files that are global scripts, augment globals or declare ambient modules", () => {
     const script = write("src/globals.d.ts", `declare function projectGlobal(): void;\n`);
     const augmenting = write(
-      "src/augment.ts",
+      "src/augment.d.ts",
       `export {};\ndeclare global {\n  interface Window { flag: boolean }\n}\n`,
     );
     const ambient = write(
@@ -118,6 +118,21 @@ describe("buildTSProgramImportGraph (bd tea-rags-mcp-vtuu4)", () => {
     expect(prelude).toEqual(expect.arrayContaining([script, augmenting, ambient]));
     expect(prelude).not.toContain(plainModule);
     expect(prelude).not.toContain(commonJs);
+  });
+
+  it("leaves project SOURCE files out of the prelude, whatever they declare", () => {
+    // The prelude's project half is declaration files only (spec §2): a
+    // `declare global` in a spec file or a source script stays with its batch.
+    const augmentingSource = write(
+      "src/augment.ts",
+      `export {};\ndeclare global {\n  interface Window { flag: boolean }\n}\n`,
+    );
+    const sourceScript = write("src/legacy-script.ts", `function legacyGlobal(): void {}\n`);
+
+    const prelude = preludeNames(build([augmentingSource, sourceScript]));
+
+    expect(prelude).not.toContain(augmentingSource);
+    expect(prelude).not.toContain(sourceScript);
   });
 
   it("collects lib reference directives as prelude libs", () => {
@@ -151,5 +166,30 @@ describe("buildTSProgramImportGraph (bd tea-rags-mcp-vtuu4)", () => {
     expect(prelude).toContain(globalScript);
     expect(prelude).not.toContain(dependencyModule);
     expect(prelude).not.toContain(entry);
+  });
+
+  it("takes a dependency's global augmentation but not its ambient module declarations", () => {
+    // Spec §2: only dependency declarations the whole Program sees as GLOBALS.
+    // An ambient `declare module "x"` shapes imports of "x" — which the
+    // importing file's own closure reaches — not global overloads.
+    write("node_modules/globby/package.json", `{ "name": "globby", "types": "index.d.ts" }\n`);
+    const augmenting = write(
+      "node_modules/globby/index.d.ts",
+      `export declare function globby(): void;\ndeclare global {\n  interface Array<T> { globby(): T }\n}\n`,
+    );
+    write("node_modules/ambi/package.json", `{ "name": "ambi", "types": "index.d.ts" }\n`);
+    const ambient = write(
+      "node_modules/ambi/index.d.ts",
+      `declare module "ambi-extra" {\n  export function extra(): void;\n}\nexport declare function ambi(): void;\n`,
+    );
+    const entry = write(
+      "src/entry.ts",
+      `import { globby } from "globby";\nimport { ambi } from "ambi";\nglobby();\nambi();\n`,
+    );
+
+    const prelude = preludeNames(build([entry]));
+
+    expect(prelude).toContain(augmenting);
+    expect(prelude).not.toContain(ambient);
   });
 });

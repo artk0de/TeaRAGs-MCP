@@ -69,6 +69,7 @@ interface FileFacts {
 }
 
 const JS_FILE = /\.(?:js|jsx|mjs|cjs)$/;
+const DECLARATION_FILE = /\.d\.(?:ts|mts|cts)$/;
 /** `ts.ResolvedModuleFull.extension` values the compiler never loads from `node_modules`. */
 const JS_EXTENSIONS: ReadonlySet<string> = new Set([".js", ".jsx", ".mjs", ".cjs"]);
 const JSON_EXTENSION = ".json";
@@ -212,17 +213,32 @@ class ImportGraphWalk {
 }
 
 /**
- * Does this file contribute declarations the whole Program sees as GLOBAL?
+ * Does this file belong in the prelude — does it contribute declarations the
+ * whole Program sees as GLOBAL? The scope is the spec's (§2), split by origin:
+ *
+ * - a project file qualifies only as a DECLARATION file: a global script, a
+ *   `declare global`, or an ambient `declare module`. A source file's
+ *   `declare global` — a spec file augmenting `Window` — stays with its batch.
+ * - a dependency file qualifies as a global script or a `declare global` only.
+ *   Its ambient `declare module "x"` shapes imports of "x", which the importing
+ *   file's closure reaches on its own; taking them all measured 799 prelude
+ *   files and 16.1 MB on taxdome, most of it outside any global.
  *
  * Decided on a parse, not on the scanner: `ts.preProcessFile` cannot tell
  * `export const x` from no export at all, and a script is global precisely
  * because it has neither. The parse is transient — nothing retains it.
  */
 function declaresGlobals(fileName: string, text: string, isJs: boolean, scanned: ts.PreProcessedFileInfo): boolean {
-  if (scanned.ambientExternalModules !== undefined && scanned.ambientExternalModules.length > 0) return true;
+  const isDependency = fileName.includes("/node_modules/");
+  if (!isDependency && !DECLARATION_FILE.test(fileName)) return false;
+  const hasAmbientModules = scanned.ambientExternalModules !== undefined && scanned.ambientExternalModules.length > 0;
+  if (!isDependency && hasAmbientModules) return true;
   const sourceFile = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, false, scriptKindOf(fileName));
-  if (sourceFile.statements.some(isGlobalOrModuleDeclaration)) return true;
+  if (sourceFile.statements.some(isGlobalAugmentation)) return true;
+  if (!isDependency && sourceFile.statements.some(isAmbientModuleDeclaration)) return true;
   if (ts.isExternalModule(sourceFile)) return false;
+  // A script of ambient module declarations only declares no globals.
+  if (isDependency && hasAmbientModules && sourceFile.statements.every(isAmbientModuleDeclaration)) return false;
   // A JavaScript file with CommonJS exports or requires is bound as a module,
   // so its top-level names are file-local, not globals.
   if (isJs && (scanned.importedFiles.length > 0 || sourceFile.statements.some(isCommonJsExport))) return false;
@@ -243,11 +259,14 @@ function isCommonJsExport(statement: ts.Statement): boolean {
   return false;
 }
 
-/** `declare global { … }` or `declare module "…" { … }` at the top level. */
-function isGlobalOrModuleDeclaration(statement: ts.Statement): boolean {
-  if (!ts.isModuleDeclaration(statement)) return false;
-  if (ts.isStringLiteral(statement.name)) return true;
-  return (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+/** `declare global { … }` at the top level. */
+function isGlobalAugmentation(statement: ts.Statement): boolean {
+  return ts.isModuleDeclaration(statement) && (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+}
+
+/** `declare module "…" { … }` at the top level. */
+function isAmbientModuleDeclaration(statement: ts.Statement): boolean {
+  return ts.isModuleDeclaration(statement) && ts.isStringLiteral(statement.name);
 }
 
 function scriptKindOf(fileName: string): ts.ScriptKind {
