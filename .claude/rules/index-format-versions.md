@@ -10,6 +10,8 @@ paths:
   - "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts"
   - "src/core/domains/ingest/pipeline/chunker/*.ts"
   - "src/core/domains/ingest/pipeline/chunker/utils/chunk-id.ts"
+  - "src/core/domains/ingest/pipeline/chunker/utils/import-extractor.ts"
+  - "src/core/domains/ingest/pipeline/chunker/utils/non-code-text-mask.ts"
   - "src/core/infra/symbolid/**"
   - "src/core/infra/materialize.ts"
   - "src/core/contracts/types/codegraph-*.ts"
@@ -24,7 +26,7 @@ for the `*` pseudo-language by `LanguageVersionDriftMonitor`.
 
 | Change                                                                                                                                  | Bump                             | Hint recommends                                    |
 | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------- |
-| chunk id hashing, symbolId classification, chunker boundaries, markdown, AST materialization, symbol mass                               | `sharedVersions.chunking`        | `tea-rags index-codebase --force`                  |
+| chunk id hashing, symbolId classification, chunker boundaries, markdown, AST materialization, symbol mass, static `imports` harvest     | `sharedVersions.chunking`        | `tea-rags index-codebase --force`                  |
 | kernel resolution, resolver chain, cone dispatch, import→file mapping, external classification, the language factory, resolution runner | `sharedVersions.walker`          | `--force-enrichments codegraph` (no `--languages`) |
 | edge kinds / columns every language writes (`codegraph-*.ts`, DDL)                                                                      | `sharedVersions.codegraphSchema` | `--force-enrichments codegraph` (no `--languages`) |
 
