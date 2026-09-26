@@ -337,13 +337,12 @@ interface Sample {
    */
   wholeProgramFileCount: number;
   /**
-   * Whole-project builds so far — 1 until the segment counter rotates, then one
-   * more per segment. The observable that says segmentation actually ran, which
-   * `wholeProgramFileCount` alone cannot: it reads the same either way.
+   * Closure-batch builds so far (bd tea-rags-mcp-vtuu4) — one per batch and
+   * per oversize root the walk has reached.
    */
   wholeProgramBuilds: number;
-  /** Distinct files acquired since the current segment began. */
-  segmentFiles: number;
+  /** Source text the shared parse cache holds outside the prelude, in MB. */
+  parsedSourceTextMb: number;
   parsedProjectFileCount: number;
   parsedDependencyFileCount: number;
   retainedSourceTextMb: number;
@@ -532,7 +531,7 @@ async function main(): Promise<void> {
         cacheSize: cache?.size ?? -1,
         wholeProgramFileCount: cache?.wholeProgramFileCount ?? -1,
         wholeProgramBuilds: cache?.wholeProgramBuildCount ?? -1,
-        segmentFiles: cache?.segmentFileCount ?? -1,
+        parsedSourceTextMb: cache ? +(cache.parsedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,
         parsedProjectFileCount: cache?.parsedProjectFileCount ?? -1,
         parsedDependencyFileCount: cache?.parsedDependencyFileCount ?? -1,
         retainedSourceTextMb: cache ? +(cache.retainedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,

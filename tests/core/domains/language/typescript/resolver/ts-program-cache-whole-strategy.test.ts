@@ -21,7 +21,6 @@ import {
   TS_PROGRAM_STRATEGY_DEFAULT,
   TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
   TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
-  TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
   TSProgramCache,
 } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { resolveProgramCacheStrategy } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
@@ -41,9 +40,6 @@ describe("resolveProgramCacheStrategy (bd tea-rags-mcp-6aytq)", () => {
       strategy: TS_PROGRAM_STRATEGY_DEFAULT,
       wholeRootFilesMax: TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
       wholeMinEntries: TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
-      // The segment size joined this resolver when the whole Program stopped
-      // being one Program for the run's length (bd tea-rags-mcp-6aytq).
-      wholeSegmentFiles: TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
     });
   });
 
@@ -487,25 +483,25 @@ describe("TSProgramCache run-corpus root union (bd tea-rags-mcp-6aytq)", () => {
     expect(cache.size).toBe(1);
   });
 
-  it("measures the heap projection against the UNION size, not the tsconfig set alone", () => {
+  it("judges the heap projection on the batches the run's corpus packs into", () => {
+    // bd tea-rags-mcp-vtuu4: the projection is per batch — text and call
+    // sites — so the corpus-only file's call sites are what it is judged on.
     const { configured, outside } = writeConfiguredAndUnconfigured();
-    const third = writeSource(repoRoot, "src/c.ts", `export function c(): number {\n  return 3;\n}\n`);
     const cache = new TSProgramCache({
       repoRoot,
       tsOptions,
       strategy: "whole",
-      // Requirement is `rootCount * 1000 MB`; the build term is zero, so
-      // coverage is always affordable and the verdict can only be whole ⇄
-      // coverage. Two roots fit 2,500 MB, three do not.
-      heapBudget: { baseMb: 0, perThousandRootsMb: 0, checkerPerThousandFilesMb: 1_000_000, usableHeapPct: 100 },
-      readHeapSizeLimitMb: () => 2500,
-      projectRoots: () => [configured, third],
+      // 1 MB per call site and nothing else: the one batch's 3 calls need
+      // 3 MB against a 2 MB ceiling.
+      heapBudget: { baseMb: 0, perTextMb: 0, perThousandCallSitesMb: 1000, perThousandRootsMb: 0, usableHeapPct: 100 },
+      readHeapSizeLimitMb: () => 2,
+      projectRoots: () => [configured],
     });
 
-    cache.primeForExpectedEntries(1000, ["excluded/b.ts"]);
+    cache.primeForExpectedEntries(1000, ["excluded/b.ts"], new Map([["excluded/b.ts", 3]]));
 
     expect(cache.wholeProgramBuildCount).toBe(0);
-    expect(cache.typeCheckerDisabled).toBe(false);
+    expect(cache.typeCheckerDisabled).toBe(true);
     expect(outside).toContain("excluded");
   });
 
@@ -537,26 +533,6 @@ describe("TSProgramCache run-corpus root union (bd tea-rags-mcp-6aytq)", () => {
     expect(cache.diagnostics().wholeHits).toBe(1);
   });
 
-  it("rebuilds a rotated segment from the union rather than from the tsconfig set", () => {
-    const { configured } = writeConfiguredAndUnconfigured();
-    const cache = new TSProgramCache({
-      repoRoot,
-      tsOptions,
-      strategy: "whole",
-      wholeSegmentFiles: 1,
-      projectRoots: () => [configured],
-    });
-
-    cache.primeForExpectedEntries(1000, ["src/a.ts", "excluded/b.ts"]);
-    cache.acquire("src/a.ts");
-    // The second distinct file overflows the one-file segment and rotates.
-    const afterRotation = cache.acquire("excluded/b.ts");
-
-    expect(cache.wholeProgramBuildCount).toBe(2);
-    expect(afterRotation).not.toBeNull();
-    expect(cache.size).toBe(1);
-  });
-
   it("reports what the cache actually did, so a production run says so in its log", () => {
     const { configured } = writeConfiguredAndUnconfigured();
     const cache = new TSProgramCache({
@@ -574,7 +550,6 @@ describe("TSProgramCache run-corpus root union (bd tea-rags-mcp-6aytq)", () => {
       strategy: "whole",
       wholeProgramFiles: expect.any(Number),
       wholeProgramBuilds: 1,
-      segmentFiles: 2,
       acquires: 2,
       wholeHits: 2,
       coverageHits: 0,

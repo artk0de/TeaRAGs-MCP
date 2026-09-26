@@ -87,6 +87,7 @@ import {
   type DispatchTableDef,
   type FileExtraction,
   type GraphEdges,
+  type RelPath,
   type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
@@ -128,22 +129,25 @@ import {
   type TsCompilerOptions,
 } from "./ts-path-mapper.js";
 import {
+  TS_PROGRAM_BATCH_CALL_SITES_DEFAULT,
+  TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT,
   TS_PROGRAM_CACHE_MAX_DEFAULT,
   TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
   TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT,
   TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
   TS_PROGRAM_STRATEGY_DEFAULT,
   TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
   TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
-  TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
   TSProgramCache,
   type TSProgramCacheOptions,
   type TSProgramStrategy,
 } from "./ts-program-cache.js";
 import {
   TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
-  TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_CALL_SITES_MB_DEFAULT,
   TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT,
   TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
   type TSProgramHeapBudget,
 } from "./ts-program-heap-admission.js";
@@ -210,6 +214,33 @@ export function resolveProgramCacheBudgets(
   };
 }
 
+/**
+ * The closure-batch budgets an operator may retune (bd tea-rags-mcp-vtuu4).
+ *
+ * - `CODEGRAPH_TS_PROGRAM_BATCH_TEXT_MB` → source text one batch Program may
+ *   hold, prelude included, in MB
+ * - `CODEGRAPH_TS_PROGRAM_BATCH_CALLS` → call sites one batch may resolve
+ * - `CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB` → source text the shared parse cache
+ *   retains outside the prelude, in MB
+ */
+export function resolveProgramBatchBudgets(
+  env: NodeJS.ProcessEnv,
+): Required<Pick<TSProgramCacheOptions, "batchTextBytes" | "batchCallSites" | "maxParsedSourceTextBytes">> {
+  return {
+    batchTextBytes:
+      resolvePositiveBudget(
+        env.CODEGRAPH_TS_PROGRAM_BATCH_TEXT_MB,
+        TS_PROGRAM_BATCH_TEXT_BYTES_DEFAULT / BYTES_PER_MB,
+      ) * BYTES_PER_MB,
+    batchCallSites: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_BATCH_CALLS, TS_PROGRAM_BATCH_CALL_SITES_DEFAULT),
+    maxParsedSourceTextBytes:
+      resolvePositiveBudget(
+        env.CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB,
+        TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT / BYTES_PER_MB,
+      ) * BYTES_PER_MB,
+  };
+}
+
 /** The three values `CODEGRAPH_TS_PROGRAM_STRATEGY` accepts. */
 const TS_PROGRAM_STRATEGIES: readonly TSProgramStrategy[] = ["coverage", "whole", "auto"];
 
@@ -227,7 +258,7 @@ const TS_PROGRAM_STRATEGIES: readonly TSProgramStrategy[] = ["coverage", "whole"
  */
 export function resolveProgramCacheStrategy(
   env: NodeJS.ProcessEnv,
-): Required<Pick<TSProgramCacheOptions, "strategy" | "wholeRootFilesMax" | "wholeMinEntries" | "wholeSegmentFiles">> {
+): Required<Pick<TSProgramCacheOptions, "strategy" | "wholeRootFilesMax" | "wholeMinEntries">> {
   const raw = env.CODEGRAPH_TS_PROGRAM_STRATEGY;
   const strategy = TS_PROGRAM_STRATEGIES.find((candidate) => candidate === raw) ?? TS_PROGRAM_STRATEGY_DEFAULT;
   return {
@@ -240,20 +271,18 @@ export function resolveProgramCacheStrategy(
       env.CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES,
       TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
     ),
-    wholeSegmentFiles: resolvePositiveBudget(
-      env.CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES,
-      TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
-    ),
   };
 }
 
 /**
- * The four terms of the whole-vs-coverage-vs-nothing heap projection, resolved
- * against the constants fitted on taxdome (bd tea-rags-mcp-6aytq).
+ * The terms of the batched-vs-coverage-vs-nothing heap projection, resolved
+ * against the constants measured on taxdome (bd tea-rags-mcp-6aytq, re-based
+ * on text and call sites by bd tea-rags-mcp-vtuu4).
  *
- * - `CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB` → fixed cost before any Program
- * - `CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB` → built-Program cost per 1,000 roots
- * - `CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB` → checker growth per 1,000 served files
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB` → the checker's fixed base
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_PER_TEXT_MB` → heap per MB of source text a Program holds
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_CALLS_MB` → checker heap per 1,000 resolved call sites
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB` → coverage-mode Program cost per 1,000 roots
  * - `CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT` → share of the heap ceiling a projection may claim
  *
  * Separate from {@link resolveProgramCacheBudgets} because the two answer
@@ -270,13 +299,14 @@ export function resolveProgramHeapBudget(env: NodeJS.ProcessEnv): TSProgramHeapB
   );
   return {
     baseMb: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB, TS_PROGRAM_HEAP_BASE_MB_DEFAULT),
+    perTextMb: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_HEAP_PER_TEXT_MB, TS_PROGRAM_HEAP_PER_TEXT_MB_DEFAULT),
+    perThousandCallSitesMb: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_CALLS_MB,
+      TS_PROGRAM_HEAP_PER_1K_CALL_SITES_MB_DEFAULT,
+    ),
     perThousandRootsMb: resolvePositiveBudget(
       env.CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB,
       TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
-    ),
-    checkerPerThousandFilesMb: resolvePositiveBudget(
-      env.CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB,
-      TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
     ),
     usableHeapPct: usableHeapPct > 100 ? TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT : usableHeapPct,
   };
@@ -367,6 +397,7 @@ export class TSCallResolver implements CallResolver {
           // not run for a resolver that never reaches the whole strategy.
           projectRoots: () => loadTsConfigFileNames(repoRoot),
           ...resolveProgramCacheBudgets(process.env),
+          ...resolveProgramBatchBudgets(process.env),
           ...resolveProgramCacheStrategy(process.env),
           heapBudget: resolveProgramHeapBudget(process.env),
         })
@@ -520,7 +551,21 @@ export class TSCallResolver implements CallResolver {
     // The corpus goes with the count: the tsconfig root set the cache would
     // otherwise build from misses the files a run resolves but the project
     // excludes — 936 of taxdome's 10,912 (bd tea-rags-mcp-6aytq).
-    this.programCache?.primeForExpectedEntries(plan.expectedFileCount, plan.expectedRelPaths);
+    // Call counts cap each closure batch's checker load (bd tea-rags-mcp-vtuu4).
+    this.programCache?.primeForExpectedEntries(plan.expectedFileCount, plan.expectedRelPaths, plan.expectedCallSites);
+  }
+
+  /**
+   * Pass-2's visit order: the Program cache's closure batches, oversize roots
+   * last (bd tea-rags-mcp-vtuu4). `undefined` without a batch plan.
+   */
+  planResolveVisits(): RelPath[][] | undefined {
+    return this.programCache?.planResolveVisits();
+  }
+
+  /** Pass-2 finished one batch group: release its Program. */
+  endResolveVisitGroup(): void {
+    this.programCache?.endResolveVisitGroup();
   }
 
   /**
