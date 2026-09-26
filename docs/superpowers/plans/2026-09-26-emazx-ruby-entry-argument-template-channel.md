@@ -12,14 +12,16 @@
 argument atoms of a call (identifier-shaped Symbol/String literal, or a bare
 identifier) and, for `send`/`public_send`/`__send__`, the name TEMPLATE
 (`prefix#{ident}suffix`, exactly one interpolation of a bare identifier). The
-provider folds them into the already-persisted `SelfDispatchMethodDecl`
-(`argTemplate` + `argForwards`), so the facts ride the existing `hydrate` policy
-of `selfDispatchMethods` and survive an incremental run. The barrier propagates
-templates across self-shaped delegation hops to a fixpoint and publishes
-`selfDispatchArgTemplates` on `CallContext`. The entry strategy gains step 2d,
-run only after v1/v2 decline: compose the hook from the literal at the
-template's position, verify every hop resolves on the concrete constant to the
-same symbol it did on the template type, then narrow through the existing
+provider folds them PER FILE, to a fixpoint across same-file self-shaped
+delegation hops, into the already-persisted `SelfDispatchMethodDecl.argTemplate`
+(`prefix`, `suffix`, `param`, `via`), so the facts ride the existing `hydrate`
+policy of `selfDispatchMethods` and survive an incremental run. The barrier only
+indexes them (`collectSelfDispatchArgTemplates`) and publishes
+`selfDispatchArgTemplates` on `CallContext`. Cross-file hop chains are out of
+scope (bd tea-rags-mcp-h2clg). The entry strategy gains step 2d, run only after
+v1/v2 decline: compose the hook from the literal at the template's position,
+verify every hop resolves on the concrete constant to the same symbol it did on
+the template type, then narrow through the existing
 `resolveSelfDispatchHookTarget`.
 
 **Tech Stack:** TypeScript, tree-sitter-ruby, vitest, DuckDB (provider e2e).
@@ -66,12 +68,12 @@ General interprocedural dataflow is `tea-rags-mcp-h2clg`, out of scope.
 
 ### Task 2: Discovery fold + barrier propagation (persisted)
 
-**Files:** `codegraph-pass1.ts` (`SelfDispatchMethodDecl.argTemplate` /
-`argForwards`), `self-dispatch-discovery.ts` (`extractSelfDispatchMethods`, new
-`propagateSelfDispatchArgTemplates`), `run-state.ts`
-(`selfDispatchArgTemplates`), `run-global-map-registry.ts` (batchOnly: derived
-at seal), `codegraph-resolution.ts` (CallContext), `resolution-runner.ts`
-(thread into ctx).
+**Files:** `codegraph-pass1.ts` (`SelfDispatchMethodDecl.argTemplate`),
+`self-dispatch-discovery.ts` (`extractSelfDispatchMethods` per-file fold, new
+`collectSelfDispatchArgTemplates`), `run-state.ts` (`selfDispatchArgTemplates`),
+`run-global-map-registry.ts` (batchOnly: derived at seal),
+`codegraph-resolution.ts` (CallContext), `resolution-runner.ts` (thread into
+ctx).
 
 - [ ] RED unit tests for extract + propagate (fixpoint through `.authorize!` →
       `#authorize!` → `#result`; computed arg declines; ancestor disagreement
@@ -91,8 +93,10 @@ at seal), `codegraph-resolution.ts` (CallContext), `resolution-runner.ts`
 
 ### Task 4: Measurement
 
-- [ ] Heavy lock; `scripts/taxdome-codegraph-recall-forensics.ts` before/after
-      (entry edges on `AbstractPolicy.authorize!/authorize/authorized?`, moved
-      to `#can_*?`, other deltas);
-      `scripts/spikes/ruby-incremental-runglobal-delta.ts` full-vs-incremental
-      delta.
+- [ ] Heavy lock; `incremental-runglobal-delta.ts --dump-full-edges` on the
+      pre-change snapshot and on the branch (entry edges on
+      `AbstractPolicy.authorize!/authorize/authorized?`, moved to `#can_*?`,
+      other deltas), plus its windows mode for the full-vs-incremental delta.
+      The delta harness drives the real run state and runner; the forensics
+      harness builds its own `CallContext`, so it gets the new field threaded to
+      stay faithful.
