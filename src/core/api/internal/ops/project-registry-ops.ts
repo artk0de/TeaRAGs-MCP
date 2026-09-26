@@ -5,18 +5,27 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import {
+  applyRegistryEnvEdit,
+  canonicalRegistryEnvKeys,
+  isIndexRecordedEnvKey,
+  parseRegistryEnvBoolean,
   PROJECT_NAME_RE,
+  REGISTRY_ENV_ALLOWLIST,
   type CollectionEntry,
   type CollectionRegistry,
   type ProjectInfo,
+  type RegistryEnvEdit,
 } from "../../../domains/maintenance/registry/index.js";
 import { resolveCollectionName, validatePath, validatePathSync } from "../../../infra/collection-name.js";
+import { ConfigError } from "../../../infra/errors.js";
 import {
   InvalidParameterError,
   MissingArgumentError,
   PathDoesNotExistError,
+  ProjectEnvKeyUnknownError,
   ProjectNameInvalidError,
   ProjectNameNotUniqueError,
+  ProjectNotRegisteredError,
   ProjectPathAlreadyRegisteredError,
 } from "../../errors.js";
 import type { ProjectRegistryAddress, StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
@@ -31,7 +40,16 @@ export interface ProjectRegistryOpsDeps {
    * needs no filesystem. Production leaves it out and gets `existsSync`.
    */
   pathExists?: (path: string) => boolean;
+  /**
+   * Refuse a project env value the config schema would reject at the next
+   * index run — throws a `ConfigError`. The schema lives in `bootstrap`, which
+   * this layer may not import, so the entry point injects it
+   * (`assertRegistryEnvValueParses`). Left out, only key-level validation runs.
+   */
+  validateEnvValue?: (key: string, value: string) => void;
 }
+
+const REGISTRY_ENV_KEYS: ReadonlySet<string> = new Set(REGISTRY_ENV_ALLOWLIST);
 
 /** The one address field a validated {@link ProjectRegistryAddress} carries. */
 type RegistryAddressTarget = { kind: "name" | "path" | "collection"; value: string };
@@ -60,7 +78,98 @@ function isGenerationOf(candidate: string, logical: string): boolean {
 export class ProjectRegistryOps {
   constructor(private readonly deps: ProjectRegistryOpsDeps) {}
 
-  async register(input: { path: string; name: string }): Promise<{ collectionName: string; alreadyIndexed: boolean }> {
+  async register(input: {
+    path: string;
+    name: string;
+    /** Project env to persist with the alias — see {@link ProjectRegistryOps#editEnv}. */
+    env?: Readonly<Record<string, string>>;
+  }): Promise<{ collectionName: string; alreadyIndexed: boolean }> {
+    // Validated before anything is written: a rejected env registers nothing.
+    const envEdit = input.env && Object.keys(input.env).length > 0 ? { set: input.env } : null;
+    if (envEdit) this.validateEnvEdit(envEdit);
+    const out = await this.registerAlias(input);
+    if (envEdit) this.editEnv({ name: input.name, ...envEdit });
+    return out;
+  }
+
+  /**
+   * Set and/or unset keys of a registered project's env (bd tea-rags-mcp-5uk75)
+   * — configuration, not an indexing run. The next run replays it registry-first
+   * (`resolveRegistryEnv`), and its own `record()` stamps back the effective
+   * value, so an edit holds until the ambient env of a run overrides it.
+   *
+   * Keys are any spelling of `REGISTRY_ENV_ALLOWLIST`, stored canonically;
+   * `EMBEDDING_BASE_URL` / `EMBEDDING_FALLBACK_URL` / `CODEGRAPH_ENABLED` land
+   * in their dedicated entry fields (`applyRegistryEnvEdit`). Persisted through
+   * `CollectionRegistry#record`, the same CAS flush every writer uses.
+   *
+   * @throws ProjectNotRegisteredError — no entry carries `name`.
+   * @throws ProjectEnvKeyUnknownError — a key outside the registry env vocabulary.
+   * @throws InvalidParameterError — nothing to edit, an index-recorded key
+   *   (`EMBEDDING_MODEL`, `QDRANT_URL`), an empty value, a non-boolean
+   *   `CODEGRAPH_ENABLED`, or a value the config schema refuses.
+   */
+  editEnv(input: { name: string } & RegistryEnvEdit): CollectionEntry {
+    const edit: RegistryEnvEdit = {
+      ...(input.set ? { set: input.set } : {}),
+      ...(input.unset ? { unset: input.unset } : {}),
+    };
+    this.validateEnvEdit(edit);
+    const { registry } = this.deps;
+    const entry = registry.findByName(input.name);
+    if (!entry) {
+      const available = registry
+        .list()
+        .map((e) => e.name)
+        .filter((n): n is string => typeof n === "string" && n.length > 0);
+      throw new ProjectNotRegisteredError(input.name, available);
+    }
+    const { name: _name, autoUpdate: _autoUpdate, ...recordable } = applyRegistryEnvEdit(entry, edit);
+    registry.record(recordable);
+    return registry.get(entry.collectionName) ?? entry;
+  }
+
+  private validateEnvEdit(edit: RegistryEnvEdit): void {
+    const setEntries = Object.entries(edit.set ?? {});
+    const unsetKeys = edit.unset ?? [];
+    if (setEntries.length === 0 && unsetKeys.length === 0) {
+      throw new InvalidParameterError("env", "nothing to set or unset — pass at least one KEY=VALUE or KEY");
+    }
+    for (const key of [...setEntries.map(([key]) => key), ...unsetKeys]) {
+      if (!REGISTRY_ENV_KEYS.has(key)) throw new ProjectEnvKeyUnknownError(key);
+      if (isIndexRecordedEnvKey(key)) {
+        throw new InvalidParameterError(
+          key,
+          "records what the index was built with and is written only by the index run — re-index with it exported instead",
+        );
+      }
+    }
+    for (const [key, value] of setEntries) {
+      if (value.length === 0) {
+        throw new InvalidParameterError(key, "empty value — unset the key to fall back to the default");
+      }
+      if (canonicalRegistryEnvKeys(key).includes("CODEGRAPH_ENABLED") && parseRegistryEnvBoolean(value) === undefined) {
+        throw new InvalidParameterError(key, `'${value}' is not a boolean — use true, false, 1 or 0`);
+      }
+      this.validateEnvValue(key, value);
+    }
+  }
+
+  private validateEnvValue(key: string, value: string): void {
+    try {
+      this.deps.validateEnvValue?.(key, value);
+    } catch (err) {
+      if (err instanceof ConfigError) {
+        throw new InvalidParameterError(key, `'${value}' is refused by the config schema — ${err.hint}`);
+      }
+      throw err;
+    }
+  }
+
+  private async registerAlias(input: {
+    path: string;
+    name: string;
+  }): Promise<{ collectionName: string; alreadyIndexed: boolean }> {
     if (!input.name || input.name.length === 0) {
       throw new ProjectNameInvalidError(input.name, "empty");
     }

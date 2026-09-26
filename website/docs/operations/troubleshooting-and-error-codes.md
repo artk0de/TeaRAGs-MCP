@@ -167,6 +167,7 @@ Full table of all structured error codes returned by the MCP server.
 | `INPUT_PROJECT_NAME_INVALID`           | `ProjectNameInvalidError`    | 400  | Project name "`{name}`" is invalid: `{reasonPhrase}`           | Names must be non-empty, within length limits, and match the allowed character set |
 | `INPUT_PATH_NOT_EXISTS`                | `PathDoesNotExistError`      | 400  | Path "`{path}`" does not exist                                 | Provide an absolute path to an existing directory                     |
 | `INPUT_PROJECT_PATH_MISSING`           | `ProjectPathMissingError`    | 400  | Project "`{name}`" has no path stored — re-register it before using as an alias | Run `tea-rags projects register --path <dir> --name <alias>`          |
+| `INPUT_PROJECT_ENV_KEY_UNKNOWN`        | `ProjectEnvKeyUnknownError`  | 400  | Unknown project env key "`{key}`"                               | Only keys an indexing run reads per project are accepted; secrets and server settings are never stored per project |
 
 ---
 

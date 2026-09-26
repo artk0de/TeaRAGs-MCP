@@ -18,6 +18,7 @@ export type InputErrorCode =
   | "INPUT_PROJECT_NAME_INVALID"
   | "INPUT_PROJECT_PATH_MISSING"
   | "INPUT_PROJECT_ALIAS_STALE"
+  | "INPUT_PROJECT_ENV_KEY_UNKNOWN"
   | "INPUT_PATH_NOT_EXISTS"
   | "INPUT_INVALID_DOCUMENT_METADATA_SCHEMA"
   | "INPUT_DOCUMENT_METADATA_SCHEMA_VIOLATION";
@@ -157,6 +158,23 @@ export class ProjectNameInvalidError extends InputValidationError {
       case "empty":
         return "is empty";
     }
+  }
+}
+
+/**
+ * Thrown when a project env edit names a key the registry does not replay
+ * (bd tea-rags-mcp-5uk75). The accepted vocabulary is `REGISTRY_ENV_ALLOWLIST`
+ * — every canonical key and deprecated spelling an indexing run reads per
+ * project. Secrets and server/process knobs are deliberately outside it:
+ * they are never persisted per project.
+ */
+export class ProjectEnvKeyUnknownError extends InputValidationError {
+  constructor(key: string) {
+    super({
+      code: "INPUT_PROJECT_ENV_KEY_UNKNOWN",
+      message: `Unknown project env key '${key}'`,
+      hint: "Only keys an indexing run reads per project are accepted (e.g. INGEST_CHUNK_SIZE, CODEGRAPH_ENABLED, TRAJECTORY_GIT_ENABLED). Secrets and server/process settings are never stored per project.",
+    });
   }
 }
 

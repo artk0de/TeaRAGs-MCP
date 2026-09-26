@@ -208,8 +208,10 @@ export function formatProjectsTable(entries: CollectionEntry[], opts: FormatProj
   return `${lines.join("\n")}\n`;
 }
 
-/** Width of the `key:` column in `projects info` — the longest key plus its colon. */
+/** Width of the `key:` column in `projects info` — the longest always-present key plus its colon. */
 const INFO_KEY_WIDTH = "embeddingDimensions:".length;
+/** The one optional key longer than that; the column widens only when it is shown. */
+const FALLBACK_URL_KEY = "embeddingFallbackUrl";
 
 /**
  * Render one registry entry as the `tea-rags projects info` key: value block.
@@ -222,8 +224,10 @@ const INFO_KEY_WIDTH = "embeddingDimensions:".length;
  */
 export function formatProjectInfo(entry: CollectionEntry, realpath: string | null, c: Colorizer): string {
   const lines: string[] = [];
+  const width = entry.embeddingFallbackUrl ? `${FALLBACK_URL_KEY}:`.length : INFO_KEY_WIDTH;
+  const indent = " ".repeat(width + 1);
   const row = (key: string, value: string): void => {
-    lines.push(`${c.dim(padRight(`${key}:`, INFO_KEY_WIDTH))} ${value}`);
+    lines.push(`${c.dim(padRight(`${key}:`, width))} ${value}`);
   };
   const orPlaceholder = (value: string | number | null | undefined, placeholder: string): string =>
     value ? String(value) : c.dim(placeholder);
@@ -235,7 +239,7 @@ export function formatProjectInfo(entry: CollectionEntry, realpath: string | nul
     row("realpath", c.alert("(missing on disk)"));
   } else if (realpath !== entry.path) {
     row("realpath", c.warn(realpath));
-    lines.push(`${" ".repeat(INFO_KEY_WIDTH + 1)}${c.warn("(symlink or moved mount — re-register to refresh)")}`);
+    lines.push(`${indent}${c.warn("(symlink or moved mount — re-register to refresh)")}`);
   }
   row("qdrantUrl", orPlaceholder(entry.qdrantUrl, "(none)"));
   row("embeddingModel", orPlaceholder(entry.embeddingModel, "(none)"));
@@ -243,6 +247,17 @@ export function formatProjectInfo(entry: CollectionEntry, realpath: string | nul
   row("chunksCount", String(entry.chunksCount));
   row("indexedAt", orPlaceholder(entry.indexedAt, "(never)"));
   row("teaRagsVersion", orPlaceholder(entry.teaRagsVersion, "(unknown)"));
+  if (entry.embeddingBaseUrl) row("embeddingBaseUrl", entry.embeddingBaseUrl);
+  if (entry.embeddingFallbackUrl) row(FALLBACK_URL_KEY, entry.embeddingFallbackUrl);
+  if (entry.codegraphEnabled !== undefined) row("codegraphEnabled", String(entry.codegraphEnabled));
+  // The env the project's index runs replay (bd tea-rags-mcp-5uk75), one
+  // KEY=VALUE per line — legacy entries carry it as `tuning`. Absent → no block.
+  const env = entry.env ?? entry.tuning ?? {};
+  const envKeys = Object.keys(env).sort();
+  if (envKeys.length > 0) {
+    lines.push(c.dim("env:"));
+    for (const key of envKeys) lines.push(`${indent}${key}=${env[key]}`);
+  }
 
   return `${lines.join("\n")}\n`;
 }
