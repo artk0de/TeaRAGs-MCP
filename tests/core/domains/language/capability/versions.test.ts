@@ -450,6 +450,9 @@ describe("seeded support versions", () => {
       // branch (typescript 18, javascript 8, python 16, swift 56 there) rebased
       // onto integration walkers 16 / 7 / 14 / 64 (r8hme.2, y99pg.35-.37), so
       // neither side's index holds both extractions.
+      // swift 66: the naming-lexicon branch (swift 65 there) rebased onto main's
+      // swift walker 64, which changed its extraction under the same number (bd
+      // tea-rags-mcp-y99pg.39), so again neither side's index holds both.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 19],
@@ -459,7 +462,7 @@ describe("seeded support versions", () => {
         ["java", 9],
         ["rust", 8],
         ["go", 9],
-        ["swift", 65],
+        ["swift", 66],
         ["bash", 3],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
