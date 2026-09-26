@@ -76,6 +76,7 @@ import {
   type SqlPredicate,
 } from "./identifier-store.js";
 import { compileNonProductionPathPredicate } from "./non-production-path-sql.js";
+import { placeholders } from "./sql-binding.js";
 
 /** Exhaustive over {@link IdentifierTypeSource}: a new source is a compile error here, not a silent zero. */
 const TYPE_SOURCE_SET: Record<IdentifierTypeSource, true> = {
@@ -135,10 +136,6 @@ function num(value: number): string {
 
 function int(value: number): string {
   return num(Math.max(0, Math.floor(value)));
-}
-
-function placeholders(values: readonly unknown[]): string {
-  return values.map(() => "?").join(", ");
 }
 
 function extensionPredicate(extensions: readonly string[] | undefined): SqlPredicate {

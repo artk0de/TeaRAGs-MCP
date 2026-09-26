@@ -40,6 +40,14 @@ export function bindParams(prep: BindablePrep, params: BindablePrimitive[]): voi
 }
 
 /**
+ * The positional `?` list for an `IN (…)` over `values` — one placeholder per
+ * value, comma-separated; the values themselves go through `bindParams`.
+ */
+export function placeholders(values: readonly unknown[]): string {
+  return values.map(() => "?").join(", ");
+}
+
+/**
  * Escape SQL `LIKE` metacharacters (`%`, `_`) and the escape char itself so a
  * literal symbol-name segment (identifiers routinely contain `_`) matches
  * verbatim under `LIKE … ESCAPE '\'`. Without this, `status_scope` would match

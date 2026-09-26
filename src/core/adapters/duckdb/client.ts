@@ -25,6 +25,7 @@
  * | `DuckDbTemporalCochangeStore`| `cg_temporal_*` co-change sub-graph             |
  * | `DuckDbIdentifierStore`      | `cg_identifiers` (naming lexicon)               |
  * | `DuckDbOntologyReportStore`  | `cg_identifiers` ontology audit reads           |
+ * | `DuckDbTypeNameStore`        | type-level `cg_symbols` rows + their ancestors  |
  *
  * Concurrency: methods run sequentially on a single shared connection owned by
  * the session; a transactional write holds the queue for its whole BEGIN/COMMIT
@@ -85,6 +86,8 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TypeNameQuery,
+  TypeNameRow,
 } from "../../contracts/types/codegraph.js";
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
@@ -98,6 +101,7 @@ import { DuckDbRunStatsStore } from "./run-stats-store.js";
 import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
 import { DuckDbTemporalCochangeStore } from "./temporal-cochange-store.js";
+import { DuckDbTypeNameStore } from "./type-name-store.js";
 
 // Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
 // here. Per the layering rules in .claude/rules/domain-boundaries.md
@@ -128,6 +132,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly temporalCochange: DuckDbTemporalCochangeStore;
   private readonly identifiers: DuckDbIdentifierStore;
   private readonly ontology: DuckDbOntologyReportStore;
+  private readonly typeNames: DuckDbTypeNameStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -142,6 +147,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.temporalCochange = new DuckDbTemporalCochangeStore(this.session);
     this.identifiers = new DuckDbIdentifierStore(this.session);
     this.ontology = new DuckDbOntologyReportStore(this.session);
+    this.typeNames = new DuckDbTypeNameStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -366,6 +372,10 @@ export class DuckDbGraphClient implements GraphDbClient {
     excludedGenericNames: readonly string[],
   ): Promise<OntologyReportSectionRows> {
     return this.ontology.readOntologyReportSections(q, excludedGenericNames);
+  }
+
+  async readTypeNameRows(q: TypeNameQuery): Promise<TypeNameRow[]> {
+    return this.typeNames.readTypeNameRows(q);
   }
 
   // ── Method-edge / chunk-signal reads ──

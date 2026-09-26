@@ -54,6 +54,8 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TypeNameQuery,
+  TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
@@ -937,6 +939,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
       query: q,
       excludedGenericNames: [...excludedGenericNames],
     })) as OntologyReportSectionRows;
+  }
+
+  async readTypeNameRows(q: TypeNameQuery): Promise<TypeNameRow[]> {
+    return (await this.call("readTypeNameRows", { query: q })) as TypeNameRow[];
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {

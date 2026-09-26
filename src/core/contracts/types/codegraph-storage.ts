@@ -42,6 +42,7 @@ import type {
   FileScopedSymbolRef,
   RelPath,
   SymbolDefinition,
+  SymbolDefinitionKind,
   SymbolId,
   SymbolVisibilityRow,
 } from "./codegraph-symbols.js";
@@ -489,6 +490,34 @@ export interface OntologyReportSectionRows {
 
 /** Both phases of one ontology read, as the caller assembles them. */
 export type OntologyReportRows = OntologyReportSummaryRows & OntologyReportSectionRows;
+
+/**
+ * The scope of {@link GraphDbClient.readTypeNameRows} (bd tea-rags-mcp-vi0wx):
+ * the type-level symbols the naming lexicon derives type roles from.
+ */
+export interface TypeNameQuery {
+  /** Literal `rel_path` prefixes, as {@link OntologyReportQuery.pathPrefixes}; empty = the whole project. */
+  pathPrefixes: readonly string[];
+  /**
+   * Files whose rows are never read — diff mode's changed files, so a draft is
+   * judged against the project and not against itself. Bounded by the diff cap
+   * (200 files), so it travels as a bind list.
+   */
+  excludePaths?: readonly string[];
+  /** The symbol kinds to read — the type-level ones. A row of unknown kind (`NULL`, pre-035) is never read. */
+  kinds: readonly SymbolDefinitionKind[];
+  /** The non-production masks the scope drops, as {@link OntologyReportQuery.nonProductionPaths}. */
+  nonProductionPaths: CaseSplitPathPatterns;
+}
+
+/** One type-level symbol with its inheritance ancestors (`ancestor_fq_name`, declaration order). */
+export interface TypeNameRow {
+  symbolId: string;
+  relPath: string;
+  shortName: string;
+  symbolKind: SymbolDefinitionKind;
+  ancestors: readonly string[];
+}
 
 /**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
@@ -985,6 +1014,14 @@ export interface GraphDbClient {
     q: OntologyReportQuery,
     excludedGenericNames: readonly string[],
   ) => Promise<OntologyReportSectionRows>;
+
+  /**
+   * The type-level symbols of the scope with their inheritance ancestors, for
+   * type-role derivation (bd tea-rags-mcp-vi0wx). Rows of unknown kind, the
+   * `excludePaths` files and non-production paths are never read. Ordered by
+   * `rel_path`, then `symbol_id`.
+   */
+  readTypeNameRows: (q: TypeNameQuery) => Promise<TypeNameRow[]>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

@@ -44,7 +44,7 @@ import type {
   SymbolId,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
-import { escapeLikeLiteral } from "./sql-binding.js";
+import { escapeLikeLiteral, placeholders } from "./sql-binding.js";
 
 /** Column order of every `cg_identifiers` write and of the diff read. */
 const CG_IDENTIFIERS_COLUMNS = [
@@ -84,10 +84,6 @@ const SHAPE_SAMPLE_SEED = 42;
 export interface SqlPredicate {
   sql: string;
   params: unknown[];
-}
-
-function placeholders(values: readonly unknown[]): string {
-  return values.map(() => "?").join(", ");
 }
 
 function chunked<T>(values: readonly T[]): T[][] {

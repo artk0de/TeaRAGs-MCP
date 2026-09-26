@@ -15,6 +15,7 @@ import type {
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { GraphDbClientPool } from "../pool.js";
@@ -285,6 +286,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   readOntologyReportSections: read(async (graphDb, p) =>
     graphDb.readOntologyReportSections(p.query as OntologyReportQuery, p.excludedGenericNames as string[]),
   ),
+  // Type-level symbols + ancestors for type roles (bd tea-rags-mcp-vi0wx).
+  readTypeNameRows: read(async (graphDb, p) => graphDb.readTypeNameRows(p.query as TypeNameQuery)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getSymbolLineRangesBulk: read(async (graphDb, p) => [
     ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),

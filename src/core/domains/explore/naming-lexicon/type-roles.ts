@@ -8,17 +8,11 @@
  * Every scope needs two types sharing the word: one type is not a family.
  * Pure: the rows come in already read (type-level kinds only) by the caller.
  */
-import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
+import type { TypeNameRow } from "../../../contracts/types/codegraph.js";
 import { typeNameLastSegment, typeNameWords } from "./casing.js";
 
-/** One type-level symbol with its inheritance ancestors. */
-export interface TypeNameRow {
-  symbolId: string;
-  relPath: string;
-  shortName: string;
-  symbolKind: SymbolDefinitionKind;
-  ancestors: readonly string[];
-}
+/** The row shape is owned by the store contract (`GraphDbClient.readTypeNameRows`). */
+export type { TypeNameRow };
 
 export type TypeRoleEvidence = "inheritance" | "directory" | "projectSuffix";
 

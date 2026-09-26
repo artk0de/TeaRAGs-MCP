@@ -923,6 +923,33 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
   });
 });
 
+describe("DaemonGraphDbClient — type-name rows op (bd tea-rags-mcp-vi0wx)", () => {
+  it("proxies readTypeNameRows through the daemon socket with the whole query", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const rows = [{ symbolId: "A", relPath: "src/a.ts", shortName: "A", symbolKind: "class", ancestors: ["Base"] }];
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return r.op === "readTypeNameRows" ? rows : null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const q = {
+      pathPrefixes: ["src/"],
+      excludePaths: ["src/b.ts"],
+      kinds: ["class" as const],
+      nonProductionPaths: { caseInsensitive: ["scripts/"], caseSensitive: [] },
+    };
+    const result = await client.readTypeNameRows(q);
+    await client.close();
+
+    expect(result).toEqual(rows);
+    expect(seen.find((r) => r.op === "readTypeNameRows")?.params).toEqual({ collection: "code_x_v1", query: q });
+  });
+});
+
 describe("DaemonGraphDbClient — ontology report op (bd tea-rags-mcp-4p3sb.20)", () => {
   it("proxies both ontology report reads through the daemon socket with the whole query and the excluded names", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));

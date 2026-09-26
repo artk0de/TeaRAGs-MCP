@@ -595,11 +595,35 @@ export interface NamingReviewResult {
 - Modify:
   `.claude-plugin/.benchmarks/{mr-review,data-driven-generation}/evals.json`
   (one case each)
+- Modify:
+  `.claude-plugin/dinopowers/skills/{requesting-code-review,receiving-code-review}/SKILL.md`
+  — both tell the agent to hand-list the diff's identifiers into `names[]`;
+  switch the diff case to `changes` (`names[]` stays for a single proposed
+  rename), and update their evals
+  (`.claude-plugin/.benchmarks/dinopowers-{requesting,receiving}-code-review/evals.json`)
+- Modify: `.claude-plugin/tea-rags/rules/search-cascade.md` — the Naming branch
+  of the decision tree gains "review the names a diff introduces →
+  get_naming_lexicon `changes`"; the prohibited pattern "judging a name by grep"
+  names `changes` next to `names[]`; the fallback-chain row covers the diff
+  case. Update `.claude-plugin/.benchmarks/search-cascade/evals.json` (one
+  diff-review case) and keep the injected hook output inside the per-part budget
+  (`plugin-guidance-layers.md`).
+- Modify: `src/mcp/resources/` search-guide content — the portable routing guide
+  for non-Claude clients lists neither naming tool today; add
+  `get_naming_lexicon` (names / types / changes) and `get_ontology_report`.
+- Modify: `website/docs/usage/advanced/codegraph-enrichments.md` — the diff
+  review mode and type-name verdicts.
+- Tool schema (call contract) is NOT here: `changes` / `files` and
+  `kind: "type"` land with their code in T5 / T7 (`src/mcp/tools/codegraph.ts`
+  descriptions, within the schema byte budget).
 
 - [ ] **Step 1:** Add the eval cases first (expected behaviour: the skill calls
       `get_naming_lexicon` with `changes` and reports findings grouped by
       verdict).
-- [ ] **Step 2:** Edit the skills; keep the tool-name references exact.
+- [ ] **Step 2:** Edit the skills, the search cascade, the search-guide resource
+      and the website doc; keep the tool-name references exact. After the
+      cascade edit run `scripts/inject-rules.sh` and check no part exceeds the
+      hook budget.
 - [ ] **Step 3:** Bump the plugin minor version.
 - [ ] **Step 4:** Commit
       `docs(plugin): naming review in mr-review and data-driven-generation (tea-rags-mcp-fdef2)`.

@@ -1226,3 +1226,58 @@ describe("CodegraphDaemonServer.handle — ontology report reads", () => {
     await pool.closeAll();
   });
 });
+
+// bd tea-rags-mcp-vi0wx: type roles read the type-level symbols through the daemon.
+describe("CodegraphDaemonServer.handle — type-name rows", () => {
+  it("is a read that answers the same rows as the in-process store", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_type_names_v1";
+    expect((await server.handle({ id: 1, op: "handshake", params: { collection: c } })).ok).toBe(true);
+    const { graphDb } = await pool.acquire(c);
+    const def = (relPath: string, name: string) => ({
+      relPath,
+      symbolId: name,
+      fqName: name,
+      shortName: name,
+      scope: [],
+      symbolKind: "class" as const,
+    });
+    await graphDb.upsertSymbolsBulk([
+      { relPath: "src/a.ts", definitions: [def("src/a.ts", "ExactStrategy")] },
+      { relPath: "src/b.ts", definitions: [def("src/b.ts", "FuzzyStrategy")] },
+      { relPath: "scripts/c.ts", definitions: [def("scripts/c.ts", "ToolStrategy")] },
+    ]);
+    await graphDb.upsertFile(
+      { relPath: "src/a.ts", language: "typescript" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        inheritance: [
+          {
+            sourceFqName: "ExactStrategy",
+            sourceSymbolId: "ExactStrategy",
+            ancestorFqName: "BaseStrategy",
+            ancestorSymbolId: null,
+            kind: "super",
+            ordinal: 0,
+          },
+        ],
+      },
+    );
+    const query = {
+      pathPrefixes: [],
+      excludePaths: ["src/b.ts"],
+      kinds: ["class" as const],
+      // The masks travel with the query, as they do for the ontology report.
+      nonProductionPaths: nonProductionPathPatterns(),
+    };
+
+    const res = await server.handle({ id: 2, op: "readTypeNameRows", params: { collection: c, query } });
+    const inProcess = await graphDb.readTypeNameRows(query);
+
+    expect(DAEMON_OP_COMMANDS.readTypeNameRows.access).toBe("read");
+    expect(inProcess.map((r) => [r.symbolId, r.ancestors])).toEqual([["ExactStrategy", ["BaseStrategy"]]]);
+    expect((res as { result: unknown }).result).toEqual(inProcess);
+    await pool.closeAll();
+  });
+});

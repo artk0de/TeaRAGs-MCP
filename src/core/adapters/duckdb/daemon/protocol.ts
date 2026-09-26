@@ -14,6 +14,7 @@ import type {
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
 
 /**
@@ -152,6 +153,9 @@ export const DAEMON_OPS = [
   // the sections read's `excludedGenericNames`.
   "readOntologyReportSummary",
   "readOntologyReportSections",
+  // Type-level cg_symbols rows + ancestors for type roles (bd tea-rags-mcp-vi0wx).
+  // REQUIRED: an older daemon's empty answer would read as a project with no roles.
+  "readTypeNameRows",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   "getSupertypes",
   "getSubtypes",
@@ -206,7 +210,8 @@ export interface DaemonRequest {
     | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[] } // identifierLanguageCounts
     | { collection: string; limit: number; pathPrefixes?: string[]; groupByLanguage?: boolean } // sampleIdentifierShapes
     | { collection: string; query: OntologyReportQuery } // readOntologyReportSummary
-    | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] }; // readOntologyReportSections
+    | { collection: string; query: OntologyReportQuery; excludedGenericNames: string[] } // readOntologyReportSections
+    | { collection: string; query: TypeNameQuery }; // readTypeNameRows
 }
 
 /**
