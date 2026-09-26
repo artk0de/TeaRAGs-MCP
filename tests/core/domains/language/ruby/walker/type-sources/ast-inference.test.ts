@@ -247,6 +247,43 @@ describe("rubyAstInferenceTypeSource", () => {
       expect(facts.filter((f) => f.name === "rows")).toEqual([]);
     });
 
+    it("a block-carrying relation verb on a plain module is NOT a relation (count = DBAccess.readonly do … end)", () => {
+      const code = "def call\n  count = DBAccess.readonly do\n    Foo.where(x: 1).count\n  end\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "count")).toEqual([]);
+    });
+
+    it("select with a block loads an Array, not a relation (rows = Post.select { |p| p.ok? })", () => {
+      const code = "def call\n  rows = Post.select { |p| p.ok? }\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "rows")).toEqual([]);
+    });
+
+    it("a block-free relation verb stays a relation (posts = Post.where(a: 1).readonly)", () => {
+      const code = "def call\n  posts = Post.where(a: 1).readonly\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts).toContainEqual(
+        expect.objectContaining({
+          name: "posts",
+          type: { form: "container", element: { form: "instance", name: "Post" } },
+        }),
+      );
+    });
+
+    it("an instance-returning verb with a block keeps its instance type (user = User.new do |u| … end)", () => {
+      const code = 'def call\n  user = User.new do |u|\n    u.name = "x"\n  end\nend\n';
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "user")).toEqual([
+        expect.objectContaining({ name: "user", type: { form: "instance", name: "User" } }),
+      ]);
+    });
+
+    it("a block-carrying link inside a relation-tail chain breaks it (x = Post.where(a: 1).lock { }.first)", () => {
+      const code = "def call\n  x = Post.where(a: 1).lock { }.first\nend\n";
+      const facts = rubyAstInferenceTypeSource.extract(makeInput(code));
+      expect(facts.filter((f) => f.name === "x")).toEqual([]);
+    });
+
     it("posts.each { |p| } binds the block param to the ELEMENT type", () => {
       const code = "def call\n  posts = Post.where(a: 1)\n  posts.each { |p| p.save }\nend\n";
       const facts = rubyAstInferenceTypeSource.extract(makeInput(code));

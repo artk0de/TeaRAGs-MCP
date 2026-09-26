@@ -21,11 +21,27 @@ import { collectYardParamTypes, YARD_CONST } from "./yard.js";
  */
 export const RUBY_BLOCK_ITERATOR_METHODS = CONTAINER_BLOCK_ITERATION_METHODS;
 
+/** A call carrying a literal block (`do … end` / `{ … }`). Read off the child
+ *  node types rather than the `block` field name, so a materialized tree and a
+ *  native one answer alike. `&blk` is a `block_argument` inside the argument
+ *  list, not a child of the call — it does not count. */
+function carriesBlock(node: AstNode): boolean {
+  return node.children.some((c) => c.type === "block" || c.type === "do_block");
+}
+
 /**
  * Walk a relation chain `Const.<rel>(...)[.<rel>(...)]*` down to its root
  * constant. Returns the fully-qualified const when the chain bottoms out at a
  * `YARD_CONST` receiver through only {@link RUBY_RELATION_RETURNING}; null
  * for any non-relation link (no guessing).
+ *
+ * A link carrying a block is NOT a relation link: the ActiveRecord query
+ * interface returns a relation only WITHOUT a block (`Post.select { }` loads an
+ * Array, `lock` / `readonly` take none), while a plain module's same-named
+ * method that yields — `DBAccess.readonly do … end` — returns whatever the
+ * block does. Accepted loss: `extending do … end`, which does return a
+ * relation. The terminal instance-returning verb is not a link and keeps its
+ * block (`User.new do |u| … end`, see {@link constInstanceType}).
  */
 function relationRootConst(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): string | null {
   const asConst =
@@ -34,7 +50,7 @@ function relationRootConst(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUB
   if (node.type !== "call" && node.type !== "method_call") return null;
   const recv = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
-  if (!recv || !method || !catalogue.relationReturning.has(method.text)) return null;
+  if (!recv || !method || !catalogue.relationReturning.has(method.text) || carriesBlock(node)) return null;
   return relationRootConst(recv, catalogue);
 }
 
