@@ -35,6 +35,10 @@ import type {
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { esmImportExportNames, exportNamesField, moduleCallExportNames } from "../../shared/ecmascript-export-names.js";
 import {
+  collectObjectLiteralDeclarators,
+  objectLiteralDeclaratorKind,
+} from "../../typescript/walker/structural-contracts.js";
+import {
   bindJsDispatchLocals,
   collectJsCallbackParams,
   collectJsDispatchTables,
@@ -75,13 +79,21 @@ export function extractFromJavascriptFile(input: JsExtractInput): FileExtraction
   // class chunk and the method chunk and inflates caller-edge counts by the
   // nesting depth (bd tea-rags-mcp-otjs — mirrors ruby tea-rags-mcp-8fnu).
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => ({
-    symbolId: c.symbolId,
-    scope: c.scope,
-    startLine: c.startLine,
-    endLine: c.endLine,
-    calls: callOwnership.get(chunkIndex) ?? [],
-  }));
+  // bd tea-rags-mcp-39xca.19 — the TypeScript walker's object-literal declarator
+  // fact, through the same gate `jsNameOf` delegates to.
+  const objectLiteralDeclarators = collectObjectLiteralDeclarators(input.tree.rootNode);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
+    const chunk: ChunkExtraction = {
+      symbolId: c.symbolId,
+      scope: c.scope,
+      startLine: c.startLine,
+      endLine: c.endLine,
+      calls: callOwnership.get(chunkIndex) ?? [],
+    };
+    const symbolKind = objectLiteralDeclaratorKind(objectLiteralDeclarators, c);
+    if (symbolKind !== undefined) chunk.symbolKind = symbolKind;
+    return chunk;
+  });
   const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,

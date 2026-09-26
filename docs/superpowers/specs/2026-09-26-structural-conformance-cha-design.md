@@ -91,7 +91,12 @@ scope. The first cut counted both, so `const close = () => {}` inside
 `parseRailsSchemaSnapshot` made that function conform to every one-member
 `close()` contract and fanned a `close()` call out to 6 targets. Object-literal
 factory members now take `#` (`createDeletionOutcome#isFullSuccess`), so they
-stay in the index.
+stay in the index. One owner's `.` members also count (owner decision, option
+A): a declarator initialized by an object literal (`const X = { m() {} }`),
+whose value is the contract instance. The kind comes from the walker, which
+records such a declarator as `symbolKind: "module"`; the barrier passes the
+owners' definitions as `ownerDefinitions`, and the deriver joins them to members
+by file and scope path, never by the shape of the id.
 
 ### 3. Contract and type changes
 

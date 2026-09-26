@@ -159,6 +159,69 @@ describe("deriveStructuralConformance", () => {
     expect(pairs(rows)).toEqual(["createOutcome -> Closeable"]);
   });
 
+  // bd tea-rags-mcp-39xca.19, option A — a declarator initialized by an object
+  // literal (walker fact: `symbolKind: "module"`) IS the value that satisfies a
+  // contract, so its `.` members count. The fact is the owner's KIND, never the
+  // shape of an id: a function's `.` helper and a class's `.` static still do not.
+  it("counts the `.` members of an object-literal declarator, by the walker's owner kind", () => {
+    const namespaceOwner: SymbolDefinition = {
+      symbolId: "RUBY_ANCESTOR_POLICY",
+      fqName: "RUBY_ANCESTOR_POLICY",
+      shortName: "RUBY_ANCESTOR_POLICY",
+      relPath: "src/ruby.ts",
+      scope: [],
+      symbolKind: "module",
+    };
+    const namespaceMember: SymbolDefinition = {
+      symbolId: "RUBY_ANCESTOR_POLICY.order",
+      fqName: "RUBY_ANCESTOR_POLICY.order",
+      shortName: "order",
+      relPath: "src/ruby.ts",
+      scope: ["RUBY_ANCESTOR_POLICY"],
+    };
+    const functionOwner: SymbolDefinition = {
+      symbolId: "parseSnapshot",
+      fqName: "parseSnapshot",
+      shortName: "parseSnapshot",
+      relPath: "src/schema.ts",
+      scope: [],
+      symbolKind: "function",
+    };
+    const nestedHelper: SymbolDefinition = {
+      symbolId: "parseSnapshot.order",
+      fqName: "parseSnapshot.order",
+      shortName: "order",
+      relPath: "src/schema.ts",
+      scope: ["parseSnapshot"],
+    };
+    const staticMember: SymbolDefinition = {
+      ...method("Pool", "order"),
+      symbolId: "Pool.order",
+      fqName: "Pool.order",
+    };
+    const rows = deriveStructuralConformance({
+      contracts: [contract("AncestorPolicy", ["order", 1])],
+      memberDefinitions: [
+        namespaceMember,
+        nestedHelper,
+        staticMember,
+        method("createPolicy", "order"),
+        // `Shared` is an object-literal declarator in a.ts but a FUNCTION in
+        // b.ts: the kind is joined per file and scope, never by name alone.
+        { ...nestedHelper, symbolId: "Shared.order", fqName: "Shared.order", relPath: "src/b.ts", scope: ["Shared"] },
+      ],
+      ownerDefinitions: [
+        namespaceOwner,
+        functionOwner,
+        { ...namespaceOwner, symbolId: "Shared", fqName: "Shared", shortName: "Shared", relPath: "src/a.ts" },
+        { ...functionOwner, symbolId: "Shared", fqName: "Shared", shortName: "Shared", relPath: "src/b.ts" },
+      ],
+      nominalRows: [],
+    });
+
+    expect(pairs(rows)).toEqual(["RUBY_ANCESTOR_POLICY -> AncestorPolicy", "createPolicy -> AncestorPolicy"]);
+  });
+
   it("returns rows sorted by contract then owner whatever the input order", () => {
     const input = {
       contracts: [contract("Zed", ["go", 0]), contract("Alpha", ["go", 0])],

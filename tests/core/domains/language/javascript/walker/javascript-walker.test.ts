@@ -957,3 +957,28 @@ describe("extractFromJavascriptFile — dispatch tables (hkj8)", () => {
     ]);
   });
 });
+
+// bd tea-rags-mcp-39xca.19 — the same object-literal declarator fact the
+// TypeScript walker records, so a JavaScript const-object namespace can satisfy
+// a contract in structural conformance.
+describe("extractFromJavascriptFile — object-literal declarator kind", () => {
+  it("marks a const-object namespace declarator `module` and leaves functions unmarked", () => {
+    const src = ["const hook = {", "  filterNode(node) { return node; },", "};", "function make() {}"].join("\n");
+    const r = extractFromJavascriptFile({
+      tree: parse(src),
+      code: src,
+      relPath: "a.js",
+      language: "javascript",
+      chunks: [
+        { symbolId: "hook", scope: [], startLine: 1, endLine: 3 },
+        { symbolId: "hook.filterNode", scope: ["hook"], startLine: 2, endLine: 2 },
+        { symbolId: "make", scope: [], startLine: 4, endLine: 4 },
+      ],
+    });
+    expect(Object.fromEntries(r.chunks.map((c) => [c.symbolId, c.symbolKind]))).toEqual({
+      hook: "module",
+      "hook.filterNode": undefined,
+      make: undefined,
+    });
+  });
+});

@@ -17,7 +17,9 @@
  * `O`'s members are its own INSTANCE-BOUND (`#`) definitions plus those of its
  * NOMINAL ancestors — a subclass carries what it inherits. A static member and a
  * helper nested in a function (`fn.inner`) are not carried by a value of `O`, so
- * they never count (bd tea-rags-mcp-39xca.19). The derived rows never feed back: a
+ * they never count (bd tea-rags-mcp-39xca.19). The one owner whose `.` members
+ * DO count is an object-literal declarator (`const X = { m() {} }`, walker kind
+ * `module`): the literal itself is the value. The derived rows never feed back: a
  * structural ancestor gives downward dispatch only, never implementation.
  *
  * Deliberately recall-first (owner decision): no minimum member count, so a
@@ -71,7 +73,8 @@ export function deriveStructuralConformance(
   const contractNames = new Set(input.contracts.flatMap((c) => [c.name, innermostSegment(c.name)]));
   const hierarchy = NominalHierarchy.of(input.nominalRows);
   const ownDefinitions = input.memberDefinitions.filter((def) => ownsDefinition(def.relPath));
-  const index = buildOwnerMemberIndex(ownDefinitions, contractNames, hierarchy);
+  const valueOwners = objectLiteralOwnerKeys(input.ownerDefinitions ?? []);
+  const index = buildOwnerMemberIndex(ownDefinitions, contractNames, hierarchy, valueOwners);
   const membersByContract = groupMembersByContract(input.contracts);
 
   const conforming = new Map<string, Set<string>>();
@@ -168,13 +171,14 @@ function buildOwnerMemberIndex(
   definitions: readonly SymbolDefinition[],
   contractNames: ReadonlySet<string>,
   hierarchy: NominalHierarchy,
+  valueOwners: ReadonlySet<string>,
 ): OwnerMemberIndex {
   const direct: OwnerMemberIndex = new Map();
   for (const def of definitions) {
     const owner = def.scope.at(-1);
     if (owner === undefined || contractNames.has(owner)) continue;
     if (def.symbolKind !== undefined && TYPE_DEFINITION_KINDS.has(def.symbolKind)) continue;
-    if (!isInstanceBound(def)) continue;
+    if (!isInstanceBound(def) && !valueOwners.has(scopeKey(def.relPath, def.scope))) continue;
     addMember(direct, def.shortName, owner, def.arity);
   }
   const index: OwnerMemberIndex = new Map();
@@ -202,6 +206,27 @@ function buildOwnerMemberIndex(
  */
 function isInstanceBound(def: SymbolDefinition): boolean {
   return symbolIdNamesInstanceMember(def.fqName, def.shortName);
+}
+
+/**
+ * The owners whose value IS the object that satisfies a contract (bd
+ * tea-rags-mcp-39xca.19, option A): a declarator initialized by an object
+ * literal, which the walker records as `symbolKind: "module"`. Their `.`
+ * members count like `#` ones. Keyed by file and full scope path — the scope a
+ * member of that owner carries — so a same-named function elsewhere, whose `.`
+ * members are nested helpers, never borrows the kind.
+ */
+function objectLiteralOwnerKeys(ownerDefinitions: readonly SymbolDefinition[]): Set<string> {
+  const keys = new Set<string>();
+  for (const def of ownerDefinitions) {
+    if (def.symbolKind === "module") keys.add(scopeKey(def.relPath, [...def.scope, def.shortName]));
+  }
+  return keys;
+}
+
+/** One file-and-scope identity; NUL cannot occur in a path or an identifier. */
+function scopeKey(relPath: string, scope: readonly string[]): string {
+  return [relPath, ...scope].join("\u0000");
 }
 
 function addMember(index: OwnerMemberIndex, memberName: string, owner: string, arity: MemberArity): void {

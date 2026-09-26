@@ -14,6 +14,7 @@ import {
   type DispatchFanoutOutcome,
   type InheritanceEdgeRow,
   type NamedSymbol,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/index.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
@@ -25,8 +26,10 @@ import {
 import { interfaceReceiverExcludesCandidate } from "../../../../../../src/core/domains/language/typescript/resolver/ts-interface-receiver.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { extractFromTypescriptFile } from "../../../../../../src/core/domains/language/typescript/walker/walker.js";
 import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 import { buildHierarchySnapshot } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
+import { symbolDefinitionsOf } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-definitions.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
 
@@ -613,5 +616,67 @@ describe("TSCallResolver.resolveDispatch — object-literal factory as a structu
     ]);
     const close: CallRef = { callText: "closer?.close()", receiver: "closer", member: "close", startLine: 10 };
     expect(edgesOf(resolver.resolveDispatch(close, ctx))).toEqual([]);
+  });
+
+  // Option A (owner, 2026-09-27): an object-literal declarator is itself the
+  // value that satisfies the contract, so its `.` member is reached — through
+  // the owner kind the WALKER records, while the function's nested `.close`
+  // helper still is not.
+  it("reaches an object-literal declarator's `.` member and still never a nested helper", () => {
+    const CLOSERS_SOURCE = [
+      `export const IMMEDIATE_CLOSER = {`,
+      `  close(): void {`,
+      `    return undefined;`,
+      `  },`,
+      `};`,
+    ];
+    writeSource(repoRoot, "src/outcome.ts", OUTCOME_SOURCE);
+    writeSource(repoRoot, "src/schema.ts", SCHEMA_SOURCE);
+    writeSource(repoRoot, "src/closers.ts", CLOSERS_SOURCE);
+    writeSource(repoRoot, "src/use.ts", USE_SOURCE);
+    const walkedDefinitions = (relPath: string, lines: string[]): SymbolDefinition[] => {
+      const src = `${lines.join("\n")}\n`;
+      const parser = new Parser();
+      parser.setLanguage(TsLang.typescript);
+      const tree = { rootNode: materializeTree(parser.parse(src).rootNode, src) };
+      const chunks = collectSymbols(tree, tsNameOf, ".", false, new DefaultSymbolIdComposer());
+      return symbolDefinitionsOf(
+        extractFromTypescriptFile({ tree, code: src, relPath, language: "typescript", chunks }),
+      );
+    };
+    const table = new InMemoryGlobalSymbolTable();
+    const defs = [
+      ...walkedDefinitions("src/outcome.ts", OUTCOME_SOURCE),
+      ...walkedDefinitions("src/schema.ts", SCHEMA_SOURCE),
+      ...walkedDefinitions("src/closers.ts", CLOSERS_SOURCE),
+    ];
+    for (const relPath of ["src/outcome.ts", "src/schema.ts", "src/closers.ts"]) {
+      table.upsertFile(
+        relPath,
+        defs.filter((def) => def.relPath === relPath),
+      );
+    }
+    const structuralRows = new TypeScriptLanguage().structuralConformance({
+      contracts: [{ name: "Closer", members: [{ name: "close", params: 0 }] }],
+      memberDefinitions: table.lookupByShortName("close"),
+      ownerDefinitions: [...table.lookupByShortName("IMMEDIATE_CLOSER"), ...table.lookupByShortName("parseSnapshot")],
+      nominalRows: [],
+    });
+    const ctx: CallContext = {
+      callerFile: "src/use.ts",
+      callerScope: ["use"],
+      imports: [{ importText: "./outcome.js", startLine: 1, importedNames: ["Closer", "DeletionOutcome"] }],
+      symbolTable: table,
+      hierarchy: new MapHierarchyView(buildHierarchySnapshot(structuralRows)),
+    };
+    const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+
+    expect(structuralRows.map((row) => `${row.sourceFqName} ${row.kind} ${row.ancestorFqName}`)).toEqual([
+      "IMMEDIATE_CLOSER structural Closer",
+    ]);
+    const close: CallRef = { callText: "closer?.close()", receiver: "closer", member: "close", startLine: 10 };
+    expect(edgesOf(resolver.resolveDispatch(close, ctx))).toEqual([
+      edgeTo("src/closers.ts", "IMMEDIATE_CLOSER.close", 1),
+    ]);
   });
 });

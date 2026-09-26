@@ -101,6 +101,48 @@ describe("TypeScript structural contracts (39xca.14)", () => {
   });
 });
 
+/**
+ * bd tea-rags-mcp-39xca.19 — a declarator initialized by an object literal (the
+ * const-object namespace the walker names) is recorded as `symbolKind: "module"`,
+ * so structural conformance can count its `.` members: the literal IS the value
+ * that satisfies a contract. Every other chunk keeps no kind.
+ */
+describe("TypeScript object-literal declarator kind (39xca.19)", () => {
+  it("marks const-object namespace declarators, wrapped or nested, and nothing else", () => {
+    const code = [
+      "export const RUBY_POLICY = {", // 1
+      "  order(a: string) { return a; },", // 2
+      "} satisfies AncestorPolicy;", // 3
+      "export function build() {", // 4
+      "  const api = { fetchAll() { return 1; } };", // 5
+      "  const close = () => 1;", // 6
+      "  return { run() { return api; } };", // 7
+      "}", // 8
+      "const DATA = { red: 1 };", // 9
+    ].join("\n");
+    const extraction = extract(code, [
+      { symbolId: "RUBY_POLICY", scope: [], startLine: 1, endLine: 3 },
+      { symbolId: "RUBY_POLICY.order", scope: ["RUBY_POLICY"], startLine: 2, endLine: 2 },
+      { symbolId: "build", scope: [], startLine: 4, endLine: 8 },
+      { symbolId: "build.api", scope: ["build"], startLine: 5, endLine: 5 },
+      { symbolId: "build.api.fetchAll", scope: ["build", "api"], startLine: 5, endLine: 5 },
+      { symbolId: "build.close", scope: ["build"], startLine: 6, endLine: 6 },
+      { symbolId: "build#run", scope: ["build"], startLine: 7, endLine: 7 },
+    ]);
+    const kinds = Object.fromEntries(extraction.chunks.map((c) => [c.symbolId, c.symbolKind]));
+
+    expect(kinds).toEqual({
+      RUBY_POLICY: "module",
+      "RUBY_POLICY.order": undefined,
+      build: undefined,
+      "build.api": "module",
+      "build.api.fetchAll": undefined,
+      "build.close": undefined,
+      "build#run": undefined,
+    });
+  });
+});
+
 describe("TypeScript callable arity (39xca.14)", () => {
   it("records minRequired / maxPositional / hasSplat on method and function chunks", () => {
     const code = [

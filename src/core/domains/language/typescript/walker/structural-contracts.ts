@@ -20,7 +20,10 @@ import type {
   AritySignature,
   StructuralContractDecl,
   StructuralContractMember,
+  SymbolDefinitionKind,
 } from "../../../../contracts/types/codegraph.js";
+import { constObjectNamespaceName } from "../../../../infra/symbolid/index.js";
+import { symbolIdNames } from "../../kernel/symbol-id.js";
 
 /** A rest parameter accepts any number of arguments, so no implementation requires too many. */
 const UNBOUNDED_PARAMS = Number.MAX_SAFE_INTEGER;
@@ -76,6 +79,40 @@ export function collectTypescriptCallableArities(root: AstNode): Map<number, Ari
     if (!out.has(line)) out.set(line, aritySignature(params));
   });
   return out;
+}
+
+/**
+ * `startLine → name` of every declarator initialized by an object literal the
+ * walker names — the const-object namespace, `const X = { m() {} }`, at any
+ * depth and through `as` / `satisfies` (bd tea-rags-mcp-39xca.19). Its chunk is
+ * recorded as `symbolKind: "module"`: the literal is itself the value that can
+ * satisfy a contract, so structural conformance counts its `.` members. Keyed
+ * like arity, by the declarator's line; the name disambiguates the chunk that
+ * starts on it. Shared with the JavaScript walker, which names the same shape
+ * through the same gate.
+ */
+export function collectObjectLiteralDeclarators(root: AstNode): Map<number, string> {
+  const out = new Map<number, string>();
+  visit(root, (node) => {
+    const name = constObjectNamespaceName(node);
+    if (name === null) return;
+    const line = node.startPosition.row + 1;
+    if (!out.has(line)) out.set(line, name);
+  });
+  return out;
+}
+
+/**
+ * The `symbolKind` a chunk takes from {@link collectObjectLiteralDeclarators}:
+ * `module` when an object-literal declarator starts on the chunk's line under
+ * the chunk's own name, else undefined (the walker records no kind).
+ */
+export function objectLiteralDeclaratorKind(
+  declarators: ReadonlyMap<number, string>,
+  chunk: { readonly symbolId: string; readonly startLine: number },
+): SymbolDefinitionKind | undefined {
+  const name = declarators.get(chunk.startLine);
+  return name !== undefined && symbolIdNames(chunk.symbolId, name) ? "module" : undefined;
 }
 
 /** The member list of an interface or an object-type alias, else `null`. */
