@@ -42,6 +42,7 @@ The tooling is conservative: **transient faults retry, permanent faults surface*
 | Qdrant unreachable | Surfaced (`INFRA_QDRANT_UNAVAILABLE`) | Likely misconfiguration; silent retry would mask it |
 | Embedding rate limit (OpenAI / Cohere / Voyage) | **Retried** with exponential backoff + `Retry-After` | Provider guarantees the limit will lift; invisible to the caller |
 | Embedding transient 5xx | **Retried** (bounded by `EMBEDDING_TUNE_RETRY_ATTEMPTS`) | Same reason |
+| Ollama HTTP 200 with no vectors or the wrong count | **Retried** (bounded by `EMBEDDING_TUNE_RETRY_ATTEMPTS`), then surfaced (`INFRA_OLLAMA_MALFORMED_RESPONSE`: expected N vectors, got M) | The host is reachable, so no unavailable-host wait and no "not reachable" report |
 | Ollama model missing | **Retried once after model pull**; then surfaced (`INFRA_EMBEDDING_OLLAMA_MODEL_MISSING`) | One self-heal attempt, then user must intervene |
 | Ollama unreachable | **Fallback to ONNX** if configured; otherwise surfaced | Local-first UX — don't break when the daemon dies |
 | Git CLI timeout during enrichment | Logged, **does not fail indexing** | Enrichment is best-effort; base payload is still usable |

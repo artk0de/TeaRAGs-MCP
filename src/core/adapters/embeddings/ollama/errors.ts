@@ -151,6 +151,32 @@ export class OllamaResponseError extends EmbeddingError {
 }
 
 /**
+ * Ollama answered HTTP 200 but the body does not carry one vector per input
+ * text — none at all, or the wrong count. The server IS reachable, so this is
+ * not an `OllamaUnavailableError`: it is retried by the normal batch retries
+ * (EMBEDDING_TUNE_RETRY_ATTEMPTS), never by the unavailable-host recovery wait.
+ */
+export class OllamaMalformedResponseError extends EmbeddingError {
+  readonly expectedCount: number;
+  readonly receivedCount: number;
+
+  constructor(url: string, expectedCount: number, receivedCount: number) {
+    const noun = expectedCount === 1 ? "vector" : "vectors";
+    super({
+      code: "INFRA_OLLAMA_MALFORMED_RESPONSE",
+      message: `Ollama returned a malformed embed response at ${url}: expected ${expectedCount} ${noun}, got ${receivedCount}`,
+      hint:
+        `Ollama answered but its response did not contain one embedding per input text.\n` +
+        `The request was already retried (EMBEDDING_TUNE_RETRY_ATTEMPTS). Check the Ollama logs at ${url}; ` +
+        `a model that is still loading or a server under memory pressure can return partial batches.`,
+      httpStatus: 502,
+    });
+    this.expectedCount = expectedCount;
+    this.receivedCount = receivedCount;
+  }
+}
+
+/**
  * A chunk exceeds the embedding model's context window.
  * Detected by Ollama response body containing "context length" or "input length".
  */

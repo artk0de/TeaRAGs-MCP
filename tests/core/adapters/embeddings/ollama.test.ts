@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
 import {
   OllamaContextOverflowError,
+  OllamaMalformedResponseError,
   OllamaModelMissingError,
   OllamaResponseError,
   OllamaTimeoutError,
@@ -146,13 +147,22 @@ describe("OllamaEmbeddings", () => {
       expect(mockFetch).toHaveBeenCalledWith("http://custom:11434/api/embeddings", expect.any(Object));
     });
 
-    it("should throw error if no embedding returned", async () => {
+    it("should throw OllamaMalformedResponseError if no embedding returned", async () => {
+      // HTTP 200 without a vector: the server answered, so this is a malformed
+      // response, not "not reachable" (bd tea-rags-mcp-jyka).
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { retryAttempts: 1, retryDelayMs: 1 },
+        undefined,
+        true,
+      );
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({}),
       });
 
-      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+      await expect(provider.embed("test")).rejects.toThrow(OllamaMalformedResponseError);
     });
 
     it("should handle API errors", async () => {
@@ -793,6 +803,10 @@ describe("OllamaEmbeddings", () => {
   describe("native batch API (/api/embed)", () => {
     let batchEmbeddings: OllamaEmbeddings;
 
+    // Malformed responses are retried by the normal batch retries; keep them fast.
+    const fastRetryProvider = () =>
+      new OllamaEmbeddings("nomic-embed-text", undefined, { retryAttempts: 1, retryDelayMs: 1 });
+
     beforeEach(() => {
       // Use native batch API (legacyApi=false, which is the default)
       batchEmbeddings = new OllamaEmbeddings("nomic-embed-text");
@@ -858,7 +872,7 @@ describe("OllamaEmbeddings", () => {
       );
     });
 
-    it("should handle empty embeddings response", async () => {
+    it("should classify an empty embeddings response as malformed", async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -867,7 +881,7 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+      await expect(fastRetryProvider().embed("test")).rejects.toThrow(OllamaMalformedResponseError);
     });
 
     it("should handle API error in batch mode", async () => {
@@ -956,7 +970,9 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embedBatch(["text1", "text2", "text3"])).rejects.toThrow(OllamaUnavailableError);
+      await expect(fastRetryProvider().embedBatch(["text1", "text2", "text3"])).rejects.toThrow(
+        OllamaMalformedResponseError,
+      );
     });
 
     it("should throw when embedBatch response has no embeddings field", async () => {
@@ -967,7 +983,7 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow(OllamaUnavailableError);
+      await expect(fastRetryProvider().embedBatch(["text1"])).rejects.toThrow(OllamaMalformedResponseError);
     });
 
     it("should throw OllamaContextOverflowError when batch API returns context length error", async () => {
@@ -1949,7 +1965,7 @@ describe("OllamaEmbeddings", () => {
       const provider = new OllamaEmbeddings(
         "nomic-embed-text",
         undefined,
-        { failoverConsecutiveFailures },
+        { failoverConsecutiveFailures, retryAttempts: 1, retryDelayMs: 1 },
         PRIMARY,
         opts.legacyApi ?? true,
         999,
@@ -2014,8 +2030,10 @@ describe("OllamaEmbeddings", () => {
       const provider = await makeProvider(2);
 
       for (let i = 0; i < 2; i++) {
+        // retryAttempts 1 → each call makes two requests before it fails
         mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
-        await expect(provider.embed(`bad ${i}`)).rejects.toThrow();
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+        await expect(provider.embed(`bad ${i}`)).rejects.toThrow(OllamaMalformedResponseError);
       }
 
       mockFetch.mockResolvedValueOnce(legacyOk());
@@ -2312,6 +2330,129 @@ describe("OllamaEmbeddings", () => {
       await expect(provider.embed("on fallback")).rejects.toThrow(OllamaUnavailableError);
 
       expect(onSwitch).not.toHaveBeenCalled();
+    });
+  });
+
+  // bd tea-rags-mcp-jyka (owner decision A): an HTTP 200 whose body carries no
+  // vectors or the wrong number of them is a malformed response from a server
+  // that IS reachable — retried by the normal batch retries, never routed into
+  // the unavailable-host recovery wait and never reported as "not reachable".
+  describe("malformed embed response", () => {
+    const URL = "http://primary:11434";
+    const vec = Array(768).fill(0.1);
+    const batchBody = (embeddings: unknown) => ({
+      ok: true,
+      json: async () => ({ model: "nomic-embed-text", embeddings }),
+    });
+
+    function makeProvider(overrides: Record<string, number> = {}): OllamaEmbeddings {
+      return new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { retryAttempts: 2, retryDelayMs: 1, ...overrides },
+        URL,
+        false,
+        999,
+      );
+    }
+
+    it("an empty body is malformed: expected 1 vector, got 0, names the endpoint", async () => {
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+
+      const error = await makeProvider()
+        .embed("t")
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(OllamaMalformedResponseError);
+      expect(error).not.toBeInstanceOf(OllamaUnavailableError);
+      const malformed = error as OllamaMalformedResponseError;
+      expect(malformed.code).toBe("INFRA_OLLAMA_MALFORMED_RESPONSE");
+      expect(malformed.expectedCount).toBe(1);
+      expect(malformed.receivedCount).toBe(0);
+      expect(malformed.message).toContain("expected 1");
+      expect(malformed.message).toContain("got 0");
+      expect(malformed.message).toContain(URL);
+    });
+
+    it("a wrong vector count is malformed: expected N, got M", async () => {
+      mockFetch.mockResolvedValue(batchBody([vec, vec]));
+
+      const error = await makeProvider()
+        .embedBatch(["a", "b", "c"])
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(OllamaMalformedResponseError);
+      expect((error as OllamaMalformedResponseError).expectedCount).toBe(3);
+      expect((error as OllamaMalformedResponseError).receivedCount).toBe(2);
+      expect((error as OllamaMalformedResponseError).message).toContain("expected 3");
+      expect((error as OllamaMalformedResponseError).message).toContain("got 2");
+    });
+
+    it("the legacy single-embedding API reports a missing vector as malformed too", async () => {
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const legacy = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { retryAttempts: 1, retryDelayMs: 1 },
+        URL,
+        true,
+      );
+
+      await expect(legacy.embed("t")).rejects.toThrow(OllamaMalformedResponseError);
+    });
+
+    it("is retried by the normal batch retries and succeeds once the server answers properly", async () => {
+      mockFetch.mockResolvedValueOnce(batchBody([vec])).mockResolvedValueOnce(batchBody([vec, vec]));
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const results = await makeProvider().embedBatch(["a", "b"]);
+
+      expect(results).toHaveLength(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      // The retry log names what it retries, not a rate limit it never hit.
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("Malformed Ollama embed response. Retrying"));
+      log.mockRestore();
+    });
+
+    it("exhausted retries surface the typed malformed error without any recovery wait", async () => {
+      mockFetch.mockResolvedValue(batchBody([]));
+      const provider = makeProvider({ retryAttempts: 2, unavailableRetryMaxWaitMs: 240_000 });
+      const onRecoveryWait = vi.fn();
+      provider.onRecoveryWait = onRecoveryWait;
+
+      const error = await provider.embedBatch(["a"]).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(OllamaMalformedResponseError);
+      expect(error).not.toBeInstanceOf(OllamaUnavailableError);
+      // 1 attempt + EMBEDDING_TUNE_RETRY_ATTEMPTS retries, nothing more
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(onRecoveryWait).not.toHaveBeenCalled();
+    });
+
+    it("N consecutive malformed responses on the primary fail over to the fallback", async () => {
+      const FALLBACK = "http://fallback:11434";
+      mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check: primary healthy
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        { retryAttempts: 1, retryDelayMs: 1, failoverConsecutiveFailures: 2 },
+        URL,
+        false,
+        999,
+        FALLBACK,
+      );
+      await new Promise<void>((r) => setTimeout(r, 0));
+
+      mockFetch.mockImplementation(async (url: string) => (url.startsWith(URL) ? batchBody([]) : batchBody([vec])));
+      for (let i = 0; i < 2; i++) {
+        await expect(provider.embedBatch(["a"])).rejects.toThrow(OllamaMalformedResponseError);
+      }
+
+      await provider.embedBatch(["a"]);
+
+      const last = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(last).toBe(`${FALLBACK}/api/embed`);
+      mockFetch.mockReset();
     });
   });
 

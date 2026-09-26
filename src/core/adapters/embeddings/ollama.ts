@@ -18,6 +18,7 @@ import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import {
   OllamaContextOverflowError,
+  OllamaMalformedResponseError,
   OllamaModelMissingError,
   OllamaResponseError,
   OllamaTimeoutError,
@@ -374,7 +375,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         const result = await withRateLimitRetry(async () => fn(url), {
           maxAttempts: this.retryAttempts,
           baseDelayMs: this.retryDelayMs,
-          isRetryable: (error) => this.isRateLimit(error),
+          // A malformed 200 (no vectors / wrong count) is a transient server
+          // hiccup on a reachable host — retry it here, not in the recovery wait.
+          isRetryable: (error) => this.isRateLimit(error) || error instanceof OllamaMalformedResponseError,
+          describeRetry: (error) =>
+            error instanceof OllamaMalformedResponseError ? "Malformed Ollama embed response" : undefined,
         });
         this.notePrimaryEmbedSuccess(url);
         if (recoveryAttempt > 0) {
@@ -385,9 +390,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         const switchedToFallback = this.notePrimaryEmbedFailure(url, error);
 
         // Typed errors propagate directly — the server IS reachable but rejected
-        // the request (missing model, timeout, HTTP error), so waiting for a
-        // reconnection is pointless. No recovery wait; the failure has already
-        // been counted toward failover above, so the NEXT call may go elsewhere.
+        // the request (missing model, timeout, HTTP error, malformed body whose
+        // retries are spent), so waiting for a reconnection is pointless. No
+        // recovery wait; the failure has already been counted toward failover
+        // above, so the NEXT call may go elsewhere.
+        if (error instanceof OllamaMalformedResponseError) throw error;
         if (error instanceof OllamaModelMissingError) throw error;
         if (error instanceof OllamaTimeoutError) throw error;
         if (error instanceof OllamaResponseError) throw error;
@@ -561,14 +568,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private async embedSingle(text: string, url: string): Promise<EmbeddingResult> {
     if (this.useNativeBatch) {
       const response = await this.callBatchApi([text], url, this.singleEmbedTimeout());
-      if (!response.embeddings || response.embeddings.length === 0) {
-        throw new OllamaUnavailableError(url);
+      if (response.embeddings?.length !== 1) {
+        throw new OllamaMalformedResponseError(url, 1, response.embeddings?.length ?? 0);
       }
       return { embedding: response.embeddings[0], dimensions: this.dimensions };
     }
     const response = await this.callApi(text, url);
     if (!response.embedding) {
-      throw new OllamaUnavailableError(url);
+      throw new OllamaMalformedResponseError(url, 1, 0);
     }
     return { embedding: response.embedding, dimensions: this.dimensions };
   }
@@ -613,7 +620,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         }
         const response = await this.callBatchApi(texts, url, timeout);
         if (response.embeddings?.length !== texts.length) {
-          throw new OllamaUnavailableError(url);
+          throw new OllamaMalformedResponseError(url, texts.length, response.embeddings?.length ?? 0);
         }
         return response.embeddings.map((embedding: number[]) => ({
           embedding,
