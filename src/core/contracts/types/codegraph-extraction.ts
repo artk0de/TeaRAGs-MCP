@@ -27,6 +27,16 @@ export interface FileExtraction {
   relPath: RelPath;
   language: string;
   imports: ImportRef[];
+  /**
+   * Imports that bring in types only and load nothing at runtime
+   * (bd tea-rags-mcp-r8hme.12) — TypeScript's statement-level `import type` /
+   * `export type … from`. Kept OUT of {@link FileExtraction.imports}: nothing
+   * that reads the runtime import list (receiver binding, dispatch gates, the
+   * file graph's fanIn / fanOut) may see them. Resolved through the same
+   * import→file path into `GraphEdges.typeOnlyFileEdges`, which only the
+   * structure-vs-history judgement reads. Absent when the file has none.
+   */
+  typeOnlyImports?: ImportRef[];
   chunks: ChunkExtraction[];
   /** Lexical scope chain at file top level — usually `[]` for TS, may be
    *  e.g. `["module Acme"]` for Ruby (slice 3). */
@@ -721,6 +731,16 @@ export interface ClassFieldParamLink {
 export interface ImportRef {
   /** Raw import path as written, e.g. `"./utils"`, `"@/lib/foo"`, `"react"`. */
   importText: string;
+  /**
+   * The import binds names for type facts but loads nothing at runtime
+   * (bd tea-rags-mcp-r8hme.12) — Python's `if TYPE_CHECKING:` block. It stays on
+   * `imports[]` because a resolver reads its bindings to type annotations; the
+   * resolution runner routes its FILE edge to the type-only table instead of
+   * the runtime file graph. Contrast {@link FileExtraction.typeOnlyImports},
+   * which holds type-only imports a resolver must not see at all. Absent on
+   * every runtime import.
+   */
+  typeOnly?: true;
   /** Lexical position used by resolvers that need it (TS aliases, Python
    *  relative imports). 1-based line number. */
   startLine: number;

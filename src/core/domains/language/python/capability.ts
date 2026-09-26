@@ -81,6 +81,9 @@ export const capability: LanguageCapability = {
   // integration walker 14; neither side's index holds both extractions.
   // walker 9: release v1.44.2 shipped walker 8 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 9.
+  // Same walker 9, bd tea-rags-mcp-r8hme.12: an import inside an
+  // `if TYPE_CHECKING:` body is flagged `typeOnly`, so its file edge moves from
+  // `cg_symbols_edges_file` to `cg_symbols_edges_file_type_only`.
   versions: { chunking: 1, walker: 9, codegraphSchema: 2 },
   // PEP 8: classes CapWords, modules short lowercase (underscores allowed),
   // functions, methods, variables and attributes snake_case, module-level

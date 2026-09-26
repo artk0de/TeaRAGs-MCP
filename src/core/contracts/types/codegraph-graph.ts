@@ -339,6 +339,15 @@ export interface FileEdgeExportNames {
 
 export interface GraphEdges {
   fileEdges: ({ targetRelPath: RelPath; importText: string | null } & FileEdgeExportNames)[];
+  /**
+   * Files this file depends on ONLY through type-only imports
+   * ({@link FileExtraction.typeOnlyImports}, bd tea-rags-mcp-r8hme.12),
+   * persisted to `cg_symbols_edges_file_type_only` — never to
+   * `cg_symbols_edges_file`, so fanIn / fanOut / PageRank / cycles keep
+   * measuring runtime dependencies. A target a runtime import also reaches is
+   * not repeated here. Absent when there is none.
+   */
+  typeOnlyFileEdges?: { targetRelPath: RelPath; importText: string | null }[];
   methodEdges: {
     sourceSymbolId: SymbolId;
     targetSymbolId: SymbolId | null;

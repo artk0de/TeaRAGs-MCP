@@ -1,6 +1,7 @@
 /**
  * Custody of the file-node tables: `cg_symbols_files` plus everything keyed by
- * `source_rel_path` (file edges, method edges, inheritance, ambiguous fan-out)
+ * `source_rel_path` (file edges, type-only file edges, method edges,
+ * inheritance, ambiguous fan-out)
  * and the per-file pass-1 aggregate slice `cg_pass1_aggregates`, which is keyed
  * by `rel_path` because the row IS the file rather than a slice of its edges.
  *
@@ -67,6 +68,8 @@ const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
 // Migration 030 (bd tea-rags-mcp-r8hme.2): the export names are VALUES, so a
 // re-walk that changes only them rewrites the row instead of keeping the first.
 const FILE_EDGE_VALUES = ["import_text", "imported_export_names", "reexported_export_names"] as const;
+// Migration 037 (bd tea-rags-mcp-r8hme.12): same key as the runtime file edge.
+const TYPE_ONLY_FILE_EDGE_VALUES = ["import_text"] as const;
 const METHOD_EDGE_KEYS = [
   "source_symbol_id",
   "source_rel_path",
@@ -139,6 +142,7 @@ export class DuckDbFileGraphStore {
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
     const pass1Rows: unknown[][] = [];
+    const typeOnlyFileEdgeRows: unknown[][] = [];
     for (const { node, edges } of group) {
       // A file may re-import the same module on different lines, so the same
       // (source, target) can arrive twice in one extraction — the diff keeps
@@ -151,6 +155,9 @@ export class DuckDbFileGraphStore {
           encodeFileEdgeExportNames(e.importedExportNames),
           encodeFileEdgeExportNames(e.reexportedExportNames),
         ]);
+      }
+      for (const e of edges.typeOnlyFileEdges ?? []) {
+        typeOnlyFileEdgeRows.push([node.relPath, e.targetRelPath, e.importText]);
       }
       // GraphEdges.methodEdges allows targetSymbolId=null (the resolver case
       // where an import resolves to a file but the called member isn't in that
@@ -241,6 +248,14 @@ export class DuckDbFileGraphStore {
       fileEdgeRows,
     );
     await this.session.applyScopedRowDiff(
+      "cg_symbols_edges_file_type_only",
+      "source_rel_path",
+      relPaths,
+      FILE_EDGE_KEYS,
+      TYPE_ONLY_FILE_EDGE_VALUES,
+      typeOnlyFileEdgeRows,
+    );
+    await this.session.applyScopedRowDiff(
       "cg_symbols_edges_method",
       "source_rel_path",
       relPaths,
@@ -306,6 +321,10 @@ export class DuckDbFileGraphStore {
         relPath,
         relPath,
       ]);
+      await this.session.run(
+        "DELETE FROM cg_symbols_edges_file_type_only WHERE source_rel_path = ? OR target_rel_path = ?",
+        [relPath, relPath],
+      );
       await this.session.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);

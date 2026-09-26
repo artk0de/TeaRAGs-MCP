@@ -159,9 +159,11 @@ export class DuckDbTemporalCochangeStore {
    * (the barrel graph, small) and joined only for importers that have a
    * co-change row, so its cost does not grow with the whole import graph.
    *
-   * Type-only imports are not file edges (the walker records runtime
-   * dependencies only), so a pair joined by nothing but `import type` reads as
-   * unlinked here.
+   * A type-only import links too (bd tea-rags-mcp-r8hme.12). It is no runtime
+   * dependency, so it is kept out of `cg_symbols_edges_file`, but a declared
+   * type dependency is structure: the daemon server consumes its wire protocol
+   * only through `import type`, and without `cg_symbols_edges_file_type_only`
+   * that pair ranked among the strongest silent couplings.
    */
   async readGraph(): Promise<TemporalCochangeGraph> {
     const meta = await this.readMeta();
@@ -177,6 +179,8 @@ export class DuckDbTemporalCochangeStore {
        ),
        links AS (
          SELECT source_rel_path AS x, target_rel_path AS y FROM cg_symbols_edges_file
+         UNION
+         SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file_type_only
          UNION
          SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL
          UNION

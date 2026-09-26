@@ -335,6 +335,7 @@ export class CallEdgeResolutionRunner {
     // these calls land, so `resolveFileEdges` receives them.
     this.resolveMethodEdges(extraction, symbolTable, resolver, inputs, methodEdges, ambiguousFanouts);
     const fileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
+    const typeOnlyFileEdges = this.buildTypeOnlyFileEdges(extraction, symbolTable, resolver, inputs, fileEdges);
 
     // Class hierarchy (bd tea-rags-mcp-f10y). Persist this file's declared
     // inheritance edges alongside its file/method edges so cg_symbols_inheritance
@@ -344,6 +345,7 @@ export class CallEdgeResolutionRunner {
     // unified inheritanceEdges field, others via the legacy class* Records.
     const inheritance = normalizeInheritanceEdges(extraction, (fq) => symbolTable.lookup(fq)[0]?.symbolId ?? null);
     const edges: GraphEdges = { fileEdges, methodEdges };
+    if (typeOnlyFileEdges.length > 0) edges.typeOnlyFileEdges = typeOnlyFileEdges;
     if (inheritance.length > 0) edges.inheritance = inheritance;
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
     // The pass-1 aggregate slice (bd tea-rags-mcp-znxg8), attached here so it
@@ -477,7 +479,60 @@ export class CallEdgeResolutionRunner {
     inputs: ResolverInputs,
     resolvedMethodEdges: MethodEdges,
   ): GraphEdges["fileEdges"] {
-    const fileEdgeCtx: CallContext = {
+    // An import flagged `typeOnly` (Python `if TYPE_CHECKING:`) loads nothing at
+    // runtime, so the runtime file graph is built without it. The same object
+    // is handed on when nothing is flagged — the common case, and the only one
+    // for a language that derives file edges from more than its imports.
+    const runtime = extraction.imports.some((imp) => imp.typeOnly)
+      ? { ...extraction, imports: extraction.imports.filter((imp) => !imp.typeOnly) }
+      : extraction;
+    const fileEdgeCtx = this.fileEdgeContext(runtime, symbolTable, inputs);
+    const candidates = resolver.resolveFileEdges
+      ? resolver.resolveFileEdges(runtime, fileEdgeCtx, resolvedMethodEdges)
+      : defaultImportFileEdges(runtime, resolver, fileEdgeCtx);
+    return dedupeFileEdgesByTarget(candidates);
+  }
+
+  /**
+   * The files this one reaches ONLY through type-only imports
+   * (bd tea-rags-mcp-r8hme.12): the `typeOnlyImports` channel plus every
+   * `imports[]` entry flagged `typeOnly`. That list is resolved by the very
+   * import→file path the runtime list takes — handed to the same resolver as if
+   * it were the file's imports — so a specifier maps to the same file either
+   * way. What comes back is kept apart from `fileEdges`: a target a runtime
+   * import already reaches is dropped (the runtime edge says more), and so is a
+   * self-edge. No resolved method edges are passed: a language that derives
+   * file edges from calls would otherwise hand the runtime answer back.
+   */
+  private buildTypeOnlyFileEdges(
+    extraction: FileExtraction,
+    symbolTable: GlobalSymbolTable,
+    resolver: LanguageSymbolResolver,
+    inputs: ResolverInputs,
+    runtimeFileEdges: GraphEdges["fileEdges"],
+  ): NonNullable<GraphEdges["typeOnlyFileEdges"]> {
+    const typeOnlyImports = [
+      ...extraction.imports.filter((imp) => imp.typeOnly),
+      ...(extraction.typeOnlyImports ?? []),
+    ];
+    if (typeOnlyImports.length === 0) return [];
+    const typeOnlyExtraction: FileExtraction = { ...extraction, imports: typeOnlyImports };
+    const ctx = this.fileEdgeContext(typeOnlyExtraction, symbolTable, inputs);
+    const candidates = resolver.resolveFileEdges
+      ? resolver.resolveFileEdges(typeOnlyExtraction, ctx, [])
+      : defaultImportFileEdges(typeOnlyExtraction, resolver, ctx);
+    const runtimeTargets = new Set(runtimeFileEdges.map((e) => e.targetRelPath));
+    return dedupeFileEdgesByTarget(candidates)
+      .filter((e) => e.targetRelPath !== extraction.relPath && !runtimeTargets.has(e.targetRelPath))
+      .map((e) => ({ targetRelPath: e.targetRelPath, importText: e.importText }));
+  }
+
+  private fileEdgeContext(
+    extraction: FileExtraction,
+    symbolTable: GlobalSymbolTable,
+    inputs: ResolverInputs,
+  ): CallContext {
+    return {
       ...resolverInputChannels(inputs),
       callerFile: extraction.relPath,
       callerScope: extraction.fileScope,
@@ -488,10 +543,6 @@ export class CallEdgeResolutionRunner {
       declaredDependencies: this.runState.declaredDependencies,
       projectRoot: this.runState.projectRoot,
     };
-    const candidates = resolver.resolveFileEdges
-      ? resolver.resolveFileEdges(extraction, fileEdgeCtx, resolvedMethodEdges)
-      : defaultImportFileEdges(extraction, resolver, fileEdgeCtx);
-    return dedupeFileEdgesByTarget(candidates);
   }
 
   /**

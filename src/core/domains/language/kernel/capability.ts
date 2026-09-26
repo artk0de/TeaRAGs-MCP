@@ -73,7 +73,9 @@ export { SHARED_LANGUAGE } from "../../../contracts/types/language.js";
 export const sharedVersions: LanguageSupportVersions = {
   chunking: 2,
   // walker 3: release v1.44.2 shipped shared walker 2 and a release cycle gets
-  // ONE bump, so the branch-local 3..5 collapse into 3.
+  // ONE bump, so the branch-local 3..5 collapse into 3. Same walker 3, bd
+  // tea-rags-mcp-r8hme.12: the resolution runner resolves `typeOnlyImports`
+  // into `GraphEdges.typeOnlyFileEdges`.
   walker: 3,
   codegraphSchema: 2,
 };

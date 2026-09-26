@@ -1078,6 +1078,7 @@ function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
           importedBindings: { [local]: imported },
           // bd tea-rags-mcp-r8hme.2 — `import m` binds the whole module.
           importedExportNames: ["*"],
+          ...typeOnlyField(node),
         });
       }
     } else if (node.type === "import_from_statement") {
@@ -1139,14 +1140,43 @@ function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
         local === "*" ? "*" : (identifierEntry(importedBindings, local) ?? local),
       );
       const exported = exportNames.length > 0 ? { importedExportNames: [...new Set(exportNames)] } : {};
+      const typeOnly = typeOnlyField(node);
       if (moduleField) {
-        out.push({ importText: sourceModule, startLine, ...names, ...bindings, ...exported });
+        out.push({ importText: sourceModule, startLine, ...names, ...bindings, ...exported, ...typeOnly });
       } else if (prefix) {
         // `from . import x` — no module name, just the prefix.
-        out.push({ importText: prefix, startLine, ...names, ...bindings, ...exported });
+        out.push({ importText: prefix, startLine, ...names, ...bindings, ...exported, ...typeOnly });
       }
     }
   };
+}
+
+/**
+ * `{ typeOnly: true }` for an import inside the body of an `if TYPE_CHECKING:`
+ * (or `if typing.TYPE_CHECKING:`) block, at any depth; `{}` otherwise
+ * (bd tea-rags-mcp-r8hme.12). The constant is `False` at runtime, so such an
+ * import is loaded only by a type checker — no runtime file dependency, and a
+ * cycle through it is no cycle. The `else` / `elif` branches of that `if` DO
+ * run, so only the `consequence` block counts. The flag leaves the import on
+ * `imports[]`: its bindings still type annotations for the resolver.
+ */
+function typeOnlyField(importNode: AstNode): { typeOnly?: true } {
+  let child = importNode;
+  for (let node = importNode.parent; node !== null; child = node, node = node.parent) {
+    if (node.type !== "if_statement") continue;
+    if (isSameAstNode(child, node.childForFieldName("consequence")) && isTypeCheckingGuard(node)) {
+      return { typeOnly: true };
+    }
+  }
+  return {};
+}
+
+/** `TYPE_CHECKING` bare, or as the attribute of a module (`typing.TYPE_CHECKING`, `t.TYPE_CHECKING`). */
+function isTypeCheckingGuard(ifNode: AstNode): boolean {
+  const condition = ifNode.childForFieldName("condition");
+  if (condition?.type === "identifier") return condition.text === "TYPE_CHECKING";
+  if (condition?.type === "attribute") return condition.childForFieldName("attribute")?.text === "TYPE_CHECKING";
+  return false;
 }
 
 function pickModuleText(node: AstNode): string | null {

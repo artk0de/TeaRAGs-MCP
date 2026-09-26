@@ -46,7 +46,7 @@ export interface ExtractInput {
 }
 
 export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
-  const imports = collectImports(input.tree.rootNode);
+  const { imports, typeOnlyImports } = collectImports(input.tree.rootNode);
   // bd tea-rags-mcp-n0zj — lookup-table dispatch. Collect module-level const
   // tables first so the call walk knows which subscript receivers are real
   // dispatch tables. The gate set unions in-file const tables with imported
@@ -117,6 +117,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
     fileScope: [],
     classFieldTypes: classFieldTypesRecord,
   };
+  if (typeOnlyImports.length > 0) out.typeOnlyImports = typeOnlyImports;
   if (classExtends.size > 0) {
     // Convert Map → Record so the field round-trips through the NDJSON
     // spill in the codegraph provider. Mirrors the same discipline as
@@ -152,19 +153,31 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
  * namespace to that namespace's module (`attachNamespaceMemberBindings`). It
  * cannot run inside the walk above: it needs the finished import list to know
  * which identifiers name a module in the first place.
+ *
+ * Statement-level type-only imports and re-exports go to a SEPARATE list
+ * (bd tea-rags-mcp-r8hme.12): they load nothing at runtime, so they stay out of
+ * the runtime channel (bd tea-rags-mcp-m19a), yet they are structure — a
+ * protocol consumed only through `import type` is still declared coupling.
+ * They carry the specifier and line only: no local binding a call can reach.
  */
-function collectImports(root: AstNode): ImportRef[] {
+function collectImports(root: AstNode): { imports: ImportRef[]; typeOnlyImports: ImportRef[] } {
   const out: ImportRef[] = [];
+  const typeOnly: ImportRef[] = [];
   walk(root, (node) => {
-    if (node.type === "import_statement") collectEsmImport(node, out);
-    else if (node.type === "export_statement") collectReexport(node, out);
+    if (node.type === "import_statement") collectEsmImport(node, out, typeOnly);
+    else if (node.type === "export_statement") collectReexport(node, out, typeOnly);
     else if (node.type === "call_expression") {
       collectRequire(node, out);
       collectDynamicImport(node, out);
     }
   });
   attachNamespaceMemberBindings(root, out);
-  return out;
+  return { imports: out, typeOnlyImports: typeOnly };
+}
+
+/** The type-only form of a module reference: where it points, and nothing it binds. */
+function typeOnlyImportRef(node: AstNode, src: AstNode): ImportRef {
+  return { importText: stringLiteralText(src), startLine: node.startPosition.row + 1 };
 }
 
 /**
@@ -208,8 +221,10 @@ function stringLiteralText(node: AstNode): string {
   return node.text.replace(/^['"`]|['"`]$/g, "");
 }
 
-function collectEsmImport(node: AstNode, out: ImportRef[]): void {
-  // Skip top-level type-only imports (bd tea-rags-mcp-m19a):
+function collectEsmImport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[]): void {
+  const src = node.children.find((c) => c.type === "string");
+  if (!src) return;
+  // Route top-level type-only imports away from imports[] (bd tea-rags-mcp-m19a):
   // `import type { X } from "./x"` is erased at compile time and
   // produces no runtime dependency. Including it in imports[] inflates
   // codegraph fanOut/fanIn for type-only relationships. The grammar
@@ -217,9 +232,10 @@ function collectEsmImport(node: AstNode, out: ImportRef[]): void {
   // right after the `import` keyword for the statement-level type-only
   // form. Per-specifier `import { type X, Y }` is NOT filtered — the
   // statement is still a runtime import that loads `Y`.
-  if (hasTypeOnlyModifier(node, "import")) return;
-  const src = node.children.find((c) => c.type === "string");
-  if (!src) return;
+  if (hasTypeOnlyModifier(node, "import")) {
+    typeOnly.push(typeOnlyImportRef(node, src));
+    return;
+  }
   // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
   // introduces so the resolver can map `Receiver.method()` straight to
   // this module by exact name. Populated in this ONE place (colocation):
@@ -267,10 +283,13 @@ function hasTypeOnlyModifier(node: AstNode, keyword: "import" | "export"): boole
  * Type-only re-exports are erased at compile time and excluded, mirroring the
  * import-side filter (bd tea-rags-mcp-m19a).
  */
-function collectReexport(node: AstNode, out: ImportRef[]): void {
+function collectReexport(node: AstNode, out: ImportRef[], typeOnly: ImportRef[]): void {
   const src = node.childForFieldName("source");
   if (src?.type !== "string") return;
-  if (hasTypeOnlyModifier(node, "export")) return;
+  if (hasTypeOnlyModifier(node, "export")) {
+    typeOnly.push(typeOnlyImportRef(node, src));
+    return;
+  }
   // bd tea-rags-mcp-r8hme.2 — the names it FORWARDS are recorded on their own
   // channel; `importedNames` stays empty for the reason above.
   out.push({
