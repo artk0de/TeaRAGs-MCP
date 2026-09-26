@@ -46,6 +46,11 @@ function collectionPathFields() {
   };
 }
 
+/** Host-class aliasing contract shared by get_callers / get_callees (bd tea-rags-mcp-63l69). */
+const RESOLVED_SYMBOL_ID_CONTRACT =
+  "Host-class id with no node of its own (Account.suspended, member defined in an included module or " +
+  "superclass) → answered via first definer up hierarchy in MRO order; resolvedSymbolId names the id queried. ";
+
 const GetCallersInputShape = {
   ...collectionPathFields(),
   symbolId: z
@@ -239,7 +244,7 @@ export function registerCodegraphTools(
     {
       title: "Get Callers",
       description:
-        "Return symbols that invoke given symbolId. Backed by codegraph DuckDB. " +
+        `Return symbols that invoke given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
         "Top-level visibility = queried symbol's declared level; each caller carries its own " +
         "(private|protected|public; absent = unknown). " +
         "Pass includeAmbiguous:true to also list ambiguous dispatch sites (member-matched, " +
@@ -270,7 +275,7 @@ export function registerCodegraphTools(
     {
       title: "Get Callees",
       description:
-        "Return symbols invoked by given symbolId. Backed by codegraph DuckDB. " +
+        `Return symbols invoked by given symbolId. Backed by codegraph DuckDB. ${RESOLVED_SYMBOL_ID_CONTRACT}` +
         "Each callee carries the target's declared visibility (private|protected|public; absent = unknown). " +
         "File scope: pass relativePath instead of symbolId → {relativePath, imports[], total} — " +
         "files it imports, each {relativePath, importText, callWeight}, heaviest callWeight first; " +

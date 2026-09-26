@@ -51,6 +51,13 @@ export interface InheritanceEdge {
   ancestorSymbolId: string | null;
   kind: InheritanceKind;
   depth: number;
+  /**
+   * The row's declaration ordinal — a PER-KIND counter, so `include A` and
+   * `extend B` can both carry 0. Set by the direct-ancestor read
+   * (`getSupertypes`), where MRO tie-breaking needs it (bd tea-rags-mcp-63l69);
+   * absent on traversal reads that span several declaring types.
+   */
+  ordinal?: number;
 }
 
 /** Options for a {@link HierarchyView} traversal. */
