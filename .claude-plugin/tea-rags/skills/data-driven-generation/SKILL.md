@@ -228,7 +228,10 @@ while writing, so misfits are prevented, not detected:
   name: a draft pulls in its own lexical neighbours.
 - `names[]` = drafts with `kind` (`local`/`param`/`field`/`return`) and `type`
   when known. Type unknown but bound from a call →
-  `callee: { member, receiver? }`.
+  `callee: { member, receiver? }`. A new class, module, interface, enum or
+  constant →
+  `{ name, kind: "type", path: <its file>, extends?: <planned ancestor> }`: the
+  ancestor's family and the directory set the expected role suffix.
 
 Reading the answer — the dominant shape per kind IS the convention:
 
@@ -249,9 +252,11 @@ Reading the answer — the dominant shape per kind IS the convention:
   IS what you are about to write → back to Step 4 and gate that holder (a missed
   reuse, not a naming issue) — never rename and write a sibling.
 - `names[]`: `CONFORMS` → keep. `MISFIT` → take `suggestion` (`holder` shows
-  where the project uses it). `NEW_TERM` → adopt a `topTerms` term if it denotes
-  the same concept; otherwise the concept is new — keep the term, justify it in
-  Step 6.
+  where the project uses it; a type MISFIT names the missing `role`). `NEW_TERM`
+  → adopt a `topTerms` term or an `alternatives` word if it denotes the same
+  concept; otherwise the concept is new — keep the term, justify it in Step 6.
+  `COLLISION` → the short name is already a type elsewhere (`existing`); pick a
+  distinct name.
 - `driftWarning` or empty `byType` → no history for the type; take names from
   the template's code and say so.
 
@@ -304,6 +309,16 @@ hallucinated name; the sweep only spends tokens. Verify what they miss:
 3. **MODIFY:** `tea-rags:tests-as-context` recipe `tests-at-risk` (affectedFiles
    = [target file], intent = change description) → run the pinning scenarios.
    SKIP verdict → note behavior unpinned, proceed.
+4. **Naming review before commit** (codegraph on): GENERATE writes names Step 5
+   never judged (helpers, locals, constants, types). ONE
+   `get_naming_lexicon(changes: {})` — every name added lines declare vs HEAD.
+   Skip when every added declaration was a Step 5 draft. `review.findings` (flat
+   `{relPath, line, name, kind, type?, verdict, …}`) grouped by verdict:
+   `MISFIT` → rename to `suggestion` before commit; `COLLISION` → rename;
+   `NEW_TERM` → take an `alternatives` word for same concept, else keep +
+   justify (soft); `genericName` → generic name, rename. `review.novel` = no
+   precedent to compare, no action. Tests not judged (`notJudged`). Never
+   hand-list written names into `names[]`.
 
 Step 7 is the extension point for post-generation structural checks — add them
 here, not as a second verification step.

@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:mr-review",
   "skillPath": ".claude-plugin/tea-rags/skills/mr-review/SKILL.md",
-  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension (new identifiers of the diff judged by get_naming_lexicon names[], MISFIT/NEW_TERM surface as findings with the suggestion and holder as evidence).",
+  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension. Local mode: one get_naming_lexicon call with `changes` (base = merge-base) reviews every name the diff's added hunks declare, findings grouped by verdict. External mode (MR branch not checked out): names[] built from the diff's added lines. MISFIT / NEW_TERM / COLLISION surface as findings with the suggestion, holder or existing declaration as evidence. Cases with status 'superseded' are kept as history and not scored.",
   "runs": [],
   "cases": [
     {
@@ -20,7 +20,47 @@
           "Report naming as 'not assessed' while codegraph is on"
         ]
       },
-      "failureMode": "Agent skips the naming dimension or flags names without project evidence"
+      "failureMode": "Agent skips the naming dimension or flags names without project evidence",
+      "status": "superseded",
+      "supersededBy": "naming-diff-changes (local), naming-external-names (external)",
+      "reason": "get_naming_lexicon reviews a diff itself through `changes` (bd tea-rags-mcp-fdef2); hand-listing the diff's identifiers into names[] stays only for external mode, where the MR branch is not in the working tree"
+    },
+    {
+      "id": "naming-diff-changes",
+      "category": "d8-naming",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Local review on branch feature/envelope-sync; the diff adds `row = find_vendor_envelope(id)` and a new class `Commit` in app/services/tax_automation/importer.rb. The review call returns MISFIT for row (suggestion tax_automation_document, holder app/services/tax_automation/loader.rb), NEW_TERM for find_vendor_envelope, COLLISION for Commit (existing app/models/commit.rb), 14 conforming.",
+      "prompt": "Сделай ревью моей ветки.",
+      "expected": {
+        "mustDo": [
+          "Run D8 as ONE get_naming_lexicon call with `changes: { base: <merge-base of main and HEAD> }` (project alias), no hand-built names[]",
+          "Report the naming findings grouped by verdict (MISFIT, COLLISION, NEW_TERM) with relPath:line from review.findings, and the review.conforming / review.novel counts as one summary line",
+          "MISFIT → minor finding whose fix is the suggestion with the holder as precedent; COLLISION → finding naming the existing declaration's file",
+          "Word comment bodies in plain language (no verdict codes, no tool names)"
+        ],
+        "mustNotDo": [
+          "List the diff's identifiers by hand into names[] in local mode",
+          "Judge the names by taste or by grep / semantic_search on the draft name",
+          "Turn a NEW_TERM that carries no alternatives into a rename demand"
+        ]
+      },
+      "failureMode": "Agent re-lists names by hand (misses types and constants) or reports raw verdicts instead of grouped, evidenced findings"
+    },
+    {
+      "id": "naming-external-names",
+      "category": "d8-naming-external",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). External review of an MR URL; the local checkout is on main, the MR branch is not checked out. The MR diff adds `row = find_vendor_envelope(id)` in app/services/tax_automation/importer.rb.",
+      "prompt": "Review this MR https://gitlab.example.com/acme/app/-/merge_requests/412",
+      "expected": {
+        "mustDo": [
+          "Run D8 with names[] built from the declarations on the diff's added lines (row as local, find_vendor_envelope as return), scoped to the touched dirs",
+          "Explain nothing about the switch in the comments; findings follow the same verdict mapping as local mode"
+        ],
+        "mustNotDo": [
+          "Call get_naming_lexicon with `changes` — the working tree does not hold the MR's code",
+          "Check out the MR branch to make `changes` work"
+        ]
+      },
+      "failureMode": "Agent reviews the local working tree instead of the MR's diff"
     }
   ]
 }

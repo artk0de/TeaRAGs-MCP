@@ -227,9 +227,21 @@ Rename / "unclear name" comment →
 `get_naming_lexicon(names=[{current}, {proposed}], pathPattern=<targetPathPattern>)`.
 Proposed `CONFORMS` → agree on the name; proposed `MISFIT` → counter-propose its
 `suggestion` (holder as precedent); proposed `NEW_TERM` while current `CONFORMS`
-→ push back with the project's term. Append the verdicts to the impact block —
-the naming verdict decides WHICH name, Step 2 decides the cost. Reading:
-`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+→ push back with the project's term.
+
+Comment on naming across the whole change, no identifier named ("names in this
+PR don't match the codebase") →
+`get_naming_lexicon(changes={ base: <merge-base of the PR's target and HEAD> })`
+— one call over the names the diff adds; never hand-list them into `names[]`.
+Findings = `review.findings`, each flat
+`{relPath, line, name, kind, type?, verdict, …}`. Answer per finding: `MISFIT` →
+apply `suggestion`; `COLLISION` → rename or justify against `existing`;
+`NEW_TERM` → keep with a justification or take an offered `alternatives` word;
+`genericName` → generic name, rename or justify. Conforming names stay;
+`review.novel` counts names with nothing to compare against — no action. Append
+the verdicts to the impact block — the naming verdict decides WHICH name, Step 2
+decides the cost. Reading: `tea-rags:data-driven-generation` Step 5 "Naming
+(lexicon)".
 
 ## Step 4 — Invoke superpowers:receiving-code-review
 

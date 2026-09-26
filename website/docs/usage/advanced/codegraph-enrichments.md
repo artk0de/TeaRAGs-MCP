@@ -139,7 +139,7 @@ the pre-computed DuckDB graph directly — no embedding):
 | `get_callees` | Symbols **invoked by** the given `symbolId` (what this depends on)                   |
 | `find_cycles` | Strongly-connected components (cycles ≥ 2) in the import graph (`scope: "file"`) or call graph (`scope: "method"`) |
 | `get_architecture_report` | Architecture violations with per-line evidence. Stable Dependencies Principle judged on components (modules with a measured facade, else directories) — a stable component depending on a less stable one, grouped into root causes by unstable target, with the file edges that carry it; plus leaking abstractions, silent coupling and main-sequence distance (zone of pain / uselessness, abstractness from the walker type census). Scripts, spikes, benchmarks, examples and fixtures are left out. Optional `pathPattern` scopes the judged edges by source file |
-| `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` verdict per draft in `names`, and project terms for a `concept` (with `language`) |
+| `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` / `COLLISION` verdict per draft in `names` (values, and types or constants with `kind: "type"`), project terms for a `concept` (with `language`), and a review of the names a diff adds (`changes`) |
 | `get_ontology_report` | Project-wide naming ontology audit over declared identifiers: `synonyms` (one type, many names), `homonyms` (one name, many types), `outliers` (a name off its type's dominant naming shape) and `collisions` (a name equal to another symbol). Ranked, with counts and one example location each |
 
 `get_naming_lexicon` reads the identifier declarations the codegraph records —
@@ -153,6 +153,82 @@ assumed: a project that names by role gets a `FREE`-dominant answer and no
 forced suggestion. Casing per role comes from the language descriptor. An index
 built before the identifier table existed answers with a `driftWarning` naming
 the reindex.
+
+**Type and constant names.** A draft with `kind: "type"` carries the file it
+will live in (`path`) and, optionally, its planned ancestor (`extends`). The
+names come from the type declarations the codegraph records, so an index built
+before those existed needs a codegraph recompute
+(`--force-enrichments codegraph`) before types and constants are judged. A
+type's expected role is its suffix (`…Strategy`, `…Preset`, `…Store`), taken
+from the strongest evidence available: the ancestor's family first, then the
+directory's dominant suffix, then a suffix used across the project. The
+project-wide suffix only confirms a name; it never makes one a `MISFIT`,
+because a suffix popular elsewhere is a guess, not an expectation. A name that
+lacks its family's or directory's role is `MISFIT` with the role appended; a
+short name that already names a type in another module is `COLLISION`. Term
+alignment checks each word against the project's established words for the
+same concept and offers `alternatives` on a `NEW_TERM` (for example `Predefined`
+where the project writes `PredefinedTemplate` and `PredefinedField`). That
+verdict stays soft: the agent decides whether to reuse the term.
+
+**Reviewing a diff.** `changes: {}` reviews the working tree against `HEAD`,
+untracked files included; `changes: { base }` reviews it against another
+commit, typically the merge-base of a branch. Only declarations inside added
+hunks are judged, so an unchanged name in a touched file is not reported. The
+changed files are left out of every evidence read, so a change an incremental
+reindex has already stored cannot vote for itself. One call covers at most 200
+changed files; the rest are reported as `truncated`. Test and other
+non-production files are skipped, as are files no codegraph language walks;
+both count toward `notJudged`.
+
+The answer sits under `review`. Declarations that conform are only counted
+(`conforming`), and so are `novel` ones: a `NEW_TERM` with no `topTerms` and no
+`alternatives`, where the project has nothing to compare the name with, so
+there is nothing to act on. Everything else is a finding with its file and
+line. A finding carries its verdict's fields: `suggestion` and `holder` (or
+`role`) on a `MISFIT`, `existing` on a `COLLISION`, `topTerms` and
+`alternatives` on a `NEW_TERM`. A name judged generic is listed even when it
+conforms, with `genericName`. `checked = conforming + novel + findings`. An
+excerpt from a live run on this repository:
+
+```json
+{
+  "review": {
+    "base": "HEAD",
+    "checked": 163,
+    "conforming": 93,
+    "novel": 58,
+    "findings": [
+      {
+        "relPath": "src/core/api/internal/ops/naming-lexicon-ops.ts",
+        "line": 373,
+        "name": "req",
+        "kind": "param",
+        "type": "NamingLexiconRequest",
+        "verdict": "NEW_TERM",
+        "topTerms": [],
+        "genericName": { "typeCount": 7, "n": 10 }
+      },
+      {
+        "relPath": "src/core/domains/trajectory/git/provider.ts",
+        "line": 846,
+        "name": "meta",
+        "kind": "local",
+        "type": "GitFileSignals",
+        "verdict": "MISFIT",
+        "suggestion": "fileSignals",
+        "holder": "assembleFileSignals"
+      }
+    ],
+    "notJudged": 19
+  }
+}
+```
+
+The excerpt keeps two of the run's 12 findings.
+
+Use `names` for a single proposed name or a rename, and `changes` to review
+everything a change introduces.
 
 `get_ontology_report` counts a declaration as evidence only when its type is
 known — annotated, constructor, resolver binding, finder or the return type of

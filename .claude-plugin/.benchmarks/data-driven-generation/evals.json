@@ -514,6 +514,43 @@
         ]
       },
       "failureMode": "Agent ignores centrality of the changed symbol"
+    },
+    {
+      "id": "naming-review-before-commit",
+      "category": "step7-naming-review",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). TypeScript (tea-rags). CREATE done: Step 5 judged the new function's name only; GENERATE also wrote a helper local `meta: GitFileSignals` and a constant `MAX_ROWS` in src/core/domains/trajectory/git/file-walk.ts. The review call returns MISFIT for meta (suggestion fileSignals, holder computeFileSignals), NEW_TERM for MAX_ROWS with alternatives [ROW_CAP], 9 conforming.",
+      "prompt": "Код написан, тесты зелёные. Можно коммитить?",
+      "expected": {
+        "mustDo": [
+          "Step 7: one get_naming_lexicon call with `changes: {}` (working tree against HEAD) before the commit",
+          "Report review.findings grouped by verdict with relPath:line and the review.conforming / review.novel counts",
+          "Rename meta → fileSignals before committing (MISFIT is a fix, not a note)",
+          "NEW_TERM with alternatives → reuse ROW_CAP if it denotes the same limit, otherwise keep MAX_ROWS and justify it in one line"
+        ],
+        "mustNotDo": [
+          "Hand-list the written names into names[] for this review",
+          "Treat the NEW_TERM alternative as mandatory (it is soft)",
+          "Commit with an unresolved MISFIT"
+        ]
+      },
+      "failureMode": "Names written during GENERATE that Step 5 never saw reach the commit unreviewed"
+    },
+    {
+      "id": "naming-type-draft",
+      "category": "step5-lexicon-type-draft",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). TypeScript (tea-rags). CREATE of a new resolution pass that extends SymbolResolutionStrategy, in src/core/domains/language/ruby/resolution/. Draft class name: RubyConstReceiverPass.",
+      "prompt": "Добавь новый проход резолвинга для Ruby-констант как отдельный класс рядом с остальными стратегиями.",
+      "expected": {
+        "mustDo": [
+          "The Step 5 call carries the class draft as { name: RubyConstReceiverPass, kind: \"type\", path: <the new file>, extends: SymbolResolutionStrategy }",
+          "MISFIT with a role (Strategy) → take the suggestion (e.g. RubyConstReceiverStrategy)"
+        ],
+        "mustNotDo": [
+          "Leave the class name unjudged because names[] only covers values",
+          "Omit `path` from a kind: \"type\" draft"
+        ]
+      },
+      "failureMode": "Agent names a new type off the family's role"
     }
   ]
 }

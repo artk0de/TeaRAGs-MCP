@@ -124,7 +124,7 @@ its parameter blocks byte-exact.
 | tests         | scenarios at risk, uncovered changes | tests-as-context + stratified per-cluster coverage    |
 | invariants    | diff contradicts docs/specs          | `semantic_search documentation="only"` on concepts    |
 | cycles        | MR introduces import/call cycle      | `find_cycles` scoped to touched dirs                  |
-| naming        | new names off the project vocabulary | `get_naming_lexicon` `names[]` on new identifiers     |
+| naming        | new names off the project vocabulary | `get_naming_lexicon` `changes` (external: `names[]`)  |
 
 Gating: prime lists `codegraph.symbols` → D1 + D7 + D8 run on the graph. Absent
 → D7 and D8 "not assessed" (no substitute); D1 degrades to name-matched callers
