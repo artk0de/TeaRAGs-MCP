@@ -58,6 +58,18 @@ export function pickSameFileThenSingle(
   return pickSingleCandidate(candidates, mode);
 }
 
+/**
+ * Short-name lookup restricted to RUST candidates. The symbol table is one
+ * polyglot index with no `language` field, and a TypeScript `Parser.new` is
+ * spelled exactly like Rust's, so a bare `lookupByShortName` lets a foreign
+ * namesake be picked or trip the single-candidate gate
+ * (`.claude/rules/resolver-architecture.md` §2). Used by `typeReceiver`
+ * (bd tea-rags-mcp-7266); the older passes still read the table directly.
+ */
+export function lookupRustSymbolsByShortName(ctx: CallContext, name: string): SymbolDefinition[] {
+  return ctx.symbolTable.lookupByShortName(name).filter((def) => def.relPath.endsWith(".rs"));
+}
+
 export function rustImportMatchesReceiver(importText: string, receiver: string): boolean {
   // Strip `crate::`, `super::`, `self::` prefixes.
   const cleaned = importText.replace(/^(crate|super|self)::/, "");
