@@ -49,6 +49,11 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       `${CHUNKER_ROOT}/chunk-navigation.ts`,
       `${CHUNKER_ROOT}/container-remainder.ts`,
       `${CHUNKER_ROOT}/utils/chunk-id.ts`,
+      // The static `imports` payload every chunk of a file carries: written at
+      // chunk upsert, never by an enrichment, so only a re-chunk rewrites it
+      // (bd tea-rags-mcp-mjq5n).
+      `${CHUNKER_ROOT}/utils/import-extractor.ts`,
+      `${CHUNKER_ROOT}/utils/non-code-text-mask.ts`,
       "src/core/infra/symbolid",
       // `chunker/materialize.ts` is a seven-line re-export; the AST every
       // chunker and the codegraph provider actually walk is built here.
