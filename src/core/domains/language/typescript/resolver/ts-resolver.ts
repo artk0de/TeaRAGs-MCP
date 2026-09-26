@@ -131,6 +131,7 @@ import {
   TS_PROGRAM_CACHE_MAX_DEFAULT,
   TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
   TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT,
   TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
   TS_PROGRAM_STRATEGY_DEFAULT,
   TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
@@ -206,6 +207,24 @@ export function resolveProgramCacheBudgets(
       resolvePositiveBudget(
         env.CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB,
         TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT / BYTES_PER_MB,
+      ) * BYTES_PER_MB,
+  };
+}
+
+/**
+ * The closure-batch budgets an operator may retune (bd tea-rags-mcp-vtuu4).
+ *
+ * - `CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB` → source text the shared parse cache
+ *   retains outside the prelude, in MB
+ */
+export function resolveProgramBatchBudgets(
+  env: NodeJS.ProcessEnv,
+): Required<Pick<TSProgramCacheOptions, "maxParsedSourceTextBytes">> {
+  return {
+    maxParsedSourceTextBytes:
+      resolvePositiveBudget(
+        env.CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB,
+        TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT / BYTES_PER_MB,
       ) * BYTES_PER_MB,
   };
 }
@@ -367,6 +386,7 @@ export class TSCallResolver implements CallResolver {
           // not run for a resolver that never reaches the whole strategy.
           projectRoots: () => loadTsConfigFileNames(repoRoot),
           ...resolveProgramCacheBudgets(process.env),
+          ...resolveProgramBatchBudgets(process.env),
           ...resolveProgramCacheStrategy(process.env),
           heapBudget: resolveProgramHeapBudget(process.env),
         })

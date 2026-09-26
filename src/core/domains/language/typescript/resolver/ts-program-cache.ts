@@ -130,6 +130,7 @@ import { dirname, isAbsolute, posix, relative, resolve as resolvePath, sep } fro
 import ts from "typescript";
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
+import { TSParsedSourceLru } from "./ts-parsed-source-lru.js";
 import {
   createProjectFileProbe,
   mapImportToFile,
@@ -186,6 +187,16 @@ export const TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT = 8000;
  * on every build, discarding Programs the very next file was going to hit.
  */
 export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 256 * 1024 * 1024;
+/**
+ * Source text (bytes) the shared parse cache may retain outside the pinned
+ * prelude and the default lib. Default
+ * {@link TSProgramCacheOptions.maxParsedSourceTextBytes} rationale.
+ *
+ * 40 MiB, the batch text budget (bd tea-rags-mcp-vtuu4): the spike's
+ * sequential closure batches over taxdome kept 1.2–1.45 GB retained between
+ * batches at this size with 80–95% of each batch's parses served as hits.
+ */
+export const TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT = 40 * 1024 * 1024;
 /**
  * How the cache gets its Programs.
  *
@@ -330,6 +341,19 @@ export interface TSProgramCacheOptions {
    * shrink what the compiler pulls in.
    */
   maxRetainedSourceTextBytes?: number;
+  /**
+   * Source text, in bytes, the shared parse cache may hold outside the pinned
+   * prelude and the default lib, least recently used evicted first. Default
+   * {@link TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT} (bd tea-rags-mcp-vtuu4).
+   *
+   * The count caps beside it ({@link maxParsedFiles},
+   * {@link maxDependencyFiles}) bound how many parses are held, and nothing
+   * about their weight; heap follows TEXT — AST plus binder state is ≈ 30 MB
+   * per MB of source. Least recently used because consecutive closure batches
+   * share most of their files, so the parses the next batch needs are the ones
+   * the current batch just touched.
+   */
+  maxParsedSourceTextBytes?: number;
   /**
    * How Programs are obtained. Default {@link TS_PROGRAM_STRATEGY_DEFAULT}.
    *
@@ -710,6 +734,22 @@ export class TSProgramCache {
   private readonly hostRealpath = new Map<string, string>();
   private readonly host: ts.CompilerHost;
   /**
+   * The byte-bounded recency index over {@link sourceFiles} — see
+   * {@link TSProgramCacheOptions.maxParsedSourceTextBytes}. Holds names and
+   * sizes; {@link evictParsedOverflow} drops what it returns from the map.
+   */
+  private readonly parsedText: TSParsedSourceLru;
+  /**
+   * One module-resolution cache for every Program this instance builds, and
+   * for the batch planner's graph walk (bd tea-rags-mcp-vtuu4).
+   *
+   * `ts.createProgram` otherwise creates a private cache per call, so each
+   * Program re-resolves every specifier of every file it holds. Resolution
+   * depends only on the containing directory, the specifier and the options,
+   * all fixed for the run, so the answers are shareable across Programs.
+   */
+  private readonly moduleResolutionCache: ts.ModuleResolutionCache;
+  /**
    * `repoRoot` as a directory prefix, in the separator the COMPILER reports.
    * `ts` normalizes every `SourceFile.fileName` to forward slashes whatever the
    * platform, so the membership test in {@link build} compares like with like
@@ -750,7 +790,15 @@ export class TSProgramCache {
     this.projectRoots = options.projectRoots ?? ((): readonly string[] => []);
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
     this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
+    this.parsedText = new TSParsedSourceLru(
+      options.maxParsedSourceTextBytes ?? TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT,
+    );
     this.host = this.buildHost();
+    this.moduleResolutionCache = ts.createModuleResolutionCache(
+      this.host.getCurrentDirectory(),
+      (fileName) => this.host.getCanonicalFileName(fileName),
+      this.compilerOptions,
+    );
     // Read off the host rather than guessed: it is the same lookup the compiler
     // itself uses to find the lib, so the exempt directory is exactly the one
     // whose files `ts.createProgram` will ask this cache to parse.
@@ -821,6 +869,15 @@ export class TSProgramCache {
    * quantity {@link TSProgramCacheOptions.maxDependencyFiles} bounds. The
    * default lib is excluded, matching what that bound counts.
    */
+  /**
+   * Source text the shared parse cache holds outside the pinned prelude and the
+   * default lib — the quantity {@link TSProgramCacheOptions.maxParsedSourceTextBytes}
+   * bounds.
+   */
+  get parsedSourceTextBytes(): number {
+    return this.parsedText.textBytes;
+  }
+
   get parsedDependencyFileCount(): number {
     return this.parsedDependencySources.size;
   }
@@ -1285,6 +1342,8 @@ export class TSProgramCache {
     this.hostFileExists.clear();
     this.hostDirectoryExists.clear();
     this.hostRealpath.clear();
+    this.parsedText.clear();
+    this.moduleResolutionCache.clear();
   }
 
   /**
@@ -1381,7 +1440,12 @@ export class TSProgramCache {
   private rememberParse(fileName: string, parsed: ts.SourceFile | undefined): void {
     this.sourceFiles.set(fileName, parsed);
     this.parsedAtMs.set(fileName, Date.now());
-    this.populationOf(fileName)?.add(fileName);
+    const population = this.populationOf(fileName);
+    if (population === null) return;
+    population.add(fileName);
+    // The default lib answered `null` above and never reaches the byte index;
+    // a pinned prelude file is refused by the index itself.
+    if (parsed !== undefined) this.parsedText.remember(fileName, parsed.text.length);
   }
 
   /**
@@ -1427,6 +1491,7 @@ export class TSProgramCache {
     this.parsedAtMs.delete(fileName);
     this.parsedProjectSources.delete(fileName);
     this.parsedDependencySources.delete(fileName);
+    this.parsedText.forget(fileName);
   }
 
   /**
@@ -1485,7 +1550,10 @@ export class TSProgramCache {
     const base = ts.createCompilerHost(this.compilerOptions, true);
     const getSourceFile = base.getSourceFile.bind(base);
     base.getSourceFile = (fileName, languageVersionOrOptions, onError, shouldCreate) => {
-      if (this.sourceFiles.has(fileName)) return this.sourceFiles.get(fileName);
+      if (this.sourceFiles.has(fileName)) {
+        this.parsedText.touch(fileName);
+        return this.sourceFiles.get(fileName);
+      }
       const pinned = this.pinnedParseOf(fileName);
       if (pinned) return pinned;
       const parsed = getSourceFile(fileName, languageVersionOrOptions, onError, shouldCreate);
@@ -1493,6 +1561,21 @@ export class TSProgramCache {
       this.evictParsedOverflow();
       return parsed;
     };
+    // Every Program resolves through ONE cache instead of a private one per
+    // `ts.createProgram` (bd tea-rags-mcp-vtuu4) — the call the compiler makes
+    // itself, with the shared cache in place of its own.
+    base.resolveModuleNameLiterals = (literals, containingFile, redirectedReference, options, containingSourceFile) =>
+      literals.map((literal) =>
+        ts.resolveModuleName(
+          literal.text,
+          containingFile,
+          options,
+          base,
+          this.moduleResolutionCache,
+          redirectedReference,
+          ts.getModeForUsageLocation(containingSourceFile, literal, options),
+        ),
+      );
     base.fileExists = memoizeHostProbe(base.fileExists.bind(base), this.hostFileExists);
     // Both are optional on `ts.CompilerHost`. `createCompilerHost` supplies
     // them on Node, but the type is the contract — wrap what is there rather
@@ -1531,6 +1614,9 @@ export class TSProgramCache {
   private evictParsedOverflow(): void {
     this.trimPopulation(this.parsedProjectSources, this.maxParsedFiles);
     this.trimPopulation(this.parsedDependencySources, this.maxDependencyFiles);
+    // The byte bound over what the counts left (bd tea-rags-mcp-vtuu4). Least
+    // recently used first; the prelude is pinned and the lib never indexed.
+    for (const fileName of this.parsedText.overflow()) this.forgetParse(fileName);
   }
 
   /**
