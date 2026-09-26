@@ -35,6 +35,16 @@ function getTestFilter(): PathFilter {
   return testFilter.filter;
 }
 
+/**
+ * Whether a repo-relative path has a conventional test-file shape — exactly
+ * `classify(relPath).isTest`, without the generated/documentation half. The one
+ * answer every "is this a test file?" consumer reads (scope detection included,
+ * bd tea-rags-mcp-jl3ff), from the INSTALLED conventions.
+ */
+export function matchesTestFileConventions(relPath: string): boolean {
+  return getTestFilter().ignores(relPath);
+}
+
 function hasGeneratedMarker(head: string): boolean {
   return GENERATED_CONTENT_MARKERS.some((re) => re.test(head));
 }
@@ -50,7 +60,7 @@ function hasGeneratedMarker(head: string): boolean {
 export function classify(relPath: string, opts?: ClassifyOptions): FileClassification {
   const isGenerated =
     getGeneratedFilter().ignores(relPath) || (opts?.contentHead ? hasGeneratedMarker(opts.contentHead) : false);
-  const isTest = getTestFilter().ignores(relPath);
+  const isTest = matchesTestFileConventions(relPath);
   const isDocumentation = opts?.isDocumentation === true;
   // A generated or documentation file is not "source". A test IS source.
   const isSource = !isGenerated && !isDocumentation;

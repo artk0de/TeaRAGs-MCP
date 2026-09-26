@@ -25,7 +25,7 @@ import {
   classify,
   nonProductionPathPatterns,
 } from "../../../../src/core/infra/file-classification/index.js";
-import { getDefaultTestPaths } from "../../../../src/core/infra/scope-detection.js";
+import { isTestPath } from "../../../../src/core/infra/scope-detection.js";
 
 interface ClassificationBaseline {
   corpus: string[];
@@ -83,9 +83,15 @@ describe("test-path classification parity across the domains/language relocation
     }
   });
 
-  it("getDefaultTestPaths answers the baseline for every language, vertical or not", () => {
-    for (const [language, paths] of Object.entries(BASELINE.defaultTestPathsByLanguage)) {
-      expect(getDefaultTestPaths(language), language).toEqual(paths);
+  it("scope detection's isTestPath answers the classifier baseline for every language, vertical or not", () => {
+    // The per-language glob lists the baseline also recorded
+    // (`defaultTestPathsByLanguage`) are retired: scope detection now asks the
+    // classifier, so its answer IS `testPaths` (bd tea-rags-mcp-jl3ff).
+    for (const language of Object.keys(BASELINE.defaultTestPathsByLanguage)) {
+      expect(
+        BASELINE.corpus.filter((p) => isTestPath(p, language)),
+        language,
+      ).toEqual(BASELINE.testPaths);
     }
   });
 });
