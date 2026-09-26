@@ -19,7 +19,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
-import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "../../../../src/core/adapters/duckdb/errors.js";
+import {
+  CodegraphDatabaseMissingError,
+  DuckDbCloseFailedError,
+  DuckDbOpenFailedError,
+} from "../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
 import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -663,6 +667,9 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
       applyMigrations: createDatabaseMigrationApplier(),
       daemonSocketPath: socketPath,
     });
+    // A reader only attaches to a database that exists; the echo daemon never
+    // opens it, so an empty placeholder is enough.
+    writeFileSync(pool.pathFor("code_proxy_v1"), "");
 
     // daemonSocketPath set → acquireReader returns a DaemonGraphDbClient that
     // proxies reads through the daemon (the sole RW file opener) instead of a
@@ -679,6 +686,61 @@ describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", ()
     expect((getCallers?.params as { symbolId: string }).symbolId).toBe("B#help");
 
     await reader.graphDb.close();
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  // A READ never creates a database (bd tea-rags-mcp-kn2cb). The daemon opens
+  // collections read-write, so a proxied read of a collection with no file used
+  // to materialize an empty `<collection>.duckdb` — after which the collection
+  // "has a graph database" and every later read failure surfaced as an error
+  // instead of the empty answer a never-codegraph-indexed project is owed.
+  it("daemon mode refuses a collection with no database without contacting the daemon or creating the file", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-reader-missing-"));
+    const socketPath = join(root, "cg.sock");
+    const seen: DaemonRequest[] = [];
+    srv = createServer((sock) => {
+      sock.on("data", (d) => {
+        const { frames } = decodeFrames(d.toString("utf8"));
+        for (const f of frames) {
+          const req = JSON.parse(f) as DaemonRequest;
+          seen.push(req);
+          sock.write(encodeFrame({ id: req.id, ok: true, result: null }));
+        }
+      });
+    });
+    srv.unref();
+    await new Promise<void>((res) => {
+      srv?.listen(socketPath, () => {
+        res();
+      });
+    });
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+      daemonSocketPath: socketPath,
+    });
+
+    await expect(pool.acquireReader("code_absent_v1")).rejects.toBeInstanceOf(CodegraphDatabaseMissingError);
+    expect(seen).toEqual([]);
+    expect(existsSync(pool.pathFor("code_absent_v1"))).toBe(false);
+
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("direct mode refuses a collection with no database with the same typed error", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-reader-missing-direct-"));
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+    });
+
+    await expect(pool.acquireReader("code_absent_v1")).rejects.toBeInstanceOf(CodegraphDatabaseMissingError);
+    expect(existsSync(pool.pathFor("code_absent_v1"))).toBe(false);
+
     await pool.closeAll();
     rmSync(root, { recursive: true, force: true });
   });
@@ -813,6 +875,8 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     w.symbolTable.upsertFile("src/a.ts", [
       { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "src/a.ts", scope: ["Foo"] },
     ]);
+    // A real daemon creates the file on the write; the echo daemon does not.
+    writeFileSync(pool.pathFor("code_rw_symtab_v1"), "");
 
     const r = await pool.acquireReader("code_rw_symtab_v1");
     // Same instance across the write/read boundary — not a fresh factory table.
@@ -837,6 +901,8 @@ describe("GraphDbClientPool — daemon-mode client caching (one socket per colle
     });
 
     const w = await pool.acquireWrite("code_shared_v1");
+    // A real daemon creates the file on the write; the echo daemon does not.
+    writeFileSync(pool.pathFor("code_shared_v1"), "");
     const r1 = await pool.acquireReader("code_shared_v1");
     const r2 = await pool.acquireReader("code_shared_v1");
 

@@ -107,6 +107,29 @@ function addressedBackend(qdrantUrl: string): RegistryQdrantBackend {
   return qdrantUrl ? { kind: "external", url: qdrantUrl } : { kind: "unaddressed" };
 }
 
+/** The two entry fields that record a backend, as a writer must persist them. */
+export interface RegistryQdrantBackendFields {
+  qdrantUrl: string;
+  qdrantEmbedded: boolean;
+}
+
+/**
+ * Encode a live Qdrant connection into the entry fields the current write path
+ * persists — the inverse of `resolveRegistryQdrantBackend`.
+ *
+ * The embedded daemon is stored as the sentinel, never as its
+ * `http://127.0.0.1:<port>` URL: the daemon rebinds a fresh ephemeral port on
+ * every restart, so a frozen URL points at a dead socket after the first one
+ * (bd tea-rags-mcp-lzynm). The pipeline writer (`ingest/pipeline/base.ts`)
+ * applies the same rule inline because ingest may not import this domain.
+ */
+export function registryQdrantBackendFields(qdrant: {
+  readonly url: string;
+  readonly isEmbedded: boolean;
+}): RegistryQdrantBackendFields {
+  return { qdrantUrl: qdrant.isEmbedded ? EMBEDDED_MARKER : qdrant.url, qdrantEmbedded: qdrant.isEmbedded };
+}
+
 /**
  * Resolve the backend a registry entry addresses.
  *
