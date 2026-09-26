@@ -41,3 +41,37 @@ describe("TreeSitterChunker oversized method symbolId inheritance", () => {
     });
   });
 });
+
+/**
+ * bd tea-rags-mcp-xdt5u — a type-only declaration (interface, type alias) too
+ * large for one chunk and with no method children to extract used to split
+ * into parts stamped `chunkType: "function"`. That label passed the
+ * `coreLogic` filter, so `decomposition` ranked a 400-line interface as a
+ * god-method by its `methodLines`. A part carries the chunkType its symbol
+ * carries unsplit: splitting is a size decision, never a kind decision.
+ */
+describe("TreeSitterChunker oversized type-only declaration chunkType", () => {
+  const config: ChunkerConfig = { chunkSize: 800, chunkOverlap: 50, maxChunkSize: 1500 };
+  const chunker = new TreeSitterChunker(config, new DefaultSymbolIdComposer(), testLanguageFactoryDescriptor);
+
+  const members = (count: number): string => Array.from({ length: count }, (_, i) => `  field${i}: string;\n`).join("");
+
+  const declarations = [
+    { kind: "interface", name: "Contract", source: (n: number) => `export interface Contract {\n${members(n)}}\n` },
+    { kind: "type alias", name: "Shape", source: (n: number) => `export type Shape = {\n${members(n)}};\n` },
+  ];
+
+  it.each(declarations)("parts of an oversized $kind carry the chunkType of the unsplit $kind", async (decl) => {
+    const small = await chunker.chunk(decl.source(3), "src/small.ts", "typescript");
+    const whole = small.find((c) => c.metadata.symbolId === decl.name);
+    expect(whole, `unsplit ${decl.kind} chunk`).toBeDefined();
+
+    const big = await chunker.chunk(decl.source(200), "src/big.ts", "typescript");
+    const parts = big.filter((c) => (c.metadata.symbolId ?? "").startsWith(`${decl.name}#part`));
+    expect(parts.length).toBeGreaterThan(1);
+    for (const part of parts) {
+      expect(part.metadata.chunkType).toBe(whole?.metadata.chunkType);
+      expect(part.metadata.chunkType).not.toBe("function");
+    }
+  });
+});
