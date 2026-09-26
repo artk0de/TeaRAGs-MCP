@@ -385,7 +385,7 @@ export class TSCallResolver implements CallResolver {
       new TSThisMemberSymbolResolutionStrategy(cfg),
       fieldType,
       localBinding,
-      new TSNamedImportSymbolResolutionStrategy(cfg),
+      new TSNamedImportSymbolResolutionStrategy(cfg, this.programCache),
       // 6 answers only JSX TAGS, and its index is the whole fix for bd
       // tea-rags-mcp-33lqo: on taxdome, jsx carried 1,279 of the 1,479
       // `wrongFile` defects (86%), and the checker had the right answer for
