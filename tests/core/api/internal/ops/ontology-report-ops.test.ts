@@ -798,6 +798,54 @@ describe("OntologyReportOps#report — live false positives", () => {
     ]);
   });
 
+  it("synonyms: names that spell the type (EXACT / QUALIFIED / TAIL) conform, so they alone never make a synonym", async () => {
+    // naming.md requires the qualified name: callNode, methodNode are TAIL of AstNode, the convention itself.
+    const { ops } = makeOps(async () =>
+      rows({
+        synonyms: [
+          group({
+            typeName: "AstNode",
+            names: [
+              { name: "node", n: 12, example: at("src/walker.ts", 1) },
+              { name: "callNode", n: 5, example: at("src/walker.ts", 2) },
+              { name: "methodNode", n: 4, example: at("src/walker.ts", 3) },
+              { name: "containerNode", n: 3, example: at("src/walker.ts", 4) },
+              { name: "root", n: 2, example: at("src/walker.ts", 5) },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { synonyms } = await ops.report({ collection: "code_x", sections: ["synonyms"] });
+    expect(synonyms).toEqual([]);
+  });
+
+  it("synonyms: reported when the names that do NOT spell the type disagree; only those are deviants", async () => {
+    const { ops } = makeOps(async () =>
+      rows({
+        synonyms: [
+          group({
+            typeName: "PhysicalCollectionName",
+            names: [
+              { name: "coll", n: 10, example: at("src/a.ts", 1) },
+              { name: "collectionName", n: 4, example: at("src/a.ts", 2) },
+              { name: "physical", n: 3, example: at("src/a.ts", 3) },
+              { name: "allCollections", n: 2, example: at("src/a.ts", 4) },
+            ],
+          }),
+        ],
+      }),
+    );
+    const { synonyms } = await ops.report({ collection: "code_x", sections: ["synonyms"] });
+
+    expect(synonyms).toHaveLength(1);
+    expect(synonyms?.[0]).toMatchObject({ type: "PhysicalCollectionName", dominant: { name: "coll", n: 10 } });
+    expect(synonyms?.[0].deviants.map((d) => [d.name, d.shape])).toEqual([
+      ["physical", "FREE"],
+      ["allCollections", "FREE"],
+    ]);
+  });
+
   it("synonyms: a type whose dominant name occurs once is a set of singleton instances, not synonyms", async () => {
     const { ops } = makeOps(async () =>
       rows({
@@ -897,10 +945,67 @@ describe("OntologyReportOps#report — the sections exclude the JUDGED generic n
       expect(res.summary.genericNames.map((g) => g.name)).toEqual(["actor"]);
       // 11 form + signup + registration + 2 person + human; the 10 actor rows are not evidence.
       expect(res.summary.evidenceRows).toBe(16);
-      const signup = res.synonyms?.find((s) => s.type === "SignupForm");
-      expect(signup?.dominant).toMatchObject({ name: "form", n: 3 });
+      // `form` (TAIL of SignupForm) conforms; signup / registration occur once each, so no synonym
+      // (bd tea-rags-mcp-4p3sb.27). The role word's rows staying evidence is the 16 above.
+      expect(res.synonyms?.map((s) => s.type)).not.toContain("SignupForm");
       expect(res.synonyms?.map((s) => s.type)).not.toContain("Person");
       expect(res.homonyms?.map((h) => h.name)).not.toContain("actor");
+    } finally {
+      await db.close().catch(() => undefined);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("OntologyReportOps#report — T vs T[] (bd tea-rags-mcp-4p3sb.26)", () => {
+  it("never mixes a collection's names with a single value's; each multiplicity is judged on its own", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ontology-ops-many-"));
+    const db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
+    try {
+      await db.init();
+      await runMigrations(db, DATABASE_MIGRATIONS);
+      const local = (name: string, line: number, many: boolean) => ({
+        ownerSymbolId: "Resolver#run",
+        kind: "local" as const,
+        name,
+        line,
+        typeName: "SymbolDefinition",
+        typeSource: "annotation" as const,
+        ...(many ? { typeMultiplicity: "many" as const } : {}),
+      });
+      const repeat = (count: number, name: string, firstLine: number, many: boolean) =>
+        Array.from({ length: count }, (_, i) => local(name, firstLine + i, many));
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "src/resolve.ts",
+          rows: [
+            ...repeat(3, "candidates", 1, true),
+            ...repeat(2, "defs", 10, true),
+            ...repeat(3, "definitions", 20, true),
+            ...repeat(4, "fallback", 30, false),
+            ...repeat(2, "definition", 40, false),
+          ],
+        },
+      ]);
+      const ops = new OntologyReportOps({
+        pool: { acquireReader: async () => ({ graphDb: db, symbolTable: {} }) } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async (n: string) => n as never,
+        languages: [RUBY, TS],
+      });
+
+      const { synonyms } = await ops.report({ collection: "code_x", sections: ["synonyms"] });
+
+      // The collection group: candidates / defs disagree (definitions spells the type).
+      // The single group: fallback alone does not spell it — one name, no disagreement.
+      expect(synonyms).toHaveLength(1);
+      expect(synonyms?.[0]).toMatchObject({
+        type: "SymbolDefinition",
+        typeMultiplicity: "many",
+        n: 8,
+        dominant: { name: "candidates", n: 3 },
+      });
+      expect(synonyms?.[0].deviants.map((d) => d.name)).toEqual(["defs"]);
     } finally {
       await db.close().catch(() => undefined);
       rmSync(dir, { recursive: true, force: true });

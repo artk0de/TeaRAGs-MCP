@@ -11,6 +11,8 @@ export {
   typeNameLastSegment,
   typeNameWords,
 } from "./casing.js";
+export { judgeGenericNames } from "./generic-names.js";
+export type { GenericNameThresholds, JudgedGenericName } from "./generic-names.js";
 export { isTypeFamilyRoleName, mergeUnqualifiedTypeSpellings } from "./homonyms.js";
 export type { HomonymTypeCount, HomonymTypeShape } from "./homonyms.js";
 export {

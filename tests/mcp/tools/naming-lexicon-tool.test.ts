@@ -98,6 +98,30 @@ describe("get_naming_lexicon", () => {
     expect(JSON.stringify(inputSchema).length).toBeLessThanOrEqual(1536);
   });
 
+  it("tells an agent which kind an attribute and a method name are, and how a collection draft is written", () => {
+    const { config } = registered();
+    const draft = (
+      toJsonSchemaCompat(config.inputSchema) as {
+        properties: { names: { items: { properties: Record<string, { description?: string; enum?: string[] }> } } };
+      }
+    ).properties.names.items.properties;
+    expect(draft.kind.description).toMatch(/ivar.*attribute.*property.*field/i);
+    expect(draft.kind.description).toMatch(/method.*return.*result type/i);
+    expect(draft.typeMultiplicity.enum).toEqual(["one", "many"]);
+    expect(draft.typeMultiplicity.description).toMatch(/element/i);
+    expect(config.description).toMatch(/field/);
+    expect(config.description).toMatch(/return/);
+  });
+
+  it("forwards a collection draft's typeMultiplicity", async () => {
+    const { handler, app } = registered();
+    vi.mocked(app.getNamingLexicon).mockResolvedValue({ scope: "", byType: [], names: [] });
+    await handler({ collection: "c", names: [{ name: "items", type: "Item", typeMultiplicity: "many" }] });
+    expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0].names).toEqual([
+      { name: "items", type: "Item", typeMultiplicity: "many" },
+    ]);
+  });
+
   it("keeps one-line field descriptions and no examples", () => {
     const { properties } = toJsonSchemaCompat(registered().config.inputSchema) as {
       properties: Record<string, { description?: string; examples?: unknown }>;

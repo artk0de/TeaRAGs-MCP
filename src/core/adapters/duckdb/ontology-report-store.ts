@@ -20,7 +20,9 @@
  *   - `resolved` — {@link resolvedIdentifiersCte}: the persisted type, or the
  *     `call-return` type of a row bound to a single-target exact call. Narrowed
  *     BEFORE the join by the language's file extensions;
- *   - `concept_all` — rows under the path scope whose effective type names a
+ *   - `concept_all` — rows under the path scope, in production files only (the
+ *     architecture report's non-production classification: tooling and test
+ *     shapes out, bd tea-rags-mcp-4p3sb.25), whose effective type names a
  *     concept: not a
  *     non-concept type of the row's language, not a single capital letter;
  *     value kinds only (`param`, `local`, `field` — a `return` row's name is a
@@ -48,6 +50,7 @@
 
 import type {
   IdentifierDeclarationKind,
+  IdentifierTypeMultiplicity,
   IdentifierTypeSource,
   OntologyCollisionRow,
   OntologyCollisionRule,
@@ -63,6 +66,7 @@ import type {
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 import { pathPrefixPredicate, resolvedIdentifiersCte, type SqlPredicate } from "./identifier-store.js";
+import { NON_PRODUCTION_PATH_SQL } from "./non-production-path-sql.js";
 
 /** Exhaustive over {@link IdentifierTypeSource}: a new source is a compile error here, not a silent zero. */
 const TYPE_SOURCE_SET: Record<IdentifierTypeSource, true> = {
@@ -142,15 +146,26 @@ function notExcludedNamePredicate(excludedGenericNames: readonly string[]): SqlP
   return { sql: `name NOT IN (${placeholders(excludedGenericNames)})`, params: [...excludedGenericNames] };
 }
 
+/**
+ * The audit's file scope: the caller's path prefixes AND production files only
+ * ({@link NON_PRODUCTION_PATH_SQL}, constant — the architecture report's
+ * classification compiled to SQL).
+ */
+function ontologyScopePredicate(q: OntologyReportQuery): SqlPredicate {
+  const prefix = pathPrefixPredicate(q.pathPrefixes);
+  return { sql: `(${prefix.sql} AND NOT ${NON_PRODUCTION_PATH_SQL("rel_path")})`, params: prefix.params };
+}
+
 /** The shared CTE chain up to `concept_all` — see the module doc. `resolved` stays addressable. */
 function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
   const resolved = resolvedIdentifiersCte(extensionPredicate(q.extensions));
   const nonConcept = nonConceptPredicate(q);
-  const scope = pathPrefixPredicate(q.pathPrefixes);
+  const scope = ontologyScopePredicate(q);
+  const names = namePredicate(q.names);
   return {
     sql: `${resolved.sql},
       concept_all AS (
-        SELECT rel_path, owner_symbol_id, kind, name, type_name, type_source, line
+        SELECT rel_path, owner_symbol_id, kind, name, type_name, type_source, type_multiplicity, line
           FROM resolved
          WHERE type_name IS NOT NULL
            AND kind IN ('param', 'local', 'field')
@@ -159,9 +174,17 @@ function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
            AND NOT (kind IN ('param', 'local') AND ${UNUSED_MARKER_SQL})
            AND NOT (${nonConcept.sql})
            AND ${scope.sql}
+           AND ${names.sql}
       )`,
-    params: [...resolved.params, ...nonConcept.params, ...scope.params],
+    params: [...resolved.params, ...nonConcept.params, ...scope.params, ...names.params],
   };
+}
+
+/** `name IN (…)` over `OntologyReportQuery.names`; `TRUE` when absent. */
+function namePredicate(names: readonly string[] | undefined): SqlPredicate {
+  if (names === undefined) return { sql: "TRUE", params: [] };
+  if (names.length === 0) return { sql: "FALSE", params: [] };
+  return { sql: `name IN (${placeholders(names)})`, params: [...names] };
 }
 
 /** {@link ontologyConceptCte}, then `evidence`: the concept rows minus the excluded generic names. */
@@ -255,7 +278,14 @@ export class DuckDbOntologyReportStore {
           }
         : {}),
       ...(sections.has("collisions")
-        ? { collisions: await this.readCollisions(q, base, notExcludedNamePredicate(excludedGenericNames)) }
+        ? {
+            collisions: await this.readCollisions(
+              ontologyScopePredicate(q),
+              q.limit,
+              base,
+              notExcludedNamePredicate(excludedGenericNames),
+            ),
+          }
         : {}),
     };
   }
@@ -321,7 +351,12 @@ export class DuckDbOntologyReportStore {
     }));
   }
 
-  /** (type, kind) groups of two or more names, ranked by `selection.score`, capped at `groupPool`. */
+  /**
+   * (type, kind, multiplicity) groups of two or more names, ranked by
+   * `selection.score`, capped at `groupPool`. Multiplicity is part of the key
+   * (bd tea-rags-mcp-4p3sb.26): `candidates: Def[]` and `fallback: Def` hold
+   * different roles, so their names are no synonyms of each other.
+   */
   private async readTypeGroups(
     q: OntologyReportQuery,
     base: SqlPredicate,
@@ -331,44 +366,46 @@ export class DuckDbOntologyReportStore {
     const rows = await this.session.queryAll<Row>(
       `${base.sql},
        group_names AS (
-         SELECT type_name, kind, name, count(*) AS n,
+         SELECT type_name, kind, type_multiplicity, name, count(*) AS n,
                 ${EXAMPLE_COLUMNS_SQL}
            FROM evidence
-          GROUP BY type_name, kind, name
+          GROUP BY type_name, kind, type_multiplicity, name
        ),
        groups AS (
-         SELECT type_name, kind, sum(n) AS total, count(*) AS distinct_names, max(n) AS top_n,
+         SELECT type_name, kind, type_multiplicity, sum(n) AS total, count(*) AS distinct_names, max(n) AS top_n,
                 sum(n * ln(n)) AS n_log_n,
                 list({'name': name, 'n': CAST(n AS INTEGER), 'relPath': ex_path, 'line': ex_line,
                       'ownerSymbolId': ex_owner} ORDER BY n DESC, name) AS names
            FROM group_names
-          GROUP BY type_name, kind
+          GROUP BY type_name, kind, type_multiplicity
        ),
        picked AS (
-         SELECT type_name, kind, total, distinct_names, names,
+         SELECT type_name, kind, type_multiplicity, total, distinct_names, names,
                 top_n / total AS dominant_share,
                 (ln(total) - n_log_n / total) / ln(distinct_names) AS entropy,
                 ${selection.score} AS score
            FROM groups
           WHERE total >= ${int(t.minSupport)} AND distinct_names >= 2 AND ${selection.where}
-          ORDER BY score DESC, total DESC, type_name, kind
+          ORDER BY score DESC, total DESC, type_name, kind, type_multiplicity
           LIMIT ${int(t.groupPool)}
        ),
        sources AS (
-         SELECT type_name, kind, ${EVIDENCE_COLUMNS_SQL}
-           FROM evidence JOIN picked USING (type_name, kind)
-          GROUP BY type_name, kind
+         SELECT type_name, kind, type_multiplicity, ${EVIDENCE_COLUMNS_SQL}
+           FROM evidence JOIN picked USING (type_name, kind, type_multiplicity)
+          GROUP BY type_name, kind, type_multiplicity
        )
-       SELECT p.type_name, p.kind, CAST(p.total AS INTEGER) AS n, CAST(p.distinct_names AS INTEGER) AS distinct_names,
+       SELECT p.type_name, p.kind, p.type_multiplicity, CAST(p.total AS INTEGER) AS n,
+              CAST(p.distinct_names AS INTEGER) AS distinct_names,
               p.dominant_share, p.entropy, list_slice(p.names, 1, ${int(t.namesPerItem)}) AS names,
-              s.* EXCLUDE (type_name, kind)
-         FROM picked p JOIN sources s USING (type_name, kind)
-        ORDER BY p.score DESC, p.total DESC, p.type_name, p.kind`,
+              s.* EXCLUDE (type_name, kind, type_multiplicity)
+         FROM picked p JOIN sources s USING (type_name, kind, type_multiplicity)
+        ORDER BY p.score DESC, p.total DESC, p.type_name, p.kind, p.type_multiplicity`,
       base.params,
     );
     return rows.map((r) => ({
       typeName: r.type_name as string,
       kind: r.kind as Exclude<IdentifierDeclarationKind, "return">,
+      typeMultiplicity: r.type_multiplicity as IdentifierTypeMultiplicity,
       n: count(r.n),
       distinctNames: count(r.distinct_names),
       dominantShare: Number(r.dominant_share),
@@ -449,11 +486,11 @@ export class DuckDbOntologyReportStore {
    *     or not, since the collision is with the name, not the value.
    */
   private async readCollisions(
-    q: OntologyReportQuery,
+    scope: SqlPredicate,
+    limit: number,
     base: SqlPredicate,
     notExcluded: SqlPredicate,
   ): Promise<OntologyCollisionRow[]> {
-    const scope = pathPrefixPredicate(q.pathPrefixes);
     const nameKey = (column: string) => `lower(replace(regexp_replace(${column}, '^(@@|@|\\$)', ''), '_', ''))`;
     const lastSegment = (column: string) => `regexp_extract(${column}, '([^:.#]+)$', 1)`;
     const rows = await this.session.queryAll<Row>(
@@ -514,7 +551,7 @@ export class DuckDbOntologyReportStore {
          SELECT *, row_number() OVER (PARTITION BY rule ORDER BY n DESC, name, symbol, type_name) AS rn FROM grouped
        )
        SELECT * EXCLUDE (rn) FROM ranked
-        WHERE rn <= ${int(q.limit)}
+        WHERE rn <= ${int(limit)}
         ORDER BY CASE rule WHEN 'namesOtherType' THEN 0 ELSE 1 END, rn`,
       [...base.params, ...scope.params, ...notExcluded.params],
     );

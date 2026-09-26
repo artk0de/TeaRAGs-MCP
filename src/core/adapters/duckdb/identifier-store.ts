@@ -37,6 +37,7 @@ import type {
   IdentifierShapeSampleRow,
   IdentifierTypeAggregateQuery,
   IdentifierTypeAggregateRow,
+  IdentifierTypeMultiplicity,
   IdentifierTypeScopeQuery,
   IdentifierTypeSource,
   RelPath,
@@ -205,7 +206,8 @@ export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
         HAVING count(*) = 1
       ),
       return_types AS (
-        SELECT rel_path, owner_symbol_id, min(type_name) AS type_name
+        SELECT rel_path, owner_symbol_id, min(type_name) AS type_name,
+               CASE WHEN bool_or(type_multiplicity = 'many') THEN 'many' ELSE 'one' END AS type_multiplicity
           FROM cg_identifiers
          WHERE kind = 'return' AND type_name IS NOT NULL
          GROUP BY rel_path, owner_symbol_id
@@ -217,7 +219,12 @@ export function resolvedIdentifiersCte(scope: SqlPredicate): SqlPredicate {
                CASE
                  WHEN s.type_name IS NOT NULL THEN s.type_source
                  WHEN r.type_name IS NOT NULL THEN 'call-return'
-               END AS type_source
+               END AS type_source,
+               -- A call-return row holds what its target returns; an untyped row, one.
+               CASE
+                 WHEN s.type_name IS NULL AND r.type_name IS NOT NULL THEN r.type_multiplicity
+                 ELSE COALESCE(s.type_multiplicity, 'one')
+               END AS type_multiplicity
           FROM scoped s
           LEFT JOIN call_targets t
             ON s.type_name IS NULL
@@ -277,21 +284,24 @@ export class DuckDbIdentifierStore {
     if (q.types.length === 0) return [];
     const cte = resolvedIdentifiersCte(pathPrefixPredicate(q.pathPrefixes));
     const lang = fileLanguageGrouping("resolved", q.groupByLanguage);
+    const multiplicity = q.groupByMultiplicity ? ", type_multiplicity" : "";
     const rows = await this.session.queryAll<{
       type_name: string;
       kind: string;
       name: string;
       type_source: string;
+      type_multiplicity?: IdentifierTypeMultiplicity;
       n: number | string;
       example_owner: string;
       file_language?: string | null;
     }>(
       `${cte.sql}
-       SELECT type_name, kind, name, type_source, count(*) AS n, min(owner_symbol_id) AS example_owner${lang.column}
+       SELECT type_name, kind, name, type_source${multiplicity}, count(*) AS n,
+              min(owner_symbol_id) AS example_owner${lang.column}
          FROM ${lang.from}
         WHERE type_name IN (${placeholders(q.types)})
-        GROUP BY type_name, kind, name, type_source${lang.column}
-        ORDER BY n DESC, type_name, kind, name, type_source${lang.order}`,
+        GROUP BY type_name, kind, name, type_source${multiplicity}${lang.column}
+        ORDER BY n DESC, type_name, kind, name, type_source${multiplicity}${lang.order}`,
       [...cte.params, ...q.types],
     );
     return rows.map((r) => ({
@@ -299,6 +309,7 @@ export class DuckDbIdentifierStore {
       kind: r.kind as IdentifierDeclarationKind,
       name: r.name,
       typeSource: r.type_source as IdentifierTypeSource,
+      ...(q.groupByMultiplicity && r.type_multiplicity ? { typeMultiplicity: r.type_multiplicity } : {}),
       n: Number(r.n),
       exampleOwner: r.example_owner,
       ...languageField(q.groupByLanguage, r),

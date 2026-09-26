@@ -179,19 +179,23 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
  * ≤ 1.5 KB serialized.
  */
 const NAMING_LEXICON_DESCRIPTION =
-  "Project naming vocabulary from the codegraph. `types`/`anchors` → names per kind + dominant shape; " +
-  "`names[]` → CONFORMS | MISFIT{suggestion} | NEW_TERM{topTerms}; " +
-  "`concept`+`language` → project terms for a description.";
+  "Project naming vocabulary from the codegraph. `types`/`anchors` → names per kind + shape; " +
+  "`names[]` (attribute: kind field; method: kind return) → CONFORMS | MISFIT{suggestion} | NEW_TERM{topTerms}, " +
+  "+genericName if generic; `concept`+`language` → project terms.";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({
     name: z.string().min(1),
-    kind: z.enum(["param", "local", "field", "return"]).optional(),
+    kind: z
+      .enum(["param", "local", "field", "return"])
+      .optional()
+      .describe("ivar/attribute/property: field; method: return, type=result type"),
     type: z.string().optional(),
+    typeMultiplicity: z.enum(["one", "many"]).optional().describe("many: collection; type=element"),
     callee: z
       .object({ member: z.string().min(1), receiver: z.string().optional() })
       .optional()
-      .describe("Call the value is bound to"),
+      .describe("Bound call"),
   });
   return z
     .object({
@@ -201,7 +205,7 @@ function buildNamingLexiconInputSchema() {
       types: z.array(z.string()).optional(),
       anchors: z.array(z.string()).optional().describe("SymbolIds whose param/return types to add"),
       concept: z.string().optional().describe("Domain description, not a name"),
-      names: z.array(draftName).optional().describe("Draft names to judge; kind defaults to local"),
+      names: z.array(draftName).optional().describe("Drafts; kind default local"),
     })
     .refine(
       (req) =>

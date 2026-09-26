@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { InputValidationError, InvalidParameterError } from "../../../../../src/core/api/errors.js";
 import { NamingLexiconOps } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
+import { ontologyLanguageProfiles } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
 import type { IdentifierReplaceEntry, IdentifierRow } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { IdentifierNamingConvention } from "../../../../../src/core/contracts/types/language.js";
@@ -659,6 +660,126 @@ describe("NamingLexiconOps", () => {
       });
       expect(result.language).toBe("ruby");
       expect(result.names[0].verdict).toBe("CONFORMS");
+    });
+  });
+
+  describe("T vs T[]: a draft is judged against rows of its own multiplicity (bd tea-rags-mcp-4p3sb.26)", () => {
+    beforeEach(async () => {
+      // `Item[]` values are named `items`; single `Item` values `record`.
+      await write(
+        [
+          {
+            relPath: "src/cart.ts",
+            rows: [
+              ...[0, 1, 2, 3, 4].map((i) =>
+                local(`Cart${i}#load`, "items", {
+                  typeName: "Item",
+                  typeSource: "annotation",
+                  typeMultiplicity: "many",
+                  line: i + 1,
+                }),
+              ),
+              ...[0, 1, 2, 3].map((i) =>
+                local(`Cart${i}#pick`, "record", { typeName: "Item", typeSource: "annotation", line: 20 + i }),
+              ),
+            ],
+          },
+        ],
+        "typescript",
+      );
+    });
+
+    it("`items: Item[]` conforms, `item: Item[]` is a MISFIT naming `items`", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "typescript",
+        names: [
+          { name: "items", type: "Item", typeMultiplicity: "many" },
+          { name: "item", type: "Item", typeMultiplicity: "many" },
+        ],
+      });
+      expect(result.names[0]).toMatchObject({ name: "items", verdict: "CONFORMS" });
+      expect(result.names[1]).toMatchObject({ name: "item", verdict: "MISFIT", suggestion: "items" });
+    });
+
+    it("a single-value draft is judged against the single-value rows only", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "typescript",
+        names: [{ name: "items", type: "Item" }],
+      });
+      // Against the collection rows `items` would conform; the single values are named `record`.
+      expect(result.names[0]).toMatchObject({ verdict: "MISFIT", suggestion: "record" });
+    });
+  });
+
+  describe("a draft named with a judged generic name carries a caveat", () => {
+    function buildWithOntology(): NamingLexiconOps {
+      const graphDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === "close") return async () => undefined;
+          const value: unknown = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+      return new NamingLexiconOps({
+        pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async (name: string) => name as never,
+        explore: { semanticSearch },
+        namingConventions: NAMING,
+        ontologyLanguages: ontologyLanguageProfiles(),
+      });
+    }
+
+    beforeEach(async () => {
+      // `result` is bound to six unrelated types — generic, as get_ontology_report judges it —
+      // and six times to RunReport, so a `result: RunReport` draft conforms by type.
+      await write([
+        {
+          relPath: "app/services/runner.rb",
+          rows: [
+            ...["TypeA", "TypeB", "TypeC", "TypeD", "TypeE"].flatMap((typeName, i) =>
+              [0, 1].map((j) => local(`Run${i}#call`, "result", { typeName, typeSource: "binding", line: 10 * i + j })),
+            ),
+            ...[0, 1, 2, 3, 4, 5].map((i) =>
+              local(`Report${i}#call`, "result", { typeName: "RunReport", typeSource: "binding", line: 100 + i }),
+            ),
+            ...[0, 1, 2].map((i) =>
+              local(`Report${i}#call`, "run_report", { typeName: "RunReport", typeSource: "binding", line: 200 + i }),
+            ),
+          ],
+        },
+      ]);
+    });
+
+    it("CONFORMS by type, with `genericName` saying how many unrelated types share the name", async () => {
+      const result = await buildWithOntology().getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        names: [
+          { name: "result", type: "RunReport" },
+          { name: "run_report", type: "RunReport" },
+        ],
+      });
+      expect(result.names[0]).toMatchObject({
+        name: "result",
+        verdict: "CONFORMS",
+        genericName: { typeCount: 6, n: 16 },
+      });
+      expect(result.names[1]).toMatchObject({ name: "run_report", verdict: "CONFORMS" });
+      expect(result.names[1]).not.toHaveProperty("genericName");
+    });
+
+    it("reads the generic judgement for the drafts' names only", async () => {
+      const summary = vi.spyOn(db, "readOntologyReportSummary");
+      await buildWithOntology().getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        names: [{ name: "result", type: "RunReport" }],
+      });
+      expect(summary).toHaveBeenCalledTimes(1);
+      expect(summary.mock.calls[0][0].names).toEqual(["result"]);
     });
   });
 });

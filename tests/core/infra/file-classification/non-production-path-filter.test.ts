@@ -26,6 +26,17 @@ describe("buildNonProductionPathFilter", () => {
     expect(filter.ignores(relPath)).toBe(true);
   });
 
+  // Test files are not the product either: the codegraph walk already drops them, and a
+  // read over rows written before that (or inserted directly) must agree with it.
+  it.each([
+    "tests/core/api/app.test.ts",
+    "spec/models/invoice_spec.rb",
+    "src/core/__tests__/graph.ts",
+    "src/Billing/InvoiceTest.java",
+  ])("classifies test file %s as non-production", (relPath) => {
+    expect(filter.ignores(relPath)).toBe(true);
+  });
+
   it.each([
     "src/core/domains/ingest/pipeline/enrichment/executor/worker-pool.ts",
     "src/mcp/tools/codegraph.ts",

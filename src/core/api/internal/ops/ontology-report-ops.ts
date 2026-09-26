@@ -24,7 +24,9 @@
  *     stay evidence;
  *   - homonym types need ≥ 2 rows and ≥ 10% of the name's rows — one stray
  *     binding is noise, not a second meaning;
- *   - a synonym's dominant name needs ≥ 2 rows ({@link SYNONYM_MIN_DOMINANT_ROWS});
+ *   - a synonym's dominant name needs ≥ 2 rows ({@link SYNONYM_MIN_DOMINANT_ROWS}),
+ *     and so does the top name among those that do not spell the type — the
+ *     share ceiling applies to them too (`OntologyReportOps#synonyms`);
  *   - outliers need a convention: the top name holds ≥ 50% of the group; a
  *     name EXACT for its type is never an outlier, nor is one whose shape is at
  *     least as strong as the dominant name's;
@@ -50,10 +52,12 @@ import {
   detectIdentifierCasing,
   isTypeFamilyRoleName,
   isWeakerNamingShape,
+  judgeGenericNames,
   mergeUnqualifiedTypeSpellings,
   singularizeIdentifierWord,
   spellsTypeName,
   splitIdentifierWords,
+  type GenericNameThresholds,
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
@@ -135,6 +139,61 @@ export function ontologyLanguageProfiles(): OntologyLanguageProfile[] {
   return profiles;
 }
 
+/** The generic bar of {@link ONTOLOGY_REPORT_THRESHOLDS}, as {@link judgeGenericNames} takes it. */
+export const GENERIC_NAME_BAR: GenericNameThresholds = {
+  minTypes: ONTOLOGY_REPORT_THRESHOLDS.genericMinTypes,
+  maxTopTypeShare: ONTOLOGY_REPORT_THRESHOLDS.genericMaxTopTypeShare,
+};
+
+/** The casing of an ontology row: `kind`'s canonical casing in the language of `relPath`. */
+export type OntologyRowCasing = (relPath: string, kind: OntologyValueKind, sampleName: string) => IdentifierCasing;
+
+/**
+ * {@link OntologyRowCasing} over `languages`, routed by file extension; a file
+ * no profile covers takes the casing `sampleName` is written in, else `snake`.
+ */
+export function ontologyRowCasing(languages: readonly OntologyLanguageProfile[]): OntologyRowCasing {
+  const profileByExtension = new Map<string, OntologyLanguageProfile>();
+  for (const profile of languages) {
+    for (const extension of profile.extensions) profileByExtension.set(extension, profile);
+  }
+  return (relPath, kind, sampleName) => {
+    const dot = relPath.lastIndexOf(".");
+    const profile = dot === -1 ? undefined : profileByExtension.get(relPath.slice(dot).toLowerCase());
+    return profile?.naming.casing[kind][0] ?? detectIdentifierCasing(sampleName) ?? "snake";
+  };
+}
+
+/** Which rows an ontology read covers. */
+export interface OntologyReadScope {
+  pathPrefixes?: readonly string[];
+  /** The language filter: file extensions, lowercase. */
+  extensions?: readonly string[];
+  /** Only these names (the naming lexicon's drafts). */
+  names?: readonly string[];
+}
+
+/** The store query for `scope`: every language's non-concept types, the report's thresholds. */
+export function ontologyReportQuery(
+  languages: readonly OntologyLanguageProfile[],
+  scope: OntologyReadScope,
+  sections: readonly OntologyReportSection[],
+  limit: number,
+): OntologyReportQuery {
+  return {
+    ...(scope.pathPrefixes && scope.pathPrefixes.length > 0 ? { pathPrefixes: [...scope.pathPrefixes] } : {}),
+    ...(scope.extensions ? { extensions: [...scope.extensions] } : {}),
+    ...(scope.names ? { names: [...scope.names] } : {}),
+    nonConceptTypes: languages.map((p) => ({
+      extensions: [...p.extensions],
+      typeNames: [...p.naming.nonConceptTypes],
+    })),
+    sections: [...sections],
+    limit,
+    thresholds: { ...ONTOLOGY_REPORT_THRESHOLDS, groupPool: limit * GROUP_POOL_FACTOR },
+  };
+}
+
 export interface OntologyReportOpsDeps {
   pool: Pick<GraphDbClientPool, "acquireReader">;
   collectionRegistry: CollectionRegistry;
@@ -183,13 +242,30 @@ function mergeKey(name: string): string {
   return words.join("_");
 }
 
+/** `{ typeMultiplicity: "many" }` for a group of collections; nothing for single values. */
+function manyGroup(group: Pick<OntologyTypeGroupRow, "typeMultiplicity">): { typeMultiplicity?: "many" } {
+  return group.typeMultiplicity === "many" ? { typeMultiplicity: "many" } : {};
+}
+
+/** The most frequent name of `names` with singular and plural merged ({@link mergeKey}); first on a tie. */
+function topMergedName(names: readonly OntologyNameCountRow[]): { n: number; names: OntologyNameCountRow[] } {
+  const buckets = new Map<string, { n: number; names: OntologyNameCountRow[] }>();
+  for (const item of names) {
+    const key = mergeKey(item.name);
+    const bucket = buckets.get(key) ?? { n: 0, names: [] };
+    bucket.n += item.n;
+    bucket.names.push(item);
+    buckets.set(key, bucket);
+  }
+  return [...buckets.values()].sort((a, b) => b.n - a.n)[0];
+}
+
 export class OntologyReportOps {
-  private readonly profileByExtension = new Map<string, OntologyLanguageProfile>();
+  /** The canonical casing of a row's kind in its file's language. */
+  private readonly casingFor: OntologyRowCasing;
 
   constructor(private readonly deps: OntologyReportOpsDeps) {
-    for (const profile of deps.languages) {
-      for (const extension of profile.extensions) this.profileByExtension.set(extension, profile);
-    }
+    this.casingFor = ontologyRowCasing(deps.languages);
   }
 
   async report(req: GetOntologyReportRequest): Promise<GetOntologyReportResponse> {
@@ -266,18 +342,12 @@ export class OntologyReportOps {
   ): OntologyReportQuery {
     const limit = Math.min(MAX_ONTOLOGY_REPORT_LIMIT, Math.max(1, req.limit ?? DEFAULT_ONTOLOGY_REPORT_LIMIT));
     const prefix = pathPatternPrefix(req.pathPattern);
-    const sections: OntologyReportSection[] = requestedSections(req);
-    return {
-      ...(prefix ? { pathPrefixes: [prefix] } : {}),
-      ...(language ? { extensions: [...language.extensions] } : {}),
-      nonConceptTypes: this.deps.languages.map((p) => ({
-        extensions: [...p.extensions],
-        typeNames: [...p.naming.nonConceptTypes],
-      })),
-      sections,
+    return ontologyReportQuery(
+      this.deps.languages,
+      { ...(prefix ? { pathPrefixes: [prefix] } : {}), ...(language ? { extensions: language.extensions } : {}) },
+      requestedSections(req),
       limit,
-      thresholds: { ...ONTOLOGY_REPORT_THRESHOLDS, groupPool: limit * GROUP_POOL_FACTOR },
-    };
+    );
   }
 
   private shape(
@@ -304,13 +374,6 @@ export class OntologyReportOps {
     return response;
   }
 
-  /** The canonical casing of `kind` in the language of `relPath`; else the casing `sampleName` is written in. */
-  private casingFor(relPath: string, kind: OntologyValueKind, sampleName: string): IdentifierCasing {
-    const dot = relPath.lastIndexOf(".");
-    const profile = dot === -1 ? undefined : this.profileByExtension.get(relPath.slice(dot).toLowerCase());
-    return profile?.naming.casing[kind][0] ?? detectIdentifierCasing(sampleName) ?? "snake";
-  }
-
   private nameCount(
     item: OntologyNameCountRow,
     typeName: string,
@@ -326,73 +389,71 @@ export class OntologyReportOps {
   }
 
   /**
-   * Re-judges the generic-name candidates: a type the name spells
-   * ({@link spellsTypeName} — EXACT, QUALIFIED or TAIL in the casing of the
-   * type row's file language) says nothing about the name being generic, so it
-   * is dropped — `form` bound to 729 `*Form` classes is the role word of a type
-   * family, the case the homonyms section drops by the same judgement. The name
-   * stays generic only when its remaining types still clear the generic bar
-   * (`genericMinTypes`, none holding `genericMaxTopTypeShare`); `typeCount` and
-   * `n` count those types alone. Most frequent first, uncapped.
+   * The judged generic names of `candidates` — {@link judgeGenericNames}, each
+   * type row cased in its own file language (the one judgement the naming
+   * lexicon's draft caveat also applies). Most frequent first, uncapped.
    */
   private genericNames(candidates: readonly OntologyGenericNameRow[]): OntologyGenericName[] {
-    const t = ONTOLOGY_REPORT_THRESHOLDS;
-    const judged: OntologyGenericName[] = [];
-    for (const candidate of candidates) {
-      const unrelated = candidate.types.filter(
-        (type) =>
-          !spellsTypeName(
-            classifyNamingShape({
-              name: candidate.name,
-              kind: "local",
-              casing: this.casingFor(type.relPath, "local", candidate.name),
-              typeName: type.typeName,
-            }),
-          ),
-      );
-      const n = unrelated.reduce((s, type) => s + type.n, 0);
-      const top = unrelated.reduce((max, type) => Math.max(max, type.n), 0);
-      if (unrelated.length < t.genericMinTypes || top >= t.genericMaxTopTypeShare * n) continue;
-      judged.push({ name: candidate.name, typeCount: unrelated.length, n });
-    }
-    return judged.sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    return judgeGenericNames(candidates, (relPath, name) => this.casingFor(relPath, "local", name), GENERIC_NAME_BAR);
   }
 
   /**
    * Re-judges the pooled candidate groups with singular and plural merged — a
-   * type named `invoice` and `invoices` is one name, not two — keeps the ones
-   * still below the dominance ceiling, re-ranks by `(1 − share) × confidence`.
+   * type named `invoice` and `invoices` is one name, not two — and reports a
+   * type only when BOTH hold (bd tea-rags-mcp-4p3sb.27):
+   *   - over all its names: the top merged name holds ≥
+   *     {@link SYNONYM_MIN_DOMINANT_ROWS} rows and < `synonymDominantShareCeiling`
+   *     of the group (the store's pool gate, re-checked after the merge);
+   *   - over its NON-SPELLING names only ({@link spellsTypeName} false — `root`,
+   *     `coll`): the same gate — the top one holds ≥ SYNONYM_MIN_DOMINANT_ROWS
+   *     rows and < the ceiling of the non-spelling rows, so at least two of them
+   *     split those rows with no convention among them.
+   * A name that spells the type (`node`, `callNode`, `collectionName`) is what
+   * `.claude/rules/naming.md` asks for — the conforming majority, never a
+   * deviant — so an `AstNode` named only `node` / `callNode` / `methodNode`
+   * is no synonym. `dominant`, `dominantShare` and `entropy` still describe the
+   * whole group; `deviants` are the non-spelling names but the dominant.
+   * Re-ranked by `(1 − dominantShare) × confidence`.
    */
   private synonyms(groups: readonly OntologyTypeGroupRow[], limit: number): OntologySynonym[] {
     const t = ONTOLOGY_REPORT_THRESHOLDS;
     const judged: (OntologySynonym & { score: number })[] = [];
     for (const group of groups) {
       if (group.names.length === 0) continue;
-      const buckets = new Map<string, { n: number; names: OntologyNameCountRow[] }>();
-      for (const item of group.names) {
-        const key = mergeKey(item.name);
-        const bucket = buckets.get(key) ?? { n: 0, names: [] };
-        bucket.n += item.n;
-        bucket.names.push(item);
-        buckets.set(key, bucket);
-      }
-      const top = [...buckets.values()].sort((a, b) => b.n - a.n)[0];
+      const top = topMergedName(group.names);
       if (top.n < SYNONYM_MIN_DOMINANT_ROWS) continue;
       const dominantShare = top.n / group.n;
       if (dominantShare >= t.synonymDominantShareCeiling) continue;
+      const nonSpelling = group.names.filter(
+        (item) =>
+          !spellsTypeName(
+            classifyNamingShape({
+              name: item.name,
+              kind: group.kind,
+              casing: this.casingFor(item.example.relPath, group.kind, item.name),
+              typeName: group.typeName,
+            }),
+          ),
+      );
+      if (nonSpelling.length < 2) continue;
+      const nonSpellingTop = topMergedName(nonSpelling);
+      const nonSpellingN = nonSpelling.reduce((s, item) => s + item.n, 0);
+      if (nonSpellingTop.n < SYNONYM_MIN_DOMINANT_ROWS) continue;
+      if (nonSpellingTop.n >= t.synonymDominantShareCeiling * nonSpellingN) continue;
       const casing = this.casingFor(top.names[0].example.relPath, group.kind, top.names[0].name);
       const dominantNames = new Set(top.names.map((item) => item.name));
       const conf = confidence(group.n, t.confidenceSupport);
       judged.push({
         type: group.typeName,
         kind: group.kind,
+        ...manyGroup(group),
         n: group.n,
         confidence: conf,
         dominantShare,
         entropy: group.entropy,
         distinctNames: group.distinctNames,
         dominant: { ...this.nameCount(top.names[0], group.typeName, group.kind, casing), n: top.n },
-        deviants: group.names
+        deviants: nonSpelling
           .filter((item) => !dominantNames.has(item.name))
           .slice(0, t.namesPerItem - 1)
           .map((item) => this.nameCount(item, group.typeName, group.kind, casing)),
@@ -485,6 +546,7 @@ export class OntologyReportOps {
         judged.push({
           type: group.typeName,
           kind: group.kind,
+          ...manyGroup(group),
           name: item.name,
           n: item.n,
           shape: item.shape,

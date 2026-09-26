@@ -437,6 +437,83 @@ describe("judgeDraftName — concept terms", () => {
   });
 });
 
+describe("judgeDraftName — a typed draft whose type has history only in other kinds", () => {
+  const conceptTerms = [
+    { term: "chunk", score: 2, holders: [OWNER] },
+    { term: "payload", score: 1, holders: [OWNER] },
+  ];
+  // GitFileSignals is held by params and fields; the draft is a local (the default kind).
+  const byTypeRows = [
+    { kind: "param" as const, name: "fileSignals", n: 4, exampleOwner: "Git#param" },
+    { kind: "field" as const, name: "fileSignals", n: 4, exampleOwner: "Git#field" },
+    { kind: "param" as const, name: "signals", n: 6, exampleOwner: "Git#signals" },
+  ];
+
+  it("is judged against those rows, weighted by n across kinds — never by the concept's terms", () => {
+    expect(
+      judgeDraftName({ name: "meta", typeName: "GitFileSignals", casing: "camel", byTypeRows, conceptTerms }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "fileSignals", holder: "Git#param" });
+  });
+
+  it("conforms when its shape holds the other kinds' rows", () => {
+    expect(
+      judgeDraftName({ name: "fileSignals", typeName: "GitFileSignals", casing: "camel", byTypeRows, conceptTerms }),
+    ).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a typed draft with no history at all still takes the concept's terms", () => {
+    expect(
+      judgeDraftName({ name: "meta", typeName: "GitFileSignals", casing: "camel", byTypeRows: [], conceptTerms }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: ["chunk", "payload"] });
+  });
+
+  it("an unlicensed return verb for a type with history names no concept terms", () => {
+    expect(
+      judgeDraftName({
+        name: "buildMeta",
+        kind: "return",
+        typeName: "GitFileSignals",
+        casing: "camel",
+        byTypeRows,
+        conceptTerms,
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+});
+
+describe("judgeDraftName — a collection draft (typeMultiplicity many) against collection rows", () => {
+  const many = (name: string, n: number) => ({ kind: "local" as const, name, n, exampleOwner: `Holder#${name}` });
+
+  it("the plural the collection rows use conforms; the singular spelling is a MISFIT naming it", () => {
+    const input = { typeName: "Item", casing: "camel" as const, typeMultiplicity: "many" as const };
+    const byTypeRows = [many("items", 5), many("records", 1)];
+    expect(judgeDraftName({ ...input, name: "items", byTypeRows })).toEqual({ verdict: "CONFORMS" });
+    expect(judgeDraftName({ ...input, name: "item", byTypeRows })).toEqual({
+      verdict: "MISFIT",
+      suggestion: "items",
+      holder: "Holder#items",
+    });
+  });
+
+  it("number is induced from the rows: a project naming its collections singular accepts the singular", () => {
+    expect(
+      judgeDraftName({
+        name: "item",
+        typeName: "Item",
+        casing: "camel",
+        typeMultiplicity: "many",
+        byTypeRows: [many("item", 5)],
+      }),
+    ).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a single-value draft keeps the number-blind judgement", () => {
+    expect(judgeDraftName({ name: "items", typeName: "Item", casing: "camel", byTypeRows: [many("item", 5)] })).toEqual(
+      { verdict: "CONFORMS" },
+    );
+  });
+});
+
 describe("judgeDraftName — nothing to judge against", () => {
   it("a typed draft whose type has no history and no concept is a NEW_TERM with no terms", () => {
     expect(judgeDraftName({ name: "envelope", typeName: "VendorEnvelope", casing: "snake", byTypeRows: [] })).toEqual({

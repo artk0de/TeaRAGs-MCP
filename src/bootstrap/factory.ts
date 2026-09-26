@@ -1288,6 +1288,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         resolveActiveCollection,
         explore,
         namingConventions: composition.namingConventions,
+        // The ontology report's profiles: a draft named generically there carries `genericName`.
+        ontologyLanguages: ontologyLanguageProfiles(),
       })
     : undefined;
   const app = createApp({

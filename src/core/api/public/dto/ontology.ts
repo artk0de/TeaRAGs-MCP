@@ -85,6 +85,8 @@ export interface OntologyNameCount {
 export interface OntologySynonym {
   type: string;
   kind: OntologyValueKind;
+  /** `many` for a group of collections of `type` (`Doc[]`, `list[Doc]`); absent for single values. */
+  typeMultiplicity?: "many";
   /** Rows of the group. */
   n: number;
   /** `min(1, (n/20)^2)`. */
@@ -113,6 +115,8 @@ export interface OntologyHomonym {
 export interface OntologyOutlier {
   type: string;
   kind: OntologyValueKind;
+  /** `many` when the group is collections of `type`; absent for single values. */
+  typeMultiplicity?: "many";
   name: string;
   n: number;
   shape: OntologyNamingShape;

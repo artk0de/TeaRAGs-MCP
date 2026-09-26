@@ -130,7 +130,14 @@ export interface IdentifierLanguageGroupingQuery {
 }
 
 /** {@link IdentifierTypeScopeQuery} for the type aggregate, which may group by file language. */
-export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, IdentifierLanguageGroupingQuery {}
+export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, IdentifierLanguageGroupingQuery {
+  /**
+   * Split every group by `type_multiplicity` and report it per row as
+   * `typeMultiplicity` — a `Doc` value and a `Doc[]` value are judged apart
+   * (bd tea-rags-mcp-4p3sb.26). Without it rows carry no `typeMultiplicity` key.
+   */
+  groupByMultiplicity?: boolean;
+}
 
 /**
  * The file language of an aggregate row read with `groupByLanguage`: null for a

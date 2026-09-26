@@ -57,6 +57,7 @@ import type {
   IdentifierLanguageCountQuery,
   IdentifierLanguageCountRow,
   IdentifierTypeAggregateRow,
+  IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type {
@@ -69,10 +70,12 @@ import {
   extractConceptTerms,
   isNonConceptType,
   judgeDraftName,
+  judgeGenericNames,
   shapeDistribution,
   splitIdentifierWords,
   type ConceptTerm,
   type ConceptTermHolder,
+  type JudgedGenericName,
   type NamingByCalleeRow,
   type NamingByTypeRow,
   type NamingReturnVerbShare,
@@ -94,6 +97,12 @@ import type {
   NamingLexiconTypeEntry,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
+import {
+  GENERIC_NAME_BAR,
+  ontologyReportQuery,
+  ontologyRowCasing,
+  type OntologyLanguageProfile,
+} from "./ontology-report-ops.js";
 
 /** A scope with fewer supporting rows widens. */
 const MIN_SCOPE_SUPPORT = 5;
@@ -130,6 +139,12 @@ export interface NamingLexiconOpsDeps {
   explore: NamingLexiconExplore;
   /** `LanguageCapability.naming` per language, from the language factory. */
   namingConventions: ReadonlyMap<string, IdentifierNamingConvention>;
+  /**
+   * The ontology report's language profiles (`ontologyLanguageProfiles()`): with
+   * them, a draft whose name the report judges generic in scope carries
+   * `genericName`. Absent → no generic judgement is read.
+   */
+  ontologyLanguages?: readonly OntologyLanguageProfile[];
 }
 
 type IdentifierReader = Pick<
@@ -144,6 +159,7 @@ type IdentifierReader = Pick<
   | "identifierLanguageCounts"
   | "sampleIdentifierShapes"
   | "hasData"
+  | "readOntologyReportSummary"
 >;
 
 /** One byType row after recovery: a store row or a `name-inferred` one. */
@@ -152,6 +168,8 @@ interface LexiconTypeRow {
   kind: IdentifierDeclarationKind;
   name: string;
   typeSource: NamingLexiconEvidenceSource;
+  /** `many` for a collection of the type; absent = one (a `name-inferred` row is one). */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   n: number;
   exampleOwner: string;
   /** The row's file language (null: its file has no language row). */
@@ -301,6 +319,7 @@ export class NamingLexiconOps {
             nonConceptTypes,
             conceptTerms,
             pathPrefixes,
+            ontologyLanguages: this.deps.ontologyLanguages,
           });
 
     return {
@@ -489,7 +508,7 @@ async function readTypeRows(
 ): Promise<LexiconTypeRow[]> {
   if (types.length === 0) return [];
   const stored: LexiconTypeRow[] = (
-    await graphDb.aggregateIdentifiersByType({ types, pathPrefixes, groupByLanguage: true })
+    await graphDb.aggregateIdentifiersByType({ types, pathPrefixes, groupByLanguage: true, groupByMultiplicity: true })
   ).map((row: IdentifierTypeAggregateRow) => ({ ...row }));
   if (stored.length === 0) return stored;
   return [...stored, ...(await nameInferredRows(graphDb, stored, new Set(types), pathPrefixes))];
@@ -628,6 +647,32 @@ interface DraftJudgementContext {
   nonConceptTypes: readonly string[];
   conceptTerms?: ConceptTerm[];
   pathPrefixes: string[] | undefined;
+  ontologyLanguages?: readonly OntologyLanguageProfile[];
+}
+
+/**
+ * The drafts' names `get_ontology_report` judges generic in the answer's scope:
+ * the report's summary read narrowed to those names (bounded by the drafts, not
+ * the project), judged by the same {@link judgeGenericNames} with the same bar
+ * and per-file casing. Empty without the ontology's language profiles.
+ */
+async function genericDraftNames(
+  graphDb: IdentifierReader,
+  names: readonly string[],
+  pathPrefixes: string[] | undefined,
+  languages: readonly OntologyLanguageProfile[] | undefined,
+): Promise<Map<string, JudgedGenericName>> {
+  if (!languages || names.length === 0) return new Map();
+  const summary = await graphDb.readOntologyReportSummary(
+    ontologyReportQuery(languages, { ...(pathPrefixes ? { pathPrefixes } : {}), names }, [], 1),
+  );
+  const casing = ontologyRowCasing(languages);
+  const judged = judgeGenericNames(
+    summary.genericNames,
+    (relPath, name) => casing(relPath, "local", name),
+    GENERIC_NAME_BAR,
+  );
+  return new Map(judged.map((g) => [g.name, g]));
 }
 
 async function judgeDrafts(
@@ -636,7 +681,7 @@ async function judgeDrafts(
   ctx: DraftJudgementContext,
 ): Promise<NamingLexiconNameVerdict[]> {
   const draftNames = unique(drafts.map((d) => d.name));
-  const [homonyms, collisions, sample] = await Promise.all([
+  const [homonyms, collisions, sample, generic] = await Promise.all([
     graphDb.identifierNameTypes(draftNames),
     graphDb.existingSymbolShortNames(draftNames),
     graphDb.sampleIdentifierShapes({
@@ -644,6 +689,7 @@ async function judgeDrafts(
       limit: SHAPE_PRIOR_SAMPLE,
       groupByLanguage: true,
     }),
+    genericDraftNames(graphDb, draftNames, ctx.pathPrefixes, ctx.ontologyLanguages),
   ]);
   const prior = projectShapePrior(sample, ctx.casingFor, ctx.rowCasing);
   const taken = new Set(collisions);
@@ -657,7 +703,9 @@ async function judgeDrafts(
       casing: ctx.casingFor(kind),
       nonConceptTypes: ctx.nonConceptTypes,
       callee: draft.callee,
-      byTypeRows: draft.type === undefined ? undefined : byTypeRowsFor(draft.type, ctx.typeRows),
+      typeMultiplicity: draft.typeMultiplicity,
+      byTypeRows:
+        draft.type === undefined ? undefined : byTypeRowsFor(draft.type, draft.typeMultiplicity ?? "one", ctx.typeRows),
       byCalleeRows: draft.callee ? byCalleeRowsFor(draft.callee, ctx.calleeRows) : undefined,
       conceptTerms: ctx.conceptTerms,
       projectShapePrior: prior.shapes,
@@ -667,6 +715,7 @@ async function judgeDrafts(
     const example =
       (verdict.verdict === "MISFIT" ? verdict.holder : undefined) ??
       [...ctx.typeRows, ...ctx.calleeRows].find((r) => r.name === draft.name)?.exampleOwner;
+    const genericName = generic.get(draft.name);
     return {
       name: draft.name,
       ...verdict,
@@ -676,15 +725,25 @@ async function judgeDrafts(
         boundTypes: new Set(nameRows.flatMap((r) => (r.typeName === null ? [] : [r.typeName]))).size,
         collision: taken.has(draft.name),
       },
+      ...(genericName ? { genericName: { typeCount: genericName.typeCount, n: genericName.n } } : {}),
     };
   });
 }
 
-/** The draft type's rows merged per (kind, name, casing) across type sources and file languages. */
-function byTypeRowsFor(typeName: string, rows: readonly LexiconTypeRow[]): NamingByTypeRow[] {
+/**
+ * The draft type's rows of the draft's multiplicity (bd tea-rags-mcp-4p3sb.26 —
+ * a `T[]` draft against collections of T, a `T` draft against single values),
+ * merged per (kind, name, casing) across type sources and file languages. A row
+ * written before migration 034 reads `one`, the honest reading of old data.
+ */
+function byTypeRowsFor(
+  typeName: string,
+  multiplicity: IdentifierTypeMultiplicity,
+  rows: readonly LexiconTypeRow[],
+): NamingByTypeRow[] {
   const merged = new Map<string, NamingByTypeRow>();
   for (const row of rows) {
-    if (row.typeName !== typeName) continue;
+    if (row.typeName !== typeName || (row.typeMultiplicity ?? "one") !== multiplicity) continue;
     const key = `${row.kind}\u0000${row.name}\u0000${row.casing ?? ""}`;
     const prev = merged.get(key);
     merged.set(key, {

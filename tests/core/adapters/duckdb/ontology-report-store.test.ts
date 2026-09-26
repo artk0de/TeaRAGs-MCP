@@ -236,6 +236,67 @@ describe("DuckDbGraphClient#readOntologyReportSummary / #readOntologyReportSecti
     ]);
   });
 
+  it("drops non-production files (scripts, test trees) from the summary and every section; src/ stays", async () => {
+    // The set the architecture report excludes: tooling (`scripts/`, `spikes/`, …) and test shapes.
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "scripts/spikes/probe.rb",
+        rows: [
+          // Generic in tooling only: five unrelated types.
+          ...["A", "B", "C", "D", "E"].flatMap((t, i) => rows(2, typed("handle", `Type${t}`), 10 * (i + 1))),
+          ...rows(4, typed("record", "Invoice"), 100),
+        ],
+      },
+      {
+        relPath: "scripts/report.rb",
+        rows: [{ ownerSymbolId: "Report#render", kind: "local", name: "title", line: 3 }],
+      },
+      { relPath: "tests/billing_test.rb", rows: rows(5, typed("inv", "Invoice", "param"), 1) },
+      { relPath: "src/billing/ledger.rb", rows: rows(2, typed("user", "User"), 1) },
+    ]);
+
+    const report = await readReport(query());
+
+    expect(report.genericNames.map((g) => g.name)).toEqual(["result"]);
+    // The fixture's 33 plus the two src/ rows; nothing under scripts/ or tests/.
+    expect(report.evidenceRows).toBe(35);
+    expect(report.homonyms?.[0].types.map((t) => [t.typeName, t.n])).toEqual([
+      ["Invoice", 6],
+      ["Payment", 3],
+    ]);
+    expect(report.collisions?.find((c) => c.rule === "shadowsMethod")?.n).toBe(1);
+    expect(JSON.stringify(report)).not.toMatch(/"(scripts|tests)\//);
+  });
+
+  it("type groups split by multiplicity: `T[]` values and `T` values of one type are different groups", async () => {
+    const many = (name: string) => ({ ...typed(name, "SymbolDefinition"), typeMultiplicity: "many" as const });
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "src/resolve.ts",
+        rows: [
+          ...rows(3, many("candidates"), 1),
+          ...rows(2, many("defs"), 10),
+          ...rows(3, many("definitions"), 20),
+          ...rows(4, typed("fallback", "SymbolDefinition"), 30),
+          ...rows(2, typed("definition", "SymbolDefinition"), 40),
+        ],
+      },
+    ]);
+    const { synonyms } = await readReport(query({ sections: ["synonyms"], pathPrefixes: ["src/resolve"] }));
+    expect(synonyms?.map((g) => [g.typeName, g.typeMultiplicity, g.n, g.names.map((n) => n.name)])).toEqual([
+      ["SymbolDefinition", "many", 8, ["candidates", "definitions", "defs"]],
+      ["SymbolDefinition", "one", 6, ["fallback", "definition"]],
+    ]);
+    expect(synonyms?.[0].evidence).toEqual({ binding: 8 });
+  });
+
+  it("`names` narrows the summary read to those names; their judgement is the unnarrowed one", async () => {
+    const all = await db.readOntologyReportSummary(query());
+    const asked = await db.readOntologyReportSummary(query({ names: ["result", "user"] }));
+    expect(asked.genericNames).toEqual(all.genericNames);
+    expect((await db.readOntologyReportSummary(query({ names: ["user"] }))).genericNames).toEqual([]);
+  });
+
   it("scopes every section by rel_path prefix and by file extension", async () => {
     const byPrefix = await readReport(query({ pathPrefixes: ["app/services/tax"] }));
     expect(byPrefix.evidenceRows).toBe(7);

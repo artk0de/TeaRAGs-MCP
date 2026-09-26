@@ -128,6 +128,7 @@ export type {
   NamingLexiconCalleeEntry,
   NamingLexiconDraftName,
   NamingLexiconEvidenceSource,
+  NamingLexiconGenericName,
   NamingLexiconKindProfile,
   NamingLexiconNameCount,
   NamingLexiconNameEvidence,

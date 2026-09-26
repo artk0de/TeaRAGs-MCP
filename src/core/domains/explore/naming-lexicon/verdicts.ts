@@ -9,6 +9,7 @@
 import type {
   IdentifierBoundCallee,
   IdentifierDeclarationKind,
+  IdentifierTypeMultiplicity,
 } from "../../../contracts/types/codegraph-extraction.js";
 import type { IdentifierCasing } from "../../../contracts/types/language.js";
 import { joinIdentifierWords, singularizeIdentifierWord, splitIdentifierWords, typeNameWords } from "./casing.js";
@@ -18,6 +19,7 @@ import {
   isNonConceptType,
   matchesTypeWords,
   shapeDistribution,
+  spellsTypeName,
   type NamingShapeDistribution,
   type NamingShapeRow,
 } from "./shapes.js";
@@ -63,6 +65,12 @@ export interface DraftNameJudgementInput {
   /** Defaults to `local`. */
   kind?: IdentifierDeclarationKind;
   typeName?: string;
+  /**
+   * `many` for a collection of `typeName` (`Item[]`). The caller passes only the
+   * rows of the same multiplicity; a `many` draft that spells the type must also
+   * agree in number with them. Absent = one.
+   */
+  typeMultiplicity?: IdentifierTypeMultiplicity;
   /** The canonical casing of the draft's role (from the language descriptor). */
   casing: IdentifierCasing;
   /** The language's non-concept types (`naming.nonConceptTypes`); absent → only the universal rule applies. */
@@ -109,8 +117,49 @@ function judgeAgainstRows(
   const distribution = shapeDistribution(judged.rows, context);
   const draftShape = classifyNamingShape({ ...context, name: input.name });
   const share = distribution.shares.find((s) => s.shape === draftShape)?.share ?? 0;
-  if (share >= CONFORMING_SHARE) return { verdict: "CONFORMS" };
-  const top = judged.rows.reduce((best, row) => (row.n > best.n ? row : best));
+  if (share < CONFORMING_SHARE) {
+    const top = judged.rows.reduce((best, row) => (row.n > best.n ? row : best));
+    return { verdict: "MISFIT", suggestion: top.name, holder: top.exampleOwner };
+  }
+  if (input.typeMultiplicity === "many" && spellsTypeName(draftShape)) {
+    return judgeCollectionNumber(input.name, judged.rows, (row) =>
+      spellsTypeName(
+        classifyNamingShape({
+          ...context,
+          name: row.name,
+          typeName: row.typeName ?? context.typeName,
+          casing: row.casing ?? context.casing,
+        }),
+      ),
+    );
+  }
+  return { verdict: "CONFORMS" };
+}
+
+/** True when the last word of `name` is a plural (`items`, `documentRows`). */
+function endsInPlural(name: string): boolean {
+  const words = splitIdentifierWords(name);
+  const last = words[words.length - 1];
+  return last !== undefined && singularizeIdentifierWord(last) !== last;
+}
+
+/**
+ * A collection draft that spells its type must agree in number with the rows
+ * that spell it: `item` for an `Item[]` where the project writes `items` is a
+ * MISFIT naming `items`. Induced, not assumed — rows that spell collections in
+ * the singular make the singular conform. No spelling rows → nothing to agree with.
+ */
+function judgeCollectionNumber(
+  name: string,
+  rows: readonly (NamingShapeRow & { exampleOwner: string })[],
+  spells: (row: NamingShapeRow) => boolean,
+): NamingVerdict {
+  const spelling = rows.filter(spells);
+  const total = spelling.reduce((s, row) => s + row.n, 0);
+  const plural = endsInPlural(name);
+  const agreeing = spelling.filter((row) => endsInPlural(row.name) === plural).reduce((s, row) => s + row.n, 0);
+  if (total === 0 || agreeing >= CONFORMING_SHARE * total) return { verdict: "CONFORMS" };
+  const top = spelling.reduce((best, row) => (row.n > best.n ? row : best));
   return { verdict: "MISFIT", suggestion: top.name, holder: top.exampleOwner };
 }
 
@@ -145,6 +194,26 @@ function calleeDerivedIsSupported(input: DraftNameJudgementInput, kind: Identifi
   return (prior.shares.find((s) => s.shape === "CALLEE_DERIVED")?.share ?? 0) >= PRIOR_SUPPORT_SHARE;
 }
 
+/**
+ * Rows of several kinds folded into one per (name, casing), `n` summed — a name
+ * held by 4 params and 4 fields outweighs one held by 6 params. The example
+ * owner is the heaviest contributing row's (the first on a tie).
+ */
+function mergeRowsByName(rows: readonly NamingByTypeRow[]): NamingByTypeRow[] {
+  const merged = new Map<string, { row: NamingByTypeRow; topN: number }>();
+  for (const row of rows) {
+    const key = `${row.name}\u0000${row.casing ?? ""}`;
+    const prev = merged.get(key);
+    if (!prev) {
+      merged.set(key, { row: { ...row }, topN: row.n });
+      continue;
+    }
+    prev.row.n += row.n;
+    if (row.n > prev.topN) [prev.row.exampleOwner, prev.topN] = [row.exampleOwner, row.n];
+  }
+  return [...merged.values()].map(({ row }) => row);
+}
+
 function judgeByType(
   input: DraftNameJudgementInput,
   kind: IdentifierDeclarationKind,
@@ -153,7 +222,12 @@ function judgeByType(
   const typeRows = input.byTypeRows ?? [];
   const kindRows = typeRows.filter((row) => row.kind === kind);
   if (kindRows.length > 0) return judgeAgainstRows(input, kind, { rows: kindRows, typeName });
-  if (kind !== "return" || typeRows.length === 0) return undefined;
+  if (kind !== "return") {
+    // No rows of the draft's kind: the type's value rows of the other kinds, one row per name.
+    const otherKindRows = mergeRowsByName(typeRows.filter((row) => row.kind !== "return"));
+    return otherKindRows.length > 0 ? judgeAgainstRows(input, kind, { rows: otherKindRows, typeName }) : undefined;
+  }
+  if (typeRows.length === 0) return undefined;
   // A known type with no return history: the project's own dominant verb, if it has one.
   const verb = supportedReturnVerb(input);
   if (verb === undefined) return "unsupported";
@@ -205,7 +279,13 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  * 1. typed (a concept type, see `isNonConceptType`) with rows of the draft's
  *    kind → shape share ≥ 0.2 CONFORMS, else MISFIT naming the most frequent
  *    row; a `return` with no return rows for a known type → the project's
- *    dominant return verb + type, when licensed;
+ *    dominant return verb + type, when licensed; a value draft (`param`,
+ *    `local`, `field`) with no rows of its kind → the type's value rows of the
+ *    OTHER kinds, one row per name with `n` summed across kinds, judged the
+ *    same way (a local `meta: GitFileSignals` against params and fields named
+ *    `fileSignals` is a MISFIT); a `many` draft that spells its type must also
+ *    agree in number with the spelling rows (`item: Item[]` against `items`
+ *    is a MISFIT) — the caller passes rows of the draft's multiplicity only;
  * 2. bound to a callee → the `byCallee` rows of that member / receiver and kind,
  *    judged the same way (rows carry their own recovered type); with no rows, a
  *    `local` / `field` whose callee derives a name (`find_x!` → `x`) must be
@@ -216,6 +296,10 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  * 4. concept terms → NEW_TERM when no draft word appears in the top 5 terms;
  * 5. a concept type with no history at all → NEW_TERM with no terms;
  * 6. otherwise CONFORMS — nothing to judge against.
+ *
+ * Concept terms (3, 4) speak only for an untyped draft or a typed one whose
+ * type has no history at all: a type the project already holds is judged by
+ * its own rows, and a concept query's vocabulary says nothing about them.
  */
 export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   const kind = input.kind ?? "local";
@@ -223,6 +307,8 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
     input.typeName !== undefined && !isNonConceptType(input.typeName, input.nonConceptTypes ?? [])
       ? input.typeName
       : undefined;
+  const typeHasHistory = typeName !== undefined && (input.byTypeRows?.length ?? 0) > 0;
+  const conceptTerms = typeHasHistory ? undefined : input.conceptTerms;
 
   const byType = typeName !== undefined ? judgeByType(input, kind, typeName) : undefined;
   if (byType !== undefined && byType !== "unsupported") return byType;
@@ -231,10 +317,10 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   if (byCallee !== undefined && byCallee !== "unsupported") return byCallee;
 
   if (byType === "unsupported" || byCallee === "unsupported") {
-    return { verdict: "NEW_TERM", topTerms: topConceptTerms(input.conceptTerms) };
+    return { verdict: "NEW_TERM", topTerms: topConceptTerms(conceptTerms) };
   }
 
-  if (input.conceptTerms && input.conceptTerms.length > 0) return judgeByConcept(input.name, input.conceptTerms);
+  if (conceptTerms && conceptTerms.length > 0) return judgeByConcept(input.name, conceptTerms);
 
   if (typeName !== undefined && input.byTypeRows?.length === 0) return { verdict: "NEW_TERM", topTerms: [] };
   return { verdict: "CONFORMS" };

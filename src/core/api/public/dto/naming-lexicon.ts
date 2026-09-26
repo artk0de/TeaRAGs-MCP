@@ -18,6 +18,12 @@ export interface NamingLexiconDraftName {
   /** Defaults to `local`. */
   kind?: IdentifierDeclarationKind;
   type?: string;
+  /**
+   * `many` when the value is a collection of `type` (`Item[]`, `list[Item]`):
+   * judged against the collection rows of `type` only, and a name spelling the
+   * type must agree in number with them. `type` is the ELEMENT type. Defaults to `one`.
+   */
+  typeMultiplicity?: "one" | "many";
   /** The call the value is bound to — drives `byCallee` when `type` is absent. */
   callee?: IdentifierBoundCallee;
 }
@@ -77,8 +83,26 @@ export interface NamingLexiconNameEvidence {
   collision: boolean;
 }
 
-/** A verdict on one draft name. */
-export type NamingLexiconNameVerdict = { name: string; evidence: NamingLexiconNameEvidence } & NamingVerdict;
+/**
+ * The caveat on a draft named with a name `get_ontology_report` judges GENERIC
+ * in the answer's scope (`result`, `data`): bound to many types it does not
+ * spell, none of them dominant — so a verdict, CONFORMS included, says nothing
+ * about what the name tells a reader. Same judgement, same numbers as the
+ * report's `summary.genericNames` entry.
+ */
+export interface NamingLexiconGenericName {
+  /** Types the name is bound to that it does not spell. */
+  typeCount: number;
+  /** Rows behind those types. */
+  n: number;
+}
+
+/** A verdict on one draft name; `genericName` only when the name is judged generic in scope. */
+export type NamingLexiconNameVerdict = {
+  name: string;
+  evidence: NamingLexiconNameEvidence;
+  genericName?: NamingLexiconGenericName;
+} & NamingVerdict;
 
 export interface NamingLexiconResult {
   /** The rel_path prefix actually read — after widening; `""` = the whole project. */
