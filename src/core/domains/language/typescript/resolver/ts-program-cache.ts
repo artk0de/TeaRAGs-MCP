@@ -216,11 +216,14 @@ export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 256 * 1024 * 1024;
  * prelude and the default lib. Default
  * {@link TSProgramCacheOptions.maxParsedSourceTextBytes} rationale.
  *
- * 40 MiB, the batch text budget (bd tea-rags-mcp-vtuu4): the spike's
- * sequential closure batches over taxdome kept 1.2–1.45 GB retained between
- * batches at this size with 80–95% of each batch's parses served as hits.
+ * 25 MiB (bd tea-rags-mcp-vtuu4). Swept over taxdome with
+ * `scripts/spikes/ts-batched-program-parity.ts`, the module-resolution memo in
+ * place: at 40 MiB a 2304 MB worker isolate OOMs while the first batch is
+ * primed; at 25 MiB it finishes with 1,807 MB max live and full parity. Wall
+ * clock did not rise at 25 (149 s against 165 s for 40, load ~7 both), and
+ * 15 MiB bought nothing further.
  */
-export const TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT = 40 * 1024 * 1024;
+export const TS_PROGRAM_PARSED_TEXT_BYTES_MAX_DEFAULT = 25 * 1024 * 1024;
 /**
  * How the cache gets its Programs.
  *

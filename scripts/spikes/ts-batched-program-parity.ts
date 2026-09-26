@@ -39,9 +39,9 @@
  */
 
 import { execSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { setFlagsFromString } from "node:v8";
+import { setFlagsFromString, writeHeapSnapshot } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 
@@ -68,6 +68,8 @@ interface PhaseInput {
   readonly sampleRelPaths: readonly string[];
   /** Whole phase only: the options the batch Programs used. */
   readonly compilerOptions?: ts.CompilerOptions;
+  /** Batched phase only: write a heap snapshot after the first group and stop there. */
+  readonly heapSnapshotPath?: string;
 }
 
 interface BatchedResult {
@@ -252,6 +254,11 @@ function runBatched(input: PhaseInput): BatchedResult {
       })}\n`,
     );
     groupIndex += 1;
+    if (input.heapSnapshotPath !== undefined) {
+      // Diagnosis mode: the first group's live set, then stop.
+      writeHeapSnapshot(input.heapSnapshotPath);
+      break;
+    }
     resolver.endResolveVisitGroup();
   }
   if (compilerOptions === undefined) throw new Error("no Program was ever served");
@@ -320,6 +327,143 @@ async function runPhase<T>(input: PhaseInput, heapMb: number): Promise<T> {
   });
 }
 
+/** Node types whose `name` is the constructor (or system) name, not content. */
+const NAMED_NODE_TYPES: ReadonlySet<string> = new Set([
+  "object",
+  "closure",
+  "native",
+  "hidden",
+  "array",
+  "code",
+  "synthetic",
+]);
+
+interface HeapSnapshotRow {
+  readonly type: string;
+  readonly name: string;
+  readonly count: number;
+  readonly selfMb: number;
+}
+
+/**
+ * The `top` largest groups of a V8 heap snapshot by summed SELF size, grouped
+ * by node type and constructor name — streamed, because a snapshot of a
+ * multi-GB heap exceeds the largest string `JSON.parse` accepts. Retained
+ * sizes need a dominator tree over the edges and are not computed.
+ */
+async function summarizeHeapSnapshot(path: string, top: number): Promise<HeapSnapshotRow[]> {
+  const groups = new Map<number, { count: number; size: number }>();
+  const wantedNames = new Map<number, string>();
+  let nodeTypes: readonly string[] = [];
+  let fieldCount = 0;
+  let typeField = 0;
+  let nameField = 0;
+  let sizeField = 0;
+  let phase: "header" | "nodes" | "seekStrings" | "strings" | "done" = "header";
+  let pending = "";
+  let field = 0;
+  let current = 0;
+  let inNumber = false;
+  const record: number[] = [];
+  let stringIndex = 0;
+  let inString = false;
+  let escaped = false;
+  let token = "";
+
+  const onNode = (): void => {
+    const typeName = nodeTypes[record[typeField]] ?? "?";
+    const key = record[typeField] * 1e9 + (NAMED_NODE_TYPES.has(typeName) ? record[nameField] : 0);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, { count: 1, size: record[sizeField] });
+    else {
+      group.count += 1;
+      group.size += record[sizeField];
+    }
+  };
+
+  for await (const chunk of createReadStream(path, { encoding: "utf8" }) as AsyncIterable<string>) {
+    let text = chunk;
+    if (phase === "header" || phase === "seekStrings") {
+      pending += text;
+      const marker = phase === "header" ? '"nodes":[' : '"strings":[';
+      const at = pending.indexOf(marker);
+      if (at === -1) {
+        if (phase === "seekStrings") pending = pending.slice(-marker.length);
+        continue;
+      }
+      if (phase === "header") {
+        const header = JSON.parse(`${pending.slice(0, pending.lastIndexOf(",", at))}}`) as {
+          snapshot: { meta: { node_fields: string[]; node_types: [string[]] } };
+        };
+        const fields = header.snapshot.meta.node_fields;
+        fieldCount = fields.length;
+        typeField = fields.indexOf("type");
+        nameField = fields.indexOf("name");
+        sizeField = fields.indexOf("self_size");
+        [nodeTypes] = header.snapshot.meta.node_types;
+        phase = "nodes";
+      } else {
+        const ranked = [...groups].sort((a, b) => b[1].size - a[1].size).slice(0, top);
+        for (const [key] of ranked) wantedNames.set(key % 1e9, "");
+        phase = "strings";
+      }
+      text = pending.slice(at + marker.length);
+      pending = "";
+    }
+    for (let index = 0; index < text.length && phase !== "done"; index++) {
+      const char = text.charCodeAt(index);
+      if (phase === "nodes") {
+        if (char >= 48 && char <= 57) {
+          current = current * 10 + (char - 48);
+          inNumber = true;
+          continue;
+        }
+        if (inNumber) {
+          record[field] = current;
+          field += 1;
+          if (field === fieldCount) {
+            onNode();
+            field = 0;
+          }
+          current = 0;
+          inNumber = false;
+        }
+        if (char === 93) {
+          phase = "seekStrings";
+          pending = text.slice(index + 1);
+          break;
+        }
+      } else if (phase === "strings") {
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (char === 92) escaped = true;
+          else if (char === 34) {
+            inString = false;
+            if (wantedNames.has(stringIndex)) wantedNames.set(stringIndex, JSON.parse(`"${token}"`) as string);
+            stringIndex += 1;
+            token = "";
+            continue;
+          }
+          if (wantedNames.has(stringIndex)) token += text[index];
+        } else if (char === 34) inString = true;
+        else if (char === 93) phase = "done";
+      }
+    }
+  }
+  return [...groups]
+    .sort((a, b) => b[1].size - a[1].size)
+    .slice(0, top)
+    .map(([key, group]) => {
+      const typeName = nodeTypes[Math.floor(key / 1e9)] ?? "?";
+      return {
+        type: typeName,
+        name: NAMED_NODE_TYPES.has(typeName) ? (wantedNames.get(key % 1e9) ?? "?") : "(all)",
+        count: group.count,
+        selfMb: Math.round((group.size / MB) * 10) / 10,
+      };
+    });
+}
+
 function uptime(): string {
   return execSync("uptime").toString().trim();
 }
@@ -344,11 +488,24 @@ async function main(): Promise<void> {
   const sampled = [...sampleFiles(counts, sampleCalls)];
   console.error(JSON.stringify({ stage: "counted", corpusFiles: corpus.length, sampledFiles: sampled.length }));
 
+  const heapSnapshotPath = argv.includes("--heap-snapshot") ? join(outDir, "group0.heapsnapshot") : undefined;
   const batchedUptime = uptime();
   const batched = await runPhase<BatchedResult>(
-    { phase: "batched", repoRoot, corpus, sampleRelPaths: sampled },
+    { phase: "batched", repoRoot, corpus, sampleRelPaths: sampled, heapSnapshotPath },
     batchedHeapMb,
   );
+  if (heapSnapshotPath !== undefined) {
+    const summary = {
+      uptime: batchedUptime,
+      parsedTextMb: process.env.CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB ?? "default",
+      maxLiveAfterGroupMb: batched.maxLiveAfterGroupMb,
+      diagnostics: batched.diagnostics,
+      topBySelfSize: await summarizeHeapSnapshot(heapSnapshotPath, 20),
+    };
+    writeFileSync(join(outDir, "group0-heap-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
   const wholeUptime = uptime();
   const whole = await runPhase<WholeResult>(
     {
@@ -382,6 +539,7 @@ async function main(): Promise<void> {
 
   const report = {
     repoRoot,
+    parsedTextMb: process.env.CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB ?? "default",
     batched: {
       uptime: batchedUptime,
       heapCeilingMb: batchedHeapMb,

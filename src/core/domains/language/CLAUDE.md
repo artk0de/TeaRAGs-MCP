@@ -243,11 +243,14 @@
   resolved CALL SITES (~30 KB each), not file count, and the spike ran taxdome's
   33 sequential batches at 1,881 MB max live with 418,216 of 418,367 call sites
   covered. The production path, measured by
-  `scripts/spikes/ts-batched-program-parity.ts`, peaks HIGHER: 2,716 MB max live
-  over 37 batches + 5 oversize roots, of which the shared
-  `ts.ModuleResolutionCache` alone retains ~545 MB (its entries carry every
-  failed lookup location) — do not read the spike number as the production one.
-  Files no batch names (an incremental run under the warm-up gate, an explicit
+  `scripts/spikes/ts-batched-program-parity.ts`, ran 37 batches + 5 oversize
+  roots at 2,716 MB max live while a shared `ts.ModuleResolutionCache` held ~545
+  MB of failed-lookup trails; with `TSModuleResolutionMemo` in its place and the
+  25 MB parse budget it runs in a 2,304 MB isolate at 1,807 MB max live. The
+  group-0 floor (~1.4 GB) is that Program's own AST and binder state, not run
+  state. Under a loose heap cap one group can read ~2.2 GB after a forced GC and
+  not reproduce under the 2,304 MB cap — compare runs at the same cap. Files no
+  batch names (an incremental run under the warm-up gate, an explicit
   `coverage`, a file outside the plan) still take the per-entry coverage path.
 - **Roots whose own closure exceeds the text budget run LAST, one Program each,
   after the parse cache is emptied down to the pinned prelude, and admission is
@@ -284,18 +287,18 @@
   project sources capped by `maxParsedFiles`, dependency `.d.ts` capped by
   `maxDependencyFiles`, and the default lib capped by neither. Over the first
   two, `TSParsedSourceLru` bounds retained TEXT
-  (`CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB`, 40), least recently used first, with
+  (`CODEGRAPH_TS_PROGRAM_PARSED_TEXT_MB`, 25), least recently used first, with
   the prelude pinned; every Program resolves modules through one shared
-  `ts.ModuleResolutionCache`. Why: consecutive batches share 80–95% of their
-  parses, so the parses the next batch needs are the ones this batch touched.
-  `populationOf` MUST test lib membership before dependency membership — with
-  the compiler installed under the indexed root the lib lives inside
-  `node_modules` and would otherwise read as an ordinary dependency. Why:
-  exempting dependencies wholesale alongside the lib (the bd qb2s3 shape) is
-  what made a real run climb ~1.8 MB per resolved file with the Program LRU and
-  project-source count both already pinned at their caps — `node_modules` is
-  discovered one import at a time, so it bounds the map only in a limit the run
-  never reaches (bd 8qf86).
+  `TSModuleResolutionMemo`, which keeps resolved modules only. Why: consecutive
+  batches share 80–95% of their parses, so the parses the next batch needs are
+  the ones this batch touched. `populationOf` MUST test lib membership before
+  dependency membership — with the compiler installed under the indexed root the
+  lib lives inside `node_modules` and would otherwise read as an ordinary
+  dependency. Why: exempting dependencies wholesale alongside the lib (the bd
+  qb2s3 shape) is what made a real run climb ~1.8 MB per resolved file with the
+  Program LRU and project-source count both already pinned at their caps —
+  `node_modules` is discovered one import at a time, so it bounds the map only
+  in a limit the run never reaches (bd 8qf86).
 - **Capacity eviction reads through to retained Programs (`pinnedParseOf`)
   before re-parsing, and the Programs answer to `maxRetainedSourceTextBytes` — a
   union-counted non-lib text budget, newest build always kept.** Do NOT
