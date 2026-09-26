@@ -39,11 +39,13 @@ import type {
   FileExtraction,
   ImportRef,
   LocalBinding,
+  TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { symbolIdNames } from "../../kernel/symbol-id.js";
 import { javaNameOf } from "./name-of.js";
 import { symbolKindOf } from "./symbol-kind.js";
+import { isJavaTypeBody, javaConformedTypeNames, javaConstantNames } from "./type-declarations.js";
 
 export interface JavaExtractInput {
   tree: MaterializedTree;
@@ -73,7 +75,7 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
   // scope, once from the class chunk under the class's (or, for a top-level
   // class, an EMPTY) scope — the second copy resolving against the wrong caller.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const symbolKinds = collectJavaSymbolKindsByLine(input.tree.rootNode);
+  const { symbolKindsByLine: symbolKinds, typeDeclarations } = collectJavaDeclarationReadings(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -105,6 +107,7 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
     for (const [cls, fields] of classFieldTypes) record[cls] = Object.fromEntries(fields);
     out.classFieldTypes = record;
   }
+  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
   return out;
 }
 
@@ -113,27 +116,88 @@ interface JavaSymbolKindReading {
   readonly kind: SymbolDefinitionKind;
 }
 
+interface JavaDeclarationReadings {
+  readonly symbolKindsByLine: Map<number, JavaSymbolKindReading[]>;
+  readonly typeDeclarations: TypeDeclarationFact[];
+}
+
 /**
- * The declaration kind of every node `javaNameOf` names, keyed by its start
- * line (tea-rags-mcp-vi0wx). A chunk carries no node, only the range and id
- * `collectSymbols` built from that same `javaNameOf` reading, so the kind joins
- * back on (start line, id names the reading's name) — the join the
- * declared-visibility facet makes. Two declarations on one line
- * (`class P { void a() {} void b() {} }`) are told apart by name.
+ * Where a node sits relative to the file's type declarations: `scope` is the
+ * enclosing type-id path a nested type composes under, `owner` the id of the
+ * type whose body the node is a member of (null outside any body). A node below
+ * a method, an initializer or an anonymous class body gets no context — what it
+ * declares is a local.
  */
-function collectJavaSymbolKindsByLine(root: AstNode): Map<number, JavaSymbolKindReading[]> {
-  const out = new Map<number, JavaSymbolKindReading[]>();
-  walk(root, (node) => {
+interface JavaDeclarationContext {
+  readonly scope: readonly string[];
+  readonly owner: string | null;
+}
+
+/**
+ * The file's declaration readings, in one traversal:
+ *
+ *   - `symbolKindsByLine` (tea-rags-mcp-vi0wx) — the declaration kind of every
+ *     node `javaNameOf` names, keyed by its start line. A chunk carries no node,
+ *     only the range and id `collectSymbols` built from that same `javaNameOf`
+ *     reading, so the kind joins back on (start line, id names the reading's
+ *     name) — the join the declared-visibility facet makes. Two declarations on
+ *     one line (`class P { void a() {} void b() {} }`) are told apart by name.
+ *   - `typeDeclarations` (spec §1b) — one fact per type declaration and per
+ *     constant ({@link javaConstantNames}) reachable from the file scope through
+ *     type bodies only, in source order. A nested type's id composes the way
+ *     `collectSymbols` composes symbol ids — only a `javaNameOf` scope container
+ *     (`descendsInto`) adds a segment — and a constant's id is its owning type's
+ *     id plus its name. Enum constants are values of their enum, not constants.
+ */
+function collectJavaDeclarationReadings(root: AstNode): JavaDeclarationReadings {
+  const symbolKindsByLine = new Map<number, JavaSymbolKindReading[]>();
+  const typeDeclarations: TypeDeclarationFact[] = [];
+  const visit = (node: AstNode, context: JavaDeclarationContext | null): void => {
     const named = javaNameOf(node);
-    if (named === null) return;
     const kind = symbolKindOf(node.type);
-    if (kind === undefined) return;
-    const line = node.startPosition.row + 1;
-    const onLine = out.get(line);
-    if (onLine === undefined) out.set(line, [{ name: named.name, kind }]);
-    else onLine.push({ name: named.name, kind });
-  });
-  return out;
+    if (named !== null && kind !== undefined) {
+      const line = node.startPosition.row + 1;
+      const onLine = symbolKindsByLine.get(line);
+      if (onLine === undefined) symbolKindsByLine.set(line, [{ name: named.name, kind }]);
+      else onLine.push({ name: named.name, kind });
+    }
+    const childContext = declarationContextBelow(node, context, kind, named?.descendsInto === true, typeDeclarations);
+    for (const child of node.children) visit(child, childContext);
+  };
+  visit(root, null);
+  return { symbolKindsByLine, typeDeclarations };
+}
+
+/**
+ * Publish what `node` declares under `context` and answer the context its
+ * children see. The file root opens the top-level scope; a type declaration
+ * opens its body; a type body passes its context through; anything else closes
+ * it.
+ */
+function declarationContextBelow(
+  node: AstNode,
+  context: JavaDeclarationContext | null,
+  kind: SymbolDefinitionKind | undefined,
+  isScopeContainer: boolean,
+  out: TypeDeclarationFact[],
+): JavaDeclarationContext | null {
+  if (node.type === "program") return { scope: [], owner: null };
+  if (context === null) return null;
+  const line = node.startPosition.row + 1;
+  if (kind !== undefined && kind !== "method") {
+    const name = node.childForFieldName("name")?.text;
+    if (name === undefined) return null;
+    const typeId = [...context.scope, name].join(".");
+    const conforms = javaConformedTypeNames(node);
+    out.push({ typeId, symbolKind: kind, line, reopens: false, ...(conforms.length > 0 ? { conforms } : {}) });
+    return { scope: isScopeContainer ? [...context.scope, name] : context.scope, owner: typeId };
+  }
+  if (context.owner !== null) {
+    for (const name of javaConstantNames(node)) {
+      out.push({ typeId: `${context.owner}.${name}`, symbolKind: "constant", line, reopens: false });
+    }
+  }
+  return isJavaTypeBody(node) ? context : null;
 }
 
 function collectJavaImports(root: AstNode): ImportRef[] {

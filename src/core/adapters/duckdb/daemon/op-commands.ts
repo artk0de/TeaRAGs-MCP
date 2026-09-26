@@ -15,6 +15,7 @@ import type {
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TypeDeclarationReplaceEntry,
   TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
@@ -222,6 +223,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // bd tea-rags-mcp-4p3sb.8 — the naming lexicon's per-file identifier rows.
   replaceIdentifiersBulk: write(async (graphDb, p) =>
     graphDb.replaceIdentifiersBulk(p.entries as IdentifierReplaceEntry[]),
+  ),
+  // bd tea-rags-mcp-vi0wx — the naming lexicon's per-file type-declaration rows.
+  replaceTypeDeclarationsBulk: write(async (graphDb, p) =>
+    graphDb.replaceTypeDeclarationsBulk(p.entries as TypeDeclarationReplaceEntry[]),
   ),
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so

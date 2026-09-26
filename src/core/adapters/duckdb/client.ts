@@ -86,6 +86,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TypeDeclarationReplaceEntry,
   TypeNameQuery,
   TypeNameRow,
 } from "../../contracts/types/codegraph.js";
@@ -325,6 +326,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
     return this.identifiers.replaceIdentifiersBulk(entries);
+  }
+
+  async replaceTypeDeclarationsBulk(entries: readonly TypeDeclarationReplaceEntry[]): Promise<void> {
+    return this.typeNames.replaceTypeDeclarationsBulk(entries);
   }
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {

@@ -64,7 +64,7 @@ export class SwiftGlobalShortNameSymbolResolutionStrategy implements SymbolResol
     if (call.receiver !== null) return CONTINUE;
     // Only what Swift's unqualified lookup reaches from here (bd tea-rags-mcp-y99pg.39).
     const defs = swiftLexicallyReachedDefinitions(
-      lookupSwiftBareNameDefinitions(ctx, call.member),
+      lookupSwiftBareNameDefinitions(ctx, call.member, { role: "callee" }),
       call,
       ctx,
       this.cfg.memberTypes,

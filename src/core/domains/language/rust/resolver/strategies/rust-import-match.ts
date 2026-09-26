@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { capability } from "../../capability.js";
 import { rustImportMatchesReceiver, rustImportSuffix, type ResolverConfig } from "./shared.js";
 
 /**
@@ -24,7 +25,7 @@ export class RustImportMatchSymbolResolutionStrategy implements SymbolResolution
       const suffix = rustImportSuffix(match.importText);
       if (suffix) {
         const candidates = ctx.symbolTable
-          .lookupByShortName(call.member, { role: "callee" })
+          .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
           .filter((def) => def.relPath.endsWith(`${suffix}.rs`) || def.relPath.endsWith(`${suffix}/mod.rs`));
         const target = pickSingleCandidate(candidates, this.cfg.mode);
         if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });

@@ -354,7 +354,7 @@ function swiftSdkFunctionHeadType(
   if (open <= 0 || closingBracketIndex(head, open) !== head.length - 1) return undefined;
   const callee = head.slice(0, open).trim();
   if (!/^[a-z]\w*$/.test(callee)) return undefined;
-  if (lookupSwiftSymbolsByShortName(ctx, callee).length > 0) return undefined;
+  if (lookupSwiftSymbolsByShortName(ctx, callee, { role: "callee" }).length > 0) return undefined;
   if (resolveLocalBinding(ctx.localBindings, callee, atLine) !== undefined) return undefined;
   if (identifierEntry(ctx.callResultBindings, callee) !== undefined) return undefined;
   const inner = head.slice(open + 1, -1);
@@ -1196,7 +1196,9 @@ function swiftBareCalleeClosureParameterType(
       return members.sdkClosureParameterType({ form: "instance", name: enclosing }, callee, index, ctx);
     }
   }
-  if (lookupSwiftSymbolsByShortName(ctx, callee).some((def) => def.scope.length === 0)) return undefined;
+  if (lookupSwiftSymbolsByShortName(ctx, callee, { role: "callee" }).some((def) => def.scope.length === 0)) {
+    return undefined;
+  }
   return members.sdkFunctionClosureParameterType(callee, index);
 }
 

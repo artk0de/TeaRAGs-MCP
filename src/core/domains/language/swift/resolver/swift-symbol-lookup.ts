@@ -27,14 +27,22 @@ import {
   type CallContext,
   type CallRef,
   type SymbolDefinition,
-  type SymbolLookupOptions,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/index.js";
+import { capability } from "../capability.js";
 import { swiftEnclosingTypeIds } from "./swift-enclosing-scope.js";
 import { swiftDeclaringFiles } from "./swift-type-declarations.js";
 import { hasSwiftOverloadSuffix, isSwiftTypeDeclarationId, stripSwiftOverloadSuffix } from "./swift-type-name.js";
 
 const SWIFT_SOURCE_EXTENSION = ".swift";
+
+/**
+ * Swift's kind roles (bd tea-rags-mcp-jqvbn): `Color(rawValue:)` calls an enum
+ * initializer, so an enum and a typealias are callees here; a protocol is not.
+ * A lookup for a part of a call passes its `role`; no role is a type lookup.
+ */
+const SWIFT_SYMBOL_KIND_ROLES = capability.codegraph.symbolKindRoles;
 
 /** Whether a definition's file is Swift source. */
 export function isSwiftSourcePath(relPath: string): boolean {
@@ -56,9 +64,11 @@ export function lookupSwiftSymbols(ctx: CallContext, symbolId: string): SymbolDe
 export function lookupSwiftSymbolsByShortName(
   ctx: CallContext,
   name: string,
-  options?: SymbolLookupOptions,
+  options?: CallRoleSymbolLookupOptions,
 ): SymbolDefinition[] {
-  const swiftDefs = ctx.symbolTable.lookupByShortName(name, options).filter((def) => isSwiftSourcePath(def.relPath));
+  const swiftDefs = ctx.symbolTable
+    .lookupByShortName(name, symbolLookupOptionsFor(SWIFT_SYMBOL_KIND_ROLES, options))
+    .filter((def) => isSwiftSourcePath(def.relPath));
   return keepDeclaringFiles(collapseReopenedTypeDeclarations(swiftDefs), ctx);
 }
 
@@ -70,9 +80,13 @@ export function lookupSwiftSymbolsByShortName(
  * the name there is the standard library's `Result` — which the project may
  * extend. Members and top-level declarations are kept as they were.
  */
-export function lookupSwiftBareNameDefinitions(ctx: CallContext, name: string): SymbolDefinition[] {
+export function lookupSwiftBareNameDefinitions(
+  ctx: CallContext,
+  name: string,
+  options?: Pick<CallRoleSymbolLookupOptions, "role">,
+): SymbolDefinition[] {
   const enclosing = swiftEnclosingTypeIds(ctx);
-  return lookupSwiftSymbolsByShortName(ctx, name).filter((def) => nestedTypeVisible(def.symbolId, enclosing));
+  return lookupSwiftSymbolsByShortName(ctx, name, options).filter((def) => nestedTypeVisible(def.symbolId, enclosing));
 }
 
 function nestedTypeVisible(symbolId: string, enclosing: readonly string[]): boolean {

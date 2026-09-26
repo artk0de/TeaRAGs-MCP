@@ -26,9 +26,10 @@ export class RubySchemaColumnSymbolResolutionStrategy implements SymbolResolutio
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null) return CONTINUE;
-    const columns = lookupRubySymbolsByShortName(ctx, call.member, { includeSchemaColumns: true }).filter(
-      (def) => def.isSchemaColumn === true,
-    );
+    const columns = lookupRubySymbolsByShortName(ctx, call.member, {
+      role: "callee",
+      includeSchemaColumns: true,
+    }).filter((def) => def.isSchemaColumn === true);
     if (columns.length === 0) return CONTINUE;
 
     // Anchor on the enclosing class the same way `bareCall` does: a class-body

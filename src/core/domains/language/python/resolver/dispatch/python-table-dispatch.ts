@@ -133,7 +133,7 @@ export class PythonTableDispatchResolver implements DispatchResolverComponent {
     if (receiver.includes(".")) return null;
     const cls = this.declaredAtModuleLevel(receiver, tableFile, ctx);
     if (cls) {
-      const members = lookupPythonSymbolsByShortName(ctx, member).filter(
+      const members = lookupPythonSymbolsByShortName(ctx, member, { role: "callee" }).filter(
         (d) => d.relPath === cls.targetRelPath && d.scope.length === 1 && d.scope[0] === receiver,
       );
       return members.length === 1 ? { targetRelPath: members[0].relPath, targetSymbolId: members[0].symbolId } : null;

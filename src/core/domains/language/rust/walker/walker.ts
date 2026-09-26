@@ -24,6 +24,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
 import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
@@ -36,6 +37,7 @@ import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { symbolIdNames } from "../../kernel/symbol-id.js";
 import { rustNameOf } from "./name-of.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";
+import { isRustLocalScopeBoundary, rustTypeDeclarationFactOf } from "./type-declarations.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -59,7 +61,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   // every in-method call once per ENCLOSING chunk as well — an `impl` inside a
   // `mod` gave three copies, each resolving against a different caller scope.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const symbolKindReadings = collectRustSymbolKindReadings(input.tree.rootNode);
+  const { readings: symbolKindReadings, typeDeclarations } = collectRustDeclarationReadings(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -87,6 +89,7 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
     fileScope: [],
   };
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
   return out;
 }
 
@@ -99,6 +102,12 @@ interface RustSymbolKindReading {
   readonly kind: SymbolDefinitionKind | undefined;
 }
 
+interface RustDeclarationReadings {
+  readonly readings: RustSymbolKindReading[];
+  /** The `typeDeclarations` channel (spec §1b) — see `./type-declarations.ts`. */
+  readonly typeDeclarations: TypeDeclarationFact[];
+}
+
 /**
  * Every node `rustNameOf` names, in the pre-order `collectSymbols` visits them,
  * with the scope (enclosing names) it composes and its declaration kind
@@ -108,10 +117,19 @@ interface RustSymbolKindReading {
  * with no kind: `collectSymbols` keeps the FIRST node per id, so `struct Foo;
  * impl Foo {}` on one line yields one `Foo` chunk, the struct's — and a lone
  * `impl Remote` yields a `Remote` chunk that must stay untagged.
+ *
+ * The same walk collects the file's type and constant declaration facts
+ * (spec §1b) off the scope it already composes: `local` turns on below a `fn`,
+ * a closure or a const/static initializer, whose declarations are not facts.
  */
-function collectRustSymbolKindReadings(root: AstNode): RustSymbolKindReading[] {
+function collectRustDeclarationReadings(root: AstNode): RustDeclarationReadings {
   const out: RustSymbolKindReading[] = [];
-  const visit = (node: AstNode, scope: readonly string[]): void => {
+  const typeDeclarations: TypeDeclarationFact[] = [];
+  const visit = (node: AstNode, scope: readonly string[], local: boolean): void => {
+    if (!local) {
+      const fact = rustTypeDeclarationFactOf(node, scope);
+      if (fact !== null) typeDeclarations.push(fact);
+    }
     const named = rustNameOf(node);
     if (named !== null) {
       out.push({
@@ -123,10 +141,11 @@ function collectRustSymbolKindReadings(root: AstNode): RustSymbolKindReading[] {
       });
     }
     const childScope = named === null ? scope : [...scope, named.name];
-    for (const child of node.children) visit(child, childScope);
+    const childLocal = local || isRustLocalScopeBoundary(node);
+    for (const child of node.children) visit(child, childScope, childLocal);
   };
-  visit(root, []);
-  return out;
+  visit(root, [], false);
+  return { readings: out, typeDeclarations };
 }
 
 /** The kind of the first reading `chunk` was built from — first, as `collectSymbols` keeps the first node per id. */

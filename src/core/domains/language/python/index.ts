@@ -56,6 +56,7 @@ import { composeExtractionWalker } from "../kernel/index.js";
 import { pythonKernel } from "./kernel.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";
+import { pythonInertFileExtraction } from "./walker/inert-file-extraction.js";
 import { pyNameOf } from "./walker/name-of.js";
 import { PYTHON_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromPythonFile, type PythonExtractInput } from "./walker/walker.js";
@@ -106,23 +107,29 @@ export class PythonLanguage implements LanguageProvider {
    * (bd tea-rags-mcp-w205u.1).
    */
   readonly dependencyManifest: DependencyManifestSource = PYTHON_DEPENDENCY_MANIFEST;
-  readonly walker: LanguageWalker = composeExtractionWalker({
-    // `WalkInput.declaredDependencies` rides through structurally, so the Django
-    // class-body facet composes against THIS project's manifests; undefined →
-    // the FULL catalogue (bd tea-rags-mcp-w205u.1).
-    walk: (input) => extractFromPythonFile(input),
-    nameOf: (node) => pyNameOf(node),
-    passes: PYTHON_EXTRACTION_PASSES,
-    // Every channel the Python walker emits is rooted in one of these: chunks and
-    // the type channels in a def or a class, `calls` (decorators included) in a
-    // `call`, `imports` / `moduleReexports` in one of the three import forms.
-    // A file with none of them yields the empty extraction, so a consumer holding
-    // the native tree may skip materializing it — netbox's `extras/data/`
-    // tables are 120k lines of exactly that (bd tea-rags-mcp-1v12o.2.4).
-    // `scripts/spikes/py-inert-file-proof.ts` runs the real walker over every
-    // file this list calls inert, on all five corpora.
-    extractionBearingNodeTypes: PYTHON_EXTRACTION_BEARING_NODE_TYPES,
-  });
+  readonly walker: LanguageWalker = {
+    ...composeExtractionWalker({
+      // `WalkInput.declaredDependencies` rides through structurally, so the Django
+      // class-body facet composes against THIS project's manifests; undefined →
+      // the FULL catalogue (bd tea-rags-mcp-w205u.1).
+      walk: (input) => extractFromPythonFile(input),
+      nameOf: (node) => pyNameOf(node),
+      passes: PYTHON_EXTRACTION_PASSES,
+      // Every channel the Python walker emits is rooted in one of these: chunks and
+      // the type channels in a def or a class, `calls` (decorators included) in a
+      // `call`, `imports` / `moduleReexports` in one of the three import forms.
+      // A file with none of them yields the empty extraction, so a consumer holding
+      // the native tree may skip materializing it — netbox's `extras/data/`
+      // tables are 120k lines of exactly that (bd tea-rags-mcp-1v12o.2.4).
+      // `scripts/spikes/py-inert-file-proof.ts` runs the real walker over every
+      // file this list calls inert, on all five corpora.
+      extractionBearingNodeTypes: PYTHON_EXTRACTION_BEARING_NODE_TYPES,
+    }),
+    // A file bearing none of the node types above still carries what the walk
+    // would publish for it — module-scope declarations and a 0/0 census; the
+    // inert path reads them off the native root (bd tea-rags-mcp-vi0wx).
+    inertFileExtraction: (nativeRoot) => pythonInertFileExtraction(nativeRoot),
+  };
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {

@@ -4,9 +4,11 @@ import {
   pickSingleCandidate,
   type CallContext,
   type CallRef,
+  type SymbolLookupRole,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { rubyMemberLookupRole } from "../short-name-lookup.js";
 import { lookupRubySymbolsByShortName, resolveConstant, type ResolverConfig } from "./shared.js";
 
 /**
@@ -38,12 +40,19 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
     // over the `#`-form (instance method). A class can declare both
     // `def self.authorize!` and `def authorize!` — only the former
     // is reachable via `Klass.authorize!(...)`.
-    const candidates = lookupRubySymbolsByShortName(ctx, call.member).filter(
+    const role = rubyMemberLookupRole(call);
+    const candidates = lookupRubySymbolsByShortName(ctx, call.member, { role }).filter(
       (def) => def.relPath === targetFile && symbolIdIsClassMethod(def.symbolId, call.member),
     );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
-    const inherited = this.walkAncestorsForConstantCall(call.receiver, call.member, ctx, new Set([call.receiver]));
+    const inherited = this.walkAncestorsForConstantCall(
+      call.receiver,
+      call.member,
+      role,
+      ctx,
+      new Set([call.receiver]),
+    );
     if (inherited) return resolved(inherited);
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
@@ -59,6 +68,7 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
   private walkAncestorsForConstantCall(
     receiver: string,
     member: string,
+    role: SymbolLookupRole,
     ctx: CallContext,
     visited: Set<string>,
   ): SymbolResolutionTarget | null {
@@ -72,13 +82,13 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
       // Same Class.method preference as the outer Zeitwerk branch:
       // only consider class-form symbols (`Ancestor.method`), not
       // instance-form (`Ancestor#method`).
-      const candidates = lookupRubySymbolsByShortName(ctx, member).filter(
+      const candidates = lookupRubySymbolsByShortName(ctx, member, { role }).filter(
         (def) => def.relPath === ancestorFile && symbolIdIsClassMethod(def.symbolId, member),
       );
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
       // Method not on this ancestor either — recurse one level deeper.
-      const deeper = this.walkAncestorsForConstantCall(ancestor, member, ctx, visited);
+      const deeper = this.walkAncestorsForConstantCall(ancestor, member, role, ctx, visited);
       if (deeper && deeper.targetSymbolId !== null) return deeper;
     }
     return null;

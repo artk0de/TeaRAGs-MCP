@@ -456,7 +456,9 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    */
   private resolveModuleValueReceiver(moduleFile: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no value to read a member off
-    const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === moduleFile);
+    const candidates = lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
+      (def) => def.relPath === moduleFile,
+    );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId }) : CONTINUE;
   }
@@ -544,7 +546,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       const mapped = this.mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
       if (mapped.kind !== "project") continue;
       const scope = packageScopeOf(mapped.relPath);
-      const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter(
+      const candidates = lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
         (def) => def.relPath === mapped.relPath || (scope !== null && def.relPath.startsWith(scope)),
       );
       const target = pickSingleCandidate(candidates, this.cfg.mode);

@@ -20,7 +20,11 @@ import Parser from "tree-sitter";
 import SwiftLang from "tree-sitter-swift";
 import { describe, expect, it } from "vitest";
 
-import { resolveLocalBindingType } from "../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  resolveLocalBindingType,
+  type SymbolDefinitionKind,
+  type TypeDeclarationFact,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { swiftNameOf } from "../../../../../../src/core/domains/language/swift/walker/name-of.js";
@@ -57,6 +61,20 @@ function extract(src: string, chunks = wholeFileChunk(src)) {
  */
 function typeAt(src: string, name: string, line: number): string | undefined {
   return resolveLocalBindingType(extract(src).chunks[0].localBindings, name, line);
+}
+
+/**
+ * INVARIANT CHANGED (bd tea-rags-mcp-vi0wx): every `typeDeclarations` fact now
+ * carries its `symbolKind` and 1-based `line` (spec §1b). A deep-equality pin
+ * written before that keeps its literal facts and gains EXACTLY those two fields
+ * per fact, positionally — the pin stays exact, it is not loosened.
+ */
+function placed(
+  facts: readonly Omit<TypeDeclarationFact, "symbolKind" | "line">[],
+  placement: readonly (readonly [SymbolDefinitionKind, number])[],
+): TypeDeclarationFact[] {
+  if (facts.length !== placement.length) throw new Error("placed(): one placement per fact");
+  return facts.map((fact, i) => ({ ...fact, symbolKind: placement[i][0], line: placement[i][1] }));
 }
 
 /** The same extraction off the MATERIALIZED tree — the one the pipeline actually walks. */
@@ -1163,17 +1181,22 @@ describe("swift walker — a type chunk's own calls run with the type as `self` 
 describe("swift walker — typeDeclarations", () => {
   it("records a type's own declaration and its conformances", () => {
     const extraction = extractMaterialized("final class Session: NSObject, Sendable {\n  func run() {}\n}\n");
-    expect(extraction.typeDeclarations).toEqual([
-      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-      { typeId: "Session", reopens: false, declarationKind: "class", conforms: ["NSObject", "Sendable"] },
-    ]);
+    expect(extraction.typeDeclarations).toEqual(
+      placed(
+        [
+          // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+          { typeId: "Session", reopens: false, declarationKind: "class", conforms: ["NSObject", "Sendable"] },
+        ],
+        [["class", 1]],
+      ),
+    );
   });
 
   it("marks an extension as a re-opening and keeps the conformances it adds", () => {
     const extraction = extractMaterialized("extension SecTrust: AlamofireExtended {}\n");
-    expect(extraction.typeDeclarations).toEqual([
-      { typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] },
-    ]);
+    expect(extraction.typeDeclarations).toEqual(
+      placed([{ typeId: "SecTrust", reopens: true, conforms: ["AlamofireExtended"] }], [["class", 1]]),
+    );
   });
 
   it("composes a nested declaration under every enclosing type, an extension's included", () => {
@@ -1186,13 +1209,23 @@ describe("swift walker — typeDeclarations", () => {
       "}",
       "",
     ].join("\n");
-    expect(extractMaterialized(src).typeDeclarations).toEqual([
-      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-      { typeId: "Request", reopens: false, declarationKind: "struct" },
-      { typeId: "Request.State", reopens: false, declarationKind: "enum" },
-      { typeId: "Encoder", reopens: true },
-      { typeId: "Encoder.Container", reopens: false, declarationKind: "class" },
-    ]);
+    expect(extractMaterialized(src).typeDeclarations).toEqual(
+      placed(
+        [
+          // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+          { typeId: "Request", reopens: false, declarationKind: "struct" },
+          { typeId: "Request.State", reopens: false, declarationKind: "enum" },
+          { typeId: "Encoder", reopens: true },
+          { typeId: "Encoder.Container", reopens: false, declarationKind: "class" },
+        ],
+        [
+          ["class", 1],
+          ["enum", 2],
+          ["class", 4],
+          ["class", 5],
+        ],
+      ),
+    );
   });
 
   it("reads an extension of a nested type by its written path and drops generic arguments", () => {
@@ -1202,25 +1235,39 @@ describe("swift walker — typeDeclarations", () => {
       "class Box<T>: Base<T> {}",
       "",
     ].join("\n");
-    expect(extractMaterialized(src).typeDeclarations).toEqual([
-      { typeId: "Outer.Inner", reopens: true },
-      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): a re-opening now publishes its `where` clause.
-      {
-        typeId: "Array",
-        reopens: true,
-        whereClause: { startLine: 2, endLine: 2, sameType: { Element: "Header" } },
-      },
-      // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
-      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-      { typeId: "Box", reopens: false, declarationKind: "class", conforms: ["Base"], genericParameters: ["T"] },
-    ]);
+    expect(extractMaterialized(src).typeDeclarations).toEqual(
+      placed(
+        [
+          { typeId: "Outer.Inner", reopens: true },
+          // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.34): a re-opening now publishes its `where` clause.
+          {
+            typeId: "Array",
+            reopens: true,
+            whereClause: { startLine: 2, endLine: 2, sameType: { Element: "Header" } },
+          },
+          // `genericParameters` since bd tea-rags-mcp-y99pg.13 — the type id itself still drops them.
+          // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+          { typeId: "Box", reopens: false, declarationKind: "class", conforms: ["Base"], genericParameters: ["T"] },
+        ],
+        [
+          ["class", 1],
+          ["class", 2],
+          ["class", 3],
+        ],
+      ),
+    );
   });
 
   it("records a protocol as a declaration of its own", () => {
-    expect(extractMaterialized("protocol Monitor: AnyObject {\n  func tick()\n}\n").typeDeclarations).toEqual([
-      // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
-      { typeId: "Monitor", reopens: false, declarationKind: "protocol", conforms: ["AnyObject"] },
-    ]);
+    expect(extractMaterialized("protocol Monitor: AnyObject {\n  func tick()\n}\n").typeDeclarations).toEqual(
+      placed(
+        [
+          // INVARIANT CHANGED (bd tea-rags-mcp-y99pg.35): an own declaration now publishes its keyword.
+          { typeId: "Monitor", reopens: false, declarationKind: "protocol", conforms: ["AnyObject"] },
+        ],
+        [["interface", 1]],
+      ),
+    );
   });
 
   it("publishes nothing for a file that declares no type", () => {
@@ -1247,6 +1294,36 @@ describe("swift walker — typeDeclarations", () => {
         ["D", false, "actor"],
         ["E", false, "protocol"],
         ["A", true, undefined],
+      ]);
+    }
+  });
+
+  // bd tea-rags-mcp-vi0wx (spec §1b): the language-neutral kind and the 1-based
+  // start line every language's fact carries. A re-opening carries the kind of
+  // the declaration it re-opens when the SAME file declares it; otherwise the
+  // nominal default `class` — naming reads own declarations only.
+  it("publishes each fact's symbol kind and 1-based line, a re-opening's from its own declaration", () => {
+    const src = [
+      "class A {}",
+      "struct B {}",
+      "enum C { case x }",
+      "actor D {}",
+      "@objc protocol E { static func build() }",
+      "extension C {}",
+      "extension E {}",
+      "extension String {}",
+      "",
+    ].join("\n");
+    for (const facts of [extract(src).typeDeclarations ?? [], extractMaterialized(src).typeDeclarations ?? []]) {
+      expect(facts.map((f) => [f.typeId, f.reopens, f.symbolKind, f.line])).toEqual([
+        ["A", false, "class", 1],
+        ["B", false, "class", 2],
+        ["C", false, "enum", 3],
+        ["D", false, "class", 4],
+        ["E", false, "interface", 5],
+        ["C", true, "enum", 6],
+        ["E", true, "interface", 7],
+        ["String", true, "class", 8],
       ]);
     }
   });
@@ -2143,9 +2220,9 @@ describe("swift walker — collection constructions and dictionary iteration (bd
 describe("swift walker — a generic-argument extension's spelled id (bd tea-rags-mcp-y99pg.19)", () => {
   it("publishes the id its members compose under beside the bare type id", () => {
     const src = ["extension Collection<String> {", '  func qualityEncoded() -> String { "" }', "}", ""].join("\n");
-    expect(extract(src).typeDeclarations).toEqual([
-      { typeId: "Collection", reopens: true, spelledAs: "Collection<String>" },
-    ]);
+    expect(extract(src).typeDeclarations).toEqual(
+      placed([{ typeId: "Collection", reopens: true, spelledAs: "Collection<String>" }], [["class", 1]]),
+    );
   });
 });
 
@@ -2178,6 +2255,14 @@ describe("swift walker — `self` in an extension of an array type iterates its 
 });
 
 describe("swift walker — generic-typed fields and extension `where` clauses (bd tea-rags-mcp-y99pg.34)", () => {
+  // `extension Protected` re-opens the class this file declares, so it carries
+  // that kind; `Box` and `Plain` are declared nowhere in the file.
+  const placementOfWhereClauseFacts: readonly (readonly [SymbolDefinitionKind, number])[] = [
+    ["class", 1],
+    ["class", 6],
+    ["class", 9],
+    ["class", 11],
+  ];
   const src = [
     "final class Protected<Value> {",
     "  private var value: Value",
@@ -2214,7 +2299,7 @@ describe("swift walker — generic-typed fields and extension `where` clauses (b
       whereClause: { startLine: 9, endLine: 10, sameType: { Other: "[Cert]" }, bounds: { Item: "Bundle" } },
     },
     { typeId: "Plain", reopens: true },
-  ];
+  ].map((fact, i) => placed([fact], [placementOfWhereClauseFacts[i]])[0]);
 
   it("publishes which fields a generic parameter types, and each re-opening's where clause", () => {
     expect(extract(src).typeDeclarations).toEqual(expected);

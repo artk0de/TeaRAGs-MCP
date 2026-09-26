@@ -60,6 +60,7 @@ export {
   buildDispatchFanoutPolicy,
   dispatchFanoutPolicyFor,
 } from "./fanout-policy.js";
+export { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "./symbol-kind-roles.js";
 export {
   boundCalleeFromCallShape,
   combineTypeMultiplicity,

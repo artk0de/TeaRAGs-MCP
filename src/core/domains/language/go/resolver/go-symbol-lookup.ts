@@ -17,9 +17,18 @@
  * same reason as Python's and Ruby's helpers: it is all a definition carries.
  */
 
-import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../../kernel/index.js";
+import { capability } from "../capability.js";
 
 const GO_SOURCE_EXTENSION = ".go";
+
+/**
+ * Go's kind roles (bd tea-rags-mcp-jqvbn): `Stringer(x)` and `MyInt(x)` are
+ * conversions, so an interface, a defined type and an alias are callees here.
+ * A lookup for a part of a call passes its `role`; no role is a type lookup.
+ */
+const GO_SYMBOL_KIND_ROLES = capability.codegraph.symbolKindRoles;
 
 /** Whether a definition's file is Go source. */
 export function isGoSourcePath(relPath: string): boolean {
@@ -27,15 +36,23 @@ export function isGoSourcePath(relPath: string): boolean {
 }
 
 /** Exact-id lookup (`Client`, `Client#fetch`) over Go declarations only. */
-export function lookupGoSymbols(ctx: CallContext, symbolId: string): SymbolDefinition[] {
-  return ctx.symbolTable.lookup(symbolId).filter((def) => isGoSourcePath(def.relPath));
+export function lookupGoSymbols(
+  ctx: CallContext,
+  symbolId: string,
+  options?: Pick<CallRoleSymbolLookupOptions, "role">,
+): SymbolDefinition[] {
+  return ctx.symbolTable
+    .lookup(symbolId, symbolLookupOptionsFor(GO_SYMBOL_KIND_ROLES, options))
+    .filter((def) => isGoSourcePath(def.relPath));
 }
 
 /** Short-name lookup over Go declarations only. */
 export function lookupGoSymbolsByShortName(
   ctx: CallContext,
   name: string,
-  options?: SymbolLookupOptions,
+  options?: CallRoleSymbolLookupOptions,
 ): SymbolDefinition[] {
-  return ctx.symbolTable.lookupByShortName(name, options).filter((def) => isGoSourcePath(def.relPath));
+  return ctx.symbolTable
+    .lookupByShortName(name, symbolLookupOptionsFor(GO_SYMBOL_KIND_ROLES, options))
+    .filter((def) => isGoSourcePath(def.relPath));
 }

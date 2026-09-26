@@ -21,8 +21,13 @@ import {
   type FileExtraction,
   type GlobalSymbolTable,
   type GraphEdges,
+  type SymbolDefinitionKind,
 } from "../../../../contracts/types/codegraph.js";
-import type { LanguageFactoryDescriptor, LanguageSymbolResolver } from "../../../../contracts/types/language.js";
+import type {
+  LanguageCapability,
+  LanguageFactoryDescriptor,
+  LanguageSymbolResolver,
+} from "../../../../contracts/types/language.js";
 import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { buildPass1Aggregates } from "./pass1-aggregates.js";
@@ -320,6 +325,19 @@ export class CallEdgeResolutionRunner {
       : undefined;
   }
 
+  /**
+   * The kinds a call written in `language` can land on — its capability's
+   * `symbolKindRoles.callee` (bd tea-rags-mcp-jqvbn) — for the miss
+   * classifier's fallback lookup. `undefined` when the factory carries no
+   * capabilities (a test double), which counts every kind as before.
+   */
+  private calleeKindsFor(language: string): ReadonlySet<SymbolDefinitionKind> | undefined {
+    this.capabilities ??= this.languageFactory.capabilities?.() ?? new Map();
+    return this.capabilities.get(language)?.codegraph.symbolKindRoles.callee;
+  }
+
+  private capabilities: ReadonlyMap<string, LanguageCapability> | undefined;
+
   resolve(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
     const resolver = this.resolverFor(extraction.language);
     const methodEdges: MethodEdges = [];
@@ -353,8 +371,13 @@ export class CallEdgeResolutionRunner {
     // per file, and re-deriving from the chunks in hand is both cheaper than
     // keeping a parallel per-file index alive across the barrier and immune to
     // the two drifting apart.
+    // A language whose resolver does not read `typeDeclarations` persists none
+    // in the slice (bd tea-rags-mcp-vi0wx): hydration would put them back in
+    // the run-global map the gate at `absorb` keeps them out of.
     const pass1Aggregates = buildPass1Aggregates(
-      extraction,
+      this.runState.readsTypeDeclarations(extraction.language)
+        ? extraction
+        : { ...extraction, typeDeclarations: undefined },
       extraction.language === SELF_DISPATCH_LANGUAGE ? extractSelfDispatchMethods(extraction.chunks) : [],
     );
     if (pass1Aggregates !== undefined) edges.pass1Aggregates = pass1Aggregates;
@@ -537,8 +560,9 @@ export class CallEdgeResolutionRunner {
     kindTally: Record<ReceiverKind, ReceiverKindTally>,
   ): void {
     const { stats } = this.runState;
+    const calleeKinds = this.calleeKindsFor(extraction.language);
     this.forEachCallSite(extraction, symbolTable, inputs, (site) => {
-      const verdict = this.judgeCallSite(site, resolver, symbolTable);
+      const verdict = this.judgeCallSite(site, resolver, symbolTable, calleeKinds);
       methodEdges.push(...verdict.edges);
       if (verdict.ambiguousFanout !== undefined) ambiguousFanouts.push(verdict.ambiguousFanout);
       tallyCallSiteVerdict(kindTally, verdict);
@@ -572,6 +596,7 @@ export class CallEdgeResolutionRunner {
     { chunk, call, localBindings, ctx }: ResolvableCallSite,
     resolver: LanguageSymbolResolver,
     symbolTable: GlobalSymbolTable,
+    calleeKinds: ReadonlySet<SymbolDefinitionKind> | undefined,
   ): CallSiteVerdict {
     const receiverKind = classifyReceiverKind(call, localBindings);
     const edges: MethodEdges = [];
@@ -581,7 +606,7 @@ export class CallEdgeResolutionRunner {
     if (outcome === "ambiguous") verdict.ambiguousFanout = fanouts[0];
     else if (outcome === "resolved") {
       verdict.unnarrowedTemplate = this.landedOnSharedTemplate(edges, ctx, receiverKind);
-    } else verdict.missBucket = classifyResolveMiss(call, ctx, resolver, symbolTable);
+    } else verdict.missBucket = classifyResolveMiss(call, ctx, resolver, symbolTable, calleeKinds);
     return verdict;
   }
 
@@ -611,8 +636,9 @@ export class CallEdgeResolutionRunner {
     const resolver = this.resolverFor(extraction.language);
     if (!resolver) return [];
     const out: (ResolvableCallSite & { verdict: CallSiteVerdict })[] = [];
+    const calleeKinds = this.calleeKindsFor(extraction.language);
     this.forEachCallSite(extraction, symbolTable, this.buildResolverInputs(extraction), (site) => {
-      out.push({ ...site, verdict: this.judgeCallSite(site, resolver, symbolTable) });
+      out.push({ ...site, verdict: this.judgeCallSite(site, resolver, symbolTable, calleeKinds) });
     });
     return out;
   }
@@ -873,6 +899,7 @@ export function classifyResolveMiss(
   ctx: CallContext,
   resolver: LanguageSymbolResolver,
   symbolTable: GlobalSymbolTable,
+  calleeKinds?: ReadonlySet<SymbolDefinitionKind>,
 ): ResolveMissBucket {
   // bd cai0 — a dynamic `send(var)` / `public_send(expr)` whose target is
   // statically undeterminable. NOT a resolver miss and NOT external — count it
@@ -888,8 +915,12 @@ export function classifyResolveMiss(
   // excluded from the inProjectEdgeRecall denominator. A resolver that never
   // targets another language's files answers for itself (bd tea-rags-mcp-t5cji):
   // the table is polyglot, and a foreign namesake is no edge this call can have.
+  // The fallback counts only the kinds the CALLING language can call
+  // (`calleeKinds`, its capability's `symbolKindRoles.callee`, bd
+  // tea-rags-mcp-jqvbn): a same-named type it cannot call is no such edge either.
   const declared =
-    resolver.hasInProjectDefinition?.(call, ctx) ?? symbolTable.lookupByShortName(call.member).length > 0;
+    resolver.hasInProjectDefinition?.(call, ctx) ??
+    symbolTable.lookupByShortName(call.member, { kinds: calleeKinds }).length > 0;
   if (!declared) return "noInProjectDef";
   // tea-rags-mcp-83cl7 — CORE HOMONYM. The member IS defined somewhere in the
   // project (the branch above did not fire), but it is a core / runtime name on

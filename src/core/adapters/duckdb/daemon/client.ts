@@ -54,6 +54,7 @@ import type {
   TemporalCochangeBuildMeta,
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
+  TypeDeclarationReplaceEntry,
   TypeNameQuery,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
@@ -865,6 +866,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async replaceIdentifiersBulk(entries: readonly IdentifierReplaceEntry[]): Promise<void> {
     await this.call("replaceIdentifiersBulk", { entries: [...entries] });
+  }
+
+  async replaceTypeDeclarationsBulk(entries: readonly TypeDeclarationReplaceEntry[]): Promise<void> {
+    await this.call("replaceTypeDeclarationsBulk", { entries: [...entries] });
   }
 
   async aggregateIdentifiersByType(q: IdentifierTypeAggregateQuery): Promise<IdentifierTypeAggregateRow[]> {

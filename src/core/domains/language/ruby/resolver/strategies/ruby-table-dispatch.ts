@@ -116,7 +116,7 @@ export class RubyTableDispatchResolver implements DispatchResolverComponent {
     if (direct.length === 1) return { targetRelPath: direct[0].relPath, targetSymbolId: direct[0].symbolId };
 
     const shortSeg = lastConstantSegment(className);
-    const byShort = lookupRubySymbolsByShortName(ctx, field).filter(
+    const byShort = lookupRubySymbolsByShortName(ctx, field, { role: "callee" }).filter(
       (d) => d.relPath === classRelPath && d.scope[d.scope.length - 1] === shortSeg && formMatches(d.symbolId, field),
     );
     if (byShort.length === 1) return { targetRelPath: byShort[0].relPath, targetSymbolId: byShort[0].symbolId };

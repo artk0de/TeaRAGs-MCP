@@ -47,7 +47,7 @@ function pythonBoundToUntypeableCall(receiver: string, atLine: number, ctx: Call
   const segments = binding.callee.split(".");
   if (segments[0] !== "self" && segments[0] !== "cls") return false;
   const member = segments[segments.length - 1];
-  return member.length > 0 && lookupPythonSymbolsByShortName(ctx, member).length === 0;
+  return member.length > 0 && lookupPythonSymbolsByShortName(ctx, member, { role: "callee" }).length === 0;
 }
 
 /**

@@ -21,18 +21,20 @@ import {
   type CallContext,
   type ImportRef,
   type SymbolDefinition,
-  type SymbolLookupOptions,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
   propagateReceiverType,
+  symbolLookupOptionsFor,
   typeRefReceiverForm,
   type AncestorClosure,
   type AncestorLinearizer,
+  type CallRoleSymbolLookupOptions,
   type ReceiverTypePorts,
 } from "../../../kernel/index.js";
+import { capability } from "../../capability.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
@@ -56,10 +58,20 @@ import { mapPythonImportToFile } from "../python-path-mapper.js";
 export function lookupPythonSymbolsByShortName(
   ctx: CallContext,
   name: string,
-  options?: SymbolLookupOptions,
+  options?: CallRoleSymbolLookupOptions,
 ): SymbolDefinition[] {
-  return ctx.symbolTable.lookupByShortName(name, options).filter((def) => isPythonSourcePath(def.relPath));
+  return ctx.symbolTable
+    .lookupByShortName(name, symbolLookupOptionsFor(PYTHON_SYMBOL_KIND_ROLES, options))
+    .filter((def) => isPythonSourcePath(def.relPath));
 }
+
+/**
+ * Python's kind roles (bd tea-rags-mcp-jqvbn): `Color(1)` calls an Enum and
+ * `UserId(5)` a `NewType`, so both are callees here. A lookup for a part of a
+ * call passes its `role` to {@link lookupPythonSymbolsByShortName}; no role is
+ * a type lookup.
+ */
+export const PYTHON_SYMBOL_KIND_ROLES = capability.codegraph.symbolKindRoles;
 
 /**
  * Fully-qualified lookup restricted to PYTHON candidates — the lookup the
@@ -577,7 +589,7 @@ export function pythonModuleReturnType(
   mapper: PythonImportFileMapper,
   unbound: PythonUnboundCalleeRule,
 ): TypeRef | undefined {
-  const defs = lookupPythonSymbolsByShortName(ctx, callee).filter((def) => def.scope.length === 0);
+  const defs = lookupPythonSymbolsByShortName(ctx, callee, { role: "callee" }).filter((def) => def.scope.length === 0);
   const file = pythonModuleDefFile(callee, defs, ctx, mapper, unbound);
   return file === null
     ? undefined
@@ -1040,7 +1052,7 @@ export function resolvePythonMemberOnType(
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeFile(bareType, ctx, mapper, member);
   if (!targetFile) return null;
-  const candidates = lookupPythonSymbolsByShortName(ctx, member).filter(
+  const candidates = lookupPythonSymbolsByShortName(ctx, member, { role: "callee" }).filter(
     (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType,
   );
   const target = pickSingleCandidate(candidates, mode);

@@ -185,7 +185,7 @@ export function goBareNamePackageDirs(cfg: ResolverConfig, ctx: CallContext): st
 function goBareCalleePackageDir(callee: string, cfg: ResolverConfig, ctx: CallContext, atLine: number): string | null {
   if (goLocalAt(ctx, callee, atLine)) return null;
   const declaredIn = new Set(
-    lookupGoSymbolsByShortName(ctx, callee)
+    lookupGoSymbolsByShortName(ctx, callee, { role: "callee" })
       .filter((def) => def.symbolId === callee)
       .map((def) => goPackageDirOf(def.relPath)),
   );
@@ -331,9 +331,13 @@ function importedPackageDirOf(cfg: ResolverConfig, qualifier: string, ctx: CallC
   return goImportPackageDir(match.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot)) ?? null;
 }
 
-/** The package-level Go declarations of `name` (`symbolId` equal to it — never a method) in `packageDir`. */
+/**
+ * The package-level Go declarations of `name` (`symbolId` equal to it — never a
+ * method) in `packageDir` that a call can land on: both callers resolve the
+ * callee of `pkg.Name(…)`.
+ */
 function packageLevelDeclarations(name: string, packageDir: string, ctx: CallContext): SymbolDefinition[] {
-  return lookupGoSymbolsByShortName(ctx, name).filter(
+  return lookupGoSymbolsByShortName(ctx, name, { role: "callee" }).filter(
     (def) => def.symbolId === name && goPackageDirOf(def.relPath) === packageDir,
   );
 }

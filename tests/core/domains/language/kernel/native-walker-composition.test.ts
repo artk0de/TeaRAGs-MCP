@@ -43,6 +43,10 @@
  * TypeScript and JavaScript gained the symbol-kind facet (bd tea-rags-mcp-vi0wx):
  * a case carrying `symbolKindFacet` is pinned as the merge plus exactly those
  * chunks' `symbolKind`, including the implicit `Class#constructor`.
+ *
+ * TypeScript and JavaScript gained the type-declaration facet (bd
+ * tea-rags-mcp-vi0wx, spec §1b): a case carrying `typeDeclarationFacet` is
+ * pinned as the merge plus exactly those `typeDeclarations`.
  */
 
 import Parser from "tree-sitter";
@@ -84,6 +88,8 @@ interface LanguageCase {
   readonly declarationFacet?: FileExtraction["identifierDeclarations"];
   /** symbolId → the `symbolKind` the symbol-kind facet adds. Absent ⇒ no symbol-kind facet. */
   readonly symbolKindFacet?: Readonly<Record<string, SymbolDefinitionKind>>;
+  /** The `typeDeclarations` the type-declaration facet adds. Absent ⇒ none. */
+  readonly typeDeclarationFacet?: FileExtraction["typeDeclarations"];
 }
 
 /** Each fixture declares exactly one concrete type (class / struct) and no abstraction. */
@@ -122,6 +128,14 @@ function withDeclarations(
   return facet === undefined ? extraction : { ...extraction, identifierDeclarations: facet };
 }
 
+/** The extraction with exactly the facet's type declarations added; absent adds nothing. */
+function withTypeDeclarations(
+  extraction: FileExtraction,
+  facet: FileExtraction["typeDeclarations"] | undefined,
+): FileExtraction {
+  return facet === undefined ? extraction : { ...extraction, typeDeclarations: facet };
+}
+
 /** The one `return` declaration a fixture's `run` method states. */
 function returnOf(ownerSymbolId: string, name: string, line: number, typeName: string) {
   return [{ name, kind: "return" as const, line, ownerSymbolId, typeName, typeSource: "annotation" as const }];
@@ -142,6 +156,7 @@ const CASES: readonly LanguageCase[] = [
     visibilityFacet: { "Svc#run": "public" },
     declarationFacet: returnOf("Svc#run", "run", 4, "string"),
     symbolKindFacet: { Svc: "class", "Svc#run": "method", "Svc#constructor": "method" },
+    typeDeclarationFacet: [{ typeId: "Svc", symbolKind: "class", line: 3, reopens: false }],
   },
   {
     language: "javascript",
@@ -151,6 +166,7 @@ const CASES: readonly LanguageCase[] = [
     native: extractFromJavascriptFile,
     visibilityFacet: { "Svc#run": "public" },
     symbolKindFacet: { Svc: "class", "Svc#run": "method", "Svc#constructor": "method" },
+    typeDeclarationFacet: [{ typeId: "Svc", symbolKind: "class", line: 3, reopens: false }],
   },
   {
     language: "java",
@@ -209,7 +225,8 @@ describe("native walkers composed through the extraction pass-runner", () => {
   });
 
   for (const testCase of CASES) {
-    const { language, passes, native, visibilityFacet, declarationFacet, symbolKindFacet } = testCase;
+    const { language, passes, native, visibilityFacet, declarationFacet, symbolKindFacet, typeDeclarationFacet } =
+      testCase;
 
     if (passes.length === 0) {
       it(`${language}: the composer returns the native extraction BY IDENTITY under its own pass list`, () => {
@@ -226,9 +243,12 @@ describe("native walkers composed through the extraction pass-runner", () => {
         const composed = composeExtractionWalker({ walk: () => sentinel, nameOf: () => null, passes });
 
         expect(composed.walk(input)).toEqual({
-          ...withDeclarations(
-            withSymbolKinds(withVisibility(sentinel, visibilityFacet ?? {}), symbolKindFacet ?? {}),
-            declarationFacet,
+          ...withTypeDeclarations(
+            withDeclarations(
+              withSymbolKinds(withVisibility(sentinel, visibilityFacet ?? {}), symbolKindFacet ?? {}),
+              declarationFacet,
+            ),
+            typeDeclarationFacet,
           ),
           ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
         });
@@ -240,9 +260,12 @@ describe("native walkers composed through the extraction pass-runner", () => {
       const viaFactory = factory.create(language).walker.walk(input);
 
       expect(viaFactory).toEqual({
-        ...withDeclarations(
-          withSymbolKinds(withVisibility(native(input), visibilityFacet ?? {}), symbolKindFacet ?? {}),
-          declarationFacet,
+        ...withTypeDeclarations(
+          withDeclarations(
+            withSymbolKinds(withVisibility(native(input), visibilityFacet ?? {}), symbolKindFacet ?? {}),
+            declarationFacet,
+          ),
+          typeDeclarationFacet,
         ),
         ...(visibilityFacet === undefined ? {} : ONE_CONCRETE_TYPE),
       });

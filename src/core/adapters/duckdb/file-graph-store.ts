@@ -316,6 +316,9 @@ export class DuckDbFileGraphStore {
       // The file's declared identifiers (bd tea-rags-mcp-4p3sb.8) go with it, or
       // the naming lexicon keeps counting names from a file that is gone.
       await this.session.run("DELETE FROM cg_identifiers WHERE rel_path = ?", [relPath]);
+      // Its type declarations (bd tea-rags-mcp-vi0wx) likewise, or type roles
+      // keep counting types from a file that is gone.
+      await this.session.run("DELETE FROM cg_type_declarations WHERE rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
     });
   }

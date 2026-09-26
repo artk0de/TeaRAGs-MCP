@@ -236,20 +236,36 @@ export function extractFromSwiftFile(input: SwiftExtractInput): FileExtraction {
  * `conforms` lists every inheritance specifier, superclass and protocols
  * alike, because the clause marks neither; {@link collectSwiftClassExtends}
  * is where the superclass is told apart for `super`.
+ *
+ * `symbolKind` (bd tea-rags-mcp-vi0wx) is the chunk's kind ({@link symbolKindOf}):
+ * class / struct / actor → `class`, enum → `enum`, protocol → `interface`.
+ * An extension declares no kind of its own, so a re-opening borrows the kind
+ * of the same file's own declaration of the type and falls back to the
+ * nominal `class` for a type declared elsewhere (an SDK type, another file) —
+ * which the naming lexicon never reads, because it reads own declarations only.
+ *
+ * A `typealias` at file scope or directly in a type body (an extension's
+ * included) publishes a `type_alias` fact for the naming lexicon (spec §1b),
+ * composed like a type: `extension Request { typealias Validation = … }` →
+ * `Request.Validation`. One declared inside a function, accessor or closure is
+ * a local and publishes nothing. An alias declares no type, so the resolver's
+ * read of the channel skips it (`swiftResolverTypeFacts` in
+ * `resolver/swift-type-declarations.ts`).
  */
 function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
   const out: TypeDeclarationFact[] = [];
+  const ownKinds = new Map<string, SymbolDefinitionKind>();
   walk(root, (node) => {
+    if (node.type === "typealias_declaration") {
+      const alias = swiftTypeAliasFact(node);
+      if (alias !== undefined) out.push(alias);
+      return;
+    }
     const kind = swiftTypeDeclarationKind(node);
     if (kind === null) return;
     const name = swiftTypeNameText(node.childForFieldName("name")?.text);
     if (name === undefined) return;
-    const enclosing: string[] = [];
-    for (let current = node.parent; current; current = current.parent) {
-      if (swiftTypeDeclarationKind(current) === null) continue;
-      const outer = swiftTypeNameText(current.childForFieldName("name")?.text);
-      if (outer !== undefined) enclosing.unshift(outer);
-    }
+    const enclosing = swiftEnclosingTypeNames(node);
     const conforms = swiftInheritedTypeNames(node);
     const genericParameters = kind === "extension" ? [] : swiftTypeParameterNames(node);
     const {
@@ -271,8 +287,14 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
     // WRITTEN (bd tea-rags-mcp-y99pg.19); an extension sits at file scope.
     const written = node.childForFieldName("name")?.text.trim();
     const spelledAs = kind === "extension" && written !== undefined && written !== name ? written : undefined;
+    const typeId = [...enclosing, name].join(".");
+    const ownKind =
+      kind === "extension" ? undefined : symbolKindOf(node.type, { atTopLevel: false, typeKeyword: kind });
+    if (ownKind !== undefined && !ownKinds.has(typeId)) ownKinds.set(typeId, ownKind);
     out.push({
-      typeId: [...enclosing, name].join("."),
+      typeId,
+      symbolKind: ownKind ?? SWIFT_REOPENED_NOMINAL_KIND,
+      line: node.startPosition.row + 1,
       reopens: kind === "extension",
       ...(kind === "extension" ? {} : { declarationKind: kind }),
       ...(conforms.length > 0 ? { conforms } : {}),
@@ -293,8 +315,58 @@ function collectSwiftTypeDeclarations(root: AstNode): TypeDeclarationFact[] {
       ...(whereClause ? { whereClause } : {}),
     });
   });
-  return out;
+  // A re-opening may precede the declaration it re-opens, so its kind is
+  // settled once every own declaration of the file is known.
+  return out.map((fact) =>
+    fact.reopens ? { ...fact, symbolKind: ownKinds.get(fact.typeId) ?? fact.symbolKind } : fact,
+  );
 }
+
+/**
+ * The names of every type declaration enclosing `node`, outermost first — an
+ * extension's included, by its written name with generic arguments dropped.
+ */
+function swiftEnclosingTypeNames(node: AstNode): string[] {
+  const enclosing: string[] = [];
+  for (let current = node.parent; current; current = current.parent) {
+    if (swiftTypeDeclarationKind(current) === null) continue;
+    const outer = swiftTypeNameText(current.childForFieldName("name")?.text);
+    if (outer !== undefined) enclosing.unshift(outer);
+  }
+  return enclosing;
+}
+
+/** The body nodes a type, extension or protocol declares its members in. */
+const SWIFT_TYPE_BODY_NODE_TYPES: ReadonlySet<string> = new Set(["class_body", "enum_class_body", "protocol_body"]);
+
+/**
+ * The naming fact of a `typealias` declared at file scope or directly in a
+ * type body, or undefined for a local one — an alias inside a function,
+ * accessor or closure sits under that body's `statements`, never directly
+ * under the file or a type body.
+ */
+function swiftTypeAliasFact(node: AstNode): TypeDeclarationFact | undefined {
+  const { parent } = node;
+  if (parent === null) return undefined;
+  const atFileScope = parent.type === "source_file";
+  const inTypeBody =
+    SWIFT_TYPE_BODY_NODE_TYPES.has(parent.type) &&
+    parent.parent !== null &&
+    swiftTypeDeclarationKind(parent.parent) !== null;
+  if (!atFileScope && !inTypeBody) return undefined;
+  const name = node.childForFieldName("name")?.text.trim();
+  const symbolKind = symbolKindOf(node.type, { atTopLevel: atFileScope });
+  if (!name || symbolKind === undefined) return undefined;
+  return {
+    typeId: [...swiftEnclosingTypeNames(node), name].join("."),
+    symbolKind,
+    line: node.startPosition.row + 1,
+    reopens: false,
+  };
+}
+
+/** The kind a re-opening of a type the file does not declare carries: Swift extends nominal types. */
+const SWIFT_REOPENED_NOMINAL_KIND: SymbolDefinitionKind = "class";
 
 /**
  * The nominal member typealiases of a type body (bd tea-rags-mcp-y99pg.33):

@@ -72,7 +72,9 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
 
   private samePackageDeclaration(name: string, ctx: CallContext): SymbolResolutionTarget | null {
     const callerPackage = goPackageDirOf(ctx.callerFile);
-    const candidates = lookupGoSymbols(ctx, name).filter((def) => goPackageDirOf(def.relPath) === callerPackage);
+    const candidates = lookupGoSymbols(ctx, name, { role: "callee" }).filter(
+      (def) => goPackageDirOf(def.relPath) === callerPackage,
+    );
     const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }

@@ -13,6 +13,8 @@
  *   3. symbol kind (bd tea-rags-mcp-vi0wx) — each named chunk's declaration
  *      kind on `ChunkExtraction.symbolKind`. TypeScript's pass, driven by
  *      `jsNameOf` so the CommonJS shapes are named (and so tagged) too.
+ *   4. type declarations (bd tea-rags-mcp-vi0wx, spec §1b) — TypeScript's pass,
+ *      driven by `jsNameOf`: classes and module-level non-function `const`s.
  *
  * A new JavaScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -28,6 +30,7 @@ import {
 } from "../../kernel/index.js";
 import { readEcmascriptDeclaredVisibility } from "../../typescript/walker/passes/declared-visibility.js";
 import { ecmascriptSymbolKindFacetPass } from "../../typescript/walker/passes/symbol-kind.js";
+import { ecmascriptTypeDeclarationFacetPass } from "../../typescript/walker/passes/type-declarations.js";
 import { jsNameOf } from "./name-of.js";
 import { JAVASCRIPT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { javascriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
@@ -37,4 +40,5 @@ export const JAVASCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   javascriptTypeAbstractnessFacetPass,
   createIdentifierDeclarationFacetPass(JAVASCRIPT_IDENTIFIER_DECLARATION_SYNTAX),
   ecmascriptSymbolKindFacetPass(jsNameOf),
+  ecmascriptTypeDeclarationFacetPass(jsNameOf),
 ];

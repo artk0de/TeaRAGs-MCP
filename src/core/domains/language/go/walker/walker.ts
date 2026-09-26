@@ -22,6 +22,7 @@
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
+import type { TypeDeclarationFact } from "../../../../contracts/types/codegraph-extraction.js";
 import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type {
   CallRef,
@@ -38,6 +39,7 @@ import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 import { goFunctionReturnTypesKey, goPackageDirOf, goQualifiedTypeName } from "../type-name.js";
 import { goNameOf } from "./name-of.js";
 import { symbolKindOf } from "./symbol-kind.js";
+import { goTypeDeclarationFactsOf } from "./type-declarations.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -61,7 +63,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   // set is unmoved — the kernel call makes that a property of the walker rather
   // than of the current nameOf.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
-  const symbolKinds = collectGoSymbolKindsByLine(input.tree.rootNode);
+  const { symbolKindsByLine: symbolKinds, typeDeclarations } = collectGoDeclarationReadings(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -99,6 +101,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   if (Object.keys(functionReturnTypes).length > 0) extraction.functionReturnTypes = functionReturnTypes;
   const buildConstraint = readGoBuildConstraint(input.tree.rootNode);
   if (buildConstraint !== undefined) extraction.buildConstraint = buildConstraint;
+  if (typeDeclarations.length > 0) extraction.typeDeclarations = typeDeclarations;
   return extraction;
 }
 
@@ -107,29 +110,48 @@ interface GoSymbolKindReading {
   readonly kind: SymbolDefinitionKind;
 }
 
+interface GoDeclarationReadings {
+  readonly symbolKindsByLine: Map<number, GoSymbolKindReading[]>;
+  readonly typeDeclarations: TypeDeclarationFact[];
+}
+
+/** Nodes whose body scopes a declaration as local: a type or const inside is not package-level. */
+const GO_FUNCTION_BODY_OWNERS = new Set(["function_declaration", "method_declaration", "func_literal"]);
+
 /**
- * The declaration kind of every node `goNameOf` names, keyed by its start line
- * (tea-rags-mcp-vi0wx). A chunk carries no node, only the range and id
- * `collectSymbols` built from that same `goNameOf` reading, so the kind joins
- * back on (start line, id names the reading's name) — the join the
- * declared-visibility facet makes. Two specs on one line
+ * One pass over the tree reading two declaration channels.
+ *
+ * `symbolKindsByLine`: the declaration kind of every node `goNameOf` names,
+ * keyed by its start line (tea-rags-mcp-vi0wx). A chunk carries no node, only
+ * the range and id `collectSymbols` built from that same `goNameOf` reading, so
+ * the kind joins back on (start line, id names the reading's name) — the join
+ * the declared-visibility facet makes. Two specs on one line
  * (`type ( A struct{}; B = A )`) are told apart by name.
+ *
+ * `typeDeclarations` (spec §1b): the package-level type and const facts
+ * ({@link goTypeDeclarationFactsOf}), in source order — hence children are
+ * pushed in reverse, so the stack pops them first-to-last. A declaration under
+ * a function or method body is local and publishes nothing.
  */
-function collectGoSymbolKindsByLine(root: AstNode): Map<number, GoSymbolKindReading[]> {
-  const out = new Map<number, GoSymbolKindReading[]>();
-  const stack: AstNode[] = [root];
-  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
-    for (const child of node.children) stack.push(child);
+function collectGoDeclarationReadings(root: AstNode): GoDeclarationReadings {
+  const symbolKindsByLine = new Map<number, GoSymbolKindReading[]>();
+  const typeDeclarations: TypeDeclarationFact[] = [];
+  const stack: { node: AstNode; local: boolean }[] = [{ node: root, local: false }];
+  for (let entry = stack.pop(); entry !== undefined; entry = stack.pop()) {
+    const { node, local } = entry;
+    const childLocal = local || GO_FUNCTION_BODY_OWNERS.has(node.type);
+    for (let i = node.children.length - 1; i >= 0; i--) stack.push({ node: node.children[i], local: childLocal });
+    if (!local) typeDeclarations.push(...goTypeDeclarationFactsOf(node));
     const named = goNameOf(node);
     if (named === null) continue;
     const kind = symbolKindOf(node.type, { typeBody: node.childForFieldName("type")?.type });
     if (kind === undefined) continue;
     const line = node.startPosition.row + 1;
-    const onLine = out.get(line);
-    if (onLine === undefined) out.set(line, [{ name: named.name, kind }]);
+    const onLine = symbolKindsByLine.get(line);
+    if (onLine === undefined) symbolKindsByLine.set(line, [{ name: named.name, kind }]);
     else onLine.push({ name: named.name, kind });
   }
-  return out;
+  return { symbolKindsByLine, typeDeclarations };
 }
 
 const GO_BUILD_DIRECTIVE = /^\/\/go:build[ \t]+/;

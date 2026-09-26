@@ -826,6 +826,41 @@ describe("DaemonGraphDbClient — cg_identifiers ops (bd tea-rags-mcp-4p3sb.8)",
     expect(params("existingSymbolShortNames")).toMatchObject({ names: ["doc"] });
   });
 
+  it("proxies the type-declaration write with its entries (bd tea-rags-mcp-vi0wx)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return null;
+    });
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const entries = [
+      {
+        relPath: "Sources/A.swift",
+        rows: [
+          {
+            language: "swift",
+            typeId: "A",
+            shortName: "A",
+            symbolKind: "class" as const,
+            line: 1,
+            reopens: false,
+            supertypes: ["Base"],
+          },
+        ],
+      },
+    ];
+    await client.replaceTypeDeclarationsBulk(entries);
+    await client.close();
+
+    expect(seen.find((r) => r.op === "replaceTypeDeclarationsBulk")?.params).toMatchObject({
+      collection: "code_x_v1",
+      entries,
+    });
+  });
+
   it("forwards the type aggregate's multiplicity split and same-type sibling count", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");

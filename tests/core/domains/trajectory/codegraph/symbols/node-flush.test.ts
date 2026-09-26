@@ -14,6 +14,8 @@ import type {
   BulkSymbolUpsertEntry,
   GraphDbClient,
   IdentifierReplaceEntry,
+  TypeDeclarationReplaceEntry,
+  TypeDeclarationRow,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   SymbolNodeFlushQueue,
@@ -136,5 +138,70 @@ describe("SymbolNodeFlushQueue — identifier rows", () => {
     await queue.flushRemainder("coll");
 
     expect(identifierCalls).toBe(0);
+  });
+});
+
+// bd tea-rags-mcp-vi0wx — and each file's type-declaration rows into
+// `cg_type_declarations`, after its identifiers, with the same clear-on-[] rule.
+describe("SymbolNodeFlushQueue — type-declaration rows", () => {
+  const row: TypeDeclarationRow = {
+    language: "swift",
+    typeId: "A",
+    shortName: "A",
+    symbolKind: "class",
+    line: 1,
+    reopens: false,
+    supertypes: [],
+  };
+
+  it("hands buffered type declarations to replaceTypeDeclarationsBulk after the identifiers", async () => {
+    const order: string[] = [];
+    const replaced: TypeDeclarationReplaceEntry[][] = [];
+    const queue = new SymbolNodeFlushQueue(
+      makeResolver({
+        upsertSymbolsBulk: async () => {
+          order.push("symbols");
+        },
+        replaceIdentifiersBulk: async () => {
+          order.push("identifiers");
+        },
+        replaceTypeDeclarationsBulk: async (entries: readonly TypeDeclarationReplaceEntry[]) => {
+          order.push("typeDeclarations");
+          replaced.push([...entries]);
+        },
+      }),
+      1000,
+    );
+    queue.buffer("Sources/A.swift", [], "coll", undefined, [], [row]);
+    queue.buffer("Sources/B.swift", [], "coll", undefined, [], []);
+
+    await queue.flushRemainder("coll");
+
+    expect(order).toEqual(["symbols", "identifiers", "typeDeclarations"]);
+    expect(replaced).toEqual([
+      [
+        { relPath: "Sources/A.swift", rows: [row] },
+        { relPath: "Sources/B.swift", rows: [] },
+      ],
+    ]);
+  });
+
+  it("does not write type declarations for files buffered without any", async () => {
+    let calls = 0;
+    const queue = new SymbolNodeFlushQueue(
+      makeResolver({
+        upsertSymbolsBulk: async () => undefined,
+        replaceIdentifiersBulk: async () => undefined,
+        replaceTypeDeclarationsBulk: async () => {
+          calls += 1;
+        },
+      }),
+      1000,
+    );
+    queue.buffer("Sources/A.swift", [], "coll", undefined, []);
+
+    await queue.flushRemainder("coll");
+
+    expect(calls).toBe(0);
   });
 });

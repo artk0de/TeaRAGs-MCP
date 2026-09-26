@@ -11,7 +11,18 @@ export const capability: LanguageCapability = {
   },
   tests: { tier: "medium", detection: "*_test.rs", tech: "generic AST (#[test] attrs not preserved)" },
   testFiles,
-  codegraph: { tier: "moderate", tech: "6-strategy; trait-based dispatch" },
+  codegraph: {
+    tier: "moderate",
+    tech: "6-strategy; trait-based dispatch",
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // A tuple struct is called (`Point(1, 2)`). A call spelled with an enum's name
+    // builds a VARIANT (`SpecValue::Style(style)`), never the enum, so an enum is a
+    // receiver only — the spec table says C R; measured wrong on ripgrep.
+    symbolKindRoles: {
+      callee: new Set(["class", "function", "method"]),
+      receiver: new Set(["class", "module", "interface", "enum", "constant", "function", "method"]),
+    },
+  },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2: bd tea-rags-mcp-f11nz — innermost-chunk call attribution. Every
   // in-method call used to be emitted again from each enclosing impl/mod/trait

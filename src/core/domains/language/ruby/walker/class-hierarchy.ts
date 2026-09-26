@@ -26,12 +26,23 @@
  *
  * Naming them both "extends" is what invites reading a mixin as a superclass,
  * which then feeds every `super` resolution downstream.
+ *
+ * The flat-Records walk also collects the file's `TypeDeclarationFact`s — one
+ * per class, module and constant assignment (bd tea-rags-mcp-vi0wx, spec §1b) —
+ * because it already holds the namespace stack, the superclass and every mixin
+ * those facts carry. They are naming data only: the Ruby resolver never reads
+ * them.
  */
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { FileExtraction, InheritanceEdgeDecl } from "../../../../contracts/types/codegraph.js";
+import type {
+  FileExtraction,
+  InheritanceEdgeDecl,
+  TypeDeclarationFact,
+} from "../../../../contracts/types/codegraph.js";
 import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
+import { CONSTANT_ASSIGNMENT_NODE_TYPES, symbolKindOf } from "./symbol-kind.js";
 
 /**
  * Flatten a class/module body into every statement that DECLARES FOR IT — the
@@ -152,14 +163,80 @@ export function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[
  * `superclasses` holds ONLY the `class Foo < Bar` parent — the `extend Mod`
  * mixin is a different declaration and lives in `ancestors` with the includes
  * (see the file header).
+ *
+ * `typeDeclarations` is the same walk's per-declaration view (bd
+ * tea-rags-mcp-vi0wx, W3c), in source order:
+ *
+ *   - a `class` / `module` → its lexical FQ, `conforms` = the superclass, then
+ *     the modules it `include`s / `prepend`s in source order. `extend Mod` mixes
+ *     into the singleton class, not the instances' ancestor chain, so it stays
+ *     out. Every declaration is the file's own (`reopens: false`): a file cannot
+ *     tell a Ruby class body that re-opens a class from the one that creates it.
+ *   - a constant assignment (`MAX = 3`, `Foo::BAR = 3`, `::ROOT = 3`,
+ *     `VERSION ||= "1.0"`, and every constant target of `A, *REST = …`,
+ *     nested destructuring included) at file, class or module level → the
+ *     constant's FQ under the enclosing namespace (`::ROOT` is root-anchored),
+ *     on the target's own line. Inside a method body, or a `class << self`
+ *     whose constants belong to the singleton class, nothing is emitted.
+ *
+ * `visitNode`, when given, is offered every node the walk passes — everything
+ * but a named declaration's header (name, superclass) and its body wrapper —
+ * so a per-node collector shares this traversal instead of running its own.
  */
-export function collectRubyClassAncestors(root: AstNode): {
+export interface RubyClassDeclarations {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
   superclasses: Map<string, string>;
   compact: Set<string>;
   schemaTables: Map<string, string>;
-} {
+  typeDeclarations: TypeDeclarationFact[];
+}
+
+/** Node types whose body is not a constant scope of the enclosing namespace. */
+const CONSTANT_OPAQUE_NODE_TYPES = new Set(["method", "singleton_method", "singleton_class"]);
+
+/** A constant target as written — `MAX`, `Foo::BAR`, `::ROOT` — as opposed to a local, ivar or `obj::X`. */
+const CONSTANT_TARGET_RE = /^(?:::)?[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
+
+/** Target lists of a multiple assignment: `A, B = …`, a nested `(P, q), …` and a splat `*REST`. */
+const TARGET_LIST_NODE_TYPES = new Set(["left_assignment_list", "destructured_left_assignment", "rest_assignment"]);
+
+/** Every single target an assignment's left side names, multiple-assignment lists flattened in source order. */
+function assignmentTargets(left: AstNode): AstNode[] {
+  if (!TARGET_LIST_NODE_TYPES.has(left.type)) return [left];
+  return left.namedChildren.flatMap(assignmentTargets);
+}
+
+/** The FQ a single assignment target declares under `scope`, or null when it is not a constant. */
+function constantTargetId(target: AstNode, scope: readonly string[]): string | null {
+  if (target.type !== "constant" && target.type !== "scope_resolution") return null;
+  const text = target.text.replace(/\s+/g, "");
+  if (!CONSTANT_TARGET_RE.test(text)) return null;
+  return text.startsWith("::") ? text.slice(2) : lexicalScopeFqName(scope, text);
+}
+
+/** One `constant` fact per constant target of a (plain, multiple or `||=`-style) assignment. */
+function constantDeclarationFacts(node: AstNode, scope: readonly string[]): TypeDeclarationFact[] {
+  const symbolKind = symbolKindOf(node.type, { declaresMethod: false, assignsConstant: true });
+  const left = node.childForFieldName("left");
+  if (symbolKind === undefined || !left) return [];
+  const facts: TypeDeclarationFact[] = [];
+  for (const target of assignmentTargets(left)) {
+    const typeId = constantTargetId(target, scope);
+    if (typeId !== null) facts.push({ typeId, symbolKind, line: target.startPosition.row + 1, reopens: false });
+  }
+  return facts;
+}
+
+function classDeclarationFact(node: AstNode, typeId: string, conforms: readonly string[]): TypeDeclarationFact | null {
+  const symbolKind = symbolKindOf(node.type, { declaresMethod: false, assignsConstant: false });
+  if (symbolKind === undefined) return null;
+  const fact: TypeDeclarationFact = { typeId, symbolKind, line: node.startPosition.row + 1, reopens: false };
+  return conforms.length > 0 ? { ...fact, conforms } : fact;
+}
+
+export function collectRubyClassAncestors(root: AstNode, visitNode?: (node: AstNode) => void): RubyClassDeclarations {
+  const typeDeclarations: TypeDeclarationFact[] = [];
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
   /** class FQ → the `class Foo < Bar` parent. NOT the `extend Mod` mixin. */
@@ -170,11 +247,14 @@ export function collectRubyClassAncestors(root: AstNode): {
   // (A, A::B) are NOT open lexical scopes, so a raw ancestor must NOT be
   // prefix-walked through them (bd lawlq.3.7). Consumed by canonicalizeAncestorFq.
   const compactOut = new Set<string>();
-  const walkScope = (node: AstNode, scope: string[]): void => {
+  // `constantScope` is false below a method body or a `class << self`, where an
+  // assignment does not declare a constant of the enclosing namespace.
+  const walkScope = (node: AstNode, scope: string[], constantScope: boolean): void => {
+    visitNode?.(node);
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
       if (!nameNode) {
-        for (const child of node.children) walkScope(child, scope);
+        for (const child of node.children) walkScope(child, scope, constantScope);
         return;
       }
       const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
@@ -182,6 +262,9 @@ export function collectRubyClassAncestors(root: AstNode): {
       if (nameNode.type === "scope_resolution") compactOut.add(fq); // compact `class A::B::C`
       const ancestors: string[] = [];
       const prepended: string[] = [];
+      // The type-declaration fact's supertypes: superclass, then include /
+      // prepend in source order — never `extend` (see the docblock).
+      const conforms: string[] = [];
       // Direct superclass — tree-sitter-ruby wraps `< Bar` in a `superclass`
       // node whose first non-`<` child is the constant or scope_resolution.
       if (node.type === "class") {
@@ -192,6 +275,7 @@ export function collectRubyClassAncestors(root: AstNode): {
               const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
               if (supText && /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(supText)) {
                 ancestors.push(supText);
+                conforms.push(supText);
                 superclassOut.set(fq, supText);
               }
               break;
@@ -215,7 +299,10 @@ export function collectRubyClassAncestors(root: AstNode): {
         if (!mixin) continue;
         if (mixin.kind === "prepend") prepended.push(mixin.name);
         else ancestors.push(mixin.name);
+        if (mixin.kind !== "extend") conforms.push(mixin.name);
       }
+      const fact = classDeclarationFact(node, fq, conforms);
+      if (fact !== null) typeDeclarations.push(fact);
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
       // `self.table_name = "companies"` — the explicit ORM table override
@@ -231,18 +318,23 @@ export function collectRubyClassAncestors(root: AstNode): {
       // the body are the canonical recursion target; without an explicit
       // body field, fall back to scanning the class node's own children.
       const recurseChildren = body ? body.children : node.children;
-      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")], true);
       return;
     }
-    for (const child of node.children) walkScope(child, scope);
+    if (constantScope && CONSTANT_ASSIGNMENT_NODE_TYPES.has(node.type)) {
+      typeDeclarations.push(...constantDeclarationFacts(node, scope));
+    }
+    const childConstantScope = constantScope && !CONSTANT_OPAQUE_NODE_TYPES.has(node.type);
+    for (const child of node.children) walkScope(child, scope, childConstantScope);
   };
-  walkScope(root, []);
+  walkScope(root, [], true);
   return {
     ancestors: out,
     prepended: prependedOut,
     superclasses: superclassOut,
     compact: compactOut,
     schemaTables: schemaTablesOut,
+    typeDeclarations,
   };
 }
 
@@ -290,23 +382,28 @@ function mixinTargetFromStatement(node: AstNode): { name: string; kind: "include
  * declarations: `classAncestors`, `compactDeclaredClasses`, `classSchemaTables`,
  * `classPrependedAncestors`, `classExtends` and `inheritanceEdges`.
  *
- * Both collectors above run here rather than at the call site, because the six
- * channels are the ONLY consumers of what they return — the ancestor Maps exist
- * to be published and nothing else reads them.
+ * `declarations` is `collectRubyClassAncestors`'s result, collected by the
+ * walker ahead of the chunk pass so that walk also feeds the chunk-kind index;
+ * the six channels plus `typeDeclarations` are its only consumers.
  *
  * Each channel is written only when non-empty, and every Map is converted to a
  * plain Record on the way out: the codegraph provider spills FileExtraction to
  * NDJSON, and `JSON.stringify` turns a Map into `{}`, silently losing every
  * entry. Plain objects survive the round-trip intact.
  */
-export function attachRubyClassHierarchyChannels(out: FileExtraction, root: AstNode): void {
+export function attachRubyClassHierarchyChannels(
+  out: FileExtraction,
+  root: AstNode,
+  declarations: RubyClassDeclarations,
+): void {
   const {
     ancestors: ancestorMap,
     prepended: prependedMap,
     superclasses: superclassMap,
     compact: compactClassSet,
     schemaTables: schemaTableMap,
-  } = collectRubyClassAncestors(root);
+    typeDeclarations,
+  } = declarations;
   if (ancestorMap.size > 0) {
     const ancestorRecord: Record<string, readonly string[]> = createIdentifierRecord();
     for (const [k, v] of ancestorMap) ancestorRecord[k] = v;
@@ -338,4 +435,5 @@ export function attachRubyClassHierarchyChannels(out: FileExtraction, root: AstN
   // for the hierarchy graph. The legacy Records stay (resolver-forward path).
   const inheritanceEdges = collectRubyInheritanceEdges(root);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
+  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
 }

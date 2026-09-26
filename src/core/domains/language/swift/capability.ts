@@ -15,6 +15,16 @@ export const capability: LanguageCapability = {
     tech: "10-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope, nested-type and module-level-value receivers; no import narrowing",
     summary:
       "10-strategy chain + superclass dispatch + field and return-type receiver typing + nested-type and module-value receivers; no import narrowing",
+    // The resolver reads the run-global `typeDeclarations` map (declared vs
+    // re-opened types, generic facts) — bd tea-rags-mcp-y99pg.1, vi0wx.
+    resolverReadsTypeDeclarations: true,
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // `Color(rawValue:)` calls an enum initializer, and a typealias of a type
+    // initializes it the same way; a protocol is only a receiver of its static members.
+    symbolKindRoles: {
+      callee: new Set(["class", "enum", "type_alias", "function", "method"]),
+      receiver: new Set(["class", "interface", "enum", "type_alias", "constant", "function", "method"]),
+    },
   },
   // walker 45: a module-level value (`public let AF = Session.default`) is
   // published run-global under the module-scope key `<relPath>::` — typed on

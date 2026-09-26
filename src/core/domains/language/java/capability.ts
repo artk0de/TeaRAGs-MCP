@@ -6,7 +6,17 @@ export const capability: LanguageCapability = {
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-java" },
   tests: { tier: "medium", detection: "*Test.java / *IT.java", tech: "generic AST" },
   testFiles,
-  codegraph: { tier: "moderate", tech: "6-strategy + java.lang stdlib whitelist + overload disambiguation" },
+  codegraph: {
+    tier: "moderate",
+    tech: "6-strategy + java.lang stdlib whitelist + overload disambiguation",
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // An interface is a receiver of its static members (`Comparator.naturalOrder()`),
+    // never a callee; an enum and a `static final` field likewise.
+    symbolKindRoles: {
+      callee: new Set(["class", "function", "method"]),
+      receiver: new Set(["class", "interface", "enum", "constant", "function", "method"]),
+    },
+  },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2: bd tea-rags-mcp-f11nz — innermost-chunk call attribution. Every
   // in-method call used to be emitted a second time from its enclosing class

@@ -479,11 +479,27 @@ export interface IdentifierBoundCallee {
 export type TypeDeclarationKind = "class" | "struct" | "enum" | "actor" | "protocol";
 
 /**
- * One type declaration a file carries (`FileExtraction.typeDeclarations`).
+ * One type-level declaration a file carries (`FileExtraction.typeDeclarations`)
+ * — a type, a type alias, or a file-level constant (bd tea-rags-mcp-vi0wx,
+ * spec §1b). Every walker may publish it; which resolvers READ it is a separate
+ * capability fact (`LanguageCapability.codegraph.resolverReadsTypeDeclarations`),
+ * so a language publishing facts for the naming lexicon does not widen any
+ * resolver's run-global maps. The fields below `conforms` are Swift resolver
+ * detail and stay absent in every other language.
  */
 export interface TypeDeclarationFact {
   /** The type's composed id, nesting included: `Request`, `Request.State`. */
   readonly typeId: string;
+  /**
+   * The language-neutral kind of the declaration (`class`, `interface`,
+   * `enum`, `type_alias`, `constant`, …) — what the naming lexicon's type roles
+   * read. On a re-opening it is the kind of the declaration it re-opens when
+   * the walker knows it, else the language's nominal default: a consumer that
+   * needs a TRUE kind reads own declarations (`reopens: false`) only.
+   */
+  readonly symbolKind: SymbolDefinitionKind;
+  /** 1-based line the declaration starts on — where a naming finding points. */
+  readonly line: number;
   /**
    * `true` for a RE-OPENING — a declaration that adds members to a type
    * declared elsewhere (Swift `extension`) — and `false` for the type's own

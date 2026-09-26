@@ -173,10 +173,10 @@ export interface GlobalSymbolTable {
   upsertFile: (relPath: RelPath, definitions: SymbolDefinition[]) => void;
   removeFile: (relPath: RelPath) => void;
   /** Lookup by fully qualified name. Returns all matches across files —
-   *  rare but possible for monkey-patched modules. `options.role` narrows the
+   *  rare but possible for monkey-patched modules. `options.kinds` narrows the
    *  answer by kind exactly as it does for {@link lookupByShortName}; schema
    *  columns never answer it. */
-  lookup: (fqName: string, options?: Pick<SymbolLookupOptions, "role">) => SymbolDefinition[];
+  lookup: (fqName: string, options?: Pick<SymbolLookupOptions, "kinds">) => SymbolDefinition[];
   /** Lookup by short name; returns all candidates for scope-walk
    *  resolution. SCHEMA COLUMNS ARE EXCLUDED unless `options` opts in — see
    *  {@link SymbolLookupOptions}. */
@@ -254,12 +254,14 @@ export interface GlobalSymbolTable {
    */
   listFiles?: () => Iterable<RelPath>;
   /** Definition count per shortName across the corpus — the distribution the
-   *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). Counts
-   *  CALL TARGETS only, the `role: "callee"` view (bd tea-rags-mcp-jqvbn): a
-   *  fan-out is over the definitions a call can land on, so an `interface` or
-   *  a constant sharing a method's name widens nothing. A name with no call
-   *  target is absent. */
-  shortNameDefCounts: () => ReadonlyMap<string, number>;
+   *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb).
+   *  `kinds` narrows the count exactly as {@link SymbolLookupOptions.kinds}
+   *  narrows a lookup (bd tea-rags-mcp-jqvbn): a fan-out is over the
+   *  definitions a call can land on, so the caller passes its language's
+   *  `symbolKindRoles.callee` and a same-named declaration that language cannot
+   *  call widens nothing. A name with no definition of those kinds is absent.
+   *  Omitted = every kind. */
+  shortNameDefCounts: (kinds?: ReadonlySet<SymbolDefinitionKind>) => ReadonlyMap<string, number>;
 }
 
 /**
@@ -275,12 +277,15 @@ export interface SymbolLookupOptions {
   /** Include schema-synthesized column accessors (`isSchemaColumn`). Default false. */
   includeSchemaColumns?: boolean;
   /**
-   * The part of a call the looked-up name plays (bd tea-rags-mcp-jqvbn). The
-   * table answers with the definitions whose `symbolKind` can play it — see
-   * {@link symbolKindServesLookupRole}. Omitted = a TYPE lookup (a CHA locator,
-   * an annotation, an `extends` target), which keeps every kind.
+   * The declaration kinds that may answer (bd tea-rags-mcp-jqvbn) — for a
+   * lookup made for a part of a call, the CALLING language's
+   * {@link SymbolKindRoles} set for that part. The table knows no language: it
+   * keeps the definitions whose `symbolKind` is in the set, plus every
+   * definition with no recorded kind (a row written before migration 035), which
+   * keeps resolving as it did before kinds existed. Omitted = a TYPE lookup (a
+   * CHA locator, an annotation, an `extends` target), which keeps every kind.
    */
-  role?: SymbolLookupRole;
+  kinds?: ReadonlySet<SymbolDefinitionKind>;
 }
 
 /**
@@ -289,62 +294,20 @@ export interface SymbolLookupOptions {
  * in `new Logger()`); `"receiver"` — the value a member call is invoked on
  * (`Color` in `Color.values()`).
  */
-export type SymbolLookupRole = "callee" | "receiver";
+export type SymbolLookupRole = keyof SymbolKindRoles;
 
 /**
- * Declarations that exist only in the type system — nothing at runtime can be
- * invoked through them or have a member called on them.
+ * Which declaration kinds can play each part of a call, in ONE language (bd
+ * tea-rags-mcp-jqvbn, spec §1a). A property of the language, not of the kind
+ * vocabulary: Ruby never calls a class by its bare name (`Money(x)` is a
+ * method), Go calls an interface (`Stringer(x)` is a conversion), Swift calls
+ * an enum (`Color(rawValue:)`). Declared by each language capability
+ * (`LanguageCapability.codegraph.symbolKindRoles`); a resolver hands the set
+ * for the part it resolves to the table as {@link SymbolLookupOptions.kinds}.
  */
-const TYPE_ONLY_SYMBOL_KINDS: ReadonlySet<SymbolDefinitionKind> = new Set(["interface", "type_alias"]);
-
-/**
- * Runtime VALUES that are not invocable themselves: an enum or a module-level
- * constant is called THROUGH (`Color.values()`, `CONFIG.get()`), never called.
- */
-const NON_INVOCABLE_VALUE_SYMBOL_KINDS: ReadonlySet<SymbolDefinitionKind> = new Set(["enum", "constant"]);
-
-/**
- * Can a definition of this kind be the CALLEE of a call (bd tea-rags-mcp-jqvbn)?
- *
- * The one owner of that answer, shared by the symbol table (which applies it to
- * a `role: "callee"` lookup and to `shortNameDefCounts`) and by anything else
- * that must agree with it. It lives beside {@link SymbolDefinitionKind} because
- * it is a fact about that vocabulary, and because `contracts/` is the only
- * layer both the table (`domains/trajectory`) and the resolvers
- * (`domains/language`) may import.
- *
- * `undefined` answers `true`: a definition whose kind no walker recorded — a
- * row persisted before migration 035, an untagged chunk — keeps resolving
- * exactly as it did before kinds existed.
- *
- * Vocabulary-level, not per-language: a language whose call syntax invokes a
- * type (a Go conversion `Stringer(x)`, a Swift `Color(rawValue:)` initializer)
- * simply does not ask its lookups for the callee role.
- */
-export function isCallTargetSymbolKind(kind: SymbolDefinitionKind | undefined): boolean {
-  if (kind === undefined) return true;
-  return !TYPE_ONLY_SYMBOL_KINDS.has(kind) && !NON_INVOCABLE_VALUE_SYMBOL_KINDS.has(kind);
-}
-
-/**
- * Can a definition of this kind be the RECEIVER a member call is invoked on
- * (bd tea-rags-mcp-jqvbn)? Everything that exists at runtime can — enums and
- * constants included; only type-only declarations cannot. `undefined` answers
- * `true` for the reason {@link isCallTargetSymbolKind} gives.
- */
-export function isCallReceiverSymbolKind(kind: SymbolDefinitionKind | undefined): boolean {
-  if (kind === undefined) return true;
-  return !TYPE_ONLY_SYMBOL_KINDS.has(kind);
-}
-
-/** Does a definition of `kind` answer a lookup made for `role`? No role = every kind. */
-export function symbolKindServesLookupRole(
-  kind: SymbolDefinitionKind | undefined,
-  role: SymbolLookupRole | undefined,
-): boolean {
-  if (role === "callee") return isCallTargetSymbolKind(kind);
-  if (role === "receiver") return isCallReceiverSymbolKind(kind);
-  return true;
+export interface SymbolKindRoles {
+  readonly callee: ReadonlySet<SymbolDefinitionKind>;
+  readonly receiver: ReadonlySet<SymbolDefinitionKind>;
 }
 
 /** Positional-arity envelope of a method definition (bd xlnub). `maxPositional`

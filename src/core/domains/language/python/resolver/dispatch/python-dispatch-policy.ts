@@ -5,6 +5,7 @@
  */
 
 import type { DispatchFanoutPopulation } from "../../../../../contracts/types/language.js";
+import { capability } from "../../capability.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 
 /**
@@ -15,7 +16,11 @@ import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
  * {@link PY_DISPATCH_FAN_MAX} (4) is always the tighter of the two — but it
  * keeps the ceiling honest if the Python cap is ever lifted past the floor.
  */
-export const PYTHON_FANOUT_POPULATION: DispatchFanoutPopulation = { family: "python", ownsPath: isPythonSourcePath };
+export const PYTHON_FANOUT_POPULATION: DispatchFanoutPopulation = {
+  family: "python",
+  ownsPath: isPythonSourcePath,
+  calleeKinds: capability.codegraph.symbolKindRoles.callee,
+};
 
 /**
  * Python's dispatch fan cap.

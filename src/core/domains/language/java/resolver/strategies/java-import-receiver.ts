@@ -1,6 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { capability } from "../../capability.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -96,7 +97,7 @@ export class JavaImportReceiverSymbolResolutionStrategy implements SymbolResolut
       const targetFile = mapJavaImportToFile(match.importText);
       if (targetFile) {
         const candidates = ctx.symbolTable
-          .lookupByShortName(call.member)
+          .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
           .filter((def) => def.relPath === targetFile || def.relPath.endsWith(`/${targetFile}`));
         const target = pickSingleCandidate(candidates, this.cfg.mode);
         if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
@@ -113,7 +114,7 @@ export class JavaImportReceiverSymbolResolutionStrategy implements SymbolResolut
     // `StrBuilder#charAt` (scope=[StrBuilder] != "cs"), `random().nextBytes()`
     // against `RandomUtils.nextBytes` (scope=[RandomUtils] != "random()").
     const filteredByScope = ctx.symbolTable
-      .lookupByShortName(call.member)
+      .lookupByShortName(call.member, { kinds: capability.codegraph.symbolKindRoles.callee })
       .filter((def) => def.scope[def.scope.length - 1] === receiver);
     const target = pickSingleCandidate(filteredByScope, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });

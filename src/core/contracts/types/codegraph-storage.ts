@@ -122,6 +122,30 @@ export interface IdentifierReplaceEntry {
 }
 
 /**
+ * One `cg_type_declarations` row (migration 038, bd tea-rags-mcp-vi0wx): a
+ * `TypeDeclarationFact` as the naming lexicon persists it. Built at sink time
+ * from a file's `FileExtraction`; the file is implied by the entry carrying it.
+ */
+export interface TypeDeclarationRow {
+  /** The file's language — the column a per-language role read groups by. */
+  language: string;
+  typeId: string;
+  /** The last segment of `typeId` — what a role's tail word is read from. */
+  shortName: string;
+  symbolKind: SymbolDefinitionKind;
+  line: number;
+  reopens: boolean;
+  /** The ancestors the declaration names, in clause order; empty when it names none. */
+  supertypes: readonly string[];
+}
+
+/** One file's type-declaration rows, as consumed by `GraphDbClient.replaceTypeDeclarationsBulk`. */
+export interface TypeDeclarationReplaceEntry {
+  relPath: RelPath;
+  rows: readonly TypeDeclarationRow[];
+}
+
+/**
  * The scope of an identifier read: the effective types asked for, optionally
  * narrowed to files under any of `pathPrefixes` (a literal rel_path prefix).
  */
@@ -950,6 +974,13 @@ export interface GraphDbClient {
    * no-op.
    */
   replaceIdentifiersBulk: (entries: readonly IdentifierReplaceEntry[]) => Promise<void>;
+
+  /**
+   * Make `cg_type_declarations` EQUAL each entry's rows for every file the
+   * entries name, in one transaction — the {@link replaceIdentifiersBulk}
+   * contract over the naming lexicon's type table (bd tea-rags-mcp-vi0wx).
+   */
+  replaceTypeDeclarationsBulk: (entries: readonly TypeDeclarationReplaceEntry[]) => Promise<void>;
 
   /**
    * Rows whose EFFECTIVE type is in `q.types`, grouped by (type, kind, name,

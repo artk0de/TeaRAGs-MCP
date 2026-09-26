@@ -4,7 +4,16 @@ export const capability: LanguageCapability = {
   language: "markdown",
   ast: { tier: "full", engine: "MarkdownChunker (ToC + smart chunking)" },
   tests: { tier: "na", detection: "doc-only", tech: "—" },
-  codegraph: { tier: "none", tech: "no call graph" },
+  codegraph: {
+    tier: "none",
+    tech: "no call graph",
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // No calls.
+    symbolKindRoles: {
+      callee: new Set([]),
+      receiver: new Set([]),
+    },
+  },
   // No grammarPackage: MarkdownChunker parses without a tree-sitter grammar, so
   // that axis is genuinely absent rather than unknown. `walker` /
   // `codegraphSchema` are declared and simply never move — a doc-only language

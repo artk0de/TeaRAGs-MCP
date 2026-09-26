@@ -50,7 +50,7 @@ import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
 import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
-import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
+import { lookupRubySymbolsByShortName, rubyMemberLookupRole } from "./short-name-lookup.js";
 import {
   CONE_MAX_DEFAULT,
   resolveConstant,
@@ -185,7 +185,7 @@ export class RubyCallResolver implements CallResolver {
    * fallback charged it as `missWithInProjectDef` anyway.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupRubySymbolsByShortName(ctx, call.member).length > 0;
+    return lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) }).length > 0;
   }
 
   /**

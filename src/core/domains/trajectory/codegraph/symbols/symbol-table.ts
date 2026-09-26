@@ -17,13 +17,12 @@
  * lands.
  */
 
-import {
-  isCallTargetSymbolKind,
-  symbolKindServesLookupRole,
-  type GlobalSymbolTable,
-  type RelPath,
-  type SymbolDefinition,
-  type SymbolLookupOptions,
+import type {
+  GlobalSymbolTable,
+  RelPath,
+  SymbolDefinition,
+  SymbolDefinitionKind,
+  SymbolLookupOptions,
 } from "../../../../contracts/types/codegraph.js";
 
 export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
@@ -116,18 +115,18 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     return this.dirRefCounts.has(normalized);
   }
 
-  lookup(fqName: string, options?: Pick<SymbolLookupOptions, "role">): SymbolDefinition[] {
-    return servingRole(this.byFq.get(fqName), options?.role);
+  lookup(fqName: string, options?: Pick<SymbolLookupOptions, "kinds">): SymbolDefinition[] {
+    return ofKinds(this.byFq.get(fqName), options?.kinds);
   }
 
   lookupByShortName(name: string, options?: SymbolLookupOptions): SymbolDefinition[] {
-    const declared = servingRole(this.byShort.get(name), options?.role);
+    const declared = ofKinds(this.byShort.get(name), options?.kinds);
     if (options?.includeSchemaColumns !== true) return declared;
     // Declared definitions stay FIRST: a real `def name` shadows the AR-generated
     // attribute method in Ruby, and callers that pick a single candidate rely on
     // the declared-before-synthesized order.
     const columns = this.schemaColumnsByShort.get(name);
-    return columns === undefined ? declared : [...declared, ...servingRole(columns, options.role)];
+    return columns === undefined ? declared : [...declared, ...ofKinds(columns, options.kinds)];
   }
 
   setSchemaColumns(definitions: SymbolDefinition[]): void {
@@ -143,16 +142,16 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
   }
 
   /**
-   * The callee view (bd tea-rags-mcp-jqvbn) — see the contract. A name every
-   * definition of which is a type or a constant has no call target and is left
-   * out, rather than counted as zero, so the distribution's population is the
-   * set of names a call can resolve to.
+   * Counted under the caller's kinds (bd tea-rags-mcp-jqvbn) — see the
+   * contract. A name none of whose definitions is of those kinds is left out,
+   * rather than counted as zero, so the distribution's population is the set of
+   * names a call of that language can resolve to.
    */
-  shortNameDefCounts(): ReadonlyMap<string, number> {
+  shortNameDefCounts(kinds?: ReadonlySet<SymbolDefinitionKind>): ReadonlyMap<string, number> {
     const counts = new Map<string, number>();
     for (const [name, defs] of this.byShort) {
       let n = 0;
-      for (const def of defs) if (isCallTargetSymbolKind(def.symbolKind)) n++;
+      for (const def of defs) if (isOfKinds(def, kinds)) n++;
       if (n > 0) counts.set(name, n);
     }
     return counts;
@@ -198,17 +197,26 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
 }
 
 /**
- * A copy of `defs` narrowed to the definitions whose kind serves `role` — the
- * copy the lookups have always returned, so a caller mutating its answer never
- * reaches the index. No role copies everything.
+ * Does `def` answer a lookup restricted to `kinds`? No restriction answers
+ * every definition; a definition with no recorded kind (a row written before
+ * migration 035, an untagged chunk) answers every restriction, so it keeps
+ * resolving exactly as it did before kinds existed.
  */
-function servingRole(
+function isOfKinds(def: SymbolDefinition, kinds: ReadonlySet<SymbolDefinitionKind> | undefined): boolean {
+  return kinds === undefined || def.symbolKind === undefined || kinds.has(def.symbolKind);
+}
+
+/**
+ * A copy of `defs` narrowed to {@link isOfKinds} — the copy the lookups have
+ * always returned, so a caller mutating its answer never reaches the index.
+ */
+function ofKinds(
   defs: readonly SymbolDefinition[] | undefined,
-  role: SymbolLookupOptions["role"],
+  kinds: ReadonlySet<SymbolDefinitionKind> | undefined,
 ): SymbolDefinition[] {
   if (defs === undefined) return [];
-  if (role === undefined) return defs.slice();
-  return defs.filter((def) => symbolKindServesLookupRole(def.symbolKind, role));
+  if (kinds === undefined) return defs.slice();
+  return defs.filter((def) => isOfKinds(def, kinds));
 }
 
 /** Every ancestor directory of a repo-relative path, shallowest first. */

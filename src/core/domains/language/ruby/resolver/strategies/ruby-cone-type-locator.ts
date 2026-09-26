@@ -36,7 +36,7 @@ export class RubyConeTypeLocator implements ConeTypeLocator {
     const file = resolveConstant(typeName, ctx);
     if (!file) return null;
     const bareType = lastConstantSegment(typeName);
-    const candidates = lookupRubySymbolsByShortName(ctx, member).filter((def) => {
+    const candidates = lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).filter((def) => {
       if (def.relPath !== file) return false;
       const tail = def.scope[def.scope.length - 1];
       return tail === typeName || tail === bareType;

@@ -14,7 +14,8 @@ import {
 } from "../../../../../src/core/domains/language/kernel/fanout-policy.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const RUBY: DispatchFanoutPopulation = { family: "ruby", ownsPath: (p) => p.endsWith(".rb") };
+const RUBY_CALLEE: ReadonlySet<SymbolDefinitionKind> = new Set(["function", "method"]);
+const RUBY: DispatchFanoutPopulation = { family: "ruby", ownsPath: (p) => p.endsWith(".rb"), calleeKinds: RUBY_CALLEE };
 
 const def = (relPath: string, name: string, symbolKind: SymbolDefinitionKind): SymbolDefinition => ({
   symbolId: `${relPath}#${name}`,
@@ -47,10 +48,30 @@ function tableWithNonCallableNamesakes(): InMemoryGlobalSymbolTable {
 
 describe("dispatch fan-out policy reads the callee view (bd tea-rags-mcp-jqvbn)", () => {
   it("keeps non-callable namesakes out of the corpus p99", () => {
-    expect(dispatchFanoutPolicyFor(tableWithNonCallableNamesakes()).p99DefsPerMember).toBe(1);
+    expect(
+      dispatchFanoutPolicyFor(tableWithNonCallableNamesakes(), { calleeKinds: RUBY_CALLEE }).p99DefsPerMember,
+    ).toBe(1);
   });
 
   it("keeps non-callable namesakes out of a population's p99", () => {
     expect(dispatchFanoutPolicyFor(tableWithNonCallableNamesakes(), { population: RUBY }).p99DefsPerMember).toBe(1);
+  });
+
+  it("counts under the population's own callee kinds, not a vocabulary-wide rule", () => {
+    const everyKind: ReadonlySet<SymbolDefinitionKind> = new Set(["method", "constant", "interface"]);
+    const table = tableWithNonCallableNamesakes();
+    const permissive: DispatchFanoutPopulation = {
+      family: "permissive",
+      ownsPath: RUBY.ownsPath,
+      calleeKinds: everyKind,
+    };
+    expect(dispatchFanoutPolicyFor(table, { population: permissive }).p99DefsPerMember).toBe(31);
+  });
+
+  it("memoises the corpus policy per callee-kind set", () => {
+    const table = tableWithNonCallableNamesakes();
+    const everyKind: ReadonlySet<SymbolDefinitionKind> = new Set(["method", "constant", "interface"]);
+    expect(dispatchFanoutPolicyFor(table, { calleeKinds: RUBY_CALLEE }).p99DefsPerMember).toBe(1);
+    expect(dispatchFanoutPolicyFor(table, { calleeKinds: everyKind }).p99DefsPerMember).toBe(31);
   });
 });

@@ -64,6 +64,21 @@ interface SwiftTypeDeclarationSets {
 
 const memo = new RunScopedMemo<Readonly<Record<string, readonly TypeDeclarationFact[]>>, SwiftTypeDeclarationSets>();
 
+/**
+ * The facts of `facts` the resolver reads — every one but a `type_alias`. The
+ * walker publishes each non-local `typealias` for the naming lexicon (bd
+ * tea-rags-mcp-vi0wx, spec §1b), and an alias declares no type: counted here, a
+ * project `typealias JSONDecoder = …` would make the project DECLARE the SDK
+ * type, and every declared-vs-re-opened answer below would move. Every read of
+ * the channel in this resolver goes through this one filter.
+ */
+function swiftResolverTypeFacts(facts: readonly TypeDeclarationFact[] | undefined): readonly TypeDeclarationFact[] {
+  if (facts === undefined) return [];
+  return facts.some((fact) => fact.symbolKind === "type_alias")
+    ? facts.filter((fact) => fact.symbolKind !== "type_alias")
+    : facts;
+}
+
 function add(into: Map<string, Set<string>>, typeId: string, relPath: string): void {
   const files = into.get(typeId);
   if (files) files.add(relPath);
@@ -165,7 +180,7 @@ function setsFor(ctx: CallContext): SwiftTypeDeclarationSets | undefined {
   for (const relPath of Object.keys(channel).sort()) {
     // Swift declarations only, as every lookup here (`swift-symbol-lookup.ts`).
     if (!relPath.endsWith(".swift")) continue;
-    for (const fact of channel[relPath]) {
+    for (const fact of swiftResolverTypeFacts(channel[relPath])) {
       add(fact.reopens ? reopening : declaring, fact.typeId, relPath);
       if (!fact.reopens) {
         const own = kinds.get(fact.typeId) ?? new Set<TypeDeclarationKind | null>();
@@ -454,7 +469,7 @@ export function swiftIsOptionalProperty(typeId: string, field: string, ctx: Call
  * nowhere else. Empty when no such re-opening spans the line.
  */
 export function swiftSelfConstraintsAt(typeId: string, line: number, ctx: CallContext): readonly string[] {
-  for (const fact of ctx.typeDeclarations?.[ctx.callerFile] ?? []) {
+  for (const fact of swiftResolverTypeFacts(ctx.typeDeclarations?.[ctx.callerFile])) {
     const constraint = fact.selfConstraints;
     if (fact.typeId !== typeId || constraint === undefined) continue;
     if (line >= constraint.startLine && line <= constraint.endLine) return constraint.types;

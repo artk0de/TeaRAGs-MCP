@@ -49,8 +49,9 @@ export interface CodeFileExtractionRequest {
 /**
  * Parse and walk `request.text`. A file bearing none of the walker's
  * `extractionBearingNodeTypes` yields the empty extraction without being
- * materialized. Throws whatever the parser, collector or walker throws — the
- * caller decides whether one file's failure is fatal.
+ * materialized, merged with whatever the walker's `inertFileExtraction` reads
+ * off the native root. Throws whatever the parser, collector or walker throws —
+ * the caller decides whether one file's failure is fatal.
  */
 export function extractCodeFileFromText(
   collaborators: CodeFileExtractionCollaborators,
@@ -62,7 +63,12 @@ export function extractCodeFileFromText(
   // Ask the NATIVE tree before materializing it — the most expensive thing
   // pass 1 does on generated data tables (bd tea-rags-mcp-1v12o.2.4).
   if (fileIsInertForExtraction(nativeTree.rootNode, walker.extractionBearingNodeTypes)) {
-    return { relPath, language, imports: [], chunks: [], fileScope: [] };
+    const inert: FileExtraction = { relPath, language, imports: [], chunks: [], fileScope: [] };
+    // An inert file still carries facts a walk would publish (module-scope
+    // declarations, a 0/0 census): the language reads them off the NATIVE root,
+    // still unmaterialized, and they merge in over the empty shape.
+    const facets = walker.inertFileExtraction?.(nativeTree.rootNode);
+    return facets === undefined ? inert : { ...inert, ...facets };
   }
   // collectSymbols and the walk both see the deterministic plain-JS tree, as at
   // the chunker boundary (rdv7d).

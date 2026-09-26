@@ -92,7 +92,7 @@ export function declaredReturnTypeOn(
  * its own lead (owner-aware facts, not a wider gate).
  */
 export function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: CallContext): boolean {
-  return lookupRubySymbolsByShortName(ctx, member).length <= 1;
+  return lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).length <= 1;
 }
 
 /**

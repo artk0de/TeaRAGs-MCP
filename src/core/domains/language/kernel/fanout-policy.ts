@@ -1,4 +1,9 @@
-import type { DispatchFanoutPolicy, GlobalSymbolTable, ResolveRunScope } from "../../../contracts/types/codegraph.js";
+import type {
+  DispatchFanoutPolicy,
+  GlobalSymbolTable,
+  ResolveRunScope,
+  SymbolDefinitionKind,
+} from "../../../contracts/types/codegraph.js";
 import type { DispatchFanoutPopulation } from "../../../contracts/types/language.js";
 import { RunScopedMemo } from "./run-scoped-memo.js";
 
@@ -39,7 +44,10 @@ export function buildDispatchFanoutPolicy(
   return { cap: Math.max(floor, Math.ceil(p99)), p99DefsPerMember: p99 };
 }
 
-const policyCache = new RunScopedMemo<GlobalSymbolTable, DispatchFanoutPolicy>();
+/** The kinds a distribution counts; `undefined` = every kind. */
+type CalleeKinds = ReadonlySet<SymbolDefinitionKind> | undefined;
+
+const policyCache = new RunScopedMemo<GlobalSymbolTable, Map<CalleeKinds, DispatchFanoutPolicy>>();
 const populationPolicyCache = new RunScopedMemo<GlobalSymbolTable, Map<string, DispatchFanoutPolicy>>();
 
 /**
@@ -59,16 +67,33 @@ const populationPolicyCache = new RunScopedMemo<GlobalSymbolTable, Map<string, D
  * cap of one with a heavier legitimate tail (taxdome: corpus 16, Ruby 19). A
  * population under {@link DISPATCH_FANOUT_POPULATION_MIN_MEMBERS} names gets
  * the corpus policy object itself.
+ *
+ * Both distributions count the definitions a call can land on (bd
+ * tea-rags-mcp-jqvbn), and which those are is the CALLING language's answer:
+ * `opts.calleeKinds` for the corpus policy, `population.calleeKinds` for a
+ * population's — and for the corpus fallback a small population reads, so the
+ * fallback counts what the population's own lookup would. The corpus policy is
+ * memoized per kind set; no kinds counts every kind.
  */
 export function dispatchFanoutPolicyFor(
   table: GlobalSymbolTable,
-  opts?: { floor?: number; runScope?: ResolveRunScope; population?: DispatchFanoutPopulation },
+  opts?: {
+    floor?: number;
+    runScope?: ResolveRunScope;
+    population?: DispatchFanoutPopulation;
+    calleeKinds?: ReadonlySet<SymbolDefinitionKind>;
+  },
 ): DispatchFanoutPolicy {
   if (opts?.population !== undefined) return populationPolicyFor(table, opts.population, opts);
-  const cached = policyCache.get(opts?.runScope, table);
+  let byKinds = policyCache.get(opts?.runScope, table);
+  const cached = byKinds?.get(opts?.calleeKinds);
   if (cached) return cached;
-  const policy = buildDispatchFanoutPolicy(table.shortNameDefCounts().values(), opts);
-  policyCache.set(opts?.runScope, table, policy);
+  const policy = buildDispatchFanoutPolicy(table.shortNameDefCounts(opts?.calleeKinds).values(), opts);
+  if (byKinds === undefined) {
+    byKinds = new Map();
+    policyCache.set(opts?.runScope, table, byKinds);
+  }
+  byKinds.set(opts?.calleeKinds, policy);
   return policy;
 }
 
@@ -83,7 +108,11 @@ function populationPolicyFor(
   const counts = populationDefCounts(table, population);
   const policy =
     counts.length < DISPATCH_FANOUT_POPULATION_MIN_MEMBERS
-      ? dispatchFanoutPolicyFor(table, { floor: opts.floor, runScope: opts.runScope })
+      ? dispatchFanoutPolicyFor(table, {
+          floor: opts.floor,
+          runScope: opts.runScope,
+          calleeKinds: population.calleeKinds,
+        })
       : buildDispatchFanoutPolicy(counts, opts);
   if (byFamily === undefined) {
     byFamily = new Map();
@@ -95,16 +124,17 @@ function populationPolicyFor(
 
 /**
  * Defs-per-shortName counted over `population`'s definitions only; a name the
- * population never defines is not one of its members. Reads through the
- * `role: "callee"` lookup, the same view `shortNameDefCounts` counts —
- * schema-synthesized columns and non-callable kinds stay out, as they do from
- * the corpus scan (bd tea-rags-mcp-jqvbn).
+ * population never defines is not one of its members. Reads through a lookup
+ * restricted to the population's `calleeKinds`, the same view
+ * `shortNameDefCounts(calleeKinds)` counts — schema-synthesized columns and the
+ * kinds the population's language cannot call stay out (bd tea-rags-mcp-jqvbn).
  */
 function populationDefCounts(table: GlobalSymbolTable, population: DispatchFanoutPopulation): number[] {
+  const kinds = population.calleeKinds;
   const counts: number[] = [];
-  for (const name of table.shortNameDefCounts().keys()) {
+  for (const name of table.shortNameDefCounts(kinds).keys()) {
     let n = 0;
-    for (const def of table.lookupByShortName(name, { role: "callee" })) if (population.ownsPath(def.relPath)) n++;
+    for (const def of table.lookupByShortName(name, { kinds })) if (population.ownsPath(def.relPath)) n++;
     if (n > 0) counts.push(n);
   }
   return counts;

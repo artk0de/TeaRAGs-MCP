@@ -24,6 +24,13 @@ export const capability: LanguageCapability = {
     summary:
       "14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker) + cone dispatch + typeChecker-backed union-receiver fan-out",
     tech: "14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker: JSX component resolution, cross-call return-type inference, generics/overload getResolvedSignature, structural typing + interface declaration merging) + ConeDispatch + typeChecker-backed union-receiver fan-out + checker-typed interface receivers dispatched to their implementers through the cone, never matched by short-name uniqueness + every receiver-bearing call the chain declined reaches the typeCheckerFallback regardless of namesake count (bd tea-rags-mcp-05uhs; bare calls still need explicit type arguments or two-plus project namesakes) + out-of-project-receiver precision guards (pre-resolution short-name match, checker-backed declaration-site test covering builtins, default-lib and dependency types, and imported-constant container members on the import-mapping fallback) + local-callee guard (bare calls whose callee is a destructured prop / hook binding) + named function-valued declarators addressable at any scope depth (module-level and nested closures alike, composed under their declaring symbol) + class-property arrows addressable as class members (`request = async () => {}` composing `#` instance / `.` static like a method) + edges restricted to project sources + tsx/tsconfig-paths-aware import mapping",
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // An `enum`, a `namespace` and a `const` are called THROUGH, never called; an
+    // `interface` / `type` exists only for the checker.
+    symbolKindRoles: {
+      callee: new Set(["class", "function", "method"]),
+      receiver: new Set(["class", "module", "enum", "constant", "function", "method"]),
+    },
   },
   // walker 2: the TS-resolver oracle wave. Every index built before it carries
   // old-resolver edges, and no payload KEY moved, so `SchemaDriftMonitor` sees

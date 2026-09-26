@@ -49,6 +49,7 @@ import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import type { SymbolNodeFlushQueue } from "./node-flush.js";
 import type { CodegraphRunState } from "./run-state.js";
 import { extractSelfDispatchMethods, SELF_DISPATCH_LANGUAGE } from "./self-dispatch-discovery.js";
+import { buildTypeDeclarationRows } from "./type-declaration-rows.js";
 
 /**
  * The pass-1 STATE of one file, shared by the sink's `write` (a file this sink
@@ -250,6 +251,7 @@ export function createCodegraphExtractionSink(
           deps.collectionKey(collectionName),
           collectionName,
           deps.buildIdentifierRows(extraction),
+          buildTypeDeclarationRows(extraction),
         );
       }
       deps.indexChunkSymbolsByLine(collectionName, extraction);

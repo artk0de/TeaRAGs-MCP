@@ -55,7 +55,7 @@ export class PythonConeTypeLocator implements ConeTypeLocator {
     const bareType = lastSegment(typeName);
     const file = resolveTypeFile(bareType, ctx, this.mapper);
     if (!file) return null;
-    const candidates = lookupPythonSymbolsByShortName(ctx, member).filter((def) => {
+    const candidates = lookupPythonSymbolsByShortName(ctx, member, { role: "callee" }).filter((def) => {
       if (def.relPath !== file) return false;
       const tail = def.scope[def.scope.length - 1];
       return tail === typeName || tail === bareType;

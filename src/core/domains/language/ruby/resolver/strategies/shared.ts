@@ -426,7 +426,7 @@ export function resolveInstanceMethodInClassChain(
 
   if (klassFile !== null) {
     const candidates = preferDeclaredOverSchemaColumn(
-      lookupRubySymbolsByShortName(ctx, member, { includeSchemaColumns: true }).filter(
+      lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true }).filter(
         (def) => def.relPath === klassFile && def.symbolId !== excludeSymbolId,
       ),
     );
@@ -494,7 +494,9 @@ export function resolveViaSuperclassChain(
     visited.add(klass);
     const file = resolveConstant(klass, ctx);
     if (file !== null) {
-      const candidates = lookupRubySymbolsByShortName(ctx, member).filter((def) => def.relPath === file);
+      const candidates = lookupRubySymbolsByShortName(ctx, member, { role: "callee" }).filter(
+        (def) => def.relPath === file,
+      );
       const target = pickSingleCandidate(candidates, mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     }
@@ -721,7 +723,7 @@ export function enclosingTypeOf(symbolId: string): string | null {
 
 /** Whether a resolved hook target points at a walker-marked abstract stub. */
 function targetIsAbstractStub(target: SymbolResolutionTarget, hook: string, ctx: CallContext): boolean {
-  return lookupRubySymbolsByShortName(ctx, hook).some(
+  return lookupRubySymbolsByShortName(ctx, hook, { role: "callee" }).some(
     (def) =>
       def.symbolId === target.targetSymbolId && def.relPath === target.targetRelPath && def.isAbstractStub === true,
   );
@@ -760,7 +762,7 @@ function resolveTypeMethodInternal(
     // already narrowed to one class's file and scope, so a synthesized `name`
     // cannot widen anything (bd tea-rags-mcp-8l5fo).
     const candidates = preferDeclaredOverSchemaColumn(
-      lookupRubySymbolsByShortName(ctx, member, { includeSchemaColumns: true }).filter((def) => {
+      lookupRubySymbolsByShortName(ctx, member, { role: "callee", includeSchemaColumns: true }).filter((def) => {
         if (def.relPath !== targetFile) return false;
         const tail = def.scope[def.scope.length - 1];
         if (tail !== typeName && tail !== bareType) return false;

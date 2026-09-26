@@ -1234,36 +1234,22 @@ describe("CodegraphDaemonServer.handle — type-name rows", () => {
     const c = "code_type_names_v1";
     expect((await server.handle({ id: 1, op: "handshake", params: { collection: c } })).ok).toBe(true);
     const { graphDb } = await pool.acquire(c);
-    const def = (relPath: string, name: string) => ({
-      relPath,
-      symbolId: name,
-      fqName: name,
+    // INVARIANT CHANGED (bd tea-rags-mcp-l2pkp): the read's single source is
+    // `cg_type_declarations` (migration 038), so that is the table seeded here.
+    const decl = (name: string, supertypes: string[] = []) => ({
+      language: "typescript",
+      typeId: name,
       shortName: name,
-      scope: [],
       symbolKind: "class" as const,
+      line: 1,
+      reopens: false,
+      supertypes,
     });
-    await graphDb.upsertSymbolsBulk([
-      { relPath: "src/a.ts", definitions: [def("src/a.ts", "ExactStrategy")] },
-      { relPath: "src/b.ts", definitions: [def("src/b.ts", "FuzzyStrategy")] },
-      { relPath: "scripts/c.ts", definitions: [def("scripts/c.ts", "ToolStrategy")] },
+    await graphDb.replaceTypeDeclarationsBulk([
+      { relPath: "src/a.ts", rows: [decl("ExactStrategy", ["BaseStrategy"])] },
+      { relPath: "src/b.ts", rows: [decl("FuzzyStrategy")] },
+      { relPath: "scripts/c.ts", rows: [decl("ToolStrategy")] },
     ]);
-    await graphDb.upsertFile(
-      { relPath: "src/a.ts", language: "typescript" },
-      {
-        fileEdges: [],
-        methodEdges: [],
-        inheritance: [
-          {
-            sourceFqName: "ExactStrategy",
-            sourceSymbolId: "ExactStrategy",
-            ancestorFqName: "BaseStrategy",
-            ancestorSymbolId: null,
-            kind: "super",
-            ordinal: 0,
-          },
-        ],
-      },
-    );
     const query = {
       pathPrefixes: [],
       excludePaths: ["src/b.ts"],

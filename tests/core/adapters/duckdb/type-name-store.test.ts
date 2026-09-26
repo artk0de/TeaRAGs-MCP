@@ -1,10 +1,15 @@
 /**
- * `readTypeNameRows` — the type-level symbols the naming lexicon derives type
- * roles from (bd tea-rags-mcp-vi0wx): each row carries its inheritance
- * ancestors from `cg_symbols_inheritance`, rows of unknown kind (`NULL`
- * `symbol_kind`, pre-migration-035) are excluded, diff mode's `excludePaths`
- * drops the changed files, and the non-production masks drop tooling and test
- * files exactly as the ontology report does.
+ * `readTypeNameRows` — the type-level declarations the naming lexicon derives
+ * type roles from (bd tea-rags-mcp-vi0wx): each row carries its ancestors, rows
+ * of unknown kind are excluded, diff mode's `excludePaths` drops the changed
+ * files, and the non-production masks drop tooling and test files exactly as
+ * the ontology report does.
+ *
+ * INVARIANT CHANGED (bd tea-rags-mcp-l2pkp, spec §1b): the single source is
+ * `cg_type_declarations` (migration 038), not `cg_symbols` joined to
+ * `cg_symbols_inheritance` — so the fixture seeds that table, and a
+ * re-opening (`reopens = true`) is never a type of the project. Every
+ * expectation of the read is unchanged.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,9 +19,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
 import type {
-  InheritanceEdgeRow,
-  SymbolDefinition,
   SymbolDefinitionKind,
+  TypeDeclarationRow,
   TypeNameQuery,
 } from "../../../../src/core/contracts/types/codegraph.js";
 import { languageTestFileConventions } from "../../../../src/core/domains/language/capability/native.js";
@@ -31,25 +35,20 @@ function query(partial: Partial<TypeNameQuery> = {}): TypeNameQuery {
   return { pathPrefixes: [], kinds: TYPE_KINDS, nonProductionPaths: NON_PRODUCTION_PATHS, ...partial };
 }
 
-function def(relPath: string, name: string, symbolKind?: SymbolDefinitionKind): SymbolDefinition {
+function decl(
+  typeId: string,
+  symbolKind: SymbolDefinitionKind,
+  extra: Partial<TypeDeclarationRow> = {},
+): TypeDeclarationRow {
   return {
-    relPath,
-    symbolId: name,
-    fqName: name,
-    shortName: name,
-    scope: [],
-    ...(symbolKind ? { symbolKind } : {}),
-  };
-}
-
-function inherits(source: string, ancestor: string, ordinal: number): InheritanceEdgeRow {
-  return {
-    sourceFqName: source,
-    sourceSymbolId: source,
-    ancestorFqName: ancestor,
-    ancestorSymbolId: null,
-    kind: ordinal === 0 ? "super" : "implements",
-    ordinal,
+    language: "typescript",
+    typeId,
+    shortName: typeId.split(".").at(-1) ?? typeId,
+    symbolKind,
+    line: 1,
+    reopens: false,
+    supertypes: [],
+    ...extra,
   };
 }
 
@@ -62,30 +61,24 @@ describe("readTypeNameRows", () => {
     db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
-    await db.upsertSymbolsBulk([
-      { relPath: "src/strategies/exact.ts", definitions: [def("src/strategies/exact.ts", "ExactStrategy", "class")] },
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "src/strategies/exact.ts",
+        rows: [decl("ExactStrategy", "class", { supertypes: ["BaseStrategy", "Named"] })],
+      },
       {
         relPath: "src/strategies/fuzzy.ts",
-        definitions: [
-          def("src/strategies/fuzzy.ts", "FuzzyStrategy", "class"),
-          def("src/strategies/fuzzy.ts", "fuzzyScore", "function"),
-        ],
+        rows: [decl("FuzzyStrategy", "class"), decl("fuzzyScore", "constant")],
       },
-      { relPath: "src/stores/legacy.ts", definitions: [def("src/stores/legacy.ts", "LegacyStore")] },
-      { relPath: "src/stores/kinds.ts", definitions: [def("src/stores/kinds.ts", "StoreKind", "enum")] },
-      { relPath: "scripts/tool.ts", definitions: [def("scripts/tool.ts", "ToolRunner", "class")] },
-      {
-        relPath: "tests/strategies/exact.test.ts",
-        definitions: [def("tests/strategies/exact.test.ts", "FakeStrategy", "class")],
-      },
+      { relPath: "src/stores/kinds.ts", rows: [decl("StoreKind", "enum")] },
+      { relPath: "scripts/tool.ts", rows: [decl("ToolRunner", "class")] },
+      { relPath: "tests/strategies/exact.test.ts", rows: [decl("FakeStrategy", "class")] },
+      // A re-opening of a type declared elsewhere is not one of the project's types.
+      { relPath: "src/stores/extensions.ts", rows: [decl("StoreKind", "enum", { reopens: true })] },
     ]);
-    await db.upsertFile(
-      { relPath: "src/strategies/exact.ts", language: "typescript" },
-      {
-        fileEdges: [],
-        methodEdges: [],
-        inheritance: [inherits("ExactStrategy", "BaseStrategy", 0), inherits("ExactStrategy", "Named", 1)],
-      },
+    // A row of unknown kind: the column is nullable, a walker never writes one.
+    await db.run(
+      "INSERT INTO cg_type_declarations VALUES ('src/stores/legacy.ts', 'typescript', 'LegacyStore', 'LegacyStore', NULL, 1, false, [])",
     );
   });
 
@@ -142,5 +135,107 @@ describe("readTypeNameRows", () => {
   it("scopes to the path prefixes", async () => {
     const rows = await db.readTypeNameRows(query({ pathPrefixes: ["src/stores/"] }));
     expect(rows.map((r) => r.symbolId)).toEqual(["StoreKind"]);
+  });
+
+  it("never reads a re-opening", async () => {
+    const paths = (await db.readTypeNameRows(query())).map((r) => r.relPath);
+    expect(paths).not.toContain("src/stores/extensions.ts");
+  });
+});
+
+/**
+ * `replaceTypeDeclarationsBulk` — per-file replace of `cg_type_declarations`,
+ * the `replaceIdentifiersBulk` contract (bd tea-rags-mcp-vi0wx), and the
+ * table's rows leave with their file.
+ */
+describe("replaceTypeDeclarationsBulk", () => {
+  let dir: string;
+  let db: DuckDbGraphClient;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "cg-type-decl-"));
+    db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
+    await db.init();
+    await runMigrations(db, DATABASE_MIGRATIONS);
+  });
+
+  afterEach(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function allRows(): Promise<{ rel_path: string; type_id: string }[]> {
+    return db.queryAll("SELECT rel_path, type_id FROM cg_type_declarations ORDER BY rel_path, type_id");
+  }
+
+  it("round-trips every column", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "Sources/Request.swift",
+        rows: [
+          decl("Request.State", "enum", { language: "swift", shortName: "State", line: 12, supertypes: ["Sendable"] }),
+          decl("Request", "class", { language: "swift", reopens: true }),
+        ],
+      },
+    ]);
+    expect(
+      await db.queryAll(
+        "SELECT rel_path, language, type_id, short_name, symbol_kind, line, reopens, supertypes FROM cg_type_declarations ORDER BY type_id",
+      ),
+    ).toEqual([
+      {
+        rel_path: "Sources/Request.swift",
+        language: "swift",
+        type_id: "Request",
+        short_name: "Request",
+        symbol_kind: "class",
+        line: 1,
+        reopens: true,
+        supertypes: [],
+      },
+      {
+        rel_path: "Sources/Request.swift",
+        language: "swift",
+        type_id: "Request.State",
+        short_name: "State",
+        symbol_kind: "enum",
+        line: 12,
+        reopens: false,
+        supertypes: ["Sendable"],
+      },
+    ]);
+  });
+
+  it("a second replace for the same relPath leaves only the second call's rows", async () => {
+    await db.replaceTypeDeclarationsBulk([{ relPath: "a.ts", rows: [decl("Old", "class"), decl("Gone", "enum")] }]);
+    await db.replaceTypeDeclarationsBulk([{ relPath: "a.ts", rows: [decl("Fresh", "class")] }]);
+    expect(await allRows()).toEqual([{ rel_path: "a.ts", type_id: "Fresh" }]);
+  });
+
+  it("is last-wins per relPath within one call and leaves unnamed files alone", async () => {
+    await db.replaceTypeDeclarationsBulk([{ relPath: "b.ts", rows: [decl("Kept", "class")] }]);
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "a.ts", rows: [decl("First", "class")] },
+      { relPath: "a.ts", rows: [decl("Second", "class")] },
+    ]);
+    expect(await allRows()).toEqual([
+      { rel_path: "a.ts", type_id: "Second" },
+      { rel_path: "b.ts", type_id: "Kept" },
+    ]);
+  });
+
+  it("an entry with no rows clears its file", async () => {
+    await db.replaceTypeDeclarationsBulk([{ relPath: "a.ts", rows: [decl("X", "class")] }]);
+    await db.replaceTypeDeclarationsBulk([{ relPath: "a.ts", rows: [] }]);
+    expect(await allRows()).toEqual([]);
+  });
+
+  it("removeFile deletes the file's rows and no other file's", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "a.ts", rows: [decl("A", "class")] },
+      { relPath: "b.ts", rows: [decl("B", "class")] },
+    ]);
+    await db.removeFile("a.ts");
+    expect(await allRows()).toEqual([{ rel_path: "b.ts", type_id: "B" }]);
   });
 });

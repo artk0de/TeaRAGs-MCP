@@ -29,7 +29,7 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const fallback = lookupRubySymbolsByShortName(ctx, call.member);
+    const fallback = lookupRubySymbolsByShortName(ctx, call.member, { role: "callee" });
     // MRO-aware scope narrowing (bug t5iw + brp1). When multiple short-name
     // candidates exist (e.g. `WebRequestConcern#user_agent` AND
     // `Agents::PhantomJsCloudAgent#user_agent`), strict-mode

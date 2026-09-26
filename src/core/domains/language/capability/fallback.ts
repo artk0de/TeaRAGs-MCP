@@ -12,7 +12,7 @@ export function unsupportedLanguageCapability(language: string): LanguageCapabil
     language,
     ast: { tier: "none", engine: "CharacterChunker" },
     tests: { tier: "na", detection: "—", tech: "—" },
-    codegraph: { tier: "none", tech: "—" },
+    codegraph: { tier: "none", tech: "—", symbolKindRoles: { callee: new Set(), receiver: new Set() } },
     // Documentation rows only — never reach `LanguageFactory.capabilities()`, so
     // they are never stamped or compared. Declared to satisfy the descriptor.
     versions: { chunking: 1, walker: 1, codegraphSchema: 1 },

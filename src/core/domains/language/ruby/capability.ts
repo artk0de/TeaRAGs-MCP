@@ -25,6 +25,13 @@ export const capability: LanguageCapability = {
     summary:
       "15-strategy chain + 4 dispatch components + 20-grammar DSL catalogue + YARD type-source + db/schema.rb column accessors",
     tech: "15-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column accessors + naming-convention receiver typing for bare and @ivar receivers (subtype-gated)",
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // Ruby never calls a class by its bare name: `Money(x)` is a METHOD, and the
+    // class is only the receiver of `Money.new`.
+    symbolKindRoles: {
+      callee: new Set(["function", "method"]),
+      receiver: new Set(["class", "module", "constant", "function", "method"]),
+    },
   },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2 (bd tea-rags-mcp-kumq2): `lookupRubySymbolsByShortName` restricts every short-name

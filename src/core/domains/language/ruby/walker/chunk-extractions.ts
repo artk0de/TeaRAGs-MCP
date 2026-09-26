@@ -14,6 +14,7 @@
  * intermediate site list nor the innermost-chunk attribution rules.
  */
 
+import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type { CallRef, ChunkExtraction } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
@@ -21,7 +22,6 @@ import type { RubyFileTypeEnv } from "./file-type-env.js";
 import { bindCompoundReceiverChains, collectRubyLocalCallBindingsForChunk } from "./local-bindings.js";
 import { collectRubyMethodSignatures } from "./method-signatures.js";
 import type { KnownTargetCallSite } from "./param-arg-types.js";
-import { rubyChunkSymbolKinds } from "./symbol-kind.js";
 import type { RubyExtractInput } from "./walker.js";
 
 export interface RubyChunkPassOutput {
@@ -35,11 +35,17 @@ export interface RubyChunkPassOutput {
   readonly siteContextAt: (line: number) => KnownTargetCallSite;
 }
 
+/**
+ * `symbolKinds` is the declaration kind of each chunk, in `input.chunks` order
+ * (bd tea-rags-mcp-vi0wx) — read by the walker off the chunk-kind index the
+ * class-declaration walk fed, so this pass runs no traversal of its own for it.
+ */
 export function buildRubyChunkExtractions(
   input: RubyExtractInput,
   calls: CallRef[],
   typeEnv: RubyFileTypeEnv,
   catalogue: RubyDslCatalogue,
+  symbolKinds: readonly (SymbolDefinitionKind | undefined)[],
 ): RubyChunkPassOutput {
   const { enabled: trackTypes, store, associationTypes, ivarFieldTypes } = typeEnv;
   // Innermost-chunk attribution: assign each call to ONE chunk only —
@@ -55,8 +61,6 @@ export function buildRubyChunkExtractions(
   // site can be typed against the bindings of the chunk that OWNS its line
   // (bd tea-rags-mcp-bvalc). Filled during the chunk loop, read after it.
   const chunkSites: (KnownTargetCallSite & { startLine: number; endLine: number })[] = [];
-  // Declaration kind per chunk (bd tea-rags-mcp-vi0wx), in `input.chunks` order.
-  const symbolKinds = rubyChunkSymbolKinds(input.tree.rootNode, input.chunks, catalogue);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,

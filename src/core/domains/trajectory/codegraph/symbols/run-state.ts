@@ -350,7 +350,23 @@ export class CodegraphRunState {
      * never runs and every framework vocabulary stays active.
      */
     private readonly dependencyManifestSources: readonly DependencyManifestSource[] = [],
+    /**
+     * The languages whose resolver reads `typeDeclarations`
+     * (`collectTypeDeclarationReaders`, bd tea-rags-mcp-vi0wx). `undefined` —
+     * a run state no provider bound, as a harness or a unit test builds it —
+     * admits every language, which is the channel's behaviour from before other
+     * walkers published it.
+     */
+    private readonly typeDeclarationReaders?: ReadonlySet<string>,
   ) {}
+
+  /**
+   * May `language`'s type declarations enter the run-global map and the
+   * persisted pass-1 slice? Only a language whose resolver reads them.
+   */
+  readsTypeDeclarations(language: string): boolean {
+    return this.typeDeclarationReaders === undefined || this.typeDeclarationReaders.has(language);
+  }
 
   /**
    * Per-run counters surfaced via `getRunMetrics()`, read-and-cleared by
@@ -1652,7 +1668,13 @@ export class CodegraphRunState {
     }
     // The file's type declarations under its own path (bd tea-rags-mcp-y99pg.1):
     // replaced on a re-walk, and dropped when the file no longer declares a type.
-    if (extraction.typeDeclarations !== undefined && extraction.typeDeclarations.length > 0) {
+    // Only a language whose resolver reads the channel enters it (bd
+    // tea-rags-mcp-vi0wx): another language's facts serve the naming lexicon.
+    if (
+      extraction.typeDeclarations !== undefined &&
+      extraction.typeDeclarations.length > 0 &&
+      this.readsTypeDeclarations(extraction.language)
+    ) {
       this.typeDeclarations[extraction.relPath] = extraction.typeDeclarations;
     } else if (extraction.relPath in this.typeDeclarations) {
       delete this.typeDeclarations[extraction.relPath];

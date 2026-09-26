@@ -38,6 +38,7 @@ import type {
   InheritanceEdgeDecl,
   LocalBinding,
   ModuleReexport,
+  TypeDeclarationFact,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/index.js";
 import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
@@ -54,6 +55,7 @@ import {
   type PythonDispatchScope,
 } from "./passes/python-dispatch-tables.js";
 import { collectPythonSymbolKinds } from "./symbol-kind.js";
+import { collectPythonTypeDeclarations } from "./type-declarations.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -124,6 +126,10 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // bd tea-rags-mcp-vi0wx — each declaration's kind, keyed by its start line and
   // joined to the chunk below the same way `defSignatures` is.
   const symbolKinds = new Map<number, SymbolDefinitionKind>();
+  // bd tea-rags-mcp-vi0wx (spec §1b) — class, type-alias and module-constant
+  // declarations for the naming lexicon. Naming data only: the capability does
+  // not set `resolverReadsTypeDeclarations`, so resolution never reads them.
+  const typeDeclarations: TypeDeclarationFact[] = [];
   const flatVisitors: PythonNodeVisitor[] = [
     collectPythonImports(scan),
     ...(dispatch === null ? [] : [collectPythonDispatchBindings(dispatch)]),
@@ -133,6 +139,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     collectPythonClassExtends(classExtends),
     collectPythonClassFieldTypes(classFieldTypes),
     collectPythonSymbolKinds(symbolKinds),
+    collectPythonTypeDeclarations(typeDeclarations),
   ];
   if (trackTypes) flatVisitors.push(collectPythonLocalBindingSites(localBindingSites));
   walkOnce(root, flatVisitors);
@@ -265,6 +272,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // legacy `classExtends` stays (resolver-forward path).
   const inheritanceEdges = collectPythonInheritanceEdges(root);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
+  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
   return out;
 }
 

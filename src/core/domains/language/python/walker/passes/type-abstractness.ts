@@ -15,6 +15,7 @@
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import type { TypeAbstractnessCensus } from "../../../../../contracts/types/codegraph.js";
 import {
   typeAbstractnessFacetPass,
   type ExtractionFacetPass,
@@ -71,6 +72,19 @@ export const readPythonTypeAbstractness: TypeAbstractnessReader = (node) => {
     ? "abstract"
     : "concrete";
 };
+
+/**
+ * The census of a file the extraction gate calls inert, answered without a
+ * traversal. {@link readPythonTypeAbstractness} counts `class_definition` alone,
+ * an extraction-bearing node type, so an inert file holds no node it counts and
+ * the walk's census over it is exactly 0/0 — still a census, which the store
+ * keeps apart from NULL. The type-declarations walker test pins the premise over
+ * every node type of the grammar, so the reader cannot start counting a
+ * non-bearing type unnoticed.
+ */
+export function pythonInertFileTypeAbstractness(): TypeAbstractnessCensus {
+  return { abstractTypeCount: 0, concreteTypeCount: 0 };
+}
 
 export const pythonTypeAbstractnessFacetPass: ExtractionFacetPass =
   typeAbstractnessFacetPass(readPythonTypeAbstractness);

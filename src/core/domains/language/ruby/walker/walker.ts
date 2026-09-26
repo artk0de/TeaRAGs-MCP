@@ -65,10 +65,11 @@ import type { FileExtraction, ImportRef } from "../../../../contracts/types/code
 import { catalogueForGemfile } from "../gemfile.js";
 import { collectRubyCalls } from "./call-collection.js";
 import { buildRubyChunkExtractions } from "./chunk-extractions.js";
-import { attachRubyClassHierarchyChannels } from "./class-hierarchy.js";
+import { attachRubyClassHierarchyChannels, collectRubyClassAncestors } from "./class-hierarchy.js";
 import { collectRubyConstantRefs, collectRubyDefinedConstants, collectRubyRequires } from "./constant-refs.js";
 import { buildRubyFileTypeEnv } from "./file-type-env.js";
 import { collectRubyDispatchTables } from "./registry-dispatch.js";
+import { rubyChunkDeclarationIndex } from "./symbol-kind.js";
 import { attachRubyTypeChannels } from "./type-channels.js";
 
 export interface RubyExtractInput {
@@ -99,7 +100,13 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   // The file's type knowledge, built once and read by both passes below.
   const typeEnv = buildRubyFileTypeEnv(input, catalogue);
-  const { chunks, siteContextAt } = buildRubyChunkExtractions(input, calls, typeEnv, catalogue);
+  // ONE walk collects the class/module/constant declarations AND feeds the
+  // chunk-kind index, so it runs before the chunk pass; its channels are still
+  // published below, in their usual order.
+  const chunkDeclarations = rubyChunkDeclarationIndex(input.chunks);
+  const classDeclarations = collectRubyClassAncestors(input.tree.rootNode, chunkDeclarations.visit);
+  const symbolKinds = chunkDeclarations.kinds(catalogue);
+  const { chunks, siteContextAt } = buildRubyChunkExtractions(input, calls, typeEnv, catalogue, symbolKinds);
   const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
@@ -109,7 +116,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   };
   // Optional channels, structural first then inferred. Each publisher writes only
   // the fields it owns, and only when they carry something.
-  attachRubyClassHierarchyChannels(out, input.tree.rootNode);
+  attachRubyClassHierarchyChannels(out, input.tree.rootNode, classDeclarations);
   if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
   attachRubyTypeChannels(out, input.tree.rootNode, typeEnv, siteContextAt, catalogue);
   return out;

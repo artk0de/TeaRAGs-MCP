@@ -241,6 +241,6 @@ export class PythonCallResolver implements CallResolver {
    * `missWithInProjectDef` anyway.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupPythonSymbolsByShortName(ctx, call.member).length > 0;
+    return lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).length > 0;
   }
 }

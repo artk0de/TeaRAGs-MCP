@@ -10,10 +10,11 @@
  * For each corpus this walks the harness kept set — `collectSourceFiles` +
  * `buildCorpusExclusionFilter`, exactly the tally's selection — and for every
  * file the predicate calls inert, materializes the tree, runs `collectSymbols`
- * and the real walker, and compares the result against the empty shape
- * (`relPath`, `language`, `imports: []`, `chunks: []`, `fileScope: []`, no
- * optional channel present). A single mismatch means the language's node-type
- * list is wrong — widen the LIST, never the assertion.
+ * and the real walker, and compares the result against what the inert fast path
+ * answers: the empty shape (`relPath`, `language`, `imports: []`, `chunks: []`,
+ * `fileScope: []`) merged with the walker's `inertFileExtraction` of the native
+ * root, and no other channel. A single mismatch means the language's node-type
+ * list or its inert answer is wrong — fix THOSE, never the assertion.
  *
  *   npx tsx scripts/spikes/py-inert-file-proof.ts
  *   npx tsx scripts/spikes/py-inert-file-proof.ts --corpora netbox,polar
@@ -21,10 +22,12 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import Parser from "tree-sitter";
 
 import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
+import type { InertFileExtractionFacets } from "../../src/core/contracts/types/language.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { loadCodegraphGrammarSync } from "../../src/core/domains/trajectory/codegraph/symbols/file-extractor.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
@@ -43,10 +46,20 @@ function extensionOf(relPath: string): string {
   return dot < 0 ? "" : relPath.slice(dot).toLowerCase();
 }
 
-/** Why this extraction is not the empty shape, or `null` when it is. */
-function departsFromEmpty(extraction: FileExtraction): string | null {
-  const extra = Object.keys(extraction).filter((k) => !EMPTY_KEYS.includes(k));
+/**
+ * Why this extraction is not what the inert path answers, or `null` when it is:
+ * the empty shape merged with the walker's `inertFileExtraction` of the native
+ * root (bd tea-rags-mcp-vi0wx) — the same channels, deep-equal, and nothing else.
+ */
+function departsFromInertAnswer(extraction: FileExtraction, facets: InertFileExtractionFacets): string | null {
+  const facetKeys = Object.keys(facets) as (keyof InertFileExtractionFacets)[];
+  const extra = Object.keys(extraction).filter(
+    (k) => !EMPTY_KEYS.includes(k) && !facetKeys.includes(k as keyof InertFileExtractionFacets),
+  );
   if (extra.length > 0) return `extra channels: ${extra.join(", ")}`;
+  for (const key of facetKeys) {
+    if (!isDeepStrictEqual(extraction[key], facets[key])) return `${key} differs from the inert path's`;
+  }
   if (extraction.imports.length > 0) return `${extraction.imports.length} imports`;
   if (extraction.chunks.length > 0) return `${extraction.chunks.length} chunks`;
   if (extraction.fileScope.length > 0) return `${extraction.fileScope.length} fileScope entries`;
@@ -104,7 +117,7 @@ async function proveCorpus(alias: string, root: string): Promise<number> {
       language: config.language,
       chunks,
     });
-    const departure = departsFromEmpty(extraction);
+    const departure = departsFromInertAnswer(extraction, walker.inertFileExtraction?.(nativeRoot) ?? {});
     if (departure !== null) {
       mismatches++;
       process.stderr.write(`  MISMATCH ${relPath}: ${departure}\n`);

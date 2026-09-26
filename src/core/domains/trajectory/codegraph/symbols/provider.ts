@@ -84,6 +84,8 @@ import { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import { drainCrossPassInputSpill, persistRunResolveStats, readCodegraphFileOverlays } from "./run-finalize.js";
 import { CodegraphRunState } from "./run-state.js";
 import { symbolDefinitionsOf } from "./symbol-definitions.js";
+import { collectTypeDeclarationReaders } from "./type-declaration-readers.js";
+import { buildTypeDeclarationRows } from "./type-declaration-rows.js";
 
 /**
  * Relocated collaborators, re-exported for import stability: the symbols barrel,
@@ -305,6 +307,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.runState = new CodegraphRunState(
       collectSchemaColumnSources(deps.languageFactory),
       collectDependencyManifestSources(deps.languageFactory),
+      collectTypeDeclarationReaders(deps.languageFactory),
     );
     this.identifierFinderVocabulary = collectIdentifierFinderVocabulary(deps.languageFactory);
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
@@ -883,6 +886,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       key,
       options?.collectionName,
       this.buildIdentifierRows(extraction),
+      buildTypeDeclarationRows(extraction),
     );
   };
 

@@ -1,0 +1,2005 @@
+{
+  "type-declarations.py": {
+    "relPath": "pkg/type-declarations.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": "enum",
+        "startLine": 1,
+        "importedNames": ["enum"],
+        "importedBindings": {
+          "enum": "enum"
+        },
+        "importedExportNames": ["*"]
+      },
+      {
+        "importText": "typing",
+        "startLine": 2,
+        "importedNames": ["typing"],
+        "importedBindings": {
+          "typing": "typing"
+        },
+        "importedExportNames": ["*"]
+      },
+      {
+        "importText": "enum",
+        "startLine": 3,
+        "importedNames": ["Enum", "IntEnum", "StrEnum", "Flag"],
+        "importedBindings": {
+          "Enum": "Enum",
+          "IntEnum": "IntEnum",
+          "StrEnum": "StrEnum",
+          "Flag": "Flag"
+        },
+        "importedExportNames": ["Enum", "IntEnum", "StrEnum", "Flag"]
+      },
+      {
+        "importText": "typing",
+        "startLine": 4,
+        "importedNames": ["Final", "NewType", "Protocol", "TypeAlias"],
+        "importedBindings": {
+          "Final": "Final",
+          "NewType": "NewType",
+          "Protocol": "Protocol",
+          "TypeAlias": "TypeAlias"
+        },
+        "importedExportNames": ["Final", "NewType", "Protocol", "TypeAlias"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "Color",
+        "scope": [],
+        "startLine": 22,
+        "endLine": 23,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Level",
+        "scope": [],
+        "startLine": 26,
+        "endLine": 27,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Mode",
+        "scope": [],
+        "startLine": 30,
+        "endLine": 31,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Perm",
+        "scope": [],
+        "startLine": 34,
+        "endLine": 35,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Readable",
+        "scope": [],
+        "startLine": 38,
+        "endLine": 39,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Readable#read",
+        "scope": ["Readable"],
+        "startLine": 39,
+        "endLine": 39,
+        "calls": [],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      },
+      {
+        "symbolId": "Box",
+        "scope": [],
+        "startLine": 42,
+        "endLine": 43,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Service",
+        "scope": [],
+        "startLine": 47,
+        "endLine": 61,
+        "calls": [],
+        "symbolKind": "class",
+        "localBindings": {
+          "Alias": [
+            {
+              "line": 49,
+              "type": "TypeAlias",
+              "endLine": 49
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "Service.Inner",
+        "scope": ["Service"],
+        "startLine": 51,
+        "endLine": 53,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Service.Inner.Deep",
+        "scope": ["Service", "Inner"],
+        "startLine": 52,
+        "endLine": 53,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Service#run",
+        "scope": ["Service"],
+        "startLine": 55,
+        "endLine": 61,
+        "calls": [],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      },
+      {
+        "symbolId": "Service#run.LocalType",
+        "scope": ["Service", "run"],
+        "startLine": 58,
+        "endLine": 59,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "build",
+        "scope": [],
+        "startLine": 64,
+        "endLine": 66,
+        "calls": [],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      }
+    ],
+    "fileScope": [],
+    "classExtends": {
+      "Color": "Enum",
+      "Level": "enum.IntEnum",
+      "Mode": "StrEnum",
+      "Perm": "Flag",
+      "Readable": "Protocol",
+      "Service": "Base",
+      "Inner": "Base"
+    },
+    "classAncestors": {
+      "pkg/type-declarations.py::Color": ["enum::Enum"],
+      "pkg/type-declarations.py::Level": ["enum::IntEnum"],
+      "pkg/type-declarations.py::Mode": ["enum::StrEnum"],
+      "pkg/type-declarations.py::Perm": ["enum::Flag"],
+      "pkg/type-declarations.py::Readable": ["typing::Protocol"],
+      "pkg/type-declarations.py::Box": ["typing::Protocol"],
+      "pkg/type-declarations.py::Service": [
+        "Base",
+        "mixins.Loggable",
+        "Generic"
+      ],
+      "pkg/type-declarations.py::Service.Inner": ["Base"]
+    },
+    "moduleReexports": [
+      {
+        "exportedName": "Enum",
+        "sourceModule": "enum",
+        "sourceName": "Enum"
+      },
+      {
+        "exportedName": "IntEnum",
+        "sourceModule": "enum",
+        "sourceName": "IntEnum"
+      },
+      {
+        "exportedName": "StrEnum",
+        "sourceModule": "enum",
+        "sourceName": "StrEnum"
+      },
+      {
+        "exportedName": "Flag",
+        "sourceModule": "enum",
+        "sourceName": "Flag"
+      },
+      {
+        "exportedName": "Final",
+        "sourceModule": "typing",
+        "sourceName": "Final"
+      },
+      {
+        "exportedName": "NewType",
+        "sourceModule": "typing",
+        "sourceName": "NewType"
+      },
+      {
+        "exportedName": "Protocol",
+        "sourceModule": "typing",
+        "sourceName": "Protocol"
+      },
+      {
+        "exportedName": "TypeAlias",
+        "sourceModule": "typing",
+        "sourceName": "TypeAlias"
+      }
+    ],
+    "inheritanceEdges": [
+      {
+        "source": "Color",
+        "ancestor": "Enum",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Level",
+        "ancestor": "enum.IntEnum",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Mode",
+        "ancestor": "StrEnum",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Perm",
+        "ancestor": "Flag",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Readable",
+        "ancestor": "Protocol",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Box",
+        "ancestor": "Protocol",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Service",
+        "ancestor": "Base",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Service",
+        "ancestor": "mixins.Loggable",
+        "kind": "super",
+        "ordinal": 1
+      },
+      {
+        "source": "Service",
+        "ancestor": "Generic",
+        "kind": "super",
+        "ordinal": 2
+      },
+      {
+        "source": "Service.Inner",
+        "ancestor": "Base",
+        "kind": "super",
+        "ordinal": 0
+      }
+    ],
+    "structuredReturnTypes": {
+      "Readable#read": {
+        "form": "instance",
+        "name": "bytes"
+      }
+    },
+    "classFieldTypes": {
+      "Service": {
+        "Alias": "TypeAlias"
+      }
+    },
+    "classFieldTypesByClassKey": {
+      "pkg/type-declarations.py::Service": {
+        "Alias": "TypeAlias"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 2,
+      "concreteTypeCount": 8
+    },
+    "identifierDeclarations": [
+      {
+        "name": "RED",
+        "kind": "local",
+        "line": 23,
+        "ownerSymbolId": "Color"
+      },
+      {
+        "name": "LOW",
+        "kind": "local",
+        "line": 27,
+        "ownerSymbolId": "Level"
+      },
+      {
+        "name": "FAST",
+        "kind": "local",
+        "line": 31,
+        "ownerSymbolId": "Mode"
+      },
+      {
+        "name": "READ",
+        "kind": "local",
+        "line": 35,
+        "ownerSymbolId": "Perm"
+      },
+      {
+        "name": "read",
+        "kind": "return",
+        "line": 39,
+        "ownerSymbolId": "Readable#read",
+        "typeName": "bytes",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 39,
+        "ownerSymbolId": "Readable#read"
+      },
+      {
+        "name": "LIMIT",
+        "kind": "local",
+        "line": 48,
+        "ownerSymbolId": "Service"
+      },
+      {
+        "name": "Alias",
+        "kind": "local",
+        "line": 49,
+        "ownerSymbolId": "Service",
+        "typeName": "TypeAlias",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 55,
+        "ownerSymbolId": "Service#run"
+      },
+      {
+        "name": "LOCAL_CONST",
+        "kind": "local",
+        "line": 56,
+        "ownerSymbolId": "Service#run"
+      },
+      {
+        "name": "INNER",
+        "kind": "local",
+        "line": 65,
+        "ownerSymbolId": "build"
+      }
+    ]
+  },
+  "__init__.py": {
+    "relPath": "pkg/__init__.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": ".base",
+        "startLine": 3,
+        "importedNames": ["Auditable"],
+        "importedBindings": {
+          "Auditable": "Auditable"
+        },
+        "importedExportNames": ["Auditable"]
+      },
+      {
+        "importText": ".models",
+        "startLine": 4,
+        "importedNames": ["User"],
+        "importedBindings": {
+          "User": "User"
+        },
+        "importedExportNames": ["User"]
+      },
+      {
+        "importText": ".service",
+        "startLine": 5,
+        "importedNames": ["promote"],
+        "importedBindings": {
+          "promote": "promote"
+        },
+        "importedExportNames": ["promote"]
+      }
+    ],
+    "chunks": [],
+    "fileScope": [],
+    "moduleReexports": [
+      {
+        "exportedName": "Auditable",
+        "sourceModule": ".base",
+        "sourceName": "Auditable"
+      },
+      {
+        "exportedName": "User",
+        "sourceModule": ".models",
+        "sourceName": "User"
+      },
+      {
+        "exportedName": "promote",
+        "sourceModule": ".service",
+        "sourceName": "promote"
+      }
+    ],
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 0
+    }
+  },
+  "attr_call.py": {
+    "relPath": "pkg/attr_call.py",
+    "language": "python",
+    "imports": [],
+    "chunks": [
+      {
+        "symbolId": "Report",
+        "scope": [],
+        "startLine": 11,
+        "endLine": 15,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Report#render",
+        "scope": ["Report"],
+        "startLine": 14,
+        "endLine": 15,
+        "calls": [
+          {
+            "callText": "self.table()",
+            "receiver": "self",
+            "member": "table",
+            "startLine": 15,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      }
+    ],
+    "fileScope": [],
+    "structuredReturnTypes": {
+      "Report#render": {
+        "form": "instance",
+        "name": "str"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 1
+    },
+    "identifierDeclarations": [
+      {
+        "name": "table",
+        "kind": "local",
+        "line": 12,
+        "ownerSymbolId": "Report"
+      },
+      {
+        "name": "render",
+        "kind": "return",
+        "line": 14,
+        "ownerSymbolId": "Report#render",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 14,
+        "ownerSymbolId": "Report#render"
+      }
+    ]
+  },
+  "base.py": {
+    "relPath": "pkg/base.py",
+    "language": "python",
+    "imports": [],
+    "chunks": [
+      {
+        "symbolId": "Auditable",
+        "scope": [],
+        "startLine": 4,
+        "endLine": 9,
+        "calls": [],
+        "symbolKind": "class"
+      },
+      {
+        "symbolId": "Auditable#touch",
+        "scope": ["Auditable"],
+        "startLine": 5,
+        "endLine": 6,
+        "calls": [],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      },
+      {
+        "symbolId": "Auditable#describe",
+        "scope": ["Auditable"],
+        "startLine": 8,
+        "endLine": 9,
+        "calls": [],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      },
+      {
+        "symbolId": "Named",
+        "scope": [],
+        "startLine": 12,
+        "endLine": 17,
+        "calls": [],
+        "symbolKind": "class",
+        "localBindings": {
+          "name": [
+            {
+              "line": 13,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "Named#__init__",
+        "scope": ["Named"],
+        "startLine": 13,
+        "endLine": 14,
+        "calls": [],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["name"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "name": [
+            {
+              "line": 13,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "Named#describe",
+        "scope": ["Named"],
+        "startLine": 16,
+        "endLine": 17,
+        "calls": [],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      }
+    ],
+    "fileScope": [],
+    "structuredReturnTypes": {
+      "Auditable#describe": {
+        "form": "instance",
+        "name": "str"
+      },
+      "Named#describe": {
+        "form": "instance",
+        "name": "str"
+      }
+    },
+    "classFieldTypes": {
+      "Named": {
+        "name": "str"
+      }
+    },
+    "classFieldTypesByClassKey": {
+      "pkg/base.py::Named": {
+        "name": "str"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 2
+    },
+    "identifierDeclarations": [
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 5,
+        "ownerSymbolId": "Auditable#touch"
+      },
+      {
+        "name": "touched",
+        "kind": "field",
+        "line": 6,
+        "ownerSymbolId": "Auditable#touch"
+      },
+      {
+        "name": "describe",
+        "kind": "return",
+        "line": 8,
+        "ownerSymbolId": "Auditable#describe",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 8,
+        "ownerSymbolId": "Auditable#describe"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 13,
+        "ownerSymbolId": "Named#__init__"
+      },
+      {
+        "name": "name",
+        "kind": "param",
+        "line": 13,
+        "ownerSymbolId": "Named#__init__",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "name",
+        "kind": "field",
+        "line": 14,
+        "ownerSymbolId": "Named#__init__"
+      },
+      {
+        "name": "describe",
+        "kind": "return",
+        "line": 16,
+        "ownerSymbolId": "Named#describe",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 16,
+        "ownerSymbolId": "Named#describe"
+      }
+    ]
+  },
+  "consumer.py": {
+    "relPath": "pkg/consumer.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": ".",
+        "startLine": 3,
+        "importedNames": ["User", "promote"],
+        "importedBindings": {
+          "User": "User",
+          "promote": "promote"
+        },
+        "importedExportNames": ["User", "promote"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "run",
+        "scope": [],
+        "startLine": 6,
+        "endLine": 8,
+        "calls": [
+          {
+            "callText": "User(name, f\"{name}@example.com\")",
+            "receiver": null,
+            "member": "User",
+            "startLine": 7,
+            "argCount": 2
+          },
+          {
+            "callText": "promote(user)",
+            "receiver": null,
+            "member": "promote",
+            "startLine": 8,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["name"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "name": [
+            {
+              "line": 6,
+              "type": "str"
+            }
+          ],
+          "user": [
+            {
+              "line": 7,
+              "type": "User",
+              "endLine": 7
+            }
+          ]
+        },
+        "callResultBindings": {
+          "user": [
+            {
+              "line": 7,
+              "callee": "User"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "moduleReexports": [
+      {
+        "exportedName": "User",
+        "sourceModule": ".",
+        "sourceName": "User"
+      },
+      {
+        "exportedName": "promote",
+        "sourceModule": ".",
+        "sourceName": "promote"
+      }
+    ],
+    "structuredReturnTypes": {
+      "pkg/consumer.py::run": {
+        "form": "instance",
+        "name": "str"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 0
+    },
+    "identifierDeclarations": [
+      {
+        "name": "run",
+        "kind": "return",
+        "line": 6,
+        "ownerSymbolId": "run",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "name",
+        "kind": "param",
+        "line": 6,
+        "ownerSymbolId": "run",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "user",
+        "kind": "local",
+        "line": 7,
+        "ownerSymbolId": "run",
+        "typeName": "User",
+        "typeSource": "constructor",
+        "boundCallee": {
+          "member": "User"
+        }
+      }
+    ]
+  },
+  "models.py": {
+    "relPath": "pkg/models.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": ".base",
+        "startLine": 3,
+        "importedNames": ["Auditable", "Named"],
+        "importedBindings": {
+          "Auditable": "Auditable",
+          "Named": "Named"
+        },
+        "importedExportNames": ["Auditable", "Named"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "User",
+        "scope": [],
+        "startLine": 6,
+        "endLine": 21,
+        "calls": [
+          {
+            "callText": "@property",
+            "receiver": null,
+            "member": "property",
+            "startLine": 11
+          },
+          {
+            "callText": "@staticmethod",
+            "receiver": null,
+            "member": "staticmethod",
+            "startLine": 15
+          }
+        ],
+        "symbolKind": "class",
+        "localBindings": {
+          "name": [
+            {
+              "line": 7,
+              "type": "str"
+            },
+            {
+              "line": 19,
+              "type": "str"
+            }
+          ],
+          "email": [
+            {
+              "line": 7,
+              "type": "str"
+            }
+          ],
+          "raw": [
+            {
+              "line": 16,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "User#__init__",
+        "scope": ["User"],
+        "startLine": 7,
+        "endLine": 9,
+        "calls": [
+          {
+            "callText": "super().__init__(name)",
+            "receiver": "super",
+            "member": "__init__",
+            "startLine": 8,
+            "argCount": 1
+          },
+          {
+            "callText": "super()",
+            "receiver": null,
+            "member": "super",
+            "startLine": 8,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 2,
+          "maxPositional": 2,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["name", "email"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "name": [
+            {
+              "line": 7,
+              "type": "str"
+            }
+          ],
+          "email": [
+            {
+              "line": 7,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "User#handle",
+        "scope": ["User"],
+        "startLine": 12,
+        "endLine": 13,
+        "calls": [
+          {
+            "callText": "self.name.lower()",
+            "receiver": "self.name",
+            "member": "lower",
+            "startLine": 13,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 0,
+          "maxPositional": 0,
+          "hasSplat": false
+        }
+      },
+      {
+        "symbolId": "User.normalise",
+        "scope": ["User"],
+        "startLine": 16,
+        "endLine": 17,
+        "calls": [
+          {
+            "callText": "raw.strip()",
+            "receiver": "raw",
+            "member": "strip",
+            "startLine": 17,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["raw"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "raw": [
+            {
+              "line": 16,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "User#rename",
+        "scope": ["User"],
+        "startLine": 19,
+        "endLine": 21,
+        "calls": [
+          {
+            "callText": "self.touch()",
+            "receiver": "self",
+            "member": "touch",
+            "startLine": 20,
+            "argCount": 0
+          },
+          {
+            "callText": "self.describe()",
+            "receiver": "self",
+            "member": "describe",
+            "startLine": 21,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["name"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "name": [
+            {
+              "line": 19,
+              "type": "str"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "classExtends": {
+      "User": "Auditable"
+    },
+    "classAncestors": {
+      "pkg/models.py::User": [".base::Auditable", ".base::Named"]
+    },
+    "moduleReexports": [
+      {
+        "exportedName": "Auditable",
+        "sourceModule": ".base",
+        "sourceName": "Auditable"
+      },
+      {
+        "exportedName": "Named",
+        "sourceModule": ".base",
+        "sourceName": "Named"
+      }
+    ],
+    "inheritanceEdges": [
+      {
+        "source": "User",
+        "ancestor": "Auditable",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "User",
+        "ancestor": "Named",
+        "kind": "super",
+        "ordinal": 1
+      }
+    ],
+    "structuredReturnTypes": {
+      "User#handle": {
+        "form": "instance",
+        "name": "str"
+      },
+      "User.normalise": {
+        "form": "instance",
+        "name": "str"
+      },
+      "User#rename": {
+        "form": "instance",
+        "name": "str"
+      }
+    },
+    "classFieldTypes": {
+      "User": {
+        "email": "str"
+      }
+    },
+    "classFieldTypesByClassKey": {
+      "pkg/models.py::User": {
+        "email": "str"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 1
+    },
+    "identifierDeclarations": [
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 7,
+        "ownerSymbolId": "User#__init__"
+      },
+      {
+        "name": "name",
+        "kind": "param",
+        "line": 7,
+        "ownerSymbolId": "User#__init__",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "email",
+        "kind": "param",
+        "line": 7,
+        "ownerSymbolId": "User#__init__",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "email",
+        "kind": "field",
+        "line": 9,
+        "ownerSymbolId": "User#__init__"
+      },
+      {
+        "name": "handle",
+        "kind": "return",
+        "line": 12,
+        "ownerSymbolId": "User#handle",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 12,
+        "ownerSymbolId": "User#handle"
+      },
+      {
+        "name": "normalise",
+        "kind": "return",
+        "line": 16,
+        "ownerSymbolId": "User.normalise",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "raw",
+        "kind": "param",
+        "line": 16,
+        "ownerSymbolId": "User.normalise",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "rename",
+        "kind": "return",
+        "line": 19,
+        "ownerSymbolId": "User#rename",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 19,
+        "ownerSymbolId": "User#rename"
+      },
+      {
+        "name": "name",
+        "kind": "param",
+        "line": 19,
+        "ownerSymbolId": "User#rename",
+        "typeName": "str",
+        "typeSource": "annotation"
+      }
+    ]
+  },
+  "mro_lib.py": {
+    "relPath": "pkg/mro_lib.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": "collections",
+        "startLine": 10,
+        "importedNames": ["UserDict"],
+        "importedBindings": {
+          "UserDict": "UserDict"
+        },
+        "importedExportNames": ["UserDict"]
+      },
+      {
+        "importText": ".base",
+        "startLine": 12,
+        "importedNames": ["Named"],
+        "importedBindings": {
+          "Named": "Named"
+        },
+        "importedExportNames": ["Named"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "Registry",
+        "scope": [],
+        "startLine": 15,
+        "endLine": 17,
+        "calls": [],
+        "symbolKind": "class",
+        "localBindings": {
+          "name": [
+            {
+              "line": 16,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "Registry#__init__",
+        "scope": ["Registry"],
+        "startLine": 16,
+        "endLine": 17,
+        "calls": [
+          {
+            "callText": "super().__init__(name)",
+            "receiver": "super",
+            "member": "__init__",
+            "startLine": 17,
+            "argCount": 1
+          },
+          {
+            "callText": "super()",
+            "receiver": null,
+            "member": "super",
+            "startLine": 17,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["name"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "name": [
+            {
+              "line": 16,
+              "type": "str"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "classExtends": {
+      "Registry": "UserDict"
+    },
+    "classAncestors": {
+      "pkg/mro_lib.py::Registry": ["collections::UserDict", ".base::Named"]
+    },
+    "moduleReexports": [
+      {
+        "exportedName": "UserDict",
+        "sourceModule": "collections",
+        "sourceName": "UserDict"
+      },
+      {
+        "exportedName": "Named",
+        "sourceModule": ".base",
+        "sourceName": "Named"
+      }
+    ],
+    "inheritanceEdges": [
+      {
+        "source": "Registry",
+        "ancestor": "UserDict",
+        "kind": "super",
+        "ordinal": 0
+      },
+      {
+        "source": "Registry",
+        "ancestor": "Named",
+        "kind": "super",
+        "ordinal": 1
+      }
+    ],
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 1
+    },
+    "identifierDeclarations": [
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 16,
+        "ownerSymbolId": "Registry#__init__"
+      },
+      {
+        "name": "name",
+        "kind": "param",
+        "line": 16,
+        "ownerSymbolId": "Registry#__init__",
+        "typeName": "str",
+        "typeSource": "annotation"
+      }
+    ]
+  },
+  "service.py": {
+    "relPath": "pkg/service.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": ".models",
+        "startLine": 3,
+        "importedNames": ["User"],
+        "importedBindings": {
+          "User": "User"
+        },
+        "importedExportNames": ["User"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "promote",
+        "scope": [],
+        "startLine": 6,
+        "endLine": 8,
+        "calls": [
+          {
+            "callText": "user.touch()",
+            "receiver": "user",
+            "member": "touch",
+            "startLine": 7,
+            "argCount": 0
+          },
+          {
+            "callText": "user.rename(\"promoted\")",
+            "receiver": "user",
+            "member": "rename",
+            "startLine": 8,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["user"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "user": [
+            {
+              "line": 6,
+              "type": "User"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "normalise_all",
+        "scope": [],
+        "startLine": 11,
+        "endLine": 12,
+        "calls": [
+          {
+            "callText": "User.normalise(item)",
+            "receiver": "User",
+            "member": "normalise",
+            "startLine": 12,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["raw"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "item": [
+            {
+              "line": 12,
+              "type": "str"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "moduleReexports": [
+      {
+        "exportedName": "User",
+        "sourceModule": ".models",
+        "sourceName": "User"
+      }
+    ],
+    "structuredReturnTypes": {
+      "pkg/service.py::promote": {
+        "form": "instance",
+        "name": "str"
+      },
+      "pkg/service.py::normalise_all": {
+        "form": "container",
+        "element": {
+          "form": "instance",
+          "name": "str"
+        }
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 0
+    },
+    "identifierDeclarations": [
+      {
+        "name": "promote",
+        "kind": "return",
+        "line": 6,
+        "ownerSymbolId": "promote",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "user",
+        "kind": "param",
+        "line": 6,
+        "ownerSymbolId": "promote",
+        "typeName": "User",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "normalise_all",
+        "kind": "return",
+        "line": 11,
+        "ownerSymbolId": "normalise_all",
+        "typeName": "str",
+        "typeSource": "annotation",
+        "typeMultiplicity": "many"
+      },
+      {
+        "name": "raw",
+        "kind": "param",
+        "line": 11,
+        "ownerSymbolId": "normalise_all",
+        "typeName": "str",
+        "typeSource": "annotation",
+        "typeMultiplicity": "many"
+      }
+    ]
+  },
+  "shadow_use.py": {
+    "relPath": "pkg/shadow_use.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": ".string",
+        "startLine": 3,
+        "importedNames": ["Formatter", "remove_linebreaks"],
+        "importedBindings": {
+          "Formatter": "Formatter",
+          "remove_linebreaks": "remove_linebreaks"
+        },
+        "importedExportNames": ["Formatter", "remove_linebreaks"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "clean",
+        "scope": [],
+        "startLine": 6,
+        "endLine": 7,
+        "calls": [
+          {
+            "callText": "remove_linebreaks(value)",
+            "receiver": null,
+            "member": "remove_linebreaks",
+            "startLine": 7,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["value"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "value": [
+            {
+              "line": 6,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "render",
+        "scope": [],
+        "startLine": 10,
+        "endLine": 11,
+        "calls": [
+          {
+            "callText": "Formatter().render(value)",
+            "receiver": "Formatter()",
+            "member": "render",
+            "startLine": 11,
+            "argCount": 1
+          },
+          {
+            "callText": "Formatter()",
+            "receiver": null,
+            "member": "Formatter",
+            "startLine": 11,
+            "argCount": 0
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["value"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "value": [
+            {
+              "line": 10,
+              "type": "str"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "moduleReexports": [
+      {
+        "exportedName": "Formatter",
+        "sourceModule": ".string",
+        "sourceName": "Formatter"
+      },
+      {
+        "exportedName": "remove_linebreaks",
+        "sourceModule": ".string",
+        "sourceName": "remove_linebreaks"
+      }
+    ],
+    "structuredReturnTypes": {
+      "pkg/shadow_use.py::clean": {
+        "form": "instance",
+        "name": "str"
+      },
+      "pkg/shadow_use.py::render": {
+        "form": "instance",
+        "name": "str"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 0
+    },
+    "identifierDeclarations": [
+      {
+        "name": "clean",
+        "kind": "return",
+        "line": 6,
+        "ownerSymbolId": "clean",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "value",
+        "kind": "param",
+        "line": 6,
+        "ownerSymbolId": "clean",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "render",
+        "kind": "return",
+        "line": 10,
+        "ownerSymbolId": "render",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "value",
+        "kind": "param",
+        "line": 10,
+        "ownerSymbolId": "render",
+        "typeName": "str",
+        "typeSource": "annotation"
+      }
+    ]
+  },
+  "stdlib_use.py": {
+    "relPath": "pkg/stdlib_use.py",
+    "language": "python",
+    "imports": [
+      {
+        "importText": "json",
+        "startLine": 3,
+        "importedNames": ["json"],
+        "importedBindings": {
+          "json": "json"
+        },
+        "importedExportNames": ["*"]
+      },
+      {
+        "importText": "os.path",
+        "startLine": 4,
+        "importedNames": ["os"],
+        "importedBindings": {
+          "os": "os.path"
+        },
+        "importedExportNames": ["*"]
+      },
+      {
+        "importText": "jedi",
+        "startLine": 6,
+        "importedNames": ["jedi"],
+        "importedBindings": {
+          "jedi": "jedi"
+        },
+        "importedExportNames": ["*"]
+      }
+    ],
+    "chunks": [
+      {
+        "symbolId": "dump",
+        "scope": [],
+        "startLine": 9,
+        "endLine": 10,
+        "calls": [
+          {
+            "callText": "json.dumps(payload)",
+            "receiver": "json",
+            "member": "dumps",
+            "startLine": 10,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["payload"],
+          "hasSplat": false
+        }
+      },
+      {
+        "symbolId": "join_here",
+        "scope": [],
+        "startLine": 13,
+        "endLine": 14,
+        "calls": [
+          {
+            "callText": "os.path.join(os.path.dirname(__file__), name)",
+            "receiver": "os.path",
+            "member": "join",
+            "startLine": 14,
+            "argCount": 2
+          },
+          {
+            "callText": "os.path.dirname(__file__)",
+            "receiver": "os.path",
+            "member": "dirname",
+            "startLine": 14,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["name"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "name": [
+            {
+              "line": 13,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "probe",
+        "scope": [],
+        "startLine": 17,
+        "endLine": 18,
+        "calls": [
+          {
+            "callText": "len(jedi.Script(source).get_names())",
+            "receiver": null,
+            "member": "len",
+            "startLine": 18,
+            "argCount": 1
+          },
+          {
+            "callText": "jedi.Script(source).get_names()",
+            "receiver": "jedi.Script(source)",
+            "member": "get_names",
+            "startLine": 18,
+            "argCount": 0
+          },
+          {
+            "callText": "jedi.Script(source)",
+            "receiver": "jedi",
+            "member": "Script",
+            "startLine": 18,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["source"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "source": [
+            {
+              "line": 17,
+              "type": "str"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "structuredReturnTypes": {
+      "pkg/stdlib_use.py::dump": {
+        "form": "instance",
+        "name": "str"
+      },
+      "pkg/stdlib_use.py::join_here": {
+        "form": "instance",
+        "name": "str"
+      },
+      "pkg/stdlib_use.py::probe": {
+        "form": "instance",
+        "name": "int"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 0
+    },
+    "identifierDeclarations": [
+      {
+        "name": "dump",
+        "kind": "return",
+        "line": 9,
+        "ownerSymbolId": "dump",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "payload",
+        "kind": "param",
+        "line": 9,
+        "ownerSymbolId": "dump",
+        "typeName": "dict",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "join_here",
+        "kind": "return",
+        "line": 13,
+        "ownerSymbolId": "join_here",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "name",
+        "kind": "param",
+        "line": 13,
+        "ownerSymbolId": "join_here",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "probe",
+        "kind": "return",
+        "line": 17,
+        "ownerSymbolId": "probe",
+        "typeName": "int",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "source",
+        "kind": "param",
+        "line": 17,
+        "ownerSymbolId": "probe",
+        "typeName": "str",
+        "typeSource": "annotation"
+      }
+    ]
+  },
+  "string.py": {
+    "relPath": "pkg/string.py",
+    "language": "python",
+    "imports": [],
+    "chunks": [
+      {
+        "symbolId": "remove_linebreaks",
+        "scope": [],
+        "startLine": 12,
+        "endLine": 13,
+        "calls": [
+          {
+            "callText": "value.replace(\"\\n\", \" \").replace(\"\\r\", \" \")",
+            "receiver": "value.replace(\"\\n\", \" \")",
+            "member": "replace",
+            "startLine": 13,
+            "argCount": 2
+          },
+          {
+            "callText": "value.replace(\"\\n\", \" \")",
+            "receiver": "value",
+            "member": "replace",
+            "startLine": 13,
+            "argCount": 2
+          }
+        ],
+        "symbolKind": "function",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["value"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "value": [
+            {
+              "line": 12,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "Formatter",
+        "scope": [],
+        "startLine": 16,
+        "endLine": 18,
+        "calls": [],
+        "symbolKind": "class",
+        "localBindings": {
+          "value": [
+            {
+              "line": 17,
+              "type": "str"
+            }
+          ]
+        }
+      },
+      {
+        "symbolId": "Formatter#render",
+        "scope": ["Formatter"],
+        "startLine": 17,
+        "endLine": 18,
+        "calls": [
+          {
+            "callText": "remove_linebreaks(value).strip()",
+            "receiver": "remove_linebreaks(value)",
+            "member": "strip",
+            "startLine": 18,
+            "argCount": 0
+          },
+          {
+            "callText": "remove_linebreaks(value)",
+            "receiver": null,
+            "member": "remove_linebreaks",
+            "startLine": 18,
+            "argCount": 1
+          }
+        ],
+        "symbolKind": "method",
+        "arity": {
+          "minRequired": 1,
+          "maxPositional": 1,
+          "hasSplat": false
+        },
+        "kwargs": {
+          "required": [],
+          "optional": ["value"],
+          "hasSplat": false
+        },
+        "localBindings": {
+          "value": [
+            {
+              "line": 17,
+              "type": "str"
+            }
+          ]
+        }
+      }
+    ],
+    "fileScope": [],
+    "structuredReturnTypes": {
+      "pkg/string.py::remove_linebreaks": {
+        "form": "instance",
+        "name": "str"
+      },
+      "Formatter#render": {
+        "form": "instance",
+        "name": "str"
+      }
+    },
+    "typeAbstractness": {
+      "abstractTypeCount": 0,
+      "concreteTypeCount": 1
+    },
+    "identifierDeclarations": [
+      {
+        "name": "remove_linebreaks",
+        "kind": "return",
+        "line": 12,
+        "ownerSymbolId": "remove_linebreaks",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "value",
+        "kind": "param",
+        "line": 12,
+        "ownerSymbolId": "remove_linebreaks",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "render",
+        "kind": "return",
+        "line": 17,
+        "ownerSymbolId": "Formatter#render",
+        "typeName": "str",
+        "typeSource": "annotation"
+      },
+      {
+        "name": "self",
+        "kind": "param",
+        "line": 17,
+        "ownerSymbolId": "Formatter#render"
+      },
+      {
+        "name": "value",
+        "kind": "param",
+        "line": 17,
+        "ownerSymbolId": "Formatter#render",
+        "typeName": "str",
+        "typeSource": "annotation"
+      }
+    ]
+  }
+}

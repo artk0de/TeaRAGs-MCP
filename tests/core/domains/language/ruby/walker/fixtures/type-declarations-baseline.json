@@ -1,0 +1,346 @@
+{
+  "relPath": "app/models/acme/auth.rb",
+  "language": "ruby",
+  "imports": [
+    {
+      "importText": "json",
+      "startLine": 1
+    },
+    {
+      "importText": "./support/base",
+      "startLine": 2
+    },
+    {
+      "importText": "zeitwerk:Base",
+      "startLine": 12
+    },
+    {
+      "importText": "zeitwerk:Trackable",
+      "startLine": 13
+    },
+    {
+      "importText": "zeitwerk:Instrumented",
+      "startLine": 14
+    },
+    {
+      "importText": "zeitwerk:Finders",
+      "startLine": 15
+    },
+    {
+      "importText": "zeitwerk:User",
+      "startLine": 25
+    },
+    {
+      "importText": "zeitwerk:MAX",
+      "startLine": 26
+    },
+    {
+      "importText": "zeitwerk:Audit",
+      "startLine": 27
+    },
+    {
+      "importText": "zeitwerk:HANDLERS",
+      "startLine": 31
+    },
+    {
+      "importText": "zeitwerk:Acme::Record",
+      "startLine": 36
+    }
+  ],
+  "chunks": [
+    {
+      "symbolId": "Acme",
+      "scope": [],
+      "startLine": 7,
+      "endLine": 41,
+      "calls": [],
+      "symbolKind": "module",
+      "localBindings": {
+        "limit": [
+          {
+            "line": 26,
+            "type": "MAX",
+            "valueKind": "class"
+          }
+        ]
+      }
+    },
+    {
+      "symbolId": "Acme::Auth",
+      "scope": ["Acme"],
+      "startLine": 8,
+      "endLine": 34,
+      "calls": [
+        {
+          "callText": "{ login: :handle_login, logout: :handle_logout }.freeze",
+          "receiver": "{ login: :handle_login, logout: :handle_logout }",
+          "member": "freeze",
+          "startLine": 10,
+          "argCount": 0
+        }
+      ],
+      "symbolKind": "module",
+      "localBindings": {
+        "limit": [
+          {
+            "line": 26,
+            "type": "MAX",
+            "valueKind": "class"
+          }
+        ]
+      }
+    },
+    {
+      "symbolId": "Acme::Auth::Login",
+      "scope": ["Acme", "Auth"],
+      "startLine": 12,
+      "endLine": 33,
+      "calls": [
+        {
+          "callText": "include Trackable",
+          "receiver": null,
+          "member": "include",
+          "startLine": 13,
+          "argCount": 1
+        },
+        {
+          "callText": "prepend Instrumented",
+          "receiver": null,
+          "member": "prepend",
+          "startLine": 14,
+          "argCount": 1
+        },
+        {
+          "callText": "extend Finders",
+          "receiver": null,
+          "member": "extend",
+          "startLine": 15,
+          "argCount": 1
+        }
+      ],
+      "symbolKind": "class",
+      "localBindings": {
+        "limit": [
+          {
+            "line": 26,
+            "type": "MAX",
+            "valueKind": "class"
+          }
+        ]
+      }
+    },
+    {
+      "symbolId": "Acme::Auth::Login#user",
+      "scope": ["Acme", "Auth", "Login"],
+      "startLine": 16,
+      "endLine": 16,
+      "calls": [
+        {
+          "callText": "attr_reader :user",
+          "receiver": null,
+          "member": "attr_reader",
+          "startLine": 16,
+          "argCount": 1
+        }
+      ],
+      "symbolKind": "method"
+    },
+    {
+      "symbolId": "Acme::Auth::Login.build",
+      "scope": ["Acme", "Auth", "Login"],
+      "startLine": 19,
+      "endLine": 21,
+      "calls": [
+        {
+          "callText": "new(params).tap(&:validate)",
+          "receiver": "new(params)",
+          "member": "tap",
+          "startLine": 20,
+          "argCount": 0
+        },
+        {
+          "callText": "&:validate",
+          "receiver": null,
+          "member": "validate",
+          "startLine": 20
+        },
+        {
+          "callText": "new(params)",
+          "receiver": null,
+          "member": "new",
+          "startLine": 20,
+          "argCount": 1
+        }
+      ],
+      "symbolKind": "method",
+      "arity": {
+        "minRequired": 1,
+        "maxPositional": 1,
+        "hasSplat": false
+      },
+      "paramNames": ["params"],
+      "visibility": "public",
+      "acceptsBlock": false
+    },
+    {
+      "symbolId": "Acme::Auth::Login#initialize",
+      "scope": ["Acme", "Auth", "Login"],
+      "startLine": 24,
+      "endLine": 28,
+      "calls": [
+        {
+          "callText": "User.find(params[:id])",
+          "receiver": "User",
+          "member": "find",
+          "startLine": 25,
+          "argCount": 1
+        },
+        {
+          "callText": "Audit.record(limit)",
+          "receiver": "Audit",
+          "member": "record",
+          "startLine": 27,
+          "argCount": 1
+        }
+      ],
+      "symbolKind": "method",
+      "arity": {
+        "minRequired": 1,
+        "maxPositional": 1,
+        "hasSplat": false
+      },
+      "paramNames": ["params"],
+      "visibility": "public",
+      "acceptsBlock": false,
+      "localBindings": {
+        "limit": [
+          {
+            "line": 26,
+            "type": "MAX",
+            "valueKind": "class"
+          }
+        ]
+      }
+    },
+    {
+      "symbolId": "Acme::Auth::Login#dispatch",
+      "scope": ["Acme", "Auth", "Login"],
+      "startLine": 30,
+      "endLine": 32,
+      "calls": [
+        {
+          "callText": "send(HANDLERS.fetch(kind))",
+          "receiver": null,
+          "member": "send",
+          "startLine": 31,
+          "dynamicSend": true,
+          "argCount": 1
+        },
+        {
+          "callText": "HANDLERS.fetch(kind)",
+          "receiver": "HANDLERS",
+          "member": "fetch",
+          "startLine": 31,
+          "argCount": 1
+        }
+      ],
+      "symbolKind": "method",
+      "arity": {
+        "minRequired": 1,
+        "maxPositional": 1,
+        "hasSplat": false
+      },
+      "paramNames": ["kind"],
+      "visibility": "public",
+      "acceptsBlock": false
+    },
+    {
+      "symbolId": "Acme::Auth::Session",
+      "scope": ["Acme"],
+      "startLine": 36,
+      "endLine": 40,
+      "calls": [],
+      "symbolKind": "class"
+    },
+    {
+      "symbolId": "Acme::Auth::Session#expire!",
+      "scope": ["Acme", "Auth::Session"],
+      "startLine": 37,
+      "endLine": 39,
+      "calls": [
+        {
+          "callText": "update(expired: true)",
+          "receiver": null,
+          "member": "update",
+          "startLine": 38,
+          "argCount": 0,
+          "kwargKeys": ["expired"]
+        }
+      ],
+      "symbolKind": "method",
+      "arity": {
+        "minRequired": 0,
+        "maxPositional": 0,
+        "hasSplat": false
+      },
+      "visibility": "public",
+      "acceptsBlock": false
+    }
+  ],
+  "fileScope": [
+    "Acme",
+    "Acme::Auth",
+    "Acme::Auth::Login",
+    "Acme::Auth::Session"
+  ],
+  "classAncestors": {
+    "Acme::Auth::Login": ["Base", "Trackable", "Finders"],
+    "Acme::Auth::Session": ["Acme::Record"]
+  },
+  "compactDeclaredClasses": ["Acme::Auth::Session"],
+  "classPrependedAncestors": {
+    "Acme::Auth::Login": ["Instrumented"]
+  },
+  "classExtends": {
+    "Acme::Auth::Login": "Base",
+    "Acme::Auth::Session": "Acme::Record"
+  },
+  "inheritanceEdges": [
+    {
+      "source": "Acme::Auth::Login",
+      "ancestor": "Base",
+      "kind": "super",
+      "ordinal": 0
+    },
+    {
+      "source": "Acme::Auth::Login",
+      "ancestor": "Trackable",
+      "kind": "include",
+      "ordinal": 0
+    },
+    {
+      "source": "Acme::Auth::Login",
+      "ancestor": "Instrumented",
+      "kind": "prepend",
+      "ordinal": 0
+    },
+    {
+      "source": "Acme::Auth::Login",
+      "ancestor": "Finders",
+      "kind": "extend",
+      "ordinal": 0
+    },
+    {
+      "source": "Acme::Auth::Session",
+      "ancestor": "Acme::Record",
+      "kind": "super",
+      "ordinal": 0
+    }
+  ],
+  "instantiatedTypes": ["Acme::Auth::Login::User"],
+  "classFieldTypes": {
+    "Acme::Auth::Login": {
+      "@user": "User"
+    }
+  }
+}

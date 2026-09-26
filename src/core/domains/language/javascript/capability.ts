@@ -19,7 +19,16 @@ export const capability: LanguageCapability = {
     tech: "testScopeChunker (describe/it scopes, one addressable chunk per example)",
   },
   testFiles,
-  codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
+  codegraph: {
+    tier: "high",
+    tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)",
+    // Kind roles (bd tea-rags-mcp-jqvbn, spec §1a).
+    // The TypeScript row: the two resolve into each other.
+    symbolKindRoles: {
+      callee: new Set(["class", "function", "method"]),
+      receiver: new Set(["class", "module", "enum", "constant", "function", "method"]),
+    },
+  },
   // chunking 2: bd tea-rags-mcp-1etj8 — `jsTestDslFilterHook` +
   // `jsTestScopeChunkerHook` composed into the hook chain and
   // `call_expression` added to chunkable/child chunk types, so the already

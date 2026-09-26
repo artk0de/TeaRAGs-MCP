@@ -63,7 +63,7 @@ export class PythonDynamicDispatchResolver implements DispatchResolverComponent 
 
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     if (pythonDynamicFanoutSuppressed(call, ctx, this.probe, this.coreAmbiguous)) return emptyDispatchFanout();
-    const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter((def) =>
+    const candidates = lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" }).filter((def) =>
       isPythonInstanceMember(def.symbolId),
     );
     if (candidates.length === 0) return emptyDispatchFanout();

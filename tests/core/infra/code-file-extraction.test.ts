@@ -65,6 +65,51 @@ describe("extractCodeFileFromText", () => {
     expect(walk).not.toHaveBeenCalled();
   });
 
+  it("merges what the walker reads off an inert file's NATIVE root into the empty extraction, still without collecting or walking", () => {
+    const { walker, walk } = fakeWalker(["function_definition", "call"]);
+    const fact = { typeId: "CODES", symbolKind: "constant", line: 1, reopens: false } as const;
+    const census = { abstractTypeCount: 0, concreteTypeCount: 0 };
+    const inertFileExtraction = vi.fn(() => ({ typeDeclarations: [fact], typeAbstractness: census }));
+    const collectSymbols = vi.fn<CollectSymbolsFn>(() => CHUNKS);
+
+    const extraction = extractCodeFileFromText(
+      { parser: pythonParser(), walker: { ...walker, inertFileExtraction }, collectSymbols, composer },
+      request('CODES = {"AD": "Andorra"}\n'),
+    );
+
+    expect(extraction).toEqual({
+      relPath: "pkg/job.py",
+      language: "python",
+      imports: [],
+      chunks: [],
+      fileScope: [],
+      typeDeclarations: [fact],
+      typeAbstractness: census,
+    });
+    expect(collectSymbols).not.toHaveBeenCalled();
+    expect(walk).not.toHaveBeenCalled();
+    expect(inertFileExtraction).toHaveBeenCalledTimes(1);
+    const [root] = inertFileExtraction.mock.calls[0] as unknown as [object];
+    // A native SyntaxNode carries a back-reference to its Tree; a materialized node does not.
+    expect(root).toHaveProperty("tree");
+  });
+
+  it("keeps the exact empty inert extraction when the walker's inert reader adds nothing", () => {
+    const { walker } = fakeWalker(["function_definition", "call"]);
+    const extraction = extractCodeFileFromText(
+      {
+        parser: pythonParser(),
+        walker: { ...walker, inertFileExtraction: () => ({}) },
+        collectSymbols: vi.fn(),
+        composer,
+      },
+      request('codes = {"AD": "Andorra"}\n'),
+    );
+
+    expect(extraction).toEqual({ relPath: "pkg/job.py", language: "python", imports: [], chunks: [], fileScope: [] });
+    expect(Object.keys(extraction)).toEqual(["relPath", "language", "imports", "chunks", "fileScope"]);
+  });
+
   it("collects symbols over the materialized tree and walks that same tree with the run context", () => {
     const { walker, walk, nameOf } = fakeWalker(["function_definition", "call"]);
     const collectSymbols = vi.fn<CollectSymbolsFn>(() => CHUNKS);

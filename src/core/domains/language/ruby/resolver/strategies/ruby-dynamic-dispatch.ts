@@ -10,7 +10,7 @@ import {
   EXPLICIT_RECEIVER_VISIBILITY_ACCESS,
   resolveNarrowedFanout,
 } from "../../../kernel/index.js";
-import { RUBY_FANOUT_POPULATION } from "../short-name-lookup.js";
+import { RUBY_FANOUT_POPULATION, rubyMemberLookupRole } from "../short-name-lookup.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import { rubyDynamicFanoutSuppressed } from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
@@ -87,7 +87,7 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     if (rubyDynamicFanoutSuppressed(call, ctx, this.cfg.mode)) return emptyDispatchFanout();
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
-    const candidates = lookupRubySymbolsByShortName(ctx, call.member);
+    const candidates = lookupRubySymbolsByShortName(ctx, call.member, { role: rubyMemberLookupRole(call) });
     if (candidates.length === 0) return emptyDispatchFanout();
     const discount = this.cfg.dynamicReceiverConfidence ?? DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT;
     return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, discount, {

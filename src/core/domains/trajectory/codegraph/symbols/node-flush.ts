@@ -34,6 +34,8 @@ import type {
   IdentifierReplaceEntry,
   IdentifierRow,
   SymbolDefinition,
+  TypeDeclarationReplaceEntry,
+  TypeDeclarationRow,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../../infra/runtime.js";
@@ -46,12 +48,14 @@ export type GraphDbResolver = (collectionName?: PhysicalCollectionName) => Promi
 
 /**
  * One buffered file: its symbol defs and, when the caller built them, its
- * `cg_identifiers` rows (bd tea-rags-mcp-4p3sb.9). `identifiers: undefined`
- * means "this caller does not write identifiers" and leaves the file's rows
- * alone; `[]` means "the file declares nothing" and clears them.
+ * `cg_identifiers` rows (bd tea-rags-mcp-4p3sb.9) and `cg_type_declarations`
+ * rows (bd tea-rags-mcp-vi0wx). `undefined` means "this caller does not write
+ * them" and leaves the file's rows alone; `[]` means "the file declares
+ * nothing" and clears them.
  */
 interface SymbolNodeFlushEntry extends BulkSymbolUpsertEntry {
   identifiers?: IdentifierRow[];
+  typeDeclarations?: TypeDeclarationRow[];
 }
 
 export class SymbolNodeFlushQueue {
@@ -74,8 +78,9 @@ export class SymbolNodeFlushQueue {
    * Buffer one file's durable symbol defs — the single seam BOTH entry points
    * share. Appends to the per-collection buffer and enqueues a flush at the
    * cadence. Order-independent: `upsertSymbolsBulk` is last-wins per relPath.
-   * `identifiers` rides the same entry into `replaceIdentifiersBulk`, also
-   * last-wins per relPath.
+   * `identifiers` rides the same entry into `replaceIdentifiersBulk`, and
+   * `typeDeclarations` into `replaceTypeDeclarationsBulk`, also last-wins per
+   * relPath.
    */
   buffer(
     relPath: BulkSymbolUpsertEntry["relPath"],
@@ -83,9 +88,15 @@ export class SymbolNodeFlushQueue {
     key: string,
     collectionName?: PhysicalCollectionName,
     identifiers?: IdentifierRow[],
+    typeDeclarations?: TypeDeclarationRow[],
   ): void {
     const buf = this.pending.get(key) ?? [];
-    buf.push(identifiers === undefined ? { relPath, definitions: defs } : { relPath, definitions: defs, identifiers });
+    buf.push({
+      relPath,
+      definitions: defs,
+      ...(identifiers === undefined ? {} : { identifiers }),
+      ...(typeDeclarations === undefined ? {} : { typeDeclarations }),
+    });
     this.pending.set(key, buf);
     if (buf.length >= this.flushFiles) this.chainFlush(buf.splice(0, buf.length), key, collectionName);
   }
@@ -181,7 +192,8 @@ export class SymbolNodeFlushQueue {
    * transaction, a row diff scoped by rel_path, last-wins per relPath), then the
    * batch's identifier rows through `replaceIdentifiersBulk` for every file
    * buffered WITH identifiers — an empty list included, so a file that lost its
-   * declarations is cleared. Records the flushed relPaths per collection
+   * declarations is cleared — then the type-declaration rows through
+   * `replaceTypeDeclarationsBulk` under the same rule. Records the flushed relPaths per collection
    * (once-per-file invariant + honest cumulative count) and emits a DEBUG-gated
    * flush log.
    */
@@ -198,6 +210,13 @@ export class SymbolNodeFlushQueue {
       if (e.identifiers !== undefined) identifierEntries.push({ relPath: e.relPath, rows: e.identifiers });
     }
     if (identifierEntries.length > 0) await graphDb.replaceIdentifiersBulk(identifierEntries);
+    const typeDeclarationEntries: TypeDeclarationReplaceEntry[] = [];
+    for (const e of batch) {
+      if (e.typeDeclarations !== undefined) {
+        typeDeclarationEntries.push({ relPath: e.relPath, rows: e.typeDeclarations });
+      }
+    }
+    if (typeDeclarationEntries.length > 0) await graphDb.replaceTypeDeclarationsBulk(typeDeclarationEntries);
     const flushed = this.flushedFiles.get(key) ?? new Set<string>();
     for (const e of batch) flushed.add(e.relPath);
     this.flushedFiles.set(key, flushed);

@@ -10,6 +10,9 @@
  *      class fields with their syntactic type, for the naming lexicon.
  *   3. symbol kind (bd tea-rags-mcp-vi0wx) — each named chunk's declaration
  *      kind on `ChunkExtraction.symbolKind`.
+ *   4. type declarations (bd tea-rags-mcp-vi0wx, spec §1b) — one
+ *      `FileExtraction.typeDeclarations` fact per module-level type, namespace
+ *      and non-function `const`, for the naming lexicon.
  *
  * A new TypeScript extraction facet is added HERE, one `ExtractionFacetPass` at a
  * time, rather than by growing the monolith. What a pass can and cannot express —
@@ -24,10 +27,12 @@ import { typescriptDeclaredVisibilityFacetPass } from "./passes/declared-visibil
 import { TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX } from "./passes/identifier-declarations.js";
 import { ecmascriptSymbolKindFacetPass } from "./passes/symbol-kind.js";
 import { typescriptTypeAbstractnessFacetPass } from "./passes/type-abstractness.js";
+import { ecmascriptTypeDeclarationFacetPass } from "./passes/type-declarations.js";
 
 export const TYPESCRIPT_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
   typescriptDeclaredVisibilityFacetPass,
   typescriptTypeAbstractnessFacetPass,
   createIdentifierDeclarationFacetPass(TYPESCRIPT_IDENTIFIER_DECLARATION_SYNTAX),
   ecmascriptSymbolKindFacetPass(tsNameOf),
+  ecmascriptTypeDeclarationFacetPass(tsNameOf),
 ];

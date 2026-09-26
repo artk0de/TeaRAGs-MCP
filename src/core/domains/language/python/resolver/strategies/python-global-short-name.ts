@@ -164,7 +164,7 @@ export class PythonGlobalShortNameSymbolResolutionStrategy implements SymbolReso
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null && call.receiver !== "self") return CONTINUE;
-    const fallback = lookupPythonSymbolsByShortName(ctx, call.member);
+    const fallback = lookupPythonSymbolsByShortName(ctx, call.member, { role: "callee" });
     // ── Module scope wins, because Python says so (bd tea-rags-mcp-c9tw2) ──
     // A BARE call names the module's own binding before it names anything a
     // sibling package happens to spell the same way: the interpreter resolves

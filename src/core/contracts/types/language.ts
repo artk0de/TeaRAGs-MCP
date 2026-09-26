@@ -23,6 +23,8 @@ import type {
   NamedSymbol,
   RelPath,
   SymbolDefinition,
+  SymbolDefinitionKind,
+  SymbolKindRoles,
   SymbolResolutionPassPlan,
   SymbolResolutionTarget,
 } from "./codegraph.js";
@@ -177,10 +179,18 @@ export interface NarrowedFanoutOptions {
  * one family id must always travel with one predicate; a family, not a single
  * language, because a family that resolves across its members (TypeScript and
  * JavaScript) draws candidates from all of them.
+ *
+ * `calleeKinds` is the other half of that predicate (bd tea-rags-mcp-jqvbn):
+ * the kinds the caller's candidate lookup admits — its language's
+ * `symbolKindRoles.callee` — so a same-named declaration the language cannot
+ * call is no member of the population either. It travels with the family the
+ * way `ownsPath` does, and the corpus fallback a small population reads is
+ * counted under it too.
  */
 export interface DispatchFanoutPopulation {
   readonly family: string;
   readonly ownsPath: (relPath: RelPath) => boolean;
+  readonly calleeKinds: ReadonlySet<SymbolDefinitionKind>;
 }
 
 /**
@@ -583,7 +593,29 @@ export interface LanguageWalker {
    * (bd tea-rags-mcp-1v12o.2.4).
    */
   readonly extractionBearingNodeTypes?: readonly string[];
+  /**
+   * What `walk` would publish BEYOND the empty extraction for a file the
+   * {@link extractionBearingNodeTypes} gate calls inert, read off its NATIVE root
+   * without materializing it — the inert fast path merges it into the empty
+   * extraction. A file bearing no extraction node still carries facts a walk
+   * would publish: its module-scope type and constant declarations
+   * (bd tea-rags-mcp-vi0wx, spec §1b), and a census that ran and counted 0/0,
+   * which the store keeps apart from NULL (bd tea-rags-mcp-r8hme.8). MUST equal
+   * what `walk` adds for the same file. Absent → the inert extraction stays
+   * empty.
+   */
+  readonly inertFileExtraction?: (nativeRoot: AstNode) => InertFileExtractionFacets;
 }
+
+/**
+ * The channels an inert file's extraction carries beyond the empty shape
+ * ({@link LanguageWalker.inertFileExtraction}); the empty shape's own keys stay
+ * the fast path's to set.
+ */
+export type InertFileExtractionFacets = Omit<
+  Partial<FileExtraction>,
+  "relPath" | "language" | "imports" | "chunks" | "fileScope"
+>;
 
 /**
  * What file, if any, an import statement names (bd tea-rags-mcp-9fgdi).
@@ -850,6 +882,13 @@ export interface LanguageFactoryDescriptor {
    * (markdown) declares `{}` explicitly rather than by omission.
    */
   signalFloors: () => Map<string, SignalFloors>;
+  /**
+   * The static per-language capability descriptors, keyed by language — as
+   * lightweight as {@link signalFloors}. Optional on the contract so a test
+   * double need not carry them; a reader treats an absent map as "no language
+   * declares the capability" (bd tea-rags-mcp-vi0wx).
+   */
+  capabilities?: () => Map<string, LanguageCapability>;
 }
 
 /**
@@ -999,6 +1038,27 @@ export interface LanguageCapability {
      * full `tech`.
      */
     summary?: string;
+    /**
+     * This language's RESOLVER reads `FileExtraction.typeDeclarations` (bd
+     * tea-rags-mcp-vi0wx). Only such a language's facts enter the run-global
+     * `typeDeclarations` map and the persisted pass-1 slice; every language's
+     * facts still reach `cg_type_declarations` for the naming lexicon. Absent =
+     * false: a walker that publishes the facts for naming alone does not widen
+     * what resolution reads.
+     */
+    resolverReadsTypeDeclarations?: true;
+    /**
+     * Which declaration kinds a call written in this language can land on as
+     * its CALLEE, and which a member call can be invoked on as its RECEIVER
+     * (bd tea-rags-mcp-jqvbn, spec §1a). The resolver hands the set for the
+     * part it resolves to every symbol-table lookup it makes for a call, so the
+     * table applies the CALLING file's policy without knowing any language. A
+     * lookup of a TYPE name takes neither and sees every kind.
+     *
+     * Mandatory so no language resolves calls without a decision; one with no
+     * calls (markdown) declares two empty sets.
+     */
+    symbolKindRoles: SymbolKindRoles;
   };
   /** Hand-bumped code versions for this language — see {@link LanguageSupportVersions}. */
   versions: LanguageSupportVersions;

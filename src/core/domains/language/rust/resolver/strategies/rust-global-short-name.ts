@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { capability } from "../../capability.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -18,7 +19,9 @@ export class RustGlobalShortNameSymbolResolutionStrategy implements SymbolResolu
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const fallback = ctx.symbolTable.lookupByShortName(call.member, { role: "callee" });
+    const fallback = ctx.symbolTable.lookupByShortName(call.member, {
+      kinds: capability.codegraph.symbolKindRoles.callee,
+    });
     const target = pickSingleCandidate(fallback, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return CONTINUE;

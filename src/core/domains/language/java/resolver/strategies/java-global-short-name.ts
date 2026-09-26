@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { capability } from "../../capability.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -16,7 +17,9 @@ export class JavaGlobalShortNameSymbolResolutionStrategy implements SymbolResolu
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
+    const fallback = ctx.symbolTable.lookupByShortName(call.member, {
+      kinds: capability.codegraph.symbolKindRoles.callee,
+    });
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
     return CONTINUE;

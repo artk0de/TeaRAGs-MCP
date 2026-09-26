@@ -14,6 +14,7 @@ import type {
   SymbolDefinition,
   SymbolId,
   TemporalCochangeSnapshot,
+  TypeDeclarationReplaceEntry,
   TypeNameQuery,
 } from "../../../contracts/types/codegraph.js";
 
@@ -79,6 +80,9 @@ export const DAEMON_OPS = [
   // Per-file replace of the naming lexicon's identifier rows (bd
   // tea-rags-mcp-4p3sb.8). REQUIRED: an older daemon is restarted at handshake.
   "replaceIdentifiersBulk",
+  // Per-file replace of the naming lexicon's type-declaration rows (bd
+  // tea-rags-mcp-vi0wx). REQUIRED: an older daemon is restarted at handshake.
+  "replaceTypeDeclarationsBulk",
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
@@ -196,6 +200,7 @@ export interface DaemonRequest {
     | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string } // getSupertypes | getSubtypes | getTransitiveSubtypes
     | { collection: string; entries: IdentifierReplaceEntry[] } // replaceIdentifiersBulk
+    | { collection: string; entries: TypeDeclarationReplaceEntry[] } // replaceTypeDeclarationsBulk
     | {
         collection: string;
         types: string[];

@@ -39,7 +39,7 @@ export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     if (call.receiver) return CONTINUE;
     if (goLocalAt(ctx, call.member, call.startLine)) return CONTINUE;
     const scope = goBareNamePackageDirs(this.cfg, ctx);
-    const candidates = lookupGoSymbolsByShortName(ctx, call.member).filter(
+    const candidates = lookupGoSymbolsByShortName(ctx, call.member, { role: "callee" }).filter(
       (def) => def.symbolId === call.member && scope.includes(goPackageDirOf(def.relPath)),
     );
     const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), this.cfg.mode);

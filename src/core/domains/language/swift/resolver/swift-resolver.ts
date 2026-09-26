@@ -270,7 +270,7 @@ export class SwiftCallResolver implements CallResolver {
    * nothing; retrofitting it later would move a published rate.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    const defs = lookupSwiftSymbolsByShortName(ctx, call.member);
+    const defs = lookupSwiftSymbolsByShortName(ctx, call.member, { role: "callee" });
     if (defs.length === 0) return false;
     if (call.receiver === null) return this.bareNameMayReach(call, ctx);
     // A function-local declaration answers to its bare name only (bd tea-rags-mcp-y99pg.39).
@@ -289,7 +289,7 @@ export class SwiftCallResolver implements CallResolver {
     // A member of a type off every enclosing lookup is no target of an
     // unqualified name (bd tea-rags-mcp-y99pg.39).
     const defs = swiftLexicallyReachableDefinitions(
-      lookupSwiftBareNameDefinitions(ctx, call.member),
+      lookupSwiftBareNameDefinitions(ctx, call.member, { role: "callee" }),
       call,
       ctx,
       this.memberTypes,
