@@ -41,9 +41,9 @@ const PINNED_CAPABILITY_LANGUAGES: Readonly<Record<string, readonly string[]>> =
   diagnostics: ["typescript"],
   hasInProjectDefinition: ["javascript", "python", "ruby", "swift", "typescript"],
   prepareResolvePass: ["go", "typescript"],
-  resolveFileEdges: ["javascript", "python", "ruby", "swift", "typescript"],
+  resolveFileEdges: ["java", "javascript", "python", "ruby", "swift", "typescript"],
   targetsCoreAmbiguousMember: ["python", "ruby"],
-  targetsExternalImport: ["javascript", "python", "ruby", "typescript"],
+  targetsExternalImport: ["java", "javascript", "python", "ruby", "typescript"],
 };
 
 /**
