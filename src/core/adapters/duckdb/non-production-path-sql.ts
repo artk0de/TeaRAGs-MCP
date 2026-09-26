@@ -1,9 +1,15 @@
 /**
  * The non-production path classification as a DuckDB predicate (bd
  * tea-rags-mcp-4p3sb.25): the same declared masks `buildNonProductionPathFilter`
- * matches in JS (`NON_PRODUCTION_PATTERNS` plus the test shapes, split into
- * case-insensitive and case-sensitive sets), compiled ONCE at module load into
- * constant SQL — no per-file bind list, no extra read.
+ * matches in JS — the tooling directories plus the test shapes, split into
+ * case-insensitive and case-sensitive sets by `nonProductionPathPatterns`
+ * (`infra/file-classification`) — compiled into constant SQL: no per-file bind
+ * list, no extra read.
+ *
+ * The masks are an ARGUMENT. The per-language test shapes are owned by
+ * `domains/language` (bd tea-rags-mcp-vjz6s), which an adapter may not import,
+ * so the caller hands the split lists in — the ontology report's query carries
+ * them — and nothing here holds a language's pattern.
  *
  * Why regular expressions and not `GLOB`: DuckDB's `GLOB` lets `*` cross `/`
  * (`'a/b/c.ts' GLOB '*.ts'` is true), so it cannot say "one path segment".
@@ -19,22 +25,9 @@
  * Anything else — negation, a character class, braces, an escape, a
  * root-anchored or multi-segment path — throws: a mask the SQL cannot express
  * must fail loudly, never be dropped from the predicate.
- *
- * The translator takes plain pattern lists, so moving the per-language test
- * masks elsewhere (bd tea-rags-mcp-vjz6s) changes only the import below.
  */
 
-import {
-  CASE_INSENSITIVE_TEST_PATTERNS,
-  CASE_SENSITIVE_TEST_PATTERNS,
-  NON_PRODUCTION_PATTERNS,
-} from "../../infra/file-classification/index.js";
-
-/** The pattern lists to compile, split by how case is matched. */
-export interface NonProductionPathPatterns {
-  caseInsensitive: readonly string[];
-  caseSensitive: readonly string[];
-}
+import type { CaseSplitPathPatterns } from "../../contracts/types/file-classification.js";
 
 const REGEX_SPECIAL = /[.+^$()|\\]/g;
 
@@ -58,11 +51,16 @@ function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+/** Compiled predicates per pattern object: a report compiles its masks once, not per query. */
+const compiled = new WeakMap<CaseSplitPathPatterns, (column: string) => string>();
+
 /**
  * Compiles `patterns` into a predicate over a path column: true for a
  * non-production path. Throws on a pattern form it cannot express.
  */
-export function compileNonProductionPathPredicate(patterns: NonProductionPathPatterns): (column: string) => string {
+export function compileNonProductionPathPredicate(patterns: CaseSplitPathPatterns): (column: string) => string {
+  const cached = compiled.get(patterns);
+  if (cached) return cached;
   const clauses: ((column: string) => string)[] = [];
   if (patterns.caseInsensitive.length > 0) {
     const regex = `(?i)(${patterns.caseInsensitive.map(segmentPatternRegex).join("|")})`;
@@ -72,16 +70,10 @@ export function compileNonProductionPathPredicate(patterns: NonProductionPathPat
     const regex = `(${patterns.caseSensitive.map(segmentPatternRegex).join("|")})`;
     clauses.push((column) => `regexp_matches(${column}, ${literal(regex)})`);
   }
-  if (clauses.length === 0) return () => "FALSE";
-  return (column) => `(${clauses.map((clause) => clause(column)).join(" OR ")})`;
+  const predicate =
+    clauses.length === 0
+      ? () => "FALSE"
+      : (column: string) => `(${clauses.map((clause) => clause(column)).join(" OR ")})`;
+  compiled.set(patterns, predicate);
+  return predicate;
 }
-
-/**
- * The non-production predicate over a path column — `buildNonProductionPathFilter`
- * in SQL: tooling directories and the case-insensitive test shapes ignoring
- * case, the PascalCase test suffixes (`*Test.java`) matching it exactly.
- */
-export const NON_PRODUCTION_PATH_SQL: (column: string) => string = compileNonProductionPathPredicate({
-  caseInsensitive: [...NON_PRODUCTION_PATTERNS, ...CASE_INSENSITIVE_TEST_PATTERNS],
-  caseSensitive: CASE_SENSITIVE_TEST_PATTERNS,
-});

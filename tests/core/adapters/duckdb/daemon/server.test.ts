@@ -10,6 +10,7 @@ import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/d
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { nonProductionPathPatterns } from "../../../../../src/core/infra/file-classification/index.js";
 
 let root: string;
 afterEach(() => {
@@ -1124,12 +1125,48 @@ describe("CodegraphDaemonServer.handle — cg_identifiers ops", () => {
     }
     await pool.closeAll();
   });
+
+  it("passes the multiplicity split and the same-type sibling count through to the type aggregate", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_ident_siblings_v1";
+    const binding = { ownerSymbolId: "A#link", line: 2, typeName: "Node", typeSource: "annotation" };
+    await server.handle({
+      id: 1,
+      op: "replaceIdentifiersBulk",
+      params: {
+        collection: c,
+        entries: [
+          {
+            relPath: "a.ts",
+            rows: [
+              { ...binding, kind: "param", name: "node" },
+              { ...binding, kind: "local", name: "sourceNode" },
+            ],
+          },
+        ],
+      },
+    });
+    const response = await server.handle({
+      id: 2,
+      op: "aggregateIdentifiersByType",
+      params: { collection: c, types: ["Node"], groupByMultiplicity: true, countSameTypeSiblings: true },
+    });
+    expect((response as { result: unknown[] }).result).toEqual([
+      expect.objectContaining({ kind: "local", name: "sourceNode", typeMultiplicity: "one", sameTypeSiblingN: 1 }),
+      expect.objectContaining({ kind: "param", name: "node", typeMultiplicity: "one", sameTypeSiblingN: 1 }),
+    ]);
+    await pool.closeAll();
+  });
 });
 
 // bd tea-rags-mcp-4p3sb.20: the ontology audit is a read proxied through the daemon.
 describe("CodegraphDaemonServer.handle — ontology report reads", () => {
   const query = {
     nonConceptTypes: [],
+    // The masks travel with the query (bd tea-rags-mcp-vjz6s): the daemon
+    // process holds no language conventions of its own.
+    nonProductionPaths: nonProductionPathPatterns(),
+    shadowsMethodExtensions: [".rb"],
     sections: ["synonyms"],
     limit: 5,
     thresholds: {

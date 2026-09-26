@@ -124,6 +124,58 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-bjzaf — a bound local always states whether it unwrapped its call; nothing else does.
+  it("persists the unwrap fact for every bound local and the wrapper a return was read through", async () => {
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "a.rs",
+        rows: [
+          row({ name: "doc", boundMember: "load", boundCallExpression: "load(id)", boundCallUnwrapped: true }),
+          row({ name: "attempt", boundMember: "load", boundCallExpression: "load(id)" }),
+          row({ name: "n" }),
+          row({
+            name: "load",
+            kind: "return",
+            ownerSymbolId: "load",
+            typeName: "Doc",
+            typeSource: "return-type",
+            returnWrapper: "Result",
+          }),
+        ],
+      },
+    ]);
+    expect(
+      await db.queryAll("SELECT name, bound_call_unwrapped, return_wrapper FROM cg_identifiers ORDER BY name"),
+    ).toEqual([
+      { name: "attempt", bound_call_unwrapped: false, return_wrapper: null },
+      { name: "doc", bound_call_unwrapped: true, return_wrapper: null },
+      { name: "load", bound_call_unwrapped: null, return_wrapper: "Result" },
+      { name: "n", bound_call_unwrapped: null, return_wrapper: null },
+    ]);
+
+    // Re-writing the same rows is a no-op for the diff: the boolean fingerprints like the other cells.
+    const before = await db.queryAll<{ rowid: number }>("SELECT rowid FROM cg_identifiers ORDER BY rowid");
+    await db.replaceIdentifiersBulk([
+      {
+        relPath: "a.rs",
+        rows: [
+          row({ name: "doc", boundMember: "load", boundCallExpression: "load(id)", boundCallUnwrapped: true }),
+          row({ name: "attempt", boundMember: "load", boundCallExpression: "load(id)" }),
+          row({ name: "n" }),
+          row({
+            name: "load",
+            kind: "return",
+            ownerSymbolId: "load",
+            typeName: "Doc",
+            typeSource: "return-type",
+            returnWrapper: "Result",
+          }),
+        ],
+      },
+    ]);
+    expect(await db.queryAll("SELECT rowid FROM cg_identifiers ORDER BY rowid")).toEqual(before);
+  });
+
   it("removeFile drops the file's identifiers", async () => {
     await db.replaceIdentifiersBulk([
       { relPath: "a.rb", rows: [row({ name: "x" })] },
@@ -173,6 +225,55 @@ describe("DuckDbGraphClient — cg_identifiers", () => {
 
     it("returns nothing for an empty type list", async () => {
       expect(await db.aggregateIdentifiersByType({ types: [] })).toEqual([]);
+    });
+
+    it("countSameTypeSiblings: per group, the rows whose owner binds the type under another name", async () => {
+      await db.replaceIdentifiersBulk([
+        {
+          relPath: "lib/c.rb",
+          rows: [
+            // One owner, one name twice (param + local): no second binding.
+            row({ ownerSymbolId: "C#run", kind: "param", name: "doc", typeName: "Doc", typeSource: "annotation" }),
+            row({ ownerSymbolId: "C#run", name: "doc", typeName: "Doc", typeSource: "annotation" }),
+            // A return is the method's name, not a value binding.
+            row({
+              ownerSymbolId: "C#run",
+              kind: "return",
+              name: "build_doc",
+              typeName: "Doc",
+              typeSource: "annotation",
+            }),
+          ],
+        },
+      ]);
+      const rows = await db.aggregateIdentifiersByType({ types: ["Doc"], countSameTypeSiblings: true });
+      const key = (r: { kind: string; name: string; typeSource: string }) => `${r.kind}:${r.name}:${r.typeSource}`;
+      expect(Object.fromEntries(rows.map((r) => [key(r), r.sameTypeSiblingN]))).toEqual({
+        // A#run holds `doc` beside the param `document`; A#other holds `doc` alone.
+        "local:doc:binding": 1,
+        "param:document:annotation": 1,
+        "local:record:constructor": 0,
+        "param:doc:annotation": 0,
+        "local:doc:annotation": 0,
+        "return:build_doc:annotation": undefined,
+      });
+      expect(rows.find((r) => r.kind === "return")).not.toHaveProperty("sameTypeSiblingN");
+
+      // The count composes with the language and multiplicity splits (the lexicon's read).
+      const grouped = await db.aggregateIdentifiersByType({
+        types: ["Doc"],
+        countSameTypeSiblings: true,
+        groupByLanguage: true,
+        groupByMultiplicity: true,
+      });
+      expect(Object.fromEntries(grouped.map((r) => [key(r), r.sameTypeSiblingN]))).toEqual(
+        Object.fromEntries(rows.map((r) => [key(r), r.sameTypeSiblingN])),
+      );
+    });
+
+    it("without countSameTypeSiblings a row carries no sameTypeSiblingN", async () => {
+      const rows = await db.aggregateIdentifiersByType({ types: ["Doc"] });
+      expect(rows.every((r) => !("sameTypeSiblingN" in r))).toBe(true);
     });
 
     it("countIdentifiers counts the rows of the scope", async () => {

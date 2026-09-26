@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "typescript",
@@ -17,6 +18,7 @@ export const capability: LanguageCapability = {
     detection: "*.test.ts / *.spec.ts",
     tech: "testScopeChunker (describe/it scopes, one addressable chunk per example)",
   },
+  testFiles,
   codegraph: {
     tier: "high",
     summary:

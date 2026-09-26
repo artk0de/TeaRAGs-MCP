@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compilePathPatternMatcher } from "../../../src/core/infra/path-pattern.js";
+import { compilePathPatternMatcher, pathPatternLiteralPrefix } from "../../../src/core/infra/path-pattern.js";
 
 const RUNNER = "src/core/domains/ingest/pipeline/enrichment/completion-runner.ts";
 const COORDINATOR = "src/core/domains/ingest/pipeline/enrichment/coordinator.ts";
@@ -68,5 +68,32 @@ describe("compilePathPatternMatcher (bd tea-rags-mcp-xf01b)", () => {
     expect(compilePathPatternMatcher(undefined)).toBeUndefined();
     expect(compilePathPatternMatcher("")).toBeUndefined();
     expect(compilePathPatternMatcher("!")).toBeUndefined();
+  });
+});
+
+describe("pathPatternLiteralPrefix — the rel_path prefix a pathPattern pins (bd tea-rags-mcp-1hj3o)", () => {
+  it("is everything before the first glob metacharacter", () => {
+    expect(pathPatternLiteralPrefix("app/services/**/*.rb")).toBe("app/services/");
+    expect(pathPatternLiteralPrefix("src/core/domains/explore/naming-lexicon/**")).toBe(
+      "src/core/domains/explore/naming-lexicon/",
+    );
+    expect(pathPatternLiteralPrefix("src/{a,b}/x.ts")).toBe("src/");
+    expect(pathPatternLiteralPrefix("src/[ab].ts")).toBe("src/");
+    expect(pathPatternLiteralPrefix("src/x?.ts")).toBe("src/x");
+  });
+
+  it("is the whole pattern when it holds no metacharacter", () => {
+    expect(pathPatternLiteralPrefix("src/core/api")).toBe("src/core/api");
+  });
+
+  it("drops a leading `./` or `/`, which a repo-relative path never carries", () => {
+    expect(pathPatternLiteralPrefix("./app/services/**")).toBe("app/services/");
+    expect(pathPatternLiteralPrefix("/app/services/**")).toBe("app/services/");
+  });
+
+  it("is empty for no pattern, or one that opens with a wildcard", () => {
+    expect(pathPatternLiteralPrefix(undefined)).toBe("");
+    expect(pathPatternLiteralPrefix("")).toBe("");
+    expect(pathPatternLiteralPrefix("**/services/**")).toBe("");
   });
 });

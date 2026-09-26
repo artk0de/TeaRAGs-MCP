@@ -4,8 +4,11 @@ import type { LanguageFactoryDescriptor, LanguageProvider } from "../../../../..
 import {
   buildCodegraphExclusionFilter,
   CODEGRAPH_GENERATED_PATTERNS,
-  CODEGRAPH_TEST_PATTERNS,
 } from "../../../../../src/core/domains/trajectory/codegraph/exclusion.js";
+import {
+  installedTestFileConventions,
+  testPathPatterns,
+} from "../../../../../src/core/infra/file-classification/index.js";
 import { languageFactory } from "./__helpers__/language-factory.js";
 
 /**
@@ -150,11 +153,14 @@ describe("buildCodegraphExclusionFilter", () => {
     expect(igBare.ignores("src/main.ts")).toBe(false);
   });
 
-  it("CODEGRAPH_TEST_PATTERNS is a non-empty readonly array covering all walker languages", () => {
-    expect(CODEGRAPH_TEST_PATTERNS.length).toBeGreaterThan(0);
+  it("the test patterns the exclusion drops cover all walker languages", () => {
+    // Since bd tea-rags-mcp-vjz6s the exclusion reads the installed language
+    // conventions rather than a codegraph-owned constant.
+    const testPatterns = testPathPatterns(installedTestFileConventions()).all;
+    expect(testPatterns.length).toBeGreaterThan(0);
     // Sanity: every language with a codegraph walker has at least one entry.
     // (Bash has no test convention — intentionally not listed.)
-    const joined = CODEGRAPH_TEST_PATTERNS.join("\n");
+    const joined = testPatterns.join("\n");
     expect(joined).toMatch(/\*\.test\.ts/); // TS
     expect(joined).toMatch(/\*\.spec\.js/); // JS
     expect(joined).toMatch(/test_\*\.py|\*_test\.py/); // Python

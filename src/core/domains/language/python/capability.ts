@@ -1,9 +1,11 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "python",
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-python" },
   tests: { tier: "medium", detection: "test_*.py / *_test.py / conftest.py", tech: "generic AST" },
+  testFiles,
   codegraph: {
     tier: "high",
     summary:

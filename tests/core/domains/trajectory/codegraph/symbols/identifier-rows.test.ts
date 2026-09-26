@@ -10,6 +10,7 @@
 
 import Parser from "tree-sitter";
 import RbLang from "tree-sitter-ruby";
+import SwiftLang from "tree-sitter-swift";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -23,6 +24,7 @@ import type {
   LanguageProvider,
 } from "../../../../../../src/core/contracts/types/language.js";
 import { RubyLanguage } from "../../../../../../src/core/domains/language/ruby/index.js";
+import { SwiftLanguage } from "../../../../../../src/core/domains/language/swift/index.js";
 import {
   buildIdentifierRows,
   collectIdentifierFinderVocabulary,
@@ -710,6 +712,82 @@ describe("buildIdentifierRows — a SCREAMING_SNAKE constant is never a type", (
   });
 });
 
+// bd tea-rags-mcp-1hj3o — `Self` is the RECEIVER's type, a marker the resolver substitutes; it names no type.
+describe("buildIdentifierRows — a `Self` marker is never a type", () => {
+  it("publishes no channel return row for a `Self` marker, structured or flat", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "swift",
+        chunks: [chunk({ symbolId: "Api#copy", startLine: 2 }), chunk({ symbolId: "Api#clone", startLine: 3 })],
+        structuredReturnTypes: { "Api#copy": { form: "instance", name: "Self" } },
+        functionReturnTypes: { clone: "Self" },
+      }),
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("leaves a declaration typed `Self` or by a `Self`-rooted associated type untyped", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        language: "rust",
+        chunks: [chunk({ symbolId: "Api#merge", startLine: 1, endLine: 9 })],
+        identifierDeclarations: [
+          decl({
+            name: "other",
+            kind: "param",
+            ownerSymbolId: "Api#merge",
+            typeName: "Self",
+            typeSource: "annotation",
+          }),
+          decl({ name: "item", kind: "param", ownerSymbolId: "Api#merge", typeName: "Self::Item" }),
+          decl({ name: "element", kind: "param", ownerSymbolId: "Api#merge", typeName: "Self.Element" }),
+          decl({ name: "selfish", kind: "param", ownerSymbolId: "Api#merge", typeName: "Selfish" }),
+        ],
+      }),
+    );
+    expect(rows.map((r) => [r.name, r.typeName])).toEqual([
+      ["other", undefined],
+      ["item", undefined],
+      ["element", undefined],
+      ["selfish", "Selfish"],
+    ]);
+  });
+
+  it("Swift end to end: a protocol's `-> Self` yields no return row; a class's names the class", () => {
+    const code = [
+      "protocol Api {",
+      "  func copy() -> Self",
+      "  func peek() -> Self?",
+      "}",
+      "final class Store: Api {",
+      "  func copy() -> Self { self }",
+      "  func peek() -> Self? { nil }",
+      "}",
+    ].join("\n");
+    const parser = new Parser();
+    parser.setLanguage(SwiftLang);
+    const swiftExtraction = new SwiftLanguage().walker.walk({
+      tree: parser.parse(code),
+      code,
+      relPath: "Sources/Api.swift",
+      language: "swift",
+      chunks: [
+        { symbolId: "Api", startLine: 1, endLine: 4, scope: [] },
+        { symbolId: "Api#copy", startLine: 2, endLine: 2, scope: ["Api"] },
+        { symbolId: "Api#peek", startLine: 3, endLine: 3, scope: ["Api"] },
+        { symbolId: "Store", startLine: 5, endLine: 8, scope: [] },
+        { symbolId: "Store#copy", startLine: 6, endLine: 6, scope: ["Store"] },
+        { symbolId: "Store#peek", startLine: 7, endLine: 7, scope: ["Store"] },
+      ],
+    });
+    const returns = buildIdentifierRows(swiftExtraction).filter((r) => r.kind === "return");
+    expect(returns.map((r) => [r.ownerSymbolId, r.typeName])).toEqual([
+      ["Store#copy", "Store"],
+      ["Store#peek", "Store"],
+    ]);
+  });
+});
+
 // bd tea-rags-mcp-4p3sb.26 — a row keeps whether its type names ONE value or MANY of them.
 describe("buildIdentifierRows — type multiplicity", () => {
   it("carries a syntactic many onto the row; a non-collection annotation stays one", () => {
@@ -805,6 +883,42 @@ describe("buildIdentifierRows — type multiplicity", () => {
     expect(locals.map((r) => [r.name, r.typeName, r.typeMultiplicity ?? "one"])).toEqual([
       ["posts", "Post", "many"],
       ["post", "Post", "one"],
+    ]);
+  });
+});
+
+// bd tea-rags-mcp-bjzaf — the call-return join needs the caller's `?` / `await` and the callee's wrapper.
+describe("buildIdentifierRows — call unwrap facts", () => {
+  it("carries a bound local's unwrap and a syntactic return's wrapper onto the rows", () => {
+    const rows = buildIdentifierRows(
+      extraction({
+        chunks: [
+          chunk({ symbolId: "load", startLine: 1, endLine: 1 }),
+          chunk({
+            symbolId: "ProcessEvent#call",
+            startLine: 2,
+            endLine: 9,
+            calls: [call({ member: "load", startLine: 5, callText: "load(id)" })],
+          }),
+        ],
+        identifierDeclarations: [
+          decl({
+            name: "load",
+            kind: "return",
+            line: 1,
+            ownerSymbolId: "load",
+            typeName: "Doc",
+            returnWrapper: "Result",
+          }),
+          decl({ name: "doc", line: 5, boundCallee: { member: "load" }, boundCallUnwrapped: true }),
+          decl({ name: "attempt", line: 5, boundCallee: { member: "load" } }),
+        ],
+      }),
+    );
+    expect(rows.map((r) => [r.name, r.typeName, r.returnWrapper, r.boundCallUnwrapped])).toEqual([
+      ["load", "Doc", "Result", undefined],
+      ["doc", undefined, undefined, true],
+      ["attempt", undefined, undefined, undefined],
     ]);
   });
 });

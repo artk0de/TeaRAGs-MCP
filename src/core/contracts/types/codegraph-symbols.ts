@@ -323,6 +323,22 @@ export interface SymbolVisibilityRow {
   visibility: DeclaredSymbolVisibility | null;
 }
 
+/**
+ * The declaration kind a walker saw for a definition (bd tea-rags-mcp-vi0wx) —
+ * what lets type-name judgement tell a type (`class`, `interface`, `enum`, …)
+ * from a callable or a constant. Language-neutral: each walker maps its own
+ * declaration nodes onto this vocabulary.
+ */
+export type SymbolDefinitionKind =
+  | "class"
+  | "module"
+  | "interface"
+  | "enum"
+  | "type_alias"
+  | "constant"
+  | "function"
+  | "method";
+
 export interface SymbolDefinition {
   symbolId: SymbolId;
   fqName: string;
@@ -364,6 +380,12 @@ export interface SymbolDefinition {
    */
   startLine?: number;
   endLine?: number;
+  /**
+   * Declaration kind the walker saw (bd tea-rags-mcp-vi0wx). PERSISTED as
+   * `cg_symbols.symbol_kind` (migration 035); absent = unknown — a walker that
+   * records no kind, or a row written before that migration.
+   */
+  symbolKind?: SymbolDefinitionKind;
   /**
    * This definition was SYNTHESIZED by the project-scope schema pre-pass from a
    * persisted schema snapshot (`db/schema.rb`) rather than extracted from a

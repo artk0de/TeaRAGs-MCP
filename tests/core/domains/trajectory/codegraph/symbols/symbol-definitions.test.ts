@@ -43,6 +43,19 @@ describe("symbolDefinitionsOf — the one chunk → SymbolDefinition mapping", (
     ]);
   });
 
+  it("threads the walker's symbol kind onto the definition (bd tea-rags-mcp-vi0wx)", () => {
+    const defs = symbolDefinitionsOf({
+      ...extraction,
+      chunks: [{ symbolId: "Request", scope: [], calls: [], symbolKind: "class" }],
+    });
+    expect(defs[0].symbolKind).toBe("class");
+  });
+
+  it("omits the symbol kind when the walker recorded none", () => {
+    const defs = symbolDefinitionsOf({ ...extraction, chunks: [{ symbolId: "Request", scope: [], calls: [] }] });
+    expect(defs[0]).not.toHaveProperty("symbolKind");
+  });
+
   it("is what the offline tally and oracle harnesses build their symbol table with", () => {
     expect(buildSymbolDefs(extraction)).toEqual(symbolDefinitionsOf(extraction));
   });

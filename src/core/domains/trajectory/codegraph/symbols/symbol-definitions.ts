@@ -28,6 +28,9 @@ export function symbolDefinitionsOf(extraction: FileExtraction): SymbolDefinitio
     // Abstract-stub marker (bd tea-rags-mcp-bcdfe) — set only when true, so the
     // self-dispatch probe can tell a declaration from a concrete definition.
     ...(c.isAbstractStub === true ? { isAbstractStub: true } : {}),
+    // The declaration kind the walker saw (bd tea-rags-mcp-vi0wx) — absent when
+    // the walker recorded none, so "unknown" never turns into a guessed kind.
+    ...(c.symbolKind ? { symbolKind: c.symbolKind } : {}),
     // The symbol's AST range, persisted so the payload healer maps chunks to
     // owners by the same rule the deferred pass uses (bd tea-rags-mcp-9i2ow).
     ...(c.startLine !== undefined && c.endLine !== undefined ? { startLine: c.startLine, endLine: c.endLine } : {}),

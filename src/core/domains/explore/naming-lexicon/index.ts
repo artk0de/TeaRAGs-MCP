@@ -23,6 +23,7 @@ export {
   isNonConceptType,
   isWeakerNamingShape,
   matchesTypeWords,
+  mergedSameTypeSiblingN,
   shapeDistribution,
   spellsTypeName,
 } from "./shapes.js";

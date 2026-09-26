@@ -1,4 +1,5 @@
 import type { LanguageCapability } from "../../../contracts/types/language.js";
+import { testFiles } from "./test-files.js";
 
 export const capability: LanguageCapability = {
   language: "swift",
@@ -8,6 +9,7 @@ export const capability: LanguageCapability = {
     detection: "*Test.swift / *Tests.swift / Tests/** / *Spec.swift / Specs/**",
     tech: "XCTest + swift-testing recognition (test cases, setUp/tearDown, @Test/@Suite) plus Quick/Nimble DSL scope chunking (per-scenario chunks with ancestor beforeEach spliced in)",
   },
+  testFiles,
   codegraph: {
     tier: "high",
     tech: "10-strategy chain + super and inherited members over the superclass chain + implicit-self and chained field typing + return-typed call hops + extension-scope, nested-type and module-level-value receivers; no import narrowing",
@@ -692,6 +694,9 @@ export const capability: LanguageCapability = {
   // else lowerCamelCase — constants included (no SCREAMING_SNAKE). A module is
   // named like a type (`Alamofire`, `Foundation`).
   naming: {
+    // `self.` is implicit on member access, so a local named like a method
+    // shadows it.
+    implicitSelf: true,
     casing: {
       type: ["pascal"],
       module: ["pascal"],

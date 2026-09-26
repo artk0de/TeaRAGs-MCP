@@ -90,7 +90,12 @@ const SHARED_SOURCES: VersionAxisSources[] = [
  * DSL grammar, and the loose files beside them (`kernel.ts`, `index.ts`,
  * vocabularies, schemas), because a resolution change can land in any of them.
  * `capability.ts` is excluded: it holds the version numbers themselves, so
- * digesting it would make every bump invalidate its own pin.
+ * digesting it would make every bump invalidate its own pin. `test-files.ts` is
+ * excluded too: it holds the file classifier's test masks (bd
+ * tea-rags-mcp-vjz6s), which decide which files are tests — `payload.isTest`,
+ * the enrichment skip stamp, the codegraph exclusion — and move no walker or
+ * resolver output. They carried no version number while they lived in `infra`,
+ * and moving them next to the walker must not start charging walker bumps.
  */
 export function versionAxisSources(language: string): VersionAxisSources[] {
   if (language === SHARED_LANGUAGE) return SHARED_SOURCES;
@@ -102,7 +107,11 @@ export function versionAxisSources(language: string): VersionAxisSources[] {
     {
       axis: "walker",
       paths: [`${LANGUAGE_ROOT}/${language}`],
-      exclude: [`${LANGUAGE_ROOT}/${language}/chunking`, `${LANGUAGE_ROOT}/${language}/capability.ts`],
+      exclude: [
+        `${LANGUAGE_ROOT}/${language}/chunking`,
+        `${LANGUAGE_ROOT}/${language}/capability.ts`,
+        `${LANGUAGE_ROOT}/${language}/test-files.ts`,
+      ],
     },
   ];
 }

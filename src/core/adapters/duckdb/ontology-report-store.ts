@@ -20,9 +20,13 @@
  *   - `resolved` — {@link resolvedIdentifiersCte}: the persisted type, or the
  *     `call-return` type of a row bound to a single-target exact call. Narrowed
  *     BEFORE the join by the language's file extensions;
+ *   - `canon_resolved` — {@link canonicalTypeNamesCte}: `resolved` with each
+ *     type name folded to the symbol it denotes (`Bar` into `Foo::Bar`, `Type`
+ *     into `ts.Type`) within one language, the spelling kept beside it;
  *   - `concept_all` — rows under the path scope, in production files only (the
  *     architecture report's non-production classification: tooling and test
- *     shapes out, bd tea-rags-mcp-4p3sb.25), whose effective type names a
+ *     shapes out, bd tea-rags-mcp-4p3sb.25; the masks travel in the query,
+ *     since the daemon process owns no language conventions), whose effective type names a
  *     concept: not a
  *     non-concept type of the row's language, not a single capital letter;
  *     value kinds only (`param`, `local`, `field` — a `return` row's name is a
@@ -65,8 +69,13 @@ import type {
   OntologyTypeGroupRow,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
-import { pathPrefixPredicate, resolvedIdentifiersCte, type SqlPredicate } from "./identifier-store.js";
-import { NON_PRODUCTION_PATH_SQL } from "./non-production-path-sql.js";
+import {
+  DECLARED_IDENTIFIER_SQL,
+  pathPrefixPredicate,
+  resolvedIdentifiersCte,
+  type SqlPredicate,
+} from "./identifier-store.js";
+import { compileNonProductionPathPredicate } from "./non-production-path-sql.js";
 
 /** Exhaustive over {@link IdentifierTypeSource}: a new source is a compile error here, not a silent zero. */
 const TYPE_SOURCE_SET: Record<IdentifierTypeSource, true> = {
@@ -97,8 +106,18 @@ const UNUSED_MARKER_SQL = `regexp_matches(name, '^_[A-Za-z]')`;
  */
 const ALL_CAPS_SQL = (column: string) =>
   `(regexp_full_match(${column}, '[A-Z0-9_]+') AND length(regexp_replace(${column}, '[^A-Z]', '', 'g')) >= 2)`;
-/** Deterministic example-row order: first file, first line, first owner. */
-const EXAMPLE_KEY_SQL = `rel_path || ':' || lpad(CAST(line AS VARCHAR), 10, '0') || ':' || owner_symbol_id`;
+/**
+ * Deterministic example-row order: a row spelling its type as reported first
+ * (a folded unqualified spelling never stands for the qualified type), then
+ * first file, first line, first owner.
+ */
+const EXAMPLE_KEY_SQL = `CASE WHEN type_spelling IS NOT DISTINCT FROM type_name THEN '0' ELSE '1' END || ':' || rel_path || ':' || lpad(CAST(line AS VARCHAR), 10, '0') || ':' || owner_symbol_id`;
+/** A type name that is one identifier (`Bar`). */
+const UNQUALIFIED_TYPE_RE = `'[A-Za-z_$][A-Za-z0-9_$]*'`;
+/** A type name that is a namespace path of identifiers (`Foo::Bar`, `ts.Type`). */
+const QUALIFIED_TYPE_RE = `'[A-Za-z_$][A-Za-z0-9_$]*((::|\\.)[A-Za-z_$][A-Za-z0-9_$]*)+'`;
+/** The last identifier of a namespace path (`Bar` of `Foo::Bar`). */
+const LAST_TYPE_SEGMENT_RE = `'([A-Za-z_$][A-Za-z0-9_$]*)$'`;
 const EXAMPLE_COLUMNS_SQL = `arg_min(rel_path, ${EXAMPLE_KEY_SQL}) AS ex_path,
          arg_min(line, ${EXAMPLE_KEY_SQL}) AS ex_line,
          arg_min(owner_symbol_id, ${EXAMPLE_KEY_SQL}) AS ex_owner`;
@@ -140,6 +159,15 @@ function nonConceptPredicate(q: OntologyReportQuery): SqlPredicate {
   return parts.length === 0 ? { sql: "FALSE", params: [] } : { sql: parts.join(" OR "), params };
 }
 
+/**
+ * The files `shadowsMethod` reads: those of the languages where a local can
+ * shadow a method (implicit self). `FALSE` when none — the rule is then off.
+ */
+function shadowsMethodFilePredicate(extensions: readonly string[]): SqlPredicate {
+  if (extensions.length === 0) return { sql: "FALSE", params: [] };
+  return { sql: `${EXTENSION_SQL} IN (${placeholders(extensions)})`, params: [...extensions] };
+}
+
 /** `name NOT IN (…)` over the excluded generic names; `TRUE` when there are none. */
 function notExcludedNamePredicate(excludedGenericNames: readonly string[]): SqlPredicate {
   if (excludedGenericNames.length === 0) return { sql: "TRUE", params: [] };
@@ -148,25 +176,92 @@ function notExcludedNamePredicate(excludedGenericNames: readonly string[]): SqlP
 
 /**
  * The audit's file scope: the caller's path prefixes AND production files only
- * ({@link NON_PRODUCTION_PATH_SQL}, constant — the architecture report's
- * classification compiled to SQL).
+ * (`OntologyReportQuery.nonProductionPaths` compiled to SQL — the architecture
+ * report's classification).
  */
 function ontologyScopePredicate(q: OntologyReportQuery): SqlPredicate {
   const prefix = pathPrefixPredicate(q.pathPrefixes);
-  return { sql: `(${prefix.sql} AND NOT ${NON_PRODUCTION_PATH_SQL("rel_path")})`, params: prefix.params };
+  const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
+  return { sql: `(${prefix.sql} AND NOT ${nonProduction("rel_path")})`, params: prefix.params };
+}
+
+/**
+ * The language a row's file belongs to, as a key: the index of the
+ * `nonConceptTypes` group (one per language) its extension falls in, else the
+ * extension itself. Type spellings only fold within one language.
+ */
+function languageKeySql(q: OntologyReportQuery, extensionSql: string): SqlPredicate {
+  const arms: string[] = [];
+  const params: unknown[] = [];
+  q.nonConceptTypes.forEach((group, i) => {
+    if (group.extensions.length === 0) return;
+    arms.push(`WHEN ${extensionSql} IN (${placeholders(group.extensions)}) THEN '${i}'`);
+    params.push(...group.extensions);
+  });
+  return arms.length === 0
+    ? { sql: extensionSql, params: [] }
+    : { sql: `CASE ${arms.join(" ")} ELSE ${extensionSql} END`, params };
+}
+
+/**
+ * `resolved` with each type name folded to the symbol it denotes (bd
+ * tea-rags-mcp-1hj3o), as `canon_resolved`; `type_spelling` keeps the name as
+ * written. An unqualified spelling (`Bar`, `Type`) folds into a qualified one
+ * (`Foo::Bar`, `ts.Type`) of the same language when:
+ *   - exactly one qualified spelling in `cg_identifiers` ends in that segment —
+ *     two (`A::Bar`, `B::Bar`) leave `Bar` ambiguous, so it folds into neither;
+ *   - the two do not name two DECLARED symbols: `cg_symbols` holding both
+ *     `Bar` and `Foo::Bar` means a top-level class beside a namespaced one.
+ * A qualified spelling nothing declares is an access path (a module alias
+ * `ns.Bar`, a library type `ts.Type`), and an unqualified one nothing declares
+ * is a relative reference — each denotes the one symbol the other spells.
+ */
+function canonicalTypeNamesCte(q: OntologyReportQuery): SqlPredicate {
+  const spellingLang = languageKeySql(q, EXTENSION_SQL);
+  const rowLang = languageKeySql(q, `lower(regexp_extract(r.rel_path, '\\.[^./]+$'))`);
+  return {
+    sql: `typed_spellings AS (
+        SELECT DISTINCT ${spellingLang.sql} AS lang, type_name FROM resolved WHERE type_name IS NOT NULL
+      ),
+      qualified_segments AS (
+        SELECT lang, regexp_extract(type_name, ${LAST_TYPE_SEGMENT_RE}, 1) AS segment,
+               min(type_name) AS qualified, count(*) AS spellings
+          FROM typed_spellings
+         WHERE regexp_full_match(type_name, ${QUALIFIED_TYPE_RE})
+         GROUP BY lang, segment
+      ),
+      type_canon AS (
+        SELECT t.lang, t.type_name AS spelling, q.qualified AS canonical
+          FROM typed_spellings t
+          JOIN qualified_segments q ON q.lang = t.lang AND q.segment = t.type_name AND q.spellings = 1
+         WHERE regexp_full_match(t.type_name, ${UNQUALIFIED_TYPE_RE})
+           AND NOT (EXISTS (SELECT 1 FROM cg_symbols s WHERE s.symbol_id = t.type_name)
+                    AND EXISTS (SELECT 1 FROM cg_symbols s WHERE s.symbol_id = q.qualified))
+      ),
+      canon_resolved AS (
+        SELECT r.rel_path, r.owner_symbol_id, r.kind, r.name,
+               coalesce(c.canonical, r.type_name) AS type_name, r.type_name AS type_spelling,
+               r.type_source, r.type_multiplicity, r.line
+          FROM resolved r
+          LEFT JOIN type_canon c ON c.lang = ${rowLang.sql} AND c.spelling = r.type_name
+      )`,
+    params: [...spellingLang.params, ...rowLang.params],
+  };
 }
 
 /** The shared CTE chain up to `concept_all` — see the module doc. `resolved` stays addressable. */
 function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
   const resolved = resolvedIdentifiersCte(extensionPredicate(q.extensions));
+  const canonical = canonicalTypeNamesCte(q);
   const nonConcept = nonConceptPredicate(q);
   const scope = ontologyScopePredicate(q);
   const names = namePredicate(q.names);
   return {
     sql: `${resolved.sql},
+      ${canonical.sql},
       concept_all AS (
-        SELECT rel_path, owner_symbol_id, kind, name, type_name, type_source, type_multiplicity, line
-          FROM resolved
+        SELECT rel_path, owner_symbol_id, kind, name, type_name, type_spelling, type_source, type_multiplicity, line
+          FROM canon_resolved
          WHERE type_name IS NOT NULL
            AND kind IN ('param', 'local', 'field')
            AND NOT regexp_full_match(type_name, '[A-Z]?')
@@ -176,7 +271,7 @@ function ontologyConceptCte(q: OntologyReportQuery): SqlPredicate {
            AND ${scope.sql}
            AND ${names.sql}
       )`,
-    params: [...resolved.params, ...nonConcept.params, ...scope.params, ...names.params],
+    params: [...resolved.params, ...canonical.params, ...nonConcept.params, ...scope.params, ...names.params],
   };
 }
 
@@ -284,6 +379,7 @@ export class DuckDbOntologyReportStore {
               q.limit,
               base,
               notExcludedNamePredicate(excludedGenericNames),
+              shadowsMethodFilePredicate(q.shadowsMethodExtensions),
             ),
           }
         : {}),
@@ -292,7 +388,8 @@ export class DuckDbOntologyReportStore {
 
   private async readTotals(): Promise<OntologyReportSummaryRows["totals"]> {
     const [row] = await this.session.queryAll<Row>(
-      `SELECT (SELECT count(*) FROM cg_identifiers) AS identifier_rows,
+      // Declarations only: a wrapper-only `return` row serves the call-return join (bd tea-rags-mcp-bjzaf).
+      `SELECT (SELECT count(*) FROM cg_identifiers WHERE ${DECLARED_IDENTIFIER_SQL}) AS identifier_rows,
               (SELECT count(*) FROM cg_symbols) AS symbol_rows`,
     );
     return { identifierRows: count(row?.identifier_rows), symbolRows: count(row?.symbol_rows) };
@@ -480,16 +577,27 @@ export class DuckDbOntologyReportStore {
    *     last segment): a `Payment` called `invoice` while class `Invoice` exists.
    *     An all-caps short name (`GROUP`) is a value constant, not a type, unless
    *     the graph shows it is one — it owns a member symbol (`URI.parse`) or
-   *     takes part in an inheritance edge — since `cg_symbols` records no kind;
+   *     takes part in an inheritance edge — since `cg_symbols` records no kind.
+   *     A capitalised symbol that owns a `return` row in `cg_identifiers` is a
+   *     FUNCTION (Go's `NewClient`, a React component), never a type (bd
+   *     tea-rags-mcp-1hj3o) — a wrapper-only `return` row (`-> Result<(), E>`,
+   *     an async `Promise<void>`, bd tea-rags-mcp-bjzaf) counts: the function
+   *     declares a return even when it names no value. Limitation until `cg_symbols` carries a symbol
+   *     kind: a PascalCase function with no declared or inferred return type
+   *     owns no `return` row and still reads as a type by its casing;
    *   - `shadowsMethod` — a local named like an instance method of its owner's
    *     class (`Report#render` declaring `title` beside `Report#title`); typed
-   *     or not, since the collision is with the name, not the value.
+   *     or not, since the collision is with the name, not the value. Only in
+   *     `shadowsMethodFiles` — the implicit-self languages, where a bare name
+   *     reaches the method and a local of that name hides it; with an explicit
+   *     receiver (`this.title()`, `self.title()`) nothing is shadowed.
    */
   private async readCollisions(
     scope: SqlPredicate,
     limit: number,
     base: SqlPredicate,
     notExcluded: SqlPredicate,
+    shadowsMethodFiles: SqlPredicate,
   ): Promise<OntologyCollisionRow[]> {
     const nameKey = (column: string) => `lower(replace(regexp_replace(${column}, '^(@@|@|\\$)', ''), '_', ''))`;
     const lastSegment = (column: string) => `regexp_extract(${column}, '([^:.#]+)$', 1)`;
@@ -502,6 +610,13 @@ export class DuckDbOntologyReportStore {
          SELECT lower(s.short_name) AS key, min(s.short_name) AS short_name
            FROM cg_symbols s
           WHERE regexp_matches(s.short_name, '^[A-Z]') AND NOT contains(s.symbol_id, '#')
+            -- ANY return row marks a callable, a wrapper-only one included (type_name NULL,
+            -- '-> Result<(), E>', an async 'Promise<void>'): it too is a declared return
+            -- (bd tea-rags-mcp-bjzaf), so DECLARED_IDENTIFIER_SQL is deliberately not applied.
+            AND NOT EXISTS (
+              SELECT 1 FROM cg_identifiers i
+               WHERE i.kind = 'return' AND i.rel_path = s.rel_path AND i.owner_symbol_id = s.symbol_id
+            )
             AND NOT (${ALL_CAPS_SQL("s.short_name")}
                      AND s.symbol_id NOT IN (SELECT owner_id FROM symbol_owners)
                      AND s.fq_name NOT IN (SELECT source_fq_name FROM cg_symbols_inheritance)
@@ -509,7 +624,7 @@ export class DuckDbOntologyReportStore {
           GROUP BY lower(s.short_name)
        ),
        names_other_type AS (
-         SELECT 'namesOtherType' AS rule, e.name, ts.short_name AS symbol, e.type_name,
+         SELECT 'namesOtherType' AS rule, e.name, ts.short_name AS symbol, e.type_name, e.type_spelling,
                 e.rel_path, e.line, e.owner_symbol_id, e.type_source
            FROM evidence e JOIN type_symbols ts ON ts.key = ${nameKey("e.name")}
           WHERE lower(${lastSegment("e.type_name")}) <> ts.key
@@ -528,10 +643,11 @@ export class DuckDbOntologyReportStore {
             AND ${scope.sql}
             AND length(${BARE_NAME_SQL}) > 1
             AND ${notExcluded.sql}
+            AND ${shadowsMethodFiles.sql}
        ),
        shadows_method AS (
          SELECT 'shadowsMethod' AS rule, l.name, l.owner_class || '#' || l.name AS symbol, NULL AS type_name,
-                l.rel_path, l.line, l.owner_symbol_id, l.type_source
+                NULL AS type_spelling, l.rel_path, l.line, l.owner_symbol_id, l.type_source
            FROM scoped_locals l
           WHERE l.owner_class <> ''
             AND l.owner_class || '#' || l.name <> l.owner_symbol_id
@@ -553,7 +669,7 @@ export class DuckDbOntologyReportStore {
        SELECT * EXCLUDE (rn) FROM ranked
         WHERE rn <= ${int(limit)}
         ORDER BY CASE rule WHEN 'namesOtherType' THEN 0 ELSE 1 END, rn`,
-      [...base.params, ...scope.params, ...notExcluded.params],
+      [...base.params, ...scope.params, ...notExcluded.params, ...shadowsMethodFiles.params],
     );
     return rows.map((r) => ({
       rule: r.rule as OntologyCollisionRule,

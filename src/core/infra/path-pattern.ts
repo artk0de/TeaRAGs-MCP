@@ -35,6 +35,26 @@ export function compilePathPatternMatcher(pathPattern: string | undefined): Path
   return negated ? (relativePath) => !isMatch(relativePath) : (relativePath) => isMatch(relativePath);
 }
 
+/** Glob metacharacters that end a pathPattern's literal prefix. */
+const GLOB_META = /[*?{[]/;
+
+/**
+ * The literal `rel_path` prefix of a `pathPattern`: everything before its first
+ * glob metacharacter (`* ? { [`), with a leading `./` or `/` dropped — a
+ * repo-relative path carries neither, as {@link compilePathPatternMatcher} also
+ * decides. `""` for no pattern or one opening with a wildcard: no narrowing.
+ *
+ * The scope of the reads that filter by prefix instead of matching the glob —
+ * the ontology report and the naming lexicon narrow `cg_identifiers` by
+ * `rel_path LIKE prefix%` (bd tea-rags-mcp-1hj3o). A superset of what the
+ * pattern selects; a negated pattern is not a prefix and is not special-cased.
+ */
+export function pathPatternLiteralPrefix(pathPattern: string | undefined): string {
+  if (!pathPattern) return "";
+  const meta = pathPattern.search(GLOB_META);
+  return (meta === -1 ? pathPattern : pathPattern.slice(0, meta)).replace(/^\.?\//, "");
+}
+
 /** A brace group holding one alternative: no nested brace, no comma, not a `a..b` range. */
 const SINGLE_ALTERNATIVE_BRACE = /(^|[^\\])\{((?:(?!\.\.)[^{},])*)\}/;
 

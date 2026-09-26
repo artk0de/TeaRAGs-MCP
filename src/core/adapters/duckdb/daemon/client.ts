@@ -870,6 +870,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
       types: [...q.types],
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       groupByLanguage: q.groupByLanguage,
+      groupByMultiplicity: q.groupByMultiplicity,
+      countSameTypeSiblings: q.countSameTypeSiblings,
     })) as IdentifierTypeAggregateRow[];
   }
 

@@ -50,6 +50,7 @@ import type {
   TemporalCochangeGraph,
   TemporalCochangeSnapshot,
 } from "./codegraph-temporal.js";
+import type { CaseSplitPathPatterns } from "./file-classification.js";
 
 /**
  * One file's worth of symbol definitions, as consumed by
@@ -102,6 +103,15 @@ export interface IdentifierRow {
   boundMember?: string;
   boundReceiver?: string;
   boundCallExpression?: string;
+  /**
+   * Persisted as `bound_call_unwrapped` (migration 036, bd tea-rags-mcp-bjzaf):
+   * whether the bound call's wrapper was consumed (`?`, `await`). Written for
+   * every row with a `boundMember` — absent reads as `false` there — and NULL
+   * on every other row.
+   */
+  boundCallUnwrapped?: boolean;
+  /** Persisted as `return_wrapper` (migration 036): a `return` row's wrapper head, `IdentifierDeclaration.returnWrapper`. */
+  returnWrapper?: string;
 }
 
 /** One file's identifier rows, as consumed by `GraphDbClient.replaceIdentifiersBulk`. */
@@ -137,6 +147,15 @@ export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, 
    * (bd tea-rags-mcp-4p3sb.26). Without it rows carry no `typeMultiplicity` key.
    */
   groupByMultiplicity?: boolean;
+  /**
+   * Report per non-`return` row `sameTypeSiblingN`: of its `n` rows, those
+   * whose owner (same file, same owner symbol) binds the same type under
+   * ANOTHER name in a non-`return` row — the co-occurrence that confirms a
+   * QUALIFIED name (`source_node` beside `node`). A `return` row is the
+   * method's name, not a value binding: it neither counts nor carries the key.
+   * Without the flag no row carries it.
+   */
+  countSameTypeSiblings?: boolean;
 }
 
 /**
@@ -171,6 +190,8 @@ export interface IdentifierTypeAggregateRow extends IdentifierLanguageGroupedRow
   typeMultiplicity?: IdentifierTypeMultiplicity;
   n: number;
   exampleOwner: SymbolId;
+  /** Of `n`, the rows beside a second binding of the type — a `countSameTypeSiblings` read, non-`return` rows only. */
+  sameTypeSiblingN?: number;
 }
 
 /**
@@ -272,9 +293,18 @@ export type OntologyReportSection = "synonyms" | "homonyms" | "outliers" | "coll
 
 /** How a declared name collides with a symbol the graph already holds. */
 export type OntologyCollisionRule =
-  /** A typed value named after a type-like symbol that is neither its type nor related to it by inheritance. */
+  /**
+   * A typed value named after a type-like symbol that is neither its type nor
+   * related to it by inheritance. A symbol owning a `return` row is callable,
+   * not a type; a PascalCase function with no declared or inferred return type
+   * still reads as one — casing is all the graph has on it.
+   */
   | "namesOtherType"
-  /** A local named like an instance method of its owner's class. */
+  /**
+   * A local named like an instance method of its owner's class, only in a
+   * language whose naming descriptor declares `implicitSelf` — elsewhere a bare
+   * name cannot reach the method, so nothing is shadowed.
+   */
   | "shadowsMethod";
 
 /**
@@ -334,6 +364,20 @@ export interface OntologyReportQuery {
    */
   names?: readonly string[];
   nonConceptTypes: readonly OntologyNonConceptTypes[];
+  /**
+   * The non-production masks the scope drops — tooling directories and test
+   * shapes, split by case matching (`nonProductionPathPatterns`). A field, not
+   * a store constant: the per-language test shapes are owned by
+   * `domains/language` and the store may run in the codegraph daemon, so the
+   * caller hands them in (bd tea-rags-mcp-vjz6s).
+   */
+  nonProductionPaths: CaseSplitPathPatterns;
+  /**
+   * File extensions (lowercase, dot included) of the languages where a local
+   * can shadow a method — those declaring `IdentifierNamingConvention.implicitSelf`.
+   * The `shadowsMethod` collision reads only these files; empty = the rule is off.
+   */
+  shadowsMethodExtensions: readonly string[];
   sections: readonly OntologyReportSection[];
   /** Items per section (collisions: per rule). */
   limit: number;

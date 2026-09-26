@@ -23,8 +23,10 @@ import type {
   OntologyReportSummaryRows,
   OntologyTypeGroupRow,
 } from "../../../../../src/core/contracts/types/codegraph.js";
+import { languageTestFileConventions } from "../../../../../src/core/domains/language/capability/native.js";
 import { DATABASE_MIGRATIONS } from "../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
+import { nonProductionPathPatterns } from "../../../../../src/core/infra/file-classification/index.js";
 
 const RUBY: OntologyLanguageProfile = {
   language: "ruby",
@@ -40,6 +42,7 @@ const RUBY: OntologyLanguageProfile = {
       constant: ["screamingSnake"],
     },
     nonConceptTypes: ["String", "Integer"],
+    implicitSelf: true,
   },
 };
 const TS: OntologyLanguageProfile = {
@@ -172,6 +175,28 @@ describe("OntologyReportOps#report — request → query", () => {
     expect(q.pathPrefixes).toBeUndefined();
     expect(q.extensions).toBeUndefined();
     expect(res.scope).toEqual({ pathPrefix: "" });
+  });
+
+  it("hands the store the non-production masks of the language domain (bd tea-rags-mcp-vjz6s)", async () => {
+    const { ops, graphDb } = makeOps(async () => rows());
+    await ops.report({ collection: "code_x" });
+    const q = graphDb.readOntologyReportSections.mock.calls[0][0];
+    expect(q.nonProductionPaths).toEqual(nonProductionPathPatterns(languageTestFileConventions()));
+    expect(graphDb.readOntologyReportSummary.mock.calls[0][0].nonProductionPaths).toEqual(q.nonProductionPaths);
+  });
+
+  it("gates shadowsMethod to the implicit-self languages' files (bd tea-rags-mcp-1hj3o)", async () => {
+    const { ops, graphDb } = makeOps(async () => rows());
+    await ops.report({ collection: "code_x" });
+    // The RUBY profile declares implicit self; TS reaches members through `this`.
+    expect(graphDb.readOntologyReportSections.mock.calls[0][0].shadowsMethodExtensions).toEqual([".rb"]);
+  });
+
+  it("a pathPattern's leading `/` is no part of the rel_path prefix", async () => {
+    const { ops, graphDb } = makeOps(async () => rows());
+    const res = await ops.report({ collection: "code_x", pathPattern: "/app/services/**" });
+    expect(graphDb.readOntologyReportSections.mock.calls[0][0].pathPrefixes).toEqual(["app/services/"]);
+    expect(res.scope).toEqual({ pathPrefix: "app/services/" });
   });
 
   it("rejects a language it has no naming descriptor for", async () => {
@@ -655,32 +680,31 @@ describe("OntologyReportOps#report — live false positives", () => {
     expect(homonyms?.map((h) => h.name).sort()).toEqual(["invoice", "result", "subscription"]);
   });
 
-  it("homonyms: an unqualified spelling folds into the one qualified type sharing its last segment", async () => {
+  // The fold of an unqualified spelling into its one qualified type moved into
+  // the store, which knows which spellings denote one symbol (bd
+  // tea-rags-mcp-1hj3o) — its case lives in ontology-report-store.test.ts. What
+  // the store still reports as two types, the ops layer must keep as two.
+  it("homonyms: types the store reports apart stay apart — `Bar` and `Foo::Bar` both declared", async () => {
     const { ops } = makeOps(async () =>
       rows({
         homonyms: [
-          homonym("@document", [
-            ["TaxPreparation::Document", 27, "app/a.rb"],
-            ["Document", 10, "app/b.rb"],
-          ]),
-          homonym("request", [
-            ["Request", 5, "app/a.rb"],
-            ["Invoice", 4, "app/b.rb"],
-            ["ActionDispatch::Request", 3, "app/c.rb"],
+          homonym("bar", [
+            ["Foo::Bar", 6, "app/a.rb"],
+            ["Bar", 4, "app/b.rb"],
           ]),
         ],
       }),
     );
     const { homonyms } = await ops.report({ collection: "code_x", sections: ["homonyms"] });
-    expect(homonyms?.map((h) => h.name)).toEqual(["request"]);
-    const [request] = homonyms ?? [];
-    expect(request.types.map((t) => [t.type, t.n])).toEqual([
-      ["ActionDispatch::Request", 8],
-      ["Invoice", 4],
+    expect(homonyms?.map((h) => [h.name, h.types.map((t) => [t.type, t.n])])).toEqual([
+      [
+        "bar",
+        [
+          ["Foo::Bar", 6],
+          ["Bar", 4],
+        ],
+      ],
     ]);
-    expect(request.topTypeShare).toBeCloseTo(8 / 12);
-    // The merged type keeps the qualified spelling's example.
-    expect(request.types[0].example.relPath).toBe("app/c.rb");
   });
 
   it("homonyms: judged over the pooled candidates, then capped at limit and namesPerItem", async () => {
@@ -1021,5 +1045,15 @@ describe("ontologyLanguageProfiles", () => {
     expect(ruby?.naming.casing.local[0]).toBe("snake");
     expect(profiles.every((p) => p.extensions.length > 0)).toBe(true);
     expect(profiles.some((p) => p.language === "markdown")).toBe(false);
+  });
+
+  it("carries implicit self for the languages where a bare name reaches a member (bd tea-rags-mcp-1hj3o)", () => {
+    const implicitSelf = ontologyLanguageProfiles()
+      .filter((p) => p.naming.implicitSelf)
+      .map((p) => p.language)
+      .sort();
+    // Ruby's implicit `self`, Swift's implicit `self.`; TS / JS `this.m`, Python / Rust `self.m`,
+    // Go's explicit receiver and Java's separate method namespace shadow nothing.
+    expect(implicitSelf).toEqual(["ruby", "swift"]);
   });
 });

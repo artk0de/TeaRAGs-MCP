@@ -21,7 +21,8 @@
  * `X::new(…)` call (the path before `::new`, turbofish dropped); any other
  * associated function (`Default::default()`) is joined at sink time. A `let`
  * bound to a call or macro carries its callee, split the way the walker splits
- * its `CallRef`, seen through `?`, `.await` and `&`.
+ * its `CallRef`, seen through `?`, `.await` and `&` — and marked unwrapped when
+ * a `?` consumed the call's `Result` (see `returnRule`).
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
@@ -214,13 +215,29 @@ function rustConstructorTypeName(value: AstNode): string | undefined {
 /** Wrappers a call's value passes through unchanged in kind: `f()?`, `f().await`, `&f()`. */
 const CALL_WRAPPER_TYPES = new Set(["try_expression", "await_expression", "reference_expression"]);
 
-function rustBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
+/** The call a value IS, seen through {@link CALL_WRAPPER_TYPES}; `crossed` names every wrapper passed. */
+function rustOutermostCall(value: AstNode): { call: AstNode | null; crossed: Set<string> } {
+  const crossed = new Set<string>();
   let call: AstNode | null = value;
   while (call !== null && CALL_WRAPPER_TYPES.has(call.type)) {
+    crossed.add(call.type);
     // `&mut f()` — the operand is the last named child, after any `mutable_specifier`.
     call = call.namedChildren.at(-1) ?? null;
   }
+  return { call, crossed };
+}
+
+function rustBoundCallee(value: AstNode): IdentifierBoundCallee | undefined {
+  const { call } = rustOutermostCall(value);
   return call === null ? undefined : boundCalleeFromCallShape(rustCallSiteShape(call));
+}
+
+/**
+ * `load()?` consumes the `Result` `load` returns (bd tea-rags-mcp-bjzaf); a bare
+ * `.await` does not — an `async fn`'s written type is already what it yields.
+ */
+function rustBoundCallUnwraps(value: AstNode): boolean {
+  return rustOutermostCall(value).crossed.has("try_expression");
 }
 
 /** The implementing type of the `impl` block `fn` sits directly in; null outside one (a trait's `Self` is open). */
@@ -229,13 +246,40 @@ function enclosingImplType(fn: AstNode): AstNode | null {
   return impl?.type === "impl_item" ? impl.childForFieldName("type") : null;
 }
 
+/** The head of a `Result` return, the wrapper its callers' `?` consumes. */
+const RESULT_WRAPPER = "Result";
+
+/**
+ * The type a returned `Result` yields to its caller's `?`: `Result<T, E>` →
+ * `T`, matched on the final path segment so the one-parameter aliases
+ * (`io::Result<T>`, `anyhow::Result<T>`) read the same, with `Result` as the
+ * wrapper. A `Result<(), E>` yields `()`, which names nothing, so its return
+ * carries the wrapper alone: `let r = save()` still holds a `Result`, and
+ * `save()?` binds nothing (bd tea-rags-mcp-bjzaf). Any other return is itself,
+ * with no wrapper — a plain `-> ()` stays silent.
+ */
+function rustReturnValue(written: AstNode): { value: AstNode | null; wrapper?: string } {
+  if (written.type !== "generic_type") return { value: written };
+  const head = written.childForFieldName("type")?.text;
+  if (head?.slice(head.lastIndexOf(":") + 1) !== RESULT_WRAPPER) return { value: written };
+  return { value: firstTypeArgument(written), wrapper: RESULT_WRAPPER };
+}
+
 /**
  * `fn f(…) -> T` — the fn's return, as a `return` of the fn itself (bd
  * tea-rags-mcp-4p3sb.21). An `async fn`'s written type is already what
- * `.await` yields. A return naming `Self` (`-> Self`, `-> Option<Self>`) names
- * the impl's type instead — `Svc::with_config(c)` builds a `Svc`, the most
- * common constructor shape after `new`. A `Result<T, E>` keeps its head, as a
- * `Result` parameter does: the join cannot see a `?`.
+ * `.await` yields. A returned `Result<T, E>` names `T` (bd tea-rags-mcp-1hj3o)
+ * and records `Result` as its wrapper (bd tea-rags-mcp-bjzaf) — the same
+ * reading TypeScript takes for an async `Promise<T>`: `?` is how a Result's
+ * callers consume it, so `let doc = load()?` is typed `Doc`, while the local of
+ * `let attempt = load()`, which carries no `?`, holds the `Result` itself. The
+ * call-return join decides between the two off the caller's own row. An
+ * `Option<T>` return keeps no wrapper: it is read as `T` with or without `?`,
+ * as an `Option<T>` annotation is. Only the RETURN is read through: a `Result`
+ * parameter or field is a Result in hand. A return naming `Self` (`-> Self`,
+ * `-> Option<Self>`, `-> Result<Self, E>`) names the impl's type instead —
+ * `Svc::with_config(c)` builds a `Svc`, the most common constructor shape
+ * after `new`.
  */
 const returnRule: IdentifierDeclarationRule = {
   nodeType: "function_item",
@@ -243,9 +287,14 @@ const returnRule: IdentifierDeclarationRule = {
     const nameNode = node.childForFieldName("name");
     if (nameNode === null) return [];
     const written = node.childForFieldName("return_type");
-    const typeNode =
-      written !== null && rustAnnotationType(written)?.typeName === "Self" ? enclosingImplType(node) : written;
-    return [{ nameNode, kind: "return", typeNode }];
+    const { value, wrapper } = written === null ? { value: null } : rustReturnValue(written);
+    const valueTypeName = value === null ? undefined : rustAnnotationType(value)?.typeName;
+    const typeNode = valueTypeName === "Self" ? enclosingImplType(node) : value;
+    return [
+      wrapper === undefined
+        ? { nameNode, kind: "return", typeNode }
+        : { nameNode, kind: "return", typeNode, returnWrapper: wrapper },
+    ];
   },
 };
 
@@ -260,4 +309,5 @@ export const RUST_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {
   annotationType: rustAnnotationType,
   constructorType: rustConstructorType,
   boundCalleeOf: rustBoundCallee,
+  boundCallUnwraps: rustBoundCallUnwraps,
 };

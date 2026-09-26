@@ -514,14 +514,18 @@
   and hzsxy the delta is ONE upgraded edge, a supersession living only in the
   spec. Why: converting a rejected site "for symmetry" reintroduces a measured
   regression.
-- **Test-file SUFFIX patterns deliberately do NOT live here** — they are
-  `TEST_PATTERNS_BY_LANGUAGE` in `core/infra/file-classification/patterns.ts`.
-  The per-language `testFilePatterns` / `configureTestPatterns()` design was
-  abandoned: it needs a module-global configured in every process context (main
-  and both workers). Infra wins by sitting BELOW every consumer — not by
-  importing nothing (`infra → contracts` type-only is allowed). Why: an
-  unconfigured context silently misclassifies test files in whichever worker
-  skipped the call.
+- **Test-file SUFFIX patterns live on each vertical, and the load of
+  `capability/native.ts` is what installs them** (bd tea-rags-mcp-vjz6s). A
+  vertical declares `testFiles` in `<lang>/test-files.ts` (excluded from its
+  walker digest: masks move no edge); languages with no vertical sit in
+  `TEST_FILES_OF_LANGUAGES_WITHOUT_VERTICAL` (`capability/test-files.ts`), and a
+  language in both throws. `infra/file-classification` keeps only the
+  language-agnostic directories. The earlier `configureTestPatterns()` design
+  was abandoned because every process context had to remember a call; here the
+  install is a side effect of `native.ts`, which the factory, the barrel, a
+  worker's `import(languageModulePath)` and every harness script all load, and
+  an uninstalled read THROWS instead of misclassifying. Why: a context that
+  never loads the language domain fails loudly, not silently.
 - **`javascript/resolver/javascript-resolver.ts` staying a fall-through
   if-ladder is a blocked migration.** Only resolver not on `resolveViaChain`;
   its file-only import edge preempts the global short-name fallback through

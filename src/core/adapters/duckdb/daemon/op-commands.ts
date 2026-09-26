@@ -240,6 +240,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       types: p.types as string[],
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
+      groupByMultiplicity: p.groupByMultiplicity as boolean | undefined,
+      countSameTypeSiblings: p.countSameTypeSiblings as boolean | undefined,
     }),
   ),
   aggregateIdentifiersByCallee: read(async (graphDb, p) =>

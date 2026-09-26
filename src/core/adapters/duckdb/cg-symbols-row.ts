@@ -6,7 +6,12 @@
  * land on one path and silently miss the other.
  */
 
-import type { AritySignature, KwargSignature, SymbolDefinition } from "../../contracts/types/codegraph.js";
+import type {
+  AritySignature,
+  KwargSignature,
+  SymbolDefinition,
+  SymbolDefinitionKind,
+} from "../../contracts/types/codegraph.js";
 
 /**
  * The `cg_symbols` PRIMARY KEY, in schema order (migration 002). Split out from
@@ -42,6 +47,7 @@ export const CG_SYMBOLS_VALUE_COLUMNS = [
   "is_abstract_stub",
   "start_line",
   "end_line",
+  "symbol_kind",
 ] as const;
 
 /**
@@ -74,6 +80,8 @@ export interface CgSymbolsRow {
   /** NULL on a row written before migration 024, or by a walker that tracks no lines. */
   start_line: number | null;
   end_line: number | null;
+  /** NULL on a row written before migration 035, or by a walker that records no kind — "unknown". */
+  symbol_kind: string | null;
 }
 
 /**
@@ -96,6 +104,7 @@ export function toCgSymbolsRow(def: SymbolDefinition): unknown[] {
     def.isAbstractStub === true,
     def.startLine ?? null,
     def.endLine ?? null,
+    def.symbolKind ?? null,
   ];
 }
 
@@ -123,6 +132,8 @@ export function fromCgSymbolsRow(row: CgSymbolsRow): SymbolDefinition {
     ...(row.start_line !== null && row.start_line !== undefined && row.end_line !== null && row.end_line !== undefined
       ? { startLine: Number(row.start_line), endLine: Number(row.end_line) }
       : {}),
+    // NULL (pre-035 row, or a walker that records no kind) stays absent = unknown.
+    ...(row.symbol_kind ? { symbolKind: row.symbol_kind as SymbolDefinitionKind } : {}),
   };
 }
 

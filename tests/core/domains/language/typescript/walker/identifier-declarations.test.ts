@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { WalkInput } from "../../../../../../src/core/contracts/types/language.js";
 import { TypeScriptLanguage } from "../../../../../../src/core/domains/language/typescript/index.js";
+import { buildIdentifierRows } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/identifier-rows.js";
 
 function parse(src: string) {
   const p = new Parser();
@@ -191,7 +192,8 @@ describe("TypeScript walker — identifier declarations", () => {
       { symbolId: "fail", startLine: 16, endLine: 16, scope: [] },
     ]);
     expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
-      // async: `await loadDocument()` is a Document — the join cannot see the `await`.
+      // async: `await loadDocument()` is a Document; the Promise it was read through is kept
+      // for a caller that binds the call without `await` (bd tea-rags-mcp-bjzaf).
       {
         name: "loadDocument",
         kind: "return",
@@ -199,6 +201,7 @@ describe("TypeScript walker — identifier declarations", () => {
         ownerSymbolId: "loadDocument",
         typeName: "Document",
         typeSource: "annotation",
+        returnWrapper: "Promise",
       },
       // not async: a Promise returned as a value stays a Promise.
       {
@@ -218,6 +221,7 @@ describe("TypeScript walker — identifier declarations", () => {
         typeName: "Job",
         typeSource: "annotation",
         typeMultiplicity: "many",
+        returnWrapper: "Promise",
       },
       { name: "ids", kind: "return", line: 6, ownerSymbolId: "ids", typeName: "Generator", typeSource: "annotation" },
       {
@@ -229,7 +233,15 @@ describe("TypeScript walker — identifier declarations", () => {
         typeSource: "annotation",
         typeMultiplicity: "many",
       },
-      { name: "load", kind: "return", line: 9, ownerSymbolId: "Svc#load", typeName: "Repo", typeSource: "annotation" },
+      {
+        name: "load",
+        kind: "return",
+        line: 9,
+        ownerSymbolId: "Svc#load",
+        typeName: "Repo",
+        typeSource: "annotation",
+        returnWrapper: "Promise",
+      },
       {
         name: "build",
         kind: "return",
@@ -247,6 +259,67 @@ describe("TypeScript walker — identifier declarations", () => {
         typeName: "Ext",
         typeSource: "annotation",
       },
+      // `void` / `never` name no value — but an async `Promise<void>` is still a
+      // Promise to a caller that does not await it (bd tea-rags-mcp-bjzaf).
+      { name: "flush", kind: "return", line: 16, ownerSymbolId: "flush", returnWrapper: "Promise" },
+    ]);
+  });
+
+  // bd tea-rags-mcp-1hj3o — tree-sitter spells `undefined` as `literal_type`, never `predefined_type`.
+  it("persists no typed return row for any valueless spelling, in every position a return is read from", () => {
+    const valueless = [
+      "function a(): undefined { return; }",
+      "function b(): void {}",
+      "function c(): never { throw e; }",
+      "async function d(): Promise<void> {}",
+      "async function e(): Promise<undefined> {}",
+      "async function f(): Promise<never> {}",
+      "function g(): null { return null; }",
+      "const h = (): undefined => undefined;",
+      "const i = async (): Promise<undefined> => undefined;",
+      "class K { m(): undefined { return; } n = async (): Promise<void> => {}; }",
+      "interface Api { get(): undefined; put(): void; }",
+      // A union has no single name: `T | undefined` types no return, the `T` included.
+      "function j(): Doc | undefined { return; }",
+      "function k(): undefined | Doc { return; }",
+      "async function l(): Promise<Doc | undefined> {}",
+    ];
+    const code = [...valueless, "async function kept(): Promise<Doc> {}"].join("\n");
+    const returnChunks = [
+      { symbolId: "a", line: 1 },
+      { symbolId: "b", line: 2 },
+      { symbolId: "c", line: 3 },
+      { symbolId: "d", line: 4 },
+      { symbolId: "e", line: 5 },
+      { symbolId: "f", line: 6 },
+      { symbolId: "g", line: 7 },
+      { symbolId: "h", line: 8 },
+      { symbolId: "i", line: 9 },
+      { symbolId: "K#m", line: 10 },
+      { symbolId: "K#n", line: 10 },
+      { symbolId: "Api#get", line: 11 },
+      { symbolId: "Api#put", line: 11 },
+      { symbolId: "j", line: 12 },
+      { symbolId: "k", line: 13 },
+      { symbolId: "l", line: 14 },
+      { symbolId: "kept", line: 15 },
+    ].map(({ symbolId, line }) => ({ symbolId, startLine: line, endLine: line, scope: [] }));
+    const extraction = extractionOf(code, returnChunks);
+    const returnRows = buildIdentifierRows(extraction).filter((r) => r.kind === "return");
+    expect(returnRows.filter((r) => r.typeName !== undefined).map((r) => [r.ownerSymbolId, r.typeName])).toEqual([
+      ["kept", "Doc"],
+    ]);
+    // bd tea-rags-mcp-bjzaf — an async function still returns a Promise, whatever it
+    // resolves to: its row carries the wrapper alone, so `const p = d()` is a Promise.
+    expect(
+      returnRows.filter((r) => r.typeName === undefined).map((r) => [r.ownerSymbolId, r.returnWrapper, r.typeSource]),
+    ).toEqual([
+      ["d", "Promise", undefined],
+      ["e", "Promise", undefined],
+      ["f", "Promise", undefined],
+      ["i", "Promise", undefined],
+      ["K#n", "Promise", undefined],
+      ["l", "Promise", undefined],
     ]);
   });
 
@@ -321,6 +394,23 @@ describe("TypeScript walker — identifier type multiplicity", () => {
       ["param", "rest", "SymbolDefinition", "many"],
       ["local", "one", "SymbolDefinition", "one"],
     ]);
+  });
+
+  // bd tea-rags-mcp-bjzaf — `await` consumes an async function's Promise; a local bound without it holds the Promise.
+  it("marks a local whose bound call is awaited, and only that one", () => {
+    const code = [
+      "async function run(id: string) {",
+      "  const doc = await fetchDocument(id);",
+      "  const pending = fetchDocument(id);",
+      "  const forced = fetchDocument(id)!;",
+      "  const n = 1;",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [{ symbolId: "run", startLine: 1, endLine: 6, scope: [] }]);
+    const unwrapped = Object.fromEntries(
+      (declarations ?? []).filter((d) => d.kind === "local").map((d) => [d.name, d.boundCallUnwrapped]),
+    );
+    expect(unwrapped).toEqual({ doc: true, pending: undefined, forced: undefined, n: undefined });
   });
 
   it("keeps `many` through an async function's awaited Promise<T[]>", () => {

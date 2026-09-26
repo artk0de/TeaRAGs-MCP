@@ -28,7 +28,10 @@
  *   3. byType. The type aggregate (persisted sources + the store's call-return
  *      join), then the `name-inferred` stage computed here and never written: a
  *      name typed ≥ 3 times in scope with one type holding ≥ 80% of those rows
- *      lends that type to its untyped rows, counted apart in `evidence`.
+ *      lends that type to its untyped rows, counted apart in `evidence`. Each
+ *      store row carries `sameTypeSiblingN` (rows beside a second binding of
+ *      the type in their owner), which confirms a QUALIFIED name; a
+ *      `name-inferred` row has none and is classified lexically.
  *   4. byCallee. Rows bound to a draft's callee, for drafts with no type.
  *   5. Concept. Semantic search of the concept alone (dense, production,
  *      the language, L2 domain widened under 5 holders) → terms. Any failure
@@ -71,6 +74,7 @@ import {
   isNonConceptType,
   judgeDraftName,
   judgeGenericNames,
+  mergedSameTypeSiblingN,
   shapeDistribution,
   splitIdentifierWords,
   type ConceptTerm,
@@ -84,6 +88,7 @@ import {
 } from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
+import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
 import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../public/dto/explore.js";
 import type {
@@ -176,6 +181,8 @@ interface LexiconTypeRow {
   language?: string | null;
   /** The casing the row is classified in — its own language's, see {@link rowCasingResolver}. */
   casing?: IdentifierCasing;
+  /** Of `n`, the rows beside a second binding of the type (a store row; a `name-inferred` row has none). */
+  sameTypeSiblingN?: number;
 }
 
 /** One byCallee row with the casing it is classified in. */
@@ -246,7 +253,7 @@ export class NamingLexiconOps {
     // 2. Scope (widening), then the language whose descriptor applies there.
     const declared = req.language ? this.deps.namingConventions.get(req.language) : undefined;
     const supportTypes = declared ? conceptTypes(askedTypes, declared) : askedTypes;
-    const scope = await resolveScope(graphDb, literalPrefix(req.pathPattern), supportTypes, draftCallees);
+    const scope = await resolveScope(graphDb, pathPatternLiteralPrefix(req.pathPattern), supportTypes, draftCallees);
     const pathPrefixes = scope.prefix === "" ? undefined : [scope.prefix];
 
     // byCallee's rows do not depend on the language, so they are read first: they may decide it.
@@ -356,7 +363,7 @@ export class NamingLexiconOps {
           : [];
       });
     };
-    const domain = domainPattern(literalPrefix(req.pathPattern));
+    const domain = domainPattern(pathPatternLiteralPrefix(req.pathPattern));
     let holders = await search(domain);
     if (domain !== undefined && holders.length < MIN_CONCEPT_HOLDERS) holders = await search(undefined);
     return extractConceptTerms(holders);
@@ -384,13 +391,6 @@ function collectionRef(req: NamingLexiconRequest): Pick<SemanticSearchRequest, "
 }
 
 // ── scope ────────────────────────────────────────────────────────────────
-
-/** The literal rel_path prefix of a glob: everything before its first `* ? { [`. */
-export function literalPrefix(pathPattern: string | undefined): string {
-  if (!pathPattern) return "";
-  const cut = pathPattern.search(/[*?{[]/);
-  return (cut === -1 ? pathPattern : pathPattern.slice(0, cut)).replace(/^\.?\//, "");
-}
 
 /** The parent directory of a prefix, with its trailing `/`; `""` at the top. */
 function parentPrefix(prefix: string): string {
@@ -468,7 +468,7 @@ async function requestedLanguageCounts(
   graphDb: IdentifierReader,
   pathPattern: string | undefined,
 ): Promise<{ counts: IdentifierLanguageCountRow[]; projectCounts?: IdentifierLanguageCountRow[] }> {
-  const prefix = literalPrefix(pathPattern);
+  const prefix = pathPatternLiteralPrefix(pathPattern);
   const pathSuffixes = pinnedExtensions(pathPattern);
   const requested: IdentifierLanguageCountQuery[] = [];
   if (prefix !== "") requested.push({ pathPrefixes: [prefix], ...(pathSuffixes ? { pathSuffixes } : {}) });
@@ -508,7 +508,13 @@ async function readTypeRows(
 ): Promise<LexiconTypeRow[]> {
   if (types.length === 0) return [];
   const stored: LexiconTypeRow[] = (
-    await graphDb.aggregateIdentifiersByType({ types, pathPrefixes, groupByLanguage: true, groupByMultiplicity: true })
+    await graphDb.aggregateIdentifiersByType({
+      types,
+      pathPrefixes,
+      groupByLanguage: true,
+      groupByMultiplicity: true,
+      countSameTypeSiblings: true,
+    })
   ).map((row: IdentifierTypeAggregateRow) => ({ ...row }));
   if (stored.length === 0) return stored;
   return [...stored, ...(await nameInferredRows(graphDb, stored, new Set(types), pathPrefixes))];
@@ -746,12 +752,14 @@ function byTypeRowsFor(
     if (row.typeName !== typeName || (row.typeMultiplicity ?? "one") !== multiplicity) continue;
     const key = `${row.kind}\u0000${row.name}\u0000${row.casing ?? ""}`;
     const prev = merged.get(key);
+    const siblings = prev ? mergedSameTypeSiblingN(prev, row) : row.sameTypeSiblingN;
     merged.set(key, {
       kind: row.kind,
       name: row.name,
       n: (prev?.n ?? 0) + row.n,
       exampleOwner: prev && prev.exampleOwner < row.exampleOwner ? prev.exampleOwner : row.exampleOwner,
       ...(row.casing !== undefined ? { casing: row.casing } : {}),
+      ...(siblings !== undefined ? { sameTypeSiblingN: siblings } : {}),
     });
   }
   return [...merged.values()];

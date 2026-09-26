@@ -1,7 +1,8 @@
 import ignore, { type Ignore } from "ignore";
 
-import type { FileClassification } from "../../contracts/types/file-classification.js";
+import type { FileClassification, TestFileConventions } from "../../contracts/types/file-classification.js";
 import { GENERATED_CONTENT_MARKERS, GENERATED_PATTERNS, USER_GENERATED_PATTERNS } from "./patterns.js";
+import { installedTestFileConventions } from "./test-file-conventions.js";
 import { buildTestPathFilter, type PathFilter } from "./test-path-filter.js";
 
 export type { FileClassification };
@@ -16,7 +17,8 @@ export interface ClassifyOptions {
 // Built once — immutable after construction (the `ignore` package is stateless
 // once loaded). Lazily initialised so module import stays side-effect-light.
 let generatedFilter: Ignore | undefined;
-let testFilter: PathFilter | undefined;
+/** The test filter, built for the conventions installed when it was built — rebuilt on a re-install. */
+let testFilter: { conventions: TestFileConventions; filter: PathFilter } | undefined;
 
 function getGeneratedFilter(): Ignore {
   if (!generatedFilter) {
@@ -26,8 +28,11 @@ function getGeneratedFilter(): Ignore {
 }
 
 function getTestFilter(): PathFilter {
-  testFilter ??= buildTestPathFilter();
-  return testFilter;
+  const conventions = installedTestFileConventions();
+  if (testFilter?.conventions !== conventions) {
+    testFilter = { conventions, filter: buildTestPathFilter(conventions) };
+  }
+  return testFilter.filter;
 }
 
 function hasGeneratedMarker(head: string): boolean {
@@ -37,7 +42,10 @@ function hasGeneratedMarker(head: string): boolean {
 /**
  * Classify a repo-relative path. Pattern-based generated/test detection plus
  * optional content-marker scan. `isDocumentation` is passed through (its
- * source of truth is the language layer in ingest/chunker/config.ts).
+ * source of truth is the language layer in ingest/chunker/config.ts). The
+ * test shapes are the INSTALLED test-file conventions
+ * (`./test-file-conventions.ts`); classifying before a composition root
+ * installed them throws.
  */
 export function classify(relPath: string, opts?: ClassifyOptions): FileClassification {
   const isGenerated =

@@ -287,10 +287,10 @@ describe("judgeDraftName — typed draft share threshold", () => {
     ).toEqual({ verdict: "MISFIT", suggestion: "tax_automation_document", holder: OWNER });
   });
 
-  it("a FREE-dominant (role-naming) history accepts a role name", () => {
+  it("a FREE-dominant (role-naming) history accepts a role name it already uses", () => {
     expect(
       judgeDraftName({
-        name: "row",
+        name: "item",
         kind: "local",
         typeName: TYPE,
         casing: "snake",
@@ -300,6 +300,85 @@ describe("judgeDraftName — typed draft share threshold", () => {
         ],
       }),
     ).toEqual({ verdict: "CONFORMS" });
+  });
+});
+
+describe("judgeDraftName — a novel FREE name against a role-naming history (live: `x: SymbolDefinition`)", () => {
+  // SymbolDefinition is named by role: FREE rows hold ~0.84 of the locals.
+  const byTypeRows = [
+    { kind: "local" as const, name: "defs", n: 10, exampleOwner: "Resolver#defs" },
+    { kind: "local" as const, name: "candidates", n: 8, exampleOwner: "Resolver#candidates" },
+    { kind: "local" as const, name: "fallback", n: 4, exampleOwner: "Resolver#fallback" },
+    { kind: "local" as const, name: "definition", n: 3, exampleOwner: "Resolver#definition" },
+    { kind: "local" as const, name: "target", n: 2, exampleOwner: "Resolver#target" },
+    { kind: "local" as const, name: "hit", n: 1, exampleOwner: "Resolver#hit" },
+  ];
+  const judge = (name: string, rows: typeof byTypeRows = byTypeRows, kind: "local" | "return" = "local") =>
+    judgeDraftName({ name, kind, typeName: "SymbolDefinition", casing: "camel", byTypeRows: rows });
+
+  it("a FREE name the type's rows never use is a NEW_TERM carrying the type's top 5 names", () => {
+    expect(judge("x")).toEqual({
+      verdict: "NEW_TERM",
+      topTerms: ["defs", "candidates", "fallback", "definition", "target"],
+    });
+  });
+
+  it("a FREE name the type's rows already use conforms", () => {
+    expect(judge("fallback")).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a known name matches across casings (a snake row names the camel draft)", () => {
+    const rows = [...byTypeRows, { kind: "local" as const, name: "best_match", n: 1, exampleOwner: "R#m" }];
+    expect(judge("bestMatch", rows)).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a non-FREE draft keeps the share judgement: an unused EXACT name is a MISFIT, not a NEW_TERM", () => {
+    expect(judge("symbolDefinition")).toEqual({ verdict: "MISFIT", suggestion: "defs", holder: "Resolver#defs" });
+  });
+
+  it("the top names of other-kind rows are merged per name, heaviest first", () => {
+    const rows = [
+      { kind: "param" as const, name: "defs", n: 4, exampleOwner: "P#defs" },
+      { kind: "field" as const, name: "defs", n: 4, exampleOwner: "F#defs" },
+      { kind: "param" as const, name: "candidates", n: 6, exampleOwner: "P#candidates" },
+    ];
+    expect(judge("x", rows)).toEqual({ verdict: "NEW_TERM", topTerms: ["defs", "candidates"] });
+  });
+
+  it("a return draft is not a value draft: a FREE return keeps the share judgement", () => {
+    const returns = [{ kind: "return" as const, name: "resolve", n: 10, exampleOwner: "R#resolve" }];
+    expect(judge("lookup", returns, "return")).toEqual({ verdict: "CONFORMS" });
+  });
+});
+
+describe("judgeDraftName — a QUALIFIED draft against co-occurrence-counted rows", () => {
+  // `node` everywhere; `source_node` beside a second Node in its owner; `result_node` always alone.
+  const qualifiedRows = [
+    { kind: "local" as const, name: "node", n: 10, exampleOwner: "Graph#walk" },
+    { kind: "local" as const, name: "source_node", n: 5, exampleOwner: "Graph#link", sameTypeSiblingN: 5 },
+  ];
+  const loneRows = [
+    { kind: "local" as const, name: "node", n: 10, exampleOwner: "Graph#walk" },
+    { kind: "local" as const, name: "result_node", n: 5, exampleOwner: "Graph#find", sameTypeSiblingN: 0 },
+  ];
+  const judge = (name: string, byTypeRows: typeof qualifiedRows) =>
+    judgeDraftName({ name, kind: "local", typeName: "Node", casing: "snake", byTypeRows });
+
+  it("conforms as QUALIFIED where the project qualifies second bindings", () => {
+    expect(judge("target_node", qualifiedRows)).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a lone qualifier the project already uses conforms as the FREE name it is", () => {
+    expect(judge("result_node", loneRows)).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a novel lone qualifier is a NEW_TERM carrying the type's names, not a MISFIT naming itself", () => {
+    expect(judge("other_node", loneRows)).toEqual({ verdict: "NEW_TERM", topTerms: ["node", "result_node"] });
+  });
+
+  it("with neither QUALIFIED nor FREE rows to conform to, it is a MISFIT naming the canonical row", () => {
+    const exactRows = [{ kind: "local" as const, name: "node", n: 10, exampleOwner: "Graph#walk" }];
+    expect(judge("other_node", exactRows)).toEqual({ verdict: "MISFIT", suggestion: "node", holder: "Graph#walk" });
   });
 });
 

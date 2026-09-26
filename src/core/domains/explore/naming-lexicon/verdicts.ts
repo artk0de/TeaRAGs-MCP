@@ -18,9 +18,11 @@ import {
   classifyNamingShape,
   isNonConceptType,
   matchesTypeWords,
+  mergedSameTypeSiblingN,
   shapeDistribution,
   spellsTypeName,
   typeTailWords,
+  type NamingShape,
   type NamingShapeDistribution,
   type NamingShapeRow,
 } from "./shapes.js";
@@ -39,6 +41,8 @@ export interface NamingByTypeRow {
   exampleOwner: string;
   /** The casing of the row's own file language, when it differs from the draft's. */
   casing?: IdentifierCasing;
+  /** Of `n`, the rows whose owner binds the type under another name ({@link NamingShapeRow}); absent = unknown. */
+  sameTypeSiblingN?: number;
 }
 
 /** One `byCallee` aggregate row: a name bound to a call of `receiver.member` `n` times. */
@@ -98,6 +102,8 @@ const PRIOR_SUPPORT_SHARE = 0.5;
 /** … at this prior confidence. */
 const PRIOR_SUPPORT_CONFIDENCE = 0.5;
 const TOP_CONCEPT_TERMS = 5;
+/** Names a NEW_TERM on a novel FREE value name carries from the type's rows. */
+const TOP_TYPE_NAMES = 5;
 
 /** A stage with no evidence of its own; `unsupported` = a fallback applied but the project prior did not license it. */
 type NamingStageOutcome = NamingVerdict | "unsupported" | undefined;
@@ -106,6 +112,12 @@ interface JudgedRows {
   rows: readonly (NamingShapeRow & { exampleOwner: string })[];
   typeName?: string;
   callee?: IdentifierBoundCallee;
+  /**
+   * The rows are the draft TYPE's own and the draft is a value: a FREE draft
+   * conforms only with a name the rows already hold — a role-naming history
+   * licenses its own roles, not any word (see {@link judgeFreeValueName}).
+   */
+  freeNameMustBeKnown?: boolean;
 }
 
 /** CONFORMS when the draft's shape holds ≥ 20% of the rows, else MISFIT naming the most frequent row. */
@@ -116,11 +128,25 @@ function judgeAgainstRows(
 ): NamingVerdict {
   const context = { kind, casing: input.casing, typeName: judged.typeName, callee: judged.callee };
   const distribution = shapeDistribution(judged.rows, context);
-  const draftShape = classifyNamingShape({ ...context, name: input.name });
-  const share = distribution.shares.find((s) => s.shape === draftShape)?.share ?? 0;
+  const shareOf = (shape: NamingShape) => distribution.shares.find((s) => s.shape === shape)?.share ?? 0;
+  let draftShape = classifyNamingShape({ ...context, name: input.name });
+  // Rows counted by co-occurrence split QUALIFIED from lone-prefix FREE; the
+  // draft's owner is unknown, so a QUALIFIED draft is judged as whichever
+  // reading the rows accept, QUALIFIED first.
+  if (
+    draftShape === "QUALIFIED" &&
+    shareOf("QUALIFIED") < CONFORMING_SHARE &&
+    judged.rows.some((row) => row.sameTypeSiblingN !== undefined)
+  ) {
+    draftShape = "FREE";
+  }
+  const share = shareOf(draftShape);
   if (share < CONFORMING_SHARE) {
     const top = judged.rows.reduce((best, row) => (row.n > best.n ? row : best));
     return { verdict: "MISFIT", suggestion: top.name, holder: top.exampleOwner };
+  }
+  if (draftShape === "FREE" && judged.freeNameMustBeKnown === true) {
+    return judgeFreeValueName(input.name, judged.rows);
   }
   if (input.typeMultiplicity === "many" && spellsTypeName(draftShape)) {
     return judgeCollectionNumber(input.name, judged.rows, (row) =>
@@ -135,6 +161,28 @@ function judgeAgainstRows(
     );
   }
   return { verdict: "CONFORMS" };
+}
+
+/**
+ * A FREE value draft whose shape the type's rows accept: CONFORMS when one of
+ * those rows already carries the name (compared by words, so a snake row names
+ * a camel draft), else NEW_TERM — the project names the type by role, and this
+ * role is one it has never used. `topTerms` carries the type's own top names
+ * (heaviest first, merged per name): for a type with history the concept terms
+ * are never consulted, so the slot holds the vocabulary the draft departs from.
+ */
+function judgeFreeValueName(name: string, rows: readonly NamingShapeRow[]): NamingVerdict {
+  const draftKey = splitIdentifierWords(name).join("_");
+  const perName = new Map<string, number>();
+  for (const row of rows) perName.set(row.name, (perName.get(row.name) ?? 0) + row.n);
+  if ([...perName.keys()].some((known) => splitIdentifierWords(known).join("_") === draftKey)) {
+    return { verdict: "CONFORMS" };
+  }
+  const topTerms = [...perName]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, TOP_TYPE_NAMES)
+    .map(([known]) => known);
+  return { verdict: "NEW_TERM", topTerms };
 }
 
 /** True when the last word of `name` is a plural (`items`, `documentRows`). */
@@ -209,6 +257,8 @@ function mergeRowsByName(rows: readonly NamingByTypeRow[]): NamingByTypeRow[] {
       merged.set(key, { row: { ...row }, topN: row.n });
       continue;
     }
+    const siblings = mergedSameTypeSiblingN(prev.row, row);
+    if (siblings !== undefined) prev.row.sameTypeSiblingN = siblings;
     prev.row.n += row.n;
     if (row.n > prev.topN) [prev.row.exampleOwner, prev.topN] = [row.exampleOwner, row.n];
   }
@@ -254,11 +304,14 @@ function judgeByType(
 ): NamingStageOutcome {
   const typeRows = input.byTypeRows ?? [];
   const kindRows = typeRows.filter((row) => row.kind === kind);
-  if (kindRows.length > 0) return judgeAgainstRows(input, kind, { rows: kindRows, typeName });
+  const freeNameMustBeKnown = kind !== "return";
+  if (kindRows.length > 0) return judgeAgainstRows(input, kind, { rows: kindRows, typeName, freeNameMustBeKnown });
   if (kind !== "return") {
     // No rows of the draft's kind: the type's value rows of the other kinds, one row per name.
     const otherKindRows = mergeRowsByName(typeRows.filter((row) => row.kind !== "return"));
-    if (otherKindRows.length > 0) return judgeAgainstRows(input, kind, { rows: otherKindRows, typeName });
+    if (otherKindRows.length > 0) {
+      return judgeAgainstRows(input, kind, { rows: otherKindRows, typeName, freeNameMustBeKnown });
+    }
     return judgeByReturnNoun(input, kind, typeName, typeRows);
   }
   if (typeRows.length === 0) return undefined;
@@ -312,7 +365,14 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  *
  * 1. typed (a concept type, see `isNonConceptType`) with rows of the draft's
  *    kind → shape share ≥ 0.2 CONFORMS, else MISFIT naming the most frequent
- *    row; a `return` with no return rows for a known type → the project's
+ *    row — except a FREE value draft (`param`, `local`, `field`), which
+ *    conforms only with a name the type's rows already carry (compared by
+ *    words) and is otherwise a NEW_TERM whose `topTerms` are the type's top 5
+ *    names (`x: SymbolDefinition` against `defs` / `candidates` / `fallback`);
+ *    rows carrying `sameTypeSiblingN` count a qualified name as QUALIFIED only
+ *    beside a second binding of the type, FREE otherwise, so a QUALIFIED draft
+ *    (its owner unknown) that the QUALIFIED share rejects is judged as FREE;
+ *    a `return` with no return rows for a known type → the project's
  *    dominant return verb + type, when licensed; a value draft (`param`,
  *    `local`, `field`) with no rows of its kind → the type's value rows of the
  *    OTHER kinds, one row per name with `n` summed across kinds, judged the

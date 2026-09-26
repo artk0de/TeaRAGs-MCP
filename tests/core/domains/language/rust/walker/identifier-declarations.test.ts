@@ -180,6 +180,83 @@ describe("Rust walker — identifier declarations", () => {
     }
   });
 
+  // bd tea-rags-mcp-bjzaf — `?` consumes a returned Result; a local bound without it holds the Result.
+  it("marks a local whose bound call is consumed through `?`, and only that one", () => {
+    const code = [
+      "fn run(id: u32) -> Result<(), Error> {",
+      "    let doc = load(id)?;",
+      "    let attempt = load(id);",
+      "    let awaited = fetch(id).await?;",
+      "    let pending = fetch(id).await;",
+      "    let n = 1;",
+      "    Ok(())",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [{ symbolId: "run", startLine: 1, endLine: 8, scope: [] }]);
+    const unwrapped = Object.fromEntries(
+      (declarations ?? []).filter((d) => d.kind === "local").map((d) => [d.name, d.boundCallUnwrapped]),
+    );
+    expect(unwrapped).toEqual({
+      doc: true,
+      attempt: undefined,
+      awaited: true,
+      pending: undefined,
+      n: undefined,
+    });
+  });
+
+  it("records the Result a return was read through as its wrapper; Option stays read as its element", () => {
+    const code = [
+      "impl Svc {",
+      "    fn open(c: Config) -> Result<Self, Error> { todo!() }",
+      "}",
+      "fn load() -> Result<Doc, Error> { todo!() }",
+      "fn read() -> io::Result<Doc> { todo!() }",
+      "fn find() -> Option<Doc> { None }",
+      "fn plain() -> Doc { todo!() }",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "Svc", startLine: 1, endLine: 3, scope: [] },
+      { symbolId: "Svc.open", startLine: 2, endLine: 2, scope: ["Svc"] },
+      { symbolId: "load", startLine: 4, endLine: 4, scope: [] },
+      { symbolId: "read", startLine: 5, endLine: 5, scope: [] },
+      { symbolId: "find", startLine: 6, endLine: 6, scope: [] },
+      { symbolId: "plain", startLine: 7, endLine: 7, scope: [] },
+    ]);
+    expect(
+      (declarations ?? []).filter((d) => d.kind === "return").map((d) => [d.name, d.typeName, d.returnWrapper]),
+    ).toEqual([
+      ["open", "Svc", "Result"],
+      ["load", "Doc", "Result"],
+      ["read", "Doc", "Result"],
+      ["find", "Doc", undefined],
+      ["plain", "Doc", undefined],
+    ]);
+  });
+
+  it("keeps the Result wrapper of a return whose Ok value names nothing; a plain unit return stays silent", () => {
+    const code = [
+      "fn save() -> Result<(), Error> { Ok(()) }",
+      "fn pair() -> Result<(u32, u32), Error> { todo!() }",
+      "fn noop() -> () {}",
+      "fn unit() {}",
+      "fn maybe() -> Option<()> { None }",
+    ].join("\n");
+    const declarations = declarationsOf(
+      code,
+      ["save", "pair", "noop", "unit", "maybe"].map((symbolId, i) => ({
+        symbolId,
+        startLine: i + 1,
+        endLine: i + 1,
+        scope: [],
+      })),
+    );
+    expect((declarations ?? []).filter((d) => d.kind === "return")).toEqual([
+      { name: "save", kind: "return", line: 1, ownerSymbolId: "save", returnWrapper: "Result" },
+      { name: "pair", kind: "return", line: 2, ownerSymbolId: "pair", returnWrapper: "Result" },
+    ]);
+  });
+
   // bd tea-rags-mcp-4p3sb.21 — the call-return join reads the TARGET's return row.
   it("records each fn's return type as a return of the fn's own chunk; `Self` names the impl's type", () => {
     const code = [
@@ -223,8 +300,50 @@ describe("Rust walker — identifier declarations", () => {
         typeMultiplicity: "many",
       },
       { name: "maybe", kind: "return", line: 5, ownerSymbolId: "Svc#maybe", typeName: "Svc", typeSource: "annotation" },
-      // A `Result` keeps its head, as a `Result` parameter does.
-      { name: "fetch", kind: "return", line: 9, ownerSymbolId: "fetch", typeName: "Result", typeSource: "annotation" },
+      // A returned `Result<T, E>` names `T`, what its callers' `?` yields (bd tea-rags-mcp-1hj3o),
+      // and keeps `Result` for a caller that binds it without `?` (bd tea-rags-mcp-bjzaf).
+      {
+        name: "fetch",
+        kind: "return",
+        line: 9,
+        ownerSymbolId: "fetch",
+        typeName: "Doc",
+        typeSource: "annotation",
+        returnWrapper: "Result",
+      },
+    ]);
+  });
+
+  // bd tea-rags-mcp-1hj3o — a Result is consumed through `?`, as an async fn's value through `.await`.
+  it("reads a returned Result<T, E> as T — aliases, Self and collections included; a parameter keeps its head", () => {
+    const code = [
+      "impl Svc {",
+      "    fn open(c: Config) -> Result<Self, Error> { todo!() }",
+      "    fn all(&self) -> io::Result<Vec<Doc>> { todo!() }",
+      "    fn save(&self) -> Result<(), Error> { todo!() }",
+      "    fn find(&self) -> anyhow::Result<Option<Doc>> { todo!() }",
+      "    fn check(r: Result<Doc, Error>) -> std::result::Result<Box<Doc>, Error> { todo!() }",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [
+      { symbolId: "Svc", startLine: 1, endLine: 7, scope: [] },
+      { symbolId: "Svc.open", startLine: 2, endLine: 2, scope: ["Svc"] },
+      { symbolId: "Svc#all", startLine: 3, endLine: 3, scope: ["Svc"] },
+      { symbolId: "Svc#save", startLine: 4, endLine: 4, scope: ["Svc"] },
+      { symbolId: "Svc#find", startLine: 5, endLine: 5, scope: ["Svc"] },
+      { symbolId: "Svc.check", startLine: 6, endLine: 6, scope: ["Svc"] },
+    ]);
+    expect((declarations ?? []).map((d) => [d.kind, d.name, d.typeName, d.typeMultiplicity ?? "one"])).toEqual([
+      ["return", "open", "Svc", "one"],
+      ["param", "c", "Config", "one"],
+      ["return", "all", "Doc", "many"],
+      // `Result<(), E>` returns nothing a local could be named after through `?`:
+      // no type, only the `Result` wrapper a `?`-less caller holds (bd tea-rags-mcp-bjzaf).
+      ["return", "save", undefined, "one"],
+      ["return", "find", "Doc", "one"],
+      ["return", "check", "Doc", "one"],
+      // A `Result` in hand is a Result: only the return is consumed through `?`.
+      ["param", "r", "Result", "one"],
     ]);
   });
 

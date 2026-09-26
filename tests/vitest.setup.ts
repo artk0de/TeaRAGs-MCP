@@ -11,7 +11,15 @@ import { join } from "node:path";
 
 import { afterAll } from "vitest";
 
+import { languageTestFileConventions } from "../src/core/domains/language/capability/native.js";
+import { installTestFileConventions } from "../src/core/infra/file-classification/test-file-conventions.js";
 import { setDebug } from "../src/core/infra/runtime.js";
+
+// The language domain owns every language's test-file masks and installs them
+// for the file classifier when its capability map loads (bd
+// tea-rags-mcp-vjz6s). A spec exercising a classifier consumer directly may never
+// load the language domain, so the suite installs the same conventions up front.
+installTestFileConventions(languageTestFileConventions());
 
 // Set test-specific environment variables
 // Enable DEBUG to cover debug logging branches across all modules

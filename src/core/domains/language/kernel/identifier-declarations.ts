@@ -51,6 +51,11 @@ export interface DeclaredIdentifierSite {
    * whose annotation names the element with no collection in sight.
    */
   typeMultiplicity?: IdentifierTypeMultiplicity;
+  /**
+   * On a `return` site: the wrapper head `typeNode` was read out of — Rust's
+   * `Result` around `T`, an async function's `Promise` (bd tea-rags-mcp-bjzaf).
+   */
+  returnWrapper?: string;
 }
 
 /**
@@ -101,6 +106,12 @@ export interface IdentifierDeclarationSyntax {
    * values only; undefined when the value is no call the walker emits.
    */
   boundCalleeOf?: (valueNode: AstNode) => IdentifierBoundCallee | undefined;
+  /**
+   * True when `valueNode` consumes its outermost call's wrapper — Rust `f()?`,
+   * TypeScript `await f()` (bd tea-rags-mcp-bjzaf). Asked only where
+   * {@link boundCalleeOf} answered; absent, no bound call is unwrapped.
+   */
+  boundCallUnwraps?: (valueNode: AstNode) => boolean;
 }
 
 /** Sigils (`@`, `@@`, `$`) and a trailing `!`/`?` allowed; destructuring patterns and literals rejected. */
@@ -242,10 +253,18 @@ export function boundCalleeFromCallShape(
 function boundCalleeOf(
   site: DeclaredIdentifierSite,
   syntax: IdentifierDeclarationSyntax,
-): Pick<IdentifierDeclaration, "boundCallee"> {
+): Pick<IdentifierDeclaration, "boundCallee" | "boundCallUnwrapped"> {
   if (site.kind === "param" || !site.valueNode || syntax.boundCalleeOf === undefined) return {};
   const boundCallee = syntax.boundCalleeOf(site.valueNode);
-  return boundCallee === undefined ? {} : { boundCallee };
+  if (boundCallee === undefined) return {};
+  return syntax.boundCallUnwraps?.(site.valueNode) === true
+    ? { boundCallee, boundCallUnwrapped: true }
+    : { boundCallee };
+}
+
+/** A `return` site's wrapper, when the syntax read its type out of one. */
+function returnWrapperOf(site: DeclaredIdentifierSite): Pick<IdentifierDeclaration, "returnWrapper"> {
+  return site.kind === "return" && site.returnWrapper !== undefined ? { returnWrapper: site.returnWrapper } : {};
 }
 
 export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarationSyntax): ExtractionFacetPass {
@@ -277,7 +296,9 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
             if (ownerSymbolId === undefined) continue;
             const type = typeOf(site, syntax);
             // An unannotated function declares no return: the row would say nothing.
-            if (isReturn && type.typeName === undefined) continue;
+            // A wrapper whose value names nothing (`Result<(), E>`, an async
+            // `Promise<void>`) still says what a non-unwrapping caller holds.
+            if (isReturn && type.typeName === undefined && site.returnWrapper === undefined) continue;
             const key = `${ownerSymbolId}\u0000${site.kind}\u0000${name}`;
             if (seen.has(key)) continue;
             seen.add(key);
@@ -288,6 +309,7 @@ export function createIdentifierDeclarationFacetPass(syntax: IdentifierDeclarati
               ownerSymbolId,
               ...type,
               ...boundCalleeOf(site, syntax),
+              ...returnWrapperOf(site),
             });
           }
         }

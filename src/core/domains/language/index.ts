@@ -13,6 +13,7 @@ export { resolveViaChain } from "./resolver-chain.js";
 export { ConeDispatchResolver } from "./cone-dispatch.js";
 export { DefaultSymbolIdComposer, collectSymbols } from "./kernel/index.js";
 export { LanguageFactory } from "./factory.js";
+export { languageTestFileConventions } from "./capability/native.js";
 export { GrammarPackageNotInstalledError, LanguageError, UnsupportedLanguageError } from "./errors.js";
 export { RubyLanguage } from "./ruby/index.js";
 export { TypeScriptLanguage } from "./typescript/index.js";

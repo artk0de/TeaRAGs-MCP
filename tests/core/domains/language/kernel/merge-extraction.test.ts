@@ -356,6 +356,16 @@ describe("mergeExtraction — chunks merge by symbolId", () => {
     expect(only.isAbstractStub).toBe(true);
   });
 
+  it("keeps the walker's symbol kind and lets a pass fill one the walker left absent (bd tea-rags-mcp-vi0wx)", () => {
+    const base = baseExtraction({
+      chunks: [chunk("User", { symbolKind: "class" }), chunk("User#save")],
+    });
+    const merged = mergeExtraction(base, {
+      chunks: [chunk("User", { symbolKind: "module" }), chunk("User#save", { symbolKind: "method" })],
+    });
+    expect(merged.chunks.map((c) => c.symbolKind)).toEqual(["class", "method"]);
+  });
+
   it("appends a synthesized chunk whose symbolId the base does not carry, after the base chunks", () => {
     const base = baseExtraction({ chunks: [chunk("User#save")] });
     const merged = mergeExtraction(base, {

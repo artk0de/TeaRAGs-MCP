@@ -14,7 +14,7 @@
 import type { DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
 import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
-import type { AritySignature, KwargSignature, RelPath, SymbolId } from "./codegraph-symbols.js";
+import type { AritySignature, KwargSignature, RelPath, SymbolDefinitionKind, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
 /**
@@ -450,6 +450,22 @@ export interface IdentifierDeclaration {
    * not a call, and on calls the walker emits no `CallRef` for.
    */
   readonly boundCallee?: IdentifierBoundCallee;
+  /**
+   * `true` when the value consumes the bound call's wrapper — Rust `f()?`,
+   * TypeScript `await f()` (bd tea-rags-mcp-bjzaf) — so the call-return join
+   * types the local as the target's unwrapped `typeName`; absent, the local
+   * holds what the target returns, its {@link returnWrapper} included. Set only
+   * with `boundCallee`.
+   */
+  readonly boundCallUnwrapped?: true;
+  /**
+   * On a `return`: the wrapper head `typeName` was read through — a Rust
+   * `Result<T, E>`, an async TypeScript function's `Promise<T>` (bd
+   * tea-rags-mcp-bjzaf). A caller that binds the call without unwrapping it
+   * holds the wrapper, not `typeName`. Absent when the return was read as
+   * written.
+   */
+  readonly returnWrapper?: string;
 }
 
 /** The callee a declared identifier is bound to — a `CallRef`'s `member` / `receiver` pair. */
@@ -892,6 +908,13 @@ export interface ChunkExtraction {
    * hook edges (spec "Risks" → abstract-stub conservatism).
    */
   isAbstractStub?: boolean;
+  /**
+   * Declaration kind of the symbol this chunk represents (bd tea-rags-mcp-vi0wx),
+   * set by each walker from its own declaration node. Threaded onto
+   * `SymbolDefinition.symbolKind` and persisted in `cg_symbols`; absent =
+   * the walker recorded none (unknown, never a guessed kind).
+   */
+  symbolKind?: SymbolDefinitionKind;
 }
 
 export interface CallRef {

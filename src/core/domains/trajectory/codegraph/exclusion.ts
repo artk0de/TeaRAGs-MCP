@@ -23,12 +23,7 @@
 import ignore from "ignore";
 
 import type { LanguageFactoryDescriptor, SchemaColumnAccessorSource } from "../../../contracts/types/language.js";
-import {
-  buildTestPathFilter,
-  GENERATED_PATTERNS,
-  TEST_PATTERNS,
-  type PathFilter,
-} from "../../../infra/file-classification/index.js";
+import { buildTestPathFilter, GENERATED_PATTERNS, type PathFilter } from "../../../infra/file-classification/index.js";
 
 /**
  * Generated / machine-authored files that look like source but never participate
@@ -41,12 +36,6 @@ import {
  * name for backward compatibility with existing importers.
  */
 export const CODEGRAPH_GENERATED_PATTERNS: readonly string[] = GENERATED_PATTERNS;
-
-/**
- * Conventional test-file shapes — sourced from `infra/file-classification`
- * (single source of truth). Re-exported under the codegraph name.
- */
-export const CODEGRAPH_TEST_PATTERNS: readonly string[] = TEST_PATTERNS;
 
 export interface CodegraphExclusionOptions {
   /**
@@ -80,7 +69,11 @@ export interface CodegraphExclusionOptions {
  * this instance: PascalCase suffixes (`*Test.java`) must match case-sensitively
  * and `ignore` sets case sensitivity per instance (bd tea-rags-mcp-ezm9o). A
  * separate filter also keeps the test exclusion out of reach of a negated
- * custom pattern, which is what "unconditional" means.
+ * custom pattern, which is what "unconditional" means. Its per-language test
+ * shapes are the test-file conventions installed in this isolate (bd
+ * tea-rags-mcp-vjz6s) — `createComposition()` on the main thread,
+ * `createCodegraphProvider` in an enrichment worker — so this throws when
+ * called in an isolate nothing installed them in.
  */
 export function buildCodegraphExclusionFilter(
   options: CodegraphExclusionOptions,

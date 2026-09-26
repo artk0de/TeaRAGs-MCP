@@ -1,8 +1,9 @@
 /**
  * Naming shapes: how an identifier's name relates to its type or to the call it
- * is bound to. Pure lexical classification — the co-occurrence check that turns
- * a QUALIFIED name into a confirmed qualifier (a second binding of the same type
- * in the same owner) needs the table and is the ops layer's job.
+ * is bound to. {@link classifyNamingShape} is purely lexical; the co-occurrence
+ * that confirms a QUALIFIED name (a second binding of the same type, under
+ * another name, in the same owner) needs the table, so the store counts it per
+ * aggregate row (`sameTypeSiblingN`) and {@link shapeDistribution} applies it.
  */
 import type {
   IdentifierBoundCallee,
@@ -23,7 +24,8 @@ import {
  * - `EXACT` — the type rendered in the casing, singular or plural
  *   (`tax_automation_document`, `tax_automation_documents`).
  * - `QUALIFIED` — the type's words plus a qualifier before or after them
- *   (`tax_automation_document_ignored`, `source_tax_automation_document`).
+ *   (`tax_automation_document_ignored`, `source_tax_automation_document`); in a
+ *   distribution, only where the owner binds the type a second time.
  * - `TAIL` — a proper suffix of the type's words, alone or after the name's own
  *   qualifier words (`document`, `source_document`).
  * - `VERB_TYPE` — on a `return`: one verb word plus the type's words
@@ -234,6 +236,22 @@ export interface NamingShapeRow {
   typeName?: string;
   callee?: IdentifierBoundCallee;
   casing?: IdentifierCasing;
+  /**
+   * Of `n`, the rows whose owner binds the same type under another name — the
+   * co-occurrence that confirms a QUALIFIED name (`source_node` beside `node`).
+   * Absent → unknown, and the row is classified lexically.
+   */
+  sameTypeSiblingN?: number;
+}
+
+/**
+ * `sameTypeSiblingN` of two rows folded into one: undefined when neither
+ * carries it; otherwise a row without it contributes its whole `n`, the count
+ * that leaves its lexical classification unchanged.
+ */
+export function mergedSameTypeSiblingN(a: NamingShapeRow, b: NamingShapeRow): number | undefined {
+  if (a.sameTypeSiblingN === undefined && b.sameTypeSiblingN === undefined) return undefined;
+  return (a.sameTypeSiblingN ?? a.n) + (b.sameTypeSiblingN ?? b.n);
 }
 
 /** What a row set shares: its kind and casing, and optionally a type or callee. */
@@ -241,7 +259,12 @@ export type NamingShapeContext = Omit<NamingShapeInput, "name">;
 
 const CONFIDENCE_SUPPORT = 20;
 
-/** Distribution of {@link NamingShape}s over aggregated rows, weighted by `n`. */
+/**
+ * Distribution of {@link NamingShape}s over aggregated rows, weighted by `n`. A
+ * lexically QUALIFIED row carrying `sameTypeSiblingN` counts as QUALIFIED only
+ * for those rows; the rest name a lone value with an arbitrary prefix and count
+ * as FREE (`result_node` alone in its owner is a role name, not a qualifier).
+ */
 export function shapeDistribution(
   rows: readonly NamingShapeRow[],
   context: NamingShapeContext,
@@ -256,7 +279,9 @@ export function shapeDistribution(
       callee: row.callee ?? context.callee,
       casing: row.casing ?? context.casing,
     });
-    counts.set(shape, (counts.get(shape) ?? 0) + row.n);
+    const confirmed = shape === "QUALIFIED" && row.sameTypeSiblingN !== undefined ? row.sameTypeSiblingN : row.n;
+    counts.set(shape, (counts.get(shape) ?? 0) + confirmed);
+    if (confirmed < row.n) counts.set("FREE", (counts.get("FREE") ?? 0) + row.n - confirmed);
     n += row.n;
   }
   if (n === 0) return { shares: [], n: 0, confidence: 0 };
