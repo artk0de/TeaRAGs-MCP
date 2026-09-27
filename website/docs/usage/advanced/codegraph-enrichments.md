@@ -142,6 +142,30 @@ the pre-computed DuckDB graph directly — no embedding):
 | `get_naming_lexicon` | The project's naming vocabulary: names per declaration kind for given `types` / `anchors`, a `CONFORMS` / `MISFIT` / `NEW_TERM` / `COLLISION` verdict per draft in `names` (values, and types or constants with `kind: "type"`), project terms for a `concept` (with `language`), and a review of the names a diff adds (`changes`) |
 | `get_ontology_report` | Project-wide naming ontology audit over declared identifiers: `synonyms` (one type, many names), `homonyms` (one name, many types), `outliers` (a name off its type's dominant naming shape) and `collisions` (a name equal to another symbol). Ranked, with counts and one example location each |
 
+**Call-graph resolution scope.** `get_callers` / `get_callees` walk the run-time
+hierarchy (Class Hierarchy Analysis), which reaches **structural**
+implementers too: a TypeScript class or object-literal factory that satisfies
+an interface or an object-type alias without `implements`, and a Python class
+that satisfies a `typing.Protocol` without subclassing it, descend from that
+contract in the cone. A host-class id whose member is actually defined by an
+included module or concern — `Account.suspended` when `suspended` lives in
+`Account::Suspensions` — resolves through the class's MRO to the definer; the
+response names it in `resolvedSymbolId` whenever the id you asked for differs
+from where the edges live. Either tool also takes `relativePath` in place of
+`symbolId` to answer at **file scope** straight from the import graph — the
+files importing it (`get_callers`) or the files it imports (`get_callees`),
+heaviest first by call weight. Where the graph records a symbol's declared
+visibility, `get_callees` targets, `get_callers` callers, `trace_path` steps
+and `find_symbol` outline members all carry it (`private` / `protected` /
+`public`), omitted rather than guessed when the graph has no answer.
+
+`trace_path` distinguishes a genuine read failure from "no path exists": an
+unreadable or corrupt graph surfaces its typed error (`INFRA_CODEGRAPH_DATABASE_MISSING`
+and friends) instead of answering an empty path list, while a project the
+codegraph never indexed still answers empty — the same rule every other graph
+tool follows on an unbuilt graph. No graph read, successful or not, ever
+creates a database file as a side effect.
+
 `get_naming_lexicon` reads the identifier declarations the codegraph records —
 params, locals, fields and return types, each with the type it is known to hold.
 A type comes from an annotation, a constructor, a resolver binding, a finder
