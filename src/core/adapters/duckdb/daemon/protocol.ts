@@ -60,6 +60,8 @@ export const DAEMON_OPS = [
   "removeSymbolsForFile",
   // Derived-table prune on deletion (bd tea-rags-mcp-dy852).
   "pruneDerivedForDeletedFiles",
+  // Cone dependents of deleted files (bd tea-rags-mcp-7t2ee).
+  "invalidateHierarchyDependentsOfDeletedFiles",
   "upsertSymbols",
   "upsertSymbolsBulk",
   "upsertFilesBulk",
@@ -110,6 +112,9 @@ export const DAEMON_OPS = [
   "getEdgeKindDistribution",
   "listAllSymbols",
   "listPass1Aggregates",
+  // Hierarchy dependencies read at the barrier (bd tea-rags-mcp-7t2ee). REQUIRED:
+  // an empty answer would read as "no caller depends on any cone".
+  "listHierarchyDependencies",
   "listFileContentHashes",
   "getTransitiveImpact",
   "getFileMetricsBulk",
@@ -181,7 +186,7 @@ export interface DaemonRequest {
   op: DaemonOp;
   params:
     | { collection: string } // checkpoint | compactStorage | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | readFileDependencyGraph | readTemporalCochangeMeta | readTemporalCochangeGraph | refreshSymbolSignalsPrev | hasStaleDerivedTables | shutdown | ping
-    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles
+    | { collection: string; relPaths: RelPath[] } // pruneDerivedForDeletedFiles | invalidateHierarchyDependentsOfDeletedFiles
     | { collection: string; languages: string[] } // readNonPublicMemberEdges
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile

@@ -78,7 +78,12 @@ export const sharedVersions: LanguageSupportVersions = {
   // into `GraphEdges.typeOnlyFileEdges`. Same walker 3, bd
   // tea-rags-mcp-39xca.14: the barrier derives `structural` hierarchy rows
   // (`kernel/structural-conformance.ts`), so the CHA cone reaches implementers
-  // no `implements` / subclass clause names.
+  // no `implements` / subclass clause names. Same walker 3, bd
+  // tea-rags-mcp-7t2ee: the runner records each file's hierarchy dependencies
+  // (`cg_hierarchy_dependencies`, migration 039) so an incremental run
+  // re-resolves the unchanged callers whose cone moved. No edge of a full run
+  // moves; only a walk fills the table, which this walker's
+  // `--force-enrichments codegraph` already does — so `codegraphSchema` stays.
   walker: 3,
   codegraphSchema: 2,
 };

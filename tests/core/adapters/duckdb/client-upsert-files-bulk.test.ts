@@ -237,7 +237,9 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     // The bound moved 70 → 80 when `cg_pass1_aggregates` became the sixth
     // reconciled table (bd tea-rags-mcp-znxg8) — a constant per group, which is
     // exactly what this test exists to distinguish from a constant per file.
-    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(80);
+    // 80 → 88 when `cg_hierarchy_dependencies` became the seventh (bd
+    // tea-rags-mcp-7t2ee): one scope read per group, 8 groups.
+    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(88);
     destroySpy.mockRestore();
 
     const filesCount = await db.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_symbols_files");
