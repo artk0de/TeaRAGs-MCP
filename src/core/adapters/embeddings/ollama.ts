@@ -17,10 +17,12 @@ import Bottleneck from "bottleneck";
 import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import {
+  isOllamaRunnerCrashBody,
   OllamaContextOverflowError,
   OllamaMalformedResponseError,
   OllamaModelMissingError,
   OllamaResponseError,
+  OllamaRunnerCrashError,
   OllamaTimeoutError,
   OllamaUnavailableError,
 } from "./ollama/errors.js";
@@ -400,6 +402,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   private isEndpointFailure(error: unknown): boolean {
     if (error instanceof OllamaModelMissingError) return false;
+    // A runner that died under an oversized batch is a batch-size fact, not a
+    // sick endpoint: concurrent crashing batches would otherwise cross the
+    // failover threshold before the first split half could succeed.
+    if (error instanceof OllamaRunnerCrashError) return false;
     if (error instanceof OllamaResponseError && error.responseStatus >= 400 && error.responseStatus < 500) {
       return false;
     }
@@ -431,14 +437,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   /**
-   * Did the server fail on the SIZE of a native batch? An ollama runner that
-   * dies mid-request answers 5xx with its own transport error ("POST
-   * .../tokenize: connection refused"), measured 2026-09-27 on 256–512-text
-   * batches. A caller-side 4xx fails identically at any size, and a timeout
-   * does not shrink with the batch (the same work under a smaller budget), so
-   * neither is split.
+   * Did the server fail on the SIZE of a native batch? A crashed runner
+   * (`OllamaRunnerCrashError`, whatever status relayed it) or any other 5xx.
+   * A caller-side 4xx fails identically at any size, and a timeout does not
+   * shrink with the batch (the same work under a smaller budget), so neither
+   * is split.
    */
   private isServerBatchFailure(error: unknown): boolean {
+    if (error instanceof OllamaRunnerCrashError) return true;
     return error instanceof OllamaResponseError && error.responseStatus >= 500;
   }
 
@@ -501,6 +507,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (error instanceof OllamaModelMissingError) throw error;
         if (error instanceof OllamaTimeoutError) throw error;
         if (error instanceof OllamaResponseError) throw error;
+        if (error instanceof OllamaRunnerCrashError) throw error;
 
         // Connection-level unavailability (both endpoints unreachable). A remote
         // host under sustained embedding load can flap — crash/restart → briefly
@@ -596,6 +603,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       if (isContextOverflow(errorBody)) {
         throw new OllamaContextOverflowError(baseUrl, response.status, errorBody);
       }
+      if (isOllamaRunnerCrashBody(errorBody)) {
+        throw new OllamaRunnerCrashError(baseUrl, response.status, errorBody);
+      }
       throw new OllamaResponseError(baseUrl, response.status, errorBody);
     }
 
@@ -627,13 +637,20 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (isContextOverflow(errorBody)) {
           throw new OllamaContextOverflowError(baseUrl, response.status, errorBody);
         }
+        if (isOllamaRunnerCrashBody(errorBody)) {
+          throw new OllamaRunnerCrashError(baseUrl, response.status, errorBody);
+        }
         throw new OllamaResponseError(baseUrl, response.status, errorBody);
       }
 
       return response.json() as Promise<OllamaEmbedResponse>;
     } catch (error) {
       // Re-throw typed errors (from !response.ok block)
-      if (error instanceof OllamaModelMissingError || error instanceof OllamaResponseError) {
+      if (
+        error instanceof OllamaModelMissingError ||
+        error instanceof OllamaResponseError ||
+        error instanceof OllamaRunnerCrashError
+      ) {
         throw error;
       }
 

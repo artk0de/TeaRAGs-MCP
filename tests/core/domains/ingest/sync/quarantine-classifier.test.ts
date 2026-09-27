@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   OllamaContextOverflowError,
   OllamaResponseError,
+  OllamaRunnerCrashError,
 } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { QdrantUnavailableError } from "../../../../../src/core/adapters/qdrant/errors.js";
 import {
@@ -97,6 +98,12 @@ describe("classifyEmbeddingQuarantinable", () => {
     const err = new OllamaResponseError(url, 400, "malformed input");
 
     expect(classifyEmbeddingQuarantinable(err, path)).toBeInstanceOf(EmbeddingRejectedError);
+  });
+
+  it("does not quarantine a crashed ollama runner, whatever status the server answered with", () => {
+    const err = new OllamaRunnerCrashError(url, 400, 'Post "http://127.0.0.1:53912/tokenize": connection refused');
+
+    expect(classifyEmbeddingQuarantinable(err, path)).toBeNull();
   });
 
   it("returns null for a 5xx embedding response (transient)", () => {

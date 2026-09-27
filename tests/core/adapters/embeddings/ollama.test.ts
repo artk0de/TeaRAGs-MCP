@@ -6,6 +6,7 @@ import {
   OllamaMalformedResponseError,
   OllamaModelMissingError,
   OllamaResponseError,
+  OllamaRunnerCrashError,
   OllamaTimeoutError,
   OllamaUnavailableError,
 } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
@@ -913,17 +914,17 @@ describe("OllamaEmbeddings", () => {
     });
 
     describe("batch the server cannot process", () => {
-      // An ollama runner that dies on a large /api/embed answers 500 with the
-      // runner's own transport error; any batch above `limit` inputs fails that way.
-      const serverFailingAbove = (limit: number) =>
-        mockFetch.mockImplementation(async (_url: string, init: { body: string }) => {
+      // An ollama runner that dies on a large /api/embed makes the server answer
+      // with the runner's own transport error — 500, or 400 as ollama 0.34.4 on
+      // Windows does (measured 2026-09-27); any batch above `limit` inputs fails that way.
+      const RUNNER_CRASH_BODY =
+        '{"error":"Post \\"http://127.0.0.1:53912/tokenize\\": dial tcp 127.0.0.1:53912: connectex: No connection could be made because the target machine actively refused it."}';
+      const serverFailingAbove = (limit: number, status = 500) =>
+        mockFetch.mockImplementation(async (_url: string, init?: { body?: string }) => {
+          if (!init?.body) return { ok: true }; // health probe GET /
           const { input } = JSON.parse(init.body) as { input: string[] };
           if (input.length > limit) {
-            return {
-              ok: false,
-              status: 500,
-              text: async () => '{"error":"Post \\"http://127.0.0.1:62902/tokenize\\": dial tcp: connection refused"}',
-            };
+            return { ok: false, status, text: async () => RUNNER_CRASH_BODY };
           }
           return {
             ok: true,
@@ -962,7 +963,37 @@ describe("OllamaEmbeddings", () => {
       it("rethrows when even a single text fails", async () => {
         serverFailingAbove(0);
 
-        await expect(batchEmbeddings.embedBatch(["t1", "t2"])).rejects.toThrow(OllamaResponseError);
+        await expect(batchEmbeddings.embedBatch(["t1", "t2"])).rejects.toThrow(OllamaRunnerCrashError);
+      });
+
+      it("splits on the 400 an ollama server answers when its runner crashed", async () => {
+        serverFailingAbove(2, 400);
+
+        const results = await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+
+        expect(results.map((r) => r.embedding)).toEqual([[1], [2], [3], [4]]);
+      });
+
+      it("surfaces a runner crash on a single text as a runner crash, not a rejected input", async () => {
+        serverFailingAbove(0, 400);
+
+        await expect(batchEmbeddings.embedBatch(["t1"])).rejects.toThrow(OllamaRunnerCrashError);
+      });
+
+      it("does not fail over when concurrent batches crash the runner", async () => {
+        const PRIMARY = "http://primary:11434";
+        const FALLBACK = "http://fallback:11434";
+        serverFailingAbove(1, 400);
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, false, 999, FALLBACK);
+
+        await Promise.all([
+          provider.embedBatch(["t1", "t2"]),
+          provider.embedBatch(["t3", "t4"]),
+          provider.embedBatch(["t5", "t6"]),
+        ]);
+
+        const urls = mockFetch.mock.calls.map(([url]: [string]) => url);
+        expect(urls.some((url: string) => url.startsWith(FALLBACK))).toBe(false);
       });
     });
 

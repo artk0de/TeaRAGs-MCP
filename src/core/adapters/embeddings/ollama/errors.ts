@@ -131,6 +131,43 @@ export class OllamaTimeoutError extends EmbeddingError {
 }
 
 /**
+ * The ollama server is up but the runner process serving the model died under
+ * the request — the server relays its own loopback call to the runner failing
+ * (`Post "http://127.0.0.1:<port>/tokenize": ... refused`) or reports the
+ * process gone. Status varies by version and platform: 500, or 400 on ollama
+ * 0.34.4 for Windows (measured 2026-09-27, 256–512-text batches). Neither the
+ * input nor the endpoint is at fault — the batch was too large for the runner —
+ * so it carries no `responseStatus` (the embed quarantine keys on it) and does
+ * not count toward failover. The provider splits the batch instead.
+ */
+export class OllamaRunnerCrashError extends EmbeddingError {
+  readonly serverStatus: number;
+  readonly responseBody: string;
+
+  constructor(url: string, status: number, body: string) {
+    super({
+      code: "INFRA_OLLAMA_RUNNER_CRASHED",
+      message: `Ollama model runner crashed at ${url} (HTTP ${status}): ${body}`,
+      hint:
+        `The ollama runner process died while embedding a batch.\n` +
+        `Batches are retried in halves automatically; if it persists, lower EMBEDDING_TUNE_BATCH_SIZE.\n` +
+        `Check the ollama server log for the runner's exit reason.`,
+      httpStatus: 502,
+    });
+    this.serverStatus = status;
+    this.responseBody = body;
+  }
+}
+
+/** The server relays a failed loopback call to its runner, or says the runner exited. */
+const RUNNER_CRASH_BODY = /http:\/\/127\.0\.0\.1:\d+\/\w+.*(refused|reset|EOF|closed)|runner process has terminated/i;
+
+/** Does this error body describe a crashed runner rather than a rejected request? */
+export function isOllamaRunnerCrashBody(body: string): boolean {
+  return RUNNER_CRASH_BODY.test(body);
+}
+
+/**
  * Ollama responded with an HTTP error (server is available, but returned an error).
  * Distinct from OllamaUnavailableError (no connection at all).
  */
