@@ -7,8 +7,23 @@ on:
     branches: [main]
 
 jobs:
+  # semantic-release's version commit and the declarative-changelog follow-up
+  # (`chore(release): …`) touch only package.json, the lockfile version and the
+  # changelogs, so the full matrix (~20 min × 2) re-proves a tree CI already
+  # proved one commit earlier. CI must still CONCLUDE `success` for them:
+  # release.yml runs on workflow_run and its deploy-docs job redeploys the site
+  # with the declarative notes only on a green CI. A run whose every job is
+  # skipped concludes `skipped`, so this cheap job stands in for the matrix.
+  release-bookkeeping:
+    name: Release bookkeeping commit
+    if: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release)') }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "chore(release) commit — build and test skipped; CI proved the tree on the previous commit."
+
   build-and-test:
     name: Build and Test
+    if: ${{ !(github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release)')) }}
     runs-on: ubuntu-latest
 
     strategy:
