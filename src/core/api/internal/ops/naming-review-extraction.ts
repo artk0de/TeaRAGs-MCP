@@ -26,6 +26,7 @@ import {
   buildIdentifierRows,
   collectIdentifierFinderVocabulary,
   extractFileInMemory,
+  isConstructorSymbol,
   type IdentifierFinderVocabulary,
   type InMemoryExtractionContext,
 } from "../../../domains/trajectory/codegraph/index.js";
@@ -41,6 +42,20 @@ export interface NamingReviewFileDeclarations {
   types: readonly TypeDeclarationFact[];
   /** The line range of every chunk the walk emitted — where a declaration's enclosing code is read from. */
   chunks: readonly { startLine: number; endLine: number }[];
+  /**
+   * Every method and function the file declares, constructors excluded — a
+   * name the review judges only through its `return` row, so one without that
+   * row (no known return type) is reported as not judged (bd tea-rags-mcp-y33ee).
+   */
+  callables: readonly NamingReviewCallable[];
+}
+
+/** One method / function declaration: its symbol, member name and first line. */
+export interface NamingReviewCallable {
+  symbolId: string;
+  name: string;
+  line: number;
+  kind: "method" | "function";
 }
 
 /**
@@ -80,10 +95,33 @@ export function createNamingReviewExtractor(languageFactory: LanguageFactoryDesc
               ? [{ startLine: chunk.startLine, endLine: chunk.endLine }]
               : [],
           ),
+          callables: callablesOf(extraction.language, extraction.chunks),
         };
       };
     },
   };
+}
+
+/** Methods and functions by symbol (a split method's parts collapse to its first line), constructors dropped. */
+function callablesOf(
+  language: string,
+  chunks: readonly { symbolId: string; startLine?: number; symbolKind?: string }[],
+): NamingReviewCallable[] {
+  const bySymbol = new Map<string, NamingReviewCallable>();
+  for (const { symbolId, startLine, symbolKind } of chunks) {
+    if ((symbolKind !== "method" && symbolKind !== "function") || startLine === undefined) continue;
+    if (isConstructorSymbol(language, symbolId)) continue;
+    const seen = bySymbol.get(symbolId);
+    if (seen !== undefined && seen.line <= startLine) continue;
+    bySymbol.set(symbolId, { symbolId, name: memberNameOf(symbolId), line: startLine, kind: symbolKind });
+  }
+  return [...bySymbol.values()];
+}
+
+/** A symbolId's member: what follows its last `#` / `.` separator, or the whole id for a top-level function. */
+function memberNameOf(symbolId: string): string {
+  const cut = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."));
+  return cut < 0 ? symbolId : symbolId.slice(cut + 1);
 }
 
 /** The Gemfile (absent → the full catalogue) and the declared dependencies (no manifest → every vocabulary). */

@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:mr-review",
   "skillPath": ".claude-plugin/tea-rags/skills/mr-review/SKILL.md",
-  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension. Local mode: one get_naming_lexicon call with `changes` (base = merge-base) reviews every name the diff's added hunks declare, findings grouped by verdict. External mode (MR branch not checked out): names[] built from the diff's added lines. MISFIT / NEW_TERM / COLLISION surface as findings with the suggestion, holder or existing declaration as evidence. Cases with status 'superseded' are kept as history and not scored.",
+  "objective": "Agent runs the mr-review phases as SKILL.md prescribes; this file starts with the D8 naming dimension. Local mode: one get_naming_lexicon call with `changes` (base = target branch, read at its merge-base with HEAD) reviews every name the diff's added hunks declare, findings grouped by verdict. External mode (MR branch not checked out): names[] built from the diff's added lines. MISFIT / NEW_TERM / COLLISION surface as findings with the suggestion, holder or existing declaration as evidence. Cases with status 'superseded' are kept as history and not scored.",
   "runs": [],
   "cases": [
     {
@@ -32,7 +32,7 @@
       "prompt": "Сделай ревью моей ветки.",
       "expected": {
         "mustDo": [
-          "Run D8 as ONE get_naming_lexicon call with `changes: { base: <merge-base of main and HEAD> }` (project alias), no hand-built names[]",
+          "Run D8 as ONE get_naming_lexicon call with `changes: { base: <target branch, e.g. main> }` (the tool reads it at its merge-base with HEAD) (project alias), no hand-built names[]",
           "Report the naming findings grouped by verdict (MISFIT, COLLISION, NEW_TERM) with relPath:line from review.findings, and the review.conforming / review.novel counts as one summary line",
           "MISFIT → minor finding whose fix is the suggestion with the holder as precedent; COLLISION → finding naming the existing declaration's file",
           "Word comment bodies in plain language (no verdict codes, no tool names)"

@@ -141,6 +141,8 @@ export type {
   NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
   NamingReviewFinding,
+  NamingReviewNotJudgedEntry,
+  NamingReviewNotJudgedReason,
   NamingReviewResult,
 } from "./naming-lexicon.js";
 

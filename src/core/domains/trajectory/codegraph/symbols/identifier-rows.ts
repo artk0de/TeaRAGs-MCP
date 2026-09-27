@@ -104,7 +104,7 @@ const CONSTRUCTOR_MEMBER_NAMES: Readonly<Record<string, ReadonlySet<string>>> = 
  * language's constructor name, or it is an instance member named like its
  * enclosing type (`billing.Subscription#Subscription`).
  */
-function isConstructorSymbol(language: string, symbolId: string): boolean {
+export function isConstructorSymbol(language: string, symbolId: string): boolean {
   const namedConstructors = Object.hasOwn(CONSTRUCTOR_MEMBER_NAMES, language)
     ? CONSTRUCTOR_MEMBER_NAMES[language]
     : undefined;

@@ -425,6 +425,152 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   });
 
+  // bd tea-rags-mcp-y33ee: a base branch that moved on flooded the review with files only the base changed.
+  describe("a base branch that moved on since the branch left it", () => {
+    const SHARED = "src/git/shared.ts";
+    let forkPoint: string;
+
+    beforeEach(() => {
+      // The fork point carries `shared.ts`; the branch commits its change; main then rewrites `shared.ts`.
+      writeFileSync(join(repo, CHANGED), ORIGINAL);
+      writeFileSync(join(repo, SHARED), "export class Commit {}\n");
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "shared");
+      forkPoint = git(repo, "rev-parse", "HEAD").trim();
+      git(repo, "checkout", "-q", "-b", "feat");
+      writeFileSync(join(repo, CHANGED), CHANGED_TEXT);
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "feat");
+      git(repo, "checkout", "-q", "main");
+      writeFileSync(join(repo, SHARED), "export class Kommit {}\n");
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "main moves on");
+      git(repo, "checkout", "-q", "feat");
+    });
+
+    it("reviews what the branch changed since its merge-base with the base, and reports that commit", async () => {
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: "main" } });
+      expect(review?.base).toBe("main");
+      expect(review?.mergeBase).toBe(forkPoint);
+      expect(review?.changedFiles).toBe(1);
+      expect(new Set(review?.findings.map((f) => f.relPath))).toEqual(new Set([CHANGED]));
+      expect(review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta", "result"]);
+    });
+
+    it("a base HEAD descends from is compared as given", async () => {
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: forkPoint } });
+      expect(review?.mergeBase).toBe(forkPoint);
+      expect(review?.changedFiles).toBe(1);
+    });
+
+    it("a base HEAD shares no history with is a parameter error saying there is no merge-base", async () => {
+      const emptyTree = git(repo, "hash-object", "-t", "tree", "/dev/null").trim();
+      const orphan = git(repo, "commit-tree", emptyTree, "-m", "orphan").trim();
+      const call = ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: orphan } });
+      await expect(call).rejects.toBeInstanceOf(InvalidParameterError);
+      await expect(call).rejects.toThrow(/no merge-base/);
+    });
+
+    it("an unknown base is a parameter error", async () => {
+      await expect(
+        ops.getNamingLexicon({ collection: "c", path: repo, changes: { base: "no-such-branch" } }),
+      ).rejects.toBeInstanceOf(InvalidParameterError);
+    });
+  });
+
+  it("the default base is HEAD itself: its merge-base is HEAD's commit", async () => {
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+    expect(review?.mergeBase).toBe(git(repo, "rev-parse", "HEAD").trim());
+    expect(review?.changedFiles).toBe(1);
+    expect(review?.wholeFiles).toBeUndefined();
+  });
+
+  // bd tea-rags-mcp-y33ee: `files` on a clean tree checked 0 — the files were committed, so nothing was "added".
+  it("`files` with no diff against the base reviews every declaration they hold, and says so", async () => {
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", "committed");
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: [CHANGED] });
+    expect(review?.wholeFiles).toBe(1);
+    expect(review?.changedFiles).toBe(0);
+    const names = review?.findings.map((f) => f.name) ?? [];
+    // `other` sits on a line the working tree did not add: only a whole-file review judges it.
+    expect(names).toEqual(expect.arrayContaining(["meta", "result", "Commit", "other"]));
+    expect(review?.checked).toBe(review!.conforming + review!.novel + review!.findings.length);
+  });
+
+  it("`files` keeps the added-lines review for a listed file that has a diff", async () => {
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: [CHANGED] });
+    expect(review?.wholeFiles).toBeUndefined();
+    expect(review?.changedFiles).toBe(1);
+    expect(review?.findings.map((f) => f.name)).not.toContain("other");
+  });
+
+  it("a listed file that does not exist is counted as not judged", async () => {
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/missing.ts"] });
+    expect(review?.checked).toBe(0);
+    expect(review?.notJudged).toBe(1);
+  });
+
+  // bd tea-rags-mcp-y33ee: new methods with no known return type vanished from the counts, so
+  // `conforming` read as if they had been reviewed.
+  describe("what the review did not judge", () => {
+    it("a method with no known return type is listed by kind and reason; a constructor is not", async () => {
+      mkdirSync(join(repo, "app/billing"), { recursive: true });
+      writeFileSync(
+        join(repo, "app/billing/ledger_sync.rb"),
+        "class LedgerSync\n  def initialize(ledger)\n    @ledger = ledger\n  end\n\n  def perform\n    1\n  end\nend\n",
+      );
+      const { review } = await ops.getNamingLexicon({
+        collection: "c",
+        path: repo,
+        files: ["app/billing/ledger_sync.rb"],
+      });
+      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 1 } });
+      expect(review?.notJudgedNames).toEqual([
+        {
+          relPath: "app/billing/ledger_sync.rb",
+          line: 6,
+          name: "perform",
+          kind: "method",
+          reason: "unknownReturnType",
+        },
+      ]);
+      // Declarations stay the only thing `notJudged` does not count: it counts files.
+      expect(review?.notJudged).toBe(0);
+    });
+
+    it("a file that was not judged is listed with why", async () => {
+      writeFileSync(join(repo, "src/git/reader.test.ts"), "export const x = 1;\n");
+      writeFileSync(join(repo, "notes.md"), "# notes\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(review?.notJudged).toBe(2);
+      expect(review?.notJudgedBy?.file).toEqual({ nonProduction: 1, noCodegraphLanguage: 1 });
+      expect(review?.notJudgedNames).toEqual(
+        expect.arrayContaining([
+          { relPath: "notes.md", kind: "file", reason: "noCodegraphLanguage" },
+          { relPath: "src/git/reader.test.ts", kind: "file", reason: "nonProduction" },
+        ]),
+      );
+    });
+
+    it("everything judged: no breakdown", async () => {
+      writeFileSync(join(repo, "src/git/typed.ts"), "export function total(): number {\n  return 1;\n}\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/typed.ts"] });
+      expect(review?.checked).toBe(1);
+      expect(review?.notJudgedBy).toBeUndefined();
+      expect(review?.notJudgedNames).toBeUndefined();
+    });
+
+    it("caps the listed names and keeps the counts whole", async () => {
+      mkdirSync(join(repo, "app/many"), { recursive: true });
+      const methods = Array.from({ length: 60 }, (_, i) => `  def step_${i}\n    1\n  end\n`).join("");
+      writeFileSync(join(repo, "app/many/runner.rb"), `class Runner\n${methods}end\n`);
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["app/many/runner.rb"] });
+      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 60 } });
+      expect(review?.notJudgedNames).toHaveLength(50);
+    });
+  });
+
   it("diff mode needs the project's working tree", async () => {
     await expect(ops.getNamingLexicon({ collection: "c", changes: {} })).rejects.toBeInstanceOf(InvalidParameterError);
   });

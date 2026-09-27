@@ -260,9 +260,17 @@ name by grep or semantic_search on the draft.
 - "Is this name right?" (one draft / rename) → names=[{ name: "row", kind: "local", type: "TaxAutomationDocument" }]
 - New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]
 - Words for a concept → concept="<what the symbol denotes, not its name>", language="typescript"
-- Review names a diff adds → changes={} (uncommitted vs HEAD) or changes={ base: "<merge-base sha>" } (branch).
+- Review names a diff adds → changes={} (uncommitted vs HEAD) or changes={ base: "origin/main" } (branch).
+  base is read at its merge-base with HEAD (git merge-base <base> HEAD): only the branch's side plus
+  uncommitted work, however far base moved on; no merge-base (unrelated / shallow clone) → error.
+  files=[...] → those files only: a file with a diff by its added hunks, one with no diff (committed,
+  clean tree) WHOLE — every declaration it holds, counted in wholeFiles.
   Only added hunks judged; changed files excluded from evidence; cap 200 files (truncated reports rest).
-  Answer → review { base, checked, conforming, novel, findings, notJudged, truncated? };
+  Answer → review { base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings,
+  notJudged, notJudgedBy?, notJudgedNames?, truncated? }; changedFiles = files differing from mergeBase
+  (with files: of the listed); notJudgedBy = kind (file | method | function) → reason → count —
+  a method is judged only by its return type, so unknownReturnType methods are in neither checked
+  nor conforming; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
   findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts plus
   genericName caveats. novel = NEW_TERM with nothing to compare (not listed). notJudged = files
   skipped: tests / non-production, no codegraph language.

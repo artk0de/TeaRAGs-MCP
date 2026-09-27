@@ -74,6 +74,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import {
   listChangedFiles,
   readAddedLineRangesOfFiles,
+  readMergeBase,
   type AddedLineRange,
 } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
@@ -145,6 +146,7 @@ import type {
   NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
   NamingReviewFinding,
+  NamingReviewNotJudgedEntry,
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
@@ -191,6 +193,10 @@ const DIFF_FILE_CAP = 200;
 const DIFF_CONCEPT_CODE_CHARS = 1500;
 /** Diff mode's base when the request names none: the working tree against HEAD (spec §6). */
 const DIFF_DEFAULT_BASE = "HEAD";
+/** Diff mode: how many not-judged entries `notJudgedNames` lists; `notJudgedBy` counts them all. */
+const NOT_JUDGED_NAME_CAP = 50;
+/** Diff mode: a listed file with no diff is reviewed whole — every line reads as added. */
+const WHOLE_FILE: readonly AddedLineRange[] = [{ start: 1, end: Number.MAX_SAFE_INTEGER }];
 
 /** Declaration kinds the type-name read loads: the type-level kinds and constants, one read for both populations. */
 const TYPE_NAME_READ_KINDS = [...TYPE_DRAFT_KINDS, "constant"] as const;
@@ -260,10 +266,15 @@ interface DiffFile {
 /** Diff mode's reads: the reviewed files, the evidence they are excluded from, and the files not judged. */
 interface DiffRead {
   base: string;
+  /** `base`'s merge-base with HEAD — what the change is read against. */
+  mergeBase: string;
+  changedFiles: number;
+  wholeFiles: number;
   /** The files under the cap — what `excludePaths` carries. */
   files: string[];
   judged: DiffFile[];
-  notJudged: number;
+  /** Files not judged, and the callables of judged files no draft carries. */
+  notJudged: NamingReviewNotJudgedEntry[];
   skipped: number;
 }
 
@@ -423,32 +434,53 @@ export class NamingLexiconOps {
   }
 
   /**
-   * Diff mode's git reads (spec §6.1–6.3): the changed files against the base —
-   * `files` when given, else `git diff --name-only` plus untracked files —
-   * capped at {@link DIFF_FILE_CAP}; per file its added line ranges and, when
-   * something was added and a codegraph language walks it, its declarations.
+   * Diff mode's git reads (spec §6.1–6.3): the changed files against the base
+   * resolved to its merge-base with HEAD (bd tea-rags-mcp-y33ee) — `files` when
+   * given, else `git diff --name-only` plus untracked files — capped at
+   * {@link DIFF_FILE_CAP}; per file its added line ranges and, when something
+   * was added and a codegraph language walks it, its declarations. A listed
+   * file with no diff is read whole: on a clean tree `files` names committed
+   * code to review, and an empty answer would read as "all conforms".
    */
   private async readDiff(req: NamingLexiconRequest, repoRoot: string | undefined): Promise<DiffRead> {
     if (!repoRoot) {
       throw new InvalidParameterError("path", "changes / files review the working tree: pass project or path");
     }
     const base = req.changes?.base ?? DIFF_DEFAULT_BASE;
-    const all = await gitRead(base, async () => (req.files ? unique(req.files) : listChangedFiles(repoRoot, base)));
+    const mergeBase = await resolveReviewMergeBase(repoRoot, base);
+    const changed = await gitRead(base, async () => listChangedFiles(repoRoot, mergeBase));
+    const listed = req.files ? unique(req.files) : undefined;
+    const all = listed ?? changed;
     const files = all.slice(0, DIFF_FILE_CAP);
-    const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(repoRoot, base, files));
+    const ranges = await gitRead(base, async () => readAddedLineRangesOfFiles(repoRoot, mergeBase, files));
+    const changedSet = new Set(changed);
+    const whole = new Set(listed ? files.filter((relPath) => !changedSet.has(relPath)) : []);
 
     const nonProduction = ontologyNonProductionPathFilter();
     const extract = this.deps.extractDeclarations?.forWorkingTree(repoRoot);
     const judged: DiffFile[] = [];
-    let notJudged = 0;
+    const notJudged: NamingReviewNotJudgedEntry[] = [];
     for (const relPath of files) {
-      const added = ranges.get(relPath) ?? [];
+      const added = whole.has(relPath) ? WHOLE_FILE : (ranges.get(relPath) ?? []);
       if (added.length === 0) continue;
-      const file = nonProduction.ignores(relPath) ? null : readDiffFile(extract, repoRoot, relPath, added);
-      if (file === null) notJudged++;
-      else judged.push(file);
+      const file = nonProduction.ignores(relPath) ? "nonProduction" : readDiffFile(extract, repoRoot, relPath, added);
+      if (typeof file === "string") {
+        notJudged.push({ relPath, kind: "file", reason: file });
+        continue;
+      }
+      judged.push(file);
+      notJudged.push(...unjudgedCallables(file));
     }
-    return { base, files, judged, notJudged, skipped: all.length - files.length };
+    return {
+      base,
+      mergeBase,
+      changedFiles: listed ? listed.filter((relPath) => changedSet.has(relPath)).length : changed.length,
+      wholeFiles: whole.size,
+      files,
+      judged,
+      notJudged,
+      skipped: all.length - files.length,
+    };
   }
 
   /**
@@ -518,11 +550,15 @@ export class NamingLexiconOps {
     return {
       review: {
         base: diff.base,
+        mergeBase: diff.mergeBase,
+        changedFiles: diff.changedFiles,
+        ...(diff.wholeFiles > 0 ? { wholeFiles: diff.wholeFiles } : {}),
         checked: drafts.length,
         conforming,
         novel,
         findings,
-        notJudged: diff.notJudged,
+        notJudged: diff.notJudged.filter((entry) => entry.kind === "file").length,
+        ...notJudgedBreakdown(diff.notJudged),
         ...(diff.skipped > 0 ? { truncated: { cap: DIFF_FILE_CAP, skipped: diff.skipped } } : {}),
       },
       notices,
@@ -1575,24 +1611,73 @@ async function gitRead<T>(base: string, read: () => Promise<T>): Promise<T> {
 }
 
 /**
- * One changed file with its text and declarations; `null` = not judged — no
- * extractor, no codegraph language for the path, or the file is unreadable or
- * unparsable.
+ * Diff mode's comparison commit (bd tea-rags-mcp-y33ee): `base`'s merge-base
+ * with HEAD. A reviewer's `base: "origin/master"` means "what this branch
+ * changed", not "how the working tree differs from master's tip" — against a
+ * tip that moved on, every file only the base touched reads as the branch's
+ * (live on taxdome: 1527 files for a 61-file branch). A commit HEAD descends
+ * from is its own merge-base, so an explicit sha is compared as given.
+ */
+async function resolveReviewMergeBase(repoRoot: string, base: string): Promise<string> {
+  const mergeBase = await gitRead(base, async () => readMergeBase(repoRoot, base));
+  if (mergeBase === null) {
+    throw new InvalidParameterError(
+      "changes.base",
+      `'${base}' and HEAD share no merge-base — unrelated histories, or a shallow clone cut the fork point off ` +
+        `(git fetch --deepen / --unshallow); pass as base a commit HEAD descends from`,
+    );
+  }
+  return mergeBase;
+}
+
+/**
+ * One changed file with its text and declarations, or why it is not judged —
+ * no extractor or no codegraph language for the path, or the file is
+ * unreadable or unparsable.
  */
 function readDiffFile(
   extract: NamingReviewFileExtractor | undefined,
   repoRoot: string,
   relPath: string,
   ranges: readonly AddedLineRange[],
-): DiffFile | null {
-  if (!extract) return null;
+): DiffFile | "noCodegraphLanguage" | "unreadable" {
+  if (!extract) return "noCodegraphLanguage";
   try {
     const text = readFileSync(join(repoRoot, relPath), "utf8");
     const declarations = extract(relPath, text);
-    return declarations === null ? null : { relPath, ranges, text, declarations };
+    return declarations === null ? "noCodegraphLanguage" : { relPath, ranges, text, declarations };
   } catch {
-    return null;
+    return "unreadable";
   }
+}
+
+/**
+ * The methods / functions on a file's added lines that no draft carries: a
+ * callable's name is judged through its `return` row, which exists only when
+ * its return type is known (bd tea-rags-mcp-y33ee).
+ */
+function unjudgedCallables(file: DiffFile): NamingReviewNotJudgedEntry[] {
+  const { relPath, ranges, declarations } = file;
+  const returned = new Set(declarations.values.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
+  return declarations.callables
+    .filter((callable) => inRanges(callable.line, ranges) && !returned.has(callable.symbolId))
+    .map(({ name, line, kind }) => ({ relPath, line, name, kind, reason: "unknownReturnType" as const }));
+}
+
+/** `notJudgedBy` counts and the first {@link NOT_JUDGED_NAME_CAP} entries in path / line order; `{}` when none. */
+function notJudgedBreakdown(
+  entries: readonly NamingReviewNotJudgedEntry[],
+): Pick<NamingReviewResult, "notJudgedBy" | "notJudgedNames"> {
+  if (entries.length === 0) return {};
+  const by: NonNullable<NamingReviewResult["notJudgedBy"]> = {};
+  for (const { kind, reason } of entries) {
+    const reasons = (by[kind] ??= {});
+    reasons[reason] = (reasons[reason] ?? 0) + 1;
+  }
+  const names = [...entries]
+    .sort((a, b) => a.relPath.localeCompare(b.relPath) || (a.line ?? 0) - (b.line ?? 0))
+    .slice(0, NOT_JUDGED_NAME_CAP);
+  return { notJudgedBy: by, notJudgedNames: names };
 }
 
 /**

@@ -184,7 +184,7 @@
       "prompt": "Готовлю PR, собери запрос на ревью.",
       "expected": {
         "mustDo": [
-          "Step 2.6: ONE get_naming_lexicon call with `changes: { base: <merge-base of main and HEAD> }`",
+          "Step 2.6: ONE get_naming_lexicon call with `changes: { base: <target branch, e.g. main> }` (the tool reads it at its merge-base with HEAD)",
           "MISFIT → rename to the suggestion before sending (or list under risk flags with the holder); COLLISION → rename or justify, naming the existing file; NEW_TERM → one-line justification in the bundle",
           "Bundle lists review.findings grouped by verdict with relPath:line plus the review.conforming and review.novel counts"
         ],

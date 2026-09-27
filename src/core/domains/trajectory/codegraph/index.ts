@@ -122,6 +122,7 @@ export {
   buildIdentifierRows,
   collectIdentifierFinderVocabulary,
   type IdentifierFinderVocabulary,
+  isConstructorSymbol,
   extractFileInMemory,
   type InMemoryExtractionContext,
   type InMemoryExtractionDeps,

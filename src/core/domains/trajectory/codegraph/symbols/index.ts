@@ -60,6 +60,7 @@ export {
   buildIdentifierRows,
   collectIdentifierFinderVocabulary,
   type IdentifierFinderVocabulary,
+  isConstructorSymbol,
 } from "./identifier-rows.js";
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";

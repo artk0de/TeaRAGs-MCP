@@ -161,8 +161,9 @@ away.
 ## D8 naming (codegraph-gated)
 
 ```text
-local:    get_naming_lexicon changes={ base: <merge-base of main and HEAD> }
+local:    get_naming_lexicon changes={ base: <target branch, e.g. main> }
                              project=<alias>
+          (tool reads base at its merge-base with HEAD — no git merge-base)
           (on main, uncommitted only → changes={})
 external: get_naming_lexicon names=[<declarations on the diff's added lines:
                              {name, kind, type?}; a type: {name, kind: "type",

@@ -620,6 +620,24 @@ export async function isAncestor(repoRoot: string, ancestor: string, descendant:
   }
 }
 
+/**
+ * The best common ancestor of `ref` and HEAD (`git merge-base <ref> HEAD`) —
+ * where a branch left `ref`, so a diff against it holds only the branch's
+ * side (three-dot semantics). `null` when the two share no history: unrelated
+ * roots, or a shallow clone whose cut-off hides the ancestor. An unknown ref or
+ * a path outside a repository rejects.
+ */
+export async function readMergeBase(repoRoot: string, ref: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(resolveGitExecutable(), ["merge-base", ref, "HEAD"], { cwd: repoRoot });
+    return stdout.trim();
+  } catch (error) {
+    // Exit 1 is git's "no common ancestor"; an unknown ref or a non-repository exits 128.
+    if ((error as { code?: unknown }).code === 1) return null;
+    throw error;
+  }
+}
+
 /** Silence window for the two tree listings below — one bounded spawn each, never a history walk. */
 const TREE_LISTING_STALL_MS = 60_000;
 

@@ -204,8 +204,19 @@ rate regardless of the draft's directory or family size. That verdict stays
 soft: the agent decides whether to reuse the term.
 
 **Reviewing a diff.** `changes: {}` reviews the working tree against `HEAD`,
-untracked files included; `changes: { base }` reviews it against another
-commit, typically the merge-base of a branch. Only declarations inside added
+untracked files included; `changes: { base }` reviews a branch. The base is
+read at its merge-base with `HEAD` (`git merge-base <base> HEAD`), so
+`base: "origin/main"` reviews what the branch changed, plus uncommitted work,
+however far `origin/main` has moved on since the branch left it — the
+three-dot view a reviewer means, not a diff against the base's tip. A commit
+`HEAD` descends from is its own merge-base, so passing a sha pins the
+comparison exactly. When the base shares no history with `HEAD` (unrelated
+roots, or a shallow clone that cut the fork point off) the call fails and says
+so. The answer reports the commit it used (`mergeBase`) and how many files
+differ from it (`changedFiles`). `files: [...]` narrows the review to the listed
+files: a file with a diff is reviewed by its added hunks, and a file with none —
+committed code on a clean tree — is reviewed whole, every declaration it holds,
+and counted in `wholeFiles`. Only declarations inside added
 hunks are judged, so an unchanged name in a touched file is not reported. The
 changed files are left out of every evidence read, so a change an incremental
 reindex has already stored cannot vote for itself. One call covers at most 200
@@ -220,7 +231,16 @@ there is nothing to act on. Everything else is a finding with its file and
 line. A finding carries its verdict's fields: `suggestion` and `holder` (or
 `role`) on a `MISFIT`, `existing` on a `COLLISION`, `topTerms` and
 `alternatives` on a `NEW_TERM`. A name judged generic is listed even when it
-conforms, with `genericName`. `checked = conforming + novel + findings`. An
+conforms, with `genericName`. `checked = conforming + novel + findings`.
+
+`checked` counts only what was judged. A method's name is judged through its
+return type, so a new method whose return type is unknown — most of them in
+Ruby — never becomes a draft and is in neither `checked` nor `conforming`.
+`notJudgedBy` says what the review skipped, per kind and reason:
+`{ "method": { "unknownReturnType": 12 }, "file": { "nonProduction": 3 } }`.
+File reasons are `nonProduction`, `noCodegraphLanguage` and `unreadable`, and
+they add up to `notJudged`. `notJudgedNames` lists the first 50 of them with
+path, line and name, so a reviewer knows what still needs reading by hand. An
 excerpt from a live run on this repository:
 
 ```json

@@ -17,6 +17,7 @@ import {
   listChangedFiles,
   readAddedLineRanges,
   readAddedLineRangesOfFiles,
+  readMergeBase,
 } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 
 function git(root: string, ...args: string[]): string {
@@ -189,5 +190,51 @@ describe("git CLI client — added line ranges of many files in one read", { tim
 
   it("reads nothing for no paths", async () => {
     expect((await readAddedLineRangesOfFiles(root, base, [])).size).toBe(0);
+  });
+});
+
+// bd tea-rags-mcp-y33ee: a reviewer's `base: "origin/master"` means where the branch left it, not its tip.
+describe("git CLI client — merge-base of a review base", { timeout: 30_000 }, () => {
+  let root: string;
+  let forkPoint: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "merge-base-"));
+    git(root, "init", "-q", "-b", "main");
+    writeFileSync(join(root, "a.ts"), "a\n");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "init");
+    forkPoint = git(root, "rev-parse", "HEAD").trim();
+    git(root, "checkout", "-q", "-b", "feat");
+    writeFileSync(join(root, "b.ts"), "b\n");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "feat");
+    git(root, "checkout", "-q", "main");
+    writeFileSync(join(root, "c.ts"), "c\n");
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "main moves on");
+    git(root, "checkout", "-q", "feat");
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("resolves a base that moved on to the commit HEAD branched from", async () => {
+    expect(await readMergeBase(root, "main")).toBe(forkPoint);
+  });
+
+  it("resolves HEAD to HEAD's own commit", async () => {
+    expect(await readMergeBase(root, "HEAD")).toBe(git(root, "rev-parse", "HEAD").trim());
+  });
+
+  it("is null for a commit HEAD shares no history with", async () => {
+    const emptyTree = git(root, "hash-object", "-t", "tree", "/dev/null").trim();
+    const orphan = git(root, "commit-tree", emptyTree, "-m", "orphan").trim();
+    expect(await readMergeBase(root, orphan)).toBeNull();
+  });
+
+  it("rejects a ref git does not know", async () => {
+    await expect(readMergeBase(root, "no-such-branch")).rejects.toThrow();
   });
 });

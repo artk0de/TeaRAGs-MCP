@@ -77,11 +77,20 @@ export interface NamingLexiconRequest extends CollectionRef {
   names?: NamingLexiconDraftName[];
   /**
    * Diff mode: review the declarations the working tree ADDS against `base`
-   * (default `HEAD` — the working tree against HEAD, untracked files included).
-   * The answer carries `review`.
+   * (default `HEAD` — uncommitted work, untracked files included). `base` is
+   * resolved to its merge-base with HEAD (`git merge-base <base> HEAD`), so a
+   * branch diff holds only the branch's side — what `git diff <base>...HEAD`
+   * shows, plus uncommitted work — however far the base moved on since. A
+   * commit HEAD descends from is its own merge-base, so passing one pins the
+   * comparison exactly. The answer carries `review`.
    */
   changes?: { base?: string };
-  /** Diff mode over these files only: their lines added against `changes.base` (default `HEAD`); an untracked file whole. */
+  /**
+   * Diff mode over these files only, against `changes.base` resolved the same
+   * way (default `HEAD`): a file with a diff is reviewed by its added lines, an
+   * untracked one whole, and one with no diff whole too — every declaration it
+   * holds (`review.wholeFiles` counts them).
+   */
   files?: string[];
 }
 
@@ -184,10 +193,41 @@ export type NamingReviewFinding = {
   genericName?: NamingLexiconGenericName;
 } & NamingVerdict;
 
+/**
+ * Why a diff-mode declaration or file was not judged: `unknownReturnType` — a
+ * method / function whose return type is unknown, so no draft carries its
+ * name; `nonProduction` — a test / script / fixture file; `noCodegraphLanguage`
+ * — no codegraph language walks the extension; `unreadable` — the file is gone
+ * from the working tree or failed to parse.
+ */
+export type NamingReviewNotJudgedReason = "unknownReturnType" | "nonProduction" | "noCodegraphLanguage" | "unreadable";
+
+/** One thing diff mode did not judge; a file carries no `line` / `name`. */
+export interface NamingReviewNotJudgedEntry {
+  relPath: string;
+  line?: number;
+  name?: string;
+  /** `file`, or the declaration's kind (`method`, `function`). */
+  kind: string;
+  reason: NamingReviewNotJudgedReason;
+}
+
 /** The naming review of a diff (`changes` / `files`, bd tea-rags-mcp-fdef2). */
 export interface NamingReviewResult {
-  /** The ref the change was read against. */
+  /** The ref the request named (`HEAD` when none). */
   base: string;
+  /** The commit the change was read against: `base`'s merge-base with HEAD. */
+  mergeBase: string;
+  /**
+   * Files that differ from what the change was read against, untracked ones
+   * included, before the cap; with `files`, those of the listed ones.
+   */
+  changedFiles: number;
+  /**
+   * Of `files`, the listed ones with no diff against the base: reviewed whole,
+   * every declaration they hold — not only added ones. Absent when none.
+   */
+  wholeFiles?: number;
   /**
    * Declarations judged: the added ones, in production files a codegraph
    * language walks. `checked = conforming + novel + findings.length`.
@@ -211,6 +251,16 @@ export interface NamingReviewResult {
    * `checked`.
    */
   notJudged: number;
+  /**
+   * What the review did not judge, per kind (`file`, `method`, `function`) and
+   * reason, counted whole: the files behind `notJudged`, and the methods /
+   * functions on added lines with no known return type — a method name is
+   * judged only through its return type, so these are in neither `checked`
+   * nor `conforming`. Absent when everything was judged.
+   */
+  notJudgedBy?: Partial<Record<string, Partial<Record<NamingReviewNotJudgedReason, number>>>>;
+  /** The first 50 of `notJudgedBy`, in path and line order — what a reviewer still has to read. */
+  notJudgedNames?: NamingReviewNotJudgedEntry[];
   /** Set when more files changed than one call reviews (200): the files past the cap, in path order, are skipped. */
   truncated?: { cap: number; skipped: number };
 }
