@@ -323,13 +323,13 @@ The right column shows what runs under the hood.
 
 Disk taken by real indexes (turbo quantization, dense + sparse vectors):
 
-| Codebase                                | Indexed                                                     | Vector index (Qdrant) | Call graph (DuckDB) |
-| --------------------------------------- | ----------------------------------------------------------- | --------------------- | ------------------- |
-| Production monolith (Ruby + TypeScript) | **3M+ LoC + 118K lines of docs** · ~33k files · 140k chunks | 1.3 GB                | ~300 MB             |
-| TeaRAGs itself (TypeScript)             | 433K LoC + 36K lines of docs · ~2.4k files · 25k chunks     | 1.2 GB                | 27 MB               |
+| Codebase                                | Indexed                                                                                             | Vector index (Qdrant) | Call graph (DuckDB) |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | ------------------- |
+| Production monolith (Ruby + TypeScript) | **3.3M lines of Ruby + TypeScript, tests included + 162K lines of docs** · ~34k files · 175k chunks | 2.0 GB                | ~460 MB             |
+| TeaRAGs itself (TypeScript)             | 686K LoC + 290K lines of docs · ~3.5k files · 45k chunks                                            | 1.2 GB                | 40 MB               |
 
-The call graph grows with the code; the vector index barely does — a codebase
-seven times smaller still takes 1.2 GB.
+The call graph grows with the code; the vector index much less — a codebase five
+times smaller still takes 1.2 GB.
 
 Pull the code-embedding model:
 
@@ -471,6 +471,42 @@ git and call-graph signals, and ranks results by the preset the task asks for.
 Qdrant and DuckDB run embedded under `~/.tea-rags` — no Docker, no servers to
 manage.
 
+## ⚡ Indexing Speed
+
+Measured on a production monolith — 3.3M lines of Ruby and TypeScript, tests
+included, plus 162K lines of docs in ~34k files — and on TeaRAGs itself. Search
+is available as soon as the embeddings are stored; git and call-graph enrichment
+keep filling in behind it.
+
+| What                                              | Time                                                                                               | Setup                                             |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| 🏁 Full `--force` of the monolith, estimated      | **~35–40 min** · 3.3M lines of Ruby + TypeScript, tests included + 162K lines of docs · ~34k files | LAN GPU¹ · from the measured embedding throughput |
+| 🕸️ TypeScript call graph rebuild on the monolith  | **165 s**                                                                                          | `--force-enrichments codegraph`                   |
+| 🔄 Incremental reindex of the monolith            | **seconds** for a commit, **5–8 min** for a week of edits                                          | only changed files are re-embedded                |
+| 🍵 Full `--force` of TeaRAGs itself               | **9 min** wall · 686K LoC + 290K lines of docs · ~3.5k files                                       | LAN GPU¹ · 97% of it is embeddings                |
+| 🔍 Agent finds a bug's root cause on the monolith | **~40 s** vs 10+ min with grep                                                                     | same question, same agent                         |
+
+¹ Ollama on a LAN mini-PC with an AMD RX 7800M eGPU (ROCm), measured 2026-09-27.
+Ollama 0.34.4 (auto-updated from 0.24.0 that day) embeds one chunk per GPU pass
+through a single llama-server slot, which keeps the GPU about 55% busy — expect
+roughly a quarter to a third faster once that is fixed. Direct support for the
+[llama.cpp](https://github.com/ggml-org/llama.cpp) server, as an alternative to
+Ollama, is coming soon.
+
+For scale: in January 2026, on the smaller monolith of the time, the server
+TeaRAGs was forked from needed 4–10 hours for a full index and 40+ minutes to
+catch up on 100 commits.
+
+**Why it is fast.** Every stage runs in parallel: 50 files in flight,
+tree-sitter parser and git-blame worker pools, GPU batches of up to 512 chunks,
+and the call graph in its own DuckDB process under a hard 2 GB memory cap, with
+SCC and PageRank computed as streams. Embeddings dominate a full rebuild, so a
+change to git or call-graph signals is recomputed with `--force-enrichments`
+without re-embedding a single chunk — minutes instead of a full reindex.
+`tea-rags tune` measures your hardware and picks batch size and concurrency in
+about 90 seconds; details in
+[Performance Tuning](https://artk0de.github.io/TeaRAGs-MCP/config/performance-tuning).
+
 ## 📏 Measured
 
 Call-graph quality is checked against independent oracles, not eyeballed.
@@ -608,8 +644,8 @@ to download the Qdrant binary on first run and for a cached npm version check in
 `tea-rags prime`. OpenAI, Cohere and Voyage are opt-in.
 
 **How big a repository can it handle?** The largest measured index is a
-production monolith of 3M+ lines of Ruby and TypeScript: ~33k files, 140k
-chunks, 1.3 GB of vectors and 1.1 GB of call graph (see
+production monolith of 3.3M lines of Ruby and TypeScript, tests included: ~34k
+files, 175k chunks, 2.0 GB of vectors and ~460 MB of call graph (see
 [System requirements](#-system-requirements)). After the first run, reindexing
 is incremental — only changed files are re-embedded.
 
