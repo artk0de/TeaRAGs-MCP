@@ -128,6 +128,42 @@ describe("renderChangelogSection — plugin and documentation themes", () => {
   });
 });
 
+// A breaking item is written as plain prose with a leading "Breaking:" marker
+// (the agent never writes emphasis); the renderer bolds the marker so a reader
+// scanning the list cannot miss it.
+describe("renderChangelogSection — breaking marker", () => {
+  const withBreaking = (description: string) => ({
+    ...DATA,
+    groups: [{ theme: "search", items: [{ description, commits: ["9506eb2"] }] }],
+  });
+
+  it("bolds a leading Breaking: marker", () => {
+    const out = renderChangelogSection(withBreaking("Breaking: `payload.preset` is gone"));
+    expect(out).toContain("* **Breaking:** `payload.preset` is gone");
+  });
+
+  it("normalises the marker's case", () => {
+    expect(renderChangelogSection(withBreaking("BREAKING: x"))).toContain("* **Breaking:** x");
+  });
+
+  it("bolds the README: and Docusaurus: surface markers of a documentation item", () => {
+    expect(renderChangelogSection(withBreaking("README: indexing speed"))).toContain("* **README:** indexing speed");
+    expect(renderChangelogSection(withBreaking("Docusaurus: silent coupling"))).toContain(
+      "* **Docusaurus:** silent coupling",
+    );
+  });
+
+  it("does not bold an arbitrary leading label", () => {
+    const out = renderChangelogSection(withBreaking("New `get_naming_lexicon` tool: shows names"));
+    expect(out).toContain("* New `get_naming_lexicon` tool: shows names");
+  });
+
+  it("leaves a mid-sentence breaking alone", () => {
+    const out = renderChangelogSection(withBreaking("no longer breaking: the old path"));
+    expect(out).not.toContain("**Breaking:**");
+  });
+});
+
 describe("renderReleaseNotes", () => {
   it("ALWAYS includes the version header with date", () => {
     expect(renderReleaseNotes(DATA)).toContain(

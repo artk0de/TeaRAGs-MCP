@@ -126,8 +126,19 @@ function renderDescriptionProse(description) {
 // the compareUrl version header (CHANGELOG). Fixes are their own theme, so no
 // per-item `fix:` prefix. `@`-tokens are escaped so a YARD tag in a description
 // can't autolink into a phantom mention.
+// An item may lead with a plain marker (the agent writes no emphasis): "Breaking:"
+// on a breaking change, "README:" / "Docusaurus:" on a documentation item naming
+// its surface. The renderer bolds it in its canonical spelling so it cannot be
+// missed while scanning. The set is closed on purpose — any "word:" would also
+// bold a sentence like "New `x` tool: …".
+const LEAD_MARKERS = ["Breaking", "README", "Docusaurus"];
+const LEAD_MARKER = new RegExp(`^(${LEAD_MARKERS.join("|")}):\\s*`, "i");
+
 function renderItem(it) {
-  return `* ${renderDescriptionProse(it.description)}`;
+  const marker = LEAD_MARKER.exec(it.description);
+  if (!marker) return `* ${renderDescriptionProse(it.description)}`;
+  const canonical = LEAD_MARKERS.find((m) => m.toLowerCase() === marker[1].toLowerCase());
+  return `* **${canonical}:** ${renderDescriptionProse(it.description.slice(marker[0].length))}`;
 }
 
 // Render only the themes present in this release, always in taxonomy order.

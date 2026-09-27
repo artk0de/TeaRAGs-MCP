@@ -85,6 +85,10 @@ commit changes how the agent behaves and is a plugin change, never a
 documentation change. Keep the two apart — `plugin` holds everything under the
 plugin scopes, `docs` holds only the documentation site and README.
 
+A `docs` item names its surface with a plain leading marker: `README: ` for
+README changes, `Docusaurus: ` for the documentation site (`docs(website)`,
+`docs(blog)`). The renderer bolds the marker; write it plain.
+
 For a scope not in the table, pick the closest theme by reading the `body`. If a
 multi-scope commit (`type(a,b):`) spans themes, use the one that best matches
 the user-facing benefit.
@@ -157,7 +161,23 @@ the user-facing benefit.
     sentence that happens to start with the product name. It also matters to
     rendering: the emphasis pass in rule 10 treats a backtick span as a wall, so
     a backticked command is left alone while a bare one can have its first word
-    marked up.
+    marked up. The same holds for EVERY project identifier the user meets
+    verbatim — always monospace, never bold or plain:
+    - tool parameters and response fields: `metaOnly`, `level: "file"`,
+      `fields`, `rankingOverlay.preset`, `payload.score`, `stableDependencies`
+    - CLI subcommands: `prime`, `projects orphans`, `index-codebase --json`
+    - skill and plugin names: `mr-review`, `report-issue`,
+      `data-driven-generation`, `dinopowers`
+    - signal names, label values and status values: `recentDominantAuthorPct`,
+      `solo`, `instability`, `stale_indexing` Bold stays reserved for product
+      concepts in prose (the emphasis pass sets it) and the lead markers (the
+      renderer sets them).
+
+12. **A breaking change leads its item with `Breaking:`.** Every commit with a
+    `!` after its scope or a `BREAKING CHANGE:` footer that you keep in `groups`
+    starts its `description` with the plain marker `Breaking: ` and then states
+    what the user must do or expect. Write the marker plain — the renderer bolds
+    it. Keep the item in the theme of the surface it breaks.
 
 Do not emit anything to stdout. The only output is the `release-notes.json`
 file.
