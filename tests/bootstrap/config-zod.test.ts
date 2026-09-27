@@ -666,7 +666,7 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     expect(trajectoryGit.chunkConcurrency).toBe(10);
     expect(trajectoryGit.chunkMaxAgeMonths).toBe(6);
     expect(trajectoryGit.chunkTimeoutMs).toBe(120000);
-    expect(trajectoryGit.chunkMaxFileLines).toBe(10000);
+    expect(trajectoryGit.chunkMaxFileLines).toBe(5000);
     expect(trajectoryGit.squashAwareSessions).toBe(false);
     expect(trajectoryGit.sessionGapMinutes).toBe(30);
     expect(trajectoryGit.blamePoolSize).toBeGreaterThanOrEqual(1);

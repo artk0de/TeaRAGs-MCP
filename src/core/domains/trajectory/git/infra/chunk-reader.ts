@@ -28,7 +28,7 @@ export type {
   WalkCommitDiscovery,
 } from "./walk-commits.js";
 
-const MAX_FILE_LINES_DEFAULT = 10000;
+const MAX_FILE_LINES_DEFAULT = 5000;
 
 /**
  * Build chunk-level churn overlays by mapping git hunks to chunk line ranges.

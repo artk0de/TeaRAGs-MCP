@@ -86,7 +86,7 @@ const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
   blamePoolSize: defaultBlamePoolSize(),
   chunkMaxAgeMonths: 6,
   chunkTimeoutMs: 120000,
-  chunkMaxFileLines: 10000,
+  chunkMaxFileLines: 5000,
   vcsAdapter: "git",
 };
 

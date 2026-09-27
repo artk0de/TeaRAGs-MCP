@@ -132,7 +132,7 @@ their own navigators.
 - **A file past `chunkMaxFileLines` is a POLICY decline, stamped
   `git.chunk.skippedAs: "oversized"` — never a walked zero.**
   `GitEnrichmentProvider#shouldEnrich` answers `"file-only"` when the
-  `fileLines` it is handed exceeds the limit (default 10000,
+  `fileLines` it is handed exceeds the limit (default 5000,
   `trajectoryGitSchema`), so the file keeps every `git.file.*` signal and the
   pipeline stamps its chunks the way it stamps a doc's; `enrichmentSkipReason`
   names `"oversized"` only when no classification flag explains the decline (a

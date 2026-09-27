@@ -268,7 +268,7 @@ describe("GitEnrichmentProvider", () => {
         fakeData, // lastFileResult passed through
         undefined, // squashOpts
         120000, // chunkTimeoutMs (default)
-        10000, // chunkMaxFileLines (default)
+        5000, // chunkMaxFileLines (default)
         undefined, // externalSemaphore (not passed when no options)
         undefined, // skipCache (not passed when no options)
         expect.any(Map), // blameByPath populated by populateBlameMap

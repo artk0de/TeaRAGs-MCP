@@ -97,7 +97,7 @@ and `tea-rags index-codebase` / `tea-rags tune` replay it automatically with
 | `TRAJECTORY_GIT_CHUNK_CONCURRENCY`     | Parallel files for chunk-level churn analysis        | `10`     |
 | `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS`  | Git log depth for chunk-level churn (months)         | `6`      |
 | `TRAJECTORY_GIT_CHUNK_TIMEOUT_MS`      | Timeout for chunk churn CLI pathspec (ms)            | `120000` |
-| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`  | Skip chunk churn for files > N lines                 | `10000`  |
+| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`  | Skip chunk churn for files > N lines                 | `5000`   |
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | Group commits into sessions (squash noise reduction) | `false`  |
 | `TRAJECTORY_GIT_SESSION_GAP_MINUTES`   | Gap between commits to split sessions                | `30`     |
 
