@@ -16,6 +16,7 @@ import { hideBin } from "yargs/helpers";
 import { openInProcessMcpSession } from "../../bootstrap/in-process-session.js";
 import type { InProcessToolSession } from "../../bootstrap/transport/in-memory.js";
 import { CLI_OWNED_TOOLS, cliCommandForTool } from "../call/cli-owned-tools.js";
+import { prepareCallProjectEnv } from "../call/project-env.js";
 import { rememberCallToolNames } from "../call/tool-name-cache.js";
 
 export interface CallArgs {
@@ -34,6 +35,12 @@ export interface CallDeps {
   /** One stderr write (a newline is appended). */
   err: (text: string) => void;
   rememberToolNames?: (names: string[]) => void;
+  /**
+   * Replay the target project's registry env before the server is built (bd
+   * tea-rags-mcp-nxwsq). Receives the parsed tool params (`{}` for a listing)
+   * — the fields a tool addresses its project by.
+   */
+  prepareProjectEnv?: (params: Record<string, unknown>) => Promise<void>;
 }
 
 /** Exit codes of `tea-rags call`. */
@@ -70,7 +77,7 @@ export async function runCall(args: CallArgs, deps: CallDeps): Promise<number> {
     return fail(deps, args, CALL_EXIT_CODES.failed, { code: "INVALID_JSON", message: parsed.message });
   }
 
-  return withSession(deps, args, async (session) => {
+  return withSession(deps, args, parsed.value, async (session) => {
     const tools = await callableTools(session, deps);
     if (!tools.some((t) => t.name === tool)) {
       const suggestions = closeMatches(
@@ -98,7 +105,7 @@ export async function runCall(args: CallArgs, deps: CallDeps): Promise<number> {
 }
 
 async function listTools(args: CallArgs, deps: CallDeps): Promise<number> {
-  return withSession(deps, args, async (session) => {
+  return withSession(deps, args, {}, async (session) => {
     const tools = await callableTools(session, deps);
     const cliOwned = Object.entries(CLI_OWNED_TOOLS).map(([name, command]) => ({ name, command }));
     if (args.json === true) {
@@ -124,10 +131,14 @@ async function callableTools(session: InProcessToolSession, deps: CallDeps): Pro
 async function withSession(
   deps: CallDeps,
   args: CallArgs,
+  params: Record<string, unknown>,
   body: (session: InProcessToolSession) => Promise<number>,
 ): Promise<number> {
   let session: InProcessToolSession | undefined;
   try {
+    // The server's gating and config are parsed from env at open — the
+    // project's registry env has to be in place first.
+    await deps.prepareProjectEnv?.(params);
     session = await deps.openSession();
     return await body(session);
   } catch (error) {
@@ -306,6 +317,7 @@ export const callCommand: CommandModule<object, CallArgs> = {
           rememberToolNames: (names) => {
             rememberCallToolNames(names);
           },
+          prepareProjectEnv: prepareCallProjectEnv,
         },
       );
     } finally {

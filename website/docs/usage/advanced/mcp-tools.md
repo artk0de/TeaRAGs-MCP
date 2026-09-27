@@ -247,10 +247,14 @@ tea-rags call --list                                             # what this con
 | exit `1` | The tool returned an error, the input failed schema validation, or `params` is not a JSON object |
 | exit `2` | Unknown tool (close matches are suggested), or a tool with its own CLI command |
 
-The server's environment is your shell's, so the tool set follows it: codegraph
-tools (`get_callers`, `trace_path`, …) appear only when `CODEGRAPH_ENABLED=true`
-is set, exactly as for `tea-rags server`. To reproduce what your MCP client
-sees, export the same variables its server config sets.
+The server's environment is your shell's, plus the settings the target project
+was indexed with: `call` finds the project from the `project`, `collection` or
+`path` argument (else the current directory) and fills every variable your shell
+leaves unset from its registry entry, the same way `index-codebase` does. A
+project indexed with codegraph therefore gets its codegraph tools (`get_callers`,
+`trace_path`, …) without exporting `CODEGRAPH_ENABLED=true`. For a project that
+is not registered nothing is filled in; to reproduce what your MCP client sees,
+export the same variables its server config sets.
 
 Two differences from a long-running server:
 

@@ -282,6 +282,51 @@ describe("runCall — results and exit codes", () => {
   });
 });
 
+// bd tea-rags-mcp-nxwsq: the target project's registry env is replayed
+// before the server is built, so its gating (codegraph) matches the project.
+describe("runCall — project env replay", () => {
+  it("hands the parsed params to prepareProjectEnv before the session opens", async () => {
+    const h = harness(makeApp());
+    const seen: { params: Record<string, unknown>; openedBefore: number }[] = [];
+    h.deps.prepareProjectEnv = async (params) => {
+      seen.push({ params, openedBefore: h.opened() });
+    };
+
+    const code = await call(h, { tool: "get_collection_info", params: '{"name":"code_a","project":"alpha"}' });
+
+    expect(code).toBe(0);
+    expect(seen).toEqual([{ params: { name: "code_a", project: "alpha" }, openedBefore: 0 }]);
+  });
+
+  it("replays the cwd's project for --list (no params)", async () => {
+    const h = harness(makeApp());
+    const seen: Record<string, unknown>[] = [];
+    h.deps.prepareProjectEnv = async (params) => {
+      seen.push(params);
+    };
+
+    await call(h, { list: true });
+
+    expect(seen).toEqual([{}]);
+  });
+
+  it("a replay that cannot resolve the project's backend fails the call before any session", async () => {
+    const h = harness(makeApp());
+    h.deps.prepareProjectEnv = async () => {
+      throw new Error("registry entry contradicts itself");
+    };
+
+    const code = await call(h, { tool: "get_collection_info", params: '{"name":"code_a"}', json: true });
+
+    expect(code).toBe(1);
+    expect(h.opened()).toBe(0);
+    expect((JSON.parse(h.stdout[0]) as { error: { code: string; message: string } }).error).toMatchObject({
+      code: "CALL_FAILED",
+      message: "registry entry contradicts itself",
+    });
+  });
+});
+
 describe("runCall — --list", () => {
   it("lists callable tools one per line with a one-line description, excluding CLI-owned ones", async () => {
     const h = harness(makeApp());
