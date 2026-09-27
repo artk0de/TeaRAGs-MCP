@@ -49,6 +49,7 @@ import type {
   LanguageWalker,
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/index.js";
+import { readEcmascriptImportSpecifiers } from "../typescript/chunking/index.js";
 import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
@@ -122,6 +123,9 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // symbolIds are ALREADY composed — the engine emits each verbatim at `index + i`,
   // flagged `claimed`.
   classifier: new JsChunkClassifier(),
+  // The JavaScript grammar emits the same module-reference nodes as the
+  // TypeScript one, so both facades share one reader (bd tea-rags-mcp-s9b0d).
+  readImportSpecifiers: readEcmascriptImportSpecifiers,
 };
 
 /**

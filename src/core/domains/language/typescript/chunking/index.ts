@@ -19,3 +19,4 @@ export { typescriptChunkClassifier, typescriptFunctionDeclarationFilterHook } fr
 export { testDslFilterHook, isTestFile, getCallName } from "./test-dsl-filter.js";
 export { testScopeChunkerHook, isDslContainerCall, buildScopeTree, produceScopeChunks } from "./test-scope-chunker.js";
 export { findClassBody } from "./utils.js";
+export { readEcmascriptImportSpecifiers } from "./import-specifiers.js";

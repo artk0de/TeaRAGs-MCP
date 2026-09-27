@@ -102,6 +102,8 @@ export interface LanguageConfig {
    * languages whose default generic shaping is correct for every node.
    */
   classifier?: LanguageChunkClassifier;
+  /** `LanguageChunkerHooks.readImportSpecifiers`, threaded the same way. */
+  readImportSpecifiers?: (root: AstNode) => string[];
 }
 
 /**

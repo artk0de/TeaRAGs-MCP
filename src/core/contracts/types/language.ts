@@ -521,6 +521,15 @@ export interface LanguageChunkerHooks {
    * `domains/language/` import — the reverse-guard forbids it).
    */
   classifier?: LanguageChunkClassifier;
+  /**
+   * Module specifiers the file references, read off the chunk parse, in source
+   * order — what `payload.imports` carries (bd tea-rags-mcp-s9b0d). The AST
+   * sees a statement across line breaks and never reads a comment or a string
+   * literal as code, which a line-bound regex over the text cannot promise.
+   * Absent → ingest keeps the regex harvest (`extractImportsExports`), as it
+   * does for any file whose parse produced no tree.
+   */
+  readImportSpecifiers?: (root: AstNode) => string[];
 }
 
 /**

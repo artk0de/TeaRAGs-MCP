@@ -33,5 +33,9 @@ export interface WorkerResponse {
   /** yl9tv — codegraph FileExtraction from the SAME parse, present iff the
    *  request set emitExtraction and the language has a walker. */
   extraction?: FileExtraction;
+  /** bd tea-rags-mcp-s9b0d — module specifiers read off the SAME parse,
+   *  present iff the language declares an import reader and the parse
+   *  produced a tree. Absent → the ingest side runs its regex harvest. */
+  imports?: string[];
   error?: string;
 }

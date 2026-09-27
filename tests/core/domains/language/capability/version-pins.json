@@ -2,7 +2,7 @@
   "*": {
     "chunking": {
       "version": 2,
-      "digest": "sha256:fe2819563671edb1880c9a96573df2e34ea3aa539a4fa87500fdc7c9724a5651"
+      "digest": "sha256:d377111d68ffc4c46c7005d730a74a7a2762ef602b6c8ad5889b1a19b59c73a0"
     },
     "walker": {
       "version": 3,
@@ -42,7 +42,7 @@
     },
     "walker": {
       "version": 4,
-      "digest": "sha256:42ed01ab7dff1716b22764209deb402b2385a12ae3803c7b281590bcc9810890"
+      "digest": "sha256:41ed2a1cb7c0180be6e94470da0c24d03107d414c6e049522cfabc6d0ee847ff"
     }
   },
   "markdown": {
@@ -86,11 +86,11 @@
   "typescript": {
     "chunking": {
       "version": 2,
-      "digest": "sha256:5afc8b3c4fa81ca815fd3fa19407ed7b1e278134849096d131699aa100b61ddd"
+      "digest": "sha256:204a0f22ae516454b3306746a0775a40680ed7b0aa120ee7b773032aa61455d6"
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:0b02ec62d31243ef6efe379862a58fcc8d803f2186e6fe5871fe75a98d1ea63a"
+      "digest": "sha256:dc1039481a420772ac640d1d101a403c8c63e4ed45876b73ac3b16d3af4892f0"
     }
   }
 }

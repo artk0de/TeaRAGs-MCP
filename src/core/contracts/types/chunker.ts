@@ -61,6 +61,14 @@ export interface BodyChunkResult {
    * like a test example under its {@link TEST_SCOPE_PARENT_TYPE} scope.
    */
   parentType?: string;
+  /**
+   * The chunk's own first row when that row says what the chunk IS — a test
+   * example's `it(...)` / `it "..." do` line (bd tea-rags-mcp-l24yk). When the
+   * engine's hard cap splits the chunk, every `#part2+` repeats it after the
+   * container prefix, as a split method repeats its signature. Absent means
+   * the parts carry the container prefix alone.
+   */
+  partHeader?: string;
 }
 
 /**

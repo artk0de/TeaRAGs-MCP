@@ -334,6 +334,7 @@ export class TreeSitterChunker implements CodeChunker {
         keepShortChildChunkTypes: hooks.keepShortChildChunkTypes,
         disambiguateOverloads: kernel.disambiguateOverloads,
         classifier: hooks.classifier,
+        readImportSpecifiers: hooks.readImportSpecifiers,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -354,12 +355,17 @@ export class TreeSitterChunker implements CodeChunker {
    * the walker can still extract symbols — parity with the codegraph provider's
    * direct-mode `extractOneFile`); it is `null` only for documentation
    * languages, unsupported languages, and hard parse failures.
+   *
+   * `imports` is the language's `readImportSpecifiers` answer over that same
+   * tree (bd tea-rags-mcp-s9b0d) — absent when there is no tree or the
+   * language declares no reader, which is ingest's cue to keep the regex
+   * harvest.
    */
   async chunkWithTree(
     code: string,
     filePath: string,
     language: string,
-  ): Promise<{ chunks: CodeChunk[]; tree: MaterializedTree | null }> {
+  ): Promise<{ chunks: CodeChunk[]; tree: MaterializedTree | null; imports?: string[] }> {
     // Documentation languages (markdown) skip tree-sitter entirely and route to
     // the remark-based MarkdownChunker. `isDocumentation` is the gate: markdown
     // is the only documentation language and the only one carrying the legacy
@@ -392,6 +398,9 @@ export class TreeSitterChunker implements CodeChunker {
     // threw — set on the catch path, undefined on the rootNode.hasError path
     // (no exception there; the syntax-error cause is derived from the tree).
     let parseError: unknown = undefined;
+    // Read off the tree as soon as it exists, so the character fallback below
+    // (a clean parse that yielded no chunks) still reports them.
+    let imports: string[] | undefined;
 
     try {
       // Materialize the native tree immediately after parse — ONE eager pass
@@ -403,6 +412,7 @@ export class TreeSitterChunker implements CodeChunker {
       astBroken = nativeTree.rootNode.hasError;
       const root = materializeTree(nativeTree.rootNode, code);
       materializedTree = { rootNode: root };
+      imports = langConfig.readImportSpecifiers?.(root);
 
       const chunks: CodeChunk[] = [];
       const nodes = this.findChunkableNodes(root, langConfig.chunkableTypes, langConfig.hooks, code, filePath);
@@ -434,7 +444,11 @@ export class TreeSitterChunker implements CodeChunker {
       // character fallback): done. A degraded AST (rootNode.hasError) that still
       // yields chunks is indexed exactly as today — no quarantine, no marker.
       if (chunks.length > 0 || code.length <= 100) {
-        return { chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)), tree: materializedTree };
+        return {
+          chunks: this.enforceMaxChunkSize(this.mergeSmallChunks(chunks)),
+          tree: materializedTree,
+          ...(imports ? { imports } : {}),
+        };
       }
       // Parse succeeded but yielded zero chunks on a non-trivial file — fall
       // through to the shared character-fallback site below (keeping the
@@ -459,6 +473,7 @@ export class TreeSitterChunker implements CodeChunker {
       return {
         chunks: this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language)),
         tree: materializedTree,
+        ...(imports ? { imports } : {}),
       };
     } catch (fallbackError) {
       if (!astBroken) throw fallbackError;
@@ -680,6 +695,7 @@ export class TreeSitterChunker implements CodeChunker {
                 symbolId: result.symbolId ?? this.buildSymbolId(parentName),
                 lineRanges: result.lineRanges,
                 contextPrefix: body.contextPrefix,
+                ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
               },
             });
           }
@@ -970,6 +986,7 @@ export class TreeSitterChunker implements CodeChunker {
     for (let i = 0; i < result.length; i++) {
       result[i].metadata.chunkIndex = i;
       delete result[i].metadata.contextPrefix;
+      delete result[i].metadata.partHeader;
     }
     return result;
   }
@@ -983,15 +1000,29 @@ export class TreeSitterChunker implements CodeChunker {
    * line indices stay indices into the chunk's content, so the line mapping of
    * `splitOversizedChunk` reads them unchanged. A prefix taking half the budget
    * or more is not repeated, as in `emitSplitSymbol`.
+   *
+   * A `partHeader` (a test example's `it` row, bd tea-rags-mcp-l24yk) is the
+   * chunk's own first row after that prefix: `#part1` holds it as its own row,
+   * and every later segment repeats it after the prefix, so a tail names the
+   * example and not just the `describe`. It is text only — segment line
+   * indices ignore it, so line ranges stay each part's own rows. Used only when
+   * the chunk opens with it and it fits beside the prefix in half the budget.
    */
   private segmentUnderContextPrefix(chunk: CodeChunk, max: number): ContentSegment[] {
-    const prefix = chunk.metadata.contextPrefix;
-    if (!prefix || prefix.length * 2 >= max || !chunk.content.startsWith(prefix)) {
-      return this.splitContentIntoSegments(chunk.content, max);
-    }
-    const prefixLines = prefix.split("\n").length - 1;
-    return this.splitContentIntoSegments(chunk.content.slice(prefix.length), max - prefix.length).map((segment) => ({
-      text: `${prefix}${segment.text}`,
+    const rawPrefix = chunk.metadata.contextPrefix ?? "";
+    const prefix = rawPrefix.length * 2 < max && chunk.content.startsWith(rawPrefix) ? rawPrefix : "";
+    const body = chunk.content.slice(prefix.length);
+    const { partHeader } = chunk.metadata;
+    const header =
+      partHeader !== undefined &&
+      body.split("\n", 1)[0].trim() === partHeader &&
+      (prefix.length + partHeader.length + 1) * 2 < max
+        ? `${partHeader}\n`
+        : "";
+    if (prefix === "" && header === "") return this.splitContentIntoSegments(chunk.content, max);
+    const prefixLines = prefix === "" ? 0 : prefix.split("\n").length - 1;
+    return this.splitContentIntoSegments(body, max - prefix.length - header.length).map((segment, i) => ({
+      text: `${prefix}${i === 0 ? "" : header}${segment.text}`,
       firstLine: segment.firstLine + prefixLines,
       lastLine: segment.lastLine + prefixLines,
     }));
@@ -1397,6 +1428,7 @@ export class TreeSitterChunker implements CodeChunker {
           symbolId: result.symbolId ?? this.buildSymbolId(childName),
           lineRanges: result.lineRanges,
           ...(body.contextPrefix === undefined ? {} : { contextPrefix: body.contextPrefix }),
+          ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
         },
       });
     }
