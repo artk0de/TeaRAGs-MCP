@@ -172,6 +172,11 @@ export { validatePath } from "../../infra/collection-name.js";
 export { createPathCollectionResolver, resolveCollection } from "../internal/collection-resolver.js";
 export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
 
+// ── Build lease — `projects orphans` / `doctor` skip a collection a live run
+// is building, by the same predicate cleanupOrphanedVersions uses (bd
+// tea-rags-mcp-9ovlp) ───
+export { isCollectionBuildInFlight } from "../../domains/ingest/infra/collection-build-lease.js";
+
 // ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
 export { QuarantineStore } from "../../domains/ingest/sync/index.js";
 export type { QuarantineEntry } from "../../domains/ingest/sync/index.js";

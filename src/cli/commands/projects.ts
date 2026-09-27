@@ -9,6 +9,7 @@ import {
   chunkPointsFilter,
   CollectionRegistry,
   InvalidParameterError,
+  isCollectionBuildInFlight,
   PROJECT_NAME_RE,
   ProjectRegistryOps,
   QdrantManager,
@@ -61,7 +62,34 @@ type QdrantSurface = Pick<QdrantManager, "listCollections" | "countPoints"> & {
    * Used to exclude physical collections that back an alias from the orphan list.
    */
   aliases?: Pick<QdrantManager["aliases"], "listAliases">;
+  /**
+   * Reads a collection's indexing marker — the lease a live build holds.
+   * Optional for partial mocks; without it no collection counts as in flight.
+   */
+  getPoint?: QdrantManager["getPoint"];
 };
+
+/**
+ * Collections neither registered nor backing an alias, minus the ones a live
+ * run is building. A force reindex fills `<name>_v<N>` off to the side until it
+ * flips the alias, so by name it IS an unregistered, unaliased collection; only
+ * its lease (`isCollectionBuildInFlight`, the predicate
+ * `cleanupOrphanedVersions` skips on, bd tea-rags-mcp-nrylk) tells it from a
+ * leftover. Reporting it sent the operator to delete a build mid-run (bd
+ * tea-rags-mcp-9ovlp). Shared by `projects orphans` and `doctor`.
+ */
+export async function listOrphanPhysicalCollections(
+  client: Pick<QdrantSurface, "getPoint">,
+  physicalCollectionNames: readonly string[],
+  isAccounted: (physicalCollectionName: string) => boolean,
+): Promise<string[]> {
+  const candidates = physicalCollectionNames.filter((name) => !isAccounted(name));
+  const { getPoint } = client;
+  if (!getPoint) return candidates;
+  const reader = { getPoint: getPoint.bind(client) };
+  const inFlight = await Promise.all(candidates.map(async (name) => isCollectionBuildInFlight(reader, name)));
+  return candidates.filter((_, index) => !inFlight[index]);
+}
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -394,8 +422,10 @@ export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Pro
   }
 
   const physicalCollectionNames = await client.listCollections();
-  const orphanPhysicalCollectionNames = physicalCollectionNames.filter(
-    (physicalCollectionName) => !registered.has(physicalCollectionName) && !aliasedTargets.has(physicalCollectionName),
+  const orphanPhysicalCollectionNames = await listOrphanPhysicalCollections(
+    client,
+    physicalCollectionNames,
+    (physicalCollectionName) => registered.has(physicalCollectionName) || aliasedTargets.has(physicalCollectionName),
   );
 
   const rows = await Promise.all(

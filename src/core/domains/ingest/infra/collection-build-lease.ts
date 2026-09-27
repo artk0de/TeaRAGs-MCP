@@ -38,7 +38,10 @@ import {
  * reclaim a collection, and hoarding collections because one marker read flaked
  * is worse than the behaviour that preceded the lease being read at all.
  */
-export async function isCollectionBuildInFlight(qdrant: QdrantManager, collection: string): Promise<boolean> {
+export async function isCollectionBuildInFlight(
+  qdrant: Pick<QdrantManager, "getPoint">,
+  collection: string,
+): Promise<boolean> {
   const marker = await readIndexingMarker(qdrant, collection);
   return marker !== undefined && isBuildLive(marker, Date.now(), Number.NEGATIVE_INFINITY);
 }
@@ -87,7 +90,7 @@ function isBuildLive(marker: IndexingMarkerPayload, now: number, evidenceAfter: 
 }
 
 async function readIndexingMarker(
-  qdrant: QdrantManager,
+  qdrant: Pick<QdrantManager, "getPoint">,
   collection: string,
 ): Promise<IndexingMarkerPayload | undefined> {
   try {
