@@ -44,7 +44,7 @@ import type {
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker, deriveStructuralConformance } from "../kernel/index.js";
 import { isEcmascriptSourcePath } from "../shared/ecmascript-symbol-lookup.js";
-import { typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
+import { readEcmascriptImportSpecifiers, typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
 import { tsNameOf } from "./walker/name-of.js";
@@ -93,6 +93,7 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
   alwaysExtractChildren: true,
   hooks: typescriptHooks,
   classifier: typescriptChunkClassifier,
+  readImportSpecifiers: readEcmascriptImportSpecifiers,
 };
 
 /**
