@@ -28,7 +28,7 @@ export type {
   WalkCommitDiscovery,
 } from "./walk-commits.js";
 
-const MAX_FILE_LINES_DEFAULT = 10000;
+const MAX_FILE_LINES_DEFAULT = 5000;
 
 /**
  * Build chunk-level churn overlays by mapping git hunks to chunk line ranges.
@@ -107,7 +107,15 @@ export async function buildChunkChurnMapUncached(
   onWalkStats?: (stats: ChunkChurnWalkStats) => void,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Phase 1: initialize per-chunk accumulator state
-  const { relativeChunkMap, accumulators } = buildAccumulators(adapter.repoRoot, chunkMap);
+  // Files past maxFileLines are dropped here — no accumulator, so no overlay.
+  const { relativeChunkMap, accumulators, skippedLargeFiles } = buildAccumulators(
+    adapter.repoRoot,
+    chunkMap,
+    maxFileLines,
+  );
+  if (skippedLargeFiles > 0 && isDebug()) {
+    console.error(`[ChunkChurn] skipped ${skippedLargeFiles} large files (> ${maxFileLines} lines): no chunk overlay`);
+  }
 
   if (relativeChunkMap.size === 0) {
     // No walk happened — the per-walk instrumentation callback is NOT invoked.
@@ -126,7 +134,6 @@ export async function buildChunkChurnMapUncached(
     concurrency,
     maxAgeMonths,
     chunkTimeoutMs,
-    maxFileLines,
     externalSemaphore,
     squashOpts,
     fileChurnDataMap,

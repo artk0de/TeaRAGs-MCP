@@ -65,10 +65,11 @@ carry their own navigators.
   `CALLABLE_CHUNK_TYPES` is.
 - **A ZERO is discarded from the sample unless the signal declares
   `stats.zeroIsValidObservation`.** The same `tryPushSignalValue` drops it,
-  because for most signals 0 means the producer never reached the file — a file
-  past `chunkMaxFileLines` publishes `git.chunk.commitCount: 0` on every chunk,
-  and `run-finalize.ts` falls back to `ZERO_FILE_METRICS` for a path its metrics
-  map has no row for. A ratio inverts that: `git.*.bugFixRate` is 0 because the
+  because for most signals 0 means the producer never reached the file —
+  `run-finalize.ts` falls back to `ZERO_FILE_METRICS` for a path its metrics map
+  has no row for. (A file past `chunkMaxFileLines` no longer contributes zeros:
+  its chunks carry `git.chunk.skippedAs: "oversized"` and no numeric chunk block
+  — `git/CLAUDE.md`.) A ratio inverts that: `git.*.bugFixRate` is 0 because the
   commits held no fix, which is a reading, and both bugFixRate descriptors carry
   the flag. Why: leave a real zero out and the percentiles describe P(x | x > 0)
   — every boundary sits above the population, and where the survivors are mostly

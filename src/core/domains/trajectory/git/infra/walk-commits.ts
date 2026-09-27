@@ -87,7 +87,6 @@ export interface WalkCommitsOptions {
   concurrency: number;
   maxAgeMonths: number;
   chunkTimeoutMs: number;
-  maxFileLines: number;
   externalSemaphore?: ChunkConcurrencySemaphore;
   /**
    * Optional reference squashOpts so signature parity with the original is
@@ -143,7 +142,6 @@ interface HunkCollection {
   blobReads: number;
   patchCalls: number;
   memoHits: number;
-  skippedLargeFiles: number;
   skippedEmptyBlobs: number;
   holdCount: number;
   semWaitMs: number;
@@ -265,7 +263,7 @@ async function collectHunksPerFile(
   opts: WalkCommitsOptions,
   discovery: CommitDiscoveryResult,
 ): Promise<HunkCollection> {
-  const { adapter, relativeChunkMap, maxFileLines, diffMemo } = opts;
+  const { adapter, relativeChunkMap, diffMemo } = opts;
   const acquire = createAcquire(opts.concurrency, opts.externalSemaphore);
   const ownsReader = opts.blobReader === undefined;
   const blobReader = opts.blobReader ?? adapter.createBlobBatchReader();
@@ -275,7 +273,6 @@ async function collectHunksPerFile(
     blobReads: 0,
     patchCalls: 0,
     memoHits: 0,
-    skippedLargeFiles: 0,
     skippedEmptyBlobs: 0,
     holdCount: 0,
     semWaitMs: 0,
@@ -295,14 +292,9 @@ async function collectHunksPerFile(
     commitTaskIds: string[],
   ): Promise<void> => {
     const filePath = changed.path;
-    const entries = relativeChunkMap.get(headPath);
-    if (!entries) return;
-
-    const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
-    if (maxLine > maxFileLines) {
-      out.skippedLargeFiles++;
-      return;
-    }
+    // A file past maxFileLines never reaches here: `buildAccumulators` drops it
+    // from the map, so it has neither hunks nor an overlay (bd tea-rags-mcp-2brzq).
+    if (!relativeChunkMap.has(headPath)) return;
 
     let hunks = diffMemo?.get(commit.sha, filePath);
     if (hunks === undefined) {
@@ -505,7 +497,7 @@ export async function walkCommits(opts: WalkCommitsOptions): Promise<WalkCommits
   if (isDebug()) {
     console.error(
       `[ChunkChurn] Hunk mapping: ${collected.patchCalls} patches, ${collected.blobReads} blob reads, ${collected.memoHits} memo hits in ${Date.now() - t1}ms` +
-        ` (skipped: ${collected.skippedLargeFiles} large files, ${collected.skippedEmptyBlobs} empty blobs)`,
+        ` (skipped: ${collected.skippedEmptyBlobs} empty blobs)`,
     );
   }
 

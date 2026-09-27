@@ -78,12 +78,9 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       10,
     );
 
-    const overlay = result.get("big-file.ts");
-    if (overlay) {
-      for (const [, o] of overlay) {
-        expect(o.commitCount).toBe(0);
-      }
-    }
+    // bd tea-rags-mcp-2brzq: an unwalked file publishes NO chunk overlay. The
+    // former all-zero block read as "no commit ever touched this method".
+    expect(result.has("big-file.ts")).toBe(false);
   });
 
   it("diffs a commit that carries no parents (loose fixture shape) against the empty tree", async () => {

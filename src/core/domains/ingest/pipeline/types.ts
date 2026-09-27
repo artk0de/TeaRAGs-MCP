@@ -56,6 +56,8 @@ export interface ChunkItem extends WorkItem {
       imports?: string[];
       /** Original method/block line count before chunk splitting. Used by decomposition signals. */
       methodLines?: number;
+      /** Physical line count of the file (symbol-mass pass); the enrichment policy's size input. */
+      moduleLines?: number;
     };
   };
   /** Pre-computed chunk ID */

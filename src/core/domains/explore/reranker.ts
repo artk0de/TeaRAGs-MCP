@@ -1026,8 +1026,8 @@ export class Reranker {
         // No adaptive and no fallback — rule cannot fire safely. 0 is the
         // narrowest sentinel available: the comparison is inclusive, so this
         // still matches a support of exactly 0 (a real value —
-        // `git.*.commitCount` publishes 0 for chunks past chunkMaxFileLines),
-        // and nothing above it. Descriptors are required to carry `fallback`
+        // `git.chunk.commitCount` is 0 for a chunk no commit in the window
+        // touched), and nothing above it. Descriptors are required to carry `fallback`
         // precisely so this path stays unreachable.
         return { ...rule, whenSupportAtOrBelow: 0 };
       }

@@ -19,7 +19,7 @@ import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { ChunkPhase } from "./chunk-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
-import { enrichmentScope, enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
+import { enrichmentScope, enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 interface FilePhaseState {
@@ -301,6 +301,7 @@ export class FilePhase {
     items: ChunkItem[],
     enrichPaths: string[],
   ): Promise<void> {
+    const linesByRel = this.fileLinesByRel(items, root);
     return this.executor
       .runFileBatch(ctx.provider, root, enrichPaths, {
         collectionName: this.coll || undefined,
@@ -324,8 +325,11 @@ export class FilePhase {
           this.runStartedAt,
           // A file the provider declined at this level is intentionally
           // unenriched — counted as ignored, not missed, and never stamped
-          // `enrichedAt` (its terminal marker is the skip stamp).
-          (rel, level) => enrichmentSkipReason(ctx.provider, rel, level) !== null,
+          // `enrichedAt` (its terminal marker is the skip stamp). The line
+          // count must reach the chunk-level question, or an oversized file
+          // outside the git window gets a bare chunk `enrichedAt` beside the
+          // chunk phase's `skippedAs: "oversized"` (bd tea-rags-mcp-2brzq).
+          (rel, level) => enrichmentSkipReason(ctx.provider, rel, level, { fileLines: linesByRel.get(rel) }) !== null,
         );
         state.streamingApplies++;
         pipelineLog.enrichmentPhase("STREAMING_APPLY", {
@@ -497,6 +501,23 @@ export class FilePhase {
       .catch((error: unknown) => {
         console.error(`[Enrichment:${ctx.key}] file skip-stamp write failed (${stamps.length} points):`, error);
       });
+  }
+
+  /** Per repo-relative path, the file's line count as this batch's chunks tell it (`fileLinesOf`). */
+  private fileLinesByRel(items: ChunkItem[], root: string): Map<string, number> {
+    const spans = new Map<string, { endLine: number; moduleLines?: number }[]>();
+    for (const item of items) {
+      const rel = relative(root, item.chunk.metadata.filePath);
+      const arr = spans.get(rel) ?? [];
+      arr.push({ endLine: item.chunk.endLine, moduleLines: item.chunk.metadata.moduleLines });
+      spans.set(rel, arr);
+    }
+    const out = new Map<string, number>();
+    for (const [rel, arr] of spans) {
+      const lines = fileLinesOf(arr);
+      if (lines !== undefined) out.set(rel, lines);
+    }
+    return out;
   }
 
   private uniqueRelPaths(items: ChunkItem[], root: string): string[] {

@@ -26,7 +26,7 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
-import { enrichmentScope, enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
+import { enrichmentScope, enrichmentSkipReason, fileLinesOf, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const CHUNK_ENRICHMENT_CONCURRENCY = 10;
@@ -714,7 +714,7 @@ export class ChunkPhase {
     if (!ctx.provider.shouldEnrich) return;
     const stamps: { id: string; skippedAs: EnrichmentSkipReason }[] = [];
     for (const [rel, entries] of map) {
-      const skippedAs = enrichmentSkipReason(ctx.provider, rel, "chunk");
+      const skippedAs = enrichmentSkipReason(ctx.provider, rel, "chunk", { fileLines: fileLinesOf(entries) });
       if (skippedAs === null) continue;
       for (const entry of entries) stamps.push({ id: entry.chunkId, skippedAs });
     }
@@ -735,13 +735,15 @@ export class ChunkPhase {
       const fp = item.chunk.metadata.filePath;
       const rel = fp.startsWith(pathBase) ? fp.slice(pathBase.length + 1) : fp;
       const arr = map.get(rel) ?? [];
-      const { symbolId } = item.chunk.metadata;
+      const { symbolId, moduleLines } = item.chunk.metadata;
       arr.push({
         chunkId: item.chunkId,
         startLine: item.chunk.startLine,
         endLine: item.chunk.endLine,
         // The codegraph chunk-owner rule anchors on it (bd tea-rags-mcp-9i2ow).
         ...(typeof symbolId === "string" ? { symbolId } : {}),
+        // The size-driven chunk decline reads it per FILE (bd tea-rags-mcp-2brzq).
+        ...(typeof moduleLines === "number" ? { moduleLines } : {}),
       });
       map.set(rel, arr);
     }
@@ -775,7 +777,7 @@ export class ChunkPhase {
     const out = new Map<string, ChunkLookupEntry[]>();
     for (const [filePath, entries] of map) {
       const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
-      if (enrichmentScope(provider, rel) === "full") out.set(filePath, entries);
+      if (enrichmentScope(provider, rel, { fileLines: fileLinesOf(entries) }) === "full") out.set(filePath, entries);
     }
     return out;
   }

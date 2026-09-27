@@ -147,7 +147,10 @@ export const trajectoryGitSchema = z.object({
   blamePoolSize: intWithDefault(defaultBlamePoolSize()),
   chunkMaxAgeMonths: floatWithDefault(6),
   chunkTimeoutMs: intWithDefault(120000),
-  chunkMaxFileLines: intWithDefault(10000),
+  // Files above it keep git.file.* but get git.chunk.skippedAs "oversized"
+  // (bd tea-rags-mcp-2brzq). 5000: tea-rags has 2 code files above it,
+  // taxdome 0 (max 4653); the walk cost it saves is ~0.2-0.7 s per file.
+  chunkMaxFileLines: intWithDefault(5000),
   squashAwareSessions: booleanFromEnv,
   sessionGapMinutes: intWithDefault(30),
 });

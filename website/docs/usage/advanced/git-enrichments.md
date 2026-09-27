@@ -330,7 +330,7 @@ Available weight keys for custom reranking:
 | `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | `5000` | Skip chunk enrichment for files larger than N lines (legacy: `GIT_CHUNK_MAX_FILE_LINES`)                                       |
 | `GIT_CHUNK_MAX_AGE_MONTHS` | `6`       | Time window for chunk-level churn analysis (months). `0` = no age limit.                           |
 | `GIT_CHUNK_CONCURRENCY`    | `10`      | Parallel commit processing for chunk churn                                                         |
-| `GIT_CHUNK_MAX_FILE_LINES` | `10000`   | Skip files larger than this for chunk analysis                                                     |
+| `GIT_CHUNK_MAX_FILE_LINES` | `5000`    | Skip files larger than this for chunk analysis                                                     |
 
 </details>
 

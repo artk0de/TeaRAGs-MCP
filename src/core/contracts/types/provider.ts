@@ -724,10 +724,20 @@ export interface EnrichmentProvider {
    * everything as before). `classification` is duck-typed structurally
    * (contracts is pure — no infra import); the canonical type is
    * FileClassification in contracts/types/file-classification.ts.
+   *
+   * `fileLines` is the file's physical line count as the caller knows it: the
+   * chunker's `moduleLines` when any chunk at hand carries it, otherwise the
+   * largest chunk `endLine` at hand — a lower bound. Absent when the caller has
+   * no chunk of the file (file-level dispatch by path). A provider declining
+   * by size must therefore treat absent as "not oversized", and should decline
+   * only the CHUNK level (`"file-only"`): file-level callers never know the
+   * count, so a size-driven `"none"` would be answered differently per caller
+   * (bd tea-rags-mcp-2brzq).
    */
   shouldEnrich?: (file: {
     relPath: string;
     classification: { isSource: boolean; isGenerated: boolean; isDocumentation: boolean; isTest: boolean };
+    fileLines?: number;
   }) => EnrichmentScope;
   /**
    * Worker-pool descriptor for the unified enrichment executor. Absent ⇒

@@ -74,20 +74,26 @@
   itself instead of calling those builders drifts from the applier with nothing
   failing — the two write the same keys on the same points, and only a live
   query shows which one was last.
-- **A point a provider declined MUST get `<provider>.<level>.skippedAs`** — one
-  of `"generated" | "test" | "documentation" | "policy"`
-  (`EnrichmentSkipReason`, `policy.ts`). `"policy"` is the mandatory catch-all
-  when no classification flag explains the decline (`enrichmentSkipReason`,
-  `policy.ts`). `skippedAs` and `enrichedAt` are mutually exclusive terminal
-  states of one decision, which is why
+- **A point a provider declined MUST get `<provider>.<level>.skippedAs`** — a
+  value of `EnrichmentSkipReason` (`policy.ts`). `"oversized"` is named when the
+  file's line count (`fileLinesOf` → `shouldEnrich`'s `fileLines`) explains the
+  decline and no classification flag does; `"policy"` is the mandatory catch-all
+  when neither does (`enrichmentSkipReason`). Every chunk-level policy question
+  must carry the line count, and every Qdrant scroll feeding one must project
+  `moduleLines` — otherwise a size-driven decline is invisible at that site and
+  the point gets `enrichedAt` beside the chunk phase's stamp (bd
+  tea-rags-mcp-2brzq). `skippedAs` and `enrichedAt` are mutually exclusive
+  terminal states of one decision, which is why
   `EnrichmentRecovery#buildUnenrichedFilter` is the conjunction
   `is_empty(enrichedAt) AND is_empty(skippedAs)`. Only
   `EnrichmentApplier#applySkipStamps` writes the stamp — it owns the whole
-  `<provider>.<level>` subtree; the decision stays in policy.ts. **Corollary:**
-  loosening a provider's `shouldEnrich` MUST clear the now-stale stamps. Why: an
-  unstamped decline stays a recovery candidate on every run forever; a stale
-  stamp hides the point from recovery permanently. No mechanism enforces the
-  corollary — it is an obligation on the edit.
+  `<provider>.<level>` subtree and REPLACES it (delete the subtree, then set
+  `skippedAs`), so a point an earlier run enriched keeps no stale overlay or
+  `enrichedAt` after a `--force-enrichments` re-stamp; the decision stays in
+  policy.ts. **Corollary:** loosening a provider's `shouldEnrich` MUST clear the
+  now-stale stamps. Why: an unstamped decline stays a recovery candidate on
+  every run forever; a stale stamp hides the point from recovery permanently. No
+  mechanism enforces the corollary — it is an obligation on the edit.
 
 ## Mechanics
 

@@ -326,6 +326,36 @@ describe("FilePhase", () => {
     expect(streamFileBatch).toHaveBeenCalledWith("/repo", ["app/models/user.rb"], expect.anything());
   });
 
+  // bd tea-rags-mcp-2brzq — an oversized file outside the git window has no
+  // file overlay, and the applier bare-stamps chunk `enrichedAt` unless the
+  // chunk level is declined. The line count must reach that question, or the
+  // point carries `enrichedAt` beside the chunk phase's `skippedAs`.
+  it("hands the batch's file line count to the applier's chunk-level decline check", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const applySpy = vi.spyOn(applier, "applyFileSignals").mockResolvedValue();
+    const ctx = buildCtx({
+      streamFileBatch: vi.fn().mockResolvedValue(new Map()),
+      shouldEnrich: (f: { fileLines?: number }) =>
+        f.fileLines !== undefined && f.fileLines > 100 ? "file-only" : "full",
+    });
+    const bigHead = {
+      chunkId: "b1",
+      chunk: { metadata: { filePath: "/repo/src/big.ts", moduleLines: 5000 }, startLine: 1, endLine: 10 },
+    } as any;
+
+    const phase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.onBatch("coll", "/repo", [...items, bigHead]);
+    await phase.drain();
+
+    const isIgnored = applySpy.mock.calls[0][7] as (rel: string, level: "file" | "chunk") => boolean;
+    expect(isIgnored("src/big.ts", "chunk")).toBe(true);
+    expect(isIgnored("src/big.ts", "file")).toBe(false);
+    expect(isIgnored("src/a.ts", "chunk")).toBe(false);
+  });
+
   // bd tea-rags-mcp-okra9 — the file-level half of the skip stamp. A declined
   // file used to end the run carrying neither terminal marker, so the NEXT
   // run's recovery scan was what settled it: one run of lag, and a scan whose

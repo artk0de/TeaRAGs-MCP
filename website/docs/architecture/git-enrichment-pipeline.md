@@ -198,6 +198,6 @@ analytics").
 | `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS` | `6` | Time window for chunk-level churn analysis (months). `0` = no age limit |
 | `TRAJECTORY_GIT_CHUNK_CONCURRENCY` | `10` | Parallel commit processing for chunk churn |
 | `TRAJECTORY_GIT_CHUNK_TIMEOUT_MS` | `120000` | Timeout for chunk churn CLI pathspec (ms) |
-| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | `10000` | Skip files larger than this for chunk analysis |
+| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | `5000` | Skip files larger than this for chunk analysis |
 | `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | `false` | Group commits into sessions (squash noise reduction) |
 | `TRAJECTORY_GIT_SESSION_GAP_MINUTES` | `30` | Gap between commits to split sessions |

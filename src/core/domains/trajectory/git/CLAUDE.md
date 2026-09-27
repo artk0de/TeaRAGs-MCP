@@ -129,18 +129,27 @@ their own navigators.
   `confidence.support: "commitCount"` threshold shift meaning — and percentiles
   computed under one setting are not comparable to an index built under the
   other.
-- **Files past `chunkMaxFileLines` get an all-ZERO chunk block, not a missing
-  one.** In the chunk churn walk a file whose largest chunk `endLine` exceeds
-  the limit (default 10000, `trajectoryGitSchema`) is skipped wholesale —
-  `out.skippedLargeFiles++; return` (`collectHunksPerFile` in
-  `infra/walk-commits.ts`) — so it collects no hunks. But `buildAccumulators`
-  (`infra/build-accumulators.ts`) pre-seeds a zeroed accumulator per chunk and
-  `assembleOverlays` emits an overlay for each, so every chunk still gets
-  `commitCount: 0`, no authors, no churn; `payloadAlpha` then returns 0 and
-  blended signals collapse to the file value. Why: that payload reads as "no
-  commit ever touched this method" rather than as unenriched. The only honest
-  tell is the `skippedLargeFiles` count in the walk's debug line
-  (`walkCommits`).
+- **A file past `chunkMaxFileLines` is a POLICY decline, stamped
+  `git.chunk.skippedAs: "oversized"` — never a walked zero.**
+  `GitEnrichmentProvider#shouldEnrich` answers `"file-only"` when the
+  `fileLines` it is handed exceeds the limit (default 5000,
+  `trajectoryGitSchema`), so the file keeps every `git.file.*` signal and the
+  pipeline stamps its chunks the way it stamps a doc's; `enrichmentSkipReason`
+  names `"oversized"` only when no classification flag explains the decline (a
+  generated file stays `"generated"`). `fileLines` comes from the chunker's
+  `moduleLines`, carried on `ChunkLookupEntry` and read by `fileLinesOf`, so the
+  answer is per FILE even when a batch holds only its head chunks; a caller with
+  no `moduleLines` (a pre-symbol-mass index) falls back to the largest
+  `endLine`, a lower bound. Absent ⇒ not oversized, which is why the provider
+  declines only the chunk level: file-level dispatch never knows the count. The
+  walk keeps a backstop — `buildAccumulators` drops such a file before
+  discovery, so it gets no overlay at all (the applier's bare `enrichedAt`
+  stamp, no numeric fields). Why: the old walk skipped the file after
+  `buildAccumulators` had pre-seeded zeroed accumulators, and every chunk
+  published `commitCount: 0` — byte-identical to "no commit ever touched this
+  method", with `payloadAlpha` 0 and the chunk `maxAgeDays` filter blind (bd
+  tea-rags-mcp-2brzq). Moving or changing the limit changes a policy answer, so
+  the stale stamps it leaves need a `--force-enrichments git` recompute.
 
 ## See also
 

@@ -268,7 +268,7 @@ describe("GitEnrichmentProvider", () => {
         fakeData, // lastFileResult passed through
         undefined, // squashOpts
         120000, // chunkTimeoutMs (default)
-        10000, // chunkMaxFileLines (default)
+        5000, // chunkMaxFileLines (default)
         undefined, // externalSemaphore (not passed when no options)
         undefined, // skipCache (not passed when no options)
         expect.any(Map), // blameByPath populated by populateBlameMap
@@ -402,6 +402,27 @@ describe("GitEnrichmentProvider", () => {
       expect(provider.shouldEnrich({ relPath: "spec/user_spec.rb", classification: { ...base, isTest: true } })).toBe(
         "full",
       );
+    });
+
+    // bd tea-rags-mcp-2brzq: the chunk walk's size cap is a policy decision,
+    // so the pipeline stamps `git.chunk.skippedAs` instead of the walk
+    // publishing an all-zero chunk block.
+    it("declines the chunk walk, not the file level, past chunkMaxFileLines", () => {
+      const capped = new GitEnrichmentProvider({ chunkMaxFileLines: 100 });
+      expect(capped.shouldEnrich({ relPath: "src/big.ts", classification: base, fileLines: 101 })).toBe("file-only");
+      expect(capped.shouldEnrich({ relPath: "src/big.ts", classification: base, fileLines: 100 })).toBe("full");
+      expect(capped.shouldEnrich({ relPath: "src/big.ts", classification: base })).toBe("full");
+    });
+
+    it("keeps a generated file at none however large it is", () => {
+      const capped = new GitEnrichmentProvider({ chunkMaxFileLines: 100 });
+      expect(
+        capped.shouldEnrich({
+          relPath: "db/schema.rb",
+          classification: { ...base, isSource: false, isGenerated: true },
+          fileLines: 5000,
+        }),
+      ).toBe("none");
     });
   });
 

@@ -14,7 +14,7 @@ const ENV_MAPPINGS: [string, string, string][] = [
   ["TRAJECTORY_GIT_CHUNK_CONCURRENCY", "GIT_CHUNK_CONCURRENCY", "10"],
   ["TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", "GIT_CHUNK_MAX_AGE_MONTHS", "6"],
   ["TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", "GIT_CHUNK_TIMEOUT_MS", "120000"],
-  ["TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", "GIT_CHUNK_MAX_FILE_LINES", "10000"],
+  ["TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", "GIT_CHUNK_MAX_FILE_LINES", "5000"],
 ];
 
 /** All env var names involved (for cleanup) */
@@ -128,7 +128,7 @@ describe("TRAJECTORY_GIT env var naming", () => {
       process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES = "5000";
 
       const val = parseInt(
-        process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES ?? process.env.GIT_CHUNK_MAX_FILE_LINES ?? "10000",
+        process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES ?? process.env.GIT_CHUNK_MAX_FILE_LINES ?? "5000",
         10,
       );
       expect(val).toBe(5000);
@@ -138,7 +138,7 @@ describe("TRAJECTORY_GIT env var naming", () => {
       process.env.GIT_CHUNK_MAX_FILE_LINES = "5000";
 
       const val = parseInt(
-        process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES ?? process.env.GIT_CHUNK_MAX_FILE_LINES ?? "10000",
+        process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES ?? process.env.GIT_CHUNK_MAX_FILE_LINES ?? "5000",
         10,
       );
       expect(val).toBe(5000);
