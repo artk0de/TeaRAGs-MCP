@@ -2012,11 +2012,11 @@ describe("OllamaEmbeddings", () => {
     it("counts 5xx responses from embed as failures", async () => {
       const provider = await makeProvider(2, { legacyApi: false });
 
-      for (let i = 0; i < 2; i++) {
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "server overloaded" });
-        await expect(provider.embedBatch(["t"])).rejects.toThrow(OllamaResponseError);
-      }
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "server overloaded" });
+      await expect(provider.embedBatch(["t"])).rejects.toThrow(OllamaResponseError);
 
+      // The second failure crosses the threshold; the same call retries on the fallback.
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "server overloaded" });
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1]] }),
@@ -2029,15 +2029,16 @@ describe("OllamaEmbeddings", () => {
     it("counts a malformed embed response as a failure", async () => {
       const provider = await makeProvider(2);
 
-      for (let i = 0; i < 2; i++) {
-        // retryAttempts 1 → each call makes two requests before it fails
-        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
-        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
-        await expect(provider.embed(`bad ${i}`)).rejects.toThrow(OllamaMalformedResponseError);
-      }
+      // retryAttempts 1 → each call makes two requests before it fails
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      await expect(provider.embed("bad 0")).rejects.toThrow(OllamaMalformedResponseError);
 
+      // The second failure crosses the threshold; the same call retries on the fallback.
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
       mockFetch.mockResolvedValueOnce(legacyOk());
-      await provider.embed("after threshold");
+      await provider.embed("bad 1");
 
       expect(lastUrl()).toContain("fallback");
     });
@@ -2066,16 +2067,14 @@ describe("OllamaEmbeddings", () => {
             }),
         );
         const embedPromise = provider.embedBatch(["t"]);
-        embedPromise.catch(() => {});
         mockFetch.mockResolvedValueOnce({ ok: true }); // background probe at 30s: GET / healthy
-        await vi.advanceTimersByTimeAsync(31_000);
-        await expect(embedPromise).rejects.toThrow(OllamaTimeoutError);
-
+        // The timeout crosses the threshold; the same call retries on the fallback.
         mockFetch.mockResolvedValueOnce({
           ok: true,
           json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1]] }),
         });
-        await provider.embedBatch(["t"]);
+        await vi.advanceTimersByTimeAsync(31_000);
+        await embedPromise;
 
         expect(lastUrl()).toContain("fallback");
       } finally {
@@ -2133,9 +2132,8 @@ describe("OllamaEmbeddings", () => {
       await expect(provider.embedBatch(["t"])).rejects.toThrow(OllamaResponseError);
       mockFetch.mockResolvedValueOnce({ ok: false, status: 400, text: async () => "input length exceeds" });
       await expect(provider.embedBatch(["huge"])).rejects.toThrow(OllamaContextOverflowError);
+      // The second counted failure crosses the threshold; the same call retries on the fallback.
       mockFetch.mockResolvedValueOnce({ ok: false, status: 500, text: async () => "boom" });
-      await expect(provider.embedBatch(["t"])).rejects.toThrow(OllamaResponseError);
-
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1]] }),
@@ -2311,6 +2309,65 @@ describe("OllamaEmbeddings", () => {
       }
     });
 
+    // bd tea-rags-mcp-sbu0s: a primary that fails from the very first embed of
+    // a run (GET / 200, /api/embed 503 or a malformed 200). The call that
+    // crosses the threshold must retry on the fallback it just switched to —
+    // otherwise the pre-run health probe (whose attempt count equals the
+    // threshold) switches on its last attempt and still aborts the run.
+    describe("the call that crosses the threshold retries on the fallback (sbu0s)", () => {
+      const batchOk = () => ({ ok: true, json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1]] }) });
+
+      it("an HTTP 503 from the primary", async () => {
+        const provider = await makeProvider(2, { legacyApi: false });
+        mockFetch.mockImplementation(async (url: string) =>
+          url.startsWith(PRIMARY) ? { ok: false, status: 503, text: async () => "busy" } : batchOk(),
+        );
+        try {
+          await expect(provider.embedBatch(["t"])).rejects.toThrow(OllamaResponseError);
+          const results = await provider.embedBatch(["t"]);
+
+          expect(results).toHaveLength(1);
+          expect(lastUrl()).toBe(`${FALLBACK}/api/embed`);
+        } finally {
+          mockFetch.mockReset();
+        }
+      });
+
+      it("a malformed 200 from the primary", async () => {
+        const provider = await makeProvider(1, { legacyApi: false });
+        mockFetch.mockImplementation(async (url: string) =>
+          url.startsWith(PRIMARY) ? { ok: true, json: async () => ({ embeddings: [] }) } : batchOk(),
+        );
+        try {
+          const results = await provider.embedBatch(["t"]);
+
+          expect(results).toHaveLength(1);
+          expect(lastUrl()).toBe(`${FALLBACK}/api/embed`);
+        } finally {
+          mockFetch.mockReset();
+        }
+      });
+
+      it("a transport failure with no recovery budget", async () => {
+        const provider = await makeProvider(1);
+        mockFetch.mockRejectedValueOnce(new Error("ECONNRESET"));
+        mockFetch.mockResolvedValueOnce(legacyOk());
+
+        const result = await provider.embed("t");
+
+        expect(result.embedding).toEqual(mockEmbedding);
+        expect(lastUrl()).toContain("fallback");
+      });
+
+      it("a caller-side 4xx never switches, so it is not retried elsewhere", async () => {
+        const provider = await makeProvider(1, { legacyApi: false });
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 400, text: async () => "invalid input type" });
+
+        await expect(provider.embedBatch(["bad"])).rejects.toThrow(OllamaResponseError);
+        expect(provider.getBaseUrl()).toBe(PRIMARY);
+      });
+    });
+
     it("does not count failures of calls that ran against the fallback", async () => {
       mockFetch.mockRejectedValueOnce(new Error("primary down")); // constructor: start on fallback
       const provider = new OllamaEmbeddings(
@@ -2444,10 +2501,8 @@ describe("OllamaEmbeddings", () => {
       await new Promise<void>((r) => setTimeout(r, 0));
 
       mockFetch.mockImplementation(async (url: string) => (url.startsWith(URL) ? batchBody([]) : batchBody([vec])));
-      for (let i = 0; i < 2; i++) {
-        await expect(provider.embedBatch(["a"])).rejects.toThrow(OllamaMalformedResponseError);
-      }
-
+      await expect(provider.embedBatch(["a"])).rejects.toThrow(OllamaMalformedResponseError);
+      // The second failure crosses the threshold; the same call retries on the fallback.
       await provider.embedBatch(["a"]);
 
       const last = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
