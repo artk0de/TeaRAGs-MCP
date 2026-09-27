@@ -31,7 +31,12 @@
  *     alias, `enum` on an enum), read off the kind vocabulary itself;
  *   - a project suffix fewer than `projectSuffixMinTypes` DISTINCT names
  *     qualify: a bare `Finish` is the concept, not a family member, and a name
- *     declared in two files is one name.
+ *     declared in two files is one name;
+ *   - a carrier that is no MEMBER of its directory / suffix family
+ *     ({@link isRoleFamilyMember}): a `module` in a suffix family of types (the
+ *     mixin `ClientPushBaseData` among `*Data` type aliases), or a type missing
+ *     a cohesive family's supertype (`SendFailedPaymentNotification`, a
+ *     `KindOfService` command, among `*Notification < Notification`).
  * Pure: the rows come in already read (type-level kinds only) by the caller.
  */
 import type { TypeNameRow } from "../../../contracts/types/codegraph.js";
@@ -56,12 +61,59 @@ export interface TypeRoleAssignment {
   /** The scope the role holds in: the ancestor's last segment, the directory, or `""` for the project. */
   scope: string;
   /**
-   * A directory role whose family is COHESIVE: the supertype(s) (last
-   * namespace segment) the role's carriers in the directory share — each
-   * carried by ≥ 2 of them and by at least `directoryShare` of them, the most
-   * carried. Absent when the carriers share no supertype (`*Args`, `*Options`).
+   * A directory or project-suffix role whose family is COHESIVE: the
+   * supertype(s) (last namespace segment) the role's carriers share — each
+   * carried by ≥ 2 of them and by at least half of them, the most carried.
+   * Absent when the carriers share no supertype (`*Args`, `*Options`).
    */
   familySupertypes?: readonly string[];
+}
+
+/**
+ * What a declaration IS, for family membership (bd tea-rags-mcp-49fsr): a
+ * `module` — a namespace, a mixin, a TS `const` object — or a TYPE, whatever
+ * kind declares it. The kinds that declare a type are one form: `interface
+ * CacheStore` is the contract its `*Store` classes implement, and 45 of
+ * taxdome's 4,136 `*Props` are interfaces beside type aliases.
+ */
+export type DeclarationForm = "module" | "type";
+
+export function declarationForm(kind: TypeNameRow["symbolKind"]): DeclarationForm | undefined {
+  if (kind === null) return undefined;
+  return kind === NAMESPACE_KIND ? "module" : "type";
+}
+
+/** The kind that names a type without extending one: its supertypes are not known to miss, they do not exist. */
+const SUPERTYPELESS_KIND: TypeNameRow["symbolKind"] = "type_alias";
+
+function declaresSupertypes(kind: TypeNameRow["symbolKind"] | undefined): boolean {
+  return kind !== SUPERTYPELESS_KIND;
+}
+
+/** What makes a type a member of a non-inheritance role family: its form and its supertypes. */
+export interface RoleFamilyMembership {
+  familySupertypes?: readonly string[];
+  familyForm?: DeclarationForm;
+}
+
+/**
+ * Whether a type belongs to a role family (bd tea-rags-mcp-49fsr): its form is
+ * the family's, and — when the family is cohesive — its supertypes (by last
+ * namespace segment) include one the family shares. What is not KNOWN about the
+ * type (`symbolKind` / `supertypes` undefined) never excludes it, and neither do
+ * the supertypes of a kind that declares none (a type alias). The one test the
+ * derivation applies to an existing type and the draft verdict to a draft.
+ */
+export function isRoleFamilyMember(
+  family: RoleFamilyMembership,
+  type: { symbolKind?: TypeNameRow["symbolKind"]; supertypes?: ReadonlySet<string> },
+): boolean {
+  const form = type.symbolKind === undefined ? undefined : declarationForm(type.symbolKind);
+  if (family.familyForm !== undefined && form !== undefined && form !== family.familyForm) return false;
+  const { familySupertypes } = family;
+  const { supertypes } = type;
+  if (familySupertypes === undefined || supertypes === undefined || !declaresSupertypes(type.symbolKind)) return true;
+  return familySupertypes.some((supertype) => supertypes.has(supertype));
 }
 
 export interface TypeRoleThresholds {
@@ -291,11 +343,19 @@ function assign(
   }));
 }
 
+/** A cohesive family's supertypes on each assignment; the form is read back off the carriers ({@link projectSuffixRole}). */
+function withFamily(assignments: TypeRoleAssignment[], family: RoleFamilyMembership): TypeRoleAssignment[] {
+  const { familySupertypes } = family;
+  return familySupertypes === undefined
+    ? assignments
+    : assignments.map((assignment) => ({ ...assignment, familySupertypes }));
+}
+
 /**
- * The supertypes a directory role's carriers share (bd tea-rags-mcp-tun7x):
+ * The supertypes a directory / suffix role's carriers share (bd tea-rags-mcp-tun7x):
  * the most carried supertype(s), by last namespace segment, when that count is
  * ≥ {@link MIN_ROLE_MEMBERS} and at least `share` of the carriers — the same
- * majority the directory role is defined by. Ties at that count are all
+ * majority the role itself is defined by. Ties at that count are all
  * returned, sorted. `undefined` when the family shares none.
  */
 function cohesiveSupertypes(carriers: readonly HeadedRow[], share: number): string[] | undefined {
@@ -311,6 +371,90 @@ function cohesiveSupertypes(carriers: readonly HeadedRow[], share: number): stri
     .filter(([, count]) => count === most)
     .map(([supertype]) => supertype)
     .sort();
+}
+
+/** The form at least `share` of the carriers are declared in; `undefined` on a tie or with no such majority. */
+function dominantForm(carriers: readonly { row: TypeNameRow }[], share: number): DeclarationForm | undefined {
+  const counts = new Map<DeclarationForm, number>();
+  for (const { row } of carriers) {
+    const form = declarationForm(row.symbolKind);
+    if (form !== undefined) counts.set(form, (counts.get(form) ?? 0) + 1);
+  }
+  let best: { form: DeclarationForm; count: number } | undefined;
+  let tied = false;
+  for (const [form, count] of counts) {
+    if (!best || count > best.count) {
+      best = { form, count };
+      tied = false;
+    } else if (count === best.count) tied = true;
+  }
+  return best && !tied && best.count / carriers.length >= share ? best.form : undefined;
+}
+
+/**
+ * A non-inheritance family's membership (bd tea-rags-mcp-49fsr): with `byForm`,
+ * its dominant form first, then the supertypes shared by its carriers of that
+ * form that can declare one — a type alias declares none, so counting it would
+ * dilute the rest: taxdome's `*Notification` is cohesive at 68 of 103 classes,
+ * not at 68 of 140 types.
+ */
+function roleFamily(carriers: readonly HeadedRow[], share: number, byForm: boolean): RoleFamilyMembership {
+  const familyForm = byForm ? dominantForm(carriers, share) : undefined;
+  const declaring = carriers.filter(
+    ({ row }) =>
+      declaresSupertypes(row.symbolKind) &&
+      (familyForm === undefined || declarationForm(row.symbolKind) === familyForm),
+  );
+  const familySupertypes = cohesiveSupertypes(declaring, share);
+  return { ...(familyForm ? { familyForm } : {}), ...(familySupertypes ? { familySupertypes } : {}) };
+}
+
+/** A family's carriers that belong to it ({@link isRoleFamilyMember}): an existing row's kind and supertypes are known. */
+function familyMembers(
+  carriers: readonly HeadedRow[],
+  family: RoleFamilyMembership,
+  supertypesOf: ProjectSupertypes,
+): HeadedRow[] {
+  return carriers.filter(({ row }) =>
+    isRoleFamilyMember(family, {
+      symbolKind: row.symbolKind,
+      supertypes: supertypesOf(row.shortName, row.ancestors),
+    }),
+  );
+}
+
+/**
+ * A type's supertypes for family membership, by last namespace segment: the
+ * type itself, its declared supertypes, and theirs as the project declares
+ * them, transitively. `ApplicationForm` is a member of the family extending it,
+ * and `ReplaceForm < ActivateForm < ApplicationForm` is one of its members.
+ */
+export type ProjectSupertypes = (shortName: string, ancestors: readonly string[]) => Set<string>;
+
+const projectSupertypesCache = new WeakMap<readonly TypeNameRow[], ProjectSupertypes>();
+
+export function projectSupertypes(rows: readonly TypeNameRow[]): ProjectSupertypes {
+  const cached = projectSupertypesCache.get(rows);
+  if (cached) return cached;
+  const declared = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const name = typeNameLastSegment(row.shortName);
+    const set = declared.get(name) ?? new Set<string>();
+    for (const ancestor of row.ancestors) set.add(typeNameLastSegment(ancestor));
+    declared.set(name, set);
+  }
+  const resolve: ProjectSupertypes = (shortName, ancestors) => {
+    const seen = new Set<string>([typeNameLastSegment(shortName)]);
+    const queue = ancestors.map(typeNameLastSegment);
+    for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(...(declared.get(next) ?? []));
+    }
+    return seen;
+  };
+  projectSupertypesCache.set(rows, resolve);
+  return resolve;
 }
 
 /**
@@ -351,6 +495,7 @@ export function deriveTypeRoles(
   t: TypeRoleThresholds = TYPE_ROLE_THRESHOLDS,
 ): TypeRoleAssignment[] {
   const headed = headedRows(rows);
+  const supertypesOf = projectSupertypes(rows);
   const assignments: TypeRoleAssignment[] = [];
 
   const familyRoles = new Map<string, string | undefined>();
@@ -376,10 +521,12 @@ export function deriveTypeRoles(
     }
     const carriers = members.filter(({ head }) => head === plurality.head);
     if (isFamilySlot(carriers, plurality.head)) continue;
-    const carried = assign(members, plurality.head, "directory", dir);
-    const supertypes = cohesiveSupertypes(carriers, t.directoryShare);
+    // No form test here: a directory is one module's convention, and a module named for its
+    // file there is the file's subject, held to the directory's role (bd tea-rags-mcp-59q9c).
+    // Forms mix across a PROJECT suffix — Ruby classes and TS type aliases share tail words.
+    const family = roleFamily(carriers, t.directoryShare, false);
     assignments.push(
-      ...(supertypes ? carried.map((assignment) => ({ ...assignment, familySupertypes: supertypes })) : carried),
+      ...withFamily(assign(familyMembers(carriers, family, supertypesOf), plurality.head, "directory", dir), family),
     );
   }
 
@@ -394,7 +541,10 @@ export function deriveTypeRoles(
     if (names.size < Math.max(t.projectSuffixMinTypes, MIN_ROLE_MEMBERS)) continue;
     if (!meetsProjectConventionSpread(files.size, dirs.size, t)) continue;
     if (isFamilySlot(members, head)) continue;
-    assignments.push(...assign(members, head, "projectSuffix", ""));
+    const family = roleFamily(members, t.familyShare, true);
+    assignments.push(
+      ...withFamily(assign(familyMembers(members, family, supertypesOf), head, "projectSuffix", ""), family),
+    );
   }
 
   return assignments.sort(
@@ -426,12 +576,35 @@ function pickRole(
 }
 
 /** The role a type draft is expected to carry ({@link expectedRoleFor}). */
-export interface ExpectedTypeRole {
+export interface ExpectedTypeRole extends RoleFamilyMembership {
   role: string;
   evidence: TypeRoleEvidence;
   examples: string[];
-  /** A directory role whose family is cohesive: the supertypes a member declares ({@link TypeRoleAssignment.familySupertypes}). */
+  /** A cohesive family: the supertypes a member declares ({@link TypeRoleAssignment.familySupertypes}). */
   familySupertypes?: readonly string[];
+  /** A project suffix: the form its carriers are declared in ({@link projectSuffixRole}). */
+  familyForm?: DeclarationForm;
+}
+
+/**
+ * The project-suffix family of `word`, when the project has one — what a
+ * draft's head is confirmed by — with the form its carriers (`rows` holds them)
+ * are declared in: the members the derivation kept share the family's dominant
+ * form ({@link isRoleFamilyMember}), so the form is read back off them.
+ */
+export function projectSuffixRole(
+  roles: readonly TypeRoleAssignment[],
+  rows: readonly TypeNameRow[],
+  word: string,
+  t: TypeRoleThresholds = TYPE_ROLE_THRESHOLDS,
+): ExpectedTypeRole | undefined {
+  const carried = roles.filter((r) => r.evidence === "projectSuffix" && r.role === word);
+  const role = pickRole(carried, "projectSuffix");
+  if (role === undefined) return undefined;
+  const keys = new Set(carried.map((r) => `${r.relPath}\u0000${r.symbolId}`));
+  const carriers = rows.filter((row) => keys.has(`${row.relPath}\u0000${row.symbolId}`)).map((row) => ({ row }));
+  const familyForm = dominantForm(carriers, t.familyShare);
+  return familyForm === undefined ? role : { ...role, familyForm };
 }
 
 /**

@@ -1529,3 +1529,74 @@ describe("judgeTypeDraft — a namespace module is no member of the directory's 
     });
   });
 });
+
+/**
+ * Project-suffix membership (bd tea-rags-mcp-49fsr): a suffix confirms only a draft that
+ * belongs to its family, by the same test the derivation applies to an existing type —
+ * the family's dominant declaration form, and its dominant supertype when the family is
+ * cohesive. A draft whose kind or supertypes are unknown is confirmed as before. Live on
+ * taxdome: `SendFailedPaymentNotification` (`include KindOfService`) and the
+ * `module ClientPushBaseData` mixin were confirmed by `*Notification` / `*Data`.
+ */
+describe("judgeTypeDraft — a project suffix confirms only its family's members", () => {
+  const row = (
+    shortName: string,
+    relPath: string,
+    symbolKind: TypeNameRow["symbolKind"],
+    ancestors: string[] = [],
+  ): TypeNameRow => ({ symbolId: shortName, relPath, shortName, symbolKind, ancestors });
+  const SERVICE_PATH = "app/services/billing/invoices/send_failed_payment_notification.rb";
+  const MIXIN_PATH = "app/helpers/communication/client_push_base_data.rb";
+  const ROWS = [
+    ...["InvoicePaid", "ProposalSigned", "TaskAssigned"].map((q, i) =>
+      row(`${q}Notification`, `app/models/n${i}/inbox/${q.toLowerCase()}_notification.rb`, "class", ["Notification"]),
+    ),
+    row("SendFailedPaymentNotification", SERVICE_PATH, "class", ["KindOfService"]),
+    ...["Invoice", "Client", "Firm"].map((q, i) => row(`${q}Data`, `app/javascript/m${i}/${q}Data.ts`, "type_alias")),
+    row("ClientPushBaseData", MIXIN_PATH, "module"),
+  ];
+  const judge = (draft: { name: string; path: string; extends?: string; symbolKind?: TypeNameRow["symbolKind"] }) =>
+    judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(ROWS, "type"), conceptNames: [] });
+
+  it("an existing service outside the family's supertype is not confirmed by `*Notification`", () => {
+    expect(judge({ name: "SendFailedPaymentNotification", path: SERVICE_PATH })).not.toEqual({
+      verdict: "CONFORMS",
+    });
+  });
+
+  it("a draft extending another supertype is not confirmed by the suffix", () => {
+    expect(
+      judge({
+        name: "SendReminderNotification",
+        path: "app/services/billing/reminders/send_reminder_notification.rb",
+        extends: "KindOfService",
+      }),
+    ).not.toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a draft extending a member of the family, through the project's own type, is confirmed", () => {
+    expect(
+      judge({
+        name: "InvoiceOverdueNotification",
+        path: "app/models/n8/inbox/invoice_overdue_notification.rb",
+        extends: "InvoicePaidNotification",
+      }),
+    ).toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a module draft is not confirmed by a family of type aliases", () => {
+    expect(judge({ name: "ClientPushBaseData", path: MIXIN_PATH, symbolKind: "module" })).not.toEqual({
+      verdict: "CONFORMS",
+    });
+  });
+
+  it("an existing module is judged by its own declaration kind", () => {
+    expect(judge({ name: "ClientPushBaseData", path: MIXIN_PATH })).not.toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a member of the family's form is confirmed; a draft of unknown kind is confirmed as before", () => {
+    const path = "app/javascript/m9/JobData.ts";
+    expect(judge({ name: "JobData", path, symbolKind: "type_alias" })).toEqual({ verdict: "CONFORMS" });
+    expect(judge({ name: "JobData", path })).toEqual({ verdict: "CONFORMS" });
+  });
+});

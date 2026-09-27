@@ -217,7 +217,11 @@ taxdome codegraph DB: type coverage fell from 62.8% to 51.5%, Ruby from 74.9% to
 25/30 to 27/30. On the self-index, coverage went from 32.3% to 31.5% (18
 assignments lost: `*Type` aliases, `Migration`'s `*Indexes`, and three suffixes
 that had rested on a bare name) and the sample stayed 30/30. The rename eval was
-unchanged: 0/17 caught, 9 flagged-other, 8 silent, control 5/40.
+unchanged: 0/17 caught, 9 flagged-other, 8 silent, control 5/40. Of the three
+misses in that sample, `GuestBlob` → `blob` was a labelling error, not a wrong
+role: `type GuestBlob = Pick<Blob<'signedId'>, 'signedId' | 'fileName'>` is a
+projection of `Blob`, so `blob` is its role. The other two are removed by the
+membership rules below.
 
 The `Cookies` ancestor seen on `ApplicationController` is not a defect in role
 evidence. The Ruby walker records `include ActionController::Cookies` as a
@@ -254,6 +258,79 @@ flags (MISFIT → `…Strategy`), and the rule clears both. `cli/commands/`
 supertype and the data cannot separate a CLI argument type from a formatter's
 options. The five MISFITs of the 20-draft measurement set are new drafts with no
 `extends` in cohesive directories, and all five stay.
+
+**Family membership: form and supertype (`49fsr`).** The two wrong roles left in
+the 27/30 taxdome sample were types that carry a family's tail word without
+belonging to the family. `Billing::Invoices::SendFailedPaymentNotification` is a
+verb-first command (`include KindOfService`) whose head is the object of its
+verb; it took `notification` from the project suffix. The mixin
+`module Communication::ClientPushBaseData` took `data` from a suffix family of
+164 TS type aliases. Two rules decide membership, and one predicate
+(`isRoleFamilyMember`) applies them both to an existing type during derivation
+and to a draft during judgement, so the two are judged the same way:
+
+1. **Kind homogeneity (project suffix).** A declaration is one of two forms: a
+   `module` (a namespace, a mixin, a TS `const` object), or a type, whatever
+   kind declares it (class, interface, type alias, enum). A suffix family names
+   only its dominant form, the one at least half its carriers share; a tie means
+   no dominant form. `*Data` is 164 type aliases, 13 classes and 2 modules, so
+   the modules drop out. A directory family has no form test, because a module
+   named for its file there is the file's subject and is still held to the
+   directory's role (`59q9c`).
+2. **Supertype cohesion (directory and project suffix).** This is the `tun7x`
+   rule, now applied to members as well as drafts, and to suffix families. The
+   dominant supertype is counted over the carriers of the family's form that can
+   declare one. A type alias declares none, so it is neither counted nor
+   excluded. A carrier whose supertypes do not include the dominant one is no
+   member. `*Notification` is cohesive at 68 of its 103 classes extending
+   `Notification`; counted over all 140 carriers, including the 37 TS aliases,
+   it would be 48.6% and not cohesive. A type's supertypes include the type
+   itself (`ApplicationForm` belongs to the family that extends it) and what the
+   project declares for its supertypes, transitively, by last segment
+   (`ReplaceForm < ActivateForm < ApplicationForm`). Without these two, the
+   first cut dropped the family's own base classes and every second-generation
+   subclass.
+
+A draft's kind is the `symbolKind` it states, else that of the declaration it
+names at its `path`. Its supertypes are known on the same terms as under
+`tun7x`. When either is unknown, that test does not apply. A project suffix now
+confirms a draft only if the draft is a member of its family: an existing
+`SendFailedPaymentNotification` or a `module ClientPushBaseData` draft is no
+longer CONFORMS on the strength of the suffix.
+
+Measured read-only with `t9-roles.mts` on copies of the codegraph DBs. On a
+fresh taxdome index (`_v15`, 33,623 types), coverage fell from 17,212 (51.2%) to
+16,836 (50.1%). The 649 removed assignments split into 292 by form and 333 by
+supertype on project suffixes, and 24 by supertype on directories. 376 types
+lost every role. The largest groups are 37 `*Helper` classes in a
+module-dominated family, 24 `*Form` classes without `ApplicationForm`, 20
+`*Template` non-records, and 11 `*Query` classes. In a seeded sample of 40 of
+those types, about 26 removals are right (verb-first `KindOfService` commands
+such as `GetEvents` and `SendActionRequiredNotification`, and concern or
+contract modules), about 8 are false negatives (helper classes, a
+`NylasErrorHandler < Middleware`, `*Form` classes with no superclass), and 6 are
+doubtful. On the older `_v14` copy of the 27/30 sample, coverage went from
+17,155 to 16,780. Both wrong roles are gone, `GuestBlob` keeps `blob`, and all
+27 correct items keep a role (`BatchHelper` keeps its directory `helper`), so
+the sample is 28/28. On fresh seeds 7, 11 and 23 of `_v15`, 1 of the 90
+assignments sampled before the change was removed: `SuggestionsResolver`, a
+class in a module-dominated `*Resolver` family, which is a false negative.
+Hand-checked after the change, the new samples hold 2 wrong roles out of 90,
+`SendFirmAttributes` → `attributes` and `RenderShortcodeTexts` → `texts`. Both
+are verb-first commands the change did not touch, since the change only removes
+assignments. Their families are not cohesive: the 8 `*Attributes` classes split
+4 `Model` and 4 `KindOfService`, and `*Texts` has one class. On the self-index,
+coverage went from 725 (31.5%) to 715 (31.0%). Of the 10 types that lost every
+role, most are false negatives from TS structural typing: `BatchAccumulator` and
+`PointsAccumulator` are accumulators that do not declare
+`implements StatsAccumulator`. The seed-7 sample stayed 30/30. The rename eval
+was unchanged: 0/17 caught, 9 flagged-other, 8 silent, control 5/40.
+
+A per-kind form, with an interface and a type alias merged but a class kept
+apart, was measured and rejected. It removes both taxdome misses, but on the
+self-index it splits every TS family whose contract is an interface:
+`CacheStore`, `CodeChunker` and `EnrichmentProvider` lost their roles, and
+coverage fell to 686. On taxdome it fell to 15,979.
 
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and

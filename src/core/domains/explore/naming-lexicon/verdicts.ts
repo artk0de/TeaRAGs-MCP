@@ -53,7 +53,10 @@ import {
   deriveTypeRoles,
   expectedRoleFor,
   isNamespaceDeclaration,
+  isRoleFamilyMember,
   meetsProjectConventionSpread,
+  projectSuffixRole,
+  projectSupertypes,
   type ExpectedTypeRole,
   type TypeNameRow,
   type TypeRoleAssignment,
@@ -772,11 +775,12 @@ function roundSimilarity(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-/** A type draft as role evidence reads it: its name, the file it lives in, its planned ancestor. */
+/** A type draft as role evidence reads it: its name, the file it lives in, its planned ancestor, its kind. */
 export interface TypeDraftPlacement {
   name: string;
   path: string;
   extends?: string;
+  symbolKind?: SymbolDefinitionKind;
 }
 
 /** The draft's expected role ({@link expectedRoleFor}); a constant has no family, so its `extends` is ignored. */
@@ -795,40 +799,54 @@ function draftRole(draft: TypeDraftPlacement, evidence: TypeNameEvidence): Expec
  */
 function knownDraftSupertypes(draft: TypeDraftPlacement, evidence: TypeNameEvidence): Set<string> | undefined {
   if (evidence.population !== "type") return undefined;
-  const shortName = typeNameLastSegment(draft.name);
-  const own = evidence.rows.filter((row) => row.relPath === draft.path && row.shortName === shortName);
+  const own = ownDeclarations(draft, evidence);
   if (draft.extends === undefined && own.length === 0) return undefined;
-  return new Set(
-    [...(draft.extends !== undefined ? [draft.extends] : []), ...own.flatMap((row) => row.ancestors)].map(
-      typeNameLastSegment,
-    ),
-  );
+  const declared = [...(draft.extends !== undefined ? [draft.extends] : []), ...own.flatMap((row) => row.ancestors)];
+  return projectSupertypes(evidence.rows)(draft.name, declared);
+}
+
+/** The existing declarations the draft names: its short name, at its `path`. */
+function ownDeclarations(draft: TypeDraftPlacement, evidence: TypeNameEvidence): TypeNameRow[] {
+  const shortName = typeNameLastSegment(draft.name);
+  return evidence.rows.filter((row) => row.relPath === draft.path && row.shortName === shortName);
+}
+
+/** The draft's declaration kind: the caller's, else the existing declaration's; `undefined` when unknown. */
+function knownDraftKind(draft: TypeDraftPlacement, evidence: TypeNameEvidence): SymbolDefinitionKind | undefined {
+  if (draft.symbolKind !== undefined) return draft.symbolKind;
+  return ownDeclarations(draft, evidence).find((row) => row.symbolKind !== null)?.symbolKind ?? undefined;
 }
 
 /**
- * The role word of the draft's directory family when the draft is KNOWN not to
- * belong to it (bd tea-rags-mcp-tun7x). Only a directory role whose carriers
- * share a supertype (`familySupertypes`) asks: a draft known to declare none of
- * them is not a member (`RubyConeDispatchResolver` `implements
- * DispatchResolverComponent` among `*SymbolResolutionStrategy`), so the role
- * neither demands nor confirms, and its word is no head for the draft either.
- * `undefined` for any other role and for a draft whose supertypes are unknown.
+ * The role word of the draft's directory or project-suffix family when the
+ * draft is KNOWN not to belong to it ({@link isRoleFamilyMember}, bd
+ * tea-rags-mcp-tun7x / 49fsr) — the test the derivation applies to an existing
+ * type. A cohesive family asks for its supertype (`RubyConeDispatchResolver`
+ * `implements DispatchResolverComponent` among `*SymbolResolutionStrategy`); a
+ * project suffix also asks for its form (`module ClientPushBaseData` among
+ * `*Data` type aliases). A non-member's role neither demands nor confirms, and
+ * its word is no head for the draft either. `undefined` for an inheritance role
+ * and for a draft whose kind and supertypes are unknown.
  */
-function directoryFamilyNonMemberRole(
+function familyNonMemberRole(
   draft: TypeDraftPlacement,
   evidence: TypeNameEvidence,
   role: ExpectedTypeRole | undefined = draftRole(draft, evidence),
 ): string | undefined {
-  if (role?.evidence !== "directory" || role.familySupertypes === undefined) return undefined;
-  const declared = knownDraftSupertypes(draft, evidence);
-  if (declared === undefined || role.familySupertypes.some((supertype) => declared.has(supertype))) return undefined;
-  return role.role;
+  if (role === undefined || role.evidence === "inheritance") return undefined;
+  const supertypes = knownDraftSupertypes(draft, evidence);
+  const symbolKind = knownDraftKind(draft, evidence);
+  const member = isRoleFamilyMember(role, {
+    ...(supertypes !== undefined ? { supertypes } : {}),
+    ...(symbolKind !== undefined ? { symbolKind } : {}),
+  });
+  return member ? undefined : role.role;
 }
 
 /**
  * The anchored head candidates grounded in the concept code: heads of type
- * names `conceptNames` holds — never the role word of a directory family the
- * draft is known not to belong to ({@link directoryFamilyNonMemberRole}).
+ * names `conceptNames` holds — never the role word of a family the draft is
+ * known not to belong to ({@link familyNonMemberRole}).
  */
 function groundedHeadCandidates(
   slots: NameSlots,
@@ -838,7 +856,7 @@ function groundedHeadCandidates(
   admitted: ReadonlySet<string>,
 ): ReturnType<typeof anchoredHeadCandidates> {
   const conceptHeads = conceptHeadWords(conceptNames);
-  const withheld = directoryFamilyNonMemberRole(draft, evidence);
+  const withheld = familyNonMemberRole(draft, evidence);
   return anchoredHeadCandidates(
     slots,
     directoryOfPath(draft.path),
@@ -1039,7 +1057,7 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   const role = namespace ? undefined : draftRole(input, input.evidence);
   // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms,
   // and a cohesive directory family only speaks for its members.
-  const nonMember = directoryFamilyNonMemberRole(input, input.evidence, role) !== undefined;
+  const nonMember = familyNonMemberRole(input, input.evidence, role) !== undefined;
   const expected = role?.evidence === "projectSuffix" || nonMember ? undefined : role;
   if (expected && words.at(-1) !== expected.role) {
     return {
@@ -1063,8 +1081,11 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
 
   // A project suffix or a known head only CONFIRMS the words: a synonym head passes both,
   // so the verdict stays and the head alternatives ride along (bd tea-rags-mcp-433d2).
-  const head = words.at(-1);
-  if (!namespace && input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
+  // The suffix confirms only a member of its family — the test its carriers passed (bd tea-rags-mcp-49fsr).
+  const suffix = namespace
+    ? undefined
+    : projectSuffixRole(input.evidence.roles, input.evidence.rows, words.at(-1) ?? "");
+  if (suffix !== undefined && familyNonMemberRole(input, input.evidence, suffix) === undefined) {
     return { verdict: "CONFORMS", ...withAlternatives };
   }
   const establishedWords = new Set(input.evidence.established.map((use) => use.word));

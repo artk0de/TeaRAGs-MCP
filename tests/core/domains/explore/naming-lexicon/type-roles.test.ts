@@ -585,3 +585,155 @@ describe("deriveTypeRoles — what is not a role", () => {
     });
   });
 });
+
+/**
+ * Who is a MEMBER of a non-inheritance role family (bd tea-rags-mcp-49fsr, hand-checked
+ * misses on taxdome). A directory or project-suffix family carries its role only to the
+ * types that belong to it:
+ *   - kind homogeneity (project suffix): a `module` and a type declaration (class,
+ *     interface, type alias, enum) are two forms, and a family names only its
+ *     dominant one. Live: the `module ClientPushBaseData` mixin took `data` from 164
+ *     TS `*Data` type aliases;
+ *   - supertype cohesion (directory and project suffix): when the family's carriers
+ *     that CAN declare a supertype share a dominant one (≥ 2 of them and ≥ half), such
+ *     a carrier whose supertypes miss it is no member; a type alias declares none, so
+ *     it neither counts nor is excluded. Live: `SendFailedPaymentNotification`
+ *     (`include KindOfService`) took `notification` from 140 `*Notification` types —
+ *     68 of the 103 classes extend `Notification`, the 37 others are TS type aliases.
+ */
+describe("deriveTypeRoles — non-inheritance family membership", () => {
+  function k(
+    shortName: string,
+    relPath: string,
+    symbolKind: TypeNameRow["symbolKind"],
+    ancestors: string[] = [],
+  ): TypeNameRow {
+    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors };
+  }
+  const carriersOf = (rows: TypeNameRow[], role: string, evidence: string) =>
+    deriveTypeRoles(rows)
+      .filter((r) => r.role === role && r.evidence === evidence)
+      .map((r) => r.symbolId)
+      .sort();
+
+  describe("a project suffix names only its family's dominant declaration form", () => {
+    const DATA_ALIASES = ["Invoice", "Client", "Firm"].map((q, i) =>
+      k(`${q}Data`, `app/javascript/m${i}/${q}Data.ts`, "type_alias"),
+    );
+
+    it("a mixin module takes no `data` role from a family of type aliases", () => {
+      const rows = [
+        ...DATA_ALIASES,
+        k("ClientPushBaseData", "app/helpers/communication/client_push_base_data.rb", "module"),
+      ];
+      expect(carriersOf(rows, "data", "projectSuffix")).toEqual(["ClientData", "FirmData", "InvoiceData"]);
+    });
+
+    it("an interface and a type alias are one form: `interface CardProps` keeps `props`", () => {
+      const rows = [
+        ...["Accordion", "Button", "Dialog"].map((q, i) => k(`${q}Props`, `src/c${i}/${q}.tsx`, "type_alias")),
+        k("CardProps", "src/c9/Card.tsx", "interface"),
+      ];
+      expect(carriersOf(rows, "props", "projectSuffix")).toContain("CardProps");
+    });
+
+    // Live on the self-index: `interface CacheStore` / `interface CodeChunker` are the contracts
+    // their `*Store` / `*Chunker` classes implement — one family, not two.
+    it("a class and an interface are one form: `interface CacheStore` keeps `store`", () => {
+      const rows = [
+        ...["Edge", "File", "Symbol"].map((q, i) => k(`${q}Store`, `src/s${i}/${q.toLowerCase()}-store.ts`, "class")),
+        k("CacheStore", "src/cli/cache-store.ts", "interface"),
+      ];
+      expect(carriersOf(rows, "store", "projectSuffix")).toContain("CacheStore");
+    });
+
+    it("forms tied at half: no dominant form, every carrier keeps the role", () => {
+      const rows = [
+        ...["Invoice", "Client"].map((q, i) => k(`${q}Report`, `app/javascript/m${i}/${q}Report.ts`, "type_alias")),
+        ...["Firm", "Job"].map((q, i) => k(`${q}Report`, `app/reports/r${i}/${q.toLowerCase()}_report.rb`, "module")),
+      ];
+      expect(carriersOf(rows, "report", "projectSuffix")).toHaveLength(4);
+    });
+  });
+
+  describe("a cohesive family's carrier that misses its supertype is no member", () => {
+    const NOTIFICATIONS = ["InvoicePaid", "ProposalSigned", "TaskAssigned"].map((q, i) =>
+      k(`${q}Notification`, `app/models/n${i}/inbox/${q.toLowerCase()}_notification.rb`, "class", ["Notification"]),
+    );
+    const SERVICE = k(
+      "SendFailedPaymentNotification",
+      "app/services/billing/invoices/send_failed_payment_notification.rb",
+      "class",
+      ["KindOfService"],
+    );
+
+    it("a verb-first service takes no `notification` suffix from a family extending `Notification`", () => {
+      expect(carriersOf([...NOTIFICATIONS, SERVICE], "notification", "projectSuffix")).toEqual([
+        "InvoicePaidNotification",
+        "ProposalSignedNotification",
+        "TaskAssignedNotification",
+      ]);
+    });
+
+    it("a type alias declares no supertype: it neither dilutes the family's nor loses the role", () => {
+      const aliases = ["Inbox", "Toast", "Banner", "Popup"].map((q, i) =>
+        k(`${q}Notification`, `app/javascript/t${i}/${q}Notification.ts`, "type_alias"),
+      );
+      const extra = k("DigestNotification", "app/models/n9/inbox/digest_notification.rb", "class", ["Notification"]);
+      const rows = [...NOTIFICATIONS, extra, SERVICE, ...aliases];
+      expect(carriersOf(rows, "notification", "projectSuffix")).toEqual([
+        "BannerNotification",
+        "DigestNotification",
+        "InboxNotification",
+        "InvoicePaidNotification",
+        "PopupNotification",
+        "ProposalSignedNotification",
+        "TaskAssignedNotification",
+        "ToastNotification",
+      ]);
+    });
+
+    it("a family sharing no supertype keeps every carrier", () => {
+      const rows = ["Call", "Doctor", "Prime"].map((q, i) =>
+        k(`${q}Args`, `src/cmd${i}/${q.toLowerCase()}.ts`, "class"),
+      );
+      expect(carriersOf(rows, "args", "projectSuffix")).toEqual(["CallArgs", "DoctorArgs", "PrimeArgs"]);
+    });
+
+    // Live on taxdome, the first cut dropped `ApplicationForm` from the family extending it, and
+    // `ReplaceForm < ActivateForm` from the `ApplicationForm` family.
+    it("the family's supertype itself, and a type extending it through a project type, are members", () => {
+      const rows = [
+        ...NOTIFICATIONS,
+        k("Notification", "app/models/inbox/notification.rb", "class", ["ApplicationRecord"]),
+        k("DocumentNotification", "app/models/n7/document_notification.rb", "class", ["Notification"]),
+        k("SignedDocumentNotification", "app/models/n8/signed_document_notification.rb", "class", [
+          "Inbox::DocumentNotification",
+        ]),
+        SERVICE,
+      ];
+      expect(carriersOf(rows, "notification", "projectSuffix")).toEqual([
+        "DocumentNotification",
+        "InvoicePaidNotification",
+        "Notification",
+        "ProposalSignedNotification",
+        "SignedDocumentNotification",
+        "TaskAssignedNotification",
+      ]);
+    });
+
+    it("a directory family: a carrier extending another supertype is no member", () => {
+      const rows = [
+        k("RubyBareCallStrategy", "src/strategies/bare-call.ts", "class", ["SymbolResolutionStrategy"]),
+        k("RubyConstantStrategy", "src/strategies/constant.ts", "class", ["SymbolResolutionStrategy"]),
+        k("RubySuperStrategy", "src/strategies/super.ts", "class", ["SymbolResolutionStrategy"]),
+        k("RubyFallbackStrategy", "src/strategies/fallback.ts", "class", ["DispatchResolverComponent"]),
+      ];
+      expect(carriersOf(rows, "strategy", "directory")).toEqual([
+        "RubyBareCallStrategy",
+        "RubyConstantStrategy",
+        "RubySuperStrategy",
+      ]);
+    });
+  });
+});
