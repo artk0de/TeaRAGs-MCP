@@ -78,6 +78,10 @@ pin records the version alongside the digest, so bumping the descriptor alone
 leaves the JSON claiming the old number and the pin test red — the bump is half
 a change until the pin carries it.
 
+Merges and cherry-picks re-pin automatically (`.gitattributes` `version-pins`
+driver + `scripts/git/repin-on-merge.sh`); `git rebase` does not — re-pin by
+hand.
+
 ## Relocations and other byte-identical changes
 
 Moving code into the kernel, extracting a helper, or renaming leaves `versions`

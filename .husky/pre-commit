@@ -5,6 +5,12 @@ if command -v bd >/dev/null 2>&1; then
   bd hooks run pre-commit "$@" 2>/dev/null || true
 fi
 
+# Merge / cherry-pick concluded by `git commit` (after resolving other
+# conflicts): re-pin the derived language version pins against the merged tree
+# and stage them, before the test run below reads them. No-op otherwise.
+# `git rebase` picks skip this hook — see scripts/git/repin-on-merge.sh.
+sh scripts/git/repin-on-merge.sh || exit 1
+
 # Format and lint staged .ts/.js files
 if ! npx lint-staged 2>&1; then
   echo ""
