@@ -215,8 +215,11 @@ export interface NamingLexiconEmbeddings {
 /** The explore operations naming runs in-process: concept search, and the label thresholds of the index. */
 export interface NamingLexiconExplore {
   semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
-  /** Absent → no head is established by usage (bd tea-rags-mcp-433d2). */
-  getIndexMetrics?: (path: string) => Promise<IndexMetrics>;
+  /**
+   * Absent → no head is established by usage (bd tea-rags-mcp-433d2). Handed
+   * the request's RESOLVED collection, which wins over the path (bd tea-rags-mcp-2kplu).
+   */
+  getIndexMetrics?: (path: string, collection?: string) => Promise<IndexMetrics>;
 }
 
 export interface NamingLexiconOpsDeps {
@@ -381,6 +384,9 @@ export class NamingLexiconOps {
   ): Promise<NamingLexiconResult> {
     validateRequest(req);
     const { collectionName, path: repoRoot } = resolveCollection(this.deps.collectionRegistry, req);
+    // Every sub-read — concept search, metrics — addresses the index resolved HERE, never
+    // re-resolves the path: a worktree path hashes to a collection that does not exist (bd tea-rags-mcp-2kplu).
+    const addressed = addressedRequest(req, collectionName, repoRoot);
     // Diff mode reads the change first: its files are the evidence every read excludes.
     const diff = isDiffRequest(req) ? await this.readDiff(req, repoRoot) : undefined;
     const excludePaths = [...(scope.excludePaths ?? []), ...(diff?.files ?? [])];
@@ -404,11 +410,11 @@ export class NamingLexiconOps {
     try {
       const graphDb = excludingEvidence(handle.graphDb, excludePaths);
       const alignment: TypeAlignmentState = {};
-      const answer = asksLexicon(req)
-        ? await this.answer(graphDb, req, alignment)
+      const answer = asksLexicon(addressed)
+        ? await this.answer(graphDb, addressed, alignment)
         : { scope: "", byType: [], names: [] };
       if (diff === undefined) return answer;
-      const { review, notices } = await this.review(graphDb, req, diff, alignment);
+      const { review, notices } = await this.review(graphDb, addressed, diff, alignment);
       const allNotices = unique([...(answer.notices ?? []), ...notices]);
       return { ...answer, ...(allNotices.length > 0 ? { notices: allNotices } : {}), review };
     } finally {
@@ -834,10 +840,10 @@ export class NamingLexiconOps {
   ): Promise<number | undefined> {
     const { language, alignment } = context;
     const { explore } = this.deps;
-    const { path } = req;
+    const { path, collection } = req;
     if (explore.getIndexMetrics === undefined || path === undefined || language === undefined) return undefined;
     // A method call: the explore facade reads its own ops through `this`.
-    alignment.metrics ??= explore.getIndexMetrics(path);
+    alignment.metrics ??= explore.getIndexMetrics(path, collection);
     const metrics = await alignment.metrics;
     return metrics.signals[language]?.[FAN_IN_SIGNAL]?.source?.labelMap[POPULAR_FAN_IN_LABEL];
   }
@@ -984,6 +990,21 @@ function validateRequest(req: NamingLexiconRequest): void {
   if (req.concept && !req.language) throw new InvalidParameterError("concept", "requires 'language'");
   const pathless = (req.names ?? []).findIndex((draft) => isTypeDraft(draft) && !draft.path);
   if (pathless >= 0) throw new InvalidParameterError(`names[${pathless}].path`, "required with kind 'type'");
+}
+
+/**
+ * The request addressed by the index `resolveCollection` resolved once for it
+ * (bd tea-rags-mcp-2kplu): its collection explicit, its path the project's
+ * root, no project alias left to resolve again. A sub-read handed this ref
+ * reads that index — never the one the path would hash to.
+ */
+function addressedRequest(
+  req: NamingLexiconRequest,
+  collectionName: string,
+  repoRoot: string | undefined,
+): NamingLexiconRequest {
+  const { project: _project, path: _path, ...rest } = req;
+  return { ...rest, collection: collectionName, ...(repoRoot !== undefined ? { path: repoRoot } : {}) };
 }
 
 function collectionRef(req: NamingLexiconRequest): Pick<SemanticSearchRequest, "collection" | "project" | "path"> {

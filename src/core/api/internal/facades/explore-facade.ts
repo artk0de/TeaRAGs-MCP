@@ -108,8 +108,9 @@ export class ExploreFacade {
     return this.exploreOps.findSymbol(request);
   }
 
-  async getIndexMetrics(path: string): Promise<IndexMetrics> {
-    return this.exploreOps.getIndexMetrics(path);
+  /** `collection`, when given, is the index read — the resolver's priority (collection > path). */
+  async getIndexMetrics(path: string, collection?: string): Promise<IndexMetrics> {
+    return this.exploreOps.getIndexMetrics(path, collection);
   }
 }
 

@@ -1072,6 +1072,27 @@ describe("NamingLexiconOps", () => {
           expect(result.notices).toBeUndefined();
         });
 
+        // bd tea-rags-mcp-2kplu: worktree validation addresses {collection, path}, and the path hashes to no index.
+        it("reads the metrics of the request's resolved collection, not of the path's hash", async () => {
+          class PathHashExplore extends MetricsExplore {
+            readonly collections: (string | undefined)[] = [];
+            override async getIndexMetrics(path: string, collection?: string) {
+              this.collections.push(collection);
+              if (collection === undefined) throw new Error("Collection code_283e5b7f not found");
+              return super.getIndexMetrics(path);
+            }
+          }
+          const explore = new PathHashExplore(3);
+          const result = await buildWithEmbeddings(explore).getNamingLexicon({
+            collection: "c",
+            path: "/worktree",
+            names: [{ name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" }],
+          });
+          expect(explore.collections).toEqual(["c"]);
+          expect(result.notices).toBeUndefined();
+          expect(result.names[0]).toMatchObject({ alternatives: [{ word: "tally", slot: "head" }] });
+        });
+
         it("below the threshold it stays a one-off", async () => {
           const result = await buildWithEmbeddings(new MetricsExplore(4)).getNamingLexicon({
             collection: "c",

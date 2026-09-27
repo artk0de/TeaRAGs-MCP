@@ -383,7 +383,14 @@ suffix rule even confirms the draft (`backend` is a suffix here). So:
    the draft's language, read from the same label map `get_index_metrics`
    publishes and the reranker labels by (self-index: 2). `Reranker` is one
    central type, while `site`-style noise is many weak carriers. It needs the
-   request's `path`; without it no head is established by usage.
+   request's `path`; without it no head is established by usage. Every index
+   read of one request (the concept searches, this metrics read) addresses the
+   collection resolved once for the request, in the resolver's priority
+   collection > project > path (`2kplu`). Before that, a `{collection, path}`
+   request, which is how a worktree is validated against its project's index,
+   read the metrics of the collection the path hashes to. That collection did
+   not exist, so the notice "type-name alignment skipped" turned alignment off
+   for the whole request.
 2. The draft's directory words are candidates too, at the slot of the draft word
    they are compared with, head or qualifier (`IndexStalenessChecker` in
    `maintenance/freshness/` → `freshness` for `staleness`). A pair sharing a
