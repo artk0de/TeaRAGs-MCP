@@ -14,6 +14,7 @@
 import { posix } from "node:path";
 
 import type {
+  FileDependencyEdge,
   FileDependencyGraphFile,
   RelPath,
   TemporalCochangeEdgeWithLinkage,
@@ -30,6 +31,7 @@ import type {
   SilentCouplingOptions,
   SilentCouplingReport,
   SilentCouplingRootCause,
+  SilentCouplingSharedNeighbour,
   SilentCouplingSummary,
   SilentCouplingViolation,
 } from "./types.js";
@@ -52,11 +54,27 @@ export const SILENT_COUPLING_WILSON_Z = 1.96;
 /** Silent partners a file needs to be reported as a root cause. One partner is a pair, not a pattern. */
 export const SILENT_COUPLING_ROOT_CAUSE_MIN_PARTNERS = 2;
 
+/**
+ * The floor on a shared neighbour's weight: ln(N / fanIn) is 0 exactly when
+ * every walked file imports the neighbour, which then says nothing about any
+ * pair. Otsu's split over the candidates' weights draws the actual cut; this
+ * is only the point no cut may fall to.
+ */
+export const SILENT_COUPLING_SHARED_NEIGHBOUR_WEIGHT_FLOOR = 0;
+
+/** Why an explained pair is not a violation — the report's reader-facing wording. */
+export const SILENT_COUPLING_EXPLAINED_REASON =
+  "strong unlinked pair explained by a specific shared neighbour: both files import it, or one reaches the other " +
+  "through it, and its weight ln(N / fanIn) clears Otsu's cut over every candidate's heaviest neighbour — " +
+  "coupling through a shared contract, not hidden coupling";
+
 type ExclusionReason = keyof SilentCouplingExclusionCounts;
 
 interface Candidate {
   edge: TemporalCochangeEdgeWithLinkage;
   strength: number;
+  /** The heaviest shared neighbour; absent when the endpoints share none, or no edges were given. */
+  sharedNeighbour?: SilentCouplingSharedNeighbour;
 }
 
 /**
@@ -71,7 +89,11 @@ interface Candidate {
  * is {@link cochangeStrength}. The threshold is drawn over every candidate's
  * strength ({@link resolveMajorityFlooredOtsuThreshold}); a candidate clearing
  * it is STRONG, and a strong candidate the structural graph does not link is a
- * VIOLATION when either endpoint is in scope.
+ * VIOLATION when either endpoint is in scope — unless a SPECIFIC shared
+ * neighbour explains it ({@link SilentCouplingNeighbourIndex}): given the file
+ * dependency edges, each candidate's heaviest neighbour weight enters a second
+ * Otsu split, and a would-be violation whose neighbour clears it is reported
+ * under `explained` instead (bd tea-rags-mcp-r8hme.13).
  *
  * Diagnosis, not prescription: a violation says two files move together for a
  * reason the code does not state, not that the reason is wrong.
@@ -89,6 +111,9 @@ export function detectSilentCoupling(
     unwalkedEndpoints: 0,
     nonPositiveLift: 0,
   };
+  const neighbours = options.fileDependencyEdges
+    ? new SilentCouplingNeighbourIndex(options.fileDependencyEdges, walkedFiles.length)
+    : null;
   const candidates: Candidate[] = [];
   for (const edge of graph.edges) {
     const reason = exclusionReason(edge, symbolCounts, options.isDocumentation);
@@ -96,13 +121,22 @@ export function detectSilentCoupling(
       excluded[reason]++;
       continue;
     }
-    candidates.push({ edge, strength: cochangeStrength(edge) });
+    const sharedNeighbour = neighbours?.heaviestSharedNeighbour(edge.relPathA, edge.relPathB);
+    candidates.push({ edge, strength: cochangeStrength(edge), ...(sharedNeighbour ? { sharedNeighbour } : {}) });
   }
 
   const policy = resolveMajorityFlooredOtsuThreshold(
     candidates.map((c) => c.strength),
     { majority: SILENT_COUPLING_STRENGTH_MAJORITY, minPopulation: SILENT_COUPLING_OTSU_MIN_POPULATION },
   );
+  // Explanation needs a cut the corpus drew itself: under the floor alone every
+  // neighbour short of universal would explain, so `majority` explains nothing.
+  const neighbourPolicy = resolveMajorityFlooredOtsuThreshold(
+    candidates.flatMap((c) => (c.sharedNeighbour ? [c.sharedNeighbour.weight] : [])),
+    { majority: SILENT_COUPLING_SHARED_NEIGHBOUR_WEIGHT_FLOOR, minPopulation: SILENT_COUPLING_OTSU_MIN_POPULATION },
+  );
+  const explains = (neighbour: SilentCouplingSharedNeighbour): boolean =>
+    neighbourPolicy.method === "otsu" && neighbourPolicy.admits(neighbour.weight);
   const inScope = compilePathPatternMatcher(options.sourcePathPattern);
   const scope =
     inScope && options.sourcePathPattern
@@ -112,7 +146,8 @@ export function detectSilentCoupling(
   let strongCount = 0;
   let strongLinkedCount = 0;
   const violations: SilentCouplingViolation[] = [];
-  for (const { edge, strength } of candidates) {
+  const explained: SilentCouplingViolation[] = [];
+  for (const { edge, strength, sharedNeighbour } of candidates) {
     if (!policy.admits(strength)) continue;
     strongCount++;
     if (edge.structurallyLinked) {
@@ -123,9 +158,14 @@ export function detectSilentCoupling(
       scope.outOfScopePairCount++;
       continue;
     }
+    if (sharedNeighbour && explains(sharedNeighbour)) {
+      explained.push({ ...toViolation(edge, strength, symbolCounts), explainedBy: sharedNeighbour });
+      continue;
+    }
     violations.push(toViolation(edge, strength, symbolCounts));
   }
   violations.sort(compareViolations);
+  explained.sort(compareViolations);
   const rootCauses = collectRootCauses(violations);
 
   const summary: SilentCouplingSummary = {
@@ -154,10 +194,78 @@ export function detectSilentCoupling(
     strengthThreshold: policy.threshold,
     strengthThresholdMethod: policy.method,
     ...(policy.separability === undefined ? {} : { strengthSeparability: policy.separability }),
+    ...(neighbourPolicy.method === "otsu"
+      ? {
+          sharedNeighbourThreshold: neighbourPolicy.threshold,
+          sharedNeighbourThresholdMethod: "otsu" as const,
+          ...(neighbourPolicy.separability === undefined
+            ? {}
+            : { sharedNeighbourSeparability: neighbourPolicy.separability }),
+        }
+      : { sharedNeighbourThresholdMethod: "none" as const }),
+    explainedCount: explained.length,
     excluded,
     ...(scope ? { scope } : {}),
   };
-  return { summary, violations, rootCauses };
+  return { summary, violations, explained, rootCauses };
+}
+
+/**
+ * Who imports whom, read for one question: which file, if any, explains why
+ * two files change together (bd tea-rags-mcp-r8hme.13). A neighbour C explains
+ * the pair (A, B) when both import C, or when one imports C and C imports the
+ * other. It explains it as far as it is SPECIFIC: weight(C) = ln(N / fanIn(C)),
+ * N the walked files and fanIn(C) the distinct files importing C — the inverse
+ * document frequency of C over importers. A wire protocol its two ends import
+ * weighs ln(N/2); a kernel most files import weighs near 0, so sharing it
+ * explains nothing.
+ */
+class SilentCouplingNeighbourIndex {
+  private readonly imports = new Map<RelPath, Set<RelPath>>();
+  private readonly importers = new Map<RelPath, Set<RelPath>>();
+
+  constructor(
+    edges: readonly FileDependencyEdge[],
+    private readonly walkedFileCount: number,
+  ) {
+    for (const { sourceRelPath, targetRelPath } of edges) {
+      if (sourceRelPath === targetRelPath) continue;
+      addToSetMap(this.imports, sourceRelPath, targetRelPath);
+      addToSetMap(this.importers, targetRelPath, sourceRelPath);
+    }
+  }
+
+  /** The heaviest neighbour of the pair; a tie goes to the smaller path, so the answer is stable. */
+  heaviestSharedNeighbour(a: RelPath, b: RelPath): SilentCouplingSharedNeighbour | undefined {
+    let best: SilentCouplingSharedNeighbour | undefined;
+    const consider = (left: ReadonlySet<RelPath> | undefined, right: ReadonlySet<RelPath> | undefined): void => {
+      if (!left || !right) return;
+      const [small, large] = left.size <= right.size ? [left, right] : [right, left];
+      for (const relPath of small) {
+        if (relPath === a || relPath === b || !large.has(relPath)) continue;
+        const weight = this.weightOf(relPath);
+        if (!best || weight > best.weight || (weight === best.weight && compareCodePoints(relPath, best.relPath) < 0)) {
+          best = { relPath, weight };
+        }
+      }
+    };
+    consider(this.imports.get(a), this.imports.get(b)); // both import C
+    consider(this.imports.get(a), this.importers.get(b)); // A → C → B
+    consider(this.imports.get(b), this.importers.get(a)); // B → C → A
+    return best;
+  }
+
+  /** ln(N / fanIn); an importer count above N (an edge endpoint the walk never extracted) is clamped to weight 0. */
+  private weightOf(relPath: RelPath): number {
+    const fanIn = this.importers.get(relPath)?.size ?? 0;
+    return fanIn > 0 ? Math.log(Math.max(this.walkedFileCount, fanIn) / fanIn) : 0;
+  }
+}
+
+function addToSetMap(map: Map<RelPath, Set<RelPath>>, key: RelPath, value: RelPath): void {
+  const set = map.get(key);
+  if (set) set.add(value);
+  else map.set(key, new Set([value]));
 }
 
 /**

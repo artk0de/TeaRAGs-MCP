@@ -191,6 +191,8 @@ from codegraph co-change sub-graph (git window, mass-change commits dropped).
 | `strengthThreshold`                      | cut this codebase got; strength must ALSO be > 0.5                             |
 | `strengthThresholdMethod`                | `otsu` = split over candidate strengths; `majority` = too few candidates (< 8) |
 | `strongLinkedCount`                      | strong pairs code DOES link — declared coupling, context for `violationCount`  |
+| `sharedNeighbourThreshold`               | Otsu cut over pairs' best shared-neighbour weight ln(N / fanIn); `none` = off  |
+| `explainedPairs`                         | pairs a specific shared neighbour explains; `evidence.explainedBy` names it    |
 
 `rootCauses` with `detector: "silentCoupling"` = file with ≥ 2 silent partners:
 `relPath`, `violationCount`, `maxStrength`, `partners`. Read first — hub of
@@ -263,8 +265,10 @@ Reasons verbatim in `exclusionReasons`. Report them as "not judged", never as
 
 `summary.silentCoupling.excluded` — pairs read, NOT judged: `testEndpoints`,
 `generatedEndpoints`, `documentationEndpoints`, `unwalkedEndpoints` (neither
-file walked), `nonPositiveLift`. A barrel / type-only / object-literal module IS
-judged — its `import type` deps are edges, so a missing edge is evidence.
+file walked), `nonPositiveLift`, `explainedBySharedNeighbour` (both import a
+low-fanIn file, or A→C→B — shared contract, not hidden coupling; hub neighbour
+explains nothing). A barrel / type-only / object-literal module IS judged — its
+`import type` deps are edges, so a missing edge is evidence.
 
 `summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
 (SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`

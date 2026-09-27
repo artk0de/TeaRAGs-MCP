@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  FileDependencyEdge,
   FileDependencyGraphFile,
   TemporalCochangeBuildMeta,
   TemporalCochangeEdgeWithLinkage,
@@ -302,5 +303,145 @@ describe("linkImportedCochangePairs (bd tea-rags-mcp-rbnkp)", () => {
 
     expect(report.violations).toHaveLength(2);
     expect(oneWalkedViolationImporters(report.violations, walked)).toEqual(["pages/TrdEditor.tsx"]);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-r8hme.13: a flagged pair is EXPLAINED by a common neighbour C
+ * — both files import C, or one reaches the other through C — when C is
+ * SPECIFIC: weight(C) = ln(N / fanIn(C)), N the walked files, fanIn(C) the
+ * distinct files importing C. The explained/unexplained cut is Otsu's split
+ * over every candidate's best neighbour weight (same helper and population
+ * floor as the strength cut); an explained pair leaves the violations and is
+ * counted, carrying the neighbour that explained it.
+ */
+describe("detectSilentCoupling — shared-neighbour explanation (bd tea-rags-mcp-r8hme.13)", () => {
+  /**
+   * 20 fillers + 19 pair files all import `lib/kernel.ts` (fanIn 39 of N = 42):
+   * a hub whose weight ln(42/39) is near zero. `proto/protocol.ts` is imported
+   * by the client/server pair only; `c/bridge.ts` joins c/x → d/y; `e/link.ts`
+   * joins f/v → e/u (the path in the other direction). Six w/p ↔ w/q pairs
+   * share the kernel alone.
+   */
+  function explanationFixture(): {
+    walked: FileDependencyGraphFile[];
+    edges: FileDependencyEdge[];
+    cochange: TemporalCochangeGraph;
+  } {
+    const hubPairs = [1, 2, 3, 4, 5, 6].map((i) => [`w/p${i}.ts`, `w/q${i}.ts`] as const);
+    const pairFiles = [
+      "a/client.ts",
+      "b/server.ts",
+      "c/x.ts",
+      "d/y.ts",
+      "e/u.ts",
+      "f/v.ts",
+      "c/bridge.ts",
+      ...hubPairs.flat(),
+    ];
+    const fillers = Array.from({ length: 20 }, (_, i) => `z/f${i}.ts`);
+    const walked = files("lib/kernel.ts", "proto/protocol.ts", "e/link.ts", ...pairFiles, ...fillers);
+    const edge = (sourceRelPath: string, targetRelPath: string): FileDependencyEdge => ({
+      sourceRelPath,
+      targetRelPath,
+      callWeight: 1,
+    });
+    const edges: FileDependencyEdge[] = [
+      ...[...pairFiles, ...fillers].map((f) => edge(f, "lib/kernel.ts")),
+      edge("a/client.ts", "proto/protocol.ts"),
+      edge("b/server.ts", "proto/protocol.ts"),
+      edge("c/x.ts", "c/bridge.ts"),
+      edge("c/bridge.ts", "d/y.ts"),
+      edge("f/v.ts", "e/link.ts"),
+      edge("e/link.ts", "e/u.ts"),
+    ];
+    const cochange = built([
+      pair("a/client.ts", "b/server.ts"),
+      pair("c/x.ts", "d/y.ts"),
+      pair("e/u.ts", "f/v.ts"),
+      ...hubPairs.map(([p, q]) => pair(p, q)),
+    ]);
+    return { walked, edges, cochange };
+  }
+
+  const N = 42;
+  const HUB_WEIGHT = Math.log(N / 39);
+
+  it("explains a pair by a specific common import, and by a path through a specific file either way", () => {
+    const { walked, edges, cochange } = explanationFixture();
+    expect(walked).toHaveLength(N);
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    const explained = Object.fromEntries(report.explained.map((v) => [`${v.relPathA}|${v.relPathB}`, v.explainedBy]));
+    expect(explained).toEqual({
+      "a/client.ts|b/server.ts": { relPath: "proto/protocol.ts", weight: expect.closeTo(Math.log(N / 2), 12) },
+      "c/x.ts|d/y.ts": { relPath: "c/bridge.ts", weight: expect.closeTo(Math.log(N / 1), 12) },
+      "e/u.ts|f/v.ts": { relPath: "e/link.ts", weight: expect.closeTo(Math.log(N / 1), 12) },
+    });
+    expect(report.violations.map((v) => v.relPathA)).toEqual([
+      "w/p1.ts",
+      "w/p2.ts",
+      "w/p3.ts",
+      "w/p4.ts",
+      "w/p5.ts",
+      "w/p6.ts",
+    ]);
+  });
+
+  it("keeps a pair flagged when its only shared neighbour is a hub most files import", () => {
+    const { walked, edges, cochange } = explanationFixture();
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    for (const v of report.violations) expect(v.explainedBy).toBeUndefined();
+    expect(report.summary.violationCount).toBe(6);
+    expect(report.summary.explainedCount).toBe(3);
+  });
+
+  it("draws the explained/unexplained cut with Otsu over every candidate's best neighbour weight", () => {
+    const { walked, edges, cochange } = explanationFixture();
+
+    const { summary } = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(summary.sharedNeighbourThresholdMethod).toBe("otsu");
+    // Six hub weights below, ln(42/2) the smallest specific weight above.
+    expect(summary.sharedNeighbourThreshold).toBeCloseTo((HUB_WEIGHT + Math.log(N / 2)) / 2, 12);
+    expect(summary.sharedNeighbourSeparability).toBeGreaterThan(0.9);
+    expect(summary.sharedNeighbourSeparability).toBeLessThanOrEqual(1);
+  });
+
+  it("explains nothing when too few candidates share a neighbour for Otsu to be trusted", () => {
+    const { walked, edges } = explanationFixture();
+    const cochange = built([pair("a/client.ts", "b/server.ts"), pair("w/p1.ts", "w/q1.ts")]);
+
+    const report = detectSilentCoupling(cochange, walked, { fileDependencyEdges: edges });
+
+    expect(report.summary.sharedNeighbourThresholdMethod).toBe("none");
+    expect(report.summary.sharedNeighbourThreshold).toBeUndefined();
+    expect(report.summary.explainedCount).toBe(0);
+    expect(report.explained).toEqual([]);
+    expect(report.violations).toHaveLength(2);
+  });
+
+  it("explains nothing when the dependency edges are not supplied", () => {
+    const { walked, cochange } = explanationFixture();
+
+    const report = detectSilentCoupling(cochange, walked);
+
+    expect(report.summary.sharedNeighbourThresholdMethod).toBe("none");
+    expect(report.summary.explainedCount).toBe(0);
+    expect(report.violations).toHaveLength(9);
+  });
+
+  it("drops explained pairs from root causes, which count silent partners only", () => {
+    const { walked, edges, cochange } = explanationFixture();
+    const withSecondPartner = built([...cochange.edges, pair("a/client.ts", "z/f0.ts")]);
+
+    const report = detectSilentCoupling(withSecondPartner, walked, { fileDependencyEdges: edges });
+
+    // a/client.ts has two strong partners, but server is explained: one silent partner is no root cause.
+    expect(report.explained.map((v) => v.relPathB)).toContain("b/server.ts");
+    expect(report.rootCauses.map((r) => r.relPath)).not.toContain("a/client.ts");
   });
 });
