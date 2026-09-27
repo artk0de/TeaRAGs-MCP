@@ -211,3 +211,74 @@ end
     });
   });
 });
+
+/**
+ * bd tea-rags-mcp-ic5mv — a split method's leading doc comment never makes a
+ * part of its own. A JSDoc larger than half the budget used to be cut as one
+ * span, so `#part1` held the class header and the comment and no signature:
+ * a hit on it named neither the method nor anything it does. The comment now
+ * shares a part with the signature whenever the two fit together, and a
+ * comment too large even for that repeats the signature on the comment-only
+ * windows, the way every later part already repeats it.
+ */
+describe("TreeSitterChunker — a split method's doc comment stays with its signature (bd ic5mv)", () => {
+  const maxChunkSize = 1000;
+  const signature = "render(run: Run): void {";
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
+      new DefaultSymbolIdComposer(),
+      new LanguageFactory(),
+    );
+  });
+
+  function reporterWithDoc(paragraphs: number): string {
+    const doc = Array.from(
+      { length: paragraphs },
+      (_, i) => `   * Paragraph ${i}: the documentation of this method is deliberately long and verbose.`,
+    ).join("\n");
+    return `export class Reporter {
+  /**
+${doc}
+   */
+  ${signature}
+${statements(20, "    ")}
+  }
+}
+`;
+  }
+
+  function renderParts(chunks: CodeChunk[]): CodeChunk[] {
+    return chunks.filter((c) => /^Reporter#render#part\d+$/.test(c.metadata.symbolId ?? ""));
+  }
+
+  it("keeps a JSDoc over half the budget in the same part as the signature", async () => {
+    const code = reporterWithDoc(7);
+    const chunks = await chunker.chunk(code, "src/reporter.ts", "typescript");
+    const parts = renderParts(chunks);
+
+    expect(parts.length).toBeGreaterThan(1);
+    const part1 = parts[0];
+    expect(part1.content).toContain("/**");
+    expect(part1.content.split("\n").map((l) => l.trim())).toContain(signature);
+    expect(part1.startLine).toBe(2);
+    for (const p of parts) expect(p.content.split("\n").map((l) => l.trim())).toContain(signature);
+    for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
+    expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*)/));
+  });
+
+  it("repeats the signature on the comment-only windows of a JSDoc larger than the budget", async () => {
+    const code = reporterWithDoc(16);
+    const chunks = await chunker.chunk(code, "src/reporter.ts", "typescript");
+    const parts = renderParts(chunks);
+
+    expect(parts.length).toBeGreaterThan(2);
+    for (const p of parts) expect(p.content.split("\n").map((l) => l.trim())).toContain(signature);
+    for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
+    expect(parts[0].startLine).toBe(2);
+    for (let i = 1; i < parts.length; i++) expect(parts[i].startLine).toBe(parts[i - 1].endLine + 1);
+    expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*)/));
+  });
+});
