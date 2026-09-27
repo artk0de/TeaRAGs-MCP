@@ -330,3 +330,58 @@ describe("EnrichmentCoordinator.recomputeEnrichments forces the store repair (cn
     expect(finalizeOptions.contentHashes?.has("src/c.ts")).toBe(false);
   });
 });
+
+describe("EnrichmentCoordinator.recomputeEnrichments forced repair covers chunkless files (nlbhg)", () => {
+  // A file that yields no chunk (a tiny one) has no Qdrant point, so the
+  // stored-chunk scope never lists it — yet it is codegraph-extractable and
+  // its edges belong in the graph. The forced repair takes its eligibility
+  // from the working-tree scan the sync leg captured, narrowed by
+  // `--languages`, so such files re-extract too.
+  const SYNC_SCAN = new Map([
+    ["src/a.ts", "hA"],
+    ["src/tiny.ts", "hT"],
+    ["app/models/user.rb", "hR"],
+  ]);
+
+  async function recomputeAfterSync(
+    points: { id: string; payload: Record<string, unknown> }[],
+    languages?: readonly string[],
+  ): Promise<{ walked: string[]; provider: EnrichmentProvider }> {
+    const executor = new InlineEnrichmentExecutor();
+    const runFileBatch = vi.spyOn(executor, "runFileBatch");
+    const provider = recomputeStoreProvider({
+      readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>(SYNC_SCAN)),
+    });
+    const coordinator = new EnrichmentCoordinator(recomputeQdrant(points) as never, provider, undefined, executor);
+    // The sync leg's ordinary repair: the store is current, nothing dispatched.
+    await coordinator.runRepairPass("code_x_v1", "/repo", SYNC_SCAN);
+    expect(runFileBatch).not.toHaveBeenCalled();
+
+    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"], languages);
+    const walked = [...new Set(runFileBatch.mock.calls.flatMap((call) => call[2]))].sort();
+    return { walked, provider };
+  }
+
+  it("walks scanned files that have no stored chunks", async () => {
+    const { walked } = await recomputeAfterSync([
+      { id: "c1", payload: { relativePath: "src/a.ts", startLine: 1, endLine: 10 } },
+    ]);
+    expect(walked).toEqual(["app/models/user.rb", "src/a.ts", "src/tiny.ts"]);
+  });
+
+  it("narrows the scanned files to --languages", async () => {
+    const { walked } = await recomputeAfterSync(
+      [{ id: "c1", payload: { relativePath: "src/a.ts", startLine: 1, endLine: 10, language: "typescript" } }],
+      ["typescript"],
+    );
+    expect(walked).toEqual(["src/a.ts", "src/tiny.ts"]);
+  });
+
+  it("still repairs and finalizes when the scope holds no stored chunk at all", async () => {
+    const { walked, provider } = await recomputeAfterSync([], ["typescript"]);
+    expect(walked).toEqual(["src/a.ts", "src/tiny.ts"]);
+    // Pass-2 resolution and `cg_run_stats` live in the finalize: a repair
+    // without one leaves the re-extracted rows unresolved.
+    expect(provider.finalizeSignals).toHaveBeenCalled();
+  });
+});
