@@ -75,6 +75,16 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       // single per-language file.
       `${LANGUAGE_ROOT}/factory.ts`,
       "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts",
+      // The type hierarchy every resolver reads (bd tea-rags-mcp-u0t4p): how
+      // walker declarations become kind/ordinal rows and a snapshot, the MRO
+      // order of the view `ConeDispatchResolver#nearestDefiner` walks, the
+      // self-dispatch templates derived from it, and the host-class alias that
+      // shares its comparator. Reordering any of them moves edges with no
+      // per-language file touched.
+      "src/core/domains/trajectory/codegraph/hierarchy-view.ts",
+      "src/core/domains/trajectory/codegraph/inherited-member-definer.ts",
+      "src/core/domains/trajectory/codegraph/symbols/inheritance-edges.ts",
+      "src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.ts",
     ],
     // Same exclusion as a language's own `capability.ts`, for the same reason:
     // `kernel/capability.ts` HOLDS `sharedVersions`, so digesting it would make
