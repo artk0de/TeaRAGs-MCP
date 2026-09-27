@@ -28,6 +28,8 @@ describe("parseAppConfigZod", () => {
       "PROMPTS_CONFIG_FILE",
       "EMBEDDING_PROVIDER",
       "EMBEDDING_MODEL",
+      "OLLAMA_QUANTIZATION",
+      "EMBEDDING_OLLAMA_QUANTIZATION",
       "EMBEDDING_DIMENSIONS",
       "EMBEDDING_BASE_URL",
       "OLLAMA_LEGACY_API",
@@ -201,6 +203,7 @@ describe("parseAppConfigZod", () => {
       expect(embedding.baseUrl).toBeUndefined();
       expect(embedding.ollamaLegacyApi).toBe(false);
       expect(embedding.ollamaNumGpu).toBe(999);
+      expect(embedding.ollamaQuantization).toBe("off");
       expect(embedding.openaiApiKey).toBeUndefined();
       expect(embedding.cohereApiKey).toBeUndefined();
       expect(embedding.voyageApiKey).toBeUndefined();

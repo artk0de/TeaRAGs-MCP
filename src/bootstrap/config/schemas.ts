@@ -84,9 +84,9 @@ export const embeddingSchema = z.object({
    * turbo quantization) and embeds against it; a server that cannot quantize
    * warns and keeps the unquantized model. Quantized vectors differ from
    * F16 ones, so the first run after flipping this re-indexes (the embedding
-   * model guard enforces it). `off` restores unquantized embedding.
+   * model guard enforces it). Defaults to `off` (unquantized) — opt in.
    */
-  ollamaQuantization: z.enum(["off", "q8_0", "q5_K_M", "q4_K_M", "turbo"]).default("turbo"),
+  ollamaQuantization: z.enum(["off", "q8_0", "q5_K_M", "q4_K_M", "turbo"]).default("off"),
   openaiApiKey: z.string().optional(),
   cohereApiKey: z.string().optional(),
   voyageApiKey: z.string().optional(),
