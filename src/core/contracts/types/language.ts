@@ -1167,4 +1167,13 @@ export interface IdentifierNamingConvention {
    * own namespace (Java's `m()`), and no local can shadow it.
    */
   readonly implicitSelf?: true;
+  /**
+   * The type namespace the language declares its types into (bd
+   * tea-rags-mcp-icuxg): languages naming the same one import each other's
+   * types, so a type name in one is taken in all of them. The naming lexicon
+   * judges a type draft — its collisions and its role / term evidence — against
+   * the declarations of every language sharing the draft's namespace. Absent:
+   * the language's types are its own.
+   */
+  readonly typeNamespace?: string;
 }

@@ -206,6 +206,37 @@ is the file the type will live in; `extends` its planned ancestor.
 
 Casing follows the file language of `path`, as for value names.
 
+**One type namespace per draft** (`icuxg`). The draft is judged against the
+declarations of its own TYPE NAMESPACE only: the language of `path` plus every
+language whose naming capability declares the same `typeNamespace`. A language
+that declares none owns its namespace alone. This covers the COLLISION check and
+all role and term evidence: the directory and family roles, established
+modifiers, head counts, the null similarity distribution, and `evidence.n`. A
+Ruby `Result` beside a TSX `Result` is no collision, because neither file can
+import the other's type. TypeScript and JavaScript both declare `ecmascript`,
+because they do import each other's types (`allowJs`, a `.d.ts` beside its
+`.js`, a JS entry point loading TS source), so a TS `Widget` draft collides with
+a JS `Widget`. When the draft's path has no known language, every language is
+read, which was the behaviour before this rule.
+
+The answer's top-level `language` is the language the answer is written in. It
+is the request's; else the `pathPattern`'s; else the language of the evidence
+rows for the asked types and callees; else the language most type drafts' paths
+are written in; else the project's dominant language. A type draft judged in any
+other language names its own language in `names[].language`. Diff mode already
+answers once per language, so each name is judged in its own language and the
+field never reaches `review.findings`.
+
+Measured on taxdome with the vi0wx N2 request (20 Ruby type drafts). The
+answer's `language` went from `typescript` to `ruby`. The `Result` draft at
+`app/services/getting_paid/payments/result.rb` had collided with the TSX
+`Result` in `ImportSidebar.tsx` (`n: 271`, counted across languages). It now
+collides with the Ruby `AbstractPolicy::Result` (`n: 260`): taxdome declares 260
+Ruby types named `Result`, so the collision is real within the namespace. 18
+verdicts are unchanged. `ClientDataManager` stays CONFORMS but now carries a
+head alternative (`methods`, similarity 0.68). The null similarity distribution
+is now measured over Ruby heads only, so its floor moved.
+
 Every verdict judges VOCABULARY. CONFORMS means consistent with the project's
 vocabulary: its words, roles and spellings. It says nothing about whether the
 name fits the behaviour of the code it names. A `Parser` that validates conforms

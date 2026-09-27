@@ -167,6 +167,10 @@ export const capability: LanguageCapability = {
       field: ["camel"],
       constant: ["camel", "screamingSnake"],
     },
+    // TypeScript imports JavaScript types (`allowJs`, a `.d.ts` beside its `.js`):
+    // one ECMAScript type namespace, so a class name one declares is taken
+    // in the other.
+    typeNamespace: "ecmascript",
     // Primitives, top types, boxed wrappers, and the containers / utility types
     // (`Promise`, `Record`, `Partial` …) that wrap a concept rather than name one.
     nonConceptTypes: [
