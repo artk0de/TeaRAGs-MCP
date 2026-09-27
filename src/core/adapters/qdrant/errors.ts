@@ -261,6 +261,27 @@ export class QdrantDowngradeNotSupportedError extends InfraError {
   }
 }
 
+/**
+ * The collection's optimizer still reports an error after `tea-rags qdrant
+ * recover` re-applied its config. Qdrant 1.18 (#8767) clears a recorded
+ * optimizer error when a collection update recreates the optimizer, so an
+ * error that survives the recreation has a live cause (disk, memory, a
+ * corrupt segment) that a config round-trip cannot fix.
+ */
+export class QdrantOptimizerErrorPersistsError extends InfraError {
+  constructor(collectionName: string, optimizerStatus: string) {
+    super({
+      code: "INFRA_QDRANT_OPTIMIZER_ERROR_PERSISTS",
+      message: `Qdrant optimizer of collection "${collectionName}" still reports an error after recreation: ${optimizerStatus}`,
+      hint:
+        `The optimizer was recreated and failed again, so the cause is still present. ` +
+        `Check the Qdrant server log for the failing optimization (disk space, memory, segment ` +
+        `corruption), fix it, then re-run the recover command; a full reindex builds a fresh collection.`,
+      httpStatus: 500,
+    });
+  }
+}
+
 export class QdrantOptimizationInProgressError extends InfraError {
   constructor(collectionName: string, cause?: Error) {
     super({

@@ -385,6 +385,27 @@ export class QdrantCollectionAdmin {
   }
 
   /**
+   * Re-send the collection's LIVE optimizer config as a collection update.
+   *
+   * Qdrant 1.18 (#8767) recreates the optimizer on a collection update and
+   * clears a recorded optimizer error, so this is the recovery for a failed
+   * optimizer without a daemon restart (bd tea-rags-mcp-ye5o). It is a pure
+   * echo: every value the server reported goes back unchanged — a collection a
+   * crashed reindex left paused stays paused — and a `null` (server default) is
+   * omitted rather than sent, so no setting moves.
+   */
+  async reapplyOptimizerConfig(collectionName: string): Promise<void> {
+    const info = await this.connection.call(async () => this.connection.client.getCollection(collectionName));
+    const current = (info.config as { optimizer_config?: Record<string, unknown> } | undefined)?.optimizer_config ?? {};
+    const optimizersConfig = Object.fromEntries(
+      Object.entries(current).filter(([, value]) => value !== null && value !== undefined),
+    );
+    await this.connection.call(async () =>
+      this.connection.client.updateCollection(collectionName, { optimizers_config: optimizersConfig }),
+    );
+  }
+
+  /**
    * Best-effort on-disk byte size of a collection's storage directory.
    *
    * EMBEDDED only: recursively sums file sizes under

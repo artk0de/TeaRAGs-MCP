@@ -194,6 +194,11 @@ export class QdrantManager {
     return this.collections.updateCollectionStrictMode(collectionName, strictMode);
   }
 
+  /** Re-send the live optimizer config unchanged — Qdrant 1.18 recreates the optimizer, clearing its error. */
+  async reapplyOptimizerConfig(collectionName: string): Promise<void> {
+    return this.collections.reapplyOptimizerConfig(collectionName);
+  }
+
   /** Pause HNSW indexing and segment vacuum for the duration of a bulk reindex. */
   async pauseOptimizer(collectionName: string): Promise<void> {
     return this.collections.pauseOptimizer(collectionName);

@@ -81,6 +81,40 @@ describe("formatInfraHealth — Qdrant version", () => {
   });
 });
 
+// bd tea-rags-mcp-ye5o — status only REPORTS a failed optimizer; the recovery
+// is the explicit `tea-rags qdrant recover` command, printed ready to run.
+describe("formatInfraHealth — optimizer failure remedy", () => {
+  const embedding: InfraHealth["embedding"] = { available: true, provider: "onnx" };
+
+  it("surfaces the optimizer error and the recover command addressed by alias", () => {
+    const out = formatInfraHealth(
+      { qdrant: { ...qdrant, status: "red", optimizerStatus: "error: segment optimization failed" }, embedding },
+      { project: "demo", path: "/repo" },
+    );
+    expect(out).toContain("optimizer: error: segment optimization failed");
+    expect(out).toContain("Run: tea-rags qdrant recover --project demo");
+  });
+
+  it("surfaces the error even when the collection status still reads green", () => {
+    const out = formatInfraHealth(
+      { qdrant: { ...qdrant, optimizerStatus: "error: boom" }, embedding },
+      { path: "/repo" },
+    );
+    expect(out).toContain("optimizer: error: boom");
+    expect(out).toContain("Run: tea-rags qdrant recover --path /repo");
+  });
+
+  it("prints no recover command for a healthy or unknown optimizer", () => {
+    const target = { project: "demo" };
+    expect(formatInfraHealth({ qdrant: { ...qdrant, optimizerStatus: "ok" }, embedding }, target)).not.toContain(
+      "qdrant recover",
+    );
+    expect(
+      formatInfraHealth({ qdrant: { ...qdrant, status: "yellow", optimizerStatus: "unknown" }, embedding }, target),
+    ).not.toContain("qdrant recover");
+  });
+});
+
 describe("formatBytes", () => {
   it.each([
     [512, "512 B"],
@@ -174,5 +208,28 @@ describe("get_index_status — drift block", () => {
     const result = await handler({ path: "/repo" }, {});
 
     expect(result.content[0].text).not.toContain("## Drift");
+  });
+});
+
+describe("get_index_status — optimizer failure remedy", () => {
+  it("addresses the recover command by the project the caller named", async () => {
+    const { handler, app } = makeStatusHarness(vi.fn().mockResolvedValue(null));
+    vi.mocked(app.getIndexStatus).mockResolvedValue({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "code_abc",
+      chunksCount: 100,
+      infraHealth: {
+        qdrant: { available: true, url: "http://127.0.0.1:6333", status: "red", optimizerStatus: "error: boom" },
+        embedding: { available: true, provider: "onnx" },
+      },
+    });
+    (app as unknown as { listProjects: unknown }).listProjects = vi
+      .fn()
+      .mockResolvedValue({ projects: [{ name: "demo", path: "/repo" }] });
+
+    const result = await handler({ project: "demo" }, {});
+
+    expect(result.content[0].text).toContain("Run: tea-rags qdrant recover --project demo");
   });
 });

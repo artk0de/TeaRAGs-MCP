@@ -936,6 +936,58 @@ describe("QdrantManager", () => {
     });
   });
 
+  // bd tea-rags-mcp-ye5o — Qdrant 1.18 (#8767) recreates a collection's
+  // optimizer on a collection update and clears its recorded error. The
+  // recovery update must be a pure echo of the LIVE optimizer config: a
+  // collection left paused by a crashed reindex stays paused, and nothing the
+  // server did not report is sent back.
+  describe("reapplyOptimizerConfig", () => {
+    it("re-sends the live optimizer config with every value unchanged", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        status: "red",
+        optimizer_status: { error: "segment optimization failed" },
+        config: {
+          params: { vectors: { size: 384, distance: "Cosine" } },
+          optimizer_config: {
+            deleted_threshold: 0.99,
+            vacuum_min_vector_number: 1000,
+            default_segment_number: 0,
+            max_segment_size: null,
+            memmap_threshold: null,
+            indexing_threshold: 0,
+            flush_interval_sec: 5,
+            max_optimization_threads: null,
+            prevent_unoptimized: true,
+          },
+        },
+      });
+
+      await manager.reapplyOptimizerConfig("code_abc_v2");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledTimes(1);
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("code_abc_v2", {
+        optimizers_config: {
+          deleted_threshold: 0.99,
+          vacuum_min_vector_number: 1000,
+          default_segment_number: 0,
+          indexing_threshold: 0,
+          flush_interval_sec: 5,
+          prevent_unoptimized: true,
+        },
+      });
+    });
+
+    it("sends an empty optimizer diff when the server reports no optimizer config", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      await manager.reapplyOptimizerConfig("code_abc");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("code_abc", { optimizers_config: {} });
+    });
+  });
+
   describe("updateCollectionQuantization", () => {
     it("PATCHes turbo config via update_collection", async () => {
       await manager.updateCollectionQuantization("col");

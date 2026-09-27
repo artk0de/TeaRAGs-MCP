@@ -4,8 +4,11 @@ import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
 import {
   formatResolveRate,
   formatResolveRateCell,
+  isOptimizerFailure,
+  renderOptimizerRecoveryCommand,
   resolveRateMiss,
   type LanguageCapability,
+  type OptimizerRecoveryTarget,
 } from "../../core/api/public/index.js";
 import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason, PrimeRegistryEntry } from "./types.js";
@@ -113,7 +116,10 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
 
   if (data.status.infraHealth) {
     lines.push("");
-    lines.push(...formatInfraSection(data.status.infraHealth));
+    const recoveryTarget: OptimizerRecoveryTarget = data.projectName
+      ? { project: data.projectName }
+      : { path: data.path };
+    lines.push(...formatInfraSection(data.status.infraHealth, recoveryTarget));
   }
 
   if (data.status.enrichment) {
@@ -530,7 +536,11 @@ function computeStaleness(lastUpdated: Date | undefined, now: Date): { ago: stri
   return { ago: formatRelativeTime(diffMs), stale: diffMs > STALE_THRESHOLD_MS };
 }
 
-function formatInfraSection(infra: InfraHealth): string[] {
+/**
+ * `recoveryTarget` addresses the recover command printed for a failed
+ * optimizer (bd tea-rags-mcp-ye5o) — prime only REPORTS it, never recovers.
+ */
+function formatInfraSection(infra: InfraHealth, recoveryTarget: OptimizerRecoveryTarget): string[] {
   const lines = ["## Infra"];
   const q = infra.qdrant;
   let qLine = `qdrant: ${q.status ?? "unknown"} (optimizer ${q.optimizerStatus ?? "unknown"}) at ${q.url}`;
@@ -543,6 +553,9 @@ function formatInfraSection(infra: InfraHealth): string[] {
     qLine += " — UNAVAILABLE, search will fail";
   }
   lines.push(qLine);
+  if (isOptimizerFailure(q.optimizerStatus)) {
+    lines.push(renderOptimizerRecoveryCommand(recoveryTarget));
+  }
 
   const e = infra.embedding;
   const badge = (ok: boolean) => (ok ? "available" : "unavailable");

@@ -7,6 +7,7 @@ import {
   QdrantInvalidQueryParameterError,
   QdrantOperationError,
   QdrantOptimizationInProgressError,
+  QdrantOptimizerErrorPersistsError,
   QdrantPointNotFoundError,
   QdrantRecoveringError,
   QdrantStartingError,
@@ -40,6 +41,18 @@ describe("QdrantOptimizationInProgressError", () => {
     const err = new QdrantOptimizationInProgressError("code_abc");
     expect(err).not.toBeInstanceOf(QdrantOperationError);
     expect(err).not.toBeInstanceOf(QdrantUnavailableError);
+  });
+});
+
+describe("QdrantOptimizerErrorPersistsError", () => {
+  it("names the collection and the error that survived the optimizer recreation", () => {
+    const err = new QdrantOptimizerErrorPersistsError("code_abc_v2", "error: segment optimization failed");
+
+    expect(err).toBeInstanceOf(InfraError);
+    expect(err.code).toBe("INFRA_QDRANT_OPTIMIZER_ERROR_PERSISTS");
+    expect(err.message).toContain("code_abc_v2");
+    expect(err.message).toContain("segment optimization failed");
+    expect(err.hint).toContain("log");
   });
 });
 
