@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 
 import { typeNameWords } from "./casing.js";
 import { isWordAbbreviation } from "./homonyms.js";
-import type { NameSlots } from "./name-slots.js";
+import { typeNameParts, type NameSlots, type TypeNameParser } from "./name-slots.js";
 
 /** One word the project uses as a qualifier before a head in type names. */
 export interface ModifierUse {
@@ -82,14 +82,16 @@ export function establishedModifiers(uses: readonly ModifierUse[], minHeads = 2,
  * (names in `conceptNames` carrying the word as a qualifier ÷
  * `conceptNames.length`) ÷ (`count` ÷ `projectTotal`). A modifier absent from
  * the concept names lifts 0; so does every modifier when either side has no
- * population to measure.
+ * population to measure. A name's qualifiers are read by `parse` — a
+ * complement (`ForFirm`) holds none.
  */
 export function modifierLift(
   established: readonly ModifierUse[],
   conceptNames: readonly string[],
   projectTotal: number,
+  parse: TypeNameParser = (name) => typeNameParts(name),
 ): Map<string, number> {
-  const qualifierSets = conceptNames.map((name) => new Set(typeNameWords(name).slice(0, -1)));
+  const qualifierSets = conceptNames.map((name) => new Set(parse(name).qualifiers));
   const lift = new Map<string, number>();
   for (const use of established) {
     const occurrences = qualifierSets.filter((qualifiers) => qualifiers.has(use.word)).length;
@@ -218,7 +220,8 @@ const MIN_HEAD_CANDIDATE_TYPES = 2;
  * fewer than {@link MIN_HEAD_CANDIDATE_TYPES} types end in (`headCounts`) —
  * unless `admitted` names it: a head ONE central type carries, established by
  * usage rather than by count (`Reranker`). Which candidate spells the draft's
- * concept is a question of meaning, left to the caller. Sorted by word.
+ * concept is a question of meaning, left to the caller. Sorted by word. Heads
+ * and qualifiers of `rows` are read by `parse`.
  */
 export function anchoredHeadCandidates(
   slots: NameSlots,
@@ -226,18 +229,19 @@ export function anchoredHeadCandidates(
   rows: readonly { shortName: string; relPath: string }[],
   headCounts: ReadonlyMap<string, number>,
   admitted: ReadonlySet<string> = new Set(),
+  parse: TypeNameParser = (name) => typeNameParts(name),
 ): HeadCandidate[] {
-  const draftWords = new Set([...slots.qualifiers, ...slots.head]);
+  const draftWords = new Set([...slots.qualifiers, ...slots.head, ...(slots.complement ?? [])]);
   const qualifiers = new Set(slots.qualifiers);
   const anchored = new Map<string, { examples: Set<string>; domains: Set<string> }>();
   for (const row of rows) {
-    const words = typeNameWords(row.shortName);
-    const head = words.at(-1);
+    const parts = parse(row.shortName);
+    const { head } = parts;
     if (head === undefined || draftWords.has(head)) continue;
     if ((headCounts.get(head) ?? 0) < MIN_HEAD_CANDIDATE_TYPES && !admitted.has(head)) continue;
     const slash = row.relPath.lastIndexOf("/");
     const dir = slash < 0 ? "" : row.relPath.slice(0, slash);
-    const sharesQualifier = words.slice(0, -1).some((word) => qualifiers.has(word));
+    const sharesQualifier = parts.qualifiers.some((word) => qualifiers.has(word));
     if (!sharesQualifier && dir !== draftDir) continue;
     const entry = anchored.get(head) ?? { examples: new Set<string>(), domains: new Set<string>() };
     entry.examples.add(row.shortName);

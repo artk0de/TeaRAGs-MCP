@@ -50,6 +50,7 @@
  */
 import type { TypeNameRow } from "../../../contracts/types/codegraph.js";
 import { singularizeIdentifierWord, splitIdentifierWords, typeNameLastSegment, typeNameWords } from "./casing.js";
+import { typeNameParts, type TypeNameParser } from "./name-slots.js";
 
 /** The row shape is owned by the store contract (`GraphDbClient.readTypeNameRows`). */
 export type { TypeNameRow };
@@ -177,7 +178,7 @@ const EVIDENCE_ORDER: readonly TypeRoleEvidence[] = ["inheritance", "directory",
 
 interface HeadedRow {
   row: TypeNameRow;
-  /** The name's last word as a role candidate; `null` when it restates the row's declaration kind. */
+  /** The name's head ({@link typeNameParts}) as a role candidate; `null` when it restates the row's declaration kind. */
   head: string | null;
 }
 
@@ -318,7 +319,8 @@ export function isNamespaceDeclaration(declaration: {
 
 /** Each file's primary type, in first-seen file order (see {@link primaryHeadedPerFile}); nameless rows are skipped. */
 export function primaryPerFile(rows: readonly TypeNameRow[]): TypeNameRow[] {
-  return primaryHeadedPerFile(headedRows(rows)).map(({ row }) => row);
+  // The pick reads names and file stems, never heads: the plain parse serves.
+  return primaryHeadedPerFile(headedRows(rows, (name) => typeNameParts(name))).map(({ row }) => row);
 }
 
 /**
@@ -329,13 +331,12 @@ function kindWords(kind: TypeNameRow["symbolKind"]): ReadonlySet<string> {
   return new Set(kind === null ? [] : splitIdentifierWords(kind));
 }
 
-function headedRows(rows: readonly TypeNameRow[]): HeadedRow[] {
+function headedRows(rows: readonly TypeNameRow[], parse: TypeNameParser): HeadedRow[] {
   const headed: HeadedRow[] = [];
   for (const row of rows) {
-    const words = typeNameWords(row.shortName);
-    const last = words.at(-1);
-    if (last === undefined) continue;
-    headed.push({ row, head: kindWords(row.symbolKind).has(last) ? null : last });
+    const { head } = parse(row.shortName);
+    if (head === undefined) continue;
+    headed.push({ row, head: kindWords(row.symbolKind).has(head) ? null : head });
   }
   return headed;
 }
@@ -541,15 +542,16 @@ function unnamedKinds(
   familyRoles: ReadonlyMap<string, string | undefined>,
   declared: ReadonlySet<string>,
   share: number,
+  parse: TypeNameParser,
 ): Map<TypeNameRow, UnnamedKind> {
   const kinds = new Map<TypeNameRow, UnnamedKind>();
   for (const [ancestor, members] of families) {
     if (familyRoles.get(ancestor) !== undefined || members.length < MIN_ROLE_MEMBERS || !declared.has(ancestor)) {
       continue;
     }
-    const last = typeNameWords(ancestor).at(-1);
-    if (last === undefined) continue;
-    const role = singularizeIdentifierWord(last);
+    const { head } = parse(ancestor);
+    if (head === undefined) continue;
+    const role = singularizeIdentifierWord(head);
     const carried = members.filter(({ head }) => head !== null && singularizeIdentifierWord(head) === role).length;
     if (carried / members.length >= share) continue;
     const agreeing = members.filter(({ row }) => directoryWords(row.relPath).has(role));
@@ -565,12 +567,54 @@ function unnamedKinds(
   return kinds;
 }
 
-/** Derives every type's role assignments, strongest evidence first, then by scope and symbolId. */
+const typeNameParserCache = new WeakMap<readonly TypeNameRow[], TypeNameParser>();
+
+/**
+ * The type-name parser of one population (spec 2026-09-26 §2): {@link typeNameParts}
+ * with the KIND words its names carry when read WITHOUT a connector — the
+ * inheritance and directory roles derived from the rows whose names have no
+ * interior connector, a dispersed family's kind (never a name word) excepted. A
+ * connector name ending in such a word is headed by it (`BatchMarkAsReadWorker`
+ * among `*Worker`s); any other by the word before its connector
+ * (`ObjectsForFirm` → `objects`). A project suffix does not count: it is the
+ * evidence a bare entity noun earns (`CurrentFirm`, `Firm`), and an entity noun
+ * is what a preposition takes as its argument. Cached per `rows` array at the
+ * default thresholds.
+ */
+export function typeNameParser(
+  rows: readonly TypeNameRow[],
+  t: TypeRoleThresholds = TYPE_ROLE_THRESHOLDS,
+): TypeNameParser {
+  const cacheable = t === TYPE_ROLE_THRESHOLDS;
+  const cached = cacheable ? typeNameParserCache.get(rows) : undefined;
+  if (cached) return cached;
+  const plainParse: TypeNameParser = (name) => typeNameParts(name);
+  const plain = rows.filter((row) => plainParse(row.shortName).connector === undefined);
+  const roleWords = new Set(
+    rolesFrom(plain, t, plainParse)
+      .filter((assignment) => assignment.evidence !== "projectSuffix" && assignment.carriedInName !== false)
+      .map((assignment) => assignment.role),
+  );
+  const parse: TypeNameParser = (name) => typeNameParts(name, roleWords);
+  if (cacheable) typeNameParserCache.set(rows, parse);
+  return parse;
+}
+
+/**
+ * Derives every type's role assignments, strongest evidence first, then by
+ * scope and symbolId. Heads are read by `parse`, by default the population's
+ * own {@link typeNameParser}.
+ */
 export function deriveTypeRoles(
   rows: readonly TypeNameRow[],
   t: TypeRoleThresholds = TYPE_ROLE_THRESHOLDS,
+  parse: TypeNameParser = typeNameParser(rows, t),
 ): TypeRoleAssignment[] {
-  const headed = headedRows(rows);
+  return rolesFrom(rows, t, parse);
+}
+
+function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: TypeNameParser): TypeRoleAssignment[] {
+  const headed = headedRows(rows, parse);
   const supertypesOf = projectSupertypes(rows);
   const assignments: TypeRoleAssignment[] = [];
 
@@ -589,7 +633,7 @@ export function deriveTypeRoles(
     familySlot(carriers, word, familyRoles, t.familyShare);
 
   const declared = new Set(rows.map((row) => typeNameLastSegment(row.shortName)));
-  const kinds = unnamedKinds(families, familyRoles, declared, t.familyShare);
+  const kinds = unnamedKinds(families, familyRoles, declared, t.familyShare, parse);
   const inherited = new Set(
     assignments.map((assignment) => `${assignment.relPath}\u0000${assignment.symbolId}\u0000${assignment.role}`),
   );

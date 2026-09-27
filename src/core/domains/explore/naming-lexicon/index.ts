@@ -15,8 +15,8 @@ export { judgeGenericNames } from "./generic-names.js";
 export type { GenericNameThresholds, JudgedGenericName } from "./generic-names.js";
 export { isTypeFamilyRoleName, mergeUnqualifiedTypeSpellings } from "./homonyms.js";
 export type { HomonymTypeCount, HomonymTypeShape } from "./homonyms.js";
-export { splitNameSlots } from "./name-slots.js";
-export type { NameSlots } from "./name-slots.js";
+export { CONNECTOR_WORDS, splitNameSlots, typeNameParts } from "./name-slots.js";
+export type { NameSlots, TypeNameParser, TypeNameParts } from "./name-slots.js";
 export {
   NAMING_VERB_PREFIXES,
   calleeDerivedName,

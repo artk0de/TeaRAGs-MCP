@@ -21,7 +21,13 @@ import {
   typeNameLastSegment,
   typeNameWords,
 } from "./casing.js";
-import { splitNameSlots, type NameSlots } from "./name-slots.js";
+import {
+  isInteriorConnector,
+  splitNameSlots,
+  type NameSlots,
+  type TypeNameParser,
+  type TypeNameParts,
+} from "./name-slots.js";
 import {
   calleeDerivedName,
   classifyNamingShape,
@@ -57,6 +63,8 @@ import {
   meetsProjectConventionSpread,
   projectSuffixRole,
   projectSupertypes,
+  TYPE_ROLE_THRESHOLDS,
+  typeNameParser,
   type ExpectedTypeRole,
   type TypeNameRow,
   type TypeRoleAssignment,
@@ -541,9 +549,15 @@ export interface TypeNameEvidence {
   /** The population's rows, one per (relPath, symbolId). */
   rows: readonly TypeNameRow[];
   roles: readonly TypeRoleAssignment[];
+  /**
+   * Reads a name's head, qualifiers and complement with the population's role
+   * words ({@link typeNameParser}) — the one head reading the roles, the counts
+   * below and every judgement of a draft share.
+   */
+  parseName: TypeNameParser;
   /** Modifiers standing before ≥ 2 heads in ≥ 2 directories. */
   established: readonly ModifierUse[];
-  /** Names per head word (a name's last word). */
+  /** Names per head word ({@link parseName}). */
   headCounts: ReadonlyMap<string, number>;
   /** Directories of the names per head word. */
   headDirs: ReadonlyMap<string, ReadonlySet<string>>;
@@ -571,17 +585,18 @@ export function typeNameEvidence(rows: readonly TypeNameRow[], population: TypeD
     members.push(population === "constant" ? { ...row, ancestors: [] } : row);
   }
 
+  const parseName = typeNameParser(members);
   const modifiers = new Map<string, { heads: Set<string>; dirs: Set<string>; count: number }>();
   const headCounts = new Map<string, number>();
   const headDirs = new Map<string, Set<string>>();
   for (const row of members) {
-    const words = typeNameWords(row.shortName);
-    const head = words.at(-1);
+    const { head, qualifiers } = parseName(row.shortName);
     if (head === undefined) continue;
     const dir = directoryOfPath(row.relPath);
     headCounts.set(head, (headCounts.get(head) ?? 0) + 1);
     headDirs.set(head, (headDirs.get(head) ?? new Set<string>()).add(dir));
-    for (const word of new Set(words.slice(0, -1))) {
+    // A complement (`ForFirm`) qualifies no head: its words are no modifier uses.
+    for (const word of new Set(qualifiers)) {
       const use = modifiers.get(word) ?? { heads: new Set<string>(), dirs: new Set<string>(), count: 0 };
       use.heads.add(head);
       use.dirs.add(dir);
@@ -593,7 +608,8 @@ export function typeNameEvidence(rows: readonly TypeNameRow[], population: TypeD
   return {
     population,
     rows: members,
-    roles: deriveTypeRoles(members),
+    roles: deriveTypeRoles(members, TYPE_ROLE_THRESHOLDS, parseName),
+    parseName,
     established: establishedModifiers([...modifiers].map(([word, use]) => ({ word, ...use }))),
     headCounts,
     headDirs,
@@ -672,7 +688,7 @@ function liftedQualifierCandidates(
   conceptNames: readonly string[],
   liftFloor: number,
 ): TermAlternative[] {
-  const lift = modifierLift(evidence.established, conceptNames, evidence.rows.length);
+  const lift = modifierLift(evidence.established, conceptNames, evidence.rows.length, evidence.parseName);
   return alignQualifiers(slots, evidence.established, lift, liftFloor)
     .filter((alternative) => !words.includes(alternative.word))
     .slice(0, MAX_QUALIFIER_ALTERNATIVES);
@@ -713,7 +729,7 @@ function termAlternatives(
   gate: MeaningGate | undefined,
 ): TermAlternative[] {
   const { evidence } = input;
-  const slots = draftSlots(words, evidence);
+  const slots = draftSlots(input.name, evidence);
   const lifted = liftedQualifierCandidates(
     slots,
     words,
@@ -746,12 +762,17 @@ function termAlternatives(
 }
 
 /** The head words of the type names in the code nearest a concept. */
-function conceptHeadWords(conceptNames: readonly string[]): Set<string | undefined> {
-  return new Set(conceptNames.map((name) => typeNameWords(name).at(-1)));
+function conceptHeadWords(conceptNames: readonly string[], evidence: TypeNameEvidence): Set<string | undefined> {
+  return new Set(conceptNames.map((name) => evidence.parseName(name).head));
 }
 
-function draftSlots(words: readonly string[], evidence: TypeNameEvidence): NameSlots {
-  return splitNameSlots(words.join("_"), new Set(evidence.headCounts.keys()));
+function draftSlots(name: string, evidence: TypeNameEvidence): NameSlots {
+  return splitNameSlots(name, new Set(evidence.headCounts.keys()), evidence.parseName);
+}
+
+/** A draft's words a path term may replace: every word but a connector — grammar, never a concept (`for`). */
+function replaceableWords(words: readonly string[]): string[] {
+  return words.filter((_, i) => !isInteriorConnector(words, i));
 }
 
 /** The similarity and the floor it is judged against. */
@@ -876,7 +897,7 @@ function groundedHeadCandidates(
   conceptNames: readonly string[],
   admitted: ReadonlySet<string>,
 ): ReturnType<typeof anchoredHeadCandidates> {
-  const conceptHeads = conceptHeadWords(conceptNames);
+  const conceptHeads = conceptHeadWords(conceptNames, evidence);
   const withheld = familyNonMemberRole(draft, evidence) ?? unnamedKind(draft, evidence)?.role;
   return anchoredHeadCandidates(
     slots,
@@ -884,6 +905,7 @@ function groundedHeadCandidates(
     evidence.rows,
     evidence.headCounts,
     admitted,
+    evidence.parseName,
   ).filter((candidate) => conceptHeads.has(candidate.word) && candidate.word !== withheld);
 }
 
@@ -906,7 +928,7 @@ export function typeDraftMeaningPairs(
   liftFloor: number = DEFAULT_LIFT_FLOOR,
 ): [string, string][] {
   const words = typeNameWords(draft.name);
-  const slots = draftSlots(words, evidence);
+  const slots = draftSlots(draft.name, evidence);
   const draftHead = slots.head.at(-1);
   if (draftHead === undefined) return [];
   const lifted = liftedQualifierCandidates(slots, words, evidence, conceptNames, liftFloor);
@@ -924,7 +946,7 @@ export function typeDraftMeaningPairs(
   const qualifiers = slots.qualifiers.filter(isVocabularyWord);
   for (const candidate of lifted) for (const qualifier of qualifiers) compare(qualifier, candidate.word);
   for (const term of pathTerms(draft.path, words, conceptNames)) {
-    for (const word of words) if (!sharesWordStem(word, term.word)) compare(word, term.word);
+    for (const word of replaceableWords(words)) if (!sharesWordStem(word, term.word)) compare(word, term.word);
   }
   // One comparison per pair: `chunker` may be both the directory's head and its directory word.
   return [...pairs.values()];
@@ -954,7 +976,7 @@ export function singleCarrierHeadFiles(
   evidence: TypeNameEvidence,
   conceptNames: readonly string[],
 ): Map<string, string> {
-  const slots = draftSlots(typeNameWords(draft.name), evidence);
+  const slots = draftSlots(draft.name, evidence);
   const single = new Set([...evidence.headCounts].filter(([, count]) => count === 1).map(([head]) => head));
   const files = new Map<string, string>();
   for (const candidate of groundedHeadCandidates(slots, draft, evidence, conceptNames, single)) {
@@ -981,7 +1003,7 @@ function meaningHeadAlternatives(
 ): TermAlternative[] {
   const { evidence } = input;
   if (gate === undefined || taken.some((alternative) => alternative.slot === "head")) return [];
-  const slots = draftSlots(words, evidence);
+  const slots = draftSlots(input.name, evidence);
   const draftHead = slots.head.at(-1) ?? "";
   const offered = new Set(taken.map((alternative) => alternative.word));
   const draftHeadCount = evidence.headCounts.get(draftHead) ?? 0;
@@ -1018,13 +1040,13 @@ function pathTermAlternatives(
   gate: MeaningGate | undefined,
 ): TermAlternative[] {
   if (gate === undefined) return [];
-  const head = draftSlots(words, input.evidence).head.at(-1);
+  const head = draftSlots(input.name, input.evidence).head.at(-1);
   const offered = new Set(taken.map((alternative) => alternative.word));
   const headTaken = taken.some((alternative) => alternative.slot === "head");
   let best: { term: { word: string; dir: string }; replaces: string; similarity: number } | undefined;
   for (const term of pathTerms(input.path, words, input.conceptNames)) {
     if (offered.has(term.word)) continue;
-    for (const word of words) {
+    for (const word of replaceableWords(words)) {
       if (sharesWordStem(word, term.word) || (word === head && headTaken)) continue;
       const similarity = gate.similarity(word, term.word);
       if (similarity > gate.floor && (best === undefined || similarity > best.similarity)) {
@@ -1050,8 +1072,9 @@ function pathTermAlternatives(
  * Judges a type or constant draft (spec §3–4), strongest evidence first:
  *
  * 1. MISFIT — the family role (via `extends`, types only), else the
- *    directory's, and the name's last word is not that role; suggestion = the
- *    name + the role, in the draft's own casing. A project suffix never sets
+ *    directory's, and the name's head ({@link TypeNameEvidence.parseName}) is
+ *    not that role; suggestion = the name with the role after its head (before
+ *    a complement), in the draft's own casing. A project suffix never sets
  *    an expected role: popular elsewhere, unanchored here, it is a guess;
  * 2. COLLISION — a TYPE draft whose short name another module already declares
  *    as a type (the draft's own file and ambient `*.d.ts` files excluded);
@@ -1082,10 +1105,11 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   // A kind its family does not carry in names is what the type IS: it neither demands its word nor confirms the head.
   const kind = unnamedKind(input, input.evidence, role);
   const expected = role?.evidence === "projectSuffix" || nonMember || kind ? undefined : role;
-  if (expected && words.at(-1) !== expected.role) {
+  const parts = input.evidence.parseName(input.name);
+  if (expected && parts.head !== expected.role) {
     return {
       verdict: "MISFIT",
-      suggestion: joinIdentifierWords([...words, expected.role], draftCasing),
+      suggestion: joinIdentifierWords(withRoleAfterHead(parts, expected.role), draftCasing),
       role: { word: expected.role, evidence: expected.evidence, examples: expected.examples },
     };
   }
@@ -1112,16 +1136,32 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   // A project suffix or a known head only CONFIRMS the words: a synonym head passes both,
   // so the verdict stays and the head alternatives ride along (bd tea-rags-mcp-433d2).
   // The suffix confirms only a member of its family — the test its carriers passed (bd tea-rags-mcp-49fsr).
-  const suffix = namespace
-    ? undefined
-    : projectSuffixRole(input.evidence.roles, input.evidence.rows, words.at(-1) ?? "");
+  const suffix = namespace ? undefined : projectSuffixRole(input.evidence.roles, input.evidence.rows, parts.head ?? "");
   if (suffix !== undefined && familyNonMemberRole(input, input.evidence, suffix) === undefined) {
     return { verdict: "CONFORMS", ...withAlternatives };
   }
-  const establishedWords = new Set(input.evidence.established.map((use) => use.word));
-  const headKnown = (input.evidence.headCounts.get(words.at(-1) ?? "") ?? 0) > 0;
-  const aligned = headKnown && words.slice(0, -1).every((word) => establishedWords.has(word));
-  return aligned
+  return alignsWithVocabulary(parts, input.evidence)
     ? { verdict: "CONFORMS", ...withAlternatives }
     : { verdict: "NEW_TERM", topTerms: [], ...withAlternatives };
+}
+
+/** The name's words with `role` inserted after its head — before a complement: `ObjectsForClient` → `ObjectsFinderForClient`. */
+function withRoleAfterHead(parts: TypeNameParts, role: string): string[] {
+  if (parts.head === undefined) return [role];
+  const complement = parts.connector === undefined ? [] : [parts.connector, ...parts.complement];
+  return [...parts.qualifiers, parts.head, role, ...complement];
+}
+
+/**
+ * A name aligned with the population's vocabulary: its head is a known head and
+ * every qualifier an established modifier; a complement is a name of its own,
+ * held to the same test (`ForClient`: `client` a known head).
+ */
+function alignsWithVocabulary(parts: TypeNameParts, evidence: TypeNameEvidence): boolean {
+  const establishedWords = new Set(evidence.established.map((use) => use.word));
+  const headKnown = (evidence.headCounts.get(parts.head ?? "") ?? 0) > 0;
+  if (!headKnown || !parts.qualifiers.every((word) => establishedWords.has(word))) return false;
+  return (
+    parts.complement.length === 0 || alignsWithVocabulary(evidence.parseName(parts.complement.join("_")), evidence)
+  );
 }

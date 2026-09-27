@@ -448,6 +448,130 @@ Rejected, measured on the same copies:
   `GetCallersRequest`. Combining it with the kind adds only these false
   negatives, 215 of them on `_v15`.
 
+**A trailing prepositional complement is not the head.** The `_v14` seed-7 miss
+above: `Supporting::ActivityFeed::Queries::ObjectsForFirm` took `firm` from its
+directory and from the project suffix. Its head is `objects`; `ForFirm` names
+what the objects belong to. Five of the seven primaries in
+`activity_feed/queries/` are `*ForFirm` queries, so the directory's majority
+head was the complement, and the same five names were five of the seven
+qualified names that made `firm` a project suffix. The same shape recurs:
+`ChatThreadMessageToPrint` (`print`), `JobToLink` (`link`), `NoteWithJobs`
+(`jobs`), `FormWithErrors` (`errors`).
+
+One function owns the reading, `typeNameParts` (`name-slots.ts`). Role
+derivation, the draft verdict, head and qualifier counts, term alignment and
+`splitNameSlots` all go through it. It returns qualifiers, head and complement.
+A connector is a preposition in an interior position, never the first word nor
+the last, so `SignIn`, `GroupBy` and `WithRouter` stay plain compounds. A name
+with a connector is headed by the word before its first connector, the words
+after the connector are its complement, and the complement is neither head nor
+qualifier. It contributes no modifier use, no qualifier to align, and no MISFIT:
+an expected role is inserted after the head (`ObjectsForClient` →
+`ObjectsFinderForClient`). For CONFORMS by alignment the complement is read as a
+name of its own and held to the same test (known head, established qualifiers).
+A connector is never compared with a path term either: `for` is grammar, not a
+word `supporting` could replace.
+
+The last word stays the head when it is a KIND word. A kind word is an
+inheritance or directory role that the population's names carry WITHOUT a
+connector, derived by a first pass over exactly those names (`typeNameParser`).
+`BatchMarkAsReadWorker` is a worker,
+`SignedDocumentBySignerNotificationSerializer` a serializer. A project suffix
+does not count as a kind. It is the evidence a bare entity noun earns: `firm` is
+a project suffix of connector-free Ruby names (`CurrentFirm` and two more), and
+an entity noun is exactly what a preposition takes as its object.
+
+The connector words are a closed class, English prepositions:
+`for by to from with in on at as via per into over without`. The user-approved
+direction was a class derived from the project's own positional distribution,
+and it was measured first. It does not separate. Take the interior share of each
+word over distinct multi-word type names, for words seen ≥ 20 times.
+
+| Corpus              | Words | Bins 0.80 → 1.00 | Top of the distribution                                                                                                                                                                |
+| ------------------- | ----- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| taxdome `_v15` Ruby | 212   | 3 / 9 / 0 / 8    | `uploaded` 1.00 (27/27, never first or last) beside `and`, `to`, `for`, `with`, `from`, `as`, `by`; `on` 0.90 and `in` 0.88 inside the noun continuum (`intent`, `return`, `requests`) |
+| taxdome TS          | 188   | 3 / 1 / 3 / 4    | `to`, `and`, `threads` 1.00, `for`; `with` 0.92 between `sidebar` 0.93 and `preset` 0.91; `by` 0.83 below `cell`                                                                       |
+| self-index TS       | 82    | 1 / 0 / 1 / 3    | `db`, `program` 1.00 and `resolution` 0.95, no preposition at all; at n ≥ 5 `by` (n = 5) sits among 20+ nouns at 1.00                                                                  |
+
+Each bin is 0.05 wide.
+
+The Ruby bins show a dip at 0.90–0.95, but the band above it holds `uploaded`,
+and the self-index band holds only compound interiors. Applying that band as a
+rule would head `SymbolResolutionStrategy` by `symbol`. Neighbour diversity does
+not separate them either (`as` L 0.15, `intent` L 0.13). The same words in
+method and identifier names were measured too (taxdome ≈ 26k Ruby / 47k TS
+names, self-index 12k). Prepositions spread from 0.07 (`on`: TS `onClick`
+handlers) to 0.9, mixed with nouns (`spec` 0.98, `v1` 1.00, `hub` 1.00). No
+valley there either. By position, a preposition and the inner word of a fixed
+compound look the same, so the class is taken from grammar. Three words were
+left out on data:
+
+- `of` is the partitive of a classifier: the members of `KindOfService` are
+  services, and the same holds for `OutOfScope…`.
+- `and` / `or` coordinate inside one compound, and the compound's head stays
+  last: `CardAndBankPaymentMethodType`, `FindOrCreate`,
+  `ConfigureAndSendDraftSigner`.
+
+Measured on the copies, per-language evidence as production reads it: 484 Ruby
+and 264 TS connector names on `_v15`. Of these, 204 Ruby and 85 TS stay
+head-final by a kind word (Ruby `worker` 55, `error` 36, `serializer` 32; TS
+`context` 14, `props` 12), and 280 and 179 are headed before the connector (Ruby
+`firm` 15, `user` 9, `clients` 8; TS `confirm` 10, `id` 9, `print` 4). The
+self-index has 20: 9 head-final, 11 complement.
+
+| Measure                                         | Before                          | After                                                    |
+| ----------------------------------------------- | ------------------------------- | -------------------------------------------------------- |
+| taxdome `_v15` coverage                         | 19,311 (57.4%)                  | 19,270 (57.3%)                                           |
+| `_v15` Ruby / TS                                | 71.6% / 45.3%                   | 71.4% / 45.2%                                            |
+| `_v14` coverage                                 | 19,248 (57.7%)                  | 19,207 (57.6%)                                           |
+| self-index coverage                             | 741 (32.1%)                     | 741 (32.1%), 0 changes                                   |
+| `_v15` strongest-role changes                   | —                               | 173: 89 own head moved, 84 neighbour recount             |
+| changes, 30 hand-checked (seed 7)               | —                               | 19 right, 6 wrong, 5 doubtful                            |
+| `_v14` seed 7                                   | 29/30                           | 30/30                                                    |
+| `_v15` seeds 7 / 11 / 23                        | —                               | 30 / 30 / 30                                             |
+| self-index seed 7                               | 30/30                           | 30/30                                                    |
+| rename eval (caught / other / silent / control) | 0 / 9 / 8 / 5 of 40             | 0 / 7 / 10 / 6 of 40                                     |
+| live `ObjectsForClient` in `queries/`           | MISFIT → `ObjectsForClientFirm` | CONFORMS, alternative `supporting` for `objects` (0.716) |
+
+Most own-head changes are the target class: `ChatThreadMessageToPrint` →
+`message`, `JobToLink` → `job`, `AutomationToConfirm` → `automation`,
+`ResponseWithMeta` → `response`, `InvoiceLineItemWithTimeEntries` → `item`, and
+the `queries/` directory losing `firm`. Neighbour recounts are suffixes that the
+complements themselves had propped up. `token` lost `GetByToken`,
+`ConfirmWithToken` and `ResendByExpiredToken`. `blob` lost `CreateFromBlob` and
+`EmailTemplateWithBlob`. `owner`, `attributes` and `api` went the same way.
+
+All six wrong changes come from the rule's one blind spot: a complement that
+ends in the name's real head while that head is a kind nowhere in the
+population.
+
+- `SendToOpensearchProcess` and its neighbour
+  `DeleteExpiredMonthlyIndicesProcess` lose `directory:process`.
+- `AsyncOperation` loses the `operation` suffix in the recount.
+- `BulkAddClientsToPipelineBody` is headed `clients`, and the recount gives
+  `NewProposalDefaultClients` a `clients` suffix.
+- `TemplateSelectWithHookParamsBase` loses `base`.
+
+The rename eval moves on exactly the pairs the task named. `SnapshotV1ToV2` and
+`SnapshotV2ToSharded` were flagged NEW_TERM only because `to` counted as a
+qualifier that was not established. With `to` a connector they align (`v1`, `v2`
+and the complement heads are known) and go silent. The pre-existing
+version-token-as-head reading (`SchemaV9` → `v9`) is untouched. The one new
+control flag, `FileScanner` → `reader` by meaning, carries no connector, and the
+null head sample is unchanged. What did change is the established-modifier set,
+which lost `for`, `with` and `at`, so a draft is compared on fewer lifted
+qualifier pairs and its corrected floor is lower.
+
+Rejected, measured on the same copies:
+
+- **Unguarded: head before the first connector, always.** 443 strongest-role
+  changes on `_v15`, most of them the families that end in a kind: `error` −43,
+  `worker` −42, `serializer` −35, `form` −11, `context` −7, `notification` −6.
+- **Guard by every role word, project suffix included.** `firm` is a Ruby
+  project suffix of connector-free names, so `ObjectsForFirm` keeps `firm` and
+  the target miss stays.
+- **Positional distribution (above).** No valley on any corpus.
+
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and
 a stored copy would go stale on every incremental run.
