@@ -11,10 +11,12 @@ import {
   CollectionRegistry,
   createPathCollectionResolver,
   IndexFreshnessCheck,
+  isQdrantColdError,
   RegistryQdrantBackendUnresolvedError,
   replayRegistryEnv,
   resolveLanguageCapabilities,
   resolveRegistryQdrantBackend,
+  TeaRagsError,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
@@ -24,7 +26,7 @@ import { PackageJsonVersionSource } from "../update-check/version-source.js";
 import { formatPrime } from "./format.js";
 import { discoverQdrantUrl } from "./qdrant-discovery.js";
 import { pingQdrant } from "./qdrant-ping.js";
-import type { PrimeData } from "./types.js";
+import type { PrimeData, PrimeFailureReason } from "./types.js";
 
 function buildUpdateService(): UpdateCheckService {
   return new UpdateCheckService(new PackageJsonVersionSource(), new NpmRegistryClient(), new FileCacheStore());
@@ -107,6 +109,20 @@ function buildPrimeAutoUpdateTrigger(entry: CollectionEntry, dataDir: string): A
   });
 }
 
+/**
+ * The placeholder for a status read that failed. Only a cold Qdrant is "warm-up
+ * pending"; anything else — a locked alias, a broken payload, a bug — is shown
+ * with its own message, code and hint, so the digest never hides the real
+ * error behind a warm-up story (bd tea-rags-mcp-zqg1i).
+ */
+function statusFailure(path: string, reason: unknown): PrimeFailureReason {
+  if (isQdrantColdError(reason)) return { kind: "qdrant-cold", path };
+  if (reason instanceof TeaRagsError) {
+    return { kind: "status-failed", path, message: reason.message, code: reason.code, hint: reason.hint };
+  }
+  return { kind: "status-failed", path, message: reason instanceof Error ? reason.message : String(reason) };
+}
+
 export async function runPrime(input: {
   path?: string;
   project?: string;
@@ -180,7 +196,16 @@ export async function runPrime(input: {
     return;
   }
 
-  const ctx = await createAppContext(config);
+  // Bootstrap reads Qdrant too (version check, alias reconcile). A rejection
+  // here escaped runPrime, and the command's unconditional exit(0) left the
+  // digest empty — the same hidden error as a failed status read.
+  let ctx: Awaited<ReturnType<typeof createAppContext>>;
+  try {
+    ctx = await createAppContext(config);
+  } catch (error) {
+    process.stdout.write(formatPrime(statusFailure(path, error)));
+    return;
+  }
   const updateService = (ctx as { updateService?: UpdateCheckService }).updateService ?? buildUpdateService();
 
   try {
@@ -211,7 +236,7 @@ export async function runPrime(input: {
     ]);
 
     if (status.status !== "fulfilled") {
-      process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));
+      process.stdout.write(formatPrime(statusFailure(path, status.reason)));
       return;
     }
 

@@ -54,6 +54,27 @@ describe("formatPrime", () => {
       expect(out).toContain("# tea-rags prime");
       expect(out).toContain("Qdrant warm-up pending — index queries will be available after MCP server attaches.");
     });
+
+    // bd tea-rags-mcp-zqg1i: a status read that failed for any reason other
+    // than a cold Qdrant renders the real error, never the warm-up placeholder.
+    it("renders the real error, its code and hint when failure kind is status-failed", () => {
+      const out = formatPrime({
+        kind: "status-failed",
+        path: "/some/project",
+        message: "Collection code_x is locked",
+        code: "INFRA_ALIAS_OPERATION",
+        hint: "Retry after the running index finishes",
+      });
+      expect(out).toContain("# tea-rags prime — /some/project");
+      expect(out).toContain("Index status unavailable: Collection code_x is locked (INFRA_ALIAS_OPERATION)");
+      expect(out).toContain("Retry after the running index finishes");
+      expect(out).not.toContain("warm-up pending");
+    });
+
+    it("renders an untyped status failure by its message alone", () => {
+      const out = formatPrime({ kind: "status-failed", path: "/p", message: "boom" });
+      expect(out).toBe("# tea-rags prime — /p\nIndex status unavailable: boom\n");
+    });
   });
 
   describe("status section", () => {

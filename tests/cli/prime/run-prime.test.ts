@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPrime } from "../../../src/cli/prime/run-prime.js";
 import type { UpdateCheckService } from "../../../src/cli/update-check/check-service.js";
 import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
+import { QdrantUnavailableError, TeaRagsError } from "../../../src/core/api/public/index.js";
 import { LanguageFactory } from "../../../src/core/domains/language/factory.js";
 
 const { pingMock, createAppContextMock } = vi.hoisted(() => ({
@@ -191,7 +192,9 @@ describe("runPrime — failure paths", () => {
     vi.mocked(existsSync).mockReturnValue(true);
     pingMock.mockResolvedValue(true);
     const cleanupMock = vi.fn();
-    const getStatusMock = vi.fn().mockRejectedValue(new Error("connection refused"));
+    const getStatusMock = vi
+      .fn()
+      .mockRejectedValue(new QdrantUnavailableError("http://localhost:6333", new Error("connection refused")));
     const getMetricsMock = vi.fn().mockResolvedValue({});
     const checkDriftMock = vi.fn().mockResolvedValue(null);
 
@@ -210,6 +213,78 @@ describe("runPrime — failure paths", () => {
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
     expect(cleanupMock).toHaveBeenCalled();
+  });
+});
+
+// bd tea-rags-mcp-zqg1i: only a genuinely cold / unreachable Qdrant renders
+// the warm-up placeholder; any other status failure shows the real error.
+describe("runPrime — status failure that is not a cold Qdrant", () => {
+  function contextRejecting(error: unknown, cleanup = vi.fn()) {
+    createAppContextMock.mockResolvedValue({
+      app: {
+        getIndexStatus: vi.fn().mockRejectedValue(error),
+        getIndexMetrics: vi.fn().mockResolvedValue({}),
+        checkIndexDrift: vi.fn().mockResolvedValue(null),
+      },
+      cleanup,
+      updateService: stubUpdateService(),
+    });
+  }
+
+  class LockedCollectionError extends TeaRagsError {
+    constructor() {
+      super({ code: "INFRA_ALIAS_OPERATION", message: "alias swap in flight", hint: "Retry shortly", httpStatus: 409 });
+    }
+  }
+
+  it("renders a typed error's message, code and hint instead of 'warm-up pending'", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    const cleanupMock = vi.fn();
+    contextRejecting(new LockedCollectionError(), cleanupMock);
+
+    await runPrime({ path: "/some/project" });
+
+    const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).not.toContain("warm-up pending");
+    expect(out).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
+    expect(out).toContain("Retry shortly");
+    expect(cleanupMock).toHaveBeenCalled();
+  });
+
+  // Bootstrap is the other status read that can fail after the ping: a
+  // rejection there used to escape runPrime and prime printed nothing at all.
+  it("renders a bootstrap failure instead of printing nothing", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    createAppContextMock.mockRejectedValue(new LockedCollectionError());
+
+    await runPrime({ path: "/some/project" });
+
+    const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toContain("alias swap in flight (INFRA_ALIAS_OPERATION)");
+  });
+
+  it("keeps the warm-up placeholder when bootstrap finds Qdrant cold", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    createAppContextMock.mockRejectedValue(new QdrantUnavailableError("http://localhost:6333"));
+
+    await runPrime({ path: "/some/project" });
+
+    expect(writeMock.mock.calls.map((c) => String(c[0])).join("")).toContain("warm-up pending");
+  });
+
+  it("renders an untyped error's message instead of 'warm-up pending'", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    contextRejecting(new TypeError("Cannot read properties of undefined (reading 'points')"));
+
+    await runPrime({ path: "/some/project" });
+
+    const out = writeMock.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).not.toContain("warm-up pending");
+    expect(out).toContain("Cannot read properties of undefined (reading 'points')");
   });
 });
 

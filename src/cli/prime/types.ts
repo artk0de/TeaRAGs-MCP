@@ -54,4 +54,8 @@ export interface PrimeData {
  * Degraded outputs that exit the runPrime pipeline early without a full digest.
  * Each variant produces a short markdown placeholder via formatPrime.
  */
-export type PrimeFailureReason = { kind: "path-not-found"; path: string } | { kind: "qdrant-cold"; path: string };
+export type PrimeFailureReason =
+  | { kind: "path-not-found"; path: string }
+  | { kind: "qdrant-cold"; path: string }
+  /** The status read failed for a reason other than a cold Qdrant — shown as-is. */
+  | { kind: "status-failed"; path: string; message: string; code?: string; hint?: string };
