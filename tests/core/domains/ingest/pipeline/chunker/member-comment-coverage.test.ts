@@ -282,3 +282,73 @@ ${statements(20, "    ")}
     expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*)/));
   });
 });
+
+/**
+ * bd tea-rags-mcp-x1dtk — a type declaration split between its members' doc
+ * comments. A member JSDoc larger than a part cannot share one with the member
+ * it documents, so some parts hold only comment rows; each of them still opens
+ * with the declaration header, the context prefix every later part of a split
+ * symbol carries, so a hit on it names the type it belongs to. Text only: the
+ * parts' own rows tile the declaration without overlap.
+ */
+describe("TreeSitterChunker — a split type declaration's doc-only parts carry its header (bd x1dtk)", () => {
+  const maxChunkSize = 1000;
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
+      new DefaultSymbolIdComposer(),
+      new LanguageFactory(),
+    );
+  });
+
+  function documentedMembers(): string {
+    return Array.from({ length: 6 }, (_, i) => {
+      const doc = Array.from(
+        { length: i % 2 ? 14 : 3 },
+        (_, p) => `   * Member ${i}, paragraph ${p}: this field is documented at length, on purpose.`,
+      ).join("\n");
+      return `  /**\n${doc}\n   */\n  member${i}?: Record<string, string>;`;
+    }).join("\n");
+  }
+
+  const declarations: Record<string, { code: string; header: string[] }> = {
+    interface: {
+      code: `export interface Aggregates {\n${documentedMembers()}\n}\n`,
+      header: ["interface Aggregates {"],
+    },
+    "multi-row interface header": {
+      code: `export interface Aggregates\n  extends Base<string>,\n    Other {\n${documentedMembers()}\n}\n`,
+      header: ["interface Aggregates", "extends Base<string>,", "Other {"],
+    },
+    "type literal": {
+      code: `export type Aggregates = {\n${documentedMembers()}\n};\n`,
+      header: ["type Aggregates = {"],
+    },
+  };
+
+  for (const [label, { code, header }] of Object.entries(declarations)) {
+    it(`opens every part of a split ${label}, doc-only parts included, with the header`, async () => {
+      const chunks = await chunker.chunk(code, "src/aggregates.ts", "typescript");
+      const parts = chunks.filter((c) => /^Aggregates#part\d+$/.test(c.metadata.symbolId ?? ""));
+
+      const docOnly = parts.filter((p) => {
+        const lines = p.content.split("\n");
+        return lines.slice(lines.length - (p.endLine - p.startLine + 1)).every((l) => /^\s*(\/\*\*|\*)/.test(l));
+      });
+      expect(docOnly.length).toBeGreaterThan(0);
+      for (const p of parts) {
+        expect(
+          p.content
+            .split("\n")
+            .slice(0, header.length)
+            .map((l) => l.trim()),
+        ).toEqual(header);
+      }
+      for (let i = 1; i < parts.length; i++) expect(parts[i].startLine).toBe(parts[i - 1].endLine + 1);
+      for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
+      expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*|member)/));
+    });
+  }
+});
