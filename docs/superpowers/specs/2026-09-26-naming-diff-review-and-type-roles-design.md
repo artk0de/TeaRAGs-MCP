@@ -530,7 +530,7 @@ self-index has 20: 9 head-final, 11 complement.
 | `_v14` seed 7                                   | 29/30                           | 30/30                                                    |
 | `_v15` seeds 7 / 11 / 23                        | —                               | 30 / 30 / 30                                             |
 | self-index seed 7                               | 30/30                           | 30/30                                                    |
-| rename eval (caught / other / silent / control) | 0 / 9 / 8 / 5 of 40             | 0 / 7 / 10 / 6 of 40                                     |
+| rename eval (caught / other / silent / control) | 0 / 9 / 8 / 6 of 40             | 0 / 7 / 10 / 6 of 40                                     |
 | live `ObjectsForClient` in `queries/`           | MISFIT → `ObjectsForClientFirm` | CONFORMS, alternative `supporting` for `objects` (0.716) |
 
 Most own-head changes are the target class: `ChatThreadMessageToPrint` →
@@ -552,24 +552,43 @@ population.
   `NewProposalDefaultClients` a `clients` suffix.
 - `TemplateSelectWithHookParamsBase` loses `base`.
 
-The rename eval moves on exactly the pairs the task named. `SnapshotV1ToV2` and
-`SnapshotV2ToSharded` were flagged NEW_TERM only because `to` counted as a
-qualifier that was not established. With `to` a connector they align (`v1`, `v2`
-and the complement heads are known) and go silent. The pre-existing
-version-token-as-head reading (`SchemaV9` → `v9`) is untouched. The one new
-control flag, `FileScanner` → `reader` by meaning, carries no connector, and the
-null head sample is unchanged. What did change is the established-modifier set,
-which lost `for`, `with` and `at`, so a draft is compared on fewer lifted
-qualifier pairs and its corrected floor is lower.
+The rename eval row compares the pre-fix `main` build and this build, run
+interleaved twice against the same index. Each build reproduced itself across
+both runs, and the two outputs differ on exactly two pairs. An earlier `main`
+run read control 5/40, but the auto-update watcher refreshed the index after it.
+Measured together, `main` also gives 6/40, including the `FileScanner` →
+`reader` flag. That flag is index drift, not this change. Rebuilt offline from
+the same rows and concept names, `FileScanner` has identical pairs under both
+lexicons: m = 5, quantile 0.9^(1/5) = 0.979, floor 0.642, `scanner`~`reader`
+0.687.
+
+The two pairs that move are `SnapshotV1ToV2` → `SnapshotV2MtimeSize` and
+`SnapshotV2ToSharded` → `SnapshotV3Sharded`, from NEW_TERM to silent. Before the
+fix their only unestablished word was `to`: `snapshot` and `sharded` are
+established, and `v1` and `v2` are version tokens. The owner did drop `to` in
+both renames, but the flag named no replacement. The one alternative it offered,
+`access` on `SnapshotV2ToSharded`, points nowhere near `v3`. It fired because a
+preposition was counted as a qualifier, and every `XToY` name trips that no
+matter what it means. That is the defect this rule removes, so the eval's
+flagged-other count falls by two wrong-reason flags. The version-token-as-head
+reading (`SchemaV9` → `v9`) is untouched.
 
 Rejected, measured on the same copies:
 
 - **Unguarded: head before the first connector, always.** 443 strongest-role
   changes on `_v15`, most of them the families that end in a kind: `error` −43,
   `worker` −42, `serializer` −35, `form` −11, `context` −7, `notification` −6.
-- **Guard by every role word, project suffix included.** `firm` is a Ruby
-  project suffix of connector-free names, so `ObjectsForFirm` keeps `firm` and
-  the target miss stays.
+- **Guard by the project suffixes of connector-free names too.** The guard's
+  roles already come from connector-free names only, so the `*ForFirm` names
+  cannot feed it. `firm` still qualifies there: Ruby services name their object
+  last (`UpdateFirm`, `TrackNewFirm`, `ResolvesUserFirm`, `AssignsCurrentFirm`,
+  `RepairTaskTagsCrossFirm`, `DemoFirm`). On `_v15` this variant flips 54 Ruby
+  and 65 TS connector names back to their complement: `firm` ×15, `user` ×9,
+  `email` ×6, `id` ×9, `type` ×7, `policy` ×6, `ResponseWithMeta` → `meta`,
+  `NoteWithId` → `id`. `ObjectsForFirm` is headed `firm` again. Of the six wrong
+  changes above it fixes one, `…PipelineBody`. `process`, `base` and `operation`
+  are no connector-free suffix, so the other five stay. A suffix count cannot
+  tell a kind from an entity noun that verb-object names also end in.
 - **Positional distribution (above).** No valley on any corpus.
 
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
