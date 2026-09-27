@@ -402,13 +402,18 @@ export class IndexingOps {
     this.indexingCollections.add(collectionName);
 
     try {
+      let supersededDeadWriterAt: number | undefined;
       if (this.indexingLock) {
         const held = await this.indexingLock.tryAcquire(collectionName, operation);
         if (!held) return await this.abandonClaim(collectionName);
         this.heldIndexingLocks.set(collectionName, held);
+        if (held.tookOverStaleLock) supersededDeadWriterAt = Date.now();
       }
+      // A takeover proves the previous writer dead, so the marker evidence it
+      // left — a heartbeat the timer still calls fresh after a kill -9 — is
+      // discounted like this process's own settled runs (bd tea-rags-mcp-nhd1s).
       const inFlightElsewhere = await isCollectionIndexingInFlight(this.qdrant, collectionName, {
-        ownRunsSettledAt: this.indexingSettledAt.get(collectionName),
+        ownRunsSettledAt: supersededDeadWriterAt ?? this.indexingSettledAt.get(collectionName),
       });
       if (inFlightElsewhere) return await this.abandonClaim(collectionName);
       return true;
