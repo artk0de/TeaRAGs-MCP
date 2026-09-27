@@ -52,6 +52,7 @@ import type { ConceptTerm } from "./terms.js";
 import {
   deriveTypeRoles,
   expectedRoleFor,
+  meetsProjectConventionSpread,
   type ExpectedTypeRole,
   type TypeNameRow,
   type TypeRoleAssignment,
@@ -626,11 +627,17 @@ export interface TypeDraftJudgementInput {
 function collidingType(input: TypeDraftJudgementInput): { symbolId: string; relPath: string } | undefined {
   if (input.evidence.population !== "type") return undefined;
   const shortName = typeNameLastSegment(input.name);
-  const hit = input.evidence.rows
+  const hits = input.evidence.rows
     .filter(
       (row) => row.shortName === shortName && row.relPath !== input.path && !AMBIENT_DECLARATION_FILE.test(row.relPath),
     )
-    .sort((a, b) => a.relPath.localeCompare(b.relPath) || a.symbolId.localeCompare(b.symbolId))[0];
+    .sort((a, b) => a.relPath.localeCompare(b.relPath) || a.symbolId.localeCompare(b.symbolId));
+  // A short name the project declares across modules is its convention (one `Result` per
+  // namespace, qualified at use), not a homonym to warn about (bd tea-rags-mcp-icuxg).
+  const files = new Set(hits.map((row) => row.relPath));
+  const dirs = new Set(hits.map((row) => directoryOfPath(row.relPath)));
+  if (meetsProjectConventionSpread(files.size, dirs.size)) return undefined;
+  const hit = hits.at(0);
   return hit ? { symbolId: hit.symbolId, relPath: hit.relPath } : undefined;
 }
 

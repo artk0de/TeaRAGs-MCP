@@ -840,6 +840,50 @@ describe("judgeTypeDraft", () => {
     });
   });
 
+  // bd tea-rags-mcp-icuxg: taxdome declares 260 Ruby `Result` types, one per namespace — a
+  // convention, not a homonym. The bar is the project-suffix role's: ≥ 3 files in ≥ 2 directories.
+  describe("a short name the project declares as its convention is no collision", () => {
+    it("declared in 3 files across 2 directories → no COLLISION; the conventional name conforms", () => {
+      const rows = [
+        ...filler(6),
+        row("Result", "app/policies/a/result.rb"),
+        row("Result", "app/policies/b/result.rb"),
+        row("Result", "app/services/c/result.rb"),
+      ];
+      expect(judge(rows, { name: "Result", path: "app/services/payments/result.rb" })).toEqual({
+        verdict: "CONFORMS",
+      });
+    });
+
+    it("declared in 3 files of one directory → still a COLLISION", () => {
+      const rows = [
+        ...filler(6),
+        row("Result", "app/results/a.rb"),
+        row("Result", "app/results/b.rb"),
+        row("Result", "app/results/c.rb"),
+      ];
+      expect(judge(rows, { name: "Result", path: "app/services/payments/result.rb" }).verdict).toBe("COLLISION");
+    });
+
+    it("declared in 2 files across 2 directories → still a COLLISION", () => {
+      const rows = [...filler(6), row("Result", "app/a/result.rb"), row("Result", "app/b/result.rb")];
+      expect(judge(rows, { name: "Result", path: "app/services/payments/result.rb" })).toMatchObject({
+        verdict: "COLLISION",
+        existing: { relPath: "app/a/result.rb" },
+      });
+    });
+
+    it("the draft's own file does not count toward the convention", () => {
+      const rows = [
+        ...filler(6),
+        row("Result", "app/a/result.rb"),
+        row("Result", "app/b/result.rb"),
+        row("Result", "app/services/payments/result.rb"),
+      ];
+      expect(judge(rows, { name: "Result", path: "app/services/payments/result.rb" }).verdict).toBe("COLLISION");
+    });
+  });
+
   it("the draft's own file and ambient `.d.ts` declarations are no collision", () => {
     const rows = [...filler(6), row("Commit", "src/vcs/commit.ts"), row("Commit", "types/global.d.ts")];
     expect(judge(rows, { name: "Commit", path: "src/vcs/commit.ts" }).verdict).not.toBe("COLLISION");

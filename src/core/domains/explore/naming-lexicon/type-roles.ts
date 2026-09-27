@@ -84,6 +84,21 @@ export const TYPE_ROLE_THRESHOLDS: TypeRoleThresholds = {
 
 /** Two types sharing a tail word are the least that makes a family. */
 const MIN_ROLE_MEMBERS = 2;
+
+/**
+ * The project-wide spread that makes a word the project's CONVENTION rather
+ * than one module's: ≥ `projectSuffixMinTypes` files (never under two) in ≥
+ * `projectSuffixMinDirs` directories. The project-suffix role reads it for a
+ * tail word; a type draft's collision check reads it for a whole short name
+ * (bd tea-rags-mcp-icuxg) — one criterion for "the project writes this".
+ */
+export function meetsProjectConventionSpread(
+  files: number,
+  dirs: number,
+  t: TypeRoleThresholds = TYPE_ROLE_THRESHOLDS,
+): boolean {
+  return files >= Math.max(t.projectSuffixMinTypes, MIN_ROLE_MEMBERS) && dirs >= t.projectSuffixMinDirs;
+}
 /** Examples returned by {@link expectedRoleFor}. */
 const MAX_ROLE_EXAMPLES = 3;
 const EVIDENCE_ORDER: readonly TypeRoleEvidence[] = ["inheritance", "directory", "projectSuffix"];
@@ -352,8 +367,8 @@ export function deriveTypeRoles(
     const names = new Set(qualified.map(({ row }) => row.shortName));
     const files = new Set(qualified.map(({ row }) => row.relPath));
     const dirs = new Set(qualified.map(({ row }) => directoryOf(row.relPath)));
-    const minTypes = Math.max(t.projectSuffixMinTypes, MIN_ROLE_MEMBERS);
-    if (names.size < minTypes || files.size < minTypes || dirs.size < t.projectSuffixMinDirs) continue;
+    if (names.size < Math.max(t.projectSuffixMinTypes, MIN_ROLE_MEMBERS)) continue;
+    if (!meetsProjectConventionSpread(files.size, dirs.size, t)) continue;
     if (isFamilySlot(members, head)) continue;
     assignments.push(...assign(members, head, "projectSuffix", ""));
   }

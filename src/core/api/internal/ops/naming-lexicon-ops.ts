@@ -23,7 +23,8 @@
  *      that pattern holds no rows (so up to three reads); else, with no
  *      pattern, the dominant file language of the evidence rows the request
  *      names (asked / anchor / draft types and draft callees, weighted by n);
- *      else the project's. Its descriptor supplies the drafts' casing per role
+ *      else the language most type drafts' paths are written in; else the
+ *      project's. Its descriptor supplies the drafts' casing per role
  *      and the non-concept types, which leave `byType`.
  *   3. byType. The type aggregate (persisted sources + the store's call-return
  *      join), then the `name-inferred` stage computed here and never written: a
@@ -39,9 +40,13 @@
  *   6. Names. The project shape prior (a bounded sample) and return verbs
  *      license fallbacks; homonymy and collision are evidence; the verdict is
  *      `judgeDraftName`.
- *   7. Type names (`kind: "type"` drafts, bd tea-rags-mcp-vi0wx). One read of
- *      the project's type and constant declarations (`cg_type_declarations`,
- *      production files) → roles, the modifier vocabulary and head spellings;
+ *   7. Type names (`kind: "type"` drafts, bd tea-rags-mcp-vi0wx). One read per
+ *      TYPE NAMESPACE of the project's type and constant declarations
+ *      (`cg_type_declarations`, production files): the draft's path language
+ *      and every language sharing its `typeNamespace` (bd tea-rags-mcp-icuxg),
+ *      so collisions and evidence never cross into a language the draft cannot
+ *      import from. A draft judged off the answer's language names its own
+ *      (`names[].language`). → roles, the modifier vocabulary and head spellings;
  *      per draft a concept search (its `concept`, the request's, else its own
  *      words) samples the type names nearest its meaning for term alignment;
  *      the verdict is `judgeTypeDraft`. A failed search is a notice, the draft
@@ -279,7 +284,14 @@ interface ReviewDraft {
 interface TypeAlignmentState {
   failure?: string;
   vectors?: Map<string, number[]>;
-  nullSimilarities?: Map<TypeDraftPopulation, readonly number[] | null>;
+  /** Keyed by {@link typeEvidenceKey}: one distribution per type namespace and population. */
+  nullSimilarities?: Map<string, readonly number[] | null>;
+  /**
+   * The type and constant declarations per type namespace ({@link typeNamespaceKey}),
+   * read at most once per request — diff mode's per-language answers of one
+   * namespace share the read.
+   */
+  typeNameRows?: Map<string, Promise<TypeNameRow[]>>;
   /** The project's index metrics — its label thresholds — read at most once per request. */
   metrics?: Promise<IndexMetrics>;
 }
@@ -476,7 +488,7 @@ export class NamingLexiconOps {
     drafts.forEach((d, i) => {
       const judged = verdicts.get(slot[i].language)?.[slot[i].at];
       if (judged === undefined) return;
-      const { name: _name, evidence: _evidence, genericName, ...verdict } = judged;
+      const { name: _name, evidence: _evidence, language: _language, genericName, ...verdict } = judged;
       if (genericName === undefined && verdict.verdict === "CONFORMS" && verdict.alternatives === undefined) {
         conforming++;
         return;
@@ -549,6 +561,8 @@ export class NamingLexiconOps {
     if (language === undefined && !req.pathPattern) {
       askedTypeRows = await readTypeRows(graphDb, askedTypes, pathPrefixes);
       language = dominantRowLanguage([...askedTypeRows, ...storedCalleeRows]);
+      // Type drafts name their files: with no value evidence, their languages decide (bd tea-rags-mcp-icuxg).
+      language ??= dominantRowLanguage(typeDrafts.map((d) => ({ language: this.languageOfPath(d.path), n: 1 })));
     }
     if (language === undefined) {
       const decided = await requestedLanguageCounts(graphDb, req.pathPattern);
@@ -667,32 +681,35 @@ export class NamingLexiconOps {
     notices: string[],
     alignment: TypeAlignmentState,
   ): Promise<NamingLexiconNameVerdict[]> {
-    const rows = await graphDb.readTypeNameRows({
-      pathPrefixes: [],
-      kinds: TYPE_NAME_READ_KINDS,
-      nonProductionPaths: ontologyNonProductionPaths(),
-    });
-    if (rows.length === 0) notices.push(NAMING_LEXICON_TYPE_DECLARATIONS_EMPTY);
-    const evidence: Record<TypeDraftPopulation, TypeNameEvidence> = {
-      type: typeNameEvidence(rows, "type"),
-      constant: typeNameEvidence(rows, "constant"),
-    };
-
+    const evidenceByKey = new Map<string, TypeNameEvidence>();
+    let tableEmpty = false;
     const failedBefore = alignment.failure !== undefined;
     const verdicts: NamingLexiconNameVerdict[] = [];
     for (const draft of drafts) {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
+      // The draft's type namespace: its language and every language sharing it (bd tea-rags-mcp-icuxg).
+      const namespace = this.typeNamespaceLanguages(draftLanguage);
+      const rows = await this.typeNameRows(graphDb, namespace, alignment);
+      // An empty namespace is not an empty table: the notice needs every language's read.
+      if (rows.length === 0 && !tableEmpty) {
+        const all = namespace === undefined ? rows : await this.typeNameRows(graphDb, undefined, alignment);
+        tableEmpty = all.length === 0;
+      }
+      const key = typeEvidenceKey(namespace, population);
+      const evidence = evidenceByKey.get(key) ?? typeNameEvidence(rows, population);
+      evidenceByKey.set(key, evidence);
       let conceptNames: string[] = [];
       let byMeaning: MeaningAlignment = {};
       // The concept search first: only head candidates its code holds are embedded — on the
       // self-index that cut the batch from ~65 words per draft to a handful.
       try {
         if (rows.length > 0 && alignment.failure === undefined) {
-          conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence[population].rows);
-          byMeaning = await this.alignByMeaning(graphDb, req, draft, evidence[population], conceptNames, {
+          conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence.rows);
+          byMeaning = await this.alignByMeaning(graphDb, req, draft, evidence, conceptNames, {
             language: draftLanguage,
             alignment,
+            evidenceKey: key,
           });
         }
       } catch (error) {
@@ -704,12 +721,14 @@ export class NamingLexiconOps {
         path: draft.path,
         ...(draft.extends !== undefined ? { extends: draft.extends } : {}),
         casing: this.typeCasing(draftLanguage, population),
-        evidence: evidence[population],
+        evidence,
         conceptNames,
         ...byMeaning,
       });
-      verdicts.push(typeDraftVerdict(draft, verdict, evidence[population].rows));
+      const judgedIn = draftLanguage !== undefined && draftLanguage !== language ? draftLanguage : undefined;
+      verdicts.push(typeDraftVerdict(draft, verdict, evidence.rows, judgedIn));
     }
+    if (tableEmpty) notices.push(NAMING_LEXICON_TYPE_DECLARATIONS_EMPTY);
     if (!failedBefore && alignment.failure !== undefined) {
       notices.push(`type-name alignment skipped: ${alignment.failure}`);
     }
@@ -758,10 +777,10 @@ export class NamingLexiconOps {
     draft: NamingLexiconTypeDraft,
     evidence: TypeNameEvidence,
     conceptNames: readonly string[],
-    context: { language: string | undefined; alignment: TypeAlignmentState },
+    context: { language: string | undefined; alignment: TypeAlignmentState; evidenceKey: string },
   ): Promise<MeaningAlignment> {
     if (this.deps.embeddings === undefined) return {};
-    const { alignment } = context;
+    const { alignment, evidenceKey } = context;
     const usageEstablishedHeads = await this.usageEstablishedHeads(
       graphDb,
       req,
@@ -772,7 +791,7 @@ export class NamingLexiconOps {
     );
     const words = typeDraftAlignmentWords(draft, evidence, conceptNames, usageEstablishedHeads);
     if (words.length === 0) return {};
-    const nullSimilarities = await this.headNullSimilarities(evidence, alignment);
+    const nullSimilarities = await this.headNullSimilarities(evidence, evidenceKey, alignment);
     if (nullSimilarities === undefined) return {};
     const vectors = await this.embedHeadWords(words, alignment);
     return {
@@ -832,17 +851,18 @@ export class NamingLexiconOps {
    */
   private async headNullSimilarities(
     evidence: TypeNameEvidence,
+    evidenceKey: string,
     alignment: TypeAlignmentState,
   ): Promise<readonly number[] | undefined> {
-    const nulls = (alignment.nullSimilarities ??= new Map<TypeDraftPopulation, readonly number[] | null>());
-    const known = nulls.get(evidence.population);
+    const nulls = (alignment.nullSimilarities ??= new Map<string, readonly number[] | null>());
+    const known = nulls.get(evidenceKey);
     if (known !== undefined) return known ?? undefined;
     const sample = nullHeadSample(evidence.headCounts);
     const vectors = sample.length >= MIN_NULL_SAMPLE_HEADS ? await this.embedHeadWords(sample, alignment) : undefined;
     const distribution = vectors
       ? nullSimilarityDistribution(sample, (a, b) => headWordSimilarity(vectors, a, b))
       : undefined;
-    nulls.set(evidence.population, distribution ?? null);
+    nulls.set(evidenceKey, distribution ?? null);
     return distribution;
   }
 
@@ -858,6 +878,47 @@ export class NamingLexiconOps {
       missing.forEach((text, i) => vectors.set(text, embedded[i].embedding));
     }
     return vectors;
+  }
+
+  /**
+   * The languages whose type declarations a draft in `language` is judged
+   * against (bd tea-rags-mcp-icuxg): the language and every language its
+   * naming convention's `typeNamespace` names too; `undefined` (every
+   * language) when the draft's language is unknown. The conventions are the
+   * injected ones and the ontology profiles' — both are the capabilities'
+   * `naming`, and either may be the only one that knows a language.
+   */
+  private typeNamespaceLanguages(language: string | undefined): string[] | undefined {
+    if (language === undefined) return undefined;
+    const conventions: [string, IdentifierNamingConvention][] = [
+      ...this.deps.namingConventions,
+      ...(this.deps.ontologyLanguages ?? []).map((p): [string, IdentifierNamingConvention] => [p.language, p.naming]),
+    ];
+    const namespace = conventions.find(([member]) => member === language)?.[1].typeNamespace;
+    if (namespace === undefined) return [language];
+    const members = conventions.filter(([, c]) => c.typeNamespace === namespace).map(([member]) => member);
+    return unique([language, ...members]).sort();
+  }
+
+  /** The production type and constant declarations of `languages` (every language when absent), once per request. */
+  private async typeNameRows(
+    graphDb: IdentifierReader,
+    languages: readonly string[] | undefined,
+    alignment: TypeAlignmentState,
+  ): Promise<TypeNameRow[]> {
+    const reads = (alignment.typeNameRows ??= new Map<string, Promise<TypeNameRow[]>>());
+    const key = typeNamespaceKey(languages);
+    let read = reads.get(key);
+    if (read === undefined) {
+      read = graphDb.readTypeNameRows({
+        pathPrefixes: [],
+        kinds: TYPE_NAME_READ_KINDS,
+        nonProductionPaths: ontologyNonProductionPaths(),
+        ...(languages !== undefined ? { languages } : {}),
+      });
+      reads.set(key, read);
+    }
+    return read;
   }
 
   /** The language a path's extension routes to, from the ontology's language profiles. */
@@ -1437,6 +1498,7 @@ function typeDraftVerdict(
   draft: NamingLexiconTypeDraft,
   verdict: NamingVerdict,
   population: readonly TypeNameRow[],
+  judgedIn: string | undefined,
 ): NamingLexiconNameVerdict {
   const shortName = typeNameLastSegment(draft.name);
   const example =
@@ -1447,6 +1509,7 @@ function typeDraftVerdict(
         : undefined;
   return {
     name: draft.name,
+    ...(judgedIn !== undefined ? { language: judgedIn } : {}),
     ...verdict,
     evidence: {
       n: population.filter((row) => row.shortName === shortName).length,
@@ -1455,6 +1518,16 @@ function typeDraftVerdict(
       collision: verdict.verdict === "COLLISION",
     },
   };
+}
+
+/** A type namespace's read key: its languages, `*` for every language. */
+function typeNamespaceKey(languages: readonly string[] | undefined): string {
+  return languages === undefined ? "*" : languages.join(",");
+}
+
+/** The evidence of one population in one type namespace. */
+function typeEvidenceKey(languages: readonly string[] | undefined, population: TypeDraftPopulation): string {
+  return `${typeNamespaceKey(languages)}\u0000${population}`;
 }
 
 /** The value and type verdicts back in the order the drafts were asked. */

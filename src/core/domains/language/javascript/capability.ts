@@ -92,6 +92,10 @@ export const capability: LanguageCapability = {
       field: ["camel"],
       constant: ["camel", "screamingSnake"],
     },
+    // JavaScript loads TypeScript modules (a `.d.ts` beside the `.js`, tsx):
+    // one ECMAScript type namespace, so a class name one declares is taken
+    // in the other.
+    typeNamespace: "ecmascript",
     // JavaScript types come from constructors only (`new Map()`), so only the built-in ones appear —
     // the constructible subset of TypeScript's list (no `Iterable`, `ReturnType` …: those are type-only).
     nonConceptTypes: [

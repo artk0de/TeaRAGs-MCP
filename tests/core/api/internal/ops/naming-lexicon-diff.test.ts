@@ -235,6 +235,24 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   });
 
+  // bd tea-rags-mcp-icuxg: a diff spanning languages judges each name within its own language.
+  it("a type declared in another language is no collision; one in the same language is", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "app/models/invoice.rb", rows: [{ ...decl("Invoice", "class"), language: "ruby" }] },
+    ]);
+    mkdirSync(join(repo, "app/billing"), { recursive: true });
+    writeFileSync(join(repo, "app/billing/documents.rb"), "class Commit\nend\n\nclass Invoice\nend\n");
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["app/billing/documents.rb"] });
+    const collisions = result.review?.findings.filter((f) => f.verdict === "COLLISION") ?? [];
+    expect(collisions).toEqual([
+      expect.objectContaining({
+        relPath: "app/billing/documents.rb",
+        name: "Invoice",
+        existing: { symbolId: "Invoice", relPath: "app/models/invoice.rb" },
+      }),
+    ]);
+  });
+
   it("a NEW_TERM with nothing to compare with is counted as novel, not listed", async () => {
     writeFileSync(
       join(repo, "src/git/novel.ts"),

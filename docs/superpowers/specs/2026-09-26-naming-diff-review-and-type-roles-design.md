@@ -258,11 +258,56 @@ is the file the type will live in; `extends` its planned ancestor.
 | Verdict   | When                                                                                                                           |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | MISFIT    | the family (via `extends`) or the directory (via `path`, members only, §2) has a role the name lacks; suggestion = name + role |
-| COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`)                        |
+| COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`), unless conventional   |
 | NEW_TERM  | no role evidence and no aligned term (section 4); carries `alternatives` when section 4 found candidates                       |
 | CONFORMS  | the name carries the role and its terms align; may carry head `alternatives` (section 4, head by meaning)                      |
 
 Casing follows the file language of `path`, as for value names.
+
+**One type namespace per draft** (`icuxg`). The draft is judged against the
+declarations of its own TYPE NAMESPACE only: the language of `path` plus every
+language whose naming capability declares the same `typeNamespace`. A language
+that declares none owns its namespace alone. This covers the COLLISION check and
+all role and term evidence: the directory and family roles, established
+modifiers, head counts, the null similarity distribution, and `evidence.n`. A
+Ruby `Result` beside a TSX `Result` is no collision, because neither file can
+import the other's type. TypeScript and JavaScript both declare `ecmascript`,
+because they do import each other's types (`allowJs`, a `.d.ts` beside its
+`.js`, a JS entry point loading TS source), so a TS `Widget` draft collides with
+a JS `Widget`. When the draft's path has no known language, every language is
+read, which was the behaviour before this rule.
+
+The answer's top-level `language` is the language the answer is written in. It
+is the request's; else the `pathPattern`'s; else the language of the evidence
+rows for the asked types and callees; else the language most type drafts' paths
+are written in; else the project's dominant language. A type draft judged in any
+other language names its own language in `names[].language`. Diff mode already
+answers once per language, so each name is judged in its own language and the
+field never reaches `review.findings`.
+
+**A conventional short name is no collision** (`icuxg`). COLLISION exists to
+catch a new homonym of a RARE name. A short name the project declares in many
+modules is its convention: per-namespace `Result` objects, qualified at use. The
+bar is the project-suffix role's own criterion, so one rule decides "the project
+writes this" (`meetsProjectConventionSpread`). The short name must be declared
+as a type in at least `projectSuffixMinTypes` files (3) across at least
+`projectSuffixMinDirs` directories (2). Only declarations in the draft's type
+namespace count, and the draft's own file and ambient `.d.ts` files are
+excluded. Above the bar there is no COLLISION, and the draft goes on to the role
+and term stages. A name below the bar still collides: one or two existing
+declarations, or several in one directory, are a real homonym.
+
+Measured on taxdome with the vi0wx N2 request (20 Ruby type drafts). The
+answer's `language` went from `typescript` to `ruby`. The `Result` draft at
+`app/services/getting_paid/payments/result.rb` had collided with the TSX
+`Result` in `ImportSidebar.tsx` (`n: 271`, counted across languages). Namespace
+scoping alone made it collide with the Ruby `AbstractPolicy::Result` (`n: 260`).
+Taxdome declares 260 Ruby `Result` types, so it is a convention, and the draft
+now CONFORMS with a head alternative `summary` (0.632). 18 verdicts are
+unchanged. `ClientDataManager` stays CONFORMS but carries a head alternative
+(`methods`, 0.68) it lacked before namespace scoping: the null similarity
+distribution is measured over Ruby heads only, so its floor moved. On tea-rags
+the rename eval and the t9 alignment set are unchanged.
 
 Every verdict judges VOCABULARY. CONFORMS means consistent with the project's
 vocabulary: its words, roles and spellings. It says nothing about whether the

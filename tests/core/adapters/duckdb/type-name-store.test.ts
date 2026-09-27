@@ -137,6 +137,21 @@ describe("readTypeNameRows", () => {
     expect(rows.map((r) => r.symbolId)).toEqual(["StoreKind"]);
   });
 
+  // bd tea-rags-mcp-icuxg: a type draft is judged within its language's type namespace.
+  it("scopes to the languages asked, every language when none are", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "app/services/result.rb", rows: [decl("Result", "class", { language: "ruby" })] },
+      { relPath: "web/result.js", rows: [decl("JsResult", "class", { language: "javascript" })] },
+    ]);
+    const ruby = await db.readTypeNameRows(query({ languages: ["ruby"] }));
+    expect(ruby.map((r) => r.symbolId)).toEqual(["Result"]);
+    const ecmascript = await db.readTypeNameRows(query({ languages: ["typescript", "javascript"] }));
+    expect(ecmascript.map((r) => r.symbolId)).not.toContain("Result");
+    expect(ecmascript.map((r) => r.symbolId)).toContain("JsResult");
+    expect(ecmascript.map((r) => r.symbolId)).toContain("ExactStrategy");
+    expect((await db.readTypeNameRows(query())).map((r) => r.symbolId)).toContain("Result");
+  });
+
   it("never reads a re-opening", async () => {
     const paths = (await db.readTypeNameRows(query())).map((r) => r.relPath);
     expect(paths).not.toContain("src/stores/extensions.ts");
