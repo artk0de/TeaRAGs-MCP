@@ -191,9 +191,17 @@ because a suffix popular elsewhere is a guess, not an expectation. A name that
 lacks its family's or directory's role is `MISFIT` with the role appended; a
 short name that already names a type in another module is `COLLISION`. Term
 alignment checks each word against the project's established words for the
-same concept and offers `alternatives` on a `NEW_TERM` (for example `Predefined`
-where the project writes `PredefinedTemplate` and `PredefinedField`). That
-verdict stays soft: the agent decides whether to reuse the term.
+same concept and offers `alternatives` — on a `NEW_TERM` when the words
+literally overlap (for example `Predefined` where the project writes
+`PredefinedTemplate` and `PredefinedField`), and also on a `CONFORMS` when the
+draft's head is a **synonym** of an established term recognized by the index's
+own embedding model (`EmbeddingBackend` → `provider`, `SignalStatistics` →
+`stats`) — a synonym confirmed only by a matching project suffix is exactly
+what a bare `CONFORMS` would otherwise wave through. The similarity floor is
+the project's own null distribution of unrelated head pairs, corrected for how
+many candidates the draft was scored against, so it holds the same ~10% false-positive
+rate regardless of the draft's directory or family size. That verdict stays
+soft: the agent decides whether to reuse the term.
 
 **Reviewing a diff.** `changes: {}` reviews the working tree against `HEAD`,
 untracked files included; `changes: { base }` reviews it against another
