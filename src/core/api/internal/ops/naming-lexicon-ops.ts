@@ -934,7 +934,7 @@ export class NamingLexiconOps {
     return response.results.flatMap((r) => {
       const symbolId = r.payload?.symbolId;
       if (typeof symbolId !== "string") return [];
-      return [...new Set(symbolId.split(/::|#|\./))].filter((segment) => known.has(segment));
+      return [...new Set(hitOwnSegments(symbolId))].filter((segment) => known.has(segment));
     });
   }
 
@@ -1108,6 +1108,20 @@ export class NamingLexiconOps {
     const convention = language ? this.deps.namingConventions.get(language) : undefined;
     return convention?.casing[role][0] ?? (population === "constant" ? "screamingSnake" : "pascal");
   }
+}
+
+/**
+ * The segments of a concept hit's symbol id that NAME it: everything after its
+ * last `::`, split at `#` / `.` (`TaxPreparation::Api#error_message` → `Api`,
+ * `error_message`). The `::` segments before it are its namespace, which
+ * locates the hit the way its directories do (bd tea-rags-mcp-i569j): on
+ * taxdome every `TaxPreparation::*` hit made the declared module
+ * `TaxPreparation` a concept type name, which grounded the directory word
+ * `preparation` as an alternative for `helper` and `args`.
+ */
+function hitOwnSegments(symbolId: string): string[] {
+  const namespaceEnd = symbolId.lastIndexOf("::");
+  return (namespaceEnd < 0 ? symbolId : symbolId.slice(namespaceEnd + 2)).split(/#|\./);
 }
 
 /**

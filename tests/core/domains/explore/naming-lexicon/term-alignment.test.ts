@@ -13,6 +13,7 @@ import {
   nullSimilarityDistribution,
   pathTerms,
   perComparisonQuantile,
+  sharesWordStem,
   similarityQuantile,
   type ModifierUse,
 } from "../../../../../src/core/domains/explore/naming-lexicon/term-alignment.js";
@@ -105,6 +106,90 @@ describe("alignHead", () => {
         ]),
       ),
     ).toBe("metadata");
+  });
+});
+
+// bd tea-rags-mcp-i569j, live on taxdome: `Refusals` was offered `refs` (2 types) as the project's
+// spelling of `refusals`. `refs` clips `references` and `refunds` just as well — the project
+// writes all three — so it spells none of them in particular.
+describe("alignHead — a clipping several project words share spells none of them", () => {
+  it("`refs` is no spelling of `refusals` when the project also writes `refunds` and `references`", () => {
+    expect(
+      alignHead(
+        { head: ["refusals"], qualifiers: [] },
+        new Map([
+          ["refs", 2],
+          ["refusals", 1],
+          ["refunds", 3],
+          ["references", 1],
+        ]),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("the draft word's own inflections are one word: `stats` still spells `statistic(s)`", () => {
+    expect(
+      alignHead(
+        { head: ["statistics"], qualifiers: ["signal"] },
+        new Map([
+          ["stats", 9],
+          ["statistics", 1],
+          ["statistic", 1],
+        ]),
+      ),
+    ).toBe("stats");
+  });
+});
+
+// bd tea-rags-mcp-i569j, live on taxdome: `TaxpayerLookupError` was offered `taxes` for
+// `taxpayer`, `Refusals` a head `refs`. A candidate sharing the replaced word's stem restates
+// it — the embedding scores the pair close BECAUSE of the shared stem — it is no other word.
+describe("sharesWordStem — an inflected stem is shared", () => {
+  it("one word is the shared prefix plus an inflection: `taxes` / `taxpayer`, `refs` / `refusals`", () => {
+    expect(sharesWordStem("taxes", "taxpayer")).toBe(true);
+    expect(sharesWordStem("taxpayer", "taxes")).toBe(true);
+    expect(sharesWordStem("refs", "refusals")).toBe(true);
+  });
+
+  it("a shared prefix under three letters is no stem: `user` / `usage`", () => {
+    expect(sharesWordStem("user", "usage")).toBe(false);
+  });
+
+  it("words sharing no stem stay apart: `inconsistent` / `refusals`, `staleness` / `freshness`", () => {
+    expect(sharesWordStem("inconsistent", "refusals")).toBe(false);
+    expect(sharesWordStem("staleness", "freshness")).toBe(false);
+  });
+});
+
+describe("candidates sharing the replaced word's stem are no alternatives (bd tea-rags-mcp-i569j)", () => {
+  it("alignQualifiers never offers a modifier sharing a draft qualifier's stem", () => {
+    const established = [
+      mod("taxes", ["return", "form"], ["app/a", "app/b"], 12),
+      mod("vendor", ["client", "error"], ["app/c", "app/d"], 12),
+    ];
+    const lift = new Map([
+      ["taxes", 40],
+      ["vendor", 10],
+    ]);
+    expect(
+      alignQualifiers({ head: ["error"], qualifiers: ["taxpayer", "lookup"] }, established, lift, 2).map((a) => a.word),
+    ).toEqual(["vendor"]);
+  });
+
+  it("anchoredHeadCandidates never offers a head sharing the draft head's stem", () => {
+    const rows = [
+      { shortName: "CampaignRefs", relPath: "app/lib/x/campaign_refs.rb" },
+      { shortName: "TagRefs", relPath: "app/lib/x/tag_refs.rb" },
+      { shortName: "UploadBuffer", relPath: "app/lib/x/upload_buffer.rb" },
+      { shortName: "TargetBuffer", relPath: "app/lib/x/target_buffer.rb" },
+    ];
+    const counts = new Map([
+      ["refs", 2],
+      ["buffer", 2],
+    ]);
+    expect(
+      anchoredHeadCandidates({ head: ["refusals"], qualifiers: [] }, "app/lib/x", rows, counts).map((c) => c.word),
+    ).toEqual(["buffer"]);
   });
 });
 

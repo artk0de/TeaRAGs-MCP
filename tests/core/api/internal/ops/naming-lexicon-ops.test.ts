@@ -1107,6 +1107,34 @@ describe("NamingLexiconOps", () => {
         });
       });
 
+      // bd tea-rags-mcp-i569j, live on taxdome: `RefusalsHelper` under app/lib/tax_preparation/ was
+      // offered `preparation` for `helper` (lift 0) — grounded only because every hit's NAMESPACE,
+      // `TaxPreparation::…`, is a declared module. A namespace locates the hit; its own type names it.
+      describe("the concept code's type names are the hits' own, not their namespaces", () => {
+        beforeEach(async () => {
+          SHARED.push("preparation");
+          await db.replaceTypeDeclarationsBulk([
+            { relPath: "src/tax_preparation.ts", rows: [decl("TaxPreparation", "module")] },
+          ]);
+          semanticSearch.mockResolvedValue({
+            driftWarning: null,
+            results: [holder("TaxPreparation::RunStatus#check", "src/run/status.ts")],
+          });
+        });
+        afterEach(() => {
+          SHARED.pop();
+        });
+
+        it("a directory word only a hit's namespace carries is no grounded term", async () => {
+          const result = await buildWithEmbeddings().getNamingLexicon({
+            collection: "c",
+            names: [{ name: "IndexNumbers", kind: "type", path: "src/tax_preparation/numbers.ts" }],
+          });
+          expect(result.notices).toBeUndefined();
+          expect(result.names[0]).not.toHaveProperty("alternatives");
+        });
+      });
+
       it("a head population too small to place a floor on → nothing embedded, no head alternative", async () => {
         // Without the ten null heads only `strategy`, `metrics` and `status` have two carriers.
         await db.run("DELETE FROM cg_type_declarations WHERE short_name LIKE 'Left%' OR short_name LIKE 'Right%'");

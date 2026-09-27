@@ -9,7 +9,7 @@
  */
 import { createHash } from "node:crypto";
 
-import { typeNameWords } from "./casing.js";
+import { singularizeIdentifierWord, typeNameWords } from "./casing.js";
 import { isWordAbbreviation } from "./homonyms.js";
 import { typeNameParts, type NameSlots, type TypeNameParser } from "./name-slots.js";
 
@@ -105,7 +105,9 @@ export function modifierLift(
  * Established modifiers with lift above `floor`, offered when the draft has a
  * qualifier that is a vocabulary word ({@link isVocabularyWord} — `v11` is not
  * one another modifier could replace) and none of its qualifiers is
- * established already. Highest lift first; heads and domains sorted for a
+ * established already. A modifier sharing a draft qualifier's stem
+ * ({@link sharesWordStem}) restates it and is never offered (bd
+ * tea-rags-mcp-i569j: `taxes` for `taxpayer`). Highest lift first; heads and domains sorted for a
  * deterministic answer. Empty = a new concept, a legitimate outcome.
  */
 export function alignQualifiers(
@@ -118,6 +120,7 @@ export function alignQualifiers(
   const establishedWords = new Set(established.map((use) => use.word));
   if (slots.qualifiers.some((word) => establishedWords.has(word))) return [];
   return established
+    .filter((use) => !slots.qualifiers.some((qualifier) => sharesWordStem(qualifier, use.word)))
     .map((use) => ({ use, lift: lift.get(use.word) ?? 0 }))
     .filter((candidate) => candidate.lift > floor)
     .sort((a, b) => b.lift - a.lift || a.use.word.localeCompare(b.use.word))
@@ -138,12 +141,40 @@ export function alignQualifiers(
 const MAX_VARIANT_LENGTH_RATIO = 0.6;
 
 /**
- * Two words share a stem when one begins with the other or one spells the
- * other (`chunk` / `chunker`, `doc` / `document`): the draft already carries
- * that term, so offering it would restate the draft.
+ * Letters a shared prefix needs to be a stem: `us` (`user` / `usage`) is two
+ * letters of spelling, `tax` / `ref` the shortest English stems the rule is for.
+ */
+const MIN_STEM_LETTERS = 3;
+
+/**
+ * Two words share a stem when one begins with the other, one spells the other
+ * (`chunk` / `chunker`, `doc` / `document`), or one is their common prefix plus
+ * an inflection or agent ending ({@link isInflectedOrAgentForm}) — `taxes` /
+ * `taxpayer`, `refs` / `refusals` (bd tea-rags-mcp-i569j): the draft already
+ * carries that term, so offering it would restate the draft. An embedding
+ * scores such a pair close BECAUSE of the stem, which is why the Šidák floor
+ * does not stop it (`taxes` replaced `taxpayer` live on taxdome).
  */
 export function sharesWordStem(a: string, b: string): boolean {
-  return a.startsWith(b) || b.startsWith(a) || isSpellingVariant(a, b);
+  return a.startsWith(b) || b.startsWith(a) || isSpellingVariant(a, b) || sharesInflectedStem(a, b);
+}
+
+function sharesInflectedStem(a: string, b: string): boolean {
+  let length = 0;
+  while (length < a.length && length < b.length && a[length] === b[length]) length++;
+  if (length < MIN_STEM_LETTERS) return false;
+  const stem = a.slice(0, length);
+  return isInflectedOrAgentForm(stem, a) || isInflectedOrAgentForm(stem, b);
+}
+
+/** `clipping` is a clipping of a project word other than `word` (in either number). */
+function clipsAnotherWord(clipping: string, word: string, headCounts: ReadonlyMap<string, number>): boolean {
+  const self = singularizeIdentifierWord(word);
+  for (const other of headCounts.keys()) {
+    if (other.length <= clipping.length || singularizeIdentifierWord(other) === self) continue;
+    if (isSpellingVariant(clipping, other)) return true;
+  }
+  return false;
 }
 
 function isSpellingVariant(a: string, b: string): boolean {
@@ -180,6 +211,10 @@ function isInflectedOrAgentForm(stem: string, word: string): boolean {
  * The project's dominant spelling of the draft's head word (its last head
  * word), or `undefined` when the head already is the most-used spelling or
  * has no variant in `headCounts`. A variant must be strictly more frequent.
+ * A clipping of SEVERAL of the project's words spells none of them (bd
+ * tea-rags-mcp-i569j): taxdome writes `refs` for `references`, and also
+ * `refunds` and `refusals`, so `refs` is no spelling of `refusals`. The
+ * draft word's own singular / plural is one word, not a second one.
  */
 export function alignHead(slots: NameSlots, headCounts: ReadonlyMap<string, number>): string | undefined {
   const head = slots.head[slots.head.length - 1];
@@ -187,7 +222,7 @@ export function alignHead(slots: NameSlots, headCounts: ReadonlyMap<string, numb
   let best: string | undefined;
   let bestCount = headCounts.get(head) ?? 0;
   for (const [word, count] of headCounts) {
-    if (word === head || !isSpellingVariant(word, head)) continue;
+    if (word === head || !isSpellingVariant(word, head) || clipsAnotherWord(word, head, headCounts)) continue;
     if (count > bestCount || (count === bestCount && best !== undefined && word < best)) {
       best = word;
       bestCount = count;
@@ -217,6 +252,7 @@ const MIN_HEAD_CANDIDATE_TYPES = 2;
  * heads of the population's types that share a qualifier word with the draft
  * (`IndexNumbers` → `IndexMetrics`, `IndexStatus`) or live in the draft's
  * directory. A word the draft already carries is never a candidate, nor a head
+ * sharing the draft head's stem ({@link sharesWordStem}), nor a head
  * fewer than {@link MIN_HEAD_CANDIDATE_TYPES} types end in (`headCounts`) —
  * unless `admitted` names it: a head ONE central type carries, established by
  * usage rather than by count (`Reranker`). Which candidate spells the draft's
@@ -238,6 +274,8 @@ export function anchoredHeadCandidates(
     const parts = parse(row.shortName);
     const { head } = parts;
     if (head === undefined || draftWords.has(head)) continue;
+    // A head sharing the draft head's stem restates it (`refs` for `refusals`, bd tea-rags-mcp-i569j).
+    if (slots.head.some((word) => sharesWordStem(word, head))) continue;
     if ((headCounts.get(head) ?? 0) < MIN_HEAD_CANDIDATE_TYPES && !admitted.has(head)) continue;
     const slash = row.relPath.lastIndexOf("/");
     const dir = slash < 0 ? "" : row.relPath.slice(0, slash);
