@@ -1912,6 +1912,9 @@ describe("OllamaEmbeddings", () => {
 
         const embedPromise = provider.embedBatch(["text1"]);
         embedPromise.catch(() => {});
+        // Background probe fires at 30s while embed hangs — report primary alive
+        // (same premise as the test above: the primary is up, the embed is slow).
+        mockFetch.mockResolvedValueOnce({ ok: true });
         await vi.advanceTimersByTimeAsync(31_000);
 
         const error = await embedPromise.catch((e: unknown) => e);
@@ -2365,6 +2368,70 @@ describe("OllamaEmbeddings", () => {
 
         await expect(provider.embedBatch(["bad"])).rejects.toThrow(OllamaResponseError);
         expect(provider.getBaseUrl()).toBe(PRIMARY);
+      });
+    });
+
+    // bd tea-rags-mcp-sbu0s residual race: the background health probe switches
+    // to the fallback while an embed is still in flight against the primary
+    // snapshot. That call's failure does not cross the threshold (the switch
+    // already happened, by someone else), yet the endpoint it failed on is no
+    // longer the active one — it must be retried on the fallback, not rethrown.
+    describe("a call whose endpoint was switched away mid-flight retries on the active one (sbu0s)", () => {
+      const batchOk = () => ({ ok: true, json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1]] }) });
+
+      async function runProbeSwitchesMidCall(primaryEmbedFailure: () => unknown): Promise<void> {
+        vi.useFakeTimers();
+        try {
+          mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check: primary healthy
+          const provider = new OllamaEmbeddings(
+            "nomic-embed-text",
+            undefined,
+            // Threshold far above one failure: only the probe can switch here.
+            { failoverConsecutiveFailures: 5, retryAttempts: 1, retryDelayMs: 1 },
+            PRIMARY,
+            false,
+            999,
+            FALLBACK,
+          );
+          await vi.advanceTimersByTimeAsync(0);
+
+          let releasePrimaryEmbed: () => void = () => {};
+          const primaryEmbedGate = new Promise<void>((resolve) => {
+            releasePrimaryEmbed = resolve;
+          });
+          mockFetch.mockImplementation(async (url: string) => {
+            if (url === `${PRIMARY}/`) return { ok: false, status: 500 }; // probe: primary looks down
+            if (url.startsWith(PRIMARY)) {
+              await primaryEmbedGate;
+              return primaryEmbedFailure();
+            }
+            return batchOk();
+          });
+
+          const embedPromise = provider.embedBatch(["t"]);
+          embedPromise.catch(() => {});
+          // Probe fires at 30s while the embed is still in flight on the primary.
+          await vi.advanceTimersByTimeAsync(30_000);
+          expect(provider.getBaseUrl()).toBe(FALLBACK);
+
+          releasePrimaryEmbed();
+          await vi.advanceTimersByTimeAsync(100);
+          const results = await embedPromise;
+
+          expect(results).toHaveLength(1);
+          expect(lastUrl()).toBe(`${FALLBACK}/api/embed`);
+        } finally {
+          mockFetch.mockReset();
+          vi.useRealTimers();
+        }
+      }
+
+      it("an HTTP 503 from the primary", async () => {
+        await runProbeSwitchesMidCall(() => ({ ok: false, status: 503, text: async () => "busy" }));
+      });
+
+      it("a malformed 200 (empty embeddings) from the primary", async () => {
+        await runProbeSwitchesMidCall(() => ({ ok: true, json: async () => ({ embeddings: [] }) }));
       });
     });
 

@@ -397,6 +397,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         // notePrimaryEmbedFailure never reports another switch.
         if (this.notePrimaryEmbedFailure(url, error)) continue;
 
+        // The active endpoint moved while this call was in flight — the
+        // background probe (or a concurrent caller crossing the threshold)
+        // switched away from the URL snapshot it ran against. The failure says
+        // nothing about the endpoint now active, so ask that one instead of
+        // rethrowing (bd tea-rags-mcp-sbu0s residual race). Terminates: a
+        // switch back to the primary is gated by the probe's recovery cooldown.
+        if (url !== this.resolveActiveUrl()) continue;
+
         // Typed errors propagate directly — the server IS reachable but rejected
         // the request (missing model, timeout, HTTP error, malformed body whose
         // retries are spent), so waiting for a reconnection is pointless. No
