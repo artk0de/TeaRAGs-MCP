@@ -515,6 +515,18 @@ for that type is NEW_TERM, with the type's top names as context (for
 was CONFORMS, because the shape share of FREE passed the 0.2 bar. A known free
 name stays CONFORMS.
 
+The same holds for the rows of the call a draft is bound to (bd
+tea-rags-mcp-hn2vt). `thing = registry.findByName(n)` against the project's
+`entry = registry.findByName(…)` rows is NEW_TERM with `entry` as context, not
+CONFORMS: a FREE share licenses the roles the project already gives that call's
+value, not any word. The comparison is by words in either number, so `row`
+against `rows` is known. A draft bound to a call with no rows at all, and with
+no type the project holds, still has nothing to compare with and stays `novel`
+(`thing = mysteryCall()`, `other = client.quickbooks_customer` on taxdome).
+Reporting those would need a judgement of the name itself. The ontology's
+`genericName` is that judgement, and it needs the name's own history across
+types.
+
 ## 6. Diff mode (`fdef2`)
 
 Input: `changes: { base?: string }` (default `HEAD`: working tree against HEAD,

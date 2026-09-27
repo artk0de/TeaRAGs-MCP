@@ -246,6 +246,25 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.checked).toBe(1);
   });
 
+  // bd tea-rags-mcp-hn2vt: `thing` / `tmp` for a call the project names `entry` were silently conforming.
+  it("a local named off the project's names for its call is a finding carrying those names", async () => {
+    await write(
+      [0, 1, 2].map((i) => ({
+        relPath: `src/reg/lookup-${i}.ts`,
+        rows: [local(`lookup${i}`, "entry", { boundMember: "findByName", boundReceiver: "registry" })],
+      })),
+    );
+    writeFileSync(
+      join(repo, "src/git/scratch.ts"),
+      "export function g(): void {\n  const thing = registry.findByName(n);\n  const entry = registry.findByName(m);\n  use(thing, entry);\n}\n",
+    );
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/scratch.ts"] });
+    expect(result.review?.findings).toEqual([
+      expect.objectContaining({ name: "thing", line: 2, kind: "local", verdict: "NEW_TERM", topTerms: ["entry"] }),
+    ]);
+    expect(result.review?.conforming).toBe(1);
+  });
+
   it("a non-production changed file is not judged, and counts as not judged", async () => {
     writeFileSync(
       join(repo, "src/git/reader.test.ts"),
