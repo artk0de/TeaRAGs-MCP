@@ -77,6 +77,16 @@ export const embeddingSchema = z.object({
   fallbackBaseUrl: z.string().optional(),
   ollamaLegacyApi: booleanFromEnv,
   ollamaNumGpu: intWithDefault(999),
+  /**
+   * Server-side quantization for the Ollama embedding model. The provider
+   * provisions a quantized copy over /api/create (`turbo` = the most
+   * aggressive gguf level, q4_K_M — the ollama-side analogue of Qdrant's
+   * turbo quantization) and embeds against it; a server that cannot quantize
+   * warns and keeps the unquantized model. Quantized vectors differ from
+   * F16 ones, so the first run after flipping this re-indexes (the embedding
+   * model guard enforces it). `off` restores unquantized embedding.
+   */
+  ollamaQuantization: z.enum(["off", "q8_0", "q5_K_M", "q4_K_M", "turbo"]).default("turbo"),
   openaiApiKey: z.string().optional(),
   cohereApiKey: z.string().optional(),
   voyageApiKey: z.string().optional(),

@@ -25,6 +25,11 @@ import {
   OllamaUnavailableError,
 } from "./ollama/errors.js";
 import { parseModelInfo, type OllamaModelInfo } from "./ollama/model-info.js";
+import {
+  provisionQuantizedOllamaModel,
+  resolveOllamaQuantizationLevel,
+  type OllamaQuantizationLevel,
+} from "./ollama/model-quantization.js";
 import { withRateLimitRetry } from "./retry.js";
 import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
@@ -132,7 +137,8 @@ export type OllamaRecoveryWaitEvent =
   | { state: "recovered"; url: string; elapsedMs: number };
 
 export class OllamaEmbeddings implements EmbeddingProvider {
-  private readonly model: string;
+  /** The model embed calls carry — the quantized tag once provisioning switched to it. */
+  private model: string;
   /**
    * Vector width this provider reports. Starts as the static model-registry
    * guess and is corrected by `resolveModelInfo()` once Ollama has been asked
@@ -165,6 +171,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private primaryFailedAt = 0;
   private cachedModelInfo?: OllamaModelInfo;
   private readonly healthReady?: Promise<void>;
+  /** Resolves once the quantized model copy (if any) is provisioned and live. */
+  private readonly modelReady?: Promise<void>;
+  private readonly quantizationLevel: OllamaQuantizationLevel = "off";
   private lastHealthResult?: boolean;
   private lastHealthAt = 0;
 
@@ -220,6 +229,40 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     if (fallbackBaseUrl) {
       this.healthReady = this.checkInitialHealth();
+    }
+
+    this.quantizationLevel = resolveOllamaQuantizationLevel(rateLimitConfig?.ollamaQuantization);
+    if (this.quantizationLevel !== "off") {
+      this.modelReady = this.applyQuantizedModel();
+    }
+  }
+
+  /**
+   * Gate every embed path waits on: the endpoint failover decision AND the
+   * quantized-model provisioning. Both are constructor-armed; awaiting them
+   * here is what keeps a first embed from racing the startup work.
+   */
+  private async startupReady(): Promise<void> {
+    await this.healthReady;
+    await this.modelReady;
+  }
+
+  /** Provision (or reuse) the server-side quantized copy and switch to it. */
+  private async applyQuantizedModel(): Promise<void> {
+    const provision = await provisionQuantizedOllamaModel({
+      baseUrl: this.baseUrl,
+      baseModel: this.model,
+      level: this.quantizationLevel,
+    });
+    if (provision.quantized) {
+      this.model = provision.effectiveModel;
+      if (isDebug()) {
+        console.error(`[Ollama] embedding with quantized ${provision.effectiveModel} (${this.quantizationLevel})`);
+      }
+    } else if (provision.warning) {
+      // Unconditional: silently different vectors are fine, silently worse
+      // throughput the operator asked to fix is not.
+      console.error(`[Ollama] ${provision.warning}`);
     }
   }
 
@@ -615,7 +658,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    await this.healthReady;
+    await this.startupReady();
     return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => this.embedSingle(text, url)));
   }
 
@@ -637,7 +680,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Note: GPU must have num_gpu: 999 enabled (see callBatchApi)
    */
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    await this.healthReady;
+    await this.startupReady();
     if (texts.length === 0) {
       return [];
     }
@@ -698,7 +741,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     // Same ordering as embed()/checkHealth(): the active URL is only decided
     // once the constructor's failover check has settled.
-    await this.healthReady;
+    await this.startupReady();
     const url = this.resolveActiveUrl();
     try {
       const response = await fetchWithTimeout(
@@ -741,7 +784,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     // Probe the endpoint the next embed will use, which the constructor's
     // failover check decides — read before it settles, the primary gets
     // probed even when failover is about to flip to the fallback (jyka).
-    await this.healthReady;
+    await this.startupReady();
     if (this.lastHealthResult !== undefined && Date.now() - this.lastHealthAt < HEALTH_CACHE_TTL_MS) {
       return this.lastHealthResult;
     }

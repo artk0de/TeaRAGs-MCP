@@ -43,6 +43,7 @@ export class EmbeddingProviderFactory {
       unavailableRetryMaxWaitMs: tune.unavailableRetryMaxWaitMs,
       unavailableRetryBaseDelayMs: tune.unavailableRetryBaseDelayMs,
       failoverConsecutiveFailures: tune.failoverConsecutiveFailures,
+      ollamaQuantization: config.ollamaQuantization,
     };
 
     switch (provider) {

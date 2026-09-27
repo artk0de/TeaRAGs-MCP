@@ -197,6 +197,7 @@ describe("RegistryEnvGroup.consequence", () => {
       "chunk-set INGEST_CHUNK_SIZE",
       "chunk-set INGEST_ENABLE_AST",
       "chunk-set INGEST_ENABLE_HYBRID",
+      "chunk-set OLLAMA_QUANTIZATION",
       "enrichment:codegraph CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
       "enrichment:codegraph CODEGRAPH_CUSTOM_EXCLUDE",
       "enrichment:codegraph CODEGRAPH_ENABLED",

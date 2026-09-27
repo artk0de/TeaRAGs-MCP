@@ -28,6 +28,16 @@ export interface RateLimitConfig {
    * still passes its health probe. 0 disables. Ollama-only; default 3.
    */
   failoverConsecutiveFailures?: number;
+  /**
+   * Requested server-side model quantization for Ollama: `turbo` (most
+   * aggressive), a concrete gguf level (`q4_K_M`, `q5_K_M`, `q8_0`), or
+   * `off`. The provider provisions the quantized model copy over /api/create
+   * and embeds against it; a server that cannot quantize warns and keeps the
+   * unquantized model. Undefined at the class level (off) — the product
+   * default lives in the config schema so directly-constructed instances
+   * never touch the network for provisioning. Ollama-only.
+   */
+  ollamaQuantization?: string;
 }
 
 export interface EmbeddingProvider {

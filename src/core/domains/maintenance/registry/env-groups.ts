@@ -58,6 +58,9 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   // Model / provider / dimensions decide the VECTORS, so they move the chunk
   // set; the endpoints only decide who computes them.
   { canonical: "EMBEDDING_MODEL", aliases: [], consequence: "chunk-set" },
+  // Quantization swaps the effective model (quantized tag) — the vectors
+  // change with it, so it is a chunk-set consequence like the model itself.
+  { canonical: "OLLAMA_QUANTIZATION", aliases: ["EMBEDDING_OLLAMA_QUANTIZATION"], consequence: "chunk-set" },
   { canonical: "EMBEDDING_BASE_URL", aliases: ["OLLAMA_URL"], consequence: "runtime" },
   { canonical: "EMBEDDING_FALLBACK_URL", aliases: ["OLLAMA_FALLBACK_URL"], consequence: "runtime" },
   { canonical: "QDRANT_URL", aliases: [], consequence: "runtime" },

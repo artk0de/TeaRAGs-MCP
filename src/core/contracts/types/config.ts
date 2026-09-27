@@ -35,6 +35,8 @@ export interface EmbeddingConfig {
   fallbackBaseUrl?: string;
   ollamaLegacyApi: boolean;
   ollamaNumGpu: number;
+  /** Requested server-side model quantization: `turbo` | `q4_K_M` | `q5_K_M` | `q8_0` | `off`. Ollama-only. */
+  ollamaQuantization: string;
   openaiApiKey?: string;
   cohereApiKey?: string;
   voyageApiKey?: string;

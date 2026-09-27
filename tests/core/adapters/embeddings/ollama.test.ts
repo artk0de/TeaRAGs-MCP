@@ -2684,4 +2684,49 @@ describe("OllamaEmbeddings", () => {
       expect(showCalls.length).toBe(1);
     });
   });
+
+  describe("model quantization", () => {
+    const PRIMARY = "http://primary:11434";
+    const BASE = "unclemusclez/jina-embeddings-v2-base-code:latest";
+    const mockEmbedding = Array(768)
+      .fill(0)
+      .map((_, i) => i * 0.001);
+
+    it("embeds against the quantized tag after the server provisions it", async () => {
+      // Server already has the quantized tag — /api/show answers ok.
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ model_info: {} }) });
+
+      const provider = new OllamaEmbeddings(BASE, 768, { ollamaQuantization: "turbo" }, PRIMARY, false, 999);
+      // Provisioning is async from the constructor — let it settle.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embeddings: [mockEmbedding] }) });
+      await provider.embedBatch(["chunk"]);
+
+      const [url, init] = mockFetch.mock.calls[mockFetch.mock.calls.length - 1] as [string, RequestInit];
+      expect(url).toBe(`${PRIMARY}/api/embed`);
+      expect(JSON.parse(init.body as string).model).toBe(`${BASE}-q4_K_M`);
+    });
+
+    it("warns and keeps the base model when the server cannot quantize", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        // /api/show misses, /api/create refuses (unsupported or old server).
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+        const provider = new OllamaEmbeddings(BASE, 768, { ollamaQuantization: "turbo" }, PRIMARY, false, 999);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embeddings: [mockEmbedding] }) });
+        await provider.embedBatch(["chunk"]);
+
+        const init = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][1] as RequestInit;
+        expect(JSON.parse(init.body as string).model).toBe(BASE);
+        expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("[Ollama]"));
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+  });
 });

@@ -106,6 +106,7 @@ function buildEnvInputs(env: EnvReader) {
     fallbackBaseUrl: env("EMBEDDING_FALLBACK_URL", "OLLAMA_FALLBACK_URL"),
     ollamaLegacyApi: env("OLLAMA_LEGACY_API"),
     ollamaNumGpu: env("OLLAMA_NUM_GPU"),
+    ollamaQuantization: env("OLLAMA_QUANTIZATION", "EMBEDDING_OLLAMA_QUANTIZATION"),
     openaiApiKey: env("OPENAI_API_KEY"),
     cohereApiKey: env("COHERE_API_KEY"),
     voyageApiKey: env("VOYAGE_API_KEY"),
