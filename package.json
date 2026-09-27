@@ -20,7 +20,7 @@
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",
     "postinstall": "node scripts/postinstall.js",
-    "prepare": "husky",
+    "prepare": "husky && sh scripts/git/register-merge-drivers.sh",
     "test-integration": "node tests/integration/index.mjs",
     "tune": "node benchmarks/tune.mjs",
     "tune:embeddings": "node benchmarks/benchmark-embeddings.mjs",

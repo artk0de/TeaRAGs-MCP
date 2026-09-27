@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# Clean (conflict-free) merge: record it so post-merge re-pins the derived
+# language version pins and folds them into the merge commit. Re-pinning here
+# is useless — git has already written the merge tree when this hook runs.
+# Conflicted merges finish through `git commit`, which re-pins in pre-commit.
+sh scripts/git/repin-on-merge.sh --mark-merge

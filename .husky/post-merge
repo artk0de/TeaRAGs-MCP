@@ -4,6 +4,11 @@
 #
 # This hook chains bd functionality with your existing post-merge hook.
 
+# Clean `git merge` marked by pre-merge-commit: re-pin the derived language
+# version pins and fold them into the merge commit. No-op otherwise
+# (fast-forward, squash, pull without a merge commit).
+sh scripts/git/repin-on-merge.sh --post-merge || exit 1
+
 # Run existing hook first
 if [ -x "" ]; then
     "" "$@"
