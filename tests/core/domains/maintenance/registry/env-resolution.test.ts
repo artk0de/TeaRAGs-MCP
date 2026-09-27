@@ -4,6 +4,7 @@ import type { CollectionEntry } from "../../../../../src/core/contracts/types/re
 import {
   outerEnvForRegistryEntry,
   pickRegistryEntry,
+  pickRegistryEnvSeed,
   resolveRegistryEnv,
 } from "../../../../../src/core/domains/maintenance/registry/env-resolution.js";
 import { RegistryQdrantBackendUnresolvedError } from "../../../../../src/core/domains/maintenance/registry/errors.js";
@@ -310,5 +311,72 @@ describe("pickRegistryEntry", () => {
   it("returns null when the registry is empty and the path is unknown", () => {
     const empty: FakeRegistry = { findByName: () => null, findByPath: () => null, list: () => [] };
     expect(pickRegistryEntry(empty, { path: "/x" })).toBeNull();
+  });
+});
+
+// bd tea-rags-mcp-h4l6k — a new project borrowed the WHOLE stamp of whatever was
+// indexed last, so one repo's TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=777 became
+// every next project's limit and was pinned into its entry.
+describe("pickRegistryEnvSeed", () => {
+  const stamp = {
+    TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777",
+    INGEST_ENABLE_AST: "false",
+    CODEGRAPH_CUSTOM_EXCLUDE: "vendor/**",
+    GIT_ADAPTER: "cli",
+    EMBEDDING_PROVIDER: "onnx",
+    EMBEDDING_DIMENSIONS: "768",
+    OLLAMA_LEGACY_API: "true",
+    QDRANT_TUNE_UPSERT_BATCH_SIZE: "64",
+  };
+  const own = entry({ name: "own", path: "/own", env: stamp });
+  const foreign = entry({ name: "foreign", path: "/foreign", env: stamp, embeddingBaseUrl: "http://gpu:11434" });
+  const registry: FakeRegistry = {
+    findByName: (n) => (n === "own" ? own : null),
+    findByPath: (p) => (p === "/own" ? own : null),
+    list: () => [foreign],
+  };
+
+  it("keeps a project's own stamp whole, by name or by path", () => {
+    expect(pickRegistryEnvSeed(registry, { project: "own" })?.env).toEqual(stamp);
+    expect(pickRegistryEnvSeed(registry, { path: "/own" })?.env).toEqual(stamp);
+  });
+
+  it("narrows an unrelated repository's stamp to the embedding and Qdrant backends", () => {
+    const seed = pickRegistryEnvSeed(registry, { path: "/brand-new" });
+
+    expect(seed?.env).toEqual({
+      EMBEDDING_PROVIDER: "onnx",
+      EMBEDDING_DIMENSIONS: "768",
+      OLLAMA_LEGACY_API: "true",
+      QDRANT_TUNE_UPSERT_BATCH_SIZE: "64",
+    });
+    expect(seed).toMatchObject({ embeddingModel: "jina-v2", embeddingBaseUrl: "http://gpu:11434" });
+  });
+
+  it("narrows a legacy `tuning` stamp the same way and drops the legacy field", () => {
+    const legacy = entry({
+      path: "/legacy",
+      tuning: { TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777", EMBEDDING_PROVIDER: "onnx" },
+    });
+    const seed = pickRegistryEnvSeed(
+      { findByName: () => null, findByPath: () => null, list: () => [legacy] },
+      {
+        path: "/brand-new",
+      },
+    );
+
+    expect(seed?.env).toEqual({ EMBEDDING_PROVIDER: "onnx" });
+    expect(seed).not.toHaveProperty("tuning");
+  });
+
+  it("never touches the registry's own entry object", () => {
+    pickRegistryEnvSeed(registry, { path: "/brand-new" });
+    expect(foreign.env).toEqual(stamp);
+  });
+
+  it("replays to no indexing key for the new project", () => {
+    const env = resolveRegistryEnv(pickRegistryEnvSeed(registry, { path: "/brand-new" }), {});
+    expect(env).not.toHaveProperty("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");
+    expect(env.EMBEDDING_PROVIDER).toBe("onnx");
   });
 });

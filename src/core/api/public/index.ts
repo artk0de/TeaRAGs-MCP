@@ -126,6 +126,7 @@ export { editRegistryEnv } from "../../domains/maintenance/registry/index.js";
 export {
   outerEnvForRegistryEntry,
   pickRegistryEntry,
+  pickRegistryEnvSeed,
   replayRegistryEnv,
   resolveRegistryEnv,
 } from "../../domains/maintenance/registry/index.js";
