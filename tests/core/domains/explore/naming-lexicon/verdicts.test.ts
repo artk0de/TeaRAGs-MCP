@@ -1157,6 +1157,83 @@ describe("judgeTypeDraft", () => {
     });
   });
 
+  // bd tea-rags-mcp-433d2 follow-up: live, `HeadCandidate` drew `markdown`, `git`, `commit` and
+  // `MeaningGate` drew `documentation`, `is`, `similar` — lift over unrelated concept code picks noise.
+  describe("a lexical qualifier alternative passes the same corrected floor as alignment by meaning", () => {
+    const PREDEFINED = [
+      ...filler(20),
+      row("PredefinedTemplate", "src/templates/predefined.ts"),
+      row("PredefinedField", "src/fields/predefined.ts"),
+      row("InvoiceDoc", "src/docs/invoice.ts"),
+    ];
+    const CALCULATED = { name: "CalculatedDoc", path: "src/docs/calculated.ts" };
+    const judgeQualifier = (
+      rows: readonly TypeNameRow[],
+      conceptNames: readonly string[],
+      similarity: (a: string, b: string) => number,
+      nullSimilarities: readonly number[],
+    ) =>
+      judgeTypeDraft({
+        ...CALCULATED,
+        casing: "pascal",
+        evidence: typeNameEvidence(rows, "type"),
+        conceptNames,
+        wordSimilarity: similarity,
+        nullSimilarities,
+      });
+    /** Similarity `value` for the one unordered pair `a|b` (sorted), 0.1 for every other. */
+    const pairSimilarity = (pair: string, value: number) => (a: string, b: string) =>
+      [a, b].sort().join("|") === pair ? value : 0.1;
+
+    it("a lifted modifier not similar to the qualifier it replaces is dropped", () => {
+      expect(
+        judgeQualifier(PREDEFINED, ["PredefinedTemplate", "PredefinedField"], pairSimilarity("x|y", 0.9), [0.5]),
+      ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    });
+
+    it("a lifted modifier similar to the qualifier survives, naming the qualifier it replaces", () => {
+      expect(
+        judgeQualifier(
+          PREDEFINED,
+          ["PredefinedTemplate", "PredefinedField"],
+          pairSimilarity("calculated|predefined", 0.8),
+          [0.5],
+        ),
+      ).toMatchObject({
+        verdict: "NEW_TERM",
+        alternatives: [{ word: "predefined", replaces: "calculated", similarity: 0.8 }],
+      });
+    });
+
+    it("each (qualifier, lifted modifier) pair is one of the draft's m comparisons", () => {
+      const pairs = typeDraftMeaningPairs(CALCULATED, typeNameEvidence(PREDEFINED, "type"), [
+        "PredefinedTemplate",
+        "PredefinedField",
+      ]);
+      expect(pairs).toEqual([["calculated", "predefined"]]);
+    });
+
+    it("three lifted modifiers raise the floor: a 0.95 pair offered alone is not offered among three", () => {
+      /** 0.000 … 1.000: one comparison → floor 0.9, three → 0.9655. */
+      const UNIFORM = Array.from({ length: 1001 }, (_, i) => i / 1000);
+      const similar = pairSimilarity("alpha|calculated", 0.95);
+      const rows = [
+        ...filler(40),
+        ...["Alpha", "Bravo", "Charlie"].flatMap((word) => [
+          row(`${word}Template`, `src/t/${word}.ts`),
+          row(`${word}Field`, `src/f/${word}.ts`),
+        ]),
+      ];
+      expect(judgeQualifier(rows, ["AlphaTemplate"], similar, UNIFORM)).toMatchObject({
+        alternatives: [{ word: "alpha", replaces: "calculated", similarity: 0.95 }],
+      });
+      expect(judgeQualifier(rows, ["AlphaTemplate", "BravoTemplate", "CharlieTemplate"], similar, UNIFORM)).toEqual({
+        verdict: "NEW_TERM",
+        topTerms: [],
+      });
+    });
+  });
+
   describe("constants — judged against the constant population, directory and suffix evidence only", () => {
     const constant = (name: string, relPath: string) => row(name, relPath, ["Ignored"], "constant");
     const PATTERNS = [

@@ -601,8 +601,8 @@ export interface TypeDraftJudgementInput {
    * for the pairs the draft is compared on ({@link correctedSimilarityFloor}
    * over {@link typeDraftMeaningPairs}). Without both a similarity and a
    * distribution — no embedding, or a population too small to measure — the
-   * draft is judged without alignment by meaning, and the spelling variant is
-   * not gated.
+   * draft is judged without alignment by meaning, and neither the spelling
+   * variant nor the lifted qualifier alternatives are gated.
    */
   nullSimilarities?: readonly number[];
   /**
@@ -626,9 +626,52 @@ function collidingType(input: TypeDraftJudgementInput): { symbolId: string; relP
 }
 
 /**
- * Qualifier alternatives (established modifiers lifted in the concept code,
- * never a word the draft already carries, at most three), then the head's
- * dominant spelling.
+ * The lexical qualifier candidates: established modifiers lifted in the concept
+ * code, never a word the draft already carries, the three most lifted. Chosen
+ * by lift alone, so the pairs they form with the draft's qualifiers can be
+ * counted before any is judged by meaning.
+ */
+function liftedQualifierCandidates(
+  slots: NameSlots,
+  words: readonly string[],
+  evidence: TypeNameEvidence,
+  conceptNames: readonly string[],
+  liftFloor: number,
+): TermAlternative[] {
+  const lift = modifierLift(evidence.established, conceptNames, evidence.rows.length);
+  return alignQualifiers(slots, evidence.established, lift, liftFloor)
+    .filter((alternative) => !words.includes(alternative.word))
+    .slice(0, MAX_QUALIFIER_ALTERNATIVES);
+}
+
+/**
+ * A lifted qualifier candidate judged by meaning (bd tea-rags-mcp-433d2): lift
+ * says the modifier is frequent in the concept code, not that it spells the
+ * draft's qualifier — for a new concept the concept search returns unrelated
+ * code and lift picks its noise (`HeadCandidate` drew `markdown`, `git`,
+ * `commit`). A candidate stands in for the draft's qualifiers as a whole, so it
+ * is compared with each of them; it is offered when the most similar exceeds
+ * the draft's floor, and names that qualifier as the word it `replaces`.
+ */
+function gateQualifierCandidate(
+  candidate: TermAlternative,
+  qualifiers: readonly string[],
+  gate: MeaningGate,
+): TermAlternative | undefined {
+  let best: { word: string; similarity: number } | undefined;
+  for (const word of qualifiers) {
+    const similarity = gate.similarity(word, candidate.word);
+    if (best === undefined || similarity > best.similarity) best = { word, similarity };
+  }
+  if (best === undefined || !(best.similarity > gate.floor)) return undefined;
+  return { ...candidate, similarity: roundSimilarity(best.similarity), replaces: best.word };
+}
+
+/**
+ * Qualifier alternatives ({@link liftedQualifierCandidates}; with embeddings,
+ * only those passing {@link gateQualifierCandidate}), then the head's dominant
+ * spelling. Without embeddings — no port, a failed request, a population too
+ * small for a floor — lift alone decides, as before alignment by meaning.
  */
 function termAlternatives(
   input: TypeDraftJudgementInput,
@@ -637,10 +680,17 @@ function termAlternatives(
 ): TermAlternative[] {
   const { evidence } = input;
   const slots = draftSlots(words, evidence);
-  const lift = modifierLift(evidence.established, input.conceptNames, evidence.rows.length);
-  const alternatives = alignQualifiers(slots, evidence.established, lift, input.liftFloor ?? DEFAULT_LIFT_FLOOR)
-    .filter((alternative) => !words.includes(alternative.word))
-    .slice(0, MAX_QUALIFIER_ALTERNATIVES);
+  const lifted = liftedQualifierCandidates(
+    slots,
+    words,
+    evidence,
+    input.conceptNames,
+    input.liftFloor ?? DEFAULT_LIFT_FLOOR,
+  );
+  const alternatives =
+    gate === undefined
+      ? lifted
+      : lifted.flatMap((candidate) => gateQualifierCandidate(candidate, slots.qualifiers, gate) ?? []);
   const head = alignHead(slots, evidence.headCounts);
   const draftHead = slots.head.at(-1);
   const similarity = head === undefined || draftHead === undefined ? undefined : gate?.similarity(draftHead, head);
@@ -684,7 +734,13 @@ function meaningGate(input: TypeDraftJudgementInput): MeaningGate | undefined {
   const { wordSimilarity, nullSimilarities } = input;
   if (wordSimilarity === undefined || nullSimilarities === undefined) return undefined;
   const admitted = input.usageEstablishedHeads ?? new Set<string>();
-  const comparisons = typeDraftMeaningPairs(input, input.evidence, input.conceptNames, admitted).length;
+  const comparisons = typeDraftMeaningPairs(
+    input,
+    input.evidence,
+    input.conceptNames,
+    admitted,
+    input.liftFloor ?? DEFAULT_LIFT_FLOOR,
+  ).length;
   return { similarity: wordSimilarity, floor: correctedSimilarityFloor(nullSimilarities, comparisons) };
 }
 
@@ -711,20 +767,24 @@ function groundedHeadCandidates(
  * draft (bd tea-rags-mcp-433d2) — its m comparisons: the draft's head with the
  * spelling variant {@link alignHead} offers (gated by similarity) and with each
  * grounded {@link anchoredHeadCandidates} head (≥ 2 carriers, or `admitted` by
- * usage); every draft word with each of its {@link pathTerms}, a pair sharing
- * a stem excepted. Each distinct pair counts once, even one an earlier
- * alternative would pre-empt: the count is fixed before any pair is judged.
+ * usage); each draft qualifier with each lifted qualifier candidate
+ * ({@link liftedQualifierCandidates}, at `liftFloor`); every draft word with
+ * each of its {@link pathTerms}, a pair sharing a stem excepted. Each distinct
+ * pair counts once, even one an earlier alternative would pre-empt: the count
+ * is fixed before any pair is judged.
  */
 export function typeDraftMeaningPairs(
   draft: { name: string; path: string },
   evidence: TypeNameEvidence,
   conceptNames: readonly string[],
   admitted: ReadonlySet<string> = new Set(),
+  liftFloor: number = DEFAULT_LIFT_FLOOR,
 ): [string, string][] {
   const words = typeNameWords(draft.name);
   const slots = draftSlots(words, evidence);
   const draftHead = slots.head.at(-1);
   if (draftHead === undefined) return [];
+  const lifted = liftedQualifierCandidates(slots, words, evidence, conceptNames, liftFloor);
   const variant = alignHead(slots, evidence.headCounts);
   const heads = new Set([
     ...(variant ? [variant] : []),
@@ -735,6 +795,7 @@ export function typeDraftMeaningPairs(
     pairs.set([word, candidate].sort().join("\u0000"), [word, candidate]);
   };
   for (const head of heads) compare(draftHead, head);
+  for (const candidate of lifted) for (const qualifier of slots.qualifiers) compare(qualifier, candidate.word);
   for (const term of pathTerms(draft.path, words, conceptNames)) {
     for (const word of words) if (!sharesWordStem(word, term.word)) compare(word, term.word);
   }
@@ -870,7 +931,9 @@ function pathTermAlternatives(
  *    constants never collide — `VERSION` in two modules is routine;
  * 3. NEW_TERM with `alternatives` — term alignment found an established
  *    modifier over-represented in the concept code, or the project's dominant
- *    spelling of the head; soft, never MISFIT;
+ *    spelling of the head — with embeddings, each only when it is also similar
+ *    to the draft word it replaces, above the draft's corrected floor; soft,
+ *    never MISFIT;
  * 4. CONFORMS — the name carries its expected role, or its head is a project
  *    suffix (the suffix confirms, never demands), or its head is a known head
  *    and every qualifier an established modifier;

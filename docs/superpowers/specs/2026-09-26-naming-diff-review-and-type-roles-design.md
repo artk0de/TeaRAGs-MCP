@@ -249,15 +249,16 @@ suffix rule even confirms the draft (`backend` is a suffix here). So:
    pairs, embedded in one batch the first time a request needs it and reused for
    candidate words it already holds. A draft compared on m pairs
    (`typeDraftMeaningPairs`: its head with the spelling variant and with each
-   grounded head candidate, every draft word with each directory word, stem
-   pairs excepted, each distinct pair once) must exceed the null quantile
-   `0.9^(1/m)` (`perComparisonQuantile`). That is the Šidák correction of the
-   family-wise level `NULL_SIMILARITY_QUANTILE` = 0.9: the chance that ANY of
-   the draft's m random pairs clears its floor stays 10%, whatever m is. m = 1
-   is the plain p90. The level is a definition of "unusually close", not a tuned
-   value. m is counted before any pair is judged, so a pair a spelling variant
-   would pre-empt still counts and the floor never depends on its own outcome.
-   The corrected quantile is capped at what the sample resolves, `1 − 1/pairs`
+   grounded head candidate, each draft qualifier with each lifted qualifier
+   candidate, every draft word with each directory word, stem pairs excepted,
+   each distinct pair once) must exceed the null quantile `0.9^(1/m)`
+   (`perComparisonQuantile`). That is the Šidák correction of the family-wise
+   level `NULL_SIMILARITY_QUANTILE` = 0.9: the chance that ANY of the draft's m
+   random pairs clears its floor stays 10%, whatever m is. m = 1 is the plain
+   p90. The level is a definition of "unusually close", not a tuned value. m is
+   counted before any pair is judged, so a pair a spelling variant would
+   pre-empt still counts and the floor never depends on its own outcome. The
+   corrected quantile is capped at what the sample resolves, `1 − 1/pairs`
    (0.9995 for 2,016 pairs, reached at m ≈ 210; 0.978 for the 45 pairs of a
    10-head sample, reached at m ≈ 5): beyond it the quantile is the sample's
    maximum, not a measured tail. Under 10 such heads there is no alignment by
@@ -271,7 +272,27 @@ suffix rule even confirms the draft (`backend` is a suffix here). So:
    directory role gets no alternative by meaning. MISFIT outranks all of this.
 8. Embedding unavailable or failing: one notice, the same one as a failed
    concept search. Drafts are judged as before, without alignment by meaning and
-   with the spelling variant ungated.
+   with the spelling variant and the lifted qualifiers ungated. The same holds
+   when the population has too few heads to place a floor on.
+
+**Lexical qualifiers under the same floor.** Lift says a modifier is frequent in
+the concept code, not that it means the draft's qualifier. For a new concept the
+concept search returns unrelated code, and lift picks its noise. Live, in diff
+mode over this wave's commits, `HeadCandidate` drew `markdown`, `git` and
+`commit`, and `MeaningGate` drew `documentation`, `is` and `similar`. So with
+embeddings a qualifier alternative passes the same per-draft floor as every
+other alternative. The three most lifted candidates are chosen by lift alone,
+before any similarity is read. Each is paired with every draft qualifier, and
+those pairs count in m. A candidate stands in for the qualifiers as a whole, not
+for one word, so it is offered when its most similar pair exceeds the floor and
+it carries that qualifier as `replaces`, plus the `similarity`. Measured with m
+= 3 and a floor of 0.624: `HeadCandidate` peaks at `git` (0.394) and gets no
+alternative. `MeaningGate` keeps `documentation` for `meaning` (0.697) and drops
+`is` (0.622) and `similar` (0.608). The rule does not decide whether
+`documentation` is a good word for this draft, and `is` misses the floor by
+0.002. The 20-draft measurement set carries no lifted qualifier, so its m,
+floors and offers are unchanged: `stats`, `provider`, `manager`, `executor`, 0
+wrong.
 
 **Null distribution.** Over all 296 heads of the self-index carried by ≥ 2 types
 (43,660 pairs, jina-embeddings-v2-base-code), the head-pair similarity has p50

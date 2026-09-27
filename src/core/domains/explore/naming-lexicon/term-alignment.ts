@@ -38,18 +38,23 @@ export interface TermAlternative {
   domains: string[];
   lift: number;
   /**
-   * A head alternative found by meaning (bd tea-rags-mcp-433d2): the embedding
-   * similarity of this word to the draft's head (`numbers` → `metrics`), above
-   * the draft's corrected null floor ({@link correctedSimilarityFloor}). Absent on a
-   * qualifier alternative and on a spelling variant judged without embeddings.
+   * The embedding similarity of this word to the draft word it replaces
+   * (bd tea-rags-mcp-433d2) — the head (`numbers` → `metrics`), or the
+   * qualifier / path word named by `replaces` — above the draft's corrected
+   * null floor ({@link correctedSimilarityFloor}). Absent on any alternative
+   * judged without embeddings.
    */
   similarity?: number;
   /** A head alternative found by meaning: project types carrying the word that anchored it (`IndexMetrics`). */
   examples?: string[];
   /**
-   * A path-term alternative (bd tea-rags-mcp-433d2): the draft word it would
-   * replace (`staleness` → `freshness`). `domains` is then the directory the
-   * term names, `heads` empty and `lift` 0 — no frequency is judged.
+   * The draft word this one would replace, when judged by meaning
+   * (bd tea-rags-mcp-433d2). On a path-term alternative (`staleness` →
+   * `freshness`) `domains` is then the directory the term names, `heads` empty
+   * and `lift` 0 — no frequency is judged. On a qualifier alternative it is the
+   * draft qualifier the modifier is most similar to (`calculated` →
+   * `predefined`). Absent on a spelling variant and a head found by meaning
+   * (both replace the head), and on any alternative judged without embeddings.
    */
   replaces?: string;
 }
