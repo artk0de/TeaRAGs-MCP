@@ -154,6 +154,12 @@ Chunk-level analysis is automatically skipped for:
 - **Single-chunk files** — chunk equals file, no granularity benefit.
 - **Files with 1 commit** — all chunks would get identical data.
 - **Files exceeding `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`** — performance guard.
+  Every chunk of the file gets `git.chunk.skippedAs: "oversized"` instead of
+  the walk running and reporting zeroed churn — a zero-fill and a genuine "no
+  commit ever touched this" read identically otherwise. File-level signals are
+  unaffected; only the chunk-level walk is declined. A `--force-enrichments`
+  recompute re-stamps the marker cleanly, replacing any overlay an earlier run
+  left rather than merging into it.
 - **Binary files** — blob read fails gracefully.
 - **Root commits** — no parent to diff against.
 

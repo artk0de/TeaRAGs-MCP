@@ -65,6 +65,8 @@ Tunable via `EMBEDDING_TUNE_RETRY_ATTEMPTS` (default `3`) and `EMBEDDING_TUNE_RE
 
 With `EMBEDDING_FALLBACK_URL` set, `OllamaEmbeddings#switchToFallback` fires on three triggers: the startup health check fails, the 30s background probe finds the primary dead, or `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` (default `3`) embed calls in a row fail on the primary while its `GET /` still answers. Only endpoint-side failures count toward the last one: transport errors, timeouts, 5xx and malformed responses. A 4xx input error would fail on any endpoint, so it neither counts nor resets the run; any successful embed on the primary resets it. The way back is always the background probe, gated by the 60s recovery cooldown.
 
+Two calls retry on the now-active endpoint instead of failing outright: the call that itself crosses the consecutive-failure threshold (so a primary that has failed every embed since the run started still completes, on the fallback, instead of rethrowing the error that triggered the switch), and any call whose failure is detected after the background probe already switched out from under it mid-flight.
+
 ## MCP Tool Error Contract
 
 **Tool handlers never contain `try/catch`.** All error handling is centralized in `errorHandlerMiddleware` via `registerToolSafe`. This guarantees:

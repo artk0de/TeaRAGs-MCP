@@ -121,6 +121,12 @@ For detailed metric definitions, formulas, and research context, see
 | `chunkAgeDays`          | Chunk | Days since this chunk was last modified                                 |
 | `chunkTaskIds`          | Chunk | Ticket IDs from commits touching this chunk                             |
 
+A file past `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` (see [Environment
+Variables](#environment-variables)) has none of the chunk-level metrics above —
+the chunk-level walk is declined by policy, not zero-filled, and the payload
+marks it explicitly (`git.chunk.skippedAs: "oversized"`). File-level metrics
+are unaffected.
+
 ### Bug-Fix Commit Detection {#bug-fix-detection}
 
 `bugFixRate` and `chunkBugFixRate` rely on a multi-layered heuristic

@@ -124,6 +124,14 @@ Indexing is **checkpoint-based**. If the process dies mid-run:
 
 The same mechanism handles "I accidentally cancelled" scenarios — the CLI returning doesn't mean indexing stopped. Check `get_index_status` to confirm background progress.
 
+A run that was killed outright (`SIGKILL`, OOM) rather than exiting cleanly is
+detected as soon as the recorded process is confirmed dead, so `get_index_status`
+reports `stale_indexing` immediately instead of waiting out the heartbeat
+window. The next `index_codebase` call is admitted right away — it takes over
+the dead run's lock and reclaims its unfinished, never-promoted build version
+in the same pass, instead of refusing with `INGEST_INDEXING_IN_PROGRESS`
+against a marker whose writer no longer exists.
+
 ## Schema Drift Recovery
 
 Payload-key drift is one axis of a broader check that also watches language versions, the indexing environment and the commit the index was built from, and the report it produces already names the single cheapest command that repairs every finding — run that rather than reaching for `forceReindex: true`. What each axis compares, how to read a report and what each remedy costs: [Drift Detection](/operations/drift-detection).
