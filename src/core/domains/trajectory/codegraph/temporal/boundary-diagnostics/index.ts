@@ -1,6 +1,8 @@
 export {
   cochangeStrength,
   detectSilentCoupling,
+  linkImportedCochangePairs,
+  oneWalkedViolationImporters,
   SILENT_COUPLING_OTSU_MIN_POPULATION,
   SILENT_COUPLING_ROOT_CAUSE_MIN_PARTNERS,
   SILENT_COUPLING_STRENGTH_MAJORITY,

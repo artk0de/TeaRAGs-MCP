@@ -69,6 +69,17 @@ export interface GraphFacadeDeps {
    * absent (unit tests), the name is used verbatim.
    */
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
+  /**
+   * The module specifiers the named files declare, read from the ADDRESSED
+   * collection's payload (`imports`) — Qdrant resolves an alias itself. Silent
+   * coupling needs it to see an import of a file the codegraph does not walk
+   * (bd tea-rags-mcp-rbnkp). Optional: absent, the report judges the codegraph
+   * alone.
+   */
+  readImportSpecifiers?: (
+    collectionName: string,
+    relPaths: readonly RelPath[],
+  ) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -283,9 +294,14 @@ export class GraphFacade {
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
+    const { readImportSpecifiers } = this.deps;
+    const importSpecifiers = readImportSpecifiers
+      ? async (relPaths: readonly RelPath[]) =>
+          readImportSpecifiers(resolveCollection(this.deps.collectionRegistry, req).collectionName, relPaths)
+      : undefined;
     return this.withReadHandle(
       req,
-      async (handle) => this.architectureReport.build(handle.graphDb, req),
+      async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers),
       ArchitectureReportOps.empty(req),
     );
   }

@@ -506,6 +506,62 @@ describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)
     expect(summary).not.toHaveProperty("exclusionReasons");
   });
 
+  /**
+   * bd tea-rags-mcp-rbnkp: a `.tsx` and the `.module.css` it imports co-change,
+   * and the codegraph has no edge for it because an asset is no file node. The
+   * importer's declared specifiers link the pair; a pair nothing imports stays.
+   */
+  it("reads the walked endpoint's import specifiers to link a one-walked pair it imports", async () => {
+    const base = cochangeGraph();
+    const assetPair = (relPathA: string, relPathB: string): TemporalCochangeEdgeWithLinkage => ({
+      ...base.edges[0],
+      relPathA,
+      relPathB,
+      structurallyLinked: false,
+    });
+    const cochange: TemporalCochangeGraph = {
+      ...base,
+      edges: [
+        ...base.edges,
+        assetPair("app/s1.module.css", "app/s1.ts"),
+        assetPair("config/frontend.en.yml", "web/s2.ts"),
+      ],
+    };
+    const readImportSpecifiers = vi.fn().mockResolvedValue(
+      new Map([
+        ["app/s1.ts", ["../lib/hub.js", "./s1.module.css"]],
+        ["web/s2.ts", ["../lib/hub.js"]],
+      ]),
+    );
+
+    const report = await new ArchitectureReportOps().build(
+      graphDb(silentCouplingGraph(), [], cochange),
+      {},
+      readImportSpecifiers,
+    );
+
+    expect(readImportSpecifiers).toHaveBeenCalledTimes(1);
+    expect([...readImportSpecifiers.mock.calls[0][0]].sort()).toEqual(["app/s1.ts", "web/s2.ts"]);
+    const silent = report.violations.filter((v) => v.detector === "silentCoupling");
+    expect(silent.map((v) => `${v.sourceRelPath}|${v.targetRelPath}`)).toEqual([
+      "app/s1.ts|lib/hub.ts",
+      "config/frontend.en.yml|web/s2.ts",
+    ]);
+    expect(report.summary.silentCoupling).toMatchObject({ strongLinkedCount: 2, violationCount: 2 });
+  });
+
+  it("reads no specifiers when no violation has an unwalked endpoint", async () => {
+    const readImportSpecifiers = vi.fn();
+
+    await new ArchitectureReportOps().build(
+      graphDb(silentCouplingGraph(), [], cochangeGraph()),
+      {},
+      readImportSpecifiers,
+    );
+
+    expect(readImportSpecifiers).not.toHaveBeenCalled();
+  });
+
   it("says the co-change graph is not built rather than reporting a clean history", async () => {
     const summary = (await new ArchitectureReportOps().build(graphDb(), {})).summary.silentCoupling;
 

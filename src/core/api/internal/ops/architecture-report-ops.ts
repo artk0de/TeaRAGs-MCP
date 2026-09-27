@@ -17,7 +17,12 @@
 
 import { extname } from "node:path";
 
-import type { GraphDbClient, RelPath } from "../../../contracts/types/codegraph.js";
+import type {
+  FileDependencyGraphFile,
+  GraphDbClient,
+  RelPath,
+  TemporalCochangeGraph,
+} from "../../../contracts/types/codegraph.js";
 import { DOCUMENTATION_LANGUAGES, LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
 import {
   buildComponentGraph,
@@ -42,6 +47,8 @@ import {
 } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import {
   detectSilentCoupling,
+  linkImportedCochangePairs,
+  oneWalkedViolationImporters,
   type SilentCouplingReport,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
@@ -62,15 +69,32 @@ export const DEFAULT_ARCHITECTURE_REPORT_LIMIT = 50;
 
 type ArchitectureReportScope = Pick<GetArchitectureReportRequest, "pathPattern" | "limit">;
 
+/**
+ * The module specifiers each named file declares (`payload.imports`), keyed by
+ * repo-relative path; a file with none, or unknown to the index, is absent.
+ * Silent coupling reads it to see an import the codegraph has no edge for
+ * (bd tea-rags-mcp-rbnkp).
+ */
+export type ModuleImportSpecifierLookup = (
+  relPaths: readonly RelPath[],
+) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
+
 export class ArchitectureReportOps {
   /**
    * Judge the graph behind `graphDb` and shape the report. Violations and root
    * causes are listed per detector — Stable Dependencies first — each capped
    * at `limit`; the summaries keep the totals.
+   *
+   * `readImportSpecifiers`, when given, lets silent coupling see an import of a
+   * file the codegraph does not walk — a stylesheet, a JSON module
+   * (bd tea-rags-mcp-rbnkp). It is asked only about the walked endpoints of
+   * one-walked violations, so its cost is bounded by the violations, not by
+   * the co-change graph.
    */
   async build(
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph">,
     request: ArchitectureReportScope,
+    readImportSpecifiers?: ModuleImportSpecifierLookup,
   ): Promise<GetArchitectureReportResponse> {
     // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9).
     const nonProduction = buildNonProductionPathFilter();
@@ -89,10 +113,12 @@ export class ArchitectureReportOps {
       memberEdges.filter((e) => !nonProduction.ignores(e.sourceRelPath) && !nonProduction.ignores(e.targetRelPath)),
       { sourcePathPattern: request.pathPattern },
     );
-    const silent = detectSilentCoupling(await graphDb.readTemporalCochangeGraph(), graph.files, {
-      sourcePathPattern: request.pathPattern,
-      isDocumentation: isDocumentationPath,
-    });
+    const silent = await detectSilentCouplingSeeingAssetImports(
+      await graphDb.readTemporalCochangeGraph(),
+      graph.files,
+      request,
+      readImportSpecifiers,
+    );
     const limit = request.limit ?? DEFAULT_ARCHITECTURE_REPORT_LIMIT;
     return {
       ...(request.pathPattern ? { pathPattern: request.pathPattern } : {}),
@@ -161,6 +187,28 @@ export class ArchitectureReportOps {
       violations: [],
     };
   }
+}
+
+/**
+ * Silent coupling, judged twice when a one-walked violation might be an import
+ * the codegraph never records: once to find those violations, then again over
+ * the graph with the imported pairs linked. Linking changes no candidate's
+ * strength, so the adaptive cut is the same both times — only which strong
+ * pairs count as linked moves.
+ */
+async function detectSilentCouplingSeeingAssetImports(
+  cochange: TemporalCochangeGraph,
+  walkedFiles: readonly FileDependencyGraphFile[],
+  request: ArchitectureReportScope,
+  readImportSpecifiers: ModuleImportSpecifierLookup | undefined,
+): Promise<SilentCouplingReport> {
+  const options = { sourcePathPattern: request.pathPattern, isDocumentation: isDocumentationPath };
+  const first = detectSilentCoupling(cochange, walkedFiles, options);
+  if (!readImportSpecifiers) return first;
+  const importers = oneWalkedViolationImporters(first.violations, walkedFiles);
+  if (importers.length === 0) return first;
+  const linked = linkImportedCochangePairs(cochange, await readImportSpecifiers(importers));
+  return detectSilentCoupling(linked, walkedFiles, options);
 }
 
 const EXCLUSION_REASONS = {
