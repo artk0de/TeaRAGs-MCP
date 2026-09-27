@@ -33,6 +33,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
+import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 
@@ -383,5 +384,42 @@ describe("EnrichmentCoordinator.recomputeEnrichments forced repair covers chunkl
     // Pass-2 resolution and `cg_run_stats` live in the finalize: a repair
     // without one leaves the re-extracted rows unresolved.
     expect(provider.finalizeSignals).toHaveBeenCalled();
+  });
+});
+
+describe("EnrichmentCoordinator.recomputeEnrichments surfaces an unreadable store (hw27k)", () => {
+  // Live on taxdome 2026-09-27: another build's codegraph daemon held the
+  // collection's DuckDB file, the forced repair's persisted-hash read failed,
+  // and the recompute still ended with a `completed` FILE marker — the failure
+  // reached the pipeline log only, so `outcome.degraded` stayed empty for a
+  // recompute that never re-extracted its store.
+  async function recomputeWithHashRead(readPersistedFileHashes: ReturnType<typeof vi.fn>): Promise<string[]> {
+    const markFileFinal = vi.spyOn(EnrichmentMarkerStore.prototype, "markFileFinal").mockResolvedValue(undefined);
+    const coordinator = new EnrichmentCoordinator(
+      recomputeQdrant(STORED_POINTS) as never,
+      recomputeStoreProvider({ readPersistedFileHashes }),
+      undefined,
+      new InlineEnrichmentExecutor(),
+    );
+
+    await coordinator.recomputeEnrichments("code_x_v1", "/repo", ["codegraph"]);
+
+    return markFileFinal.mock.calls
+      .filter(([, key]) => key === PROVIDER_KEY)
+      .map(([, , marker]) => (marker as { status: string }).status);
+  }
+
+  it("marks the provider's FILE marker degraded when the forced repair cannot read the store", async () => {
+    const statuses = await recomputeWithHashRead(
+      vi.fn().mockRejectedValue(new Error("Failed to open DuckDB at /x/code_x_v1.duckdb")),
+    );
+
+    expect(statuses).toEqual(["degraded"]);
+  });
+
+  it("keeps the FILE marker completed when the store read succeeds", async () => {
+    const statuses = await recomputeWithHashRead(vi.fn().mockResolvedValue(new Map<string, string | null>()));
+
+    expect(statuses).toEqual(["completed"]);
   });
 });

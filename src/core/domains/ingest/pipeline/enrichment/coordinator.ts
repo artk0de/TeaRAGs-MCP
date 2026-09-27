@@ -365,6 +365,13 @@ export class EnrichmentCoordinator {
      * `--languages`), not the file universe the orphan diff needs.
      */
     forceProviders?: ReadonlySet<string>,
+    /**
+     * Told each provider whose persisted store could not be read (bd
+     * tea-rags-mcp-hw27k). The recompute folds these into its run's terminal
+     * FILE marker; other callers keep the log-only behaviour, since their next
+     * run retries the drift check.
+     */
+    onStoreReadFailure?: (providerKey: string) => void,
   ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
@@ -387,6 +394,7 @@ export class EnrichmentCoordinator {
           collection: physicalCollectionName,
           error: err instanceof Error ? err.message : String(err),
         });
+        onStoreReadFailure?.(provider.key);
         // The drift check needs the store; the forced walk does not, and the
         // run has already been promised those files' chunks.
         if (forced.length === 0) continue;
@@ -761,6 +769,10 @@ export class EnrichmentCoordinator {
       this.providers.filter((p) => matched.includes(p.key) && p.readPersistedFileHashes).map((p) => p.key),
     );
     let forcedRepaired = 0;
+    // A store the forced repair could not read was never reconciled — the run's
+    // terminal FILE marker must say so, not the pipeline log alone (bd
+    // tea-rags-mcp-hw27k).
+    const storeReadFailedProviderKeys = new Set<string>();
     if (forceProviderSet.size > 0) {
       // Membership drives the forced repair set; hash values keep the drift
       // check sound for any store provider the selectors did not force, using
@@ -791,6 +803,7 @@ export class EnrichmentCoordinator {
         eligibilityMap,
         undefined,
         forceProviderSet,
+        (providerKey) => storeReadFailedProviderKeys.add(providerKey),
       );
       // The synthetic eligibility map must not DISPLACE the run's hash stamp:
       // `runRepairPass` captures its `scanned` as `runContentHashes`, and this
@@ -826,6 +839,7 @@ export class EnrichmentCoordinator {
         // Known before the first batch — the one run that can say so, which is
         // what lets the executor split it by language (bd tea-rags-mcp-sgo8v).
         runRelPaths: [...stored.chunkMap.keys()],
+        storeReadFailedProviderKeys,
       }),
     );
     // File phase, in the same bounded batches the live pipeline uses, so a
@@ -1371,6 +1385,7 @@ export class EnrichmentCoordinator {
       executor: this.executor,
       codegraphHeal: this.codegraphHeal,
       codegraphCompaction: this.codegraphCompaction,
+      storeReadFailedProviderKeys: spec.storeReadFailedProviderKeys,
     });
 
     let resolveDone!: (m: EnrichmentMetrics) => void;

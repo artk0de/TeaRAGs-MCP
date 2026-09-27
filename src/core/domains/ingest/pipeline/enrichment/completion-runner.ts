@@ -62,6 +62,13 @@ export interface CompletionRunnerDeps {
    * `codegraphHeal` is; undefined skips the step.
    */
   codegraphCompaction?: CodegraphStorageCompactionRunner;
+  /**
+   * Providers whose per-file store could not be read before this run opened —
+   * the recompute's forced repair (bd tea-rags-mcp-hw27k). Their store was never
+   * reconciled, so the terminal FILE marker says `degraded`, as a failed pass-1
+   * aggregate read does. Fixed for the run: the runner is built per run.
+   */
+  storeReadFailedProviderKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -682,7 +689,9 @@ export class CompletionRunner {
         // ranks BELOW `failed` — the prefetch failure is still the stronger verdict.
         const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
           ? "failed"
-          : fileUnenriched > 0 || this.pass1AggregateReadFailures.has(ctx.key)
+          : fileUnenriched > 0 ||
+              this.pass1AggregateReadFailures.has(ctx.key) ||
+              this.deps.storeReadFailedProviderKeys?.has(ctx.key) === true
             ? "degraded"
             : "completed";
         await markerStore.markFileFinal(physicalCollectionName, ctx.key, {

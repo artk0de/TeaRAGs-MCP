@@ -58,6 +58,13 @@ export interface EnrichmentRunSpec {
    * its partitions from it; absent, the run keeps collection affinity.
    */
   readonly runRelPaths?: readonly string[];
+  /**
+   * Providers whose per-file store read failed before the run opened — only the
+   * recompute's forced repair reports them (bd tea-rags-mcp-hw27k). The run's
+   * terminal FILE marker for each is `degraded`, which is what reaches
+   * `outcome.degraded`; the pipeline log alone let such a recompute end clean.
+   */
+  readonly storeReadFailedProviderKeys?: ReadonlySet<string>;
 }
 
 /** A run's coverage is its scope's kind — derived, never set beside it, so the two cannot disagree. */
@@ -93,6 +100,8 @@ export function recomputeRunSpec(input: {
   languages: readonly string[];
   /** The stored files read back for the run — see `EnrichmentRunSpec.runRelPaths`. */
   runRelPaths?: readonly string[];
+  /** Providers the forced repair could not read — see `EnrichmentRunSpec.storeReadFailedProviderKeys`. */
+  storeReadFailedProviderKeys?: ReadonlySet<string>;
 }): EnrichmentRunSpec {
   const { languages, ...rest } = input;
   return { ...rest, crossPass: false, scope: { kind: "wholeCorpus", languages } };
