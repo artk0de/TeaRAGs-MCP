@@ -198,6 +198,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges)),
   removeFile: write(async (graphDb, p) => graphDb.removeFile(p.relPath as RelPath)),
   removeSymbolsForFile: write(async (graphDb, p) => graphDb.removeSymbolsForFile(p.relPath as RelPath)),
+  invalidateHierarchyDependentsOfDeletedFiles: write(async (graphDb, p) =>
+    graphDb.invalidateHierarchyDependentsOfDeletedFiles(p.relPaths as RelPath[]),
+  ),
   pruneDerivedForDeletedFiles: write(async (graphDb, p) =>
     graphDb.pruneDerivedForDeletedFiles(p.relPaths as RelPath[]),
   ),
@@ -355,6 +358,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   getEdgeKindDistribution: read(async (graphDb) => graphDb.getEdgeKindDistribution()),
   listAllSymbols: read(async (graphDb) => graphDb.listAllSymbols()),
   listPass1Aggregates: read(async (graphDb, p) => graphDb.listPass1Aggregates(p.scope as Pass1AggregateReadScope)),
+  listHierarchyDependencies: read(async (graphDb, p) =>
+    graphDb.listHierarchyDependencies(p.scope as Pass1AggregateReadScope),
+  ),
   listFileContentHashes: read(async (graphDb) => graphDb.listFileContentHashes()),
   getTransitiveImpact: read(async (graphDb, p) =>
     graphDb.getTransitiveImpact(p.relPath as RelPath, p.maxDepth as number | undefined),

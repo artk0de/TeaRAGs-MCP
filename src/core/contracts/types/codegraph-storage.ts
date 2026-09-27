@@ -33,6 +33,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   NonPublicMemberEdge,
+  PersistedHierarchyDescendantDependency,
   ResolveRunStatsRow,
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
@@ -925,6 +926,27 @@ export interface GraphDbClient {
    * Array rather than Map so it survives the daemon's JSON round trip.
    */
   listPass1Aggregates: (scope: Pass1AggregateReadScope) => Promise<CodegraphPass1FileAggregates[]>;
+
+  /**
+   * The persisted hierarchy dependencies of `scope`'s languages (bd
+   * tea-rags-mcp-7t2ee): per source file, which types' descendant sets its
+   * resolution read and what it read. The pass-1→pass-2 barrier compares each
+   * against the run's current hierarchy and re-resolves the files whose answer
+   * moved. Scoped exactly like {@link listPass1Aggregates}, by the language of
+   * the SOURCE file.
+   */
+  listHierarchyDependencies: (scope: Pass1AggregateReadScope) => Promise<PersistedHierarchyDescendantDependency[]>;
+
+  /**
+   * Before `relPaths` are removed (bd tea-rags-mcp-7t2ee): clear the content
+   * hash of every OTHER file whose recorded hierarchy dependency lists a type
+   * one of `relPaths` declares, so the drift repair re-extracts — and pass-2
+   * re-resolves — the callers whose cone lost a member. A deletion-only run
+   * opens no barrier, so this is the only place the removal can reach them.
+   * Called by `handleDeletedPaths` BEFORE the base rows go, like
+   * {@link pruneDerivedForDeletedFiles}.
+   */
+  invalidateHierarchyDependentsOfDeletedFiles: (relPaths: readonly RelPath[]) => Promise<void>;
 
   /**
    * Every file row with the content hash persisted alongside it, `null` where

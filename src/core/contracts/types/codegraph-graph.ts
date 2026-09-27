@@ -387,6 +387,32 @@ export interface GraphEdges {
    * declaring no class and no self-dispatching method writes no row.
    */
   pass1Aggregates?: CodegraphPass1FileAggregates;
+  /**
+   * Every hierarchy type whose DESCENDANT set this file's call resolution read,
+   * with the answer it got (bd tea-rags-mcp-7t2ee) — persisted to
+   * `cg_hierarchy_dependencies` on the same per-file reconciliation as the
+   * edges. A later run re-resolves this file, unchanged or not, when one of
+   * these answers moved, which is what keeps an incremental run's CHA cones
+   * equal to a full run's. Present only when non-empty.
+   */
+  hierarchyDependencies?: HierarchyDescendantDependency[];
+}
+
+/**
+ * One `getDescendants(typeName)` answer a file's resolution depended on (bd
+ * tea-rags-mcp-7t2ee): the TRANSITIVE descendant names, every inheritance kind
+ * (declared and `structural`), sorted and deduplicated — so it compares as a
+ * value, whatever traversal options the asking strategy passed.
+ */
+export interface HierarchyDescendantDependency {
+  typeName: string;
+  descendantNames: string[];
+}
+
+/** A persisted {@link HierarchyDescendantDependency}, with the file that holds it and that file's language. */
+export interface PersistedHierarchyDescendantDependency extends HierarchyDescendantDependency {
+  sourceRelPath: RelPath;
+  language: string;
 }
 
 export interface CallerEdge {

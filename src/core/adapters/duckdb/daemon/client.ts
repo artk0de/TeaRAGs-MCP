@@ -44,6 +44,7 @@ import type {
   OntologyReportSectionRows,
   OntologyReportSummaryRows,
   Pass1AggregateReadScope,
+  PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -1194,6 +1195,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
     return (await this.call("listPass1Aggregates", { scope })) as CodegraphPass1FileAggregates[];
+  }
+
+  async listHierarchyDependencies(scope: Pass1AggregateReadScope): Promise<PersistedHierarchyDescendantDependency[]> {
+    return (await this.call("listHierarchyDependencies", { scope })) as PersistedHierarchyDescendantDependency[];
+  }
+
+  async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    await this.call("invalidateHierarchyDependentsOfDeletedFiles", { relPaths: [...relPaths] });
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {

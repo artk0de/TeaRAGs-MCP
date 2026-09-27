@@ -391,12 +391,11 @@ export class EnrichmentCoordinator {
         if (forced.length === 0) continue;
       }
 
-      const { repair, orphans }: ExtractionRepair = persisted
+      const initial: ExtractionRepair = persisted
         ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll || forcedBySelector)
         : { repair: [], orphans: [] };
-      const drifted = new Set(repair);
-      const handedOff = forced.filter((path) => !drifted.has(path));
-      repair.push(...handedOff);
+      const { orphans } = initial;
+      let { repair } = initial;
       // Selector-forced eligibility is the run's stored-chunk scope, not the
       // file universe: rows outside it are the unselected languages' live
       // rows, and pruning them would delete the graph this run was told not
@@ -404,7 +403,24 @@ export class EnrichmentCoordinator {
       // working-tree scan, where an out-of-set row really is an orphan.
       if (!forcedBySelector && orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName: physicalCollectionName });
+        // Pruning a file can invalidate OTHER files' rows — a caller whose
+        // dispatch cone held a class the file declared (bd
+        // tea-rags-mcp-7t2ee) — so the drift is re-read after it, and this run
+        // repairs them rather than the next.
+        try {
+          persisted = await readPersisted.call(provider, physicalCollectionName);
+          ({ repair } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll));
+        } catch (err) {
+          pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
+            provider: provider.key,
+            collection: physicalCollectionName,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
+      const drifted = new Set(repair);
+      const handedOff = forced.filter((path) => !drifted.has(path));
+      repair.push(...handedOff);
       if (repair.length > 0) {
         pipelineLog.enrichmentPhase("REPAIR_PASS", {
           provider: provider.key,
