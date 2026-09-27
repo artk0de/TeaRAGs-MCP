@@ -22,6 +22,7 @@ import {
   resolveCollection,
 } from "../../core/api/public/index.js";
 import type { McpAutoUpdateTrigger } from "../../mcp/tools/explore.js";
+import { resolveRegistryEnvCodeDefaults } from "../config/registry-env-code-defaults.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";
 import { closeAutoUpdateLog, openAutoUpdateLog } from "./updater-log.js";
@@ -56,7 +57,7 @@ export function buildMcpAutoUpdateTrigger(
   dataDir: string = resolveDataDir(),
   spawnImpl?: (project: string) => void,
 ): McpAutoUpdateTrigger {
-  const registry = new CollectionRegistry(dataDir);
+  const registry = new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults });
   // The MCP server is LONG-LIVED and CollectionRegistry caches registry.json
   // in memory — without the watcher, `tea-rags auto-update` config written
   // AFTER server start stays invisible until the next reconnect. The watcher

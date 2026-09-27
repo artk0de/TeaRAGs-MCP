@@ -36,9 +36,36 @@
   it on, so one repo's `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=777` became the next
   project's pin, and every entry froze the defaults of the release that first
   indexed it — the BREAKING default of 5000 reached none of 21 entries (bd
-  tea-rags-mcp-h4l6k). Existing pins are never rewritten here.
+  tea-rags-mcp-h4l6k). Existing pins are rewritten exactly ONCE, by the one-time
+  env-pin migration (`migrateRegistryEnvPins`, `env-pin-migration.ts`): it drops
+  every pin equal to the current code default plus the frozen
+  `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000`, stamps
+  `REGISTRY_ENV_PIN_MIGRATION_REVISION`, and never runs again — a default-equal
+  pin an operator sets afterwards is a decision and stays. Nothing else rewrites
+  a pin.
+
+- **Data migrations advance `RegistryFileV1.revision`, never `version`.**
+  `loadRegistryFile` in every release so far backs up and discards a file whose
+  `version` is not exactly 1, so a bumped `version` makes any older binary still
+  running — a parallel worktree build, a long-running MCP server — move the
+  registry aside and start empty. `mergeRegistryDelta` carries the DISK's
+  revision (a fresh file is born at the latest), so only the migration advances
+  it. An older binary's flush drops the field; the next open re-runs the
+  migration, which then only removes default-equal values.
 
 ## Mechanics
+
+- **Opening a registry can WRITE it.** A `CollectionRegistry` constructed with
+  `envCodeDefaults` runs a due data migration on first load
+  (`CollectionRegistry#loadMigrated`, through `migrateRegistryFileWithCAS` —
+  same CAS and temp+rename as a flush). Every production construction site
+  passes `resolveRegistryEnvCodeDefaults` (`bootstrap/config/`); one without it
+  loads as-is and leaves the migration to the next open, never marking it done.
+  Why: a test that reaches the `~/.tea-rags` fallback of `resolveDataDir`
+  (`TEA_RAGS_DATA_DIR` unset) migrates the developer's REAL registry — the
+  pre-existing `tests/cli/registry-resolver.test.ts` fallback case did exactly
+  that until it was pointed at a scratch home. A test that unsets the data dir
+  must also redirect `homedir`.
 
 - **Every mutator does a synchronous whole-file round trip, and the CAS backoff
   busy-waits.** `CollectionRegistry#record`, `#updatePath`, `#setName`,

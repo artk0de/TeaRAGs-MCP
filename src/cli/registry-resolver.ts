@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { resolveRegistryEnvCodeDefaults } from "../bootstrap/config/registry-env-code-defaults.js";
 import {
   CollectionRegistry,
   EMBEDDED_MARKER,
@@ -61,7 +62,7 @@ function registryQdrantUrlArg(entry: CollectionEntry): string | undefined {
  */
 export function applyProjectDefaults<A extends ProjectAwareArgs>(argv: A): A {
   if (!argv.project) return argv;
-  const registry = new CollectionRegistry(resolveDataDir());
+  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
   const entry = registry.findByName(argv.project);
   if (!entry) {
     const names = registry

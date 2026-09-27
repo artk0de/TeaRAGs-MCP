@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 
 import type { CommandModule } from "yargs";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { CollectionRegistry } from "../../core/api/public/index.js";
 
 function resolveDataDir(): string {
@@ -17,7 +18,7 @@ export interface ProjectExistArgs {
 }
 
 export function runProjectExist(args: ProjectExistArgs): void {
-  const registry = new CollectionRegistry(resolveDataDir());
+  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
   const entry = args.path ? registry.findByPath(resolve(args.path)) : registry.findByName(args.name ?? "");
   const exists = entry !== null;
   if (args.json) {

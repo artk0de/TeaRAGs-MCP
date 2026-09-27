@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { CollectionRegistry, InputValidationError, replayRegistryEnv } from "../../core/api/public/index.js";
 import { createColorizer } from "../infra/color.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
@@ -139,7 +140,9 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
     // process.env so the spawned benchmark inherits it via buildEnv. Explicit
     // shell env wins — replayRegistryEnv only fills unset alias groups.
     if (resolved.project) {
-      const entry = new CollectionRegistry(resolveDataDir()).findByName(resolved.project);
+      const entry = new CollectionRegistry(resolveDataDir(), {
+        envCodeDefaults: resolveRegistryEnvCodeDefaults,
+      }).findByName(resolved.project);
       replayRegistryEnv(entry?.env ?? entry?.tuning, process.env);
     }
     const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
@@ -159,7 +162,9 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         ? (): void => {
             const envFilePath = join(resolved.path as string, "tuned_environment_variables.env");
             if (!existsSync(envFilePath)) return;
-            const registry = new CollectionRegistry(resolveDataDir());
+            const registry = new CollectionRegistry(resolveDataDir(), {
+              envCodeDefaults: resolveRegistryEnvCodeDefaults,
+            });
             const applied = mergeTunedEnvIntoRegistry(
               registry,
               resolved.project as string,

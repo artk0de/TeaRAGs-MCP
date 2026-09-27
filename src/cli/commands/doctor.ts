@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import type { CodegraphDaemonRestartOutcome } from "../../bootstrap/codegraph-daemon-restart.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import {
   CollectionRegistry,
   ProjectRegistryOps,
@@ -84,7 +85,7 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
  */
 export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<void> {
   const { qdrant, embeddings } = deps ?? (await defaultDeps());
-  const registry = new CollectionRegistry(resolveDataDir());
+  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
 
   const qdrantOk = await safe(async () => qdrant.checkHealth(), false);
   const embeddingsOk = await safe(async () => embeddings.checkHealth(), false);
@@ -249,7 +250,10 @@ export async function runQuarantineDoctor(args: { path: string; json?: boolean }
   // The quarantine file is named after the collection, so it has to be the
   // collection the index actually lives in — the registry's entry when one
   // claims this path, the hash only otherwise (bd tea-rags-mcp-dxa9w).
-  const { collectionName } = resolveCollection(new CollectionRegistry(resolveDataDir()), { path: project });
+  const { collectionName } = resolveCollection(
+    new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
+    { path: project },
+  );
   const snapshotDir = join(resolveDataDir(), "snapshots");
   const entries = await new QuarantineStore(snapshotDir, collectionName).load();
   const files = [...entries.entries()].map(([path, entry]) => ({ path, ...entry }));

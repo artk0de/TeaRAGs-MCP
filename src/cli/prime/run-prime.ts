@@ -6,6 +6,7 @@ import { spawnDetachedUpdater } from "../../bootstrap/auto-update/spawner.js";
 import { AutoUpdateTrigger, type AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
 import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../../bootstrap/auto-update/updater-log.js";
 import { parseAppConfig } from "../../bootstrap/config/index.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import {
   CollectionRegistry,
@@ -42,7 +43,7 @@ function resolveDataDir(): string {
  * entry — caller falls back to heuristic discovery.
  */
 async function lookupRegistryEntry(input: { path?: string; project?: string }): Promise<CollectionEntry | null> {
-  const registry = new CollectionRegistry(resolveDataDir());
+  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
   if (input.project) {
     return registry.findByName(input.project);
   }
@@ -98,7 +99,7 @@ function registryExternalQdrantUrl(entry: CollectionEntry | null): string | unde
 function buildPrimeAutoUpdateTrigger(entry: CollectionEntry, dataDir: string): AutoUpdateTrigger {
   const label = entry.name ?? entry.collectionName;
   return new AutoUpdateTrigger({
-    registry: new CollectionRegistry(dataDir),
+    registry: new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults }),
     freshness: new IndexFreshnessCheck(),
     spawn: (project) => {
       const log = openAutoUpdateLog(dataDir, label);

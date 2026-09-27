@@ -88,6 +88,7 @@ import {
 } from "./config/env-snapshot.js";
 import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
+import { resolveRegistryEnvCodeDefaults } from "./config/registry-env-code-defaults.js";
 import {
   reconcileStrictMode,
   reconcileTurbo,
@@ -1074,7 +1075,9 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   // the `{ collection, project, path }` triad through it. startWatching()
   // is deferred until later — registry construction alone is side-effect
   // free, so creating it early costs nothing.
-  const collectionRegistry = new CollectionRegistry(config.paths.appData);
+  const collectionRegistry = new CollectionRegistry(config.paths.appData, {
+    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+  });
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
   const codegraphContext = wireCodegraph(

@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import {
   TeaRagsError,
   type OptimizerRecoveryOps,
@@ -86,7 +87,7 @@ function defaultDeps(): QdrantRecoverDeps {
     } = await import("../../core/api/public/index.js");
 
     const config = parseAppConfig();
-    const registry = new CollectionRegistry(config.paths.appData);
+    const registry = new CollectionRegistry(config.paths.appData, { envCodeDefaults: resolveRegistryEnvCodeDefaults });
     const entry = target.project ? registry.findByName(target.project) : registry.findByPath(target.path ?? "");
     const backend = entry ? resolveRegistryQdrantBackend(entry) : { kind: "unaddressed" as const };
     const qdrantUrl =
