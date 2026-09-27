@@ -160,6 +160,36 @@ describe("formatIndexStatus", () => {
 });
 
 describe("formatIndexStatusJson", () => {
+  it("passes embedding endpoint state through to the JSON report", () => {
+    const status: IndexStatus = {
+      ...baseStatus,
+      infraHealth: {
+        qdrant: { available: true, url: "http://localhost:6333" },
+        embedding: {
+          available: true,
+          provider: "ollama",
+          url: "http://192.168.1.71:11434",
+          primaryAvailable: true,
+          fallbackUrl: "http://localhost:11434",
+          fallbackAvailable: false,
+          activeUrl: "http://localhost:11434",
+        },
+      },
+    };
+    const o = formatIndexStatusJson(status, { path: "/p" }) as {
+      infraHealth: { embedding: Record<string, unknown> };
+    };
+    expect(o.infraHealth.embedding).toEqual({
+      available: true,
+      provider: "ollama",
+      url: "http://192.168.1.71:11434",
+      primaryAvailable: true,
+      fallbackUrl: "http://localhost:11434",
+      fallbackAvailable: false,
+      activeUrl: "http://localhost:11434",
+    });
+  });
+
   it("returns a stable machine object with expected shape", () => {
     const status: IndexStatus = {
       ...baseStatus,

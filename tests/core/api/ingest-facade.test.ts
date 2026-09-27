@@ -325,6 +325,7 @@ describe("IngestFacade", () => {
       available: true,
       provider: "ollama",
       url: "http://gpu-server:11434",
+      activeUrl: "http://gpu-server:11434",
       fallbackUrl: "http://127.0.0.1:11434",
     });
   });
@@ -362,6 +363,7 @@ describe("IngestFacade", () => {
       available: true,
       provider: "ollama",
       url: "http://127.0.0.1:11434",
+      activeUrl: "http://127.0.0.1:11434",
     });
     expect(status.infraHealth?.embedding).not.toHaveProperty("fallbackUrl");
   });

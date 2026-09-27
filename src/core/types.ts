@@ -526,6 +526,10 @@ export interface IndexStatus {
       available: boolean;
       provider: string;
       url?: string;
+      /** Endpoint currently in use once runtime failover is factored in. Under
+       *  failover this differs from `url` — a run that lived on the fallback
+       *  says so here rather than only in the debug log. */
+      activeUrl?: string;
       /** Live reachability of the CONFIGURED primary endpoint, independent of failover. */
       primaryAvailable?: boolean;
       fallbackUrl?: string;

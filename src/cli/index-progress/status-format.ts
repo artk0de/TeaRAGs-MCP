@@ -176,6 +176,24 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
       embedding: {
         available: status.infraHealth.embedding.available,
         provider: status.infraHealth.embedding.provider,
+        // Endpoint state — the fields a "why is indexing slow" diagnosis
+        // starts from. url is the CONFIGURED primary; activeUrl is what the
+        // run actually used once failover is factored in. A run that spent
+        // its whole life on the fallback says so here instead of only in a
+        // debug log nobody reads mid-run.
+        ...(status.infraHealth.embedding.url !== undefined ? { url: status.infraHealth.embedding.url } : {}),
+        ...(status.infraHealth.embedding.activeUrl !== undefined
+          ? { activeUrl: status.infraHealth.embedding.activeUrl }
+          : {}),
+        ...(status.infraHealth.embedding.primaryAvailable !== undefined
+          ? { primaryAvailable: status.infraHealth.embedding.primaryAvailable }
+          : {}),
+        ...(status.infraHealth.embedding.fallbackUrl !== undefined
+          ? { fallbackUrl: status.infraHealth.embedding.fallbackUrl }
+          : {}),
+        ...(status.infraHealth.embedding.fallbackAvailable !== undefined
+          ? { fallbackAvailable: status.infraHealth.embedding.fallbackAvailable }
+          : {}),
       },
     };
   }
