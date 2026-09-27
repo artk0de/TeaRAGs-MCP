@@ -613,6 +613,37 @@ Rejected, measured on the same copies:
   `DocumentsUploadedByConcern`. Across all 98 flips, about 8 are right,
   including the three TS `…NotificationType` names in `types/`. The guard fixes
   two of the six wrong changes, both Process names, at that cost.
+- **Guard by the head-share of the word before the connector.** The idea: a noun
+  there (`objects` in `ObjectsForFirm`) heads the name, while a verb or a
+  compound interior (`send`, `apply`, `select`, `clients`) means the name is a
+  verb phrase or a modifier chain headed by its last word. The signal is the
+  word's head-share in the same population: connector-free distinct names ending
+  in it, over connector-free distinct names containing it. On `_v15`, 421 of 747
+  connector names are complement-headed, and their pre-connector words fall in
+  deciles 118 / 117 / 61 / 47 / 15 / 12 / 2 / 15 / 7 / 3 / 10. The mass sits
+  below 0.2, and the only trough, `[0.6, 0.7)`, lies far above every word in
+  question. The wrong words are `select` 8/99 (0.08), `apply` 2/26 (0.08),
+  `clients` 9/76 (0.12) and `send` 19/135 (0.14). The right ones are interleaved
+  with them: `objects` 0/3 (0), `automation` 5/48 (0.10), `job` 25/185 (0.14),
+  `message` 32/203 (0.16), `note` 6/37 (0.16), and higher up `template` 0.23,
+  `notification` 0.30, `event` 0.49, `response` 0.50, `form` 0.55. Folding
+  singular and plural does not separate them: `send` 0.14 and `client` 57/458
+  (0.12) against `automation` 7/67 (0.10) and `job` 34/263 (0.13), with `object`
+  rising to 20/38. In Ruby the overlap persists: `apply` is 1/20 and `send`
+  18/100, against `objects` 0/3 and `job` 4/89
+  (`DisablePreviewImageJobForHeic`). TypeScript alone leaves a gap between
+  `clients` 3/34 (0.09) and `automation` 5/46 (0.11), but it is a gap between
+  two words, not a valley: the TS histogram holds 22 names below 0.1 and 46 in
+  `[0.1, 0.2)`, so a cut there would be tuned to the sample. Any cut above 0.14
+  that catches all four wrong words turns 188 of the 421 names back to
+  head-final, `ObjectsForFirm`, `AutomationToConfirm` and `JobToLink` among
+  them. The zero-head variant (keep head-final when the word ends no
+  connector-free name) hits 51 names, none of the wrong ones, and reverts
+  `ObjectsForFirm` itself. On the self-index the right heads sit at the bottom
+  too: `DocumentForValidation` 0/7, `CommitWithChangedFiles` 1/21. The signal
+  measures how often a word ends a compound. An entity noun in a compound-heavy
+  namespace is mostly a modifier (`MessageTemplate`, `JobStatus`), so head-share
+  cannot tell a noun from a verb here.
 - **Positional distribution (above).** No valley on any corpus.
 
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
