@@ -160,6 +160,64 @@ then to the first declared; no overlap at all goes to the first declared. So one
 `RerankOptions` beside `Reranker` belongs to reranker.ts's subject, not to a
 role. Inheritance evidence reads every type.
 
+**What is not a role (`49fsr`).** Live on taxdome, a role-precision sample found
+verbs, events and namespaces named as roles: `InitialSync::Finish` → `finish`,
+`BatchCreateAsync` → `async`, `ActivateOnLogin` → `login`, `KbaAttemptCreate` →
+`create` (all `include KindOfService`, which the Ruby walker records as a
+supertype), `ClientPortalSettingsUpdated` → `updated` (an event under
+`BaseEvent`), `module Communication` → `communication`, and the TS type aliases
+`OverviewBlockType` → `type` and `ProposalPackage` → `package`. Five rules
+remove them. Each comes from the project's own data or from the kind vocabulary,
+not from a word list:
+
+1. **A family's role is its majority head.** The inheritance family's plurality
+   head must be carried by ≥ 2 members and by at least half the family (the same
+   0.5 majority as the directory); a split family has none. `create` was the
+   plurality of `KindOfService`'s 2,554 members at 324 (13%), and `updated` of
+   `BaseEvent`'s 124 at 30 (24%).
+2. **A head that varies inside a family is that family's slot.** When a family
+   holds a majority (≥ 2, ≥ half) of a directory or suffix word's carriers and
+   its role is not that word, and no family holding such a majority names it,
+   the word is no role. The carriers are kin through the ancestor, and their
+   heads are what varies. On taxdome this vetoes about 230 suffix and directory
+   words, nearly all under `KindOfService` (`destroy`, `update`, `clone`,
+   `async`, `finish`) or `BaseEvent` (`created`, `deleted`, `changed`). On the
+   self-index it vetoes nothing. A mixin family with no role never vetoes a head
+   that another majority family names: a `*Form` under both `BaseForm` and
+   `ActiveModel::Model` keeps `form`.
+3. **A namespace is not a primary.** A `module` row competes for the file's
+   primary only when its name overlaps the file stem. One named for its file is
+   the file's subject (a Ruby concern, a TS `export const fooHook = {…}` object,
+   which the TS walker records as `module`). One that is not is the namespace
+   wrapping the subject. A taxdome contract `request.rb` holds
+   `module Communication` around `Request = Data.define(…)`, a constant, so the
+   file now has no primary.
+4. **A head restating the declaration kind is no role.** A name whose last word
+   is one of the words of its own kind (`type_alias` → `type`, `alias`; `enum`;
+   `interface`) says nothing its declaration does not. A TS `OverviewBlockType`
+   carries no role, but a GraphQL `UserType` class still can.
+5. **A project suffix counts distinct qualified names.** The ≥ k threshold
+   counts distinct names in which a word precedes the head. A bare `Finish` is
+   the concept itself, and a `ProposalPackage` declared in two files is one
+   name, so `Package`, `ProposalPackage` ×2 and `SelectedPackage` make no
+   `package` suffix. Once a suffix holds, a bare carrier (`Props`) shares it.
+
+Measured with `t9-roles.mts` (seed 7, sample 30), read-only, on a copy of the
+taxdome codegraph DB: type coverage fell from 62.8% to 51.5%, Ruby from 74.9% to
+57.9%, TS from 52.1% to 45.8%. Precision on the hand-checked sample rose from
+25/30 to 27/30. On the self-index, coverage went from 32.3% to 31.5% (18
+assignments lost: `*Type` aliases, `Migration`'s `*Indexes`, and three suffixes
+that had rested on a bare name) and the sample stayed 30/30. The rename eval was
+unchanged: 0/17 caught, 9 flagged-other, 8 silent, control 5/40.
+
+The `Cookies` ancestor seen on `ApplicationController` is not a defect in role
+evidence. The Ruby walker records `include ActionController::Cookies` as a
+supertype, and families key on the last segment. The role it yields
+(`controller`) is right; only the scope label is a mixin. Last-segment keying
+does merge distinct ancestors that share a name (`Base` is eight classes on
+taxdome). Resolving written supertypes to declared type ids would separate them,
+but that is a per-language lookup and was left out of this change.
+
 **Directory-role membership (`tun7x`).** A directory role speaks only for the
 family it names. Its family is COHESIVE when the role's carriers in the
 directory share a supertype: the most carried supertype (last namespace segment

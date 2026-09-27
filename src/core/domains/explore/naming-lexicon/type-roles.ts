@@ -14,6 +14,23 @@
  * `RerankOptions` beside `Reranker` is part of reranker.ts's subject, not a role.
  * The rows must arrive in declaration order within a file.
  * Every scope needs two types sharing the word: one type is not a family.
+ *
+ * What is NOT a role (bd tea-rags-mcp-49fsr, live on taxdome):
+ *   - a family's minority head: the family role is the MAJORITY head of the
+ *     family (`familyShare`), a split family has none — `create` on 324 of
+ *     2,554 `KindOfService` services named no family;
+ *   - a head that VARIES within an inheritance family: when a majority of a
+ *     directory / suffix word's carriers share an ancestor whose family role is
+ *     not that word (and no such majority family names it), the word is the
+ *     family's varying slot — `*Async`, `*Finish`, `*Updated` are the verbs and
+ *     events of role-less `KindOfService` / `BaseEvent` families;
+ *   - a namespace `module` not named for its file: never the file's primary
+ *     (it wraps the file's subject);
+ *   - a head restating the carrier's own declaration kind (`type` on a type
+ *     alias, `enum` on an enum), read off the kind vocabulary itself;
+ *   - a project suffix fewer than `projectSuffixMinTypes` DISTINCT names
+ *     qualify: a bare `Finish` is the concept, not a family member, and a name
+ *     declared in two files is one name.
  * Pure: the rows come in already read (type-level kinds only) by the caller.
  */
 import type { TypeNameRow } from "../../../contracts/types/codegraph.js";
@@ -49,6 +66,8 @@ export interface TypeRoleAssignment {
 export interface TypeRoleThresholds {
   /** The share of a directory's primaries its role word must hold: a MAJORITY family. */
   directoryShare: number;
+  /** The share of an inheritance family its role word must hold — and of a word's carriers a family must hold to veto it. */
+  familyShare: number;
   projectSuffixMinTypes: number;
   projectSuffixMinDirs: number;
 }
@@ -57,6 +76,8 @@ export const TYPE_ROLE_THRESHOLDS: TypeRoleThresholds = {
   // 0.5 is the definition of a majority, not a tuned value: a directory's role is the family
   // at least half of its files belong to. A lower share let two helper files name a directory.
   directoryShare: 0.5,
+  // The same majority for an inheritance family (bd tea-rags-mcp-49fsr).
+  familyShare: 0.5,
   projectSuffixMinTypes: 3,
   projectSuffixMinDirs: 2,
 };
@@ -69,8 +90,12 @@ const EVIDENCE_ORDER: readonly TypeRoleEvidence[] = ["inheritance", "directory",
 
 interface HeadedRow {
   row: TypeNameRow;
-  head: string;
+  /** The name's last word as a role candidate; `null` when it restates the row's declaration kind. */
+  head: string | null;
 }
+
+/** The namespace kind: a primary only when named for its file, else it wraps the file's subject. */
+const NAMESPACE_KIND: TypeNameRow["symbolKind"] = "module";
 
 /** The file's directory: everything before the last `/`, `""` at the root. */
 function directoryOf(relPath: string): string {
@@ -90,25 +115,14 @@ function groupBy<K>(items: readonly HeadedRow[], keysOf: (item: HeadedRow) => re
   return groups;
 }
 
-/** The most frequent head in a group and its count; ties go to the alphabetically first head. */
-function dominantHead(members: readonly HeadedRow[]): { head: string; count: number } {
-  const counts = new Map<string, number>();
-  for (const { head } of members) counts.set(head, (counts.get(head) ?? 0) + 1);
-  let best = { head: "", count: 0 };
-  for (const [head, count] of counts) {
-    if (count > best.count || (count === best.count && head < best.head)) best = { head, count };
-  }
-  return best;
-}
-
 /**
- * The plurality head of a directory's primaries (one per file) and its file
- * count; `undefined` when two heads tie for the most — a split directory has
- * no majority family.
+ * The plurality head of a group — a directory's primaries (one per file) or a
+ * family's members — and its count; `undefined` when two heads tie for the
+ * most (a split group has no majority family) or no member has a head.
  */
-function pluralityHead(primaries: readonly HeadedRow[]): { head: string; count: number } | undefined {
+function pluralityHead(members: readonly HeadedRow[]): { head: string; count: number } | undefined {
   const counts = new Map<string, number>();
-  for (const { head } of primaries) counts.set(head, (counts.get(head) ?? 0) + 1);
+  for (const { head } of members) if (head !== null) counts.set(head, (counts.get(head) ?? 0) + 1);
   let best: { head: string; count: number } | undefined;
   let tied = false;
   for (const [head, count] of counts) {
@@ -166,7 +180,11 @@ function beatsPrimary(a: PrimaryCandidate, b: PrimaryCandidate): boolean {
  * `FileOutlineInput`) — then the first declared; with no overlap at all, the
  * first declared. The rows arrive in declaration order within a file.
  * `errors.ts` contributes one `*Error`; `reranker.ts` contributes `Reranker`,
- * not `RerankOptions`.
+ * not `RerankOptions`. A `module` competes only when its name overlaps the stem
+ * (bd tea-rags-mcp-49fsr): one named for the file is its subject (a Ruby
+ * concern, a TS `const` object of hooks), one that is not is the NAMESPACE
+ * wrapping the subject — `module Communication` around a contract whose
+ * `Request = Data.define(…)` is a constant leaves that file without a primary.
  */
 function primaryHeadedPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
   const best = new Map<string, PrimaryCandidate>();
@@ -174,6 +192,7 @@ function primaryHeadedPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
     const stem = fileStemWords(member.row.relPath);
     const words = new Set(typeNameWords(member.row.shortName).map(singularizeIdentifierWord));
     const overlap = [...words].filter((word) => stem.has(word)).length;
+    if (overlap === 0 && member.row.symbolKind === NAMESPACE_KIND) continue;
     const kind = member.row.symbolKind;
     const candidate: PrimaryCandidate = {
       member,
@@ -192,13 +211,28 @@ export function primaryPerFile(rows: readonly TypeNameRow[]): TypeNameRow[] {
   return primaryHeadedPerFile(headedRows(rows)).map(({ row }) => row);
 }
 
+/**
+ * The words a declaration kind is spelled with (`type_alias` → `type`, `alias`):
+ * a name ending in one restates what its declaration already says.
+ */
+function kindWords(kind: TypeNameRow["symbolKind"]): ReadonlySet<string> {
+  return new Set(kind === null ? [] : splitIdentifierWords(kind));
+}
+
 function headedRows(rows: readonly TypeNameRow[]): HeadedRow[] {
   const headed: HeadedRow[] = [];
   for (const row of rows) {
     const words = typeNameWords(row.shortName);
-    if (words.length > 0) headed.push({ row, head: words[words.length - 1] });
+    const last = words.at(-1);
+    if (last === undefined) continue;
+    headed.push({ row, head: kindWords(row.symbolKind).has(last) ? null : last });
   }
   return headed;
+}
+
+/** A head qualified by at least one word before it: `ContactImportFinish`, not a bare `Finish`. */
+function qualifiesHead(row: TypeNameRow): boolean {
+  return typeNameWords(row.shortName).length > 1;
 }
 
 function assign(
@@ -240,6 +274,38 @@ function cohesiveSupertypes(carriers: readonly HeadedRow[], share: number): stri
     .sort();
 }
 
+/**
+ * Whether `word` is the VARYING slot of an inheritance family rather than a role
+ * (bd tea-rags-mcp-49fsr): a family (by last namespace segment) holding at least
+ * `share` of the carriers — and ≥ {@link MIN_ROLE_MEMBERS} of them — has a role
+ * other than `word`, and no family holding such a majority has `word` as its
+ * role. The carriers' kinship is their ancestor; their heads vary inside it —
+ * `*Async`, `*Finish`, `*Create` are the verbs of taxdome's role-less
+ * `KindOfService` services, `*Updated` the events of `BaseEvent`. A mixin family
+ * with no role never vetoes a head another majority family names (`*Form`
+ * under both `BaseForm` and `ActiveModel::Model`).
+ */
+function familySlot(
+  carriers: readonly HeadedRow[],
+  word: string,
+  familyRoles: ReadonlyMap<string, string | undefined>,
+  share: number,
+): boolean {
+  const counts = new Map<string, number>();
+  for (const { row } of carriers) {
+    for (const ancestor of new Set(row.ancestors.map(typeNameLastSegment))) {
+      counts.set(ancestor, (counts.get(ancestor) ?? 0) + 1);
+    }
+  }
+  let vetoed = false;
+  for (const [ancestor, count] of counts) {
+    if (count < MIN_ROLE_MEMBERS || count / carriers.length < share) continue;
+    if (familyRoles.get(ancestor) === word) return false;
+    vetoed = true;
+  }
+  return vetoed;
+}
+
 /** Derives every type's role assignments, strongest evidence first, then by scope and symbolId. */
 export function deriveTypeRoles(
   rows: readonly TypeNameRow[],
@@ -248,35 +314,48 @@ export function deriveTypeRoles(
   const headed = headedRows(rows);
   const assignments: TypeRoleAssignment[] = [];
 
+  const familyRoles = new Map<string, string | undefined>();
   const families = groupBy(headed, ({ row }) => [...new Set(row.ancestors.map(typeNameLastSegment))]);
   for (const [ancestor, members] of families) {
-    const { head, count } = dominantHead(members);
-    if (count >= MIN_ROLE_MEMBERS) assignments.push(...assign(members, head, "inheritance", ancestor));
+    const plurality = pluralityHead(members);
+    const role =
+      plurality && plurality.count >= MIN_ROLE_MEMBERS && plurality.count / members.length >= t.familyShare
+        ? plurality.head
+        : undefined;
+    familyRoles.set(ancestor, role);
+    if (role !== undefined) assignments.push(...assign(members, role, "inheritance", ancestor));
   }
+  const isFamilySlot = (carriers: readonly HeadedRow[], word: string): boolean =>
+    familySlot(carriers, word, familyRoles, t.familyShare);
 
   const primaries = primaryHeadedPerFile(headed);
   const directories = groupBy(primaries, ({ row }) => [directoryOf(row.relPath)]);
   for (const [dir, members] of directories) {
     const plurality = pluralityHead(members);
-    if (plurality && plurality.count >= MIN_ROLE_MEMBERS && plurality.count / members.length >= t.directoryShare) {
-      const carried = assign(members, plurality.head, "directory", dir);
-      const supertypes = cohesiveSupertypes(
-        members.filter(({ head }) => head === plurality.head),
-        t.directoryShare,
-      );
-      assignments.push(
-        ...(supertypes ? carried.map((assignment) => ({ ...assignment, familySupertypes: supertypes })) : carried),
-      );
+    if (!plurality || plurality.count < MIN_ROLE_MEMBERS || plurality.count / members.length < t.directoryShare) {
+      continue;
     }
+    const carriers = members.filter(({ head }) => head === plurality.head);
+    if (isFamilySlot(carriers, plurality.head)) continue;
+    const carried = assign(members, plurality.head, "directory", dir);
+    const supertypes = cohesiveSupertypes(carriers, t.directoryShare);
+    assignments.push(
+      ...(supertypes ? carried.map((assignment) => ({ ...assignment, familySupertypes: supertypes })) : carried),
+    );
   }
 
-  const byHead = groupBy(primaries, ({ head }) => [head]);
+  const byHead = groupBy(primaries, ({ head }) => (head === null ? [] : [head]));
   for (const [head, members] of byHead) {
-    const files = new Set(members.map(({ row }) => row.relPath));
-    const dirs = new Set(members.map(({ row }) => directoryOf(row.relPath)));
-    if (files.size >= Math.max(t.projectSuffixMinTypes, MIN_ROLE_MEMBERS) && dirs.size >= t.projectSuffixMinDirs) {
-      assignments.push(...assign(members, head, "projectSuffix", ""));
-    }
+    // A suffix is a word names ATTACH to: a bare `Finish` is the concept itself, and a name
+    // declared in two files is one name — neither is a second member of the family.
+    const qualified = members.filter(({ row }) => qualifiesHead(row));
+    const names = new Set(qualified.map(({ row }) => row.shortName));
+    const files = new Set(qualified.map(({ row }) => row.relPath));
+    const dirs = new Set(qualified.map(({ row }) => directoryOf(row.relPath)));
+    const minTypes = Math.max(t.projectSuffixMinTypes, MIN_ROLE_MEMBERS);
+    if (names.size < minTypes || files.size < minTypes || dirs.size < t.projectSuffixMinDirs) continue;
+    if (isFamilySlot(members, head)) continue;
+    assignments.push(...assign(members, head, "projectSuffix", ""));
   }
 
   return assignments.sort(
