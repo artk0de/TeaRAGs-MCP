@@ -243,6 +243,41 @@ describe("IndexingOps — claims the collection with an exclusive indexing lock"
       await expect(new IndexingOps(deps).run("/repo")).rejects.toBeInstanceOf(IndexingAlreadyInProgressError);
       expect(deps.reindex.reindexChanges).not.toHaveBeenCalled();
     });
+
+    // Live 2026-09-27: after the retry ran, the killed force run's _vN kept its
+    // fresh heartbeat, so status read "being indexed, 0 chunks" for the whole
+    // heartbeat window — and the lazy orphan sweep skipped it on that same lease.
+    it("reclaims the dead writer's unpromoted build on takeover, never the served version", async () => {
+      writeLockOfAnotherRun({ operation: "force-reindex" });
+      const served = `${ALIAS}_v6`;
+      const building = `${ALIAS}_v7`;
+      const deps = makeDeps(makeLock({ isProcessAlive: (pid) => pid !== FOREIGN_PID }), {
+        [served]: { indexingComplete: true, startedAt: new Date().toISOString() },
+        [building]: freshMarker(),
+      });
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([served, building]);
+      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([{ aliasName: ALIAS, collectionName: served }]);
+      const deleteCollection = vi.fn().mockResolvedValue(undefined);
+      Object.assign(deps.qdrant, { deleteCollection });
+
+      await expect(new IndexingOps(deps).run("/repo")).resolves.toMatchObject({ status: "completed" });
+
+      expect(deleteCollection.mock.calls.map(([name]) => name)).toEqual([building]);
+    });
+
+    it("reclaims nothing without a takeover — a live run's build keeps its lease", async () => {
+      const served = `${ALIAS}_v6`;
+      const building = `${ALIAS}_v7`;
+      const deps = makeDeps(makeLock());
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([served, building]);
+      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([{ aliasName: ALIAS, collectionName: served }]);
+      const deleteCollection = vi.fn().mockResolvedValue(undefined);
+      Object.assign(deps.qdrant, { deleteCollection });
+
+      await new IndexingOps(deps).run("/repo");
+
+      expect(deleteCollection).not.toHaveBeenCalled();
+    });
   });
 
   it("gives its lock back when the operation fails, so a retry is admitted", async () => {

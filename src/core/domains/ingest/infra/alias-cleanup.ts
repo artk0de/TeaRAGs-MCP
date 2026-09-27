@@ -37,6 +37,13 @@ export async function cleanupOrphanedVersions(
   qdrant: QdrantManager,
   collectionName: string,
   removeCodegraphDb?: CodegraphDbRemover,
+  /**
+   * Epoch ms up to which lease evidence belongs to a writer the caller proved
+   * dead by taking over its indexing lock (bd tea-rags-mcp-nhd1s). Its build
+   * holds no lease however fresh its heartbeat reads, so it is reclaimed now
+   * rather than after the heartbeat window.
+   */
+  options: { deadWriterEvidenceUpTo?: number } = {},
 ): Promise<number> {
   const aliases = await qdrant.aliases.listAliases();
   const activePhysicalCollectionName = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
@@ -57,7 +64,7 @@ export async function cleanupOrphanedVersions(
   // reports success (bd tea-rags-mcp-nrylk).
   const orphanPhysicalCollectionNames: PhysicalCollectionName[] = [];
   for (const candidatePhysicalCollectionName of candidatePhysicalCollectionNames) {
-    if (await isCollectionBuildInFlight(qdrant, candidatePhysicalCollectionName)) {
+    if (await isCollectionBuildInFlight(qdrant, candidatePhysicalCollectionName, options)) {
       if (isDebug()) {
         console.error(
           `[AliasCleanup] ${candidatePhysicalCollectionName} is being built by a live run — leaving it alone`,
