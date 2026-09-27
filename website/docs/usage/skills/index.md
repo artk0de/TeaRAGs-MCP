@@ -71,6 +71,18 @@ depending on one nested inside it is composition, and a component with too few
 connections has no trustworthy instability. Scripts, spikes, benchmarks,
 examples and fixtures are left out of the graph altogether. Requires codegraph.
 
+A second detector, silent coupling, flags file pairs that co-change strongly in
+git history while no import, re-export or resolved call joins them — coupling
+the import graph alone cannot see. Strength is the larger direction's 95%
+Wilson lower bound on the conditional co-change rate, against the same
+adaptive Otsu cut the Stable Dependencies check uses. A flagged pair is
+explained, not violated, when a specific shared neighbour accounts for it: both
+files import the same file, or one reaches the other through it. The
+neighbour's specificity — how few files import it — decides which neighbour
+counts, so a near-universal file (a barrel, a shared types module) never
+explains a pair away. Explained pairs are still reported, counted separately
+from the violations, with the explaining file named alongside each one.
+
 The same components are also placed against Martin's main sequence. The walker
 counts each file's abstract and concrete type declarations, which gives a
 component's abstractness A, and its distance from the line A + I = 1 is read as
