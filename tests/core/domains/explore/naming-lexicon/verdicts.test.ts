@@ -1614,3 +1614,45 @@ describe("judgeTypeDraft — a project suffix confirms only its family's members
     expect(judge({ name: "JobData", path })).toEqual({ verdict: "CONFORMS" });
   });
 });
+
+// A dispersed family's kind (bd tea-rags-mcp-49fsr): `KindOfService` commands are named for their
+// action, never `*Service`; the kind is what the type IS, not a word its name owes.
+describe("judgeTypeDraft — a kind not carried in names is never demanded", () => {
+  const row = (shortName: string, relPath: string, ancestors: string[] = []): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind: "class",
+    ancestors,
+  });
+  const ROWS = [
+    { ...row("KindOfService", "app/lib/kind_of_service.rb"), symbolKind: "module" as const },
+    row("SendFirmAttributes", "app/services/marketing/send_firm_attributes.rb", ["KindOfService"]),
+    row("RenderShortcodeTexts", "app/services/crm/render_shortcode_texts.rb", ["KindOfService"]),
+    row("CreateInvoice", "app/services/billing/create_invoice.rb", ["KindOfService"]),
+    row("IssueRefund", "app/services/billing/issue_refund.rb", ["KindOfService"]),
+  ];
+  const judge = (name: string) =>
+    judgeTypeDraft({
+      name,
+      path: "app/services/billing/invoices/send_failed_payment_notification.rb",
+      extends: "KindOfService",
+      casing: "pascal",
+      evidence: typeNameEvidence(ROWS, "type"),
+      conceptNames: [],
+    });
+  const SERVICE_ROLE = {
+    word: "service",
+    evidence: "inheritance",
+    examples: ["CreateInvoice", "IssueRefund", "RenderShortcodeTexts"],
+    carriedInName: false,
+  };
+
+  it("an action-named draft conforms, carrying the kind it takes", () => {
+    expect(judge("SendFailedPaymentNotification")).toEqual({ verdict: "CONFORMS", role: SERVICE_ROLE });
+  });
+
+  it("a draft that does spell the kind is not flagged either", () => {
+    expect(judge("SendFailedPaymentService")).toEqual({ verdict: "CONFORMS", role: SERVICE_ROLE });
+  });
+});

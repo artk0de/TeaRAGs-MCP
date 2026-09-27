@@ -32,6 +32,15 @@
  *   - a project suffix fewer than `projectSuffixMinTypes` DISTINCT names
  *     qualify: a bare `Finish` is the concept, not a family member, and a name
  *     declared in two files is one name;
+ *   - the head of a member of a DISPERSED family's kind: a project-declared
+ *     supertype whose family has no role, whose head word (singular) most of
+ *     its members do not carry, and which a directory segment of the member's
+ *     path names (its last word, singular) — `KindOfService` commands under
+ *     `app/services/`. Such a member's role is that word, flagged
+ *     `carriedInName: false`, and its head (`SendFirmAttributes` → `attributes`)
+ *     is the family's varying slot, no directory or suffix role. A head the
+ *     directory does not name (`ApplicationRecord` models in `app/models/`) or
+ *     an undeclared supertype (`ActiveModel::Model`) names no kind;
  *   - a carrier that is no MEMBER of its directory / suffix family
  *     ({@link isRoleFamilyMember}): a `module` in a suffix family of types (the
  *     mixin `ClientPushBaseData` among `*Data` type aliases), or a type missing
@@ -67,6 +76,12 @@ export interface TypeRoleAssignment {
    * Absent when the carriers share no supertype (`*Args`, `*Options`).
    */
   familySupertypes?: readonly string[];
+  /**
+   * `false` on an inheritance role its family does NOT carry in names — a
+   * dispersed family's kind ({@link deriveTypeRoles}): what the type IS, never a
+   * word its name owes. Absent: the role is the name's head.
+   */
+  carriedInName?: boolean;
 }
 
 /**
@@ -495,6 +510,61 @@ function familySlot(
   return vetoed;
 }
 
+/** A path's directory segments, each read as its last word, singular: `app/async_operations/x.rb` → `{app, operation}`. */
+function directoryWords(relPath: string): Set<string> {
+  const words = new Set<string>();
+  for (const segment of relPath.split("/").slice(0, -1)) {
+    const last = splitIdentifierWords(segment).at(-1);
+    if (last !== undefined) words.add(singularizeIdentifierWord(last));
+  }
+  return words;
+}
+
+/** The kind a dispersed family names for a member ({@link unnamedKinds}). */
+interface UnnamedKind {
+  role: string;
+  scope: string;
+  familySize: number;
+  support: number;
+}
+
+/**
+ * The members of DISPERSED families that take the family's kind (bd
+ * tea-rags-mcp-49fsr): the family (by last namespace segment) has no role, the
+ * supertype is declared in the project, fewer than `share` of its members end
+ * in the supertype's head word (singular) — it is not carried in names — and a
+ * directory segment of the member's path names that word. Of two such
+ * families the larger names the kind, then the first by name.
+ */
+function unnamedKinds(
+  families: ReadonlyMap<string, readonly HeadedRow[]>,
+  familyRoles: ReadonlyMap<string, string | undefined>,
+  declared: ReadonlySet<string>,
+  share: number,
+): Map<TypeNameRow, UnnamedKind> {
+  const kinds = new Map<TypeNameRow, UnnamedKind>();
+  for (const [ancestor, members] of families) {
+    if (familyRoles.get(ancestor) !== undefined || members.length < MIN_ROLE_MEMBERS || !declared.has(ancestor)) {
+      continue;
+    }
+    const last = typeNameWords(ancestor).at(-1);
+    if (last === undefined) continue;
+    const role = singularizeIdentifierWord(last);
+    const carried = members.filter(({ head }) => head !== null && singularizeIdentifierWord(head) === role).length;
+    if (carried / members.length >= share) continue;
+    const agreeing = members.filter(({ row }) => directoryWords(row.relPath).has(role));
+    for (const { row } of agreeing) {
+      const current = kinds.get(row);
+      const larger =
+        !current ||
+        members.length > current.familySize ||
+        (members.length === current.familySize && ancestor.localeCompare(current.scope) < 0);
+      if (larger) kinds.set(row, { role, scope: ancestor, familySize: members.length, support: agreeing.length });
+    }
+  }
+  return kinds;
+}
+
 /** Derives every type's role assignments, strongest evidence first, then by scope and symbolId. */
 export function deriveTypeRoles(
   rows: readonly TypeNameRow[],
@@ -518,6 +588,30 @@ export function deriveTypeRoles(
   const isFamilySlot = (carriers: readonly HeadedRow[], word: string): boolean =>
     familySlot(carriers, word, familyRoles, t.familyShare);
 
+  const declared = new Set(rows.map((row) => typeNameLastSegment(row.shortName)));
+  const kinds = unnamedKinds(families, familyRoles, declared, t.familyShare);
+  const inherited = new Set(
+    assignments.map((assignment) => `${assignment.relPath}\u0000${assignment.symbolId}\u0000${assignment.role}`),
+  );
+  for (const [row, kind] of kinds) {
+    if (inherited.has(`${row.relPath}\u0000${row.symbolId}\u0000${kind.role}`)) continue;
+    assignments.push({
+      symbolId: row.symbolId,
+      relPath: row.relPath,
+      role: kind.role,
+      evidence: "inheritance",
+      support: kind.support,
+      scope: kind.scope,
+      carriedInName: false,
+    });
+  }
+  /** A kind member's head is its family's varying slot: no directory / suffix role but its kind. */
+  const outsideKinds = (members: readonly HeadedRow[], word: string): HeadedRow[] =>
+    members.filter(({ row }) => {
+      const kind = kinds.get(row);
+      return kind === undefined || kind.role === word;
+    });
+
   const primaries = primaryHeadedPerFile(headed);
   const directories = groupBy(primaries, ({ row }) => [directoryOf(row.relPath)]);
   for (const [dir, members] of directories) {
@@ -532,7 +626,15 @@ export function deriveTypeRoles(
     // Forms mix across a PROJECT suffix — Ruby classes and TS type aliases share tail words.
     const family = roleFamily(carriers, t.directoryShare, false);
     assignments.push(
-      ...withFamily(assign(familyMembers(carriers, family, supertypesOf), plurality.head, "directory", dir), family),
+      ...withFamily(
+        assign(
+          outsideKinds(familyMembers(carriers, family, supertypesOf), plurality.head),
+          plurality.head,
+          "directory",
+          dir,
+        ),
+        family,
+      ),
     );
   }
 
@@ -549,7 +651,10 @@ export function deriveTypeRoles(
     if (isFamilySlot(members, head)) continue;
     const family = roleFamily(members, t.familyShare, true);
     assignments.push(
-      ...withFamily(assign(familyMembers(members, family, supertypesOf), head, "projectSuffix", ""), family),
+      ...withFamily(
+        assign(outsideKinds(familyMembers(members, family, supertypesOf), head), head, "projectSuffix", ""),
+        family,
+      ),
     );
   }
 
@@ -578,6 +683,7 @@ function pickRole(
     evidence,
     examples,
     ...(best.familySupertypes ? { familySupertypes: best.familySupertypes } : {}),
+    ...(best.carriedInName === false ? { carriedInName: false } : {}),
   };
 }
 
@@ -590,6 +696,8 @@ export interface ExpectedTypeRole extends RoleFamilyMembership {
   familySupertypes?: readonly string[];
   /** A project suffix: the form its carriers are declared in ({@link projectSuffixRole}). */
   familyForm?: DeclarationForm;
+  /** A dispersed family's kind: `false`, the role is not the name's head ({@link TypeRoleAssignment.carriedInName}). */
+  carriedInName?: boolean;
 }
 
 /**

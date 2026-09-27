@@ -68,6 +68,8 @@ export interface NamingExpectedTypeRole {
   word: string;
   evidence: TypeRoleEvidence;
   examples: string[];
+  /** `false`: a dispersed family's kind — what the type IS, never a word its name owes (bd tea-rags-mcp-49fsr). */
+  carriedInName?: boolean;
 }
 
 export type NamingVerdict =
@@ -81,6 +83,13 @@ export type NamingVerdict =
        * vocabulary only, never whether the name fits the behaviour.
        */
       alternatives?: TermAlternative[];
+      /**
+       * The kind a dispersed family names for the draft (`carriedInName: false`,
+       * bd tea-rags-mcp-49fsr): its supertype and directory say what it IS, and
+       * the family fixes no head — `SendFailedPaymentNotification` extending
+       * `KindOfService` is a `service`.
+       */
+      role?: NamingExpectedTypeRole;
     }
   | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
   | { verdict: "NEW_TERM"; topTerms: string[]; alternatives?: TermAlternative[] }
@@ -846,6 +855,15 @@ function familyNonMemberRole(
   return member ? undefined : role.role;
 }
 
+/** The draft's expected role when it is a dispersed family's kind: never carried in names. */
+function unnamedKind(
+  draft: TypeDraftPlacement,
+  evidence: TypeNameEvidence,
+  role: ExpectedTypeRole | undefined = draftRole(draft, evidence),
+): ExpectedTypeRole | undefined {
+  return role?.carriedInName === false ? role : undefined;
+}
+
 /**
  * The anchored head candidates grounded in the concept code: heads of type
  * names `conceptNames` holds — never the role word of a family the draft is
@@ -859,7 +877,7 @@ function groundedHeadCandidates(
   admitted: ReadonlySet<string>,
 ): ReturnType<typeof anchoredHeadCandidates> {
   const conceptHeads = conceptHeadWords(conceptNames);
-  const withheld = familyNonMemberRole(draft, evidence);
+  const withheld = familyNonMemberRole(draft, evidence) ?? unnamedKind(draft, evidence)?.role;
   return anchoredHeadCandidates(
     slots,
     directoryOfPath(draft.path),
@@ -1061,7 +1079,9 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms,
   // and a cohesive directory family only speaks for its members.
   const nonMember = familyNonMemberRole(input, input.evidence, role) !== undefined;
-  const expected = role?.evidence === "projectSuffix" || nonMember ? undefined : role;
+  // A kind its family does not carry in names is what the type IS: it neither demands its word nor confirms the head.
+  const kind = unnamedKind(input, input.evidence, role);
+  const expected = role?.evidence === "projectSuffix" || nonMember || kind ? undefined : role;
   if (expected && words.at(-1) !== expected.role) {
     return {
       verdict: "MISFIT",
@@ -1077,6 +1097,13 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   const lexical = termAlternatives(input, words, gate);
   // The name carries its expected role: its head is right by construction.
   if (lexical.length === 0 && expected) return { verdict: "CONFORMS" };
+  // The family fixes no head: any name conforms to it, and the verdict says what the type is.
+  if (lexical.length === 0 && kind) {
+    return {
+      verdict: "CONFORMS",
+      role: { word: kind.role, evidence: kind.evidence, examples: kind.examples, carriedInName: false },
+    };
+  }
   const byMeaning = [...lexical, ...meaningHeadAlternatives(input, words, lexical, gate)];
   const alternatives = [...byMeaning, ...pathTermAlternatives(input, words, byMeaning, gate)];
   if (lexical.length > 0) return { verdict: "NEW_TERM", topTerms: [], alternatives };

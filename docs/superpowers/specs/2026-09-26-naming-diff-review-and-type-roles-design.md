@@ -362,6 +362,92 @@ declare an unrelated supertype. The one wrong role left in the fresh samples,
 `*Invoice`). There the command is a member by the rule, and no supertype test
 can separate it.
 
+**A dispersed family's kind.** `SendFirmAttributes`, `RenderShortcodeTexts` and
+`IssueReplacementInvoice` are commands. Their head is the object of the verb,
+not what they are, so a suffix family hands them `attributes`, `texts` and
+`invoice`. What they are is written in two other places: the supertype
+(`KindOfService`) and the directory (`app/services/`). The rule reads both. Take
+an inheritance family that has no role, whose supertype the project declares,
+and whose members mostly do not end in the supertype's head word (singular),
+here `service`. A member whose path has a directory segment whose last word,
+singularised, is that word takes it as an inheritance role flagged
+`carriedInName: false`. Its own head is the family's varying slot, so it takes
+no directory or suffix role except that same word. When two such families agree,
+the larger one names the kind. Every threshold is an existing one: two members
+make a family, and half of them is the familyShare majority. No verb list or
+dictionary is involved.
+
+Both gates are needed. Without the directory agreement, `ApplicationRecord`
+(`record`, 384 members, 0 of them under a `records/` segment) would strip
+`GuestBlob` of `blob`, together with 250 other model suffixes. Without the
+project-declared test, the external `ActiveModel::Model` under `app/models/`
+would take `settings` / `data` / `mapping` from 34 value objects that carry them
+correctly. On taxdome `_v15`, `KindOfService` agrees on 2,544 members and
+disagrees on 10, which live outside `app/services/`. `BaseEvent` agrees on 124
+and `AsyncOperation` on 106. `ApplicationRecord`, `FindActor`, `ValidateJsonb`,
+`Enforcement` and the `*Helper` mixins agree on none.
+
+The draft verdict follows the same rule. A draft extending `KindOfService`
+expects the role `service` with `carriedInName: false`. That role never produces
+a MISFIT, and it is not the head that confirms the name.
+`SendFailedPaymentNotification` and `SendFailedPaymentService` both get
+`CONFORMS` with
+`role: {word: "service", evidence: "inheritance", carriedInName: false}`,
+provided lexical alignment finds nothing. The kind is also held back as a head
+alternative. No new verdict state was needed: CONFORMS already means "consistent
+with the vocabulary", and the role says what the type is.
+
+Measured on the same copies against declared-only (C):
+
+| Measure                                         | C                   | + dispersed kind                                |
+| ----------------------------------------------- | ------------------- | ----------------------------------------------- |
+| taxdome `_v15` coverage                         | 16,895 (50.2%)      | 19,311 (57.4%)                                  |
+| types newly with a role / losing every role     | —                   | 2,416 / 0                                       |
+| suffix / directory roles removed                | —                   | 389                                             |
+| kind roles added (`carriedInName: false`)       | —                   | 2,831                                           |
+| removed, 40 hand-checked                        | —                   | 38 right, 2 doubtful                            |
+| added, 30 hand-checked                          | —                   | 30 right                                        |
+| self-index coverage                             | 723 (31.4%)         | 741 (32.1%)                                     |
+| self-index changes                              | —                   | +21 `migration`, −3, all right                  |
+| wrong roles, fresh seeds 7/11/23 (of 90)        | 1                   | 0 (3 doubtful)                                  |
+| `_v14` seed 7                                   | 28/28               | 29/30 (`ObjectsForFirm` → `firm`, pre-existing) |
+| self-index seed 7                               | 30/30               | 30/30                                           |
+| rename eval (caught / other / silent / control) | 0 / 9 / 8 / 5 of 40 | 0 / 9 / 8 / 5 of 40                             |
+
+The kinds added are `KindOfService` → `service` 2,544, `BaseEvent` → `event`
+124, `AsyncOperation` → `operation` 106, `Automation` 15, `BaseParams` 14, and
+28 more across seven families. The two doubtful removals are `EidEasySignStep`
+(`step`) and `TokenManager` (`manager`): both are services whose head may also
+be their kind. All three target misses are fixed, and each now takes `service`.
+`SendFailedPaymentNotification`, `ClientPushBaseData` and `GuestBlob` stay as
+the membership rule left them.
+
+Rejected, measured on the same copies:
+
+- **Drop-only.** A dispersed project-declared family (≥ 2 members, no role)
+  strips its members' suffix and directory roles, with no directory agreement
+  and no role added. It removes 664 assignments, 250 of them from
+  `ApplicationRecord` models that carry their suffix correctly (`ClientNote` →
+  `note`, `WikiPage` → `page`). A 40-item hand check found 29 right, 10 false
+  negatives and 1 doubtful. Coverage drops to 48.3%.
+- **Verb-initial first word from the project's own identifiers.** A type whose
+  first word W leads multi-word function and method names in at least θ of the
+  names containing it (≥ 20 observations) takes no suffix role. The first
+  formulation, W leading methods against W heading types (`m/(m+h)`), does not
+  separate verbs from nouns: `chat` 1.00, `client` 0.81, `create` 0.90, `send`
+  0.95, because Ruby and TS methods lead with nouns (`client_name`). The
+  lead-versus-inner position ratio is sharper, but its distribution over the
+  carriers' first words has no valley. It falls monotonically from 0.4 (words
+  per 0.1 bucket from 0.4 up: 91, 62, 41, 23, 13, 25, 2), so θ = 0.85 is a tail
+  cut, not a mode boundary. It catches `render`, `get`, `build`, `process` and
+  `track`, but misses `send` (0.76), `create` (0.83), `update` (0.46) and
+  `issue` (5 observations). It fixes 1 of the 3 target misses. Precision is 12
+  of 40 on taxdome and 0 of 10 on the self-index. It strips roles the name does
+  carry: `TrackSignupWorker` → `worker`, `CalculateSummaryForm` → `form`, the
+  React-hook contract types `Use*Props` / `Use*Params` / `Use*Result`, and
+  `GetCallersRequest`. Combining it with the kind adds only these false
+  negatives, 215 of them on `_v15`.
+
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and
 a stored copy would go stale on every incremental run.

@@ -759,3 +759,125 @@ describe("deriveTypeRoles — non-inheritance family membership", () => {
     });
   });
 });
+
+// Live on taxdome (bd tea-rags-mcp-49fsr): `KindOfService` holds 2,554 commands whose heads are
+// their verbs' objects (`SendFirmAttributes`, `RenderShortcodeTexts`); no head holds the family,
+// and the word naming what they ARE sits in the supertype and the directory, not in the names.
+describe("deriveTypeRoles — a dispersed family's kind, named by its supertype and its directory", () => {
+  function k(
+    shortName: string,
+    relPath: string,
+    ancestors: string[] = [],
+    symbolKind: TypeNameRow["symbolKind"] = "class",
+  ): TypeNameRow {
+    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors };
+  }
+  const rolesOf = (rows: TypeNameRow[], name: string) =>
+    deriveTypeRoles(rows)
+      .filter((r) => r.symbolId === name)
+      .map(({ role, evidence, scope, carriedInName }) => ({
+        role,
+        evidence,
+        scope,
+        ...(carriedInName !== undefined ? { carriedInName } : {}),
+      }));
+
+  const SERVICES = [
+    k("KindOfService", "app/lib/kind_of_service.rb", [], "module"),
+    k("SendFirmAttributes", "app/services/marketing/send_firm_attributes.rb", ["KindOfService"]),
+    k("RenderShortcodeTexts", "app/services/crm/render_shortcode_texts.rb", ["KindOfService"]),
+    k("CreateInvoice", "app/services/billing/create_invoice.rb", ["KindOfService"]),
+    k("ArchivePipeline", "app/services/workflow/archive_pipeline.rb", ["KindOfService"]),
+    k("IssueRefund", "app/services/billing/issue_refund.rb", ["KindOfService"]),
+  ];
+  const ATTRIBUTES = [
+    k("ContactAttributes", "app/models/twilio/contact_attributes.rb"),
+    k("BusinessAttributes", "app/models/twilio/business_attributes.rb"),
+    k("CountryAttributes", "app/models/phone/country_attributes.rb"),
+  ];
+
+  it("a member in a directory named for the supertype's head takes that role, not carried in names", () => {
+    expect(rolesOf([...SERVICES, ...ATTRIBUTES], "SendFirmAttributes")).toEqual([
+      { role: "service", evidence: "inheritance", scope: "KindOfService", carriedInName: false },
+    ]);
+  });
+
+  it("the member's head is the family's varying slot: no suffix role from it", () => {
+    const rows = [...SERVICES, ...ATTRIBUTES];
+    expect(rolesOf(rows, "ContactAttributes")).toContainEqual({
+      role: "attributes",
+      evidence: "projectSuffix",
+      scope: "",
+    });
+    expect(rolesOf(rows, "SendFirmAttributes").some((r) => r.evidence === "projectSuffix")).toBe(false);
+  });
+
+  it("a member outside such a directory gains nothing and keeps its roles", () => {
+    const rows = [
+      ...SERVICES,
+      ...ATTRIBUTES,
+      k("SyncFirmAttributes", "app/lib/marketing/sync_firm_attributes.rb", ["KindOfService"]),
+    ];
+    expect(rolesOf(rows, "SyncFirmAttributes")).toEqual([{ role: "attributes", evidence: "projectSuffix", scope: "" }]);
+  });
+
+  // `ApplicationRecord` → `record`, but models live in `app/models/`: no agreement, no role, and
+  // `GuestBlob` keeps `blob`.
+  it("a supertype head the directory does not name changes nothing", () => {
+    const rows = [
+      k("ApplicationRecord", "app/models/application_record.rb"),
+      k("GuestBlob", "app/models/guest_blob.rb", ["ApplicationRecord"]),
+      k("Client", "app/models/client.rb", ["ApplicationRecord"]),
+      k("Invoice", "app/models/invoice.rb", ["ApplicationRecord"]),
+      k("PresignedBlob", "app/lib/tech/presigned_blob.rb"),
+      k("ActiveBlob", "app/lib/storage/active_blob.rb"),
+    ];
+    expect(rolesOf(rows, "GuestBlob")).toEqual([{ role: "blob", evidence: "projectSuffix", scope: "" }]);
+  });
+
+  // Live: `ActiveModel::Model` / `StoreModel::Model` under `app/models/` — a capability mixin the
+  // project does not declare; its head says nothing about what `NotificationSettings` is.
+  it("a supertype the project does not declare names no kind", () => {
+    const rows = [
+      k("NotificationSettings", "app/models/firm_member/notification_settings.rb", ["ActiveModel::Model"]),
+      k("CertificateData", "app/models/custom_domain/certificate_data.rb", ["ActiveModel::Model"]),
+      k("ImportMapping", "app/models/contact_import/import_mapping.rb", ["ActiveModel::Model"]),
+      k("TwilioSettings", "app/lib/twilio/twilio_settings.rb"),
+      k("QuickbookSettings", "app/lib/quickbook/quickbook_settings.rb"),
+    ];
+    expect(rolesOf(rows, "NotificationSettings")).toEqual([{ role: "settings", evidence: "projectSuffix", scope: "" }]);
+  });
+
+  // Live: `NylasApiV3` includes `LoggerHelper` beside `MailHelper` in `mailbox_helper/` — half the
+  // family ends in `Helper`, so the word IS carried in names and a non-carrier is no kind member.
+  it("a family whose names carry the word names no unnamed kind", () => {
+    const rows = [
+      k("LoggerHelper", "app/lib/logger_helper.rb", [], "module"),
+      k("MailHelper", "app/lib/communication/mailbox_helper/mail_helper.rb", ["LoggerHelper"], "module"),
+      k("NylasApiV3", "app/lib/communication/mailbox_helper/nylas_api_v3.rb", ["LoggerHelper"]),
+    ];
+    expect(rolesOf(rows, "NylasApiV3")).toEqual([]);
+  });
+
+  it("of two agreeing families the larger names the kind", () => {
+    const rows = [
+      ...SERVICES,
+      k("KindOfServiceTask", "app/lib/kind_of_service_task.rb", [], "module"),
+      k("FindConnection", "app/services/admin/tasks/find_connection.rb", ["KindOfService", "KindOfServiceTask"]),
+      k("RestartSync", "app/services/admin/tasks/restart_sync.rb", ["KindOfService", "KindOfServiceTask"]),
+    ];
+    expect(rolesOf(rows, "FindConnection")).toEqual([
+      { role: "service", evidence: "inheritance", scope: "KindOfService", carriedInName: false },
+    ]);
+  });
+
+  it("an expected role for a draft extending the supertype is the kind, flagged not carried in names", () => {
+    const roles = deriveTypeRoles([...SERVICES, ...ATTRIBUTES]);
+    expect(
+      expectedRoleFor(roles, {
+        path: "app/services/billing/send_failed_payment_notification.rb",
+        extends: "KindOfService",
+      }),
+    ).toMatchObject({ role: "service", evidence: "inheritance", carriedInName: false });
+  });
+});

@@ -272,7 +272,10 @@ Verdicts: CONFORMS (vocabulary, not behaviour; may carry alternatives) | MISFIT 
 role) | NEW_TERM (topTerms, alternatives — soft,
 never a rename demand) | COLLISION (existing). Role = inheritance family > directory > project
 suffix; project suffix only confirms, never MISFIT. A directory-evidence MISFIT is
-location-based: rename only when the type belongs to role.examples' family.
+location-based: rename only when the type belongs to role.examples' family. CONFORMS with
+role.carriedInName=false: the kind a family of action-named types takes from its supertype
+and directory (KindOfService under app/services → service) — what the type IS, never a
+word the name owes.
 
 ## get_ontology_report Examples
 
