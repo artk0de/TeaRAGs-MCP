@@ -172,4 +172,65 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
 
     expect(p.buildFileSignals).not.toHaveBeenCalled();
   });
+
+  // bd tea-rags-mcp-ckfof — loosening a policy (TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES
+  // 777 → 5000) and recomputing left `skippedAs: "oversized"` beside the fresh
+  // overlay on every point: the overlay write merges, nothing retired the old
+  // decline. The recompute re-decides the policy for every point it rebuilds,
+  // so it retires the previous decisions first and re-stamps what it still
+  // declines.
+  describe("retires the previous run's skip stamps before rebuilding", () => {
+    function recordingQdrant(): { qdrant: Record<string, unknown>; calls: string[] } {
+      const calls: string[] = [];
+      const base = qdrantWithPoints(POINTS);
+      const qdrant = {
+        ...base,
+        deletePayloadKeys: vi.fn(async () => {
+          calls.push("deletePayloadKeys");
+          return Promise.resolve();
+        }),
+        batchSetPayload: vi.fn(async () => {
+          calls.push("batchSetPayload");
+          return Promise.resolve();
+        }),
+        batchDeletePayload: vi.fn().mockResolvedValue(undefined),
+      };
+      return { qdrant, calls };
+    }
+
+    it("deletes both levels' skippedAs of every selected provider — and only those — before any payload write", async () => {
+      const { qdrant, calls } = recordingQdrant();
+      const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git"), provider("codegraph.symbols")]);
+
+      await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+
+      const deletes = vi.mocked(qdrant.deletePayloadKeys as (...args: unknown[]) => Promise<void>).mock.calls;
+      expect(deletes).toHaveLength(1);
+      expect(deletes[0][0]).toBe("coll");
+      expect(deletes[0][1]).toEqual(["git.file.skippedAs", "git.chunk.skippedAs"]);
+      expect(calls[0]).toBe("deletePayloadKeys");
+    });
+
+    it("scopes the retirement to the recompute's languages", async () => {
+      const { qdrant } = recordingQdrant();
+      const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")]);
+
+      await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["ruby"]);
+
+      const deletes = vi.mocked(qdrant.deletePayloadKeys as (...args: unknown[]) => Promise<void>).mock.calls;
+      expect(deletes).toHaveLength(1);
+      expect(JSON.stringify(deletes[0][2])).toContain('"language","match":{"any":["ruby"]}');
+    });
+
+    it("still rebuilds when the retirement fails — the stamps stay as they were", async () => {
+      const { qdrant } = recordingQdrant();
+      vi.mocked(qdrant.deletePayloadKeys as () => Promise<void>).mockRejectedValue(new Error("qdrant down"));
+      const p = provider("git");
+      const coordinator = new EnrichmentCoordinator(qdrant as never, [p]);
+
+      await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+
+      expect(p.buildFileSignals).toHaveBeenCalled();
+    });
+  });
 });

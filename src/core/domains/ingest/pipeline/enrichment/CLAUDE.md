@@ -92,8 +92,15 @@
   `enrichedAt` after a `--force-enrichments` re-stamp; the decision stays in
   policy.ts. **Corollary:** loosening a provider's `shouldEnrich` MUST clear the
   now-stale stamps. Why: an unstamped decline stays a recovery candidate on
-  every run forever; a stale stamp hides the point from recovery permanently. No
-  mechanism enforces the corollary — it is an obligation on the edit.
+  every run forever; a stale stamp hides the point from recovery permanently.
+  The one path that enforces it is the recompute:
+  `EnrichmentCoordinator#retireSkipStamps` deletes the selected providers'
+  `skippedAs` over the run's scope before rebuilding, and the run re-stamps what
+  the policy still declines (bd tea-rags-mcp-ckfof) — an overlay write alone
+  merges beside the old stamp. So a loosening reaches existing points through
+  `--force-enrichments <provider>`, never through an incremental run; any other
+  writer that re-decides the policy over existing points owes the same
+  retirement.
 
 ## Mechanics
 
