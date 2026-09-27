@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -668,6 +670,46 @@ describe("StatusModule", () => {
         // Versioned stale collections are auto-cleaned → not_indexed
         expect(status.status).toBe("not_indexed");
         expect(status.isIndexed).toBe(false);
+      });
+
+      it("reports stale_indexing at once when the collection's indexing lock names a dead process on this host (f93ao)", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // The marker heartbeat is fresh — on its own it reads as a live run.
+        const now = new Date().toISOString();
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { _type: "indexing_metadata", indexingComplete: false, startedAt: now, lastHeartbeat: now },
+          },
+        ]);
+        // A pid that named a process a moment ago and names none now.
+        const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
+        const snapshotDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots");
+        await fs.mkdir(snapshotDir, { recursive: true });
+        await fs.writeFile(
+          join(snapshotDir, `${collectionName}.indexing.lock`),
+          JSON.stringify({
+            pid: deadPid,
+            hostname: hostname(),
+            startedAt: now,
+            heartbeatAt: now,
+            operation: "force-reindex",
+          }),
+        );
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("stale_indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(status.collectionName).toBe(collectionName);
       });
 
       it("should detect completed _v1 collection when alias does not exist yet", async () => {

@@ -49,6 +49,15 @@ export interface IndexingLockRecord {
   operation: string;
 }
 
+/**
+ * {@link CollectionIndexingLock#inspectLiveness}: `alive` / `dead` — the lock's
+ * holder judged by the takeover rule; `unknown` — no lock to judge.
+ */
+export type IndexingLockLiveness = "alive" | "dead" | "unknown";
+
+/** The read-only slice of the lock a status reader is handed. */
+export type IndexingLockLivenessProbe = Pick<CollectionIndexingLock, "inspectLiveness">;
+
 export interface CollectionIndexingLockOptions {
   /** Directory holding the per-collection artifacts (the snapshots dir). Created on the first claim. */
   lockDir: string;
@@ -144,6 +153,24 @@ export class CollectionIndexingLock {
       if (removal === "removed") return { status: "removed-stale" };
       if (removal === "gone") return { status: "absent" };
       return heldLive((await inspectLock(path))?.record);
+    } catch (error) {
+      throw new IndexingLockUnavailableError(path, asError(error));
+    }
+  }
+
+  /**
+   * Read-only verdict on the run holding the collection's lock, by the same rule
+   * that decides a takeover (bd tea-rags-mcp-f93ao). `unknown` when there is no
+   * lock — its writer, if any, runs where this machine cannot see. Never touches
+   * the file. A reused pid reads as `alive`: the caller falls back to its own
+   * timer, the safe direction.
+   */
+  async inspectLiveness(collectionName: string): Promise<IndexingLockLiveness> {
+    const path = this.lockPathFor(collectionName);
+    try {
+      const existing = await inspectLock(path);
+      if (!existing) return "unknown";
+      return this.isStale(path, existing) ? "dead" : "alive";
     } catch (error) {
       throw new IndexingLockUnavailableError(path, asError(error));
     }

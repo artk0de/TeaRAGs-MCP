@@ -30,7 +30,7 @@ import type {
   EdgeKindBreakdown,
   IndexStatus,
 } from "../../../types.js";
-import { MIN_LANGUAGE_SHARE } from "../infra/index.js";
+import { MIN_LANGUAGE_SHARE, type IndexingLockLivenessProbe } from "../infra/index.js";
 import { QuarantineStore } from "../sync/index.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
@@ -300,6 +300,13 @@ export class StatusModule {
      * path resolves to either way.
      */
     private readonly resolveCollectionForPath: PathCollectionResolver = hashCollectionForPath,
+    /**
+     * The collection's indexing lock, asked whether the writer of an incomplete
+     * marker still runs (bd tea-rags-mcp-f93ao). A lock naming a dead process on
+     * this host turns the report to `stale_indexing` at once instead of after the
+     * marker heartbeat ages out. Absent → the heartbeat timer alone decides.
+     */
+    private readonly writerLiveness?: IndexingLockLivenessProbe,
   ) {}
 
   /**
@@ -534,10 +541,13 @@ export class StatusModule {
       // Detect stale indexing: prefer lastHeartbeat (updated periodically by live pipeline),
       // fall back to startedAt for markers written before heartbeat was introduced.
       const referenceTime = marker.lastHeartbeat ?? marker.startedAt;
-      const isStale =
+      const heartbeatExpired =
         referenceTime !== undefined && Date.now() - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
+      // A writer provably dead on this host is reported at once; deleting what it
+      // left stays on the heartbeat timer (bd tea-rags-mcp-f93ao).
+      const isStale = heartbeatExpired || (await this.isWriterDead(reportedName));
 
-      if (isStale && sourceCollection !== reportedName) {
+      if (heartbeatExpired && sourceCollection !== reportedName) {
         const resolved = await this.resolveStaleCollection(sourceCollection, reportedName, actualChunksCount);
         if ("notIndexed" in resolved) {
           return { isIndexed: false, status: "not_indexed", collectionName: reportedName };
@@ -601,6 +611,22 @@ export class StatusModule {
       qdrantUrl: this.qdrant.url,
       sparseVersion,
     };
+  }
+
+  /**
+   * Does the collection's indexing lock name a writer that is gone? The lock is
+   * keyed by the logical name the run claimed. An unreadable lock proves
+   * nothing, so it leaves the verdict to the heartbeat timer — a status call
+   * never fails on it.
+   */
+  private async isWriterDead(reportedName: string): Promise<boolean> {
+    if (!this.writerLiveness) return false;
+    try {
+      return (await this.writerLiveness.inspectLiveness(reportedName)) === "dead";
+    } catch (error) {
+      if (isDebug()) console.error(`[StatusModule] indexing lock of ${reportedName} unreadable:`, error);
+      return false;
+    }
   }
 
   /**

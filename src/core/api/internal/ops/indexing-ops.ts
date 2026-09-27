@@ -263,6 +263,9 @@ export class IndexingOps {
       // Status answers about the SAME collection the run writes, which for a
       // relocated project is its registry entry's, not its path's hash.
       this.resolveCollectionForPath,
+      // The lock the runs claim is the one status asks whether their writer
+      // still lives (bd tea-rags-mcp-f93ao).
+      deps.indexingLock,
     );
     this.collectionRegistry = deps.collectionRegistry;
     this.languageCodeVersions = deps.languageCodeVersions;
