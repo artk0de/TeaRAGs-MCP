@@ -37,13 +37,38 @@ export type {
   NamingShapeRow,
   NamingShapeShare,
 } from "./shapes.js";
-export { alignHead, alignQualifiers, establishedModifiers, modifierLift } from "./term-alignment.js";
-export type { ModifierUse, TermAlternative } from "./term-alignment.js";
+export {
+  alignHead,
+  alignQualifiers,
+  anchoredHeadCandidates,
+  correctedSimilarityFloor,
+  establishedModifiers,
+  MIN_NULL_SAMPLE_HEADS,
+  modifierLift,
+  NULL_SAMPLE_HEADS,
+  NULL_SIMILARITY_QUANTILE,
+  nullHeadSample,
+  nullSimilarityDistribution,
+  pathTerms,
+  perComparisonQuantile,
+  sharesWordStem,
+  similarityQuantile,
+} from "./term-alignment.js";
+export type { HeadCandidate, ModifierUse, PathTerm, TermAlternative } from "./term-alignment.js";
 export { extractConceptTerms } from "./terms.js";
 export type { ConceptTerm, ConceptTermHolder } from "./terms.js";
 export { TYPE_ROLE_THRESHOLDS, deriveTypeRoles, expectedRoleFor } from "./type-roles.js";
 export type { TypeNameRow, TypeRoleAssignment, TypeRoleEvidence, TypeRoleThresholds } from "./type-roles.js";
-export { TYPE_DRAFT_KINDS, judgeDraftName, judgeTypeDraft, typeDraftPopulation, typeNameEvidence } from "./verdicts.js";
+export {
+  TYPE_DRAFT_KINDS,
+  judgeDraftName,
+  judgeTypeDraft,
+  singleCarrierHeadFiles,
+  typeDraftAlignmentWords,
+  typeDraftMeaningPairs,
+  typeDraftPopulation,
+  typeNameEvidence,
+} from "./verdicts.js";
 export type {
   DraftNameJudgementInput,
   NamingExpectedTypeRole,

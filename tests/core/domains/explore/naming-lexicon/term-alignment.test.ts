@@ -3,8 +3,17 @@ import { describe, expect, it } from "vitest";
 import {
   alignHead,
   alignQualifiers,
+  anchoredHeadCandidates,
+  correctedSimilarityFloor,
   establishedModifiers,
+  MIN_NULL_SAMPLE_HEADS,
   modifierLift,
+  NULL_SIMILARITY_QUANTILE,
+  nullHeadSample,
+  nullSimilarityDistribution,
+  pathTerms,
+  perComparisonQuantile,
+  similarityQuantile,
   type ModifierUse,
 } from "../../../../../src/core/domains/explore/naming-lexicon/term-alignment.js";
 
@@ -122,5 +131,209 @@ describe("alignQualifiers", () => {
     expect(alignQualifiers({ head: ["doc"], qualifiers: [] }, established, new Map([["predefined", 50]]), 2)).toEqual(
       [],
     );
+  });
+});
+
+// bd tea-rags-mcp-433d2: the heads a synonym head could be replaced by — heads of
+// the types sharing a qualifier with the draft or living in its directory.
+describe("anchoredHeadCandidates", () => {
+  const type = (shortName: string, relPath: string) => ({ shortName, relPath });
+  const counts = (rows: readonly { shortName: string }[]) => {
+    const map = new Map<string, number>();
+    for (const { shortName } of rows) {
+      const head = shortName.replace(/^.*(?=[A-Z])/, "").toLowerCase();
+      map.set(head, (map.get(head) ?? 0) + 1);
+    }
+    return map;
+  };
+
+  it("offers the heads of types sharing a qualifier, with the anchored types as examples", () => {
+    const rows = [
+      type("IndexMetrics", "src/dto/metrics.ts"),
+      type("SignalMetrics", "src/dto/metrics.ts"),
+      type("IndexStatus", "src/dto/status.ts"),
+      type("RunStatus", "src/run/status.ts"),
+      type("FooWidget", "src/widgets/foo.ts"),
+      type("BarWidget", "src/widgets/bar.ts"),
+    ];
+    const candidates = anchoredHeadCandidates(
+      { head: ["numbers"], qualifiers: ["index"] },
+      "src/api",
+      rows,
+      counts(rows),
+    );
+    expect(candidates).toEqual([
+      { word: "metrics", examples: ["IndexMetrics"], domains: ["src/dto"] },
+      { word: "status", examples: ["IndexStatus"], domains: ["src/dto"] },
+    ]);
+  });
+
+  it("offers the heads of types in the draft's directory, never a word the draft already carries", () => {
+    const rows = [
+      type("CodeChunker", "src/chunker/code.ts"),
+      type("MarkdownChunker", "src/chunker/markdown.ts"),
+      type("ChunkSplitter", "src/other/splitter.ts"),
+      type("SplitterChunk", "src/other/chunk.ts"),
+      type("TextChunk", "src/chunker/text.ts"),
+    ];
+    const candidates = anchoredHeadCandidates(
+      { head: ["splitter"], qualifiers: ["chunk"] },
+      "src/chunker",
+      rows,
+      counts(rows),
+    );
+    expect(candidates.map((c) => c.word)).toEqual(["chunker"]);
+    expect(candidates[0]).toMatchObject({ examples: ["CodeChunker", "MarkdownChunker"] });
+  });
+
+  it("drops a head fewer than two project types carry — a one-off word is not the project's term", () => {
+    const rows = [
+      type("IndexSite", "src/a/site.ts"),
+      type("IndexMetrics", "src/a/m.ts"),
+      type("RunMetrics", "src/b/m.ts"),
+    ];
+    expect(
+      anchoredHeadCandidates({ head: ["numbers"], qualifiers: ["index"] }, "src/z", rows, counts(rows)).map(
+        (c) => c.word,
+      ),
+    ).toEqual(["metrics"]);
+  });
+
+  it("admits a head only one type ends in when usage establishes it (a central type, not a one-off)", () => {
+    const rows = [type("Reranker", "src/explore/reranker.ts"), type("SearchConfidence", "src/explore/confidence.ts")];
+    const slots = { head: ["scorer"], qualifiers: ["search"] };
+    expect(anchoredHeadCandidates(slots, "src/explore", rows, counts(rows)).map((c) => c.word)).toEqual([]);
+    expect(
+      anchoredHeadCandidates(slots, "src/explore", rows, counts(rows), new Set(["reranker"])).map((c) => c.word),
+    ).toEqual(["reranker"]);
+  });
+
+  it("a draft with no qualifier and an empty directory has no candidates", () => {
+    const rows = [type("IndexMetrics", "src/a/m.ts"), type("RunMetrics", "src/b/m.ts")];
+    expect(anchoredHeadCandidates({ head: ["numbers"], qualifiers: [] }, "src/z", rows, counts(rows))).toEqual([]);
+  });
+});
+
+// bd tea-rags-mcp-433d2: the floor a head similarity must clear is read off the project's
+// own null distribution — similarities of random pairs of its head words.
+describe("nullHeadSample", () => {
+  const eligible = Array.from({ length: 40 }, (_, i) => [`w${String(i).padStart(2, "0")}`, 2 + (i % 7)] as const);
+  const counts = new Map<string, number>([...eligible, ["lonely", 1]]);
+
+  it("draws only heads carried by ≥ 2 types, every one of them when they fit", () => {
+    expect(new Set(nullHeadSample(counts))).toEqual(new Set(eligible.map(([word]) => word)));
+  });
+
+  it("is deterministic and independent of the order the heads were counted in", () => {
+    const reversed = new Map([...counts].reverse());
+    expect(nullHeadSample(reversed, 10)).toEqual(nullHeadSample(counts, 10));
+    expect(nullHeadSample(counts, 10)).toHaveLength(10);
+  });
+
+  it("is not the most-carried heads: frequent words are generic and closer to each other", () => {
+    // The 10 most-carried heads (count 8) would bias the null distribution upward.
+    const mostCarried = eligible.filter(([, count]) => count === 8).map(([word]) => word);
+    expect(nullHeadSample(counts, mostCarried.length).sort()).not.toEqual(mostCarried.sort());
+  });
+});
+
+describe("similarityQuantile", () => {
+  it("interpolates linearly between order statistics", () => {
+    expect(similarityQuantile([5, 1, 3, 2, 4], 0.9)).toBeCloseTo(4.6);
+    expect(similarityQuantile([5, 1, 3, 2, 4], 0.5)).toBe(3);
+    expect(similarityQuantile([0.7], 0.9)).toBe(0.7);
+  });
+
+  it("an empty sample has no quantile", () => {
+    expect(similarityQuantile([], 0.9)).toBeUndefined();
+  });
+});
+
+describe("nullSimilarityDistribution", () => {
+  const heads = (n: number) => Array.from({ length: n }, (_, i) => `h${i}`);
+
+  it("is the sorted scores of every pair of sampled heads", () => {
+    // Score = distance of the two indices / 100: pairs of 10 heads → 45 scores.
+    const score = (a: string, b: string) => Math.abs(Number(a.slice(1)) - Number(b.slice(1))) / 100;
+    const pairs: number[] = [];
+    for (let i = 0; i < 10; i++) for (let j = i + 1; j < 10; j++) pairs.push((j - i) / 100);
+    expect(nullSimilarityDistribution(heads(10), score)).toEqual(pairs.sort((a, b) => a - b));
+  });
+
+  it("fewer than MIN_NULL_SAMPLE_HEADS heads → no distribution: too small a population to measure", () => {
+    expect(nullSimilarityDistribution(heads(MIN_NULL_SAMPLE_HEADS - 1), () => 0.5)).toBeUndefined();
+    expect(nullSimilarityDistribution(heads(MIN_NULL_SAMPLE_HEADS), () => 0.5)).toHaveLength(45);
+  });
+});
+
+// bd tea-rags-mcp-433d2: a draft compared on m pairs gets m chances for a random pair to clear the floor.
+describe("perComparisonQuantile — Šidák correction for m comparisons", () => {
+  it("one comparison → the family-wise level itself", () => {
+    expect(NULL_SIMILARITY_QUANTILE).toBe(0.9);
+    expect(perComparisonQuantile(1, 2016)).toBeCloseTo(0.9);
+  });
+
+  it("m comparisons → 0.9^(1/m): the chance that ANY random pair clears it stays 10%", () => {
+    expect(perComparisonQuantile(5, 2016)).toBeCloseTo(0.9 ** (1 / 5));
+    expect(perComparisonQuantile(5, 2016) ** 5).toBeCloseTo(0.9);
+  });
+
+  it("never beyond what the sample resolves: at most 1 − 1/pairs", () => {
+    expect(perComparisonQuantile(1000, 45)).toBeCloseTo(1 - 1 / 45);
+    expect(perComparisonQuantile(50, 2016)).toBeCloseTo(0.9 ** (1 / 50));
+  });
+
+  it("no comparison counts as one", () => {
+    expect(perComparisonQuantile(0, 2016)).toBeCloseTo(0.9);
+  });
+});
+
+describe("correctedSimilarityFloor", () => {
+  /** 0.000, 0.001, … 1.000 — the q quantile is q. */
+  const UNIFORM = Array.from({ length: 1001 }, (_, i) => i / 1000);
+
+  it("one comparison → the null distribution's 0.9 quantile", () => {
+    expect(correctedSimilarityFloor(UNIFORM, 1)).toBeCloseTo(0.9);
+  });
+
+  it("five comparisons → its 0.9^(1/5) quantile, a stricter floor", () => {
+    expect(correctedSimilarityFloor(UNIFORM, 5)).toBeCloseTo(0.9 ** (1 / 5));
+    expect(correctedSimilarityFloor(UNIFORM, 5)).toBeGreaterThan(correctedSimilarityFloor(UNIFORM, 1));
+  });
+});
+
+// bd tea-rags-mcp-433d2: the directory a draft lives in names its concept too
+// (`maintenance/freshness/` for `IndexStalenessChecker`).
+describe("pathTerms", () => {
+  /** Type names in the code nearest the draft's concept. */
+  const concept = ["IndexFreshnessCheck", "CommitDriftMonitor", "ChunkerPool"];
+
+  it("offers the draft's directory words a type in the concept code carries", () => {
+    expect(
+      pathTerms(
+        "src/core/domains/maintenance/freshness/staleness-checker.ts",
+        ["index", "staleness", "checker"],
+        concept,
+      ),
+    ).toEqual([{ word: "freshness", dir: "src/core/domains/maintenance/freshness" }]);
+  });
+
+  it("a directory word no concept type carries is structure, not a term (`core`, `domains`, `maintenance`)", () => {
+    // Measured on the self-index: the words of any type or of any directory with ≥ 2 files let
+    // `core`, `api`, `static`, `explore`, `ingest`, `maintenance` through — 7 wrong alternatives, 0 hits.
+    expect(pathTerms("src/core/domains/maintenance/ops.ts", ["maintenance", "ops"], ["MaintenanceOps"])).toEqual([]);
+    expect(pathTerms("src/core/domains/maintenance/x.ts", ["x"], ["CoreThing"])).toEqual([
+      { word: "core", dir: "src/core" },
+    ]);
+  });
+
+  it("never a word the draft already carries", () => {
+    expect(pathTerms("src/core/domains/ingest/chunker/pool.ts", ["chunker", "pool"], concept)).toEqual([]);
+  });
+
+  it("splits a hyphenated segment into words", () => {
+    expect(pathTerms("src/naming-lexicon/draft.ts", ["draft"], ["LexiconEntry"]).map((t) => t.word)).toEqual([
+      "lexicon",
+    ]);
   });
 });

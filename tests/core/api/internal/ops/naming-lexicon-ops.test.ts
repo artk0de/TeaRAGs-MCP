@@ -17,7 +17,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { InputValidationError, InvalidParameterError } from "../../../../../src/core/api/errors.js";
-import { NamingLexiconOps } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
+import {
+  NamingLexiconOps,
+  type NamingLexiconExplore,
+} from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import { ontologyLanguageProfiles } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
 import type {
@@ -936,6 +939,175 @@ describe("NamingLexiconOps", () => {
       });
       expect(result.names[0]).toMatchObject({ verdict: "COLLISION" });
       expect(result.notices).toEqual(["type-name alignment skipped: ollama unreachable"]);
+    });
+
+    // bd tea-rags-mcp-433d2: a synonym head is aligned by the embedding of short head words.
+    describe("head alignment by meaning", () => {
+      // `numbers`, `figures` and `metrics` share one direction; every other word is its own axis,
+      // so the project's null head pairs score 0 and the floor is 0.
+      const SHARED = ["numbers", "figures", "metrics"];
+      const DIMENSIONS = 64;
+      let axes: Map<string, number>;
+      const vectorOf = (word: string): number[] => {
+        const vector = new Array<number>(DIMENSIONS).fill(0);
+        if (SHARED.includes(word)) vector[0] = 1;
+        else vector[(axes.get(word) ?? axes.set(word, axes.size + 1).get(word)) as number] = 1;
+        return vector;
+      };
+      /** Ten more heads, two carriers each: a null population large enough to measure. */
+      const NULL_HEADS = ["Anchor", "Beacon", "Cable", "Dagger", "Ember", "Falcon", "Glacier", "Harbor"];
+      let embedBatch: ReturnType<typeof vi.fn<(texts: string[]) => Promise<{ embedding: number[] }[]>>>;
+
+      function buildWithEmbeddings(explore?: NamingLexiconExplore): NamingLexiconOps {
+        const graphDb = new Proxy(db, {
+          get(target, prop, receiver) {
+            if (prop === "close") return async () => undefined;
+            const value: unknown = Reflect.get(target, prop, receiver);
+            return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+          },
+        });
+        return new NamingLexiconOps({
+          pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
+          collectionRegistry: {} as never,
+          resolveActiveCollection: async (name: string) => name as never,
+          explore: explore ?? { semanticSearch },
+          namingConventions: NAMING,
+          ontologyLanguages: ontologyLanguageProfiles(),
+          embeddings: { embedBatch },
+        });
+      }
+
+      beforeEach(async () => {
+        // A word and its `class <word>` form embed alike here: one vector per word.
+        axes = new Map();
+        embedBatch = vi.fn(async (texts: string[]) =>
+          texts.map((t) => ({ embedding: vectorOf(t.replace(/^class /, "")) })),
+        );
+        // The concept code of both drafts holds `IndexMetrics`: the candidate is grounded.
+        semanticSearch.mockResolvedValue({
+          driftWarning: null,
+          results: [holder("IndexMetrics#total", "src/dto/metrics.ts")],
+        });
+        await db.replaceTypeDeclarationsBulk([
+          { relPath: "src/dto/metrics.ts", rows: [decl("IndexMetrics", "interface")] },
+          { relPath: "src/signals/metrics.ts", rows: [decl("SignalMetrics", "interface")] },
+          { relPath: "src/dto/status.ts", rows: [decl("IndexStatus", "interface")] },
+          { relPath: "src/run/status.ts", rows: [decl("RunStatus", "interface")] },
+          ...NULL_HEADS.flatMap((head) =>
+            ["Left", "Right"].map((side) => ({
+              relPath: `src/${head.toLowerCase()}/${side.toLowerCase()}.ts`,
+              rows: [decl(`${side}${head}`, "class")],
+            })),
+          ),
+        ]);
+      });
+
+      it("embeds the null head sample ONCE per request, then each draft's missing words in ONE batch", async () => {
+        const result = await buildWithEmbeddings().getNamingLexicon({
+          collection: "c",
+          names: [
+            { name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" },
+            { name: "IndexFigures", kind: "type", path: "src/api/figures.ts" },
+          ],
+        });
+        expect(embedBatch).toHaveBeenCalledTimes(3);
+        // The null sample: the project's heads carried by ≥ 2 types, in both encodings.
+        expect(embedBatch.mock.calls[0][0]).toEqual(
+          expect.arrayContaining(["metrics", "class metrics", "status", "anchor", "class harbor", "strategy"]),
+        );
+        // Per draft only what the request has not embedded yet: `metrics` is reused from the null sample,
+        // and `status` (IndexStatus) is not grounded in the concept code.
+        expect(embedBatch.mock.calls[1][0]).toEqual(["numbers", "class numbers"]);
+        expect(embedBatch.mock.calls[2][0]).toEqual(["figures", "class figures"]);
+        expect(result.names[0]).toMatchObject({
+          verdict: "NEW_TERM",
+          alternatives: [{ word: "metrics", slot: "head", examples: ["IndexMetrics"] }],
+        });
+        expect(result.names[1]).toMatchObject({ alternatives: [{ word: "metrics", slot: "head" }] });
+        expect(result.notices).toBeUndefined();
+      });
+
+      describe("a head ONE type carries, established by usage", () => {
+        // `IndexTally` is the only `*Tally`; three files import it.
+        beforeEach(async () => {
+          SHARED.push("tally");
+          await db.replaceTypeDeclarationsBulk([{ relPath: "src/dto/tally.ts", rows: [decl("IndexTally", "class")] }]);
+          for (const source of ["src/a.ts", "src/b.ts", "src/c.ts"]) {
+            await db.run("INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path) VALUES (?, ?)", [
+              source,
+              "src/dto/tally.ts",
+            ]);
+          }
+          semanticSearch.mockResolvedValue({
+            driftWarning: null,
+            results: [holder("IndexTally#count", "src/dto/tally.ts")],
+          });
+        });
+        afterEach(() => {
+          SHARED.pop();
+        });
+
+        /** Shaped like the explore facade: `getIndexMetrics` is a METHOD reading its own instance. */
+        class MetricsExplore {
+          readonly asked: string[] = [];
+          constructor(private readonly popular: number) {}
+          semanticSearch = async (request: SemanticSearchRequest) => semanticSearch(request);
+          async getIndexMetrics(path: string) {
+            this.asked.push(path);
+            const labelMap = { typical: 1, popular: this.popular };
+            return { signals: { typescript: { "codegraph.file.fanIn": { source: { labelMap } } } } } as never;
+          }
+        }
+
+        it("its file's fan-in at or above the project's `popular` threshold admits it", async () => {
+          const explore = new MetricsExplore(3);
+          const result = await buildWithEmbeddings(explore).getNamingLexicon({
+            collection: "c",
+            path: "/repo",
+            names: [{ name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" }],
+          });
+          expect(explore.asked).toEqual(["/repo"]);
+          expect(result.names[0]).toMatchObject({ alternatives: [{ word: "tally", slot: "head" }] });
+          expect(result.notices).toBeUndefined();
+        });
+
+        it("below the threshold it stays a one-off", async () => {
+          const result = await buildWithEmbeddings(new MetricsExplore(4)).getNamingLexicon({
+            collection: "c",
+            path: "/repo",
+            names: [{ name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" }],
+          });
+          expect(result.names[0]).not.toHaveProperty("alternatives");
+        });
+      });
+
+      it("a head population too small to place a floor on → nothing embedded, no head alternative", async () => {
+        // Without the ten null heads only `strategy`, `metrics` and `status` have two carriers.
+        await db.run("DELETE FROM cg_type_declarations WHERE short_name LIKE 'Left%' OR short_name LIKE 'Right%'");
+        const result = await buildWithEmbeddings().getNamingLexicon({
+          collection: "c",
+          names: [{ name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" }],
+        });
+        expect(embedBatch).not.toHaveBeenCalled();
+        expect(result.names[0]).toEqual(expect.objectContaining({ verdict: "NEW_TERM", topTerms: [] }));
+        expect(result.names[0]).not.toHaveProperty("alternatives");
+        expect(result.notices).toBeUndefined();
+      });
+
+      it("a failing embedding is one notice; the drafts are still judged, without head alignment", async () => {
+        embedBatch.mockRejectedValue(new Error("embeddings down"));
+        const result = await buildWithEmbeddings().getNamingLexicon({
+          collection: "c",
+          names: [
+            { name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" },
+            { name: "IndexFigures", kind: "type", path: "src/api/figures.ts" },
+          ],
+        });
+        expect(embedBatch).toHaveBeenCalledTimes(1);
+        expect(result.notices).toEqual(["type-name alignment skipped: embeddings down"]);
+        expect(result.names.map((n) => n.verdict)).toEqual(["NEW_TERM", "NEW_TERM"]);
+        expect(result.names[0]).not.toHaveProperty("alternatives");
+      });
     });
 
     it("an empty declaration table → a notice naming the codegraph recompute", async () => {

@@ -141,7 +141,21 @@ export interface NamingLexiconGenericName {
   n: number;
 }
 
-/** A verdict on one draft name; `genericName` only when the name is judged generic in scope. */
+/**
+ * A verdict on one draft name; `genericName` only when the name is judged
+ * generic in scope.
+ *
+ * CONFORMS means consistent with the project's vocabulary — its words, roles
+ * and spellings. It says nothing about whether the name fits the behaviour of
+ * the code it names: that is the reviewer's judgement, not the lexicon's.
+ *
+ * `alternatives` ride on NEW_TERM, and on a type draft's CONFORMS when only a
+ * project suffix or known words confirmed it and the project spells one of its
+ * words with another, similar word (`EmbeddingBackend` → `provider`,
+ * `IndexStalenessChecker` → `freshness` for `staleness`; bd
+ * tea-rags-mcp-433d2). Never on MISFIT, and never on a name carrying its
+ * expected family / directory role.
+ */
 export type NamingLexiconNameVerdict = {
   name: string;
   evidence: NamingLexiconNameEvidence;
@@ -150,7 +164,8 @@ export type NamingLexiconNameVerdict = {
 
 /**
  * One reviewed declaration that did not simply conform: a verdict other than
- * CONFORMS, or a CONFORMS on a name judged generic (`genericName`).
+ * CONFORMS, or a CONFORMS on a name judged generic (`genericName`) or carrying
+ * head `alternatives`.
  */
 export type NamingReviewFinding = {
   relPath: string;
@@ -173,7 +188,7 @@ export interface NamingReviewResult {
    * language walks. `checked = conforming + novel + findings.length`.
    */
   checked: number;
-  /** Of `checked`, CONFORMS on a name that is not generic — not listed. */
+  /** Of `checked`, CONFORMS on a name that is not generic and carries no `alternatives` — not listed. */
   conforming: number;
   /**
    * Of `checked`, NEW_TERM with no `topTerms` and no `alternatives` on a name

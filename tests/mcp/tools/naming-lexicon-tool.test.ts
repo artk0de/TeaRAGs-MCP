@@ -98,6 +98,11 @@ describe("get_naming_lexicon", () => {
     expect(JSON.stringify(inputSchema).length).toBeLessThanOrEqual(1536);
   });
 
+  // bd tea-rags-mcp-433d2: CONFORMS is read as "the name is right" unless the contract says otherwise.
+  it("says CONFORMS judges vocabulary, not whether the name fits the behaviour", () => {
+    expect(registered().config.description).toMatch(/CONFORMS[^;]*vocabulary[^;]*not behaviou?r/i);
+  });
+
   it("tells an agent which kind an attribute and a method name are, and how a collection draft is written", () => {
     const { config } = registered();
     const draft = (

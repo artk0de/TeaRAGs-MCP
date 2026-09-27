@@ -21,7 +21,7 @@ import {
   typeNameLastSegment,
   typeNameWords,
 } from "./casing.js";
-import { splitNameSlots } from "./name-slots.js";
+import { splitNameSlots, type NameSlots } from "./name-slots.js";
 import {
   calleeDerivedName,
   classifyNamingShape,
@@ -38,8 +38,12 @@ import {
 import {
   alignHead,
   alignQualifiers,
+  anchoredHeadCandidates,
+  correctedSimilarityFloor,
   establishedModifiers,
   modifierLift,
+  pathTerms,
+  sharesWordStem,
   type ModifierUse,
   type TermAlternative,
 } from "./term-alignment.js";
@@ -60,7 +64,17 @@ export interface NamingExpectedTypeRole {
 }
 
 export type NamingVerdict =
-  | { verdict: "CONFORMS" }
+  | {
+      verdict: "CONFORMS";
+      /**
+       * A type draft conforming by project suffix or lexical alignment alone,
+       * one of whose words the project spells with another, similar word
+       * (bd tea-rags-mcp-433d2) — `EmbeddingBackend` → `provider`. Never on a
+       * name carrying its expected (family / directory) role. CONFORMS judges
+       * vocabulary only, never whether the name fits the behaviour.
+       */
+      alternatives?: TermAlternative[];
+    }
   | { verdict: "MISFIT"; suggestion: string; holder?: string; role?: NamingExpectedTypeRole }
   | { verdict: "NEW_TERM"; topTerms: string[]; alternatives?: TermAlternative[] }
   | { verdict: "COLLISION"; existing: { symbolId: string; relPath: string } };
@@ -472,12 +486,20 @@ export type TypeDraftPopulation = "type" | "constant";
 const DEFAULT_LIFT_FLOOR = 2;
 /** Directories listed on a head alternative. */
 const MAX_HEAD_DOMAINS = 5;
+/** Example types listed on a head alternative found by meaning. */
+const MAX_HEAD_EXAMPLES = 3;
 /**
  * Qualifier alternatives offered, most lifted first. Live on the self-index
  * (3,600 declarations) an unbounded list ran to 17 for `CalculatedDoc`; an agent
  * reads the top few.
  */
 const MAX_QUALIFIER_ALTERNATIVES = 3;
+/**
+ * Head alternatives found by meaning. One: on the measurement set the runner-up
+ * was never the draft's concept (`EmbeddingBackend`: `provider` 0.66, then
+ * `factory` 0.54).
+ */
+const MAX_MEANING_HEAD_ALTERNATIVES = 1;
 /** An ambient declaration file (`declare global`, `declare module "x"`) augments; it declares nothing new. */
 const AMBIENT_DECLARATION_FILE = /\.d\.[cm]?ts$/;
 
@@ -568,6 +590,27 @@ export interface TypeDraftJudgementInput {
   /** Type names in the code nearest the draft's concept — the term-alignment lift sample. */
   conceptNames: readonly string[];
   liftFloor?: number;
+  /**
+   * Embedding similarity of two of the words {@link typeDraftAlignmentWords}
+   * names (bd tea-rags-mcp-433d2), on the caller's scale.
+   */
+  wordSimilarity?: (a: string, b: string) => number;
+  /**
+   * The project's null distribution of head-pair similarity on the same scale
+   * (`nullSimilarityDistribution`). A word must EXCEED its quantile corrected
+   * for the pairs the draft is compared on ({@link correctedSimilarityFloor}
+   * over {@link typeDraftMeaningPairs}). Without both a similarity and a
+   * distribution — no embedding, or a population too small to measure — the
+   * draft is judged without alignment by meaning, and the spelling variant is
+   * not gated.
+   */
+  nullSimilarities?: readonly number[];
+  /**
+   * Heads ONE type carries that usage establishes as the project's term — the
+   * type's file is imported at least as much as the project's `popular` files
+   * (bd tea-rags-mcp-433d2). Candidates like the heads ≥ 2 types carry.
+   */
+  usageEstablishedHeads?: ReadonlySet<string>;
 }
 
 /** The first existing TYPE with the draft's short name in another, non-ambient file. */
@@ -587,15 +630,22 @@ function collidingType(input: TypeDraftJudgementInput): { symbolId: string; relP
  * never a word the draft already carries, at most three), then the head's
  * dominant spelling.
  */
-function termAlternatives(input: TypeDraftJudgementInput, words: readonly string[]): TermAlternative[] {
+function termAlternatives(
+  input: TypeDraftJudgementInput,
+  words: readonly string[],
+  gate: MeaningGate | undefined,
+): TermAlternative[] {
   const { evidence } = input;
-  const slots = splitNameSlots(words.join("_"), new Set(evidence.headCounts.keys()));
+  const slots = draftSlots(words, evidence);
   const lift = modifierLift(evidence.established, input.conceptNames, evidence.rows.length);
   const alternatives = alignQualifiers(slots, evidence.established, lift, input.liftFloor ?? DEFAULT_LIFT_FLOOR)
     .filter((alternative) => !words.includes(alternative.word))
     .slice(0, MAX_QUALIFIER_ALTERNATIVES);
   const head = alignHead(slots, evidence.headCounts);
-  if (head !== undefined) {
+  const draftHead = slots.head.at(-1);
+  const similarity = head === undefined || draftHead === undefined ? undefined : gate?.similarity(draftHead, head);
+  // With embeddings, a spelling variant must also MEAN the head: `site` abbreviates `splitter` letter by letter.
+  if (head !== undefined && (gate === undefined || (similarity ?? 0) > gate.floor)) {
     const draftHeadCount = evidence.headCounts.get(slots.head.at(-1) ?? "") ?? 0;
     alternatives.push({
       word: head,
@@ -603,9 +653,209 @@ function termAlternatives(input: TypeDraftJudgementInput, words: readonly string
       heads: [],
       domains: [...(evidence.headDirs.get(head) ?? [])].sort().slice(0, MAX_HEAD_DOMAINS),
       lift: (evidence.headCounts.get(head) ?? 0) / Math.max(1, draftHeadCount),
+      ...(similarity !== undefined ? { similarity: roundSimilarity(similarity) } : {}),
     });
   }
   return alternatives;
+}
+
+/** The head words of the type names in the code nearest a concept. */
+function conceptHeadWords(conceptNames: readonly string[]): Set<string | undefined> {
+  return new Set(conceptNames.map((name) => typeNameWords(name).at(-1)));
+}
+
+function draftSlots(words: readonly string[], evidence: TypeNameEvidence): NameSlots {
+  return splitNameSlots(words.join("_"), new Set(evidence.headCounts.keys()));
+}
+
+/** The similarity and the floor it is judged against. */
+interface MeaningGate {
+  similarity: (a: string, b: string) => number;
+  floor: number;
+}
+
+/**
+ * The similarity and the draft's floor — both, or no judgement by meaning. The
+ * floor is the null distribution's quantile corrected for every pair the draft
+ * is compared on ({@link typeDraftMeaningPairs}), counted before any is judged
+ * so the floor never depends on its own outcome.
+ */
+function meaningGate(input: TypeDraftJudgementInput): MeaningGate | undefined {
+  const { wordSimilarity, nullSimilarities } = input;
+  if (wordSimilarity === undefined || nullSimilarities === undefined) return undefined;
+  const admitted = input.usageEstablishedHeads ?? new Set<string>();
+  const comparisons = typeDraftMeaningPairs(input, input.evidence, input.conceptNames, admitted).length;
+  return { similarity: wordSimilarity, floor: correctedSimilarityFloor(nullSimilarities, comparisons) };
+}
+
+function roundSimilarity(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/** The anchored head candidates grounded in the concept code: heads of type names `conceptNames` holds. */
+function groundedHeadCandidates(
+  slots: NameSlots,
+  draftPath: string,
+  evidence: TypeNameEvidence,
+  conceptNames: readonly string[],
+  admitted: ReadonlySet<string>,
+): ReturnType<typeof anchoredHeadCandidates> {
+  const conceptHeads = conceptHeadWords(conceptNames);
+  return anchoredHeadCandidates(slots, directoryOfPath(draftPath), evidence.rows, evidence.headCounts, admitted).filter(
+    (candidate) => conceptHeads.has(candidate.word),
+  );
+}
+
+/**
+ * The (draft word, candidate word) pairs alignment by meaning scores for a
+ * draft (bd tea-rags-mcp-433d2) — its m comparisons: the draft's head with the
+ * spelling variant {@link alignHead} offers (gated by similarity) and with each
+ * grounded {@link anchoredHeadCandidates} head (≥ 2 carriers, or `admitted` by
+ * usage); every draft word with each of its {@link pathTerms}, a pair sharing
+ * a stem excepted. Each distinct pair counts once, even one an earlier
+ * alternative would pre-empt: the count is fixed before any pair is judged.
+ */
+export function typeDraftMeaningPairs(
+  draft: { name: string; path: string },
+  evidence: TypeNameEvidence,
+  conceptNames: readonly string[],
+  admitted: ReadonlySet<string> = new Set(),
+): [string, string][] {
+  const words = typeNameWords(draft.name);
+  const slots = draftSlots(words, evidence);
+  const draftHead = slots.head.at(-1);
+  if (draftHead === undefined) return [];
+  const variant = alignHead(slots, evidence.headCounts);
+  const heads = new Set([
+    ...(variant ? [variant] : []),
+    ...groundedHeadCandidates(slots, draft.path, evidence, conceptNames, admitted).map((candidate) => candidate.word),
+  ]);
+  const pairs = new Map<string, [string, string]>();
+  const compare = (word: string, candidate: string): void => {
+    pairs.set([word, candidate].sort().join("\u0000"), [word, candidate]);
+  };
+  for (const head of heads) compare(draftHead, head);
+  for (const term of pathTerms(draft.path, words, conceptNames)) {
+    for (const word of words) if (!sharesWordStem(word, term.word)) compare(word, term.word);
+  }
+  // One comparison per pair: `chunker` may be both the directory's head and its directory word.
+  return [...pairs.values()];
+}
+
+/**
+ * The words whose embeddings alignment by meaning compares: every word of
+ * {@link typeDraftMeaningPairs}. Empty when there is nothing to compare the
+ * draft with.
+ */
+export function typeDraftAlignmentWords(
+  draft: { name: string; path: string },
+  evidence: TypeNameEvidence,
+  conceptNames: readonly string[],
+  admitted: ReadonlySet<string> = new Set(),
+): string[] {
+  return [...new Set(typeDraftMeaningPairs(draft, evidence, conceptNames, admitted).flat())];
+}
+
+/**
+ * The heads exactly ONE type carries among the draft's grounded anchored
+ * candidates, with that type's file — the heads usage may establish
+ * (`usageEstablishedHeads`). The caller reads the files' fan-in.
+ */
+export function singleCarrierHeadFiles(
+  draft: { name: string; path: string },
+  evidence: TypeNameEvidence,
+  conceptNames: readonly string[],
+): Map<string, string> {
+  const slots = draftSlots(typeNameWords(draft.name), evidence);
+  const single = new Set([...evidence.headCounts].filter(([, count]) => count === 1).map(([head]) => head));
+  const files = new Map<string, string>();
+  for (const candidate of groundedHeadCandidates(slots, draft.path, evidence, conceptNames, single)) {
+    if (!single.has(candidate.word)) continue;
+    const carrier = evidence.rows.find((row) => row.shortName === candidate.examples[0]);
+    if (carrier) files.set(candidate.word, carrier.relPath);
+  }
+  return files;
+}
+
+/**
+ * The anchored head most similar to the draft's head, when its similarity
+ * exceeds the draft's corrected floor AND it heads a type name in the code
+ * nearest the draft's concept (`conceptNames`) — the word alone is too weak a
+ * signal: without that grounding `SymbolLookupTable` drew `row` (0.72) and
+ * `IndexStalenessChecker` drew `guard` (0.71). None when `taken` already
+ * aligns the head (a spelling variant: `SignalStatistics` → `stats`).
+ */
+function meaningHeadAlternatives(
+  input: TypeDraftJudgementInput,
+  words: readonly string[],
+  taken: readonly TermAlternative[],
+  gate: MeaningGate | undefined,
+): TermAlternative[] {
+  const { evidence } = input;
+  if (gate === undefined || taken.some((alternative) => alternative.slot === "head")) return [];
+  const slots = draftSlots(words, evidence);
+  const draftHead = slots.head.at(-1) ?? "";
+  const offered = new Set(taken.map((alternative) => alternative.word));
+  const draftHeadCount = evidence.headCounts.get(draftHead) ?? 0;
+  const admitted = input.usageEstablishedHeads ?? new Set<string>();
+  return groundedHeadCandidates(slots, input.path, evidence, input.conceptNames, admitted)
+    .filter((candidate) => !offered.has(candidate.word))
+    .map((candidate) => ({ candidate, similarity: gate.similarity(draftHead, candidate.word) }))
+    .filter(({ similarity }) => similarity > gate.floor)
+    .sort((a, b) => b.similarity - a.similarity || a.candidate.word.localeCompare(b.candidate.word))
+    .slice(0, MAX_MEANING_HEAD_ALTERNATIVES)
+    .map(({ candidate, similarity }) => ({
+      word: candidate.word,
+      slot: "head" as const,
+      heads: [],
+      domains: candidate.domains.slice(0, MAX_HEAD_DOMAINS),
+      lift: (evidence.headCounts.get(candidate.word) ?? 0) / Math.max(1, draftHeadCount),
+      similarity: roundSimilarity(similarity),
+      examples: candidate.examples.slice(0, MAX_HEAD_EXAMPLES),
+    }));
+}
+
+/**
+ * The draft's directory words ({@link pathTerms}) nearest one of its words
+ * (bd tea-rags-mcp-433d2) — `IndexStalenessChecker` in `maintenance/freshness/`
+ * → `freshness` for `staleness`. Every draft word is compared, head and
+ * qualifiers; a pair sharing a stem (`chunk` / `chunker`) is not. The one most
+ * similar pair above the floor is offered at its draft word's slot — never a
+ * word `taken` offers, nor a second head.
+ */
+function pathTermAlternatives(
+  input: TypeDraftJudgementInput,
+  words: readonly string[],
+  taken: readonly TermAlternative[],
+  gate: MeaningGate | undefined,
+): TermAlternative[] {
+  if (gate === undefined) return [];
+  const head = draftSlots(words, input.evidence).head.at(-1);
+  const offered = new Set(taken.map((alternative) => alternative.word));
+  const headTaken = taken.some((alternative) => alternative.slot === "head");
+  let best: { term: { word: string; dir: string }; replaces: string; similarity: number } | undefined;
+  for (const term of pathTerms(input.path, words, input.conceptNames)) {
+    if (offered.has(term.word)) continue;
+    for (const word of words) {
+      if (sharesWordStem(word, term.word) || (word === head && headTaken)) continue;
+      const similarity = gate.similarity(word, term.word);
+      if (similarity > gate.floor && (best === undefined || similarity > best.similarity)) {
+        best = { term, replaces: word, similarity };
+      }
+    }
+  }
+  if (best === undefined) return [];
+  return [
+    {
+      word: best.term.word,
+      ...(best.replaces === head ? { slot: "head" as const } : {}),
+      heads: [],
+      domains: [best.term.dir],
+      lift: 0,
+      similarity: roundSimilarity(best.similarity),
+      replaces: best.replaces,
+    },
+  ];
 }
 
 /**
@@ -646,16 +896,25 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   const existing = collidingType(input);
   if (existing) return { verdict: "COLLISION", existing };
 
-  const alternatives = termAlternatives(input, words);
-  if (alternatives.length > 0) return { verdict: "NEW_TERM", topTerms: [], alternatives };
-  if (expected) return { verdict: "CONFORMS" };
+  const gate = meaningGate(input);
+  const lexical = termAlternatives(input, words, gate);
+  // The name carries its expected role: its head is right by construction.
+  if (lexical.length === 0 && expected) return { verdict: "CONFORMS" };
+  const byMeaning = [...lexical, ...meaningHeadAlternatives(input, words, lexical, gate)];
+  const alternatives = [...byMeaning, ...pathTermAlternatives(input, words, byMeaning, gate)];
+  if (lexical.length > 0) return { verdict: "NEW_TERM", topTerms: [], alternatives };
+  const withAlternatives = alternatives.length > 0 ? { alternatives } : {};
+
+  // A project suffix or a known head only CONFIRMS the words: a synonym head passes both,
+  // so the verdict stays and the head alternatives ride along (bd tea-rags-mcp-433d2).
   const head = words.at(-1);
   if (input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
-    return { verdict: "CONFORMS" };
+    return { verdict: "CONFORMS", ...withAlternatives };
   }
-
   const establishedWords = new Set(input.evidence.established.map((use) => use.word));
   const headKnown = (input.evidence.headCounts.get(words.at(-1) ?? "") ?? 0) > 0;
   const aligned = headKnown && words.slice(0, -1).every((word) => establishedWords.has(word));
-  return aligned ? { verdict: "CONFORMS" } : { verdict: "NEW_TERM", topTerms: [] };
+  return aligned
+    ? { verdict: "CONFORMS", ...withAlternatives }
+    : { verdict: "NEW_TERM", topTerms: [], ...withAlternatives };
 }

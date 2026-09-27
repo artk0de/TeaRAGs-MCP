@@ -9,6 +9,7 @@ import type { TypeNameRow } from "../../../../../src/core/domains/explore/naming
 import {
   judgeDraftName,
   judgeTypeDraft,
+  typeDraftMeaningPairs,
   typeDraftPopulation,
   typeNameEvidence,
 } from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
@@ -880,6 +881,280 @@ describe("judgeTypeDraft", () => {
     expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives : undefined).toContainEqual(
       expect.objectContaining({ word: "doc", slot: "head" }),
     );
+  });
+
+  // bd tea-rags-mcp-433d2: a draft naming a known concept by a synonym head.
+  describe("head alignment by meaning — anchored heads ranked by similarity to the draft's head", () => {
+    const judgeBySimilarity = (
+      rows: readonly TypeNameRow[],
+      draft: { name: string; path: string; extends?: string },
+      headSimilarity: ReadonlyMap<string, number>,
+      conceptNames: readonly string[] = CONCEPT,
+      usageEstablishedHeads?: ReadonlySet<string>,
+    ) =>
+      judgeTypeDraft({
+        ...draft,
+        casing: "pascal",
+        evidence: typeNameEvidence(rows, "type"),
+        conceptNames,
+        // Similarity to the draft's head: the map is keyed by the other word.
+        wordSimilarity: (a, b) => headSimilarity.get(b) ?? headSimilarity.get(a) ?? 0,
+        // A constant null distribution: the floor is 0.5 whatever the number of comparisons.
+        nullSimilarities: [0.5],
+        ...(usageEstablishedHeads !== undefined ? { usageEstablishedHeads } : {}),
+      });
+    /** Type names in the code nearest the drafts' concepts: every candidate head below is grounded there. */
+    const CONCEPT = ["IndexMetrics", "IndexStatus", "EmbeddingProvider", "SymbolResolutionStrategy", "GoResolver"];
+    const METRICS = [
+      ...filler(6),
+      row("IndexMetrics", "src/dto/metrics.ts"),
+      row("SignalMetrics", "src/signals/metrics.ts"),
+      row("IndexStatus", "src/status/index.ts"),
+      row("RunStatus", "src/run/status.ts"),
+    ];
+
+    it("a synonym head → NEW_TERM with the similar anchored head, its similarity and example types", () => {
+      const verdict = judgeBySimilarity(
+        METRICS,
+        { name: "IndexNumbers", path: "src/api/numbers.ts" },
+        new Map([
+          ["metrics", 0.81],
+          ["status", 0.3],
+        ]),
+      );
+      expect(verdict).toMatchObject({
+        verdict: "NEW_TERM",
+        alternatives: [{ word: "metrics", slot: "head", similarity: 0.81, examples: ["IndexMetrics"] }],
+      });
+      expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives : undefined).toHaveLength(1);
+    });
+
+    it("a similar head absent from the concept code is not offered — the word alone is too weak", () => {
+      const verdict = judgeBySimilarity(
+        METRICS,
+        { name: "IndexNumbers", path: "src/api/numbers.ts" },
+        new Map([["metrics", 0.81]]),
+        ["IndexStatus"],
+      );
+      expect(verdict).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    });
+
+    it("only the most similar head is offered", () => {
+      const verdict = judgeBySimilarity(
+        METRICS,
+        { name: "IndexNumbers", path: "src/api/numbers.ts" },
+        new Map([
+          ["metrics", 0.7],
+          ["status", 0.8],
+        ]),
+      );
+      expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives?.map((a) => a.word) : undefined).toEqual(["status"]);
+    });
+
+    it("similarities without a floor (a population too small to measure) → no head alignment by meaning", () => {
+      expect(
+        judgeTypeDraft({
+          name: "IndexNumbers",
+          path: "src/api/numbers.ts",
+          casing: "pascal",
+          evidence: typeNameEvidence(METRICS, "type"),
+          conceptNames: CONCEPT,
+          wordSimilarity: () => 0.99,
+        }),
+      ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    });
+
+    it("a similarity equal to the floor is not above it — the floor is what random pairs reach", () => {
+      expect(
+        judgeBySimilarity(METRICS, { name: "IndexNumbers", path: "src/api/numbers.ts" }, new Map([["metrics", 0.5]])),
+      ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    });
+
+    it("no similarity map (embedding unavailable) → no head alternative by meaning", () => {
+      expect(judge(METRICS, { name: "IndexNumbers", path: "src/api/numbers.ts" })).toEqual({
+        verdict: "NEW_TERM",
+        topTerms: [],
+      });
+    });
+
+    it("a CONFORMS by project suffix alone keeps its verdict and carries the alternatives", () => {
+      const rows = [
+        ...filler(6),
+        row("FooBackend", "src/a/foo.ts"),
+        row("BarBackend", "src/b/bar.ts"),
+        row("BazBackend", "src/c/baz.ts"),
+        row("EmbeddingProvider", "src/emb/provider.ts"),
+        row("CodeProvider", "src/code/provider.ts"),
+      ];
+      expect(
+        judgeBySimilarity(rows, { name: "EmbeddingBackend", path: "src/emb/backend.ts" }, new Map([["provider", 0.7]])),
+      ).toMatchObject({ verdict: "CONFORMS", alternatives: [{ word: "provider", slot: "head", similarity: 0.7 }] });
+    });
+
+    it("a name carrying its expected (family) role gets no alternatives", () => {
+      const rows = [...STRATEGIES, row("GoResolver", "src/lang/go/resolver.ts"), row("PyResolver", "src/r/py.ts")];
+      expect(
+        judgeBySimilarity(
+          rows,
+          { name: "GoStrategy", path: "src/lang/go/strategy.ts", extends: "SymbolResolutionStrategy" },
+          new Map([["resolver", 0.9]]),
+        ),
+      ).toEqual({ verdict: "CONFORMS" });
+    });
+
+    it("a spelling variant the similarity does not confirm is dropped (`splitter` is no `site`)", () => {
+      const docs = Array.from({ length: 12 }, (_, i) => row(`Kind${i}Doc`, `src/docs/k${i}.ts`));
+      const rows = [...filler(6), ...docs, row("RawDocument", "src/raw/raw.ts")];
+      const draft = { name: "CalculatedDocument", path: "src/calc/calculated.ts" };
+      expect(judgeBySimilarity(rows, draft, new Map([["doc", 0.2]]))).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+      expect(judgeBySimilarity(rows, draft, new Map([["doc", 0.9]]))).toMatchObject({
+        alternatives: [{ word: "doc", slot: "head", similarity: 0.9 }],
+      });
+    });
+
+    it("a head only one type carries is offered when usage establishes it", () => {
+      const rows = [...filler(6), row("Reranker", "src/explore/reranker.ts"), row("RankModule", "src/explore/rank.ts")];
+      const draft = { name: "SearchScorer", path: "src/explore/search-scorer.ts" };
+      const similarity = new Map([["reranker", 0.8]]);
+      expect(judgeBySimilarity(rows, draft, similarity, ["Reranker"])).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+      expect(judgeBySimilarity(rows, draft, similarity, ["Reranker"], new Set(["reranker"]))).toMatchObject({
+        alternatives: [{ word: "reranker", slot: "head", examples: ["Reranker"] }],
+      });
+    });
+
+    it("a directory word near a draft QUALIFIER → an alternative at the qualifier slot, naming what it replaces", () => {
+      const rows = [
+        ...filler(6),
+        row("IndexFreshnessProbe", "src/maintenance/freshness/probe.ts"),
+        row("CommitDriftMonitor", "src/maintenance/freshness/monitor.ts"),
+      ];
+      const verdict = judgeTypeDraft({
+        name: "IndexStalenessChecker",
+        path: "src/maintenance/freshness/staleness-checker.ts",
+        casing: "pascal",
+        evidence: typeNameEvidence(rows, "type"),
+        // The concept code holds a type carrying the directory word: the term is grounded.
+        conceptNames: ["IndexFreshnessProbe"],
+        wordSimilarity: (a, b) => ([a, b].sort().join("|") === "freshness|staleness" ? 0.8 : 0.1),
+        // A constant null distribution: the floor is 0.5 whatever the number of comparisons.
+        nullSimilarities: [0.5],
+      });
+      expect(verdict).toMatchObject({
+        verdict: "NEW_TERM",
+        alternatives: [
+          { word: "freshness", replaces: "staleness", similarity: 0.8, domains: ["src/maintenance/freshness"] },
+        ],
+      });
+      expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives?.[0] : undefined).not.toHaveProperty("slot");
+    });
+
+    it("a directory word near the draft's HEAD → an alternative at the head slot", () => {
+      const rows = [
+        ...filler(6),
+        row("CodeChunker", "src/ingest/chunker/code.ts"),
+        row("TextThing", "src/ingest/chunker/t.ts"),
+      ];
+      const verdict = judgeTypeDraft({
+        name: "ChunkSplitter",
+        path: "src/ingest/chunker/chunk-splitter.ts",
+        casing: "pascal",
+        evidence: typeNameEvidence(rows, "type"),
+        conceptNames: ["TextThing", "CodeChunker"],
+        wordSimilarity: (a, b) => ([a, b].sort().join("|") === "chunker|splitter" ? 0.7 : 0.1),
+        // A constant null distribution: the floor is 0.5 whatever the number of comparisons.
+        nullSimilarities: [0.5],
+      });
+      // `chunk` → `chunker` shares a stem and is not compared; `splitter` → `chunker` is.
+      expect(verdict).toMatchObject({
+        alternatives: [{ word: "chunker", slot: "head", replaces: "splitter", similarity: 0.7 }],
+      });
+    });
+
+    describe("the floor is corrected for the number of pairs the draft is compared on (Šidák)", () => {
+      /** 0.000, 0.001, … 1.000 — the q quantile is q: one comparison → floor 0.9, five → 0.979. */
+      const UNIFORM = Array.from({ length: 1001 }, (_, i) => i / 1000);
+      const judgeUniform = (rows: readonly TypeNameRow[], draft: { name: string; path: string }, similar: string) =>
+        judgeTypeDraft({
+          ...draft,
+          casing: "pascal",
+          evidence: typeNameEvidence(rows, "type"),
+          conceptNames: rows.map((r) => r.shortName),
+          wordSimilarity: (a, b) => ([a, b].includes(similar) ? 0.95 : 0.1),
+          nullSimilarities: UNIFORM,
+        });
+
+      it("one candidate pair → floor 0.9: a 0.95 head is offered", () => {
+        const rows = [...filler(6), row("IndexMetrics", "src/dto/metrics.ts"), row("RunMetrics", "src/r/metrics.ts")];
+        expect(judgeUniform(rows, { name: "IndexNumbers", path: "src/api/numbers.ts" }, "metrics")).toMatchObject({
+          alternatives: [{ word: "metrics", similarity: 0.95 }],
+        });
+      });
+
+      it("five candidate pairs → floor 0.979: the same 0.95 head is not", () => {
+        const heads = ["metrics", "status", "report", "summary", "digest"];
+        const rows = [
+          ...filler(6),
+          ...heads.flatMap((head) => [
+            row(`Index${head[0].toUpperCase()}${head.slice(1)}`, `src/a/${head}.ts`),
+            row(`Run${head[0].toUpperCase()}${head.slice(1)}`, `src/b/${head}.ts`),
+          ]),
+        ];
+        expect(judgeUniform(rows, { name: "IndexNumbers", path: "src/api/numbers.ts" }, "metrics")).toEqual({
+          verdict: "NEW_TERM",
+          topTerms: [],
+        });
+      });
+
+      it("a pair reached both as a head candidate and as a directory word is one comparison", () => {
+        const rows = [
+          ...filler(6),
+          row("CodeChunker", "src/ingest/chunker/code.ts"),
+          row("TextChunker", "src/ingest/chunker/text.ts"),
+        ];
+        const pairs = typeDraftMeaningPairs(
+          { name: "ChunkSplitter", path: "src/ingest/chunker/chunk-splitter.ts" },
+          typeNameEvidence(rows, "type"),
+          ["CodeChunker"],
+        );
+        // `splitter` / `chunker`: the directory's head AND the `chunker` directory word; `chunk` shares a stem.
+        expect(pairs).toEqual([["splitter", "chunker"]]);
+      });
+
+      it("directory words add their pairs: a path-term-heavy draft pays for them", () => {
+        const rows = [
+          ...filler(6),
+          row("IndexMetrics", "src/dto/metrics.ts"),
+          row("RunMetrics", "src/r/metrics.ts"),
+          // Concept types carrying the directory words `core`, `stats` and `report` ground them as path terms.
+          row("CoreThing", "src/x/core.ts"),
+          row("StatsThing", "src/x/stats.ts"),
+          row("ReportThing", "src/x/report.ts"),
+        ];
+        // Alone: one pair (`numbers` / `metrics`) → offered at 0.95.
+        expect(judgeUniform(rows, { name: "IndexNumbers", path: "src/api/numbers.ts" }, "metrics")).toMatchObject({
+          alternatives: [{ word: "metrics" }],
+        });
+        // Under core/stats/report: 1 + 2 words × 3 terms = 7 pairs → floor 0.985, and nothing is offered.
+        expect(
+          judgeUniform(rows, { name: "IndexNumbers", path: "src/core/stats/report/numbers.ts" }, "metrics"),
+        ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+      });
+    });
+
+    it("a head a spelling variant already aligns gets no second head by meaning", () => {
+      const docs = Array.from({ length: 12 }, (_, i) => row(`Calc${i}Doc`, `src/docs/k${i}.ts`));
+      const rows = [...filler(6), ...docs, row("CalcSheet", "src/s/a.ts"), row("RawSheet", "src/s/b.ts")];
+      const verdict = judgeBySimilarity(
+        rows,
+        { name: "CalcDocument", path: "src/calc/calculated.ts" },
+        new Map([
+          ["doc", 0.9],
+          ["sheet", 0.95],
+        ]),
+        ["CalcSheet", "Calc0Doc"],
+      );
+      expect(verdict.verdict === "NEW_TERM" ? verdict.alternatives?.map((a) => a.word) : undefined).toEqual(["doc"]);
+    });
   });
 
   describe("constants — judged against the constant population, directory and suffix evidence only", () => {

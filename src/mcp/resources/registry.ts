@@ -268,9 +268,11 @@ name by grep or semantic_search on the draft.
   skipped: tests / non-production, no codegraph language.
   Type / constant names need a codegraph recompute on an index built before type declarations existed.
 
-Verdicts: CONFORMS | MISFIT (suggestion, role) | NEW_TERM (topTerms, alternatives — soft,
+Verdicts: CONFORMS (vocabulary, not behaviour; may carry alternatives) | MISFIT (suggestion,
+role) | NEW_TERM (topTerms, alternatives — soft,
 never a rename demand) | COLLISION (existing). Role = inheritance family > directory > project
-suffix; project suffix only confirms, never MISFIT.
+suffix; project suffix only confirms, never MISFIT. A directory-evidence MISFIT is
+location-based: rename only when the type belongs to role.examples' family.
 
 ## get_ontology_report Examples
 

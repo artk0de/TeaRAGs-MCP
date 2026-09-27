@@ -17,7 +17,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
 import { InvalidParameterError } from "../../../../../src/core/api/errors.js";
-import { NamingLexiconOps } from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
+import {
+  NamingLexiconOps,
+  type NamingLexiconEmbeddings,
+} from "../../../../../src/core/api/internal/ops/naming-lexicon-ops.js";
 import { createNamingReviewExtractor } from "../../../../../src/core/api/internal/ops/naming-review-extraction.js";
 import { ontologyLanguageProfiles } from "../../../../../src/core/api/internal/ops/ontology-report-ops.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../../../../src/core/api/public/dto/index.js";
@@ -134,7 +137,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   }
 
-  function build(): NamingLexiconOps {
+  function build(embeddings?: NamingLexiconEmbeddings): NamingLexiconOps {
     const graphDb = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "close") return async () => undefined;
@@ -150,6 +153,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       namingConventions: NAMING,
       ontologyLanguages: ontologyLanguageProfiles(),
       extractDeclarations: createNamingReviewExtractor(new LanguageFactory({})),
+      ...(embeddings !== undefined ? { embeddings } : {}),
     });
   }
 
@@ -303,6 +307,55 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     for (let i = 0; i < 201; i++) writeFileSync(join(repo, `notes/n${String(i).padStart(3, "0")}.md`), "x\n");
     const result = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
     expect(result.review?.truncated).toEqual({ cap: 200, skipped: 2 });
+  });
+
+  // bd tea-rags-mcp-433d2: a synonym head passes the project-suffix rule; its alternative makes it a finding.
+  it("a CONFORMS carrying head alternatives is a finding, not a conforming count", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "src/a/foo.ts", rows: [decl("FooBackend", "class")] },
+      { relPath: "src/b/bar.ts", rows: [decl("BarBackend", "class")] },
+      { relPath: "src/c/baz.ts", rows: [decl("BazBackend", "class")] },
+      { relPath: "src/emb/provider.ts", rows: [decl("EmbeddingProvider", "class")] },
+      { relPath: "src/code/provider.ts", rows: [decl("CodeProvider", "class")] },
+      // Ten more heads, two carriers each: a null population large enough to measure a floor.
+      ...["Anchor", "Beacon", "Cable", "Dagger", "Ember", "Falcon", "Glacier", "Harbor", "Island", "Jetty"].flatMap(
+        (head) =>
+          ["Left", "Right"].map((side) => ({
+            relPath: `src/${head.toLowerCase()}/${side.toLowerCase()}.ts`,
+            rows: [decl(`${side}${head}`, "class")],
+          })),
+      ),
+    ]);
+    semanticSearch.mockResolvedValue({
+      driftWarning: null,
+      results: [{ id: "p", score: 1, payload: { symbolId: "EmbeddingProvider", relativePath: "src/emb/provider.ts" } }],
+    });
+    // `backend` and `provider` share a direction; every other head is its own axis (null pairs score 0).
+    const axes = new Map<string, number>();
+    const embedBatch = vi.fn(async (texts: string[]) =>
+      texts.map((text) => {
+        const word = text.replace(/^class /, "");
+        const embedding = new Array<number>(32).fill(0);
+        if (word === "backend" || word === "provider") embedding[0] = 1;
+        else embedding[axes.get(word) ?? axes.set(word, axes.size + 1).get(word) ?? 0] = 1;
+        return { embedding };
+      }),
+    );
+    mkdirSync(join(repo, "src/emb"), { recursive: true });
+    writeFileSync(join(repo, "src/emb/backend.ts"), "export class EmbeddingBackend {}\n");
+    const result = await build({ embedBatch }).getNamingLexicon({
+      collection: "c",
+      path: repo,
+      files: ["src/emb/backend.ts"],
+    });
+    expect(result.review?.findings).toEqual([
+      expect.objectContaining({
+        name: "EmbeddingBackend",
+        verdict: "CONFORMS",
+        alternatives: [expect.objectContaining({ word: "provider", slot: "head" })],
+      }),
+    ]);
+    expect(result.review?.conforming).toBe(0);
   });
 
   it("diff mode needs the project's working tree", async () => {

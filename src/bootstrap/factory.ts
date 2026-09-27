@@ -1299,6 +1299,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         ontologyLanguages: ontologyLanguageProfiles(),
         // Diff mode (bd tea-rags-mcp-fdef2): changed files walked in memory by the same languages.
         extractDeclarations: createNamingReviewExtractor(composition.languageFactory),
+        // Type drafts (bd tea-rags-mcp-433d2): head words embedded to align a synonym head.
+        embeddings: infra.embeddings,
       })
     : undefined;
   const app = createApp({

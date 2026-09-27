@@ -174,9 +174,15 @@ is the file the type will live in; `extends` its planned ancestor.
 | MISFIT    | the family (via `extends`) or the directory (via `path`) has a role the name lacks; suggestion = name + role |
 | COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`)      |
 | NEW_TERM  | no role evidence and no aligned term (section 4); carries `alternatives` when section 4 found candidates     |
-| CONFORMS  | the name carries the role and its terms align                                                                |
+| CONFORMS  | the name carries the role and its terms align; may carry head `alternatives` (section 4, head by meaning)    |
 
 Casing follows the file language of `path`, as for value names.
+
+Every verdict judges VOCABULARY. CONFORMS means consistent with the project's
+vocabulary: its words, roles and spellings. It says nothing about whether the
+name fits the behaviour of the code it names. A `Parser` that validates conforms
+if the project writes `Parser`. Whether the name matches the behaviour is the
+reviewer's call.
 
 ## 4. Term alignment: reuse the project's words
 
@@ -207,6 +213,122 @@ A similar case is found by meaning, and the attempt is ALWAYS made:
    `Predefined — PredefinedTemplate (templates/), PredefinedField (fields/)`.
 5. Nothing clears the floor → a new concept: NEW_TERM with no alternatives. That
    is a legitimate outcome, not a failure.
+
+**Head by meaning (`433d2`).** A draft can name a known concept with a synonym
+head: `EmbeddingBackend` for `EmbeddingProvider`, `ProjectCatalog` for
+`CollectionRegistry`. Neither spelling nor lift catches that, and the project
+suffix rule even confirms the draft (`backend` is a suffix here). So:
+
+1. Candidates are the heads of production types ANCHORED to the draft: sharing a
+   qualifier word with it (`Embedding*`) or living in its directory. A head
+   fewer than 2 project types end in is dropped: it is one type's choice, not
+   the project's word. The exception is a head exactly ONE type carries whose
+   file is imported at least as much as the project's `popular` files. The
+   threshold is the lower bound of the `codegraph.file.fanIn` band `popular` in
+   the draft's language, read from the same label map `get_index_metrics`
+   publishes and the reranker labels by (self-index: 2). `Reranker` is one
+   central type, while `site`-style noise is many weak carriers. It needs the
+   request's `path`; without it no head is established by usage.
+2. The draft's directory words are candidates too, at the slot of the draft word
+   they are compared with, head or qualifier (`IndexStalenessChecker` in
+   `maintenance/freshness/` → `freshness` for `staleness`). A pair sharing a
+   stem (`chunk` / `chunker`) is not compared.
+3. Every candidate must be grounded in the concept code (step 2 above): a head
+   candidate heads a type name there, and a directory word is a word of one.
+   Only grounded candidates are embedded.
+4. Each word is embedded twice, bare and as `class <word>`, in ONE batch per
+   draft (cached per request). Similarity is the mean of the two cosines. The
+   most similar head candidate whose similarity EXCEEDS the draft's floor is
+   offered as `{ word, slot: "head", similarity, examples }`. The most similar
+   directory-word pair above it is offered as
+   `{ word, slot?, replaces, similarity, domains: [dir] }`.
+5. The floor is adaptive, not a constant, and it is corrected for the number of
+   comparisons. The null distribution is the same similarity over every pair of
+   the project's own heads carried by ≥ 2 types. The sample is 64 of those heads
+   in the order of a hash of the word, deterministic and unbiased: ≤ 2,016
+   pairs, embedded in one batch the first time a request needs it and reused for
+   candidate words it already holds. A draft compared on m pairs
+   (`typeDraftMeaningPairs`: its head with the spelling variant and with each
+   grounded head candidate, every draft word with each directory word, stem
+   pairs excepted, each distinct pair once) must exceed the null quantile
+   `0.9^(1/m)` (`perComparisonQuantile`). That is the Šidák correction of the
+   family-wise level `NULL_SIMILARITY_QUANTILE` = 0.9: the chance that ANY of
+   the draft's m random pairs clears its floor stays 10%, whatever m is. m = 1
+   is the plain p90. The level is a definition of "unusually close", not a tuned
+   value. m is counted before any pair is judged, so a pair a spelling variant
+   would pre-empt still counts and the floor never depends on its own outcome.
+   The corrected quantile is capped at what the sample resolves, `1 − 1/pairs`
+   (0.9995 for 2,016 pairs, reached at m ≈ 210; 0.978 for the 45 pairs of a
+   10-head sample, reached at m ≈ 5): beyond it the quantile is the sample's
+   maximum, not a measured tail. Under 10 such heads there is no alignment by
+   meaning.
+6. With embeddings, a spelling variant must also exceed the floor. `site`
+   abbreviates `splitter` letter by letter at similarity 0.29, so it goes. A
+   head the spelling rule already aligned gets no second head by meaning.
+7. The alternative attaches to NEW_TERM, and to a CONFORMS that rests only on a
+   project suffix or on known words. The verdict stays CONFORMS, and in diff
+   mode such a CONFORMS is a finding. A name carrying its expected family or
+   directory role gets no alternative by meaning. MISFIT outranks all of this.
+8. Embedding unavailable or failing: one notice, the same one as a failed
+   concept search. Drafts are judged as before, without alignment by meaning and
+   with the spelling variant ungated.
+
+**Null distribution.** Over all 296 heads of the self-index carried by ≥ 2 types
+(43,660 pairs, jina-embeddings-v2-base-code), the head-pair similarity has p50
+0.410, p90 0.562, p95 0.604, p98 0.654 and p99 0.686. The 64-head hash sample
+reproduces it within 0.015: p50 0.402, p90 0.558, p95 0.596, p98 0.645, p99
+0.672. The 64 MOST-carried heads do not. They are generic words (`result`,
+`options`, `config`) closer to each other than the population is, and they put
+p90 at 0.593, which silently dropped `chunker` (0.571).
+
+**Measurement.** 20 drafts naming known concepts by synonyms, 11 with ground
+truth. With a single p90 floor (0.558) for every draft the run gave 6 hits and 5
+wrong. The wrong alternatives sat at 0.565 to 0.667, the null distribution's own
+p90 to p98: a draft compared on several pairs at p90 each lets a random pair
+through far more often than one time in ten. A p95 floor (0.596) gave 5 hits and
+1 wrong, but that is a tuned value. The per-draft correction replaces both.
+Live, p90 of the (re-indexed) sample 0.562:
+
+| Draft                 | m   | Floor | Best pair (similarity)              | Offered    | Truth        |
+| --------------------- | --- | ----- | ----------------------------------- | ---------- | ------------ |
+| SignalStatistics      | 4   | 0.637 | `stats` (0.926, spelling)           | `stats`    | hit          |
+| EmbeddingBackend      | 3   | 0.624 | `provider` (0.661)                  | `provider` | hit          |
+| ProjectCatalog        | 7   | 0.663 | `registry` (0.639)                  | —          | missed       |
+| PayloadFieldDoc       | 10  | 0.674 | `descriptor` (0.625)                | —          | missed       |
+| IndexStalenessChecker | 6   | 0.654 | `freshness` for `staleness` (0.617) | —          | missed       |
+| ChunkSplitter         | 2   | 0.603 | `chunker` (0.571)                   | —          | missed       |
+| ChunkChurnInfo        | 10  | 0.674 | `stats` (0.667)                     | —          | wrong gone   |
+| SearchScorer          | 7   | 0.663 | `explore` for `search` (0.580)      | —          | 2 wrong gone |
+| EnrichmentWorkerPool  | 3   | 0.624 | `executor` (0.770)                  | `executor` | real term    |
+| VectorDbAdapter       | 8   | 0.667 | `manager` (0.675)                   | `manager`  | real term    |
+
+Result: 2 hits, 0 wrong, 2 real terms outside the ground truth. The correction
+does what it claims — no alternative on these drafts is within the reach of
+chance — and the price is recall: four true synonyms (0.571 to 0.639) sit below
+their corrected floors. They are as close to the draft as the null p90–p97, so
+at this embedding model they cannot be told from chance once the draft's other
+comparisons are paid for. Recovering them needs a stronger signal, not a lower
+floor. Out of reach as before: `reranker` (0.469), `metrics` (0.493), `overlay`,
+`signals`, and `outline` (`FileSummaryView` is a MISFIT). The held-out set is
+uninformative: MISFIT or COLLISION for five drafts, and `PipelineBatchSize` (m =
+4, floor 0.637) conforms with nothing to offer.
+
+How the directory-word rule was chosen: first the project's vocabulary alone
+decided a term ("a word of any type, or a directory of ≥ 2 files"). That let
+`core`, `api`, `static`, `explore`, `ingest` and `maintenance` through, each
+0.57 to 0.62 similar to some draft word, as close as the one true pair
+(`staleness` / `freshness`, 0.617): 7 wrong, 0 hits. `checker` / `maintenance`
+(0.621) even outranked it. Grounding in the concept code is what separates them.
+
+**Measured and rejected: co-change neighbourhood as a candidate source.** Heads
+taken from the files that co-change with the draft's directory, lift-normalized,
+put the truth first for 4 of 14 drafts, including the held-out `RubyBodyGrouper`
+→ `chunker`. In union with concept grounding it added 1 hit and 2 to 3 wrong
+alternatives above the floor, so it is not used.
+
+Cost: about 65 ms per type draft, plus one null-sample batch per request (128
+short texts). The 20-draft call went from 2.1 s without embeddings to 4.4 to 6.0
+s warm; the correction itself is arithmetic on the cached distribution.
 
 The verdict stays soft (NEW_TERM + alternatives, never MISFIT). This is a
 judgement by meaning, and the agent decides whether to reuse the term or

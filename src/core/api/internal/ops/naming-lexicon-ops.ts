@@ -96,9 +96,14 @@ import {
   judgeGenericNames,
   judgeTypeDraft,
   mergedSameTypeSiblingN,
+  MIN_NULL_SAMPLE_HEADS,
+  nullHeadSample,
+  nullSimilarityDistribution,
   shapeDistribution,
+  singleCarrierHeadFiles,
   splitIdentifierWords,
   TYPE_DRAFT_KINDS,
+  typeDraftAlignmentWords,
   typeDraftPopulation,
   typeNameEvidence,
   typeNameLastSegment,
@@ -112,14 +117,17 @@ import {
   type NamingShapeDistribution,
   type NamingShapeRow,
   type NamingVerdict,
+  type TypeDraftJudgementInput,
   type TypeDraftPopulation,
   type TypeNameEvidence,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
+import { cosine } from "../../../infra/vector-math.js";
 import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../errors.js";
 import type { ExploreResponse, SemanticSearchRequest } from "../../public/dto/explore.js";
+import type { IndexMetrics } from "../../public/dto/metrics.js";
 import type {
   NamingLexiconCalleeEntry,
   NamingLexiconDraftName,
@@ -190,9 +198,20 @@ export const NAMING_LEXICON_DRIFT_WARNING =
   "cg_identifiers is empty while the codegraph holds files — the index predates the identifier table; " +
   "reindex with --force to populate it";
 
-/** The explore operation concept mode runs in-process. */
+/**
+ * The embedding port head alignment by meaning reads (bd tea-rags-mcp-433d2):
+ * a batch of short words in, one vector each out — the shape of
+ * `EmbeddingProvider#embedBatch`, which the factory injects.
+ */
+export interface NamingLexiconEmbeddings {
+  embedBatch: (texts: string[]) => Promise<{ embedding: number[] }[]>;
+}
+
+/** The explore operations naming runs in-process: concept search, and the label thresholds of the index. */
 export interface NamingLexiconExplore {
   semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
+  /** Absent → no head is established by usage (bd tea-rags-mcp-433d2). */
+  getIndexMetrics?: (path: string) => Promise<IndexMetrics>;
 }
 
 export interface NamingLexiconOpsDeps {
@@ -214,6 +233,12 @@ export interface NamingLexiconOpsDeps {
    * file counts as not judged.
    */
   extractDeclarations?: NamingReviewExtractor;
+  /**
+   * Type drafts: embeds the draft's head and its anchored candidate heads, so
+   * a synonym head (`IndexNumbers`) gets the project's word (`metrics`).
+   * Absent → type drafts are judged without head alignment by meaning.
+   */
+  embeddings?: NamingLexiconEmbeddings;
 }
 
 /** Diff mode: one changed file's added lines, its working-tree text and its declarations. */
@@ -245,12 +270,26 @@ interface ReviewDraft {
 }
 
 /**
- * Term-alignment searches share one fate per request: the first failure is one
- * notice and stops the later searches, across every judgement the request runs.
+ * Term-alignment reads — concept searches and head-word embeddings — share one
+ * fate per request: the first failure is one notice and stops the later reads,
+ * across every judgement the request runs. `vectors` caches the texts already
+ * embedded in this request; `nullSimilarities` the null head-pair distribution per population
+ * (`null`: the population is too small to measure one).
  */
 interface TypeAlignmentState {
   failure?: string;
+  vectors?: Map<string, number[]>;
+  nullSimilarities?: Map<TypeDraftPopulation, readonly number[] | null>;
+  /** The project's index metrics — its label thresholds — read at most once per request. */
+  metrics?: Promise<IndexMetrics>;
 }
+
+/** What alignment by meaning hands `judgeTypeDraft`. */
+type MeaningAlignment = Pick<TypeDraftJudgementInput, "wordSimilarity" | "nullSimilarities" | "usageEstablishedHeads">;
+
+/** The signal and band whose threshold establishes a head one type carries by usage. */
+const FAN_IN_SIGNAL = "codegraph.file.fanIn";
+const POPULAR_FAN_IN_LABEL = "popular";
 
 type IdentifierReader = Pick<
   GraphDbClient,
@@ -266,6 +305,7 @@ type IdentifierReader = Pick<
   | "hasData"
   | "readOntologyReportSummary"
   | "readTypeNameRows"
+  | "getFanIn"
 >;
 
 /** A value draft: `kind` absent or a declaration kind. */
@@ -437,7 +477,7 @@ export class NamingLexiconOps {
       const judged = verdicts.get(slot[i].language)?.[slot[i].at];
       if (judged === undefined) return;
       const { name: _name, evidence: _evidence, genericName, ...verdict } = judged;
-      if (genericName === undefined && verdict.verdict === "CONFORMS") {
+      if (genericName === undefined && verdict.verdict === "CONFORMS" && verdict.alternatives === undefined) {
         conforming++;
         return;
       }
@@ -644,13 +684,20 @@ export class NamingLexiconOps {
       const population = typeDraftPopulation(draft);
       const draftLanguage = this.languageOfPath(draft.path) ?? language;
       let conceptNames: string[] = [];
-      if (rows.length > 0 && alignment.failure === undefined) {
-        try {
+      let byMeaning: MeaningAlignment = {};
+      // The concept search first: only head candidates its code holds are embedded — on the
+      // self-index that cut the batch from ~65 words per draft to a handful.
+      try {
+        if (rows.length > 0 && alignment.failure === undefined) {
           conceptNames = await this.conceptTypeNames(req, draft, draftLanguage, evidence[population].rows);
-        } catch (error) {
-          if (error instanceof InputValidationError) throw error;
-          alignment.failure = errorMessage(error);
+          byMeaning = await this.alignByMeaning(graphDb, req, draft, evidence[population], conceptNames, {
+            language: draftLanguage,
+            alignment,
+          });
         }
+      } catch (error) {
+        if (error instanceof InputValidationError) throw error;
+        alignment.failure = errorMessage(error);
       }
       const verdict = judgeTypeDraft({
         name: draft.name,
@@ -659,6 +706,7 @@ export class NamingLexiconOps {
         casing: this.typeCasing(draftLanguage, population),
         evidence: evidence[population],
         conceptNames,
+        ...byMeaning,
       });
       verdicts.push(typeDraftVerdict(draft, verdict, evidence[population].rows));
     }
@@ -698,6 +746,120 @@ export class NamingLexiconOps {
     });
   }
 
+  /**
+   * The inputs of alignment by meaning for one draft (bd tea-rags-mcp-433d2):
+   * the heads usage establishes, the project's similarity floor, and the
+   * similarity of the embedded words. Empty without an embedding port, a word
+   * to compare, or a population large enough to place a floor on.
+   */
+  private async alignByMeaning(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    draft: NamingLexiconTypeDraft,
+    evidence: TypeNameEvidence,
+    conceptNames: readonly string[],
+    context: { language: string | undefined; alignment: TypeAlignmentState },
+  ): Promise<MeaningAlignment> {
+    if (this.deps.embeddings === undefined) return {};
+    const { alignment } = context;
+    const usageEstablishedHeads = await this.usageEstablishedHeads(
+      graphDb,
+      req,
+      draft,
+      evidence,
+      conceptNames,
+      context,
+    );
+    const words = typeDraftAlignmentWords(draft, evidence, conceptNames, usageEstablishedHeads);
+    if (words.length === 0) return {};
+    const nullSimilarities = await this.headNullSimilarities(evidence, alignment);
+    if (nullSimilarities === undefined) return {};
+    const vectors = await this.embedHeadWords(words, alignment);
+    return {
+      wordSimilarity: (a, b) => headWordSimilarity(vectors, a, b),
+      nullSimilarities,
+      ...(usageEstablishedHeads.size > 0 ? { usageEstablishedHeads } : {}),
+    };
+  }
+
+  /**
+   * The draft's grounded candidate heads exactly ONE type carries whose file
+   * is imported at least as much as the project's `popular` files — the
+   * `codegraph.file.fanIn` label threshold `get_index_metrics` publishes for the
+   * draft's language, the one the reranker labels by. None without the
+   * project's path or that threshold.
+   */
+  private async usageEstablishedHeads(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    draft: NamingLexiconTypeDraft,
+    evidence: TypeNameEvidence,
+    conceptNames: readonly string[],
+    context: { language: string | undefined; alignment: TypeAlignmentState },
+  ): Promise<Set<string>> {
+    const files = singleCarrierHeadFiles(draft, evidence, conceptNames);
+    const admitted = new Set<string>();
+    if (files.size === 0) return admitted;
+    const popular = await this.popularFanIn(req, context);
+    if (popular === undefined) return admitted;
+    for (const [head, relPath] of files) {
+      if ((await graphDb.getFanIn(relPath)) >= popular) admitted.add(head);
+    }
+    return admitted;
+  }
+
+  /** The `popular` band's lower bound of `codegraph.file.fanIn` in `language`, once per request. */
+  private async popularFanIn(
+    req: NamingLexiconRequest,
+    context: { language: string | undefined; alignment: TypeAlignmentState },
+  ): Promise<number | undefined> {
+    const { language, alignment } = context;
+    const { explore } = this.deps;
+    const { path } = req;
+    if (explore.getIndexMetrics === undefined || path === undefined || language === undefined) return undefined;
+    // A method call: the explore facade reads its own ops through `this`.
+    alignment.metrics ??= explore.getIndexMetrics(path);
+    const metrics = await alignment.metrics;
+    return metrics.signals[language]?.[FAN_IN_SIGNAL]?.source?.labelMap[POPULAR_FAN_IN_LABEL];
+  }
+
+  /**
+   * The population's null distribution of head similarity: its own head pairs
+   * ({@link nullSimilarityDistribution} over {@link nullHeadSample}), embedded
+   * in ONE batch the first time a request needs it and kept for the request.
+   * Each draft's floor is its quantile corrected for the draft's comparisons.
+   * `undefined` when the population is too small to measure.
+   */
+  private async headNullSimilarities(
+    evidence: TypeNameEvidence,
+    alignment: TypeAlignmentState,
+  ): Promise<readonly number[] | undefined> {
+    const nulls = (alignment.nullSimilarities ??= new Map<TypeDraftPopulation, readonly number[] | null>());
+    const known = nulls.get(evidence.population);
+    if (known !== undefined) return known ?? undefined;
+    const sample = nullHeadSample(evidence.headCounts);
+    const vectors = sample.length >= MIN_NULL_SAMPLE_HEADS ? await this.embedHeadWords(sample, alignment) : undefined;
+    const distribution = vectors
+      ? nullSimilarityDistribution(sample, (a, b) => headWordSimilarity(vectors, a, b))
+      : undefined;
+    nulls.set(evidence.population, distribution ?? null);
+    return distribution;
+  }
+
+  /** Embeds, in ONE batch, the texts of `words` this request has not embedded yet; the request's cache. */
+  private async embedHeadWords(
+    words: readonly string[],
+    alignment: TypeAlignmentState,
+  ): Promise<ReadonlyMap<string, number[]>> {
+    const vectors = (alignment.vectors ??= new Map<string, number[]>());
+    const missing = [...new Set(words.flatMap(headWordTexts))].filter((text) => !vectors.has(text));
+    if (missing.length > 0 && this.deps.embeddings !== undefined) {
+      const embedded = await this.deps.embeddings.embedBatch(missing);
+      missing.forEach((text, i) => vectors.set(text, embedded[i].embedding));
+    }
+    return vectors;
+  }
+
   /** The language a path's extension routes to, from the ontology's language profiles. */
   private languageOfPath(relPath: string): string | undefined {
     const dot = relPath.lastIndexOf(".");
@@ -712,6 +874,29 @@ export class NamingLexiconOps {
     const convention = language ? this.deps.namingConventions.get(language) : undefined;
     return convention?.casing[role][0] ?? (population === "constant" ? "screamingSnake" : "pascal");
   }
+}
+
+/**
+ * The texts one head word is embedded as, compared pairwise and averaged
+ * (bd tea-rags-mcp-433d2): the bare word, and the word as a type declaration.
+ * On the self-index measurement (jina-embeddings-v2-base-code) the average
+ * ranked the draft's concept first for 4 of 6 reachable drafts, the bare word
+ * alone for 3 of 6 — `class descriptor` is nearer `class doc` than
+ * `descriptor` is to `doc`.
+ */
+function headWordTexts(word: string): [string, string] {
+  return [word, `class ${word}`];
+}
+
+/** The mean cosine of two words over their {@link headWordTexts} encodings, pairwise. */
+function headWordSimilarity(vectors: ReadonlyMap<string, number[]>, a: string, b: string): number {
+  const textsA = headWordTexts(a);
+  const textsB = headWordTexts(b);
+  const sum = textsA.reduce(
+    (total, text, i) => total + cosine(vectors.get(text) ?? [], vectors.get(textsB[i]) ?? []),
+    0,
+  );
+  return sum / textsA.length;
 }
 
 // ── request ──────────────────────────────────────────────────────────────
@@ -1446,6 +1631,8 @@ function excludingEvidence(reader: IdentifierReader, paths: readonly string[] | 
     hasData: async () => reader.hasData(),
     readOntologyReportSummary: async (q) => reader.readOntologyReportSummary({ ...q, excludePaths }),
     readTypeNameRows: async (q) => reader.readTypeNameRows({ ...q, excludePaths }),
+    // A fan-in counts edges INTO an unchanged file; nothing of the diff to exclude.
+    getFanIn: async (relPath) => reader.getFanIn(relPath),
   };
 }
 
