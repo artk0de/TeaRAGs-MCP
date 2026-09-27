@@ -73,6 +73,15 @@ export class IndexPipeline extends BaseIndexingPipeline {
     };
 
     const { absolutePath, collectionName: aliasCollectionName } = await this.resolveContext(path);
+    // Startup marker: the earliest per-event line a run emits. Everything
+    // before PIPELINE_START (scan, qdrant setup, hashing) is a window where a
+    // hang is otherwise invisible — the log simply goes quiet (2026-09-27: a
+    // 45-minute stall with zero events).
+    pipelineLog.step({ component: "IndexRun" }, "RUN_START", {
+      collection: aliasCollectionName,
+      path: absolutePath,
+      force: options?.forceReindex === true,
+    });
     // Held outside the try so the failure path knows which versioned collection
     // this run created and can discard it (bd tea-rags-mcp-8pymz).
     let build: SetupResult | undefined;
@@ -80,6 +89,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     try {
       const { files, scanner } = await this.scanAndReport(absolutePath, options, progressCallback);
       stats.filesScanned = files.length;
+      pipelineLog.step({ component: "IndexRun" }, "SCAN_COMPLETE", { files: files.length });
 
       if (files.length === 0) {
         stats.durationMs = Date.now() - startTime;
@@ -97,6 +107,10 @@ export class IndexPipeline extends BaseIndexingPipeline {
       );
       build = setup;
       pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
+      pipelineLog.step({ component: "IndexRun" }, "QDRANT_READY", {
+        collection: setup.targetCollection,
+        ms: Date.now() - qdrantSetupStart,
+      });
       /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
       if (!setup.ready) {
         stats.status = "failed";
@@ -122,7 +136,12 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // result instead of hashing everything a second time. Without the stamp
       // every row lands NULL and the NEXT run repairs the entire corpus.
       const synchronizer = this.deps.createSynchronizer(absolutePath, aliasCollectionName);
+      const hashesStart = Date.now();
       const contentHashes = await synchronizer.computeContentHashes(files);
+      pipelineLog.step({ component: "IndexRun" }, "HASHES_COMPLETE", {
+        files: files.length,
+        ms: Date.now() - hashesStart,
+      });
 
       const ctx = this.initProcessing(
         setup.targetCollection,
