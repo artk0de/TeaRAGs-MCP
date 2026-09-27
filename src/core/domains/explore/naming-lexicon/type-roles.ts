@@ -2,8 +2,10 @@
  * Type roles (bd tea-rags-mcp-vi0wx): the tail word a family of types shares
  * (`…Strategy`, `…Preset`, `…Store`). Evidence, strongest first:
  *   1. inheritance — types with a common ancestor whose names share a tail word;
- *   2. directory   — a tail word carried by the primary types of ≥ 2 files and
- *      ≥ `directoryShare` of the directory's files that have a primary;
+ *   2. directory   — the MAJORITY family: the plurality tail word of the
+ *      directory's primaries, carried by ≥ 2 files and ≥ half (`directoryShare`
+ *      0.5 — the definition of a majority) of the files that have a primary;
+ *      a plurality tie is no role;
  *   3. project suffix — a tail word carried by the primary types of
  *      ≥ `projectSuffixMinTypes` files in ≥ `projectSuffixMinDirs` directories.
  * Directory and suffix evidence read ONE type per file, its primary (the type
@@ -38,13 +40,16 @@ export interface TypeRoleAssignment {
 }
 
 export interface TypeRoleThresholds {
+  /** The share of a directory's primaries its role word must hold: a MAJORITY family. */
   directoryShare: number;
   projectSuffixMinTypes: number;
   projectSuffixMinDirs: number;
 }
 
 export const TYPE_ROLE_THRESHOLDS: TypeRoleThresholds = {
-  directoryShare: 0.2,
+  // 0.5 is the definition of a majority, not a tuned value: a directory's role is the family
+  // at least half of its files belong to. A lower share let two helper files name a directory.
+  directoryShare: 0.5,
   projectSuffixMinTypes: 3,
   projectSuffixMinDirs: 2,
 };
@@ -90,21 +95,22 @@ function dominantHead(members: readonly HeadedRow[]): { head: string; count: num
 }
 
 /**
- * The head carried by the most FILES of a group (a file counts once per head,
- * however many of its types end in it) and that file count; ties go to the
- * alphabetically first head. One `errors.ts` of ten `*Error` classes is one
- * file of evidence, not ten.
+ * The plurality head of a directory's primaries (one per file) and its file
+ * count; `undefined` when two heads tie for the most — a split directory has
+ * no majority family.
  */
-function dominantFileHead(members: readonly HeadedRow[]): { head: string; count: number } {
-  const files = new Map<string, Set<string>>();
-  for (const { row, head } of members) files.set(head, (files.get(head) ?? new Set<string>()).add(row.relPath));
-  let best = { head: "", count: 0 };
-  for (const [head, paths] of files) {
-    if (paths.size > best.count || (paths.size === best.count && head < best.head)) {
-      best = { head, count: paths.size };
-    }
+function pluralityHead(primaries: readonly HeadedRow[]): { head: string; count: number } | undefined {
+  const counts = new Map<string, number>();
+  for (const { head } of primaries) counts.set(head, (counts.get(head) ?? 0) + 1);
+  let best: { head: string; count: number } | undefined;
+  let tied = false;
+  for (const [head, count] of counts) {
+    if (!best || count > best.count) {
+      best = { head, count };
+      tied = false;
+    } else if (count === best.count) tied = true;
   }
-  return best;
+  return tied ? undefined : best;
 }
 
 /** Leading / trailing words of a file stem that mark a test file, not its subject. */
@@ -119,22 +125,73 @@ function fileStemWords(relPath: string): Set<string> {
   return new Set(words.map(singularizeIdentifierWord));
 }
 
+/** Tie-break rank of a declaration kind for the primary pick: lower wins. */
+const PRIMARY_KIND_RANK: Partial<Record<NonNullable<TypeNameRow["symbolKind"]>, number>> = {
+  class: 0,
+  interface: 1,
+  enum: 1,
+  module: 1,
+  type_alias: 2,
+};
+const OTHER_KIND_RANK = 3;
+
+interface PrimaryCandidate {
+  member: HeadedRow;
+  overlap: number;
+  /** The name's words that are not stem words. */
+  extra: number;
+  kindRank: number;
+}
+
+/** Whether `a` beats the incumbent `b` (declared earlier): more overlap, then — on overlap — fewer extra words, then the stronger kind. */
+function beatsPrimary(a: PrimaryCandidate, b: PrimaryCandidate): boolean {
+  if (a.overlap !== b.overlap) return a.overlap > b.overlap;
+  if (a.overlap === 0) return false;
+  if (a.extra !== b.extra) return a.extra < b.extra;
+  return a.kindRank < b.kindRank;
+}
+
 /**
  * Each file's PRIMARY type: the one whose (singular) words overlap its file
- * stem's most. A tie, or no overlap at all, goes to the first declared — the
- * rows arrive in declaration order within a file. `errors.ts` contributes one
- * `*Error`; `reranker.ts` contributes `Reranker`, not `RerankOptions`.
+ * stem's most. Among the max-overlap types the fewest words beyond the stem's
+ * win (`CompletionRunner` over `CompletionRunnerDeps`), then the kind — class >
+ * interface / enum / module > type alias > the rest (`FileOutlineStrategy` over
+ * `FileOutlineInput`) — then the first declared; with no overlap at all, the
+ * first declared. The rows arrive in declaration order within a file.
+ * `errors.ts` contributes one `*Error`; `reranker.ts` contributes `Reranker`,
+ * not `RerankOptions`.
  */
-function primaryPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
-  const best = new Map<string, { member: HeadedRow; overlap: number }>();
+function primaryHeadedPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
+  const best = new Map<string, PrimaryCandidate>();
   for (const member of headed) {
     const stem = fileStemWords(member.row.relPath);
     const words = new Set(typeNameWords(member.row.shortName).map(singularizeIdentifierWord));
     const overlap = [...words].filter((word) => stem.has(word)).length;
+    const kind = member.row.symbolKind;
+    const candidate: PrimaryCandidate = {
+      member,
+      overlap,
+      extra: words.size - overlap,
+      kindRank: (kind === null ? undefined : PRIMARY_KIND_RANK[kind]) ?? OTHER_KIND_RANK,
+    };
     const current = best.get(member.row.relPath);
-    if (!current || overlap > current.overlap) best.set(member.row.relPath, { member, overlap });
+    if (!current || beatsPrimary(candidate, current)) best.set(member.row.relPath, candidate);
   }
   return [...best.values()].map(({ member }) => member);
+}
+
+/** Each file's primary type, in first-seen file order (see {@link primaryHeadedPerFile}); nameless rows are skipped. */
+export function primaryPerFile(rows: readonly TypeNameRow[]): TypeNameRow[] {
+  return primaryHeadedPerFile(headedRows(rows)).map(({ row }) => row);
+}
+
+function headedRows(rows: readonly TypeNameRow[]): HeadedRow[] {
+  const headed: HeadedRow[] = [];
+  for (const row of rows) {
+    const words = typeNameWords(row.shortName);
+    if (words.length > 0) headed.push({ row, head: words[words.length - 1] });
+  }
+  return headed;
 }
 
 function assign(
@@ -159,11 +216,7 @@ export function deriveTypeRoles(
   rows: readonly TypeNameRow[],
   t: TypeRoleThresholds = TYPE_ROLE_THRESHOLDS,
 ): TypeRoleAssignment[] {
-  const headed: HeadedRow[] = [];
-  for (const row of rows) {
-    const words = typeNameWords(row.shortName);
-    if (words.length > 0) headed.push({ row, head: words[words.length - 1] });
-  }
+  const headed = headedRows(rows);
   const assignments: TypeRoleAssignment[] = [];
 
   const families = groupBy(headed, ({ row }) => [...new Set(row.ancestors.map(typeNameLastSegment))]);
@@ -172,13 +225,12 @@ export function deriveTypeRoles(
     if (count >= MIN_ROLE_MEMBERS) assignments.push(...assign(members, head, "inheritance", ancestor));
   }
 
-  const primaries = primaryPerFile(headed);
+  const primaries = primaryHeadedPerFile(headed);
   const directories = groupBy(primaries, ({ row }) => [directoryOf(row.relPath)]);
   for (const [dir, members] of directories) {
-    const { head, count } = dominantFileHead(members);
-    const files = new Set(members.map(({ row }) => row.relPath)).size;
-    if (count >= MIN_ROLE_MEMBERS && count / files >= t.directoryShare) {
-      assignments.push(...assign(members, head, "directory", dir));
+    const plurality = pluralityHead(members);
+    if (plurality && plurality.count >= MIN_ROLE_MEMBERS && plurality.count / members.length >= t.directoryShare) {
+      assignments.push(...assign(members, plurality.head, "directory", dir));
     }
   }
 

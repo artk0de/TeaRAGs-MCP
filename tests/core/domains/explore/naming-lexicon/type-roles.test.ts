@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveTypeRoles,
   expectedRoleFor,
+  primaryPerFile,
   type TypeNameRow,
 } from "../../../../../src/core/domains/explore/naming-lexicon/type-roles.js";
 
@@ -205,18 +206,112 @@ describe("deriveTypeRoles / expectedRoleFor", () => {
       expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/new.ts" })).toBeUndefined();
     });
 
+    // T9 live measurement: helper types declared above the main class won the stem tie.
+    describe("a stem-overlap tie prefers the tightest name, then the class", () => {
+      function k(shortName: string, relPath: string, symbolKind: TypeNameRow["symbolKind"]): TypeNameRow {
+        return { symbolId: shortName, relPath, shortName, symbolKind, ancestors: [] };
+      }
+      const primaryOf = (rows: TypeNameRow[]) => primaryPerFile(rows).map((row) => row.shortName);
+
+      it("completion-runner.ts → CompletionRunner, not the CompletionRunnerDeps declared above it", () => {
+        const file = "src/core/domains/ingest/pipeline/enrichment/completion-runner.ts";
+        expect(
+          primaryOf([
+            k("CompletionRunnerDeps", file, "interface"),
+            k("CodegraphStorageCompactionRunner", file, "interface"),
+            k("CodegraphCompactionStepOutcome", file, "type_alias"),
+            k("UnenrichedReader", file, "type_alias"),
+            k("OutOfWindowBackfillOutcome", file, "interface"),
+            k("DeferredChunkPassOutcome", file, "type_alias"),
+            k("CodegraphHealStepOutcome", file, "type_alias"),
+            k("CompletionTerminalMarkerProgress", file, "type_alias"),
+            k("CompletionRunner", file, "class"),
+          ]),
+        ).toEqual(["CompletionRunner"]);
+      });
+
+      it("the `*OpsDeps` above each `*Ops` never make `deps` the ops directory's role", () => {
+        const dir = "src/core/api/internal/ops";
+        const rows = [
+          k("ExploreOpsDeps", `${dir}/explore-ops.ts`, "interface"),
+          k("ResolvedExploreFilter", `${dir}/explore-ops.ts`, "interface"),
+          k("ExploreFinalizeOptions", `${dir}/explore-ops.ts`, "interface"),
+          k("ExploreOps", `${dir}/explore-ops.ts`, "class"),
+          k("FilterPresetLookup", `${dir}/explore-ops.ts`, "interface"),
+          k("NamingLexiconExplore", `${dir}/naming-lexicon-ops.ts`, "interface"),
+          k("NamingLexiconOpsDeps", `${dir}/naming-lexicon-ops.ts`, "interface"),
+          k("NamingLexiconOps", `${dir}/naming-lexicon-ops.ts`, "class"),
+          k("WorktreeSeedOpsDeps", `${dir}/worktree-seed-ops.ts`, "interface"),
+          k("WorktreeSeedSourceRelease", `${dir}/worktree-seed-ops.ts`, "type_alias"),
+          k("WorktreeSeedRequest", `${dir}/worktree-seed-ops.ts`, "interface"),
+          k("WorktreeSeedOps", `${dir}/worktree-seed-ops.ts`, "class"),
+        ];
+        expect(primaryOf(rows)).toEqual(["ExploreOps", "NamingLexiconOps", "WorktreeSeedOps"]);
+        expect(expectedRoleFor(deriveTypeRoles(rows), { path: `${dir}/new-ops.ts` })).toMatchObject({
+          role: "ops",
+          evidence: "directory",
+        });
+      });
+
+      it("file-outline.ts → the FileOutlineStrategy class over the FileOutlineInput interface", () => {
+        const file = "src/core/domains/explore/strategies/file-outline.ts";
+        expect(primaryOf([k("FileOutlineInput", file, "interface"), k("FileOutlineStrategy", file, "class")])).toEqual([
+          "FileOutlineStrategy",
+        ]);
+      });
+
+      it("cohere.ts → the CohereEmbeddings class over the CohereError interface", () => {
+        const file = "src/core/adapters/embeddings/cohere.ts";
+        expect(primaryOf([k("CohereError", file, "interface"), k("CohereEmbeddings", file, "class")])).toEqual([
+          "CohereEmbeddings",
+        ]);
+      });
+    });
+
     it("a plural stem matches a singular head: errors.ts contributes one `*Error`", () => {
       const rows = [
         t("Alpha", "src/explore/errors.ts", []),
         t("ExploreError", "src/explore/errors.ts", []),
         t("QueryError", "src/explore/query.ts", []),
+        t("ScrollError", "src/explore/scroll.ts", []),
         ...fillers("src/explore", 1, 3),
       ];
-      // errors.ts's primary is ExploreError (stem `errors` ~ `error`), not Alpha, so `error` holds 2 of 5 files.
+      // errors.ts's primary is ExploreError (stem `errors` ~ `error`), not Alpha, so `error` holds 3 of 6
+      // files — a majority; with Alpha as the primary it would hold 2 of 6 and no role.
       expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/explore/new.ts" })).toMatchObject({
         role: "error",
         evidence: "directory",
       });
+    });
+  });
+
+  // T9 live: share ≥ 0.2 let a few helper files define a directory (`request` in api/public/dto).
+  // A directory role is its MAJORITY family: the plurality head of at least half its primaries.
+  describe("a directory role is the majority family", () => {
+    const suffixed = (head: string, dir: string, count: number, from = 0): TypeNameRow[] =>
+      FILLER_HEADS.slice(from, from + count).map((q) => t(`${q}${head}`, `${dir}/${q.toLowerCase()}.ts`, []));
+
+    it("`*Request` in 3 of 12 primaries (the api/public/dto shape) → no role", () => {
+      const rows = [...suffixed("Request", "src/dto", 3), ...fillers("src/dto", 3, 9)];
+      expect(deriveTypeRoles(rows).filter((r) => r.evidence === "directory")).toEqual([]);
+    });
+
+    it("`*Preset` in 3 of 4 primaries → the role", () => {
+      const rows = [...suffixed("Preset", "src/presets", 3), ...fillers("src/presets", 3, 1)];
+      expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/presets/new.ts" })).toMatchObject({
+        role: "preset",
+        evidence: "directory",
+      });
+    });
+
+    it("`*Dispatcher` in 2 of 5 primaries → no role", () => {
+      const rows = [...suffixed("Dispatcher", "src/executor", 2), ...fillers("src/executor", 2, 3)];
+      expect(deriveTypeRoles(rows).filter((r) => r.evidence === "directory")).toEqual([]);
+    });
+
+    it("a plurality tie at half each → no role", () => {
+      const rows = [...suffixed("Store", "src/mixed", 2), ...suffixed("Cache", "src/mixed", 2, 2)];
+      expect(deriveTypeRoles(rows).filter((r) => r.evidence === "directory")).toEqual([]);
     });
   });
 
