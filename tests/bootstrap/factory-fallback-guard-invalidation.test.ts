@@ -251,6 +251,10 @@ describe("Ollama failover invalidates the model guard (bd tea-rags-mcp-g5nmi)", 
     // The primary dies mid-session. The next probe detects it and fails over.
     captured.primaryAlive = false;
     await vi.advanceTimersByTimeAsync(PROBE_INTERVAL_MS);
+    // The probe retries transport failures once after a real 250ms delay —
+    // only the interval is faked here (see toFake above), so the retry needs
+    // real wall time to settle before the failover is visible.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(embeddings.getBaseUrl(), "the probe did not fail over to the fallback").toBe(FALLBACK_URL);
 
     // The cached verdict described the endpoint that just went away, so the

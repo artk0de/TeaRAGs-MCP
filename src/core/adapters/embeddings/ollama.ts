@@ -31,8 +31,17 @@ import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 /** Full request timeout for single embed calls (connect + model load + inference).
  *  30s allows for cold model loads after successful health check. */
 const SINGLE_EMBED_TIMEOUT_MS = 30_000;
-/** Timeout for lightweight health probe (GET /) */
-const HEALTH_PROBE_TIMEOUT_MS = 1000;
+/** Timeout for lightweight health probe (GET /). Generous on purpose: a box
+ *  that is mid model-load or behind LAN jitter can stall a 1s GET / while
+ *  still being perfectly able to serve embeds a moment later. */
+const HEALTH_PROBE_TIMEOUT_MS = 3_000;
+/** Probe attempts before declaring the primary unreachable. One retry absorbs
+ *  sub-second jitter (cold model load, LAN blip) that would otherwise flip the
+ *  whole run onto the fallback endpoint on a single dropped probe. */
+const HEALTH_PROBE_ATTEMPTS = 2;
+/** Pause between probe attempts. Same shape as the tune config's
+ *  healthCheckRetryDelayMs default (250ms). */
+const HEALTH_PROBE_RETRY_DELAY_MS = 250;
 /** Minimum time after primary failure before allowing recovery */
 const RECOVERY_COOLDOWN_MS = 60_000;
 /** How long to cache checkHealth() result before re-probing */
@@ -259,20 +268,38 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
   }
 
-  private async checkInitialHealth(): Promise<void> {
-    try {
-      const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      if (!response.ok) {
-        this.switchToFallback("initial health check non-ok");
-      } else {
-        this.primaryAlive = true;
-        this.primaryAliveAt = Date.now();
-        // Monitor primary for runtime failures — symmetric to recovery probe.
-        // Detection-only: probe never switches URL mid-operation (snapshot invariant).
-        this.startPrimaryProbe();
+  /**
+   * Probe the primary endpoint with GET /. Retries transport failures (timeout,
+   * connection refused) once after a short delay — a live server answering
+   * non-ok is a deterministic signal and is NOT retried. Returns the outcome
+   * so callers keep their distinct switch reasons.
+   */
+  private async probeEndpointOutcome(): Promise<"ok" | "non-ok" | "unreachable"> {
+    for (let attempt = 1; attempt <= HEALTH_PROBE_ATTEMPTS; attempt++) {
+      try {
+        const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
+        return response.ok ? "ok" : "non-ok";
+      } catch {
+        if (attempt < HEALTH_PROBE_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, HEALTH_PROBE_RETRY_DELAY_MS));
+        }
       }
-    } catch {
-      this.switchToFallback("initial health check failed");
+    }
+    return "unreachable";
+  }
+
+  private async checkInitialHealth(): Promise<void> {
+    const outcome = await this.probeEndpointOutcome();
+    if (outcome === "ok") {
+      this.primaryAlive = true;
+      this.primaryAliveAt = Date.now();
+      // Monitor primary for runtime failures — symmetric to recovery probe.
+      // Detection-only: probe never switches URL mid-operation (snapshot invariant).
+      this.startPrimaryProbe();
+    } else if (outcome === "non-ok") {
+      this.switchToFallback("initial health check non-ok");
+    } else {
+      this.switchToFallback(`initial health check failed (${HEALTH_PROBE_ATTEMPTS} attempts)`);
     }
   }
 
@@ -289,13 +316,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private async probePrimary(): Promise<void> {
-    let alive: boolean;
-    try {
-      const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      alive = response.ok;
-    } catch {
-      alive = false;
-    }
+    const alive = (await this.probeEndpointOutcome()) === "ok";
 
     if (this.usingFallback) {
       // Recovery direction: fallback → primary
