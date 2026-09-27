@@ -42,6 +42,7 @@ export class EmbeddingProviderFactory {
       retryDelayMs: tune.retryDelayMs,
       unavailableRetryMaxWaitMs: tune.unavailableRetryMaxWaitMs,
       unavailableRetryBaseDelayMs: tune.unavailableRetryBaseDelayMs,
+      failoverConsecutiveFailures: tune.failoverConsecutiveFailures,
     };
 
     switch (provider) {

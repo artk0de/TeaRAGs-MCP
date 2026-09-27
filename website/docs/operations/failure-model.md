@@ -42,6 +42,7 @@ The tooling is conservative: **transient faults retry, permanent faults surface*
 | Qdrant unreachable | Surfaced (`INFRA_QDRANT_UNAVAILABLE`) | Likely misconfiguration; silent retry would mask it |
 | Embedding rate limit (OpenAI / Cohere / Voyage) | **Retried** with exponential backoff + `Retry-After` | Provider guarantees the limit will lift; invisible to the caller |
 | Embedding transient 5xx | **Retried** (bounded by `EMBEDDING_TUNE_RETRY_ATTEMPTS`) | Same reason |
+| Ollama HTTP 200 with no vectors or the wrong count | **Retried** (bounded by `EMBEDDING_TUNE_RETRY_ATTEMPTS`), then surfaced (`INFRA_OLLAMA_MALFORMED_RESPONSE`: expected N vectors, got M) | The host is reachable, so no unavailable-host wait and no "not reachable" report |
 | Ollama model missing | **Retried once after model pull**; then surfaced (`INFRA_EMBEDDING_OLLAMA_MODEL_MISSING`) | One self-heal attempt, then user must intervene |
 | Ollama unreachable | **Fallback to ONNX** if configured; otherwise surfaced | Local-first UX — don't break when the daemon dies |
 | Git CLI timeout during enrichment | Logged, **does not fail indexing** | Enrichment is best-effort; base payload is still usable |
@@ -61,6 +62,8 @@ Tunable via `EMBEDDING_TUNE_RETRY_ATTEMPTS` (default `3`) and `EMBEDDING_TUNE_RE
 ### Ollama fallback to ONNX
 
 `OllamaUnavailableError.withFallback` and `OllamaEmbeddings#switchToFallback` let the indexer switch to ONNX mid-run if Ollama becomes unreachable. The fallback is **opt-in** via configuration — no silent provider swaps without user intent.
+
+With `EMBEDDING_FALLBACK_URL` set, `OllamaEmbeddings#switchToFallback` fires on three triggers: the startup health check fails, the 30s background probe finds the primary dead, or `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` (default `3`) embed calls in a row fail on the primary while its `GET /` still answers. Only endpoint-side failures count toward the last one: transport errors, timeouts, 5xx and malformed responses. A 4xx input error would fail on any endpoint, so it neither counts nor resets the run; any successful embed on the primary resets it. The way back is always the background probe, gated by the 60s recovery cooldown.
 
 ## MCP Tool Error Contract
 

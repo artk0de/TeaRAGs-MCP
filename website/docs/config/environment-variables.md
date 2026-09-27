@@ -178,6 +178,7 @@ bottlenecks.
 | `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | Rate limit for embedding API           | Provider-specific |
 | `EMBEDDING_TUNE_RETRY_ATTEMPTS`          | Retry count for failed embedding calls | `3`               |
 | `EMBEDDING_TUNE_RETRY_DELAY_MS`          | Initial retry delay (ms)               | `1000`            |
+| `EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES` | Ollama only, needs `EMBEDDING_FALLBACK_URL`: consecutive failed embed calls on the primary (transport error, timeout, 5xx, malformed response; never a 4xx input error) before switching to the fallback while the primary still answers its health check. The 60s recovery cooldown and background probe decide the way back. `0` disables | `3` |
 
 ### Ingest Tune
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   OllamaContextOverflowError,
+  OllamaMalformedResponseError,
   OllamaModelMissingError,
   OllamaTimeoutError,
   OllamaUnavailableError,
@@ -239,5 +240,19 @@ describe("OllamaUnavailableError actionable hint (bd tea-rags-mcp-umatc)", () =>
       "Ollama is not reachable at http://127.0.0.1:9 (primary) or http://127.0.0.1:7 (fallback) (waited 30s for it to come back)",
     );
     expect(error.recoveryWaitMs).toBe(30_000);
+  });
+});
+
+describe("OllamaMalformedResponseError (bd tea-rags-mcp-jyka)", () => {
+  it("states expected and received vector counts and the endpoint, and is not an unavailability", () => {
+    const error = new OllamaMalformedResponseError("http://gpu:11434", 64, 63);
+    expect(error.code).toBe("INFRA_OLLAMA_MALFORMED_RESPONSE");
+    expect(error.message).toBe(
+      "Ollama returned a malformed embed response at http://gpu:11434: expected 64 vectors, got 63",
+    );
+    expect(error.expectedCount).toBe(64);
+    expect(error.receivedCount).toBe(63);
+    expect(error.hint).toContain("EMBEDDING_TUNE_RETRY_ATTEMPTS");
+    expect(error).not.toBeInstanceOf(OllamaUnavailableError);
   });
 });

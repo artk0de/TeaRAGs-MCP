@@ -12,6 +12,8 @@ export interface RetryOptions {
   isRetryable: (error: unknown) => boolean;
   /** Extract server-suggested retry delay in ms (e.g. from Retry-After header). */
   getRetryAfterMs?: (error: unknown) => number | undefined;
+  /** Name what is being retried in the log line; undefined keeps "Rate limit reached". */
+  describeRetry?: (error: unknown) => string | undefined;
 }
 
 export async function withRateLimitRetry<T>(fn: () => Promise<T>, opts: RetryOptions, attempt = 0): Promise<T> {
@@ -22,7 +24,7 @@ export async function withRateLimitRetry<T>(fn: () => Promise<T>, opts: RetryOpt
       const retryAfterMs = opts.getRetryAfterMs?.(error);
       const delayMs = retryAfterMs ?? opts.baseDelayMs * Math.pow(2, attempt);
       console.error(
-        `Rate limit reached. Retrying in ${(delayMs / 1000).toFixed(1)}s (attempt ${attempt + 1}/${opts.maxAttempts})...`,
+        `${opts.describeRetry?.(error) ?? "Rate limit reached"}. Retrying in ${(delayMs / 1000).toFixed(1)}s (attempt ${attempt + 1}/${opts.maxAttempts})...`,
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       return withRateLimitRetry(fn, opts, attempt + 1);

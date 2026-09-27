@@ -158,6 +158,7 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
     aliases: ["EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS"],
     consequence: "runtime",
   },
+  { canonical: "EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES", aliases: [], consequence: "runtime" },
   // qdrantTune (parse.ts `qdrantTune` section) — write path and storage
   // settings only; quantization is applied in place on the live collection.
   {

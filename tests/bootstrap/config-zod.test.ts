@@ -247,6 +247,23 @@ describe("parseAppConfigZod", () => {
       delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS;
       delete process.env.EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS;
     });
+
+    it("defaults embed-failure failover to 3 consecutive failures", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.failoverConsecutiveFailures).toBe(3);
+    });
+
+    it("reads the embed-failure failover threshold from env, 0 included", async () => {
+      process.env.EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES = "0";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.failoverConsecutiveFailures).toBe(0);
+
+      delete process.env.EMBEDDING_TUNE_FAILOVER_CONSECUTIVE_FAILURES;
+    });
   });
 
   describe("provider-specific batch size defaults", () => {

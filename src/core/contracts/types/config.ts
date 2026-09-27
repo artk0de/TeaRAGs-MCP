@@ -18,6 +18,12 @@ export interface EmbeddingTuneConfig {
   unavailableRetryMaxWaitMs: number;
   /** Base backoff (ms) between connection-recovery attempts; exponential, capped. */
   unavailableRetryBaseDelayMs: number;
+  /**
+   * Consecutive failed embed calls on the Ollama primary after which the
+   * provider fails over to the configured fallback URL while the primary still
+   * passes its health probe. 0 disables.
+   */
+  failoverConsecutiveFailures: number;
 }
 
 export interface EmbeddingConfig {

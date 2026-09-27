@@ -18,6 +18,7 @@ import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import {
   OllamaContextOverflowError,
+  OllamaMalformedResponseError,
   OllamaModelMissingError,
   OllamaResponseError,
   OllamaTimeoutError,
@@ -53,6 +54,14 @@ const BATCH_PER_ITEM_TIMEOUT_MS = 200; // 200ms per item (accounts for GPU queue
 const UNAVAILABLE_RETRY_MAX_DELAY_MS = 30_000;
 /** Default base backoff between connection-recovery attempts when unset. */
 const UNAVAILABLE_RETRY_DEFAULT_BASE_DELAY_MS = 2_000;
+/**
+ * Default consecutive failed embeds on the primary before failing over while
+ * its `GET /` still answers (bd tea-rags-mcp-80maa). One failure is a blip (a
+ * model reload, one dropped connection); three in a row with no success
+ * between them is a broken embed path. Inside a recovery wait that costs
+ * ~2s + 4s of backoff instead of the whole 240s budget.
+ */
+const FAILOVER_CONSECUTIVE_FAILURES_DEFAULT = 3;
 
 async function fetchWithTimeout(
   url: string,
@@ -128,6 +137,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly retryDelayMs: number;
   private readonly unavailableRetryMaxWaitMs: number;
   private readonly unavailableRetryBaseDelayMs: number;
+  private readonly failoverConsecutiveFailures: number;
+  /**
+   * Embed calls that ran against the primary and failed on the endpoint's side,
+   * in completion order with no success between them. Per instance, so every
+   * worker sharing this provider feeds the same count; JS runs each update to
+   * completion, so concurrent failures cross the threshold exactly once.
+   */
+  private consecutivePrimaryFailures = 0;
   private readonly baseUrl: string;
   private readonly fallbackBaseUrl?: string;
   private readonly numGpu: number;
@@ -181,6 +198,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     this.unavailableRetryMaxWaitMs = rateLimitConfig?.unavailableRetryMaxWaitMs ?? 0;
     this.unavailableRetryBaseDelayMs =
       rateLimitConfig?.unavailableRetryBaseDelayMs || UNAVAILABLE_RETRY_DEFAULT_BASE_DELAY_MS;
+    this.failoverConsecutiveFailures =
+      rateLimitConfig?.failoverConsecutiveFailures ?? FAILOVER_CONSECUTIVE_FAILURES_DEFAULT;
 
     this.limiter = new Bottleneck({
       reservoir: maxRequestsPerMinute,
@@ -259,6 +278,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
   private switchToFallback(reason: string): void {
     this.usingFallback = true;
+    this.consecutivePrimaryFailures = 0;
     this.primaryAlive = false;
     this.primaryFailedAt = Date.now();
     this.startPrimaryProbe();
@@ -284,6 +304,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           return;
         }
         this.usingFallback = false;
+        this.consecutivePrimaryFailures = 0;
         this.primaryAlive = true;
         this.primaryAliveAt = Date.now();
         if (isDebug()) {
@@ -304,6 +325,45 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
   }
 
+  /**
+   * Did the ENDPOINT fail this embed, as opposed to the caller's input? A
+   * caller-side 4xx (context overflow, missing model, bad request, rate limit
+   * once its own retries are spent) would fail the same way on any endpoint,
+   * so it says nothing about the primary. Everything else — transport error,
+   * timeout, 5xx, malformed body — does.
+   */
+  private isEndpointFailure(error: unknown): boolean {
+    if (error instanceof OllamaModelMissingError) return false;
+    if (error instanceof OllamaResponseError && error.responseStatus >= 400 && error.responseStatus < 500) {
+      return false;
+    }
+    return !this.isRateLimit(error);
+  }
+
+  /** A success on the primary ends the run of consecutive failures. */
+  private notePrimaryEmbedSuccess(url: string): void {
+    if (url === this.baseUrl) this.consecutivePrimaryFailures = 0;
+  }
+
+  /**
+   * Count an embed that failed on the primary; fail over once the run reaches
+   * the threshold (bd tea-rags-mcp-80maa). This is the only path for a primary
+   * that still answers `GET /` — the startup check and the background probe
+   * both see it healthy. The way back stays with the probe and its cooldown.
+   * Only calls whose URL snapshot was the primary count, and only while the
+   * primary is active: an in-flight call landing after the switch neither
+   * re-switches nor counts toward the next run. Returns true when it switched.
+   */
+  private notePrimaryEmbedFailure(url: string, error: unknown): boolean {
+    if (!this.fallbackBaseUrl || this.failoverConsecutiveFailures <= 0) return false;
+    if (this.usingFallback || url !== this.baseUrl) return false;
+    if (!this.isEndpointFailure(error)) return false;
+    this.consecutivePrimaryFailures += 1;
+    if (this.consecutivePrimaryFailures < this.failoverConsecutiveFailures) return false;
+    this.switchToFallback(`${this.consecutivePrimaryFailures} consecutive embed failures on primary`);
+    return true;
+  }
+
   private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
     const recoveryStart = Date.now();
     const recoveryDeadline = recoveryStart + this.unavailableRetryMaxWaitMs;
@@ -315,16 +375,26 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         const result = await withRateLimitRetry(async () => fn(url), {
           maxAttempts: this.retryAttempts,
           baseDelayMs: this.retryDelayMs,
-          isRetryable: (error) => this.isRateLimit(error),
+          // A malformed 200 (no vectors / wrong count) is a transient server
+          // hiccup on a reachable host — retry it here, not in the recovery wait.
+          isRetryable: (error) => this.isRateLimit(error) || error instanceof OllamaMalformedResponseError,
+          describeRetry: (error) =>
+            error instanceof OllamaMalformedResponseError ? "Malformed Ollama embed response" : undefined,
         });
+        this.notePrimaryEmbedSuccess(url);
         if (recoveryAttempt > 0) {
           this.onRecoveryWait?.({ state: "recovered", url, elapsedMs: Date.now() - recoveryStart });
         }
         return result;
       } catch (error) {
+        const switchedToFallback = this.notePrimaryEmbedFailure(url, error);
+
         // Typed errors propagate directly — the server IS reachable but rejected
-        // the request (missing model, timeout, HTTP error), so waiting for a
-        // reconnection is pointless. No fallback switch, no recovery wait.
+        // the request (missing model, timeout, HTTP error, malformed body whose
+        // retries are spent), so waiting for a reconnection is pointless. No
+        // recovery wait; the failure has already been counted toward failover
+        // above, so the NEXT call may go elsewhere.
+        if (error instanceof OllamaMalformedResponseError) throw error;
         if (error instanceof OllamaModelMissingError) throw error;
         if (error instanceof OllamaTimeoutError) throw error;
         if (error instanceof OllamaResponseError) throw error;
@@ -338,6 +408,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         const cause = error instanceof Error ? error : undefined;
         const remainingMs = recoveryDeadline - Date.now();
         if (remainingMs > 0) {
+          // This failure just moved us to the fallback: try it now rather than
+          // back off on behalf of an endpoint we are no longer calling.
+          if (switchedToFallback) continue;
           const delayMs = Math.min(
             this.unavailableRetryBaseDelayMs * 2 ** recoveryAttempt,
             UNAVAILABLE_RETRY_MAX_DELAY_MS,
@@ -360,9 +433,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           continue;
         }
 
-        // Recovery budget exhausted (or disabled) — abort. Fallback is only
-        // decided at initial health check (constructor), not mid-operation.
-        // The error carries the wait already spent so a caller does not spend
+        // Recovery budget exhausted (or disabled) — abort. The error carries the wait already spent so a caller does not spend
         // the operator's budget a second time (bd tea-rags-mcp-umatc).
         const recoveryWaitMs = recoveryAttempt > 0 ? Date.now() - recoveryStart : 0;
         if (this.usingFallback && this.fallbackBaseUrl) {
@@ -497,14 +568,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private async embedSingle(text: string, url: string): Promise<EmbeddingResult> {
     if (this.useNativeBatch) {
       const response = await this.callBatchApi([text], url, this.singleEmbedTimeout());
-      if (!response.embeddings || response.embeddings.length === 0) {
-        throw new OllamaUnavailableError(url);
+      if (response.embeddings?.length !== 1) {
+        throw new OllamaMalformedResponseError(url, 1, response.embeddings?.length ?? 0);
       }
       return { embedding: response.embeddings[0], dimensions: this.dimensions };
     }
     const response = await this.callApi(text, url);
     if (!response.embedding) {
-      throw new OllamaUnavailableError(url);
+      throw new OllamaMalformedResponseError(url, 1, 0);
     }
     return { embedding: response.embedding, dimensions: this.dimensions };
   }
@@ -549,7 +620,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         }
         const response = await this.callBatchApi(texts, url, timeout);
         if (response.embeddings?.length !== texts.length) {
-          throw new OllamaUnavailableError(url);
+          throw new OllamaMalformedResponseError(url, texts.length, response.embeddings?.length ?? 0);
         }
         return response.embeddings.map((embedding: number[]) => ({
           embedding,

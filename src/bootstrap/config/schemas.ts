@@ -57,6 +57,15 @@ export const embeddingTuneSchema = z.object({
   unavailableRetryMaxWaitMs: intWithDefault(240_000),
   /** Base backoff between connection-recovery attempts (ms); exponential, capped at 30s. Default 2000. */
   unavailableRetryBaseDelayMs: intWithDefault(2000),
+  /**
+   * Consecutive failed embed calls on the Ollama primary (transport error,
+   * timeout, 5xx, malformed response — never a caller-side 4xx) after which
+   * the provider fails over to EMBEDDING_FALLBACK_URL, even though the
+   * primary still answers its `GET /` health probe. The existing 60s recovery
+   * cooldown and background probe decide the way back. Needs a fallback URL;
+   * 0 disables. Default 3.
+   */
+  failoverConsecutiveFailures: intWithDefault(3),
 });
 
 export const embeddingSchema = z.object({
