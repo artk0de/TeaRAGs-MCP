@@ -161,9 +161,10 @@ interface JudgedRows {
   typeName?: string;
   callee?: IdentifierBoundCallee;
   /**
-   * The rows are the draft TYPE's own and the draft is a value: a FREE draft
-   * conforms only with a name the rows already hold — a role-naming history
-   * licenses its own roles, not any word (see {@link judgeFreeValueName}).
+   * The rows are the draft type's or bound callee's own and the draft is a
+   * value: a FREE draft conforms only with a name the rows already hold — a
+   * role-naming history licenses its own roles, not any word (see
+   * {@link judgeFreeValueName}).
    */
   freeNameMustBeKnown?: boolean;
 }
@@ -212,18 +213,20 @@ function judgeAgainstRows(
 }
 
 /**
- * A FREE value draft whose shape the type's rows accept: CONFORMS when one of
- * those rows already carries the name (compared by words, so a snake row names
- * a camel draft), else NEW_TERM — the project names the type by role, and this
- * role is one it has never used. `topTerms` carries the type's own top names
- * (heaviest first, merged per name): for a type with history the concept terms
- * are never consulted, so the slot holds the vocabulary the draft departs from.
+ * A FREE value draft whose shape the type's or callee's rows accept: CONFORMS
+ * when one of those rows already carries the name (compared by words in either
+ * number, so a snake row names a camel draft and `rows` names `row`), else
+ * NEW_TERM — the project names the value by role, and this role is one it has
+ * never used. `topTerms` carries the rows' own top names (heaviest first,
+ * merged per name): for a type or callee with history the concept terms are
+ * never consulted, so the slot holds the vocabulary the draft departs from.
  */
 function judgeFreeValueName(name: string, rows: readonly NamingShapeRow[]): NamingVerdict {
-  const draftKey = splitIdentifierWords(name).join("_");
+  const wordKey = (identifier: string) => splitIdentifierWords(identifier).map(singularizeIdentifierWord).join("_");
+  const draftKey = wordKey(name);
   const perName = new Map<string, number>();
   for (const row of rows) perName.set(row.name, (perName.get(row.name) ?? 0) + row.n);
-  if ([...perName.keys()].some((known) => splitIdentifierWords(known).join("_") === draftKey)) {
+  if ([...perName.keys()].some((known) => wordKey(known) === draftKey)) {
     return { verdict: "CONFORMS" };
   }
   const topTerms = [...perName]
@@ -386,6 +389,7 @@ function judgeByCallee(
       rows: calleeRows,
       callee,
       typeName: typeName ?? dominantRowType(calleeRows),
+      freeNameMustBeKnown: kind !== "return",
     });
   }
   if (kind !== "local" && kind !== "field") return undefined;
@@ -433,7 +437,10 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  *    rows (`item: Item[]` against `items` is a MISFIT) — the caller passes rows
  *    of the draft's multiplicity only;
  * 2. bound to a callee → the `byCallee` rows of that member / receiver and kind,
- *    judged the same way (rows carry their own recovered type); with no rows, a
+ *    judged the same way (rows carry their own recovered type) — a FREE value
+ *    draft, too, conforms only with a name those rows carry, else NEW_TERM
+ *    with their top names (`thing = registry.findByName(…)` against `entry`);
+ *    with no rows, a
  *    `local` / `field` whose callee derives a name (`find_x!` → `x`) must be
  *    `CALLEE_DERIVED`, when licensed;
  * 3. a fallback the project prior does not license (licence: ≥ 50% share at

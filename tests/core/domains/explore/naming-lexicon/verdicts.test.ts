@@ -485,6 +485,39 @@ describe("judgeDraftName — byCallee rows", () => {
       }),
     ).toEqual({ verdict: "CONFORMS" });
   });
+
+  // bd tea-rags-mcp-hn2vt: a FREE shape share licenses the project's role names for this call, not any word.
+  it("a FREE draft the callee's rows never use is a NEW_TERM carrying the names they do use", () => {
+    expect(
+      judgeDraftName({
+        name: "thing",
+        kind: "local",
+        casing: "camel",
+        callee: { member: "findByName", receiver: "registry" },
+        byCalleeRows: [
+          { member: "findByName", receiver: "registry", kind: "local", name: "entry", n: 5, exampleOwner: OWNER },
+          { member: "findByName", receiver: "registry", kind: "local", name: "found", n: 1, exampleOwner: OWNER },
+        ],
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: ["entry", "found"] });
+  });
+
+  it("a FREE draft a callee row already uses conforms, compared by words in either number", () => {
+    const rows = [
+      { member: "list", receiver: "registry", kind: "local" as const, name: "entries", n: 3, exampleOwner: OWNER },
+    ];
+    const judge = (name: string) =>
+      judgeDraftName({
+        name,
+        kind: "local",
+        casing: "camel",
+        callee: { member: "list", receiver: "registry" },
+        byCalleeRows: rows,
+      });
+    expect(judge("entries")).toEqual({ verdict: "CONFORMS" });
+    expect(judge("entry")).toEqual({ verdict: "CONFORMS" });
+    expect(judge("tmp")).toEqual({ verdict: "NEW_TERM", topTerms: ["entries"] });
+  });
 });
 
 describe("judgeDraftName — concept terms", () => {
