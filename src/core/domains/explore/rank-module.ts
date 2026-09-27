@@ -32,9 +32,19 @@ export interface RankOptions {
   filter?: Record<string, unknown>;
   /** Original preset name — passed to reranker for overlay mask resolution. */
   presetName?: string;
+  /**
+   * Payload field the preset collapses results on after rerank (its
+   * `groupBy`). The pool is then sized in distinct groups, not points.
+   */
+  groupBy?: string;
 }
 
 const OVERFETCH_FACTOR = 3;
+/**
+ * How many times one scroll may double its window while hunting for distinct
+ * groups — up to 2^4 = 16x the initial `limit * OVERFETCH_FACTOR` points.
+ */
+const MAX_GROUP_FILL_DOUBLINGS = 4;
 
 /**
  * Which STORED payload path a derived signal orders a scroll by — the half of
@@ -153,7 +163,7 @@ export class RankModule {
    * Rank chunks: scatter-gather → merge → rerank → top-N.
    */
   async rankChunks(collectionName: string, options: RankOptions): Promise<RerankableResult[]> {
-    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName } = options;
+    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName, groupBy } = options;
 
     // Remove similarity and re-normalize
     const cleanWeights = this.removeAndNormalize(weights);
@@ -167,10 +177,12 @@ export class RankModule {
       await Promise.all(orderByFields.map(async (field) => ensureIndexFn(collectionName, field.key)));
     }
 
-    // Parallel scroll (scatter)
-    const fetchLimit = limit * OVERFETCH_FACTOR;
+    // Parallel scroll (scatter), each window sized in distinct groups
+    const targetGroups = limit * OVERFETCH_FACTOR;
     const scrollResults = await Promise.all(
-      orderByFields.map(async (field) => scrollFn(collectionName, field, fetchLimit, filter)),
+      orderByFields.map(async (field) =>
+        this.scrollDistinctGroups(targetGroups, groupBy, async (n) => scrollFn(collectionName, field, n, filter)),
+      ),
     );
 
     // Merge + deduplicate (gather)
@@ -192,6 +204,34 @@ export class RankModule {
   }
 
   // -- Private --
+
+  /**
+   * One ordered scroll, widened until it holds `targetGroups` distinct groups
+   * or the source runs out (a window that came back short).
+   *
+   * Without a `groupBy` every point is its own group and the first window is
+   * the whole answer. With one, the points of a single group sit side by side
+   * in the order — every `#partN` of a split method shares its `methodLines` —
+   * so a window of `limit * 3` points could hold a handful of groups, and the
+   * group collapse after rerank left the result to whatever the other scrolls
+   * brought: 3 real hits and 11 two-line methods for decomposition at limit 14,
+   * and results that changed with `limit` (bd tea-rags-mcp-s9vgb).
+   */
+  private async scrollDistinctGroups(
+    targetGroups: number,
+    groupBy: string | undefined,
+    scroll: (n: number) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>,
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    let window = targetGroups;
+    let points = await scroll(window);
+    if (!groupBy) return points;
+    for (let doubling = 0; doubling < MAX_GROUP_FILL_DOUBLINGS; doubling++) {
+      if (points.length < window || countGroups(points, groupBy) >= targetGroups) break;
+      window *= 2;
+      points = await scroll(window);
+    }
+    return points;
+  }
 
   private removeAndNormalize(weights: Record<string, number>): Record<string, number> {
     const clean: Record<string, number> = {};
@@ -227,4 +267,14 @@ export class RankModule {
 
     return [...seen.values()];
   }
+}
+
+/** Distinct `groupBy` values in `points`; a point without one is its own group, as in `groupByTop`. */
+function countGroups(points: { id: string | number; payload: Record<string, unknown> }[], groupBy: string): number {
+  const keys = new Set<string>();
+  for (const p of points) {
+    const raw = p.payload[groupBy];
+    keys.add(typeof raw === "string" && raw !== "" ? `g:${raw}` : `id:${String(p.id)}`);
+  }
+  return keys.size;
 }
