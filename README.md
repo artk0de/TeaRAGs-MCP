@@ -24,16 +24,28 @@
 **Your coding agent copies the first code it finds — not the right one.**
 
 TeaRAGs is a **Codebase Intelligence layer** your agent queries over MCP. It
-indexes the repository on your machine and returns every piece of code with
-three views of it:
+indexes the repository on your machine into five layers — three that read the
+code and two that judge its interfaces:
 
 - 🔍 **What it does** — semantic and hybrid search over AST-aware chunks
 - 🕸️ **How it is connected** — callers, callees, fan-in, transitive impact
 - 🧬 **How it has lived** — churn, bug-fix rate, ownership, age
+- 🏛️ **Whether it is laid out right** — dependency direction, leaking facades,
+  files that change together with no edge between them
+- 🔤 **What the project calls things** — the naming vocabulary, inferred from
+  the call graph, and a verdict on every new name
 
-…and ships agent skills that know which view a task needs. The agent stops
-guessing which code is safe to copy, what is critical, and what a change will
-break — it reads the dossier instead.
+<p align="center">
+  <img src="public/five-layers.png" alt="Five layers behind one MCP interface: Semantic index, Codegraph, Trajectory, Architecture, Lexicon. The first three read the code, the last two judge its borders and names; every result comes back as a dossier">
+</p>
+
+The first three layers and why an agent needs all of them at once are laid out
+in [Codebase Intelligence для агента](https://habr.com/ru/articles/1084028/)
+(Habr, in Russian).
+
+TeaRAGs also ships agent skills that know which layer a task needs. The agent
+stops guessing which code is safe to copy, what is critical, and what a change
+will break — it reads the dossier instead.
 
 📖 **[Documentation](https://artk0de.github.io/TeaRAGs-MCP/)** · 🏁
 **[15-minute quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation)**
@@ -137,6 +149,86 @@ Ask in plain language. **The plugin picks the skill, tools and rerank presets
 for every question automatically** — it ships a decision table that maps intent
 to the right call, so nobody has to know a preset name. Other MCP clients get
 the same routing guide as an MCP resource (`tea-rags://schema/search-guide`).
+
+One question per layer, most distinctive first. Every number is a real response
+on TeaRAGs' own repository.
+
+### 1. 🏛️ _"Is this codebase laid out correctly?"_
+
+`/tea-rags:architecture-diagnostics` → `get_architecture_report`
+
+Four detectors judge the borders between modules, not the risk of touching them.
+Each violation carries the file edges or commits that prove it, grouped into
+root causes:
+
+| Detector                | What it found here                                                                                                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Stable Dependencies** | `api/public` (instability 0.06, 33 dependents) depends on `api` (0.89) — and `api` depends back on it                                                                                                      |
+| **Leaking abstraction** | `bootstrap/factory.ts` reaches past the `bootstrap/config` facade into `env-snapshot.ts` for 3 names the facade does not export; 7 of 9 importers go through the facade                                    |
+| **Silent coupling**     | the Go and Java resolvers changed together in 5 sessions — every Java change came with a Go one (lift 86.5) — with no import or call between them: a shared shape waiting to move into the language kernel |
+| **Main sequence**       | `language/kernel` has 94 dependents yet only 6 of its 17 types are abstract — distance 0.58 from A + I = 1, toward the zone of pain                                                                        |
+
+A component is a module with a facade, or a plain directory when there is none.
+The facade-adoption and coupling-strength cut-offs are derived from the
+repository itself (Otsu), so the same report reads a small library and a
+monolith without tuning.
+
+### 2. 🔤 _"Do the names in my diff speak the project's language?"_
+
+`get_naming_lexicon { changes: { base: "main" } }` — also step D8 of
+`/tea-rags:mr-review` and the last check of `/tea-rags:data-driven-generation`
+
+The project's vocabulary is read from its call graph: how values of each type
+are named, which role word each directory gives its types, which word the
+project already uses for a concept. Only declarations on added lines are judged,
+and the changed files are left out of the evidence, so a diff never confirms
+itself:
+
+| Draft                                             | Verdict                       | Why                                                                          |
+| ------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------- |
+| `const meta: GitFileSignals`                      | **MISFIT** → `fileSignals`    | the project names this type's values after `assembleFileSignals`             |
+| `type EmbeddingBackend` in `adapters/embeddings/` | **CONFORMS**, alt. `provider` | the project's word for this concept is `EmbeddingProvider` (similarity 0.66) |
+| `type SignalStatistics`                           | **NEW_TERM**, alt. `stats`    | same meaning as the project's `stats` (0.93), above a chance-corrected floor |
+
+Verdicts are `CONFORMS`, `MISFIT` with a suggestion, `NEW_TERM` with the
+project's closest terms, and `COLLISION` for a name already taken elsewhere. The
+rules are checked against the project's own history: every type rename a commit
+message records is a case the tool must flag. `get_ontology_report` audits the
+whole vocabulary — synonyms, homonyms, outliers.
+
+### 3. 🧬 _"We have four payment-gateway retries. Which one should I copy?"_
+
+`semantic_search` with `proven` — `/tea-rags:data-driven-generation` runs it as
+its template step
+
+Similarity finds all four; history decides. `proven` ranks long-lived,
+low-bug-rate, multi-author code first, and every result carries its dossier —
+commits, bug-fix share, age, owners — labelled against this repository's own
+percentiles. The closest match by text is often the one fixed every sprint; see
+[See It → 1](#1-find-retry-logic-i-can-reuse) for a real pair.
+
+### 4. 🕸️ _"How does a request get from the API to the card charge, and which step is riskiest?"_
+
+`trace_path` with `dangerous` — `get_callers` for a single hop
+
+Every call path between the two symbols, resolved from the call graph rather
+than guessed from names, with each step ranked by how risky it is to touch. An
+ambiguous call is reported as ambiguous, never picked at random. See
+[See It → 3](#3-who-calls-it-before-i-change-it) for the ten call sites of a
+real write path.
+
+### 5. 🔍 _"Where do we charge a bill with a saved card?"_ — when the code says `invoice`
+
+`hybrid_search` — dense vectors for the meaning, BM25 for exact names
+
+The code is chunked on AST boundaries, so a result is a whole method with its
+class, not a window of N lines. Search by meaning crosses the vocabulary gap
+between the question and the code; BM25 still pins an exact identifier when the
+question names one.
+
+<details>
+<summary>More questions it answers — understand, reuse, change safely, find problems, review</summary>
+
 The right column shows what runs under the hood.
 
 ### 🗺️ Understand
@@ -183,6 +275,8 @@ The right column shows what runs under the hood.
 | _"Whose code is this, and where is the bus factor one?"_      | `ownership` · `fragileSilo` filter                                          |
 | _"Which old security-critical code is overdue for an audit?"_ | `securityAudit` · `securityPaths` filter                                    |
 
+</details>
+
 ## ✨ Features
 
 - 📈 **Git- and codegraph-aware ranking** — 23 rerank presets blend churn,
@@ -190,12 +284,15 @@ The right column shows what runs under the hood.
   (`proven`, `hotspots`, `techDebt`, `blastRadius`, `criticalPath`, …), plus 12
   filter presets
 - 🕸️ **Call graph** — callers, callees, cycles and A→B paths (`get_callers`,
-  `get_callees`, `find_cycles`, `trace_path`) for TypeScript, JavaScript, Python
-  and Ruby at a high tier, plus an architecture report of Stable Dependencies
-  violations (`get_architecture_report`), the project's naming vocabulary — how
-  values of a type are named, and a verdict on a draft name
-  (`get_naming_lexicon`) — and a naming ontology audit: synonyms, homonyms,
-  outlier names and symbol collisions (`get_ontology_report`)
+  `get_callees`, `find_cycles`, `trace_path`) for TypeScript, JavaScript, Ruby,
+  Swift and Python at a high tier
+- 🏛️ **Architecture report** — Stable Dependencies at component level, imports
+  that leak past an adopted facade, files that change together with no edge
+  between them, and distance from the main sequence (`get_architecture_report`)
+- 🔤 **Naming review** — the project's vocabulary inferred from the call graph:
+  verdicts on value and type names, the project's own word for a synonym, a
+  review of every name a diff declares (`get_naming_lexicon`), and a whole-code
+  audit of synonyms, homonyms and outliers (`get_ontology_report`)
 - 🧠 **Agent skills** — the plugin routes every question to the right tools and
   presets on its own; 15 ready-made workflows (`explore`, `bug-hunt`,
   `risk-assessment`, `data-driven-generation`, `mr-review`, …) plus
@@ -203,7 +300,9 @@ The right column shows what runs under the hood.
   10 wrappers that feed index signals into
   [`superpowers`](https://github.com/obra/superpowers)
 - 🔒 **100% local** — embedded Qdrant and DuckDB, no Docker; embeddings through
-  Ollama, with OpenAI, Cohere and Voyage optional
+  Ollama — on the laptop or on any machine in your network, with the laptop as
+  an automatic fallback (see [Embedding providers](#embedding-providers)) — with
+  OpenAI, Cohere and Voyage optional
 - 🔄 **Always fresh** — incremental reindex, auto-update on a target branch,
   per-worktree index clones, and a drift report that names the exact command to
   run
@@ -317,7 +416,7 @@ competitor cell links to that product's own documentation, checked on
 
 |                                                                                                                      | Ranks by git history                                                                                | Semantic search                                         | Call graph                                                                                                               | Serves context over MCP                                                                 | Runs locally                                                                               | Rerank presets |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------- |
-| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 23 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
+| **TeaRAGs**                                                                                                          | ✅ churn, bug-fix rate, ownership and age, per file and per chunk                                   | ✅ dense + hybrid (BM25)                                | ✅ callers, callees, cycles, A→B paths                                                                                   | ✅ 26 tools                                                                             | ✅ embedded Qdrant and DuckDB, local embeddings                                            | ✅ 23          |
 | [Aider](https://github.com/Aider-AI/aider)                                                                           | —                                                                                                   | —                                                       | ⚠️ [internal only](https://aider.chat/docs/repomap.html): a file dependency graph ranks the repo map it sends to the LLM | ❌ [not built in — open feature request](https://github.com/Aider-AI/aider/issues/4506) | ✅ [terminal CLI, works with local models](https://github.com/Aider-AI/aider)              | —              |
 | [Repomix](https://github.com/yamadashy/repomix)                                                                      | ⚠️ [orders files by git change count](https://github.com/yamadashy/repomix) inside the packed file  | —                                                       | —                                                                                                                        | ✅ [`repomix --mcp`](https://github.com/yamadashy/repomix)                              | ✅ CLI                                                                                     | —              |
 | [Sourcegraph](https://sourcegraph.com/docs/api/mcp) (incl. [Cody Enterprise](https://sourcegraph.com/docs/cody/faq)) | ⚠️ [commit and diff search](https://sourcegraph.com/docs/api/mcp); no ranking by history documented | ✅ [`nls_search`](https://sourcegraph.com/docs/api/mcp) | ✅ [`go_to_definition`, `find_references`](https://sourcegraph.com/docs/api/mcp)                                         | ✅ [MCP server on Enterprise plans](https://sourcegraph.com/docs/api/mcp)               | ⚠️ [your Sourcegraph instance](https://sourcegraph.com/docs/api/mcp), self-hosted or cloud | —              |
@@ -342,7 +441,7 @@ flowchart LR
     Agent[🤖 Coding agent<br/>+ TeaRAGs skills]
 
     subgraph pkg["🍵 tea-rags"]
-        MCP[🔌 MCP server<br/>23 tools]
+        MCP[🔌 MCP server<br/>26 tools]
         CLI[⌨️ CLI<br/>index · prime · projects · auto-update]
         Core[⚙️ Core<br/>chunk · enrich · search · rerank]
         MCP --> Core
@@ -458,6 +557,26 @@ Set `EMBEDDING_PROVIDER`; `EMBEDDING_MODEL` overrides the default model.
 Throughput per provider and how to choose:
 [Embedding Providers](https://artk0de.github.io/TeaRAGs-MCP/config/providers/).
 
+**Ollama on another machine, the laptop as the fallback.** Ollama does not have
+to run where the agent does. Put it on any computer in your local network — a
+desktop GPU, a home server, a spare Mac — and keep the laptop's own GPU or Apple
+chip as the fallback. TeaRAGs switches to the fallback when the primary stops
+answering or fails three embed calls in a row, and switches back once the
+primary is healthy again. Your code and index stay on the laptop; only chunk
+text crosses your own network.
+
+<p align="center">
+  <img src="public/ollama-failover.png" alt="The laptop runs tea-rags and a fallback Ollama; a machine on the LAN runs the primary Ollama. Embed calls go over the LAN; after three consecutive failures they go to the laptop, and a probe every 30 seconds switches them back">
+</p>
+
+```bash
+EMBEDDING_BASE_URL=http://gpu-box:11434        # primary: any machine on your LAN
+EMBEDDING_FALLBACK_URL=http://localhost:11434  # fallback: the laptop itself
+```
+
+Details:
+[Ollama provider](https://artk0de.github.io/TeaRAGs-MCP/config/providers/ollama).
+
 ## ⌨️ CLI
 
 | Command                   | What it does                                                        |
@@ -468,6 +587,7 @@ Throughput per provider and how to choose:
 | `tea-rags auto-update`    | Keep a project's index fresh on its target branch                   |
 | `tea-rags worktree`       | Per-worktree index clones for parallel branches                     |
 | `tea-rags doctor`         | Infrastructure and registry health                                  |
+| `tea-rags qdrant recover` | Recover a failed Qdrant optimizer without restarting the daemon     |
 | `tea-rags tune`           | Auto-tune performance parameters for your hardware                  |
 | `tea-rags update`         | Check for and install a newer version                               |
 | `tea-rags server`         | Start the MCP server                                                |
@@ -505,7 +625,7 @@ message says so (`fix:`, `[Bug]`, `TICKET-123 Fix …`, `fixes #123`) or it
 arrived through a merged `fix/`, `hotfix/` or `bugfix/` branch; "fix typo", "fix
 lint" and similar are excluded. Chunk-level history follows each chunk's lines
 through diff hunks and looks back 6 months by default (12 for file level); files
-over 10,000 lines get file-level signals only. Labels such as _high_ or
+over 5,000 lines get file-level signals only. Labels such as _high_ or
 _concerning_ are percentiles of your own repository, and signals backed by only
 a few commits are dampened before they affect ranking.
 

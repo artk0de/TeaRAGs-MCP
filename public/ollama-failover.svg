@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="470" viewBox="0 0 1180 470" font-family="Inter, -apple-system, Helvetica, Arial, sans-serif">
+<rect width="1180" height="470" fill="#FFFFFF"/>
+<defs><marker id="g" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#A07D1C"/></marker><marker id="s" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#64748B"/></marker></defs>
+<text x="36" y="42" font-size="21" font-weight="700" fill="#0F172A" text-anchor="start">Embeddings on the LAN, the laptop as the fallback</text>
+<text x="36" y="66" font-size="13.5" font-weight="400" fill="#64748B" text-anchor="start">Ollama on any machine in your network does the heavy lifting; the laptop's own GPU or Apple chip takes over when it cannot</text>
+<rect x="36" y="96" width="470" height="250" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5"/>
+<text x="56" y="126" font-size="16" font-weight="700" fill="#0F172A" text-anchor="start">Your laptop</text>
+<rect x="286" y="146" width="200" height="76" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+<text x="386" y="174" font-size="14" font-weight="700" fill="#0F172A" text-anchor="middle">tea-rags</text>
+<text x="386" y="192" font-size="11.5" font-weight="400" fill="#64748B" text-anchor="middle">index · search · MCP</text>
+<text x="386" y="208" font-size="11.5" font-weight="400" fill="#64748B" text-anchor="middle">Qdrant + DuckDB, embedded</text>
+<rect x="56" y="146" width="200" height="76" rx="12" fill="#FBF6E4" stroke="#A07D1C" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="156" y="174" font-size="14" font-weight="700" fill="#0F172A" text-anchor="middle">Ollama — fallback</text>
+<text x="156" y="192" font-size="11.5" font-weight="400" fill="#64748B" text-anchor="middle">laptop GPU / Apple chip</text>
+<text x="156" y="208" font-size="11.5" font-weight="400" fill="#64748B" text-anchor="middle" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, monospace">localhost:11434</text>
+<line x1="286" y1="196" x2="260" y2="196" stroke="#64748B" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#s)"/>
+<text x="56" y="256" font-size="12" font-weight="400" fill="#0F172A" text-anchor="start">Your code and index never leave the laptop.</text>
+<text x="56" y="276" font-size="12" font-weight="400" fill="#0F172A" text-anchor="start">Only chunk text travels to the embedding host,</text>
+<text x="56" y="294" font-size="12" font-weight="400" fill="#0F172A" text-anchor="start">inside your own network.</text>
+<text x="56" y="324" font-size="11.5" font-weight="400" fill="#A07D1C" text-anchor="start" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, monospace">EMBEDDING_FALLBACK_URL=http://localhost:11434</text>
+<rect x="674" y="96" width="470" height="250" rx="12" fill="#FBF6E4" stroke="#A07D1C" stroke-width="1.5"/>
+<text x="694" y="126" font-size="16" font-weight="700" fill="#0F172A" text-anchor="start">Any machine on your LAN</text>
+<rect x="694" y="146" width="430" height="76" rx="12" fill="#FFFFFF" stroke="#A07D1C" stroke-width="1.5"/>
+<text x="909" y="174" font-size="14" font-weight="700" fill="#0F172A" text-anchor="middle">Ollama — primary</text>
+<text x="909" y="192" font-size="11.5" font-weight="400" fill="#64748B" text-anchor="middle">desktop GPU, home server, a spare Mac</text>
+<text x="909" y="208" font-size="11.5" font-weight="400" fill="#64748B" text-anchor="middle" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, monospace">gpu-box:11434</text>
+<text x="694" y="256" font-size="12" font-weight="400" fill="#0F172A" text-anchor="start">A bigger GPU embeds faster, and the laptop</text>
+<text x="694" y="276" font-size="12" font-weight="400" fill="#0F172A" text-anchor="start">stays cool and free for the agent and your IDE.</text>
+<text x="694" y="324" font-size="11.5" font-weight="400" fill="#A07D1C" text-anchor="start" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, monospace">EMBEDDING_BASE_URL=http://gpu-box:11434</text>
+<line x1="486" y1="184" x2="670" y2="184" stroke="#A07D1C" stroke-width="2.4" marker-end="url(#g)"/>
+<text x="580.0" y="174" font-size="11" font-weight="700" fill="#A07D1C" text-anchor="middle">embed calls over the LAN</text>
+<rect x="36" y="364" width="1108" height="86" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.5"/>
+<text x="56" y="390" font-size="12.5" font-weight="700" fill="#A07D1C" text-anchor="start">→ fallback</text>
+<text x="176" y="390" font-size="12.5" font-weight="400" fill="#0F172A" text-anchor="start">the primary is unreachable, or 3 embed calls in a row fail on its side (timeout, 5xx, empty answer)</text>
+<text x="56" y="414" font-size="12.5" font-weight="700" fill="#A07D1C" text-anchor="start">→ primary</text>
+<text x="176" y="414" font-size="12.5" font-weight="400" fill="#0F172A" text-anchor="start">while on the fallback, the primary is probed every 30 s; the first healthy answer switches back</text>
+<text x="56" y="438" font-size="12.5" font-weight="700" fill="#A07D1C" text-anchor="start">never counts</text>
+<text x="176" y="438" font-size="12.5" font-weight="400" fill="#0F172A" text-anchor="start">caller-side errors — context overflow, missing model — would fail on any host, so they switch nothing</text>
+</svg>
