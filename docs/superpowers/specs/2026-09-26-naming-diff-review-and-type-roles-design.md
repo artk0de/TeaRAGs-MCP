@@ -137,9 +137,11 @@ secondary):
 1. **Inheritance family.** Types with a common ancestor in
    `cg_symbols_inheritance` whose names share a tail word: that word is the
    family's role. `extends SymbolResolutionStrategy` → `…Strategy`.
-2. **Directory.** A tail word carried by the primary types of ≥ 2 files of one
-   directory, with a share ≥ 0.2 (the lexicon's shape-share bar) of the
-   directory's files that have a primary: the directory's role.
+2. **Directory.** The directory's MAJORITY family: the plurality tail word of
+   its primary types, carried by ≥ 2 files and by at least half (share ≥ 0.5) of
+   the directory's files that have a primary. 0.5 is the definition of a
+   majority, not a tuned value. A plurality tie is no role. A lower share (0.2)
+   let two helper files name a directory on the live self-index.
 3. **Project suffix.** A tail word carried by the primary types of ≥ k files in
    ≥ 2 directories. Filters one-off coincidences. k starts at 3 and is measured
    on the corpora below. The project suffix only CONFIRMS: a draft whose last
@@ -150,10 +152,13 @@ secondary):
 
 Directory and suffix evidence read ONE type per file, its primary: the type
 whose words overlap the file stem's words most, with a trailing plural
-normalized on both sides (`errors.ts` matches `*Error`). A tie, or no overlap,
-goes to the first type declared. So one `errors.ts` of ten `*Error` classes is
-one file's convention, and a `RerankOptions` beside `Reranker` belongs to
-reranker.ts's subject, not to a role. Inheritance evidence reads every type.
+normalized on both sides (`errors.ts` matches `*Error`). A tie goes to the
+fewest words beyond the stem's (`CompletionRunner` over `CompletionRunnerDeps`),
+then to the kind (class > interface / enum / module > type alias > the rest),
+then to the first declared; no overlap at all goes to the first declared. So one
+`errors.ts` of ten `*Error` classes is one file's convention, and a
+`RerankOptions` beside `Reranker` belongs to reranker.ts's subject, not to a
+role. Inheritance evidence reads every type.
 
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and

@@ -32,9 +32,10 @@ zod MCP schemas, git CLI adapter.
 - Symbol kind values:
   `class | module | interface | enum | type_alias | constant | function | method`.
   `NULL` on pre-migration rows = unknown, excluded from type-name judgement.
-- Role evidence order: inheritance family > directory (share ≥ 0.2) > project
-  suffix (≥ k types, k = 3, in ≥ 2 directories) (project suffix confirms only,
-  never MISFIT).
+- Role evidence order: inheritance family > directory (majority family: the
+  plurality head of ≥ 2 files and share ≥ 0.5 — the definition of a majority,
+  not a tuned value; a plurality tie is no role) > project suffix (≥ k types, k
+  = 3, in ≥ 2 directories) (project suffix confirms only, never MISFIT).
 - Term alignment always attempts a concept search. Nothing above the lift floor
   → NEW_TERM with no alternatives. Alignment verdicts are never MISFIT.
 - Diff mode: cap 200 changed files per call; the changed files are excluded from
