@@ -87,11 +87,13 @@
   `EnrichmentRecovery#buildUnenrichedFilter` is the conjunction
   `is_empty(enrichedAt) AND is_empty(skippedAs)`. Only
   `EnrichmentApplier#applySkipStamps` writes the stamp — it owns the whole
-  `<provider>.<level>` subtree; the decision stays in policy.ts. **Corollary:**
-  loosening a provider's `shouldEnrich` MUST clear the now-stale stamps. Why: an
-  unstamped decline stays a recovery candidate on every run forever; a stale
-  stamp hides the point from recovery permanently. No mechanism enforces the
-  corollary — it is an obligation on the edit.
+  `<provider>.<level>` subtree and REPLACES it (delete the subtree, then set
+  `skippedAs`), so a point an earlier run enriched keeps no stale overlay or
+  `enrichedAt` after a `--force-enrichments` re-stamp; the decision stays in
+  policy.ts. **Corollary:** loosening a provider's `shouldEnrich` MUST clear the
+  now-stale stamps. Why: an unstamped decline stays a recovery candidate on
+  every run forever; a stale stamp hides the point from recovery permanently. No
+  mechanism enforces the corollary — it is an obligation on the edit.
 
 ## Mechanics
 

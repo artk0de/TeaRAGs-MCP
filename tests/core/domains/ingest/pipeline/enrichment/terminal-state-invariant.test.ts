@@ -208,6 +208,40 @@ describe("enrichment terminal-state invariant", () => {
     expect(owed.skippedAs).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-2brzq: `--force-enrichments` re-stamps points an earlier
+  // run ENRICHED. A stamp merged into that level kept the stale overlay and its
+  // enrichedAt — both terminal markers, plus numeric zeros that read as data.
+  it("a skip stamp replaces the level: stale overlay and enrichedAt go, other levels and providers stay", async () => {
+    const qdrant = new MockQdrantManager();
+    await qdrant.createCollection("c", 384);
+    await qdrant.addPoints("c", [
+      {
+        id: "p1",
+        vector: new Array(384).fill(0.1),
+        payload: {
+          git: {
+            file: { commitCount: 12, enrichedAt: "t-old" },
+            chunk: { commitCount: 0, bugFixRate: 0, authors: [], enrichedAt: "t-old" },
+          },
+          codegraph: { symbols: { chunk: { fanIn: 2, enrichedAt: "t-old" } } },
+        },
+      },
+    ]);
+    const applier = new EnrichmentApplier(qdrant as never);
+
+    await applier.applySkipStamps("c", "git", "chunk", [{ id: "p1", skippedAs: "oversized" }]);
+
+    const point = (await qdrant.getPoint("c", "p1")) as { payload: Record<string, any> };
+    expect(point.payload.git.chunk).toEqual({ skippedAs: "oversized" });
+    expect(point.payload.git.file).toEqual({ commitCount: 12, enrichedAt: "t-old" });
+    expect(point.payload.codegraph).toEqual({ symbols: { chunk: { fanIn: 2, enrichedAt: "t-old" } } });
+    // Exactly one terminal marker: recovery's is_empty(enrichedAt) AND
+    // is_empty(skippedAs) conjunction no longer selects the point.
+    const chunk = await terminals(qdrant, "p1", "chunk");
+    expect(chunk.skippedAs).toBe("oversized");
+    expect(chunk.enrichedAt).toBeUndefined();
+  });
+
   it("never overwrites a declined chunk that arrives carrying an overlay", async () => {
     const qdrant = await seed(["p1"]);
     const applier = new EnrichmentApplier(qdrant as never);

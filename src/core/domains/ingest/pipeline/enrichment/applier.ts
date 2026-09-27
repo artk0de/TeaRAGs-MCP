@@ -270,9 +270,10 @@ export class EnrichmentApplier {
    * separate them server-side and drags the entire declined population over the
    * wire on every run — 51 540 of 89 336 points on taxdome, permanently.
    *
-   * Grouped by reason so one Qdrant op covers every point sharing it. Writes the
-   * same way file-level stamps already do (`set_payload` with `key`), so the
-   * write replaces only this provider+level sub-tree.
+   * Grouped by reason so one Qdrant op covers every point sharing it. The
+   * provider+level sub-tree is deleted (`delete_payload` on `<provider>.<level>`)
+   * and then written (`set_payload` with `key`), so after a stamp the level
+   * holds `skippedAs` and nothing else — the state a fresh index would have.
    */
   async applySkipStamps(
     collectionName: string,
@@ -295,9 +296,27 @@ export class EnrichmentApplier {
       key: `${providerKey}.${level}`,
     }));
 
+    const levelKey = `${providerKey}.${level}`;
     let stamped = 0;
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
       const batch = operations.slice(i, i + BATCH_SIZE);
+      // The stamp REPLACES the level, it does not merge into it: a point an
+      // earlier run enriched (a `--force-enrichments` recompute after the policy
+      // tightened) would otherwise keep its overlay and `enrichedAt` beside
+      // `skippedAs` — two terminal markers, and stale numbers that read as data
+      // (bd tea-rags-mcp-2brzq). `set_payload` with `key` merges, so the level's
+      // subtree is deleted first; only this provider+level is addressed, the
+      // sibling level and other providers stay untouched. Sequential awaits keep
+      // the delete ahead of the set, the order `OmittedOverlayKeyCollector`
+      // relies on too. A delete that never lands skips the stamp for that batch:
+      // the point keeps its pre-stamp state rather than gaining a contradiction.
+      const cleared = await batchDeletePayloadWithRetry(
+        this.qdrant,
+        collectionName,
+        [{ keys: [levelKey], points: batch.flatMap((op) => op.points) }],
+        this.retryOptions,
+      );
+      if (!cleared) continue;
       const ok = await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions);
       // A failed stamp batch is not fatal: those points simply stay in the next
       // run's scan, which is the pre-fix behaviour, not a regression.
