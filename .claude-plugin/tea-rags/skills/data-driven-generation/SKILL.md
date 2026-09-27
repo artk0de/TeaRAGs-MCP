@@ -251,12 +251,16 @@ Reading the answer — the dominant shape per kind IS the convention:
 - `concept.terms` = the project's words for the concept. A holder that already
   IS what you are about to write → back to Step 4 and gate that holder (a missed
   reuse, not a naming issue) — never rename and write a sibling.
-- `names[]`: `CONFORMS` → keep. `MISFIT` → take `suggestion` (`holder` shows
-  where the project uses it; a type MISFIT names the missing `role`). `NEW_TERM`
-  → adopt a `topTerms` term or an `alternatives` word if it denotes the same
-  concept; otherwise the concept is new — keep the term, justify it in Step 6.
-  `COLLISION` → the short name is already a type elsewhere (`existing`); pick a
-  distinct name.
+- `names[]`: `CONFORMS` → keep (it means consistent with the project's
+  vocabulary, not a verdict on behaviour; an `alternatives` word on it is the
+  project's term for the same concept → prefer it). `MISFIT` → take `suggestion`
+  (`holder` shows where the project uses it; a type MISFIT names the missing
+  `role`; `role.evidence: "directory"` = location only — rename only when the
+  type belongs to `role.examples`' family, else keep the name, reconsider the
+  location). `NEW_TERM` → adopt a `topTerms` term or an `alternatives` word if
+  it denotes the same concept; otherwise the concept is new — keep the term,
+  justify it in Step 6. `COLLISION` → the short name is already a type elsewhere
+  (`existing`); pick a distinct name.
 - `driftWarning` or empty `byType` → no history for the type; take names from
   the template's code and say so.
 

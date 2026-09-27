@@ -188,7 +188,10 @@ comment. `genericName` on a finding (even CONFORMS) = generic name → minor.
 `notJudged` counts tests and non-codegraph files — not reviewed, not clean.
 Reading a verdict: `../../data-driven-generation/SKILL.md` Step 5 "Naming
 (lexicon)". Evidence = `suggestion` + `holder` (MISFIT), `existing` file
-(COLLISION), `alternatives` (NEW_TERM — soft, never a rename demand).
+(COLLISION), `alternatives` (NEW_TERM — soft, never a rename demand). A type
+MISFIT with `role.evidence: "directory"` is location-based: comment only when
+the type IS one of `role.examples`' family; a non-member (a copier among
+artifacts) = placement question → drop, or note the location, never a rename.
 
 fix: the suggested name citing the holder file (MISFIT); a distinct name, or a
 reason the homonym is intended, citing the existing file (COLLISION); the

@@ -225,7 +225,8 @@ bindings. Phrasing stays runner-agnostic — list scenarios, never name a runner
 
 Rename / "unclear name" comment →
 `get_naming_lexicon(names=[{current}, {proposed}], pathPattern=<targetPathPattern>)`.
-Proposed `CONFORMS` → agree on the name; proposed `MISFIT` → counter-propose its
+Proposed `CONFORMS` → agree on the name (unless it carries `alternatives` — the
+project's word for the same concept); proposed `MISFIT` → counter-propose its
 `suggestion` (holder as precedent); proposed `NEW_TERM` while current `CONFORMS`
 → push back with the project's term.
 
@@ -235,13 +236,14 @@ PR don't match the codebase") →
 — one call over the names the diff adds; never hand-list them into `names[]`.
 Findings = `review.findings`, each flat
 `{relPath, line, name, kind, type?, verdict, …}`. Answer per finding: `MISFIT` →
-apply `suggestion`; `COLLISION` → rename or justify against `existing`;
-`NEW_TERM` → keep with a justification or take an offered `alternatives` word;
-`genericName` → generic name, rename or justify. Conforming names stay;
-`review.novel` counts names with nothing to compare against — no action. Append
-the verdicts to the impact block — the naming verdict decides WHICH name, Step 2
-decides the cost. Reading: `tea-rags:data-driven-generation` Step 5 "Naming
-(lexicon)".
+apply `suggestion` (a type MISFIT with `role.evidence: "directory"` only when
+the type belongs to `role.examples`' family — else push back: location, not
+name); `COLLISION` → rename or justify against `existing`; `NEW_TERM` → keep
+with a justification or take an offered `alternatives` word; `genericName` →
+generic name, rename or justify. Conforming names stay; `review.novel` counts
+names with nothing to compare against — no action. Append the verdicts to the
+impact block — the naming verdict decides WHICH name, Step 2 decides the cost.
+Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 4 — Invoke superpowers:receiving-code-review
 
