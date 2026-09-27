@@ -341,7 +341,9 @@ export function registerCodegraphTools(
         "partners; summary.silentCoupling.built false = no co-change build, not clean. mainSequence " +
         "(Stable Abstractions Principle): component far from A+I=1 — pain = stable+concrete, uselessness = " +
         "unstable+abstract; A from walker type census, D > max(0.5, Otsu cut); components whose language " +
-        "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute. Summary " +
+        "rarely declares abstractions excluded (unobservableAbstractness); census needs codegraph recompute; pain " +
+        "also needs volatility (mean git.file.commitCount per file > max(median file, log-scale Otsu cut)), calm ones " +
+        "counted as stableConcreteCalm. Summary " +
         "counts exclusions with named reasons. Diagnosis, not prescription.",
       inputSchema: GetArchitectureReportInputShape,
       annotations: { readOnlyHint: true, idempotentHint: true },

@@ -80,6 +80,12 @@ export interface GraphFacadeDeps {
     collectionName: string,
     relPaths: readonly RelPath[],
   ) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
+  /**
+   * Every file's `git.file.commitCount`, read from the ADDRESSED collection's
+   * payload. The main-sequence detector gates the zone of pain on it
+   * (bd tea-rags-mcp-r8hme.14). Optional: absent, pain is judged on D alone.
+   */
+  readFileCommitCounts?: (collectionName: string) => Promise<ReadonlyMap<RelPath, number>>;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -294,14 +300,15 @@ export class GraphFacade {
   }
 
   async getArchitectureReport(req: GetArchitectureReportRequest): Promise<GetArchitectureReportResponse> {
-    const { readImportSpecifiers } = this.deps;
+    const { readImportSpecifiers, readFileCommitCounts } = this.deps;
+    const addressedCollection = () => resolveCollection(this.deps.collectionRegistry, req).collectionName;
     const importSpecifiers = readImportSpecifiers
-      ? async (relPaths: readonly RelPath[]) =>
-          readImportSpecifiers(resolveCollection(this.deps.collectionRegistry, req).collectionName, relPaths)
+      ? async (relPaths: readonly RelPath[]) => readImportSpecifiers(addressedCollection(), relPaths)
       : undefined;
+    const fileCommitCounts = readFileCommitCounts ? async () => readFileCommitCounts(addressedCollection()) : undefined;
     return this.withReadHandle(
       req,
-      async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers),
+      async (handle) => this.architectureReport.build(handle.graphDb, req, importSpecifiers, fileCommitCounts),
       ArchitectureReportOps.empty(req),
     );
   }

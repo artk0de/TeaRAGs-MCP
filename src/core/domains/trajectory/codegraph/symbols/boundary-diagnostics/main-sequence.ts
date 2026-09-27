@@ -4,11 +4,13 @@ import { resolveMajorityFlooredOtsuThreshold } from "./otsu-split.js";
 import { DEFAULT_SDP_MIN_CONNECTION_COUNT } from "./stable-dependencies.js";
 import type {
   ComponentGraph,
+  MainSequenceComponentVolatility,
   MainSequenceExclusionCounts,
   MainSequenceOptions,
   MainSequenceReport,
   MainSequenceScope,
   MainSequenceViolation,
+  MainSequenceVolatilitySummary,
 } from "./types.js";
 
 /**
@@ -33,6 +35,10 @@ export const MAIN_SEQUENCE_UNOBSERVABLE_REASON =
 
 /** Same population floor the other boundary detectors trust Otsu's split on. */
 export const MAIN_SEQUENCE_OTSU_MIN_POPULATION = 8;
+
+/** Human-readable meaning of the `stableConcreteCalm` exclusion. */
+export const MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON =
+  "stable and concrete but calm: its files change no more often than the volatility cut, so the rigidity costs nothing - the zone of pain hurts only a component that keeps changing";
 
 interface ComponentCensus {
   abstractTypeCount: number;
@@ -70,6 +76,17 @@ interface ComponentCensus {
  * Judged distances set an adaptive cut (Otsu, majority-floored at
  * `MAIN_SEQUENCE_DISTANCE_FLOOR`). `sourcePathPattern` only decides which
  * judged components are reported; shares, the cut and the mean are whole-graph.
+ *
+ * With `fileVolatility` (bd tea-rags-mcp-r8hme.14) the zone of pain is gated
+ * on change: per Martin it hurts only a VOLATILE component — `String` is
+ * stable, concrete and fine. A component's volatility is the mean reading over
+ * its files that carry one; the cut is Otsu's split over the judged
+ * components' log volatilities, floored at the median file's reading (a component
+ * whose typical file changes no more than the codebase's typical file is not
+ * volatile), and the floor alone below `MAIN_SEQUENCE_OTSU_MIN_POPULATION`.
+ * A pain component past the distance cut but not volatile is counted as
+ * `stableConcreteCalm` instead of reported; one with no reading at all is
+ * reported, since nothing shows it calm. Uselessness is judged on D alone.
  */
 export function detectMainSequenceDeviations(
   componentGraph: ComponentGraph,
@@ -85,6 +102,7 @@ export function detectMainSequenceDeviations(
     unmeasured: 0,
     fewTypes: 0,
     unobservableAbstractness: 0,
+    stableConcreteCalm: 0,
   };
 
   const judged: { violation: MainSequenceViolation; paths: string[] }[] = [];
@@ -130,13 +148,21 @@ export function detectMainSequenceDeviations(
       ? { sourcePathPattern: options.sourcePathPattern, outOfScopeComponentCount: 0 }
       : undefined;
 
+  const volatilityGate = resolveVolatilityGate(judged, files, options.fileVolatility);
+
   const violations: MainSequenceViolation[] = [];
   for (const { violation, paths } of judged) {
     if (scope && inScope && !paths.some(inScope)) {
       scope.outOfScopeComponentCount++;
       continue;
     }
-    if (threshold.admits(violation.distance)) violations.push(violation);
+    if (!threshold.admits(violation.distance)) continue;
+    const volatility = volatilityGate?.judge(paths);
+    if (violation.zone === "pain" && volatility?.label === "calm") {
+      excluded.stableConcreteCalm++;
+      continue;
+    }
+    violations.push(volatility ? { ...violation, volatility } : violation);
   }
   violations.sort((a, b) => b.distance - a.distance || compareCodePoints(a.component, b.component));
 
@@ -156,9 +182,81 @@ export function detectMainSequenceDeviations(
       minTypeCount,
       abstractTypeShareByLanguage: Object.fromEntries(share),
       excluded,
+      ...(volatilityGate ? { volatility: volatilityGate.summary } : {}),
       ...(scope ? { scope } : {}),
     },
   };
+}
+
+interface MainSequenceVolatilityGate {
+  summary: MainSequenceVolatilitySummary;
+  /** The component's volatility and label; undefined when none of its files has a reading. */
+  judge: (paths: readonly string[]) => MainSequenceComponentVolatility | undefined;
+}
+
+/**
+ * The volatility cut, drawn from the data it judges: undefined when no graph
+ * file has a reading — the gate then does not run and pain stays judged on D.
+ */
+function resolveVolatilityGate(
+  judged: readonly { paths: string[] }[],
+  files: readonly FileDependencyGraphFile[],
+  fileVolatility: ReadonlyMap<string, number> | undefined,
+): MainSequenceVolatilityGate | undefined {
+  if (!fileVolatility || fileVolatility.size === 0) return undefined;
+  const readings = files.flatMap((f) => {
+    const reading = fileVolatility.get(f.relPath);
+    return reading === undefined ? [] : [reading];
+  });
+  if (readings.length === 0) return undefined;
+  const fileMedian = median(readings);
+
+  const meanOf = (paths: readonly string[]) => {
+    let sum = 0;
+    let measuredFileCount = 0;
+    for (const relPath of paths) {
+      const reading = fileVolatility.get(relPath);
+      if (reading === undefined) continue;
+      sum += reading;
+      measuredFileCount++;
+    }
+    return measuredFileCount > 0 ? { value: sum / measuredFileCount, measuredFileCount } : undefined;
+  };
+  const population = judged.flatMap(({ paths }) => {
+    const mean = meanOf(paths);
+    return mean ? [mean.value] : [];
+  });
+  // Split on the LOG scale: change counts spread multiplicatively (on the
+  // self-index the median file has 3 commits and p95 16), and on the raw scale
+  // the few hottest components carry most of the variance, so Otsu isolates
+  // them and reads everything merely active as calm — measured 10.9 against 6.1
+  // there. A mean of 0 maps to -Infinity: below every cut, calm by any reading.
+  const cut = resolveMajorityFlooredOtsuThreshold(population.map(Math.log), {
+    majority: Math.log(fileMedian),
+    minPopulation: MAIN_SEQUENCE_OTSU_MIN_POPULATION,
+  });
+  const threshold = cut.method === "otsu" ? Math.exp(cut.threshold) : fileMedian;
+
+  return {
+    summary: {
+      threshold,
+      thresholdMethod: cut.method === "otsu" ? "otsu" : "fileMedian",
+      ...(cut.separability !== undefined ? { separability: cut.separability } : {}),
+      fileMedian,
+      measuredComponentCount: population.length,
+    },
+    judge: (paths) => {
+      const mean = meanOf(paths);
+      if (!mean) return undefined;
+      return { ...mean, threshold, label: cut.admits(Math.log(mean.value)) ? "volatile" : "calm" };
+    },
+  };
+}
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 /** Abstract types over all measured types, per language, across the whole graph. */
