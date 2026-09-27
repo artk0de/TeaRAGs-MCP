@@ -495,12 +495,12 @@
   (`scripts/lib/lint-staged-format.ts`). Why: `eslint --fix` / prettier rewrite
   bytes at commit time, and a pin taken before them fails its own test.
 - **`kernel/capability.ts` is the version of everything shared.**
-  `sharedVersions` stamps the pseudo-language `*`: `walker` covers `kernel/**`
-  (minus this file, which holds the numbers), `resolver-chain.ts`,
-  `cone-dispatch.ts` and the codegraph `resolution-runner.ts`; `chunking` covers
-  the shared chunker files and `infra/symbolid/**`. A kernel change that alters
-  resolution output bumps `sharedVersions.walker`, not eight per-language
-  walkers; the pin test covers the `*` sources too. Rule:
+  `sharedVersions` stamps the pseudo-language `*`; which sources each of its
+  axes digests is `SHARED_SOURCES` in `capability/version-axes.ts` (the
+  codegraph type hierarchy included, bd tea-rags-mcp-u0t4p), held equal to the
+  rule's `paths:` by `index-format-versions-rule-parity.test.ts`. A kernel
+  change that alters resolution output bumps `sharedVersions.walker`, not eight
+  per-language walkers; the pin test covers the `*` sources too. Rule:
   `.claude/rules/index-format-versions.md`.
 
 ## Boundaries

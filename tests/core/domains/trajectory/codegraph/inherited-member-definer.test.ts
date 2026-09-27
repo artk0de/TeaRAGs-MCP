@@ -11,7 +11,9 @@
  * Invariants under test:
  *   - an id with its own `cg_symbols` row is never aliased;
  *   - the separator (`#` / `.`) is preserved, never swapped;
- *   - MRO precedence decides between several defining ancestors;
+ *   - MRO precedence decides between several defining ancestors — within one
+ *     rank a LATER include/extend/prepend sits nearer, a base list reads as
+ *     written (bd tea-rags-mcp-u0t4p);
  *   - a genuine tie (same parent, same MRO rank, same ordinal) aliases nothing;
  *   - a cyclic hierarchy terminates.
  */
@@ -129,8 +131,37 @@ describe("resolveInheritedMemberDefiner (bd tea-rags-mcp-63l69)", () => {
     expect(await resolveInheritedMemberDefiner(db, "Account.dfs")).toBe("Deep.dfs");
   });
 
-  it("breaks same-rank ties by declaration ordinal", async () => {
-    expect(await resolveInheritedMemberDefiner(db, "Account.order_pick")).toBe("Account::Suspensions.order_pick");
+  it("the LATER include wins between two included definers (include A; include B → B)", async () => {
+    // bd tea-rags-mcp-u0t4p: Ruby's MRO is [Account, Silences, Suspensions, …].
+    expect(await resolveInheritedMemberDefiner(db, "Account.order_pick")).toBe("Account::Silences.order_pick");
+  });
+
+  it("the LATER prepend wins between two prepended definers (prepend A; prepend B → B)", async () => {
+    await db.upsertSymbols("pa.rb", [sym("pa.rb", "PA#m")]);
+    await db.upsertSymbols("pb.rb", [sym("pb.rb", "PB#m")]);
+    await db.upsertFile(
+      { relPath: "phost.rb", language: "ruby" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        inheritance: [inh("PHost", "PA", "prepend", 0), inh("PHost", "PB", "prepend", 1)],
+      },
+    );
+    expect(await resolveInheritedMemberDefiner(db, "PHost#m")).toBe("PB#m");
+  });
+
+  it("keeps base-list order for multiple superclasses (Python class C(A, B) → A)", async () => {
+    await db.upsertSymbols("pya.py", [sym("pya.py", "PyA#m")]);
+    await db.upsertSymbols("pyb.py", [sym("pyb.py", "PyB#m")]);
+    await db.upsertFile(
+      { relPath: "pyc.py", language: "python" },
+      {
+        fileEdges: [],
+        methodEdges: [],
+        inheritance: [inh("PyC", "PyB", "super", 1), inh("PyC", "PyA", "super", 0)],
+      },
+    );
+    expect(await resolveInheritedMemberDefiner(db, "PyC#m")).toBe("PyA#m");
   });
 
   it("aliases nothing when no ancestor defines the member", async () => {

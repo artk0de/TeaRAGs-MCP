@@ -36,11 +36,13 @@ import {
   type FileScopedSymbolId,
   type FileScopedSymbolRef,
   type RelPath,
+  type SymbolId,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import { resolveInheritedMemberDefiner } from "../../../domains/trajectory/codegraph/inherited-member-definer.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { DeclaredVisibilityIndex } from "../../../infra/declared-visibility-index.js";
@@ -78,6 +80,8 @@ interface EndpointCandidates {
   refs: FileScopedSymbolRef[];
   /** Every file the symbol appears in, BEFORE the filter — what `namesakes` reports. */
   allPaths: RelPath[];
+  /** The definer id traced instead, when the requested id was a host-class alias (bd tea-rags-mcp-u0t4p). */
+  resolvedSymbolId?: SymbolId;
 }
 
 type HydratedChunk = { id: string | number; payload: Record<string, unknown> };
@@ -125,7 +129,7 @@ export class TracePathOps {
         // An endpoint the graph does not know, or narrowed away by an exact
         // path that matches no candidate. Report the real candidates so the
         // caller can correct the request rather than guess.
-        return this.withNamesakes({ paths: [], truncated: false }, from, to);
+        return this.withEndpointFacts({ paths: [], truncated: false }, from, to);
       }
       const adjacency = await this.buildBoundedAdjacency(handle, from.refs, maxDepth);
       // 2. Enumerate simple paths over the partial map (pure), once per
@@ -141,7 +145,7 @@ export class TracePathOps {
       await handle.graphDb.close().catch(() => undefined);
     }
 
-    if (paths.length === 0) return this.withNamesakes({ paths: [], truncated }, from, to);
+    if (paths.length === 0) return this.withEndpointFacts({ paths: [], truncated }, from, to);
 
     // 3. Hydrate every step symbol from Qdrant (one scroll for the whole union).
     const nodes = [...new Set(paths.flat())];
@@ -170,33 +174,72 @@ export class TracePathOps {
     //    aggregateDanger desc; without, keep enumeration order.
     const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, visibility, dangerByNode));
     if (dangerByNode) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
-    return this.withNamesakes({ paths: traced, truncated }, from, to);
+    return this.withEndpointFacts({ paths: traced, truncated }, from, to);
   }
 
   /**
    * Resolve the bare `from` / `to` symbolIds to the graph nodes they denote,
    * narrowed by the optional exact `fromPath` / `toPath`. One graph read covers
-   * both endpoints.
+   * both endpoints; an endpoint the graph has no node for is then aliased onto
+   * the member's definer (bd tea-rags-mcp-u0t4p) — the 63l69 policy
+   * `get_callers` / `get_callees` answer a host-class id with.
    */
   private async resolveEndpoints(
     handle: CollectionGraphHandle,
     req: TracePathRequest,
   ): Promise<{ from: EndpointCandidates; to: EndpointCandidates }> {
     const relPaths = await handle.graphDb.getSymbolRelPaths([req.from, req.to]);
-    return {
-      from: candidatesFor(req.from, relPaths.get(req.from) ?? [], req.fromPath),
-      to: candidatesFor(req.to, relPaths.get(req.to) ?? [], req.toPath),
-    };
+    const [from, to] = await Promise.all([
+      this.resolveEndpoint(handle, req.from, relPaths.get(req.from) ?? [], req.fromPath),
+      this.resolveEndpoint(handle, req.to, relPaths.get(req.to) ?? [], req.toPath),
+    ]);
+    return { from, to };
   }
 
   /**
-   * Attach the `namesakes` listing when at least one endpoint was ambiguous.
-   * Omitted entirely for an unambiguous trace so the lean response shape is
-   * unchanged from before file scoping.
+   * One endpoint's candidates. A symbolId with graph nodes is answered as-is;
+   * one with none falls back to `resolveInheritedMemberDefiner`, whose failure
+   * leaves the endpoint unresolved — the pre-aliasing behaviour. The exact
+   * path, when given, filters the DEFINER's files after an alias.
    */
-  private withNamesakes(result: PathTraceResult, from: EndpointCandidates, to: EndpointCandidates): PathTraceResult {
-    if (from.allPaths.length <= 1 && to.allPaths.length <= 1) return result;
-    return { ...result, namesakes: { from: from.allPaths, to: to.allPaths } };
+  private async resolveEndpoint(
+    handle: CollectionGraphHandle,
+    symbolId: SymbolId,
+    paths: RelPath[],
+    exactPath: RelPath | undefined,
+  ): Promise<EndpointCandidates> {
+    if (paths.length > 0) return candidatesFor(symbolId, paths, exactPath);
+    const definer = await resolveInheritedMemberDefiner(handle.graphDb, symbolId).catch(() => null);
+    if (definer === null) return candidatesFor(symbolId, paths, exactPath);
+    const definerPaths = (await handle.graphDb.getSymbolRelPaths([definer])).get(definer) ?? [];
+    return { ...candidatesFor(definer, definerPaths, exactPath), resolvedSymbolId: definer };
+  }
+
+  /**
+   * Attach the `namesakes` listing when at least one endpoint was ambiguous,
+   * and `resolvedEndpoints` when at least one was aliased onto its definer.
+   * Each is omitted entirely otherwise, so the lean response shape is unchanged
+   * from before file scoping and endpoint aliasing.
+   */
+  private withEndpointFacts(
+    result: PathTraceResult,
+    from: EndpointCandidates,
+    to: EndpointCandidates,
+  ): PathTraceResult {
+    let out = result;
+    if (from.allPaths.length > 1 || to.allPaths.length > 1) {
+      out = { ...out, namesakes: { from: from.allPaths, to: to.allPaths } };
+    }
+    if (from.resolvedSymbolId !== undefined || to.resolvedSymbolId !== undefined) {
+      out = {
+        ...out,
+        resolvedEndpoints: {
+          ...(from.resolvedSymbolId === undefined ? {} : { from: from.resolvedSymbolId }),
+          ...(to.resolvedSymbolId === undefined ? {} : { to: to.resolvedSymbolId }),
+        },
+      };
+    }
+    return out;
   }
 
   /**

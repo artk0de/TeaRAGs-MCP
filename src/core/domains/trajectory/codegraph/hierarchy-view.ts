@@ -25,6 +25,37 @@ export const MRO_RANK: Record<InheritanceKind, number> = {
   structural: 4,
 };
 
+// Which way the per-kind declaration ordinal runs WITHIN one rank (bd
+// tea-rags-mcp-u0t4p). A mixin is inserted at the FRONT of its region, so the
+// last `include` / `extend` / `prepend` declared sits nearest — `include A;
+// include B` gives `[C, B, A]`, `prepend A; prepend B` gives `[B, A, C]`. A base
+// list reads in the order written: Python `class C(A, B)` consults A first (C3
+// itself is computed by the Python ancestor policy, not here), and `implements`
+// order carries no dispatch meaning but must stay stable.
+export const MRO_ORDINAL_DIRECTION: Record<InheritanceKind, 1 | -1> = {
+  prepend: -1,
+  include: -1,
+  extend: -1,
+  implements: 1,
+  super: 1,
+  structural: 1,
+};
+
+/** One direct ancestor's position under its source — what the MRO order compares. */
+export interface MroPosition {
+  kind: InheritanceKind;
+  ordinal: number;
+}
+
+/**
+ * Nearest-first comparator over the direct ancestors of ONE type: `MRO_RANK`
+ * first, then the ordinal in the kind's `MRO_ORDINAL_DIRECTION`. Zero means
+ * the two positions have no MRO order between them.
+ */
+export function compareMroPosition(a: MroPosition, b: MroPosition): number {
+  return MRO_RANK[a.kind] - MRO_RANK[b.kind] || MRO_ORDINAL_DIRECTION[a.kind] * (a.ordinal - b.ordinal);
+}
+
 export class MapHierarchyView implements HierarchyView {
   constructor(private readonly snapshot: HierarchySnapshot) {}
 
@@ -51,7 +82,7 @@ export class MapHierarchyView implements HierarchyView {
       const { kinds } = opts;
       if (kinds) rows = rows.filter((r) => kinds.includes(r.kind));
       if (opts.ordered && index === "ancestorsBySource") {
-        rows = [...rows].sort((a, b) => MRO_RANK[a.kind] - MRO_RANK[b.kind] || a.ordinal - b.ordinal);
+        rows = [...rows].sort(compareMroPosition);
       }
       for (const r of rows) {
         out.push({

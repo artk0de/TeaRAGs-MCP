@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { HierarchySnapshot, InheritanceEdgeRow } from "../../../../../src/core/contracts/types/codegraph.js";
-import { MapHierarchyView } from "../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import {
+  MapHierarchyView,
+  MRO_ORDINAL_DIRECTION,
+  MRO_RANK,
+} from "../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
 
 function r(
   source: string,
@@ -55,12 +59,57 @@ describe("MapHierarchyView", () => {
     ]);
   });
 
-  it("ordered breaks same-kind ties by ordinal (Comparable@0 before Auditable@1)", () => {
+  it("ordered puts the LATER include nearer (Ruby: include Comparable; include Auditable → [Auditable, Comparable])", () => {
+    // bd tea-rags-mcp-u0t4p: each `include` inserts at the front of the mixin
+    // region, so `Service.ancestors == [Service, Auditable, Comparable, …]`.
     const includes = view
       .getAncestors("Service", { ordered: true })
       .filter((e) => e.kind === "include")
       .map((e) => e.ancestorFqName);
-    expect(includes).toEqual(["Comparable", "Auditable"]);
+    expect(includes).toEqual(["Auditable", "Comparable"]);
+  });
+
+  it("ordered puts the LATER prepend nearer (prepend A; prepend B → [B, A, C])", () => {
+    const prepends: HierarchySnapshot = {
+      ancestorsBySource: { C: [r("C", "A", "prepend", 0), r("C", "B", "prepend", 1)] },
+      descendantsByAncestor: {},
+    };
+    const names = new MapHierarchyView(prepends).getAncestors("C", { ordered: true }).map((e) => e.ancestorFqName);
+    expect(names).toEqual(["B", "A"]);
+  });
+
+  it("ordered puts the LATER extend nearer", () => {
+    const extendsSnap: HierarchySnapshot = {
+      ancestorsBySource: { C: [r("C", "A", "extend", 0), r("C", "B", "extend", 1)] },
+      descendantsByAncestor: {},
+    };
+    const names = new MapHierarchyView(extendsSnap).getAncestors("C", { ordered: true }).map((e) => e.ancestorFqName);
+    expect(names).toEqual(["B", "A"]);
+  });
+
+  it("ordered keeps nominal base-list order for super and implements (Python class C(A, B) → A before B)", () => {
+    const bases: HierarchySnapshot = {
+      ancestorsBySource: {
+        C: [
+          r("C", "B", "super", 1),
+          r("C", "A", "super", 0),
+          r("C", "J", "implements", 1),
+          r("C", "I", "implements", 0),
+        ],
+      },
+      descendantsByAncestor: {},
+    };
+    const names = new MapHierarchyView(bases).getAncestors("C", { ordered: true }).map((e) => e.ancestorFqName);
+    expect(names).toEqual(["I", "J", "A", "B"]);
+  });
+
+  it("kinds sharing an MRO rank share an ordinal direction (the comparator stays a total order)", () => {
+    const kinds = Object.keys(MRO_RANK) as InheritanceEdgeRow["kind"][];
+    for (const a of kinds) {
+      for (const b of kinds) {
+        if (MRO_RANK[a] === MRO_RANK[b]) expect([a, MRO_ORDINAL_DIRECTION[a]]).toEqual([a, MRO_ORDINAL_DIRECTION[b]]);
+      }
+    }
   });
 
   it("returns empty for a type absent from the snapshot", () => {

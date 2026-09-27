@@ -292,4 +292,12 @@ export interface PathTraceResult {
    * still sees what it excluded. Absent when both endpoints are unambiguous.
    */
   namesakes?: { from: RelPath[]; to: RelPath[] };
+  /**
+   * Host-class aliasing on the endpoints (bd tea-rags-mcp-u0t4p) — the same
+   * policy as `ResolvedSymbolIdField`: a `from` / `to` naming a member the
+   * host inherits, with no node of its own, is traced from / to the member's
+   * definer. Each key is PRESENT only for an endpoint that was aliased, and
+   * names the definer id actually traced; the field is absent when neither was.
+   */
+  resolvedEndpoints?: { from?: SymbolId; to?: SymbolId };
 }

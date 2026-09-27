@@ -9,28 +9,28 @@
  * rows, no walker change, and nothing language-specific — any language whose
  * hierarchy rows exist gets the same walk.
  *
- * Order is `MapHierarchyView`'s ordered transitive walk: at each type its rows
- * by MRO rank (prepend ▸ include/extend ▸ implements ▸ super), then declaration
- * ordinal, and each ancestor's own ancestors right after it — so a module an
- * included concern pulls in is consulted before the host's superclass. The
- * first ancestor defining `<ancestor><sep><member>` wins. Two definers under the
- * same parent at the same rank AND ordinal have no MRO order between them, so
- * the answer is "no alias" rather than a guess.
+ * Order is `MapHierarchyView`'s ordered transitive walk — both read
+ * `compareMroPosition`: at each type its rows by MRO rank (prepend ▸
+ * include/extend ▸ implements ▸ super), then declaration ordinal in the kind's
+ * direction (a later mixin sits nearer, a base list reads as written), and each
+ * ancestor's own ancestors right after it — so a module an included concern
+ * pulls in is consulted before the host's superclass. The first ancestor
+ * defining `<ancestor><sep><member>` wins. Two definers under the same parent
+ * whose positions compare equal have no MRO order between them, so the answer
+ * is "no alias" rather than a guess.
  */
 
 import { splitMethodSymbol } from "../../../adapters/duckdb/symbol-id-text.js";
 import type { GraphDbClient, SymbolId } from "../../../contracts/types/codegraph.js";
-import { MRO_RANK } from "./hierarchy-view.js";
+import { compareMroPosition, type MroPosition } from "./hierarchy-view.js";
 
 /** The two graph reads the walk needs — direct ancestors and symbol presence. */
 export type InheritedMemberGraph = Pick<GraphDbClient, "getSupertypes" | "getSymbolVisibilities">;
 
 /** One ancestor in MRO order, with the position that orders it under its parent. */
-interface MroAncestor {
+interface MroAncestor extends MroPosition {
   fqName: string;
   parent: string;
-  rank: number;
-  ordinal: number;
 }
 
 /**
@@ -55,9 +55,7 @@ export async function resolveInheritedMemberDefiner(
   const definers = ancestors.filter((a) => defined.has(idOf(a)));
   const [first] = definers;
   if (first === undefined) return null;
-  const tied = definers.some(
-    (a) => a !== first && a.parent === first.parent && a.rank === first.rank && a.ordinal === first.ordinal,
-  );
+  const tied = definers.some((a) => a !== first && a.parent === first.parent && compareMroPosition(a, first) === 0);
   return tied ? null : idOf(first);
 }
 
@@ -67,8 +65,8 @@ async function linearizeAncestors(graph: InheritedMemberGraph, owner: string): P
   const seen = new Set<string>([owner]);
   const visit = async (node: string): Promise<void> => {
     const edges = (await graph.getSupertypes(node))
-      .map((e) => ({ fqName: e.ancestorFqName, parent: node, rank: MRO_RANK[e.kind], ordinal: e.ordinal ?? 0 }))
-      .sort((a, b) => a.rank - b.rank || a.ordinal - b.ordinal);
+      .map((e): MroAncestor => ({ fqName: e.ancestorFqName, parent: node, kind: e.kind, ordinal: e.ordinal ?? 0 }))
+      .sort(compareMroPosition);
     for (const ancestor of edges) {
       if (seen.has(ancestor.fqName)) continue;
       seen.add(ancestor.fqName);
