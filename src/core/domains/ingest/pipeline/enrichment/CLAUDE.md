@@ -264,6 +264,20 @@
   contradiction — branch on the conjunction the recovery filter uses, not on
   `enrichedAt`.
 
+- **Every payload write is `wait: false`, so a read that decides a terminal
+  status must follow a drain.** Qdrant acknowledges such a write from the WAL
+  and applies it later; a count or scroll issued meanwhile reads the segments as
+  they were. Both `CompletionRunner` marker steps open with
+  `EnrichmentMarkerStore#awaitQueuedPayloadWrites` (a `wait: true` update
+  matching no point — `QdrantPointStore#awaitQueuedUpdates`) before
+  `readUnenriched`. Why: the marker's own `wait: true` write used to be the only
+  barrier, and it came AFTER the scan — taxdome's file marker read
+  `degraded / 92` for points whose first stamp was still queued behind 37.9 s of
+  finalize writes, and the index showed them stamped a minute later (bd
+  tea-rags-mcp-vnmj1). Mock Qdrant applies writes synchronously, so no suite
+  catches a new scan placed before the drain unless it queues writes the way
+  `completion-runner-terminal-scan-visibility.test.ts` does.
+
 ## Boundaries
 
 - **Streamable per stored batch: git file signals, git chunk signals, codegraph

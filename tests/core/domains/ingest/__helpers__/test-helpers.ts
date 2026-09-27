@@ -392,6 +392,11 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     }
   }
 
+  /** Every write above applies synchronously, so nothing is ever queued behind this barrier. */
+  async awaitQueuedUpdates(_collectionName: string): Promise<void> {
+    return Promise.resolve();
+  }
+
   batchDeletePayloadCalls: { collectionName: string; operations: { keys: string[]; points: (string | number)[] }[] }[] =
     [];
 

@@ -144,8 +144,8 @@ export type DeferredChunkPassOutcome =
 
 /**
  * How the codegraph payload heal (step 7b) settled. The terminal CHUNK markers
- * require it: their `wait: true` write is the barrier draining the heal's
- * `wait: false` payload writes, so they must not be written before it.
+ * require it: their step opens with the barrier draining the heal's
+ * `wait: false` payload writes, so it must not run before the heal.
  */
 export type CodegraphHealStepOutcome =
   /** No heal runner is wired (codegraph off), or no provider in the run defers chunk enrichment. */
@@ -488,13 +488,16 @@ export class CompletionRunner {
         contentHashes: filePhase.runContentHashes,
         ...(pass1Aggregates ? { pass1Aggregates } : {}),
       });
-      if (fileOverlays.size > 0) {
-        await filePhase.applyFinalize(
-          physicalCollectionName,
-          ctx,
-          fileOverlays,
-          chunkPhase.getDeferredChunkMap(ctx.key),
-        );
+      // Apply whenever there is something to settle, not only when the graph
+      // returned overlays: the apply is also what bare-stamps (and miss-tracks)
+      // a file the graph holds nothing for. An incremental run that touched only
+      // such files — two markdown files re-ingested by a recompute's sync leg —
+      // gets an EMPTY overlay map, and skipping on it left every point of those
+      // files with neither terminal marker (bd tea-rags-mcp-vnmj1). A provider
+      // that accumulates no chunk map (git) still skips on an empty map.
+      const chunkMap = chunkPhase.getDeferredChunkMap(ctx.key);
+      if (fileOverlays.size > 0 || chunkMap.size > 0) {
+        await filePhase.applyFinalize(physicalCollectionName, ctx, fileOverlays, chunkMap);
       }
     }
     await filePhase.drain();
@@ -617,24 +620,43 @@ export class CompletionRunner {
   }
 
   /**
-   * Report a marker step's two halves apart.
+   * Report a marker step's three parts apart.
    *
-   * A marker step does exactly two things: scan for residual unenriched points,
-   * and write the terminal marker. The write is `wait: true`, which makes it a
-   * BARRIER on every `wait: false` payload write the preceding apply step
-   * queued — so a marker step's wall clock is mostly not its own work. The
-   * unenriched scans measure ~6ms on taxdome since the v14 payload indexes while
-   * the steps measured 11.6s and 11.4s; without this split that gap is
+   * A marker step drains the payload writes the preceding apply steps queued,
+   * scans for residual unenriched points, and writes the terminal marker. The
+   * drain is where a marker step's wall clock goes — it waits out every
+   * `wait: false` write before it (11.6s and 11.4s on taxdome, against ~6ms
+   * scans since the v14 payload indexes); without this split that gap is
    * unattributable and invites re-optimising a scan that is already free.
    */
-  private reportMarkerSplit(step: string, scanMs: number, writeMs: number): void {
-    pipelineLog.enrichmentPhase("COMPLETION_MARKER_SPLIT", { step, scanMs, writeMs });
+  private reportMarkerSplit(step: string, drainMs: number, scanMs: number, writeMs: number): void {
+    pipelineLog.enrichmentPhase("COMPLETION_MARKER_SPLIT", { step, drainMs, scanMs, writeMs });
+  }
+
+  /**
+   * Wait until every payload write this run queued is visible to the unenriched
+   * scan, and return how long that took (bd tea-rags-mcp-vnmj1).
+   *
+   * The scan decides the terminal status, and the payload writes before it are
+   * `wait: false` — acknowledged, not yet applied. Scanned before they land, a
+   * point whose FIRST stamp is still queued counts as unenriched: on taxdome
+   * the file marker recorded `degraded / 92` for points the index showed
+   * stamped a minute later, because the marker's own `wait: true` write — the
+   * barrier that drained 37.9s of queue — came after the scan. Only the scan
+   * needs the barrier; the marker write that follows stays `wait: true` for
+   * durability.
+   */
+  private async drainQueuedPayloadWrites(physicalCollectionName: PhysicalCollectionName): Promise<number> {
+    const startedAt = Date.now();
+    await this.deps.markerStore.awaitQueuedPayloadWrites(physicalCollectionName);
+    return Date.now() - startedAt;
   }
 
   /**
    * Step 4 — terminal FILE marker per provider. Reads post-backfill unenriched
-   * counts. `_backfill` is not read: requiring it is what keeps this step from
-   * running before the backfill settles. Times itself (see `timedStep`).
+   * counts, after draining the queued payload writes so the count sees them.
+   * `_backfill` is not read: requiring it is what keeps this step from running
+   * before the backfill settles. Times itself (see `timedStep`).
    */
   private async markFileTerminals(
     physicalCollectionName: PhysicalCollectionName,
@@ -645,6 +667,7 @@ export class CompletionRunner {
   ): Promise<{ readonly kind: "fileLevelWritten" }> {
     await this.timedStep("fileMarkers", async () => {
       const { filePhase, applier, markerStore } = this.deps;
+      const drainMs = await this.drainQueuedPayloadWrites(physicalCollectionName);
       let scanMs = 0;
       let writeMs = 0;
       for (const ctx of contexts.values()) {
@@ -677,7 +700,7 @@ export class CompletionRunner {
         });
         writeMs += Date.now() - writeStartedAt;
       }
-      this.reportMarkerSplit("fileMarkers", scanMs, writeMs);
+      this.reportMarkerSplit("fileMarkers", drainMs, scanMs, writeMs);
     });
     return { kind: "fileLevelWritten" };
   }
@@ -748,8 +771,8 @@ export class CompletionRunner {
 
   /**
    * Step 8 — terminal CHUNK marker per provider. `_codegraphHeal` is not read:
-   * requiring it is what keeps this `wait: true` write — the barrier on the
-   * heal's `wait: false` payload writes — from landing before the heal settles.
+   * requiring it is what keeps this step's drain — the barrier on the heal's
+   * `wait: false` payload writes — from running before the heal settles.
    * Times itself (see `timedStep`).
    */
   private async markChunkTerminals(
@@ -762,6 +785,7 @@ export class CompletionRunner {
   ): Promise<{ readonly kind: "allLevelsWritten" }> {
     await this.timedStep("chunkMarkers", async () => {
       const { filePhase, chunkPhase, markerStore } = this.deps;
+      const drainMs = await this.drainQueuedPayloadWrites(physicalCollectionName);
       let scanMs = 0;
       let writeMs = 0;
       for (const ctx of contexts.values()) {
@@ -788,7 +812,7 @@ export class CompletionRunner {
         });
         writeMs += Date.now() - writeStartedAt;
       }
-      this.reportMarkerSplit("chunkMarkers", scanMs, writeMs);
+      this.reportMarkerSplit("chunkMarkers", drainMs, scanMs, writeMs);
     });
     return { kind: "allLevelsWritten" };
   }

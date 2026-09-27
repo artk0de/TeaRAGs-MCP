@@ -2697,6 +2697,24 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("awaitQueuedUpdates", () => {
+    // bd tea-rags-mcp-vnmj1 — a read issued after `wait: false` updates does not
+    // see them until they are applied; a `wait: true` update is sequenced behind
+    // them. The barrier must be such an update while changing nothing: a filter
+    // matching no point, so it also needs no point to exist.
+    it("sends one wait:true update whose filter selects no point", async () => {
+      await manager.awaitQueuedUpdates("test-collection");
+
+      expect(mockClient.batchUpdate).toHaveBeenCalledTimes(1);
+      const [collection, request] = mockClient.batchUpdate.mock.calls[0];
+      expect(collection).toBe("test-collection");
+      expect(request.wait).toBe(true);
+      expect(request.operations).toHaveLength(1);
+      expect(request.operations[0].delete_payload.filter).toEqual({ must: [{ has_id: [] }] });
+      expect(request.operations[0].delete_payload.points).toBeUndefined();
+    });
+  });
+
   describe("deletePayloadKeys", () => {
     it("should call client.deletePayload with keys and empty filter by default", async () => {
       await manager.deletePayloadKeys("test-collection", ["parentName"]);
