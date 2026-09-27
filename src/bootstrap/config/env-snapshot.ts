@@ -33,8 +33,8 @@
  * against the first, and the two enable flags against the second.
  */
 
-import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js";
-// Deep import, not the registry barrel: `env-replay.js` depends on nothing but
+import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js"; // Deep import, not the registry barrel: `env-replay.js` depends on nothing but
+
 // the group table, while the barrel reaches the qdrant-daemon and vcs adapters
 // through `env-resolution.js`.
 import {
@@ -134,6 +134,32 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("QDRANT_LOW_MEMORY", qdrantTune.lowMemory);
 
   return snapshot;
+}
+
+/**
+ * The part of {@link buildRegistryEnvSnapshot} an index run PINS into its
+ * registry entry: only the families its env set explicitly
+ * (`flags.explicitEnvKeys`), never a value that is merely the code default
+ * (bd tea-rags-mcp-h4l6k).
+ *
+ * Materializing every default (9vpnz) froze each project at the defaults of the
+ * release that first indexed it: all 21 live entries carried
+ * `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000`, so the BREAKING default of 5000
+ * reached no project. A pin is an operator's decision; a default keeps
+ * following the release. "Explicit" includes what the registry replayed into
+ * the run's env, so an existing entry keeps every pin it already has — this
+ * narrows what NEW pins are taken, it never drops an old one.
+ *
+ * The full set stays `buildRegistryEnvSnapshot`'s job: the env drift axis
+ * compares resolved values, pinned or not.
+ */
+export function buildPinnedRegistryEnvSnapshot(
+  config: RegistryEnvSnapshotSource & { flags: { explicitEnvKeys: readonly string[] } },
+): Record<string, string> {
+  const explicit = new Set(config.flags.explicitEnvKeys);
+  // Both sides speak canonical names: the snapshot emits one per group, and the
+  // parser records the canonical name it asked for, whichever spelling answered.
+  return Object.fromEntries(Object.entries(buildRegistryEnvSnapshot(config)).filter(([key]) => explicit.has(key)));
 }
 
 /**

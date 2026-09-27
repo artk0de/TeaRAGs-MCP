@@ -5,8 +5,9 @@
  * (`parseAppConfig`). Rather than forcing the operator to re-export EMBEDDING_*
  * by hand, the run pulls the actual config from the project registry — the same
  * register-first source `prime` reads. For a brand-new project (no entry yet) it
- * borrows the config of the most recently indexed project, so a fresh index
- * "just works" against the same backend the operator last used. Ambient env
+ * borrows the BACKEND of the most recently indexed project — never its indexing
+ * env (`pickRegistryEnvSeed`) — so a fresh index "just works" against the same
+ * backend the operator last used. Ambient env
  * still wins, preserving explicit overrides.
  *
  * Both entry points consume this: the CLI seeds the resolved map into its forked
@@ -17,6 +18,7 @@
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
+import { isBackendRegistryEnvKey } from "./env-groups.js";
 import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "./env-replay.js";
 import { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
 
@@ -34,17 +36,58 @@ export interface RegistryLookup {
  * 3. else an entry for ANOTHER working tree of the SAME repository — a linked
  *    worktree is the same codebase as its checkout, so that entry's backend and
  *    tuning are a far better seed than whatever was indexed last,
- * 4. else the most recently indexed project (new project — borrow last config),
+ * 4. else the most recently indexed project (new project — borrow last config;
+ *    an env seed narrows it to the backend, see {@link pickRegistryEnvSeed}),
  * 5. else null (empty registry → fall back to ambient env / defaults).
  */
 export function pickRegistryEntry(
   registry: RegistryLookup,
   target: { project?: string; path?: string },
 ): CollectionEntry | null {
-  if (target.project) return registry.findByName(target.project);
+  return pickRegistryEntryWithProvenance(registry, target)?.entry ?? null;
+}
+
+/**
+ * The entry whose stamp an index run of `target` replays — {@link pickRegistryEntry}
+ * with the borrow of rule 4 narrowed to the BACKEND (bd tea-rags-mcp-h4l6k).
+ *
+ * The named project, the path's own entry and a sibling worktree's entry are
+ * the same codebase, so their whole stamp applies. The most recent entry of an
+ * UNRELATED repository is not: its `env` records how THAT project was indexed —
+ * a `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=777` set for one repo was inherited by
+ * every project indexed next, and then pinned into its own entry. A new project
+ * borrows only what reaches the operator's backends ({@link isBackendRegistryEnvKey}
+ * plus the dedicated identity fields) and takes code defaults for the rest.
+ */
+export function pickRegistryEnvSeed(
+  registry: RegistryLookup,
+  target: { project?: string; path?: string },
+): CollectionEntry | null {
+  const picked = pickRegistryEntryWithProvenance(registry, target);
+  if (!picked) return null;
+  if (picked.provenance !== "foreign-repo") return picked.entry;
+  const { tuning: _legacy, ...entry } = picked.entry;
+  const stamp = picked.entry.env ?? picked.entry.tuning ?? {};
+  return {
+    ...entry,
+    env: Object.fromEntries(Object.entries(stamp).filter(([key]) => isBackendRegistryEnvKey(key))),
+  };
+}
+
+/** Where {@link pickRegistryEntry}'s choice came from — only a `foreign-repo` borrow is another codebase. */
+type RegistryEntryProvenance = "named" | "own-path" | "same-repo" | "foreign-repo";
+
+function pickRegistryEntryWithProvenance(
+  registry: RegistryLookup,
+  target: { project?: string; path?: string },
+): { entry: CollectionEntry; provenance: RegistryEntryProvenance } | null {
+  if (target.project) {
+    const named = registry.findByName(target.project);
+    return named ? { entry: named, provenance: "named" } : null;
+  }
   if (target.path) {
     const byPath = registry.findByPath(target.path);
-    if (byPath) return byPath;
+    if (byPath) return { entry: byPath, provenance: "own-path" };
   }
   const all = registry.list();
   if (all.length === 0) return null;
@@ -52,7 +95,8 @@ export function pickRegistryEntry(
     entries.reduce((latest, e) => (e.indexedAt > latest.indexedAt ? e : latest));
 
   const sameRepo = target.path ? entriesSharingRepo(all, target.path) : [];
-  return newest(sameRepo.length > 0 ? sameRepo : all);
+  if (sameRepo.length > 0) return { entry: newest(sameRepo), provenance: "same-repo" };
+  return { entry: newest(all), provenance: "foreign-repo" };
 }
 
 /**

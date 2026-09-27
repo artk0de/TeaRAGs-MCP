@@ -517,6 +517,51 @@ describe("CLI 'doctor' command", () => {
         stdout.mockRestore();
       }
     });
+
+    // bd tea-rags-mcp-9j2cy — the same in-flight lease the orphan count honours
+    // (9ovlp) keeps recovery from stubbing a build a live force run still owns.
+    it("does not register a collection an in-flight force run is building", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const now = new Date().toISOString();
+        const long = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const markers: Record<string, Record<string, unknown>> = {
+          code_x_v14: { indexingComplete: false, startedAt: now, lastHeartbeat: now },
+          code_dead_v3: { indexingComplete: false, startedAt: long, lastHeartbeat: long },
+        };
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_x_v14", "code_dead_v3"]),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+          countPoints: vi.fn().mockResolvedValue(0),
+          getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+          scrollFiltered: vi.fn().mockResolvedValue([]),
+          getPoint: vi.fn(async (collection: string) =>
+            Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
+          ),
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: true, recoverRegistry: true },
+          { qdrant: fakeQdrant as never, embeddings: fakeEmbeddings },
+        );
+        const parsed = JSON.parse(
+          stdout.mock.calls
+            .map((c) => String(c[0]))
+            .join("")
+            .trim(),
+        );
+        expect(parsed.recovery.recovered).toBe(1);
+        expect(new CollectionRegistry(dir).list().map((e) => e.collectionName)).toEqual(["code_dead_v3"]);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
   });
 
   describe("orphan count excludes aliased physical collections (FixC)", () => {
@@ -583,6 +628,47 @@ describe("CLI 'doctor' command", () => {
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         const parsed = JSON.parse(out.trim());
         // Only the genuinely orphan one counts.
+        expect(parsed.registry.orphanCount).toBe(1);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    // bd tea-rags-mcp-9ovlp — a force run builds code_x_v14 off to the side; until
+    // the alias flips, only its live indexing marker tells it from a leftover.
+    it("does not count a collection an in-flight force run is building, but counts a dead build", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const now = new Date().toISOString();
+        const long = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const markers: Record<string, Record<string, unknown>> = {
+          code_x_v14: { indexingComplete: false, startedAt: now, lastHeartbeat: now },
+          code_dead_v3: { indexingComplete: false, startedAt: long, lastHeartbeat: long },
+        };
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_x_v14", "code_dead_v3"]),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+          getPoint: vi.fn(async (collection: string) =>
+            Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
+          ),
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: true, recoverRegistry: false },
+          { qdrant: fakeQdrant as never, embeddings: fakeEmbeddings },
+        );
+        const parsed = JSON.parse(
+          stdout.mock.calls
+            .map((c) => String(c[0]))
+            .join("")
+            .trim(),
+        );
         expect(parsed.registry.orphanCount).toBe(1);
       } finally {
         stdout.mockRestore();

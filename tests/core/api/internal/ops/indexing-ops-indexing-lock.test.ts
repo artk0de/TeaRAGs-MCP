@@ -206,6 +206,80 @@ describe("IndexingOps — claims the collection with an exclusive indexing lock"
     expect(existsSync(lockFile())).toBe(false);
   });
 
+  describe("a hard-killed run's marker is judged by its dead writer, not by the timer (bd tea-rags-mcp-nhd1s)", () => {
+    const freshMarker = (): Record<string, unknown> => {
+      const fresh = new Date().toISOString();
+      return { indexingComplete: false, startedAt: fresh, lastHeartbeat: fresh };
+    };
+
+    it("takes over the dead lock and runs although the served collection's marker heartbeat is still fresh", async () => {
+      writeLockOfAnotherRun({ operation: "force-reindex" });
+      const deps = makeDeps(makeLock({ isProcessAlive: (pid) => pid !== FOREIGN_PID }), { [ALIAS]: freshMarker() });
+      let lockDuringReindex: IndexingLockRecord | undefined;
+      vi.mocked(deps.reindex.reindexChanges).mockImplementation(async () => {
+        lockDuringReindex = readLock();
+        return Promise.resolve(changeStats);
+      });
+
+      await expect(new IndexingOps(deps).run("/repo")).resolves.toMatchObject({ status: "completed" });
+      expect(lockDuringReindex?.pid).toBe(process.pid);
+    });
+
+    it("takes over the dead lock and runs although the killed force build's _vN marker is still fresh", async () => {
+      writeLockOfAnotherRun({ operation: "force-reindex" });
+      const building = `${ALIAS}_v7`;
+      const deps = makeDeps(makeLock({ isProcessAlive: (pid) => pid !== FOREIGN_PID }), {
+        [building]: freshMarker(),
+      });
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([building]);
+
+      await expect(new IndexingOps(deps).run("/repo")).resolves.toMatchObject({ status: "completed" });
+      expect(deps.reindex.reindexChanges).toHaveBeenCalledTimes(1);
+    });
+
+    it("still refuses on a fresh marker when there was no dead lock to take over", async () => {
+      const deps = makeDeps(makeLock(), { [ALIAS]: freshMarker() });
+
+      await expect(new IndexingOps(deps).run("/repo")).rejects.toBeInstanceOf(IndexingAlreadyInProgressError);
+      expect(deps.reindex.reindexChanges).not.toHaveBeenCalled();
+    });
+
+    // Live 2026-09-27: after the retry ran, the killed force run's _vN kept its
+    // fresh heartbeat, so status read "being indexed, 0 chunks" for the whole
+    // heartbeat window — and the lazy orphan sweep skipped it on that same lease.
+    it("reclaims the dead writer's unpromoted build on takeover, never the served version", async () => {
+      writeLockOfAnotherRun({ operation: "force-reindex" });
+      const served = `${ALIAS}_v6`;
+      const building = `${ALIAS}_v7`;
+      const deps = makeDeps(makeLock({ isProcessAlive: (pid) => pid !== FOREIGN_PID }), {
+        [served]: { indexingComplete: true, startedAt: new Date().toISOString() },
+        [building]: freshMarker(),
+      });
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([served, building]);
+      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([{ aliasName: ALIAS, collectionName: served }]);
+      const deleteCollection = vi.fn().mockResolvedValue(undefined);
+      Object.assign(deps.qdrant, { deleteCollection });
+
+      await expect(new IndexingOps(deps).run("/repo")).resolves.toMatchObject({ status: "completed" });
+
+      expect(deleteCollection.mock.calls.map(([name]) => name)).toEqual([building]);
+    });
+
+    it("reclaims nothing without a takeover — a live run's build keeps its lease", async () => {
+      const served = `${ALIAS}_v6`;
+      const building = `${ALIAS}_v7`;
+      const deps = makeDeps(makeLock());
+      vi.mocked(deps.qdrant.listCollections).mockResolvedValue([served, building]);
+      vi.mocked(deps.qdrant.aliases.listAliases).mockResolvedValue([{ aliasName: ALIAS, collectionName: served }]);
+      const deleteCollection = vi.fn().mockResolvedValue(undefined);
+      Object.assign(deps.qdrant, { deleteCollection });
+
+      await new IndexingOps(deps).run("/repo");
+
+      expect(deleteCollection).not.toHaveBeenCalled();
+    });
+  });
+
   it("gives its lock back when the operation fails, so a retry is admitted", async () => {
     const deps = makeDeps(makeLock());
     vi.mocked(deps.reindex.reindexChanges).mockRejectedValueOnce(new Error("embedding endpoint down"));

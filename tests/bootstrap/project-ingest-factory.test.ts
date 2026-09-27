@@ -72,6 +72,41 @@ describe("ProjectIngestFactory", () => {
     expect(seen[0].INGEST_CHUNK_OVERLAP).toBe("450");
   });
 
+  it("seeds a NEW project with another repository's backend only, never its indexing env (bd tea-rags-mcp-h4l6k)", () => {
+    const seen: Record<string, string>[] = [];
+    const factory = new ProjectIngestFactory({
+      registry: registryOf([
+        entry({
+          path: "/repo/alpha",
+          env: {
+            TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES: "777",
+            CODE_TEST_PATHS: "spec/**",
+            EMBEDDING_PROVIDER: "onnx",
+            QDRANT_TUNE_UPSERT_BATCH_SIZE: "64",
+          },
+        }),
+      ]),
+      processIngest: facade("process") as never,
+      buildIngest: (env) => {
+        seen.push(env);
+        return facade("borrowed") as never;
+      },
+      ambientEnv: {},
+    });
+
+    factory.forPath("/repo/brand-new");
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toHaveProperty("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES");
+    expect(seen[0]).not.toHaveProperty("CODE_TEST_PATHS");
+    expect(seen[0]).toMatchObject({
+      EMBEDDING_PROVIDER: "onnx",
+      EMBEDDING_MODEL: "jina-v2",
+      QDRANT_TUNE_UPSERT_BATCH_SIZE: "64",
+      QDRANT_URL: "http://127.0.0.1:6333",
+    });
+  });
+
   it("reuses the process-wide facade when the registry has no entry for the path", () => {
     let built = 0;
     const factory = new ProjectIngestFactory({

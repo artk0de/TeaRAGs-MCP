@@ -68,6 +68,7 @@ vi.mock("../../../src/core/api/public/index.js", async () => {
     // reaches the CLI through this barrel, so its stubs live here too.
     resolveRegistryEnv: vi.fn().mockReturnValue({}),
     pickRegistryEntry: vi.fn().mockReturnValue(null),
+    pickRegistryEnvSeed: vi.fn().mockReturnValue(null),
   };
 });
 

@@ -36,7 +36,12 @@ export {
 export type { RegistryEnvEdit } from "./env-edit.js";
 export { outerEnvForRegistryStamp, replayRegistryEnv } from "./env-replay.js";
 export type { AmbientEnvRole } from "./env-replay.js";
-export { outerEnvForRegistryEntry, pickRegistryEntry, resolveRegistryEnv } from "./env-resolution.js";
+export {
+  outerEnvForRegistryEntry,
+  pickRegistryEntry,
+  pickRegistryEnvSeed,
+  resolveRegistryEnv,
+} from "./env-resolution.js";
 export type { RegistryLookup } from "./env-resolution.js";
 export { RegistryQdrantBackendUnresolvedError } from "./errors.js";
 export type { RegistryQdrantBackendClaim } from "./errors.js";

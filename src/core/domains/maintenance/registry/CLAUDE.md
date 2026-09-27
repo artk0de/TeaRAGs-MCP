@@ -24,6 +24,20 @@
   tea-rags-mcp-ghk1f). Any new field set outside the pipeline must be added to
   the sticky preserve list here.
 
+- **A registry `env` stamp records operator DECISIONS, and only its own project
+  replays it whole.** A run pins the env families its env set explicitly —
+  replayed pins included — never a bare code default
+  (`buildPinnedRegistryEnvSnapshot`, `bootstrap/config/env-snapshot.ts`; the
+  full resolved set stays `buildRegistryEnvSnapshot`, which the env drift axis
+  compares). A new project seeded from an UNRELATED repository's entry takes
+  only its backend (`pickRegistryEnvSeed`, `isBackendRegistryEnvKey`); the named
+  project, its own path and a sibling worktree replay whole. Why: the 9vpnz
+  snapshot materialized every default and rule 4 of `pickRegistryEntry` handed
+  it on, so one repo's `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=777` became the next
+  project's pin, and every entry froze the defaults of the release that first
+  indexed it — the BREAKING default of 5000 reached none of 21 entries (bd
+  tea-rags-mcp-h4l6k). Existing pins are never rewritten here.
+
 ## Mechanics
 
 - **Every mutator does a synchronous whole-file round trip, and the CAS backoff

@@ -128,11 +128,14 @@ export class CollectionIndexingLock {
       if (held) return held;
 
       const existing = await inspectLock(path);
+      let tookOverStaleLock = false;
       if (existing) {
         if (!this.isStale(path, existing)) return undefined;
-        if ((await removeExactLock(path, existing)) === "replaced") return undefined;
+        const removal = await removeExactLock(path, existing);
+        if (removal === "replaced") return undefined;
+        tookOverStaleLock = removal === "removed";
       }
-      return await this.create(path, operation);
+      return await this.create(path, operation, tookOverStaleLock);
     } catch (error) {
       throw new IndexingLockUnavailableError(path, asError(error));
     }
@@ -176,7 +179,11 @@ export class CollectionIndexingLock {
     }
   }
 
-  private async create(path: string, operation: string): Promise<HeldCollectionIndexingLock | undefined> {
+  private async create(
+    path: string,
+    operation: string,
+    tookOverStaleLock = false,
+  ): Promise<HeldCollectionIndexingLock | undefined> {
     let handle: FileHandle;
     try {
       handle = await open(path, "wx");
@@ -205,7 +212,7 @@ export class CollectionIndexingLock {
       await handle.close();
     }
     locksHeldByThisProcess.add(lockHoldKey(path, record));
-    return new HeldCollectionIndexingLock(path, created, this.now, this.heartbeatIntervalMs);
+    return new HeldCollectionIndexingLock(path, created, this.now, this.heartbeatIntervalMs, tookOverStaleLock);
   }
 
   private isStale(path: string, lock: InspectedLock): boolean {
@@ -234,6 +241,13 @@ export class HeldCollectionIndexingLock {
     private readonly identity: InspectedLock,
     private readonly now: () => number,
     heartbeatIntervalMs: number,
+    /**
+     * This claim replaced a lock whose holder was judged dead (bd
+     * tea-rags-mcp-nhd1s). Everything that holder published elsewhere — the
+     * Qdrant indexing marker, its heartbeat, an enrichment `_run` — died with
+     * it, however fresh its timestamps still look.
+     */
+    readonly tookOverStaleLock = false,
   ) {
     this.current = { ...(identity.record as IndexingLockRecord) };
     this.timer = setInterval(() => {

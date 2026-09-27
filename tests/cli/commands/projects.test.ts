@@ -454,6 +454,44 @@ describe("CLI 'projects' command group", () => {
       }
     });
 
+    // bd tea-rags-mcp-9ovlp — during the taxdome --force run code_27622aef_v14 was
+    // listed as an orphan; acting on that mid-run deletes the build. The same
+    // lease cleanupOrphanedVersions honours (nrylk) decides here.
+    it("hides a collection an in-flight force run is building and still lists a dead build", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const now = new Date().toISOString();
+        const long = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const markers: Record<string, Record<string, unknown>> = {
+          code_x_v14: { indexingComplete: false, startedAt: now, lastHeartbeat: now },
+          code_dead_v3: { indexingComplete: false, startedAt: long, lastHeartbeat: long },
+        };
+        const fakeQdrant = {
+          listCollections: vi.fn().mockResolvedValue(["code_x_v14", "code_dead_v3"]),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+          countPoints: vi.fn().mockResolvedValue(7),
+          getPoint: vi.fn(async (collection: string) =>
+            Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
+          ),
+        };
+
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: true }, fakeQdrant as never);
+
+        const parsed = JSON.parse(
+          stdout.mock.calls
+            .map((c) => String(c[0]))
+            .join("")
+            .trim(),
+        ) as {
+          collectionName: string;
+        }[];
+        expect(parsed.map((row) => row.collectionName)).toEqual(["code_dead_v3"]);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
     it("falls back gracefully when listAliases is missing or throws", async () => {
       // Defensive — if the Qdrant client doesn't expose aliases (e.g. older
       // server), orphans should still work, just including all physical names.

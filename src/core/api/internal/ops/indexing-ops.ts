@@ -26,6 +26,7 @@ import type { Reranker } from "../../../domains/explore/reranker.js";
 import { IndexingAlreadyInProgressError, NotIndexedError } from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
 import {
+  cleanupOrphanedVersions,
   isCollectionIndexingInFlight,
   type CollectionIndexingLock,
   type HeldCollectionIndexingLock,
@@ -50,6 +51,7 @@ import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js"
 import { advanceChunkSetStamp } from "../../../domains/maintenance/drift/index.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/worktree-seed-source.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
@@ -402,19 +404,58 @@ export class IndexingOps {
     this.indexingCollections.add(collectionName);
 
     try {
+      let supersededDeadWriterAt: number | undefined;
       if (this.indexingLock) {
         const held = await this.indexingLock.tryAcquire(collectionName, operation);
         if (!held) return await this.abandonClaim(collectionName);
         this.heldIndexingLocks.set(collectionName, held);
+        if (held.tookOverStaleLock) supersededDeadWriterAt = Date.now();
       }
+      // A takeover proves the previous writer dead, so the marker evidence it
+      // left — a heartbeat the timer still calls fresh after a kill -9 — is
+      // discounted like this process's own settled runs (bd tea-rags-mcp-nhd1s).
       const inFlightElsewhere = await isCollectionIndexingInFlight(this.qdrant, collectionName, {
-        ownRunsSettledAt: this.indexingSettledAt.get(collectionName),
+        ownRunsSettledAt: supersededDeadWriterAt ?? this.indexingSettledAt.get(collectionName),
       });
       if (inFlightElsewhere) return await this.abandonClaim(collectionName);
+      if (supersededDeadWriterAt !== undefined) {
+        await this.reclaimDeadWriterBuilds(collectionName, supersededDeadWriterAt);
+      }
       return true;
     } catch (error) {
       await this.abandonClaim(collectionName);
       throw error;
+    }
+  }
+
+  /**
+   * After a takeover, drop the versioned builds the dead writer left unpromoted
+   * (bd tea-rags-mcp-nhd1s). Its `_vN` keeps a heartbeat the timer calls fresh
+   * for the whole stale window, so the lazy sweep at the next run's start skips
+   * it on that lease and status reads "being indexed, 0 chunks" meanwhile. The
+   * takeover proved that writer dead, so its evidence up to the takeover is
+   * discounted and the ordinary sweep reclaims it — the served version and a
+   * first-ever build (no alias yet) are never touched by that sweep. Best
+   * effort: a failure leaves the build for the next sweep, never fails the claim.
+   */
+  private async reclaimDeadWriterBuilds(collectionName: string, deadWriterEvidenceUpTo: number): Promise<void> {
+    try {
+      const pool = this.codegraphPool;
+      const reclaimed = await cleanupOrphanedVersions(
+        this.qdrant,
+        collectionName,
+        pool
+          ? async (physicalCollectionName) => {
+              await pool.removeCollection(physicalCollectionName);
+            }
+          : undefined,
+        { deadWriterEvidenceUpTo },
+      );
+      if (reclaimed > 0 && isDebug()) {
+        console.error(`[IndexingOps] reclaimed ${reclaimed} build(s) a dead writer left on ${collectionName}`);
+      }
+    } catch (error) {
+      if (isDebug()) console.error(`[IndexingOps] could not reclaim dead-writer builds of ${collectionName}:`, error);
     }
   }
 

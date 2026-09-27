@@ -83,7 +83,7 @@ import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import {
   buildEffectiveIndexEnvSnapshot,
-  buildRegistryEnvSnapshot,
+  buildPinnedRegistryEnvSnapshot,
   buildRunningIndexEnvSnapshot,
 } from "./config/env-snapshot.js";
 import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
@@ -1025,11 +1025,12 @@ function createIngestFacade(
     // Which files each chunk-set bump touched: lets a scoped force advance the
     // stamps its selection covered (bd tea-rags-mcp-j4oww).
     languageChunkSetBumpScopes: facadeComposition.languageChunkSetBumpScopes,
-    // Full effective env set of this run (defaults materialized, 9vpnz).
+    // The env families this run set explicitly — never a bare code default
+    // (bd tea-rags-mcp-h4l6k; the full resolved set is buildRegistryEnvSnapshot).
     // Built AFTER the adaptive adjustments in resolveInfrastructure
     // (GPU-calibrated batch size, embedded delete tuning) so user-set values
     // reflect what actually ran.
-    envSnapshot: buildRegistryEnvSnapshot(zodConfig),
+    envSnapshot: buildPinnedRegistryEnvSnapshot(zodConfig),
     enrichmentProviders,
     codegraphPool: shared.codegraphPool,
     indexRunDaemonGuard: shared.indexRunDaemonGuard,

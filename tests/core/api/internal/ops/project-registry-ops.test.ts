@@ -404,6 +404,43 @@ describe("ProjectRegistryOps", () => {
       }
     });
 
+    // bd tea-rags-mcp-9j2cy — a force run builds code_x_v14 off to the side and
+    // holds it by its live indexing marker until the alias flips. Recovery must
+    // not register that build as a project; a dead build is fair game.
+    it("skips a collection an in-flight force run is building, recovers a dead build", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-inflight-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const now = new Date().toISOString();
+        const long = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const markers: Record<string, Record<string, unknown>> = {
+          code_x_v14: { indexingComplete: false, startedAt: now, lastHeartbeat: now },
+          code_dead_v3: { indexingComplete: false, startedAt: long, lastHeartbeat: long },
+        };
+        const qdrant = {
+          url: "http://localhost:6333",
+          listCollections: async () => ["code_x_v14", "code_dead_v3"],
+          getCollectionInfo: async (n: string) => ({
+            name: n,
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [],
+          countPoints: async () => 0,
+          getPoint: async (collection: string) => (markers[collection] ? { payload: markers[collection] } : null),
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        expect(registry.list().map((e) => e.collectionName)).toEqual(["code_dead_v3"]);
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+
     it("throws if recoverFromQdrant called without qdrant injected", async () => {
       const recDir = mkdtempSync(join(tmpdir(), "rec2-"));
       try {
