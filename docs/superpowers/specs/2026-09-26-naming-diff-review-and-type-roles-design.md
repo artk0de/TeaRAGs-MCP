@@ -231,6 +231,62 @@ does merge distinct ancestors that share a name (`Base` is eight classes on
 taxdome). Resolving written supertypes to declared type ids would separate them,
 but that is a per-language lookup and was left out of this change.
 
+**The nearest family decides (`5ulz2`).** The merge above produced a wrong role
+live on taxdome. A draft
+`ExportAsyncWorkflow < Platform::Async::Workflow::Worker` came back MISFIT →
+`ExportAsyncWorkflowWorker`, with examples `AccountsCleanupWorker` and
+`ApplicationWorker`. The `Worker` family was six supertypes merged:
+`Sidekiq::Throttled::Worker` (73 members), `Platform::Async::Batch::Worker`
+(10), `Platform::Async::Operation::Worker` (8), `Sidekiq::Worker` (4),
+`Platform::Async::Workflow::Worker` (2) and `Shoryuken::Worker` (1). The two
+direct subclasses of the draft's supertype are `ImportAsyncWorkflow` and
+`UpdateAsyncWorkflow`. Transitive supertypes (`projectSupertypes`) play no part:
+families are keyed on a row's declared supertypes, and the role came from the
+last-segment merge alone.
+
+A namespaced supertype as written (leading `::` and generic arguments dropped)
+is now a family of its own, nested in its last-segment family. It takes a role
+by the same majority rule (≥ 2 members, ≥ half). When that role differs from the
+last-segment family's, its members carry it as an inheritance assignment scoped
+by the written name. When the two agree, nothing is added. A draft's `extends`
+looks up the written family first and falls back to the last segment when the
+written family has no role, whether it has too few subclasses or they split. No
+id resolution is involved: a supertype written relatively (`Workflow::Worker`)
+is a different key and simply falls back.
+
+The role stays a single head word. Every evidence kind, `carriedInName`, the
+head-alternative exclusions and the MISFIT suggestion (the role word inserted
+after the head) work on one word, and `async` in `ImportAsyncWorkflow` is a
+qualifier like any other. So `ExportWorkflow` CONFORMS to `workflow` too. A
+multi-word tail convention (`AsyncWorkflow`) would change what a role is for all
+three evidence kinds at once, and two members are too little evidence to measure
+that on. A draft that misses the head (`ExportJob`) is MISFIT →
+`ExportJobWorkflow`.
+
+Measured read-only on a copy of taxdome `_v15`, with `t9-roles.mts` and a
+per-type role dump diffed before and after:
+
+| Measure                                         | Before               | After                                        |
+| ----------------------------------------------- | -------------------- | -------------------------------------------- |
+| taxdome coverage                                | 19,267 (57.3%)       | 19,271 (57.3%)                               |
+| Ruby / TS                                       | 11,083 / 8,184       | 11,087 / 8,184                               |
+| types whose roles changed                       | —                    | 20, all additions, 0 removed; 20 of 20 right |
+| t9 seed 7 sample (30)                           | 30/30                | 30/30 (a different draw: the pool moved)     |
+| rename eval (caught / other / silent / control) | 0 / 7 / 10 / 6 of 40 | 0 / 7 / 10 / 6 of 40, byte-identical         |
+| live `ExportAsyncWorkflow` / `ExportWorkflow`   | MISFIT → `…Worker`   | CONFORMS, `workflow`, siblings as examples   |
+
+The 20 changes are 2 `*AsyncWorkflow`s (`workflow`), 6 `*::Process` classes
+under `GettingPaid::Quickbooks::Webhooks::Base` (`process`), 2 controllers under
+`ActionController::Base`, 1 of them newly with a role, 3 templates and 2
+`ClientDescription`s through a namespaced `InlineImages` mixin, 2 mailers
+through `ActionView::Helpers::UrlHelper` (a mixin scope that names the right
+role, as `Cookies` does above), and 3 `*Process` classes in
+`activity_feed/processes/`. The last 3 come through the connector reading:
+`process` is now a kind word (`typeNameParser`), so `SendToOpensearchProcess`,
+`UploadToS3Process` and `DeleteExpiredMonthlyIndicesProcess` are headed by
+`process` again. That fixes two of the six wrong changes the connector rule
+below records.
+
 **Directory-role membership (`tun7x`).** A directory role speaks only for the
 family it names. Its family is COHESIVE when the role's carriers in the
 directory share a supertype: the most carried supertype (last namespace segment

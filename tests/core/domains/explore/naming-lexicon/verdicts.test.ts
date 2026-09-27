@@ -852,6 +852,42 @@ describe("judgeTypeDraft", () => {
     ).toEqual({ verdict: "CONFORMS", role: STRATEGY_ROLE });
   });
 
+  // bd tea-rags-mcp-5ulz2, live on taxdome: `ExportAsyncWorkflow < Platform::Async::Workflow::Worker`
+  // was MISFIT → `ExportAsyncWorkflowWorker`, the role of every class whose supertype ENDS in
+  // `Worker`. The supertype's own subclasses are `*AsyncWorkflow`s: its nearest family decides.
+  describe("a draft extending a namespaced supertype takes that supertype's family role", () => {
+    const WORKERS = ["AccountsCleanup", "AccountsInvalidate", "Mailer"].map((q, i) =>
+      row(`${q}Worker`, `app/workers/w${i}/${q.toLowerCase()}_worker.rb`, ["Sidekiq::Throttled::Worker"]),
+    );
+    const WORKFLOWS = ["Import", "Update"].map((q, i) =>
+      row(`${q}AsyncWorkflow`, `app/workers/f${i}/${q.toLowerCase()}_async_workflow.rb`, [
+        "Platform::Async::Workflow::Worker",
+      ]),
+    );
+    const rows = [...filler(6), ...WORKERS, ...WORKFLOWS];
+    const draft = (name: string) => ({
+      name,
+      path: "app/workers/x/documents/export_async_workflow.rb",
+      extends: "Platform::Async::Workflow::Worker",
+      symbolKind: "class" as const,
+    });
+
+    it.each(["ExportAsyncWorkflow", "ExportWorkflow"])("`%s` → CONFORMS with the `workflow` role", (name) => {
+      expect(judge(rows, draft(name))).toMatchObject({
+        verdict: "CONFORMS",
+        role: { word: "workflow", evidence: "inheritance", examples: ["ImportAsyncWorkflow", "UpdateAsyncWorkflow"] },
+      });
+    });
+
+    it("`ExportJob` → MISFIT toward the sibling convention, never `…Worker`", () => {
+      expect(judge(rows, draft("ExportJob"))).toMatchObject({
+        verdict: "MISFIT",
+        suggestion: "ExportJobWorkflow",
+        role: { word: "workflow", evidence: "inheritance" },
+      });
+    });
+  });
+
   it("a short name that already exists as a type in another module → COLLISION naming it", () => {
     const rows = [...filler(6), row("Commit", "src/git/commit.ts")];
     expect(judge(rows, { name: "Commit", path: "src/vcs/commit.ts" })).toEqual({

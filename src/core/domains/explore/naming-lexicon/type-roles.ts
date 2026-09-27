@@ -2,6 +2,10 @@
  * Type roles (bd tea-rags-mcp-vi0wx): the tail word a family of types shares
  * (`…Strategy`, `…Preset`, `…Store`). Evidence, strongest first:
  *   1. inheritance — types with a common ancestor whose names share a tail word;
+ *      the NEAREST family decides (bd tea-rags-mcp-5ulz2): a namespaced
+ *      supertype as written (`Platform::Async::Workflow::Worker`, whose
+ *      subclasses are `*Workflow`s) before every supertype sharing its last
+ *      segment (`Sidekiq::Throttled::Worker`'s `*Worker`s);
  *   2. directory   — the MAJORITY family: the plurality tail word of the
  *      directory's primaries, carried by ≥ 2 files and ≥ half (`directoryShare`
  *      0.5 — the definition of a majority) of the files that have a primary;
@@ -617,6 +621,22 @@ export function deriveTypeRoles(
   return rolesFrom(rows, t, parse);
 }
 
+/** An inheritance family's role: its majority head (≥ {@link MIN_ROLE_MEMBERS}, ≥ `familyShare`); a split family has none. */
+function familyRole(members: readonly HeadedRow[], t: TypeRoleThresholds): string | undefined {
+  const plurality = pluralityHead(members);
+  return plurality && plurality.count >= MIN_ROLE_MEMBERS && plurality.count / members.length >= t.familyShare
+    ? plurality.head
+    : undefined;
+}
+
+/**
+ * A supertype as written, namespace kept (`::Platform::Async::Workflow::Worker<T>` →
+ * `Platform::Async::Workflow::Worker`): the family key nearer than its last segment.
+ */
+function writtenTypeName(typeName: string): string {
+  return typeName.replace(/^::/, "").replace(/[<[].*$/, "");
+}
+
 function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: TypeNameParser): TypeRoleAssignment[] {
   const headed = headedRows(rows, parse);
   const supertypesOf = projectSupertypes(rows);
@@ -625,13 +645,21 @@ function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: T
   const familyRoles = new Map<string, string | undefined>();
   const families = groupBy(headed, ({ row }) => [...new Set(row.ancestors.map(typeNameLastSegment))]);
   for (const [ancestor, members] of families) {
-    const plurality = pluralityHead(members);
-    const role =
-      plurality && plurality.count >= MIN_ROLE_MEMBERS && plurality.count / members.length >= t.familyShare
-        ? plurality.head
-        : undefined;
+    const role = familyRole(members, t);
     familyRoles.set(ancestor, role);
     if (role !== undefined) assignments.push(...assign(members, role, "inheritance", ancestor));
+  }
+  // The NEAREST family (bd tea-rags-mcp-5ulz2): a namespaced supertype as written is a family of its
+  // own inside its last-segment family, and where the two name different roles its members carry
+  // the nearer one. One naming the same role adds nothing.
+  const writtenFamilies = groupBy(headed, ({ row }) => [...new Set(row.ancestors.map(writtenTypeName))]);
+  for (const [supertype, members] of writtenFamilies) {
+    const last = typeNameLastSegment(supertype);
+    if (supertype === last) continue;
+    const role = familyRole(members, t);
+    if (role !== undefined && role !== familyRoles.get(last)) {
+      assignments.push(...assign(members, role, "inheritance", supertype));
+    }
   }
   const isFamilySlot = (carriers: readonly HeadedRow[], word: string): boolean =>
     familySlot(carriers, word, familyRoles, t.familyShare);
@@ -780,12 +808,14 @@ export function expectedRoleFor(
   draft: { path: string; extends?: string },
 ): ExpectedTypeRole | undefined {
   if (draft.extends !== undefined) {
-    const ancestor = typeNameLastSegment(draft.extends);
-    const family = pickRole(
-      roles.filter((r) => r.evidence === "inheritance" && r.scope === ancestor),
-      "inheritance",
-    );
-    if (family) return family;
+    // The nearest family first: the supertype as written, then its last segment (bd tea-rags-mcp-5ulz2).
+    for (const ancestor of new Set([writtenTypeName(draft.extends), typeNameLastSegment(draft.extends)])) {
+      const family = pickRole(
+        roles.filter((r) => r.evidence === "inheritance" && r.scope === ancestor),
+        "inheritance",
+      );
+      if (family) return family;
+    }
   }
   const dir = directoryOf(draft.path);
   const directory = pickRole(

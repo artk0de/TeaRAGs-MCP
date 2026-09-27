@@ -881,3 +881,54 @@ describe("deriveTypeRoles — a dispersed family's kind, named by its supertype 
     ).toMatchObject({ role: "service", evidence: "inheritance", carriedInName: false });
   });
 });
+
+// bd tea-rags-mcp-5ulz2, live on taxdome: families keyed by the supertype's LAST segment merged
+// `Sidekiq::Throttled::Worker` (73), `Platform::Async::Batch::Worker` (10), `Sidekiq::Worker` and
+// `Platform::Async::Workflow::Worker` (2) into one `Worker` family. Its `worker` role made the
+// draft `ExportAsyncWorkflow < Platform::Async::Workflow::Worker` MISFIT → `…Worker`, while that
+// supertype's own subclasses are `ImportAsyncWorkflow` and `UpdateAsyncWorkflow`.
+describe("deriveTypeRoles — the nearest family decides", () => {
+  const WORKERS = ["AccountsCleanup", "AccountsInvalidate", "Mailer"].map((q, i) =>
+    t(`${q}Worker`, `app/workers/w${i}/${q.toLowerCase()}_worker.rb`, ["Sidekiq::Throttled::Worker"]),
+  );
+  const WORKFLOWS = ["Import", "Update"].map((q, i) =>
+    t(`${q}AsyncWorkflow`, `app/workers/f${i}/${q.toLowerCase()}_async_workflow.rb`, [
+      "Platform::Async::Workflow::Worker",
+    ]),
+  );
+  const DRAFT = { path: "app/workers/x/export_async_workflow.rb", extends: "Platform::Async::Workflow::Worker" };
+
+  it("a draft takes the role of its supertype as written, before the last-segment family", () => {
+    expect(expectedRoleFor(deriveTypeRoles([...WORKERS, ...WORKFLOWS]), DRAFT)).toMatchObject({
+      role: "workflow",
+      evidence: "inheritance",
+      examples: ["ImportAsyncWorkflow", "UpdateAsyncWorkflow"],
+    });
+  });
+
+  it("the written supertype's members carry its role, scoped by the written name", () => {
+    const roles = deriveTypeRoles([...WORKERS, ...WORKFLOWS]).filter((r) => r.role === "workflow");
+    expect(roles.map((r) => [r.symbolId, r.evidence, r.support, r.scope])).toEqual([
+      ["ImportAsyncWorkflow", "inheritance", 2, "Platform::Async::Workflow::Worker"],
+      ["UpdateAsyncWorkflow", "inheritance", 2, "Platform::Async::Workflow::Worker"],
+    ]);
+  });
+
+  it("a written supertype with too few subclasses for a convention falls back to the last-segment family", () => {
+    expect(expectedRoleFor(deriveTypeRoles([...WORKERS, WORKFLOWS[0]]), DRAFT)).toMatchObject({
+      role: "worker",
+      evidence: "inheritance",
+    });
+  });
+
+  it("a written family naming the same role as its last-segment family adds no second assignment", () => {
+    const rows = [
+      t("TsStrategy", "src/a/ts.ts", ["Resolution::SymbolResolutionStrategy"]),
+      t("PyStrategy", "src/b/py.ts", ["Resolution::SymbolResolutionStrategy"]),
+    ];
+    expect(deriveTypeRoles(rows).map((r) => [r.symbolId, r.scope])).toEqual([
+      ["PyStrategy", "SymbolResolutionStrategy"],
+      ["TsStrategy", "SymbolResolutionStrategy"],
+    ]);
+  });
+});

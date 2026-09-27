@@ -290,7 +290,8 @@ behind its suggestion, never deletes the draft's qualifier or complement (for_pa
 local named after its own type conforms unless the type's values are never named that way.
 evidence.collisions: up to 3 symbol ids a value / return name collides with (an override of
 AbstractPolicy#same_firm? reads as such). Role = inheritance family > directory > project
-suffix; project suffix only confirms, never MISFIT. A directory-evidence MISFIT is
+suffix; project suffix only confirms, never MISFIT. The nearest family decides: the subclasses
+of extends as written (A::Workflow::Worker), else of every supertype sharing its last segment. A directory-evidence MISFIT is
 location-based: rename only when the type belongs to role.examples' family. CONFORMS with
 role.carriedInName=false: the kind a family of action-named types takes from its supertype
 and directory (KindOfService under app/services → service) — what the type IS, never a
