@@ -45,6 +45,15 @@ npm run test:coverage
 `npm test` is NOT the gate — pre-commit deliberately skips coverage for speed
 and says so. An epic closed on `npm test` alone can still be below threshold.
 
+**Run it ONCE, on main after the branches merge — never per agent branch.** The
+coverage thresholds are global, so the run always executes the whole suite
+(~19.7k tests); nothing caches results. Three agent branches each running it in
+parallel cost three 15–20 minute runs at load 40+ and made each other's
+pre-commit time out (2026-09-27). A subagent branch's gate is its targeted
+suites, `tsc` and `eslint`, plus the `vitest related` run pre-commit makes. The
+orchestrator merges the branches to main, runs `npm run test:coverage` there
+once, and lands whatever it finds as separate fix commits.
+
 ### 3. Live validation — USER-GATED
 
 Reindex and measure. **Never run this unasked**: it rewrites the shared Qdrant
