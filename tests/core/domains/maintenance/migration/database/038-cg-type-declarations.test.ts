@@ -9,6 +9,8 @@ import { DATABASE_MIGRATIONS } from "../../../../../../src/core/domains/maintena
 import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const MIGRATION = "038-cg-type-declarations.sql";
+/** The schema 038 leaves — later migrations (040 adds the member census) grow the table. */
+const THROUGH_038 = DATABASE_MIGRATIONS.slice(0, DATABASE_MIGRATIONS.findIndex((m) => m.filename === MIGRATION) + 1);
 
 /**
  * bd tea-rags-mcp-vi0wx / l2pkp (spec §1b) — `cg_type_declarations` holds every
@@ -37,7 +39,7 @@ describe("038 creates cg_type_declarations", () => {
   });
 
   it("creates the table with the spec's columns and types", async () => {
-    await runMigrations(db, DATABASE_MIGRATIONS);
+    await runMigrations(db, THROUGH_038);
     const cols = await db.queryAll<{ column_name: string; data_type: string }>(
       `SELECT column_name, data_type FROM information_schema.columns
         WHERE table_name = 'cg_type_declarations' ORDER BY ordinal_position`,
@@ -55,7 +57,7 @@ describe("038 creates cg_type_declarations", () => {
   });
 
   it("stores a supertype list and reads it back as a list", async () => {
-    await runMigrations(db, DATABASE_MIGRATIONS);
+    await runMigrations(db, THROUGH_038);
     await db.run(
       `INSERT INTO cg_type_declarations VALUES ('a.swift', 'swift', 'A.B', 'B', 'class', 3, false, ['Base', 'Named'])`,
     );

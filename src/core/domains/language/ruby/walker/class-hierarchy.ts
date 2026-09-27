@@ -31,7 +31,8 @@
  * per class, module and constant assignment (bd tea-rags-mcp-vi0wx, spec §1b) —
  * because it already holds the namespace stack, the superclass and every mixin
  * those facts carry. They are naming data only: the Ruby resolver never reads
- * them.
+ * them. The same walk takes each body's member census (`typeMemberCensus`, bd
+ * tea-rags-mcp-ffxfc; `type-member-census.ts` documents what counts).
  */
 
 import { createIdentifierRecord } from "../../../../contracts/identifier-record.js";
@@ -40,9 +41,12 @@ import type {
   FileExtraction,
   InheritanceEdgeDecl,
   TypeDeclarationFact,
+  TypeMemberCensus,
 } from "../../../../contracts/types/codegraph.js";
+import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
 import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
 import { CONSTANT_ASSIGNMENT_NODE_TYPES, symbolKindOf } from "./symbol-kind.js";
+import { rubyBodyMemberCounts, valueClassMemberNames } from "./type-member-census.js";
 
 /**
  * Flatten a class/module body into every statement that DECLARES FOR IT — the
@@ -190,6 +194,8 @@ export interface RubyClassDeclarations {
   compact: Set<string>;
   schemaTables: Map<string, string>;
   typeDeclarations: TypeDeclarationFact[];
+  /** One entry per class / module body and per constant bound to `Struct.new` / `Data.define`. */
+  typeMemberCensus: TypeMemberCensus[];
 }
 
 /** Node types whose body is not a constant scope of the enclosing namespace. */
@@ -216,6 +222,25 @@ function constantTargetId(target: AstNode, scope: readonly string[]): string | n
 }
 
 /** One `constant` fact per constant target of a (plain, multiple or `||=`-style) assignment. */
+/**
+ * The census of a constant bound to a value-class builder (`Point = Struct.new(:x) do … end`):
+ * the builder's symbols are fields, the block's `def`s methods. Null for any other constant.
+ */
+function constantMemberCensus(
+  node: AstNode,
+  facts: readonly TypeDeclarationFact[],
+  catalogue: RubyDslCatalogue,
+): TypeMemberCensus | null {
+  const right = node.childForFieldName("right");
+  const fields = valueClassMemberNames(right);
+  const target = facts.length === 1 ? facts[0] : undefined;
+  if (fields === null || target === undefined || right === null) return null;
+  const block = attachedBlockOf(right);
+  const blockBody = block?.childForFieldName("body");
+  const statements = blockBody ? blockBody.children : (block?.children ?? []);
+  return { typeId: target.typeId, line: target.line, ...rubyBodyMemberCounts(statements, fields, catalogue) };
+}
+
 function constantDeclarationFacts(node: AstNode, scope: readonly string[]): TypeDeclarationFact[] {
   const symbolKind = symbolKindOf(node.type, { declaresMethod: false, assignsConstant: true });
   const left = node.childForFieldName("left");
@@ -235,8 +260,13 @@ function classDeclarationFact(node: AstNode, typeId: string, conforms: readonly 
   return conforms.length > 0 ? { ...fact, conforms } : fact;
 }
 
-export function collectRubyClassAncestors(root: AstNode, visitNode?: (node: AstNode) => void): RubyClassDeclarations {
+export function collectRubyClassAncestors(
+  root: AstNode,
+  visitNode?: (node: AstNode) => void,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+): RubyClassDeclarations {
   const typeDeclarations: TypeDeclarationFact[] = [];
+  const typeMemberCensus: TypeMemberCensus[] = [];
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
   /** class FQ → the `class Foo < Bar` parent. NOT the `extend Mod` mixin. */
@@ -302,7 +332,16 @@ export function collectRubyClassAncestors(root: AstNode, visitNode?: (node: AstN
         if (mixin.kind !== "extend") conforms.push(mixin.name);
       }
       const fact = classDeclarationFact(node, fq, conforms);
-      if (fact !== null) typeDeclarations.push(fact);
+      if (fact !== null) {
+        typeDeclarations.push(fact);
+        const superclassCall = node.childForFieldName("superclass")?.namedChildren.find((c) => c.type === "call");
+        const baseFields = valueClassMemberNames(superclassCall) ?? [];
+        typeMemberCensus.push({
+          typeId: fact.typeId,
+          line: fact.line,
+          ...rubyBodyMemberCounts(stmtSource, baseFields, catalogue),
+        });
+      }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
       // `self.table_name = "companies"` — the explicit ORM table override
@@ -322,7 +361,10 @@ export function collectRubyClassAncestors(root: AstNode, visitNode?: (node: AstN
       return;
     }
     if (constantScope && CONSTANT_ASSIGNMENT_NODE_TYPES.has(node.type)) {
-      typeDeclarations.push(...constantDeclarationFacts(node, scope));
+      const facts = constantDeclarationFacts(node, scope);
+      typeDeclarations.push(...facts);
+      const census = constantMemberCensus(node, facts, catalogue);
+      if (census !== null) typeMemberCensus.push(census);
     }
     const childConstantScope = constantScope && !CONSTANT_OPAQUE_NODE_TYPES.has(node.type);
     for (const child of node.children) walkScope(child, scope, childConstantScope);
@@ -335,6 +377,7 @@ export function collectRubyClassAncestors(root: AstNode, visitNode?: (node: AstN
     compact: compactOut,
     schemaTables: schemaTablesOut,
     typeDeclarations,
+    typeMemberCensus,
   };
 }
 
@@ -412,6 +455,7 @@ export function attachRubyClassHierarchyChannels(
     compact: compactClassSet,
     schemaTables: schemaTableMap,
     typeDeclarations,
+    typeMemberCensus,
   } = declarations;
   if (ancestorMap.size > 0) {
     const ancestorRecord: Record<string, readonly string[]> = createIdentifierRecord();
@@ -445,4 +489,5 @@ export function attachRubyClassHierarchyChannels(
   const inheritanceEdges = collectRubyInheritanceEdges(root);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
+  if (typeMemberCensus.length > 0) out.typeMemberCensus = typeMemberCensus;
 }

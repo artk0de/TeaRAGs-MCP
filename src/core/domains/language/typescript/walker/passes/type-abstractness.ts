@@ -46,7 +46,7 @@ const BEHAVIOUR_SIGNATURE_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /** A function type, seen through parentheses and an optional-value union (`(() => void) | undefined`). */
-function isFunctionType(node: AstNode | null | undefined): boolean {
+export function isFunctionType(node: AstNode | null | undefined): boolean {
   if (!node) return false;
   if (node.type === "function_type" || node.type === "constructor_type") return true;
   if (node.type === "parenthesized_type" || node.type === "union_type") return node.namedChildren.some(isFunctionType);

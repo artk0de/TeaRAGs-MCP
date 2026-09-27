@@ -34,15 +34,57 @@
  * JavaScript's grammar has no interface, alias, enum or namespace node, so its
  * row is the subset by construction. The facts are naming data only: neither
  * capability sets `resolverReadsTypeDeclarations`.
+ *
+ * The same walk takes the member census (`typeMemberCensus`, bd
+ * tea-rags-mcp-ffxfc) of every class, interface and object-type alias it
+ * records — how `type-member-census.ts` reads a member is documented there.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { SymbolDefinitionKind } from "../../../../../contracts/types/codegraph-symbols.js";
-import type { FileExtraction, NamedSymbol, TypeDeclarationFact } from "../../../../../contracts/types/codegraph.js";
+import type {
+  FileExtraction,
+  NamedSymbol,
+  TypeDeclarationFact,
+  TypeMemberCensus,
+} from "../../../../../contracts/types/codegraph.js";
 import { constObjectNamespaceName, unwrapTypeAssertions } from "../../../../../infra/symbolid/index.js";
 import type { ExtractionFacetPass } from "../../../kernel/index.js";
+import { classBodyMemberCounts, objectTypeMemberCounts, type EcmascriptMemberCounts } from "./type-member-census.js";
 
 type NameOf = (node: AstNode) => NamedSymbol | NamedSymbol[] | null;
+
+/** What the walk collects: the facts, and the member census of those whose members it reads. */
+interface TypeDeclarationSink {
+  facts: TypeDeclarationFact[];
+  census: TypeMemberCensus[];
+}
+
+function recordCensus(sink: TypeDeclarationSink, fact: TypeDeclarationFact, counts: EcmascriptMemberCounts): void {
+  sink.census.push({ typeId: fact.typeId, line: fact.line, ...counts });
+}
+
+/**
+ * The member census of a module-level declaration whose members it writes: a
+ * class, an interface, a type alias bound to an object type. Anything else — a
+ * union or mapped alias, an enum, a namespace — writes none, so it has no
+ * census (unknown), not an empty one.
+ */
+function declarationMemberCounts(declaration: AstNode): EcmascriptMemberCounts | null {
+  switch (declaration.type) {
+    case "class_declaration":
+    case "abstract_class_declaration":
+      return classBodyMemberCounts(declaration.childForFieldName("body"));
+    case "interface_declaration":
+      return objectTypeMemberCounts(declaration.childForFieldName("body"));
+    case "type_alias_declaration": {
+      const value = declaration.childForFieldName("value");
+      return value?.type === "object_type" ? objectTypeMemberCounts(value) : null;
+    }
+    default:
+      return null;
+  }
+}
 
 const KIND_BY_DECLARATION: ReadonlyMap<string, SymbolDefinitionKind> = new Map<string, SymbolDefinitionKind>([
   ["class_declaration", "class"],
@@ -120,7 +162,7 @@ function namesAFunction(declarator: AstNode, nameOf: NameOf): boolean {
   return nameOf(declarator) !== null && constObjectNamespaceName(declarator) === null;
 }
 
-function collectConstDeclarators(declaration: AstNode, nameOf: NameOf, out: TypeDeclarationFact[]): void {
+function collectConstDeclarators(declaration: AstNode, nameOf: NameOf, sink: TypeDeclarationSink): void {
   for (const declarator of declaration.namedChildren) {
     if (declarator.type !== "variable_declarator") continue;
     const id = declarator.childForFieldName("name");
@@ -128,11 +170,13 @@ function collectConstDeclarators(declaration: AstNode, nameOf: NameOf, out: Type
     const value = declarator.childForFieldName("value");
     const bound = value ? unwrapTypeAssertions(value) : undefined;
     if (bound?.type === "class") {
-      out.push(fact(id.text, "class", declarator, supertypesOf(bound)));
+      const classFact = fact(id.text, "class", declarator, supertypesOf(bound));
+      sink.facts.push(classFact);
+      recordCensus(sink, classFact, classBodyMemberCounts(bound.childForFieldName("body")));
     } else if (constObjectNamespaceName(declarator) !== null) {
-      out.push(fact(id.text, "module", declarator));
+      sink.facts.push(fact(id.text, "module", declarator));
     } else if (!namesAFunction(declarator, nameOf)) {
-      out.push(fact(id.text, "constant", declarator));
+      sink.facts.push(fact(id.text, "constant", declarator));
     }
   }
 }
@@ -144,45 +188,52 @@ function namespaceName(node: AstNode): string | null {
 }
 
 /** One module-level statement: record what it declares, descend only into a namespace-like body. */
-function collectStatement(node: AstNode, nameOf: NameOf, out: TypeDeclarationFact[]): void {
+function collectStatement(node: AstNode, nameOf: NameOf, sink: TypeDeclarationSink): void {
   switch (node.type) {
     case "export_statement":
     case "ambient_declaration":
     case "expression_statement":
-      for (const child of node.namedChildren) collectStatement(child, nameOf, out);
+      for (const child of node.namedChildren) collectStatement(child, nameOf, sink);
       return;
     case "statement_block":
       // `declare global { … }` — the only block reached here.
-      collectStatements(node, nameOf, out);
+      collectStatements(node, nameOf, sink);
       return;
     case "lexical_declaration":
-      if (isConstDeclaration(node)) collectConstDeclarators(node, nameOf, out);
+      if (isConstDeclaration(node)) collectConstDeclarators(node, nameOf, sink);
       return;
     default:
       break;
   }
   if (NAMESPACE_TYPES.has(node.type)) {
     const name = namespaceName(node);
-    if (name !== null) out.push(fact(name, "module", node));
+    if (name !== null) sink.facts.push(fact(name, "module", node));
     const body = node.childForFieldName("body") ?? node.namedChildren.find((c) => c.type === "statement_block");
-    if (body) collectStatements(body, nameOf, out);
+    if (body) collectStatements(body, nameOf, sink);
     return;
   }
   const kind = KIND_BY_DECLARATION.get(node.type);
   const name = kind === undefined ? undefined : node.childForFieldName("name")?.text;
-  if (kind !== undefined && name !== undefined) out.push(fact(name, kind, node, supertypesOf(node)));
+  if (kind === undefined || name === undefined) return;
+  const declared = fact(name, kind, node, supertypesOf(node));
+  sink.facts.push(declared);
+  const counts = declarationMemberCounts(node);
+  if (counts !== null) recordCensus(sink, declared, counts);
 }
 
-function collectStatements(container: AstNode, nameOf: NameOf, out: TypeDeclarationFact[]): void {
-  for (const statement of container.namedChildren) collectStatement(statement, nameOf, out);
+function collectStatements(container: AstNode, nameOf: NameOf, sink: TypeDeclarationSink): void {
+  for (const statement of container.namedChildren) collectStatement(statement, nameOf, sink);
 }
 
 export function ecmascriptTypeDeclarationFacetPass(nameOf: NameOf): ExtractionFacetPass {
   return {
     run: (root): Partial<FileExtraction> => {
-      const typeDeclarations: TypeDeclarationFact[] = [];
-      collectStatements(root, nameOf, typeDeclarations);
-      return typeDeclarations.length > 0 ? { typeDeclarations } : {};
+      const sink: TypeDeclarationSink = { facts: [], census: [] };
+      collectStatements(root, nameOf, sink);
+      return {
+        ...(sink.facts.length > 0 ? { typeDeclarations: sink.facts } : {}),
+        ...(sink.census.length > 0 ? { typeMemberCensus: sink.census } : {}),
+      };
     },
   };
 }

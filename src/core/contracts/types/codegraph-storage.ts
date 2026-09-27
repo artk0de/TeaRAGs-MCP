@@ -149,6 +149,12 @@ export interface TypeDeclarationRow {
   reopens: boolean;
   /** The ancestors the declaration names, in clause order; empty when it names none. */
   supertypes: readonly string[];
+  /**
+   * The declaration's member census, `TypeMemberCensus` (migration 040, bd
+   * tea-rags-mcp-ffxfc). Both-or-neither; absent = the walker took none.
+   */
+  methodCount?: number;
+  fieldCount?: number;
 }
 
 /** One file's type-declaration rows, as consumed by `GraphDbClient.replaceTypeDeclarationsBulk`. */
@@ -570,6 +576,16 @@ export interface TypeNameRow {
   shortName: string;
   symbolKind: SymbolDefinitionKind;
   ancestors: readonly string[];
+  /**
+   * How many of the TYPE's members are methods and how many are fields (bd
+   * tea-rags-mcp-ffxfc): the sum over every production declaration of the same
+   * language and type id — a Ruby class body re-opened in another file, a
+   * re-opening that adds members — so every row of one type carries the same
+   * pair. Both-or-neither; absent = unknown, no declaration of the type carries
+   * a census (an index written before migration 040, a walker that takes none).
+   */
+  methodCount?: number;
+  fieldCount?: number;
 }
 
 /**

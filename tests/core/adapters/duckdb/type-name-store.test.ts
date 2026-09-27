@@ -78,7 +78,7 @@ describe("readTypeNameRows", () => {
     ]);
     // A row of unknown kind: the column is nullable, a walker never writes one.
     await db.run(
-      "INSERT INTO cg_type_declarations VALUES ('src/stores/legacy.ts', 'typescript', 'LegacyStore', 'LegacyStore', NULL, 1, false, [])",
+      "INSERT INTO cg_type_declarations (rel_path, language, type_id, short_name, symbol_kind, line, reopens, supertypes) VALUES ('src/stores/legacy.ts', 'typescript', 'LegacyStore', 'LegacyStore', NULL, 1, false, [])",
     );
   });
 
@@ -268,5 +268,88 @@ describe("replaceTypeDeclarationsBulk", () => {
     ]);
     await db.removeFile("a.ts");
     expect(await allRows()).toEqual([{ rel_path: "b.ts", type_id: "B" }]);
+  });
+});
+
+/**
+ * Member counts (bd tea-rags-mcp-ffxfc, migration 040): a declaration's
+ * method / field census persists on its row, and the read answers per TYPE —
+ * the sum over every production row of the same language and type id, so a
+ * Ruby class body re-opened in a second file, or a re-opening that adds
+ * members, counts once as one type. A type none of whose rows carries a census
+ * (an index written before 040, a walker that takes none) reads as unknown: both
+ * fields absent, never zero.
+ */
+describe("member counts", () => {
+  let dir: string;
+  let db: DuckDbGraphClient;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "cg-type-members-"));
+    db = new DuckDbGraphClient({ path: join(dir, "g.duckdb") });
+    await db.init();
+    await runMigrations(db, DATABASE_MIGRATIONS);
+  });
+
+  afterEach(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("round-trips the counts and writes NULL for a row without a census", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "src/cache.ts",
+        rows: [decl("CacheStore", "interface", { methodCount: 2, fieldCount: 1 }), decl("Legacy", "class")],
+      },
+    ]);
+    expect(
+      await db.queryAll("SELECT type_id, method_count, field_count FROM cg_type_declarations ORDER BY type_id"),
+    ).toEqual([
+      { type_id: "CacheStore", method_count: 2, field_count: 1 },
+      { type_id: "Legacy", method_count: null, field_count: null },
+    ]);
+  });
+
+  it("rewrites a file whose only change is its census", async () => {
+    await db.replaceTypeDeclarationsBulk([{ relPath: "src/a.ts", rows: [decl("A", "class")] }]);
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "src/a.ts", rows: [decl("A", "class", { methodCount: 1, fieldCount: 0 })] },
+    ]);
+    expect(await db.queryAll("SELECT method_count, field_count FROM cg_type_declarations")).toEqual([
+      { method_count: 1, field_count: 0 },
+    ]);
+  });
+
+  it("reads a type's counts summed over its production rows of the same language, unknown when none has one", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      {
+        relPath: "app/models/user.rb",
+        rows: [decl("User", "class", { language: "ruby", methodCount: 2, fieldCount: 1 })],
+      },
+      {
+        relPath: "app/models/user/search.rb",
+        rows: [decl("User", "class", { language: "ruby", line: 3, methodCount: 4, fieldCount: 0 })],
+      },
+      // A spec file re-opening the class is not the project's code.
+      {
+        relPath: "spec/models/user_spec.rb",
+        rows: [decl("User", "class", { language: "ruby", methodCount: 9, fieldCount: 9 })],
+      },
+      // A namesake in another language is another type.
+      { relPath: "web/user.ts", rows: [decl("User", "interface", { methodCount: 0, fieldCount: 5 })] },
+      { relPath: "app/models/legacy.rb", rows: [decl("Legacy", "class", { language: "ruby" })] },
+    ]);
+    const rows = await db.readTypeNameRows(query());
+    const counts = rows.map((r) => [r.relPath, r.methodCount, r.fieldCount]);
+    expect(counts).toEqual([
+      ["app/models/legacy.rb", undefined, undefined],
+      ["app/models/user.rb", 6, 1],
+      ["app/models/user/search.rb", 6, 1],
+      ["web/user.ts", 0, 5],
+    ]);
+    const legacy = rows.find((r) => r.symbolId === "Legacy");
+    expect(legacy).not.toHaveProperty("methodCount");
+    expect(legacy).not.toHaveProperty("fieldCount");
   });
 });

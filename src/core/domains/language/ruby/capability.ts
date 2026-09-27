@@ -66,6 +66,10 @@ export const capability: LanguageCapability = {
   // merged with nbf8q item 4 (8 here); neither parent's index holds both.
   // walker 5: release v1.44.2 shipped walker 4 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 5.
+  // Same walker 5, bd tea-rags-mcp-ffxfc: every class / module body carries a
+  // member census on `cg_type_declarations` (migration 040) — `def`s are
+  // methods, `attr_*` names and `Struct.new` / `Data.define` symbols fields; the
+  // resolver's `cg_symbols` rows are unchanged.
   // chunking 2: bd tea-rags-mcp-j4jrn — the class-body grouper sizes groups to
   // the cap less the reserved header prefix, so a group that the header used to
   // push over the cap is no longer line-cut into `#partN` windows; the cut

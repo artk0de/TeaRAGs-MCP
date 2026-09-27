@@ -75,6 +75,8 @@ export const capability: LanguageCapability = {
   // walker bump, so every branch-local number above collapses into 4.
   // Same walker 4, bd tea-rags-mcp-39xca.19: a method of the literal a named
   // function returns composes with `#` (`createOutcome#isFullSuccess`).
+  // Same walker 4, bd tea-rags-mcp-ffxfc: the shared ECMAScript type pass gives
+  // every class a member census on `cg_type_declarations` (migration 040).
   // chunking 3: bd tea-rags-mcp-39xca.19 — the same `#` reaches the payload
   // `symbolId`, and a declarator-bound factory's members gain its segment.
   versions: { chunking: 3, walker: 4, codegraphSchema: 2 },

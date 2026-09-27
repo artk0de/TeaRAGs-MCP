@@ -215,9 +215,11 @@ describe("extractFromRubyFile — typeDeclarations (W3c)", () => {
     expect(declarationsOf("puts 'hi'\nx = 1\n")).toBeUndefined();
   });
 
-  it("changes nothing else: the extraction minus typeDeclarations equals the pre-W3c baseline", () => {
+  // bd tea-rags-mcp-ffxfc: the same walk also takes each declaration's member census,
+  // a channel of its own that the pre-W3c baseline never had either.
+  it("changes nothing else: the extraction minus typeDeclarations and typeMemberCensus equals the pre-W3c baseline", () => {
     const ex = extract(BASELINE_RUBY_SOURCE, "app/models/acme/auth.rb");
-    const { typeDeclarations, ...rest } = ex;
+    const { typeDeclarations, typeMemberCensus, ...rest } = ex;
     const baseline = readFileSync(new URL("./fixtures/type-declarations-baseline.json", import.meta.url), "utf8");
     // Serialized compare: key order and every value, independent of how the
     // fixture file is formatted.
@@ -229,6 +231,12 @@ describe("extractFromRubyFile — typeDeclarations (W3c)", () => {
       "Acme::Auth",
       "Acme::Auth::MAX",
       "Acme::Auth::HANDLERS",
+      "Acme::Auth::Login",
+      "Acme::Auth::Session",
+    ]);
+    expect(typeMemberCensus?.map((c) => c.typeId)).toEqual([
+      "Acme",
+      "Acme::Auth",
       "Acme::Auth::Login",
       "Acme::Auth::Session",
     ]);

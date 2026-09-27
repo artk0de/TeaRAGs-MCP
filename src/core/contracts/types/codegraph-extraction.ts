@@ -368,6 +368,16 @@ export interface FileExtraction {
    */
   typeDeclarations?: readonly TypeDeclarationFact[];
   /**
+   * How many members each class, interface or object-type declaration writes
+   * are BEHAVIOUR and how many are DATA (bd tea-rags-mcp-ffxfc) — one entry per
+   * {@link typeDeclarations} fact whose members the walker reads, joined to it
+   * by `typeId` and `line`. Naming data only: no resolver reads it, and the
+   * `cg_symbols` rows a member may also have are untouched by it. A fact with no
+   * entry has no census (unknown), which is not a census of zero. Undefined for
+   * a file with none, and for languages whose walkers do not take it.
+   */
+  typeMemberCensus?: readonly TypeMemberCensus[];
+  /**
    * How many of the file's types declare behaviour without implementing it and
    * how many implement it (bd tea-rags-mcp-r8hme.8) — the input of Martin's
    * abstractness A that the architecture report's main-sequence detector sums
@@ -389,6 +399,22 @@ export interface FileExtraction {
    * declaring nothing, and for languages whose passes do not collect it.
    */
   identifierDeclarations?: readonly IdentifierDeclaration[];
+}
+
+/**
+ * One declaration's member census ({@link FileExtraction.typeMemberCensus}). A
+ * member is a METHOD when it is callable and a FIELD when it holds a value;
+ * each count is of distinct member names, so overloads and an accessor pair
+ * count once. What is callable is each walker's reading of its own syntax,
+ * documented on the code that takes the census.
+ */
+export interface TypeMemberCensus {
+  /** The {@link TypeDeclarationFact.typeId} of the declaration counted. */
+  readonly typeId: string;
+  /** Its {@link TypeDeclarationFact.line}: a Ruby class body re-opened in one file is two declarations. */
+  readonly line: number;
+  readonly methodCount: number;
+  readonly fieldCount: number;
 }
 
 /** A file's type-abstractness census ({@link FileExtraction.typeAbstractness}). */

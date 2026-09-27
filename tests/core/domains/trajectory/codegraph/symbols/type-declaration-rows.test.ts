@@ -67,6 +67,32 @@ describe("buildTypeDeclarationRows", () => {
     expect(rows.map((r) => r.shortName)).toEqual(["Account"]);
   });
 
+  // bd tea-rags-mcp-ffxfc: the member census joins its declaration by id AND line.
+  it("carries a declaration's member census and leaves a declaration without one unknown", () => {
+    const rows = buildTypeDeclarationRows(
+      extraction({
+        relPath: "app/models/account.rb",
+        language: "ruby",
+        typeDeclarations: [
+          { typeId: "Account", symbolKind: "class", line: 1, reopens: false },
+          { typeId: "Account", symbolKind: "class", line: 9, reopens: false },
+          { typeId: "MAX", symbolKind: "constant", line: 20, reopens: false },
+        ],
+        typeMemberCensus: [
+          { typeId: "Account", line: 9, methodCount: 3, fieldCount: 1 },
+          { typeId: "Account", line: 1, methodCount: 0, fieldCount: 2 },
+        ],
+      }),
+    );
+    expect(rows.map((r) => [r.typeId, r.line, r.methodCount, r.fieldCount])).toEqual([
+      ["Account", 1, 0, 2],
+      ["Account", 9, 3, 1],
+      ["MAX", 20, undefined, undefined],
+    ]);
+    expect(rows[2]).not.toHaveProperty("methodCount");
+    expect(rows[2]).not.toHaveProperty("fieldCount");
+  });
+
   it("returns no rows for a file that declares none, so its stored rows are cleared", () => {
     expect(buildTypeDeclarationRows(extraction({}))).toEqual([]);
   });

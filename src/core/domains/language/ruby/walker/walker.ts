@@ -104,7 +104,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   // chunk-kind index, so it runs before the chunk pass; its channels are still
   // published below, in their usual order.
   const chunkDeclarations = rubyChunkDeclarationIndex(input.chunks);
-  const classDeclarations = collectRubyClassAncestors(input.tree.rootNode, chunkDeclarations.visit);
+  const classDeclarations = collectRubyClassAncestors(input.tree.rootNode, chunkDeclarations.visit, catalogue);
   const symbolKinds = chunkDeclarations.kinds(catalogue);
   const { chunks, siteContextAt } = buildRubyChunkExtractions(input, calls, typeEnv, catalogue, symbolKinds);
   const out: FileExtraction = {

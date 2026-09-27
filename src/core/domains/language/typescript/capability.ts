@@ -159,6 +159,10 @@ export const capability: LanguageCapability = {
   // Same walker 12, bd tea-rags-mcp-vqdi6: a FULL index walked `.tsx` files on
   // the chunker's `typescript`-grammar tree and lost ~72% of their call sites;
   // the cross-pass extraction now walks the `tsx` grammar, as a recompute did.
+  // Same walker 12, bd tea-rags-mcp-ffxfc: every class, interface and
+  // object-type alias carries a member census (methods vs fields) on
+  // `cg_type_declarations` (migration 040); a walker-12 row written before it
+  // reads as unknown until `--force-enrichments codegraph` rewrites it.
   versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties

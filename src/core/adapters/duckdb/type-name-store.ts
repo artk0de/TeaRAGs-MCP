@@ -39,6 +39,10 @@ const CG_TYPE_DECLARATIONS_COLUMNS = [
   "symbol_kind",
   "line",
   "reopens",
+  // Migration 040 (bd tea-rags-mcp-ffxfc): the declaration's member census, NULL when it has none.
+  "method_count",
+  "field_count",
+  // Last: the only cell the tuple casts, see TYPE_DECLARATION_TUPLE.
   "supertypes",
 ] as const;
 
@@ -52,7 +56,7 @@ const TYPE_DECLARATION_CHUNK = 200;
  * One row's `VALUES` tuple. The session binds primitives only, so the
  * supertype list travels as JSON text and is cast to `VARCHAR[]` in SQL.
  */
-const TYPE_DECLARATION_TUPLE = "(?, ?, ?, ?, ?, ?, ?, CAST(CAST(? AS JSON) AS VARCHAR[]))";
+const TYPE_DECLARATION_TUPLE = "(?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(CAST(? AS JSON) AS VARCHAR[]))";
 
 function chunkedTypeDeclarationValues<T>(values: readonly T[]): T[][] {
   const chunks: T[][] = [];
@@ -64,7 +68,18 @@ function chunkedTypeDeclarationValues<T>(values: readonly T[]): T[][] {
 
 /** A row's cells in {@link CG_TYPE_DECLARATIONS_COLUMNS} order, supertypes still a list. */
 function typeDeclarationCells(relPath: RelPath, row: TypeDeclarationRow): unknown[] {
-  return [relPath, row.language, row.typeId, row.shortName, row.symbolKind, row.line, row.reopens, [...row.supertypes]];
+  return [
+    relPath,
+    row.language,
+    row.typeId,
+    row.shortName,
+    row.symbolKind,
+    row.line,
+    row.reopens,
+    row.methodCount ?? null,
+    row.fieldCount ?? null,
+    [...row.supertypes],
+  ];
 }
 
 /** A file's rows as one order-independent fingerprint — equal iff the row multisets are. */
@@ -131,30 +146,56 @@ export class DuckDbTypeNameStore {
       q.languages === undefined
         ? { sql: "TRUE", params: [] as string[] }
         : { sql: `language IN (${placeholders(q.languages)})`, params: [...q.languages] };
+    // The member census is the TYPE's (bd tea-rags-mcp-ffxfc): summed over every
+    // production row of the same language and id, re-openings included, and
+    // independent of the scope the types are read in. A type none of whose rows
+    // carries a census has no `members` row, so both counts read back NULL.
     const rows = await this.session.queryAll<{
       type_id: string;
       rel_path: string;
       short_name: string;
       symbol_kind: SymbolDefinitionKind;
       supertypes: string[];
+      method_count: number | null;
+      field_count: number | null;
     }>(
-      `SELECT type_id, rel_path, short_name, symbol_kind, supertypes
-         FROM cg_type_declarations
-        WHERE NOT reopens
-          AND symbol_kind IN (${placeholders(q.kinds)})
-          AND ${prefix.sql}
-          AND NOT ${nonProduction("rel_path")}
-          AND ${excluded.sql}
-          AND ${languages.sql}
-        ORDER BY rel_path, line, type_id`,
+      `WITH members AS (
+         SELECT language, type_id,
+                CAST(SUM(method_count) AS INTEGER) AS method_count,
+                CAST(SUM(field_count) AS INTEGER) AS field_count
+           FROM cg_type_declarations
+          WHERE method_count IS NOT NULL
+            AND field_count IS NOT NULL
+            AND NOT ${nonProduction("rel_path")}
+          GROUP BY language, type_id
+       ),
+       scoped AS (
+         SELECT language, type_id, rel_path, short_name, symbol_kind, supertypes, line
+           FROM cg_type_declarations
+          WHERE NOT reopens
+            AND symbol_kind IN (${placeholders(q.kinds)})
+            AND ${prefix.sql}
+            AND NOT ${nonProduction("rel_path")}
+            AND ${excluded.sql}
+            AND ${languages.sql}
+       )
+       SELECT s.type_id, s.rel_path, s.short_name, s.symbol_kind, s.supertypes, m.method_count, m.field_count
+         FROM scoped s
+         LEFT JOIN members m ON m.language = s.language AND m.type_id = s.type_id
+        ORDER BY s.rel_path, s.line, s.type_id`,
       [...q.kinds, ...prefix.params, ...excluded.params, ...languages.params],
     );
-    return rows.map((r) => ({
-      symbolId: r.type_id,
-      relPath: r.rel_path,
-      shortName: r.short_name,
-      symbolKind: r.symbol_kind,
-      ancestors: r.supertypes,
-    }));
+    return rows.map((r) => {
+      const row: TypeNameRow = {
+        symbolId: r.type_id,
+        relPath: r.rel_path,
+        shortName: r.short_name,
+        symbolKind: r.symbol_kind,
+        ancestors: r.supertypes,
+      };
+      return r.method_count === null || r.field_count === null
+        ? row
+        : { ...row, methodCount: Number(r.method_count), fieldCount: Number(r.field_count) };
+    });
   }
 }
