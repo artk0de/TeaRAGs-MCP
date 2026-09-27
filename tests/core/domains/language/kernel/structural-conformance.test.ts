@@ -108,8 +108,8 @@ describe("deriveStructuralConformance", () => {
 
   it("reads the owner off the innermost scope segment and skips definitions with no owner or a type kind", () => {
     const factoryMember: SymbolDefinition = {
-      symbolId: "createOutcome.isFullSuccess",
-      fqName: "createOutcome.isFullSuccess",
+      symbolId: "createOutcome#isFullSuccess",
+      fqName: "createOutcome#isFullSuccess",
       shortName: "isFullSuccess",
       relPath: "src/outcome.ts",
       scope: ["createOutcome"],
@@ -129,6 +129,140 @@ describe("deriveStructuralConformance", () => {
     });
 
     expect(pairs(rows)).toEqual(["createOutcome -> Outcome"]);
+  });
+
+  // bd tea-rags-mcp-39xca.19 — an owner carries only what is invoked on its
+  // VALUE: the `#` members. A helper nested in a function (`parse.close`) is a
+  // scope, not a member, and a static (`Pool.close`) is invoked on the class.
+  // Counting either fanned `resource.close()` out to every function that
+  // declared a local `close`.
+  it("counts only instance-bound `#` members, never a nested helper or a static", () => {
+    const instanceMember = method("createOutcome", "close");
+    const nestedHelper: SymbolDefinition = {
+      ...method("parseRailsSchemaSnapshot", "close"),
+      symbolId: "parseRailsSchemaSnapshot.close",
+      fqName: "parseRailsSchemaSnapshot.close",
+      symbolKind: "function",
+    };
+    const staticMember: SymbolDefinition = {
+      ...method("Pool", "close"),
+      symbolId: "Pool.close",
+      fqName: "Pool.close",
+    };
+
+    const rows = deriveStructuralConformance({
+      contracts: [contract("Closeable", ["close", 0])],
+      memberDefinitions: [instanceMember, nestedHelper, staticMember],
+      nominalRows: [],
+    });
+
+    expect(pairs(rows)).toEqual(["createOutcome -> Closeable"]);
+  });
+
+  // bd tea-rags-mcp-39xca.19, option A — a declarator initialized by an object
+  // literal (walker fact: `symbolKind: "module"`) IS the value that satisfies a
+  // contract, so its `.` members count. The fact is the owner's KIND, never the
+  // shape of an id: a function's `.` helper and a class's `.` static still do not.
+  it("counts the `.` members of an object-literal declarator, by the walker's owner kind", () => {
+    const namespaceOwner: SymbolDefinition = {
+      symbolId: "RUBY_ANCESTOR_POLICY",
+      fqName: "RUBY_ANCESTOR_POLICY",
+      shortName: "RUBY_ANCESTOR_POLICY",
+      relPath: "src/ruby.ts",
+      scope: [],
+      symbolKind: "module",
+    };
+    const namespaceMember: SymbolDefinition = {
+      symbolId: "RUBY_ANCESTOR_POLICY.order",
+      fqName: "RUBY_ANCESTOR_POLICY.order",
+      shortName: "order",
+      relPath: "src/ruby.ts",
+      scope: ["RUBY_ANCESTOR_POLICY"],
+    };
+    const functionOwner: SymbolDefinition = {
+      symbolId: "parseSnapshot",
+      fqName: "parseSnapshot",
+      shortName: "parseSnapshot",
+      relPath: "src/schema.ts",
+      scope: [],
+      symbolKind: "function",
+    };
+    const nestedHelper: SymbolDefinition = {
+      symbolId: "parseSnapshot.order",
+      fqName: "parseSnapshot.order",
+      shortName: "order",
+      relPath: "src/schema.ts",
+      scope: ["parseSnapshot"],
+    };
+    const staticMember: SymbolDefinition = {
+      ...method("Pool", "order"),
+      symbolId: "Pool.order",
+      fqName: "Pool.order",
+    };
+    const rows = deriveStructuralConformance({
+      contracts: [contract("AncestorPolicy", ["order", 1])],
+      memberDefinitions: [
+        namespaceMember,
+        nestedHelper,
+        staticMember,
+        method("createPolicy", "order"),
+        // `Shared` is an object-literal declarator in a.ts but a FUNCTION in
+        // b.ts: the kind is joined per file and scope, never by name alone.
+        { ...nestedHelper, symbolId: "Shared.order", fqName: "Shared.order", relPath: "src/b.ts", scope: ["Shared"] },
+      ],
+      ownerDefinitions: [
+        namespaceOwner,
+        functionOwner,
+        { ...namespaceOwner, symbolId: "Shared", fqName: "Shared", shortName: "Shared", relPath: "src/a.ts" },
+        { ...functionOwner, symbolId: "Shared", fqName: "Shared", shortName: "Shared", relPath: "src/b.ts" },
+      ],
+      nominalRows: [],
+    });
+
+    expect(pairs(rows)).toEqual(["RUBY_ANCESTOR_POLICY -> AncestorPolicy", "createPolicy -> AncestorPolicy"]);
+  });
+
+  // bd tea-rags-mcp-39xca.19 — `nameOf: LanguageWalker["nameOf"]` is a required
+  // callable member whose signature lives in another contract. Resolved against
+  // the run's contracts it makes `ExtractionWalkerParts` two-member, so a class
+  // carrying only `walk` no longer conforms; a reference to a contract the run
+  // does not declare stays out of the requirement, as before.
+  it("resolves a member referenced through another contract, and drops an unresolvable one", () => {
+    const rows = deriveStructuralConformance({
+      contracts: [
+        {
+          name: "ExtractionWalkerParts",
+          members: [
+            { name: "walk", params: 1 },
+            { name: "nameOf", params: Number.MAX_SAFE_INTEGER, ref: { contract: "LanguageWalker", member: "nameOf" } },
+          ],
+        },
+        contract("LanguageWalker", ["walk", 1], ["nameOf", 2]),
+        {
+          name: "Unresolved",
+          members: [
+            { name: "walk", params: 1 },
+            { name: "render", params: Number.MAX_SAFE_INTEGER, ref: { contract: "ReactLib", member: "render" } },
+          ],
+        },
+      ],
+      memberDefinitions: [
+        method("ChunkChurnWalkPool", "walk", [1, 1]),
+        method("Full", "walk", [1, 1]),
+        method("Full", "nameOf", [1, 2]),
+        method("Greedy", "walk", [1, 1]),
+        method("Greedy", "nameOf", [3, 3]),
+      ],
+      nominalRows: [],
+    });
+
+    expect(pairs(rows)).toEqual([
+      "Full -> ExtractionWalkerParts",
+      "Full -> LanguageWalker",
+      "ChunkChurnWalkPool -> Unresolved",
+      "Full -> Unresolved",
+      "Greedy -> Unresolved",
+    ]);
   });
 
   it("returns rows sorted by contract then owner whatever the input order", () => {

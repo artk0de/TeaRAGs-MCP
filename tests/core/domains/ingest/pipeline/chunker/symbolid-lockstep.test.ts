@@ -582,4 +582,137 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       expect(codegraphIds(JAVASCRIPT, JS_CLASS_EXPRESSION_IN_MOCK_FACTORY)).toContain("Worker#constructor");
     });
   });
+
+  // bd tea-rags-mcp-39xca.19 — a method of the object literal a named function
+  // RETURNS is invoked on that function's return value with `this` bound to the
+  // literal: instance-bound, the `#` a class-property arrow takes. A helper
+  // declared inside the function stays a nested scope and keeps `.`.
+  describe("factory-returned object literal", () => {
+    const FACTORY_RETURN_STATEMENT = [
+      "export function createDeletionOutcome(attemptedPaths) {",
+      "  const failed = new Set<string>();",
+      "  const close = () => {",
+      "    failed.clear();",
+      "  };",
+      "  return {",
+      "    markFailed(path) {",
+      "      if (attemptedPaths.includes(path)) failed.add(path.trim());",
+      "    },",
+      "    isFullSuccess() {",
+      "      const empty = failed.size === 0;",
+      "      return empty && attemptedPaths.length >= 0;",
+      "    },",
+      "  };",
+      "}",
+    ].join("\n");
+
+    const FACTORY_ARROW_BODY = [
+      "export const createCounter = (start) => ({",
+      "  increment(step) {",
+      "    const next = start + step;",
+      "    return next * 1;",
+      "  },",
+      "});",
+    ].join("\n");
+
+    const NAMED_LOCAL_LITERAL = [
+      "export function buildApi(base) {",
+      "  const api = {",
+      "    fetchAll() {",
+      "      const url = base.trim();",
+      "      return url.toLowerCase();",
+      "    },",
+      "  };",
+      "  return api;",
+      "}",
+    ].join("\n");
+
+    const ANONYMOUS_CALLBACK_RETURN = [
+      "export function register() {",
+      "  install(() => ({",
+      "    handle(event) {",
+      "      const trimmed = event.trim();",
+      "      return trimmed.toUpperCase();",
+      "    },",
+      "  }));",
+      "}",
+    ].join("\n");
+
+    /** Arrow factories one and two scopes down — the chunker must not name a shorter chain than the walker. */
+    const NESTED_ARROW_FACTORIES = [
+      "export class Store {",
+      "  build() {",
+      "    const make = () => ({",
+      "      read(key) {",
+      "        const trimmed = key.trim();",
+      "        return trimmed.toLowerCase();",
+      "      },",
+      "    });",
+      "    return make();",
+      "  }",
+      "}",
+      "",
+      "export function outer(seed) {",
+      "  const create = () => ({",
+      "    write(value) {",
+      '      const joined = [seed, value].join(":");',
+      "      return joined.toUpperCase();",
+      "    },",
+      "  });",
+      "  return create();",
+      "}",
+    ].join("\n");
+
+    it("writes the `#` id into the TypeScript payload for a returned literal's member", async () => {
+      const ids = await chunkerCallableIds(TYPESCRIPT, FACTORY_RETURN_STATEMENT);
+      expect(ids).toContain("createDeletionOutcome#isFullSuccess");
+      expect(ids).not.toContain("createDeletionOutcome.isFullSuccess");
+    });
+
+    for (const lang of [TYPESCRIPT, JAVASCRIPT]) {
+      it(`${lang.language}: joins a returned literal's member to its factory with \`#\``, async () => {
+        const graphIds = codegraphIds(lang, FACTORY_RETURN_STATEMENT);
+        expect(graphIds).toContain("createDeletionOutcome#isFullSuccess");
+        expect(graphIds).toContain("createDeletionOutcome#markFailed");
+        expect(graphIds).not.toContain("createDeletionOutcome.isFullSuccess");
+        for (const id of await chunkerCallableIds(lang, FACTORY_RETURN_STATEMENT)) {
+          expect([...graphIds]).toContain(id);
+        }
+      });
+
+      it(`${lang.language}: keeps a helper declared inside the factory a nested \`.\` scope`, () => {
+        expect(codegraphIds(lang, FACTORY_RETURN_STATEMENT)).toContain("createDeletionOutcome.close");
+      });
+
+      it(`${lang.language}: joins an arrow factory's expression-body literal with \`#\``, async () => {
+        const graphIds = codegraphIds(lang, FACTORY_ARROW_BODY);
+        expect(graphIds).toContain("createCounter#increment");
+        for (const id of await chunkerCallableIds(lang, FACTORY_ARROW_BODY)) {
+          expect([...graphIds]).toContain(id);
+        }
+      });
+
+      it(`${lang.language}: emits no callable id absent from cg_symbols — nested arrow factories`, async () => {
+        const graphIds = codegraphIds(lang, NESTED_ARROW_FACTORIES);
+        expect(graphIds).toContain("Store#build.make#read");
+        expect(graphIds).toContain("outer.create#write");
+        for (const id of await chunkerCallableIds(lang, NESTED_ARROW_FACTORIES)) {
+          expect([...graphIds]).toContain(id);
+        }
+      });
+
+      it(`${lang.language}: keeps a NAMED local literal a namespace, even when returned`, () => {
+        expect(codegraphIds(lang, NAMED_LOCAL_LITERAL)).toContain("buildApi.api.fetchAll");
+      });
+
+      it(`${lang.language}: keeps an anonymous callback's returned literal on the namespace separator`, async () => {
+        const graphIds = codegraphIds(lang, ANONYMOUS_CALLBACK_RETURN);
+        expect(graphIds).toContain("register.handle");
+        expect(graphIds).not.toContain("register#handle");
+        for (const id of await chunkerCallableIds(lang, ANONYMOUS_CALLBACK_RETURN)) {
+          expect([...graphIds]).toContain(id);
+        }
+      });
+    }
+  });
 });

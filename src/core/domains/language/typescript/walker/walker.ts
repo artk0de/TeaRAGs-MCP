@@ -35,7 +35,12 @@ import {
   exportNamesField,
   moduleCallExportNames,
 } from "../../shared/ecmascript-export-names.js";
-import { collectTypescriptCallableArities, collectTypescriptStructuralContracts } from "./structural-contracts.js";
+import {
+  collectObjectLiteralDeclarators,
+  collectTypescriptCallableArities,
+  collectTypescriptStructuralContracts,
+  objectLiteralDeclaratorKind,
+} from "./structural-contracts.js";
 
 export interface ExtractInput {
   tree: MaterializedTree;
@@ -102,6 +107,9 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // chunk by the declaring line, so structural conformance can reject an
   // implementer requiring more arguments than the contract passes.
   const callableArities = collectTypescriptCallableArities(input.tree.rootNode);
+  // bd tea-rags-mcp-39xca.19 — an object-literal declarator is a `module`: the
+  // literal is the value that satisfies a contract, so its `.` members conform.
+  const objectLiteralDeclarators = collectObjectLiteralDeclarators(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -112,6 +120,8 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
     };
     const arity = callableArities.get(c.startLine);
     if (arity !== undefined) chunk.arity = arity;
+    const symbolKind = objectLiteralDeclaratorKind(objectLiteralDeclarators, c);
+    if (symbolKind !== undefined) chunk.symbolKind = symbolKind;
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;
     return chunk;

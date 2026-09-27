@@ -38,10 +38,17 @@ Same detection logic powers BOTH chunker
 (`codegraph/symbols/provider.ts:<lang>NameOf` returning `instanceMethod`). Keep
 lockstep when adding language.
 
-| Language       | Instance method                                       | Class / static method                     |
-| -------------- | ----------------------------------------------------- | ----------------------------------------- |
-| **TypeScript** | `method_definition` without `static` keyword          | `method_definition` with `static` keyword |
-| **JavaScript** | Same as TypeScript (shared `method_definition` shape) | Same as TypeScript                        |
+| Language       | Instance method                                                              | Class / static method                                               |
+| -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **TypeScript** | `method_definition` without `static` keyword                                 | `method_definition` with `static` keyword                           |
+| **JavaScript** | Same as TypeScript (shared `method_definition` shape)                        | Same as TypeScript                                                  |
+| **Python**     | `function_definition` inside class, no decorator                             | `function_definition` decorated with `@classmethod`/`@staticmethod` |
+| **Ruby**       | `method` (`def foo`)                                                         | `singleton_method` (`def self.foo`)                                 |
+| **Go**         | `method_declaration` (has a receiver)                                        | `function_declaration` (top-level — gets `name` form, no parent)    |
+| **Java**       | `method_declaration` without `static` in modifiers                           | `method_declaration` with `static` in modifiers                     |
+| **Rust**       | `function_item` with a `self` / `&self` parameter                            | `function_item` without `self` (associated function)                |
+| **Swift**      | `function_declaration` without `static`/`class` modifier; `init_declaration` | `function_declaration` with a `static`/`class` modifier             |
+| **Bash**       | n/a (no class concept — only top-level functions)                            | n/a                                                                 |
 
 A TypeScript class member can also be declared as a FIELD bound to a function
 (`class F { request = async () => {} }`) — a `public_field_definition`, not a
@@ -49,18 +56,19 @@ A TypeScript class member can also be declared as a FIELD bound to a function
 without the `static` keyword, `F.request` with it. Only the codegraph side names
 it (bd tea-rags-mcp-5ldqu); the chunker carries the field inside the class
 chunk, which is the codegraph-only-id direction the invariant permits — see
-"Where the convention is implemented" below. | **Python** |
-`function_definition` inside class, no decorator | `function_definition`
-decorated with `@classmethod`/`@staticmethod` | | **Ruby** | `method`
-(`def foo`) | `singleton_method` (`def self.foo`) | | **Go** |
-`method_declaration` (has a receiver) | `function_declaration` (top-level — gets
-`name` form, no parent) | | **Java** | `method_declaration` without `static` in
-modifiers | `method_declaration` with `static` in modifiers | | **Rust** |
-`function_item` with a `self` / `&self` parameter | `function_item` without
-`self` (associated function) | | **Swift** | `function_declaration` without
-`static`/`class` modifier; `init_declaration` | `function_declaration` with a
-`static`/`class` modifier | | **Bash** | n/a (no class concept — only top-level
-functions) | n/a |
+"Where the convention is implemented" below.
+
+An OBJECT-LITERAL method (TypeScript and JavaScript) takes `#` only when the
+literal is the value a NAMED function returns — `return { … }` or an arrow's
+expression body, from a `function_declaration`, a `method_definition`, or a
+declarator-bound function expression:
+`function createDeletionOutcome() { return { isFullSuccess() {} } }` →
+`createDeletionOutcome#isFullSuccess`. It is invoked on the function's result
+with `this` = the literal, the instance a constructor would produce (bd
+tea-rags-mcp-39xca.19). Every other literal keeps the namespace `.`: a named
+literal (`const X = { m() {} }` → `X.m`, also when a function returns `X`), a
+call argument, an anonymous callback's value. A helper declared inside a
+function is a nested scope, not a member: `parse.close`.
 
 Constructors instance-bound (`Class#constructor`) per convention — initialize an
 instance even though invoked via `new Class()`.
@@ -72,6 +80,10 @@ instance even though invoked via `new Class()`.
     BOTH producers consult, dispatched by node type
   - `class-property-function.ts` beside it — the TypeScript class-FIELD gate,
     reading `classifyMethod` for the kind
+  - `factory-returned-literal.ts` beside it — the factory-returned literal gate
+    `classifyMethod` reads for an object-literal method, plus
+    `enclosingFactoryScopeNames`, the declarator-bound factory segment the
+    chunker adds because that factory is never a chunk container
 - `src/core/domains/ingest/pipeline/chunker/tree-sitter.ts`
   - `buildSymbolId(name, parentName, isStatic)` — picks `#` vs `.`
   - `isStaticMethod(node)` — per-language detection dispatched by node type

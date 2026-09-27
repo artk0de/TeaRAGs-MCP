@@ -55,6 +55,19 @@ export interface StructuralContractDecl {
 export interface StructuralContractMember {
   name: string;
   params: number;
+  /**
+   * The member is typed through an indexed access into a contract the file does
+   * not declare (`nameOf: LanguageWalker["nameOf"]`, bd tea-rags-mcp-39xca.19).
+   * The deriver resolves it against the run's contracts: `params` is then the
+   * referenced member's, and an unresolved reference is no requirement at all.
+   */
+  ref?: StructuralContractMemberRef;
+}
+
+/** `Contract["member"]` — the contract and member a {@link StructuralContractMember} is typed by. */
+export interface StructuralContractMemberRef {
+  contract: string;
+  member: string;
 }
 
 /**

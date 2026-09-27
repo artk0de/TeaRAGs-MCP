@@ -73,7 +73,11 @@ export const capability: LanguageCapability = {
   // integration walker 7; neither side's index holds both extractions.
   // walker 4: release v1.44.2 shipped walker 3 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 4.
-  versions: { chunking: 2, walker: 4, codegraphSchema: 2 },
+  // Same walker 4, bd tea-rags-mcp-39xca.19: a method of the literal a named
+  // function returns composes with `#` (`createOutcome#isFullSuccess`).
+  // chunking 3: bd tea-rags-mcp-39xca.19 — the same `#` reaches the payload
+  // `symbolId`, and a declarator-bound factory's members gain its segment.
+  versions: { chunking: 3, walker: 4, codegraphSchema: 2 },
   // Google JavaScript Style Guide — the same convention as TypeScript:
   // classes UpperCamelCase, functions / methods / parameters / locals /
   // properties lowerCamelCase, a module binding lowerCamelCase or

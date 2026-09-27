@@ -828,10 +828,19 @@ export interface StructuralConformanceInput {
    * name — ACROSS languages, because `SymbolDefinition` carries no language and
    * only the language knows its own files. The deriver keeps its family's, reads
    * each one's OWNER off its innermost scope segment — the class `O` of `O#m`,
-   * the factory `createX` of `createX.m` — and extends an owner's members down
+   * the factory `createX` of `createX#m` — and extends an owner's members down
    * the nominal rows to its descendants.
    */
   readonly memberDefinitions: readonly SymbolDefinition[];
+  /**
+   * The definitions that NAME those owners (bd tea-rags-mcp-39xca.19): every
+   * symbol-table definition whose short name is some member's innermost scope
+   * segment. Read for the owner's walker-recorded `symbolKind` only — a
+   * `module` owner (an object-literal declarator, `const X = { m() {} }`) is
+   * itself the value that satisfies a contract, so its `.` members count.
+   * Absent = no owner kinds known, and only `#` members count.
+   */
+  readonly ownerDefinitions?: readonly SymbolDefinition[];
   /** The family's declared hierarchy — never a `structural` row. */
   readonly nominalRows: readonly InheritanceEdgeRow[];
 }

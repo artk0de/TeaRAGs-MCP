@@ -72,6 +72,40 @@ describe("CodegraphRunState — structural conformance at the barrier (39xca.14)
     ]);
   });
 
+  // bd tea-rags-mcp-39xca.19 — the barrier hands the deriver the definitions
+  // naming each member's owner, so an object-literal declarator (walker kind
+  // `module`) conforms through its `.` member.
+  it("threads the owners' definitions, so an object-literal declarator conforms", async () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("src/policy.ts", [
+      {
+        symbolId: "POLICY",
+        fqName: "POLICY",
+        shortName: "POLICY",
+        relPath: "src/policy.ts",
+        scope: [],
+        symbolKind: "module",
+      },
+      {
+        symbolId: "POLICY.find",
+        fqName: "POLICY.find",
+        shortName: "find",
+        relPath: "src/policy.ts",
+        scope: ["POLICY"],
+      },
+    ]);
+    const state = new CodegraphRunState([], [], derivers());
+    state.absorb(file("src/registry.ts", "typescript", { structuralContracts: [registryContract] }), []);
+    await state.seal(async () => table);
+
+    expect(
+      state
+        .hierarchyViewFor("typescript")
+        ?.getDescendants("Registry")
+        .map((e) => e.sourceFqName),
+    ).toEqual(["POLICY"]);
+  });
+
   it("keeps the rows out of the persisted inheritance rows and out of a nominal-kinds walk", async () => {
     const state = new CodegraphRunState([], [], derivers());
     state.absorb(file("src/registry.ts", "typescript", { structuralContracts: [registryContract] }), []);

@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 2,
-      "digest": "sha256:8bdb7fbd8bbce4cafa6b8ca7e5c244e1b6d966c77a93c9ab4435032264c087c1"
+      "digest": "sha256:fe2819563671edb1880c9a96573df2e34ea3aa539a4fa87500fdc7c9724a5651"
     },
     "walker": {
       "version": 3,
-      "digest": "sha256:7b7f3e2a09c001d2fc851ae0478a4c3f6957c2d3c3e99d4bda6dcf8182d05970"
+      "digest": "sha256:45366a21c3f96ee3f20e1699702396436dd9ae73aefd211fc73874361b3b81cc"
     }
   },
   "bash": {
@@ -37,12 +37,12 @@
   },
   "javascript": {
     "chunking": {
-      "version": 2,
+      "version": 3,
       "digest": "sha256:2e0daf5930246c9ea66455f36c69f3121c389aa0d166a49ebc42fcd8860facbc"
     },
     "walker": {
       "version": 4,
-      "digest": "sha256:9fe8fad8bb7b3d2ec223553d602bea72f5eb0d89f9e618813a053bb7152314ca"
+      "digest": "sha256:42ed01ab7dff1716b22764209deb402b2385a12ae3803c7b281590bcc9810890"
     }
   },
   "markdown": {
@@ -85,12 +85,12 @@
   },
   "typescript": {
     "chunking": {
-      "version": 1,
+      "version": 2,
       "digest": "sha256:5afc8b3c4fa81ca815fd3fa19407ed7b1e278134849096d131699aa100b61ddd"
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:1fa20ad8e2d2f3e70b2bf9a54028b81a739dee43b0185fb5646c061844b1e44a"
+      "digest": "sha256:0b02ec62d31243ef6efe379862a58fcc8d803f2186e6fe5871fe75a98d1ea63a"
     }
   }
 }

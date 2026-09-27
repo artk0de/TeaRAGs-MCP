@@ -13,7 +13,8 @@ interface without an `implements` clause is invisible, so its dispatch edges are
 lost. Agent B's probe on the tea-rags self corpus found 59 affected call sites.
 Among the true targets are `TrajectoryRegistry#buildMergedFilter`,
 `CollectionRegistry#findBy*`, `GitCommitDiscovery`,
-`createDeletionOutcome.isFullSuccess` and `buildSelfDispatchProbe.*`.
+`createDeletionOutcome#isFullSuccess` (`.isFullSuccess` before bd 39xca.19) and
+`buildSelfDispatchProbe#*`.
 
 The same defect exists wherever the cone runs over a structural type system:
 Python `typing.Protocol` (PEP 544) receivers dispatch to nominal subclasses
@@ -49,7 +50,15 @@ interface StructuralContractDecl {
   Members are method signatures and function-typed property signatures that are
   NOT optional (`?`). Data properties, index and call signatures are excluded:
   the symbol table carries no field definitions, so they cannot be checked.
-  `params` = the member's parameter count.
+  `params` = the member's parameter count. A property typed through a reference
+  counts too (bd 39xca.19): a same-file function alias, `typeof` a same-file
+  function, or `Contract["member"]`. An indexed access into a contract declared
+  in another file is emitted as `ref` and resolved at the barrier against the
+  run's contracts; an unresolved reference (an imported alias, `typeof` an
+  import, a contract the run does not declare) stays out. Without this,
+  `ExtractionWalkerParts` (`nameOf: LanguageWalker["nameOf"]`) shrank to the
+  single member `walk`, and `ChunkChurnWalkPool#walk` became a confidence-1
+  target of `parts.walk`.
 - Python: a class whose bases include `Protocol` (`typing.Protocol`,
   `typing_extensions.Protocol`). Members are its methods minus `self`/`cls`.
   `params` = positional parameter count.
@@ -81,6 +90,21 @@ interface StructuralContractDecl {
   intersect starting from the rarest member of the contract; never contracts ×
   owners.
 - Mode independence: both inputs are complete in full and incremental runs.
+
+Only instance-bound members count (bd 39xca.19). The owner index takes a
+definition only when its id joins the owner with `#`, for every owner, class or
+factory. A contract describes what a value of the owner carries, and a static
+member is invoked on the class while a helper nested in a function is a local
+scope. The first cut counted both, so `const close = () => {}` inside
+`parseRailsSchemaSnapshot` made that function conform to every one-member
+`close()` contract and fanned a `close()` call out to 6 targets. Object-literal
+factory members now take `#` (`createDeletionOutcome#isFullSuccess`), so they
+stay in the index. One owner's `.` members also count (owner decision, option
+A): a declarator initialized by an object literal (`const X = { m() {} }`),
+whose value is the contract instance. The kind comes from the walker, which
+records such a declarator as `symbolKind: "module"`; the barrier passes the
+owners' definitions as `ownerDefinitions`, and the deriver joins them to members
+by file and scope path, never by the shape of the id.
 
 ### 3. Contract and type changes
 

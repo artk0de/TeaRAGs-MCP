@@ -23,6 +23,7 @@
  */
 
 import type { AstNode } from "../../contracts/types/ast.js";
+import { isFactoryReturnedLiteral } from "./factory-returned-literal.js";
 
 /** Universal separator between a class and its instance method. */
 export const INSTANCE_METHOD_SEPARATOR = "#";
@@ -49,7 +50,13 @@ export function classifyMethod(node: AstNode): MethodClassification | null {
     // Declining to classify it lets the caller compose the `Outer.Nested`
     // namespace form the convention reserves for exactly this case. See
     // `./const-object-namespace.ts` for who the enclosing namespace is.
-    if (node.parent?.type === "object") return null;
+    //
+    // bd tea-rags-mcp-39xca.19 — the one object literal that DOES bind an
+    // instance is the one a named function returns: its methods are invoked on
+    // the function's result with `this` = the literal, so they take `#` like a
+    // class-property arrow. The gate and its boundaries live in
+    // `./factory-returned-literal.ts`.
+    if (node.parent?.type === "object") return isFactoryReturnedLiteral(node.parent) ? "instance" : null;
     return hasChildOfTypeOrText(node, "static") ? "static" : "instance";
   }
   // TypeScript — a class FIELD bound to a function (`request = async () => {}`)

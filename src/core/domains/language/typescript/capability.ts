@@ -147,7 +147,12 @@ export const capability: LanguageCapability = {
   // aliases are emitted as `structuralContracts` and every callable chunk
   // carries its `arity`, so an interface receiver's cone reaches the classes
   // and object-literal factories that satisfy it without `implements`.
-  versions: { chunking: 1, walker: 12, codegraphSchema: 2 },
+  // Same walker 12, bd tea-rags-mcp-39xca.19: a method of the literal a named
+  // function returns composes with `#` (`createDeletionOutcome#isFullSuccess`).
+  // chunking 2: bd tea-rags-mcp-39xca.19 — the same `#` reaches the payload
+  // `symbolId`, and a declarator-bound factory's members gain its segment
+  // (`createCounter#increment`, was a bare `increment`).
+  versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
   // lowerCamelCase; a namespace-like module binding lowerCamelCase or

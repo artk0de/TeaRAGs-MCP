@@ -1306,9 +1306,14 @@ export class CodegraphRunState {
       const memberNames = new Set(contracts.flatMap((contract) => contract.members.map((member) => member.name)));
       const table = symbolTable;
       const memberDefinitions = [...memberNames].flatMap((name) => table.lookupByShortName(name));
+      // bd tea-rags-mcp-39xca.19 — the definitions naming those members' owners,
+      // read by the deriver for the walker-recorded owner kind only.
+      const ownerNames = new Set(memberDefinitions.flatMap((def) => def.scope.slice(-1)));
+      const ownerDefinitions = [...ownerNames].flatMap((name) => table.lookupByShortName(name));
       const rows = derive({
         contracts,
         memberDefinitions,
+        ownerDefinitions,
         nominalRows: this.inheritanceRowsByFamily.get(family) ?? [],
       });
       if (rows.length > 0) out.set(family, rows);

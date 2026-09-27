@@ -488,8 +488,13 @@ describe("seeded support versions", () => {
       // ruby chunking 2: bd tea-rags-mcp-j4jrn — the class-body grouper budgets
       // the reserved header prefix, so groups the header pushed over the cap are
       // no longer line-cut into `#partN` windows.
+      // typescript chunking 2 / javascript chunking 3: bd tea-rags-mcp-39xca.19
+      // — a method of the literal a named function returns is written as
+      // `factory#member`, and a declarator-bound factory's members gain its
+      // segment, so the payload `symbolId` of those chunks moves.
       const CHUNKING_BUMPED = new Map([
-        ["javascript", 2],
+        ["typescript", 2],
+        ["javascript", 3],
         ["swift", 4],
         ["bash", 2],
         ["ruby", 2],
