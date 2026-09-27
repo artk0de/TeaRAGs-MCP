@@ -161,17 +161,38 @@ away.
 ## D8 naming (codegraph-gated)
 
 ```text
-get_naming_lexicon names=[<identifiers the diff declares: {name, kind, type?}>]
-                   pathPattern=<touched-dirs glob> language=<lang> project=<alias>
-severity: MISFIT → minor; NEW_TERM → minor only when topTerms holds a term for
-          the same concept; CONFORMS → nothing
+local:    get_naming_lexicon changes={ base: <merge-base of main and HEAD> }
+                             project=<alias>
+          (on main, uncommitted only → changes={})
+external: get_naming_lexicon names=[<declarations on the diff's added lines:
+                             {name, kind, type?}; a type: {name, kind: "type",
+                             path, extends?}>]
+                             pathPattern=<touched-dirs glob> language=<lang>
+                             project=<alias>
+severity: MISFIT → minor; COLLISION → minor; NEW_TERM → minor only when
+          topTerms or alternatives hold a term for the same concept;
+          CONFORMS → nothing
 ```
 
-Catches: names off the project vocabulary. Reading the answer:
-`../../data-driven-generation/SKILL.md` Step 5 "Naming (lexicon)". Evidence =
-`suggestion` + the `holder` where the project already uses it.
+Local: ONE `changes` call judges every name added hunks declare (values, types,
+constants) — no hand-listed drafts. Changed files excluded from evidence →
+already-indexed names cannot vouch for themselves. External: MR branch never
+checked out, working tree lacks its code → `names[]` from diff. `truncated`
+(>200 changed files) → state unreviewed file count, never "no naming issues".
 
-fix: the suggested name, citing the holder file as precedent.
+Answer = `review` {base, checked, conforming, novel, findings, notJudged,
+truncated?}; each finding flat `{relPath, line, name, kind, type?, verdict, …}`.
+Findings grouped by verdict with `relPath:line`; conforming + novel counts = one
+summary line. `novel` = NEW_TERM with nothing to compare against — never a
+comment. `genericName` on a finding (even CONFORMS) = generic name → minor.
+`notJudged` counts tests and non-codegraph files — not reviewed, not clean.
+Reading a verdict: `../../data-driven-generation/SKILL.md` Step 5 "Naming
+(lexicon)". Evidence = `suggestion` + `holder` (MISFIT), `existing` file
+(COLLISION), `alternatives` (NEW_TERM — soft, never a rename demand).
+
+fix: the suggested name citing the holder file (MISFIT); a distinct name, or a
+reason the homonym is intended, citing the existing file (COLLISION); the
+alternative term, when it denotes the same concept (NEW_TERM).
 
 ## Phase 4 CLASSIFY rules (applied over all dimension findings)
 

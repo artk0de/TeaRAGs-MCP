@@ -105,11 +105,20 @@ lists.
 
 ## Step 2.6 — Naming pre-check (codegraph only)
 
-`get_naming_lexicon(names=<identifiers the diff declares>, pathPattern=<diff dirs>)`
-— settle naming against the project vocabulary before a reviewer spends a
-comment on it. `MISFIT` → rename to `suggestion` before sending (or list it
-under risk flags with the holder); `NEW_TERM` → one-line justification in the
-bundle. Reading: `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
+`get_naming_lexicon(changes={ base: <Step 1 base> })` — ONE call reviews every
+name the diff's added lines declare (values, types, constants); do not hand-list
+them into `names[]`. Base = the merge-base for a branch diff
+(`git merge-base main HEAD`), omit it for uncommitted work (default `HEAD`).
+Settle naming before a reviewer spends a comment on it: `MISFIT` → rename to
+`suggestion` before sending (or list it under risk flags with the holder);
+`COLLISION` → rename, or justify against the `existing` declaration; `NEW_TERM`
+→ one-line justification in the bundle, or take an offered alternative. Answer
+lives under `review` {base, checked, conforming, novel, findings, notJudged,
+truncated?}; findings flat `{relPath, line, name, kind, type?, verdict, …}`.
+Bundle line: findings grouped by verdict with `relPath:line`, plus conforming
+and novel counts (`novel` = nothing to compare against, no action). A finding
+with `genericName` = generic name → rename or justify. Reading:
+`tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 ## Step 3 — Build reviewer-context bundle
 

@@ -224,6 +224,22 @@ describe("Resource builders", () => {
       expect(md).toContain("relativePath");
       expect(md).toContain("Reranker#rerank");
     });
+
+    // bd tea-rags-mcp-fdef2 — the portable routing guide for non-Claude clients
+    // listed neither naming tool; a client without the plugin cascade never
+    // learned that a diff is reviewed through `changes`, not hand-listed names.
+    it("routes naming questions to both codegraph naming tools", () => {
+      const md = buildSearchGuide();
+      const start = md.indexOf("## get_naming_lexicon Examples");
+      expect(start).toBeGreaterThanOrEqual(0);
+      const rest = md.slice(start + 1);
+      const section = rest.slice(0, rest.indexOf("\n## "));
+      expect(section).toMatch(/names=\[/);
+      expect(section).toMatch(/types=\[/);
+      expect(section).toMatch(/changes=\{/);
+      expect(section).toMatch(/kind: "type"/);
+      expect(md).toContain("get_ontology_report");
+    });
   });
 
   describe("buildIndexingGuide", () => {

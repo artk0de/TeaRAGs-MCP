@@ -138,6 +138,8 @@ export type {
   NamingLexiconResult,
   NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
+  NamingReviewFinding,
+  NamingReviewResult,
 } from "./naming-lexicon.js";
 
 export type {

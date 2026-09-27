@@ -13,7 +13,11 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { listChangedFiles, readAddedLineRanges } from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
+import {
+  listChangedFiles,
+  readAddedLineRanges,
+  readAddedLineRangesOfFiles,
+} from "../../../../../../src/core/adapters/vcs/git/git-cli/client.js";
 
 function git(root: string, ...args: string[]): string {
   return execFileSync("git", args, {
@@ -103,5 +107,87 @@ describe("git CLI client — changed files and added line ranges", { timeout: 30
 
   it("reads no added range for an unchanged file", async () => {
     expect(await readAddedLineRanges(root, base, "src/untouched.ts")).toEqual([]);
+  });
+});
+
+/**
+ * The same reads for many files at once (bd tea-rags-mcp-fdef2): one `git diff
+ * -U0` over every path plus one untracked listing, parsed per file — a review of
+ * 200 changed files costs two subprocesses, not 200.
+ */
+describe("git CLI client — added line ranges of many files in one read", { timeout: 30_000 }, () => {
+  let root: string;
+  let base: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "changed-lines-bulk-"));
+    git(root, "init", "-q", "-b", "main");
+    git(root, "config", "user.email", "t@x");
+    git(root, "config", "user.name", "t");
+    mkdirSync(join(root, "src/pages"), { recursive: true });
+    writeFileSync(join(root, "src/edited.ts"), numberedLines(9, "line"));
+    writeFileSync(join(root, "src/shrunk.ts"), numberedLines(6, "line"));
+    writeFileSync(join(root, "src/untouched.ts"), numberedLines(3, "line"));
+    writeFileSync(join(root, "src/old-name.ts"), numberedLines(3, "moved"));
+    writeFileSync(join(root, "src/pages/[id].ts"), numberedLines(2, "page"));
+    writeFileSync(join(root, "src/with space.ts"), numberedLines(2, "spaced"));
+    writeFileSync(join(root, 'src/quo"té.ts'), numberedLines(2, "quoted"));
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "init");
+    base = git(root, "rev-parse", "HEAD").trim();
+
+    const edited = numberedLines(9, "line").split("\n");
+    edited[2] = "rewritten 3";
+    writeFileSync(join(root, "src/edited.ts"), `${edited.slice(0, 9).join("\n")}\n${numberedLines(3, "appended")}`);
+    const shrunk = numberedLines(6, "line").split("\n");
+    writeFileSync(join(root, "src/shrunk.ts"), `${[shrunk[0], ...shrunk.slice(3, 6)].join("\n")}\n`);
+    // A staged rename reads, with --no-renames, as its new side added whole.
+    git(root, "mv", "src/old-name.ts", "src/new-name.ts");
+    // Glob characters and a space are literal path characters, not a pathspec.
+    writeFileSync(join(root, "src/pages/[id].ts"), `${numberedLines(2, "page")}added 3\n`);
+    writeFileSync(join(root, "src/with space.ts"), `${numberedLines(2, "spaced")}added 3\n`);
+    // A quote forces git's C-quoting even under core.quotePath=false; the é rides along as octal bytes.
+    writeFileSync(join(root, 'src/quo"té.ts'), `added 1\n${numberedLines(2, "quoted")}`);
+    writeFileSync(join(root, "src/fresh.ts"), numberedLines(4, "fresh"));
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("answers every asked path from one read: edits, deletions, renames, untracked, literal paths", async () => {
+    const ranges = await readAddedLineRangesOfFiles(root, base, [
+      "src/edited.ts",
+      "src/shrunk.ts",
+      "src/untouched.ts",
+      "src/new-name.ts",
+      "src/fresh.ts",
+      "src/pages/[id].ts",
+      "src/with space.ts",
+      'src/quo"té.ts',
+    ]);
+    expect(Object.fromEntries(ranges)).toEqual({
+      'src/quo"té.ts': [{ start: 1, end: 1 }],
+      "src/edited.ts": [
+        { start: 3, end: 3 },
+        { start: 10, end: 12 },
+      ],
+      "src/shrunk.ts": [],
+      "src/untouched.ts": [],
+      "src/new-name.ts": [{ start: 1, end: 3 }],
+      "src/fresh.ts": [{ start: 1, end: 4 }],
+      "src/pages/[id].ts": [{ start: 3, end: 3 }],
+      "src/with space.ts": [{ start: 3, end: 3 }],
+    });
+  });
+
+  it("agrees with the per-file read on every path", async () => {
+    const paths = ["src/edited.ts", "src/shrunk.ts", "src/new-name.ts", "src/fresh.ts"];
+    const bulk = await readAddedLineRangesOfFiles(root, base, paths);
+    for (const path of paths) expect(bulk.get(path), path).toEqual(await readAddedLineRanges(root, base, path));
+  });
+
+  it("reads nothing for no paths", async () => {
+    expect((await readAddedLineRangesOfFiles(root, base, [])).size).toBe(0);
   });
 });

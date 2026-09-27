@@ -251,6 +251,31 @@ search.
   (no positives — returns code maximally UNLIKE the negative; outlier / novelty
   / refactor-candidate detection)
 
+## get_naming_lexicon Examples
+
+Codegraph on only. Judges names against project's own vocabulary; never judge a
+name by grep or semantic_search on the draft.
+
+- "What does the project call values of type T?" → types=["TaxAutomationDocument"], language="ruby"
+- "Is this name right?" (one draft / rename) → names=[{ name: "row", kind: "local", type: "TaxAutomationDocument" }]
+- New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]
+- Words for a concept → concept="<what the symbol denotes, not its name>", language="typescript"
+- Review names a diff adds → changes={} (uncommitted vs HEAD) or changes={ base: "<merge-base sha>" } (branch).
+  Only added hunks judged; changed files excluded from evidence; cap 200 files (truncated reports rest).
+  Answer → review { base, checked, conforming, novel, findings, notJudged, truncated? };
+  findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts plus
+  genericName caveats. novel = NEW_TERM with nothing to compare (not listed). notJudged = files
+  skipped: tests / non-production, no codegraph language.
+  Type / constant names need a codegraph recompute on an index built before type declarations existed.
+
+Verdicts: CONFORMS | MISFIT (suggestion, role) | NEW_TERM (topTerms, alternatives — soft,
+never a rename demand) | COLLISION (existing). Role = inheritance family > directory > project
+suffix; project suffix only confirms, never MISFIT.
+
+## get_ontology_report Examples
+
+- Project-wide naming audit → sections=["synonyms","homonyms","outliers","collisions"], pathPattern="src/**"
+
 ## Pagination
 
 Every search tool accepts offset for cursor-style pagination. Page exhausted but

@@ -117,6 +117,19 @@
       "prompt": "Is `row` a good name for a TaxAutomationDocument local here, or what does this project call it?",
       "expected": "get_naming_lexicon(names / types)",
       "not": ["semantic_search", "hybrid_search", "ripgrep"]
+    },
+    {
+      "id": 12,
+      "audit_finding": "naming review of a diff",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Uncommitted changes add several locals, a class and a constant across 4 files.",
+      "prompt": "Check whether the names in my uncommitted changes fit the project's vocabulary.",
+      "expected": "get_naming_lexicon(changes)",
+      "not": [
+        "get_naming_lexicon(names[] hand-listed from the diff)",
+        "semantic_search",
+        "hybrid_search",
+        "ripgrep"
+      ]
     }
   ],
   "results": {

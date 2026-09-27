@@ -164,6 +164,26 @@ describe("get_naming_lexicon", () => {
     expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0].names).toEqual(names);
   });
 
+  // bd tea-rags-mcp-fdef2: diff mode — the declarations a change adds are the drafts.
+  it("accepts `changes` or `files` alone as a request, and tells an agent about the review", () => {
+    const { inputSchema, description } = registered().config;
+    expect(inputSchema.safeParse({ project: "p", changes: {} }).success).toBe(true);
+    expect(inputSchema.safeParse({ project: "p", changes: { base: "main" } }).success).toBe(true);
+    expect(inputSchema.safeParse({ project: "p", files: ["src/a.ts"] }).success).toBe(true);
+    expect(inputSchema.safeParse({ project: "p", files: [] }).success).toBe(false);
+    expect(description).toMatch(/changes/);
+  });
+
+  it("forwards `changes` and `files`", async () => {
+    const { handler, app } = registered();
+    vi.mocked(app.getNamingLexicon).mockResolvedValue({ scope: "", byType: [], names: [] });
+    await handler({ project: "p", changes: { base: "main" }, files: ["src/a.ts"] });
+    expect(vi.mocked(app.getNamingLexicon).mock.calls[0][0]).toMatchObject({
+      changes: { base: "main" },
+      files: ["src/a.ts"],
+    });
+  });
+
   it("keeps one-line field descriptions and no examples", () => {
     const { properties } = toJsonSchemaCompat(registered().config.inputSchema) as {
       properties: Record<string, { description?: string; examples?: unknown }>;

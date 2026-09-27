@@ -711,6 +711,128 @@ export async function readAddedLineRanges(
   return parseAddedHunkRanges(diff);
 }
 
+/**
+ * {@link readAddedLineRanges} for many files in two subprocesses: one untracked
+ * listing and one `git diff -U0` over every tracked path, split per file by its
+ * `+++` header. Every asked path gets an entry — `[]` when nothing was added.
+ * Paths are literal (`--literal-pathspecs`): `[id].ts` names a file, not a
+ * character class.
+ */
+export async function readAddedLineRangesOfFiles(
+  repoRoot: string,
+  base: string,
+  relPaths: readonly string[],
+  timeoutMs = TREE_LISTING_STALL_MS,
+): Promise<Map<string, AddedLineRange[]>> {
+  const ranges = new Map<string, AddedLineRange[]>(relPaths.map((relPath) => [relPath, []]));
+  if (relPaths.length === 0) return ranges;
+  const untracked = new Set(
+    splitNulTerminated(
+      await execWithStallGuard(
+        resolveGitExecutable(),
+        ["--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--", ...relPaths],
+        { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+      ),
+    ),
+  );
+  for (const relPath of untracked) {
+    const lineCount = countLines(readFileSync(join(repoRoot, relPath), "utf8"));
+    ranges.set(relPath, lineCount > 0 ? [{ start: 1, end: lineCount }] : []);
+  }
+  const tracked = relPaths.filter((relPath) => !untracked.has(relPath));
+  if (tracked.length === 0) return ranges;
+  const diff = await execWithStallGuard(
+    resolveGitExecutable(),
+    [
+      "-c",
+      "core.quotePath=false",
+      "--literal-pathspecs",
+      "diff",
+      "--no-ext-diff",
+      "--no-color",
+      "--no-renames",
+      "-U0",
+      base,
+      "--",
+      ...tracked,
+    ],
+    { cwd: repoRoot, stallTimeoutMs: timeoutMs },
+  );
+  for (const [relPath, added] of parseAddedHunkRangesPerFile(diff)) {
+    if (ranges.has(relPath)) ranges.set(relPath, added);
+  }
+  return ranges;
+}
+
+/**
+ * A multi-file `-U0` diff split per file. The file is the `+++ b/<path>` side;
+ * a deletion (`+++ /dev/null`) keeps its `--- a/<path>` side and adds nothing.
+ */
+function parseAddedHunkRangesPerFile(diff: string): Map<string, AddedLineRange[]> {
+  const perFile = new Map<string, AddedLineRange[]>();
+  let oldPath: string | undefined;
+  let current: string | undefined;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      oldPath = undefined;
+      current = undefined;
+    } else if (line.startsWith("--- ")) {
+      oldPath = diffHeaderPath(line.slice(4), "a/");
+    } else if (line.startsWith("+++ ")) {
+      current = diffHeaderPath(line.slice(4), "b/") ?? oldPath;
+      if (current !== undefined && !perFile.has(current)) perFile.set(current, []);
+    } else if (current !== undefined && line.startsWith("@@ ")) {
+      perFile.get(current)?.push(...parseAddedHunkRanges(line));
+    }
+  }
+  return perFile;
+}
+
+/**
+ * The path of a `---` / `+++` header side: `/dev/null` → undefined; a trailing
+ * TAB (git's marker after a name holding a space) dropped; a C-quoted name
+ * (`"b/a\"b.ts"`, what `core.quotePath=false` still quotes) unquoted.
+ */
+function diffHeaderPath(raw: string, prefix: "a/" | "b/"): string | undefined {
+  const name = raw.endsWith("\t") ? raw.slice(0, -1) : raw;
+  if (name === "/dev/null") return undefined;
+  const unquoted = name.startsWith('"') && name.endsWith('"') ? unquoteGitPath(name.slice(1, -1)) : name;
+  return unquoted.startsWith(prefix) ? unquoted.slice(prefix.length) : unquoted;
+}
+
+const GIT_PATH_ESCAPES: Readonly<Record<string, number>> = {
+  a: 7,
+  b: 8,
+  t: 9,
+  n: 10,
+  v: 11,
+  f: 12,
+  r: 13,
+  '"': 34,
+  "\\": 92,
+};
+
+/** Git's C-style path quoting reversed: named escapes and `\ooo` octal bytes, decoded as UTF-8. */
+function unquoteGitPath(body: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < body.length; i++) {
+    const char = body[i];
+    if (char !== "\\") {
+      bytes.push(...Buffer.from(char, "utf8"));
+      continue;
+    }
+    const next = body[i + 1] ?? "";
+    if (/[0-7]/.test(next)) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4), 8));
+      i += 3;
+    } else {
+      bytes.push(GIT_PATH_ESCAPES[next] ?? next.charCodeAt(0));
+      i += 1;
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
 async function listUntrackedFiles(repoRoot: string, pathspec: string[], timeoutMs: number): Promise<string[]> {
   const out = await execWithStallGuard(
     resolveGitExecutable(),

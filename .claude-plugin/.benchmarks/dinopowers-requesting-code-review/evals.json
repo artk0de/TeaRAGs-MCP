@@ -172,6 +172,27 @@
           "Send the request leaving MISFIT names for the reviewer to find"
         ]
       },
+      "failureMode": "Reviewer spends comments on naming the lexicon would have settled",
+      "status": "superseded",
+      "supersededBy": "eval-14",
+      "reason": "get_naming_lexicon reviews the diff itself through `changes` (bd tea-rags-mcp-fdef2); hand-listing the diff's identifiers into names[] misses types and constants"
+    },
+    {
+      "id": "eval-14",
+      "category": "naming-pre-check",
+      "context": "Prime `## Enrichment` lists codegraph.symbols (get_naming_lexicon is available). Branch against main; the diff declares new locals `row`, method `find_vendor_envelope` and class `Commit`. The review call returns MISFIT for row (suggestion tax_automation_document), COLLISION for Commit (existing app/models/commit.rb), NEW_TERM for find_vendor_envelope without alternatives, 11 conforming.",
+      "prompt": "Готовлю PR, собери запрос на ревью.",
+      "expected": {
+        "mustDo": [
+          "Step 2.6: ONE get_naming_lexicon call with `changes: { base: <merge-base of main and HEAD> }`",
+          "MISFIT → rename to the suggestion before sending (or list under risk flags with the holder); COLLISION → rename or justify, naming the existing file; NEW_TERM → one-line justification in the bundle",
+          "Bundle lists review.findings grouped by verdict with relPath:line plus the review.conforming and review.novel counts"
+        ],
+        "mustNotDo": [
+          "Hand-list the diff's identifiers into names[]",
+          "Send the request leaving MISFIT names for the reviewer to find"
+        ]
+      },
       "failureMode": "Reviewer spends comments on naming the lexicon would have settled"
     }
   ]
