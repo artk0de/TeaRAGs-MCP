@@ -94,6 +94,40 @@ describe("renderChangelogSection", () => {
   });
 });
 
+// The agent plugin (skills, rules, dinopowers) and the documentation site are
+// separate product surfaces: a plugin change must not read as a docs change,
+// and neither belongs among the tea-rags server themes.
+describe("renderChangelogSection — plugin and documentation themes", () => {
+  const WITH_PLUGIN_AND_DOCS = {
+    ...DATA,
+    groups: [
+      { theme: "docs", items: [{ description: "indexing speed guide", commits: ["db71fce"] }] },
+      { theme: "fixes", items: [{ description: "a fix", commits: ["90d8bd8"] }] },
+      { theme: "plugin", items: [{ description: "explore skill routes by intent", commits: ["1a2b3c4"] }] },
+      { theme: "workflow", items: [{ description: "a CLI change", commits: ["c7a0125"] }] },
+    ],
+  };
+
+  it("renders the plugin and documentation themes under their own headings", () => {
+    const out = renderChangelogSection(WITH_PLUGIN_AND_DOCS);
+    expect(out).toContain("### 🧩 Agent plugin\n\n* explore skill routes by intent");
+    expect(out).toContain("### 📚 Documentation\n\n* indexing speed guide");
+  });
+
+  it("orders them after the server themes and before fixes: workflow, plugin, docs, fixes", () => {
+    const out = renderChangelogSection(WITH_PLUGIN_AND_DOCS);
+    expect(out.indexOf("🛠 CLI & workflow")).toBeLessThan(out.indexOf("🧩 Agent plugin"));
+    expect(out.indexOf("🧩 Agent plugin")).toBeLessThan(out.indexOf("📚 Documentation"));
+    expect(out.indexOf("📚 Documentation")).toBeLessThan(out.indexOf("🩹 Fixes"));
+  });
+
+  it("omits both when the release has no plugin or documentation items", () => {
+    const out = renderChangelogSection(DATA);
+    expect(out).not.toContain("Agent plugin");
+    expect(out).not.toContain("📚 Documentation");
+  });
+});
+
 describe("renderReleaseNotes", () => {
   it("ALWAYS includes the version header with date", () => {
     expect(renderReleaseNotes(DATA)).toContain(

@@ -75,7 +75,15 @@ themes for you — omit any theme with no items; never invent a new theme key.
 | `indexing`  | Indexing & performance | `ingest`, `pipeline`, `chunker`, `embedding`, `embedded`, `qdrant`, `perf` |
 | `language`  | Language support       | `language`, per-language scopes (ruby/python/…)                            |
 | `workflow`  | CLI & workflow         | `cli`, `config`, `api`, `mcp` (tooling), `factory`, `bootstrap`            |
-| `fixes`     | Fixes                  | any **user-visible** `fix` (this theme overrides scope mapping)            |
+| `plugin`    | Agent plugin           | `plugin`, `dinopowers`, `skills`, `marketplace` — any type, `docs` too     |
+| `docs`      | Documentation          | `docs(website)`, `docs(readme)`, `docs(blog)` — the user-facing docs       |
+| `fixes`     | Fixes                  | any **user-visible** `fix` outside the plugin (overrides scope mapping)    |
+
+The agent plugin (`.claude-plugin/**`: skills, rules, the dinopowers wrappers)
+is its own product: its skills and rules ARE markdown, so a `docs(plugin)`
+commit changes how the agent behaves and is a plugin change, never a
+documentation change. Keep the two apart — `plugin` holds everything under the
+plugin scopes, `docs` holds only the documentation site and README.
 
 For a scope not in the table, pick the closest theme by reading the `body`. If a
 multi-scope commit (`type(a,b):`) spans themes, use the one that best matches
@@ -83,10 +91,13 @@ the user-facing benefit.
 
 ## Rules
 
-1. **Only `feat` and `fix` commits are candidates for `groups`.** Everything
-   else — `refactor`, `perf`, `docs`, `test`, `chore`, `style`, `build`, `ci` —
-   is EXCLUDED from `groups` entirely. They still appear in `allCommits` (the
-   Full Commits spoiler).
+1. **Only `feat` and `fix` commits are candidates for `groups`** — with two
+   exceptions: `improve` and `docs` commits under the plugin scopes go to
+   `plugin`, and `docs(website)` / `docs(readme)` / `docs(blog)` go to `docs`.
+   Everything else — `refactor`, `perf`, other `docs` scopes (internal notes,
+   measurements, specs), `test`, `chore`, `style`, `build`, `ci` — is EXCLUDED
+   from `groups` entirely. They still appear in `allCommits` (the Full Commits
+   spoiler).
 
 2. **Benefit framing — describe the value, not the mechanism.** For each item,
    answer: _"so what, for someone using tea-rags?"_ State the capability the
@@ -109,8 +120,9 @@ the user-facing benefit.
    "throw a typed error instead of a plain Error") from the product view.
 
 4. **Fixes go to the `fixes` theme.** A user-visible `fix` becomes an item under
-   `theme: "fixes"` regardless of its scope. Internal-only fixes are dropped per
-   rule 3. There is no per-item `kind` field — the `fixes` theme is the marker.
+   `theme: "fixes"` regardless of its scope — except a plugin-scope fix, which
+   stays under `plugin`. Internal-only fixes are dropped per rule 3. There is no
+   per-item `kind` field — the `fixes` theme is the marker.
 
 5. **Collapse related commits.** Several commits forming one capability (e.g. an
    epic) collapse into ONE item; list all their hashes in `commits[]`. Same for

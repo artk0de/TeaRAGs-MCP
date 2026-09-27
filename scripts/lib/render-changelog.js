@@ -8,12 +8,16 @@ import { emphasiseChangelogVocabulary } from "./changelog-emphasis.js";
 // no items in a release is skipped. Keys match release-notes.json
 // `groups[].theme`. The agent groups commits by user-facing capability (not by
 // internal module), so headings read as product surfaces, not code domains.
+// The agent plugin and the documentation site are surfaces of their own and
+// follow the server themes, so a plugin change never reads as a docs change.
 const THEMES = [
   { key: "search", label: "🔎 Search & ranking" },
   { key: "codeIntel", label: "🧠 Code intelligence" },
   { key: "indexing", label: "⚡ Indexing & performance" },
   { key: "language", label: "🗣 Language support" },
   { key: "workflow", label: "🛠 CLI & workflow" },
+  { key: "plugin", label: "🧩 Agent plugin" },
+  { key: "docs", label: "📚 Documentation" },
   { key: "fixes", label: "🩹 Fixes" },
 ];
 
