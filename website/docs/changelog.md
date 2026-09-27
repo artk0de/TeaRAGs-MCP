@@ -7,18 +7,18 @@ sidebar_position: 99
 
 ### 🔎 Search & ranking
 
-* Breaking: metaOnly results keep every payload value raw and carry the labels on rankingOverlay for every search tool; payload.preset is gone, read rankingOverlay.preset instead
-* Breaking: level file results are reduced to file scope. Members and chunk-level fields are no longer attached (outline a file with `find_symbol` by path), and payload.score is replaced by the top-level score
-* Search tools can return only the payload fields you ask for, which keeps large result sets small
-* A result set now says when a preset's default filter narrowed it, so an empty or short page is explained
+* **Breaking:** `metaOnly` results keep every payload value raw, and every search tool carries the labels on `rankingOverlay`. `payload.preset` is gone; read `rankingOverlay.preset` instead
+* **Breaking:** `level: "file"` results are reduced to file scope. Members and chunk-level fields are no longer attached (outline a file with `find_symbol` by `relativePath`), and `payload.score` is replaced by the top-level `score`
+* Search tools take `fields`, an allow-list of payload paths, and return only those fields, which keeps large result sets small
+* A response now says when a rerank preset's default `filter` narrowed the result set, and names the param that clears it
 * Tool schemas list only the filter parameters a tool really applies and describe the item shape it really returns
 
 ### 🧠 Code intelligence
 
 * New `get_architecture_report` tool: finds convention-privacy leaks, leaking abstractions, facade leaks, components in the zone of pain (gated on how volatile their git history is), and files that always change together without any code link, each explained by the neighbour they share
-* Breaking: Stable Dependencies findings in `get_architecture_report` are judged per component, not per file, and carry component names and afferent/efferent counts
+* **Breaking:** `stableDependencies` findings in `get_architecture_report` are judged per component, not per file, and carry component names and afferent/efferent counts
 * New `get_naming_lexicon` tool: before you name something, it shows the project's own vocabulary for that concept, judges a draft name by the role its type plays and by the terms it aligns with, and suggests alternatives the project already uses
-* Naming review over a diff: the names a branch introduces are checked against the project's vocabulary before merge
+* `get_naming_lexicon` reviews a diff with `changes`: the names a branch introduces are checked against the project's vocabulary before merge
 * New `get_ontology_report` tool audits a whole codebase's naming: synonyms for one concept, generic names, and outliers
 * Graph tools and the `find_symbol` outline show each symbol's declared visibility, for every native language
 * `get_callers` and `get_callees` answer at file scope from the import graph when given a file path
@@ -28,8 +28,8 @@ sidebar_position: 99
 
 ### ⚡ Indexing & performance
 
-* Breaking: `--force --languages` (and `forceReindex` with languages) re-chunks only the selected files in place and leaves every other point untouched, instead of building a new collection of just those languages. Path, extension, test-file and file-list filters narrow it further, and drift reports point at this scoped run when only one language's chunking changed
-* Breaking: files above 5000 lines skip chunk-level git churn by default (was 10000); file-level git signals are unchanged. Set `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000` for the old limit
+* **Breaking:** `--force --languages` (and `forceReindex` with `languages`) re-chunks only the selected files in place and leaves every other point untouched, instead of building a new collection of just those languages. `--path-pattern`, `--file-extension`, `--test-file` and `--files` narrow it further, and drift reports point at this scoped run when only one language's chunking changed
+* **Breaking:** files above 5000 lines skip chunk-level git churn by default (was 10000); file-level git signals are unchanged. Set `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000` for the old limit
 * **Ollama** models can be quantized server-side through `OLLAMA_QUANTIZATION`; it is opt-in and off by default, and a refused quantization says why
 
 ### 🗣 Language support
@@ -41,31 +41,31 @@ sidebar_position: 99
 ### 🛠 CLI & workflow
 
 * `tea-rags call` runs any **MCP** tool from the command line, in-process, with the target project's registered environment
-* Breaking: the project registry pins only environment values you set explicitly, and a newly indexed project starts from code defaults instead of inheriting another project's settings. Pins left behind at old release defaults are dropped once on upgrade; re-pin one on purpose with `tea-rags projects set-env`
+* **Breaking:** the project registry pins only environment values you set explicitly, and a newly indexed project starts from code defaults instead of inheriting another project's settings. Pins left behind at old release defaults are dropped once on upgrade; re-pin one on purpose with `tea-rags projects set-env`
 * `prime` shows how far each language's chunking, test chunking and call graph can be trusted on this index
 * `tea-rags qdrant recover` repairs a collection whose optimizer failed
-* The `index-codebase` JSON report includes the state of each embedding endpoint
+* The `index-codebase --json` report includes the state of each embedding endpoint
 * `add_documents` accepts an optional metadata schema for typed collections
 * `doctor`, `projects`, `update` and `tune` share one coloured output style
 
 ### 🧩 Agent plugin
 
-* New architecture-diagnostics skill
-* Skills name things with the project's own vocabulary: code generation runs a naming step, mr-review reviews a branch's new names, and naming audits go to `get_ontology_report`
-* dinopowers wrappers check index freshness on reads, route modifications through code generation and report root causes
-* report-issue opens the bug form
-* Agent guidance: labels are read from rankingOverlay, a split symbol is read whole before reasoning about it, file-level import questions go to `get_callers` / `get_callees`, visibility is read in graph navigation, and god classes are attributed through the file outline
+* New `architecture-diagnostics` skill
+* Skills name things with the project's own vocabulary: `data-driven-generation` runs a naming step, `mr-review` reviews a branch's new names, and naming audits go to `get_ontology_report`
+* `dinopowers` wrappers check index freshness on reads, route modifications through `data-driven-generation` and report root causes
+* `report-issue` opens the bug form
+* Agent guidance: labels are read from `rankingOverlay`, a split symbol is read whole before reasoning about it, file-level import questions go to `get_callers` / `get_callees`, visibility is read in graph navigation, and god classes are attributed through the file outline
 
 ### 📚 Documentation
 
-* README: indexing speed on a LAN GPU, the five-layer index with one question per layer, a comparison with alternatives, a client and provider matrix, and an FAQ
-* Website: silent coupling, naming alignment, structural conformance and **codegraph** read errors, explicit env pinning, embedding failover and hard-kill recovery, the scoped `--force`, the mr-review and report-issue skills, and every ingest error code
+* **README:** indexing speed on a LAN GPU, the five-layer index with one question per layer, a comparison with alternatives, a client and provider matrix, and an FAQ
+* **Docusaurus:** silent coupling, naming alignment, structural conformance and **codegraph** read errors, explicit env pinning, embedding failover and hard-kill recovery, the scoped `--force`, the `mr-review` and `report-issue` skills, and every ingest error code
 
 ### 🩹 Fixes
 
 * Embedding failover: after consecutive failures indexing switches to the fallback endpoint, a call caught mid-failover is retried there, and a provider that is down at startup fails with an actionable message within its wait budget
 * A batch that crashes the **Ollama** runner is split and retried at a smaller size instead of stalling the run
-* A hard-killed index run is reported stale at once, and the next run takes over and reclaims its unfinished build
+* A hard-killed index run is reported as `stale_indexing` at once, and the next run takes over and reclaims its unfinished build
 * `--force-enrichments` fully rebuilds the selected layers, including files without chunks and stale skip markers
 * Incremental reindexing retries failed deletions, reports partial runs, and keeps derived **call-graph** data in step with deleted files
 * Git signals follow file renames, and a chunk is credited only for lines a commit actually changed
@@ -74,9 +74,9 @@ sidebar_position: 99
 * **Call-graph** precision: ***TypeScript*** bare calls bind by lexical scope, ***Java*** `new X()` receivers, ***Rust*** type paths, ***Ruby*** mixin order, ***Python*** re-exports and same-named classes across languages resolve correctly
 * **Qdrant** requests survive a reset keep-alive socket, and every filterable field gets a payload index on existing collections too
 * The **MCP** server releases its resources and exits when the client goes away
-* `projects unregister` works for path-registered projects, and orphan reports count chunks
+* `projects unregister` works for path-registered projects, and `projects orphans` counts chunks
 * `prime` shows the real status error, and `tune` prints a pasteable **MCP** config for any tuned subset
-* One-contributor files are labelled solo in recent ownership, and instability labels are banded over what the corpus measured
+* One-contributor files are labelled `solo` in `recentDominantAuthorPct`, and `instability` labels are banded over what the corpus measured
 
 ### 🔧 Environment Variables
 
