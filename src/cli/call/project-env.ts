@@ -18,6 +18,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import {
   CollectionRegistry,
   createPathCollectionResolver,
@@ -68,6 +69,8 @@ export function applyCallProjectEnv(entry: CollectionEntry | null, env: NodeJS.P
 
 /** Production wiring for `CallDeps.prepareProjectEnv`: the user's registry, the process cwd and env. */
 export async function prepareCallProjectEnv(params: Record<string, unknown>): Promise<void> {
-  const registry = new CollectionRegistry(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"));
+  const registry = new CollectionRegistry(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), {
+    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+  });
   applyCallProjectEnv(await resolveCallProjectEntry(registry, params, process.cwd()), process.env);
 }

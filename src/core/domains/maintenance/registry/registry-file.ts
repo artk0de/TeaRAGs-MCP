@@ -3,10 +3,16 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import type { CollectionEntry, RegistryFileV1 } from "../../../contracts/types/registry.js";
+import { REGISTRY_ENV_PIN_MIGRATION_REVISION } from "./env-pin-migration.js";
 import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
 
 const FILE_NAME = "registry.json";
 const CURRENT_VERSION = 1 as const;
+/**
+ * The data revision a registry created from scratch is born at: it holds no
+ * legacy data, so no one-time data migration has anything to do on it.
+ */
+const LATEST_REGISTRY_REVISION = REGISTRY_ENV_PIN_MIGRATION_REVISION;
 const CAS_MAX_ATTEMPTS = 5;
 const CAS_BACKOFF_MS_BASE = 10;
 
@@ -14,6 +20,12 @@ const CAS_BACKOFF_MS_BASE = 10;
  * Registered migrations transform an older on-disk shape into the current
  * RegistryFileV1. Empty in this PR — framework only. When a V2 lands, add
  * `1: (raw) => transformV1toV2(raw)` here in the same PR as the schema bump.
+ *
+ * DATA migrations do not go here: they keep the shape, advance
+ * `RegistryFileV1.revision` instead of `version`, and run through
+ * `migrateRegistryFileWithCAS`, because they may need values this layer cannot
+ * compute (the env-pin cleanup needs the code defaults, injected from
+ * bootstrap) and must not race a concurrent writer.
  */
 const KNOWN_MIGRATIONS: Record<number, (raw: unknown) => RegistryFileV1> = {};
 
@@ -166,7 +178,11 @@ export function mergeRegistryDelta(
   if (tombstones) {
     for (const k of tombstones) delete out[k];
   }
-  return { version: CURRENT_VERSION, collections: out };
+  // The revision is the DISK's: only a data migration advances it. Stamping the
+  // latest revision here would let any flush from an instance that never ran a
+  // due migration mark it done without running it.
+  const revision = disk ? disk.revision : LATEST_REGISTRY_REVISION;
+  return { version: CURRENT_VERSION, ...(revision !== undefined ? { revision } : {}), collections: out };
 }
 
 function sleepSync(ms: number): void {
@@ -224,6 +240,46 @@ export function flushWithCAS(
     if (stable) {
       saveRegistryFile(dataDir, merged);
       return merged;
+    }
+    if (attempt < CAS_MAX_ATTEMPTS - 1) {
+      sleepSync(CAS_BACKOFF_MS_BASE * 2 ** attempt);
+    }
+  }
+  throw new RegistryConcurrencyError(path, CAS_MAX_ATTEMPTS);
+}
+
+/**
+ * Apply a one-time DATA migration to the on-disk registry under the same
+ * cross-process CAS as `flushWithCAS`, writing through `saveRegistryFile`
+ * (temp file + rename, so a crash leaves the old file or the new one, never a
+ * torn one).
+ *
+ * `migrate` sees the file as currently on disk and returns the migrated result,
+ * or null when it has nothing to do (already migrated — possibly by a
+ * concurrent process between attempts). It is re-run on every attempt, so it
+ * must be pure.
+ *
+ * Returns the file as it now stands (null when there is none) and the outcome
+ * that was written, if any.
+ *
+ * @throws RegistryConcurrencyError when the file keeps changing under us.
+ */
+export function migrateRegistryFileWithCAS<T extends { file: RegistryFileV1 }>(
+  dataDir: string,
+  migrate: (disk: RegistryFileV1) => T | null,
+): { file: RegistryFileV1 | null; applied: T | null } {
+  const path = filePath(dataDir);
+  for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+    const before = statOrNull(path);
+    const disk = loadRegistryFile(dataDir);
+    if (disk === null) return { file: null, applied: null };
+    const outcome = migrate(disk);
+    if (outcome === null) return { file: disk, applied: null };
+    const after = statOrNull(path);
+    const stable = before !== null && after !== null && before.ino === after.ino && before.mtimeMs === after.mtimeMs;
+    if (stable) {
+      saveRegistryFile(dataDir, outcome.file);
+      return { file: outcome.file, applied: outcome };
     }
     if (attempt < CAS_MAX_ATTEMPTS - 1) {
       sleepSync(CAS_BACKOFF_MS_BASE * 2 ** attempt);

@@ -140,7 +140,22 @@ export interface CollectionEntry {
 export type RecordEntryInput = Omit<CollectionEntry, "name" | "autoUpdate">;
 
 export interface RegistryFileV1 {
+  /**
+   * Wire version. Stays 1 across data migrations: every release up to and
+   * including the one that added `revision` backs up and discards a registry
+   * whose version is not exactly 1 (`loadRegistryFile`), so bumping it would
+   * make any older binary still in use — a parallel worktree build, a
+   * long-running MCP server — move the registry aside and start empty.
+   */
   version: 1;
+  /**
+   * Data revision — which one-time registry data migrations have run. Absent
+   * means 1 (none). Advanced only by the migration itself and carried through
+   * every flush (`mergeRegistryDelta`); a file created from scratch is born at
+   * the latest revision. Revision 2 = the env-pin cleanup of bd
+   * tea-rags-mcp-h4l6k (`migrateRegistryEnvPins`).
+   */
+  revision?: number;
   collections: Record<string, CollectionEntry>;
 }
 

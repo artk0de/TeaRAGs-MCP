@@ -6,15 +6,34 @@ import type {
   CollectionEntry,
   RecordEntryInput,
   RegistryAutoUpdateConfig,
+  RegistryFileV1,
 } from "../../../contracts/types/registry.js";
 import { PROJECT_NAME_RE } from "./constants.js";
-import { RegistryNameConflictError } from "./errors.js";
-import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
+import {
+  formatRegistryEnvPinDrops,
+  isRegistryEnvPinMigrationDue,
+  migrateRegistryEnvPins,
+  type RegistryEnvCodeDefaultsProvider,
+} from "./env-pin-migration.js";
+import { RegistryConcurrencyError, RegistryNameConflictError, RegistryWriteError } from "./errors.js";
+import { flushWithCAS, loadRegistryFile, migrateRegistryFileWithCAS } from "./registry-file.js";
 
 function snapshotEntries(map: ReadonlyMap<string, CollectionEntry>): Map<string, CollectionEntry> {
   const snapshot = new Map<string, CollectionEntry>();
   for (const [k, v] of map) snapshot.set(k, structuredClone(v));
   return snapshot;
+}
+
+export interface CollectionRegistryOptions {
+  /**
+   * The current code defaults of the registry env snapshot, injected by the
+   * composition root (bootstrap owns config parsing). When given, the first load
+   * runs the one-time env-pin migration if the file on disk predates it
+   * (`migrateRegistryEnvPins`, bd tea-rags-mcp-h4l6k). Without it the registry
+   * loads the file as-is and leaves the migration to the next instance that has
+   * it — never marking it done.
+   */
+  envCodeDefaults?: RegistryEnvCodeDefaultsProvider;
 }
 
 export class CollectionRegistry {
@@ -30,12 +49,15 @@ export class CollectionRegistry {
   private watcher: FSWatcher | null = null;
   private stopHandle: (() => void) | null = null;
 
-  constructor(private readonly dataDir: string) {}
+  constructor(
+    private readonly dataDir: string,
+    private readonly options: CollectionRegistryOptions = {},
+  ) {}
 
   private ensureLoaded(): Map<string, CollectionEntry> {
     if (this.cache !== null) return this.cache;
     try {
-      const file = loadRegistryFile(this.dataDir);
+      const file = this.loadMigrated();
       const map = new Map<string, CollectionEntry>();
       if (file !== null) {
         for (const [k, v] of Object.entries(file.collections)) map.set(k, v);
@@ -48,6 +70,28 @@ export class CollectionRegistry {
       this.cache = new Map();
       this.loadedSnapshot = new Map();
       return this.cache;
+    }
+  }
+
+  /**
+   * Load the registry file, first running the one-time env-pin migration on it
+   * when defaults were injected and the file predates it. A migration that
+   * cannot be written (contention, I/O) is reported and skipped: the file loads
+   * unmigrated and the next open retries.
+   */
+  private loadMigrated(): RegistryFileV1 | null {
+    const provider = this.options.envCodeDefaults;
+    if (provider === undefined) return loadRegistryFile(this.dataDir);
+    try {
+      const { file, applied } = migrateRegistryFileWithCAS(this.dataDir, (disk) =>
+        isRegistryEnvPinMigrationDue(disk) ? migrateRegistryEnvPins(disk, provider()) : null,
+      );
+      if (applied !== null) process.stderr.write(formatRegistryEnvPinDrops(applied.droppedPins));
+      return file;
+    } catch (err) {
+      if (!(err instanceof RegistryConcurrencyError) && !(err instanceof RegistryWriteError)) throw err;
+      process.stderr.write(`[tea-rags] registry env migration deferred: ${err.message}\n`);
+      return loadRegistryFile(this.dataDir);
     }
   }
 

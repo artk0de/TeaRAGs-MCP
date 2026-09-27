@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import { CollectionRegistry, listWorktreeInfos, worktreeInfoForPath } from "../../core/api/public/index.js";
 
 function resolveDataDir(): string {
@@ -10,7 +11,9 @@ function resolveDataDir(): string {
 }
 
 export function runWorktreeList(args: { json: boolean; dataDir?: string }): void {
-  const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir());
+  const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir(), {
+    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+  });
   const rows = listWorktreeInfos(registry);
   if (args.json) {
     process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
@@ -28,7 +31,9 @@ export function runWorktreeList(args: { json: boolean; dataDir?: string }): void
 }
 
 export function runWorktreeInfo(args: { json: boolean; dataDir?: string }): void {
-  const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir());
+  const registry = new CollectionRegistry(args.dataDir ?? resolveDataDir(), {
+    envCodeDefaults: resolveRegistryEnvCodeDefaults,
+  });
   const info = worktreeInfoForPath(registry, process.cwd());
   process.stdout.write(args.json ? `${JSON.stringify(info, null, 2)}\n` : `${JSON.stringify(info)}\n`);
 }

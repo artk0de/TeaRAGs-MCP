@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Argv, CommandModule } from "yargs";
 
 import { assertRegistryEnvValueParses } from "../../bootstrap/config/parse.js";
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import {
   chunkPointsFilter,
   CollectionRegistry,
@@ -96,7 +97,7 @@ function resolveDataDir(): string {
 }
 
 function newOps(): { registry: CollectionRegistry; ops: ProjectRegistryOps } {
-  const registry = new CollectionRegistry(resolveDataDir());
+  const registry = new CollectionRegistry(resolveDataDir(), { envCodeDefaults: resolveRegistryEnvCodeDefaults });
   return { registry, ops: new ProjectRegistryOps({ registry, validateEnvValue: assertRegistryEnvValueParses }) };
 }
 

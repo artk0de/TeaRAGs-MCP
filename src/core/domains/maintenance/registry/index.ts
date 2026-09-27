@@ -17,6 +17,8 @@ export type {
 export { PROJECT_NAME_RE } from "./constants.js";
 export { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
 export { CollectionRegistry } from "./collection-registry.js";
+export type { CollectionRegistryOptions } from "./collection-registry.js";
+export type { RegistryEnvCodeDefaults, RegistryEnvCodeDefaultsProvider } from "./env-pin-migration.js";
 export {
   ADAPTIVE_DEFAULT_ENV_KEYS,
   canonicalRegistryEnvKeys,

@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 
 import type { CommandModule } from "yargs";
 
+import { resolveRegistryEnvCodeDefaults } from "../../bootstrap/config/registry-env-code-defaults.js";
 import {
   CollectionRegistry,
   pickRegistryEnvSeed,
@@ -316,7 +317,7 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const jsonMode = Boolean(argv.json);
 
     const dataDir = resolveDataDir();
-    const registry = new CollectionRegistry(dataDir);
+    const registry = new CollectionRegistry(dataDir, { envCodeDefaults: resolveRegistryEnvCodeDefaults });
 
     // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
     const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);

@@ -1,13 +1,24 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import type * as NodeOs from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyProjectDefaults } from "../../src/cli/registry-resolver.js";
 import { ProjectNotRegisteredError } from "../../src/core/api/errors.js";
 import { RegistryQdrantBackendUnresolvedError } from "../../src/core/api/public/index.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/collection-registry.js";
+
+// The resolver falls back to `~/.tea-rags` when TEA_RAGS_DATA_DIR is unset, and
+// opening a registry there may WRITE it (the one-time env-pin migration, bd
+// tea-rags-mcp-h4l6k). Point the home directory at a scratch dir so no test in
+// this file can ever touch the developer's real registry.
+const scratchHome = vi.hoisted(() => ({ dir: "" }));
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeOs>();
+  return { ...actual, homedir: () => scratchHome.dir || join(actual.tmpdir(), "cli-rr-scratch-home") };
+});
 
 describe("applyProjectDefaults", () => {
   let dir: string;
@@ -72,8 +83,16 @@ describe("applyProjectDefaults", () => {
     // up the home directory. We don't have a registry at ~/.tea-rags/registry.json
     // in tests, so the project is "unknown" and the function throws — but the
     // path through resolveDataDir's homedir() branch is exercised.
-    delete process.env.TEA_RAGS_DATA_DIR;
-    expect(() => applyProjectDefaults({ project: "definitely-not-registered-xyz" })).toThrow(ProjectNotRegisteredError);
+    scratchHome.dir = mkdtempSync(join(tmpdir(), "cli-rr-home-"));
+    try {
+      delete process.env.TEA_RAGS_DATA_DIR;
+      expect(() => applyProjectDefaults({ project: "definitely-not-registered-xyz" })).toThrow(
+        ProjectNotRegisteredError,
+      );
+    } finally {
+      rmSync(scratchHome.dir, { recursive: true, force: true });
+      scratchHome.dir = "";
+    }
   });
 });
 
