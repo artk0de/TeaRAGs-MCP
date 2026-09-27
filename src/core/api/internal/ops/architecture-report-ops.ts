@@ -18,7 +18,7 @@
 import { extname } from "node:path";
 
 import type {
-  FileDependencyGraphFile,
+  FileDependencyGraph,
   GraphDbClient,
   RelPath,
   TemporalCochangeGraph,
@@ -49,7 +49,9 @@ import {
   detectSilentCoupling,
   linkImportedCochangePairs,
   oneWalkedViolationImporters,
+  SILENT_COUPLING_EXPLAINED_REASON,
   type SilentCouplingReport,
+  type SilentCouplingViolation,
 } from "../../../domains/trajectory/codegraph/temporal/index.js";
 import { buildNonProductionPathFilter } from "../../../infra/file-classification/index.js";
 import type {
@@ -60,6 +62,7 @@ import type {
   GetArchitectureReportResponse,
   LeakingAbstractionReportSummary,
   MainSequenceReportSummary,
+  SilentCouplingArchitectureViolation,
   SilentCouplingReportSummary,
   StableDependenciesReportSummary,
 } from "../../public/dto/architecture.js";
@@ -115,7 +118,7 @@ export class ArchitectureReportOps {
     );
     const silent = await detectSilentCouplingSeeingAssetImports(
       await graphDb.readTemporalCochangeGraph(),
-      graph.files,
+      graph,
       request,
       readImportSpecifiers,
     );
@@ -130,7 +133,7 @@ export class ArchitectureReportOps {
         },
         stableDependencies: summarise(sdp),
         leakingAbstraction: summariseLeaks(leaks, privacy, limit),
-        silentCoupling: summariseSilentCoupling(silent),
+        silentCoupling: summariseSilentCoupling(silent, limit),
         mainSequence: summariseMainSequence(mainSequence),
       },
       rootCauses: [...sdpRootCauses(sdp, limit), ...leakRootCauses(leaks, limit), ...silentRootCauses(silent, limit)],
@@ -178,7 +181,7 @@ export class ArchitectureReportOps {
           detectConventionPrivacyLeaks([]),
           0,
         ),
-        silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, [])),
+        silentCoupling: summariseSilentCoupling(detectSilentCoupling({ meta: null, edges: [] }, []), 0),
         mainSequence: summariseMainSequence(
           detectMainSequenceDeviations(buildComponentGraph({ files: [], edges: [] }, []), []),
         ),
@@ -194,15 +197,21 @@ export class ArchitectureReportOps {
  * the codegraph never records: once to find those violations, then again over
  * the graph with the imported pairs linked. Linking changes no candidate's
  * strength, so the adaptive cut is the same both times — only which strong
- * pairs count as linked moves.
+ * pairs count as linked moves. The production graph's edges let a specific
+ * shared neighbour explain a pair (bd tea-rags-mcp-r8hme.13).
  */
 async function detectSilentCouplingSeeingAssetImports(
   cochange: TemporalCochangeGraph,
-  walkedFiles: readonly FileDependencyGraphFile[],
+  production: FileDependencyGraph,
   request: ArchitectureReportScope,
   readImportSpecifiers: ModuleImportSpecifierLookup | undefined,
 ): Promise<SilentCouplingReport> {
-  const options = { sourcePathPattern: request.pathPattern, isDocumentation: isDocumentationPath };
+  const walkedFiles = production.files;
+  const options = {
+    sourcePathPattern: request.pathPattern,
+    isDocumentation: isDocumentationPath,
+    fileDependencyEdges: production.edges,
+  };
   const first = detectSilentCoupling(cochange, walkedFiles, options);
   if (!readImportSpecifiers) return first;
   const importers = oneWalkedViolationImporters(first.violations, walkedFiles);
@@ -384,8 +393,9 @@ function isDocumentationPath(relPath: RelPath): boolean {
   return language !== undefined && DOCUMENTATION_LANGUAGES.has(language);
 }
 
-function summariseSilentCoupling(report: SilentCouplingReport): SilentCouplingReportSummary {
+function summariseSilentCoupling(report: SilentCouplingReport, limit: number): SilentCouplingReportSummary {
   const { summary } = report;
+  const explained = summary.explainedCount > 0;
   return {
     built: summary.built,
     ...(summary.build ? { build: { ...summary.build } } : {}),
@@ -400,9 +410,24 @@ function summariseSilentCoupling(report: SilentCouplingReport): SilentCouplingRe
     ...(summary.strengthSeparability === undefined
       ? {}
       : { strengthSeparability: Math.round(summary.strengthSeparability * 1000) / 1000 }),
-    excluded: { ...summary.excluded },
+    ...(summary.sharedNeighbourThreshold === undefined
+      ? {}
+      : { sharedNeighbourThreshold: roundTo3(summary.sharedNeighbourThreshold) }),
+    sharedNeighbourThresholdMethod: summary.sharedNeighbourThresholdMethod,
+    ...(summary.sharedNeighbourSeparability === undefined
+      ? {}
+      : { sharedNeighbourSeparability: roundTo3(summary.sharedNeighbourSeparability) }),
+    excluded: { ...summary.excluded, explainedBySharedNeighbour: summary.explainedCount },
+    ...(explained ? { exclusionReasons: { explainedBySharedNeighbour: SILENT_COUPLING_EXPLAINED_REASON } } : {}),
+    ...(explained
+      ? { explainedPairs: report.explained.slice(0, limit).map(toSilentCouplingArchitectureViolation) }
+      : {}),
     ...(summary.scope ? { outOfScopePairCount: summary.scope.outOfScopePairCount } : {}),
   };
+}
+
+function roundTo3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function silentRootCauses(report: SilentCouplingReport, limit: number): ArchitectureRootCause[] {
@@ -418,24 +443,29 @@ function silentRootCauses(report: SilentCouplingReport, limit: number): Architec
 }
 
 function silentViolations(report: SilentCouplingReport, limit: number): ArchitectureViolation[] {
-  return report.violations.slice(0, limit).map(
-    (v): ArchitectureViolation => ({
-      detector: "silentCoupling",
-      sourceRelPath: v.relPathA,
-      targetRelPath: v.relPathB,
-      evidence: {
-        support: v.support,
-        confidenceAB: v.confidenceAB,
-        confidenceBA: v.confidenceBA,
-        lift: v.lift,
-        strength: v.strength,
-        lastCoChangeAt: v.lastCoChangeAt,
-        sampleCommits: v.sampleCommits,
-        structuralVisibility: v.structuralVisibility,
-        directoryRelation: v.directoryRelation,
-      },
-    }),
-  );
+  return report.violations.slice(0, limit).map(toSilentCouplingArchitectureViolation);
+}
+
+function toSilentCouplingArchitectureViolation(v: SilentCouplingViolation): SilentCouplingArchitectureViolation {
+  return {
+    detector: "silentCoupling",
+    sourceRelPath: v.relPathA,
+    targetRelPath: v.relPathB,
+    evidence: {
+      support: v.support,
+      confidenceAB: v.confidenceAB,
+      confidenceBA: v.confidenceBA,
+      lift: v.lift,
+      strength: v.strength,
+      lastCoChangeAt: v.lastCoChangeAt,
+      sampleCommits: v.sampleCommits,
+      structuralVisibility: v.structuralVisibility,
+      directoryRelation: v.directoryRelation,
+      ...(v.explainedBy
+        ? { explainedBy: { relPath: v.explainedBy.relPath, weight: roundTo3(v.explainedBy.weight) } }
+        : {}),
+    },
+  };
 }
 
 function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSummary {

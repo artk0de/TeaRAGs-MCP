@@ -181,6 +181,13 @@ export interface SilentCouplingViolationEvidence {
   structuralVisibility: SilentCouplingStructuralVisibility;
   /** Where the target's directory sits relative to the source's. */
   directoryRelation: ArchitectureDirectoryRelation;
+  /**
+   * Only on a pair in `summary.silentCoupling.explainedPairs` (bd
+   * tea-rags-mcp-r8hme.13): the shared neighbour both files import, or one
+   * reaches the other through, and its weight ln(N / fanIn), 3 decimals. A
+   * violation never carries it.
+   */
+  explainedBy?: { relPath: RelPath; weight: number };
 }
 
 /**
@@ -446,6 +453,15 @@ export interface SilentCouplingReportSummary {
   strengthThresholdMethod: "otsu" | "majority";
   /** η of the Otsu cut, 3 decimals; absent under `majority`. */
   strengthSeparability?: number;
+  /**
+   * Otsu's split over every candidate's heaviest shared-neighbour weight
+   * ln(N / fanIn), 3 decimals (bd tea-rags-mcp-r8hme.13); absent under `none`.
+   */
+  sharedNeighbourThreshold?: number;
+  /** `otsu` when ≥ 8 candidates share a neighbour and their weights split; `none` = no pair is explained. */
+  sharedNeighbourThresholdMethod: "otsu" | "none";
+  /** η of the shared-neighbour cut, 3 decimals; absent under `none`. */
+  sharedNeighbourSeparability?: number;
   /** Pairs read but not judged, by the first reason that applied. */
   excluded: {
     testEndpoints: number;
@@ -455,7 +471,13 @@ export interface SilentCouplingReportSummary {
     unwalkedEndpoints: number;
     /** lift ≤ 1: no more co-change than independence predicts. */
     nonPositiveLift: number;
+    /** Strong unlinked in-scope pairs a specific shared neighbour explains — see `exclusionReasons`. */
+    explainedBySharedNeighbour: number;
   };
+  /** Present only when a pair was explained. */
+  exclusionReasons?: { explainedBySharedNeighbour: string };
+  /** The explained pairs, strongest first, capped at `limit`, each with `evidence.explainedBy`; present only when any. */
+  explainedPairs?: SilentCouplingArchitectureViolation[];
   /** Strong unlinked pairs with neither file matching `pathPattern`; present only when scoped. */
   outOfScopePairCount?: number;
 }

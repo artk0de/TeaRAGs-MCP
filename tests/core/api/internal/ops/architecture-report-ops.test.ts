@@ -570,6 +570,80 @@ describe("ArchitectureReportOps#build — silentCoupling (bd tea-rags-mcp-b4dcz)
   });
 });
 
+/**
+ * bd tea-rags-mcp-r8hme.13: a co-change pair a SPECIFIC shared neighbour
+ * explains leaves the violations and is counted under `excluded`, with the
+ * reason named, the adaptive cut reported like the strength one, and the pair
+ * listed with `evidence.explainedBy`. `proto/protocol.ts` (fanIn 2) explains
+ * client ↔ server; `lib/kernel.ts`, imported by 40 of 42 files, explains no
+ * w/p ↔ w/q pair.
+ */
+describe("ArchitectureReportOps#build — silentCoupling shared-neighbour explanation (bd tea-rags-mcp-r8hme.13)", () => {
+  function explainedGraphs(): { g: FileDependencyGraph; cochange: TemporalCochangeGraph } {
+    const hubPairs = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => [`w/p${i}.ts`, `w/q${i}.ts`] as const);
+    const importers = ["a/client.ts", "b/server.ts", ...hubPairs.flat()];
+    const fillers = Array.from({ length: 22 }, (_, i) => `z/f${i}.ts`);
+    const files = ["lib/kernel.ts", "proto/protocol.ts", ...importers, ...fillers].map(file);
+    const edges: FileDependencyGraph["edges"] = [
+      ...[...importers, ...fillers].map((s) => ({ sourceRelPath: s, targetRelPath: "lib/kernel.ts", callWeight: 1 })),
+      { sourceRelPath: "a/client.ts", targetRelPath: "proto/protocol.ts", callWeight: 1 },
+      { sourceRelPath: "b/server.ts", targetRelPath: "proto/protocol.ts", callWeight: 1 },
+    ];
+    const base = cochangeGraph();
+    const pairOf = (relPathA: string, relPathB: string): TemporalCochangeEdgeWithLinkage => ({
+      ...base.edges[0],
+      relPathA,
+      relPathB,
+      structurallyLinked: false,
+    });
+    return {
+      g: { files, edges },
+      cochange: { ...base, edges: [pairOf("a/client.ts", "b/server.ts"), ...hubPairs.map(([p, q]) => pairOf(p, q))] },
+    };
+  }
+
+  it("excludes the explained pair with its reason and lists it with the neighbour that explains it", async () => {
+    const { g, cochange } = explainedGraphs();
+    expect(g.files).toHaveLength(42);
+
+    const report = await new ArchitectureReportOps().build(graphDb(g, [], cochange), {});
+
+    const silent = report.violations.filter((v) => v.detector === "silentCoupling");
+    expect(silent).toHaveLength(8);
+    expect(silent.map((v) => v.sourceRelPath)).not.toContain("a/client.ts");
+    const summary = report.summary.silentCoupling;
+    expect(summary).toMatchObject({
+      violationCount: 8,
+      sharedNeighbourThresholdMethod: "otsu",
+      excluded: { explainedBySharedNeighbour: 1 },
+    });
+    expect(summary.sharedNeighbourThreshold).toBeGreaterThan(Math.log(42 / 40));
+    expect(summary.sharedNeighbourThreshold).toBeLessThan(Math.log(42 / 2));
+    expect(summary.sharedNeighbourSeparability).toBeGreaterThan(0.9);
+    expect(summary.exclusionReasons?.explainedBySharedNeighbour).toEqual(expect.any(String));
+    expect(summary.explainedPairs).toEqual([
+      {
+        detector: "silentCoupling",
+        sourceRelPath: "a/client.ts",
+        targetRelPath: "b/server.ts",
+        evidence: expect.objectContaining({
+          support: 10,
+          explainedBy: { relPath: "proto/protocol.ts", weight: Math.round(Math.log(42 / 2) * 1000) / 1000 },
+        }),
+      },
+    ]);
+  });
+
+  it("names no exclusion reason and lists no pair when nothing is explained", async () => {
+    const summary = ArchitectureReportOps.empty({}).summary.silentCoupling;
+
+    expect(summary.excluded.explainedBySharedNeighbour).toBe(0);
+    expect(summary.sharedNeighbourThresholdMethod).toBe("none");
+    expect(summary).not.toHaveProperty("exclusionReasons");
+    expect(summary).not.toHaveProperty("explainedPairs");
+  });
+});
+
 describe("ArchitectureReportOps.empty", () => {
   it("reports an unbuilt silent-coupling summary too", () => {
     const summary = ArchitectureReportOps.empty({}).summary.silentCoupling;

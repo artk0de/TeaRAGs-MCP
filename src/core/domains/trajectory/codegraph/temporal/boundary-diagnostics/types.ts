@@ -1,4 +1,4 @@
-import type { RelPath } from "../../../../../contracts/types/codegraph.js";
+import type { FileDependencyEdge, RelPath } from "../../../../../contracts/types/codegraph.js";
 import type { DependencyDirectoryRelation } from "../../symbols/boundary-diagnostics/index.js";
 
 export interface SilentCouplingOptions {
@@ -9,6 +9,23 @@ export interface SilentCouplingOptions {
    * answers it belongs to ingest; without it no pair is excluded as documentation.
    */
   isDocumentation?: (relPath: RelPath) => boolean;
+  /**
+   * The walked graph's file → file dependencies. Given, a flagged pair that a
+   * SPECIFIC shared neighbour explains is excluded (bd tea-rags-mcp-r8hme.13);
+   * absent, no pair is explained.
+   */
+  fileDependencyEdges?: readonly FileDependencyEdge[];
+}
+
+/**
+ * The file that explains a pair's co-change: both endpoints import it, or one
+ * reaches the other through it. `weight` = ln(N / fanIn) — N the walked files,
+ * fanIn the distinct files importing it — so a file few import weighs much and
+ * one every file imports weighs nothing.
+ */
+export interface SilentCouplingSharedNeighbour {
+  relPath: RelPath;
+  weight: number;
 }
 
 /**
@@ -45,6 +62,13 @@ export interface SilentCouplingViolation {
   structuralVisibility: SilentCouplingStructuralVisibility;
   /** Where `relPathB`'s directory sits relative to `relPathA`'s. */
   directoryRelation: DependencyDirectoryRelation;
+  /**
+   * Set only on a pair in {@link SilentCouplingReport.explained}: the heaviest
+   * shared neighbour, whose weight cleared the explanation cut. A flagged pair
+   * carries none — a neighbour below the cut explains nothing, and naming it
+   * would read as an explanation.
+   */
+  explainedBy?: SilentCouplingSharedNeighbour;
 }
 
 /** A file silently coupled to several partners — its partners change with it for a reason the graph does not show. */
@@ -104,6 +128,22 @@ export interface SilentCouplingSummary {
   strengthThresholdMethod: "otsu" | "majority";
   /** η of the Otsu cut; absent under `majority`. */
   strengthSeparability?: number;
+  /**
+   * Otsu's cut over every candidate's heaviest shared-neighbour weight; a
+   * strong unlinked pair whose neighbour is at or above it is explained.
+   * Absent under `none`.
+   */
+  sharedNeighbourThreshold?: number;
+  /**
+   * `otsu` when ≥ `SILENT_COUPLING_OTSU_MIN_POPULATION` candidates share
+   * a neighbour and their weights split; `none` otherwise, or without
+   * dependency edges — and then no pair is explained.
+   */
+  sharedNeighbourThresholdMethod: "otsu" | "none";
+  /** η of the shared-neighbour cut; absent under `none`. */
+  sharedNeighbourSeparability?: number;
+  /** Strong, unlinked, in-scope pairs a specific shared neighbour explains — not violations. */
+  explainedCount: number;
   excluded: SilentCouplingExclusionCounts;
   /** Present only when scoped. */
   scope?: { sourcePathPattern: string; outOfScopePairCount: number };
@@ -113,6 +153,8 @@ export interface SilentCouplingReport {
   summary: SilentCouplingSummary;
   /** Strongest first. */
   violations: SilentCouplingViolation[];
+  /** Pairs a specific shared neighbour explains, each with `explainedBy`; strongest first. */
+  explained: SilentCouplingViolation[];
   /** Most silent partners first. */
   rootCauses: SilentCouplingRootCause[];
 }
