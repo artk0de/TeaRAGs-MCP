@@ -22,6 +22,7 @@ import {
 } from "../index-progress/worker-sweep.js";
 import { createColorizer, type Colorizer } from "../infra/color.js";
 import { statusTag } from "../infra/status-tag.js";
+import { listOrphanPhysicalCollections } from "./projects.js";
 
 interface DoctorArgs {
   json?: boolean;
@@ -49,6 +50,8 @@ interface DoctorDeps {
      * count (mirrors FixB in src/cli/commands/projects.ts:runOrphans).
      */
     aliases?: Pick<QdrantManager["aliases"], "listAliases">;
+    /** Reads a collection's indexing marker, so a live build is not counted as an orphan. */
+    getPoint?: QdrantManager["getPoint"];
   };
   embeddings: Pick<EmbeddingProvider, "checkHealth" | "getProviderName" | "getBaseUrl">;
 }
@@ -96,7 +99,11 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
     const aliases = await qdrant.aliases.listAliases();
     return new Set(aliases.map((a) => a.collectionName));
   }, new Set<string>());
-  const orphanCount = collections.filter((c) => !registeredBefore.has(c) && !aliasedTargets.has(c)).length;
+  // A collection a live run is building is not an orphan either — the same
+  // helper `projects orphans` lists with (bd tea-rags-mcp-9ovlp).
+  const orphanCount = (
+    await listOrphanPhysicalCollections(qdrant, collections, (c) => registeredBefore.has(c) || aliasedTargets.has(c))
+  ).length;
   const embeddingUrl = typeof embeddings.getBaseUrl === "function" ? embeddings.getBaseUrl() : undefined;
 
   let recovery: { recovered: number } | undefined;

@@ -729,6 +729,8 @@ export class EnrichmentCoordinator {
     });
     if (stored.items.length === 0) return EMPTY_METRICS;
 
+    await this.retireSkipStamps(physicalCollectionName, matched, languages);
+
     // The recompute's own writes to a provider's per-file store are ADDITIVE —
     // only the repair leg's diffing per-file write (`applyScopedRowDiff`)
     // retires rows — so stale edge rows written by older resolver code survive
@@ -798,6 +800,45 @@ export class EnrichmentCoordinator {
     // write) fire, and what fills the RunState metrics the CLI reports.
     this.startChunkEnrichment(run, stored.chunkMap);
     return this.awaitCompletion(run);
+  }
+
+  /**
+   * Retire the selected providers' `skippedAs` stamps over the recompute's
+   * scope, before it rebuilds (bd tea-rags-mcp-ckfof).
+   *
+   * A stamp is the policy's decision under the configuration of the run that
+   * wrote it. The recompute re-asks the policy for every point it feeds, and
+   * re-stamps what the policy still declines (`applySkipStamps` replaces the
+   * level), but what the policy now ENRICHES gets an overlay through
+   * `set_payload` under `<provider>.<level>`, which merges — so after a
+   * loosening (`TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` raised, `excludeTests`
+   * off) every such point came out with the fresh overlay AND the old stamp,
+   * the two terminal markers the recovery filter treats as contradictory.
+   *
+   * One filtered request, touching only points that carry a stamp. A crash
+   * between here and the re-stamp leaves those points with neither marker,
+   * which recovery picks up and re-decides — never a lie. A failed delete keeps
+   * the stamps as they were, the behaviour before this existed.
+   */
+  private async retireSkipStamps(
+    physicalCollectionName: PhysicalCollectionName,
+    providerKeys: readonly string[],
+    languages: readonly string[] | undefined,
+  ): Promise<void> {
+    const keys = providerKeys.flatMap((key) => [`${key}.file.skippedAs`, `${key}.chunk.skippedAs`]);
+    const filter = {
+      ...(languages && languages.length > 0 ? { must: [{ key: "language", match: { any: [...languages] } }] } : {}),
+      should: keys.map((key) => ({ must_not: [{ is_empty: { key } }] })),
+    };
+    try {
+      await this.qdrant.deletePayloadKeys(physicalCollectionName, keys, filter);
+    } catch (error) {
+      pipelineLog.enrichmentPhase("RECOMPUTE_SKIP_STAMP_RETIRE_FAILED", {
+        collection: physicalCollectionName,
+        keys,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

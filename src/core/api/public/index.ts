@@ -126,6 +126,7 @@ export { editRegistryEnv } from "../../domains/maintenance/registry/index.js";
 export {
   outerEnvForRegistryEntry,
   pickRegistryEntry,
+  pickRegistryEnvSeed,
   replayRegistryEnv,
   resolveRegistryEnv,
 } from "../../domains/maintenance/registry/index.js";
@@ -170,6 +171,11 @@ export { validatePath } from "../../infra/collection-name.js";
 // may not reach api/internal directly (bd tea-rags-mcp-dxa9w).
 export { createPathCollectionResolver, resolveCollection } from "../internal/collection-resolver.js";
 export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
+
+// ── Build lease — `projects orphans` / `doctor` skip a collection a live run
+// is building, by the same predicate cleanupOrphanedVersions uses (bd
+// tea-rags-mcp-9ovlp) ───
+export { isCollectionBuildInFlight } from "../../domains/ingest/infra/collection-build-lease.js";
 
 // ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
 export { QuarantineStore } from "../../domains/ingest/sync/index.js";

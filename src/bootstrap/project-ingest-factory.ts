@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 
 import type { IngestFacade } from "../core/api/index.js";
 import {
-  pickRegistryEntry,
+  pickRegistryEnvSeed,
   registryEnvGroupMembers,
   resolveRegistryEnv,
   type AmbientEnvRole,
@@ -78,7 +78,7 @@ export class ProjectIngestFactory {
     // Only the project's OWN stamp outranks a server env. A borrowed seed (a new
     // project, a worktree of a known repo) records some other index's shape.
     const own = this.deps.registry.findByPath(target);
-    const entry = own ?? pickRegistryEntry(this.deps.registry, { path: target });
+    const entry = own ?? pickRegistryEnvSeed(this.deps.registry, { path: target });
     const overlay = resolveRegistryEnv(entry, ambient, own ? (this.deps.ambientEnvRole ?? "invocation") : "invocation");
     // Replay dropped every key the ambient env may override, so an empty
     // overlay means this project's recorded config IS the process config.

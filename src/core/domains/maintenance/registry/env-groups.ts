@@ -191,6 +191,22 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
 ];
 
 /**
+ * Does this registry env key describe the operator's BACKENDS — the embedding
+ * service and its vector space (`EMBEDDING_*`, `OLLAMA_*`) or the Qdrant
+ * instance (`QDRANT_*`) — rather than how one project is indexed?
+ *
+ * That is the whole of what a new project may borrow from an unrelated entry
+ * (`pickRegistryEnvSeed`, bd tea-rags-mcp-h4l6k): reaching the same backend in
+ * the same vector space is what makes a fresh index "just work", while the git
+ * windows, chunking, test paths and codegraph policy of another repository are
+ * that repository's decisions. Canonical names only — a stamp stores nothing
+ * else.
+ */
+export function isBackendRegistryEnvKey(canonical: string): boolean {
+  return /^(EMBEDDING|OLLAMA|QDRANT)_/.test(canonical);
+}
+
+/**
  * Flat allowlist of every recognized spelling (canonical + aliases).
  * Kept for consumers that only need membership checks.
  */

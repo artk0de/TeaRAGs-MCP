@@ -38,9 +38,19 @@ import {
  * reclaim a collection, and hoarding collections because one marker read flaked
  * is worse than the behaviour that preceded the lease being read at all.
  */
-export async function isCollectionBuildInFlight(qdrant: QdrantManager, collection: string): Promise<boolean> {
+export async function isCollectionBuildInFlight(
+  qdrant: Pick<QdrantManager, "getPoint">,
+  collection: string,
+  /**
+   * Epoch ms. Heartbeat evidence stamped at or before it does not count — the
+   * caller proved the writer of that evidence dead (a lock takeover, bd
+   * tea-rags-mcp-nhd1s), however fresh the timestamp still looks.
+   */
+  options: { deadWriterEvidenceUpTo?: number } = {},
+): Promise<boolean> {
   const marker = await readIndexingMarker(qdrant, collection);
-  return marker !== undefined && isBuildLive(marker, Date.now(), Number.NEGATIVE_INFINITY);
+  const evidenceAfter = options.deadWriterEvidenceUpTo ?? Number.NEGATIVE_INFINITY;
+  return marker !== undefined && isBuildLive(marker, Date.now(), evidenceAfter);
 }
 
 /**
@@ -87,7 +97,7 @@ function isBuildLive(marker: IndexingMarkerPayload, now: number, evidenceAfter: 
 }
 
 async function readIndexingMarker(
-  qdrant: QdrantManager,
+  qdrant: Pick<QdrantManager, "getPoint">,
   collection: string,
 ): Promise<IndexingMarkerPayload | undefined> {
   try {

@@ -589,6 +589,47 @@ describe("CLI 'doctor' command", () => {
       }
     });
 
+    // bd tea-rags-mcp-9ovlp — a force run builds code_x_v14 off to the side; until
+    // the alias flips, only its live indexing marker tells it from a leftover.
+    it("does not count a collection an in-flight force run is building, but counts a dead build", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const now = new Date().toISOString();
+        const long = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const markers: Record<string, Record<string, unknown>> = {
+          code_x_v14: { indexingComplete: false, startedAt: now, lastHeartbeat: now },
+          code_dead_v3: { indexingComplete: false, startedAt: long, lastHeartbeat: long },
+        };
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_x_v14", "code_dead_v3"]),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+          getPoint: vi.fn(async (collection: string) =>
+            Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
+          ),
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: true, recoverRegistry: false },
+          { qdrant: fakeQdrant as never, embeddings: fakeEmbeddings },
+        );
+        const parsed = JSON.parse(
+          stdout.mock.calls
+            .map((c) => String(c[0]))
+            .join("")
+            .trim(),
+        );
+        expect(parsed.registry.orphanCount).toBe(1);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
     it("falls back gracefully when aliases.listAliases is unavailable", async () => {
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {

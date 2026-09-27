@@ -209,10 +209,22 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
     userSetChunkSize: boolean;
     userSetDeleteBatchSize: boolean;
     userSetDeleteConcurrency: boolean;
+    /**
+     * Canonical names of the env families `source` set explicitly, under any
+     * spelling — what an index run may pin into its registry entry
+     * (`buildPinnedRegistryEnvSnapshot`, bd tea-rags-mcp-h4l6k).
+     */
+    explicitEnvKeys: readonly string[];
   };
 } {
   const deprecations: DeprecationNotice[] = [];
-  const inputs = buildEnvInputs(createEnvReader(deprecations, source));
+  const read = createEnvReader(deprecations, source);
+  const explicitEnvKeys = new Set<string>();
+  const inputs = buildEnvInputs((newName, ...oldNames) => {
+    const value = read(newName, ...oldNames);
+    if (value !== undefined) explicitEnvKeys.add(newName);
+    return value;
+  });
 
   const core = validateSchema(coreSchema, inputs.core, "core");
   const embedding = validateSchema(embeddingSchema, inputs.embedding, "embedding");
@@ -242,6 +254,7 @@ export function parseAppConfigZod(source: EnvSource = process.env): {
       userSetChunkSize: !!inputs.userSetChunkSize,
       userSetDeleteBatchSize: !!inputs.userSetDeleteBatchSize,
       userSetDeleteConcurrency: !!inputs.userSetDeleteConcurrency,
+      explicitEnvKeys: [...explicitEnvKeys],
     },
   };
 }

@@ -7,7 +7,7 @@ import type { CommandModule } from "yargs";
 
 import {
   CollectionRegistry,
-  pickRegistryEntry,
+  pickRegistryEnvSeed,
   ProjectRegistryOps,
   resolveRegistryEnv,
   TeaRagsError,
@@ -329,7 +329,7 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     // resurfaces as a bare "Qdrant is not reachable at <dead port>".
     let registryEnv: Record<string, string>;
     try {
-      registryEnv = resolveRegistryEnv(pickRegistryEntry(registry, { project: argv.project, path }));
+      registryEnv = resolveRegistryEnv(pickRegistryEnvSeed(registry, { project: argv.project, path }));
     } catch (err) {
       renderIndexSetupError(err, { json: jsonMode, colors });
       process.exit(1);
