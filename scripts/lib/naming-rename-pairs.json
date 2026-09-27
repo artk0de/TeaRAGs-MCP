@@ -1,0 +1,548 @@
+{
+  "ref": "main",
+  "refSha": "c69d52e1bceb5456baf709d5ddd92d932bce9fdc",
+  "refTime": "2026-09-27T02:00:39.000Z",
+  "pairs": [
+    {
+      "oldName": "RubyBodyGrouper",
+      "newName": "RubyClassBodyChunker",
+      "sha": "8f8f62e89e6425bf6bbd411c24f7ff4d1de89dcc",
+      "class": "both",
+      "newPath": "src/core/domains/language/ruby/chunking/class-body-chunker.ts"
+    },
+    {
+      "oldName": "GitFileMetadata",
+      "newName": "GitFileSignals",
+      "sha": "638b48689e26ddf37836173bc782f8f4db5d6eeb",
+      "class": "head",
+      "newPath": "src/core/domains/trajectory/git/types.ts",
+      "newExtends": "FileSignalOverlay"
+    },
+    {
+      "oldName": "SearchFacade",
+      "newName": "ExploreFacade",
+      "sha": "b7fd74217d49eed15ff41a155bd68e6dd2e23a7e",
+      "class": "qualifier",
+      "newPath": "src/core/api/internal/facades/explore-facade.ts"
+    },
+    {
+      "oldName": "RawResult",
+      "newName": "ExploreResult",
+      "sha": "4fa605614d1337ed67274b3df71601bf79f464a6",
+      "class": "qualifier",
+      "newPath": "src/core/domains/explore/strategies/types.ts"
+    },
+    {
+      "oldName": "SearchStrategy",
+      "newName": "ExploreStrategy",
+      "sha": "472a4741d020bfc25cadb5a9f2e965beea6b279f",
+      "class": "qualifier",
+      "newPath": "src/core/domains/explore/strategies/types.ts"
+    },
+    {
+      "oldName": "SearchStrategyType",
+      "newName": "ExploreStrategyType",
+      "sha": "472a4741d020bfc25cadb5a9f2e965beea6b279f",
+      "class": "qualifier",
+      "newPath": "src/core/domains/explore/strategies/factory.ts"
+    },
+    {
+      "oldName": "SearchContext",
+      "newName": "ExploreContext",
+      "sha": "a88a2528f79c0c2e353909acbe69e76df14f5f8f",
+      "class": "qualifier",
+      "newPath": "src/core/domains/explore/strategies/types.ts"
+    },
+    {
+      "oldName": "SearchResponse",
+      "newName": "ExploreResponse",
+      "sha": "17a021f4d5bb2878be78b8a00d36411fc8d8663a",
+      "class": "qualifier",
+      "newPath": "src/core/api/public/dto/explore.ts"
+    },
+    {
+      "oldName": "SearchCodeRequest",
+      "newName": "ExploreCodeRequest",
+      "sha": "17a021f4d5bb2878be78b8a00d36411fc8d8663a",
+      "class": "qualifier",
+      "newPath": "src/core/api/public/dto/explore.ts",
+      "newExtends": "TypedFilterParams"
+    },
+    {
+      "oldName": "SnapshotV1ToV2",
+      "newName": "SnapshotV2MtimeSize",
+      "sha": "2bd2309aedb156e0ea01f4449f446320cda20e4c",
+      "class": "both",
+      "newPath": "src/core/domains/maintenance/migration/snapshot_migrations/snapshot-v2-mtime-size.ts"
+    },
+    {
+      "oldName": "SnapshotV2ToSharded",
+      "newName": "SnapshotV3Sharded",
+      "sha": "2bd2309aedb156e0ea01f4449f446320cda20e4c",
+      "class": "qualifier",
+      "newPath": "src/core/domains/maintenance/migration/snapshot_migrations/snapshot-v3-sharded.ts"
+    },
+    {
+      "oldName": "SparseVectorRebuild",
+      "newName": "SparseV1VectorRebuild",
+      "sha": "7ca4ae7bd0984b454f6af15c1edf64f96eb80b31",
+      "class": "qualifier",
+      "newPath": "src/core/domains/maintenance/migration/sparse_migrations/sparse-v1-vector-rebuild.ts"
+    },
+    {
+      "oldName": "AuthorCountsAccumulator",
+      "newName": "RecentAuthorCountsAccumulator",
+      "sha": "6f2105d94229f345aa6de1338178f49b77a66b7e",
+      "class": "qualifier",
+      "newPath": "src/core/domains/trajectory/git/stats/author-counts.ts"
+    },
+    {
+      "oldName": "LineAuthorCountsAccumulator",
+      "newName": "BlameAuthorCountsAccumulator",
+      "sha": "6f2105d94229f345aa6de1338178f49b77a66b7e",
+      "class": "qualifier",
+      "newPath": "src/core/domains/trajectory/git/stats/author-counts.ts"
+    },
+    {
+      "oldName": "LanguageFactoryImpl",
+      "newName": "LanguageFactory",
+      "sha": "02fcce87dc6ad0ffd8523cfb66753a916a2dbba3",
+      "class": "both",
+      "newPath": "src/core/domains/language/factory.ts"
+    },
+    {
+      "oldName": "ResolvedTarget",
+      "newName": "SymbolResolutionTarget",
+      "sha": "e091d0a79801a17f3392633e054287d8b04adf27",
+      "class": "qualifier",
+      "newPath": "src/core/contracts/types/codegraph-resolution.ts"
+    },
+    {
+      "oldName": "ThreadPool",
+      "newName": "WorkerDispatchPool",
+      "sha": "99af2eb299a64263d52cecb96169a8cfa22cb17c",
+      "class": "qualifier",
+      "newPath": "src/core/domains/ingest/pipeline/infra/worker-dispatch-pool.ts"
+    }
+  ],
+  "dropped": [
+    {
+      "oldName": "Gemfile",
+      "newName": "ChunkerConfig",
+      "sha": "be4b89c7da52996a8ab8214b14b82610915b05ac",
+      "reason": "data-flow arrow (\"base.ts reads Gemfile → ChunkerConfig → engine\"), not a rename: Gemfile is the Ruby manifest file"
+    }
+  ],
+  "rejected": [
+    {
+      "oldName": "FieldDoc",
+      "newName": "Signal",
+      "sha": "13f5857df86a5591321c1334267da7bb073f2348",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Metadata",
+      "newName": "Signals",
+      "sha": "638b48689e26ddf37836173bc782f8f4db5d6eeb",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "SearchModule",
+      "newName": "ExploreModule",
+      "sha": "f86957092dc963bb1c263abfe67e4b17d00c1f83",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "SearchCodeConfig",
+      "newName": "ExploreCodeConfig",
+      "sha": "f86957092dc963bb1c263abfe67e4b17d00c1f83",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Works",
+      "newName": "What",
+      "sha": "f4356a88992d69898d510af01fc08a91dbdbdd31",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Get",
+      "newName": "Who",
+      "sha": "f4356a88992d69898d510af01fc08a91dbdbdd31",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "For",
+      "newName": "Quick",
+      "sha": "f4356a88992d69898d510af01fc08a91dbdbdd31",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Start",
+      "newName": "Docs",
+      "sha": "f4356a88992d69898d510af01fc08a91dbdbdd31",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Scan",
+      "newName": "Setup",
+      "sha": "f416ff87270fd793f0186e66bdc8882f6e6b067f",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Process",
+      "newName": "Alias",
+      "sha": "f416ff87270fd793f0186e66bdc8882f6e6b067f",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "ChangeStats",
+      "newName": "IndexStats",
+      "sha": "6e344f60e615a01b684844ffd30c61cd731bafa2",
+      "reason": "NEW declared in more than one src/ file"
+    },
+    {
+      "oldName": "IngestFacade",
+      "newName": "IndexingOps",
+      "sha": "1fc919b51c6472aa37aa71c66ee2fdb017697b22",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "Map",
+      "newName": "Record",
+      "sha": "53620c7c51c185a8b6c3f4af645c54f675616eba",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "New",
+      "newName": "Engine",
+      "sha": "18027ff64256dc338e7f464799bfa08671a19a88",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "LanguageFactory",
+      "newName": "LanguageFactoryDescriptor",
+      "sha": "2c86d866e3602885affbba1f3f5567498398d2db",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "ProgressUpdate",
+      "newName": "EnrichmentProgressEvent",
+      "sha": "ab3658431e1e695d38ecb87ec003aac73eddb065",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "WorktreeOps",
+      "newName": "WorktreeProvisioner",
+      "sha": "74d8c61290f822b4cd5559c3d3656a517d50ec75",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "NotificationsController",
+      "newName": "Api",
+      "sha": "5139b1172bfb5c34394ab63268c1aab1af67052b",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "VcsAdapter",
+      "newName": "VcsGitAdapter",
+      "sha": "4c030151e672ba65058fd5f5d5030e0504952e67",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "IngestCodeConfig",
+      "newName": "GitProviderConfig",
+      "sha": "563115f5717c2e0ee9bc34f8216f1d07306031b2",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "ChunkExtraction",
+      "newName": "SymbolDefinition",
+      "sha": "c60e904f9aad7f53e40a99135545f9e78fd843ba",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "Ability",
+      "newName": "Post",
+      "sha": "750838ec6bd0edcd03f1cb116bbe3c26f1af826c",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "UserSerializer",
+      "newName": "User",
+      "sha": "e084e7ae71b2c666b56197764829167ad90f686a",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Trackable",
+      "newName": "Auditable",
+      "sha": "1cc2135231c3d33431b799abb668f9f1a899206f",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "QdrantManager",
+      "newName": "QdrantConnection",
+      "sha": "8c220e3f91ca1d5d0062af26ed6616e8b0dea87d",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "IndexingOps",
+      "newName": "ReindexPipeline",
+      "sha": "4799b3240a6551ee704ac7622e0812c559ce694f",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "RubyTypeRef",
+      "newName": "TypeRef",
+      "sha": "bd3320267e848335dfb25a6339d039fc7ebf1435",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "ExploreFacade",
+      "newName": "ExploreOps",
+      "sha": "88e825da161ce6fdcb22113f8f308cea2a7c0f54",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "LanguageConfig",
+      "newName": "CodegraphLanguageConfig",
+      "sha": "774cdb0623d484ccff7cfbe4663527dfba2f445b",
+      "reason": "OLD still declared under src/"
+    },
+    {
+      "oldName": "Engine2",
+      "newName": "Base",
+      "sha": "cb0eed108111891bc8b40f0fd47aca8f43cc4e7e",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Array",
+      "newName": "RandomAccessCollection",
+      "sha": "305ae5f087202b9a48bf98a12d08631e5c710e03",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Collection",
+      "newName": "Sequence",
+      "sha": "305ae5f087202b9a48bf98a12d08631e5c710e03",
+      "reason": "NEW not declared under src/"
+    },
+    {
+      "oldName": "Document",
+      "newName": "TaxPreparation",
+      "sha": "e68d174f1ab70403f021b3cd05c1f700712ec0ec",
+      "reason": "NEW not declared under src/"
+    }
+  ],
+  "control": {
+    "seed": 20260927,
+    "minAgeDays": 90,
+    "types": [
+      {
+        "name": "AccumulatorStats",
+        "path": "src/core/adapters/qdrant/accumulator.ts",
+        "firstDeclaredAt": "2026-01-28"
+      },
+      {
+        "name": "AmbiguousResolveMode",
+        "path": "src/core/contracts/types/codegraph-resolution.ts",
+        "firstDeclaredAt": "2026-05-21"
+      },
+      {
+        "name": "ChunkSymbol",
+        "path": "src/core/contracts/types/chunker.ts",
+        "firstDeclaredAt": "2026-05-27"
+      },
+      {
+        "name": "CodegraphProviderDeps",
+        "path": "src/core/domains/trajectory/codegraph/symbols/provider.ts",
+        "firstDeclaredAt": "2026-05-20"
+      },
+      {
+        "name": "CohereError",
+        "path": "src/core/adapters/embeddings/cohere.ts",
+        "firstDeclaredAt": "2025-10-09"
+      },
+      {
+        "name": "CommitHunkData",
+        "path": "src/core/domains/trajectory/git/infra/walk-commits.ts",
+        "firstDeclaredAt": "2026-04-05"
+      },
+      {
+        "name": "CreateCollectionRequest",
+        "path": "src/core/api/public/dto/collection.ts",
+        "firstDeclaredAt": "2026-03-11"
+      },
+      {
+        "name": "DangerousCompositePreset",
+        "path": "src/core/domains/trajectory/composite/presets/dangerous.ts",
+        "firstDeclaredAt": "2026-05-20"
+      },
+      {
+        "name": "DensitySignal",
+        "path": "src/core/domains/trajectory/git/rerank/derived-signals/density.ts",
+        "firstDeclaredAt": "2026-03-01"
+      },
+      {
+        "name": "DispatchEdge",
+        "path": "src/core/contracts/types/codegraph-dispatch.ts",
+        "firstDeclaredAt": "2026-05-26"
+      },
+      {
+        "name": "EnrichmentReleaseRequest",
+        "path": "src/core/domains/ingest/pipeline/enrichment/infra/worker-protocol.ts",
+        "firstDeclaredAt": "2026-05-29"
+      },
+      {
+        "name": "ExploreErrorCode",
+        "path": "src/core/domains/explore/errors.ts",
+        "firstDeclaredAt": "2026-05-16"
+      },
+      {
+        "name": "ExternalVocabulary",
+        "path": "src/core/contracts/types/language.ts",
+        "firstDeclaredAt": "2026-06-23"
+      },
+      {
+        "name": "FileScanner",
+        "path": "src/core/domains/ingest/pipeline/scanner.ts",
+        "firstDeclaredAt": "2025-10-30"
+      },
+      {
+        "name": "FilterSpec",
+        "path": "src/core/contracts/types/filter-preset.ts",
+        "firstDeclaredAt": "2026-06-17"
+      },
+      {
+        "name": "FormatProjectsOptions",
+        "path": "src/cli/commands/projects-format.ts",
+        "firstDeclaredAt": "2026-06-06"
+      },
+      {
+        "name": "IngestConfig",
+        "path": "src/bootstrap/config/schemas.ts",
+        "firstDeclaredAt": "2026-03-05"
+      },
+      {
+        "name": "IngestError",
+        "path": "src/core/domains/ingest/errors.ts",
+        "extends": "TeaRagsError",
+        "firstDeclaredAt": "2026-03-18"
+      },
+      {
+        "name": "InvalidQueryError",
+        "path": "src/core/domains/explore/errors.ts",
+        "extends": "ExploreError",
+        "firstDeclaredAt": "2026-03-18"
+      },
+      {
+        "name": "IsHubSignal",
+        "path": "src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/is-hub.ts",
+        "firstDeclaredAt": "2026-05-20"
+      },
+      {
+        "name": "LevelTimeRange",
+        "path": "src/core/contracts/types/trajectory.ts",
+        "firstDeclaredAt": "2026-03-22"
+      },
+      {
+        "name": "MaterializedNode",
+        "path": "src/core/infra/materialize.ts",
+        "firstDeclaredAt": "2026-06-21"
+      },
+      {
+        "name": "OllamaUnavailableError",
+        "path": "src/core/adapters/embeddings/ollama/errors.ts",
+        "extends": "EmbeddingError",
+        "firstDeclaredAt": "2026-03-18"
+      },
+      {
+        "name": "OnboardingPreset",
+        "path": "src/core/domains/trajectory/git/rerank/presets/onboarding.ts",
+        "firstDeclaredAt": "2026-03-01"
+      },
+      {
+        "name": "OverallTimer",
+        "path": "src/cli/index-progress/phase-tracker.ts",
+        "firstDeclaredAt": "2026-06-22"
+      },
+      {
+        "name": "PathDoesNotExistError",
+        "path": "src/core/api/errors.ts",
+        "extends": "InputValidationError",
+        "firstDeclaredAt": "2026-05-12"
+      },
+      {
+        "name": "PointsAccumulator",
+        "path": "src/core/adapters/qdrant/accumulator.ts",
+        "firstDeclaredAt": "2026-01-28"
+      },
+      {
+        "name": "QdrantOperationError",
+        "path": "src/core/adapters/qdrant/errors.ts",
+        "extends": "InfraError",
+        "firstDeclaredAt": "2026-03-18"
+      },
+      {
+        "name": "QdrantRecoveringError",
+        "path": "src/core/adapters/qdrant/errors.ts",
+        "extends": "InfraError",
+        "firstDeclaredAt": "2026-04-24"
+      },
+      {
+        "name": "RecoveryResultInput",
+        "path": "src/core/domains/ingest/pipeline/enrichment/types.ts",
+        "firstDeclaredAt": "2026-05-07"
+      },
+      {
+        "name": "RubyConeDispatchResolver",
+        "path": "src/core/domains/language/ruby/resolver/strategies/ruby-cone-dispatch.ts",
+        "firstDeclaredAt": "2026-06-18"
+      },
+      {
+        "name": "RubyDynamicDispatchResolver",
+        "path": "src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.ts",
+        "firstDeclaredAt": "2026-06-18"
+      },
+      {
+        "name": "SchemaV4RelativePathKeyword",
+        "path": "src/core/domains/maintenance/migration/schema_migrations/schema-v4-relativepath-keyword.ts",
+        "firstDeclaredAt": "2026-03-28"
+      },
+      {
+        "name": "SnapshotMeta",
+        "path": "src/core/domains/ingest/sync/snapshot/sharded-snapshot.ts",
+        "firstDeclaredAt": "2026-01-28"
+      },
+      {
+        "name": "SquashOptions",
+        "path": "src/core/domains/trajectory/git/infra/metrics.ts",
+        "firstDeclaredAt": "2026-03-04"
+      },
+      {
+        "name": "TSLocalBindingSymbolResolutionStrategy",
+        "path": "src/core/domains/language/typescript/resolver/strategies/ts-local-binding.ts",
+        "firstDeclaredAt": "2026-05-30"
+      },
+      {
+        "name": "TSSameFileSymbolResolutionStrategy",
+        "path": "src/core/domains/language/typescript/resolver/strategies/ts-same-file.ts",
+        "firstDeclaredAt": "2026-06-06"
+      },
+      {
+        "name": "ThreadTransport",
+        "path": "src/core/domains/ingest/pipeline/infra/thread-transport.ts",
+        "firstDeclaredAt": "2026-06-21"
+      },
+      {
+        "name": "V11Store",
+        "path": "src/core/domains/maintenance/migration/schema_migrations/schema-v11-rename-parent-symbol-id.ts",
+        "firstDeclaredAt": "2026-04-03"
+      },
+      {
+        "name": "WorkerTransport",
+        "path": "src/core/domains/ingest/pipeline/infra/worker-transport.ts",
+        "firstDeclaredAt": "2026-06-21"
+      }
+    ]
+  }
+}
