@@ -26,9 +26,9 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
-import { TreeSitterChunker } from "../../build/core/domains/ingest/pipeline/chunker/tree-sitter.js";
-import { DefaultSymbolIdComposer, LanguageFactory } from "../../build/core/domains/language/index.js";
-import { materializeTree } from "../../build/core/infra/materialize.js";
+import { TreeSitterChunker } from "../../src/core/domains/ingest/pipeline/chunker/tree-sitter.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
+import { materializeTree } from "../../src/core/infra/materialize.js";
 
 interface Corpus {
   name: string;
