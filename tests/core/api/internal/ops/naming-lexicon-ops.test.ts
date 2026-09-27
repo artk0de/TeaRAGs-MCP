@@ -361,7 +361,11 @@ describe("NamingLexiconOps", () => {
         metaOnly: true,
         fields: ["symbolId", "relativePath", "parentSymbolId"],
       });
-      expect(result.concept?.terms.map((t) => t.term)).toContain("tax_automation");
+      // A namespace-only n-gram locates the holder, it names no concept (bd tea-rags-mcp-i569j);
+      // one reaching into the holder's own name is kept.
+      const terms = result.concept?.terms.map((t) => t.term);
+      expect(terms).toContain("tax_automation_document");
+      expect(terms).not.toContain("tax_automation");
       expect(result.names[0]).toMatchObject({ verdict: "NEW_TERM" });
     });
 

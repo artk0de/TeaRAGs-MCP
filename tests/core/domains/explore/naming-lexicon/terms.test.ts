@@ -137,6 +137,76 @@ describe("extractConceptTerms", () => {
     });
   });
 
+  describe("namespace and directory words locate a holder, they do not name the concept (bd tea-rags-mcp-i569j)", () => {
+    // Live on taxdome: "module_function helper module in app/lib holding error classification"
+    // ranked tax_preparation / tax / preparation / ai / intake above helper — namespace words
+    // every TaxPreparation::* hit repeats.
+    const ERROR_HOLDERS = [
+      {
+        symbolId: "TaxPreparation::Ai::ResultPostprocessing::BaseProcessor#validate_llm_result!",
+        relativePath: "app/lib/tax_preparation/ai/result_postprocessing/base_processor.rb",
+        score: 3.0,
+      },
+      {
+        symbolId: "TaxPreparation::EidEasy::Api#error_message",
+        relativePath: "app/lib/tax_preparation/eid_easy/api.rb",
+        score: 2.9,
+      },
+      {
+        symbolId: "TaxPreparation::IntakeService::Client#mapped_error",
+        relativePath: "app/lib/tax_preparation/intake_service/client.rb",
+        score: 2.8,
+      },
+      { symbolId: "Tech::ClustersHelper.log", relativePath: "app/lib/tech/clusters_helper.rb", score: 2.7 },
+      {
+        symbolId: "Workflow::Pipelines::Automations::ErrorsHelper#classify",
+        relativePath: "app/lib/workflow/pipelines/automations/errors_helper.rb",
+        score: 2.6,
+      },
+    ];
+
+    it("never yields a term whose words all come from the holder's namespace or directories", () => {
+      const terms = extractConceptTerms(ERROR_HOLDERS, 100).map((t) => t.term);
+      for (const noise of [
+        "tax",
+        "preparation",
+        "tax_preparation",
+        "ai",
+        "intake",
+        "intake_service",
+        "eid_easy",
+        "tech",
+        "workflow",
+        "pipeline",
+        "automation",
+      ]) {
+        expect(terms).not.toContain(noise);
+      }
+    });
+
+    it("ranks the words the hits are NAMED with on top", () => {
+      const terms = extractConceptTerms(ERROR_HOLDERS).map((t) => t.term);
+      expect(terms[0]).toBe("error");
+      expect(terms.slice(0, 3)).toContain("helper");
+    });
+
+    it("keeps a word the holder's own name carries, even when its namespace carries it too", () => {
+      const terms = extractConceptTerms(
+        [
+          {
+            symbolId: "TaxPreparation::TaxReturn#file",
+            relativePath: "app/lib/tax_preparation/tax_return.rb",
+            score: 1,
+          },
+        ],
+        100,
+      ).map((t) => t.term);
+      expect(terms).toEqual(expect.arrayContaining(["tax", "tax_return", "return"]));
+      expect(terms).not.toContain("preparation");
+      expect(terms).not.toContain("tax_preparation");
+    });
+  });
+
   it("returns nothing for no holders", () => {
     expect(extractConceptTerms([])).toEqual([]);
   });
