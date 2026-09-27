@@ -183,9 +183,38 @@
   and the rebuilt graph leaves with the process (bd tea-rags-mcp-amh78,
   reproduced live). A checkpointing close deletes whatever WAL sits at the path,
   which measured as a clone's WAL and every row in it. And `closeSync` under a
-  running query leaves that query unsettled forever. Not covered: an op already
-  in flight on the old client when the file is replaced can still write into the
-  successor's WAL.
+  running query leaves that query unsettled forever.
+
+- **An in-process replacer of a graph DB path holds the path's lease and drains
+  the old client before it touches the file; database files land at a path by
+  rename only.** `GraphDbClientPool#removeCollection` and
+  `GraphDbClientPool#cloneDatabase` (source AND target) run under
+  `GraphDbClientPool#withPathLeases`: `GraphDbClientPool#retireForReplacement`
+  drops the cached client, waits for every op
+  `GraphDbClientPool#runCollectionOp` pinned to it
+  (`GraphDbClientPool#pinClient` — a per-client refcount, the only hot-path
+  cost), closes it, and only then does `CodegraphDbFiles` unlink or publish.
+  `GraphDbClientPool#acquire` waits out a held lease, so an op issued meanwhile
+  opens the successor. A new unlink/rename/copy of a codegraph DB path goes
+  through the pool the same way — a raw `CodegraphDbFiles` call in a process
+  holding a pool skips the drain. `CodegraphDbFiles#cloneDatabase` copies with
+  `COPYFILE_EXCL` into staging and renames into place;
+  `tests/core/adapters/duckdb/codegraph-db-rename-only.test.ts` fails on any
+  non-exclusive copy in a module that can name a DB path. Why: DuckDB addresses
+  the WAL by path, so an op in flight on the old client when the file was
+  replaced wrote into the successor's WAL (a ghost row in a clone, bd
+  tea-rags-mcp-r4veq); and a copy OVER an existing path keeps its inode, which
+  the dev/ino check cannot see. In daemon mode the clients are the daemon's, so
+  `GraphDbClientPool#replaceInDaemon` sends the replacement there
+  (`DaemonDatabaseFileReplacer`, ops `removeCollectionDatabase` /
+  `cloneCollectionDatabase`) and the daemon's pool takes the lease; the purge's
+  store (`createPurgeCodegraphStore`) routes the same way. The caller touches
+  the files itself only when no daemon of its build is up (nothing to drain),
+  the pid is alive but the socket refuses, or the daemon predates the ops —
+  legacy-tolerated, so the fallback is the pre-r4veq behaviour and never a
+  daemon drain. Not covered: another build's daemon holding the same file, and
+  any of those fallbacks — there the dev/ino check on the next acquire is all
+  that catches the replacement.
 
 - **Every `cg_*` table keeps the rows it deletes, so a wholesale rewrite
   RECREATES its table and the file is compacted by copy.** DuckDB 1.5.3 vacuums

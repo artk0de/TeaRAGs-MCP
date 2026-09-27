@@ -170,6 +170,29 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       return null;
     },
   },
+  // In-process path replacement for a caller outside the daemon (bd
+  // tea-rags-mcp-r4veq): the daemon's pool holds the clients, so only its path
+  // lease can drain the ops running on the old one before the file changes.
+  // Never routed through `runCollectionOp` — an op pinned to the client it is
+  // about to drain would wait for itself.
+  removeCollectionDatabase: {
+    access: "daemon",
+    // Deletes a collection's DuckDB file.
+    mutates: true,
+    run: async (ctx, p) => ctx.pool.removeCollection(physicalCollectionNameFromDaemonRequest(p.target)),
+  },
+  cloneCollectionDatabase: {
+    access: "daemon",
+    // Publishes a collection's DuckDB file over the target path.
+    mutates: true,
+    run: async (ctx, p) => {
+      await ctx.pool.cloneDatabase(
+        physicalCollectionNameFromDaemonRequest(p.source),
+        physicalCollectionNameFromDaemonRequest(p.target),
+      );
+      return null;
+    },
+  },
 
   // ── writes ──
   upsertFile: write(async (graphDb, p) => graphDb.upsertFile(p.node as GraphFileNode, p.edges as GraphEdges)),

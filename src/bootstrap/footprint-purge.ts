@@ -13,8 +13,10 @@
 import { join } from "node:path";
 
 import { CodegraphDbFiles } from "../core/adapters/duckdb/codegraph-db-files.js";
+import { DaemonDatabaseFileReplacer } from "../core/adapters/duckdb/daemon/database-file-replacer.js";
 import { getDaemonPaths, getStorageDir, readDaemonPid, readRefs } from "../core/adapters/duckdb/daemon/lifecycle.js";
 import type { QdrantManager } from "../core/adapters/qdrant/client.js";
+import type { CodegraphFootprintStore } from "../core/contracts/types/footprint.js";
 import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
@@ -48,12 +50,41 @@ export function readCodegraphDaemonLiveness(appDataDir: string): CodegraphDaemon
   };
 }
 
+/**
+ * The purge's codegraph store: file layout from `CodegraphDbFiles`, file
+ * replacement routed through this build's daemon when one is up (bd
+ * tea-rags-mcp-r4veq). The purge runs while the daemon may still hold a client
+ * on the collection it deletes — it reports the daemon "left running" rather
+ * than stopping it — so deleting the file from here would replace it under that
+ * client. The daemon's pool drains the client's in-flight ops and removes the
+ * file under its path lease instead; with no daemon up, or one that predates
+ * the ops, the files are removed here, as before. Like the liveness report it
+ * never spawns a daemon.
+ */
+export function createPurgeCodegraphStore(appDataDir: string): CodegraphFootprintStore {
+  const codegraphFiles = new CodegraphDbFiles(appDataDir);
+  const daemon = new DaemonDatabaseFileReplacer(getDaemonPaths(getStorageDir(appDataDir)).socketPath);
+  return {
+    listCollectionDbNames: (base) => codegraphFiles.listCollectionDbNames(base),
+    removeCollection: async (collectionName) => {
+      const replaced = await daemon.removeDatabase(collectionName);
+      if (replaced.handledBy === "daemon") return replaced.evicted;
+      return codegraphFiles.removeCollection(collectionName);
+    },
+    cloneDatabase: async (sourceCollection, targetCollection) => {
+      const replaced = await daemon.cloneDatabase(sourceCollection, targetCollection);
+      if (replaced.handledBy === "daemon") return;
+      await codegraphFiles.cloneDatabase(sourceCollection, targetCollection);
+    },
+  };
+}
+
 export function createCollectionFootprintPurger(deps: FootprintPurgeDeps): CollectionFootprintPurger {
   const snapshotBaseDir = join(deps.appDataDir, "snapshots");
-  const codegraphFiles = new CodegraphDbFiles(deps.appDataDir);
+  const codegraphStore = createPurgeCodegraphStore(deps.appDataDir);
   const footprintFactory = new CollectionFootprintFactory({
     qdrant: deps.qdrant,
-    pool: codegraphFiles,
+    pool: codegraphStore,
     statsCache: new StatsCache(snapshotBaseDir),
     snapshotBaseDir,
     snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
@@ -65,7 +96,9 @@ export function createCollectionFootprintPurger(deps: FootprintPurgeDeps): Colle
   return new CollectionFootprintPurger({
     qdrant: deps.qdrant,
     footprintFactory,
-    listCodegraphDbs: (base) => codegraphFiles.listCollectionGenerationNames(base),
+    // Generations, not databases: a spill left without its `.duckdb` is swept
+    // too (see `CodegraphDbFiles#listCollectionGenerationNames`).
+    listCodegraphDbs: (base) => new CodegraphDbFiles(deps.appDataDir).listCollectionGenerationNames(base),
     registry: deps.registry,
     daemon: readCodegraphDaemonLiveness(deps.appDataDir),
   });

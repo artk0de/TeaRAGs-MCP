@@ -91,6 +91,8 @@ const LEGACY_TOLERATED_OP_LIST = [
   "refreshSymbolSignalsPrev",
   "compactStorage",
   "ping",
+  "removeCollectionDatabase",
+  "cloneCollectionDatabase",
 ] as const satisfies readonly DaemonOp[];
 
 type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
@@ -117,6 +119,11 @@ type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  *   using for the sake of disk space.
  * - `ping` — the liveness probe (bd tea-rags-mcp-f924y). An older daemon's
  *   "unknown daemon op" answer is itself the proof of life the probe asks for.
+ * - `removeCollectionDatabase` / `cloneCollectionDatabase` — the caller unlinks
+ *   or publishes the file itself, the pre-r4veq behaviour: no drain of that
+ *   daemon's in-flight op, and the dev/ino check its next acquire runs is what
+ *   retires the client. Requiring them would drain a daemon other sessions are
+ *   using for the sake of a clear.
  *
  * An op whose fallback is wrong data stays required — weno4's
  * pass-1 aggregate read (now `listPass1Aggregates`) degraded a live repair to a
@@ -1014,6 +1021,35 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   async finalizeReindex(oldVersion: string, newVersion: string): Promise<void> {
     await this.call("finalizeReindex", { oldVersion, newVersion });
+  }
+
+  /**
+   * Have the daemon's pool remove `target`'s database under its path lease (bd
+   * tea-rags-mcp-r4veq): the ops running on its client finish first. Resolves
+   * whether the daemon evicted a cached client, or `undefined` when the daemon
+   * predates the op and the caller must remove the files itself.
+   */
+  async removeCollectionDatabase(target: PhysicalCollectionName): Promise<boolean | undefined> {
+    return this.callTolerated(
+      "removeCollectionDatabase",
+      { target },
+      (result) => result === true,
+      () => undefined,
+    );
+  }
+
+  /**
+   * Have the daemon's pool clone `source` over `target` under both paths'
+   * leases (bd tea-rags-mcp-r4veq). Resolves `false` when the daemon predates
+   * the op and the caller must copy the files itself.
+   */
+  async cloneCollectionDatabase(source: PhysicalCollectionName, target: PhysicalCollectionName): Promise<boolean> {
+    return this.callTolerated(
+      "cloneCollectionDatabase",
+      { source, target },
+      () => true,
+      () => false,
+    );
   }
 
   /**

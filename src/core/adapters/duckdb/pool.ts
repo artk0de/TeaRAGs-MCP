@@ -12,6 +12,18 @@
  * file it holds open — see `acquire` (bd tea-rags-mcp-amh78). A storage
  * compaction swapping that file under the client (bd tea-rags-mcp-dvzdm) is not
  * such a replacement: the client reports the file it holds NOW.
+ *
+ * Every in-process replacer of a database path — `removeCollection`,
+ * `cloneDatabase` — holds that path's LEASE while it works: it retires the
+ * cached client, waits for every op pinned to it (`runCollectionOp`) to finish,
+ * closes it, and only then touches the file; ops issued meanwhile wait for the
+ * lease and run on the successor (bd tea-rags-mcp-r4veq). In daemon mode the
+ * clients live in the daemon, so both replacers send the replacement there
+ * (`DaemonDatabaseFileReplacer`) and the daemon's own pool takes the lease;
+ * they act on the files themselves only when no daemon of this build is up, or
+ * it cannot take the op. A replacement nobody routes — another build's daemon,
+ * a process outside tea-rags — is still caught only by the dev/ino check on the
+ * next acquire.
  */
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
@@ -25,6 +37,7 @@ import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
+import type { DaemonDatabaseFileReplacer, DaemonDatabaseReplacement } from "./daemon/database-file-replacer.js";
 import {
   daemonPathsForKeyDir,
   DEFAULT_EXIT_TIMEOUT_MS,
@@ -231,6 +244,12 @@ export interface GraphDbClientPoolIdleEviction {
 interface PoolEntry {
   graphDb: DuckDbGraphClient;
   symbolTable: GlobalSymbolTable;
+  /** Ops running on this client through `runCollectionOp` — what a path lease drains. */
+  pinnedOps: number;
+  /** Resolved once `pinnedOps` returns to zero. */
+  drainWaiters: (() => void)[];
+  /** Out of the cache: an op that raced the retirement must re-acquire, never pin it. */
+  retired: boolean;
 }
 
 /**
@@ -268,7 +287,13 @@ export class GraphDbClientPool {
    * collection share a single init pass (avoids racing migrations on
    * the same file).
    */
-  private readonly inflight = new Map<string, Promise<CollectionGraphHandle>>();
+  private readonly inflight = new Map<string, Promise<PoolEntry>>();
+  /**
+   * Path leases held by in-process replacers (bd tea-rags-mcp-r4veq), one
+   * settle-on-release promise per collection. `acquire` waits out a lease
+   * before it hands out or opens a client; no lease costs one `Map.get`.
+   */
+  private readonly pathLeases = new Map<PhysicalCollectionName, Promise<void>>();
   /**
    * Daemon mode only: ONE `DaemonGraphDbClient` (one socket) per (collection,
    * process); the client multiplexes requests by id. Closed in `closeAll` so the
@@ -402,8 +427,24 @@ export class GraphDbClientPool {
    * one in-flight pass concurrent callers share. The daemon reaches every op
    * through here, so this is the check every holder of a pool shares (bd
    * tea-rags-mcp-amh78).
+   *
+   * While an in-process replacer holds the path's lease, the acquire waits for
+   * it and then resolves against whatever the replacer left (bd
+   * tea-rags-mcp-r4veq).
    */
   async acquire(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+    return this.acquireEntry(physicalCollectionName);
+  }
+
+  private async acquireEntry(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
+    // Looped: a lease that settles may be followed by the next replacer's.
+    for (
+      let lease = this.pathLeases.get(physicalCollectionName);
+      lease;
+      lease = this.pathLeases.get(physicalCollectionName)
+    ) {
+      await lease;
+    }
     // The idle-eviction clock starts here even for acquires that bypass
     // `runCollectionOp` (the daemon handshake's open-and-drop), so an opened
     // collection nobody ever ops against still becomes evictable.
@@ -413,7 +454,7 @@ export class GraphDbClientPool {
     const inflight = this.inflight.get(physicalCollectionName);
     if (inflight) return inflight;
 
-    const promise = (async (): Promise<CollectionGraphHandle> => {
+    const promise = (async (): Promise<PoolEntry> => {
       if (cached) await this.retireStaleClient(physicalCollectionName, cached);
       return this.openCollection(physicalCollectionName);
     })().finally(() => {
@@ -445,8 +486,14 @@ export class GraphDbClientPool {
    *    keeps at this path. A close that fails on the unlinked file is tolerated:
    *    the file is not ours any more.
    * 3. Announce it (`onCollectionClientClosed`).
+   *
+   * Unlike a lease holder it does NOT drain pinned ops first: the file was
+   * replaced by someone outside the lease, so the successor is already at the
+   * path, and letting an op keep writing would put its rows into the
+   * successor's WAL. Closing now fails such an op cleanly instead.
    */
   private async retireStaleClient(physicalCollectionName: PhysicalCollectionName, entry: PoolEntry): Promise<void> {
+    entry.retired = true;
     this.clients.delete(physicalCollectionName);
     if (isDebug()) {
       process.stderr.write(
@@ -862,7 +909,7 @@ export class GraphDbClientPool {
     return this.acquireRead(physicalCollectionName);
   }
 
-  private async openCollection(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+  private async openCollection(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
     // Bounded open retry (bd tea-rags-mcp-42hno): two build-keyed daemons
     // serve the same on-disk collections, so a loser's first open loses the
     // DuckDB RW lock to the winner's still-cached client. The wait is bounded
@@ -890,7 +937,7 @@ export class GraphDbClientPool {
   }
 
   /** ONE open attempt for `openCollection` — no retry, no cache check. */
-  private async openCollectionOnce(physicalCollectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
+  private async openCollectionOnce(physicalCollectionName: PhysicalCollectionName): Promise<PoolEntry> {
     // The one read-write open in the codebase — the daemon's pool reaches it too —
     // so this is where a shadow `<alias>.duckdb` would be created. Refused there.
     const dbPath = this.dbFiles.writablePathFor(physicalCollectionName);
@@ -932,7 +979,7 @@ export class GraphDbClientPool {
       }
     }
 
-    const entry: PoolEntry = { graphDb, symbolTable };
+    const entry: PoolEntry = { graphDb, symbolTable, pinnedOps: 0, drainWaiters: [], retired: false };
     this.clients.set(physicalCollectionName, entry);
     return entry;
   }
@@ -945,6 +992,10 @@ export class GraphDbClientPool {
    * `idleMs` after its last op finished, not after it started. The daemon
    * server routes every per-collection op through here; eviction never fires
    * on a client whose connection is executing.
+   *
+   * The op is also PINNED to the client it runs on for its whole duration, so a
+   * path lease holder waits for it before the client closes and the file is
+   * touched (bd tea-rags-mcp-r4veq).
    */
   async runCollectionOp<T>(
     physicalCollectionName: PhysicalCollectionName,
@@ -958,7 +1009,12 @@ export class GraphDbClientPool {
       );
     }
     try {
-      return await op(await this.acquire(physicalCollectionName));
+      const entry = await this.pinClient(physicalCollectionName);
+      try {
+        return await op(entry);
+      } finally {
+        unpinClient(entry);
+      }
     } finally {
       if (this.options.idleEviction) {
         this.lastUsedByCollection.set(physicalCollectionName, Date.now());
@@ -966,6 +1022,100 @@ export class GraphDbClientPool {
         if (remaining <= 0) this.opsInFlightByCollection.delete(physicalCollectionName);
         else this.opsInFlightByCollection.set(physicalCollectionName, remaining);
       }
+    }
+  }
+
+  /**
+   * Acquire the collection's client and pin one op to it. The pin is taken in
+   * the same synchronous step that checks the client is still current: a lease
+   * taken, or a retirement begun, while the acquire was pending sends the op
+   * round again, so it can never pin a client a replacer already drained.
+   */
+  private async pinClient(collectionName: PhysicalCollectionName): Promise<PoolEntry> {
+    for (;;) {
+      const entry = await this.acquireEntry(collectionName);
+      if (!entry.retired && !this.pathLeases.has(collectionName)) {
+        entry.pinnedOps += 1;
+        return entry;
+      }
+    }
+  }
+
+  /**
+   * Hold the path leases of `collectionNames` while `replace` runs (bd
+   * tea-rags-mcp-r4veq). Leases are taken in sorted order, so two replacers
+   * sharing paths (a clone A→B racing one B→A) cannot deadlock, and always
+   * released, even when `replace` throws.
+   */
+  private async withPathLeases<T>(collectionNames: PhysicalCollectionName[], replace: () => Promise<T>): Promise<T> {
+    const releases: (() => void)[] = [];
+    try {
+      for (const collectionName of [...new Set(collectionNames)].sort()) {
+        releases.push(await this.takePathLease(collectionName));
+      }
+      return await replace();
+    } finally {
+      for (const release of releases.reverse()) release();
+    }
+  }
+
+  /** Wait for the current holder of the path's lease, if any, then take it. */
+  private async takePathLease(collectionName: PhysicalCollectionName): Promise<() => void> {
+    for (let held = this.pathLeases.get(collectionName); held; held = this.pathLeases.get(collectionName)) {
+      await held;
+    }
+    let settle!: () => void;
+    const lease = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.pathLeases.set(collectionName, lease);
+    return () => {
+      if (this.pathLeases.get(collectionName) === lease) this.pathLeases.delete(collectionName);
+      settle();
+    };
+  }
+
+  /**
+   * Retire the collection's cached client for a lease holder about to touch its
+   * file: wait for an open already in flight, drop the client from the cache,
+   * wait for every op pinned to it, close it, announce it. Returns whether a
+   * client was retired. A close failure throws `DuckDbCloseFailedError` when
+   * the caller is about to put or delete a file at the path, and is swallowed
+   * when it only reads it.
+   */
+  private async retireForReplacement(
+    collectionName: PhysicalCollectionName,
+    onCloseFailure: "throw" | "swallow",
+  ): Promise<boolean> {
+    await this.inflight.get(collectionName)?.catch(() => undefined);
+    const entry = this.clients.get(collectionName);
+    if (!entry) return false;
+    await this.retireEntry(collectionName, entry, onCloseFailure);
+    return true;
+  }
+
+  /** Drop `entry` from the cache, drain its pinned ops, close and announce it. */
+  private async retireEntry(
+    collectionName: PhysicalCollectionName,
+    entry: PoolEntry,
+    onCloseFailure: "throw" | "swallow",
+  ): Promise<void> {
+    entry.retired = true;
+    this.clients.delete(collectionName);
+    this.lastUsedByCollection.delete(collectionName);
+    if (entry.pinnedOps > 0) {
+      await new Promise<void>((resolve) => {
+        entry.drainWaiters.push(resolve);
+      });
+    }
+    try {
+      await entry.graphDb.close();
+    } catch (err) {
+      if (onCloseFailure === "throw") {
+        throw new DuckDbCloseFailedError(this.pathFor(collectionName), err instanceof Error ? err : undefined);
+      }
+    } finally {
+      this.options.onCollectionClientClosed?.(collectionName);
     }
   }
 
@@ -1004,14 +1154,12 @@ export class GraphDbClientPool {
   /**
    * Drop the cached client for a collection (close + forget), e.g. to release the
    * file lock between test scenarios. Returns true when an entry was evicted.
+   * Ops pinned to the client finish before it closes.
    */
   async release(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
     const entry = this.clients.get(physicalCollectionName);
     if (!entry) return false;
-    this.clients.delete(physicalCollectionName);
-    this.lastUsedByCollection.delete(physicalCollectionName);
-    await entry.graphDb.close().catch(() => undefined);
-    this.options.onCollectionClientClosed?.(physicalCollectionName);
+    await this.retireEntry(physicalCollectionName, entry, "swallow");
     return true;
   }
 
@@ -1028,13 +1176,50 @@ export class GraphDbClientPool {
    * daemon holds stays open in the daemon. Either way the source WAL can carry
    * writes the database file lacks, which is why the sidecar is copied rather
    * than assumed empty.
+   *
+   * Both paths are leased for the copy (bd tea-rags-mcp-r4veq): the source so
+   * no op writes into it mid-copy, the target because the copy REPLACES it — a
+   * client cached there is drained and closed first, so an op already running
+   * on it finishes in the old file instead of writing into the successor's WAL.
+   * A target client that fails to close throws `DuckDbCloseFailedError` and
+   * nothing is published.
    */
   async cloneDatabase(
     sourcePhysicalCollectionName: PhysicalCollectionName,
     targetPhysicalCollectionName: PhysicalCollectionName,
   ): Promise<void> {
-    await this.release(sourcePhysicalCollectionName);
-    await this.dbFiles.cloneDatabase(sourcePhysicalCollectionName, targetPhysicalCollectionName);
+    await this.withPathLeases([sourcePhysicalCollectionName, targetPhysicalCollectionName], async () => {
+      await this.retireForReplacement(sourcePhysicalCollectionName, "swallow");
+      await this.retireForReplacement(targetPhysicalCollectionName, "throw");
+      const replaced = await this.replaceInDaemon(async (daemon) =>
+        daemon.cloneDatabase(sourcePhysicalCollectionName, targetPhysicalCollectionName),
+      );
+      if (replaced?.handledBy === "daemon") return;
+      await this.dbFiles.cloneDatabase(sourcePhysicalCollectionName, targetPhysicalCollectionName);
+    });
+  }
+
+  /**
+   * Daemon mode: send a path replacement to the daemon, whose pool holds the
+   * clients and so is the one that can drain them (bd tea-rags-mcp-r4veq).
+   * `undefined` in direct mode — this pool holds every client itself. A
+   * `caller` answer (no daemon running, unreachable, or an older build without
+   * the op) leaves the files to this pool, the pre-r4veq behaviour.
+   */
+  private async replaceInDaemon(
+    replace: (daemon: DaemonDatabaseFileReplacer) => Promise<DaemonDatabaseReplacement>,
+  ): Promise<DaemonDatabaseReplacement | undefined> {
+    const socketPath = this.options.daemonSocketPath;
+    if (!socketPath) return undefined;
+    // Dynamic so direct/test mode never loads the node:net socket code.
+    const { DaemonDatabaseFileReplacer } = await import("./daemon/database-file-replacer.js");
+    const replaced = await replace(new DaemonDatabaseFileReplacer(socketPath));
+    if (replaced.handledBy === "caller" && isDebug()) {
+      process.stderr.write(
+        `[tea-rags] codegraph pool: daemon did not replace the database (${replaced.reason}) — this process does\n`,
+      );
+    }
+    return replaced;
   }
 
   /**
@@ -1049,25 +1234,20 @@ export class GraphDbClientPool {
    *   leaves a stale file a later `acquire` overwrites, rather than a
    *   half-mutated pool).
    *
+   * - The path's lease is held throughout (bd tea-rags-mcp-r4veq): ops pinned
+   *   to the cached client finish before it closes and the file is unlinked,
+   *   and ops issued meanwhile wait and open the path afresh afterwards.
+   *
    * Returns true when a cached entry was evicted; disk cleanup runs regardless.
    */
   async removeCollection(physicalCollectionName: PhysicalCollectionName): Promise<boolean> {
-    const dbPath = this.pathFor(physicalCollectionName);
-    const entry = this.clients.get(physicalCollectionName);
-    let evicted = false;
-    if (entry) {
-      this.clients.delete(physicalCollectionName);
-      try {
-        await entry.graphDb.close();
-      } catch (err) {
-        throw new DuckDbCloseFailedError(dbPath, err instanceof Error ? err : undefined);
-      } finally {
-        this.options.onCollectionClientClosed?.(physicalCollectionName);
-      }
-      evicted = true;
-    }
-    await this.dbFiles.removeFiles(physicalCollectionName);
-    return evicted;
+    return this.withPathLeases([physicalCollectionName], async () => {
+      const evicted = await this.retireForReplacement(physicalCollectionName, "throw");
+      const replaced = await this.replaceInDaemon(async (daemon) => daemon.removeDatabase(physicalCollectionName));
+      if (replaced?.handledBy === "daemon") return evicted || replaced.evicted;
+      await this.dbFiles.removeFiles(physicalCollectionName);
+      return evicted;
+    });
   }
 
   /**
@@ -1084,12 +1264,20 @@ export class GraphDbClientPool {
     this.daemonClients.clear();
     await Promise.all([
       ...all.map(async ([physicalCollectionName, e]) => {
+        e.retired = true;
         await e.graphDb.close().catch(() => undefined);
         this.options.onCollectionClientClosed?.(physicalCollectionName);
       }),
       ...daemons.map(async (e) => e.client.close().catch(() => undefined)),
     ]);
   }
+}
+
+/** End one op's pin; the last one out wakes a lease holder waiting to drain. */
+function unpinClient(entry: PoolEntry): void {
+  entry.pinnedOps -= 1;
+  if (entry.pinnedOps > 0) return;
+  for (const wake of entry.drainWaiters.splice(0)) wake();
 }
 
 /**
