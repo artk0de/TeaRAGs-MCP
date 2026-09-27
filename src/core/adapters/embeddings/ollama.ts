@@ -174,6 +174,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   /** Resolves once the quantized model copy (if any) is provisioned and live. */
   private readonly modelReady?: Promise<void>;
   private readonly quantizationLevel: OllamaQuantizationLevel = "off";
+  /** Largest native batch the server has handled since it last failed on one; unset until a failure. */
+  private maxServerBatchSize?: number;
   private lastHealthResult?: boolean;
   private lastHealthAt = 0;
 
@@ -426,6 +428,27 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     if (this.consecutivePrimaryFailures < this.failoverConsecutiveFailures) return false;
     this.switchToFallback(`${this.consecutivePrimaryFailures} consecutive embed failures on primary`);
     return true;
+  }
+
+  /**
+   * Did the server fail on the SIZE of a native batch? An ollama runner that
+   * dies mid-request answers 5xx with its own transport error ("POST
+   * .../tokenize: connection refused"), measured 2026-09-27 on 256–512-text
+   * batches. A caller-side 4xx fails identically at any size, and a timeout
+   * does not shrink with the batch (the same work under a smaller budget), so
+   * neither is split.
+   */
+  private isServerBatchFailure(error: unknown): boolean {
+    return error instanceof OllamaResponseError && error.responseStatus >= 500;
+  }
+
+  /** Embed consecutive slices one after another, preserving input order. */
+  private async embedBatchInSlices(texts: string[], sliceSize: number): Promise<EmbeddingResult[]> {
+    const results: EmbeddingResult[] = [];
+    for (let start = 0; start < texts.length; start += sliceSize) {
+      results.push(...(await this.embedBatch(texts.slice(start, start + sliceSize))));
+    }
+    return results;
   }
 
   private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
@@ -705,7 +728,25 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         }));
       };
 
-      return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
+      // A size the server already failed on is never sent again this run: each
+      // failure costs a runner restart plus a model reload on the server.
+      if (this.maxServerBatchSize !== undefined && texts.length > this.maxServerBatchSize) {
+        return this.embedBatchInSlices(texts, this.maxServerBatchSize);
+      }
+      try {
+        return await this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
+      } catch (error) {
+        if (texts.length <= 1 || !this.isServerBatchFailure(error)) throw error;
+        const half = Math.ceil(texts.length / 2);
+        this.maxServerBatchSize = Math.min(this.maxServerBatchSize ?? half, half);
+        // Unconditional: a batch size the server cannot take is an operator-facing
+        // tuning fact (EMBEDDING_TUNE_BATCH_SIZE), not debug noise.
+        console.error(
+          `[Ollama] server failed a ${texts.length}-text batch (${error instanceof Error ? error.message : String(error)}); ` +
+            `retrying in batches of ${half}`,
+        );
+        return this.embedBatchInSlices(texts, half);
+      }
     }
 
     // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)

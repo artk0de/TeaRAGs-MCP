@@ -912,6 +912,60 @@ describe("OllamaEmbeddings", () => {
       expect(results).toHaveLength(4);
     });
 
+    describe("batch the server cannot process", () => {
+      // An ollama runner that dies on a large /api/embed answers 500 with the
+      // runner's own transport error; any batch above `limit` inputs fails that way.
+      const serverFailingAbove = (limit: number) =>
+        mockFetch.mockImplementation(async (_url: string, init: { body: string }) => {
+          const { input } = JSON.parse(init.body) as { input: string[] };
+          if (input.length > limit) {
+            return {
+              ok: false,
+              status: 500,
+              text: async () => '{"error":"Post \\"http://127.0.0.1:62902/tokenize\\": dial tcp: connection refused"}',
+            };
+          }
+          return {
+            ok: true,
+            json: async () => ({ embeddings: input.map((text) => [Number(text.slice(1))]) }),
+          };
+        });
+      const sentBatchSizes = () =>
+        mockFetch.mock.calls.map(([, init]: [string, { body: string }]) => JSON.parse(init.body).input.length);
+
+      it("splits the batch and returns every vector in input order", async () => {
+        serverFailingAbove(2);
+
+        const results = await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4", "t5"]);
+
+        expect(results.map((r) => r.embedding)).toEqual([[1], [2], [3], [4], [5]]);
+      });
+
+      it("sends later batches at the size that worked instead of failing again", async () => {
+        serverFailingAbove(2);
+        await batchEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+        mockFetch.mockClear();
+
+        const results = await batchEmbeddings.embedBatch(["t5", "t6", "t7", "t8"]);
+
+        expect(sentBatchSizes()).toEqual([2, 2]);
+        expect(results.map((r) => r.embedding)).toEqual([[5], [6], [7], [8]]);
+      });
+
+      it("does not split on a caller-side 4xx", async () => {
+        mockFetch.mockResolvedValue({ ok: false, status: 400, text: async () => "bad request" });
+
+        await expect(batchEmbeddings.embedBatch(["t1", "t2"])).rejects.toThrow(OllamaResponseError);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
+      it("rethrows when even a single text fails", async () => {
+        serverFailingAbove(0);
+
+        await expect(batchEmbeddings.embedBatch(["t1", "t2"])).rejects.toThrow(OllamaResponseError);
+      });
+    });
+
     it("should respect numGpu constructor parameter in batch mode", async () => {
       const cpuEmbeddings = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, undefined, false, 0);
 
