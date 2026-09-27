@@ -10,6 +10,7 @@ import {
   OptimizerRecoveryOps,
   renderOptimizerRecoveryCommand,
 } from "../../../../../src/core/api/internal/ops/optimizer-recovery-ops.js";
+import { NotIndexedError } from "../../../../../src/core/domains/ingest/errors.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 /**
@@ -51,6 +52,7 @@ describe("OptimizerRecoveryOps#recover", () => {
   function qdrantReporting(...statuses: string[]) {
     const reads = [...statuses];
     return {
+      collectionExists: vi.fn(async () => true),
       getCollectionInfo: vi.fn(async () => ({ optimizerStatus: reads.shift() ?? "ok" })),
       reapplyOptimizerConfig: vi.fn(async () => {}),
       aliases: { resolveActive: vi.fn(async (name: string) => `${name}_v2`) },
@@ -104,6 +106,26 @@ describe("OptimizerRecoveryOps#recover", () => {
     await ops.recover({ path: projectDir });
 
     expect(qdrant.aliases.resolveActive).toHaveBeenCalledWith("code_abc");
+  });
+
+  // bd tea-rags-mcp-61bwb: `qdrant recover --path /tmp` on a path that was
+  // never indexed dumped Qdrant's raw `ApiError: Not Found` (and yargs help).
+  it("throws the typed not-indexed error when the project has no collection, touching nothing", async () => {
+    const unindexed = mkdtempSync(join(tmpdir(), "optimizer-recovery-unindexed-"));
+    try {
+      const qdrant = { ...qdrantReporting("ok"), collectionExists: vi.fn(async () => false) };
+      qdrant.aliases.resolveActive.mockImplementation(async (name: string) => name);
+      const ops = new OptimizerRecoveryOps({ registry, qdrant });
+
+      const failure = ops.recover({ path: unindexed });
+
+      await expect(failure).rejects.toBeInstanceOf(NotIndexedError);
+      await expect(failure).rejects.toThrow(unindexed);
+      expect(qdrant.getCollectionInfo).not.toHaveBeenCalled();
+      expect(qdrant.reapplyOptimizerConfig).not.toHaveBeenCalled();
+    } finally {
+      rmSync(unindexed, { recursive: true, force: true });
+    }
   });
 });
 

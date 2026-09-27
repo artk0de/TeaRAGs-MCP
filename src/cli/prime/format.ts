@@ -49,6 +49,13 @@ function formatFailure(reason: PrimeFailureReason): string {
         `# tea-rags prime — ${reason.path}\n` +
         `Qdrant warm-up pending — index queries will be available after MCP server attaches.\n`
       );
+    case "status-failed":
+      return (
+        `# tea-rags prime — ${reason.path}\n` +
+        `Index status unavailable: ${reason.message}${reason.code ? ` (${reason.code})` : ""}\n${
+          reason.hint ? `${reason.hint}\n` : ""
+        }`
+      );
   }
 }
 

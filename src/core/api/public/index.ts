@@ -116,6 +116,9 @@ export { IndexingAlreadyInProgressError } from "../../domains/ingest/errors.js";
 // `tea-rags qdrant recover` renders an optimizer error that survived the
 // recreation (bd tea-rags-mcp-ye5o).
 export { QdrantOptimizerErrorPersistsError } from "../../adapters/qdrant/errors.js";
+// `prime` renders the warm-up placeholder only for a cold Qdrant and shows
+// every other status failure as it is (bd tea-rags-mcp-zqg1i).
+export { isQdrantColdError, QdrantUnavailableError } from "../../adapters/qdrant/errors.js";
 
 // ── Project registry — runtime + types (domains/maintenance/registry) ──
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";

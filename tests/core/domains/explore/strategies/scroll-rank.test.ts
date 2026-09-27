@@ -75,6 +75,43 @@ describe("ScrollRankStrategy", () => {
     expect(reranker.rerank).toHaveBeenCalled();
   });
 
+  // bd tea-rags-mcp-s9vgb: a grouping preset's pool is sized in groups, so the
+  // strategy hands RankModule the preset's groupBy.
+  it("widens the scroll past a window of one split method's parts for a grouping preset", async () => {
+    const parts = Array.from({ length: 6 }, (_, i) => ({
+      id: `main#part${i + 1}`,
+      payload: { methodLines: 406, parentSymbolId: "main", relativePath: "src/main.ts" },
+    }));
+    const others = Array.from({ length: 6 }, (_, i) => ({
+      id: `m${i}`,
+      payload: { methodLines: 300 - i, parentSymbolId: `m${i}`, relativePath: `src/m${i}.ts` },
+    }));
+    const ordered = [...parts, ...others];
+    const qdrant = {
+      scrollOrdered: vi.fn(async (_c: string, _o: unknown, lim: number) => ordered.slice(0, lim)),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+    const reranker = createMockReranker();
+    vi.mocked(reranker.getFullPreset).mockReturnValue({
+      name: "decomposition",
+      description: "",
+      tools: ["rank_chunks"],
+      weights: { chunkSize: 1.0 },
+      overlayMask: {},
+      groupBy: "parentSymbolId",
+    });
+
+    await createStrategy(qdrant, reranker).execute({
+      collectionName: "test_col",
+      rerank: "decomposition",
+      level: "chunk",
+      limit: 2,
+    });
+
+    expect(reranker.getFullPreset).toHaveBeenCalledWith("decomposition", "rank_chunks");
+    expect(vi.mocked(qdrant.scrollOrdered).mock.calls.map((c) => c[2])).toEqual([6, 12]);
+  });
+
   it("returns exactly one result for limit 1 — rank_chunks has no page floor (tea-rags-mcp-9mwny)", async () => {
     const results = await createStrategy().execute({
       collectionName: "test_col",

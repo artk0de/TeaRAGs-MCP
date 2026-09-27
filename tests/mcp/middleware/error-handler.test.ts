@@ -52,8 +52,26 @@ describe("errorHandlerMiddleware", () => {
       content: [{ type: "text", text: error.toUserMessage() }],
       isError: true,
     });
-    expect(stderrSpy).toHaveBeenCalledWith("[MCP] Tool error:", error);
+    // bd tea-rags-mcp-xj38o: a caller error (4xx) is logged as one line — its
+    // code and message — never as a stack trace; the answer carries the hint.
+    expect(stderrSpy).toHaveBeenCalledWith("[MCP] Tool error: [TEST_ERROR] something broke");
+    expect(stderrSpy).not.toHaveBeenCalledWith("[MCP] Tool error:", error);
 
+    stderrSpy.mockRestore();
+  });
+
+  it("logs a server-side typed error (5xx) with its full detail", async () => {
+    class ServerSideError extends TeaRagsError {
+      constructor() {
+        super({ code: "TEST_SERVER_ERROR", message: "backend exploded", hint: "Check the backend", httpStatus: 503 });
+      }
+    }
+    const error = new ServerSideError();
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await errorHandlerMiddleware(vi.fn().mockRejectedValue(error))({}, {} as never);
+
+    expect(stderrSpy).toHaveBeenCalledWith("[MCP] Tool error:", error);
     stderrSpy.mockRestore();
   });
 

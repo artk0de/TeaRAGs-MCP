@@ -387,13 +387,21 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         }
         return result;
       } catch (error) {
-        const switchedToFallback = this.notePrimaryEmbedFailure(url, error);
+        // This failure just moved us to the fallback: retry the same call there
+        // now, whatever the error type and whatever the recovery budget. The
+        // switch is the only thing that changed, and it means there is another
+        // endpoint to ask — rethrowing would fail the call that crossed the
+        // threshold, and a caller that allows exactly threshold-many attempts
+        // (the pre-run health probe) would die having never called the
+        // fallback (bd tea-rags-mcp-sbu0s). Terminates: once on the fallback,
+        // notePrimaryEmbedFailure never reports another switch.
+        if (this.notePrimaryEmbedFailure(url, error)) continue;
 
         // Typed errors propagate directly — the server IS reachable but rejected
         // the request (missing model, timeout, HTTP error, malformed body whose
         // retries are spent), so waiting for a reconnection is pointless. No
         // recovery wait; the failure has already been counted toward failover
-        // above, so the NEXT call may go elsewhere.
+        // above without reaching the threshold.
         if (error instanceof OllamaMalformedResponseError) throw error;
         if (error instanceof OllamaModelMissingError) throw error;
         if (error instanceof OllamaTimeoutError) throw error;
@@ -408,9 +416,6 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         const cause = error instanceof Error ? error : undefined;
         const remainingMs = recoveryDeadline - Date.now();
         if (remainingMs > 0) {
-          // This failure just moved us to the fallback: try it now rather than
-          // back off on behalf of an endpoint we are no longer calling.
-          if (switchedToFallback) continue;
           const delayMs = Math.min(
             this.unavailableRetryBaseDelayMs * 2 ** recoveryAttempt,
             UNAVAILABLE_RETRY_MAX_DELAY_MS,

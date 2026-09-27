@@ -15,7 +15,12 @@ import { z } from "zod";
 import { connectInProcessClient, type InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
 import { CLI_OWNED_TOOLS } from "../../../src/cli/call/cli-owned-tools.js";
 import { resolveParamsArg, runCall, type CallArgs, type CallDeps } from "../../../src/cli/commands/call.js";
-import { InvalidParameterError, type App, type SchemaBuilder } from "../../../src/core/api/public/index.js";
+import {
+  InvalidParameterError,
+  MissingArgumentError,
+  type App,
+  type SchemaBuilder,
+} from "../../../src/core/api/public/index.js";
 import { createRegisterTool } from "../../../src/mcp/middleware/error-handler.js";
 import { registerCodegraphTools } from "../../../src/mcp/tools/codegraph.js";
 import { registerCollectionTools } from "../../../src/mcp/tools/collection.js";
@@ -222,6 +227,33 @@ describe("runCall — results and exit codes", () => {
     expect(h.stdout).toEqual([]);
   });
 
+  // bd tea-rags-mcp-xj38o: a graph tool called without its target printed a
+  // full stack trace ahead of the typed message.
+  it("a caller error prints the typed code, message and hint — no stack trace", async () => {
+    const app = makeApp(
+      { getCallers: vi.fn().mockRejectedValue(new MissingArgumentError(["symbolId or relativePath"])) },
+      true,
+    );
+    const h = harness(app);
+    const logged: unknown[][] = [];
+    const errSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args);
+    });
+
+    try {
+      const code = await call(h, { tool: "get_callers", params: '{"project":"demo","symbol":"x"}' });
+
+      expect(code).toBe(1);
+      const answer = h.stderr.join("\n");
+      expect(answer).toContain("[INPUT_MISSING_ARGUMENT] Missing required arguments: symbolId or relativePath");
+      expect(answer).toContain("Hint:");
+      const log = logged.map((args) => args.map((a) => (a instanceof Error ? (a.stack ?? "") : String(a))).join(" "));
+      expect(log.join("\n")).not.toMatch(/\n\s+at /);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
   it("zod input validation failure → exit 1 with the SDK validation message", async () => {
     const app = makeApp();
     const h = harness(app);
@@ -279,6 +311,51 @@ describe("runCall — results and exit codes", () => {
     expect(h.stdout).toHaveLength(2);
     expect((JSON.parse(h.stdout[0]) as { error: { code: string } }).error.code).toBe("INVALID_JSON");
     expect((JSON.parse(h.stdout[1]) as { error: { code: string } }).error.code).toBe("UNKNOWN_TOOL");
+  });
+});
+
+// bd tea-rags-mcp-nxwsq: the target project's registry env is replayed
+// before the server is built, so its gating (codegraph) matches the project.
+describe("runCall — project env replay", () => {
+  it("hands the parsed params to prepareProjectEnv before the session opens", async () => {
+    const h = harness(makeApp());
+    const seen: { params: Record<string, unknown>; openedBefore: number }[] = [];
+    h.deps.prepareProjectEnv = async (params) => {
+      seen.push({ params, openedBefore: h.opened() });
+    };
+
+    const code = await call(h, { tool: "get_collection_info", params: '{"name":"code_a","project":"alpha"}' });
+
+    expect(code).toBe(0);
+    expect(seen).toEqual([{ params: { name: "code_a", project: "alpha" }, openedBefore: 0 }]);
+  });
+
+  it("replays the cwd's project for --list (no params)", async () => {
+    const h = harness(makeApp());
+    const seen: Record<string, unknown>[] = [];
+    h.deps.prepareProjectEnv = async (params) => {
+      seen.push(params);
+    };
+
+    await call(h, { list: true });
+
+    expect(seen).toEqual([{}]);
+  });
+
+  it("a replay that cannot resolve the project's backend fails the call before any session", async () => {
+    const h = harness(makeApp());
+    h.deps.prepareProjectEnv = async () => {
+      throw new Error("registry entry contradicts itself");
+    };
+
+    const code = await call(h, { tool: "get_collection_info", params: '{"name":"code_a"}', json: true });
+
+    expect(code).toBe(1);
+    expect(h.opened()).toBe(0);
+    expect((JSON.parse(h.stdout[0]) as { error: { code: string; message: string } }).error).toMatchObject({
+      code: "CALL_FAILED",
+      message: "registry entry contradicts itself",
+    });
   });
 });
 

@@ -106,6 +106,21 @@ export class QdrantTimeoutError extends InfraError {
   }
 }
 
+/**
+ * True when the error says Qdrant itself is not answering yet — unreachable,
+ * still binding its port, recovering shards, or timing out. Those are the
+ * states a caller may present as "warm-up pending"; every other failure is a
+ * real error and must be shown as one (bd tea-rags-mcp-zqg1i).
+ */
+export function isQdrantColdError(error: unknown): boolean {
+  return (
+    error instanceof QdrantUnavailableError ||
+    error instanceof QdrantStartingError ||
+    error instanceof QdrantRecoveringError ||
+    error instanceof QdrantTimeoutError
+  );
+}
+
 export class AliasOperationError extends InfraError {
   constructor(operation: string, detail: string, cause?: Error) {
     super({

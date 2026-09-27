@@ -221,6 +221,57 @@ describe("RankModule", () => {
       expect(mockScroll).toHaveBeenCalledWith("test-col", expect.anything(), 30, undefined);
     });
 
+    // bd tea-rags-mcp-s9vgb: every #partN of one split method shares its
+    // methodLines, so a methodLines-ordered window of limit*3 POINTS can hold a
+    // handful of methods. The preset's groupBy collapses them after rerank and
+    // the pool starved — 3 real hits and 11 two-line methods at limit 14.
+    it("widens each scroll until it holds limit*3 distinct groups when the preset groups results", async () => {
+      const parts = Array.from({ length: 12 }, (_, i) => ({
+        id: `main#part${i + 1}`,
+        payload: { methodLines: 406, parentSymbolId: "main" },
+      }));
+      const others = Array.from({ length: 12 }, (_, i) => ({
+        id: `m${i}`,
+        payload: { methodLines: 300 - i, parentSymbolId: `m${i}` },
+      }));
+      const ordered = [...parts, ...others];
+      const mockScroll = vi.fn(async (_col: string, _orderBy: { key: string }, lim: number) => ordered.slice(0, lim));
+      const reranker = createMockReranker();
+      const module = new RankModule(reranker, [chunkSizeDesc], PAYLOAD_SIGNALS);
+
+      await module.rankChunks("test-col", {
+        weights: { chunkSize: 1.0 },
+        level: "chunk",
+        limit: 2,
+        scrollFn: mockScroll,
+        groupBy: "parentSymbolId",
+      });
+
+      const pool = vi.mocked(reranker.rerank).mock.calls[0][0] as { payload: { parentSymbolId: string } }[];
+      const groups = new Set(pool.map((p) => p.payload.parentSymbolId));
+      expect(groups.size).toBeGreaterThanOrEqual(6);
+      expect(mockScroll.mock.calls.map((c) => c[2])).toEqual([6, 12, 24]);
+    });
+
+    it("stops widening once a scroll comes back short — the source ran out", async () => {
+      const parts = Array.from({ length: 5 }, (_, i) => ({
+        id: `main#part${i + 1}`,
+        payload: { methodLines: 406, parentSymbolId: "main" },
+      }));
+      const mockScroll = vi.fn(async (_col: string, _orderBy: { key: string }, lim: number) => parts.slice(0, lim));
+      const module = new RankModule(createMockReranker(), [chunkSizeDesc], PAYLOAD_SIGNALS);
+
+      await module.rankChunks("test-col", {
+        weights: { chunkSize: 1.0 },
+        level: "chunk",
+        limit: 2,
+        scrollFn: mockScroll,
+        groupBy: "parentSymbolId",
+      });
+
+      expect(mockScroll).toHaveBeenCalledTimes(1);
+    });
+
     it("passes filter to scroll function", async () => {
       const scrollData = new Map([["methodLines", [{ id: "a", payload: { methodLines: 200 } }]]]);
       const mockScroll = createMockScrollFn(scrollData);

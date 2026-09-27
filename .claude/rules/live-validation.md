@@ -23,10 +23,13 @@ parallel.
   `mcp__tea-rags__*` only when the user has linked and reconnected for you,
   because it runs whatever build the global link points at.
 - **Environment.** `call` reads the shell's environment, not the MCP server
-  config, so a flag the config sets is off unless you export it. Codegraph tools
-  (`get_callers`, `get_ontology_report`, `get_naming_lexicon`, …) are registered
-  only under `CODEGRAPH_ENABLED=true`: without it `call` answers `Unknown tool`,
-  which is not a regression.
+  config, then replays the TARGET project's registry env over the unset groups
+  (the project named by the `project` / `collection` / `path` param, else the
+  cwd's) — the same replay `index-codebase` does. A project indexed with
+  codegraph therefore gets its codegraph tools (`get_callers`, …) without an
+  export. For an unregistered target nothing is replayed, and a flag the MCP
+  config sets is off unless you export it: `Unknown tool` there is not a
+  regression.
 - **Indexing.** Use `DEBUG=1 node build/cli/index.js index-codebase ...` from
   your worktree, never the bare `tea-rags`, which is the global link. Always
   pass `--json`, and pass `--languages <lang>` for a language-scoped change.

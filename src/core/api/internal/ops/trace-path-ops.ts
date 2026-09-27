@@ -85,6 +85,7 @@ interface EndpointCandidates {
 }
 
 type HydratedChunk = { id: string | number; payload: Record<string, unknown> };
+type StepLineRange = { startLine: number; endLine: number };
 type StepDanger = { score: number; overlay?: RankingOverlay };
 
 export class TracePathOps {
@@ -123,6 +124,7 @@ export class TracePathOps {
     let paths: FileScopedSymbolId[][];
     let truncated: boolean;
     let visibility: DeclaredVisibilityIndex;
+    let graphRanges: Map<FileScopedSymbolId, StepLineRange>;
     try {
       ({ from, to } = await this.resolveEndpoints(handle, req));
       if (from.refs.length === 0 || to.refs.length === 0) {
@@ -141,6 +143,7 @@ export class TracePathOps {
         handle.graphDb,
         paths.flat().map((key) => parseFileScopedSymbolKey(key).symbolId),
       );
+      graphRanges = await this.readNodeLineRanges(handle, paths.flat());
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
@@ -172,7 +175,7 @@ export class TracePathOps {
 
     // 5. Assemble TracedPath per enumerated path. With danger, sort by
     //    aggregateDanger desc; without, keep enumeration order.
-    const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, visibility, dangerByNode));
+    const traced: TracedPath[] = paths.map((p) => this.assemble(p, byNode, graphRanges, visibility, dangerByNode));
     if (dangerByNode) traced.sort((a, b) => (b.aggregateDanger ?? 0) - (a.aggregateDanger ?? 0));
     return this.withEndpointFacts({ paths: traced, truncated }, from, to);
   }
@@ -315,6 +318,33 @@ export class TracePathOps {
     return { paths, truncated };
   }
 
+  /**
+   * The codegraph line range of every path node — the fallback for a step whose
+   * symbol has no chunk of its own (bd tea-rags-mcp-kz89o): a short method
+   * folded into its class-body chunk hydrates nothing and reported 0 / 0 while
+   * the graph knew where it lives. One batched read over the nodes' files; an
+   * empty map on failure, so a trace never fails on a line range.
+   */
+  private async readNodeLineRanges(
+    handle: CollectionGraphHandle,
+    nodes: FileScopedSymbolId[],
+  ): Promise<Map<FileScopedSymbolId, StepLineRange>> {
+    const wanted = new Set(nodes);
+    const relPaths = [...new Set(nodes.map((key) => parseFileScopedSymbolKey(key).relPath))];
+    const out = new Map<FileScopedSymbolId, StepLineRange>();
+    try {
+      for (const [relPath, file] of await handle.graphDb.getSymbolLineRangesBulk(relPaths)) {
+        for (const { symbolId, startLine, endLine } of file.ranges) {
+          const key = fileScopedSymbolKey({ relPath, symbolId });
+          if (wanted.has(key)) out.set(key, { startLine, endLine });
+        }
+      }
+    } catch {
+      return new Map();
+    }
+    return out;
+  }
+
   /** Annotate-only rerank over hydrated chunks → per-node danger score + overlay. */
   private async computeDanger(chunks: HydratedChunk[], preset: string): Promise<Map<FileScopedSymbolId, StepDanger>> {
     const rerankInput = chunks.map((c) => ({ id: c.id, score: 0, payload: c.payload }));
@@ -341,6 +371,7 @@ export class TracePathOps {
   private assemble(
     path: FileScopedSymbolId[],
     byNode: Map<FileScopedSymbolId, HydratedChunk>,
+    graphRanges: Map<FileScopedSymbolId, StepLineRange>,
     visibility: DeclaredVisibilityIndex,
     dangerByNode?: Map<FileScopedSymbolId, StepDanger>,
   ): TracedPath {
@@ -349,12 +380,15 @@ export class TracePathOps {
       // the chunk is best-effort (it may be missing entirely), the graph edge
       // is what actually determined the walk.
       const ref = parseFileScopedSymbolKey(node);
+      // Lines: the hydrated chunk's, else the graph node's range (a symbol
+      // with no chunk of its own), else 0 / 0.
       const payload = byNode.get(node)?.payload ?? {};
+      const graphRange = graphRanges.get(node);
       const step: PathStep = {
         symbolId: ref.symbolId,
         relativePath: ref.relPath,
-        startLine: (payload.startLine as number) ?? 0,
-        endLine: (payload.endLine as number) ?? 0,
+        startLine: (payload.startLine as number | undefined) ?? graphRange?.startLine ?? 0,
+        endLine: (payload.endLine as number | undefined) ?? graphRange?.endLine ?? 0,
       };
       // Omitted, never null, when the graph states no level (bd tea-rags-mcp-sqqkz).
       const level = visibility.at(ref.relPath, ref.symbolId);
