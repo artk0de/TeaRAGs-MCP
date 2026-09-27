@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
+import { isCollectionBuildInFlight } from "../../../domains/ingest/infra/collection-build-lease.js";
 import {
   applyRegistryEnvEdit,
   canonicalRegistryEnvKeys,
@@ -521,6 +522,11 @@ export class ProjectRegistryOps {
    * embedding model are tolerated and stored as defaults so the registry can
    * still be browsed by name. Used by `tea-rags doctor` to rebuild a
    * corrupted or wiped registry file from Qdrant + snapshots.
+   *
+   * A collection a live run is building (a force reindex's `_v<N>` before the
+   * alias flips) is skipped: it is that run's, not a project to recover — the
+   * same lease the orphan report and version cleanup honour (bd
+   * tea-rags-mcp-9j2cy).
    */
   async recoverFromQdrant(): Promise<void> {
     const { qdrant } = this.deps;
@@ -530,6 +536,7 @@ export class ProjectRegistryOps {
     const physicalCollectionNames = await qdrant.listCollections();
     for (const physicalCollectionName of physicalCollectionNames) {
       if (this.deps.registry.get(physicalCollectionName) !== null) continue;
+      if (await isCollectionBuildInFlight(qdrant, physicalCollectionName)) continue;
       let dimensions = 0;
       try {
         const info = await qdrant.getCollectionInfo(physicalCollectionName);
