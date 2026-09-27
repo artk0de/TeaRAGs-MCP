@@ -83,6 +83,17 @@ defaults `--path` to `process.cwd()`.
   `KNOWN_MIGRATIONS[version]` if a transformer is registered. The reserved
   framework is in place; no migrations are registered yet because v1 is the
   initial schema.
+- A separate, finer-grained `revision` field on the same `version: 1` file
+  drives a one-time **data** migration: every env pin whose value equals the
+  current code default for its key (and any
+  `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES=10000` pin left over from before it
+  defaulted to `5000`) is dropped, once, on first load. Before this, every
+  index run pinned its FULL resolved env — every code default materialized —
+  so an entry froze the defaults of the release that first indexed it and a
+  later default change reached no project that had already been indexed.
+  Non-default pins and keys outside the default snapshot (backend URLs, etc.)
+  are kept unchanged. One line per affected project reports which keys were
+  dropped.
 - Any other case (JSON parse failure, malformed shape, unsupported version)
   is treated as **corruption**: the bad file is renamed to
   `registry.json.corrupt-<ISO>.bak` so it is recoverable by hand, and
@@ -285,6 +296,18 @@ matching reindex.
 An ambient variable set when an index run starts still beats the stored value,
 following the precedence rule above. Under the long-lived MCP server, only its
 runtime settings (endpoints, pool and batch sizes) take precedence this way.
+
+An index run only pins env keys its own environment set **explicitly** — not
+the whole resolved snapshot with every code default filled in. A key the run
+left to its default is not pinned, so a later change to that default reaches
+the project on its next index run instead of staying frozen at whatever the
+first index happened to ship with. Separately, indexing a genuinely **new**
+project no longer borrows the full env of whatever project was indexed most
+recently: the seed narrows to the backend keys (`EMBEDDING_*`, `OLLAMA_*`,
+`QDRANT_*`) that make a fresh index reach the same embedding service and
+Qdrant instance, never another repository's git windows, chunking, test paths
+or codegraph policy. The project's own path and a sibling git worktree of the
+same repository still replay their own full env.
 
 ### `tea-rags projects list`
 
