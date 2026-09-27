@@ -81,6 +81,29 @@ export class EnrichmentMarkerStore {
   }
 
   /** Chunk-level terminal marker (CompletionRunner step 8). Carries runId. */
+  /**
+   * Return only once every payload write queued on `coll` before this call is
+   * visible to reads (bd tea-rags-mcp-vnmj1).
+   *
+   * Enrichment writes are `wait: false`: Qdrant acknowledges them from the WAL
+   * and applies them later, and a count or scroll issued meanwhile reads the
+   * segments as they were. The barrier (`QdrantManager#awaitQueuedUpdates`)
+   * changes no payload, so it can run before any read without leaving a trace.
+   *
+   * Best-effort: a barrier that fails leaves the caller reading whatever is
+   * applied, which is what every read did before this existed.
+   */
+  async awaitQueuedPayloadWrites(coll: string): Promise<void> {
+    try {
+      await this.qdrant.awaitQueuedUpdates(coll);
+    } catch (error) {
+      pipelineLog.enrichmentPhase("PAYLOAD_WRITE_BARRIER_FAILED", {
+        collection: coll,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async markChunkFinal(coll: string, providerKey: string, input: ChunkFinalInput): Promise<void> {
     await this.writeKeys(coll, [
       {

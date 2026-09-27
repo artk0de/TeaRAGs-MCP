@@ -36,6 +36,9 @@ import {
 import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
 import type { SparseVector } from "./types.js";
 
+/** Named by the no-op barrier update in `awaitQueuedUpdates`; its filter matches no point, so nothing is deleted. */
+const QUEUED_UPDATE_BARRIER_KEY = "__queued_update_barrier__";
+
 export class QdrantPointStore {
   /** Page size for scroll pagination when collecting point IDs by filter. */
   private static readonly SCROLL_PAGE_SIZE = 1000;
@@ -637,6 +640,25 @@ export class QdrantPointStore {
         }),
       );
     }
+  }
+
+  /**
+   * Resolve once every update submitted to `collectionName` before this call has
+   * been applied, i.e. is visible to reads.
+   *
+   * A `wait: false` update is acknowledged from the WAL and applied later; a
+   * count or scroll issued meanwhile does not see it. Updates apply in submission
+   * order, so a `wait: true` update is a barrier on all of them. This one is a
+   * `delete_payload` whose filter selects no point (`has_id: []`): sequenced like
+   * any update, touching nothing, needing no point to exist.
+   */
+  async awaitQueuedUpdates(collectionName: string): Promise<void> {
+    await this.connection.call(async () =>
+      this.connection.client.batchUpdate(collectionName, {
+        operations: [{ delete_payload: { keys: [QUEUED_UPDATE_BARRIER_KEY], filter: { must: [{ has_id: [] }] } } }],
+        wait: true,
+      }),
+    );
   }
 
   /** Delete payload keys from all points (or filtered subset). */

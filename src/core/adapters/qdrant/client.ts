@@ -401,6 +401,11 @@ export class QdrantManager {
     return this.points.batchDeletePayload(collectionName, operations, options);
   }
 
+  /** Resolve once every update queued on the collection before this call is visible to reads. */
+  async awaitQueuedUpdates(collectionName: string): Promise<void> {
+    return this.points.awaitQueuedUpdates(collectionName);
+  }
+
   /** Delete payload keys from all points (or filtered subset). */
   async deletePayloadKeys(collectionName: string, keys: string[], filter?: Record<string, unknown>): Promise<void> {
     return this.points.deletePayloadKeys(collectionName, keys, filter);
