@@ -38,6 +38,7 @@ import {
   lookupEcmascriptSymbolsByShortName,
 } from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
+import { pinFunctionByWalkerScope } from "../ts-walker-scope.js";
 import type { ResolverConfig } from "./shared.js";
 import { callSiteAt, memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 
@@ -124,7 +125,12 @@ export class TSTypeCheckerFallbackSymbolResolutionStrategy implements SymbolReso
     const byShortName = lookupEcmascriptSymbolsByShortName(ctx, composed.shortName, { role: "callee" }).filter(
       (def) => def.relPath === targetRelPath,
     );
-    return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
+    const single = pickSingleCandidate(byShortName, this.cfg.mode);
+    if (single) return single.symbolId;
+    // Several rows share the short name — a function-scoped helper each of
+    // several functions declares. The walker's scope tells them apart (bd
+    // tea-rags-mcp-bv0tq).
+    return pinFunctionByWalkerScope(declaration, targetRelPath, ctx);
   }
 }
 

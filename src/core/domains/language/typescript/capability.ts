@@ -152,6 +152,10 @@ export const capability: LanguageCapability = {
   // chunking 2: bd tea-rags-mcp-39xca.19 — the same `#` reaches the payload
   // `symbolId`, and a declarator-bound factory's members gain its segment
   // (`createCounter#increment`, was a bare `increment`).
+  // Same walker 12, bd tea-rags-mcp-bv0tq: a bare call binds by lexical scope
+  // (`lexicalCallee`) — a parameter callee emits no edge, a function-scoped
+  // helper pins to its own row by walker scope, a local value takes only the
+  // checker tier's answer.
   versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties

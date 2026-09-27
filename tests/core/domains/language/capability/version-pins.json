@@ -32,7 +32,7 @@
   "java": {
     "walker": {
       "version": 3,
-      "digest": "sha256:453a04a0ce1118464691f2cb43dc66d782883b26fda174614ca814b839cdeab4"
+      "digest": "sha256:01f14097e06a6dec9cb95b84642efd81f96792f73a38d0d845c2b798362ae0b0"
     }
   },
   "javascript": {
@@ -90,7 +90,7 @@
     },
     "walker": {
       "version": 12,
-      "digest": "sha256:e2dd48a5e480760fd204231889c72a126cfcd1cd280b80c5a96185c0aa04bd65"
+      "digest": "sha256:4e2fd255cbd07176a6bbbce28634c163f07d488f32e33d10bc2a65a65351c19b"
     }
   }
 }

@@ -43,6 +43,7 @@ import type { CallContext, CallRef } from "../../../../contracts/types/codegraph
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
+import { isFunctionValuedInitializer, sameWalkerScope, walkerScopeOf } from "./ts-walker-scope.js";
 
 /**
  * `true` when `call` is a BARE call whose callee identifier is declared by a
@@ -111,6 +112,87 @@ export function calleeIsExternalLocalBinding(
   programCache: TSProgramCache | null,
 ): boolean {
   return classifyLocalCallee(call, ctx, programCache) === "externalSignature";
+}
+
+/**
+ * Which LEXICAL declaration a bare call's callee identifier binds, as the
+ * checker sees it (bd tea-rags-mcp-bv0tq).
+ *
+ *   - `none` — no evidence, or a binding the project's symbol table may name
+ *     (module level, an import, a class member). Not this question's business.
+ *   - `parameter` — a parameter, or an element of a parameter's destructuring
+ *     pattern. Its value is whatever the CALLER passes; nothing the file
+ *     declares is evidence about it.
+ *   - `localFunction` — a function the enclosing scope itself declares: a
+ *     nested `function` declaration or a function-valued declarator inside a
+ *     function body. `scope` is the walker's scope for it, so the symbol the
+ *     walker recorded can be picked out by scope instead of by short name.
+ *     `null` when a declaration sits in a shape the mirror does not model.
+ *   - `localValue` — any other function-scoped binding. Its value is an
+ *     expression's, which only the checker can follow.
+ */
+export type TSLexicalCalleeBinding =
+  | { kind: "none" }
+  | { kind: "parameter" }
+  | { kind: "localFunction"; scope: readonly string[] | null }
+  | { kind: "localValue" };
+
+const NO_LEXICAL_BINDING: TSLexicalCalleeBinding = { kind: "none" };
+
+/**
+ * Classify a BARE call's callee by the declaration its identifier binds. EVERY
+ * declaration of the symbol must fall in one class, the rule
+ * {@link isLocalValueBinding} already applies: a merged or overloaded name stays
+ * `none` unless all its declarations agree.
+ */
+export function classifyLexicalCallee(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): TSLexicalCalleeBinding {
+  if (programCache === null || call.receiver !== null || call.member.length === 0) return NO_LEXICAL_BINDING;
+  const handle = programCache.acquire(ctx.callerFile);
+  if (handle === null) return NO_LEXICAL_BINDING;
+  const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
+  if (node === null || !ts.isIdentifier(node.expression)) return NO_LEXICAL_BINDING;
+  const declarations = handle.checker.getSymbolAtLocation(node.expression)?.getDeclarations() ?? [];
+  if (declarations.length === 0) return NO_LEXICAL_BINDING;
+
+  if (declarations.every(isParameterBinding)) return { kind: "parameter" };
+  if (declarations.every(isLocalFunctionDeclaration)) {
+    const scopes = declarations.map(walkerScopeOf);
+    const [first] = scopes;
+    const agreed = scopes.every((scope) => scope !== null && first !== null && sameWalkerScope(scope, first));
+    return { kind: "localFunction", scope: agreed ? first : null };
+  }
+  if (declarations.every(isLocalValueBinding)) return { kind: "localValue" };
+  return NO_LEXICAL_BINDING;
+}
+
+/** A parameter, or a binding element anywhere inside a parameter's pattern. */
+function isParameterBinding(declaration: ts.Declaration): boolean {
+  if (ts.isParameter(declaration)) return true;
+  if (!ts.isBindingElement(declaration)) return false;
+  let cursor: ts.Node = declaration.parent;
+  while (ts.isBindingElement(cursor) || ts.isObjectBindingPattern(cursor) || ts.isArrayBindingPattern(cursor)) {
+    cursor = cursor.parent;
+  }
+  return ts.isParameter(cursor);
+}
+
+/**
+ * A function the enclosing function scope declares by name: a nested
+ * `function` declaration, or a `const`/`let`/`var` whose initializer IS a
+ * function expression or arrow. Module-level ones are excluded — they are the
+ * file's top-level declarations, which the short-name passes already own.
+ */
+function isLocalFunctionDeclaration(declaration: ts.Declaration): boolean {
+  if (ts.isFunctionDeclaration(declaration)) return declaredInsideFunctionBody(declaration);
+  return (
+    ts.isVariableDeclaration(declaration) &&
+    isFunctionValuedInitializer(declaration.initializer) &&
+    declaredInsideFunctionBody(declaration)
+  );
 }
 
 /**
