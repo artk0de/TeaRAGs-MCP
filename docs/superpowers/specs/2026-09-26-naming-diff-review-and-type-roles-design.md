@@ -646,6 +646,120 @@ Rejected, measured on the same copies:
   cannot tell a noun from a verb here.
 - **Positional distribution (above).** No valley on any corpus.
 
+**A kind profile per head (`ffxfc`): measured, rejected for both uses.** The
+idea: a head word's carriers say what kind of thing the word names. Per head,
+per type namespace, over its carriers (connector-aware heads): the declaration
+form (class; interface / type alias / enum; module), the member bucket (no
+member in `cg_symbols` vs at least one, by symbol-id prefix), whether a project
+type names it as a supertype, and the cohesive supertype (the `tun7x` rule).
+Each axis is decided only when its dominant value holds ≥ 2 carriers and at
+least half of them, the familyShare majority. Two uses were measured, each with
+a stop rule: ship only if the profile separates and the flips are mostly right.
+Neither use shipped, and no code changed.
+
+What the profile is made of, on the copies:
+
+- The member bucket adds nothing to the form in TypeScript and separates nothing
+  in Ruby. `cg_symbols` records no interface members, so every TS interface and
+  type alias has 0, and 0 of the self-index's 584 classes have none. In Ruby,
+  attribute accessors are methods: `*Data` has members on 93% of its 175
+  carriers, `*Error` on 3% of 1,316. The member share of the 493 Ruby heads with
+  ≥ 3 carriers falls in deciles 39 / 13 / 17 / 41 / 13 / 33 / 40 / 21 / 38 / 24
+  / 214, with no valley.
+- The form separates only in TypeScript. All 355 Ruby heads with ≥ 3 non-module
+  carriers sit in the top class-share decile. On the self-index the class share
+  of the 191 heads is bimodal: 126 heads in the lowest decile, 8 in the top. On
+  taxdome's TS, 358 of 373 heads sit in the lowest decile, because it declares
+  84 classes among 18,105 types.
+- Subtypes do not separate data from behaviour. `*Descriptor` (0.25) and
+  `*Overlay` (0.50) have more subtyped carriers than `*Strategy` (0.04).
+
+**A. A draft whose kind contradicts its head's profile** (a class named by a
+data head, `PipelineBatchSize`; an interface named by a behaviour head).
+Measured as a leave-one-out over existing types, which are mostly named right,
+so a flag there approximates a false flag:
+
+| Measure                                           | Result                                                                                                                  |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| self-index classes under a data-majority head     | 61 / 516 (65 / 563 when an implemented interface counts as behaviour); 0 of 25 hand-checked is a value-named component  |
+| self-index data types under a class-majority head | 71 / 1,370; the sample is contracts (`ExploreStrategy`, `CacheStore`, `OidBatchResolver`)                               |
+| taxdome TS classes under a data-majority head     | 60 / 77, all `*Error` and `*Store` classes among type aliases                                                           |
+| taxdome Ruby                                      | 0 / 11,214: no head has a data majority, so no class can contradict one                                                 |
+| synthetic value-named components (10)             | 4 / 10 flagged: self-index 4 / 5, taxdome Ruby 0 / 5                                                                    |
+| rename eval, 17 pairs                             | unchanged, 0 caught: no pair draft states its kind or names a declaration at its path                                   |
+| rename eval, 40 controls                          | 1 carries the flag, `MaterializedNode` (class; `node` 4 of 5 data), already a false flag (alt `tree`): 6 / 40 unchanged |
+| t9 20-draft set                                   | unchanged by construction: no draft states its kind or exists at its path                                               |
+
+The self-index flags are behaviour heads whose carriers are mostly interfaces,
+because a TS interface is the contract a behaviour family is typed by and
+structural typing rarely writes `implements`: `DuckDbGraphSession` (`session`, 3
+of 3 data), `IndexMetricsQuery` (`query`, 12 of 12), `LanguageFactory`
+(`factory`, 8 of 12), `DuckDbMethodEdgeReader` (`reader`, 13 of 17). A pure data
+head does not help: `session`, `query` and `map` are 100% data and still wrong.
+The bead's own examples fail too. `GitFileMetadata` was an interface, like
+`GitFileSignals` today, so it has no kind contradiction; its defect is the word.
+`PipelineBatchSize` stays silent, because the self-index's one `*Size` carrier
+is a class. The synthetic set was fixed before any output: the first five
+classes with ≥ 3 members, in path order, under
+`src/core/domains/ingest/pipeline/` and under `app/services/`, with the head
+replaced by `Size`, `Count`, `Info`, `Metadata`, `Config` in turn. The
+self-index flags `BaseIndexingCount`, `ChunkInfo`, `AstSymbolMetadata` and
+`CharacterConfig`, and misses `AdaptiveBatchSize`.
+
+A kind contradiction needs interface members typed as methods versus properties.
+The walkers do not record interface members, so the profile cannot tell
+`CacheStore` (methods) from `GitFileSignals` (fields).
+
+**B. Connector disambiguation by the type's own profile.** For a connector name,
+the candidates are the word before the connector (the current head) and the last
+word. The type matches a candidate's profile (its carriers without the type
+itself) when at least one axis is decided on both sides and none disagrees. A
+candidate with no decided axis neither matches nor mismatches. The name is read
+head-final only when the type matches the last word's profile and mismatches the
+pre-connector word's. Otherwise the current rule stands. A first cut that
+counted an undecided profile as a mismatch flipped `ObjectsForFirm` (`objects`
+has one carrier) and was dropped.
+
+| Measure                                             | Result                                                                                  |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `_v15` connector-headed names (declarations)        | 459 (606): 280 Ruby, 179 TS                                                             |
+| flips to head-final                                 | 19 names (25 declarations), all Ruby; TS 0                                              |
+| `_v14` / self-index flips                           | 20 names / 1 (`PipelineWithConfig` → `config`, wrong: it is a `Pipeline` with a config) |
+| 19 flips, all hand-checked                          | 2 right, 1 doubtful, 16 wrong                                                           |
+| six wrong changes of `de19327df`                    | 0 fixed                                                                                 |
+| `_v15` strongest-role changes                       | 13: 4 right, 9 wrong                                                                    |
+| the 173 changes of `de19327df`                      | 3 wrong ones fixed (`converter` ×3), 4 right ones broken (`attributes` ×4)              |
+| coverage `_v15` / `_v14` / self-index               | 19,270 → 19,277 / 19,207 → 19,213 / 741 → 741                                           |
+| samples `_v14` s7, `_v15` s7/11/23, self s7         | none of the sampled types changes role                                                  |
+| `ObjectsForFirm`, `AccountsForFirm`, `EventForFirm` | keep the pre-connector head, but `ActorsForFirm` and `EventsForFirm` flip to `firm`     |
+
+The two right flips are `TextToImageConverter` and `SignInAllowance`. The wrong
+ones are verb-object commands: `MigrateBlobsToImages` → `images`,
+`UnlinkPaymentFromBill` → `bill`, `MarkNotificationAsRead` → `read`,
+`ListContactsForEmail` → `email`, the contracts `ListByContact(s)` →
+`contact(s)`. The cause is the same one that defeated the suffix guard: a
+`KindOfService` command ending in an entity noun gives that noun its own profile
+(class, members, `KindOfService`), so a command with a complement matches its
+object. `firm` is 13 such carriers. None of the targets move:
+
+- `SendToOpensearchProcess`: `send` and `process` have one profile (class,
+  members, `KindOfService`), so both match.
+- `TemplateSelectWithHookParamsBase` and `BulkAddClientsToPipelineBody`: the
+  carriers of both candidates (`select` / `base`, `clients` / `body`) are type
+  aliases with no members, like the names themselves, so both match.
+- `RunBatchApplyToClientsAsyncOperation`: `operation`'s carriers share
+  `ApplicationRecord` (the `AsyncOperation` model), which the command does not
+  declare, and `apply` matches, so the current head stays.
+- The recount targets (`DeleteExpiredMonthlyIndicesProcess`, `AsyncOperation`,
+  `NewProposalDefaultClients`) follow the heads above, so they do not move
+  either.
+
+The strongest-role changes: `HtmlConverter`, `PDFConverter` and a bare
+`Converter` regain `converter` beside `TextToImageConverter` (right). The four
+`*Attributes` models regain a suffix that `GetAuthAttributesByDeeplink`, a
+command, props up. `TaxPayments`, `GroupOfPayments` and `Payment` lose theirs.
+`ActorsForFirm` and `EventsForFirm` gain `firm`.
+
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and
 a stored copy would go stale on every incremental run.
