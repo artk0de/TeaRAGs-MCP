@@ -722,6 +722,28 @@ describe("deriveTypeRoles — non-inheritance family membership", () => {
       ]);
     });
 
+    // Declaring nothing is no evidence of non-membership: TS types match structurally without
+    // `implements`, Ruby duck-types. Live on the self-index, `BatchAccumulator` and
+    // `PointsAccumulator` lost `accumulator` beside the `implements StatsAccumulator` family.
+    describe("only a DECLARED supertype can miss the family's", () => {
+      const ACCUMULATORS = ["Author", "Language", "Chunk"].map((q, i) =>
+        k(`${q}CountsAccumulator`, `src/stats/s${i}/${q.toLowerCase()}-counts.ts`, "class", ["StatsAccumulator"]),
+      );
+
+      it("a TS class with no `implements` in a cohesive `*Accumulator` family keeps its role", () => {
+        const rows = [...ACCUMULATORS, k("BatchAccumulator", "src/pipeline/batch-accumulator.ts", "class")];
+        expect(carriersOf(rows, "accumulator", "projectSuffix")).toContain("BatchAccumulator");
+      });
+
+      it("a class declaring an unrelated supertype still loses it", () => {
+        const rows = [
+          ...ACCUMULATORS,
+          k("RetryAccumulator", "src/pipeline/retry-accumulator.ts", "class", ["EventEmitter"]),
+        ];
+        expect(carriersOf(rows, "accumulator", "projectSuffix")).not.toContain("RetryAccumulator");
+      });
+    });
+
     it("a directory family: a carrier extending another supertype is no member", () => {
       const rows = [
         k("RubyBareCallStrategy", "src/strategies/bare-call.ts", "class", ["SymbolResolutionStrategy"]),

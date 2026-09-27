@@ -794,14 +794,17 @@ function draftRole(draft: TypeDraftPlacement, evidence: TypeNameEvidence): Expec
 /**
  * The supertypes a type draft is KNOWN to declare, by last namespace segment:
  * its `extends`, plus — when the draft names a declaration already at its
- * `path` — that declaration's own supertypes. `undefined` when neither is
- * known: a new draft that states no `extends` has not said it declares none.
+ * `path` — that declaration's own supertypes. `undefined` when they declare
+ * none: a new draft that states no `extends` has not said it declares none,
+ * and a declaration with no supertypes may still match a family structurally
+ * (TS) or by duck typing (Ruby).
  */
 function knownDraftSupertypes(draft: TypeDraftPlacement, evidence: TypeNameEvidence): Set<string> | undefined {
   if (evidence.population !== "type") return undefined;
   const own = ownDeclarations(draft, evidence);
-  if (draft.extends === undefined && own.length === 0) return undefined;
   const declared = [...(draft.extends !== undefined ? [draft.extends] : []), ...own.flatMap((row) => row.ancestors)];
+  // Declaring nothing is no evidence of non-membership: only a declared supertype can miss.
+  if (declared.length === 0) return undefined;
   return projectSupertypes(evidence.rows)(draft.name, declared);
 }
 

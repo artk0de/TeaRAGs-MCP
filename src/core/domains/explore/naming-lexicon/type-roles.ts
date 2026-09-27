@@ -101,7 +101,11 @@ export interface RoleFamilyMembership {
  * the family's, and — when the family is cohesive — its supertypes (by last
  * namespace segment) include one the family shares. What is not KNOWN about the
  * type (`symbolKind` / `supertypes` undefined) never excludes it, and neither do
- * the supertypes of a kind that declares none (a type alias). The one test the
+ * the supertypes of a kind that declares none (a type alias). Callers pass
+ * `supertypes` only for a type that DECLARES at least one: `BatchAccumulator`
+ * declaring nothing beside `implements StatsAccumulator` classes is no evidence
+ * of non-membership, `SendFailedPaymentNotification` declaring `KindOfService`
+ * among `Notification` subclasses is. The one test the
  * derivation applies to an existing type and the draft verdict to a draft.
  */
 export function isRoleFamilyMember(
@@ -418,7 +422,9 @@ function familyMembers(
   return carriers.filter(({ row }) =>
     isRoleFamilyMember(family, {
       symbolKind: row.symbolKind,
-      supertypes: supertypesOf(row.shortName, row.ancestors),
+      // Declaring nothing is no evidence of non-membership (TS structural typing, Ruby duck
+      // typing): only a type that DECLARES a supertype can miss the family's.
+      ...(row.ancestors.length > 0 ? { supertypes: supertypesOf(row.shortName, row.ancestors) } : {}),
     }),
   );
 }

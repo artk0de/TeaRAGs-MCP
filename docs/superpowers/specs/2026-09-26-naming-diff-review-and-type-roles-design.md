@@ -332,6 +332,36 @@ self-index it splits every TS family whose contract is an interface:
 `CacheStore`, `CodeChunker` and `EnrichmentProvider` lost their roles, and
 coverage fell to 686. On taxdome it fell to 15,979.
 
+**Only a declared supertype can miss.** A type that declares no supertype is not
+evidence of non-membership. TS types match a family structurally without writing
+`implements`, and Ruby duck-types. So the supertype test excludes a type only
+when it declares at least one supertype and none of them reaches, transitively,
+a supertype the family shares. A draft's supertypes count as declared under the
+same rule: its `extends`, or its own row's ancestors.
+`SendFailedPaymentNotification` declares `KindOfService` and stays out;
+`BatchAccumulator`, which declares nothing, is back among the `*Accumulator`
+family. Measured on the same copies, against the first cut:
+
+| Measure                                         | first cut           | declared-only       |
+| ----------------------------------------------- | ------------------- | ------------------- |
+| taxdome `_v15` coverage                         | 16,836 (50.1%)      | 16,895 (50.2%)      |
+| types losing every role (vs main)               | 376                 | 318                 |
+| self-index coverage                             | 715 (31.0%)         | 723 (31.4%)         |
+| self-index types losing every role              | 10                  | 2 (both by form)    |
+| `_v14` 27/30 sample                             | 28/28               | 28/28               |
+| wrong roles, fresh seeds 7/11/23 (of 90)        | 2                   | 1                   |
+| self-index seed 7                               | 30/30               | 30/30               |
+| rename eval (caught / other / silent / control) | 0 / 9 / 8 / 5 of 40 | 0 / 9 / 8 / 5 of 40 |
+
+Of the 40 sampled types the first cut stripped, 3 come back, all right:
+`NotificationUpdateForm` (a form with no superclass), `DrillOption` (a TS
+interface) and `IndexTemplate`. The other 37 either fail the form test or
+declare an unrelated supertype. The one wrong role left in the fresh samples,
+`IssueReplacementInvoice` → `invoice`, is a verb-first command in a family where
+`KindOfService` is the dominant supertype of the classes (12 of 21 in
+`*Invoice`). There the command is a member by the rule, and no supertype test
+can separate it.
+
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and
 a stored copy would go stale on every incremental run.

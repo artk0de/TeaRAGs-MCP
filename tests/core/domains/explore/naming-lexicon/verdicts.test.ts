@@ -1574,6 +1574,20 @@ describe("judgeTypeDraft — a project suffix confirms only its family's members
     ).not.toEqual({ verdict: "CONFORMS" });
   });
 
+  it("an existing class declaring no supertype is confirmed: declaring nothing is no evidence", () => {
+    const path = "app/models/n9/inbox/digest_notification.rb";
+    const rows = [...ROWS, row("DigestNotification", path, "class")];
+    expect(
+      judgeTypeDraft({
+        name: "DigestNotification",
+        path,
+        casing: "pascal",
+        evidence: typeNameEvidence(rows, "type"),
+        conceptNames: [],
+      }),
+    ).toEqual({ verdict: "CONFORMS" });
+  });
+
   it("a draft extending a member of the family, through the project's own type, is confirmed", () => {
     expect(
       judge({
