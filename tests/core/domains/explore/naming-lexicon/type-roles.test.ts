@@ -354,3 +354,75 @@ describe("deriveTypeRoles / expectedRoleFor", () => {
     expect(expectedRoleFor([], { path: "src/a.ts" })).toBeUndefined();
   });
 });
+
+/**
+ * A directory role's family is COHESIVE when its members share a supertype
+ * (bd tea-rags-mcp-tun7x): the dominant supertype of the directory's role
+ * carriers is carried by ≥ 2 of them and by at least half — the majority the
+ * directory role itself is defined by. Live: `ruby/resolver/strategies/` holds
+ * 14 `*SymbolResolutionStrategy` (all `extends SymbolResolutionStrategy`) beside
+ * four `*DispatchResolver` components; `cli/commands/` `*Args` declare no
+ * supertype at all.
+ */
+describe("expectedRoleFor — a directory role's family supertypes", () => {
+  const STRATEGIES = [
+    t("RubyBareCallStrategy", "src/strategies/bare-call.ts", ["SymbolResolutionStrategy"]),
+    t("RubyConstantStrategy", "src/strategies/constant.ts", ["Resolution::SymbolResolutionStrategy"]),
+    t("RubySuperStrategy", "src/strategies/super.ts", ["SymbolResolutionStrategy"]),
+    t("RubyConeDispatchResolver", "src/strategies/cone-dispatch.ts", ["DispatchResolverComponent"]),
+  ];
+
+  it("a cohesive family carries its dominant supertype (by last namespace segment)", () => {
+    expect(expectedRoleFor(deriveTypeRoles(STRATEGIES), { path: "src/strategies/new.ts" })).toMatchObject({
+      role: "strategy",
+      evidence: "directory",
+      familySupertypes: ["SymbolResolutionStrategy"],
+    });
+  });
+
+  it("carriers with no supertype → no family supertypes", () => {
+    const args = [
+      t("CallArgs", "src/commands/call.ts", []),
+      t("DoctorArgs", "src/commands/doctor.ts", []),
+      t("PrimeArgs", "src/commands/prime.ts", []),
+    ];
+    expect(expectedRoleFor(deriveTypeRoles(args), { path: "src/commands/new.ts" })).not.toHaveProperty(
+      "familySupertypes",
+    );
+  });
+
+  it("a supertype one carrier declares is not shared → no family supertypes", () => {
+    const rows = [
+      t("TechDebtPreset", "src/presets/tech-debt.ts", ["RerankPreset"]),
+      t("HotspotsPreset", "src/presets/hotspots.ts", ["CompositePreset"]),
+      t("OwnershipPreset", "src/presets/ownership.ts", []),
+    ];
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/presets/new.ts" })).not.toHaveProperty(
+      "familySupertypes",
+    );
+  });
+
+  it("a shared supertype under half of the carriers → no family supertypes", () => {
+    const rows = [
+      t("APreset", "src/presets/a.ts", ["RerankPreset"]),
+      t("BPreset", "src/presets/b.ts", ["RerankPreset"]),
+      t("CPreset", "src/presets/c.ts", []),
+      t("DPreset", "src/presets/d.ts", []),
+      t("EPreset", "src/presets/e.ts", []),
+    ];
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/presets/new.ts" })).not.toHaveProperty(
+      "familySupertypes",
+    );
+  });
+
+  it("two supertypes tied at the majority are both the family's", () => {
+    const rows = [
+      t("APreset", "src/presets/a.ts", ["RerankPreset", "Named"]),
+      t("BPreset", "src/presets/b.ts", ["RerankPreset", "Named"]),
+      t("CPreset", "src/presets/c.ts", []),
+    ];
+    expect(expectedRoleFor(deriveTypeRoles(rows), { path: "src/presets/new.ts" })).toMatchObject({
+      familySupertypes: ["Named", "RerankPreset"],
+    });
+  });
+});

@@ -41,6 +41,7 @@ import {
   anchoredHeadCandidates,
   correctedSimilarityFloor,
   establishedModifiers,
+  isVocabularyWord,
   modifierLift,
   pathTerms,
   sharesWordStem,
@@ -51,6 +52,7 @@ import type { ConceptTerm } from "./terms.js";
 import {
   deriveTypeRoles,
   expectedRoleFor,
+  type ExpectedTypeRole,
   type TypeNameRow,
   type TypeRoleAssignment,
   type TypeRoleEvidence,
@@ -690,7 +692,9 @@ function termAlternatives(
   const alternatives =
     gate === undefined
       ? lifted
-      : lifted.flatMap((candidate) => gateQualifierCandidate(candidate, slots.qualifiers, gate) ?? []);
+      : lifted.flatMap(
+          (candidate) => gateQualifierCandidate(candidate, slots.qualifiers.filter(isVocabularyWord), gate) ?? [],
+        );
   const head = alignHead(slots, evidence.headCounts);
   const draftHead = slots.head.at(-1);
   const similarity = head === undefined || draftHead === undefined ? undefined : gate?.similarity(draftHead, head);
@@ -748,18 +752,80 @@ function roundSimilarity(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-/** The anchored head candidates grounded in the concept code: heads of type names `conceptNames` holds. */
+/** A type draft as role evidence reads it: its name, the file it lives in, its planned ancestor. */
+export interface TypeDraftPlacement {
+  name: string;
+  path: string;
+  extends?: string;
+}
+
+/** The draft's expected role ({@link expectedRoleFor}); a constant has no family, so its `extends` is ignored. */
+function draftRole(draft: TypeDraftPlacement, evidence: TypeNameEvidence): ExpectedTypeRole | undefined {
+  return expectedRoleFor(evidence.roles, {
+    path: draft.path,
+    ...(evidence.population === "type" && draft.extends !== undefined ? { extends: draft.extends } : {}),
+  });
+}
+
+/**
+ * The supertypes a type draft is KNOWN to declare, by last namespace segment:
+ * its `extends`, plus — when the draft names a declaration already at its
+ * `path` — that declaration's own supertypes. `undefined` when neither is
+ * known: a new draft that states no `extends` has not said it declares none.
+ */
+function knownDraftSupertypes(draft: TypeDraftPlacement, evidence: TypeNameEvidence): Set<string> | undefined {
+  if (evidence.population !== "type") return undefined;
+  const shortName = typeNameLastSegment(draft.name);
+  const own = evidence.rows.filter((row) => row.relPath === draft.path && row.shortName === shortName);
+  if (draft.extends === undefined && own.length === 0) return undefined;
+  return new Set(
+    [...(draft.extends !== undefined ? [draft.extends] : []), ...own.flatMap((row) => row.ancestors)].map(
+      typeNameLastSegment,
+    ),
+  );
+}
+
+/**
+ * The role word of the draft's directory family when the draft is KNOWN not to
+ * belong to it (bd tea-rags-mcp-tun7x). Only a directory role whose carriers
+ * share a supertype (`familySupertypes`) asks: a draft known to declare none of
+ * them is not a member (`RubyConeDispatchResolver` `implements
+ * DispatchResolverComponent` among `*SymbolResolutionStrategy`), so the role
+ * neither demands nor confirms, and its word is no head for the draft either.
+ * `undefined` for any other role and for a draft whose supertypes are unknown.
+ */
+function directoryFamilyNonMemberRole(
+  draft: TypeDraftPlacement,
+  evidence: TypeNameEvidence,
+  role: ExpectedTypeRole | undefined = draftRole(draft, evidence),
+): string | undefined {
+  if (role?.evidence !== "directory" || role.familySupertypes === undefined) return undefined;
+  const declared = knownDraftSupertypes(draft, evidence);
+  if (declared === undefined || role.familySupertypes.some((supertype) => declared.has(supertype))) return undefined;
+  return role.role;
+}
+
+/**
+ * The anchored head candidates grounded in the concept code: heads of type
+ * names `conceptNames` holds — never the role word of a directory family the
+ * draft is known not to belong to ({@link directoryFamilyNonMemberRole}).
+ */
 function groundedHeadCandidates(
   slots: NameSlots,
-  draftPath: string,
+  draft: TypeDraftPlacement,
   evidence: TypeNameEvidence,
   conceptNames: readonly string[],
   admitted: ReadonlySet<string>,
 ): ReturnType<typeof anchoredHeadCandidates> {
   const conceptHeads = conceptHeadWords(conceptNames);
-  return anchoredHeadCandidates(slots, directoryOfPath(draftPath), evidence.rows, evidence.headCounts, admitted).filter(
-    (candidate) => conceptHeads.has(candidate.word),
-  );
+  const withheld = directoryFamilyNonMemberRole(draft, evidence);
+  return anchoredHeadCandidates(
+    slots,
+    directoryOfPath(draft.path),
+    evidence.rows,
+    evidence.headCounts,
+    admitted,
+  ).filter((candidate) => conceptHeads.has(candidate.word) && candidate.word !== withheld);
 }
 
 /**
@@ -774,7 +840,7 @@ function groundedHeadCandidates(
  * is fixed before any pair is judged.
  */
 export function typeDraftMeaningPairs(
-  draft: { name: string; path: string },
+  draft: TypeDraftPlacement,
   evidence: TypeNameEvidence,
   conceptNames: readonly string[],
   admitted: ReadonlySet<string> = new Set(),
@@ -788,14 +854,16 @@ export function typeDraftMeaningPairs(
   const variant = alignHead(slots, evidence.headCounts);
   const heads = new Set([
     ...(variant ? [variant] : []),
-    ...groundedHeadCandidates(slots, draft.path, evidence, conceptNames, admitted).map((candidate) => candidate.word),
+    ...groundedHeadCandidates(slots, draft, evidence, conceptNames, admitted).map((candidate) => candidate.word),
   ]);
   const pairs = new Map<string, [string, string]>();
   const compare = (word: string, candidate: string): void => {
     pairs.set([word, candidate].sort().join("\u0000"), [word, candidate]);
   };
   for (const head of heads) compare(draftHead, head);
-  for (const candidate of lifted) for (const qualifier of slots.qualifiers) compare(qualifier, candidate.word);
+  // A version token (`v11`) is no word a modifier could replace: it is never compared.
+  const qualifiers = slots.qualifiers.filter(isVocabularyWord);
+  for (const candidate of lifted) for (const qualifier of qualifiers) compare(qualifier, candidate.word);
   for (const term of pathTerms(draft.path, words, conceptNames)) {
     for (const word of words) if (!sharesWordStem(word, term.word)) compare(word, term.word);
   }
@@ -809,7 +877,7 @@ export function typeDraftMeaningPairs(
  * draft with.
  */
 export function typeDraftAlignmentWords(
-  draft: { name: string; path: string },
+  draft: TypeDraftPlacement,
   evidence: TypeNameEvidence,
   conceptNames: readonly string[],
   admitted: ReadonlySet<string> = new Set(),
@@ -823,14 +891,14 @@ export function typeDraftAlignmentWords(
  * (`usageEstablishedHeads`). The caller reads the files' fan-in.
  */
 export function singleCarrierHeadFiles(
-  draft: { name: string; path: string },
+  draft: TypeDraftPlacement,
   evidence: TypeNameEvidence,
   conceptNames: readonly string[],
 ): Map<string, string> {
   const slots = draftSlots(typeNameWords(draft.name), evidence);
   const single = new Set([...evidence.headCounts].filter(([, count]) => count === 1).map(([head]) => head));
   const files = new Map<string, string>();
-  for (const candidate of groundedHeadCandidates(slots, draft.path, evidence, conceptNames, single)) {
+  for (const candidate of groundedHeadCandidates(slots, draft, evidence, conceptNames, single)) {
     if (!single.has(candidate.word)) continue;
     const carrier = evidence.rows.find((row) => row.shortName === candidate.examples[0]);
     if (carrier) files.set(candidate.word, carrier.relPath);
@@ -859,7 +927,7 @@ function meaningHeadAlternatives(
   const offered = new Set(taken.map((alternative) => alternative.word));
   const draftHeadCount = evidence.headCounts.get(draftHead) ?? 0;
   const admitted = input.usageEstablishedHeads ?? new Set<string>();
-  return groundedHeadCandidates(slots, input.path, evidence, input.conceptNames, admitted)
+  return groundedHeadCandidates(slots, input, evidence, input.conceptNames, admitted)
     .filter((candidate) => !offered.has(candidate.word))
     .map((candidate) => ({ candidate, similarity: gate.similarity(draftHead, candidate.word) }))
     .filter(({ similarity }) => similarity > gate.floor)
@@ -942,12 +1010,11 @@ function pathTermAlternatives(
 export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   const words = typeNameWords(input.name);
   const draftCasing = detectIdentifierCasing(input.name) ?? input.casing;
-  const role = expectedRoleFor(input.evidence.roles, {
-    path: input.path,
-    ...(input.evidence.population === "type" && input.extends !== undefined ? { extends: input.extends } : {}),
-  });
-  // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms.
-  const expected = role?.evidence === "projectSuffix" ? undefined : role;
+  const role = draftRole(input, input.evidence);
+  // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms,
+  // and a cohesive directory family only speaks for its members.
+  const nonMember = directoryFamilyNonMemberRole(input, input.evidence, role) !== undefined;
+  const expected = role?.evidence === "projectSuffix" || nonMember ? undefined : role;
   if (expected && words.at(-1) !== expected.role) {
     return {
       verdict: "MISFIT",

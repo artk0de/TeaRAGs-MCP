@@ -37,6 +37,13 @@ export interface TypeRoleAssignment {
   support: number;
   /** The scope the role holds in: the ancestor's last segment, the directory, or `""` for the project. */
   scope: string;
+  /**
+   * A directory role whose family is COHESIVE: the supertype(s) (last
+   * namespace segment) the role's carriers in the directory share — each
+   * carried by ≥ 2 of them and by at least `directoryShare` of them, the most
+   * carried. Absent when the carriers share no supertype (`*Args`, `*Options`).
+   */
+  familySupertypes?: readonly string[];
 }
 
 export interface TypeRoleThresholds {
@@ -211,6 +218,28 @@ function assign(
   }));
 }
 
+/**
+ * The supertypes a directory role's carriers share (bd tea-rags-mcp-tun7x):
+ * the most carried supertype(s), by last namespace segment, when that count is
+ * ≥ {@link MIN_ROLE_MEMBERS} and at least `share` of the carriers — the same
+ * majority the directory role is defined by. Ties at that count are all
+ * returned, sorted. `undefined` when the family shares none.
+ */
+function cohesiveSupertypes(carriers: readonly HeadedRow[], share: number): string[] | undefined {
+  const counts = new Map<string, number>();
+  for (const { row } of carriers) {
+    for (const supertype of new Set(row.ancestors.map(typeNameLastSegment))) {
+      counts.set(supertype, (counts.get(supertype) ?? 0) + 1);
+    }
+  }
+  const most = Math.max(0, ...counts.values());
+  if (most < MIN_ROLE_MEMBERS || most / carriers.length < share) return undefined;
+  return [...counts]
+    .filter(([, count]) => count === most)
+    .map(([supertype]) => supertype)
+    .sort();
+}
+
 /** Derives every type's role assignments, strongest evidence first, then by scope and symbolId. */
 export function deriveTypeRoles(
   rows: readonly TypeNameRow[],
@@ -230,7 +259,14 @@ export function deriveTypeRoles(
   for (const [dir, members] of directories) {
     const plurality = pluralityHead(members);
     if (plurality && plurality.count >= MIN_ROLE_MEMBERS && plurality.count / members.length >= t.directoryShare) {
-      assignments.push(...assign(members, plurality.head, "directory", dir));
+      const carried = assign(members, plurality.head, "directory", dir);
+      const supertypes = cohesiveSupertypes(
+        members.filter(({ head }) => head === plurality.head),
+        t.directoryShare,
+      );
+      assignments.push(
+        ...(supertypes ? carried.map((assignment) => ({ ...assignment, familySupertypes: supertypes })) : carried),
+      );
     }
   }
 
@@ -255,7 +291,7 @@ export function deriveTypeRoles(
 function pickRole(
   assignments: readonly TypeRoleAssignment[],
   evidence: TypeRoleEvidence,
-): { role: string; evidence: TypeRoleEvidence; examples: string[] } | undefined {
+): ExpectedTypeRole | undefined {
   if (assignments.length === 0) return undefined;
   const best = [...assignments].sort((a, b) => b.support - a.support || a.role.localeCompare(b.role))[0];
   const examples = assignments
@@ -263,7 +299,21 @@ function pickRole(
     .map((assignment) => typeNameLastSegment(assignment.symbolId))
     .sort()
     .slice(0, MAX_ROLE_EXAMPLES);
-  return { role: best.role, evidence, examples };
+  return {
+    role: best.role,
+    evidence,
+    examples,
+    ...(best.familySupertypes ? { familySupertypes: best.familySupertypes } : {}),
+  };
+}
+
+/** The role a type draft is expected to carry ({@link expectedRoleFor}). */
+export interface ExpectedTypeRole {
+  role: string;
+  evidence: TypeRoleEvidence;
+  examples: string[];
+  /** A directory role whose family is cohesive: the supertypes a member declares ({@link TypeRoleAssignment.familySupertypes}). */
+  familySupertypes?: readonly string[];
 }
 
 /**
@@ -275,7 +325,7 @@ function pickRole(
 export function expectedRoleFor(
   roles: readonly TypeRoleAssignment[],
   draft: { path: string; extends?: string },
-): { role: string; evidence: TypeRoleEvidence; examples: string[] } | undefined {
+): ExpectedTypeRole | undefined {
   if (draft.extends !== undefined) {
     const ancestor = typeNameLastSegment(draft.extends);
     const family = pickRole(

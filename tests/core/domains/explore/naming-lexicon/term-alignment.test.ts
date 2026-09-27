@@ -62,6 +62,73 @@ describe("alignHead", () => {
   it("an empty head aligns to nothing", () => {
     expect(alignHead({ head: [], qualifiers: [] }, new Map([["doc", 1]]))).toBeUndefined();
   });
+
+  // bd tea-rags-mcp-tun7x: live, `FileScanner` got `scan` as the project's spelling of `scanner`.
+  // A stem plus an inflection or agent suffix is ANOTHER word (the scan vs what scans), not a spelling.
+  it("a word's stem is not its spelling variant: `scan` / `scanner`, `run` / `runner`", () => {
+    expect(
+      alignHead(
+        { head: ["scanner"], qualifiers: ["file"] },
+        new Map([
+          ["scan", 6],
+          ["scanner", 1],
+        ]),
+      ),
+    ).toBeUndefined();
+    expect(
+      alignHead(
+        { head: ["runner"], qualifiers: [] },
+        new Map([
+          ["run", 6],
+          ["runner", 1],
+        ]),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("a clipping is still a spelling: `stats` / `statistics`, `metadata` / `meta`", () => {
+    expect(
+      alignHead(
+        { head: ["statistics"], qualifiers: ["signal"] },
+        new Map([
+          ["stats", 9],
+          ["statistics", 1],
+        ]),
+      ),
+    ).toBe("stats");
+    expect(
+      alignHead(
+        { head: ["meta"], qualifiers: ["snapshot"] },
+        new Map([
+          ["metadata", 5],
+          ["meta", 2],
+        ]),
+      ),
+    ).toBe("metadata");
+  });
+});
+
+// bd tea-rags-mcp-tun7x: a token carrying a digit (`v1`, `v11`) names a value, not a concept.
+describe("version tokens are not modifier vocabulary", () => {
+  it("establishedModifiers drops a token with a digit", () => {
+    expect(
+      establishedModifiers([
+        mod("v1", ["rebuild", "set"], ["a", "b"], 2),
+        mod("sparse", ["x", "y"], ["a", "b"], 2),
+      ]).map((use) => use.word),
+    ).toEqual(["sparse"]);
+  });
+
+  it("alignQualifiers does not replace a draft qualifier that carries a digit", () => {
+    expect(
+      alignQualifiers(
+        { head: ["store"], qualifiers: ["v11"] },
+        [mod("sparse", ["x", "y"], ["a", "b"], 2)],
+        new Map([["sparse", 10]]),
+        2,
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("establishedModifiers", () => {

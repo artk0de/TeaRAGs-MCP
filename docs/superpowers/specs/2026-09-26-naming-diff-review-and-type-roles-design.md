@@ -160,6 +160,34 @@ then to the first declared; no overlap at all goes to the first declared. So one
 `RerankOptions` beside `Reranker` belongs to reranker.ts's subject, not to a
 role. Inheritance evidence reads every type.
 
+**Directory-role membership (`tun7x`).** A directory role speaks only for the
+family it names. Its family is COHESIVE when the role's carriers in the
+directory share a supertype: the most carried supertype (last namespace segment
+of `cg_type_declarations.supertypes`) is carried by ≥ 2 carriers and by at least
+half of them, the same majority that defines the role. Ties at that count are
+all the family's. A draft is a member when its KNOWN supertypes include one of
+them. Its supertypes are known when it states `extends`, or when it names a
+declaration already at its `path`, whose own supertypes then count. A draft
+known not to be a member gets no directory role. The role neither demands the
+suffix (no MISFIT) nor confirms it, and its word is no head alternative by
+meaning for that draft. A new draft that states no `extends` has not said it
+declares none, so it is judged as before. A family whose carriers share no
+supertype also keeps the plain majority rule.
+
+On the self-index 21 of 35 directory roles are cohesive: every `strategy`,
+`preset`, `signal` and `accumulator` directory, plus `drift/`
+(`IndexDriftMonitor`), `footprint/` (`CollectionArtifact`) and `migration/`
+(`MigrationRunner`). The 14 without a shared supertype include `cli/commands/`
+`*Args`, `api/internal/ops`, `*/chunking/` hooks and `facades/`.
+`ruby/resolver/strategies/` has 15 `*SymbolResolutionStrategy` carriers, all
+`extends SymbolResolutionStrategy`, beside four `*DispatchResolver` that
+`implements DispatchResolverComponent`. Two of those four were control false
+flags (MISFIT → `…Strategy`), and the rule clears both. `cli/commands/`
+`FormatProjectsOptions` stays MISFIT → `…Args`, because no `*Args` declares a
+supertype and the data cannot separate a CLI argument type from a formatter's
+options. The five MISFITs of the 20-draft measurement set are new drafts with no
+`extends` in cohesive directories, and all five stay.
+
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
 query behind a daemon op. They are not persisted: they are cheap aggregates, and
 a stored copy would go stale on every incremental run.
@@ -169,12 +197,12 @@ a stored copy would go stale on every incremental run.
 The draft gains `kind: "type"` with `{ name, path, extends?, concept? }`. `path`
 is the file the type will live in; `extends` its planned ancestor.
 
-| Verdict   | When                                                                                                         |
-| --------- | ------------------------------------------------------------------------------------------------------------ |
-| MISFIT    | the family (via `extends`) or the directory (via `path`) has a role the name lacks; suggestion = name + role |
-| COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`)      |
-| NEW_TERM  | no role evidence and no aligned term (section 4); carries `alternatives` when section 4 found candidates     |
-| CONFORMS  | the name carries the role and its terms align; may carry head `alternatives` (section 4, head by meaning)    |
+| Verdict   | When                                                                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| MISFIT    | the family (via `extends`) or the directory (via `path`, members only, §2) has a role the name lacks; suggestion = name + role |
+| COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`)                        |
+| NEW_TERM  | no role evidence and no aligned term (section 4); carries `alternatives` when section 4 found candidates                       |
+| CONFORMS  | the name carries the role and its terms align; may carry head `alternatives` (section 4, head by meaning)                      |
 
 Casing follows the file language of `path`, as for value names.
 
@@ -193,6 +221,30 @@ the project's existing vocabulary.
 **Head slot.** For one concept the project has a dominant spelling. If the
 project writes `Doc` 200 times and `Document` 3, a draft `CalculatedDocument`
 gets `…Doc`. Compared among heads of the same family or role.
+
+A spelling variant is a CLIPPING of one word: the shorter abbreviates the longer
+(same first letter, letters in order, at most 60% of its length). A stem plus an
+inflection or an agent ending (`-s`, `-es`, `-ed`, `-ing`, `-er`, `-or`, and
+their plurals, allowing a doubled final consonant or a dropped silent `e`) is
+another word, not a spelling (`tun7x`). `scan` / `scanner` and `run` / `runner`
+name the act and the actor. `doc` / `document`, `stats` / `statistics` and
+`meta` / `metadata` stay variants. The ending set is closed-class English
+morphology, like the plural rules of `singularizeIdentifierWord`. It is not a
+tuned list. Live, the control type `FileScanner` had been offered `scan`. After
+the rule it conforms, and no head by meaning takes the offer's place.
+
+`SnapshotMeta` → `metadata` is not a defect. The project writes `Metadata` 4
+times and `Meta` twice, and `meta` is a clipping of `metadata`. That is the
+dominant-spelling rule doing what this section asks. The eval scores it as a
+false flag only because the owner never renamed the type.
+
+**Version tokens are not vocabulary (`tun7x`).** A word of the project's
+vocabulary is letters only, the same test the abbreviation rule already applies.
+A token with a digit (`v1`, `v11`) names a value, not a concept. It is never an
+established modifier. A draft qualifier carrying one is neither replaced nor
+compared by meaning, and it does not count in the draft's m. Live, `V11Store`
+was offered `v1` for `v11` (similarity 0.736). Now it conforms: `store` is a
+project suffix.
 
 **Qualifier slot.** The project's modifier vocabulary is the set of words that
 stand before a head in type names. A modifier is ESTABLISHED when it combines
@@ -355,6 +407,43 @@ The verdict stays soft (NEW_TERM + alternatives, never MISFIT). This is a
 judgement by meaning, and the agent decides whether to reuse the term or
 introduce a new one. The same alignment applies to value names
 (`calculatedDoc`).
+
+**Rename eval (`tun7x`).** `scripts/naming-rename-eval.ts` judges the project's
+own 17 type renames, each OLD name at NEW's path, and a frozen control of 40
+types that were never renamed and are older than 90 days. The three rules above
+(directory membership, stem vs spelling, version tokens) were measured one at a
+time:
+
+| Step                       | Control false flags | Renames caught / flagged-other / silent |
+| -------------------------- | ------------------- | --------------------------------------- |
+| baseline                   | 9/40 (22.5%)        | 0 / 9 / 8                               |
+| + directory membership     | 7/40 (17.5%)        | 0 / 9 / 8                               |
+| + stem is not a spelling   | 6/40 (15.0%)        | 0 / 9 / 8                               |
+| + version tokens not words | 5/40 (12.5%)        | 0 / 9 / 8                               |
+
+All 17 rename verdicts are byte-identical to the baseline. Only the four
+targeted controls changed, and each moved to CONFORMS. The 20-draft measurement
+set above is unchanged too: `stats`, `provider`, `manager`, `executor` and the
+same five MISFITs. Without the head-by-meaning exclusion for non-members, the
+membership rule alone cut the control to 8/40, because
+`RubyDynamicDispatchResolver` turned from MISFIT → `…Strategy` into CONFORMS
+with the head alternative `strategy`: the same demand, offered by meaning.
+
+Five control flags remain, and none is a defect of the rules:
+
+- `FormatProjectsOptions` MISFIT → `…Args`: the `cli/commands/` family is not
+  cohesive, see §2.
+- `SnapshotMeta` → `metadata`: the dominant spelling, correct by this section.
+- `DangerousCompositePreset` → `bug` for `dangerous` (0.748): a lifted qualifier
+  that cleared the corrected floor. It is not a spelling variant. Neither
+  `dangerous` nor `composite` is established (`composite` qualifies only
+  `preset`), and the concept code is the bug-hunt presets. The qualifier
+  discriminates one member of a role family from its siblings. Suppressing
+  qualifier alternatives on role-carrying names would also silence the mechanism
+  that could catch the six `search` → `explore` renames, so it is not done.
+- `FilterSpec` → `descriptor` (0.721) and `MaterializedNode` → `tree` (0.657):
+  heads by meaning that cleared the Šidák floor. The floor is not moved to
+  remove them.
 
 Known limit: when the semantic search does not retrieve the code where
 `Predefined*` lives, no alternative is offered. Recall is bounded by the

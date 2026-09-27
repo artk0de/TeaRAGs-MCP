@@ -1277,3 +1277,122 @@ describe("judgeTypeDraft", () => {
     });
   });
 });
+
+/**
+ * Directory-role membership (bd tea-rags-mcp-tun7x). When the directory role's
+ * family is cohesive — its carriers share a supertype — a draft whose known
+ * supertypes (its `extends`, or an existing declaration's own supertypes) do
+ * not include it is not a member: the directory role neither demands nor
+ * confirms. Live control false flags: `RubyConeDispatchResolver` /
+ * `RubyDynamicDispatchResolver` (`implements DispatchResolverComponent`) in
+ * `ruby/resolver/strategies/` were MISFIT → `…Strategy`.
+ */
+describe("judgeTypeDraft — directory-role membership by the family's supertype", () => {
+  const row = (shortName: string, relPath: string, ancestors: string[] = []): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind: "class",
+    ancestors,
+  });
+  const STRATEGIES = [
+    row("RubyBareCallStrategy", "src/strategies/bare-call.ts", ["SymbolResolutionStrategy"]),
+    row("RubyConstantStrategy", "src/strategies/constant.ts", ["SymbolResolutionStrategy"]),
+    row("RubySuperStrategy", "src/strategies/super.ts", ["SymbolResolutionStrategy"]),
+    row("RubyConeDispatchResolver", "src/strategies/cone-dispatch.ts", ["DispatchResolverComponent"]),
+  ];
+  const ARGS = [
+    row("CallArgs", "src/commands/call.ts"),
+    row("DoctorArgs", "src/commands/doctor.ts"),
+    row("PrimeArgs", "src/commands/prime.ts"),
+    row("FormatProjectsOptions", "src/commands/projects-format.ts"),
+  ];
+  const judge = (rows: readonly TypeNameRow[], draft: { name: string; path: string; extends?: string }) =>
+    judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(rows, "type"), conceptNames: [] });
+
+  it("an existing type whose own supertypes miss the family's → no directory MISFIT", () => {
+    expect(
+      judge(STRATEGIES, { name: "RubyConeDispatchResolver", path: "src/strategies/cone-dispatch.ts" }).verdict,
+    ).not.toBe("MISFIT");
+  });
+
+  it("a draft extending another supertype → no directory MISFIT", () => {
+    expect(
+      judge(STRATEGIES, {
+        name: "RubyTableDispatchResolver",
+        path: "src/strategies/table-dispatch.ts",
+        extends: "DispatchResolverComponent",
+      }).verdict,
+    ).not.toBe("MISFIT");
+  });
+
+  it("a new draft with no declared supertype is judged as before: its supertypes are unknown", () => {
+    expect(judge(STRATEGIES, { name: "CallSiteResolutionPass", path: "src/strategies/call-site.ts" })).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "CallSiteResolutionPassStrategy",
+      role: { word: "strategy", evidence: "directory" },
+    });
+  });
+
+  it("a family with no shared supertype keeps its directory MISFIT", () => {
+    expect(judge(ARGS, { name: "FormatProjectsOptions", path: "src/commands/projects-format.ts" })).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "FormatProjectsOptionsArgs",
+    });
+  });
+
+  // Live, after the membership rule `RubyDynamicDispatchResolver` became CONFORMS with the head
+  // alternative `strategy` — the same demand the rule withdrew, offered by meaning instead.
+  it("a known non-member is not offered the family's role word as a head by meaning", () => {
+    const rows = [
+      ...Array.from({ length: 20 }, (_, i) => row(`Filler${String.fromCharCode(97 + (i % 26))}${i}`, `src/f${i}/x.ts`)),
+      ...STRATEGIES,
+    ];
+    const draft = { name: "RubyConeDispatchResolver", path: "src/strategies/cone-dispatch.ts" };
+    const verdict = judgeTypeDraft({
+      ...draft,
+      casing: "pascal",
+      evidence: typeNameEvidence(rows, "type"),
+      conceptNames: ["RubyBareCallStrategy", "RubySuperStrategy"],
+      wordSimilarity: (a, b) => ([a, b].sort().join("|") === "resolver|strategy" ? 0.9 : 0.1),
+      nullSimilarities: [0.5],
+    });
+    expect(verdict).not.toMatchObject({ alternatives: [expect.objectContaining({ word: "strategy" })] });
+    expect(
+      typeDraftMeaningPairs(draft, typeNameEvidence(rows, "type"), ["RubyBareCallStrategy", "RubySuperStrategy"]),
+    ).not.toContainEqual(["resolver", "strategy"]);
+  });
+});
+
+/**
+ * Version and ordinal tokens are not vocabulary (bd tea-rags-mcp-tun7x): `v1`
+ * in `SparseV1VectorRebuild` names a value, not a concept, and `v11` in
+ * `V11Store` is not a word another modifier could replace. Live control false
+ * flag: `V11Store` got `v1` for `v11` (similarity 0.736).
+ */
+describe("judgeTypeDraft — a token with a digit is not a modifier", () => {
+  const row = (shortName: string, relPath: string): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind: "class",
+    ancestors: [],
+  });
+  const rows = [
+    ...Array.from({ length: 20 }, (_, i) => row(`Filler${String.fromCharCode(97 + (i % 26))}${i}`, `src/f${i}/x.ts`)),
+    row("SparseV1VectorRebuild", "src/sparse/rebuild.ts"),
+    row("PayloadV1Set", "src/payload/set.ts"),
+  ];
+
+  it("`V11Store` gets no `v1` alternative", () => {
+    expect(
+      judgeTypeDraft({
+        name: "V11Store",
+        path: "src/migrations/v11.ts",
+        casing: "pascal",
+        evidence: typeNameEvidence(rows, "type"),
+        conceptNames: ["SparseV1VectorRebuild", "PayloadV1Set"],
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+});

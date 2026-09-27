@@ -59,9 +59,22 @@ export interface TermAlternative {
   replaces?: string;
 }
 
-/** A modifier is established when it qualifies ≥ `minHeads` distinct heads in ≥ `minDirs` directories. */
+/**
+ * A word of the project's vocabulary is letters only (bd tea-rags-mcp-tun7x): a
+ * token carrying a digit (`v1`, `v11`, `sha256`) names a value — a version, an
+ * ordinal — not a concept another word could spell. The same test
+ * {@link isWordAbbreviation} applies to an abbreviation.
+ */
+export function isVocabularyWord(word: string): boolean {
+  return /^[a-z]+$/.test(word);
+}
+
+/**
+ * A modifier is established when it is a vocabulary word ({@link isVocabularyWord})
+ * qualifying ≥ `minHeads` distinct heads in ≥ `minDirs` directories.
+ */
 export function establishedModifiers(uses: readonly ModifierUse[], minHeads = 2, minDirs = 2): ModifierUse[] {
-  return uses.filter((use) => use.heads.size >= minHeads && use.dirs.size >= minDirs);
+  return uses.filter((use) => isVocabularyWord(use.word) && use.heads.size >= minHeads && use.dirs.size >= minDirs);
 }
 
 /**
@@ -88,9 +101,10 @@ export function modifierLift(
 
 /**
  * Established modifiers with lift above `floor`, offered when the draft has a
- * qualifier and none of its qualifiers is established already. Highest lift
- * first; heads and domains sorted for a deterministic answer. Empty = a new
- * concept, a legitimate outcome.
+ * qualifier that is a vocabulary word ({@link isVocabularyWord} — `v11` is not
+ * one another modifier could replace) and none of its qualifiers is
+ * established already. Highest lift first; heads and domains sorted for a
+ * deterministic answer. Empty = a new concept, a legitimate outcome.
  */
 export function alignQualifiers(
   slots: NameSlots,
@@ -98,7 +112,7 @@ export function alignQualifiers(
   lift: ReadonlyMap<string, number>,
   floor: number,
 ): TermAlternative[] {
-  if (slots.qualifiers.length === 0) return [];
+  if (!slots.qualifiers.some(isVocabularyWord)) return [];
   const establishedWords = new Set(established.map((use) => use.word));
   if (slots.qualifiers.some((word) => establishedWords.has(word))) return [];
   return established
@@ -132,7 +146,32 @@ export function sharesWordStem(a: string, b: string): boolean {
 
 function isSpellingVariant(a: string, b: string): boolean {
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  return short.length <= long.length * MAX_VARIANT_LENGTH_RATIO && isWordAbbreviation(short, long);
+  return (
+    short.length <= long.length * MAX_VARIANT_LENGTH_RATIO &&
+    isWordAbbreviation(short, long) &&
+    !isInflectedOrAgentForm(short, long)
+  );
+}
+
+/**
+ * English's inflectional endings and its agent-noun ending: `-s`, `-ed`,
+ * `-ing`, and `-er` / `-or` with their plurals. Closed-class morphology, like
+ * `singularizeIdentifierWord` (casing.ts) plural rules — not a tuned list.
+ */
+const INFLECTION_OR_AGENT_ENDINGS = new Set(["s", "es", "ed", "ing", "er", "ers", "or", "ors"]);
+
+/**
+ * `word` is `stem` plus an inflection or an agent ending (bd tea-rags-mcp-tun7x)
+ * — `scan` / `scanner`, `run` / `runner`, `parse` / `parser`. That is another
+ * word (the scan vs what scans), not a spelling of the same one: a clipping
+ * drops letters of ONE word (`doc` / `document`, `stats` / `statistics`,
+ * `meta` / `metadata`), and what it drops is never such an ending alone. A
+ * doubled final consonant (`scann-er`) and a stem's silent `e` (`pars-er`)
+ * are spelling, not ending.
+ */
+function isInflectedOrAgentForm(stem: string, word: string): boolean {
+  const bases = [stem, stem + stem.at(-1), ...(stem.endsWith("e") ? [stem.slice(0, -1)] : [])];
+  return bases.some((base) => word.startsWith(base) && INFLECTION_OR_AGENT_ENDINGS.has(word.slice(base.length)));
 }
 
 /**
