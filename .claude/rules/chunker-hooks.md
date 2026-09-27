@@ -110,7 +110,10 @@ Every OTHER `#partN` tail names its container too (bd tea-rags-mcp-j4jrn):
   the hierarchy prefix plus the container header.
 - A hook body chunk that still overflows (a setup-only test chunk, a row wider
   than the budget) is cut by the `enforceMaxChunkSize` post-pass with its
-  transient `contextPrefix` (hierarchy + header rows) repeated on every part.
+  transient `contextPrefix` (hierarchy + header rows) repeated on every part. A
+  body chunk that declares a `partHeader` (a test example's call row) gets that
+  row repeated after the prefix on every `#part2+` too (bd tea-rags-mcp-l24yk);
+  it is text only, so line ranges stay the part's own rows.
 - The header is the row the container's `name` starts on, not its first row — a
   leading attribute / decorator / annotation row (`@NSApplicationMain`) is never
   the header.

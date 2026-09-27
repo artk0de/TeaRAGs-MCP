@@ -695,6 +695,7 @@ export class TreeSitterChunker implements CodeChunker {
                 symbolId: result.symbolId ?? this.buildSymbolId(parentName),
                 lineRanges: result.lineRanges,
                 contextPrefix: body.contextPrefix,
+                ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
               },
             });
           }
@@ -985,6 +986,7 @@ export class TreeSitterChunker implements CodeChunker {
     for (let i = 0; i < result.length; i++) {
       result[i].metadata.chunkIndex = i;
       delete result[i].metadata.contextPrefix;
+      delete result[i].metadata.partHeader;
     }
     return result;
   }
@@ -998,15 +1000,29 @@ export class TreeSitterChunker implements CodeChunker {
    * line indices stay indices into the chunk's content, so the line mapping of
    * `splitOversizedChunk` reads them unchanged. A prefix taking half the budget
    * or more is not repeated, as in `emitSplitSymbol`.
+   *
+   * A `partHeader` (a test example's `it` row, bd tea-rags-mcp-l24yk) is the
+   * chunk's own first row after that prefix: `#part1` holds it as its own row,
+   * and every later segment repeats it after the prefix, so a tail names the
+   * example and not just the `describe`. It is text only — segment line
+   * indices ignore it, so line ranges stay each part's own rows. Used only when
+   * the chunk opens with it and it fits beside the prefix in half the budget.
    */
   private segmentUnderContextPrefix(chunk: CodeChunk, max: number): ContentSegment[] {
-    const prefix = chunk.metadata.contextPrefix;
-    if (!prefix || prefix.length * 2 >= max || !chunk.content.startsWith(prefix)) {
-      return this.splitContentIntoSegments(chunk.content, max);
-    }
-    const prefixLines = prefix.split("\n").length - 1;
-    return this.splitContentIntoSegments(chunk.content.slice(prefix.length), max - prefix.length).map((segment) => ({
-      text: `${prefix}${segment.text}`,
+    const rawPrefix = chunk.metadata.contextPrefix ?? "";
+    const prefix = rawPrefix.length * 2 < max && chunk.content.startsWith(rawPrefix) ? rawPrefix : "";
+    const body = chunk.content.slice(prefix.length);
+    const { partHeader } = chunk.metadata;
+    const header =
+      partHeader !== undefined &&
+      body.split("\n", 1)[0].trim() === partHeader &&
+      (prefix.length + partHeader.length + 1) * 2 < max
+        ? `${partHeader}\n`
+        : "";
+    if (prefix === "" && header === "") return this.splitContentIntoSegments(chunk.content, max);
+    const prefixLines = prefix === "" ? 0 : prefix.split("\n").length - 1;
+    return this.splitContentIntoSegments(body, max - prefix.length - header.length).map((segment, i) => ({
+      text: `${prefix}${i === 0 ? "" : header}${segment.text}`,
       firstLine: segment.firstLine + prefixLines,
       lastLine: segment.lastLine + prefixLines,
     }));
@@ -1412,6 +1428,7 @@ export class TreeSitterChunker implements CodeChunker {
           symbolId: result.symbolId ?? this.buildSymbolId(childName),
           lineRanges: result.lineRanges,
           ...(body.contextPrefix === undefined ? {} : { contextPrefix: body.contextPrefix }),
+          ...(result.partHeader === undefined ? {} : { partHeader: result.partHeader }),
         },
       });
     }

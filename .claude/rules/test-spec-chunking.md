@@ -107,7 +107,9 @@ Always-applied rules:
   prefix sheds whole statements from the OUTERMOST end until it fits; the
   example is never cut by the kernel. An example oversized on its own is split
   by the engine's hard cap into `<exampleId>#partN` windows (`parentSymbolId` =
-  the example id), which the outline folds back into one line.
+  the example id), which the outline folds back into one line. Every window
+  after the first repeats the example's call row (`it(...)` / `it "..." do`)
+  under the container header (bd tea-rags-mcp-l24yk).
 - **Order**: chunks follow source order — scopes and examples interleaved by
   start line.
 

@@ -92,6 +92,10 @@ export function produceTestScopeChunks(
       name: event.example.name,
       parentSymbolId: scopeId,
       parentType: TEST_SCOPE_PARENT_TYPE,
+      // The example's call row. An example oversized on its own sheds every
+      // setup line above, so it opens its chunk, and the engine repeats it on
+      // every `#part2+` it cuts (bd tea-rags-mcp-l24yk).
+      partHeader: event.example.text.split("\n", 1)[0].trim(),
     });
   }
 

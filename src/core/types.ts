@@ -662,6 +662,13 @@ export interface CodeChunk {
      * so it never leaves the chunker (bd tea-rags-mcp-j4jrn).
      */
     contextPrefix?: string;
+
+    /**
+     * Transient. A hook body chunk's `BodyChunkResult.partHeader`: the row
+     * after `contextPrefix` that every `#part2+` the post-pass cuts repeats
+     * (bd tea-rags-mcp-l24yk). Removed with `contextPrefix`.
+     */
+    partHeader?: string;
   };
 }
 
