@@ -152,6 +152,9 @@ export const capability: LanguageCapability = {
   // chunking 2: bd tea-rags-mcp-39xca.19 — the same `#` reaches the payload
   // `symbolId`, and a declarator-bound factory's members gain its segment
   // (`createCounter#increment`, was a bare `increment`).
+  // Same walker 12, bd tea-rags-mcp-vqdi6: a FULL index walked `.tsx` files on
+  // the chunker's `typescript`-grammar tree and lost ~72% of their call sites;
+  // the cross-pass extraction now walks the `tsx` grammar, as a recompute did.
   versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties

@@ -7,6 +7,8 @@
  * After: Parsers loaded on demand (~0ms startup, ~100-200ms first use per language)
  */
 
+import { extname } from "node:path";
+
 import Parser from "tree-sitter";
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
@@ -116,6 +118,12 @@ interface ContainerRemainderIdentity {
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
   private readonly parserCache: Map<string, LanguageConfig> = new Map();
+  /**
+   * Codegraph walk parsers keyed by language + extension (bd
+   * tea-rags-mcp-vqdi6); `null` where the chunk parser's grammar is the one the
+   * extension selects. See {@link walkTreeFor}.
+   */
+  private readonly walkParsers = new Map<string, Parser | null>();
   private readonly fallbackChunker: CharacterChunker;
   /** Splits an oversized symbol on statement boundaries (bd tea-rags-mcp-y5vx4). */
   private readonly symbolSplitter: AstSymbolSplitter;
@@ -355,6 +363,55 @@ export class TreeSitterChunker implements CodeChunker {
    * direct-mode `extractOneFile`); it is `null` only for documentation
    * languages, unsupported languages, and hard parse failures.
    */
+  /**
+   * The tree a codegraph walker reads for `filePath`: `chunkTree` itself when
+   * the file's extension selects the grammar it was chunked with, otherwise a
+   * parse under the grammar the extension selects (bd tea-rags-mcp-vqdi6).
+   *
+   * The chunker holds ONE parser per language and asks the kernel for its
+   * grammar with no extension; the codegraph walk passes the file's extension
+   * (`LanguageKernel.extractLanguage`). The two differ for `.tsx`, which chunks
+   * under the `typescript` grammar and walks under `tsx` — handing the walker
+   * the chunk tree there lost ~72% of taxdome's `.tsx` call sites to JSX parse
+   * errors on the full-index path, while a recompute (which re-parses through
+   * the codegraph provider's own extractor) did not. So the single-parse
+   * economy holds only where the grammars agree, which is every other file.
+   */
+  async walkTreeFor(
+    code: string,
+    filePath: string,
+    language: string,
+    chunkTree: MaterializedTree,
+  ): Promise<MaterializedTree> {
+    const extension = extname(filePath);
+    const key = `${language}\u0000${extension}`;
+    let parser = this.walkParsers.get(key);
+    if (parser === undefined) {
+      parser = await this.walkParserFor(language, extension);
+      this.walkParsers.set(key, parser);
+    }
+    if (parser === null) return chunkTree;
+    return { rootNode: materializeTree(parser.parse(code).rootNode, code) };
+  }
+
+  /**
+   * A parser for the grammar `extension` selects, or `null` when that is the
+   * grammar the language's chunk parser already uses.
+   */
+  private async walkParserFor(language: string, extension: string): Promise<Parser | null> {
+    const kernel = this.tryGetProvider(language)?.kernel;
+    if (kernel?.extractLanguage === undefined) return null;
+    const mod = await kernel.loadModule();
+    // A language that loads no grammar has no chunk parser either, so no chunk
+    // tree reaches here for it; there is nothing to re-parse with.
+    if (mod === null) return null;
+    const walkGrammar = kernel.extractLanguage(mod, extension);
+    if (walkGrammar === kernel.extractLanguage(mod)) return null;
+    const parser = new Parser();
+    parser.setLanguage(walkGrammar as Parser.Language);
+    return parser;
+  }
+
   async chunkWithTree(
     code: string,
     filePath: string,
