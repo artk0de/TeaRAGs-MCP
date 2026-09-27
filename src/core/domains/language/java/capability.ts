@@ -42,6 +42,9 @@ export const capability: LanguageCapability = {
   // return row for call-return to join.
   // walker 3: release v1.44.2 shipped walker 2 and a release cycle gets ONE
   // walker bump, so every branch-local number above collapses into 3.
+  // Same walker 3, bd tea-rags-mcp-52gqn: a call on a `new X()` receiver binds
+  // that receiver to X in `localBindings`, so `new Latest().version()` resolves
+  // like a typed local instead of dropping as an untyped chain.
   versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
   // Google Java Style / Oracle conventions: classes and interfaces
   // UpperCamelCase, methods / parameters / locals / non-constant fields

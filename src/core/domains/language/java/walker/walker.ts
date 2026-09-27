@@ -245,6 +245,27 @@ export function javaCallSiteShape(node: AstNode): JavaCallShape | null {
   return { receiver: node.childForFieldName("object")?.text ?? null, member: name.text };
 }
 
+/**
+ * A method call whose receiver is an object creation — `new Latest().version()`,
+ * parentheses allowed — binds that receiver, keyed by its text exactly as the
+ * `CallRef` carries it, to the constructed type (bd tea-rags-mcp-52gqn). The
+ * type is written in the expression itself, so this is the same evidence a
+ * typed local (`Latest l = new Latest()`) gives the localBinding pass; without
+ * it the receiver reached the resolver as an untyped parenthesized chain and
+ * every pass dropped it.
+ */
+function constructedReceiverBinding(node: AstNode): JavaParamBinding | null {
+  if (node.type !== "method_invocation") return null;
+  const receiver = node.childForFieldName("object");
+  if (!receiver) return null;
+  let created: AstNode | null = receiver;
+  while (created?.type === "parenthesized_expression") created = created.namedChildren[0] ?? null;
+  if (created?.type !== "object_creation_expression") return null;
+  const typeName = baseTypeName(created.childForFieldName("type"));
+  if (!typeName) return null;
+  return { name: receiver.text, type: typeName, startLine: node.startPosition.row + 1 };
+}
+
 interface JavaParamBinding {
   name: string;
   type: string;
@@ -271,6 +292,11 @@ interface JavaParamBinding {
 function collectLocalBindings(root: AstNode): JavaParamBinding[] {
   const out: JavaParamBinding[] = [];
   walk(root, (node) => {
+    const constructed = constructedReceiverBinding(node);
+    if (constructed) {
+      out.push(constructed);
+      return;
+    }
     if (node.type === "formal_parameter") {
       const typeName = baseTypeName(node.childForFieldName("type"));
       const name = node.childForFieldName("name");
