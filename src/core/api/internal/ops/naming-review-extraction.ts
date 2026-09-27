@@ -50,9 +50,13 @@ export interface NamingReviewFileDeclarations {
   callables: readonly NamingReviewCallable[];
 }
 
-/** One method / function declaration: its symbol, member name and first line. */
+/**
+ * One method / function declaration: its symbols, member name and first line.
+ * One declaration can carry several symbols — a Ruby `module_function` method
+ * is both `M#x` and `M.x`.
+ */
 export interface NamingReviewCallable {
-  symbolId: string;
+  symbolIds: readonly string[];
   name: string;
   line: number;
   kind: "method" | "function";
@@ -102,20 +106,31 @@ export function createNamingReviewExtractor(languageFactory: LanguageFactoryDesc
   };
 }
 
-/** Methods and functions by symbol (a split method's parts collapse to its first line), constructors dropped. */
+/**
+ * Methods and functions, one per declaration: a split method's parts collapse
+ * to its first line, the symbols one declaration carries to one entry;
+ * constructors dropped.
+ */
 function callablesOf(
   language: string,
   chunks: readonly { symbolId: string; startLine?: number; symbolKind?: string }[],
 ): NamingReviewCallable[] {
-  const bySymbol = new Map<string, NamingReviewCallable>();
+  const firstLine = new Map<string, { line: number; kind: "method" | "function" }>();
   for (const { symbolId, startLine, symbolKind } of chunks) {
     if ((symbolKind !== "method" && symbolKind !== "function") || startLine === undefined) continue;
     if (isConstructorSymbol(language, symbolId)) continue;
-    const seen = bySymbol.get(symbolId);
-    if (seen !== undefined && seen.line <= startLine) continue;
-    bySymbol.set(symbolId, { symbolId, name: memberNameOf(symbolId), line: startLine, kind: symbolKind });
+    const seen = firstLine.get(symbolId);
+    if (seen === undefined || startLine < seen.line) firstLine.set(symbolId, { line: startLine, kind: symbolKind });
   }
-  return [...bySymbol.values()];
+  const byDeclaration = new Map<string, NamingReviewCallable & { symbolIds: string[] }>();
+  for (const [symbolId, { line, kind }] of firstLine) {
+    const name = memberNameOf(symbolId);
+    const key = `${line}\u0000${name}`;
+    const declaration = byDeclaration.get(key);
+    if (declaration) declaration.symbolIds.push(symbolId);
+    else byDeclaration.set(key, { symbolIds: [symbolId], name, line, kind });
+  }
+  return [...byDeclaration.values()];
 }
 
 /** A symbolId's member: what follows its last `#` / `.` separator, or the whole id for a top-level function. */

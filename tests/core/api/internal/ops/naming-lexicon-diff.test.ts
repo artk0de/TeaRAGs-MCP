@@ -539,6 +539,24 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       expect(review?.notJudged).toBe(0);
     });
 
+    // Live on taxdome: a `module_function` method is one declaration under two symbols (`M#x`, `M.x`).
+    it("a method declared once under two symbols is listed once", async () => {
+      mkdirSync(join(repo, "app/billing"), { recursive: true });
+      writeFileSync(
+        join(repo, "app/billing/refusals.rb"),
+        "module Refusals\n  module_function\n\n  def refuse!(error)\n    error\n  end\nend\n",
+      );
+      const { review } = await ops.getNamingLexicon({
+        collection: "c",
+        path: repo,
+        files: ["app/billing/refusals.rb"],
+      });
+      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 1 } });
+      expect(review?.notJudgedNames).toEqual([
+        { relPath: "app/billing/refusals.rb", line: 4, name: "refuse!", kind: "method", reason: "unknownReturnType" },
+      ]);
+    });
+
     it("a file that was not judged is listed with why", async () => {
       writeFileSync(join(repo, "src/git/reader.test.ts"), "export const x = 1;\n");
       writeFileSync(join(repo, "notes.md"), "# notes\n");

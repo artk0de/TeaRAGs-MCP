@@ -1660,7 +1660,7 @@ function unjudgedCallables(file: DiffFile): NamingReviewNotJudgedEntry[] {
   const { relPath, ranges, declarations } = file;
   const returned = new Set(declarations.values.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
   return declarations.callables
-    .filter((callable) => inRanges(callable.line, ranges) && !returned.has(callable.symbolId))
+    .filter((callable) => inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)))
     .map(({ name, line, kind }) => ({ relPath, line, name, kind, reason: "unknownReturnType" as const }));
 }
 
