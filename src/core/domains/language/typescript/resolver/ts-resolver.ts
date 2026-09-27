@@ -106,6 +106,7 @@ import {
   TSImportBasenameSymbolResolutionStrategy,
   TSImportedCalleeSymbolResolutionStrategy,
   TSImportNarrowedFallbackSymbolResolutionStrategy,
+  TSLexicalCalleeSymbolResolutionStrategy,
   TSLocalBindingSymbolResolutionStrategy,
   TSNamedImportSymbolResolutionStrategy,
   TSReceiverSymbolSymbolResolutionStrategy,
@@ -411,6 +412,25 @@ export class TSCallResolver implements CallResolver {
     const fieldType = new TSFieldTypeSymbolResolutionStrategy(cfg);
     const localBinding = new TSLocalBindingSymbolResolutionStrategy(cfg);
     this.functionInvokerSiteStrategies = [fieldType, localBinding];
+    const checkerTier: SymbolResolutionStrategy[] = this.programCache
+      ? [
+          // Head of the checker tier bar the JSX pass, and the index is a
+          // correctness argument in one direction only (bd tea-rags-mcp-kf42k).
+          // Everything ahead of it either answers a receiver or answers a bare
+          // call from exact evidence — an import binding, the caller's own file —
+          // and this pass would have nothing to add there. Against
+          // `typeCheckerFallback` it decides the family: both reach the same
+          // declaration through `getResolvedSignature`, but the fallback degrades
+          // to a file-only edge where the symbol table cannot confirm the member,
+          // and the MEMBER is the whole answer here. Behind the JSX pass because a
+          // React component is routinely `const Page = lazy(() => …)` — a
+          // call-result binding by shape — and its tag is that pass's case.
+          new TSCallResultCalleeSymbolResolutionStrategy(cfg, this.programCache),
+          new TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy(cfg, this.programCache),
+          new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache),
+          new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache),
+        ]
+      : [];
     this.strategies = [
       new TSSuperSymbolResolutionStrategy(cfg),
       new TSThisMemberSymbolResolutionStrategy(cfg),
@@ -464,6 +484,14 @@ export class TSCallResolver implements CallResolver {
       // the receiver is a `Map`.
       new TSImportBasenameSymbolResolutionStrategy(cfg, this.programCache),
       new TSReceiverSymbolSymbolResolutionStrategy(cfg),
+      // Ahead of `sameFile` because that pass matches a bare callee against
+      // every short name the caller's file declares, blind to scope: a
+      // PARAMETER `send` landed on the `main.send` another function declares,
+      // and a function's own nested helper went unresolved beside a namesake
+      // (bd tea-rags-mcp-bv0tq). This pass asks the checker which declaration
+      // the identifier binds; local values it hands to the checker tier and
+      // nothing else, so the two short-name passes below never see them.
+      ...(this.programCache ? [new TSLexicalCalleeSymbolResolutionStrategy(this.programCache, checkerTier)] : []),
       new TSSameFileSymbolResolutionStrategy(cfg),
       // 10 and 11 take the Program cache for their three GUARDS, not to resolve
       // with: `targetsExternalImport` for receivers only the checker can type
@@ -474,26 +502,8 @@ export class TSCallResolver implements CallResolver {
       // in-project type for (bd tea-rags-mcp-z0zqd).
       new TSGlobalShortNameSymbolResolutionStrategy(cfg, this.programCache),
       new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg, this.programCache),
+      ...checkerTier,
     ];
-    if (this.programCache) {
-      this.strategies.push(
-        // Head of the checker tier bar the JSX pass, and the index is a
-        // correctness argument in one direction only (bd tea-rags-mcp-kf42k).
-        // Everything ahead of it either answers a receiver or answers a bare
-        // call from exact evidence — an import binding, the caller's own file —
-        // and this pass would have nothing to add there. Against
-        // `typeCheckerFallback` it decides the family: both reach the same
-        // declaration through `getResolvedSignature`, but the fallback degrades
-        // to a file-only edge where the symbol table cannot confirm the member,
-        // and the MEMBER is the whole answer here. Behind the JSX pass because a
-        // React component is routinely `const Page = lazy(() => …)` — a
-        // call-result binding by shape — and its tag is that pass's case.
-        new TSCallResultCalleeSymbolResolutionStrategy(cfg, this.programCache),
-        new TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy(cfg, this.programCache),
-        new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache),
-        new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache),
-      );
-    }
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {

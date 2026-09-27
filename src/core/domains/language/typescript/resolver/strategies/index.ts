@@ -6,6 +6,7 @@ export { TSNamedImportSymbolResolutionStrategy } from "./ts-named-import.js";
 export { TSImportedCalleeSymbolResolutionStrategy } from "./ts-imported-callee.js";
 export { TSImportBasenameSymbolResolutionStrategy } from "./ts-import-basename.js";
 export { TSReceiverSymbolSymbolResolutionStrategy } from "./ts-receiver-symbol.js";
+export { TSLexicalCalleeSymbolResolutionStrategy } from "./ts-lexical-callee.js";
 export { TSSameFileSymbolResolutionStrategy } from "./ts-same-file.js";
 export { TSGlobalShortNameSymbolResolutionStrategy } from "./ts-global-short-name.js";
 export { TSImportNarrowedFallbackSymbolResolutionStrategy } from "./ts-import-narrowed-fallback.js";
