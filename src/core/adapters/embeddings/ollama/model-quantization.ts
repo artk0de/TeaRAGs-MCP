@@ -95,10 +95,21 @@ export async function provisionQuantizedOllamaModel(deps: {
       await create.text();
       return { effectiveModel: tag, quantized: true };
     }
+    // Surface the server's own reason — "create-time quantization is only
+    // supported for safetensors imports" (a GGUF base) is actionable; a bare
+    // "refused" is not.
+    let refusal = `status ${create.status}`;
+    try {
+      const body = await create.text();
+      const parsed = JSON.parse(body) as { error?: string };
+      if (parsed.error) refusal = parsed.error;
+    } catch {
+      // Non-JSON body — keep the status form.
+    }
     return {
       effectiveModel: deps.baseModel,
       quantized: false,
-      warning: `Ollama quantization ${deps.level} unavailable (server refused to create ${tag}) — embedding with unquantized ${deps.baseModel}`,
+      warning: `Ollama quantization ${deps.level} unavailable (${refusal}) — embedding with unquantized ${deps.baseModel}`,
     };
   } catch (error) {
     return {

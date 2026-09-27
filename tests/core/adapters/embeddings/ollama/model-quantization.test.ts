@@ -94,11 +94,16 @@ describe("provisionQuantizedOllamaModel", () => {
     });
   });
 
-  it("warns and keeps the base model when the server cannot quantize", async () => {
+  it("warns with the server's refusal reason and keeps the base model", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, status: 404 })
-      .mockResolvedValueOnce({ ok: false, status: 404 });
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () =>
+          JSON.stringify({ error: "create-time quantization is only supported for safetensors imports" }),
+      });
     const result = await provisionQuantizedOllamaModel({
       baseUrl: "http://box:11434",
       baseModel: BASE,
@@ -107,6 +112,7 @@ describe("provisionQuantizedOllamaModel", () => {
     });
     expect(result.quantized).toBe(false);
     expect(result.effectiveModel).toBe(BASE);
+    expect(result.warning).toContain("safetensors");
     expect(result.warning).toContain("q4_K_M");
   });
 });
