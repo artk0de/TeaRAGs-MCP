@@ -298,7 +298,10 @@ return whose owner's in-project ancestor declares the method (diff mode: enclosi
 mode: the class at path) is an override: CONFORMS with override.declaredBy, and
 evidence.collisions (up to 3 ids) lists the ancestors' declarations first. Role = inheritance family > directory > project
 suffix; project suffix only confirms, never MISFIT. The nearest family decides: the subclasses
-of extends as written (A::Workflow::Worker), else of every supertype sharing its last segment. A directory-evidence MISFIT is
+of extends as written (A::Workflow::Worker), else of every supertype sharing its last segment. The
+written family's role may be a tail (role.tail AsyncWorkflow, role.word its head workflow): the
+suffix every distinct name carrying the head shares, each word named by that supertype. A draft conforms only
+ending in the whole tail; ExportWorkflow → ExportAsyncWorkflow, ExportJob → ExportJobAsyncWorkflow. A directory-evidence MISFIT is
 location-based: rename only when the type belongs to role.examples' family. CONFORMS with
 role.carriedInName=false: the kind a family of action-named types takes from its supertype
 and directory (KindOfService under app/services → service) — what the type IS, never a

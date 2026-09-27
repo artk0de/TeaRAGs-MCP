@@ -875,20 +875,89 @@ describe("judgeTypeDraft", () => {
       symbolKind: "class" as const,
     });
 
-    it.each(["ExportAsyncWorkflow", "ExportWorkflow"])("`%s` → CONFORMS with the `workflow` role", (name) => {
-      expect(judge(rows, draft(name))).toMatchObject({
+    it("`ExportAsyncWorkflow` → CONFORMS with the `workflow` role and its `AsyncWorkflow` tail", () => {
+      expect(judge(rows, draft("ExportAsyncWorkflow"))).toMatchObject({
         verdict: "CONFORMS",
-        role: { word: "workflow", evidence: "inheritance", examples: ["ImportAsyncWorkflow", "UpdateAsyncWorkflow"] },
+        role: {
+          word: "workflow",
+          tail: "AsyncWorkflow",
+          evidence: "inheritance",
+          examples: ["ImportAsyncWorkflow", "UpdateAsyncWorkflow"],
+        },
       });
     });
 
-    it("`ExportJob` → MISFIT toward the sibling convention, never `…Worker`", () => {
-      expect(judge(rows, draft("ExportJob"))).toMatchObject({
+    // bd tea-rags-mcp-1ffi9 — an intentional invariant change, the user's decision: 5ulz2 judged
+    // `ExportWorkflow` CONFORMS to the one-word `workflow` role. The written family's role is now
+    // the tail its majority shares, and the team names these subclasses `*AsyncWorkflow`.
+    it("`ExportWorkflow` → MISFIT → `ExportAsyncWorkflow`: the tail's qualifier goes before the head", () => {
+      expect(judge(rows, draft("ExportWorkflow"))).toMatchObject({
         verdict: "MISFIT",
-        suggestion: "ExportJobWorkflow",
-        role: { word: "workflow", evidence: "inheritance" },
+        suggestion: "ExportAsyncWorkflow",
+        role: { word: "workflow", tail: "AsyncWorkflow", evidence: "inheritance" },
       });
     });
+
+    it("`ExportJob` → MISFIT toward the sibling convention, the whole tail appended, never `…Worker`", () => {
+      expect(judge(rows, draft("ExportJob"))).toMatchObject({
+        verdict: "MISFIT",
+        suggestion: "ExportJobAsyncWorkflow",
+        role: { word: "workflow", tail: "AsyncWorkflow", evidence: "inheritance" },
+      });
+    });
+
+    it("a draft ending in the tail's first words is completed, not repeated: `ExportAsync` → `ExportAsyncWorkflow`", () => {
+      expect(judge(rows, draft("ExportAsync"))).toMatchObject({
+        verdict: "MISFIT",
+        suggestion: "ExportAsyncWorkflow",
+      });
+    });
+
+    it("a qualifier the draft already carries elsewhere is moved, not repeated: `AsyncExportWorkflow` → `ExportAsyncWorkflow`", () => {
+      expect(judge(rows, draft("AsyncExportWorkflow"))).toMatchObject({
+        verdict: "MISFIT",
+        suggestion: "ExportAsyncWorkflow",
+      });
+    });
+
+    it("a family sharing only the head keeps `ExportWorkflow` CONFORMS, with no tail", () => {
+      const split = [
+        ...filler(6),
+        ...WORKERS,
+        row("ImportAsyncWorkflow", "app/workers/f0/import_async_workflow.rb", ["Platform::Async::Workflow::Worker"]),
+        row("UpdateSyncWorkflow", "app/workers/f1/update_sync_workflow.rb", ["Platform::Async::Workflow::Worker"]),
+      ];
+      const verdict = judge(split, draft("ExportWorkflow"));
+      expect(verdict).toMatchObject({ verdict: "CONFORMS", role: { word: "workflow" } });
+      expect(verdict.verdict === "CONFORMS" && verdict.role?.tail).toBeFalsy();
+    });
+  });
+
+  // bd tea-rags-mcp-1ffi9: a majority tail qualifier flipped 12 correct taxdome names; the tail's
+  // qualifier words are unanimous among the head's names, so 6 of 11 `*DocumentNotification`s set none.
+  it("`SignatureRequestNotification` among 11 notifications, 6 of them `*DocumentNotification`, CONFORMS", () => {
+    const supertype = "TaxPreparation::Inbox::DocumentNotification";
+    const notifications = [
+      "ApprovedDocumentNotification",
+      "RejectedDocumentNotification",
+      "ClientUploadedDocumentsNotification",
+      "ClientUploadedRequestedDocumentsNotification",
+      "SharedDocumentNotification",
+      "DeletedDocumentNotification",
+      "DatevUploadNotification",
+      "IrsTranscriptsDownloadedNotification",
+      "SignedDocumentBySignerNotification",
+      "VoidedSignatureRequestNotification",
+      "ExpiredLinkNotification",
+    ].map((name, i) => row(name, `app/models/tax_preparation/inbox/n${i}.rb`, [supertype]));
+    const verdict = judge([...filler(6), ...notifications], {
+      name: "SignatureRequestNotification",
+      path: "app/models/tax_preparation/inbox/signature_request_notification.rb",
+      extends: supertype,
+      symbolKind: "class",
+    });
+    expect(verdict).toMatchObject({ verdict: "CONFORMS", role: { word: "notification", evidence: "inheritance" } });
+    expect(verdict.verdict === "CONFORMS" && verdict.role?.tail).toBeFalsy();
   });
 
   it("a short name that already exists as a type in another module → COLLISION naming it", () => {

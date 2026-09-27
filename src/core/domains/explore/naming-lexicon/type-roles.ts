@@ -87,6 +87,13 @@ export interface TypeRoleAssignment {
    * word its name owes. Absent: the role is the name's head.
    */
   carriedInName?: boolean;
+  /**
+   * A written-supertype family's multi-word role (bd tea-rags-mcp-1ffi9): the
+   * longest word suffix its role majority shares, `role` its last word —
+   * `[async, workflow]` for `Platform::Async::Workflow::Worker`'s
+   * `*AsyncWorkflow`s. Absent: the role is the one word.
+   */
+  tail?: readonly string[];
 }
 
 /**
@@ -219,6 +226,11 @@ function groupBy<K>(items: readonly HeadedRow[], keysOf: (item: HeadedRow) => re
 function pluralityHead(members: readonly HeadedRow[]): { head: string; count: number } | undefined {
   const counts = new Map<string, number>();
   for (const { head } of members) if (head !== null) counts.set(head, (counts.get(head) ?? 0) + 1);
+  return pluralityOf(counts);
+}
+
+/** The most counted word and its count; `undefined` on a tie for the most or no word. */
+function pluralityOf(counts: ReadonlyMap<string, number>): { head: string; count: number } | undefined {
   let best: { head: string; count: number } | undefined;
   let tied = false;
   for (const [head, count] of counts) {
@@ -359,6 +371,7 @@ function assign(
   role: string,
   evidence: TypeRoleEvidence,
   scope: string,
+  tail?: readonly string[],
 ): TypeRoleAssignment[] {
   const carriers = members.filter((member) => member.head === role);
   return carriers.map(({ row }) => ({
@@ -368,6 +381,7 @@ function assign(
     evidence,
     support: carriers.length,
     scope,
+    ...(tail ? { tail } : {}),
   }));
 }
 
@@ -630,6 +644,78 @@ function familyRole(members: readonly HeadedRow[], t: TypeRoleThresholds): strin
 }
 
 /**
+ * A written family's TAIL (bd tea-rags-mcp-1ffi9): the longest word suffix,
+ * ending in the family's role word, that EVERY distinct name carrying the role
+ * word ends in (the words up to the head, a complement excluded, compared
+ * singular) — ≥ {@link MIN_ROLE_MEMBERS} of them. The head word keeps its
+ * majority rule; its qualifiers need unanimity. Measured on taxdome, a
+ * majority qualifier flipped 12 correct names in 4 families and caught none
+ * (`SignatureRequestNotification` among 6 of 11 `*DocumentNotification`s,
+ * `TagsPolicy` among `*TemplatesPolicy`s): a qualifier most members share is
+ * still their subject, a qualifier all of them share is the family's
+ * convention (`*AsyncWorkflow`, `*CsvExporter`, `*ExportWorker`). It grows one
+ * word at a time, spelled as most of its carriers spell it. Three more guards
+ * keep a subject word out, each measured on taxdome:
+ *   - names, not declarations: a name re-declared in ten namespaces
+ *     (`ApplicationController`, `ExecuteWorker`) is one name, as it is one for
+ *     a project suffix;
+ *   - the supertype's own name is no member: `UserSerializer <
+ *     Base::UserSerializer` re-declares its parent, it does not qualify it;
+ *   - a qualifier is a word the supertype as written names, outside its root
+ *     namespace (`Platform::Async::Workflow::Worker` names `async` and
+ *     `workflow`): a word only the members share is their subject
+ *     (`ClientsV2Index`), and a root namespace names a whole domain
+ *     (`GettingPaid` → `paid`).
+ * `undefined` when only the role word is shared.
+ */
+function familyTail(
+  supertype: string,
+  members: readonly HeadedRow[],
+  role: string,
+  parse: TypeNameParser,
+): string[] | undefined {
+  const segments = supertype.split("::");
+  const own = segments.at(-1);
+  const declared = new Set(segments.slice(1).flatMap(splitIdentifierWords).map(singularizeIdentifierWord));
+  const names = new Map<string, string | null>();
+  for (const { row, head } of members) {
+    const name = typeNameLastSegment(row.shortName);
+    if (name !== own) names.set(name, head);
+  }
+  const named = [...names].flatMap(([name, head]) => (head === role ? [[...parse(name).qualifiers, role]] : []));
+  const tail = [role];
+  for (;;) {
+    const counts = new Map<string, number>();
+    const spellings = new Map<string, Map<string, number>>();
+    for (const words of named) {
+      if (words.length <= tail.length || !endsWithWords(words, tail)) continue;
+      const word = words[words.length - tail.length - 1];
+      const key = singularizeIdentifierWord(word);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const spelled = spellings.get(key) ?? new Map<string, number>();
+      spelled.set(word, (spelled.get(word) ?? 0) + 1);
+      spellings.set(key, spelled);
+    }
+    const best = pluralityOf(counts);
+    // Unanimous among the head's names: a majority qualifier is some members' subject word.
+    if (!best || best.count < MIN_ROLE_MEMBERS || best.count < named.length) break;
+    if (!declared.has(best.head)) break;
+    const spelled = [...(spellings.get(best.head) ?? [])].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    tail.unshift(spelled[0]?.[0] ?? best.head);
+  }
+  return tail.length > 1 ? tail : undefined;
+}
+
+/** Whether `words` end with `suffix`, word for word, compared singular (`organizers` ends in `organizer`). */
+export function endsWithWords(words: readonly string[], suffix: readonly string[]): boolean {
+  const offset = words.length - suffix.length;
+  return (
+    offset >= 0 &&
+    suffix.every((word, i) => singularizeIdentifierWord(words[offset + i]) === singularizeIdentifierWord(word))
+  );
+}
+
+/**
  * A supertype as written, namespace kept (`::Platform::Async::Workflow::Worker<T>` →
  * `Platform::Async::Workflow::Worker`): the family key nearer than its last segment.
  */
@@ -651,14 +737,17 @@ function rolesFrom(rows: readonly TypeNameRow[], t: TypeRoleThresholds, parse: T
   }
   // The NEAREST family (bd tea-rags-mcp-5ulz2): a namespaced supertype as written is a family of its
   // own inside its last-segment family, and where the two name different roles its members carry
-  // the nearer one. One naming the same role adds nothing.
+  // the nearer one. Its role is the TAIL its majority shares (bd tea-rags-mcp-1ffi9): one naming the
+  // same one-word role adds nothing, one with a longer tail adds it.
   const writtenFamilies = groupBy(headed, ({ row }) => [...new Set(row.ancestors.map(writtenTypeName))]);
   for (const [supertype, members] of writtenFamilies) {
     const last = typeNameLastSegment(supertype);
     if (supertype === last) continue;
     const role = familyRole(members, t);
-    if (role !== undefined && role !== familyRoles.get(last)) {
-      assignments.push(...assign(members, role, "inheritance", supertype));
+    if (role === undefined) continue;
+    const tail = familyTail(supertype, members, role, parse);
+    if (tail !== undefined || role !== familyRoles.get(last)) {
+      assignments.push(...assign(members, role, "inheritance", supertype, tail));
     }
   }
   const isFamilySlot = (carriers: readonly HeadedRow[], word: string): boolean =>
@@ -760,6 +849,7 @@ function pickRole(
     examples,
     ...(best.familySupertypes ? { familySupertypes: best.familySupertypes } : {}),
     ...(best.carriedInName === false ? { carriedInName: false } : {}),
+    ...(best.tail ? { tail: best.tail } : {}),
   };
 }
 
@@ -774,6 +864,8 @@ export interface ExpectedTypeRole extends RoleFamilyMembership {
   familyForm?: DeclarationForm;
   /** A dispersed family's kind: `false`, the role is not the name's head ({@link TypeRoleAssignment.carriedInName}). */
   carriedInName?: boolean;
+  /** A written family's multi-word role, `role` its last word ({@link TypeRoleAssignment.tail}). */
+  tail?: readonly string[];
 }
 
 /**

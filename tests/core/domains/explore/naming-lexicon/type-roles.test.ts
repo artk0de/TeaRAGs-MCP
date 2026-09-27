@@ -921,6 +921,128 @@ describe("deriveTypeRoles — the nearest family decides", () => {
     });
   });
 
+  // bd tea-rags-mcp-1ffi9, the user's decision: taxdome's team names the direct subclasses of
+  // `Platform::Async::Workflow::Worker` `*AsyncWorkflow`. A written family's role is the TAIL its
+  // role majority shares — the longest word suffix carried by ≥ 2 members and ≥ half of them.
+  describe("a written family's role is the tail its majority shares (1ffi9)", () => {
+    const flow = (name: string, i: number, supertype = "Platform::Async::Workflow::Worker") =>
+      t(name, `app/workers/g${i}/${name.toLowerCase()}.rb`, [supertype]);
+
+    it("members sharing `AsyncWorkflow` give the tail [async, workflow], headed by `workflow`", () => {
+      expect(expectedRoleFor(deriveTypeRoles([...WORKERS, ...WORKFLOWS]), DRAFT)).toMatchObject({
+        role: "workflow",
+        tail: ["async", "workflow"],
+      });
+    });
+
+    it("members sharing only the head give a one-word role, no tail", () => {
+      const rows = [...WORKERS, flow("ImportAsyncWorkflow", 0), flow("UpdateSyncWorkflow", 1)];
+      const role = expectedRoleFor(deriveTypeRoles(rows), DRAFT);
+      expect(role).toMatchObject({ role: "workflow" });
+      expect(role?.tail).toBeUndefined();
+    });
+
+    // Measured on taxdome: a majority qualifier flipped 12 correct names in 4 families and caught
+    // none; the qualifier words must be UNANIMOUS among the head's names. The head keeps its majority.
+    it("a tail qualifier needs every name carrying the head: 2 of 4 is no tail, 2 of 2 is", () => {
+      const half = ["ImportAsyncWorkflow", "UpdateAsyncWorkflow", "SyncWorkflow", "PullWorkflow"].map((n, i) =>
+        flow(n, i),
+      );
+      expect(expectedRoleFor(deriveTypeRoles(half), DRAFT)?.tail).toBeUndefined();
+      const all = ["ImportAsyncWorkflow", "UpdateAsyncWorkflow"].map((n, i) => flow(n, i));
+      expect(expectedRoleFor(deriveTypeRoles(all), DRAFT)?.tail).toEqual(["async", "workflow"]);
+    });
+
+    it("6 of 11 names carrying `DocumentNotification` leave the one-word role `notification`", () => {
+      const supertype = "TaxPreparation::Inbox::DocumentNotification";
+      const names = [
+        "ApprovedDocumentNotification",
+        "RejectedDocumentNotification",
+        "ClientUploadedDocumentsNotification",
+        "ClientUploadedRequestedDocumentsNotification",
+        "SharedDocumentNotification",
+        "DeletedDocumentNotification",
+        "DatevUploadNotification",
+        "IrsTranscriptsDownloadedNotification",
+        "SignatureRequestNotification",
+        "SignedDocumentBySignerNotification",
+        "VoidedSignatureRequestNotification",
+      ];
+      const role = expectedRoleFor(deriveTypeRoles(names.map((n, i) => flow(n, i, supertype))), {
+        path: "app/models/tax_preparation/inbox/x.rb",
+        extends: supertype,
+      });
+      expect(role).toMatchObject({ role: "notification", evidence: "inheritance" });
+      expect(role?.tail).toBeUndefined();
+    });
+
+    it("one member's own qualifier never extends the tail", () => {
+      const rows = ["BulkImportAsyncWorkflow", "UpdateAsyncWorkflow"].map((n, i) => flow(n, i));
+      expect(expectedRoleFor(deriveTypeRoles(rows), DRAFT)?.tail).toEqual(["async", "workflow"]);
+    });
+
+    // Measured on taxdome: counted per declaration, 9 re-declared `ApplicationController`s made
+    // `events` the tail of `Tech::Webhooks::ApplicationController` and flipped `QuotesController`.
+    it("a name re-declared in many namespaces is one name for the tail's majority", () => {
+      const supertype = "Tech::Webhooks::EventsBase";
+      const rows = [
+        ...[0, 1, 2].map((i) => flow("ApplicationEventsController", i, supertype)),
+        flow("QuotesController", 3, supertype),
+        flow("PredictsController", 4, supertype),
+      ];
+      expect(
+        expectedRoleFor(deriveTypeRoles(rows), { path: "app/controllers/x/y.rb", extends: supertype })?.tail,
+      ).toBeUndefined();
+    });
+
+    it("the supertype's own name re-declared by its subclasses is no member of the tail", () => {
+      const supertype = "Tech::Base::UserSerializer";
+      const rows = [
+        ...[0, 1, 2].map((i) => flow("UserSerializer", i, supertype)),
+        flow("CurrentUserSerializer", 3, supertype),
+        flow("MailboxHolderSerializer", 4, supertype),
+      ];
+      expect(
+        expectedRoleFor(deriveTypeRoles(rows), { path: "app/serializers/x/y.rb", extends: supertype })?.tail,
+      ).toBeUndefined();
+    });
+
+    it("a tail qualifier is a word the supertype names outside its root namespace", () => {
+      const index = ["ChatV1Index", "ContactsV1Index", "ClientsV2Index", "ClientsV3Index"].map((n, i) =>
+        flow(n, i, "Chewy::Index"),
+      );
+      expect(
+        expectedRoleFor(deriveTypeRoles(index), { path: "app/chewy/x.rb", extends: "Chewy::Index" })?.tail,
+      ).toBeUndefined();
+      const bills = ["OverdueBillsNotification", "PaidBillsNotification", "PartiallyPaidBillsNotification"].map(
+        (n, i) => flow(n, i, "GettingPaid::Inbox::BillNotification"),
+      );
+      expect(
+        expectedRoleFor(deriveTypeRoles(bills), {
+          path: "app/models/x.rb",
+          extends: "GettingPaid::Inbox::BillNotification",
+        })?.tail,
+      ).toEqual(["bills", "notification"]);
+    });
+
+    it("a last-segment family keeps a one-word role", () => {
+      const rows = ["ImportAsyncWorker", "UpdateAsyncWorker"].map((n, i) => flow(n, i, "Worker"));
+      const role = expectedRoleFor(deriveTypeRoles(rows), { path: "app/workers/x/y.rb", extends: "Worker" });
+      expect(role).toMatchObject({ role: "worker" });
+      expect(role?.tail).toBeUndefined();
+    });
+
+    it("a written family with the last-segment family's head but a longer tail carries its tail", () => {
+      const rows = [
+        ...["AccountsCleanup", "Mailer"].map((q, i) => flow(`${q}Worker`, i, "Sidekiq::Worker")),
+        ...["ImportAsync", "UpdateAsync"].map((q, i) => flow(`${q}Worker`, i + 2, "Platform::Async::Worker")),
+      ];
+      expect(
+        expectedRoleFor(deriveTypeRoles(rows), { path: "app/workers/x/y.rb", extends: "Platform::Async::Worker" }),
+      ).toMatchObject({ role: "worker", tail: ["async", "worker"] });
+    });
+  });
+
   it("a written family naming the same role as its last-segment family adds no second assignment", () => {
     const rows = [
       t("TsStrategy", "src/a/ts.ts", ["Resolution::SymbolResolutionStrategy"]),

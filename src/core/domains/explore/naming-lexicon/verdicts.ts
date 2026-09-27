@@ -62,6 +62,7 @@ import {
 import type { ConceptTerm } from "./terms.js";
 import {
   deriveTypeRoles,
+  endsWithWords,
   expectedRoleFor,
   isNamespaceDeclaration,
   isRoleFamilyMember,
@@ -84,6 +85,12 @@ export interface NamingExpectedTypeRole {
   examples: string[];
   /** `false`: a dispersed family's kind — what the type IS, never a word its name owes (bd tea-rags-mcp-49fsr). */
   carriedInName?: boolean;
+  /**
+   * A written-supertype family's multi-word role, in the draft's casing (bd
+   * tea-rags-mcp-1ffi9): the tail its members share, `word` its last word —
+   * `AsyncWorkflow`. Absent: the role is `word` alone.
+   */
+  tail?: string;
 }
 
 export type NamingVerdict =
@@ -1424,11 +1431,11 @@ export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
   const kind = unnamedKind(input, input.evidence, role);
   const expected = role?.evidence === "projectSuffix" || nonMember || kind ? undefined : role;
   const parts = input.evidence.parseName(input.name);
-  if (expected && parts.head !== expected.role) {
+  if (expected && !carriesRole(parts, expected)) {
     return {
       verdict: "MISFIT",
-      suggestion: joinIdentifierWords(withRoleAfterHead(parts, expected.role), draftCasing),
-      role: { word: expected.role, evidence: expected.evidence, examples: expected.examples },
+      suggestion: joinIdentifierWords(withRoleAfterHead(parts, expected.tail ?? [expected.role]), draftCasing),
+      role: namedRole(expected, draftCasing),
     };
   }
 
@@ -1438,7 +1445,7 @@ export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
   const gate = meaningGate(input);
   const lexical = termAlternatives(input, words, gate);
   // The name carries its expected role: its head is right by construction — and the role is its evidence.
-  if (lexical.length === 0 && expected) return { verdict: "CONFORMS", role: namedRole(expected) };
+  if (lexical.length === 0 && expected) return { verdict: "CONFORMS", role: namedRole(expected, draftCasing) };
   // The family fixes no head: any name conforms to it, and the verdict says what the type is.
   if (lexical.length === 0 && kind) {
     return {
@@ -1456,7 +1463,7 @@ export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
   // The suffix confirms only a member of its family — the test its carriers passed (bd tea-rags-mcp-49fsr).
   const suffix = namespace ? undefined : projectSuffixRole(input.evidence.roles, input.evidence.rows, parts.head ?? "");
   if (suffix !== undefined && familyNonMemberRole(input, input.evidence, suffix) === undefined) {
-    return { verdict: "CONFORMS", ...withAlternatives, role: namedRole(suffix) };
+    return { verdict: "CONFORMS", ...withAlternatives, role: namedRole(suffix, draftCasing) };
   }
   return alignsWithVocabulary(parts, input.evidence)
     ? { verdict: "CONFORMS", ...withAlternatives }
@@ -1467,15 +1474,49 @@ export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
  * The role a CONFORMS rests on, as the verdict names it (bd tea-rags-mcp-xsxkr):
  * a verdict that says CONFORMS says on what — here the role and its carriers.
  */
-function namedRole(role: ExpectedTypeRole): NamingExpectedTypeRole {
-  return { word: role.role, evidence: role.evidence, examples: role.examples };
+function namedRole(role: ExpectedTypeRole, casing: IdentifierCasing): NamingExpectedTypeRole {
+  return {
+    word: role.role,
+    ...(role.tail ? { tail: joinIdentifierWords(role.tail, casing) } : {}),
+    evidence: role.evidence,
+    examples: role.examples,
+  };
 }
 
-/** The name's words with `role` inserted after its head — before a complement: `ObjectsForClient` → `ObjectsFinderForClient`. */
-function withRoleAfterHead(parts: TypeNameParts, role: string): string[] {
-  if (parts.head === undefined) return [role];
+/** Whether the name's words up to its head end with the role — its whole tail (bd tea-rags-mcp-1ffi9). */
+function carriesRole(parts: TypeNameParts, role: ExpectedTypeRole): boolean {
+  if (parts.head !== role.role) return false;
+  return role.tail === undefined || endsWithWords([...parts.qualifiers, parts.head], role.tail);
+}
+
+/**
+ * The name's words completed with the role `tail` (its last word the role
+ * word), before a complement. A name ending in the head (bd tea-rags-mcp-1ffi9)
+ * gets the tail's missing qualifiers before the longest part of the tail it
+ * already ends with, taken out of its earlier words so none repeats —
+ * `ExportWorkflow` → `ExportAsyncWorkflow`. Any other name is followed by the
+ * tail, less the longest start of it the name already ends with — `ExportJob` →
+ * `ExportJobAsyncWorkflow`, `ExportAsync` → `ExportAsyncWorkflow`,
+ * `ObjectsForClient` → `ObjectsFinderForClient`.
+ */
+function withRoleAfterHead(parts: TypeNameParts, tail: readonly string[]): string[] {
+  if (parts.head === undefined) return [...tail];
   const complement = parts.connector === undefined ? [] : [parts.connector, ...parts.complement];
-  return [...parts.qualifiers, parts.head, role, ...complement];
+  const words = [...parts.qualifiers, parts.head];
+  if (parts.head === tail.at(-1)) {
+    let kept = 1;
+    while (kept < tail.length && endsWithWords(words, tail.slice(-kept - 1))) kept++;
+    const missing = tail.slice(0, -kept);
+    const rest = words.slice(0, -kept);
+    for (const word of missing) {
+      const at = rest.findIndex((kept) => endsWithWords([kept], [word]));
+      if (at >= 0) rest.splice(at, 1);
+    }
+    return [...rest, ...tail, ...complement];
+  }
+  let overlap = tail.length - 1;
+  while (overlap > 0 && !endsWithWords(words, tail.slice(0, overlap))) overlap--;
+  return [...words, ...tail.slice(overlap), ...complement];
 }
 
 /**

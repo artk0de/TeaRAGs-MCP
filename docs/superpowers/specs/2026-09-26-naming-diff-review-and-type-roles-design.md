@@ -254,14 +254,9 @@ written family has no role, whether it has too few subclasses or they split. No
 id resolution is involved: a supertype written relatively (`Workflow::Worker`)
 is a different key and simply falls back.
 
-The role stays a single head word. Every evidence kind, `carriedInName`, the
-head-alternative exclusions and the MISFIT suggestion (the role word inserted
-after the head) work on one word, and `async` in `ImportAsyncWorkflow` is a
-qualifier like any other. So `ExportWorkflow` CONFORMS to `workflow` too. A
-multi-word tail convention (`AsyncWorkflow`) would change what a role is for all
-three evidence kinds at once, and two members are too little evidence to measure
-that on. A draft that misses the head (`ExportJob`) is MISFIT →
-`ExportJobWorkflow`.
+The 5ulz2 cut kept the role a single head word, so `ExportWorkflow` conformed to
+`workflow` and `ExportJob` was MISFIT → `ExportJobWorkflow`. "The written
+family's tail (`1ffi9`)" below records the rule that replaced it.
 
 Measured read-only on a copy of taxdome `_v15`, with `t9-roles.mts` and a
 per-type role dump diffed before and after:
@@ -286,6 +281,90 @@ role, as `Cookies` does above), and 3 `*Process` classes in
 `UploadToS3Process` and `DeleteExpiredMonthlyIndicesProcess` are headed by
 `process` again. That fixes two of the six wrong changes the connector rule
 below records.
+
+**The written family's tail (`1ffi9`).** The user overruled the one-word role
+for the nearest family. The team names the direct subclasses of
+`Platform::Async::Workflow::Worker` `*AsyncWorkflow`
+(`Bookkeeping::FinancialTransactions::UpdateAsyncWorkflow`,
+`…::ContinuousSync::ImportAsyncWorkflow`), so `ExportWorkflow` extending it is
+MISFIT → `ExportAsyncWorkflow`.
+
+A written family's role is now a TAIL: the head word, which keeps its majority
+rule (≥ 2, ≥ half), plus the longest run of qualifier words before it that EVERY
+distinct name carrying the head shares, with ≥ 2 such names. The tail grows one
+word at a time, spelled as most of its carriers spell it. Words compare
+singular. The head is the tail's last word, so a one-word tail behaves exactly
+as before, and the last-segment, directory and project-suffix roles stay one
+word. A written family whose head equals its last-segment family's head is now
+kept when its tail is longer.
+
+A draft CONFORMS only when its words (up to the head, complement excluded) end
+with the whole tail. With the head present, the missing qualifiers go before the
+longest part of the tail the name already ends with, and a qualifier the draft
+carries elsewhere is moved, not repeated (`AsyncExportWorkflow` →
+`ExportAsyncWorkflow`). With the head absent, the tail follows the name, less
+the longest start of it the name already ends with (`ExportJob` →
+`ExportJobAsyncWorkflow`, `ExportAsync` → `ExportAsyncWorkflow`). The verdict
+keeps `role.word` as the head and adds `role.tail` in the draft's casing
+(`AsyncWorkflow`) only when the tail has more than one word. `carriedInName`,
+the head-alternative exclusions and the parser's kind words still read the head.
+
+**Why unanimity for the qualifiers.** The first cut applied the head's majority
+rule to the qualifiers as well. Measured on the taxdome `_v15` copy, that gave
+26 Ruby families a tail and flipped 12 existing declarations (11 CONFORMS →
+MISFIT, 1 COLLISION → MISFIT). By hand, all 12 are correct names that the
+majority demanded a subject word from, and none of them was caught as a real
+miss: `TagsPolicy`, `WikiPagesPolicy`, `PipelinesPolicy`, `ServicesPolicy` →
+`…TemplatesPolicy` and `ServicesController`, `PipelinesController` →
+`…TemplatesController` (the `TemplatesLibrary` namespace names `templates`, and
+only the template resources carry it); `DatevUploadNotification`,
+`IRSTranscriptsDownloadedNotification`, `SignatureRequestNotification`,
+`SignedDocumentBySignerNotification`, `VoidedSignatureRequestNotification` →
+`…DocumentNotification` (6 of 11 names); `FailedOrganizersCreateNotification` →
+`…OrganizerNotification`. The other 22 families were already unanimous. A
+qualifier most members share is still their subject. A qualifier all of them
+share is the family's convention.
+
+The bare "longest common suffix" rule overfit before either rule for the
+qualifiers applied. It tailed 217 Ruby families and flipped 160 declarations.
+Three guards, each from a measured failure, stay in place:
+
+- **Names, not declarations.** A name re-declared in many namespaces is one
+  name, as it already is for a project suffix. Nine `ApplicationController`s
+  under `Tech::Webhooks::ApplicationController` had made `events` its tail and
+  flipped `QuotesController`.
+- **The supertype's own name is no member.**
+  `UserSerializer < Base::UserSerializer` re-declares its parent instead of
+  qualifying it; 45 of them had turned `MailboxHolderSerializer` into a flip.
+- **A qualifier is a word the supertype as written names, outside its root
+  namespace.** A qualifier only the members share is their subject
+  (`ClientsV2Index` vs `ContactsV1Index` gave `v1`, `ContractSignedNotification`
+  gave `signed`), and a root namespace names a whole domain (`GettingPaid` gave
+  `paid` to `OverdueBillsNotification`). `Platform::Async::Workflow::Worker`
+  names `async` and `workflow`.
+
+Measured read-only on the same `_v15` copy (`tails.mts`, `loo.mts`, `judge.mts`
+and the role dump, job dir `tmp/1ffi9`):
+
+| Measure                                         | 5ulz2                                       | 1ffi9 (unanimous qualifiers)                                    |
+| ----------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------- |
+| taxdome coverage                                | 19,271 (57.3%)                              | 19,271 (57.3%)                                                  |
+| types whose roles changed                       | —                                           | 202, all additions of a tailed written family, 0 removed        |
+| Ruby / TS families with a multi-word tail       | —                                           | 22 / 0, all unanimous                                           |
+| existing declarations flipped to MISFIT         | —                                           | 1 (leave-one-out, below); 0 counting every member               |
+| rename eval (caught / other / silent / control) | 0 / 7 / 10 / 6 of 40                        | 0 / 7 / 10 / 6 of 40, byte-identical                            |
+| live `ExportWorkflow` / `…Async…` / `ExportJob` | CONFORMS / CONFORMS / → `ExportJobWorkflow` | → `ExportAsyncWorkflow` / CONFORMS / → `ExportJobAsyncWorkflow` |
+
+The 22 families include `NotificationSerializer` (86 names), `CsvExporter` (11),
+`ExportWorker` (10), `SkipStrategy` (5), `LineDetailAdapter` (3) and
+`AsyncWorkflow` (2). The one flip comes from how an existing declaration is
+judged: its own row never votes for it (`xsxkr`), so with it set aside the
+family's other names can be unanimous. Leave-one-out over all 848 written
+families (2,747 names) finds exactly one such case:
+`FailedOrganizersCreateNotification < TaxPreparation::Inbox::OrganizerNotification`
+→ `FailedCreateOrganizerNotification`. Every other name in that family ends in
+`OrganizerNotification`. This is the same shape as `ExportWorkflow` among the
+`*AsyncWorkflow`s, so it is the rule working as intended, not an overfit.
 
 **Directory-role membership (`tun7x`).** A directory role speaks only for the
 family it names. Its family is COHESIVE when the role's carriers in the
