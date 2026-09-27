@@ -461,6 +461,43 @@ export interface MainSequenceOptions {
   minTypeCount?: number;
   /** Report only components holding a file matching this glob; every number is still whole-graph. */
   sourcePathPattern?: string;
+  /**
+   * How often each file changes (the report feeds `git.file.commitCount`),
+   * keyed by path; a file without a reading is absent. Given with at least one
+   * reading, a pain-zone component must also be VOLATILE to be reported (bd
+   * tea-rags-mcp-r8hme.14); absent, the zone of pain is judged on D alone.
+   */
+  fileVolatility?: ReadonlyMap<RelPath, number>;
+}
+
+/** Whether a component changes often enough for the zone of pain to hurt. */
+export type MainSequenceVolatilityLabel = "volatile" | "calm";
+
+/** A component's volatility and the adaptive cut it was judged against. */
+export interface MainSequenceComponentVolatility {
+  /** Mean per-file volatility over the component's files that carry a reading. */
+  value: number;
+  /** Files of the component with a reading — the mean's denominator. */
+  measuredFileCount: number;
+  /** The cut `value` had to reach; it must also be strictly above the median file's reading. */
+  threshold: number;
+  label: MainSequenceVolatilityLabel;
+}
+
+/** How the volatility cut was drawn; present only when the gate ran. */
+export interface MainSequenceVolatilitySummary {
+  threshold: number;
+  /**
+   * `otsu` = Otsu's split over the judged components' LOG volatilities, floored at
+   * the median file; `fileMedian` = too few components for Otsu, the floor alone.
+   */
+  thresholdMethod: "otsu" | "fileMedian";
+  /** η of the Otsu cut; absent under `fileMedian`. */
+  separability?: number;
+  /** Median reading over the graph's files: a volatile component's mean must be strictly above it. */
+  fileMedian: number;
+  /** Judged components with at least one measured file — the Otsu population. */
+  measuredComponentCount: number;
 }
 
 /** One component judged against the main sequence, far enough off it to report. */
@@ -483,6 +520,8 @@ export interface MainSequenceViolation {
   fileCount: number;
   /** Files of the component the census never ran over (written before it existed). */
   unmeasuredFileCount: number;
+  /** Present when the volatility gate ran and a file of the component carries a reading. */
+  volatility?: MainSequenceComponentVolatility;
 }
 
 /** Components read but not judged, by the first reason that applied. */
@@ -499,6 +538,12 @@ export interface MainSequenceExclusionCounts {
    * types < 1): an A of 0 there is the language's idiom, not the component's.
    */
   unobservableAbstractness: number;
+  /**
+   * Judged, past the distance cut, in the zone of pain — but calm: its files
+   * change no more than the volatility cut, so its rigidity costs nothing
+   * (Martin's `String`). 0 when the volatility gate did not run.
+   */
+  stableConcreteCalm: number;
 }
 
 export interface MainSequenceScope {
@@ -524,6 +569,8 @@ export interface MainSequenceSummary {
   /** Abstract share of every measured type, per language — what `unobservableAbstractness` is judged against. */
   abstractTypeShareByLanguage: Record<string, number>;
   excluded: MainSequenceExclusionCounts;
+  /** Present only when `fileVolatility` was given with at least one reading. */
+  volatility?: MainSequenceVolatilitySummary;
   scope?: MainSequenceScope;
 }
 

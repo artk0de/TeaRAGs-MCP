@@ -79,7 +79,10 @@ abstract). The cut adapts to the codebase and never drops below 0.5. A language
 that almost never declares an abstraction, such as duck-typed Ruby, has its
 components excluded as unobservable rather than all reported as pain. An index
 built before the type census reports its components as unmeasured until a
-codegraph recompute.
+codegraph recompute. With the git trajectory on, the zone of pain also needs
+the component to keep changing: its mean commits per file must clear a cut drawn
+from the codebase's own history, so a stable, concrete utility that nobody
+touches is counted as calm instead of reported.
 
 ## Generation
 

@@ -827,4 +827,68 @@ describe("ArchitectureReportOps#build — mainSequence (bd tea-rags-mcp-r8hme.8)
     expect(summary.judgedComponentCount).toBe(0);
     expect(summary.violationCount).toBe(0);
   });
+
+  // bd tea-rags-mcp-r8hme.14 — the zone of pain hurts only a component that
+  // keeps changing: volatility = mean git.file.commitCount over its files.
+  describe("volatility gate on the zone of pain (bd tea-rags-mcp-r8hme.14)", () => {
+    /** Every file changed twice, `core/` files `coreCommits` times. */
+    function commitCounts(coreCommits: number) {
+      return vi.fn(
+        async () =>
+          new Map(censusGraph().files.map((f) => [f.relPath, f.relPath.startsWith("core/") ? coreCommits : 2])),
+      );
+    }
+
+    it("keeps a volatile stable-concrete component in pain, with its volatility and the cut it cleared", async () => {
+      const report = await new ArchitectureReportOps().build(graphDb(censusGraph()), {}, undefined, commitCounts(9));
+
+      const pain = report.violations.find((v) => v.detector === "mainSequence" && v.component === "core");
+      expect(pain?.evidence).toMatchObject({
+        zone: "pain",
+        volatility: { value: 9, measuredFileCount: 2, threshold: 2, label: "volatile" },
+      });
+      expect(report.summary.mainSequence).toMatchObject({
+        painCount: 1,
+        volatility: {
+          signal: "git.file.commitCount",
+          threshold: 2,
+          thresholdMethod: "fileMedian",
+          fileMedian: 2,
+          measuredComponentCount: 3,
+        },
+        excluded: { stableConcreteCalm: 0 },
+      });
+    });
+
+    it("drops a calm stable-concrete component from pain and counts it with a reason", async () => {
+      const report = await new ArchitectureReportOps().build(graphDb(censusGraph()), {}, undefined, commitCounts(1));
+
+      const components = report.violations.filter((v) => v.detector === "mainSequence").map((v) => v.component);
+      expect(components).toEqual(["ports"]);
+      const { mainSequence } = report.summary;
+      expect(mainSequence).toMatchObject({ violationCount: 1, painCount: 0, excluded: { stableConcreteCalm: 1 } });
+      expect(mainSequence.exclusionReasons.stableConcreteCalm).toMatch(/chang/);
+    });
+
+    it("reads no commit counts when nothing sits in the zone of pain", async () => {
+      const g = censusGraph();
+      g.files = g.files.filter((f) => !f.relPath.startsWith("core/"));
+      g.edges = g.edges.filter((e) => !e.targetRelPath.startsWith("core/"));
+      const read = commitCounts(9);
+
+      const summary = (await new ArchitectureReportOps().build(graphDb(g), {}, undefined, read)).summary.mainSequence;
+
+      expect(read).not.toHaveBeenCalled();
+      expect(summary.volatility).toBeUndefined();
+      expect(summary.excluded.stableConcreteCalm).toBe(0);
+    });
+
+    it("says the volatility gate did not run when there is no reader", async () => {
+      const summary = (await new ArchitectureReportOps().build(graphDb(censusGraph()), {})).summary.mainSequence;
+
+      expect(summary.painCount).toBe(1);
+      expect(summary.volatility).toBeUndefined();
+      expect(summary.excluded.stableConcreteCalm).toBe(0);
+    });
+  });
 });

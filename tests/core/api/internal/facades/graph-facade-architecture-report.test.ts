@@ -79,6 +79,42 @@ describe("GraphFacade#getArchitectureReport", () => {
     expect(report.summary.silentCoupling.strongLinkedCount).toBe(1);
   });
 
+  it("gates the zone of pain on commit counts read from the addressed collection (bd tea-rags-mcp-r8hme.14)", async () => {
+    // `core/` — 6 concrete types, 6 dependents: A 0, I 0 → the zone of pain.
+    const typeAbstractness = { abstractTypeCount: 0, concreteTypeCount: 3 };
+    const files = [
+      { relPath: "core/a.ts", language: "typescript", symbolCount: 1, typeAbstractness },
+      { relPath: "core/b.ts", language: "typescript", symbolCount: 1, typeAbstractness },
+    ];
+    const edges = [];
+    for (let i = 1; i <= 6; i++) {
+      files.push({
+        relPath: `app/c${i}.ts`,
+        language: "typescript",
+        symbolCount: 1,
+        typeAbstractness: { abstractTypeCount: 1, concreteTypeCount: 0 },
+      });
+      edges.push({ sourceRelPath: `app/c${i}.ts`, targetRelPath: "core/a.ts", callWeight: 1 });
+    }
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({ files, edges }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const readFileCommitCounts = vi.fn().mockResolvedValue(new Map(files.map((f) => [f.relPath, 1])));
+    const facade = new GraphFacade({
+      pool: readerPool(graphDb).pool,
+      collectionRegistry: registry,
+      readFileCommitCounts,
+    });
+
+    const { summary } = await facade.getArchitectureReport({ collection: "code_x" });
+
+    expect(readFileCommitCounts).toHaveBeenCalledWith("code_x");
+    expect(summary.mainSequence).toMatchObject({ painCount: 0, excluded: { stableConcreteCalm: 1 } });
+  });
+
   it("returns the empty report when the collection has no graph database", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),

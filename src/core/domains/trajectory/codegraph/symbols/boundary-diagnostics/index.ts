@@ -22,6 +22,7 @@ export {
   detectMainSequenceDeviations,
   MAIN_SEQUENCE_DISTANCE_FLOOR,
   MAIN_SEQUENCE_OTSU_MIN_POPULATION,
+  MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
 } from "./main-sequence.js";
 export {
@@ -70,7 +71,10 @@ export type {
   MainSequenceReport,
   MainSequenceScope,
   MainSequenceSummary,
+  MainSequenceComponentVolatility,
   MainSequenceViolation,
+  MainSequenceVolatilityLabel,
+  MainSequenceVolatilitySummary,
   MainSequenceZone,
   FacadeLeakViolation,
   FacadeModuleAssessment,

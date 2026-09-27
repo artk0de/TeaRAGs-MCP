@@ -18,6 +18,7 @@ import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   detectMainSequenceDeviations,
   MAIN_SEQUENCE_DISTANCE_FLOOR,
+  MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 function file(relPath: string, typeAbstractness?: TypeAbstractnessCensus) {
@@ -156,5 +157,144 @@ describe("detectMainSequenceDeviations", () => {
     expect(report.violations.map((v) => v.component)).toEqual(["ports"]);
     expect(report.summary.scope).toEqual({ sourcePathPattern: "ports/**", outOfScopeComponentCount: 2 });
     expect(report.summary.meanDistance).toBe(2 / 3);
+  });
+});
+
+/**
+ * Volatility gate on the zone of pain (bd tea-rags-mcp-r8hme.14): per Martin,
+ * stable + concrete hurts only for a component that keeps changing — `String`
+ * is stable, concrete and fine. A component's volatility is the mean per-file
+ * change count over its files; the cut is drawn from the data (Otsu over the
+ * judged components' volatilities, never at or below the median file's).
+ */
+describe("detectMainSequenceDeviations — volatility gate on the zone of pain", () => {
+  /** Every file of `graph()` changed `base` times, `core/` files `coreCount` times. */
+  function volatility(g: FileDependencyGraph, coreCount: number, base = 2): Map<string, number> {
+    return new Map(g.files.map((f) => [f.relPath, f.relPath.startsWith("core/") ? coreCount : base]));
+  }
+
+  it("keeps a stable, concrete component that keeps changing in the zone of pain, with its volatility", () => {
+    const g = graph();
+
+    const report = judge(g, { fileVolatility: volatility(g, 9) });
+
+    expect(report.violations.map((v) => [v.component, v.zone])).toEqual([
+      ["core", "pain"],
+      ["ports", "uselessness"],
+    ]);
+    expect(report.violations[0].volatility).toEqual({
+      value: 9,
+      measuredFileCount: 2,
+      threshold: 2,
+      label: "volatile",
+    });
+    expect(report.summary.painCount).toBe(1);
+    expect(report.summary.excluded.stableConcreteCalm).toBe(0);
+  });
+
+  it("drops a stable, concrete component that does not change out of the zone of pain, counting it as calm", () => {
+    const g = graph();
+
+    const report = judge(g, { fileVolatility: volatility(g, 1) });
+
+    expect(report.violations.map((v) => v.component)).toEqual(["ports"]);
+    expect(report.summary).toMatchObject({
+      violationCount: 1,
+      painCount: 0,
+      uselessnessCount: 1,
+      excluded: { stableConcreteCalm: 1 },
+    });
+    expect(MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON).toMatch(/volatil|chang/);
+  });
+
+  it("leaves the zone of uselessness to distance alone, whatever its volatility", () => {
+    const g = graph();
+    const fileVolatility = volatility(g, 9);
+    for (let i = 1; i <= 5; i++) fileVolatility.set(`ports/p${i}.ts`, 1);
+
+    const report = judge(g, { fileVolatility });
+
+    expect(report.violations.map((v) => [v.component, v.zone])).toEqual([
+      ["core", "pain"],
+      ["ports", "uselessness"],
+    ]);
+    expect(report.violations[1].volatility?.label).toBe("calm");
+  });
+
+  it("derives the volatility cut from the data, so rescaling every change count rescales the cut and keeps the verdicts", () => {
+    const g = graph();
+    const scaled = new Map([...volatility(g, 9)].map(([relPath, n]) => [relPath, n * 10]));
+
+    const base = judge(g, { fileVolatility: volatility(g, 9) });
+    const report = judge(g, { fileVolatility: scaled });
+
+    expect(report.summary.volatility?.threshold).toBe((base.summary.volatility?.threshold ?? 0) * 10);
+    expect(report.violations.map((v) => [v.component, v.volatility?.label])).toEqual(
+      base.violations.map((v) => [v.component, v.volatility?.label]),
+    );
+  });
+
+  /**
+   * `graph()` plus one stable, mostly concrete component per entry of
+   * `libCommits` (A = 1/6, so the corpus share keeps every judged component's
+   * abstractness observable), each file of `lib<n>/` changed that many times —
+   * enough judged components for Otsu.
+   */
+  function withLibraries(coreCommits: number, libCommits: readonly number[]) {
+    const g = graph();
+    const fileVolatility = volatility(g, coreCommits);
+    libCommits.forEach((commits, index) => {
+      const lib = `lib${index + 1}`;
+      for (let i = 1; i <= 2; i++) {
+        g.files.push(file(`${lib}/f${i}.ts`, census(1, 5)));
+        fileVolatility.set(`${lib}/f${i}.ts`, commits);
+      }
+      for (let i = 1; i <= 6; i++) g.edges.push(edge(`app/c${i}.ts`, `${lib}/f1.ts`));
+    });
+    return { g, fileVolatility };
+  }
+
+  const painComponents = (report: ReturnType<typeof judge>) =>
+    report.violations.filter((v) => v.zone === "pain").map((v) => v.component);
+
+  it("floors the cut at the median file and splits the component population with Otsu once it is large enough", () => {
+    // Four calm libraries (1 change per file), four hot ones (20); `core/` at 3
+    // clears the median file (2) but sits with the calm class.
+    const { g, fileVolatility } = withLibraries(3, [1, 1, 1, 1, 20, 20, 20, 20]);
+
+    const report = judge(g, { fileVolatility });
+
+    expect(report.summary.volatility).toMatchObject({ thresholdMethod: "otsu", fileMedian: 2 });
+    expect(report.summary.volatility?.threshold).toBeGreaterThan(3);
+    expect(painComponents(report)).toEqual(["lib5", "lib6", "lib7", "lib8"]);
+    expect(report.summary.excluded.stableConcreteCalm).toBe(5);
+  });
+
+  it("splits change counts on a log scale, so a few very hot components do not drag the cut past the active ones", () => {
+    // Calm libraries at 2, active ones at 8 like `core/`, one extreme at 60.
+    // On the raw scale the extreme alone is the upper class and `core/` reads
+    // calm; change counts spread multiplicatively, and on the log scale the
+    // split falls between calm and active.
+    const { g, fileVolatility } = withLibraries(8, [2, 2, 2, 2, 8, 8, 8, 60]);
+
+    const report = judge(g, { fileVolatility });
+
+    expect(report.summary.volatility?.thresholdMethod).toBe("otsu");
+    expect(report.summary.volatility?.threshold).toBeGreaterThan(2);
+    expect(report.summary.volatility?.threshold).toBeLessThan(8);
+    expect(painComponents(report)).toEqual(["core", "lib5", "lib6", "lib7", "lib8"]);
+    expect(report.summary.excluded.stableConcreteCalm).toBe(4);
+  });
+
+  it("keeps a pain component none of whose files has a volatility reading, and gates nothing without readings", () => {
+    const g = graph();
+    const partial = new Map([...volatility(g, 1)].filter(([relPath]) => !relPath.startsWith("core/")));
+
+    expect(judge(g, { fileVolatility: partial }).violations.map((v) => v.component)).toEqual(["core", "ports"]);
+    const ungated = judge(g);
+    expect(ungated.violations.map((v) => v.component)).toEqual(["core", "ports"]);
+    expect(ungated.violations[0]).not.toHaveProperty("volatility");
+    expect(ungated.summary.volatility).toBeUndefined();
+    expect(ungated.summary.excluded.stableConcreteCalm).toBe(0);
   });
 });

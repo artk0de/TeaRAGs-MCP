@@ -33,6 +33,7 @@ import {
 } from "../core/api/index.js";
 import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
 import { GraphFacade, type GraphFacadeDeps } from "../core/api/internal/facades/graph-facade.js";
+import { readPayloadFileCommitCounts } from "../core/api/internal/infra/payload-file-commit-count-reader.js";
 import { readPayloadImportSpecifiers } from "../core/api/internal/infra/payload-import-specifier-reader.js";
 import { NamingLexiconOps } from "../core/api/internal/ops/naming-lexicon-ops.js";
 import { createNamingReviewExtractor } from "../core/api/internal/ops/naming-review-extraction.js";
@@ -660,6 +661,13 @@ export function wireCodegraph(
    * Qdrant by `createAppContext`; optional for the same reason as above.
    */
   readImportSpecifiers?: GraphFacadeDeps["readImportSpecifiers"],
+  /**
+   * Every file's `git.file.commitCount` from the index payload — the
+   * main-sequence detector's volatility gate on the zone of pain (bd
+   * tea-rags-mcp-r8hme.14). Wired to `readPayloadFileCommitCounts` over the
+   * app's Qdrant by `createAppContext`; optional for the same reason as above.
+   */
+  readFileCommitCounts?: GraphFacadeDeps["readFileCommitCounts"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -895,6 +903,7 @@ export function wireCodegraph(
     collectionRegistry,
     resolveActiveCollection,
     ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
+    ...(readFileCommitCounts ? { readFileCommitCounts } : {}),
   });
 
   // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
@@ -1086,6 +1095,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     collectionRegistry,
     resolveActiveCollection,
     async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
+    async (collectionName) => readPayloadFileCommitCounts(infra.qdrant, collectionName),
   );
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 

@@ -229,15 +229,18 @@ shapes and props are concrete-neutral, not counted. Ruby: class/module with a
 | `pain`        | stable + concrete (A + I < 1) — every change hits many      | extract interfaces dependents code against      |
 | `uselessness` | unstable + abstract (A + I > 1) — contracts nobody leans on | drop unused abstractions or merge into concrete |
 
-| Summary field (`summary.mainSequence`) | Read as                                                                       |
-| -------------------------------------- | ----------------------------------------------------------------------------- |
-| `distanceThreshold` / `…Method`        | D must exceed it; `majority` = floor 0.5 decided, `otsu` = adaptive cut above |
-| `meanDistance`                         | whole-codebase D over judged components — trend number                        |
-| `abstractTypeShareByLanguage`          | abstract share per language — why a language's components are unobservable    |
+| Summary field (`summary.mainSequence`) | Read as                                                                                                        |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `distanceThreshold` / `…Method`        | D must exceed it; `majority` = floor 0.5 decided, `otsu` = adaptive cut above                                  |
+| `meanDistance`                         | whole-codebase D over judged components — trend number                                                         |
+| `abstractTypeShareByLanguage`          | abstract share per language — why a language's components are unobservable                                     |
+| `volatility`                           | pain gate: `threshold`/`thresholdMethod` over mean commits per file; absent = gate off (no git data / no pain) |
 
 Evidence per line: `distance`, `abstractness`, `instability`, type counts,
-Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge). Stable core of
-utilities (`infra`) in pain is often by design — say so, don't prescribe.
+Ca/Ce, `unmeasuredFileCount` (> 0 = partial census, hedge), `volatility`
+(`value` = mean `git.file.commitCount` per file vs `threshold`). A reported pain
+component is volatile — it is rigid AND keeps changing, so it hurts now. Pain
+with no `volatility` = no git reading for its files, hedge.
 
 ## Phase 4 — EXCLUSIONS
 
@@ -273,7 +276,9 @@ explains nothing). A barrel / type-only / object-literal module IS judged — it
 `summary.mainSequence.excluded` — components NOT judged: `lowConnectionCount`
 (SDP floor), `unmeasured` (no census — recompute), `fewTypes` (< `minTypeCount`
 — A swings per type), `unobservableAbstractness` (expected abstract types < 1 at
-language's share; reason in `exclusionReasons`).
+language's share; reason in `exclusionReasons`). `stableConcreteCalm` is judged,
+not skipped: stable + concrete past the D cut but calm (below the volatility
+cut) — a settled utility, not pain; reason in `exclusionReasons`.
 
 ## Phase 5 — OUTPUT
 
@@ -299,8 +304,8 @@ Threshold [strengthThreshold] ([method], η [separability]); history [commitCoun
 | # | File A ↔ File B | Strength | Support | P(B|A) / P(A|B) | Visibility | Sample commit |
 
 ## Main sequence — [violationCount] (pain N, uselessness N); mean D [meanDistance]
-Threshold [distanceThreshold] ([method]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N
-| # | Component | Zone | D | A (abstract/types) | I | Ca/Ce |
+Threshold [distanceThreshold] ([method]); volatility cut [volatility.threshold] ([volatility.thresholdMethod]); judged [judgedComponentCount]; excluded: unmeasured N, unobservable N, calm N
+| # | Component | Zone | D | A (abstract/types) | I | Ca/Ce | Commits/file |
 ```
 
 Every line cites evidence numbers from report. No evidence → no claim.

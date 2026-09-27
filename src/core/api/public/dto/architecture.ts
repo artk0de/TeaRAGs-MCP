@@ -222,6 +222,24 @@ export interface MainSequenceViolationEvidence {
   fileCount: number;
   /** Files of the component the type census never ran over. */
   unmeasuredFileCount: number;
+  /**
+   * How often the component changes, judged against the adaptive volatility
+   * cut (bd tea-rags-mcp-r8hme.14). Present when the gate ran and a file of
+   * the component carries `git.file.commitCount`.
+   */
+  volatility?: MainSequenceComponentVolatilityEvidence;
+}
+
+/** A component's volatility: mean `git.file.commitCount` over its measured files. */
+export interface MainSequenceComponentVolatilityEvidence {
+  /** Mean commits per file over the git window, 3 decimals. */
+  value: number;
+  /** Files of the component carrying a commit count. */
+  measuredFileCount: number;
+  /** The cut `value` had to reach (and exceed the median file), 3 decimals. */
+  threshold: number;
+  /** `volatile` keeps a pain component reported; `calm` drops it into `excluded.stableConcreteCalm`. */
+  label: "volatile" | "calm";
 }
 
 /**
@@ -482,6 +500,22 @@ export interface SilentCouplingReportSummary {
   outOfScopePairCount?: number;
 }
 
+/** How the volatility cut on the zone of pain was drawn. */
+export interface MainSequenceVolatilityReportSummary {
+  /** The per-file reading a component's volatility averages. */
+  signal: "git.file.commitCount";
+  /** 3 decimals. */
+  threshold: number;
+  /** `otsu` = Otsu's split over judged components' log volatilities (cut reported back on the count scale), floored at `fileMedian`; `fileMedian` = the floor alone (too few components). */
+  thresholdMethod: "otsu" | "fileMedian";
+  /** η of the Otsu cut, 3 decimals; absent under `fileMedian`. */
+  separability?: number;
+  /** Median commit count over the judged graph's files — a volatile component's mean must be strictly above it. */
+  fileMedian: number;
+  /** Judged components with a measured file — the population the cut is drawn over. */
+  measuredComponentCount: number;
+}
+
 export interface MainSequenceReportSummary {
   /** Components that survived every exclusion. */
   judgedComponentCount: number;
@@ -511,9 +545,19 @@ export interface MainSequenceReportSummary {
     fewTypes: number;
     /** See `exclusionReasons.unobservableAbstractness`. */
     unobservableAbstractness: number;
+    /**
+     * Judged and past the distance cut in the zone of pain, but calm — see
+     * `exclusionReasons.stableConcreteCalm`. 0 when `volatility` is absent.
+     */
+    stableConcreteCalm: number;
   };
-  /** Human-readable meaning of the exclusion a reader is most likely to question. */
-  exclusionReasons: { unobservableAbstractness: string };
+  /** Human-readable meaning of the exclusions a reader is most likely to question. */
+  exclusionReasons: { unobservableAbstractness: string; stableConcreteCalm: string };
+  /**
+   * The volatility gate on the zone of pain (bd tea-rags-mcp-r8hme.14); absent
+   * when it did not run — no git trajectory data, or nothing in the zone of pain.
+   */
+  volatility?: MainSequenceVolatilityReportSummary;
   /** Judged components with no file matching `pathPattern`; present only when scoped. */
   outOfScopeComponentCount?: number;
 }

@@ -5,7 +5,8 @@
  * Reads the whole file dependency graph from a codegraph handle, runs the
  * boundary detectors owned by the codegraph trajectory — Stable Dependencies,
  * leaking abstraction (bd tea-rags-mcp-jetrd), the main sequence (bd
- * tea-rags-mcp-r8hme.8) and, over the temporal co-change sub-graph, silent
+ * tea-rags-mcp-r8hme.8, its zone of pain gated on git volatility by bd
+ * tea-rags-mcp-r8hme.14) and, over the temporal co-change sub-graph, silent
  * coupling (bd tea-rags-mcp-b4dcz) — and shapes
  * the typed report DTO. Lives in `api/internal` because it bridges the trajectory's
  * detectors and the public DTO — the one layer allowed to import both.
@@ -37,6 +38,7 @@ import {
   excludeNonProductionFiles,
   FACADE_AGGREGATION_REASON,
   FACADE_MODULE_EXCLUSION_REASONS,
+  MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
   MAIN_SEQUENCE_UNOBSERVABLE_REASON,
   NON_PRODUCTION_REASON,
   type ComponentStableDependenciesReport,
@@ -82,6 +84,17 @@ export type ModuleImportSpecifierLookup = (
   relPaths: readonly RelPath[],
 ) => Promise<ReadonlyMap<RelPath, readonly string[]>>;
 
+/**
+ * Every indexed file's `git.file.commitCount`, keyed by repo-relative path; a
+ * file the git trajectory never measured is absent. The main-sequence
+ * detector reads it as per-file volatility to gate the zone of pain
+ * (bd tea-rags-mcp-r8hme.14).
+ */
+export type GitFileCommitCountLookup = () => Promise<ReadonlyMap<RelPath, number>>;
+
+/** The per-file reading the volatility gate averages — named in the summary. */
+const MAIN_SEQUENCE_VOLATILITY_SIGNAL = "git.file.commitCount";
+
 export class ArchitectureReportOps {
   /**
    * Judge the graph behind `graphDb` and shape the report. Violations and root
@@ -93,11 +106,17 @@ export class ArchitectureReportOps {
    * (bd tea-rags-mcp-rbnkp). It is asked only about the walked endpoints of
    * one-walked violations, so its cost is bounded by the violations, not by
    * the co-change graph.
+   *
+   * `readFileCommitCounts`, when given, gates the zone of pain on volatility
+   * (bd tea-rags-mcp-r8hme.14). It is read only when the ungated judgement
+   * puts a component in the zone of pain, since only such a component can
+   * change verdict.
    */
   async build(
     graphDb: Pick<GraphDbClient, "readFileDependencyGraph" | "readNonPublicMemberEdges" | "readTemporalCochangeGraph">,
     request: ArchitectureReportScope,
     readImportSpecifiers?: ModuleImportSpecifierLookup,
+    readFileCommitCounts?: GitFileCommitCountLookup,
   ): Promise<GetArchitectureReportResponse> {
     // Every detector judges the production graph (bd tea-rags-mcp-r8hme.9).
     const nonProduction = buildNonProductionPathFilter();
@@ -107,10 +126,17 @@ export class ArchitectureReportOps {
     // Components: the modules A4 measured, plain directories elsewhere (bd tea-rags-mcp-r8hme.7).
     const components = buildComponentGraph(graph, leaks.modules);
     const sdp = detectComponentStableDependencyViolations(components, { sourcePathPattern: request.pathPattern });
-    // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8).
-    const mainSequence = detectMainSequenceDeviations(components, graph.files, {
-      sourcePathPattern: request.pathPattern,
-    });
+    // Same components, A from the walker's type census (bd tea-rags-mcp-r8hme.8),
+    // the zone of pain gated on git volatility (bd tea-rags-mcp-r8hme.14).
+    const mainSequenceOptions = { sourcePathPattern: request.pathPattern };
+    const ungatedMainSequence = detectMainSequenceDeviations(components, graph.files, mainSequenceOptions);
+    const mainSequence =
+      readFileCommitCounts && ungatedMainSequence.summary.painCount > 0
+        ? detectMainSequenceDeviations(components, graph.files, {
+            ...mainSequenceOptions,
+            fileVolatility: await readFileCommitCounts(),
+          })
+        : ungatedMainSequence;
     const memberEdges = await graphDb.readNonPublicMemberEdges([...CONVENTION_PRIVACY_LANGUAGES]);
     const privacy = detectConventionPrivacyLeaks(
       memberEdges.filter((e) => !nonProduction.ignores(e.sourceRelPath) && !nonProduction.ignores(e.targetRelPath)),
@@ -487,7 +513,24 @@ function summariseMainSequence(report: MainSequenceReport): MainSequenceReportSu
       Object.entries(summary.abstractTypeShareByLanguage).map(([language, share]) => [language, round3(share)]),
     ),
     excluded: { ...summary.excluded },
-    exclusionReasons: { unobservableAbstractness: MAIN_SEQUENCE_UNOBSERVABLE_REASON },
+    exclusionReasons: {
+      unobservableAbstractness: MAIN_SEQUENCE_UNOBSERVABLE_REASON,
+      stableConcreteCalm: MAIN_SEQUENCE_STABLE_CONCRETE_CALM_REASON,
+    },
+    ...(summary.volatility
+      ? {
+          volatility: {
+            signal: MAIN_SEQUENCE_VOLATILITY_SIGNAL,
+            threshold: round3(summary.volatility.threshold),
+            thresholdMethod: summary.volatility.thresholdMethod,
+            ...(summary.volatility.separability === undefined
+              ? {}
+              : { separability: round3(summary.volatility.separability) }),
+            fileMedian: round3(summary.volatility.fileMedian),
+            measuredComponentCount: summary.volatility.measuredComponentCount,
+          },
+        }
+      : {}),
     ...(summary.scope ? { outOfScopeComponentCount: summary.scope.outOfScopeComponentCount } : {}),
   };
 }
@@ -510,6 +553,16 @@ function mainSequenceViolations(report: MainSequenceReport, limit: number): Arch
         efferentCount: v.efferentCount,
         fileCount: v.fileCount,
         unmeasuredFileCount: v.unmeasuredFileCount,
+        ...(v.volatility
+          ? {
+              volatility: {
+                value: round3(v.volatility.value),
+                measuredFileCount: v.volatility.measuredFileCount,
+                threshold: round3(v.volatility.threshold),
+                label: v.volatility.label,
+              },
+            }
+          : {}),
       },
     }),
   );
