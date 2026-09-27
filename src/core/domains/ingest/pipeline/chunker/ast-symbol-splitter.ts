@@ -54,11 +54,15 @@ export class AstSymbolSplitter {
    * @param leadingStartRow - 0-based first row of the comment block a
    *   comment-capture hook attached to the symbol (bd tea-rags-mcp-u7tjf). The
    *   block opens the first part, whose `startLine` then starts there, and
-   *   never enters a later part's context prefix. The first part's capacity is
-   *   reduced by the block, so the cuts land where they would without it; a
-   *   block larger than half the budget instead joins the rows being cut, as
-   *   one span, so it can take a part of its own rather than overflow one.
-   *   Defaults to the symbol's own first row (no leading block).
+   *   never enters a later part's context prefix. The block rides the part
+   *   that carries the signature whenever the two fit together: the first
+   *   part's capacity is reduced by the block, so the cuts land where they
+   *   would without it (bd tea-rags-mcp-ic5mv — cutting a block over half the
+   *   budget off as a part of its own left a part with no signature). A block
+   *   too large even for that joins the rows being cut, as one span, and every
+   *   part holding only its rows opens with the signature as context, so no
+   *   part is a bare comment. Defaults to the symbol's own first row (no
+   *   leading block).
    */
   split(node: AstNode, code: string, leadingStartRow: number = node.startPosition.row): AstSymbolPart[] {
     const codeLines = code.split("\n");
@@ -69,22 +73,31 @@ export class AstSymbolSplitter {
     leading[0] = leading[0].trimStart();
     const leadingText = leading.join("\n").trimEnd();
     const reserve = leadingText.length + 1;
-    if (reserve > this.budget / 2) return this.splitRows(node, codeLines, leadingStartRow, 0);
+    if (reserve + this.signatureSize(node, codeLines) > this.budget) {
+      return this.splitRows(node, codeLines, leadingStartRow, 0);
+    }
 
     const [first, ...rest] = this.splitRows(node, codeLines, symbolRow, reserve);
     return [{ ...first, content: `${leadingText}\n${first.content}`, startLine: leadingStartRow + 1 }, ...rest];
   }
 
-  /**
-   * Cut rows `firstRow..` of the symbol. `firstRow` is the symbol's own first
-   * row, or earlier when a leading block rides along as rows; `firstPartReserve`
-   * is the capacity the first part leaves for text the caller prepends.
-   */
-  private splitRows(node: AstNode, codeLines: string[], firstRow: number, firstPartReserve: number): AstSymbolPart[] {
-    const symbolRow = node.startPosition.row;
-    const leadingRows = symbolRow - firstRow;
-    const lastRow = AstSymbolSplitter.lastRowOf(node);
+  /** Characters of the symbol's signature rows, as the first part would hold them. */
+  private signatureSize(node: AstNode, codeLines: string[]): number {
+    const rows = AstSymbolSplitter.symbolRows(node, codeLines, node.startPosition.row);
+    return this.signatureRows(node, node.startPosition.row, rows, 0).reduce(
+      (sum, row) => sum + rows[row].length + 1,
+      0,
+    );
+  }
 
+  /**
+   * Text of rows `firstRow..` through the symbol's last row: the symbol's own
+   * first row starts at its column, its last row ends at its end column, and an
+   * earlier leading row loses its indentation.
+   */
+  private static symbolRows(node: AstNode, codeLines: string[], firstRow: number): string[] {
+    const symbolRow = node.startPosition.row;
+    const lastRow = AstSymbolSplitter.lastRowOf(node);
     const rows: string[] = [];
     for (let row = firstRow; row <= lastRow; row++) {
       let text = codeLines[row] ?? "";
@@ -93,6 +106,17 @@ export class AstSymbolSplitter {
       else if (row === firstRow) text = text.trimStart();
       rows.push(text);
     }
+    return rows;
+  }
+
+  /**
+   * Cut rows `firstRow..` of the symbol. `firstRow` is the symbol's own first
+   * row, or earlier when a leading block rides along as rows; `firstPartReserve`
+   * is the capacity the first part leaves for text the caller prepends.
+   */
+  private splitRows(node: AstNode, codeLines: string[], firstRow: number, firstPartReserve: number): AstSymbolPart[] {
+    const leadingRows = node.startPosition.row - firstRow;
+    const rows = AstSymbolSplitter.symbolRows(node, codeLines, firstRow);
 
     const spans = this.collectSpans(node, firstRow, rows.length);
     // The leading block is one span, so the cutter keeps it whole when it fits.
@@ -108,17 +132,25 @@ export class AstSymbolSplitter {
       }
       return cached;
     };
-    const prefixLength = (row: number): number => {
-      const lines = contextAt(row);
-      return lines.length === 0 ? 0 : lines.reduce((sum, line) => sum + line.length + 1, 0);
-    };
+    const linesLength = (lines: string[]): number => lines.reduce((sum, line) => sum + line.length + 1, 0);
+    const prefixLength = (row: number): number => linesLength(contextAt(row));
+    // A part holding only leading-comment rows opens with the signature, so it
+    // names the symbol it documents (bd tea-rags-mcp-ic5mv). Every part that
+    // STARTS in the comment reserves room for it; only one that also ENDS
+    // there spends it — a part reaching the symbol's first row carries the
+    // signature as its own rows.
+    const signatureContext = leadingRows > 0 ? AstSymbolSplitter.fitContext(signatureRows, rows, contextLimit) : [];
+    const signatureContextLength = linesLength(signatureContext);
 
     const openingRows = new Set<number>(signatureRows);
     for (const span of spans) if (span.opener) openingRows.add(span.startRow);
     const splitter = new NestingLineSplitter({
       rows,
       spans,
-      capacityAt: (row) => this.budget - prefixLength(row) - (row === 0 ? firstPartReserve : 0),
+      capacityAt: (row) =>
+        this.budget -
+        (row < leadingRows ? signatureContextLength : prefixLength(row)) -
+        (row === 0 ? firstPartReserve : 0),
       openingRows,
     });
 
@@ -126,7 +158,7 @@ export class AstSymbolSplitter {
       const body = part.columns
         ? rows[part.startRow].slice(part.columns.start, part.columns.end)
         : rows.slice(part.startRow, part.endRow + 1).join("\n");
-      const context = contextAt(part.startRow);
+      const context = part.endRow < leadingRows ? signatureContext : contextAt(part.startRow);
       return {
         content: context.length === 0 ? body : `${context.join("\n")}\n${body}`,
         startLine: firstRow + part.startRow + 1,

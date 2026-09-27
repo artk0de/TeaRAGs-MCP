@@ -260,3 +260,69 @@ describe("processFiles — onFileExtraction hook (yl9tv cross-pass)", () => {
     expect(onFileExtraction).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * bd tea-rags-mcp-s9b0d — the chunker's AST read of a file's module references
+ * is what `payload.imports` carries; the regex harvest over the raw text is the
+ * fallback for a parse that produced none (no reader for the language, or no
+ * tree at all).
+ */
+describe("processFiles — payload.imports source (bd tea-rags-mcp-s9b0d)", () => {
+  let tempDir: string;
+  let codebaseDir: string;
+
+  beforeEach(async () => {
+    ({ tempDir, codebaseDir } = await createTempTestDir());
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  const SOURCE = [`import {`, `  a,`, `} from "./multi-line.js";`, `import b from "./single-line.js";`, ``].join("\n");
+
+  async function importsOnFirstChunk(chunkerImports: string[] | undefined): Promise<unknown> {
+    await createTestFile(codebaseDir, "index.ts", SOURCE);
+    const chunkerPool = {
+      processFile: vi.fn(async (_filePath: string) => ({
+        chunks: [
+          {
+            content: SOURCE,
+            startLine: 1,
+            endLine: 4,
+            metadata: {
+              filePath: `${codebaseDir}/index.ts`,
+              language: "typescript",
+              chunkIndex: 0,
+              chunkType: "block",
+            },
+          },
+        ],
+        ...(chunkerImports ? { imports: chunkerImports } : {}),
+      })),
+    };
+    const chunkPipeline = {
+      addChunk: vi.fn(() => true),
+      isBackpressured: () => false,
+      waitForBackpressure: async () => true,
+    };
+
+    await processFiles([`${codebaseDir}/index.ts`], codebaseDir, chunkerPool as never, chunkPipeline as never, {
+      enableGitMetadata: false,
+    });
+
+    const [firstCall] = chunkPipeline.addChunk.mock.calls as unknown as [{ metadata: { imports?: string[] } }][];
+    return firstCall[0].metadata.imports;
+  }
+
+  it("carries the specifiers the chunker read off the AST", async () => {
+    expect(await importsOnFirstChunk(["./multi-line.js", "./single-line.js"])).toEqual([
+      "./multi-line.js",
+      "./single-line.js",
+    ]);
+  });
+
+  it("falls back to the regex harvest when the chunker reports none", async () => {
+    expect(await importsOnFirstChunk(undefined)).toEqual(["./single-line.js"]);
+  });
+});

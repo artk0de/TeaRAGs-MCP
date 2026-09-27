@@ -25,6 +25,8 @@ import type {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   detectSilentCoupling,
+  linkImportedCochangePairs,
+  oneWalkedViolationImporters,
   SILENT_COUPLING_STRENGTH_MAJORITY,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/temporal/index.js";
 
@@ -237,5 +239,68 @@ describe("detectSilentCoupling", () => {
     expect(report.summary.built).toBe(false);
     expect(report.summary.build).toBeUndefined();
     expect(report.summary.pairCount).toBe(0);
+  });
+});
+
+/**
+ * A pair the codegraph cannot link because one endpoint is not code — a
+ * `.tsx` and the `.module.css` it imports (bd tea-rags-mcp-rbnkp). The walker
+ * drops an asset import on purpose (bd tea-rags-mcp-unt4v), so the import is
+ * read off the importer's declared module specifiers instead.
+ */
+describe("linkImportedCochangePairs (bd tea-rags-mcp-rbnkp)", () => {
+  const CSS_PAIR = pair("pages/TrdEditor.module.css", "pages/TrdEditor.tsx");
+
+  it("links a pair whose importer names the other endpoint with a relative specifier", () => {
+    const linked = linkImportedCochangePairs(
+      built([CSS_PAIR]),
+      new Map([["pages/TrdEditor.tsx", ["react", "./TrdEditor.module.css"]]]),
+    );
+
+    expect(linked.edges[0].structurallyLinked).toBe(true);
+    expect(detectSilentCoupling(linked, files("pages/TrdEditor.tsx")).violations).toEqual([]);
+  });
+
+  it("resolves `..` segments, with either endpoint as the importer", () => {
+    const linked = linkImportedCochangePairs(
+      built([pair("pages/TrdEditor.module.css", "sections/Intro.tsx")]),
+      new Map([["sections/Intro.tsx", ["../pages/TrdEditor.module.css"]]]),
+    );
+
+    expect(linked.edges[0].structurallyLinked).toBe(true);
+  });
+
+  it("links a baseUrl-style specifier naming the partner's path below some root", () => {
+    const linked = linkImportedCochangePairs(
+      built([pair("app/javascript/ui-kit/Tour/Tour.module.css", "app/javascript/ui-kit/Tour/Tour.tsx")]),
+      new Map([["app/javascript/ui-kit/Tour/Tour.tsx", ["ui-kit/Tour/Tour.module.css"]]]),
+    );
+
+    expect(linked.edges[0].structurallyLinked).toBe(true);
+  });
+
+  it("keeps a genuine silent pair silent: no specifier resolves to the partner", () => {
+    const linked = linkImportedCochangePairs(
+      built([
+        pair("config/locales/frontend.en.yml", "pages/Client.tsx"),
+        pair("other/TrdEditor.module.css", "pages/TrdEditor.tsx"),
+        pair("pages/TrdEditor.module.css", "pages/Settings.tsx"),
+      ]),
+      new Map<string, string[]>([
+        ["pages/Client.tsx", ["@/locales/frontend.en.yml", "frontend.en.yml"]],
+        ["pages/TrdEditor.tsx", ["./TrdEditor.module.css"]],
+        ["pages/Settings.tsx", ["TrdEditor.module.css", "s/TrdEditor.module.css"]],
+      ]),
+    );
+
+    expect(linked.edges.map((e) => e.structurallyLinked)).toEqual([false, false, false]);
+  });
+
+  it("names the walked endpoint of each one-walked violation as the importer to read", () => {
+    const walked = files("pages/TrdEditor.tsx", "app/x.ts", "lib/y.ts");
+    const report = detectSilentCoupling(built([CSS_PAIR, pair("app/x.ts", "lib/y.ts")]), walked);
+
+    expect(report.violations).toHaveLength(2);
+    expect(oneWalkedViolationImporters(report.violations, walked)).toEqual(["pages/TrdEditor.tsx"]);
   });
 });

@@ -44,6 +44,41 @@ describe("GraphFacade#getArchitectureReport", () => {
     expect(report.summary.stableDependencies.edgeCount).toBe(0);
   });
 
+  it("reads a one-walked violation's import specifiers from the addressed collection (bd tea-rags-mcp-rbnkp)", async () => {
+    const edge = {
+      relPathA: "app/Editor.module.css",
+      relPathB: "app/Editor.tsx",
+      support: 10,
+      confidenceAB: 1,
+      confidenceBA: 1,
+      lift: 8,
+      lastCoChangeAt: 1_700_000_000,
+      sampleCommits: ["c1"],
+      structurallyLinked: false,
+    };
+    const graphDb = {
+      readFileDependencyGraph: vi.fn().mockResolvedValue({
+        files: [{ relPath: "app/Editor.tsx", language: "typescript", symbolCount: 1 }],
+        edges: [],
+      }),
+      readNonPublicMemberEdges: vi.fn().mockResolvedValue([]),
+      readTemporalCochangeGraph: vi.fn().mockResolvedValue({ meta: null, edges: [edge] }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const readImportSpecifiers = vi.fn().mockResolvedValue(new Map([["app/Editor.tsx", ["./Editor.module.css"]]]));
+    const facade = new GraphFacade({
+      pool: readerPool(graphDb).pool,
+      collectionRegistry: registry,
+      readImportSpecifiers,
+    });
+
+    const report = await facade.getArchitectureReport({ collection: "code_x" });
+
+    expect(readImportSpecifiers).toHaveBeenCalledWith("code_x", ["app/Editor.tsx"]);
+    expect(report.violations.filter((v) => v.detector === "silentCoupling")).toEqual([]);
+    expect(report.summary.silentCoupling.strongLinkedCount).toBe(1);
+  });
+
   it("returns the empty report when the collection has no graph database", async () => {
     const pool = {
       acquireReader: vi.fn().mockRejectedValue(new Error("no such file")),

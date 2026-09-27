@@ -58,6 +58,12 @@ export interface FileChunkResult {
    * provider no longer re-parses on the main thread.
    */
   extraction?: FileExtraction;
+  /**
+   * bd tea-rags-mcp-s9b0d — module specifiers the language's import reader
+   * found on the SAME parse. Absent when the language has no reader or the
+   * parse produced no tree; the file-processor then keeps its regex harvest.
+   */
+  imports?: string[];
 }
 
 export class ChunkerPool {
@@ -98,7 +104,12 @@ export class ChunkerPool {
     const response = await this.pool.dispatch({ filePath, code, language, emitExtraction });
     // WorkerDispatchPool already rejects on `response.error`; here we only narrow the
     // wire shape (`WorkerResponse`) to the public contract (`FileChunkResult`).
-    return { filePath: response.filePath, chunks: response.chunks, extraction: response.extraction };
+    return {
+      filePath: response.filePath,
+      chunks: response.chunks,
+      extraction: response.extraction,
+      ...(response.imports ? { imports: response.imports } : {}),
+    };
   }
 
   /**

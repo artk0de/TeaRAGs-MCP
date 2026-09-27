@@ -211,3 +211,144 @@ end
     });
   });
 });
+
+/**
+ * bd tea-rags-mcp-ic5mv — a split method's leading doc comment never makes a
+ * part of its own. A JSDoc larger than half the budget used to be cut as one
+ * span, so `#part1` held the class header and the comment and no signature:
+ * a hit on it named neither the method nor anything it does. The comment now
+ * shares a part with the signature whenever the two fit together, and a
+ * comment too large even for that repeats the signature on the comment-only
+ * windows, the way every later part already repeats it.
+ */
+describe("TreeSitterChunker — a split method's doc comment stays with its signature (bd ic5mv)", () => {
+  const maxChunkSize = 1000;
+  const signature = "render(run: Run): void {";
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
+      new DefaultSymbolIdComposer(),
+      new LanguageFactory(),
+    );
+  });
+
+  function reporterWithDoc(paragraphs: number): string {
+    const doc = Array.from(
+      { length: paragraphs },
+      (_, i) => `   * Paragraph ${i}: the documentation of this method is deliberately long and verbose.`,
+    ).join("\n");
+    return `export class Reporter {
+  /**
+${doc}
+   */
+  ${signature}
+${statements(20, "    ")}
+  }
+}
+`;
+  }
+
+  function renderParts(chunks: CodeChunk[]): CodeChunk[] {
+    return chunks.filter((c) => /^Reporter#render#part\d+$/.test(c.metadata.symbolId ?? ""));
+  }
+
+  it("keeps a JSDoc over half the budget in the same part as the signature", async () => {
+    const code = reporterWithDoc(7);
+    const chunks = await chunker.chunk(code, "src/reporter.ts", "typescript");
+    const parts = renderParts(chunks);
+
+    expect(parts.length).toBeGreaterThan(1);
+    const part1 = parts[0];
+    expect(part1.content).toContain("/**");
+    expect(part1.content.split("\n").map((l) => l.trim())).toContain(signature);
+    expect(part1.startLine).toBe(2);
+    for (const p of parts) expect(p.content.split("\n").map((l) => l.trim())).toContain(signature);
+    for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
+    expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*)/));
+  });
+
+  it("repeats the signature on the comment-only windows of a JSDoc larger than the budget", async () => {
+    const code = reporterWithDoc(16);
+    const chunks = await chunker.chunk(code, "src/reporter.ts", "typescript");
+    const parts = renderParts(chunks);
+
+    expect(parts.length).toBeGreaterThan(2);
+    for (const p of parts) expect(p.content.split("\n").map((l) => l.trim())).toContain(signature);
+    for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
+    expect(parts[0].startLine).toBe(2);
+    for (let i = 1; i < parts.length; i++) expect(parts[i].startLine).toBe(parts[i - 1].endLine + 1);
+    expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*)/));
+  });
+});
+
+/**
+ * bd tea-rags-mcp-x1dtk — a type declaration split between its members' doc
+ * comments. A member JSDoc larger than a part cannot share one with the member
+ * it documents, so some parts hold only comment rows; each of them still opens
+ * with the declaration header, the context prefix every later part of a split
+ * symbol carries, so a hit on it names the type it belongs to. Text only: the
+ * parts' own rows tile the declaration without overlap.
+ */
+describe("TreeSitterChunker — a split type declaration's doc-only parts carry its header (bd x1dtk)", () => {
+  const maxChunkSize = 1000;
+  let chunker: TreeSitterChunker;
+
+  beforeEach(() => {
+    chunker = new TreeSitterChunker(
+      { chunkSize: 500, chunkOverlap: 50, maxChunkSize },
+      new DefaultSymbolIdComposer(),
+      new LanguageFactory(),
+    );
+  });
+
+  function documentedMembers(): string {
+    return Array.from({ length: 6 }, (_, i) => {
+      const doc = Array.from(
+        { length: i % 2 ? 14 : 3 },
+        (_, p) => `   * Member ${i}, paragraph ${p}: this field is documented at length, on purpose.`,
+      ).join("\n");
+      return `  /**\n${doc}\n   */\n  member${i}?: Record<string, string>;`;
+    }).join("\n");
+  }
+
+  const declarations: Record<string, { code: string; header: string[] }> = {
+    interface: {
+      code: `export interface Aggregates {\n${documentedMembers()}\n}\n`,
+      header: ["interface Aggregates {"],
+    },
+    "multi-row interface header": {
+      code: `export interface Aggregates\n  extends Base<string>,\n    Other {\n${documentedMembers()}\n}\n`,
+      header: ["interface Aggregates", "extends Base<string>,", "Other {"],
+    },
+    "type literal": {
+      code: `export type Aggregates = {\n${documentedMembers()}\n};\n`,
+      header: ["type Aggregates = {"],
+    },
+  };
+
+  for (const [label, { code, header }] of Object.entries(declarations)) {
+    it(`opens every part of a split ${label}, doc-only parts included, with the header`, async () => {
+      const chunks = await chunker.chunk(code, "src/aggregates.ts", "typescript");
+      const parts = chunks.filter((c) => /^Aggregates#part\d+$/.test(c.metadata.symbolId ?? ""));
+
+      const docOnly = parts.filter((p) => {
+        const lines = p.content.split("\n");
+        return lines.slice(lines.length - (p.endLine - p.startLine + 1)).every((l) => /^\s*(\/\*\*|\*)/.test(l));
+      });
+      expect(docOnly.length).toBeGreaterThan(0);
+      for (const p of parts) {
+        expect(
+          p.content
+            .split("\n")
+            .slice(0, header.length)
+            .map((l) => l.trim()),
+        ).toEqual(header);
+      }
+      for (let i = 1; i < parts.length; i++) expect(parts[i].startLine).toBe(parts[i - 1].endLine + 1);
+      for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(maxChunkSize);
+      expectLinesCovered(code, chunks, linesMatching(code, /^\s*(\/\*\*|\*|member)/));
+    });
+  }
+});

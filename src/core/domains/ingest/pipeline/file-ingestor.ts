@@ -75,16 +75,18 @@ export class SourceFileIngestor {
         return;
       }
 
-      const { imports } = extractImportsExports(code, language);
       const parseStart = Date.now();
-      const { chunks, extraction } = await chunkerPool.processFile(
-        filePath,
-        code,
-        language,
-        options.onFileExtraction !== undefined,
-      );
+      const {
+        chunks,
+        extraction,
+        imports: astImports,
+      } = await chunkerPool.processFile(filePath, code, language, options.onFileExtraction !== undefined);
       const parseMs = Date.now() - parseStart;
       pipelineLog.addStageTime("parse", parseMs);
+      // The chunk parse's own read wins (bd tea-rags-mcp-s9b0d): it sees a
+      // statement across line breaks. The regex harvest covers a language with
+      // no reader and a file whose parse produced no tree.
+      const imports = astImports ?? extractImportsExports(code, language).imports;
 
       // yl9tv cross-pass — tee the codegraph extraction (from the chunker's
       // single parse) to the enrichment coordinator with a root-relative

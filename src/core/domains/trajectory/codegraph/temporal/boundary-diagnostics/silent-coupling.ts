@@ -11,6 +11,8 @@
  * language.
  */
 
+import { posix } from "node:path";
+
 import type {
   FileDependencyGraphFile,
   RelPath,
@@ -156,6 +158,79 @@ export function detectSilentCoupling(
     ...(scope ? { scope } : {}),
   };
   return { summary, violations, rootCauses };
+}
+
+/**
+ * A specifier that addresses a file relative to its importer's directory —
+ * `./x`, `../x`, never a bare `.` or `..` (a directory is not a partner file).
+ */
+const RELATIVE_MODULE_SPECIFIER = /^\.{1,2}\//;
+
+/**
+ * Mark a co-change pair structurally linked when one endpoint's declared
+ * module specifiers name the other (bd tea-rags-mcp-rbnkp).
+ *
+ * The structural graph holds only edges between files the codegraph walks: an
+ * import of a stylesheet, a JSON module or an image is dropped at resolve time
+ * on purpose (bd tea-rags-mcp-unt4v), so a `.tsx` and the `.module.css` it
+ * imports read as a silent pair although the import sits in plain sight. The
+ * importer's specifiers — `payload.imports`, read by the caller — restore it.
+ *
+ * A specifier names the partner in one of two ways, both exact:
+ *   - RELATIVE (`./x.css`, `../pages/x.css`): joined onto the importer's
+ *     directory, it IS the partner's path;
+ *   - ROOTED (`ui-kit/Tour/Tour.module.css` under a `baseUrl` of
+ *     `app/javascript`): the partner's path ends with it on a segment
+ *     boundary. The root is the resolver configuration's, which this detector
+ *     does not read — a suffix is that resolution with the root left open. It
+ *     takes at least two segments: a bare basename could be any file of that
+ *     name, and an alias head (`@/`) or package name that names no directory
+ *     on the partner's path matches nothing.
+ * Anything looser could hide a pair that is genuinely silent. Language-agnostic
+ * like the rest of the detector: plain posix path arithmetic.
+ */
+export function linkImportedCochangePairs(
+  graph: TemporalCochangeGraph,
+  importSpecifiersByFile: ReadonlyMap<RelPath, readonly string[]>,
+): TemporalCochangeGraph {
+  const imports = (importer: RelPath, target: RelPath) =>
+    (importSpecifiersByFile.get(importer) ?? []).some((specifier) => specifierNames(importer, specifier, target));
+  return {
+    ...graph,
+    edges: graph.edges.map((edge) =>
+      edge.structurallyLinked || !(imports(edge.relPathA, edge.relPathB) || imports(edge.relPathB, edge.relPathA))
+        ? edge
+        : { ...edge, structurallyLinked: true },
+    ),
+  };
+}
+
+/** Does `specifier`, written in `importer`, name `target`? See {@link linkImportedCochangePairs}. */
+function specifierNames(importer: RelPath, specifier: string, target: RelPath): boolean {
+  if (RELATIVE_MODULE_SPECIFIER.test(specifier)) {
+    return posix.normalize(posix.join(posix.dirname(importer), specifier)) === target;
+  }
+  if (!specifier.includes("/") || specifier.startsWith("/")) return false;
+  return target === specifier || target.endsWith(`/${specifier}`);
+}
+
+/**
+ * The walked endpoint of every `one-walked` violation — the files whose
+ * declared specifiers {@link linkImportedCochangePairs} needs, and the only
+ * ones: a both-walked pair's imports are already file edges, and an unwalked
+ * endpoint is not code that imports. Distinct, in violation order.
+ */
+export function oneWalkedViolationImporters(
+  violations: readonly SilentCouplingViolation[],
+  walkedFiles: readonly FileDependencyGraphFile[],
+): RelPath[] {
+  const walked = new Set(walkedFiles.map((f) => f.relPath));
+  const importers = new Set<RelPath>();
+  for (const v of violations) {
+    if (v.structuralVisibility !== "one-walked") continue;
+    importers.add(walked.has(v.relPathA) ? v.relPathA : v.relPathB);
+  }
+  return [...importers];
 }
 
 /**

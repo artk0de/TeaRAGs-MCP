@@ -133,7 +133,11 @@ runtime.onRequest((request) => {
   void (async () => {
     try {
       const engine = await chunkerPromise;
-      const { chunks, tree } = await engine.chunker.chunkWithTree(request.code, request.filePath, request.language);
+      const { chunks, tree, imports } = await engine.chunker.chunkWithTree(
+        request.code,
+        request.filePath,
+        request.language,
+      );
       // yl9tv — when codegraph is enabled the request sets `emitExtraction`;
       // run the walker on the SAME parse instead of re-parsing on the main
       // thread. `tree` is non-null iff the parse succeeded for a code
@@ -170,6 +174,7 @@ runtime.onRequest((request) => {
         filePath: request.filePath,
         chunks,
         ...(extraction ? { extraction } : {}),
+        ...(imports ? { imports } : {}),
       } satisfies WorkerResponse);
     } catch (error) {
       runtime.respond({

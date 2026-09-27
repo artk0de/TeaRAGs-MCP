@@ -32,7 +32,8 @@ import {
   type App,
 } from "../core/api/index.js";
 import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
-import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
+import { GraphFacade, type GraphFacadeDeps } from "../core/api/internal/facades/graph-facade.js";
+import { readPayloadImportSpecifiers } from "../core/api/internal/infra/payload-import-specifier-reader.js";
 import { NamingLexiconOps } from "../core/api/internal/ops/naming-lexicon-ops.js";
 import { createNamingReviewExtractor } from "../core/api/internal/ops/naming-review-extraction.js";
 import { ontologyLanguageProfiles, OntologyReportOps } from "../core/api/internal/ops/ontology-report-ops.js";
@@ -651,6 +652,13 @@ export function wireCodegraph(
    * then address by literal collection, no alias indirection needed).
    */
   resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>,
+  /**
+   * The module specifiers files declare, read from the index payload — silent
+   * coupling's view of an import the codegraph has no edge for (bd
+   * tea-rags-mcp-rbnkp). Wired to `readPayloadImportSpecifiers` over the app's
+   * Qdrant by `createAppContext`; optional for the same reason as above.
+   */
+  readImportSpecifiers?: GraphFacadeDeps["readImportSpecifiers"],
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -881,7 +889,12 @@ export function wireCodegraph(
     workerDescriptor,
     ...(temporal ? { temporal } : {}),
   };
-  const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
+  const graphFacade = new GraphFacade({
+    pool,
+    collectionRegistry,
+    resolveActiveCollection,
+    ...(readImportSpecifiers ? { readImportSpecifiers } : {}),
+  });
 
   // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
   // build handshake goes through THIS pool's `acquireWrite`, the one pool that
@@ -1063,7 +1076,13 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
     infra.qdrant.aliases.resolveActive(name);
-  const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry, resolveActiveCollection);
+  const codegraphContext = wireCodegraph(
+    config,
+    zodConfig,
+    collectionRegistry,
+    resolveActiveCollection,
+    async (collectionName, relPaths) => readPayloadImportSpecifiers(infra.qdrant, collectionName, relPaths),
+  );
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   // TracePathOps bridges the codegraph adjacency (DuckDB pool) and the explore

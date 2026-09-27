@@ -90,7 +90,10 @@ exactly like the unsplit member chunk (bd tea-rags-mcp-jgb5a). A part's layout,
 top to bottom:
 
 1. hierarchy prefix — the enclosing containers' headers;
-2. leading comment — `#part1` only (the u7tjf rule above);
+2. leading comment — `#part1` only (the u7tjf rule above), in the same part as
+   the signature whenever both fit; a comment too large for that spreads over
+   the first parts, each comment-only one opened by the signature rows, so no
+   part is a bare doc block (bd tea-rags-mcp-ic5mv);
 3. the splitter's signature/context prefix — every part after the first;
 4. the part's own rows — the only rows `startLine..endLine` covers.
 
@@ -110,7 +113,10 @@ Every OTHER `#partN` tail names its container too (bd tea-rags-mcp-j4jrn):
   the hierarchy prefix plus the container header.
 - A hook body chunk that still overflows (a setup-only test chunk, a row wider
   than the budget) is cut by the `enforceMaxChunkSize` post-pass with its
-  transient `contextPrefix` (hierarchy + header rows) repeated on every part.
+  transient `contextPrefix` (hierarchy + header rows) repeated on every part. A
+  body chunk that declares a `partHeader` (a test example's call row) gets that
+  row repeated after the prefix on every `#part2+` too (bd tea-rags-mcp-l24yk);
+  it is text only, so line ranges stay the part's own rows.
 - The header is the row the container's `name` starts on, not its first row — a
   leading attribute / decorator / annotation row (`@NSApplicationMain`) is never
   the header.
