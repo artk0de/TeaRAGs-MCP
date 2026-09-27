@@ -1,4 +1,4 @@
-scrpits/**
+scripts/**
 package-lock.json
 public/**
 node_modules/**
@@ -14,8 +14,7 @@ docs/**
 logs/**
 benchmarks/**
 package.json
-packag-lock.json
-propmts.example.json
+prompts.example.json
 README.md
 tsconfig.eslint.json
 tsconfig.json
