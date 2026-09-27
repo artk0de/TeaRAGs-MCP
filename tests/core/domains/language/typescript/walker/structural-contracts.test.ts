@@ -95,6 +95,63 @@ describe("TypeScript structural contracts (39xca.14)", () => {
     ]);
   });
 
+  // bd tea-rags-mcp-39xca.19 — a property typed as a function THROUGH A
+  // REFERENCE is a required callable member. Resolved in this file when the
+  // syntax allows; an indexed access into a contract declared elsewhere is
+  // emitted as a reference the barrier resolves against the run's contracts;
+  // anything else unresolvable stays out, as before.
+  it("resolves function types reached through same-file references", () => {
+    const code = [
+      "interface Walker { walk(input: string): number; nameOf: (node: Node, gem?: string) => string }",
+      "type Fn = (a: number) => void;",
+      "function helper(a: number, b: number) { return a + b; }",
+      "interface Parts {",
+      '  walk: Walker["walk"];',
+      "  nameOf: (Walker)['nameOf'];",
+      "  alias: Fn;",
+      "  query: typeof helper;",
+      '  missing: Walker["absent"];',
+      "  imported: typeof importedFn;",
+      "  external: ExternalFn;",
+      "  passes: readonly string[];",
+      "}",
+    ].join("\n");
+
+    expect(extract(code).structuralContracts?.find((c) => c.name === "Parts")).toEqual({
+      name: "Parts",
+      members: [
+        { name: "walk", params: 1 },
+        { name: "nameOf", params: 2 },
+        { name: "alias", params: 1 },
+        { name: "query", params: 2 },
+      ],
+    });
+  });
+
+  it("emits an indexed access into a contract declared elsewhere as a reference", () => {
+    const code = [
+      "export interface ExtractionWalkerParts {",
+      "  walk: (input: WalkInput) => FileExtraction;",
+      '  nameOf: LanguageWalker["nameOf"];',
+      "  passes: readonly ExtractionFacetPass[];",
+      "}",
+    ].join("\n");
+
+    expect(extract(code).structuralContracts).toEqual([
+      {
+        name: "ExtractionWalkerParts",
+        members: [
+          { name: "walk", params: 1 },
+          {
+            name: "nameOf",
+            params: Number.MAX_SAFE_INTEGER,
+            ref: { contract: "LanguageWalker", member: "nameOf" },
+          },
+        ],
+      },
+    ]);
+  });
+
   it("declares no contract for an interface with no callable member, and none for a file without one", () => {
     expect(extract("interface Point { x: number; y: number }").structuralContracts).toBeUndefined();
     expect(extract("export const a = 1;").structuralContracts).toBeUndefined();

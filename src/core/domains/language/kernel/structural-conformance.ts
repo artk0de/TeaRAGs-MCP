@@ -35,6 +35,7 @@ import {
   type AritySignature,
   type InheritanceEdgeRow,
   type StructuralContractDecl,
+  type StructuralContractMember,
   type SymbolDefinition,
   type SymbolDefinitionKind,
 } from "../../../contracts/types/codegraph.js";
@@ -257,8 +258,10 @@ function requiredMembers(
   const required = new Map<string, number>();
   const require = (source: StructuralContractDecl): void => {
     for (const member of source.members) {
+      const params = memberParams(member, membersByContract, hierarchy, new Set());
+      if (params === undefined) continue;
       const bound = required.get(member.name);
-      required.set(member.name, bound === undefined ? member.params : Math.min(bound, member.params));
+      required.set(member.name, bound === undefined ? params : Math.min(bound, params));
     }
   };
   require(decl);
@@ -266,6 +269,37 @@ function requiredMembers(
     for (const inherited of membersByContract.get(ancestor) ?? []) require(inherited);
   }
   return required;
+}
+
+/**
+ * A required member's parameter count. A member typed `Contract["member"]`
+ * through another file (bd tea-rags-mcp-39xca.19) takes the referenced
+ * member's — looked up on that contract and the contracts it extends, the
+ * smaller count when several declare it — and is no requirement at all when the
+ * run declares no such contract member: nothing says it is callable.
+ */
+function memberParams(
+  member: StructuralContractMember,
+  membersByContract: ReadonlyMap<string, readonly StructuralContractDecl[]>,
+  hierarchy: NominalHierarchy,
+  visiting: Set<string>,
+): number | undefined {
+  if (member.ref === undefined) return member.params;
+  const key = `${member.ref.contract}\u0000${member.ref.member}`;
+  if (visiting.has(key)) return undefined;
+  visiting.add(key);
+  let params: number | undefined;
+  for (const contractName of [member.ref.contract, ...hierarchy.ancestors(member.ref.contract)]) {
+    for (const decl of membersByContract.get(contractName) ?? []) {
+      for (const candidate of decl.members) {
+        if (candidate.name !== member.ref.member) continue;
+        const resolved = memberParams(candidate, membersByContract, hierarchy, visiting);
+        if (resolved !== undefined) params = params === undefined ? resolved : Math.min(params, resolved);
+      }
+    }
+  }
+  visiting.delete(key);
+  return params;
 }
 
 /** Owners carrying every required member at a compatible arity, starting from the rarest member. */

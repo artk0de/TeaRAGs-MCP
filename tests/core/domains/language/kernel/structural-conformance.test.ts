@@ -222,6 +222,49 @@ describe("deriveStructuralConformance", () => {
     expect(pairs(rows)).toEqual(["RUBY_ANCESTOR_POLICY -> AncestorPolicy", "createPolicy -> AncestorPolicy"]);
   });
 
+  // bd tea-rags-mcp-39xca.19 — `nameOf: LanguageWalker["nameOf"]` is a required
+  // callable member whose signature lives in another contract. Resolved against
+  // the run's contracts it makes `ExtractionWalkerParts` two-member, so a class
+  // carrying only `walk` no longer conforms; a reference to a contract the run
+  // does not declare stays out of the requirement, as before.
+  it("resolves a member referenced through another contract, and drops an unresolvable one", () => {
+    const rows = deriveStructuralConformance({
+      contracts: [
+        {
+          name: "ExtractionWalkerParts",
+          members: [
+            { name: "walk", params: 1 },
+            { name: "nameOf", params: Number.MAX_SAFE_INTEGER, ref: { contract: "LanguageWalker", member: "nameOf" } },
+          ],
+        },
+        contract("LanguageWalker", ["walk", 1], ["nameOf", 2]),
+        {
+          name: "Unresolved",
+          members: [
+            { name: "walk", params: 1 },
+            { name: "render", params: Number.MAX_SAFE_INTEGER, ref: { contract: "ReactLib", member: "render" } },
+          ],
+        },
+      ],
+      memberDefinitions: [
+        method("ChunkChurnWalkPool", "walk", [1, 1]),
+        method("Full", "walk", [1, 1]),
+        method("Full", "nameOf", [1, 2]),
+        method("Greedy", "walk", [1, 1]),
+        method("Greedy", "nameOf", [3, 3]),
+      ],
+      nominalRows: [],
+    });
+
+    expect(pairs(rows)).toEqual([
+      "Full -> ExtractionWalkerParts",
+      "Full -> LanguageWalker",
+      "ChunkChurnWalkPool -> Unresolved",
+      "Full -> Unresolved",
+      "Greedy -> Unresolved",
+    ]);
+  });
+
   it("returns rows sorted by contract then owner whatever the input order", () => {
     const input = {
       contracts: [contract("Zed", ["go", 0]), contract("Alpha", ["go", 0])],

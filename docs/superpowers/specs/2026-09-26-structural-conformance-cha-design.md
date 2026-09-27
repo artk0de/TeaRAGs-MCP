@@ -50,7 +50,15 @@ interface StructuralContractDecl {
   Members are method signatures and function-typed property signatures that are
   NOT optional (`?`). Data properties, index and call signatures are excluded:
   the symbol table carries no field definitions, so they cannot be checked.
-  `params` = the member's parameter count.
+  `params` = the member's parameter count. A property typed through a reference
+  counts too (bd 39xca.19): a same-file function alias, `typeof` a same-file
+  function, or `Contract["member"]`. An indexed access into a contract declared
+  in another file is emitted as `ref` and resolved at the barrier against the
+  run's contracts; an unresolved reference (an imported alias, `typeof` an
+  import, a contract the run does not declare) stays out. Without this,
+  `ExtractionWalkerParts` (`nameOf: LanguageWalker["nameOf"]`) shrank to the
+  single member `walk`, and `ChunkChurnWalkPool#walk` became a confidence-1
+  target of `parts.walk`.
 - Python: a class whose bases include `Protocol` (`typing.Protocol`,
   `typing_extensions.Protocol`). Members are its methods minus `self`/`cls`.
   `params` = positional parameter count.
