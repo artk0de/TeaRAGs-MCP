@@ -178,9 +178,14 @@ function typescriptBoundCallee(value: AstNode): IdentifierBoundCallee | undefine
   return boundCalleeFromCallShape(typescriptCallSiteShape(ecmascriptOutermostCall(value)));
 }
 
-/** `await f()` consumes the Promise `f` returns (bd tea-rags-mcp-bjzaf); `f()!` only asserts it non-null. */
+/**
+ * `await f()` consumes the Promise `f` returns (bd tea-rags-mcp-bjzaf); `f()!` only asserts it non-null.
+ * The grammar parses `await f<T>()` as a call whose callee is `await f` (bd
+ * tea-rags-mcp-6ea2k), so that shape is awaited too.
+ */
 function typescriptBoundCallUnwraps(value: AstNode): boolean {
-  return value.type === "await_expression";
+  if (value.type === "await_expression") return true;
+  return value.type === "call_expression" && value.childForFieldName("function")?.type === "await_expression";
 }
 
 /** The head of an async function's return, the wrapper its callers' `await` consumes. */

@@ -420,6 +420,37 @@ describe("extractFromTypescriptFile", () => {
     });
   });
 
+  // bd tea-rags-mcp-6ea2k — tree-sitter-typescript parses `await x.m<T>(a)` as a
+  // call whose `function` is `await x.m`, so the member call came out as a
+  // receiverless call to `await x.m`: no edge could ever reach its target.
+  describe("awaited generic calls (bd tea-rags-mcp-6ea2k)", () => {
+    it("records `await this.local.read<T>(k)` as a member call on this.local", () => {
+      const code = [
+        "class Sync {",
+        "  async pull<T>(k: string) {",
+        "    const a = await this.local.read<T>(k);",
+        "    const b = await load<T>(k);",
+        "    return (await this.remote.read<T>(k)) ?? a ?? b;",
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const extraction = extractFromTypescriptFile({
+        tree: parse(code),
+        code,
+        relPath: "src/sync.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "Sync#pull", startLine: 2, endLine: 6, scope: ["Sync"] }],
+      });
+      const calls = (extraction.chunks[0]?.calls ?? []).map((c) => [c.receiver, c.member, c.startLine]);
+      expect(calls).toEqual([
+        ["this.local", "read", 3],
+        [null, "load", 4],
+        ["this.remote", "read", 5],
+      ]);
+    });
+  });
+
   // bd tea-rags-mcp-d29r — Walker must extract `class Child extends Parent`
   // relationships so the resolver can route `super()` calls to the PARENT
   // class instead of self-looping back to the enclosing class's own

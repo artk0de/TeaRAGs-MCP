@@ -680,3 +680,152 @@ describe("TSCallResolver.resolveDispatch — object-literal factory as a structu
     ]);
   });
 });
+
+/**
+ * bd tea-rags-mcp-6ea2k — a contract declared as a TYPE ALIAS of an object type
+ * (`export type StorePort = { read…; write… }`) is a contract exactly like an
+ * `interface` (39xca.14 design names both). The checker reports such a receiver
+ * as an anonymous `__type` whose ALIAS is the contract, and the receiver
+ * reader only ever accepted interface declarations, so a `this.local.write()`
+ * on a field typed `StorePort` reached no implementer — nominal
+ * (`implements StorePort`) or structural. The taxdome prototypes/state
+ * `StorageAdapter` shape, renamed.
+ */
+describe("TSCallResolver.resolveDispatch — type-alias object contract receiver (bd tea-rags-mcp-6ea2k)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-alias-contract-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function writeAliasFixture(implementsClause: string): void {
+    writeSource(repoRoot, "src/port.ts", [
+      `export type StorePort = {`,
+      `  read<T>(key: string): T | null;`,
+      `  write<T>(key: string, value: T): void;`,
+      `};`,
+    ]);
+    writeSource(repoRoot, "src/local.ts", [
+      `import type { StorePort } from "./port.js";`,
+      ``,
+      `export class LocalStore${implementsClause} {`,
+      `  read<T>(key: string): T | null {`,
+      `    return key.length > 0 ? null : null;`,
+      `  }`,
+      ``,
+      `  write<T>(key: string, value: T): void {`,
+      `    void key;`,
+      `    void value;`,
+      `  }`,
+      `}`,
+    ]);
+    writeSource(repoRoot, "src/other.ts", [
+      `export class Ledger {`,
+      `  write(a: number, b: number, c: number): void {`,
+      `    void (a + b + c);`,
+      `  }`,
+      `}`,
+    ]);
+    writeSource(repoRoot, "src/engine.ts", [
+      `import type { StorePort } from "./port.js";`,
+      ``,
+      `export class Engine {`,
+      `  private readonly local: StorePort;`,
+      ``,
+      `  constructor(local: StorePort) {`,
+      `    this.local = local;`,
+      `  }`,
+      ``,
+      `  pull<T>(key: string): T | null {`,
+      `    return this.local.read<T>(key);`,
+      `  }`,
+      ``,
+      `  push(key: string): void {`,
+      `    this.local.write(key, 1);`,
+      `  }`,
+      `}`,
+    ]);
+  }
+
+  const arity = (minRequired: number, maxPositional: number) => ({ minRequired, maxPositional, hasSplat: false });
+  const tableOf = (): InMemoryGlobalSymbolTable => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("src/port.ts", []);
+    table.upsertFile("src/local.ts", [
+      sym("LocalStore", "LocalStore", "src/local.ts", []),
+      { ...sym("LocalStore#read", "read", "src/local.ts", ["LocalStore"]), arity: arity(1, 1) },
+      { ...sym("LocalStore#write", "write", "src/local.ts", ["LocalStore"]), arity: arity(2, 2) },
+    ]);
+    table.upsertFile("src/other.ts", [
+      sym("Ledger", "Ledger", "src/other.ts", []),
+      { ...sym("Ledger#write", "write", "src/other.ts", ["Ledger"]), arity: arity(3, 3) },
+    ]);
+    table.upsertFile("src/engine.ts", [
+      sym("Engine", "Engine", "src/engine.ts", []),
+      sym("Engine#pull", "pull", "src/engine.ts", ["Engine"]),
+      sym("Engine#push", "push", "src/engine.ts", ["Engine"]),
+    ]);
+    return table;
+  };
+  const engineCtx = (table: InMemoryGlobalSymbolTable, hierarchy: MapHierarchyView): CallContext => ({
+    callerFile: "src/engine.ts",
+    callerScope: ["Engine"],
+    imports: [],
+    classFieldTypes: { Engine: { local: "StorePort" } },
+    symbolTable: table,
+    hierarchy,
+  });
+  const READ_CALL: CallRef = {
+    callText: "this.local.read<T>(key)",
+    receiver: "this.local",
+    member: "read",
+    startLine: 11,
+  };
+  const WRITE_CALL: CallRef = {
+    callText: "this.local.write(key, 1)",
+    receiver: "this.local",
+    member: "write",
+    startLine: 15,
+  };
+  const resolver = (): TSCallResolver => new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+
+  it("reaches the class that `implements` the alias through the nominal row", () => {
+    writeAliasFixture(" implements StorePort");
+    const ctx = engineCtx(tableOf(), hierarchyOf([["LocalStore", "StorePort"]]));
+
+    expect(edgesOf(resolver().resolveDispatch(READ_CALL, ctx))).toEqual([edgeTo("src/local.ts", "LocalStore#read", 1)]);
+    expect(edgesOf(resolver().resolveDispatch(WRITE_CALL, ctx))).toEqual([
+      edgeTo("src/local.ts", "LocalStore#write", 1),
+    ]);
+  });
+
+  it("reaches a class that conforms to the alias without `implements`", () => {
+    writeAliasFixture("");
+    const table = tableOf();
+    const structuralRows = new TypeScriptLanguage().structuralConformance({
+      contracts: [
+        {
+          name: "StorePort",
+          members: [
+            { name: "read", params: 1 },
+            { name: "write", params: 2 },
+          ],
+        },
+      ],
+      memberDefinitions: [...table.lookupByShortName("read"), ...table.lookupByShortName("write")],
+      nominalRows: [],
+    });
+    const ctx = engineCtx(table, new MapHierarchyView(buildHierarchySnapshot(structuralRows)));
+
+    expect(structuralRows.map((row) => `${row.sourceFqName} ${row.kind} ${row.ancestorFqName}`)).toEqual([
+      "LocalStore structural StorePort",
+    ]);
+    expect(edgesOf(resolver().resolveDispatch(WRITE_CALL, ctx))).toEqual([
+      edgeTo("src/local.ts", "LocalStore#write", 1),
+    ]);
+  });
+});
