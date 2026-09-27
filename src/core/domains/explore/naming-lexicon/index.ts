@@ -65,6 +65,7 @@ export {
   judgeTypeDraft,
   singleCarrierHeadFiles,
   typeDraftAlignmentWords,
+  typeDraftEvidence,
   typeDraftMeaningPairs,
   typeDraftPopulation,
   typeNameEvidence,

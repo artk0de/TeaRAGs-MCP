@@ -36,6 +36,7 @@ export const CONNECTOR_WORDS: ReadonlySet<string> = new Set([
   "per",
   "into",
   "over",
+  "under",
   "without",
 ]);
 

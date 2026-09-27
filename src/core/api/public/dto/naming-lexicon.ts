@@ -124,16 +124,28 @@ export interface NamingLexiconCalleeEntry extends NamingLexiconKindProfile {
   receiver?: string;
 }
 
-/** Evidence behind one draft-name verdict. */
+/**
+ * Evidence behind one draft-name verdict. A draft's own declaration is never
+ * its evidence (bd tea-rags-mcp-xsxkr): a type draft's own declaration at its
+ * `path` is left out of every count, and a value draft given a `path` is judged
+ * with that file left out of every read — as diff mode leaves out the changed
+ * files.
+ */
 export interface NamingLexiconNameEvidence {
-  /** Rows already carrying this name, project-wide. */
+  /** Rows already carrying this name, project-wide — its own declaration excluded. */
   n: number;
   /** An owner symbol holding the suggested / observed name. */
   example?: string;
   /** Distinct types this name is bound to (homonymy). */
   boundTypes: number;
-  /** The name is already a symbol's short name. */
+  /** The name is already a symbol's short name — of a symbol other than the draft's own. */
   collision: boolean;
+  /**
+   * A value / return draft's `collision`: the symbols it collides with, at most
+   * three ids (an override of `AbstractPolicy#same_firm?` reads as such). Absent
+   * when there is no collision, in diff mode, or without a symbol lookup.
+   */
+  collisions?: string[];
 }
 
 /**

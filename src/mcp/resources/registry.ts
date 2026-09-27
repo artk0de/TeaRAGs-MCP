@@ -258,6 +258,8 @@ name by grep or semantic_search on the draft.
 
 - "What does the project call values of type T?" → types=["TaxAutomationDocument"], language="ruby"
 - "Is this name right?" (one draft / rename) → names=[{ name: "row", kind: "local", type: "TaxAutomationDocument" }]
+- An EXISTING name → add path: "<its file>" (any kind): that file is left out of the evidence, as a
+  review leaves out changed files — a declaration never counts, collides with or confirms itself.
 - New class / constant → names=[{ name: "RubyConstReceiverPass", kind: "type", path: "<its file>", extends: "SymbolResolutionStrategy" }]
 - Words for a concept → concept="<what the symbol denotes, not its name>", language="typescript"
 - Review names a diff adds → changes={} (uncommitted vs HEAD) or changes={ base: "origin/main" } (branch).
@@ -278,7 +280,13 @@ name by grep or semantic_search on the draft.
 
 Verdicts: CONFORMS (vocabulary, not behaviour; may carry alternatives) | MISFIT (suggestion,
 role) | NEW_TERM (topTerms, alternatives — soft,
-never a rename demand) | COLLISION (existing). Role = inheritance family > directory > project
+never a rename demand) | COLLISION (existing). CONFORMS rests on evidence: a type's carries the
+role or project suffix it rests on (role); a value nothing compares conforms only when other rows
+use the name (evidence.n), else NEW_TERM with no topTerms (novel). A value MISFIT needs ≥ 2 rows
+behind its suggestion, never deletes the draft's qualifier or complement (for_payload), and a
+local named after its own type conforms unless the type's values are never named that way.
+evidence.collisions: up to 3 symbol ids a value / return name collides with (an override of
+AbstractPolicy#same_firm? reads as such). Role = inheritance family > directory > project
 suffix; project suffix only confirms, never MISFIT. A directory-evidence MISFIT is
 location-based: rename only when the type belongs to role.examples' family. CONFORMS with
 role.carriedInName=false: the kind a family of action-named types takes from its supertype

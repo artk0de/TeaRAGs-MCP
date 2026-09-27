@@ -383,9 +383,10 @@ describe("judgeDraftName — a QUALIFIED draft against co-occurrence-counted row
     expect(judge("other_node", loneRows)).toEqual({ verdict: "NEW_TERM", topTerms: ["node", "result_node"] });
   });
 
-  it("with neither QUALIFIED nor FREE rows to conform to, it is a MISFIT naming the canonical row", () => {
+  // bd tea-rags-mcp-xsxkr: `node` only deletes the draft's qualifier — no rename demand, the canonical row is context.
+  it("with neither QUALIFIED nor FREE rows to conform to, it is a NEW_TERM naming the canonical row", () => {
     const exactRows = [{ kind: "local" as const, name: "node", n: 10, exampleOwner: "Graph#walk" }];
-    expect(judge("other_node", exactRows)).toEqual({ verdict: "MISFIT", suggestion: "node", holder: "Graph#walk" });
+    expect(judge("other_node", exactRows)).toEqual({ verdict: "NEW_TERM", topTerms: ["node"] });
   });
 });
 
@@ -448,7 +449,8 @@ describe("judgeDraftName — byCallee rows", () => {
           },
         ],
       }),
-    ).toEqual({ verdict: "CONFORMS" });
+      // bd tea-rags-mcp-xsxkr: with those rows ignored nothing compares the draft — novel, not CONFORMS.
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
   });
 
   it("untyped callee rows that name by role accept a role name", () => {
@@ -723,7 +725,8 @@ describe("judgeDraftName — nothing to judge against", () => {
         nonConceptTypes: ["string", "number"],
         byTypeRows: [{ kind: "local", name: "name", n: 100, exampleOwner: OWNER }],
       }),
-    ).toEqual({ verdict: "CONFORMS" });
+      // bd tea-rags-mcp-xsxkr: not judged by type, and no use of `label` given — novel, never a MISFIT.
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
   });
 
   it("a type the language does not list is judged by type (no global stop-list)", () => {
@@ -738,8 +741,10 @@ describe("judgeDraftName — nothing to judge against", () => {
     ).toEqual({ verdict: "MISFIT", suggestion: "string", holder: OWNER });
   });
 
-  it("no type, callee or terms conforms", () => {
-    expect(judgeDraftName({ name: "row", casing: "snake" })).toEqual({ verdict: "CONFORMS" });
+  // bd tea-rags-mcp-xsxkr: CONFORMS needs evidence — with nothing to compare, the name's own use elsewhere.
+  it("no type, callee or terms: CONFORMS only when other rows carry the name, else novel", () => {
+    expect(judgeDraftName({ name: "row", casing: "snake" })).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    expect(judgeDraftName({ name: "row", casing: "snake", nameRows: 12 })).toEqual({ verdict: "CONFORMS" });
   });
 });
 
@@ -769,6 +774,12 @@ describe("judgeTypeDraft", () => {
     row("PyStrategy", "src/lang/py/strategy.ts", ["SymbolResolutionStrategy"]),
     row("RubyStrategy", "src/lang/rb/strategy.ts", ["SymbolResolutionStrategy"]),
   ];
+  /** bd tea-rags-mcp-xsxkr: a CONFORMS carrying the family role names it. */
+  const STRATEGY_ROLE = {
+    word: "strategy",
+    evidence: "inheritance",
+    examples: ["PyStrategy", "RubyStrategy", "TsStrategy"],
+  };
   const judge = (
     rows: readonly TypeNameRow[],
     draft: { name: string; path: string; extends?: string; symbolKind?: TypeNameRow["symbolKind"] },
@@ -799,15 +810,24 @@ describe("judgeTypeDraft", () => {
       ).not.toBe("MISFIT");
     });
 
+    // bd tea-rags-mcp-xsxkr: the CONFORMS names the suffix it rests on.
+    const OPTIONS_SUFFIX = {
+      word: "options",
+      evidence: "projectSuffix",
+      examples: ["IndexOptions", "PostProcessOptions", "RenderOptions"],
+    };
+
     it("`SearchOptions` there → CONFORMS", () => {
       expect(judge(OPTIONS_ELSEWHERE, { name: "SearchOptions", path: "src/explore/search-options.ts" })).toEqual({
         verdict: "CONFORMS",
+        role: OPTIONS_SUFFIX,
       });
     });
 
     it("`SearchOptions` in a directory where no type carries the suffix → CONFORMS", () => {
       expect(judge(OPTIONS_ELSEWHERE, { name: "SearchOptions", path: "src/z/search-options.ts" })).toEqual({
         verdict: "CONFORMS",
+        role: OPTIONS_SUFFIX,
       });
     });
   });
@@ -829,7 +849,7 @@ describe("judgeTypeDraft", () => {
   it("a draft carrying the family role with established terms → CONFORMS", () => {
     expect(
       judge(STRATEGIES, { name: "GoStrategy", path: "src/lang/go/strategy.ts", extends: "SymbolResolutionStrategy" }),
-    ).toEqual({ verdict: "CONFORMS" });
+    ).toEqual({ verdict: "CONFORMS", role: STRATEGY_ROLE });
   });
 
   it("a short name that already exists as a type in another module → COLLISION naming it", () => {
@@ -1076,7 +1096,7 @@ describe("judgeTypeDraft", () => {
           { name: "GoStrategy", path: "src/lang/go/strategy.ts", extends: "SymbolResolutionStrategy" },
           new Map([["resolver", 0.9]]),
         ),
-      ).toEqual({ verdict: "CONFORMS" });
+      ).toEqual({ verdict: "CONFORMS", role: STRATEGY_ROLE });
     });
 
     it("a spelling variant the similarity does not confirm is dropped (`splitter` is no `site`)", () => {
@@ -1557,11 +1577,17 @@ describe("judgeTypeDraft — a project suffix confirms only its family's members
   ];
   const judge = (draft: { name: string; path: string; extends?: string; symbolKind?: TypeNameRow["symbolKind"] }) =>
     judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(ROWS, "type"), conceptNames: [] });
+  // bd tea-rags-mcp-xsxkr: a CONFORMS the suffix confirms names it.
+  const NOTIFICATION_SUFFIX = {
+    word: "notification",
+    evidence: "projectSuffix",
+    examples: ["InvoicePaidNotification", "ProposalSignedNotification", "TaskAssignedNotification"],
+  };
+  const DATA_SUFFIX = { word: "data", evidence: "projectSuffix" };
 
+  // bd tea-rags-mcp-xsxkr: a CONFORMS may now carry its role, so "not confirmed" reads the verdict itself.
   it("an existing service outside the family's supertype is not confirmed by `*Notification`", () => {
-    expect(judge({ name: "SendFailedPaymentNotification", path: SERVICE_PATH })).not.toEqual({
-      verdict: "CONFORMS",
-    });
+    expect(judge({ name: "SendFailedPaymentNotification", path: SERVICE_PATH }).verdict).not.toBe("CONFORMS");
   });
 
   it("a draft extending another supertype is not confirmed by the suffix", () => {
@@ -1570,8 +1596,8 @@ describe("judgeTypeDraft — a project suffix confirms only its family's members
         name: "SendReminderNotification",
         path: "app/services/billing/reminders/send_reminder_notification.rb",
         extends: "KindOfService",
-      }),
-    ).not.toEqual({ verdict: "CONFORMS" });
+      }).verdict,
+    ).not.toBe("CONFORMS");
   });
 
   it("an existing class declaring no supertype is confirmed: declaring nothing is no evidence", () => {
@@ -1585,7 +1611,7 @@ describe("judgeTypeDraft — a project suffix confirms only its family's members
         evidence: typeNameEvidence(rows, "type"),
         conceptNames: [],
       }),
-    ).toEqual({ verdict: "CONFORMS" });
+    ).toEqual({ verdict: "CONFORMS", role: NOTIFICATION_SUFFIX });
   });
 
   it("a draft extending a member of the family, through the project's own type, is confirmed", () => {
@@ -1595,23 +1621,24 @@ describe("judgeTypeDraft — a project suffix confirms only its family's members
         path: "app/models/n8/inbox/invoice_overdue_notification.rb",
         extends: "InvoicePaidNotification",
       }),
-    ).toEqual({ verdict: "CONFORMS" });
+    ).toEqual({ verdict: "CONFORMS", role: NOTIFICATION_SUFFIX });
   });
 
   it("a module draft is not confirmed by a family of type aliases", () => {
-    expect(judge({ name: "ClientPushBaseData", path: MIXIN_PATH, symbolKind: "module" })).not.toEqual({
-      verdict: "CONFORMS",
-    });
+    expect(judge({ name: "ClientPushBaseData", path: MIXIN_PATH, symbolKind: "module" }).verdict).not.toBe("CONFORMS");
   });
 
   it("an existing module is judged by its own declaration kind", () => {
-    expect(judge({ name: "ClientPushBaseData", path: MIXIN_PATH })).not.toEqual({ verdict: "CONFORMS" });
+    expect(judge({ name: "ClientPushBaseData", path: MIXIN_PATH }).verdict).not.toBe("CONFORMS");
   });
 
   it("a member of the family's form is confirmed; a draft of unknown kind is confirmed as before", () => {
     const path = "app/javascript/m9/JobData.ts";
-    expect(judge({ name: "JobData", path, symbolKind: "type_alias" })).toEqual({ verdict: "CONFORMS" });
-    expect(judge({ name: "JobData", path })).toEqual({ verdict: "CONFORMS" });
+    expect(judge({ name: "JobData", path, symbolKind: "type_alias" })).toMatchObject({
+      verdict: "CONFORMS",
+      role: DATA_SUFFIX,
+    });
+    expect(judge({ name: "JobData", path })).toMatchObject({ verdict: "CONFORMS", role: DATA_SUFFIX });
   });
 });
 

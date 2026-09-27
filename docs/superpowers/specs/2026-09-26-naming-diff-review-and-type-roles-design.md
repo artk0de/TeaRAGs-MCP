@@ -1093,6 +1093,60 @@ Reporting those would need a judgement of the name itself. The ontology's
 `genericName` is that judgement, and it needs the name's own history across
 types.
 
+## 5a. What counts as evidence (bd tea-rags-mcp-xsxkr)
+
+A field review of a taxdome stack found verdicts resting on the draft itself:
+`RefusalsConcern` CONFORMS with its own declaration as the one carrier, a
+nonexistent `RefusalsHelper` CONFORMS with `n = 0`, `store_entity!` CONFORMS
+with its own symbol as the only example, `collision: true` on names that exist
+only as themselves, and names mode disagreeing with diff mode on the same
+declaration. The rules below close those.
+
+1. **A draft's own declaration is never its evidence.** Diff mode already leaves
+   changed files out of every read. Names mode now does the same for any draft
+   that names its file: a type draft drops the rows declared at its path under
+   its own short name before counting heads, directory roles, families or `n`
+   (`typeDraftEvidence`). Its supertypes and kind are kept as facts ABOUT the
+   draft, since they decide membership rather than support it. A value draft
+   (`local`, `param`, `return`) with a `path` is judged with that file excluded
+   from the store, so its own row neither counts toward `n` nor collides with
+   it. A value draft with no `path` has no identity names mode could exclude;
+   that is the caller's contract, stated in the resource text.
+2. **CONFORMS rests on evidence.** A type CONFORMS names the role it rests on
+   (`role`: the expected family role or the project suffix, with examples). A
+   value draft that nothing compares — no type rows, no callee rows, no concept
+   terms — CONFORMS only when other rows carry the name (`nameRows > 0`), else
+   it is novel: NEW_TERM with no topTerms. That also removes the
+   location-dependent flip of `result` (CONFORMS where the bound call derives no
+   name, NEW_TERM `[]` where it derives an unlicensed one): both paths now read
+   the same count.
+3. **A value MISFIT needs a convention.** The suggestion must be carried by at
+   least `MIN_ROLE_MEMBERS` (2) rows; against thinner evidence the draft is
+   NEW_TERM with the row names as context. The store has no distinct-holder
+   count, so the bar is on rows, not holders.
+4. **A local named after its own type conforms** (EXACT or TAIL shape) when
+   there is no convention, or when another kind of the type's values (a param, a
+   return) spells the name that way. `tax_preparation: TaxPreparation` against
+   `existing` (3 locals) and `tax_preparation` (18 params) is CONFORMS; against
+   `existing` alone it stays a MISFIT.
+5. **A MISFIT suggestion keeps what the draft says about WHICH value.** The
+   draft is split at its connector (`for`, `by`, `under`, … — the closed
+   `CONNECTOR_WORDS` list, which gained `under`). If the words before the
+   connector already are the suggestion, the draft CONFORMS
+   (`tax_automation_documents_for_payload`). Otherwise only the head part is
+   replaced and the complement kept (`filed_under_another_entity` →
+   `tax_automation_documents_under_another_entity`). A suggestion that would
+   only delete words of a connector-free draft (`other_node` → `node`) is not a
+   rename: NEW_TERM naming the project's word.
+6. **A collision names what it collides with.** `evidence.collisions` lists up
+   to three symbol ids of other declarations of the name (own file excluded), so
+   an override (`same_firm?` against `AbstractPolicy#same_firm?`) reads as one.
+   It is absent without a collision, in diff mode, and when the lookup is
+   unavailable.
+
+Diff mode and names mode still differ on concept terms: the diff's concept query
+carries the enclosing code, names mode only the name.
+
 ## 6. Diff mode (`fdef2`)
 
 Input: `changes: { base?: string }` (default `HEAD`: working tree against HEAD,

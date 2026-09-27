@@ -24,6 +24,7 @@ import {
 import {
   isInteriorConnector,
   splitNameSlots,
+  typeNameParts,
   type NameSlots,
   type TypeNameParser,
   type TypeNameParts,
@@ -61,6 +62,7 @@ import {
   isNamespaceDeclaration,
   isRoleFamilyMember,
   meetsProjectConventionSpread,
+  MIN_ROLE_MEMBERS,
   projectSuffixRole,
   projectSupertypes,
   TYPE_ROLE_THRESHOLDS,
@@ -92,10 +94,13 @@ export type NamingVerdict =
        */
       alternatives?: TermAlternative[];
       /**
-       * The kind a dispersed family names for the draft (`carriedInName: false`,
-       * bd tea-rags-mcp-49fsr): its supertype and directory say what it IS, and
-       * the family fixes no head — `SendFailedPaymentNotification` extending
-       * `KindOfService` is a `service`.
+       * The role a type draft's CONFORMS rests on (bd tea-rags-mcp-xsxkr): the
+       * expected family / directory role its name carries, or the project
+       * suffix that confirms it. With `carriedInName: false`, the kind a
+       * dispersed family names for the draft (bd tea-rags-mcp-49fsr): its
+       * supertype and directory say what it IS, and the family fixes no head —
+       * `SendFailedPaymentNotification` extending `KindOfService` is a
+       * `service`. Absent: known words alone confirmed the name.
        */
       role?: NamingExpectedTypeRole;
     }
@@ -163,6 +168,14 @@ export interface DraftNameJudgementInput {
   projectShapePrior?: Partial<Record<IdentifierDeclarationKind, NamingShapeDistribution>>;
   /** The project's `VERB_TYPE` return verbs with their shares — licenses the return fallback. */
   projectReturnVerbs?: readonly NamingReturnVerbShare[];
+  /**
+   * Rows already carrying the draft's name, its own declaration excluded
+   * (`evidence.n`; bd tea-rags-mcp-xsxkr). For an untyped draft that nothing
+   * else compares — no type, no rows of its call, no licensed fallback, no
+   * concept — the only evidence: > 0 → CONFORMS (the project uses the name),
+   * else NEW_TERM with no terms (novel). Absent = 0.
+   */
+  nameRows?: number;
 }
 
 /** A draft's shape conforms when it holds at least this share of the observed rows. */
@@ -189,9 +202,66 @@ interface JudgedRows {
    * {@link judgeFreeValueName}).
    */
   freeNameMustBeKnown?: boolean;
+  /**
+   * Every value row of the draft's type, one per name across kinds — whether
+   * the project spells the type for its values at all (bd tea-rags-mcp-xsxkr).
+   * Absent: not a typed value draft.
+   */
+  typeValueRows?: readonly NamingShapeRow[];
 }
 
-/** CONFORMS when the draft's shape holds ≥ 20% of the rows, else MISFIT naming the most frequent row. */
+/** The rows' names, heaviest first (merged per name), at most {@link TOP_TYPE_NAMES}. */
+function topRowNames(rows: readonly NamingShapeRow[]): string[] {
+  const perName = new Map<string, number>();
+  for (const row of rows) perName.set(row.name, (perName.get(row.name) ?? 0) + row.n);
+  return [...perName]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, TOP_TYPE_NAMES)
+    .map(([known]) => known);
+}
+
+/** Rows carrying `name`, across the rows' casings and kinds. */
+function nameSupport(rows: readonly NamingShapeRow[], name: string): number {
+  return rows.reduce((total, row) => (row.name === name ? total + row.n : total), 0);
+}
+
+/**
+ * The demand a value draft's rows make (bd tea-rags-mcp-xsxkr): a MISFIT naming
+ * the heaviest row only when that name is a convention — at least
+ * {@link MIN_ROLE_MEMBERS} rows carry it, the least that makes a family. One
+ * row is context, not a demand: NEW_TERM with the rows' names. A draft named
+ * after its own type ({@link namesItsType}) conforms by that alone unless the
+ * contrary evidence is strong — a convention AND no kind of the type's values
+ * named that way. A `return` keeps the plain demand: its rows are the method
+ * convention.
+ */
+function rowDemand(
+  kind: IdentifierDeclarationKind,
+  rows: readonly (NamingShapeRow & { exampleOwner: string })[],
+  typeNamed: boolean,
+  typeNamedElsewhere: boolean,
+): NamingVerdict {
+  const top = rows.reduce((best, row) => (row.n > best.n ? row : best));
+  const misfit: NamingVerdict = { verdict: "MISFIT", suggestion: top.name, holder: top.exampleOwner };
+  if (kind === "return") return misfit;
+  const convention = nameSupport(rows, top.name) >= MIN_ROLE_MEMBERS;
+  if (typeNamed && (!convention || typeNamedElsewhere)) return { verdict: "CONFORMS" };
+  return convention ? misfit : { verdict: "NEW_TERM", topTerms: topRowNames(rows) };
+}
+
+/**
+ * A name that IS its type's name — the whole of it or its tail
+ * (`tax_preparation`, `preparations`) — not a qualified one, whose qualifier
+ * the co-occurrence reading judges.
+ */
+function namesItsType(shape: NamingShape): boolean {
+  return shape === "EXACT" || shape === "TAIL";
+}
+
+/**
+ * CONFORMS when the draft's shape holds ≥ 20% of the rows, else the rows'
+ * demand ({@link rowDemand}) — for a `return`, a MISFIT naming the most frequent row.
+ */
 function judgeAgainstRows(
   input: DraftNameJudgementInput,
   kind: IdentifierDeclarationKind,
@@ -213,14 +283,17 @@ function judgeAgainstRows(
   }
   const share = shareOf(draftShape);
   if (share < CONFORMING_SHARE) {
-    const top = judged.rows.reduce((best, row) => (row.n > best.n ? row : best));
-    return { verdict: "MISFIT", suggestion: top.name, holder: top.exampleOwner };
+    const typeNamedElsewhere =
+      judged.typeValueRows !== undefined &&
+      (shapeDistribution(judged.typeValueRows, context).shares.find((s) => s.shape === draftShape)?.share ?? 0) >=
+        CONFORMING_SHARE;
+    return rowDemand(kind, judged.rows, namesItsType(draftShape), typeNamedElsewhere);
   }
   if (draftShape === "FREE" && judged.freeNameMustBeKnown === true) {
     return judgeFreeValueName(input.name, judged.rows);
   }
   if (input.typeMultiplicity === "many" && spellsTypeName(draftShape)) {
-    return judgeCollectionNumber(input.name, judged.rows, (row) =>
+    return judgeCollectionNumber(input.name, kind, judged.rows, (row) =>
       spellsTypeName(
         classifyNamingShape({
           ...context,
@@ -246,16 +319,8 @@ function judgeAgainstRows(
 function judgeFreeValueName(name: string, rows: readonly NamingShapeRow[]): NamingVerdict {
   const wordKey = (identifier: string) => splitIdentifierWords(identifier).map(singularizeIdentifierWord).join("_");
   const draftKey = wordKey(name);
-  const perName = new Map<string, number>();
-  for (const row of rows) perName.set(row.name, (perName.get(row.name) ?? 0) + row.n);
-  if ([...perName.keys()].some((known) => wordKey(known) === draftKey)) {
-    return { verdict: "CONFORMS" };
-  }
-  const topTerms = [...perName]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, TOP_TYPE_NAMES)
-    .map(([known]) => known);
-  return { verdict: "NEW_TERM", topTerms };
+  if (rows.some((row) => wordKey(row.name) === draftKey)) return { verdict: "CONFORMS" };
+  return { verdict: "NEW_TERM", topTerms: topRowNames(rows) };
 }
 
 /** True when the last word of `name` is a plural (`items`, `documentRows`). */
@@ -269,10 +334,13 @@ function endsInPlural(name: string): boolean {
  * A collection draft that spells its type must agree in number with the rows
  * that spell it: `item` for an `Item[]` where the project writes `items` is a
  * MISFIT naming `items`. Induced, not assumed — rows that spell collections in
- * the singular make the singular conform. No spelling rows → nothing to agree with.
+ * the singular make the singular conform. No spelling rows → nothing to agree
+ * with; spelling rows too thin to be a convention ({@link rowDemand}) → the
+ * draft, which spells its type, conforms.
  */
 function judgeCollectionNumber(
   name: string,
+  kind: IdentifierDeclarationKind,
   rows: readonly (NamingShapeRow & { exampleOwner: string })[],
   spells: (row: NamingShapeRow) => boolean,
 ): NamingVerdict {
@@ -281,8 +349,8 @@ function judgeCollectionNumber(
   const plural = endsInPlural(name);
   const agreeing = spelling.filter((row) => endsInPlural(row.name) === plural).reduce((s, row) => s + row.n, 0);
   if (total === 0 || agreeing >= CONFORMING_SHARE * total) return { verdict: "CONFORMS" };
-  const top = spelling.reduce((best, row) => (row.n > best.n ? row : best));
-  return { verdict: "MISFIT", suggestion: top.name, holder: top.exampleOwner };
+  // The draft spells its type: spelling rows too thin to be a convention demand nothing.
+  return rowDemand(kind, spelling, true, false);
 }
 
 function sameReceiver(a: string | undefined, b: string | undefined): boolean {
@@ -367,6 +435,8 @@ function judgeByReturnNoun(
   if (!best) return undefined;
   const shape = classifyNamingShape({ name: input.name, kind, casing: input.casing, typeName });
   if (spellsTypeName(shape)) return { verdict: "CONFORMS" };
+  // One return row is no convention for the noun (bd tea-rags-mcp-xsxkr): context, not a demand.
+  if (best.n < MIN_ROLE_MEMBERS) return { verdict: "NEW_TERM", topTerms: [best.noun] };
   return { verdict: "MISFIT", suggestion: best.noun, holder: best.holder.exampleOwner };
 }
 
@@ -378,7 +448,12 @@ function judgeByType(
   const typeRows = input.byTypeRows ?? [];
   const kindRows = typeRows.filter((row) => row.kind === kind);
   const freeNameMustBeKnown = kind !== "return";
-  if (kindRows.length > 0) return judgeAgainstRows(input, kind, { rows: kindRows, typeName, freeNameMustBeKnown });
+  // The type's value rows of every kind, one row per name: whether the project spells the type for its values.
+  const typeValueRows =
+    kind === "return" ? undefined : mergeRowsByName(typeRows.filter((row) => row.kind !== "return"));
+  if (kindRows.length > 0) {
+    return judgeAgainstRows(input, kind, { rows: kindRows, typeName, freeNameMustBeKnown, typeValueRows });
+  }
   if (kind !== "return") {
     // No rows of the draft's kind: the type's value rows of the other kinds, one row per name.
     const otherKindRows = mergeRowsByName(typeRows.filter((row) => row.kind !== "return"));
@@ -479,6 +554,11 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  * its own rows, and a concept query's vocabulary says nothing about them.
  */
 export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
+  const verdict = judgeDraftNameByEvidence(input);
+  return verdict.verdict === "MISFIT" ? keepDraftQualification(input, verdict) : verdict;
+}
+
+function judgeDraftNameByEvidence(input: DraftNameJudgementInput): NamingVerdict {
   const kind = input.kind ?? "local";
   const typeName =
     input.typeName !== undefined && !isNonConceptType(input.typeName, input.nonConceptTypes ?? [])
@@ -494,7 +574,9 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   if (byCallee !== undefined && byCallee !== "unsupported") return byCallee;
 
   if (byType === "unsupported" || byCallee === "unsupported") {
-    return { verdict: "NEW_TERM", topTerms: topConceptTerms(conceptTerms) };
+    const topTerms = topConceptTerms(conceptTerms);
+    if (topTerms.length > 0 || typeName !== undefined) return { verdict: "NEW_TERM", topTerms };
+    return judgeByNameUse(input);
   }
 
   if (conceptTerms && conceptTerms.length > 0) return judgeByConcept(input.name, conceptTerms);
@@ -502,7 +584,62 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   // A concept type nothing above could compare with — no history, or history
   // with no comparable row — is no evidence of conformance.
   if (typeName !== undefined) return { verdict: "NEW_TERM", topTerms: [] };
-  return { verdict: "CONFORMS" };
+  return judgeByNameUse(input);
+}
+
+/**
+ * An untyped draft nothing compares (bd tea-rags-mcp-xsxkr): the project using
+ * the name elsewhere is the one evidence left — CONFORMS on it, else NEW_TERM
+ * with no terms, the `novel` outcome (spec §5: a draft bound to a call with no
+ * rows, and with no type the project holds, stays novel).
+ */
+function judgeByNameUse(input: DraftNameJudgementInput): NamingVerdict {
+  return (input.nameRows ?? 0) > 0 ? { verdict: "CONFORMS" } : { verdict: "NEW_TERM", topTerms: [] };
+}
+
+/** Words compared as a set: lower-cased and singular (`rows` names `row`). */
+function wordSet(name: string): Set<string> {
+  return new Set(splitIdentifierWords(name).map(singularizeIdentifierWord));
+}
+
+/** The trailing `!` / `?` of a Ruby method name, kept on a rebuilt suggestion. */
+function trailingMarker(name: string): string {
+  return /[!?]+$/.exec(name)?.[0] ?? "";
+}
+
+/**
+ * A MISFIT suggestion never deletes what the draft says about WHICH value it
+ * names (bd tea-rags-mcp-xsxkr): `tax_automation_documents_for_payload`
+ * narrows `tax_automation_documents` to a subset, it does not misname it.
+ *
+ * - A draft with a complement ({@link typeNameParts}: the words after an
+ *   interior connector — `for_payload`, `under_another_entity`) is judged by
+ *   the part before it: that part spelled as the suggestion CONFORMS, otherwise
+ *   the suggestion replaces only that part and the complement stays
+ *   (`filed_under_another_entity` → `tax_automation_documents_under_another_entity`).
+ * - A suggestion whose words are a strict subset of the draft's only drops a
+ *   qualifier: no rename is demanded — NEW_TERM with the project's word as context.
+ */
+function keepDraftQualification(
+  input: DraftNameJudgementInput,
+  misfit: Extract<NamingVerdict, { verdict: "MISFIT" }>,
+): NamingVerdict {
+  const parts = typeNameParts(input.name);
+  const suggestionWords = wordSet(misfit.suggestion);
+  if (parts.connector !== undefined && parts.head !== undefined) {
+    const before = new Set([...parts.qualifiers, parts.head].map(singularizeIdentifierWord));
+    if (before.size === suggestionWords.size && [...before].every((word) => suggestionWords.has(word))) {
+      return { verdict: "CONFORMS" };
+    }
+    const marker = trailingMarker(misfit.suggestion);
+    const casing = detectIdentifierCasing(misfit.suggestion) ?? input.casing;
+    const words = [...splitIdentifierWords(misfit.suggestion), parts.connector, ...parts.complement];
+    return { ...misfit, suggestion: `${joinIdentifierWords(words, casing)}${marker}` };
+  }
+  const draftWords = wordSet(input.name);
+  const strictSubset =
+    suggestionWords.size < draftWords.size && [...suggestionWords].every((word) => draftWords.has(word));
+  return strictSubset ? { verdict: "NEW_TERM", topTerms: [misfit.suggestion] } : misfit;
 }
 
 // ── type and constant drafts (bd tea-rags-mcp-vi0wx) ─────────────────────────
@@ -561,6 +698,13 @@ export interface TypeNameEvidence {
   headCounts: ReadonlyMap<string, number>;
   /** Directories of the names per head word. */
   headDirs: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * The draft's OWN existing declarations — its short name at its path — set
+   * by {@link typeDraftEvidence}, which takes them out of every count above:
+   * facts about the draft (its kind, its supertypes), never evidence for it
+   * (bd tea-rags-mcp-xsxkr).
+   */
+  own?: readonly TypeNameRow[];
 }
 
 function directoryOfPath(relPath: string): string {
@@ -614,6 +758,25 @@ export function typeNameEvidence(rows: readonly TypeNameRow[], population: TypeD
     headCounts,
     headDirs,
   };
+}
+
+/**
+ * The evidence a type draft is judged against: `evidence` without the draft's
+ * own existing declarations — its short name at its path (bd
+ * tea-rags-mcp-xsxkr). A declaration that already exists would otherwise vote
+ * for itself: its head counts as a known head, its file completes a
+ * directory's role, its qualifiers count as modifier uses. Names mode then
+ * agreed with itself where diff mode, whose reads exclude the changed file,
+ * did not (`RefusalsConcern`: CONFORMS with n = 1 — itself — against NEW_TERM).
+ * The own rows stay on `own`, as facts about the draft. Idempotent; the same
+ * `evidence` when the draft declares nothing yet.
+ */
+export function typeDraftEvidence(evidence: TypeNameEvidence, draft: { name: string; path: string }): TypeNameEvidence {
+  const shortName = typeNameLastSegment(draft.name);
+  const own = evidence.rows.filter((row) => row.relPath === draft.path && row.shortName === shortName);
+  if (own.length === 0) return evidence;
+  const others = evidence.rows.filter((row) => !own.includes(row));
+  return { ...typeNameEvidence(others, evidence.population), own: [...(evidence.own ?? []), ...own] };
 }
 
 export interface TypeDraftJudgementInput {
@@ -838,10 +1001,13 @@ function knownDraftSupertypes(draft: TypeDraftPlacement, evidence: TypeNameEvide
   return projectSupertypes(evidence.rows)(draft.name, declared);
 }
 
-/** The existing declarations the draft names: its short name, at its `path`. */
+/** The existing declarations the draft names: its short name, at its `path` — set aside, or still in the rows. */
 function ownDeclarations(draft: TypeDraftPlacement, evidence: TypeNameEvidence): TypeNameRow[] {
   const shortName = typeNameLastSegment(draft.name);
-  return evidence.rows.filter((row) => row.relPath === draft.path && row.shortName === shortName);
+  return [
+    ...(evidence.own ?? []),
+    ...evidence.rows.filter((row) => row.relPath === draft.path && row.shortName === shortName),
+  ];
 }
 
 /** The draft's declaration kind: the caller's, else the existing declaration's; `undefined` when unknown. */
@@ -922,11 +1088,12 @@ function groundedHeadCandidates(
  */
 export function typeDraftMeaningPairs(
   draft: TypeDraftPlacement,
-  evidence: TypeNameEvidence,
+  population: TypeNameEvidence,
   conceptNames: readonly string[],
   admitted: ReadonlySet<string> = new Set(),
   liftFloor: number = DEFAULT_LIFT_FLOOR,
 ): [string, string][] {
+  const evidence = typeDraftEvidence(population, draft);
   const words = typeNameWords(draft.name);
   const slots = draftSlots(draft.name, evidence);
   const draftHead = slots.head.at(-1);
@@ -973,9 +1140,10 @@ export function typeDraftAlignmentWords(
  */
 export function singleCarrierHeadFiles(
   draft: TypeDraftPlacement,
-  evidence: TypeNameEvidence,
+  population: TypeNameEvidence,
   conceptNames: readonly string[],
 ): Map<string, string> {
+  const evidence = typeDraftEvidence(population, draft);
   const slots = draftSlots(draft.name, evidence);
   const single = new Set([...evidence.headCounts].filter(([, count]) => count === 1).map(([head]) => head));
   const files = new Map<string, string>();
@@ -1089,7 +1257,9 @@ function pathTermAlternatives(
  *    and every qualifier an established modifier;
  * 5. otherwise NEW_TERM with no alternatives — a new concept, a legitimate outcome.
  */
-export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
+export function judgeTypeDraft(judged: TypeDraftJudgementInput): NamingVerdict {
+  // The draft's own declaration never votes for itself (bd tea-rags-mcp-xsxkr).
+  const input = { ...judged, evidence: typeDraftEvidence(judged.evidence, judged) };
   const words = typeNameWords(input.name);
   const draftCasing = detectIdentifierCasing(input.name) ?? input.casing;
   // A namespace wraps its file's subject: no member of any role family (bd tea-rags-mcp-59q9c).
@@ -1119,8 +1289,8 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
 
   const gate = meaningGate(input);
   const lexical = termAlternatives(input, words, gate);
-  // The name carries its expected role: its head is right by construction.
-  if (lexical.length === 0 && expected) return { verdict: "CONFORMS" };
+  // The name carries its expected role: its head is right by construction — and the role is its evidence.
+  if (lexical.length === 0 && expected) return { verdict: "CONFORMS", role: namedRole(expected) };
   // The family fixes no head: any name conforms to it, and the verdict says what the type is.
   if (lexical.length === 0 && kind) {
     return {
@@ -1138,11 +1308,19 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   // The suffix confirms only a member of its family — the test its carriers passed (bd tea-rags-mcp-49fsr).
   const suffix = namespace ? undefined : projectSuffixRole(input.evidence.roles, input.evidence.rows, parts.head ?? "");
   if (suffix !== undefined && familyNonMemberRole(input, input.evidence, suffix) === undefined) {
-    return { verdict: "CONFORMS", ...withAlternatives };
+    return { verdict: "CONFORMS", ...withAlternatives, role: namedRole(suffix) };
   }
   return alignsWithVocabulary(parts, input.evidence)
     ? { verdict: "CONFORMS", ...withAlternatives }
     : { verdict: "NEW_TERM", topTerms: [], ...withAlternatives };
+}
+
+/**
+ * The role a CONFORMS rests on, as the verdict names it (bd tea-rags-mcp-xsxkr):
+ * a verdict that says CONFORMS says on what — here the role and its carriers.
+ */
+function namedRole(role: ExpectedTypeRole): NamingExpectedTypeRole {
+  return { word: role.role, evidence: role.evidence, examples: role.examples };
 }
 
 /** The name's words with `role` inserted after its head — before a complement: `ObjectsForClient` → `ObjectsFinderForClient`. */

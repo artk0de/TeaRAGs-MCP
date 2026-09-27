@@ -155,8 +155,12 @@ export const TYPE_ROLE_THRESHOLDS: TypeRoleThresholds = {
   projectSuffixMinDirs: 2,
 };
 
-/** Two types sharing a tail word are the least that makes a family. */
-const MIN_ROLE_MEMBERS = 2;
+/**
+ * Two types sharing a tail word are the least that makes a family — and two
+ * rows the least that makes any naming convention: a value-name MISFIT demands
+ * a name at least this many rows carry (bd tea-rags-mcp-xsxkr).
+ */
+export const MIN_ROLE_MEMBERS = 2;
 
 /**
  * The project-wide spread that makes a word the project's CONVENTION rather

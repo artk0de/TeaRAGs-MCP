@@ -1309,4 +1309,143 @@ describe("NamingLexiconOps", () => {
       expect(shortNames).toHaveBeenCalledWith(expect.anything(), excludePaths);
     });
   });
+
+  // bd tea-rags-mcp-xsxkr: names mode judged an existing declaration against itself — n = 1 (itself),
+  // `collision: true` (itself), CONFORMS — where diff mode, whose reads exclude the changed file, did not.
+  describe("a draft's own declaration is never its evidence", () => {
+    const STORE = "app/services/tax/store.rb";
+    const symbol = async (relPath: string, symbolId: string, shortName: string): Promise<void> => {
+      await db.run(
+        "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, '[]')",
+        [relPath, symbolId, symbolId, shortName],
+      );
+    };
+
+    beforeEach(async () => {
+      await write([
+        {
+          relPath: STORE,
+          rows: [
+            { ownerSymbolId: "Store#store_entity!", kind: "return", name: "store_entity!", line: 4 },
+            local("Store#store_entity!", "entity_row"),
+          ],
+        },
+      ]);
+      await symbol(STORE, "Store#store_entity!", "store_entity!");
+    });
+
+    it("a local's `path` leaves its own row out of `n`: the only carrier of the name is no use elsewhere", async () => {
+      const draft = { name: "entity_row", kind: "local" as const };
+      const blind = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [draft] });
+      expect(blind.names[0]).toMatchObject({ verdict: "CONFORMS", evidence: { n: 1 } });
+      const own = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [{ ...draft, path: STORE }] });
+      expect(own.names[0]).toMatchObject({ verdict: "NEW_TERM", topTerms: [], evidence: { n: 0 } });
+    });
+
+    it("a value draft's `path` takes its own file out of every evidence read, as diff mode does", async () => {
+      const draft = { name: "store_entity!", kind: "return" as const };
+      const blind = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [draft] });
+      // Without `path` the reader cannot tell the one symbol of that name is the draft itself.
+      expect(blind.names[0]).toMatchObject({ evidence: { collision: true } });
+
+      const own = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [{ ...draft, path: STORE }] });
+      expect(own.names[0]).toMatchObject({
+        name: "store_entity!",
+        verdict: "NEW_TERM",
+        topTerms: [],
+        evidence: { n: 0, collision: false },
+      });
+    });
+
+    it("an untyped draft nothing compares conforms on the name's use elsewhere, and is novel without it", async () => {
+      await write([
+        { relPath: "app/services/tax/a.rb", rows: [local("A#run", "result")] },
+        { relPath: "app/services/tax/b.rb", rows: [local("B#run", "result")] },
+      ]);
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        names: [
+          { name: "result", callee: { member: "call" } },
+          { name: "result", callee: { member: "fetch_payload" } },
+          { name: "outcome_blob", callee: { member: "call" } },
+        ],
+      });
+      expect(result.names.map((n) => [n.name, n.verdict])).toEqual([
+        ["result", "CONFORMS"],
+        ["result", "CONFORMS"],
+        ["outcome_blob", "NEW_TERM"],
+      ]);
+    });
+
+    it("a collision names the symbols it collides with — never the draft's own", async () => {
+      await symbol("app/policies/a_policy.rb", "APolicy#same_firm?", "same_firm?");
+      const findSymbol = vi.fn(async () => ({
+        driftWarning: null,
+        results: [
+          { id: 1, score: 1, payload: { symbolId: "APolicy#same_firm?", relativePath: "app/policies/a_policy.rb" } },
+          { id: 2, score: 1, payload: { symbolId: "OwnPolicy#same_firm?", relativePath: "app/policies/own.rb" } },
+          { id: 3, score: 1, payload: { symbolId: "APolicy#same_firm_or_admin?", relativePath: "app/x.rb" } },
+        ],
+      }));
+      const withLookup = new NamingLexiconOps({
+        pool: { acquireReader: vi.fn(async () => ({ graphDb: db, symbolTable: {} })) } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async (name: string) => name as never,
+        explore: { semanticSearch, findSymbol },
+        namingConventions: NAMING,
+      });
+      vi.spyOn(db, "close").mockResolvedValue(undefined);
+      const result = await withLookup.getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        names: [
+          { name: "same_firm?", kind: "return", path: "app/policies/own.rb" },
+          { name: "store_entity!", kind: "return", path: STORE },
+        ],
+      });
+      expect(findSymbol).toHaveBeenCalledTimes(1);
+      expect(findSymbol).toHaveBeenCalledWith(expect.objectContaining({ symbol: "same_firm?", collection: "c" }));
+      expect(result.names[0].evidence).toMatchObject({ collision: true, collisions: ["APolicy#same_firm?"] });
+      expect(result.names[1].evidence).not.toHaveProperty("collisions");
+    });
+
+    it("a type draft's evidence count leaves out its own declaration", async () => {
+      await db.replaceTypeDeclarationsBulk([
+        ...Array.from({ length: 6 }, (_, i) => ({
+          relPath: `app/f${i}/x.rb`,
+          rows: [
+            {
+              language: "ruby",
+              typeId: `Filler${String.fromCharCode(97 + i)}`,
+              shortName: `Filler${String.fromCharCode(97 + i)}`,
+              symbolKind: "class" as const,
+              line: 1,
+              reopens: false,
+              supertypes: [],
+            },
+          ],
+        })),
+        {
+          relPath: "app/lib/refusals/concern.rb",
+          rows: [
+            {
+              language: "ruby",
+              typeId: "Concern",
+              shortName: "Concern",
+              symbolKind: "module" as const,
+              line: 1,
+              reopens: false,
+              supertypes: [],
+            },
+          ],
+        },
+      ]);
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        names: [{ name: "Concern", kind: "type", path: "app/lib/refusals/concern.rb" }],
+      });
+      expect(result.names[0]).toMatchObject({ verdict: "NEW_TERM", evidence: { n: 0 } });
+    });
+  });
 });

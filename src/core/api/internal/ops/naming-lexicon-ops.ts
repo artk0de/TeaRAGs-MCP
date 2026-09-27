@@ -110,6 +110,7 @@ import {
   splitIdentifierWords,
   TYPE_DRAFT_KINDS,
   typeDraftAlignmentWords,
+  typeDraftEvidence,
   typeDraftPopulation,
   typeNameEvidence,
   typeNameLastSegment,
@@ -132,7 +133,7 @@ import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import { pathPatternLiteralPrefix } from "../../../infra/path-pattern.js";
 import { cosine } from "../../../infra/vector-math.js";
 import { InputValidationError, InvalidParameterError, MissingArgumentError } from "../../errors.js";
-import type { ExploreResponse, SemanticSearchRequest } from "../../public/dto/explore.js";
+import type { ExploreResponse, FindSymbolRequest, SemanticSearchRequest } from "../../public/dto/explore.js";
 import type { IndexMetrics } from "../../public/dto/metrics.js";
 import type {
   NamingLexiconCalleeEntry,
@@ -198,6 +199,12 @@ const NOT_JUDGED_NAME_CAP = 50;
 /** Diff mode: a listed file with no diff is reviewed whole — every line reads as added. */
 const WHOLE_FILE: readonly AddedLineRange[] = [{ start: 1, end: Number.MAX_SAFE_INTEGER }];
 
+/** Collided symbol ids a value / return draft's evidence lists — as many as a head alternative's example types. */
+const MAX_COLLISION_EXAMPLES = 3;
+/** The symbol lookup behind them: enough hits that the excluded file's own and a near-name cannot crowd them out. */
+const COLLISION_LOOKUP_LIMIT = 10;
+const COLLISION_LOOKUP_FIELDS = ["symbolId", "relativePath"];
+
 /** Declaration kinds the type-name read loads: the type-level kinds and constants, one read for both populations. */
 const TYPE_NAME_READ_KINDS = [...TYPE_DRAFT_KINDS, "constant"] as const;
 
@@ -221,6 +228,12 @@ export interface NamingLexiconEmbeddings {
 /** The explore operations naming runs in-process: concept search, and the label thresholds of the index. */
 export interface NamingLexiconExplore {
   semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
+  /**
+   * The symbols a colliding value / return draft collides with (bd
+   * tea-rags-mcp-xsxkr): their ids on `evidence.collisions`. Absent → the
+   * collision is reported without them.
+   */
+  findSymbol?: (request: FindSymbolRequest) => Promise<ExploreResponse>;
   /**
    * Absent → no head is established by usage (bd tea-rags-mcp-433d2). Handed
    * the request's RESOLVED collection, which wins over the path (bd tea-rags-mcp-2kplu).
@@ -308,6 +321,18 @@ interface TypeAlignmentState {
   typeNameRows?: Map<string, Promise<TypeNameRow[]>>;
   /** The project's index metrics — its label thresholds — read at most once per request. */
   metrics?: Promise<IndexMetrics>;
+}
+
+/**
+ * One answer's reads: the files every evidence read leaves out (diff mode's
+ * changed files, a value draft's own `path`), the request-wide alignment state,
+ * and whether a collision's symbols are looked up (names mode only — a
+ * review's findings carry no evidence).
+ */
+interface AnswerContext {
+  alignment: TypeAlignmentState;
+  excludePaths: readonly string[];
+  lookupCollisions: boolean;
 }
 
 /** What alignment by meaning hands `judgeTypeDraft`. */
@@ -419,13 +444,14 @@ export class NamingLexiconOps {
       };
     }
     try {
-      const graphDb = excludingEvidence(handle.graphDb, excludePaths);
-      const alignment: TypeAlignmentState = {};
+      const reader = handle.graphDb;
+      const context: AnswerContext = { alignment: {}, excludePaths, lookupCollisions: true };
       const answer = asksLexicon(addressed)
-        ? await this.answer(graphDb, addressed, alignment)
+        ? await this.answer(reader, addressed, context)
         : { scope: "", byType: [], names: [] };
       if (diff === undefined) return answer;
-      const { review, notices } = await this.review(graphDb, addressed, diff, alignment);
+      // A review's findings carry no evidence: its collisions are not looked up.
+      const { review, notices } = await this.review(reader, addressed, diff, { ...context, lookupCollisions: false });
       const allNotices = unique([...(answer.notices ?? []), ...notices]);
       return { ...answer, ...(allNotices.length > 0 ? { notices: allNotices } : {}), review };
     } finally {
@@ -492,10 +518,10 @@ export class NamingLexiconOps {
    * concept search.
    */
   private async review(
-    graphDb: IdentifierReader,
+    reader: IdentifierReader,
     req: NamingLexiconRequest,
     diff: DiffRead,
-    alignment: TypeAlignmentState,
+    context: AnswerContext,
   ): Promise<{ review: NamingReviewResult; notices: string[] }> {
     const drafts = diff.judged.flatMap(reviewDrafts);
     const groups = new Map<string, { drafts: NamingLexiconDraftName[]; index: Map<string, number> }>();
@@ -515,7 +541,7 @@ export class NamingLexiconOps {
     const notices: string[] = [];
     const verdicts = new Map<string, NamingLexiconNameVerdict[]>();
     for (const [language, group] of groups) {
-      const answer = await this.answer(graphDb, { ...collectionRef(req), language, names: group.drafts }, alignment);
+      const answer = await this.answer(reader, { ...collectionRef(req), language, names: group.drafts }, context);
       verdicts.set(language, answer.names);
       notices.push(...(answer.notices ?? []));
     }
@@ -566,10 +592,12 @@ export class NamingLexiconOps {
   }
 
   private async answer(
-    graphDb: IdentifierReader,
+    reader: IdentifierReader,
     req: NamingLexiconRequest,
-    alignment: TypeAlignmentState = {},
+    context: AnswerContext,
   ): Promise<NamingLexiconResult> {
+    const { alignment } = context;
+    const graphDb = excludingEvidence(reader, context.excludePaths);
     const allDrafts = req.names ?? [];
     const drafts = allDrafts.filter((d): d is NamingLexiconValueDraft => !isTypeDraft(d));
     const typeDrafts = allDrafts.filter(isTypeDraft) as NamingLexiconTypeDraft[];
@@ -649,11 +677,12 @@ export class NamingLexiconOps {
       }
     }
 
-    // 6. Names.
-    const valueVerdicts =
-      drafts.length === 0
+    // 6. Names. A value draft that names its file is judged with that file out of every read (bd tea-rags-mcp-xsxkr).
+    const blind = drafts.filter((d) => d.path === undefined);
+    const blindVerdicts =
+      blind.length === 0
         ? []
-        : await judgeDrafts(graphDb, drafts, {
+        : await judgeDrafts(graphDb, blind, {
             typeRows,
             calleeRows,
             casingFor,
@@ -662,7 +691,13 @@ export class NamingLexiconOps {
             conceptTerms,
             pathPrefixes,
             ontologyLanguages: this.deps.ontologyLanguages,
+            collisionHolders: context.lookupCollisions
+              ? async (name) => this.collisionHolders(req, name, context.excludePaths)
+              : undefined,
           });
+    const ownedVerdicts = await this.judgeOwnedValueDrafts(reader, req, drafts, language, context, notices);
+    let blindAt = 0;
+    const valueVerdicts = drafts.map((d) => ownedVerdicts.get(d) ?? blindVerdicts[blindAt++]);
 
     // 7. Type names.
     const typeVerdicts =
@@ -679,6 +714,70 @@ export class NamingLexiconOps {
       ...(notices.length > 0 ? { notices } : {}),
       ...(driftWarning ? { driftWarning } : {}),
     };
+  }
+
+  /**
+   * The value drafts that name their file (`path`, bd tea-rags-mcp-xsxkr),
+   * judged per file by the same stages with that file out of every evidence
+   * read — the reader diff mode gives a changed file — so an existing
+   * declaration neither counts itself in `evidence.n`, collides with itself,
+   * nor lends its own row to the convention it is judged against. One answer
+   * per file, in the answer's language.
+   */
+  private async judgeOwnedValueDrafts(
+    reader: IdentifierReader,
+    req: NamingLexiconRequest,
+    drafts: readonly NamingLexiconValueDraft[],
+    language: string | undefined,
+    context: AnswerContext,
+    notices: string[],
+  ): Promise<Map<NamingLexiconValueDraft, NamingLexiconNameVerdict>> {
+    const byPath = new Map<string, NamingLexiconValueDraft[]>();
+    for (const draft of drafts) {
+      if (draft.path !== undefined) byPath.set(draft.path, [...(byPath.get(draft.path) ?? []), draft]);
+    }
+    const verdicts = new Map<NamingLexiconValueDraft, NamingLexiconNameVerdict>();
+    for (const [path, owned] of byPath) {
+      const names = owned.map(({ path: _path, ...draft }) => draft);
+      const scoped = { ...req, ...(language !== undefined ? { language } : {}), types: [], anchors: [], names };
+      const answer = await this.answer(reader, scoped, { ...context, excludePaths: [...context.excludePaths, path] });
+      owned.forEach((draft, i) => verdicts.set(draft, answer.names[i]));
+      notices.push(...(answer.notices ?? []).filter((notice) => !notices.includes(notice)));
+    }
+    return verdicts;
+  }
+
+  /**
+   * The symbols a colliding value / return draft collides with (bd
+   * tea-rags-mcp-xsxkr): the indexed symbols whose short name IS the draft's,
+   * outside the excluded files, at most {@link MAX_COLLISION_EXAMPLES}. Empty
+   * without a symbol lookup or when it fails — the collision itself stands.
+   */
+  private async collisionHolders(
+    req: NamingLexiconRequest,
+    name: string,
+    excludePaths: readonly string[],
+  ): Promise<string[]> {
+    const { explore } = this.deps;
+    if (explore.findSymbol === undefined) return [];
+    try {
+      // A method call: the explore facade reads its own ops through `this`.
+      const response = await explore.findSymbol({
+        ...collectionRef(req),
+        symbol: name,
+        metaOnly: true,
+        fields: COLLISION_LOOKUP_FIELDS,
+        limit: COLLISION_LOOKUP_LIMIT,
+      });
+      const ids = response.results.flatMap((r) => {
+        const { symbolId, relativePath } = r.payload ?? {};
+        if (typeof symbolId !== "string" || typeof relativePath !== "string") return [];
+        return symbolShortName(symbolId) === name && !excludePaths.includes(relativePath) ? [symbolId] : [];
+      });
+      return unique(ids).slice(0, MAX_COLLISION_EXAMPLES);
+    } catch {
+      return [];
+    }
   }
 
   /** Concept holders under the L2 domain of `pathPattern`, widened to the project under 5 holders. */
@@ -739,8 +838,10 @@ export class NamingLexiconOps {
         tableEmpty = all.length === 0;
       }
       const key = typeEvidenceKey(namespace, population);
-      const evidence = evidenceByKey.get(key) ?? typeNameEvidence(rows, population);
-      evidenceByKey.set(key, evidence);
+      const shared = evidenceByKey.get(key) ?? typeNameEvidence(rows, population);
+      evidenceByKey.set(key, shared);
+      // The draft's own declaration never votes for itself — nor counts in `evidence.n` (bd tea-rags-mcp-xsxkr).
+      const evidence = typeDraftEvidence(shared, draft);
       let conceptNames: string[] = [];
       let byMeaning: MeaningAlignment = {};
       // The concept search first: only head candidates its code holds are embedded — on the
@@ -1316,6 +1417,8 @@ interface DraftJudgementContext {
   conceptTerms?: ConceptTerm[];
   pathPrefixes: string[] | undefined;
   ontologyLanguages?: readonly OntologyLanguageProfile[];
+  /** The symbols a colliding name collides with; absent → not looked up. */
+  collisionHolders?: (name: string) => Promise<string[]>;
 }
 
 /**
@@ -1361,9 +1464,14 @@ async function judgeDrafts(
   ]);
   const prior = projectShapePrior(sample, ctx.casingFor, ctx.rowCasing);
   const taken = new Set(collisions);
+  const holders = new Map<string, string[]>();
+  if (ctx.collisionHolders) {
+    for (const name of draftNames) if (taken.has(name)) holders.set(name, await ctx.collisionHolders(name));
+  }
 
   return drafts.map((draft) => {
     const kind = draft.kind ?? "local";
+    const nameRows = homonyms.filter((r) => r.name === draft.name);
     const verdict = judgeDraftName({
       name: draft.name,
       kind,
@@ -1378,12 +1486,13 @@ async function judgeDrafts(
       conceptTerms: ctx.conceptTerms,
       projectShapePrior: prior.shapes,
       projectReturnVerbs: prior.returnVerbs,
+      nameRows: sum(nameRows),
     });
-    const nameRows = homonyms.filter((r) => r.name === draft.name);
     const example =
       (verdict.verdict === "MISFIT" ? verdict.holder : undefined) ??
       [...ctx.typeRows, ...ctx.calleeRows].find((r) => r.name === draft.name)?.exampleOwner;
     const genericName = generic.get(draft.name);
+    const collided = holders.get(draft.name) ?? [];
     return {
       name: draft.name,
       ...verdict,
@@ -1392,6 +1501,7 @@ async function judgeDrafts(
         ...(example !== undefined ? { example } : {}),
         boundTypes: new Set(nameRows.flatMap((r) => (r.typeName === null ? [] : [r.typeName]))).size,
         collision: taken.has(draft.name),
+        ...(collided.length > 0 ? { collisions: collided } : {}),
       },
       ...(genericName ? { genericName: { typeCount: genericName.typeCount, n: genericName.n } } : {}),
     };
@@ -1820,6 +1930,11 @@ function excludingEvidence(reader: IdentifierReader, paths: readonly string[] | 
 
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
+}
+
+/** A symbol id's own name: its last `::` / `#` / `.` segment (`APolicy#same_firm?` → `same_firm?`). */
+function symbolShortName(symbolId: string): string {
+  return symbolId.split(/::|#|\./).at(-1) ?? symbolId;
 }
 
 function uniqueCallees(callees: readonly IdentifierBoundCallee[]): IdentifierBoundCallee[] {
