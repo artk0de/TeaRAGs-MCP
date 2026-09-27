@@ -14,6 +14,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantOptimizerErrorPersistsError } from "../../../adapters/qdrant/errors.js";
+import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { shellQuote } from "../../../domains/maintenance/drift/remedy.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import { resolveCollection } from "../collection-resolver.js";
@@ -30,7 +31,7 @@ export type OptimizerRecoveryOutcome =
 
 export interface OptimizerRecoveryDeps {
   registry: CollectionRegistry;
-  qdrant: Pick<QdrantManager, "reapplyOptimizerConfig"> & {
+  qdrant: Pick<QdrantManager, "reapplyOptimizerConfig" | "collectionExists"> & {
     getCollectionInfo: (name: string) => Promise<{ optimizerStatus: string }>;
     aliases: Pick<QdrantManager["aliases"], "resolveActive">;
   };
@@ -57,12 +58,18 @@ export class OptimizerRecoveryOps {
    * Re-apply the optimizer config when — and only when — the optimizer failed,
    * then re-read the status to prove the error is gone.
    *
+   * @throws NotIndexedError when the project has no collection — a path that
+   *   was never indexed still resolves to a derived name, and reading it would
+   *   surface Qdrant's raw 404 instead (bd tea-rags-mcp-61bwb).
    * @throws QdrantOptimizerErrorPersistsError when the recreated optimizer
    *   still reports an error.
    */
   async recover(target: OptimizerRecoveryTarget): Promise<OptimizerRecoveryOutcome> {
-    const { collectionName: alias } = resolveCollection(this.deps.registry, target);
+    const { collectionName: alias, path } = resolveCollection(this.deps.registry, target);
     const collectionName = await this.deps.qdrant.aliases.resolveActive(alias);
+    if (!(await this.deps.qdrant.collectionExists(collectionName))) {
+      throw new NotIndexedError(path ?? target.project ?? alias);
+    }
 
     const before = (await this.deps.qdrant.getCollectionInfo(collectionName)).optimizerStatus;
     if (!isOptimizerFailure(before)) {
