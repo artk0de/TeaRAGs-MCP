@@ -1073,6 +1073,45 @@ Known limit: when the semantic search does not retrieve the code where
 `Predefined*` lives, no alternative is offered. Recall is bounded by the
 embedding model; the live measurement below quantifies it.
 
+**Field report `i569j` (taxdome stack review, 2026-09-27).** Four offered
+alternatives were embedding-neighbour noise. Each was diagnosed against the
+gates above; the per-draft floor is not moved, and each rule below is the one
+the data confirmed.
+
+- A concept hit's NAMESPACE is not concept code. `preparation` was offered for
+  `helper` (`RefusalsHelper`, similarity 0.706, lift 0) and for `args`: a
+  directory word grounded only because every hit under `TaxPreparation::…` made
+  the declared module `TaxPreparation` a concept type name. The concept type
+  names of a hit are now its own segments, after its last `::`, split at `#` /
+  `.`. The namespace locates the hit the way its directories do, so it grounds
+  no term, lifts no modifier and anchors no head. TypeScript symbol ids carry no
+  `::`, so the self-index is unaffected by construction.
+- A clipping of several project words spells none of them. `Refusals` was
+  offered `refs` (similarity 0.788) as the project's spelling of `refusals`, but
+  taxdome writes `refs` for `references`, and also writes `refunds`. A spelling
+  variant that also clips another project word (the draft word's own singular or
+  plural excepted) is dropped. `stats` still spells `statistic(s)`.
+- A candidate sharing the replaced word's stem restates it.
+  `TaxpayerLookupError` was offered `taxes` for `taxpayer`. Two words now also
+  share a stem when one of them is their common prefix (at least three letters)
+  plus an inflection or agent ending, the closed-class morphology of `tun7x`:
+  `taxes` / `taxpayer`, `refs` / `refusals`. A lifted qualifier sharing a draft
+  qualifier's stem and a head candidate sharing the draft head's stem are no
+  candidates, and do not count in m. The spelling channel keeps its own rule: a
+  clipping of the draft word is what it is for.
+- Not changed: `RefusalsConcern` in diff mode drew `inconsistent` for `refusals`
+  (lift 89.7, similarity 0.678). The concept query carries the declaration's
+  code, a list of error classes, so `Inconsistent*Error` types lift; the pair
+  clears the corrected floor with no stem or path link. It is the
+  `DangerousCompositePreset` case above, and is not suppressed.
+
+Measured on the rename eval, base `7f0301b1b` and the branch interleaved, two
+runs each: byte-identical reports, caught 0 / flagged-other 7 / silent 10,
+control 6/40. On the 20-draft set, `stats`, `provider` and `executor` are
+unchanged (`manager` is absent from the base build too since the self-index
+rebuild), and `ChunkSplitter` now gets its ground-truth synonym `chunker`
+(0.571): with the stem-sharing candidates out of m, its floor drops below it.
+
 ## 5. Novel free names
 
 A value draft of FREE shape that is not among the names the project already uses

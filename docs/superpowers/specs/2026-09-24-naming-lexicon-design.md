@@ -269,6 +269,24 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
    SQL.
 3. **byType.** One GROUP BY over `cg_identifiers` (`type_name, kind, name`), top
    5 names per kind.
+
+   **Type-name heads (amendment 2026-09-27, `i569j`).** `byType` answers how
+   VALUES of a type are named, so a word no value is typed as answers nothing
+   about the types named with it. Live on taxdome,
+   `types: ["Helper", "Concern"]` under `app/lib/**` returned two
+   annotation-typed locals while 151 `*_helper.rb` declarations and one
+   `*_concern.rb` stood there, and a reviewer's "rename this Concern to a
+   Helper" was not decidable. A single-word `types` entry therefore also answers
+   `typeNameHeads`: one read of `cg_type_declarations` (type-level kinds,
+   production files, the answer's type namespace) under the REQUESTED pattern's
+   literal prefix, never the widened value scope, counting the declarations
+   whose head, read by the population's own parser in either number, is the
+   word: `{ head, n, files, kinds, examples }`. A namespace module (not named
+   for its file) carries nothing; it locates its file's subject. A mixin named
+   for its file counts. A multi-word type stays a type whose values are named.
+   After: `Helper` n = 156 in 156 files (92 class, 64 module), `Concern` n = 1,
+   `RefusalsConcern` itself.
+
 4. **Shapes.** Pure function over the rows, rendering `snake(T)` / `camel(T)`
    with the canonical casing the language descriptor's `naming` declares for the
    row's role: `EXACT` (`snake(T)`), `QUALIFIED` (`snake(T)_q`, checked to
@@ -292,9 +310,19 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
    | rerank      | `{ custom: { similarity: 0.7, chunkFanIn: 0.15, fanIn: 0.15 } }`   |
    | limit       | 30, `metaOnly`, `fields: [symbolId, relativePath, parentSymbolId]` |
 
-   Holders' symbolIds, namespaces and paths are split (CamelCase, snake, `::`),
+   Holders' symbolIds and file stems are split (CamelCase, snake, `::`),
    normalised to snake n-grams of length 1–3; term score = Σ holder score.
    Relevance leads; among relevant holders the referenced ones are canon.
+   Directory segments never contribute, and neither does a holder's NAMESPACE
+   (amendment 2026-09-27, `i569j`): an n-gram lying wholly inside the `::`
+   segments before the holder's own name is dropped, one reaching into the name
+   (`tax_automation_document` off `TaxAutomations::Document`) is kept. Which
+   words are namespace words is read off each hit's own symbol id, not a word
+   list. Live on taxdome, "module_function helper module in app/lib holding
+   error classification" ranked `tax_preparation`, `preparation` and `tax` (8.6
+   each) and `ai` (2.95) above `helper` (5.42); after, the top ten are `error`
+   10.34, `helper` 5.42, `client` 3.17, `error_message` 2.69, … with no path or
+   namespace token.
 
 6. **Names.** Homonymy (types bound to the name, one SQL), collision
    (`cg_symbols.short_name`), fit against step 4 →
@@ -304,6 +332,7 @@ Every language's walker version bumps → drift routes to `--force`. Accepted.
 
 ```
 { scope,
+  typeNameHeads?: { scope, heads: [{ head, n, files, kinds, examples }] },  // 1-word types
   byType: [{ type, kinds: { local, param, field, return: [{ name, n }] },
              shapes, confidence,
              evidence: { annotation, constructor, binding, finder,
