@@ -726,6 +726,7 @@ export class NamingLexiconOps {
         name: draft.name,
         path: draft.path,
         ...(draft.extends !== undefined ? { extends: draft.extends } : {}),
+        ...(draft.symbolKind !== undefined ? { symbolKind: draft.symbolKind } : {}),
         casing: this.typeCasing(draftLanguage, population),
         evidence,
         conceptNames,

@@ -395,6 +395,36 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.conforming).toBe(0);
   });
 
+  // bd tea-rags-mcp-59q9c: live on taxdome the namespace modules were MISFIT → `GettingPaidWorker` / `QuickbooksWorker`.
+  it("the namespace modules around a worker get no directory-role MISFIT; the worker is judged by it", async () => {
+    const dirPath = "app/workers/getting_paid/quickbooks";
+    const ruby = (typeId: string, symbolKind: TypeDeclarationRow["symbolKind"]): TypeDeclarationRow => ({
+      ...decl(typeId, symbolKind),
+      language: "ruby",
+    });
+    await db.replaceTypeDeclarationsBulk(
+      [
+        ["import_invoices_worker", "ImportInvoicesWorker"],
+        ["sync_payments_worker", "SyncPaymentsWorker"],
+        ["push_customers_worker", "PushCustomersWorker"],
+      ].map(([stem, worker]) => ({
+        relPath: `${dirPath}/${stem}.rb`,
+        rows: [ruby("GettingPaid", "module"), ruby("Quickbooks", "module"), ruby(worker, "class")],
+      })),
+    );
+    mkdirSync(join(repo, dirPath), { recursive: true });
+    const scratch = `${dirPath}/sync_ledger.rb`;
+    writeFileSync(
+      join(repo, scratch),
+      "module GettingPaid\n  module Quickbooks\n    class SyncLedger\n      def perform; end\n    end\n  end\nend\n",
+    );
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: [scratch] });
+    const misfits = result.review?.findings.filter((f) => f.verdict === "MISFIT") ?? [];
+    expect(misfits).toEqual([
+      expect.objectContaining({ name: "SyncLedger", line: 3, suggestion: "SyncLedgerWorker", kind: "class" }),
+    ]);
+  });
+
   it("diff mode needs the project's working tree", async () => {
     await expect(ops.getNamingLexicon({ collection: "c", changes: {} })).rejects.toBeInstanceOf(InvalidParameterError);
   });

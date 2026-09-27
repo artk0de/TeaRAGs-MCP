@@ -1473,3 +1473,59 @@ describe("judgeTypeDraft — a token with a digit is not a modifier", () => {
     ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
   });
 });
+
+/**
+ * A namespace draft (bd tea-rags-mcp-59q9c). A `module` not named for its file
+ * wraps the file's subject — the same test that keeps it from being the file's
+ * primary (bd tea-rags-mcp-49fsr) — so it is no member of the directory's role
+ * family: neither a directory MISFIT nor a role confirmation. Live on taxdome:
+ * `module GettingPaid` / `module Quickbooks` around a worker class in
+ * `app/workers/getting_paid/quickbooks/` were MISFIT → `GettingPaidWorker`.
+ */
+describe("judgeTypeDraft — a namespace module is no member of the directory's role", () => {
+  const DIR = "app/workers/getting_paid/quickbooks";
+  const row = (shortName: string, relPath: string, symbolKind: TypeNameRow["symbolKind"] = "class"): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind,
+    ancestors: [],
+  });
+  const WORKERS = ["ImportInvoicesWorker", "SyncPaymentsWorker", "PushCustomersWorker"].flatMap((name) => {
+    const relPath = `${DIR}/${splitWords(name)}.rb`;
+    return [row("GettingPaid", relPath, "module"), row("Quickbooks", relPath, "module"), row(name, relPath)];
+  });
+  function splitWords(name: string): string {
+    return name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  }
+  const judge = (draft: { name: string; path: string; symbolKind?: TypeNameRow["symbolKind"] }) =>
+    judgeTypeDraft({ ...draft, casing: "pascal", evidence: typeNameEvidence(WORKERS, "type"), conceptNames: [] });
+
+  it("a module not named for its file → no directory MISFIT, no role", () => {
+    for (const name of ["GettingPaid", "Quickbooks"]) {
+      const verdict = judge({ name, path: `${DIR}/sync_ledger_worker.rb`, symbolKind: "module" });
+      expect(verdict.verdict).not.toBe("MISFIT");
+      expect(verdict).not.toHaveProperty("role");
+    }
+  });
+
+  it("a namespace module carrying the directory's role word is not CONFIRMED by it", () => {
+    const verdict = judge({ name: "BackgroundWorker", path: `${DIR}/sync_ledger.rb`, symbolKind: "module" });
+    expect(verdict).not.toEqual({ verdict: "CONFORMS" });
+  });
+
+  it("a module named for its file is the file's subject: the directory role still applies", () => {
+    expect(judge({ name: "Quickbooks", path: `${DIR}/quickbooks.rb`, symbolKind: "module" })).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "QuickbooksWorker",
+      role: { word: "worker", evidence: "directory" },
+    });
+  });
+
+  it("a class of the same name is judged by the directory role", () => {
+    expect(judge({ name: "GettingPaid", path: `${DIR}/sync_ledger_worker.rb`, symbolKind: "class" })).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "GettingPaidWorker",
+    });
+  });
+});

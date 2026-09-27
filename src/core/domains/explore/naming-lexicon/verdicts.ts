@@ -52,6 +52,7 @@ import type { ConceptTerm } from "./terms.js";
 import {
   deriveTypeRoles,
   expectedRoleFor,
+  isNamespaceDeclaration,
   meetsProjectConventionSpread,
   type ExpectedTypeRole,
   type TypeNameRow,
@@ -593,6 +594,11 @@ export interface TypeDraftJudgementInput {
   path: string;
   /** The planned ancestor — a type draft's family; ignored for a constant. */
   extends?: string;
+  /**
+   * The declaration kind, when known. A namespace ({@link isNamespaceDeclaration})
+   * carries no role: neither demanded nor confirmed (bd tea-rags-mcp-59q9c).
+   */
+  symbolKind?: SymbolDefinitionKind;
   /** The casing a suggestion is rendered in when the draft's own is indeterminate (the language's role casing). */
   casing: IdentifierCasing;
   /** Built by {@link typeNameEvidence} for the draft's {@link typeDraftPopulation}. */
@@ -1024,7 +1030,13 @@ function pathTermAlternatives(
 export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   const words = typeNameWords(input.name);
   const draftCasing = detectIdentifierCasing(input.name) ?? input.casing;
-  const role = draftRole(input, input.evidence);
+  // A namespace wraps its file's subject: no member of any role family (bd tea-rags-mcp-59q9c).
+  const namespace = isNamespaceDeclaration({
+    shortName: typeNameLastSegment(input.name),
+    relPath: input.path,
+    symbolKind: input.symbolKind,
+  });
+  const role = namespace ? undefined : draftRole(input, input.evidence);
   // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms,
   // and a cohesive directory family only speaks for its members.
   const nonMember = directoryFamilyNonMemberRole(input, input.evidence, role) !== undefined;
@@ -1052,7 +1064,7 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   // A project suffix or a known head only CONFIRMS the words: a synonym head passes both,
   // so the verdict stays and the head alternatives ride along (bd tea-rags-mcp-433d2).
   const head = words.at(-1);
-  if (input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
+  if (!namespace && input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
     return { verdict: "CONFORMS", ...withAlternatives };
   }
   const establishedWords = new Set(input.evidence.established.map((use) => use.word));

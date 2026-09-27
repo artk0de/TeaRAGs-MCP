@@ -25,7 +25,8 @@
  *     family's varying slot — `*Async`, `*Finish`, `*Updated` are the verbs and
  *     events of role-less `KindOfService` / `BaseEvent` families;
  *   - a namespace `module` not named for its file: never the file's primary
- *     (it wraps the file's subject);
+ *     (it wraps the file's subject), and as a draft no member of its
+ *     directory's role ({@link isNamespaceDeclaration});
  *   - a head restating the carrier's own declaration kind (`type` on a type
  *     alias, `enum` on an enum), read off the kind vocabulary itself;
  *   - a project suffix fewer than `projectSuffixMinTypes` DISTINCT names
@@ -204,10 +205,8 @@ function beatsPrimary(a: PrimaryCandidate, b: PrimaryCandidate): boolean {
 function primaryHeadedPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
   const best = new Map<string, PrimaryCandidate>();
   for (const member of headed) {
-    const stem = fileStemWords(member.row.relPath);
-    const words = new Set(typeNameWords(member.row.shortName).map(singularizeIdentifierWord));
-    const overlap = [...words].filter((word) => stem.has(word)).length;
-    if (overlap === 0 && member.row.symbolKind === NAMESPACE_KIND) continue;
+    if (isNamespaceDeclaration(member.row)) continue;
+    const { words, overlap } = fileStemOverlap(member.row.shortName, member.row.relPath);
     const kind = member.row.symbolKind;
     const candidate: PrimaryCandidate = {
       member,
@@ -219,6 +218,31 @@ function primaryHeadedPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
     if (!current || beatsPrimary(candidate, current)) best.set(member.row.relPath, candidate);
   }
   return [...best.values()].map(({ member }) => member);
+}
+
+/** A type name's singular words, and how many of them its file's stem shares. */
+function fileStemOverlap(shortName: string, relPath: string): { words: Set<string>; overlap: number } {
+  const stem = fileStemWords(relPath);
+  const words = new Set(typeNameWords(shortName).map(singularizeIdentifierWord));
+  return { words, overlap: [...words].filter((word) => stem.has(word)).length };
+}
+
+/**
+ * A NAMESPACE declaration: a `module` sharing no word with its file's stem —
+ * it wraps the file's subject instead of being it (bd tea-rags-mcp-49fsr). Such
+ * a declaration is never a file's primary, and a namespace DRAFT is no member of
+ * its directory's role family (bd tea-rags-mcp-59q9c): `module GettingPaid`
+ * around a worker in `app/workers/getting_paid/` is not a `*Worker`.
+ */
+export function isNamespaceDeclaration(declaration: {
+  shortName: string;
+  relPath: string;
+  symbolKind?: TypeNameRow["symbolKind"];
+}): boolean {
+  return (
+    declaration.symbolKind === NAMESPACE_KIND &&
+    fileStemOverlap(declaration.shortName, declaration.relPath).overlap === 0
+  );
 }
 
 /** Each file's primary type, in first-seen file order (see {@link primaryHeadedPerFile}); nameless rows are skipped. */

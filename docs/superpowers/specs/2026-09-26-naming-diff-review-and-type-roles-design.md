@@ -191,7 +191,16 @@ not from a word list:
    which the TS walker records as `module`). One that is not is the namespace
    wrapping the subject. A taxdome contract `request.rb` holds
    `module Communication` around `Request = Data.define(…)`, a constant, so the
-   file now has no primary.
+   file now has no primary. The same test judges a DRAFT (`59q9c`): a draft
+   whose `symbolKind` is `module` and whose name shares no word with its file's
+   stem is a namespace, so no role applies to it. It gets no MISFIT and no role
+   confirmation (neither from the directory or family role nor from a project
+   suffix). Diff mode knows every draft's kind; a `names[]` draft carries it
+   when the caller passes `symbolKind`. Live on taxdome, `module GettingPaid`
+   and `module Quickbooks` around a worker class in
+   `app/workers/getting_paid/quickbooks/` were MISFIT → `GettingPaidWorker` /
+   `QuickbooksWorker`. A module named for its file is still that file's subject
+   and is still judged by the directory role.
 4. **A head restating the declaration kind is no role.** A name whose last word
    is one of the words of its own kind (`type_alias` → `type`, `alias`; `enum`;
    `interface`) says nothing its declaration does not. A TS `OverviewBlockType`
