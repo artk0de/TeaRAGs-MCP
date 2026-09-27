@@ -11,7 +11,12 @@ import type {
   IdentifierTypeSource,
 } from "../../../contracts/types/codegraph-extraction.js";
 import type { SymbolDefinitionKind } from "../../../contracts/types/codegraph-symbols.js";
-import type { ConceptTerm, NamingShapeShare, NamingVerdict } from "../../../domains/explore/naming-lexicon/index.js";
+import type {
+  ConceptTerm,
+  NamingShapeShare,
+  NamingVerdict,
+  TypeNameHeadCarriers,
+} from "../../../domains/explore/naming-lexicon/index.js";
 import type { CollectionRef } from "./explore.js";
 
 /**
@@ -277,6 +282,12 @@ export interface NamingReviewResult {
   truncated?: { cap: number; skipped: number };
 }
 
+/**
+ * The type declarations one single-word `types` entry heads — their names END in
+ * it (`…Helper`), namespace modules excluded (bd tea-rags-mcp-i569j).
+ */
+export type NamingLexiconTypeNameHead = TypeNameHeadCarriers;
+
 export interface NamingLexiconResult {
   /** The rel_path prefix actually read — after widening; `""` = the whole project. */
   scope: string;
@@ -290,6 +301,13 @@ export interface NamingLexiconResult {
    */
   language?: string;
   byType: NamingLexiconTypeEntry[];
+  /**
+   * Set when `types` holds a single-word entry: the type declarations under the
+   * REQUESTED pattern's literal prefix (`scope`, never widened; `""` = the whole
+   * project) whose names that word heads — the suffix vocabulary `byType`'s
+   * value rows cannot show (`Helper`: 151 declarations, no value typed as one).
+   */
+  typeNameHeads?: { scope: string; heads: NamingLexiconTypeNameHead[] };
   byCallee?: NamingLexiconCalleeEntry[];
   concept?: { terms: ConceptTerm[] };
   names: NamingLexiconNameVerdict[];

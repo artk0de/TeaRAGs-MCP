@@ -57,6 +57,8 @@ export {
 export type { HeadCandidate, ModifierUse, PathTerm, TermAlternative } from "./term-alignment.js";
 export { extractConceptTerms } from "./terms.js";
 export type { ConceptTerm, ConceptTermHolder } from "./terms.js";
+export { typeNameHeadCarriers } from "./type-name-heads.js";
+export type { TypeNameHeadCarriers } from "./type-name-heads.js";
 export { TYPE_ROLE_THRESHOLDS, deriveTypeRoles, expectedRoleFor } from "./type-roles.js";
 export type { TypeNameRow, TypeRoleAssignment, TypeRoleEvidence, TypeRoleThresholds } from "./type-roles.js";
 export {

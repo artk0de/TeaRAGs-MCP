@@ -113,6 +113,7 @@ import {
   typeDraftEvidence,
   typeDraftPopulation,
   typeNameEvidence,
+  typeNameHeadCarriers,
   typeNameLastSegment,
   typeNameWords,
   type ConceptTerm,
@@ -146,6 +147,7 @@ import type {
   NamingLexiconResult,
   NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
+  NamingLexiconTypeNameHead,
   NamingReviewFinding,
   NamingReviewNotJudgedEntry,
   NamingReviewResult,
@@ -664,6 +666,7 @@ export class NamingLexiconOps {
     // 4. byCallee.
     const byType = buildTypeEntries(types, typeRows, casingFor);
     const byCallee = draftCallees.map((callee) => buildCalleeEntry(callee, calleeRows, casingFor));
+    const typeNameHeads = await this.typeNameHeads(graphDb, req, language);
 
     // 5. Concept.
     let conceptTerms: ConceptTerm[] | undefined;
@@ -708,6 +711,7 @@ export class NamingLexiconOps {
       scope: scope.prefix,
       ...(language ? { language } : {}),
       byType,
+      ...(typeNameHeads ? { typeNameHeads } : {}),
       ...(draftCallees.length > 0 ? { byCallee } : {}),
       ...(conceptTerms ? { concept: { terms: conceptTerms } } : {}),
       names,
@@ -778,6 +782,31 @@ export class NamingLexiconOps {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * The type declarations each single-word `types` entry heads (bd
+   * tea-rags-mcp-i569j), under the REQUESTED pattern's literal prefix — never
+   * the widened value scope: the question is the suffix vocabulary of the place
+   * asked about. Read in the answer's type namespace; `undefined` when no
+   * single-word type is asked.
+   */
+  private async typeNameHeads(
+    graphDb: IdentifierReader,
+    req: NamingLexiconRequest,
+    language: string | undefined,
+  ): Promise<{ scope: string; heads: NamingLexiconTypeNameHead[] } | undefined> {
+    const words = (req.types ?? []).filter((type) => typeNameWords(type).length === 1);
+    if (words.length === 0) return undefined;
+    const scope = pathPatternLiteralPrefix(req.pathPattern);
+    const languages = this.typeNamespaceLanguages(language);
+    const rows = await graphDb.readTypeNameRows({
+      pathPrefixes: scope === "" ? [] : [scope],
+      kinds: TYPE_DRAFT_KINDS,
+      nonProductionPaths: ontologyNonProductionPaths(),
+      ...(languages !== undefined ? { languages } : {}),
+    });
+    return { scope, heads: typeNameHeadCarriers(rows, words) };
   }
 
   /** Concept holders under the L2 domain of `pathPattern`, widened to the project under 5 holders. */

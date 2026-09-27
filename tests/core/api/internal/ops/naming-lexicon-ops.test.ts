@@ -1261,6 +1261,67 @@ describe("NamingLexiconOps", () => {
     });
   });
 
+  // bd tea-rags-mcp-i569j: taxdome app/lib holds 151 `*_helper.rb` declarations and one
+  // `*_concern.rb`; `types: ["Helper", "Concern"]` answered two local variables and nothing
+  // about the declarations — a reviewer's "rename Concern → Helper" was not decidable.
+  describe("types mode counts the type declarations a type word heads", () => {
+    const decl = (typeId: string, symbolKind: TypeDeclarationRow["symbolKind"]) => ({
+      language: "ruby",
+      typeId,
+      shortName: typeId,
+      symbolKind,
+      line: 1,
+      reopens: false,
+      supertypes: [],
+    });
+
+    beforeEach(async () => {
+      await db.replaceTypeDeclarationsBulk([
+        { relPath: "app/lib/name_helper.rb", rows: [decl("NameHelper", "class")] },
+        { relPath: "app/lib/confirmation_helper.rb", rows: [decl("ConfirmationHelper", "module")] },
+        { relPath: "app/lib/workflow/errors_helper.rb", rows: [decl("ErrorsHelper", "module")] },
+        { relPath: "app/lib/tax/refusals_concern.rb", rows: [decl("RefusalsConcern", "module")] },
+        // Outside the requested pattern.
+        { relPath: "app/models/concerns/syncable_concern.rb", rows: [decl("SyncableConcern", "module")] },
+      ]);
+      await write([
+        {
+          relPath: "app/lib/move.rb",
+          rows: [local("Move#call", "move_confirmation_helper", { typeName: "Helper", typeSource: "annotation" })],
+        },
+      ]);
+    });
+
+    it("answers the declarations under the REQUESTED pattern beside the value names", async () => {
+      const result = await ops.getNamingLexicon({
+        collection: "c",
+        language: "ruby",
+        types: ["Helper", "Concern"],
+        pathPattern: "app/lib/**",
+      });
+      expect(result.typeNameHeads).toEqual({
+        scope: "app/lib/",
+        heads: [
+          {
+            head: "Helper",
+            n: 3,
+            files: 3,
+            kinds: { class: 1, module: 2 },
+            examples: ["ConfirmationHelper", "NameHelper", "ErrorsHelper"],
+          },
+          { head: "Concern", n: 1, files: 1, kinds: { module: 1 }, examples: ["RefusalsConcern"] },
+        ],
+      });
+      // The value view is unchanged: values annotated `Helper` are still named per kind.
+      expect(result.byType.map((entry) => entry.type)).toEqual(["Helper"]);
+    });
+
+    it("no single-word type asked → no type-name heads", async () => {
+      const result = await ops.getNamingLexicon({ collection: "c", language: "ruby", types: [DOC] });
+      expect(result).not.toHaveProperty("typeNameHeads");
+    });
+  });
+
   describe("excludePaths reaches every evidence read", () => {
     it("type rows, by-type, by-name, callee, prior sample, homonymy, collisions and generic names", async () => {
       await seedTaxdome();

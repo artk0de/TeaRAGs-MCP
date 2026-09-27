@@ -140,6 +140,7 @@ export type {
   NamingLexiconResult,
   NamingLexiconTypeDraft,
   NamingLexiconTypeEntry,
+  NamingLexiconTypeNameHead,
   NamingReviewFinding,
   NamingReviewNotJudgedEntry,
   NamingReviewNotJudgedReason,
