@@ -268,9 +268,21 @@ export interface DaemonHandshakeResult {
   supportedOps?: readonly string[];
 }
 
+/**
+ * An error as it crosses the socket. `dbPath` and `cause` are set only for a
+ * `DuckDbOpenFailedError`, so the client can rebuild that class — code, hint and
+ * `lockContention` — instead of a nameless `Error` (bd tea-rags-mcp-zgg62).
+ */
+export interface DaemonWireError {
+  name: string;
+  message: string;
+  dbPath?: string;
+  cause?: string;
+}
+
 export type DaemonResponse =
   | { id: number; ok: true; result: unknown }
-  | { id: number; ok: false; error: { name: string; message: string } };
+  | { id: number; ok: false; error: DaemonWireError };
 
 /** One JSON object per line. `\n` is the frame delimiter (JSON.stringify never emits a raw newline). */
 export function encodeFrame(msg: DaemonRequest | DaemonResponse): string {

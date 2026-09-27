@@ -15,20 +15,70 @@ import { InfraError } from "../errors.js";
  * directory, corrupted file). The pool catches this to degrade
  * gracefully: the offending collection runs without codegraph until
  * the lock is released or the file is repaired.
+ *
+ * `lockContention` separates the two (bd tea-rags-mcp-zgg62): only a held lock
+ * clears by waiting, so it is the only failure an open retry may wait out. A
+ * file that is not a database fails the same way on every attempt.
  */
 export class DuckDbOpenFailedError extends InfraError {
-  constructor(dbPath: string, cause?: Error) {
+  /** The open lost the file's lock to another process — the one retryable cause. */
+  readonly lockContention: boolean;
+
+  constructor(
+    readonly dbPath: string,
+    cause?: Error,
+  ) {
+    const lockContention = cause !== undefined && isDuckDbLockContentionMessage(cause.message);
     super({
       code: "INFRA_DUCKDB_OPEN_FAILED",
       message: `Failed to open DuckDB at ${dbPath}`,
+      // No cause (the cold-start path) keeps the historical lock hint.
       hint:
-        "DuckDB is single-writer per file. Another tea-rags MCP process likely holds the lock — " +
-        "stop the duplicate server or wait for it to idle out, then retry. Codegraph for this " +
-        "collection is disabled in this process until the lock is released.",
+        cause === undefined || lockContention
+          ? "DuckDB is single-writer per file. Another tea-rags MCP process likely holds the lock — " +
+            "stop the duplicate server or wait for it to idle out, then retry. Codegraph for this " +
+            "collection is disabled in this process until the lock is released."
+          : "The codegraph database file could not be opened (unreadable, or not a DuckDB database). " +
+            "Remove it and re-index the project to rebuild the graph.",
       httpStatus: 503,
       cause,
     });
+    this.lockContention = lockContention;
   }
+}
+
+/** The driver's wording for an open that lost the file lock to another process. */
+function isDuckDbLockContentionMessage(message: string): boolean {
+  return /Could not set lock on file|Conflicting lock is held/.test(message);
+}
+
+/**
+ * Rebuild the typed error a daemon reported over the socket (bd
+ * tea-rags-mcp-zgg62). The wire carries `{ name, message }` only, so a
+ * `DuckDbOpenFailedError` raised in the daemon used to reach the client as a
+ * plain `Error` and render as `UNKNOWN_ERROR`. The daemon also ships the
+ * failed path and the driver's message, from which the same class — code,
+ * hint and `lockContention` — is reconstructed. Any other name stays a plain
+ * `Error` carrying that name.
+ */
+export function daemonErrorFromWire(wire: { name: string; message: string; dbPath?: string; cause?: string }): Error {
+  if (wire.name === DuckDbOpenFailedError.name && wire.dbPath !== undefined) {
+    return new DuckDbOpenFailedError(wire.dbPath, wire.cause !== undefined ? new Error(wire.cause) : undefined);
+  }
+  return Object.assign(new Error(wire.message), { name: wire.name });
+}
+
+/** The wire shape of an error — `daemonErrorFromWire`'s inverse. */
+export function daemonErrorToWire(err: Error): { name: string; message: string; dbPath?: string; cause?: string } {
+  if (err instanceof DuckDbOpenFailedError) {
+    return {
+      name: err.name,
+      message: err.message,
+      dbPath: err.dbPath,
+      ...(err.cause ? { cause: err.cause.message } : {}),
+    };
+  }
+  return { name: err.name, message: err.message };
 }
 
 /**

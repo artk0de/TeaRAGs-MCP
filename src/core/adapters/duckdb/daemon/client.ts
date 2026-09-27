@@ -67,6 +67,7 @@ import {
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonUnreachableError,
   CodegraphDaemonUnresponsiveError,
+  daemonErrorFromWire,
 } from "../errors.js";
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
@@ -443,7 +444,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       if (!p) continue;
       this.pending.delete(res.id);
       if (res.ok) p.resolve(res.result);
-      else p.reject(Object.assign(new Error(res.error.message), { name: res.error.name }));
+      else p.reject(daemonErrorFromWire(res.error));
     }
   }
 

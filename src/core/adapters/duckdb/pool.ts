@@ -922,7 +922,15 @@ export class GraphDbClientPool {
         return await this.openCollectionOnce(physicalCollectionName);
       } catch (err) {
         const intervalMs = retry?.intervalMs ?? DEFAULT_OPEN_RETRY_INTERVAL_MS;
-        if (!retry || !(err instanceof DuckDbOpenFailedError) || Date.now() + intervalMs > deadline) {
+        // Only a held lock clears by waiting (bd tea-rags-mcp-zgg62): a file
+        // that is not a database fails identically on every attempt, and
+        // waiting the whole window turned it into a ~75 s stall per read.
+        if (
+          !retry ||
+          !(err instanceof DuckDbOpenFailedError) ||
+          !err.lockContention ||
+          Date.now() + intervalMs > deadline
+        ) {
           throw err;
         }
         if (isDebug()) {
