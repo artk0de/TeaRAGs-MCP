@@ -233,9 +233,15 @@
   the files itself only when no daemon of its build is up (nothing to drain),
   the pid is alive but the socket refuses, or the daemon predates the ops —
   legacy-tolerated, so the fallback is the pre-r4veq behaviour and never a
-  daemon drain. Not covered: another build's daemon holding the same file, and
-  any of those fallbacks — there the dev/ino check on the next acquire is all
-  that catches the replacement.
+  daemon drain. Not covered: a replacement another build's daemon makes, and any
+  of those fallbacks — there the dev/ino check on the next acquire is all that
+  catches the replacement. Another build's daemon merely HOLDING the file is
+  settled at open instead (bd tea-rags-mcp-hw27k): the daemon pool's
+  `ForeignBuildDaemonLockArbiter` drains such a holder when no client is
+  connected to it, and once the open window runs out on one still in use the
+  open fails with `CodegraphDatabaseHeldByForeignDaemonError` naming its pid and
+  build — never drained then, or two builds' daemons would drain each other
+  between writes.
 
 - **Every `cg_*` table keeps the rows it deletes, so a wholesale rewrite
   RECREATES its table and the file is compacted by copy.** DuckDB 1.5.3 vacuums

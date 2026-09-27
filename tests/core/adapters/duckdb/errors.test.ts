@@ -7,10 +7,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CodegraphDatabaseHeldByForeignDaemonError,
   daemonErrorFromWire,
   daemonErrorToWire,
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
+  isCodegraphUnavailableError,
 } from "../../../../src/core/adapters/duckdb/errors.js";
 import { InfraError } from "../../../../src/core/adapters/errors.js";
 
@@ -80,5 +82,45 @@ describe("DuckDbCloseFailedError", () => {
     const err = new DuckDbCloseFailedError("/tmp/y.duckdb");
     expect(err.cause).toBeUndefined();
     expect(err.toUserMessage()).toContain("driver rejected");
+  });
+});
+
+describe("the lock holder of a lost DuckDB open (hw27k)", () => {
+  const LOCK_MESSAGE =
+    'IO Error: Could not set lock on file "/tmp/a.duckdb": Conflicting lock is held in ' +
+    "/usr/local/bin/node (PID 50906) by user me. See also https://duckdb.org/docs/stable/connect/concurrency";
+
+  it("reads the holder's pid out of the driver's message, and none from any other failure", () => {
+    expect(new DuckDbOpenFailedError("/tmp/a.duckdb", new Error(LOCK_MESSAGE)).lockHolderPid).toBe(50906);
+    expect(
+      new DuckDbOpenFailedError("/tmp/a.duckdb", new Error("not a valid DuckDB database")).lockHolderPid,
+    ).toBeUndefined();
+    expect(new DuckDbOpenFailedError("/tmp/a.duckdb").lockHolderPid).toBeUndefined();
+  });
+
+  it("names another build's daemon, and survives the daemon wire as the same class", () => {
+    const original = new CodegraphDatabaseHeldByForeignDaemonError(
+      "/tmp/a.duckdb",
+      { pid: 50906, buildDir: "/d/b-0123abcd", buildFingerprint: "/other/checkout/build/x|1.0.0|42" },
+      new Error(LOCK_MESSAGE),
+    );
+    expect(original.code).toBe("INFRA_CODEGRAPH_DB_HELD_BY_FOREIGN_DAEMON");
+    expect(original.message).toContain("pid 50906");
+    expect(original.message).toContain("/other/checkout/build/x");
+    expect(isCodegraphUnavailableError(original)).toBe(true);
+
+    const rebuilt = daemonErrorFromWire(JSON.parse(JSON.stringify(daemonErrorToWire(original))));
+    expect(rebuilt).toBeInstanceOf(CodegraphDatabaseHeldByForeignDaemonError);
+    expect((rebuilt as CodegraphDatabaseHeldByForeignDaemonError).holderPid).toBe(50906);
+    expect(rebuilt.message).toBe(original.message);
+  });
+
+  it("falls back to the build-key directory when the holder's fingerprint is unknown", () => {
+    const err = new CodegraphDatabaseHeldByForeignDaemonError("/tmp/a.duckdb", {
+      pid: 7,
+      buildDir: "/d/b-0123abcd",
+      buildFingerprint: undefined,
+    });
+    expect(err.message).toContain("/d/b-0123abcd");
   });
 });

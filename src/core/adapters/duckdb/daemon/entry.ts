@@ -4,9 +4,12 @@
  * Spawned (detached) by the bootstrap factory's `ensureCodegraphDaemon` when
  * `TEA_RAGS_CODEGRAPH_DAEMON=1`. The daemon owns the single read-write
  * `GraphDbClientPool` for the machine — every MCP client process proxies
- * mutations to it over the unix socket, so the cross-process single-writer
- * DuckDB lock is held by exactly one process. Reads bypass the daemon entirely
- * (in-process READ_ONLY attach via `pool.acquireRead`).
+ * mutations AND reads to it over the unix socket (`pool.acquireReader` routes
+ * through the daemon — a cross-process READ_ONLY attach is refused while it
+ * holds the file), so the cross-process single-writer DuckDB lock is held by
+ * one process per build. Two builds run two daemons (bd tea-rags-mcp-42hno);
+ * one holding a file the other must open is settled by
+ * `ForeignBuildDaemonLockArbiter` (bd tea-rags-mcp-hw27k).
  *
  * Transport: newline-delimited JSON over a unix socket (`encodeFrame` /
  * `DaemonFrameDecoder`). Each connection increments the file refcount on connect and
@@ -29,6 +32,8 @@ import type { MigrationCapableGraphClient } from "../../../contracts/types/migra
 import { setDebug } from "../../../infra/runtime.js";
 import { CodegraphDaemonDrainRefusedError, CodegraphDaemonOwnedElsewhereError } from "../errors.js";
 import { GraphDbClientPool } from "../pool.js";
+import { getBuildFingerprint } from "./build-fingerprint.js";
+import { ForeignBuildDaemonLockArbiter } from "./foreign-build-lock-arbiter.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
   claimDaemonOwnership,
@@ -360,6 +365,14 @@ async function startOwnedDaemon(
     // opening the same collection waits out the first daemon's idle eviction
     // instead of failing the op. Bounded BY the eviction window.
     openRetry: daemonOpenRetry(options.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS),
+    // …unless the holder is another build's daemon (bd tea-rags-mcp-hw27k):
+    // drained when no client is connected to it, otherwise named once the
+    // window runs out, instead of every op waiting the window and failing bare.
+    foreignBuildLockArbiter: new ForeignBuildDaemonLockArbiter({
+      storageDir: options.paths.storageDir,
+      ownBuildDir: options.paths.buildDir,
+      buildFingerprint: options.buildFingerprint ?? getBuildFingerprint(),
+    }),
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
   });

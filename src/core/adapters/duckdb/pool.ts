@@ -23,7 +23,9 @@
  * they act on the files themselves only when no daemon of this build is up, or
  * it cannot take the op. A replacement nobody routes — another build's daemon,
  * a process outside tea-rags — is still caught only by the dev/ino check on the
- * next acquire.
+ * next acquire. Another build's daemon merely HOLDING a file this pool must
+ * open is settled at open time by `foreignBuildLockArbiter` (bd
+ * tea-rags-mcp-hw27k).
  */
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
@@ -38,6 +40,7 @@ import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.j
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
 import type { DaemonDatabaseFileReplacer, DaemonDatabaseReplacement } from "./daemon/database-file-replacer.js";
+import type { ForeignBuildDaemonLockArbiter } from "./daemon/foreign-build-lock-arbiter.js";
 import {
   daemonPathsForKeyDir,
   DEFAULT_EXIT_TIMEOUT_MS,
@@ -56,6 +59,7 @@ import {
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
   CodegraphDaemonUnreachableError,
+  CodegraphDatabaseHeldByForeignDaemonError,
   CodegraphDatabaseMissingError,
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
@@ -189,6 +193,16 @@ export interface GraphDbClientPoolOptions {
     intervalMs?: number;
   };
   /**
+   * Settles an open that lost the file lock to ANOTHER build's codegraph
+   * daemon (bd tea-rags-mcp-hw27k) — the daemon wires it beside `openRetry`.
+   * A foreign daemon with no client connected is drained and the open retried
+   * at once; one still in use is waited for within the `openRetry` window and
+   * then named in `CodegraphDatabaseHeldByForeignDaemonError`, and a later open
+   * of the same collection against that same holder fails at once instead of
+   * waiting the window again. Without it every holder gets the plain retry.
+   */
+  foreignBuildLockArbiter?: ForeignBuildDaemonLockArbiter;
+  /**
    * Build + capability handshake restart wiring, daemon mode only (bd
    * tea-rags-mcp-ji56r, 39xca.4). A daemon from another build, or one missing a
    * required op, is drained, its exit awaited, `respawn` invoked and the
@@ -316,6 +330,12 @@ export class GraphDbClientPool {
    */
   private readonly opsInFlightByCollection = new Map<PhysicalCollectionName, number>();
   private idleEvictionTimer: NodeJS.Timeout | undefined;
+  /**
+   * Collections whose open already waited out a whole `openRetry` window
+   * against a foreign-build daemon still in use, by that holder's pid (bd
+   * tea-rags-mcp-hw27k). Cleared by the collection's next successful open.
+   */
+  private readonly foreignHeldCollections = new Map<PhysicalCollectionName, number>();
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
@@ -914,23 +934,37 @@ export class GraphDbClientPool {
     // serve the same on-disk collections, so a loser's first open loses the
     // DuckDB RW lock to the winner's still-cached client. The wait is bounded
     // BY DESIGN — nlls evicts the idle holder — so retrying until then turns
-    // a shared-collection collision from a failed op into a delay.
+    // a shared-collection collision from a failed op into a delay. A holder
+    // that is another build's daemon is settled by `foreignBuildLockArbiter`
+    // instead of merely waited for (bd tea-rags-mcp-hw27k).
     const retry = this.options.openRetry;
     const deadline = retry ? Date.now() + retry.maxMs : 0;
     for (;;) {
       try {
-        return await this.openCollectionOnce(physicalCollectionName);
+        const entry = await this.openCollectionOnce(physicalCollectionName);
+        this.foreignHeldCollections.delete(physicalCollectionName);
+        return entry;
       } catch (err) {
         const intervalMs = retry?.intervalMs ?? DEFAULT_OPEN_RETRY_INTERVAL_MS;
         // Only a held lock clears by waiting (bd tea-rags-mcp-zgg62): a file
         // that is not a database fails identically on every attempt, and
         // waiting the whole window turned it into a ~75 s stall per read.
-        if (
-          !retry ||
-          !(err instanceof DuckDbOpenFailedError) ||
-          !err.lockContention ||
-          Date.now() + intervalMs > deadline
-        ) {
+        if (!(err instanceof DuckDbOpenFailedError) || !err.lockContention) throw err;
+        const windowSpent = !retry || Date.now() + intervalMs > deadline;
+        const arbiter = this.options.foreignBuildLockArbiter;
+        const settlement = await arbiter?.settle(err, physicalCollectionName);
+        // Retried at once, within the window only: a foreign session respawning
+        // its daemon and re-taking the file each time must not spin this loop.
+        if (settlement?.kind === "drained" && !windowSpent) continue;
+        if (arbiter && settlement?.kind === "held") {
+          // One window per holder, not one per op (bd tea-rags-mcp-hw27k): the
+          // op that already waited it out recorded the holder.
+          if (windowSpent || this.foreignHeldCollections.get(physicalCollectionName) === settlement.holder.pid) {
+            this.foreignHeldCollections.set(physicalCollectionName, settlement.holder.pid);
+            const holder = await arbiter.describe(settlement.holder, physicalCollectionName);
+            throw new CodegraphDatabaseHeldByForeignDaemonError(err.dbPath, holder, err);
+          }
+        } else if (windowSpent) {
           throw err;
         }
         if (isDebug()) {

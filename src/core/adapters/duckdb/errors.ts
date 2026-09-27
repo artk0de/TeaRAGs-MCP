@@ -23,6 +23,12 @@ import { InfraError } from "../errors.js";
 export class DuckDbOpenFailedError extends InfraError {
   /** The open lost the file's lock to another process — the one retryable cause. */
   readonly lockContention: boolean;
+  /**
+   * The pid of the process holding the lock, as the driver names it
+   * (`Conflicting lock is held in <exe> (PID <n>)`) — undefined when the open
+   * failed for another reason or the driver did not say (bd tea-rags-mcp-hw27k).
+   */
+  readonly lockHolderPid: number | undefined;
 
   constructor(
     readonly dbPath: string,
@@ -44,12 +50,70 @@ export class DuckDbOpenFailedError extends InfraError {
       cause,
     });
     this.lockContention = lockContention;
+    this.lockHolderPid = lockContention ? parseDuckDbLockHolderPid(cause?.message ?? "") : undefined;
   }
 }
 
 /** The driver's wording for an open that lost the file lock to another process. */
 function isDuckDbLockContentionMessage(message: string): boolean {
   return /Could not set lock on file|Conflicting lock is held/.test(message);
+}
+
+function parseDuckDbLockHolderPid(message: string): number | undefined {
+  const match = /Conflicting lock is held in .*\(PID (\d+)\)/.exec(message);
+  const pid = match ? Number(match[1]) : NaN;
+  return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+/** The codegraph daemon of ANOTHER build that holds a collection's database file. */
+export interface ForeignBuildDaemonLockHolder {
+  pid: number;
+  /** Its build-key directory under the daemon storage dir. */
+  buildDir: string;
+  /** Its build fingerprint (`<build dir>|<version>|<mtime>`), when its socket answered. */
+  buildFingerprint: string | undefined;
+}
+
+/**
+ * A collection's DuckDB file is held read-write by the codegraph daemon of
+ * ANOTHER build, which still serves a connected client (bd tea-rags-mcp-hw27k).
+ *
+ * Build-keyed daemons (bd tea-rags-mcp-42hno) never share a socket, so two
+ * builds on one machine run two daemons over the same collection files, and
+ * DuckDB lets one process hold a file read-write. A foreign daemon nobody is
+ * connected to is drained instead; this is raised only for one somebody is
+ * still using — draining it would cut that session — once the open window has
+ * run out. Named, rather than a bare open failure, because the remedy lies with
+ * that other process, and waiting silently op after op is how a recompute lost
+ * ten minutes to it.
+ */
+export class CodegraphDatabaseHeldByForeignDaemonError extends InfraError {
+  readonly holderPid: number;
+
+  constructor(
+    readonly dbPath: string,
+    readonly holder: ForeignBuildDaemonLockHolder,
+    cause?: Error,
+  ) {
+    const build = holder.buildFingerprint?.split("|")[0] ?? holder.buildDir;
+    super({
+      code: "INFRA_CODEGRAPH_DB_HELD_BY_FOREIGN_DAEMON",
+      // The remedy rides the message (bd tea-rags-mcp-a43tr): the pipeline log
+      // and optional consumers quote the message, not the hint.
+      message:
+        `Codegraph database ${dbPath} is held by the codegraph daemon of another build ` +
+        `(pid ${holder.pid}, build ${build}), which still has a client connected. ` +
+        `Stop that session or daemon (kill ${holder.pid}) and retry`,
+      hint:
+        "Each tea-rags build runs its own codegraph daemon, and DuckDB lets only one process hold a " +
+        "database file read-write. A foreign daemon with no client connected is drained automatically; " +
+        "this one still serves a session (an MCP server or a `call` of that build). Finish or stop that " +
+        "session, or point every session at one build, then re-run.",
+      httpStatus: 503,
+      cause,
+    });
+    this.holderPid = holder.pid;
+  }
 }
 
 /**
@@ -61,15 +125,42 @@ function isDuckDbLockContentionMessage(message: string): boolean {
  * hint and `lockContention` — is reconstructed. Any other name stays a plain
  * `Error` carrying that name.
  */
-export function daemonErrorFromWire(wire: { name: string; message: string; dbPath?: string; cause?: string }): Error {
+export function daemonErrorFromWire(wire: {
+  name: string;
+  message: string;
+  dbPath?: string;
+  cause?: string;
+  holder?: ForeignBuildDaemonLockHolder;
+}): Error {
+  const cause = wire.cause !== undefined ? new Error(wire.cause) : undefined;
   if (wire.name === DuckDbOpenFailedError.name && wire.dbPath !== undefined) {
-    return new DuckDbOpenFailedError(wire.dbPath, wire.cause !== undefined ? new Error(wire.cause) : undefined);
+    return new DuckDbOpenFailedError(wire.dbPath, cause);
+  }
+  // The foreign-build holder rides the wire too (bd tea-rags-mcp-hw27k), so the
+  // client that asked gets the named class, not a nameless `Error`.
+  if (wire.name === CodegraphDatabaseHeldByForeignDaemonError.name && wire.dbPath !== undefined && wire.holder) {
+    return new CodegraphDatabaseHeldByForeignDaemonError(wire.dbPath, wire.holder, cause);
   }
   return Object.assign(new Error(wire.message), { name: wire.name });
 }
 
 /** The wire shape of an error — `daemonErrorFromWire`'s inverse. */
-export function daemonErrorToWire(err: Error): { name: string; message: string; dbPath?: string; cause?: string } {
+export function daemonErrorToWire(err: Error): {
+  name: string;
+  message: string;
+  dbPath?: string;
+  cause?: string;
+  holder?: ForeignBuildDaemonLockHolder;
+} {
+  if (err instanceof CodegraphDatabaseHeldByForeignDaemonError) {
+    return {
+      name: err.name,
+      message: err.message,
+      dbPath: err.dbPath,
+      holder: err.holder,
+      ...(err.cause ? { cause: err.cause.message } : {}),
+    };
+  }
   if (err instanceof DuckDbOpenFailedError) {
     return {
       name: err.name,
@@ -509,6 +600,7 @@ export type CodegraphUnavailableError =
   | CodegraphDaemonUnresponsiveError
   | CodegraphDaemonDrainRefusedError
   | CodegraphDaemonBuildUnavailableError
+  | CodegraphDatabaseHeldByForeignDaemonError
   | DuckDbOpenFailedError;
 
 export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
@@ -521,6 +613,7 @@ export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnava
     err instanceof CodegraphDaemonUnresponsiveError ||
     err instanceof CodegraphDaemonDrainRefusedError ||
     err instanceof CodegraphDaemonBuildUnavailableError ||
+    err instanceof CodegraphDatabaseHeldByForeignDaemonError ||
     err instanceof DuckDbOpenFailedError
   );
 }

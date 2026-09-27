@@ -754,8 +754,9 @@ export function wireCodegraph(
       preserveInsertionOrder: false,
     },
     // Daemon socket — always set. `acquireWrite` routes mutations through a
-    // `DaemonGraphDbClient` over this socket; reads (`acquireRead`) always stay
-    // in-process READ_ONLY and ignore it.
+    // `DaemonGraphDbClient` over this socket, and so does `acquireReader` (see
+    // the lazy wrap below); only the direct-mode `acquireRead` attaches
+    // READ_ONLY in-process.
     daemonSocketPath: daemonPaths.socketPath,
     // Base lifecycle dir (bd tea-rags-mcp-42hno): the pool's one-time legacy
     // migration looks for a pre-keying daemon layout here before its first

@@ -278,6 +278,12 @@ export interface DaemonWireError {
   message: string;
   dbPath?: string;
   cause?: string;
+  /**
+   * Set only for a `CodegraphDatabaseHeldByForeignDaemonError`: the other
+   * build's daemon holding the file, so the client rebuilds that class (bd
+   * tea-rags-mcp-hw27k).
+   */
+  holder?: { pid: number; buildDir: string; buildFingerprint: string | undefined };
 }
 
 export type DaemonResponse =
