@@ -193,4 +193,25 @@ describe("ExploreOps.getIndexMetrics", () => {
 
     expect(statsCache.load).toHaveBeenCalledWith("code_legacy01");
   });
+
+  // bd tea-rags-mcp-2kplu: the resolver's priority — an explicit collection wins over the path's hash.
+  it("an explicit collection wins over the path", async () => {
+    legacyRoot = mkdtempSync(join(tmpdir(), "eo-explicit-"));
+    const statsCache = { load: vi.fn().mockReturnValue(null), save: vi.fn(), lastWrittenAt: vi.fn() };
+    const ops = new ExploreOps({
+      qdrant: makeMockQdrant(),
+      embeddings: makeMockEmbeddings(),
+      reranker: makeMockReranker(),
+      registry: makeMockRegistry(),
+      collectionRegistry: new CollectionRegistry(legacyRoot),
+      statsCache,
+      payloadSignals: [],
+      essentialKeys: [],
+    } as never);
+
+    await ops.getIndexMetrics(join(legacyRoot, "worktree"), "code_explicit").catch(() => undefined);
+
+    expect(statsCache.load).toHaveBeenCalled();
+    expect(statsCache.load.mock.calls.every(([name]) => name === "code_explicit")).toBe(true);
+  });
 });

@@ -52,6 +52,8 @@ import type { ConceptTerm } from "./terms.js";
 import {
   deriveTypeRoles,
   expectedRoleFor,
+  isNamespaceDeclaration,
+  meetsProjectConventionSpread,
   type ExpectedTypeRole,
   type TypeNameRow,
   type TypeRoleAssignment,
@@ -161,9 +163,10 @@ interface JudgedRows {
   typeName?: string;
   callee?: IdentifierBoundCallee;
   /**
-   * The rows are the draft TYPE's own and the draft is a value: a FREE draft
-   * conforms only with a name the rows already hold — a role-naming history
-   * licenses its own roles, not any word (see {@link judgeFreeValueName}).
+   * The rows are the draft type's or bound callee's own and the draft is a
+   * value: a FREE draft conforms only with a name the rows already hold — a
+   * role-naming history licenses its own roles, not any word (see
+   * {@link judgeFreeValueName}).
    */
   freeNameMustBeKnown?: boolean;
 }
@@ -212,18 +215,20 @@ function judgeAgainstRows(
 }
 
 /**
- * A FREE value draft whose shape the type's rows accept: CONFORMS when one of
- * those rows already carries the name (compared by words, so a snake row names
- * a camel draft), else NEW_TERM — the project names the type by role, and this
- * role is one it has never used. `topTerms` carries the type's own top names
- * (heaviest first, merged per name): for a type with history the concept terms
- * are never consulted, so the slot holds the vocabulary the draft departs from.
+ * A FREE value draft whose shape the type's or callee's rows accept: CONFORMS
+ * when one of those rows already carries the name (compared by words in either
+ * number, so a snake row names a camel draft and `rows` names `row`), else
+ * NEW_TERM — the project names the value by role, and this role is one it has
+ * never used. `topTerms` carries the rows' own top names (heaviest first,
+ * merged per name): for a type or callee with history the concept terms are
+ * never consulted, so the slot holds the vocabulary the draft departs from.
  */
 function judgeFreeValueName(name: string, rows: readonly NamingShapeRow[]): NamingVerdict {
-  const draftKey = splitIdentifierWords(name).join("_");
+  const wordKey = (identifier: string) => splitIdentifierWords(identifier).map(singularizeIdentifierWord).join("_");
+  const draftKey = wordKey(name);
   const perName = new Map<string, number>();
   for (const row of rows) perName.set(row.name, (perName.get(row.name) ?? 0) + row.n);
-  if ([...perName.keys()].some((known) => splitIdentifierWords(known).join("_") === draftKey)) {
+  if ([...perName.keys()].some((known) => wordKey(known) === draftKey)) {
     return { verdict: "CONFORMS" };
   }
   const topTerms = [...perName]
@@ -386,6 +391,7 @@ function judgeByCallee(
       rows: calleeRows,
       callee,
       typeName: typeName ?? dominantRowType(calleeRows),
+      freeNameMustBeKnown: kind !== "return",
     });
   }
   if (kind !== "local" && kind !== "field") return undefined;
@@ -433,7 +439,10 @@ function judgeByConcept(name: string, terms: readonly ConceptTerm[]): NamingVerd
  *    rows (`item: Item[]` against `items` is a MISFIT) — the caller passes rows
  *    of the draft's multiplicity only;
  * 2. bound to a callee → the `byCallee` rows of that member / receiver and kind,
- *    judged the same way (rows carry their own recovered type); with no rows, a
+ *    judged the same way (rows carry their own recovered type) — a FREE value
+ *    draft, too, conforms only with a name those rows carry, else NEW_TERM
+ *    with their top names (`thing = registry.findByName(…)` against `entry`);
+ *    with no rows, a
  *    `local` / `field` whose callee derives a name (`find_x!` → `x`) must be
  *    `CALLEE_DERIVED`, when licensed;
  * 3. a fallback the project prior does not license (licence: ≥ 50% share at
@@ -585,6 +594,11 @@ export interface TypeDraftJudgementInput {
   path: string;
   /** The planned ancestor — a type draft's family; ignored for a constant. */
   extends?: string;
+  /**
+   * The declaration kind, when known. A namespace ({@link isNamespaceDeclaration})
+   * carries no role: neither demanded nor confirmed (bd tea-rags-mcp-59q9c).
+   */
+  symbolKind?: SymbolDefinitionKind;
   /** The casing a suggestion is rendered in when the draft's own is indeterminate (the language's role casing). */
   casing: IdentifierCasing;
   /** Built by {@link typeNameEvidence} for the draft's {@link typeDraftPopulation}. */
@@ -619,11 +633,17 @@ export interface TypeDraftJudgementInput {
 function collidingType(input: TypeDraftJudgementInput): { symbolId: string; relPath: string } | undefined {
   if (input.evidence.population !== "type") return undefined;
   const shortName = typeNameLastSegment(input.name);
-  const hit = input.evidence.rows
+  const hits = input.evidence.rows
     .filter(
       (row) => row.shortName === shortName && row.relPath !== input.path && !AMBIENT_DECLARATION_FILE.test(row.relPath),
     )
-    .sort((a, b) => a.relPath.localeCompare(b.relPath) || a.symbolId.localeCompare(b.symbolId))[0];
+    .sort((a, b) => a.relPath.localeCompare(b.relPath) || a.symbolId.localeCompare(b.symbolId));
+  // A short name the project declares across modules is its convention (one `Result` per
+  // namespace, qualified at use), not a homonym to warn about (bd tea-rags-mcp-icuxg).
+  const files = new Set(hits.map((row) => row.relPath));
+  const dirs = new Set(hits.map((row) => directoryOfPath(row.relPath)));
+  if (meetsProjectConventionSpread(files.size, dirs.size)) return undefined;
+  const hit = hits.at(0);
   return hit ? { symbolId: hit.symbolId, relPath: hit.relPath } : undefined;
 }
 
@@ -1010,7 +1030,13 @@ function pathTermAlternatives(
 export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   const words = typeNameWords(input.name);
   const draftCasing = detectIdentifierCasing(input.name) ?? input.casing;
-  const role = draftRole(input, input.evidence);
+  // A namespace wraps its file's subject: no member of any role family (bd tea-rags-mcp-59q9c).
+  const namespace = isNamespaceDeclaration({
+    shortName: typeNameLastSegment(input.name),
+    relPath: input.path,
+    symbolKind: input.symbolKind,
+  });
+  const role = namespace ? undefined : draftRole(input, input.evidence);
   // Only inheritance and directory evidence set an EXPECTED role; a project suffix only confirms,
   // and a cohesive directory family only speaks for its members.
   const nonMember = directoryFamilyNonMemberRole(input, input.evidence, role) !== undefined;
@@ -1038,7 +1064,7 @@ export function judgeTypeDraft(input: TypeDraftJudgementInput): NamingVerdict {
   // A project suffix or a known head only CONFIRMS the words: a synonym head passes both,
   // so the verdict stays and the head alternatives ride along (bd tea-rags-mcp-433d2).
   const head = words.at(-1);
-  if (input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
+  if (!namespace && input.evidence.roles.some((r) => r.evidence === "projectSuffix" && r.role === head)) {
     return { verdict: "CONFORMS", ...withAlternatives };
   }
   const establishedWords = new Set(input.evidence.established.map((use) => use.word));

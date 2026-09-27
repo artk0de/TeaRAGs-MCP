@@ -235,6 +235,24 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   });
 
+  // bd tea-rags-mcp-icuxg: a diff spanning languages judges each name within its own language.
+  it("a type declared in another language is no collision; one in the same language is", async () => {
+    await db.replaceTypeDeclarationsBulk([
+      { relPath: "app/models/invoice.rb", rows: [{ ...decl("Invoice", "class"), language: "ruby" }] },
+    ]);
+    mkdirSync(join(repo, "app/billing"), { recursive: true });
+    writeFileSync(join(repo, "app/billing/documents.rb"), "class Commit\nend\n\nclass Invoice\nend\n");
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["app/billing/documents.rb"] });
+    const collisions = result.review?.findings.filter((f) => f.verdict === "COLLISION") ?? [];
+    expect(collisions).toEqual([
+      expect.objectContaining({
+        relPath: "app/billing/documents.rb",
+        name: "Invoice",
+        existing: { symbolId: "Invoice", relPath: "app/models/invoice.rb" },
+      }),
+    ]);
+  });
+
   it("a NEW_TERM with nothing to compare with is counted as novel, not listed", async () => {
     writeFileSync(
       join(repo, "src/git/novel.ts"),
@@ -244,6 +262,25 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(result.review?.findings).toEqual([]);
     expect(result.review?.novel).toBe(1);
     expect(result.review?.checked).toBe(1);
+  });
+
+  // bd tea-rags-mcp-hn2vt: `thing` / `tmp` for a call the project names `entry` were silently conforming.
+  it("a local named off the project's names for its call is a finding carrying those names", async () => {
+    await write(
+      [0, 1, 2].map((i) => ({
+        relPath: `src/reg/lookup-${i}.ts`,
+        rows: [local(`lookup${i}`, "entry", { boundMember: "findByName", boundReceiver: "registry" })],
+      })),
+    );
+    writeFileSync(
+      join(repo, "src/git/scratch.ts"),
+      "export function g(): void {\n  const thing = registry.findByName(n);\n  const entry = registry.findByName(m);\n  use(thing, entry);\n}\n",
+    );
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/scratch.ts"] });
+    expect(result.review?.findings).toEqual([
+      expect.objectContaining({ name: "thing", line: 2, kind: "local", verdict: "NEW_TERM", topTerms: ["entry"] }),
+    ]);
+    expect(result.review?.conforming).toBe(1);
   });
 
   it("a non-production changed file is not judged, and counts as not judged", async () => {
@@ -356,6 +393,36 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       }),
     ]);
     expect(result.review?.conforming).toBe(0);
+  });
+
+  // bd tea-rags-mcp-59q9c: live on taxdome the namespace modules were MISFIT → `GettingPaidWorker` / `QuickbooksWorker`.
+  it("the namespace modules around a worker get no directory-role MISFIT; the worker is judged by it", async () => {
+    const dirPath = "app/workers/getting_paid/quickbooks";
+    const ruby = (typeId: string, symbolKind: TypeDeclarationRow["symbolKind"]): TypeDeclarationRow => ({
+      ...decl(typeId, symbolKind),
+      language: "ruby",
+    });
+    await db.replaceTypeDeclarationsBulk(
+      [
+        ["import_invoices_worker", "ImportInvoicesWorker"],
+        ["sync_payments_worker", "SyncPaymentsWorker"],
+        ["push_customers_worker", "PushCustomersWorker"],
+      ].map(([stem, worker]) => ({
+        relPath: `${dirPath}/${stem}.rb`,
+        rows: [ruby("GettingPaid", "module"), ruby("Quickbooks", "module"), ruby(worker, "class")],
+      })),
+    );
+    mkdirSync(join(repo, dirPath), { recursive: true });
+    const scratch = `${dirPath}/sync_ledger.rb`;
+    writeFileSync(
+      join(repo, scratch),
+      "module GettingPaid\n  module Quickbooks\n    class SyncLedger\n      def perform; end\n    end\n  end\nend\n",
+    );
+    const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: [scratch] });
+    const misfits = result.review?.findings.filter((f) => f.verdict === "MISFIT") ?? [];
+    expect(misfits).toEqual([
+      expect.objectContaining({ name: "SyncLedger", line: 3, suggestion: "SyncLedgerWorker", kind: "class" }),
+    ]);
   });
 
   it("diff mode needs the project's working tree", async () => {

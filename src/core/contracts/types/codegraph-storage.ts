@@ -553,6 +553,12 @@ export interface TypeNameQuery {
   excludePaths?: readonly string[];
   /** The symbol kinds to read — the type-level ones. A row of unknown kind (`NULL`, pre-035) is never read. */
   kinds: readonly SymbolDefinitionKind[];
+  /**
+   * The file languages to read (bd tea-rags-mcp-icuxg) — one type namespace, so
+   * a draft is never judged against a namesake it could not collide with.
+   * Absent = every language.
+   */
+  languages?: readonly string[];
   /** The non-production masks the scope drops, as {@link OntologyReportQuery.nonProductionPaths}. */
   nonProductionPaths: CaseSplitPathPatterns;
 }

@@ -29,6 +29,7 @@ import type {
   TypeDeclarationRow,
 } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { IdentifierNamingConvention } from "../../../../../src/core/contracts/types/language.js";
+import { capability as javascriptCapability } from "../../../../../src/core/domains/language/javascript/capability.js";
 import { capability as rubyCapability } from "../../../../../src/core/domains/language/ruby/capability.js";
 import { capability as typescriptCapability } from "../../../../../src/core/domains/language/typescript/capability.js";
 import { DATABASE_MIGRATIONS } from "../../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
@@ -1071,6 +1072,27 @@ describe("NamingLexiconOps", () => {
           expect(result.notices).toBeUndefined();
         });
 
+        // bd tea-rags-mcp-2kplu: worktree validation addresses {collection, path}, and the path hashes to no index.
+        it("reads the metrics of the request's resolved collection, not of the path's hash", async () => {
+          class PathHashExplore extends MetricsExplore {
+            readonly collections: (string | undefined)[] = [];
+            override async getIndexMetrics(path: string, collection?: string) {
+              this.collections.push(collection);
+              if (collection === undefined) throw new Error("Collection code_283e5b7f not found");
+              return super.getIndexMetrics(path);
+            }
+          }
+          const explore = new PathHashExplore(3);
+          const result = await buildWithEmbeddings(explore).getNamingLexicon({
+            collection: "c",
+            path: "/worktree",
+            names: [{ name: "IndexNumbers", kind: "type", path: "src/api/numbers.ts" }],
+          });
+          expect(explore.collections).toEqual(["c"]);
+          expect(result.notices).toBeUndefined();
+          expect(result.names[0]).toMatchObject({ alternatives: [{ word: "tally", slot: "head" }] });
+        });
+
         it("below the threshold it stays a one-off", async () => {
           const result = await buildWithEmbeddings(new MetricsExplore(4)).getNamingLexicon({
             collection: "c",
@@ -1127,6 +1149,114 @@ describe("NamingLexiconOps", () => {
   });
 
   // bd tea-rags-mcp-vi0wx (spec §6.4): a changed file never votes for itself.
+  // bd tea-rags-mcp-icuxg (vi0wx N2): a Ruby `Result` draft collided with a TSX `Result`, and
+  // the answer said `language: "typescript"` for a Ruby-only request.
+  describe("type drafts are judged within their own language's type namespace", () => {
+    const decl = (language: string, typeId: string) => ({
+      language,
+      typeId,
+      shortName: typeId,
+      symbolKind: "class" as const,
+      line: 1,
+      reopens: false,
+      supertypes: [],
+    });
+    const RUBY_DRAFT = { name: "Result", kind: "type" as const, path: "app/services/getting_paid/payments/result.rb" };
+
+    function buildPolyglot(): NamingLexiconOps {
+      const graphDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === "close") return async () => undefined;
+          const value: unknown = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+      return new NamingLexiconOps({
+        pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
+        collectionRegistry: {} as never,
+        resolveActiveCollection: async (name: string) => name as never,
+        explore: { semanticSearch },
+        namingConventions: new Map([
+          ...NAMING,
+          ["javascript", javascriptCapability.naming as IdentifierNamingConvention],
+        ]),
+        ontologyLanguages: ontologyLanguageProfiles(),
+      });
+    }
+
+    beforeEach(async () => {
+      await db.replaceTypeDeclarationsBulk([
+        { relPath: "web/pages/ImportSidebar.tsx", rows: [decl("typescript", "Result")] },
+        { relPath: "web/widgets/widget.js", rows: [decl("javascript", "Widget")] },
+        { relPath: "app/models/invoice.rb", rows: [decl("ruby", "Invoice")] },
+      ]);
+      // The project's identifiers are mostly TypeScript: the old fallback answered `typescript`.
+      await write([{ relPath: "web/pages/a.ts", rows: [local("a", "row"), local("b", "row")] }], "typescript");
+    });
+
+    it("a namesake in another language is no collision, and the answer is in the draft's language", async () => {
+      const result = await buildPolyglot().getNamingLexicon({ collection: "c", names: [RUBY_DRAFT] });
+      expect(result.language).toBe("ruby");
+      expect(result.names[0]).not.toMatchObject({ verdict: "COLLISION" });
+      expect(result.names[0].evidence).toMatchObject({ n: 0, collision: false });
+      expect(result.names[0]).not.toHaveProperty("language");
+    });
+
+    it("a namesake in the same language collides", async () => {
+      const result = await buildPolyglot().getNamingLexicon({
+        collection: "c",
+        names: [{ name: "Invoice", kind: "type", path: "app/billing/invoice.rb" }],
+      });
+      expect(result.names[0]).toMatchObject({
+        verdict: "COLLISION",
+        existing: { symbolId: "Invoice", relPath: "app/models/invoice.rb" },
+      });
+    });
+
+    it("TypeScript and JavaScript share one type namespace", async () => {
+      const result = await buildPolyglot().getNamingLexicon({
+        collection: "c",
+        names: [{ name: "Widget", kind: "type", path: "web/ui/widget.ts" }],
+      });
+      expect(result.language).toBe("typescript");
+      expect(result.names[0]).toMatchObject({
+        verdict: "COLLISION",
+        existing: { symbolId: "Widget", relPath: "web/widgets/widget.js" },
+      });
+    });
+
+    it("drafts spanning languages: each judged in its own, a draft off the answer's language names its own", async () => {
+      const result = await buildPolyglot().getNamingLexicon({
+        collection: "c",
+        names: [
+          RUBY_DRAFT,
+          { name: "Invoice", kind: "type", path: "app/billing/invoice.rb" },
+          { name: "Result", kind: "type", path: "web/ui/result.ts" },
+        ],
+      });
+      expect(result.language).toBe("ruby");
+      expect(result.names[0]).not.toMatchObject({ verdict: "COLLISION" });
+      expect(result.names[1]).toMatchObject({ verdict: "COLLISION" });
+      expect(result.names[1]).not.toHaveProperty("language");
+      expect(result.names[2]).toMatchObject({
+        language: "typescript",
+        verdict: "COLLISION",
+        existing: { symbolId: "Result", relPath: "web/pages/ImportSidebar.tsx" },
+      });
+    });
+
+    it("the request's language stays the answer's; a draft in another language names its own", async () => {
+      const result = await buildPolyglot().getNamingLexicon({
+        collection: "c",
+        language: "typescript",
+        names: [RUBY_DRAFT],
+      });
+      expect(result.language).toBe("typescript");
+      expect(result.names[0]).toMatchObject({ language: "ruby" });
+      expect(result.names[0]).not.toMatchObject({ verdict: "COLLISION" });
+    });
+  });
+
   describe("excludePaths reaches every evidence read", () => {
     it("type rows, by-type, by-name, callee, prior sample, homonymy, collisions and generic names", async () => {
       await seedTaxdome();

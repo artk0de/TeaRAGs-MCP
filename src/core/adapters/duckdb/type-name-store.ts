@@ -123,10 +123,14 @@ export class DuckDbTypeNameStore {
   }
 
   async readTypeNameRows(q: TypeNameQuery): Promise<TypeNameRow[]> {
-    if (q.kinds.length === 0) return [];
+    if (q.kinds.length === 0 || q.languages?.length === 0) return [];
     const prefix = pathPrefixPredicate(q.pathPrefixes);
     const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
     const excluded = excludedPathsPredicate(q.excludePaths);
+    const languages =
+      q.languages === undefined
+        ? { sql: "TRUE", params: [] as string[] }
+        : { sql: `language IN (${placeholders(q.languages)})`, params: [...q.languages] };
     const rows = await this.session.queryAll<{
       type_id: string;
       rel_path: string;
@@ -141,8 +145,9 @@ export class DuckDbTypeNameStore {
           AND ${prefix.sql}
           AND NOT ${nonProduction("rel_path")}
           AND ${excluded.sql}
+          AND ${languages.sql}
         ORDER BY rel_path, line, type_id`,
-      [...q.kinds, ...prefix.params, ...excluded.params],
+      [...q.kinds, ...prefix.params, ...excluded.params, ...languages.params],
     );
     return rows.map((r) => ({
       symbolId: r.type_id,

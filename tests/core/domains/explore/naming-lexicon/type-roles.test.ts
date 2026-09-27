@@ -426,3 +426,162 @@ describe("expectedRoleFor — a directory role's family supertypes", () => {
     });
   });
 });
+
+/**
+ * Wrong roles live on taxdome (bd tea-rags-mcp-49fsr): `Finish`, `BatchCreateAsync`,
+ * `ActivateOnLogin`, `KbaAttemptCreate` (services — `include KindOfService`),
+ * `ClientPortalSettingsUpdated` (an event), the namespace `module Communication`,
+ * a TS `OverviewBlockType` and `ProposalPackage`.
+ */
+describe("deriveTypeRoles — what is not a role", () => {
+  function k(
+    shortName: string,
+    relPath: string,
+    symbolKind: TypeNameRow["symbolKind"],
+    ancestors: string[] = [],
+  ): TypeNameRow {
+    return { symbolId: shortName, relPath, shortName, symbolKind, ancestors };
+  }
+  const rolesOf = (rows: TypeNameRow[], role: string) => deriveTypeRoles(rows).filter((r) => r.role === role);
+
+  describe("a module is a file's primary only when it names the file", () => {
+    it("a file declaring only `module Communication` has no primary", () => {
+      expect(primaryPerFile([k("Communication", "app/services/communication/request.rb", "module")])).toEqual([]);
+    });
+
+    // Live on the self-index: a TS `export const rubyCommentCaptureHook = { … }` object is a
+    // `module` row, and the chunking directories' `hook` role rests on them.
+    it("a module named for its file is the primary: comment-capture.ts → rubyCommentCaptureHook", () => {
+      const file = "src/core/domains/language/ruby/chunking/comment-capture.ts";
+      expect(primaryPerFile([k("rubyCommentCaptureHook", file, "module")]).map((row) => row.shortName)).toEqual([
+        "rubyCommentCaptureHook",
+      ]);
+    });
+
+    it("the namespace wrapping a file's class is not its primary: cursor.rb → Cursor", () => {
+      const file = "app/lib/communication/cursor_paginated/cursor.rb";
+      const rows = [
+        k("Communication", file, "module"),
+        k("CursorPaginated", file, "module"),
+        k("Cursor", file, "class"),
+      ];
+      expect(primaryPerFile(rows).map((row) => row.shortName)).toEqual(["Cursor"]);
+    });
+
+    it("the namespace module wrapping each contract file is no `communication` suffix", () => {
+      const rows = [
+        ...["a", "b", "c", "d"].map((d) => k("Communication", `app/services/communication/${d}/request.rb`, "module")),
+        k("CommonCommunication", "app/javascript/crm/useCommunications.ts", "type_alias"),
+      ];
+      expect(rolesOf(rows, "communication")).toEqual([]);
+    });
+  });
+
+  describe("a head restating the declaration kind is no role", () => {
+    it("`*Type` type aliases carry no `type` role", () => {
+      const rows = ["Overview", "Action", "Account"].map((q, i) =>
+        k(`${q}Type`, `src/m${i}/${q.toLowerCase()}-type.ts`, "type_alias"),
+      );
+      expect(rolesOf(rows, "type")).toEqual([]);
+    });
+
+    it("`*Type` classes (a GraphQL object type) keep the `type` role", () => {
+      const rows = ["User", "Invoice", "Account"].map((q, i) =>
+        k(`${q}Type`, `app/graphql/m${i}/${q.toLowerCase()}_type.rb`, "class"),
+      );
+      expect(rolesOf(rows, "type").map((r) => r.evidence)).toEqual(["projectSuffix", "projectSuffix", "projectSuffix"]);
+    });
+  });
+
+  describe("an inheritance family's role is its majority head", () => {
+    it("`create` on 2 of 5 KindOfService members is no family role", () => {
+      const rows = ["KbaAttemptCreate", "TagCreate", "TagDestroy", "BillUpdate", "ClientList"].map((name, i) =>
+        k(name, `app/services/s${i}/${name.toLowerCase()}.rb`, "class", ["KindOfService"]),
+      );
+      expect(deriveTypeRoles(rows).filter((r) => r.evidence === "inheritance")).toEqual([]);
+    });
+
+    it("a family split half and half has no role", () => {
+      const rows = [
+        k("AStore", "src/a/a.ts", "class", ["Base"]),
+        k("BStore", "src/b/b.ts", "class", ["Base"]),
+        k("ACache", "src/c/c.ts", "class", ["Base"]),
+        k("BCache", "src/d/d.ts", "class", ["Base"]),
+      ];
+      expect(deriveTypeRoles(rows).filter((r) => r.evidence === "inheritance")).toEqual([]);
+    });
+  });
+
+  describe("a head that varies within an inheritance family is that family's slot, not a role", () => {
+    const SERVICES = ["TagCreate", "TagDestroy", "BillUpdate", "ClientList", "JobClone"].map((name, i) =>
+      k(name, `app/services/x${i}/${name.toLowerCase()}.rb`, "class", ["KindOfService"]),
+    );
+
+    it("`*Async` services in three directories are no `async` project suffix", () => {
+      const asyncs = ["BatchCreateAsync", "UpdateAsync", "StartAsync"].map((name, i) =>
+        k(name, `app/services/a${i}/${name.toLowerCase()}.rb`, "class", ["KindOfService"]),
+      );
+      expect(rolesOf([...SERVICES, ...asyncs], "async")).toEqual([]);
+    });
+
+    it("`*Updated` events filling a directory are no `updated` directory role", () => {
+      const dir = "app/lib/activity/events/firm_settings";
+      const events = [
+        ...["Branding", "ClientPortalSettings", "AboutUs"].map((q) =>
+          k(`${q}Updated`, `${dir}/${q.toLowerCase()}_updated.rb`, "class", ["Events::BaseEvent"]),
+        ),
+        ...["InvoiceCreated", "PaymentDeleted", "OrganizerSent", "ProposalViewed"].map((name, i) =>
+          k(name, `app/lib/activity/events/e${i}/${name.toLowerCase()}.rb`, "class", ["Events::BaseEvent"]),
+        ),
+      ];
+      expect(rolesOf(events, "updated")).toEqual([]);
+    });
+
+    it("a head that IS its family's role keeps its directory and suffix evidence", () => {
+      const strategies = ["Ts", "Py", "Ruby"].map((q, i) =>
+        k(`${q}Strategy`, `src/s${i}/${q.toLowerCase()}-strategy.ts`, "class", ["SymbolResolutionStrategy"]),
+      );
+      expect(new Set(rolesOf(strategies, "strategy").map((r) => r.evidence))).toEqual(
+        new Set(["inheritance", "projectSuffix"]),
+      );
+    });
+
+    it("a mixin family with no role does not veto a head another majority family names", () => {
+      const forms = ["Create", "Update", "Index"].map((q, i) =>
+        k(`${q}Form`, `app/forms/f${i}/${q.toLowerCase()}_form.rb`, "class", ["BaseForm", "Model"]),
+      );
+      const models = ["UserParams", "TagArgs", "JobArgs", "BillParams"].map((name, i) =>
+        k(name, `app/lib/m${i}/${name.toLowerCase()}.rb`, "class", ["Model"]),
+      );
+      expect(rolesOf([...forms, ...models], "form").some((r) => r.evidence === "projectSuffix")).toBe(true);
+    });
+  });
+
+  describe("a project suffix counts distinct names that qualify the head", () => {
+    it("bare `Finish` ×4 plus one `ContactImportFinish` is no `finish` suffix", () => {
+      const rows = [
+        ...["a", "b", "c", "d"].map((d) => k("Finish", `app/services/${d}/finish.rb`, "class")),
+        k("ContactImportFinish", "app/services/crm/contact_import_finish.rb", "class"),
+      ];
+      expect(rolesOf(rows, "finish")).toEqual([]);
+    });
+
+    it("`Package`, `ProposalPackage` declared in two files and `SelectedPackage` are no `package` suffix", () => {
+      const rows = [
+        k("Package", "app/models/proposal/package.rb", "class"),
+        k("ProposalPackage", "app/javascript/types/ProposalPackage.ts", "type_alias"),
+        k("ProposalPackage", "app/javascript/pages/Packages/Packages.tsx", "type_alias"),
+        k("SelectedPackage", "app/javascript/hooks/useCalculateProposalPayment.ts", "type_alias"),
+      ];
+      expect(rolesOf(rows, "package")).toEqual([]);
+    });
+
+    it("once three distinct names qualify the head, a bare carrier shares the role", () => {
+      const rows = [
+        ...["Accordion", "Button", "Card"].map((q, i) => k(`${q}Props`, `src/c${i}/${q}.tsx`, "type_alias")),
+        k("Props", "src/c3/Thread.tsx", "type_alias"),
+      ];
+      expect(rolesOf(rows, "props").map((r) => r.symbolId)).toContain("Props");
+    });
+  });
+});

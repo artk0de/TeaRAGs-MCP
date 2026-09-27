@@ -158,6 +158,11 @@ export interface NamingLexiconGenericName {
  */
 export type NamingLexiconNameVerdict = {
   name: string;
+  /**
+   * A type draft judged in a language other than the answer's `language` — its
+   * path's (bd tea-rags-mcp-icuxg). Absent: judged in the answer's language.
+   */
+  language?: string;
   evidence: NamingLexiconNameEvidence;
   genericName?: NamingLexiconGenericName;
 } & NamingVerdict;
@@ -213,7 +218,14 @@ export interface NamingReviewResult {
 export interface NamingLexiconResult {
   /** The rel_path prefix actually read — after widening; `""` = the whole project. */
   scope: string;
-  /** The language whose descriptor supplied casing and non-concept types, when one was known. */
+  /**
+   * The language the answer is written in, when one was known: the request's;
+   * else the `pathPattern`'s; else the one the evidence rows of the asked types
+   * and callees come from; else the one most type drafts' paths are written in;
+   * else the project's dominant one. Its descriptor supplies the value drafts'
+   * casing and the non-concept types. A type draft is judged in its own path's
+   * language regardless, and names it (`names[].language`) when it differs.
+   */
   language?: string;
   byType: NamingLexiconTypeEntry[];
   byCallee?: NamingLexiconCalleeEntry[];

@@ -160,6 +160,73 @@ then to the first declared; no overlap at all goes to the first declared. So one
 `RerankOptions` beside `Reranker` belongs to reranker.ts's subject, not to a
 role. Inheritance evidence reads every type.
 
+**What is not a role (`49fsr`).** Live on taxdome, a role-precision sample found
+verbs, events and namespaces named as roles: `InitialSync::Finish` → `finish`,
+`BatchCreateAsync` → `async`, `ActivateOnLogin` → `login`, `KbaAttemptCreate` →
+`create` (all `include KindOfService`, which the Ruby walker records as a
+supertype), `ClientPortalSettingsUpdated` → `updated` (an event under
+`BaseEvent`), `module Communication` → `communication`, and the TS type aliases
+`OverviewBlockType` → `type` and `ProposalPackage` → `package`. Five rules
+remove them. Each comes from the project's own data or from the kind vocabulary,
+not from a word list:
+
+1. **A family's role is its majority head.** The inheritance family's plurality
+   head must be carried by ≥ 2 members and by at least half the family (the same
+   0.5 majority as the directory); a split family has none. `create` was the
+   plurality of `KindOfService`'s 2,554 members at 324 (13%), and `updated` of
+   `BaseEvent`'s 124 at 30 (24%).
+2. **A head that varies inside a family is that family's slot.** When a family
+   holds a majority (≥ 2, ≥ half) of a directory or suffix word's carriers and
+   its role is not that word, and no family holding such a majority names it,
+   the word is no role. The carriers are kin through the ancestor, and their
+   heads are what varies. On taxdome this vetoes about 230 suffix and directory
+   words, nearly all under `KindOfService` (`destroy`, `update`, `clone`,
+   `async`, `finish`) or `BaseEvent` (`created`, `deleted`, `changed`). On the
+   self-index it vetoes nothing. A mixin family with no role never vetoes a head
+   that another majority family names: a `*Form` under both `BaseForm` and
+   `ActiveModel::Model` keeps `form`.
+3. **A namespace is not a primary.** A `module` row competes for the file's
+   primary only when its name overlaps the file stem. One named for its file is
+   the file's subject (a Ruby concern, a TS `export const fooHook = {…}` object,
+   which the TS walker records as `module`). One that is not is the namespace
+   wrapping the subject. A taxdome contract `request.rb` holds
+   `module Communication` around `Request = Data.define(…)`, a constant, so the
+   file now has no primary. The same test judges a DRAFT (`59q9c`): a draft
+   whose `symbolKind` is `module` and whose name shares no word with its file's
+   stem is a namespace, so no role applies to it. It gets no MISFIT and no role
+   confirmation (neither from the directory or family role nor from a project
+   suffix). Diff mode knows every draft's kind; a `names[]` draft carries it
+   when the caller passes `symbolKind`. Live on taxdome, `module GettingPaid`
+   and `module Quickbooks` around a worker class in
+   `app/workers/getting_paid/quickbooks/` were MISFIT → `GettingPaidWorker` /
+   `QuickbooksWorker`. A module named for its file is still that file's subject
+   and is still judged by the directory role.
+4. **A head restating the declaration kind is no role.** A name whose last word
+   is one of the words of its own kind (`type_alias` → `type`, `alias`; `enum`;
+   `interface`) says nothing its declaration does not. A TS `OverviewBlockType`
+   carries no role, but a GraphQL `UserType` class still can.
+5. **A project suffix counts distinct qualified names.** The ≥ k threshold
+   counts distinct names in which a word precedes the head. A bare `Finish` is
+   the concept itself, and a `ProposalPackage` declared in two files is one
+   name, so `Package`, `ProposalPackage` ×2 and `SelectedPackage` make no
+   `package` suffix. Once a suffix holds, a bare carrier (`Props`) shares it.
+
+Measured with `t9-roles.mts` (seed 7, sample 30), read-only, on a copy of the
+taxdome codegraph DB: type coverage fell from 62.8% to 51.5%, Ruby from 74.9% to
+57.9%, TS from 52.1% to 45.8%. Precision on the hand-checked sample rose from
+25/30 to 27/30. On the self-index, coverage went from 32.3% to 31.5% (18
+assignments lost: `*Type` aliases, `Migration`'s `*Indexes`, and three suffixes
+that had rested on a bare name) and the sample stayed 30/30. The rename eval was
+unchanged: 0/17 caught, 9 flagged-other, 8 silent, control 5/40.
+
+The `Cookies` ancestor seen on `ApplicationController` is not a defect in role
+evidence. The Ruby walker records `include ActionController::Cookies` as a
+supertype, and families key on the last segment. The role it yields
+(`controller`) is right; only the scope label is a mixin. Last-segment keying
+does merge distinct ancestors that share a name (`Base` is eight classes on
+taxdome). Resolving written supertypes to declared type ids would separate them,
+but that is a per-language lookup and was left out of this change.
+
 **Directory-role membership (`tun7x`).** A directory role speaks only for the
 family it names. Its family is COHESIVE when the role's carriers in the
 directory share a supertype: the most carried supertype (last namespace segment
@@ -200,11 +267,56 @@ is the file the type will live in; `extends` its planned ancestor.
 | Verdict   | When                                                                                                                           |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | MISFIT    | the family (via `extends`) or the directory (via `path`, members only, §2) has a role the name lacks; suggestion = name + role |
-| COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`)                        |
+| COLLISION | the short name already exists as a type in another module (homonym risk, e.g. `Commit` vs `CommitInfo`), unless conventional   |
 | NEW_TERM  | no role evidence and no aligned term (section 4); carries `alternatives` when section 4 found candidates                       |
 | CONFORMS  | the name carries the role and its terms align; may carry head `alternatives` (section 4, head by meaning)                      |
 
 Casing follows the file language of `path`, as for value names.
+
+**One type namespace per draft** (`icuxg`). The draft is judged against the
+declarations of its own TYPE NAMESPACE only: the language of `path` plus every
+language whose naming capability declares the same `typeNamespace`. A language
+that declares none owns its namespace alone. This covers the COLLISION check and
+all role and term evidence: the directory and family roles, established
+modifiers, head counts, the null similarity distribution, and `evidence.n`. A
+Ruby `Result` beside a TSX `Result` is no collision, because neither file can
+import the other's type. TypeScript and JavaScript both declare `ecmascript`,
+because they do import each other's types (`allowJs`, a `.d.ts` beside its
+`.js`, a JS entry point loading TS source), so a TS `Widget` draft collides with
+a JS `Widget`. When the draft's path has no known language, every language is
+read, which was the behaviour before this rule.
+
+The answer's top-level `language` is the language the answer is written in. It
+is the request's; else the `pathPattern`'s; else the language of the evidence
+rows for the asked types and callees; else the language most type drafts' paths
+are written in; else the project's dominant language. A type draft judged in any
+other language names its own language in `names[].language`. Diff mode already
+answers once per language, so each name is judged in its own language and the
+field never reaches `review.findings`.
+
+**A conventional short name is no collision** (`icuxg`). COLLISION exists to
+catch a new homonym of a RARE name. A short name the project declares in many
+modules is its convention: per-namespace `Result` objects, qualified at use. The
+bar is the project-suffix role's own criterion, so one rule decides "the project
+writes this" (`meetsProjectConventionSpread`). The short name must be declared
+as a type in at least `projectSuffixMinTypes` files (3) across at least
+`projectSuffixMinDirs` directories (2). Only declarations in the draft's type
+namespace count, and the draft's own file and ambient `.d.ts` files are
+excluded. Above the bar there is no COLLISION, and the draft goes on to the role
+and term stages. A name below the bar still collides: one or two existing
+declarations, or several in one directory, are a real homonym.
+
+Measured on taxdome with the vi0wx N2 request (20 Ruby type drafts). The
+answer's `language` went from `typescript` to `ruby`. The `Result` draft at
+`app/services/getting_paid/payments/result.rb` had collided with the TSX
+`Result` in `ImportSidebar.tsx` (`n: 271`, counted across languages). Namespace
+scoping alone made it collide with the Ruby `AbstractPolicy::Result` (`n: 260`).
+Taxdome declares 260 Ruby `Result` types, so it is a convention, and the draft
+now CONFORMS with a head alternative `summary` (0.632). 18 verdicts are
+unchanged. `ClientDataManager` stays CONFORMS but carries a head alternative
+(`methods`, 0.68) it lacked before namespace scoping: the null similarity
+distribution is measured over Ruby heads only, so its floor moved. On tea-rags
+the rename eval and the t9 alignment set are unchanged.
 
 Every verdict judges VOCABULARY. CONFORMS means consistent with the project's
 vocabulary: its words, roles and spellings. It says nothing about whether the
@@ -280,7 +392,14 @@ suffix rule even confirms the draft (`backend` is a suffix here). So:
    the draft's language, read from the same label map `get_index_metrics`
    publishes and the reranker labels by (self-index: 2). `Reranker` is one
    central type, while `site`-style noise is many weak carriers. It needs the
-   request's `path`; without it no head is established by usage.
+   request's `path`; without it no head is established by usage. Every index
+   read of one request (the concept searches, this metrics read) addresses the
+   collection resolved once for the request, in the resolver's priority
+   collection > project > path (`2kplu`). Before that, a `{collection, path}`
+   request, which is how a worktree is validated against its project's index,
+   read the metrics of the collection the path hashes to. That collection did
+   not exist, so the notice "type-name alignment skipped" turned alignment off
+   for the whole request.
 2. The draft's directory words are candidates too, at the slot of the draft word
    they are compared with, head or qualifier (`IndexStalenessChecker` in
    `maintenance/freshness/` → `freshness` for `staleness`). A pair sharing a
@@ -456,6 +575,18 @@ for that type is NEW_TERM, with the type's top names as context (for
 `x: SymbolDefinition`: `defs`, `candidates`, `fallback`). Before this spec it
 was CONFORMS, because the shape share of FREE passed the 0.2 bar. A known free
 name stays CONFORMS.
+
+The same holds for the rows of the call a draft is bound to (bd
+tea-rags-mcp-hn2vt). `thing = registry.findByName(n)` against the project's
+`entry = registry.findByName(…)` rows is NEW_TERM with `entry` as context, not
+CONFORMS: a FREE share licenses the roles the project already gives that call's
+value, not any word. The comparison is by words in either number, so `row`
+against `rows` is known. A draft bound to a call with no rows at all, and with
+no type the project holds, still has nothing to compare with and stays `novel`
+(`thing = mysteryCall()`, `other = client.quickbooks_customer` on taxdome).
+Reporting those would need a judgement of the name itself. The ontology's
+`genericName` is that judgement, and it needs the name's own history across
+types.
 
 ## 6. Diff mode (`fdef2`)
 

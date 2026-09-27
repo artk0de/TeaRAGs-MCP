@@ -284,7 +284,12 @@ export class ExploreOps {
     return codegraphWarning ? { ...response, codegraphWarning } : response;
   }
 
-  async getIndexMetrics(path: string): Promise<IndexMetrics> {
+  /**
+   * `collection` is an already-resolved index a caller addressed explicitly
+   * (bd tea-rags-mcp-2kplu): it wins over the path, as it does in every
+   * resolver — a worktree path hashes to a collection that does not exist.
+   */
+  async getIndexMetrics(path: string, collection?: string): Promise<IndexMetrics> {
     if (!this.indexMetricsQuery) throw new NotIndexedError(path);
     // Same rule the search legs above resolve by, handed the SAME spelling:
     // a project that moved keeps the collection its registry entry recorded, so
@@ -297,7 +302,7 @@ export class ExploreOps {
     // caller that pre-canonicalizes turns that miss into a hash, and the same
     // project then answers with one collection through a search and another
     // through this call.
-    const { collectionName } = resolveCollection(this.collectionRegistry, { path });
+    const { collectionName } = resolveCollection(this.collectionRegistry, { collection, path });
     await this.ensureStats(collectionName);
     return this.indexMetricsQuery.run(collectionName, path, this.enrichmentHealthFrameForPath?.(path) ?? []);
   }
