@@ -112,6 +112,11 @@ export type { ConfigErrorCode } from "../../infra/errors.js";
 // from a failed run (bd tea-rags-mcp-62pgi).
 export { IndexingAlreadyInProgressError } from "../../domains/ingest/errors.js";
 
+// ── Error classes — Qdrant adapter (adapters/qdrant/errors.ts) ────────
+// `tea-rags qdrant recover` renders an optimizer error that survived the
+// recreation (bd tea-rags-mcp-ye5o).
+export { QdrantOptimizerErrorPersistsError } from "../../adapters/qdrant/errors.js";
+
 // ── Project registry — runtime + types (domains/maintenance/registry) ──
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
@@ -220,6 +225,15 @@ export { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
 // commands and uses the registry-backed query helpers for list/info, all via
 // `api/public` so cli stays out of api/internal and domains/maintenance.
 export { WorktreeOps, toWorktreeInfo, listWorktreeInfos, worktreeInfoForPath } from "../internal/ops/worktree-ops.js";
+// ── Qdrant optimizer recovery (cli/qdrant recover; status surfaces print the command) ──
+// CLI-only write path (bd tea-rags-mcp-ye5o): `get_index_status` and `prime`
+// only REPORT a failed optimizer, rendering the command from the same module.
+export {
+  OptimizerRecoveryOps,
+  isOptimizerFailure,
+  renderOptimizerRecoveryCommand,
+} from "../internal/ops/optimizer-recovery-ops.js";
+export type { OptimizerRecoveryOutcome, OptimizerRecoveryTarget } from "../internal/ops/optimizer-recovery-ops.js";
 // The one wording of a first index's worktree seed outcome — CLI status block
 // and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
 export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/worktree-seed-report.js";

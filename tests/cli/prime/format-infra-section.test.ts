@@ -200,3 +200,37 @@ describe("formatPrime — Infra section (both-endpoints-down hint)", () => {
     expect(out).not.toContain("get_index_status");
   });
 });
+
+// bd tea-rags-mcp-ye5o — prime only REPORTS a failed optimizer; the recovery
+// is the explicit `tea-rags qdrant recover` command, printed ready to run.
+describe("formatPrime — Infra section (optimizer failure remedy)", () => {
+  const embedding = { available: true, provider: "onnx" };
+
+  function primeWithQdrant(
+    qdrant: NonNullable<PrimeData["status"]["infraHealth"]>["qdrant"],
+    projectName: string | null,
+  ): PrimeData {
+    return { ...primeWith(embedding), projectName, status: { ...baseStatus, infraHealth: { qdrant, embedding } } };
+  }
+
+  it("prints the recover command under the qdrant line when the optimizer reports an error", () => {
+    const out = formatPrime(
+      primeWithQdrant({ ...baseQdrant, status: "red", optimizerStatus: "error: segment optimization failed" }, "demo"),
+      at,
+    );
+    expect(out).toContain("(optimizer error: segment optimization failed)");
+    expect(out).toContain("Run: tea-rags qdrant recover --project demo");
+  });
+
+  it("addresses the project by path when it has no alias", () => {
+    const out = formatPrime(primeWithQdrant({ ...baseQdrant, optimizerStatus: "error: boom" }, null), at);
+    expect(out).toContain("Run: tea-rags qdrant recover --path /repo");
+  });
+
+  it("prints no recover command for a healthy or unknown optimizer", () => {
+    expect(formatPrime(primeWithQdrant(baseQdrant, "demo"), at)).not.toContain("qdrant recover");
+    expect(formatPrime(primeWithQdrant({ ...baseQdrant, optimizerStatus: "unknown" }, "demo"), at)).not.toContain(
+      "qdrant recover",
+    );
+  });
+});

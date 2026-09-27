@@ -58,6 +58,15 @@ FIRST debug step when:
 - Indexing run finished but searches return empty/stale results
 - Trajectory's enrichment looks incomplete
 
+**Failed optimizer.** Optimizer reads `error: <message>` → the Infra block (and
+the prime `## Infra` section) carries a ready
+`Run: tea-rags qdrant recover --project <alias>` line. The command re-applies
+the collection's CURRENT optimizer config (no value changes; Qdrant 1.18
+recreates the optimizer and clears the error) and verifies the error is gone —
+no daemon restart, no reindex. It writes to Qdrant, so relay it to the user
+rather than running it unasked. Still failing afterwards → the error persists
+with a live cause (disk, memory, segment); check the Qdrant log.
+
 Pair with "Embedding Unavailable" rule in `search-cascade.md`: if
 `embedding.reachable === false`, ask user to start embedding backend via
 `AskUserQuestion` before downgrading search strategy.

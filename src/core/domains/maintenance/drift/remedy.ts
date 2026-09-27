@@ -129,7 +129,7 @@ export function renderRechunkFlags(selector: RechunkFileSelector): string {
 }
 
 /** Single-quote anything a shell would expand or split; plain words stay bare. */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return /^[\w./,:@-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 

@@ -4,7 +4,13 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, IndexStatus } from "../../../core/api/public/index.js";
+import {
+  isOptimizerFailure,
+  renderOptimizerRecoveryCommand,
+  type App,
+  type IndexStatus,
+  type OptimizerRecoveryTarget,
+} from "../../../core/api/public/index.js";
 import { formatMcpText } from "../../format.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import * as schemas from "../schemas.js";
@@ -31,10 +37,13 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       // thrown as typed errors by QdrantManager and handled by the MCP error
       // middleware — we don't mask them here by returning a text response.
       const status = await app.getIndexStatus(path);
+      // Addresses the recover command a failed optimizer prints: the alias the
+      // caller named, else the path.
+      const recoveryTarget: OptimizerRecoveryTarget = project ? { project } : { path };
 
       if (status.status === "not_indexed") {
         let text = `Codebase at "${path}" is not indexed. Use index_codebase to index it first.`;
-        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
+        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth, recoveryTarget)}`;
         return formatMcpText(text);
       }
 
@@ -42,7 +51,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
         let text =
           `Codebase at "${path}" has a stale indexing marker (started but never completed — likely crashed). ` +
           `Use index_codebase to re-index. The stale collection will be cleaned up automatically.`;
-        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
+        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth, recoveryTarget)}`;
         return formatMcpText(text);
       }
 
@@ -53,7 +62,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
             text += `\n${provider} enrichment: file=${health.file.status}, chunk=${health.chunk.status}`;
           }
         }
-        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
+        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth, recoveryTarget)}`;
         return formatMcpText(text);
       }
 
@@ -77,7 +86,7 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       const details = formatCollectionDetails(infraHealth?.qdrant);
       if (details) text += `\n\n${details}`;
 
-      if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
+      if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth, recoveryTarget)}`;
 
       // One report over every axis the build can see, under one heading
       // (bd tea-rags-mcp-p0phi). Appended only when something moved, so the
@@ -144,21 +153,33 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-export function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
+/**
+ * `target` addresses the recover command printed for a failed optimizer
+ * (bd tea-rags-mcp-ye5o): status only REPORTS it — the recovery is the
+ * explicit `tea-rags qdrant recover`, never run from this read path.
+ */
+export function formatInfraHealth(
+  h: NonNullable<IndexStatus["infraHealth"]>,
+  target: OptimizerRecoveryTarget = {},
+): string {
   const qdrantStatus = h.qdrant.available ? "available" : "unavailable";
   const versionSuffix = h.qdrant.version ? ` · v${h.qdrant.version}` : "";
+  // A failed optimizer is shown whatever the collection status reads: it is the
+  // one state an operator must act on, and the command below is its remedy.
+  const optimizerFailed = isOptimizerFailure(h.qdrant.optimizerStatus);
   const collectionHealth =
-    h.qdrant.status && h.qdrant.status !== "green"
-      ? ` [collection status: ${h.qdrant.status}${
+    (h.qdrant.status && h.qdrant.status !== "green") || optimizerFailed
+      ? ` [collection status: ${h.qdrant.status ?? "unknown"}${
           h.qdrant.optimizerStatus && h.qdrant.optimizerStatus !== "ok"
             ? `, optimizer: ${h.qdrant.optimizerStatus}`
             : ""
         }]`
       : "";
+  const remedy = optimizerFailed ? `  ${renderOptimizerRecoveryCommand(target)}\n` : "";
   return (
     `Infrastructure:\n` +
     `  Qdrant: ${qdrantStatus}${versionSuffix} (${h.qdrant.url})${collectionHealth}\n` +
-    `  Embedding (${h.embedding.provider}): ${formatEmbeddingEndpoints(h.embedding)}`
+    `${remedy}  Embedding (${h.embedding.provider}): ${formatEmbeddingEndpoints(h.embedding)}`
   );
 }
 
