@@ -15,7 +15,12 @@ import { z } from "zod";
 import { connectInProcessClient, type InProcessToolSession } from "../../../src/bootstrap/transport/in-memory.js";
 import { CLI_OWNED_TOOLS } from "../../../src/cli/call/cli-owned-tools.js";
 import { resolveParamsArg, runCall, type CallArgs, type CallDeps } from "../../../src/cli/commands/call.js";
-import { InvalidParameterError, type App, type SchemaBuilder } from "../../../src/core/api/public/index.js";
+import {
+  InvalidParameterError,
+  MissingArgumentError,
+  type App,
+  type SchemaBuilder,
+} from "../../../src/core/api/public/index.js";
 import { createRegisterTool } from "../../../src/mcp/middleware/error-handler.js";
 import { registerCodegraphTools } from "../../../src/mcp/tools/codegraph.js";
 import { registerCollectionTools } from "../../../src/mcp/tools/collection.js";
@@ -220,6 +225,33 @@ describe("runCall — results and exit codes", () => {
     expect(code).toBe(1);
     expect(h.stderr.join("\n")).toContain('Invalid parameter "name": no such collection');
     expect(h.stdout).toEqual([]);
+  });
+
+  // bd tea-rags-mcp-xj38o: a graph tool called without its target printed a
+  // full stack trace ahead of the typed message.
+  it("a caller error prints the typed code, message and hint — no stack trace", async () => {
+    const app = makeApp(
+      { getCallers: vi.fn().mockRejectedValue(new MissingArgumentError(["symbolId or relativePath"])) },
+      true,
+    );
+    const h = harness(app);
+    const logged: unknown[][] = [];
+    const errSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args);
+    });
+
+    try {
+      const code = await call(h, { tool: "get_callers", params: '{"project":"demo","symbol":"x"}' });
+
+      expect(code).toBe(1);
+      const answer = h.stderr.join("\n");
+      expect(answer).toContain("[INPUT_MISSING_ARGUMENT] Missing required arguments: symbolId or relativePath");
+      expect(answer).toContain("Hint:");
+      const log = logged.map((args) => args.map((a) => (a instanceof Error ? (a.stack ?? "") : String(a))).join(" "));
+      expect(log.join("\n")).not.toMatch(/\n\s+at /);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("zod input validation failure → exit 1 with the SDK validation message", async () => {

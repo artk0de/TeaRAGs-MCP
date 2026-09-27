@@ -70,11 +70,28 @@ async function enrichWithHealthContext(error: TeaRagsError, probes: HealthProbes
 }
 
 /**
+ * Log a tool failure to stderr. A caller error — a typed error below 500
+ * (missing / invalid argument, unknown project) — is one line, code and
+ * message: the answer already carries the hint, and a stack trace there only
+ * buries it (bd tea-rags-mcp-xj38o — `tea-rags call` routes this log to the
+ * same stderr as the answer). A server-side typed error or an unknown throw
+ * keeps its full detail: that stack is what diagnoses it.
+ */
+function logToolError(e: unknown): void {
+  if (e instanceof TeaRagsError && e.httpStatus < 500) {
+    console.error(`[MCP] Tool error: [${e.code}] ${e.message}`);
+    return;
+  }
+  console.error("[MCP] Tool error:", e);
+}
+
+/**
  * Wraps an MCP tool handler with standardized error handling.
  *
  * - TeaRagsError instances are formatted via `toUserMessage()`.
  * - Unknown errors are wrapped in `UnknownError` first.
- * - All errors are logged to stderr before formatting.
+ * - All errors are logged to stderr before formatting — caller errors as one
+ *   line, everything else with its full detail (`logToolError`).
  * - When healthProbes provided, infra errors include cross-service health context.
  */
 export function errorHandlerMiddleware<T>(
@@ -85,7 +102,7 @@ export function errorHandlerMiddleware<T>(
     try {
       return await handler(args, extra);
     } catch (e) {
-      console.error("[MCP] Tool error:", e);
+      logToolError(e);
 
       if (e instanceof TeaRagsError) {
         const text = healthProbes ? await enrichWithHealthContext(e, healthProbes) : e.toUserMessage();
