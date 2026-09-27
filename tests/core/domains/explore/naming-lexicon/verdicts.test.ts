@@ -449,8 +449,10 @@ describe("judgeDraftName — byCallee rows", () => {
           },
         ],
       }),
-      // bd tea-rags-mcp-xsxkr: with those rows ignored nothing compares the draft — novel, not CONFORMS.
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+      // bd tea-rags-mcp-xsxkr: with those rows ignored nothing compares the draft — not CONFORMS.
+      // bd tea-rags-mcp-bjfa0: a bare verb on a constant receiver offers the receiver's words
+      // (its head dropped, then whole) instead of an empty NEW_TERM; neither row's name is offered.
+    ).toEqual({ verdict: "NEW_TERM", topTerms: ["tax_automation", "tax_automation_document"] });
   });
 
   it("untyped callee rows that name by role accept a role name", () => {
@@ -501,7 +503,8 @@ describe("judgeDraftName — byCallee rows", () => {
           { member: "findByName", receiver: "registry", kind: "local", name: "found", n: 1, exampleOwner: OWNER },
         ],
       }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: ["entry", "found"] });
+      // bd tea-rags-mcp-bjfa0: `found`, one owner's name, is that owner's context — not vocabulary to offer.
+    ).toEqual({ verdict: "NEW_TERM", topTerms: ["entry"] });
   });
 
   it("a FREE draft a callee row already uses conforms, compared by words in either number", () => {

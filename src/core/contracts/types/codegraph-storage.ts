@@ -210,6 +210,12 @@ export interface IdentifierTypeAggregateQuery extends IdentifierTypeScopeQuery, 
    * Without the flag no row carries it.
    */
   countSameTypeSiblings?: boolean;
+  /**
+   * Report per row `holders`: the group's distinct owner symbols (bd
+   * tea-rags-mcp-bjfa0) — three locals of one method are one holder. Without
+   * the flag no row carries it.
+   */
+  countHolders?: boolean;
 }
 
 /**
@@ -228,6 +234,12 @@ export interface IdentifierLanguageGroupedRow {
 export interface IdentifierCalleeScopeQuery extends IdentifierLanguageGroupingQuery, IdentifierEvidenceExclusion {
   callees: readonly IdentifierBoundCallee[];
   pathPrefixes?: readonly string[];
+  /**
+   * Report per row `holders`: the group's distinct owner symbols (bd
+   * tea-rags-mcp-bjfa0) — three locals of one method are one holder. Without
+   * the flag no row carries it.
+   */
+  countHolders?: boolean;
 }
 
 /**
@@ -246,6 +258,8 @@ export interface IdentifierTypeAggregateRow extends IdentifierLanguageGroupedRow
   exampleOwner: SymbolId;
   /** Of `n`, the rows beside a second binding of the type — a `countSameTypeSiblings` read, non-`return` rows only. */
   sameTypeSiblingN?: number;
+  /** The group's distinct owner symbols — a `countHolders` read only. */
+  holders?: number;
 }
 
 /**
@@ -262,6 +276,8 @@ export interface IdentifierCalleeAggregateRow extends IdentifierLanguageGroupedR
   n: number;
   exampleOwner: SymbolId;
   typeName?: string;
+  /** The group's distinct owner symbols — a `countHolders` read only. */
+  holders?: number;
 }
 
 /** A typed `param` / `return` row of an anchor symbol. */
@@ -286,6 +302,8 @@ export interface IdentifierScopeQuery extends IdentifierEvidenceExclusion {
 /** Names asked for by `GraphDbClient.aggregateIdentifiersByName`, scoped like {@link IdentifierScopeQuery}. */
 export interface IdentifierNameScopeQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
   names: readonly string[];
+  /** Report per row `holders`, the group's distinct owner symbols (bd tea-rags-mcp-bjfa0). */
+  countHolders?: boolean;
 }
 
 /**
@@ -301,6 +319,8 @@ export interface IdentifierNameKindTypeRow extends IdentifierLanguageGroupedRow 
   typeMultiplicity?: IdentifierTypeMultiplicity;
   n: number;
   exampleOwner: SymbolId;
+  /** The group's distinct owner symbols — a `countHolders` read only. */
+  holders?: number;
 }
 
 /**

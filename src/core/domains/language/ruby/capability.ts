@@ -70,6 +70,9 @@ export const capability: LanguageCapability = {
   // member census on `cg_type_declarations` (migration 040) — `def`s are
   // methods, `attr_*` names and `Struct.new` / `Data.define` symbols fields; the
   // resolver's `cg_symbols` rows are unchanged.
+  // Same walker 5, bd tea-rags-mcp-bjfa0: a constant reached through a value
+  // (`adapter::Client.new`) types no return, local or binding; the RTA
+  // instantiation set keeps its lexical reading, so persisted edges do not move.
   // chunking 2: bd tea-rags-mcp-j4jrn — the class-body grouper sizes groups to
   // the cap less the reserved header prefix, so a group that the header used to
   // push over the cap is no longer line-cut into `#partN` windows; the cut

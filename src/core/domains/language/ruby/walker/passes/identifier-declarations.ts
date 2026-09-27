@@ -19,6 +19,7 @@ import {
   type IdentifierDeclarationSyntax,
   type IdentifierSyntacticType,
 } from "../../../kernel/index.js";
+import { typeConstantName } from "../ast-utils.js";
 import { rubyCallShape } from "../call-collection.js";
 
 /** Parameter forms whose declared name is the `name` field; a bare `identifier` is its own name. */
@@ -59,13 +60,15 @@ const assignmentRule: IdentifierDeclarationRule = {
   },
 };
 
-/** `X.new` / `Foo::Bar.new` → the receiver as written; anything else is not a constructor. */
+/**
+ * `X.new` / `Foo::Bar.new` → the receiver as written; anything else is not a
+ * constructor. A value-scoped constant (`adapter::Client.new`) names no type
+ * the walk knows ({@link typeConstantName}, bd tea-rags-mcp-bjfa0).
+ */
 function rubyConstructorType(value: AstNode): IdentifierSyntacticType | undefined {
   if (value.type !== "call" || value.childForFieldName("method")?.text !== "new") return undefined;
   const receiver = value.childForFieldName("receiver");
-  return receiver?.type === "constant" || receiver?.type === "scope_resolution"
-    ? { typeName: receiver.text }
-    : undefined;
+  return receiver && typeConstantName(receiver) !== null ? { typeName: receiver.text } : undefined;
 }
 
 export const RUBY_IDENTIFIER_DECLARATION_SYNTAX: IdentifierDeclarationSyntax = {

@@ -169,6 +169,7 @@ describe("judgeDraftName — a value MISFIT needs a convention, not one row", ()
     ).toEqual({ verdict: "CONFORMS" });
   });
 
+  // bd tea-rags-mcp-bjfa0: still no rename, but one owner's name is context, not a term to offer — topTerms [].
   it("any other draft against one row is not demanded a rename: NEW_TERM with the row as context", () => {
     expect(
       judgeDraftName({
@@ -180,7 +181,7 @@ describe("judgeDraftName — a value MISFIT needs a convention, not one row", ()
           { member: "find_tax_automation_document!", kind: "local", name: "row", n: 1, exampleOwner: "A#m" },
         ],
       }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: ["row"] });
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
   });
 
   it("one return row is too thin to name the type's noun", () => {

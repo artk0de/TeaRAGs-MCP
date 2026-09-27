@@ -68,12 +68,18 @@ export function spellsTypeName(shape: NamingShape): boolean {
   return shape === "EXACT" || shape === "QUALIFIED" || shape === "TAIL";
 }
 
-/** Verb words that prefix a finder / factory name: `find_x`, `getX`, `build_x`. */
+/**
+ * The closed class of accessor / factory verbs — words that say how a value is
+ * obtained, never what it is: `find_x`, `getX`, `build_x`, `read_x`. A leading
+ * one belongs to the method (a return name's noun follows it) or to the call
+ * (a callee member of one bare verb derives no name).
+ */
 export const NAMING_VERB_PREFIXES: readonly string[] = [
   "find",
   "get",
   "fetch",
   "load",
+  "read",
   "build",
   "create",
   "new",
@@ -242,6 +248,13 @@ export interface NamingShapeRow {
    * Absent → unknown, and the row is classified lexically.
    */
   sameTypeSiblingN?: number;
+  /**
+   * The distinct owners behind `n` (bd tea-rags-mcp-bjfa0) — a convention is
+   * held by several symbols, not by several rows of one. Rows merged across
+   * store groups keep the largest group's count, a lower bound. Absent →
+   * unknown, and `n` stands in.
+   */
+  holders?: number;
 }
 
 /**
@@ -252,6 +265,16 @@ export interface NamingShapeRow {
 export function mergedSameTypeSiblingN(a: NamingShapeRow, b: NamingShapeRow): number | undefined {
   if (a.sameTypeSiblingN === undefined && b.sameTypeSiblingN === undefined) return undefined;
   return (a.sameTypeSiblingN ?? a.n) + (b.sameTypeSiblingN ?? b.n);
+}
+
+/**
+ * The distinct owners of two rows of one name folded into one: the larger
+ * count, since the same owner may stand behind both — a lower bound. A row
+ * that did not count them contributes its `n`. Undefined when neither did.
+ */
+export function mergedHolders(a: NamingShapeRow, b: NamingShapeRow): number | undefined {
+  if (a.holders === undefined && b.holders === undefined) return undefined;
+  return Math.max(a.holders ?? a.n, b.holders ?? b.n);
 }
 
 /** What a row set shares: its kind and casing, and optionally a type or callee. */

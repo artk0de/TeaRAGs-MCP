@@ -101,6 +101,7 @@ import {
   judgeDraftName,
   judgeGenericNames,
   judgeTypeDraft,
+  mergedHolders,
   mergedSameTypeSiblingN,
   MIN_NULL_SAMPLE_HEADS,
   nullHeadSample,
@@ -149,6 +150,7 @@ import type {
   NamingLexiconTypeEntry,
   NamingLexiconTypeNameHead,
   NamingReviewFinding,
+  NamingReviewNote,
   NamingReviewNotJudgedEntry,
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
@@ -359,10 +361,17 @@ type IdentifierReader = Pick<
   | "readOntologyReportSummary"
   | "readTypeNameRows"
   | "getFanIn"
+  | "getSupertypes"
+  | "getSymbolVisibilities"
 >;
 
-/** A value draft: `kind` absent or a declaration kind. */
-type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDeclarationKind };
+/**
+ * A value draft: `kind` absent or a declaration kind. `owner` is internal (bd
+ * tea-rags-mcp-bjfa0): the type a `return` draft is declared in — diff mode's
+ * enclosing class, names mode's class at `path` — whose ancestry may already
+ * declare the method it names.
+ */
+type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDeclarationKind; owner?: string };
 
 function isTypeDraft(draft: NamingLexiconDraftName): boolean {
   return draft.kind === "type";
@@ -384,6 +393,8 @@ interface LexiconTypeRow {
   casing?: IdentifierCasing;
   /** Of `n`, the rows beside a second binding of the type (a store row; a `name-inferred` row has none). */
   sameTypeSiblingN?: number;
+  /** The distinct owners behind `n` (a store row; a `name-inferred` row has none). */
+  holders?: number;
 }
 
 /** One byCallee row with the casing it is classified in. */
@@ -549,14 +560,26 @@ export class NamingLexiconOps {
     }
 
     const findings: NamingReviewFinding[] = [];
+    const notes: NamingReviewNote[] = [];
     let conforming = 0;
     let novel = 0;
     drafts.forEach((d, i) => {
       const judged = verdicts.get(slot[i].language)?.[slot[i].at];
       if (judged === undefined) return;
       const { name: _name, evidence: _evidence, language: _language, genericName, ...verdict } = judged;
-      if (genericName === undefined && verdict.verdict === "CONFORMS" && verdict.alternatives === undefined) {
+      if (verdict.verdict === "CONFORMS" && verdict.alternatives === undefined) {
         conforming++;
+        // A generic name that conforms is information, not a finding (bd tea-rags-mcp-bjfa0).
+        if (genericName !== undefined) {
+          notes.push({
+            relPath: d.relPath,
+            line: d.line,
+            name: d.draft.name,
+            kind: d.kind,
+            ...(d.type !== undefined ? { type: d.type } : {}),
+            genericName,
+          });
+        }
         return;
       }
       if (genericName === undefined && isNovelVerdict(verdict)) {
@@ -574,6 +597,7 @@ export class NamingLexiconOps {
       });
     });
     findings.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line);
+    notes.sort((a, b) => a.relPath.localeCompare(b.relPath) || a.line - b.line);
 
     return {
       review: {
@@ -585,6 +609,7 @@ export class NamingLexiconOps {
         conforming,
         novel,
         findings,
+        ...(notes.length > 0 ? { notes } : {}),
         notJudged: diff.notJudged.filter((entry) => entry.kind === "file").length,
         ...notJudgedBreakdown(diff.notJudged),
         ...(diff.skipped > 0 ? { truncated: { cap: DIFF_FILE_CAP, skipped: diff.skipped } } : {}),
@@ -624,7 +649,12 @@ export class NamingLexiconOps {
       draftCallees.length === 0
         ? []
         : (scope.calleeRows ??
-          (await graphDb.aggregateIdentifiersByCallee({ callees: draftCallees, pathPrefixes, groupByLanguage: true })));
+          (await graphDb.aggregateIdentifiersByCallee({
+            callees: draftCallees,
+            pathPrefixes,
+            groupByLanguage: true,
+            countHolders: true,
+          })));
 
     let { language } = req;
     let projectLanguages: IdentifierLanguageCountRow[] | undefined;
@@ -742,7 +772,11 @@ export class NamingLexiconOps {
     }
     const verdicts = new Map<NamingLexiconValueDraft, NamingLexiconNameVerdict>();
     for (const [path, owned] of byPath) {
-      const names = owned.map(({ path: _path, ...draft }) => draft);
+      const methods = owned.flatMap((d) => (d.kind === "return" ? [d.name] : []));
+      const owner = methods.length > 0 ? await ownerTypeAt(reader, path, methods) : undefined;
+      const names = owned.map(({ path: _path, ...draft }) =>
+        draft.kind === "return" && owner !== undefined && draft.owner === undefined ? { ...draft, owner } : draft,
+      );
       const scoped = { ...req, ...(language !== undefined ? { language } : {}), types: [], anchors: [], names };
       const answer = await this.answer(reader, scoped, { ...context, excludePaths: [...context.excludePaths, path] });
       owned.forEach((draft, i) => verdicts.set(draft, answer.names[i]));
@@ -1240,7 +1274,12 @@ async function supportAt(
   const pathPrefixes = prefix === "" ? undefined : [prefix];
   if (types.length > 0) return { prefix, support: await graphDb.countIdentifiers({ types, pathPrefixes }) };
   if (callees.length > 0) {
-    const calleeRows = await graphDb.aggregateIdentifiersByCallee({ callees, pathPrefixes, groupByLanguage: true });
+    const calleeRows = await graphDb.aggregateIdentifiersByCallee({
+      callees,
+      pathPrefixes,
+      groupByLanguage: true,
+      countHolders: true,
+    });
     return { prefix, support: sum(calleeRows), calleeRows };
   }
   return { prefix, support: sum(await graphDb.identifierLanguageCounts({ pathPrefixes })) };
@@ -1320,6 +1359,7 @@ async function readTypeRows(
       groupByLanguage: true,
       groupByMultiplicity: true,
       countSameTypeSiblings: true,
+      countHolders: true,
     })
   ).map((row: IdentifierTypeAggregateRow) => ({ ...row }));
   if (stored.length === 0) return stored;
@@ -1328,8 +1368,8 @@ async function readTypeRows(
 
 /**
  * The `name-inferred` stage: every name the type rows carry, read once in scope
- * with all its types; a name typed ≥ 3 times with one type holding ≥ 80% of
- * those rows lends that type to its untyped rows — when it is an asked type.
+ * with all its types; a name typed by ≥ 3 owners with one type holding ≥ 80% of
+ * those owners lends that type to its untyped rows — when it is an asked type.
  */
 async function nameInferredRows(
   graphDb: IdentifierReader,
@@ -1341,12 +1381,15 @@ async function nameInferredRows(
     names: unique(typeRows.map((r) => r.name)),
     pathPrefixes,
     groupByLanguage: true,
+    countHolders: true,
   });
+  // Typed evidence is counted in OWNERS (bd tea-rags-mcp-bjfa0): three `existing` locals of one method
+  // typed TaxPreparation once lent that type to every untyped `existing` in the project.
   const typedByName = new Map<string, Map<string, number>>();
   for (const row of byName) {
     if (row.typeName === null) continue;
     const perType = typedByName.get(row.name) ?? new Map<string, number>();
-    perType.set(row.typeName, (perType.get(row.typeName) ?? 0) + row.n);
+    perType.set(row.typeName, (perType.get(row.typeName) ?? 0) + (row.holders ?? row.n));
     typedByName.set(row.name, perType);
   }
   const inferred: LexiconTypeRow[] = [];
@@ -1360,6 +1403,7 @@ async function nameInferredRows(
       name: row.name,
       typeSource: "name-inferred",
       n: row.n,
+      ...(row.holders !== undefined ? { holders: row.holders } : {}),
       exampleOwner: row.exampleOwner,
       ...(row.language !== undefined ? { language: row.language } : {}),
     });
@@ -1511,9 +1555,16 @@ async function judgeDrafts(
   if (ctx.collisionHolders) {
     for (const name of draftNames) if (taken.has(name)) holders.set(name, await ctx.collisionHolders(name));
   }
+  const overridden = new Map<NamingLexiconValueDraft, string[]>();
+  for (const draft of drafts) {
+    if (draft.kind !== "return" || draft.owner === undefined) continue;
+    const declarations = await inheritedDeclarations(graphDb, draft.owner, draft.name);
+    if (declarations.length > 0) overridden.set(draft, declarations);
+  }
 
   return drafts.map((draft) => {
     const kind = draft.kind ?? "local";
+    const ancestorDeclarations = overridden.get(draft) ?? [];
     const nameRows = homonyms.filter((r) => r.name === draft.name);
     const verdict = judgeDraftName({
       name: draft.name,
@@ -1530,12 +1581,18 @@ async function judgeDrafts(
       projectShapePrior: prior.shapes,
       projectReturnVerbs: prior.returnVerbs,
       nameRows: sum(nameRows),
+      nameIsGeneric: generic.has(draft.name),
+      ...(ancestorDeclarations.length > 0 ? { overrides: ancestorDeclarations[0] } : {}),
     });
     const example =
       (verdict.verdict === "MISFIT" ? verdict.holder : undefined) ??
       [...ctx.typeRows, ...ctx.calleeRows].find((r) => r.name === draft.name)?.exampleOwner;
     const genericName = generic.get(draft.name);
-    const collided = holders.get(draft.name) ?? [];
+    // The ancestors' declarations lead: the symbols the draft actually collides with by design.
+    const collided = unique([...ancestorDeclarations, ...(holders.get(draft.name) ?? [])]).slice(
+      0,
+      MAX_COLLISION_EXAMPLES,
+    );
     return {
       name: draft.name,
       ...verdict,
@@ -1543,7 +1600,7 @@ async function judgeDrafts(
         n: sum(nameRows),
         ...(example !== undefined ? { example } : {}),
         boundTypes: new Set(nameRows.flatMap((r) => (r.typeName === null ? [] : [r.typeName]))).size,
-        collision: taken.has(draft.name),
+        collision: taken.has(draft.name) || ancestorDeclarations.length > 0,
         ...(collided.length > 0 ? { collisions: collided } : {}),
       },
       ...(genericName ? { genericName: { typeCount: genericName.typeCount, n: genericName.n } } : {}),
@@ -1568,6 +1625,7 @@ function byTypeRowsFor(
     const key = `${row.kind}\u0000${row.name}\u0000${row.casing ?? ""}`;
     const prev = merged.get(key);
     const siblings = prev ? mergedSameTypeSiblingN(prev, row) : row.sameTypeSiblingN;
+    const holders = prev ? mergedHolders(prev, row) : row.holders;
     merged.set(key, {
       kind: row.kind,
       name: row.name,
@@ -1575,6 +1633,7 @@ function byTypeRowsFor(
       exampleOwner: prev && prev.exampleOwner < row.exampleOwner ? prev.exampleOwner : row.exampleOwner,
       ...(row.casing !== undefined ? { casing: row.casing } : {}),
       ...(siblings !== undefined ? { sameTypeSiblingN: siblings } : {}),
+      ...(holders !== undefined ? { holders } : {}),
     });
   }
   return [...merged.values()];
@@ -1591,6 +1650,7 @@ function byCalleeRowsFor(callee: IdentifierBoundCallee, rows: readonly LexiconCa
       kind: r.kind,
       name: r.name,
       n: r.n,
+      ...(r.holders !== undefined ? { holders: r.holders } : {}),
       exampleOwner: r.exampleOwner,
       ...(r.typeName !== undefined ? { typeName: r.typeName } : {}),
       ...(r.casing !== undefined ? { casing: r.casing } : {}),
@@ -1876,6 +1936,7 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
   const drafts: ReviewDraft[] = [];
   for (const row of declarations.values) {
     if (!inRanges(row.line, ranges)) continue;
+    const owner = row.kind === "return" ? memberOwner(row.ownerSymbolId) : undefined;
     drafts.push({
       relPath,
       line: row.line,
@@ -1887,6 +1948,7 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
         kind: row.kind,
         ...(row.typeName !== undefined ? { type: row.typeName } : {}),
         ...(row.typeMultiplicity !== undefined ? { typeMultiplicity: row.typeMultiplicity } : {}),
+        ...(owner !== undefined ? { owner } : {}),
         ...(row.boundMember !== undefined
           ? {
               callee: {
@@ -1940,6 +2002,84 @@ function directoryOf(relPath: string): string {
   return slash < 0 ? "" : relPath.slice(0, slash);
 }
 
+// ── overrides ────────────────────────────────────────────────────────────
+
+/** How far up an owner's ancestry an override is looked for — deeper hierarchies are not project code. */
+const MAX_ANCESTOR_DEPTH = 10;
+
+/** Kind order of one class's direct ancestors, nearest first — Ruby's prepend, include, superclass. */
+const ANCESTOR_KIND_RANK: Record<string, number> = { prepend: 0, include: 1 };
+
+/** The type a member symbol is declared in: `A::B#m` / `A::B.m` → `A::B`; a top-level function → none. */
+function memberOwner(symbolId: string): string | undefined {
+  const at = Math.max(symbolId.lastIndexOf("#"), symbolId.lastIndexOf("."));
+  return at > 0 ? symbolId.slice(0, at) : undefined;
+}
+
+/**
+ * The in-project declarations of method `name` in `owner`'s ancestry (bd
+ * tea-rags-mcp-bjfa0), nearest ancestor first: breadth-first over the
+ * persisted inheritance edges, each level in its declaration order (prepends,
+ * then includes last-declared first, then the superclass), cycle-guarded and
+ * capped at {@link MAX_ANCESTOR_DEPTH}. An ancestor counts when the symbol
+ * table holds its instance or class method of that name. `owner` itself is
+ * never read — its own declaration is the draft.
+ */
+async function inheritedDeclarations(graphDb: IdentifierReader, owner: string, name: string): Promise<string[]> {
+  const seen = new Set<string>([owner]);
+  const order: string[] = [];
+  let level = [owner];
+  for (let depth = 0; depth < MAX_ANCESTOR_DEPTH && level.length > 0; depth++) {
+    const next: string[] = [];
+    for (const type of level) {
+      const edges = await graphDb.getSupertypes(type);
+      const ranked = [...edges].sort(
+        (a, b) =>
+          (ANCESTOR_KIND_RANK[a.kind] ?? 2) - (ANCESTOR_KIND_RANK[b.kind] ?? 2) ||
+          (a.kind === "include" ? (b.ordinal ?? 0) - (a.ordinal ?? 0) : (a.ordinal ?? 0) - (b.ordinal ?? 0)),
+      );
+      for (const edge of ranked) {
+        const ancestor = edge.ancestorSymbolId ?? edge.ancestorFqName;
+        if (seen.has(ancestor)) continue;
+        seen.add(ancestor);
+        next.push(ancestor);
+      }
+    }
+    order.push(...next);
+    level = next;
+  }
+  if (order.length === 0) return [];
+  const candidates = order.flatMap((type) => [`${type}#${name}`, `${type}.${name}`]);
+  const declared = new Set((await graphDb.getSymbolVisibilities(candidates)).map((row) => row.symbolId));
+  return candidates.filter((id) => declared.has(id));
+}
+
+/**
+ * The type the `return` drafts at `path` are declared in (names mode, bd
+ * tea-rags-mcp-bjfa0): of the types the file declares, the one that already
+ * holds one of the methods, else the file's only type. Several types and no
+ * method among them → unknown, and no draft is judged as an override.
+ */
+async function ownerTypeAt(
+  reader: IdentifierReader,
+  path: string,
+  methods: readonly string[],
+): Promise<string | undefined> {
+  const declared = (
+    await reader.readTypeNameRows({
+      pathPrefixes: [path],
+      kinds: ["class", "module"],
+      nonProductionPaths: { caseInsensitive: [], caseSensitive: [] },
+    })
+  ).filter((row) => row.relPath === path);
+  const types = unique(declared.map((row) => row.symbolId));
+  if (types.length === 0) return undefined;
+  const candidates = types.flatMap((type) => methods.flatMap((m) => [`${type}#${m}`, `${type}.${m}`]));
+  const held = (await reader.getSymbolVisibilities(candidates)).find((row) => row.relPath === path);
+  const holder = held === undefined ? undefined : memberOwner(held.symbolId);
+  return holder ?? (types.length === 1 ? types[0] : undefined);
+}
+
 // ── evidence scope ───────────────────────────────────────────────────────
 
 /**
@@ -1966,6 +2106,9 @@ function excludingEvidence(reader: IdentifierReader, paths: readonly string[] | 
     readTypeNameRows: async (q) => reader.readTypeNameRows({ ...q, excludePaths }),
     // A fan-in counts edges INTO an unchanged file; nothing of the diff to exclude.
     getFanIn: async (relPath) => reader.getFanIn(relPath),
+    // An override is judged against its ANCESTORS' declarations, never the changed file's own.
+    getSupertypes: async (fqName) => reader.getSupertypes(fqName),
+    getSymbolVisibilities: async (symbolIds) => reader.getSymbolVisibilities(symbolIds),
   };
 }
 

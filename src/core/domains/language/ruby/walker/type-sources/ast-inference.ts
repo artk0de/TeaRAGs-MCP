@@ -6,7 +6,7 @@ import {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
 } from "../../resolver/type-propagation.js";
-import { lexicalScopeFqName, readScopeResolution, walk } from "../ast-utils.js";
+import { lexicalScopeFqName, readScopeResolution, typeConstantName, walk } from "../ast-utils.js";
 import type { RubyExtractInput } from "../walker.js";
 import type { RubyInlineTypeSource, RubyTypeFact } from "./types.js";
 import { collectYardParamTypes, YARD_CONST } from "./yard.js";
@@ -43,15 +43,18 @@ function carriesBlock(node: AstNode): boolean {
  * relation. The terminal instance-returning verb is not a link and keeps its
  * block (`User.new do |u| … end`, see {@link constInstanceType}).
  */
-function relationRootConst(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): string | null {
-  const asConst =
-    node.type === "scope_resolution" ? readScopeResolution(node) : node.type === "constant" ? node.text : null;
+function relationRootConst(
+  node: AstNode,
+  catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE,
+  readConst: ConstantReader = typeConstantName,
+): string | null {
+  const asConst = readConst(node);
   if (asConst && YARD_CONST.test(asConst)) return asConst;
   if (node.type !== "call" && node.type !== "method_call") return null;
   const recv = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
   if (!recv || !method || !catalogue.relationReturning.has(method.text) || carriesBlock(node)) return null;
-  return relationRootConst(recv, catalogue);
+  return relationRootConst(recv, catalogue, readConst);
 }
 
 /** A call chain that is STILL a relation (no terminal instanceReturning verb):
@@ -75,17 +78,40 @@ export function relationElementConst(node: AstNode, catalogue: RubyDslCatalogue 
  * receivers — never guessed).
  */
 export function constInstanceType(node: AstNode, catalogue: RubyDslCatalogue = FULL_RUBY_CATALOGUE): string | null {
+  return instanceTypeOf(node, catalogue, typeConstantName);
+}
+
+/**
+ * How a `constant` / `scope_resolution` node is read as a type name. The TYPE
+ * reader ({@link typeConstantName}) refuses a value-scoped constant
+ * (`adapter::Client`): nothing the walk knows names the namespace `adapter`
+ * holds, and the bare `Client` names another type (bd tea-rags-mcp-bjfa0). The
+ * LEXICAL reader keeps the pre-bjfa0 spelling for the RTA instantiation set,
+ * which over-approximates what is constructed: `described_class::Price.new`
+ * does instantiate a `Price`, and pruning it would drop dispatch edges.
+ */
+type ConstantReader = (node: AstNode) => string | null;
+
+function lexicalConstantName(node: AstNode): string | null {
+  if (node.type === "scope_resolution") return readScopeResolution(node);
+  return node.type === "constant" ? node.text : null;
+}
+
+function instanceTypeOf(node: AstNode, catalogue: RubyDslCatalogue, readConst: ConstantReader): string | null {
   if (node.type !== "call" && node.type !== "method_call") return null;
   const receiver = node.childForFieldName("receiver");
   const method = node.childForFieldName("method");
   if (!receiver || !method) return null;
   const methodName = method.text;
   if (!catalogue.instanceReturning.has(methodName)) return null;
-  const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
   // Direct `ClassName.new` / `ClassName.find` — receiver is the constant itself.
-  if (YARD_CONST.test(receiverText)) return receiverText;
+  if (receiver.type === "scope_resolution" || receiver.type === "constant") {
+    const receiverConst = readConst(receiver);
+    return receiverConst !== null && YARD_CONST.test(receiverConst) ? receiverConst : null;
+  }
+  if (YARD_CONST.test(receiver.text)) return receiver.text;
   // B2 relation tail `Const.where(...).first` — receiver is a relation chain.
-  return relationRootConst(receiver, catalogue);
+  return relationRootConst(receiver, catalogue, readConst);
 }
 
 /** `lhs ||= rhs` is the only operator assignment that BINDS a type: the
@@ -127,7 +153,7 @@ export function collectRubyInstantiatedTypes(
       return;
     }
     if (node.type === "call" || node.type === "method_call") {
-      const constText = constInstanceType(node, catalogue);
+      const constText = instanceTypeOf(node, catalogue, lexicalConstantName);
       if (constText) seen.add(lexicalScopeFqName(scope, constText));
     }
     for (const child of node.children) walkScope(child, scope);

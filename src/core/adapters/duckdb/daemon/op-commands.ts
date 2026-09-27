@@ -276,6 +276,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       groupByLanguage: p.groupByLanguage as boolean | undefined,
       groupByMultiplicity: p.groupByMultiplicity as boolean | undefined,
       countSameTypeSiblings: p.countSameTypeSiblings as boolean | undefined,
+      countHolders: p.countHolders as boolean | undefined,
     }),
   ),
   aggregateIdentifiersByCallee: read(async (graphDb, p) =>
@@ -284,6 +285,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
+      countHolders: p.countHolders as boolean | undefined,
     }),
   ),
   anchorIdentifierTypes: read(async (graphDb, p) => graphDb.anchorIdentifierTypes(p.symbolIds as SymbolId[])),
@@ -307,6 +309,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       pathPrefixes: p.pathPrefixes as string[] | undefined,
       excludePaths: p.excludePaths as string[] | undefined,
       groupByLanguage: p.groupByLanguage as boolean | undefined,
+      countHolders: p.countHolders as boolean | undefined,
     }),
   ),
   identifierLanguageCounts: read(async (graphDb, p) =>

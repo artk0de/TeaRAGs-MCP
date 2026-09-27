@@ -85,3 +85,19 @@ export function readScopeResolution(node: AstNode): string {
     scope?.type === "scope_resolution" ? readScopeResolution(scope) : scope?.type === "constant" ? scope.text : "";
   return left ? `${left}::${name.text}` : name.text;
 }
+
+/**
+ * The constant a `constant` / `scope_resolution` node names as a TYPE, read by
+ * {@link readScopeResolution} — or `null` when a scope on its path is a VALUE
+ * (bd tea-rags-mcp-bjfa0). `adapter::Client` reaches `Client` through whatever
+ * `adapter` holds at runtime, a namespace no walk knows; reading it as the bare
+ * `Client` names a different type (taxdome's CRM `::Client` model for a vendor
+ * API client). A root-anchored `::Client` is a constant path.
+ */
+export function typeConstantName(node: AstNode): string | null {
+  if (node.type === "constant") return node.text;
+  if (node.type !== "scope_resolution") return null;
+  const scope = node.childForFieldName("scope");
+  if (scope !== null && typeConstantName(scope) === null) return null;
+  return readScopeResolution(node);
+}

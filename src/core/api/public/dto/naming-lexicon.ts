@@ -195,8 +195,7 @@ export type NamingLexiconNameVerdict = {
 
 /**
  * One reviewed declaration that did not simply conform: a verdict other than
- * CONFORMS, or a CONFORMS on a name judged generic (`genericName`) or carrying
- * head `alternatives`.
+ * CONFORMS, or a CONFORMS carrying head `alternatives`.
  */
 export type NamingReviewFinding = {
   relPath: string;
@@ -229,6 +228,23 @@ export interface NamingReviewNotJudgedEntry {
   reason: NamingReviewNotJudgedReason;
 }
 
+/**
+ * A declaration that CONFORMS on a name `get_ontology_report` judges generic
+ * (bd tea-rags-mcp-bjfa0): information, not a verdict to act on — the name is
+ * the project's own for the value, and the project uses it for many types.
+ */
+export interface NamingReviewNote {
+  relPath: string;
+  /** 1-based line of the declared name. */
+  line: number;
+  name: string;
+  /** The value's declaration kind (`param`, `local`, `field`, `return`). */
+  kind: string;
+  /** The value's declared type, when it has one. */
+  type?: string;
+  genericName: NamingLexiconGenericName;
+}
+
 /** The naming review of a diff (`changes` / `files`, bd tea-rags-mcp-fdef2). */
 export interface NamingReviewResult {
   /** The ref the request named (`HEAD` when none). */
@@ -250,7 +266,10 @@ export interface NamingReviewResult {
    * language walks. `checked = conforming + novel + findings.length`.
    */
   checked: number;
-  /** Of `checked`, CONFORMS on a name that is not generic and carries no `alternatives` — not listed. */
+  /**
+   * Of `checked`, CONFORMS with no `alternatives` — not listed as a finding. A
+   * generic name among them is listed in `notes` (bd tea-rags-mcp-bjfa0).
+   */
   conforming: number;
   /**
    * Of `checked`, NEW_TERM with no `topTerms` and no `alternatives` on a name
@@ -258,8 +277,10 @@ export interface NamingReviewResult {
    * is nothing to act on — not listed.
    */
   novel: number;
-  /** Everything else: a verdict to act on, or a generic name (`genericName`). */
+  /** Everything else: a verdict to act on (a generic name on one carries `genericName`). */
   findings: NamingReviewFinding[];
+  /** The conforming declarations whose name is judged generic — counted in `conforming`; absent when none. */
+  notes?: NamingReviewNote[];
   /**
    * Changed files with added lines whose declarations were not judged: a
    * non-production file (tests, scripts, fixtures — the masks the evidence side

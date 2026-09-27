@@ -147,6 +147,19 @@ function fileLanguageGrouping(source: string, grouped: boolean | undefined): Fil
   };
 }
 
+/**
+ * The SELECT column behind `countHolders` (bd tea-rags-mcp-bjfa0): the group's
+ * distinct owners. Not counting → nothing, so the plain read is byte-identical.
+ */
+function holdersColumn(counted: boolean | undefined): string {
+  return counted === true ? ", count(DISTINCT owner_symbol_id) AS holders" : "";
+}
+
+/** The row's `holders` key when the read counted them; nothing otherwise. */
+function holdersField(counted: boolean | undefined, row: { holders?: number | string | bigint }): { holders?: number } {
+  return counted === true && row.holders !== undefined ? { holders: Number(row.holders) } : {};
+}
+
 /** The row's `language` key when the read grouped by it; nothing otherwise. */
 function languageField(
   grouped: boolean | undefined,
@@ -382,10 +395,11 @@ export class DuckDbIdentifierStore {
       example_owner: string;
       file_language?: string | null;
       same_type_sibling_n?: number | string | bigint | null;
+      holders?: number | string | bigint;
     }>(
       `${cte.sql}
        SELECT type_name, kind, name, type_source${multiplicity}, count(*) AS n,
-              min(owner_symbol_id) AS example_owner${siblings.column}${lang.column}
+              min(owner_symbol_id) AS example_owner${siblings.column}${holdersColumn(q.countHolders)}${lang.column}
          FROM ${lang.from}
         WHERE type_name IN (${placeholders(q.types)})
         GROUP BY type_name, kind, name, type_source${multiplicity}${lang.column}
@@ -403,6 +417,7 @@ export class DuckDbIdentifierStore {
       ...(r.same_type_sibling_n !== undefined && r.same_type_sibling_n !== null
         ? { sameTypeSiblingN: Number(r.same_type_sibling_n) }
         : {}),
+      ...holdersField(q.countHolders, r),
       ...languageField(q.groupByLanguage, r),
     }));
   }
@@ -440,9 +455,10 @@ export class DuckDbIdentifierStore {
       n: number | string;
       example_owner: string;
       file_language?: string | null;
+      holders?: number | string | bigint;
     }>(
       `SELECT bound_member, bound_receiver, kind, name, type_name, count(*) AS n,
-              min(owner_symbol_id) AS example_owner${lang.column}
+              min(owner_symbol_id) AS example_owner${holdersColumn(q.countHolders)}${lang.column}
          FROM ${lang.from}
         WHERE ${scope.sql} AND (${calleeSql})
         GROUP BY bound_member, bound_receiver, kind, name, type_name${lang.column}
@@ -457,6 +473,7 @@ export class DuckDbIdentifierStore {
       n: Number(r.n),
       exampleOwner: r.example_owner,
       ...(r.type_name === null ? {} : { typeName: r.type_name }),
+      ...holdersField(q.countHolders, r),
       ...languageField(q.groupByLanguage, r),
     }));
   }
@@ -518,9 +535,11 @@ export class DuckDbIdentifierStore {
         n: number | string;
         example_owner: string;
         file_language?: string | null;
+        holders?: number | string | bigint;
       }>(
         `${cte.sql}
-         SELECT name, kind, type_name, count(*) AS n, min(owner_symbol_id) AS example_owner${lang.column}
+         SELECT name, kind, type_name, count(*) AS n,
+                min(owner_symbol_id) AS example_owner${holdersColumn(q.countHolders)}${lang.column}
            FROM ${lang.from}
           GROUP BY name, kind, type_name${lang.column}
           ORDER BY name, kind, type_name NULLS LAST${lang.order}`,
@@ -533,6 +552,7 @@ export class DuckDbIdentifierStore {
           typeName: r.type_name,
           n: Number(r.n),
           exampleOwner: r.example_owner,
+          ...holdersField(q.countHolders, r),
           ...languageField(q.groupByLanguage, r),
         });
       }

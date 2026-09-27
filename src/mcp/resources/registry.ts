@@ -271,13 +271,14 @@ name by grep or semantic_search on the draft.
   files=[...] → those files only: a file with a diff by its added hunks, one with no diff (committed,
   clean tree) WHOLE — every declaration it holds, counted in wholeFiles.
   Only added hunks judged; changed files excluded from evidence; cap 200 files (truncated reports rest).
-  Answer → review { base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings,
+  Answer → review { base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings, notes?,
   notJudged, notJudgedBy?, notJudgedNames?, truncated? }; changedFiles = files differing from mergeBase
   (with files: of the listed); notJudgedBy = kind (file | method | function) → reason → count —
   a method is judged only by its return type, so unknownReturnType methods are in neither checked
   nor conforming; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
-  findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts plus
-  genericName caveats. novel = NEW_TERM with nothing to compare (not listed). notJudged = files
+  findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts and
+  CONFORMS with alternatives. notes = CONFORMS on a generic name (genericName; information, counted
+  in conforming). novel = NEW_TERM with nothing to compare (not listed). notJudged = files
   skipped: tests / non-production, no codegraph language.
   Type / constant names need a codegraph recompute on an index built before type declarations existed.
 
@@ -285,11 +286,17 @@ Verdicts: CONFORMS (vocabulary, not behaviour; may carry alternatives) | MISFIT 
 role) | NEW_TERM (topTerms, alternatives — soft,
 never a rename demand) | COLLISION (existing). CONFORMS rests on evidence: a type's carries the
 role or project suffix it rests on (role); a value nothing compares conforms only when other rows
-use the name (evidence.n), else NEW_TERM with no topTerms (novel). A value MISFIT needs ≥ 2 rows
-behind its suggestion, never deletes the draft's qualifier or complement (for_payload), and a
-local named after its own type conforms unless the type's values are never named that way.
-evidence.collisions: up to 3 symbol ids a value / return name collides with (an override of
-AbstractPolicy#same_firm? reads as such). Role = inheritance family > directory > project
+use the name (evidence.n), else NEW_TERM with no topTerms (novel). A MISFIT (value or return) needs ≥ 2 owners
+(distinct holders, not rows) behind its suggestion, never deletes the draft's qualifier or complement
+(for_payload), never suggests a connector-led row (for_delivery), and a local named after its own
+type conforms unless the type's values are never named that way; a collection named by its
+element type's plural (tax_preparations) conforms over a container noun (scope). topTerms offer
+only names ≥ 2 owners share. A return's leading accessor verb (build_, read_, fetch_…) belongs to
+the method: its noun is judged (build_api_client → api_client). An untyped value read off a
+constant receiver (UploadTargetBuffer.read) is offered the receiver's concept (upload_target). A
+return whose owner's in-project ancestor declares the method (diff mode: enclosing class; names
+mode: the class at path) is an override: CONFORMS with override.declaredBy, and
+evidence.collisions (up to 3 ids) lists the ancestors' declarations first. Role = inheritance family > directory > project
 suffix; project suffix only confirms, never MISFIT. The nearest family decides: the subclasses
 of extends as written (A::Workflow::Worker), else of every supertype sharing its last segment. A directory-evidence MISFIT is
 location-based: rename only when the type belongs to role.examples' family. CONFORMS with

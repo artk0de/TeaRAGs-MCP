@@ -893,6 +893,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       groupByLanguage: q.groupByLanguage,
       groupByMultiplicity: q.groupByMultiplicity,
       countSameTypeSiblings: q.countSameTypeSiblings,
+      countHolders: q.countHolders,
     })) as IdentifierTypeAggregateRow[];
   }
 
@@ -902,6 +903,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
       groupByLanguage: q.groupByLanguage,
+      countHolders: q.countHolders,
     })) as IdentifierCalleeAggregateRow[];
   }
 
@@ -940,6 +942,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       pathPrefixes: q.pathPrefixes === undefined ? undefined : [...q.pathPrefixes],
       excludePaths: q.excludePaths === undefined ? undefined : [...q.excludePaths],
       groupByLanguage: q.groupByLanguage,
+      countHolders: q.countHolders,
     })) as IdentifierNameKindTypeRow[];
   }
 

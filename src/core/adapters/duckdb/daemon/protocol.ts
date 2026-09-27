@@ -223,6 +223,7 @@ export interface DaemonRequest {
         groupByLanguage?: boolean;
         groupByMultiplicity?: boolean;
         countSameTypeSiblings?: boolean;
+        countHolders?: boolean;
       } // aggregateIdentifiersByType | countIdentifiers
     | {
         collection: string;
@@ -230,6 +231,7 @@ export interface DaemonRequest {
         pathPrefixes?: string[];
         excludePaths?: string[];
         groupByLanguage?: boolean;
+        countHolders?: boolean;
       } // aggregateIdentifiersByCallee
     | { collection: string; names: string[]; excludePaths?: string[] } // identifierNameTypes | existingSymbolShortNames
     | {
@@ -238,6 +240,7 @@ export interface DaemonRequest {
         pathPrefixes?: string[];
         excludePaths?: string[];
         groupByLanguage?: boolean;
+        countHolders?: boolean;
       } // aggregateIdentifiersByName
     | { collection: string; pathPrefixes?: string[]; pathSuffixes?: string[]; excludePaths?: string[] } // identifierLanguageCounts
     | {

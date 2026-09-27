@@ -198,10 +198,17 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
         suggestion: "fileSignals",
       }),
     );
-    // A generic name is a finding even when it conforms.
-    expect(review?.findings).toContainEqual(
-      expect.objectContaining({ name: "result", line: 9, verdict: "CONFORMS", genericName: { typeCount: 6, n: 16 } }),
-    );
+    // bd tea-rags-mcp-bjfa0: a generic name that conforms is a note, not a finding — it counts as conforming.
+    expect(review?.notes).toEqual([
+      {
+        relPath: CHANGED,
+        line: 9,
+        name: "result",
+        kind: "local",
+        type: "RunReport",
+        genericName: { typeCount: 6, n: 16 },
+      },
+    ]);
     // A new class whose short name another module declares.
     expect(review?.findings).toContainEqual(
       expect.objectContaining({
@@ -224,7 +231,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
 
   it("`files` reviews the named files' added lines against the base", async () => {
     const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: [CHANGED] });
-    expect(result.review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta", "result"]);
+    // bd tea-rags-mcp-bjfa0: the conforming generic `result` moved from findings to notes.
+    expect(result.review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta"]);
+    expect(result.review?.notes?.map((n) => n.name)).toEqual(["result"]);
   });
 
   it("an untracked file is reviewed whole", async () => {
@@ -454,7 +463,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       expect(review?.mergeBase).toBe(forkPoint);
       expect(review?.changedFiles).toBe(1);
       expect(new Set(review?.findings.map((f) => f.relPath))).toEqual(new Set([CHANGED]));
-      expect(review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta", "result"]);
+      // bd tea-rags-mcp-bjfa0: the conforming generic `result` is a note, not a finding.
+      expect(review?.findings.map((f) => f.name).sort()).toEqual(["Commit", "meta"]);
+      expect(review?.notes?.map((n) => n.name)).toEqual(["result"]);
     });
 
     it("a base HEAD descends from is compared as given", async () => {
@@ -494,7 +505,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     expect(review?.changedFiles).toBe(0);
     const names = review?.findings.map((f) => f.name) ?? [];
     // `other` sits on a line the working tree did not add: only a whole-file review judges it.
-    expect(names).toEqual(expect.arrayContaining(["meta", "result", "Commit", "other"]));
+    expect(names).toEqual(expect.arrayContaining(["meta", "Commit", "other"]));
+    // bd tea-rags-mcp-bjfa0: the conforming generic `result` is judged too, and listed as a note.
+    expect(review?.notes?.map((n) => n.name)).toEqual(["result"]);
     expect(review?.checked).toBe(review!.conforming + review!.novel + review!.findings.length);
   });
 
@@ -587,6 +600,33 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
       expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 60 } });
       expect(review?.notJudgedNames).toHaveLength(50);
     });
+  });
+
+  // bd tea-rags-mcp-bjfa0: taxdome's `same_firm?` in Bookkeeping::InquiryPolicy, overriding AbstractPolicy#same_firm?.
+  it("a method its enclosing class's ancestor declares is an override: it conforms, never novel", async () => {
+    mkdirSync(join(repo, "src/policy"), { recursive: true });
+    const policy = "src/policy/inquiry-policy.ts";
+    writeFileSync(
+      join(repo, policy),
+      "export class InquiryPolicy extends AbstractPolicy {\n  sameFirm(): boolean {\n    return true;\n  }\n}\n",
+    );
+    const before = await ops.getNamingLexicon({ collection: "c", path: repo, files: [policy] });
+    const novelBefore = before.review!.novel;
+
+    await db.run(
+      `INSERT INTO cg_symbols_inheritance
+         (source_fq_name, source_rel_path, source_symbol_id, ancestor_fq_name, ancestor_symbol_id, kind, ordinal)
+       VALUES ('InquiryPolicy', ?, 'InquiryPolicy', 'AbstractPolicy', 'AbstractPolicy', 'super', 0)`,
+      [policy],
+    );
+    await db.run(
+      "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, '[]')",
+      ["src/policy/abstract-policy.ts", "AbstractPolicy#sameFirm", "AbstractPolicy#sameFirm", "sameFirm"],
+    );
+    const after = await ops.getNamingLexicon({ collection: "c", path: repo, files: [policy] });
+    expect(after.review?.novel).toBe(novelBefore - 1);
+    expect(after.review?.conforming).toBe(before.review!.conforming + 1);
+    expect(after.review?.findings.map((f) => f.name)).not.toContain("sameFirm");
   });
 
   it("diff mode needs the project's working tree", async () => {

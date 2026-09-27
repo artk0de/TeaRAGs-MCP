@@ -1216,14 +1216,16 @@ declaration. The rules below close those.
    name, NEW_TERM `[]` where it derives an unlicensed one): both paths now read
    the same count.
 3. **A value MISFIT needs a convention.** The suggestion must be carried by at
-   least `MIN_ROLE_MEMBERS` (2) rows; against thinner evidence the draft is
-   NEW_TERM with the row names as context. The store has no distinct-holder
-   count, so the bar is on rows, not holders.
+   least `MIN_ROLE_MEMBERS` (2) owners; against thinner evidence the draft is
+   NEW_TERM with the row names as context. Since bd tea-rags-mcp-bjfa0 the store
+   counts distinct holders (`countHolders`), and the bar is on holders: three
+   `existing` locals of one method are one owner, not a convention. A row the
+   store did not count falls back to its row count.
 4. **A local named after its own type conforms** (EXACT or TAIL shape) when
    there is no convention, or when another kind of the type's values (a param, a
    return) spells the name that way. `tax_preparation: TaxPreparation` against
    `existing` (3 locals) and `tax_preparation` (18 params) is CONFORMS; against
-   `existing` alone it stays a MISFIT.
+   `existing` alone it is a MISFIT only when two or more owners hold it.
 5. **A MISFIT suggestion keeps what the draft says about WHICH value.** The
    draft is split at its connector (`for`, `by`, `under`, … — the closed
    `CONNECTOR_WORDS` list, which gained `under`). If the words before the
@@ -1241,6 +1243,58 @@ declaration. The rules below close those.
 
 Diff mode and names mode still differ on concept terms: the diff's concept query
 carries the enclosing code, names mode only the name.
+
+## 5b. The second field report (bd tea-rags-mcp-bjfa0)
+
+A second taxdome review produced verdicts a reader rejected. Each rule below
+answers one of them.
+
+1. **A value-scoped constant names no type.** `adapter::Client.new` reaches
+   `Client` through whatever `adapter` holds at run time. The Ruby walker read
+   it as the bare `Client`, the CRM model, and `build_api_client` was judged
+   against the CRM model's names. The walker now types a `constant` or
+   `scope_resolution` only when every scope on its path is itself a constant
+   (`typeConstantName`); a root-anchored `::Client` still counts. The RTA
+   instantiation set keeps the lexical reading, since it over-approximates what
+   is constructed and pruning it would drop dispatch edges.
+2. **A return's leading verb belongs to the method.** A return name that starts
+   with a verb of the closed accessor/factory class (`NAMING_VERB_PREFIXES`,
+   which gained `read`) is judged by its noun. `build_api_client` is judged as
+   `api_client`, and its `api_` qualifier says which client the method builds.
+3. **A collection is named by its element type's plural.** A `many` draft
+   spelling its element type's plural (`tax_preparations`) conforms, and a
+   container noun (`scope`, `records`) never outranks it. The singular for a
+   collection still meets the convention.
+4. **Vocabulary is what several owners share.** `topTerms` from a type's or a
+   callee's rows list only names with at least two holders. A block-yielding
+   callee (`RedisConnection.with_tax_preparation_pool`) binds whatever each
+   block read, and offering those one-off names (`claimed`, `payload`) was
+   noise. Nothing shared means `topTerms: []`. A `return` MISFIT needs the same
+   two owners behind its suggestion: one other method's name
+   (`secondary_default_sorting`) is no method convention. Name inference counts
+   owners too: a name typed by fewer than three owners lends its type to no
+   untyped row, so one method's three `existing` locals no longer type every
+   `existing` in the project.
+5. **A suggestion is a name, never a complement.** A row whose first word is a
+   connector (`for_delivery`) is never suggested. With no other row, the draft
+   is NEW_TERM with no terms, or CONFORMS when it is a value named after its
+   type.
+6. **An untyped value read off a constant takes the constant's concept.**
+   `target = UploadTargetBuffer.read(…)` has no type. When the member derives no
+   name, the receiver's words minus its last one, and then all of them, are the
+   terms (`upload_target`, `upload_target_buffer`). A draft spelling either
+   conforms. A generic name's use elsewhere is no evidence for this value, so
+   the receiver's concept is offered in its place.
+7. **An override's name is fixed by its supertype.** A `return` draft whose
+   owner has an in-project ancestor declaring the method (nearest first:
+   prepends, includes last-declared first, the superclass) conforms with
+   `override: { declaredBy }`, and `evidence.collisions` lists the ancestors'
+   declarations first. The owner in diff mode is the enclosing class. In names
+   mode it is the class at `path` that holds the method, or the file's only
+   class.
+8. **A conforming generic name is a note.** In diff mode, a CONFORMS on a name
+   the ontology report judges generic leaves `findings` for `review.notes` and
+   counts as conforming.
 
 ## 6. Diff mode (`fdef2`)
 
@@ -1263,8 +1317,9 @@ to `names[]` and `concept`.
    can therefore not let a new misfit vote for itself.
 5. **Output.** The conforming declarations are counted in a summary; only
    findings are listed, each with `file:line`. GENERIC is a value draft whose
-   verdict carries the existing `genericName` caveat, even when it otherwise
-   conforms:
+   verdict carries the existing `genericName` caveat. Since bd
+   tea-rags-mcp-bjfa0 a generic name that conforms is listed under `notes`, not
+   `findings` (§5b rule 8):
 
 ```
 Naming review (base: HEAD) — 42 declarations checked, 37 conform

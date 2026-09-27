@@ -25,6 +25,7 @@ export {
   isNonConceptType,
   isWeakerNamingShape,
   matchesTypeWords,
+  mergedHolders,
   mergedSameTypeSiblingN,
   shapeDistribution,
   spellsTypeName,
