@@ -195,6 +195,8 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
   it("every protocol op is either required or explicitly tolerated — nothing falls between", () => {
     // Widening the tolerated set is a deliberate decision, so it is pinned here.
     expect([...LEGACY_TOLERATED_OPS].sort()).toEqual([
+      // Path replacement (r4veq): an older daemon's caller unlinks / copies the file itself, as before.
+      "cloneCollectionDatabase",
       // Storage compaction (dvzdm): an older daemon's file simply stays as large as it was.
       "compactStorage",
       "diffSymbolSignals",
@@ -203,6 +205,7 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       // The liveness probe (f924y): an older daemon's "unknown op" answer is the proof of life it asks for.
       "ping",
       "refreshSymbolSignalsPrev",
+      "removeCollectionDatabase",
     ]);
     expect(new Set([...REQUIRED_DAEMON_OPS, ...LEGACY_TOLERATED_OPS])).toEqual(new Set(DAEMON_OPS));
     expect(REQUIRED_DAEMON_OPS.filter((op) => LEGACY_TOLERATED_OPS.has(op))).toEqual([]);
@@ -223,7 +226,12 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     // handshake and liveness probe leave everything as it was.
     const daemonOps = DAEMON_OPS.filter((op) => DAEMON_OP_COMMANDS[op].access === "daemon");
     expect(daemonOps.filter((op) => !isDaemonWriteOp(op)).sort()).toEqual(["handshake", "ping"]);
-    expect(daemonOps.filter((op) => isDaemonWriteOp(op)).sort()).toEqual(["finalizeReindex", "shutdown"]);
+    expect(daemonOps.filter((op) => isDaemonWriteOp(op)).sort()).toEqual([
+      "cloneCollectionDatabase",
+      "finalizeReindex",
+      "removeCollectionDatabase",
+      "shutdown",
+    ]);
     // The reads behind get_callers / get_callees / trace_path / find_cycles.
     for (const op of [
       "getCallers",

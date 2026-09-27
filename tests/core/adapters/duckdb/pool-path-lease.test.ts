@@ -91,6 +91,8 @@ function parkOp(pool: GraphDbClientPool, name: typeof TARGET, events: string[]):
   const gate = new Promise<void>((resolve) => (resume = resolve));
   const done = pool.runCollectionOp(name, async ({ graphDb }) => {
     await writeMarker(graphDb, "before-park.ts");
+    // No WAL left open: a write after the park creates `<path>.wal` by path.
+    await (graphDb as DuckDbGraphClient).checkpoint();
     markParked();
     await gate;
     await writeMarker(graphDb, "ghost.ts");
@@ -136,18 +138,19 @@ describe("GraphDbClientPool — path lease drains in-flight ops before a replace
 
     const clone = pool.cloneDatabase(SOURCE, TARGET).then(() => events.push("clone:done"));
     await settle();
-    expect(events).toEqual([]);
 
     op.resume();
-    await op.done;
+    await op.done.catch(() => events.push("op:failed"));
     await clone;
-    expect(events).toEqual(["op:done", "clone:done"]);
 
-    // The successor holds the source's rows and nothing the ghost wrote.
+    // The successor — database AND WAL, as the next process replays them —
+    // holds the source's rows and nothing the old client wrote.
     const successor = await pool.acquire(TARGET);
     expect(await relPaths(successor.graphDb)).toEqual(["cloned.ts"]);
     await pool.closeAll();
     expect(await relPathsOnDisk(TARGET)).toEqual(["cloned.ts"]);
+    // And the op finished on the old client before the successor was published.
+    expect(events).toEqual(["op:done", "clone:done"]);
   });
 
   it("an op issued while a replacer holds the path waits for it and runs on the successor", async () => {

@@ -67,9 +67,13 @@
   the shared `.spill` dir on behalf of every project (`spill-files.ts`, next to
   the pool) — so `FootprintDeps.pool` is the structural
   `CodegraphFootprintStore` (`contracts/types/footprint.ts`), satisfied by the
-  pool in the app and by `adapters/duckdb/codegraph-db-files.ts` in the purge.
-  Why: "reuse the pool, it already has these methods" is the obvious move and it
-  silently sabotages another process.
+  pool in the app and by `createPurgeCodegraphStore`
+  (`bootstrap/footprint-purge.ts`) in the purge — `CodegraphDbFiles` for the
+  layout, the file replacement sent to a running daemon first because the purge
+  runs while the daemon may still hold a client on the collection (the lease
+  rule is `../../trajectory/codegraph/CLAUDE.md`). Why: "reuse the pool, it
+  already has these methods" is the obvious move and it silently sabotages
+  another process.
 - **`QdrantArtifact#remove` swallows the alias delete and NOT the collection
   delete.** A logical name that was never an alias 404s on `deleteAlias` as a
   matter of course, so that step is best-effort and must never block the one

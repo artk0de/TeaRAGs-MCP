@@ -17,9 +17,13 @@
  * `cloneDatabase` — holds that path's LEASE while it works: it retires the
  * cached client, waits for every op pinned to it (`runCollectionOp`) to finish,
  * closes it, and only then touches the file; ops issued meanwhile wait for the
- * lease and run on the successor (bd tea-rags-mcp-r4veq). A replacement made by
- * ANOTHER process is outside the lease and still caught only by the dev/ino
- * check on the next acquire.
+ * lease and run on the successor (bd tea-rags-mcp-r4veq). In daemon mode the
+ * clients live in the daemon, so both replacers send the replacement there
+ * (`DaemonDatabaseFileReplacer`) and the daemon's own pool takes the lease;
+ * they act on the files themselves only when no daemon of this build is up, or
+ * it cannot take the op. A replacement nobody routes — another build's daemon,
+ * a process outside tea-rags — is still caught only by the dev/ino check on the
+ * next acquire.
  */
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
@@ -33,6 +37,7 @@ import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
+import type { DaemonDatabaseFileReplacer, DaemonDatabaseReplacement } from "./daemon/database-file-replacer.js";
 import {
   daemonPathsForKeyDir,
   DEFAULT_EXIT_TIMEOUT_MS,
@@ -1163,8 +1168,35 @@ export class GraphDbClientPool {
     await this.withPathLeases([sourceCollection, targetCollection], async () => {
       await this.retireForReplacement(sourceCollection, "swallow");
       await this.retireForReplacement(targetCollection, "throw");
+      const replaced = await this.replaceInDaemon(async (daemon) =>
+        daemon.cloneDatabase(sourceCollection, targetCollection),
+      );
+      if (replaced?.handledBy === "daemon") return;
       await this.dbFiles.cloneDatabase(sourceCollection, targetCollection);
     });
+  }
+
+  /**
+   * Daemon mode: send a path replacement to the daemon, whose pool holds the
+   * clients and so is the one that can drain them (bd tea-rags-mcp-r4veq).
+   * `undefined` in direct mode — this pool holds every client itself. A
+   * `caller` answer (no daemon running, unreachable, or an older build without
+   * the op) leaves the files to this pool, the pre-r4veq behaviour.
+   */
+  private async replaceInDaemon(
+    replace: (daemon: DaemonDatabaseFileReplacer) => Promise<DaemonDatabaseReplacement>,
+  ): Promise<DaemonDatabaseReplacement | undefined> {
+    const socketPath = this.options.daemonSocketPath;
+    if (!socketPath) return undefined;
+    // Dynamic so direct/test mode never loads the node:net socket code.
+    const { DaemonDatabaseFileReplacer } = await import("./daemon/database-file-replacer.js");
+    const replaced = await replace(new DaemonDatabaseFileReplacer(socketPath));
+    if (replaced.handledBy === "caller" && isDebug()) {
+      process.stderr.write(
+        `[tea-rags] codegraph pool: daemon did not replace the database (${replaced.reason}) — this process does\n`,
+      );
+    }
+    return replaced;
   }
 
   /**
@@ -1188,6 +1220,8 @@ export class GraphDbClientPool {
   async removeCollection(collectionName: PhysicalCollectionName): Promise<boolean> {
     return this.withPathLeases([collectionName], async () => {
       const evicted = await this.retireForReplacement(collectionName, "throw");
+      const replaced = await this.replaceInDaemon(async (daemon) => daemon.removeDatabase(collectionName));
+      if (replaced?.handledBy === "daemon") return evicted || replaced.evicted;
       await this.dbFiles.removeFiles(collectionName);
       return evicted;
     });

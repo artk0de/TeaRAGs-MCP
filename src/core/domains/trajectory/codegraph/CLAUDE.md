@@ -204,11 +204,17 @@
   the WAL by path, so an op in flight on the old client when the file was
   replaced wrote into the successor's WAL (a ghost row in a clone, bd
   tea-rags-mcp-r4veq); and a copy OVER an existing path keeps its inode, which
-  the dev/ino check cannot see. Not covered: a replacement made by another
-  PROCESS — the app pool unlinking under the daemon's clients, the purge's bare
-  `CodegraphDbFiles` — has no lease to take; the dev/ino check on the next
-  acquire is all that catches it, and an op already running there can still
-  reach the successor's WAL.
+  the dev/ino check cannot see. In daemon mode the clients are the daemon's, so
+  `GraphDbClientPool#replaceInDaemon` sends the replacement there
+  (`DaemonDatabaseFileReplacer`, ops `removeCollectionDatabase` /
+  `cloneCollectionDatabase`) and the daemon's pool takes the lease; the purge's
+  store (`createPurgeCodegraphStore`) routes the same way. The caller touches
+  the files itself only when no daemon of its build is up (nothing to drain),
+  the pid is alive but the socket refuses, or the daemon predates the ops —
+  legacy-tolerated, so the fallback is the pre-r4veq behaviour and never a
+  daemon drain. Not covered: another build's daemon holding the same file, and
+  any of those fallbacks — there the dev/ino check on the next acquire is all
+  that catches the replacement.
 
 - **Every `cg_*` table keeps the rows it deletes, so a wholesale rewrite
   RECREATES its table and the file is compacted by copy.** DuckDB 1.5.3 vacuums

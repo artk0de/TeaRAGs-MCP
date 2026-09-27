@@ -47,6 +47,13 @@ export const DAEMON_OPS = [
   // is a tolerated legacy op (`LEGACY_TOLERATED_OPS`).
   "ping",
   "finalizeReindex",
+  // Path replacers run where the clients are (bd tea-rags-mcp-r4veq): the app
+  // process's clear / delete / orphan sweep / purge and footprint clone ask the
+  // daemon's pool to do the unlink or publish under its path lease, which
+  // drains the ops running on the old client first. Tolerated legacy ops: an
+  // older daemon's "unknown op" sends the caller back to its own file path.
+  "removeCollectionDatabase",
+  "cloneCollectionDatabase",
   // ── writes ──
   "upsertFile",
   "removeFile",
@@ -187,6 +194,8 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
+    | { collection: string; target: string } // removeCollectionDatabase
+    | { collection: string; source: string; target: string } // cloneCollectionDatabase
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount
     | { collection: string; symbolId: SymbolId; relPath?: RelPath } // getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
