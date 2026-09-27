@@ -218,3 +218,64 @@ describe("TracePathOps.tracePath", () => {
     expect(res.paths[1].steps.map((s) => s.symbolId)).toEqual(["A", "C", "D"]);
   });
 });
+
+// bd tea-rags-mcp-kz89o: a step whose symbol has no chunk of its own (a short
+// method folded into a class-body chunk, say) reported startLine 0 / endLine 0.
+// The codegraph node knows the symbol's real range.
+describe("TracePathOps.tracePath — step lines without a chunk", () => {
+  function opsWithRanges(getSymbolLineRangesBulk: unknown) {
+    const graphDb = { ...scopedGraphDb({ A: ["B"], B: ["C"], C: [] }), getSymbolLineRangesBulk };
+    const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
+    const qdrant = {
+      // B has no chunk of its own.
+      scrollBySymbolIds: vi.fn(async (_c: string, ids: string[]) =>
+        ids
+          .filter((id) => id !== "B")
+          .map((id) => ({ id, payload: { symbolId: id, relativePath: `${id}.ts`, startLine: 1, endLine: 9 } })),
+      ),
+    };
+    return new TracePathOps({
+      pool: pool as never,
+      qdrant: qdrant as never,
+      reranker: { rerank: vi.fn() } as never,
+      collectionRegistry: {} as never,
+      resolveActiveCollection: async (n: string) => n,
+    });
+  }
+
+  it("takes the step's line range from its codegraph node", async () => {
+    const ranges = vi.fn(
+      async () =>
+        new Map([
+          [
+            "B.ts",
+            {
+              ranges: [
+                { symbolId: "B", startLine: 40, endLine: 58 },
+                { symbolId: "Other", startLine: 1, endLine: 10 },
+              ],
+              rowsWithoutRanges: 0,
+            },
+          ],
+        ]),
+    );
+
+    const res = await opsWithRanges(ranges).tracePath({ collection: "c", from: "A", to: "C" });
+
+    const b = res.paths[0].steps[1];
+    expect(b.symbolId).toBe("B");
+    expect({ startLine: b.startLine, endLine: b.endLine }).toEqual({ startLine: 40, endLine: 58 });
+    // Steps that do have a chunk keep its lines.
+    expect(res.paths[0].steps[0]).toMatchObject({ startLine: 1, endLine: 9 });
+  });
+
+  it("keeps 0 / 0 when the graph read of the ranges fails — a trace never fails on a range", async () => {
+    const ranges = vi.fn(async () => {
+      throw new Error("daemon gone");
+    });
+
+    const res = await opsWithRanges(ranges).tracePath({ collection: "c", from: "A", to: "C" });
+
+    expect(res.paths[0].steps[1]).toMatchObject({ symbolId: "B", startLine: 0, endLine: 0 });
+  });
+});
