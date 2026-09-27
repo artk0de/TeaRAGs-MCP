@@ -6,7 +6,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { DuckDbCloseFailedError, DuckDbOpenFailedError } from "../../../../src/core/adapters/duckdb/errors.js";
+import {
+  daemonErrorFromWire,
+  daemonErrorToWire,
+  DuckDbCloseFailedError,
+  DuckDbOpenFailedError,
+} from "../../../../src/core/adapters/duckdb/errors.js";
 import { InfraError } from "../../../../src/core/adapters/errors.js";
 
 describe("DuckDbOpenFailedError", () => {
@@ -25,6 +30,38 @@ describe("DuckDbOpenFailedError", () => {
     expect(err.message).toContain("/tmp/x.duckdb");
     expect(err.cause).toBeUndefined();
     expect(err.toUserMessage()).toContain("single-writer");
+  });
+
+  it("marks a lost file lock as lock contention and a non-database file as not (zgg62)", () => {
+    const lock = new DuckDbOpenFailedError(
+      "/tmp/a.duckdb",
+      new Error('IO Error: Could not set lock on file "/tmp/a.duckdb": Conflicting lock is held in node (PID 1)'),
+    );
+    const junk = new DuckDbOpenFailedError(
+      "/tmp/b.duckdb",
+      new Error('IO Error: The file "/tmp/b.duckdb" exists, but it is not a valid DuckDB database file!'),
+    );
+    expect(lock.lockContention).toBe(true);
+    expect(lock.toUserMessage()).toContain("single-writer");
+    expect(junk.lockContention).toBe(false);
+    expect(junk.toUserMessage()).toContain("not a DuckDB database");
+  });
+
+  it("survives the daemon wire as the same typed error (zgg62)", () => {
+    const original = new DuckDbOpenFailedError(
+      "/tmp/b.duckdb",
+      new Error('IO Error: The file "/tmp/b.duckdb" exists, but it is not a valid DuckDB database file!'),
+    );
+    const rebuilt = daemonErrorFromWire(JSON.parse(JSON.stringify(daemonErrorToWire(original))));
+    expect(rebuilt).toBeInstanceOf(DuckDbOpenFailedError);
+    expect((rebuilt as DuckDbOpenFailedError).code).toBe("INFRA_DUCKDB_OPEN_FAILED");
+    expect((rebuilt as DuckDbOpenFailedError).lockContention).toBe(false);
+    expect(rebuilt.message).toBe(original.message);
+
+    const other = daemonErrorFromWire(daemonErrorToWire(Object.assign(new Error("boom"), { name: "SomeError" })));
+    expect(other).not.toBeInstanceOf(DuckDbOpenFailedError);
+    expect(other.name).toBe("SomeError");
+    expect(other.message).toBe("boom");
   });
 });
 

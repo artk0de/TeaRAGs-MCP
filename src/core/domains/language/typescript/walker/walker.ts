@@ -600,7 +600,7 @@ function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySe
     return;
   }
   if (node.type !== "call_expression") return;
-  const callee = node.childForFieldName("function");
+  const callee = calleeOf(node);
   if (!callee) return;
   const startLine = node.startPosition.row + 1;
 
@@ -912,10 +912,25 @@ function newExpressionShape(node: AstNode): CallShape | null {
 export function typescriptCallSiteShape(node: AstNode): CallShape | null {
   if (node.type === "new_expression") return newExpressionShape(node);
   if (node.type !== "call_expression") return null;
-  const callee = node.childForFieldName("function");
+  const callee = calleeOf(node);
   if (!callee) return null;
   const shape = functionInvokerShape(callee) ?? plainCallShape(callee);
   return shape ? { receiver: shape.receiver, member: shape.member } : null;
+}
+
+/**
+ * The callee of a `call_expression`, seen through the grammar's parse of an
+ * awaited generic call (bd tea-rags-mcp-6ea2k). tree-sitter-typescript reads
+ * `await this.local.read<T>(k)` as a call whose `function` is the
+ * `await_expression` `await this.local.read`, so the member call came out as a
+ * receiverless call named `await this.local.read` that no pass could resolve.
+ * An `await_expression` can be a callee in no other way — `(await f)(x)` keeps
+ * its parentheses — so its operand is the callee.
+ */
+function calleeOf(call: AstNode): AstNode | null {
+  const callee = call.childForFieldName("function");
+  if (callee?.type !== "await_expression") return callee;
+  return callee.namedChildren[0] ?? null;
 }
 
 /**

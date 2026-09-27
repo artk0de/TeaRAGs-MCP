@@ -1,6 +1,6 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
-import { CodegraphDaemonRequestAbortedError } from "../errors.js";
+import { CodegraphDaemonRequestAbortedError, daemonErrorToWire } from "../errors.js";
 import type { GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import type { DaemonMemoryGovernor } from "./memory-governor.js";
@@ -66,7 +66,7 @@ export class CodegraphDaemonServer {
       return { id: req.id, ok: true, result };
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      return { id: req.id, ok: false, error: { name: e.name, message: e.message } };
+      return { id: req.id, ok: false, error: daemonErrorToWire(e) };
     }
   }
 

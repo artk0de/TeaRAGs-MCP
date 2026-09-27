@@ -28,6 +28,7 @@ import type {
 } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, EnrichmentProgressCallback } from "../../../../types.js";
+import { detectLanguage } from "../chunker/utils/language-detector.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
@@ -391,12 +392,11 @@ export class EnrichmentCoordinator {
         if (forced.length === 0) continue;
       }
 
-      const { repair, orphans }: ExtractionRepair = persisted
+      const initial: ExtractionRepair = persisted
         ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll || forcedBySelector)
         : { repair: [], orphans: [] };
-      const drifted = new Set(repair);
-      const handedOff = forced.filter((path) => !drifted.has(path));
-      repair.push(...handedOff);
+      const { orphans } = initial;
+      let { repair } = initial;
       // Selector-forced eligibility is the run's stored-chunk scope, not the
       // file universe: rows outside it are the unselected languages' live
       // rows, and pruning them would delete the graph this run was told not
@@ -404,7 +404,24 @@ export class EnrichmentCoordinator {
       // working-tree scan, where an out-of-set row really is an orphan.
       if (!forcedBySelector && orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName: physicalCollectionName });
+        // Pruning a file can invalidate OTHER files' rows — a caller whose
+        // dispatch cone held a class the file declared (bd
+        // tea-rags-mcp-7t2ee) — so the drift is re-read after it, and this run
+        // repairs them rather than the next.
+        try {
+          persisted = await readPersisted.call(provider, physicalCollectionName);
+          ({ repair } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll));
+        } catch (err) {
+          pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
+            provider: provider.key,
+            collection: physicalCollectionName,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
+      const drifted = new Set(repair);
+      const handedOff = forced.filter((path) => !drifted.has(path));
+      repair.push(...handedOff);
       if (repair.length > 0) {
         pipelineLog.enrichmentPhase("REPAIR_PASS", {
           provider: provider.key,
@@ -727,7 +744,6 @@ export class EnrichmentCoordinator {
       durationMs: Date.now() - scrollStartedAt,
       ...(languages && languages.length > 0 ? { languages: [...languages] } : {}),
     });
-    if (stored.items.length === 0) return EMPTY_METRICS;
 
     // The recompute's own writes to a provider's per-file store are ADDITIVE —
     // only the repair leg's diffing per-file write (`applyScopedRowDiff`)
@@ -742,20 +758,38 @@ export class EnrichmentCoordinator {
     const forceProviderSet = new Set(
       this.providers.filter((p) => matched.includes(p.key) && p.readPersistedFileHashes).map((p) => p.key),
     );
+    let forcedRepaired = 0;
     if (forceProviderSet.size > 0) {
       // Membership drives the forced repair set; hash values keep the drift
       // check sound for any store provider the selectors did not force, using
       // the hashes the sync leg's repair captured. Unknown files carry "" —
       // under force the value is never compared.
+      //
+      // Membership is the stored-chunk scope PLUS the working-tree scan the
+      // sync leg captured, narrowed to `languages` (bd tea-rags-mcp-nlbhg): a
+      // file that yields no chunk has no Qdrant point, so the stored scope
+      // alone never re-extracted it although its edges belong in the graph.
+      // Each provider's own extractability filter still narrows the set
+      // inside `runRepairPass`.
       const hashesBeforeForcedRepair = this.runContentHashes;
       const eligibilityMap = new Map(
         [...stored.chunkMap.keys()].map((relPath) => [relPath, hashesBeforeForcedRepair?.get(relPath) ?? ""]),
       );
+      for (const [relPath, hash] of hashesBeforeForcedRepair ?? []) {
+        if (languages && languages.length > 0 && !languages.includes(detectLanguage(relPath))) continue;
+        eligibilityMap.set(relPath, hash);
+      }
       pipelineLog.enrichmentPhase("RECOMPUTE_FORCED_PROVIDER_REPAIR", {
         providers: [...forceProviderSet],
         files: eligibilityMap.size,
       });
-      await this.runRepairPass(physicalCollectionName, absolutePath, eligibilityMap, undefined, forceProviderSet);
+      forcedRepaired = await this.runRepairPass(
+        physicalCollectionName,
+        absolutePath,
+        eligibilityMap,
+        undefined,
+        forceProviderSet,
+      );
       // The synthetic eligibility map must not DISPLACE the run's hash stamp:
       // `runRepairPass` captures its `scanned` as `runContentHashes`, and this
       // run's finalize stamps that map onto every `cg_symbols_files` row — a
@@ -771,6 +805,10 @@ export class EnrichmentCoordinator {
       // dispatch, keeping all workers symmetric.
       this.runContentHashes = hashesBeforeForcedRepair ?? eligibilityMap;
     }
+    // Nothing stored and nothing re-extracted: no run to open. A forced repair
+    // that walked chunkless files still needs the run below — its finalize
+    // is where pass-2 resolves the re-extracted rows and `cg_run_stats` lands.
+    if (stored.items.length === 0 && forcedRepaired === 0) return EMPTY_METRICS;
 
     // `languages` reaches the run itself, not just the scroll: the terminal
     // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s). Every

@@ -27,6 +27,7 @@ import type {
   GraphDbClient,
   IdentifierRow,
   Pass1AggregateReadScope,
+  PersistedHierarchyDescendantDependency,
   SymbolDefinition,
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
@@ -74,6 +75,7 @@ import {
 } from "./extraction-sink.js";
 import { CodegraphFileExtractor } from "./file-extractor.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
+import { selectHierarchyDependents, typeDeclaredByAnyOf } from "./hierarchy-dependencies.js";
 import {
   buildIdentifierRows,
   collectIdentifierFinderVocabulary,
@@ -484,6 +486,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // finalize recomputes (bd tea-rags-mcp-dy852). BEFORE the base rows go:
     // only a file `cg_symbols_files` still knows marks the tables stale.
     await graphDb.pruneDerivedForDeletedFiles(paths);
+    // Callers whose cone held a type these files declare (bd tea-rags-mcp-7t2ee)
+    // lose their hash, so the drift repair re-resolves them — also BEFORE the
+    // base rows go, because the declared names are read from `cg_symbols`.
+    await graphDb.invalidateHierarchyDependentsOfDeletedFiles(paths);
     for (const relPath of paths) {
       // `removeFile` clears edges AND cg_symbols rows; `removeSymbolsForFile` is
       // idempotent for symbol-only callers, so calling both is safe.
@@ -561,7 +567,67 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       resolveAndUpsert: async (spillPath, physicalCollectionName) =>
         this.streamingResolveAndUpsert(spillPath, physicalCollectionName),
       recomputeMetrics: async (physicalCollectionName) => this.recomputeGraphMetricsStreaming(physicalCollectionName),
+      extractHierarchyDependents: async (physicalCollectionName) =>
+        this.extractHierarchyDependents(physicalCollectionName),
     };
+  }
+
+  /**
+   * The unchanged files whose persisted resolution read a hierarchy answer
+   * that this run moved (bd tea-rags-mcp-7t2ee), parsed fresh for pass-2 —
+   * the files a full run would resolve differently from the edges they hold.
+   *
+   * Scoped like the barrier's hydration: the families this run walked, since
+   * only a walked file can move a family's hierarchy. Under language affinity
+   * each partition takes the dependents of the languages it resolves; every
+   * partition absorbed every file, so each computes the same set and keeps its
+   * share. A read failure degrades to "follow nothing" with a stderr line, the
+   * same trade the hydration makes — losing the heal costs this run's cones,
+   * losing the run costs the index.
+   */
+  private async extractHierarchyDependents(physicalCollectionName?: PhysicalCollectionName): Promise<FileExtraction[]> {
+    const { runState } = this;
+    const root = runState.projectRoot;
+    const walked = runState.walkedRelPaths();
+    if (root === undefined || walked.size === 0) return [];
+    const { graphDb, symbolTable } = await this.getStore(physicalCollectionName);
+    let dependencies: PersistedHierarchyDescendantDependency[];
+    try {
+      dependencies = await graphDb.listHierarchyDependencies(runState.walkedFamilyScope());
+    } catch (err) {
+      process.stderr.write(
+        `[tea-rags] codegraph hierarchy-dependency read failed: ${(err as Error).message}\n` +
+          "[tea-rags] unchanged callers keep their cones this run — a later incremental or --force-enrichments codegraph heals them\n",
+      );
+      return [];
+    }
+    const partitioned = runState.mirroredRelPaths.size > 0;
+    const owned = new Set(runState.extractedFilesByLanguage.keys());
+    const relPaths = selectHierarchyDependents({
+      dependencies: partitioned ? dependencies.filter((d) => owned.has(d.language)) : dependencies,
+      viewFor: (language) => runState.hierarchyViewFor(language),
+      walkedRelPaths: walked,
+      declaredByWalkedFile: typeDeclaredByAnyOf(symbolTable, walked),
+    });
+    const extractions: FileExtraction[] = [];
+    for (const relPath of this.filterExtractablePaths(relPaths)) {
+      try {
+        extractions.push(await this.extractOneFile(root, relPath));
+      } catch (err) {
+        // Gone or unreadable since it was indexed: the deletion path owns it.
+        if (process.env.DEBUG === "true") {
+          process.stderr.write(`[codegraph] skip dependent ${relPath}: ${(err as Error).message}\n`);
+        }
+      }
+    }
+    if (isDebug() && extractions.length > 0) {
+      console.error("[GitEnrich] PHASE: CODEGRAPH_HIERARCHY_DEPENDENTS", {
+        dependencies: dependencies.length,
+        walkedFiles: walked.size,
+        reresolved: extractions.length,
+      });
+    }
+    return extractions;
   }
 
   /**

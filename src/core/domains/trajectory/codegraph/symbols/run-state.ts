@@ -1219,6 +1219,26 @@ export class CodegraphRunState {
   }
 
   /**
+   * Every file this run walked — owned and mirrored alike. The set hydration
+   * skips and the hierarchy-dependent selection (bd tea-rags-mcp-7t2ee) never
+   * re-resolves, because its fresh walk is already authoritative.
+   */
+  walkedRelPaths(): Set<RelPath> {
+    const walked = new Set<RelPath>(this.mirroredRelPaths);
+    for (const relPaths of this.extractedRelPathsByLanguage.values()) for (const p of relPaths) walked.add(p);
+    return walked;
+  }
+
+  /**
+   * The languages whose persisted state this run can use: every language
+   * sharing a family with one it walked. Pass-2 resolves only walked families,
+   * and every name-keyed map hands a resolver its own family's partition.
+   */
+  walkedFamilyScope(): { kind: "languages"; languages: string[] } {
+    return { kind: "languages", languages: languagesSharingFamilyWith(this.extractedRelPathsByLanguage.keys()) };
+  }
+
+  /**
    * Absorb the persisted pass-1 slices of files this run did NOT walk (bd
    * tea-rags-mcp-znxg8), so an incremental run's run-global maps describe the
    * PROJECT, matching the symbol table it resolves against.
@@ -1243,10 +1263,11 @@ export class CodegraphRunState {
   private async hydratePersistedPass1Aggregates(
     load: (scope: Pass1AggregateReadScope) => Promise<readonly CodegraphPass1FileAggregates[]>,
   ): Promise<void> {
-    const languages = languagesSharingFamilyWith(this.extractedRelPathsByLanguage.keys());
+    const scope = this.walkedFamilyScope();
+    const { languages } = scope;
     let persisted: readonly CodegraphPass1FileAggregates[];
     try {
-      persisted = await load({ kind: "languages", languages });
+      persisted = await load(scope);
     } catch (err) {
       process.stderr.write(
         `[tea-rags] codegraph pass-1 aggregate hydration failed: ${(err as Error).message}\n` +
@@ -1254,8 +1275,7 @@ export class CodegraphRunState {
       );
       return;
     }
-    const walked = new Set<string>(this.mirroredRelPaths);
-    for (const relPaths of this.extractedRelPathsByLanguage.values()) for (const p of relPaths) walked.add(p);
+    const walked = this.walkedRelPaths();
     const inScope = new Set(languages);
     const hydratable = selectHydratablePass1Aggregates(
       persisted.filter((row) => inScope.has(row.language)),
@@ -1742,6 +1762,37 @@ export class CodegraphRunState {
   }
 
   /**
+   * Count a file pass-2 will resolve for THIS partition: the per-language file
+   * count and path list the resolvers are primed with, and its call sites. The
+   * defensive empty extraction carries `language: ""` and is not a file any
+   * resolver will be handed.
+   */
+  private countOwnedExtraction(extraction: FileExtraction): void {
+    if (extraction.language === "") return;
+    this.extractedFilesByLanguage.set(
+      extraction.language,
+      (this.extractedFilesByLanguage.get(extraction.language) ?? 0) + 1,
+    );
+    const relPaths = this.extractedRelPathsByLanguage.get(extraction.language);
+    if (relPaths === undefined) this.extractedRelPathsByLanguage.set(extraction.language, [extraction.relPath]);
+    else relPaths.push(extraction.relPath);
+    let callSites = 0;
+    for (const chunk of extraction.chunks) callSites += chunk.calls.length;
+    if (callSites > 0) this.extractedCallSitesByRelPath.set(extraction.relPath, callSites);
+  }
+
+  /**
+   * Admit an UNCHANGED file to this run's pass-2 because its recorded cone
+   * moved (bd tea-rags-mcp-7t2ee), after the barrier. It is counted like a
+   * walked file — pass-2 primes and resolves it — but merges nothing: its
+   * pass-1 facts were hydrated at `seal` from its persisted slice, which
+   * describes exactly this content, and the barrier's products are frozen.
+   */
+  admitReresolvedFile(extraction: FileExtraction): void {
+    this.countOwnedExtraction(extraction);
+  }
+
+  /**
    * Merge one file's pass-1 aggregates into the run-global maps. Called by the
    * extraction sink's `write` for every file walked in pass-1. Last-write-wins
    * on duplicate keys — same-class declarations across files are rare, and when
@@ -1762,17 +1813,8 @@ export class CodegraphRunState {
     // carries `language: ""` and is not a file any resolver will be handed.
     if (role === "mirror") {
       this.mirroredRelPaths.add(extraction.relPath);
-    } else if (extraction.language !== "") {
-      this.extractedFilesByLanguage.set(
-        extraction.language,
-        (this.extractedFilesByLanguage.get(extraction.language) ?? 0) + 1,
-      );
-      const relPaths = this.extractedRelPathsByLanguage.get(extraction.language);
-      if (relPaths === undefined) this.extractedRelPathsByLanguage.set(extraction.language, [extraction.relPath]);
-      else relPaths.push(extraction.relPath);
-      let callSites = 0;
-      for (const chunk of extraction.chunks) callSites += chunk.calls.length;
-      if (callSites > 0) this.extractedCallSitesByRelPath.set(extraction.relPath, callSites);
+    } else {
+      this.countOwnedExtraction(extraction);
     }
     // Class-name maps land in the file's language FAMILY (bd tea-rags-mcp-nbf8q).
     const { language } = extraction;

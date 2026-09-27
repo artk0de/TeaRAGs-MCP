@@ -44,6 +44,7 @@ import type {
   OntologyReportSectionRows,
   OntologyReportSummaryRows,
   Pass1AggregateReadScope,
+  PersistedHierarchyDescendantDependency,
   PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
@@ -66,6 +67,7 @@ import {
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonUnreachableError,
   CodegraphDaemonUnresponsiveError,
+  daemonErrorFromWire,
 } from "../errors.js";
 import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
@@ -442,7 +444,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       if (!p) continue;
       this.pending.delete(res.id);
       if (res.ok) p.resolve(res.result);
-      else p.reject(Object.assign(new Error(res.error.message), { name: res.error.name }));
+      else p.reject(daemonErrorFromWire(res.error));
     }
   }
 
@@ -1194,6 +1196,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async listPass1Aggregates(scope: Pass1AggregateReadScope): Promise<CodegraphPass1FileAggregates[]> {
     return (await this.call("listPass1Aggregates", { scope })) as CodegraphPass1FileAggregates[];
+  }
+
+  async listHierarchyDependencies(scope: Pass1AggregateReadScope): Promise<PersistedHierarchyDescendantDependency[]> {
+    return (await this.call("listHierarchyDependencies", { scope })) as PersistedHierarchyDescendantDependency[];
+  }
+
+  async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    await this.call("invalidateHierarchyDependentsOfDeletedFiles", { relPaths: [...relPaths] });
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {

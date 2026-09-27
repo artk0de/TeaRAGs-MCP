@@ -30,7 +30,7 @@
 
 import { once } from "node:events";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname as pathDirname } from "node:path";
 
 import { spillLiveMarkerPath } from "../../../../adapters/duckdb/spill-files.js";
@@ -126,6 +126,13 @@ export interface CodegraphSinkDeps {
    */
   resolveAndUpsert: (spillPath: string, physicalCollectionName?: PhysicalCollectionName) => Promise<void>;
   recomputeMetrics: (physicalCollectionName?: PhysicalCollectionName) => Promise<void>;
+  /**
+   * The UNCHANGED files this run must re-resolve because a hierarchy answer
+   * their persisted resolution depended on moved (bd tea-rags-mcp-7t2ee),
+   * freshly parsed. Asked once, right after the barrier — only there is the
+   * run's hierarchy complete. Absent = no hierarchy dependencies are followed.
+   */
+  extractHierarchyDependents?: (physicalCollectionName?: PhysicalCollectionName) => Promise<FileExtraction[]>;
 }
 
 /**
@@ -326,6 +333,18 @@ export function createCodegraphExtractionSink(
           async () => deps.resolveSymbolTable(physicalCollectionName),
           async (scope) => deps.loadPersistedPass1Aggregates(scope, physicalCollectionName),
         );
+        // Unchanged callers whose cone moved (bd tea-rags-mcp-7t2ee), appended to
+        // the closed spill. The barrier already hydrated their pass-1 facts from
+        // their persisted slices, which describe this very content, so they join
+        // pass-2 only — no merge, no node write, no walk ranges.
+        const dependents =
+          spillWriteCount > 0 ? ((await deps.extractHierarchyDependents?.(physicalCollectionName)) ?? []) : [];
+        if (dependents.length > 0) {
+          await appendDependentsToSpill(spillPath, dependents);
+          for (const extraction of dependents) deps.runState.admitReresolvedFile(extraction);
+          spillWriteCount += dependents.length;
+          deps.runState.stats.extractedFiles += dependents.length;
+        }
         if (spillWriteCount > 0) {
           await deps.resolveAndUpsert(spillPath, physicalCollectionName);
         }
@@ -357,6 +376,15 @@ export function createCodegraphExtractionSink(
       }
     },
   };
+}
+
+/** Append re-resolved extractions to a spill whose write stream is already closed. */
+async function appendDependentsToSpill(spillPath: string, extractions: readonly FileExtraction[]): Promise<void> {
+  try {
+    await appendFile(spillPath, extractions.map((extraction) => `${JSON.stringify(extraction)}\n`).join(""), "utf8");
+  } catch (err) {
+    throw new CodegraphSpillIoError(spillPath, "write", err instanceof Error ? err : undefined);
+  }
 }
 
 /**

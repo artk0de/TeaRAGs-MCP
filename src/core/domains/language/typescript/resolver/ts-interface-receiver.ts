@@ -20,8 +20,9 @@
  *     way, because a receiver-blind short-name match is a naming coincidence
  *     against a type that already names what the member is.
  *
- * Only INTERFACES qualify — a symbol every declaration of which is an
- * `interface` block, at least one of them in the project's own sources. A class
+ * Only CONTRACTS qualify — a symbol every declaration of which is an
+ * `interface` block, or a type alias of an object type (bd tea-rags-mcp-6ea2k),
+ * at least one of them in the project's own sources. A class
  * receiver keeps the answers it had: its members are symbols the table can pin
  * directly, and widening this to classes would re-route every class-typed
  * destructured receiver through the cone. Union and intersection receivers are
@@ -57,10 +58,9 @@ export function receiverProjectInterfaceNames(
 
   const names: string[] = [];
   for (const constituent of typeConstituents(handle.checker, handle.checker.getTypeAtLocation(node))) {
-    const symbol = constituent.getSymbol();
-    const declarations = symbol?.getDeclarations() ?? [];
-    if (symbol === undefined || declarations.length === 0) continue;
-    if (!declarations.every((declaration) => ts.isInterfaceDeclaration(declaration))) continue;
+    const symbol = contractSymbolOf(constituent);
+    if (symbol === undefined) continue;
+    const declarations = symbol.getDeclarations() ?? [];
     if (!declarations.some((declaration) => programCache.isProjectSourceFile(declaration.getSourceFile().fileName))) {
       continue;
     }
@@ -68,6 +68,33 @@ export function receiverProjectInterfaceNames(
     if (!names.includes(name)) names.push(name);
   }
   return names;
+}
+
+/**
+ * The CONTRACT symbol a receiver type names, or `undefined`: an interface
+ * (every declaration an `interface` block), or a type alias of an object type
+ * (`type StorageAdapter = { read…; write… }`). The 39xca.14 design makes both
+ * contracts, and the walker emits both as `structuralContracts` under the
+ * declared name. The checker reports the alias's type as an anonymous `__type`
+ * literal and names the alias only through `aliasSymbol`, so reading
+ * `getSymbol()` alone dropped every alias contract (bd tea-rags-mcp-6ea2k).
+ */
+function contractSymbolOf(type: ts.Type): ts.Symbol | undefined {
+  const symbol = type.getSymbol();
+  const declarations = symbol?.getDeclarations() ?? [];
+  if (symbol !== undefined && declarations.length > 0 && declarations.every((d) => ts.isInterfaceDeclaration(d))) {
+    return symbol;
+  }
+  const alias = type.aliasSymbol;
+  const aliasDeclarations = alias?.getDeclarations() ?? [];
+  if (
+    alias !== undefined &&
+    aliasDeclarations.length > 0 &&
+    aliasDeclarations.every((d) => ts.isTypeAliasDeclaration(d) && ts.isTypeLiteralNode(d.type))
+  ) {
+    return alias;
+  }
+  return undefined;
 }
 
 /**

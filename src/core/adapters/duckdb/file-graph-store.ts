@@ -23,6 +23,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   Pass1AggregateReadScope,
+  PersistedHierarchyDescendantDependency,
   RelPath,
 } from "../../contracts/types/codegraph.js";
 import {
@@ -85,6 +86,19 @@ const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"]
 // namesake caller's aggregate in another file is a distinct row, not a collision.
 const FANOUT_KEYS = ["source_symbol_id", "source_rel_path", "call_expression"] as const;
 const FANOUT_VALUES = ["member", "candidate_count"] as const;
+// Migration 039 (bd tea-rags-mcp-7t2ee): one row per (file, type it asked about).
+const HIERARCHY_DEPENDENCY_KEYS = ["source_rel_path", "type_name"] as const;
+const HIERARCHY_DEPENDENCY_VALUES = ["descendant_names"] as const;
+/** `descendant_names` separator: a type name never holds a newline. */
+const DESCENDANT_NAME_SEPARATOR = "\n";
+
+function encodeDescendantNames(names: readonly string[]): string {
+  return names.join(DESCENDANT_NAME_SEPARATOR);
+}
+
+function decodeDescendantNames(encoded: string): string[] {
+  return encoded === "" ? [] : encoded.split(DESCENDANT_NAME_SEPARATOR);
+}
 
 export class DuckDbFileGraphStore {
   constructor(private readonly session: DuckDbGraphSession) {}
@@ -144,6 +158,7 @@ export class DuckDbFileGraphStore {
     const fanoutRows: unknown[][] = [];
     const pass1Rows: unknown[][] = [];
     const typeOnlyFileEdgeRows: unknown[][] = [];
+    const hierarchyDependencyRows: unknown[][] = [];
     for (const { node, edges } of group) {
       // A file may re-import the same module on different lines, so the same
       // (source, target) can arrive twice in one extraction — the diff keeps
@@ -222,6 +237,9 @@ export class DuckDbFileGraphStore {
       if (edges.pass1Aggregates !== undefined) {
         pass1Rows.push(toCgPass1Row({ ...edges.pass1Aggregates, relPath: node.relPath }));
       }
+      for (const d of edges.hierarchyDependencies ?? []) {
+        hierarchyDependencyRows.push([node.relPath, d.typeName, encodeDescendantNames(d.descendantNames)]);
+      }
     }
 
     await this.session.applyScopedRowDiff(
@@ -293,6 +311,77 @@ export class DuckDbFileGraphStore {
       CG_PASS1_VALUE_COLUMNS,
       pass1Rows,
     );
+    // Hierarchy dependencies (bd tea-rags-mcp-7t2ee) — the answers this file's
+    // resolution read; a re-walk replaces them, so a type it stopped asking
+    // about stops invalidating it.
+    await this.session.applyScopedRowDiff(
+      "cg_hierarchy_dependencies",
+      "source_rel_path",
+      relPaths,
+      HIERARCHY_DEPENDENCY_KEYS,
+      HIERARCHY_DEPENDENCY_VALUES,
+      hierarchyDependencyRows,
+    );
+  }
+
+  /**
+   * The persisted hierarchy dependencies whose SOURCE file is of one of
+   * `scope`'s languages (bd tea-rags-mcp-7t2ee). Once per run, at the barrier;
+   * the language comes from the file row, so the filter runs in SQL.
+   */
+  async listHierarchyDependencies(scope: Pass1AggregateReadScope): Promise<PersistedHierarchyDescendantDependency[]> {
+    const select = `SELECT d.source_rel_path, f.language, d.type_name, d.descendant_names
+      FROM cg_hierarchy_dependencies d JOIN cg_symbols_files f ON f.rel_path = d.source_rel_path`;
+    type Row = { source_rel_path: string; language: string; type_name: string; descendant_names: string };
+    let rows: Row[];
+    if (scope.kind === "allLanguages") {
+      rows = await this.session.queryAll<Row>(select);
+    } else {
+      if (scope.languages.length === 0) return [];
+      const placeholders = scope.languages.map(() => "?").join(", ");
+      rows = await this.session.queryAll<Row>(`${select} WHERE f.language IN (${placeholders})`, [...scope.languages]);
+    }
+    return rows.map((r) => ({
+      sourceRelPath: r.source_rel_path,
+      language: r.language,
+      typeName: r.type_name,
+      descendantNames: decodeDescendantNames(r.descendant_names),
+    }));
+  }
+
+  /**
+   * Clear the content hash of every surviving file whose recorded dependency
+   * lists a type `relPaths` declare (bd tea-rags-mcp-7t2ee), so the drift
+   * repair re-walks it. The declared names come from `cg_symbols` — member ids
+   * never appear in a descendant list, so no kind filter is needed. Must run
+   * before those files' `cg_symbols` rows are removed.
+   */
+  async invalidateHierarchyDependentsOfDeletedFiles(relPaths: readonly RelPath[]): Promise<void> {
+    if (relPaths.length === 0) return;
+    const placeholders = relPaths.map(() => "?").join(", ");
+    const declared = await this.session.queryAll<{ fq_name: string }>(
+      `SELECT DISTINCT fq_name FROM cg_symbols WHERE rel_path IN (${placeholders})`,
+      [...relPaths],
+    );
+    if (declared.length === 0) return;
+    const deleted = new Set<string>(relPaths);
+    const names = new Set(declared.map((r) => r.fq_name));
+    const dependencies = await this.session.queryAll<{ source_rel_path: string; descendant_names: string }>(
+      "SELECT source_rel_path, descendant_names FROM cg_hierarchy_dependencies",
+    );
+    const dependents = new Set<string>();
+    for (const row of dependencies) {
+      if (deleted.has(row.source_rel_path) || dependents.has(row.source_rel_path)) continue;
+      if (decodeDescendantNames(row.descendant_names).some((name) => names.has(name))) {
+        dependents.add(row.source_rel_path);
+      }
+    }
+    if (dependents.size === 0) return;
+    const targets = [...dependents];
+    await this.session.run(
+      `UPDATE cg_symbols_files SET content_hash = NULL WHERE rel_path IN (${targets.map(() => "?").join(", ")})`,
+      targets,
+    );
   }
 
   /**
@@ -335,6 +424,7 @@ export class DuckDbFileGraphStore {
       );
       await this.session.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
+      await this.session.run("DELETE FROM cg_hierarchy_dependencies WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_pass1_aggregates WHERE rel_path = ?", [relPath]);
       // The file's resolve tallies (bd tea-rags-mcp-xpmwg): `getRunStats` sums

@@ -358,3 +358,47 @@ describe("cross-build shared-collection open retry (42hno)", () => {
     }
   });
 });
+
+describe("a corrupt codegraph database fails fast (zgg62)", () => {
+  function writeJunkDatabase(dir: string, name: string): void {
+    mkdirSync(join(dir, "codegraph"), { recursive: true });
+    writeFileSync(join(dir, "codegraph", `${name}.duckdb`), "not a duckdb database ".repeat(200));
+  }
+
+  it("openRetry does not retry an open refused because the file is not a DuckDB database", async () => {
+    const { DuckDbOpenFailedError } = await import("../../../../../src/core/adapters/duckdb/errors.js");
+    const dir = mkdtempSync(join(tmpdir(), "cg-keyed-j-"));
+    root = dir;
+    writeJunkDatabase(dir, "code_junk_v1");
+    const pool = new GraphDbClientPool({
+      rootDir: dir,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+      openRetry: { maxMs: 20_000, intervalMs: 100 },
+    });
+    pools.push(pool);
+
+    const started = Date.now();
+    const err = await pool.acquire("code_junk_v1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DuckDbOpenFailedError);
+    expect((err as InstanceType<typeof DuckDbOpenFailedError>).lockContention).toBe(false);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("a graph read through the daemon on a junk database rejects at once with the typed open error", async () => {
+    const { DuckDbOpenFailedError } = await import("../../../../../src/core/adapters/duckdb/errors.js");
+    const paths = makePaths();
+    writeJunkDatabase(root, "code_junk_daemon_v1");
+    await startKeyedDaemon(paths);
+    const pool = makePool(paths);
+
+    const started = Date.now();
+    const err = await pool
+      .acquireReader("code_junk_daemon_v1")
+      .then(async (handle) => handle.graphDb.hasData())
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DuckDbOpenFailedError);
+    expect((err as InstanceType<typeof DuckDbOpenFailedError>).code).toBe("INFRA_DUCKDB_OPEN_FAILED");
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 30_000);
+});

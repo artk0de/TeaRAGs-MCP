@@ -165,6 +165,27 @@
   every `*rel_path` column naming it, including `cg_symbols_cycles.member` for
   `scope = 'file'`.
 
+- **An unchanged caller is re-resolved when a hierarchy answer its resolution
+  read has moved — full and incremental runs hold the same edges.** A CHA cone
+  is a function of the whole hierarchy, so a caller whose file did not change
+  kept the cone of the run that last walked it (bd tea-rags-mcp-7t2ee).
+  `CallEdgeResolutionRunner#resolve` threads a `HierarchyDependencyRecorder`
+  (symbols/hierarchy-dependencies.ts) as the call sites' `CallContext.hierarchy`
+  and persists each `getDescendants(T)` it saw with the transitive descendant
+  names (`cg_hierarchy_dependencies`, migration 039). Two owners act on it:
+  after `seal`, `selectHierarchyDependents` names the unwalked files whose
+  recorded answer differs from the sealed view, or whose descendants a walked
+  file declares (member-set change), and the sink appends them to the spill for
+  pass-2 only — counted, never re-absorbed, since `seal` already hydrated their
+  slices; a deletion, which opens no barrier, goes through
+  `DuckDbFileGraphStore#invalidateHierarchyDependentsOfDeletedFiles` from
+  `handleDeletedPaths`, clearing those callers' content hashes so
+  `EnrichmentCoordinator#runRepairPass` — which re-reads the drift after pruning
+  orphans — walks them in the same run. Two things an edit must keep: a
+  hierarchy read that bypasses `CallContext.hierarchy` records nothing, and
+  ancestor reads are not recorded (a different dependency, not the cone's). Case
+  matrix: `provider-incremental-cone-invalidation.test.ts`.
+
 - **A pooled graph client is valid only while its path still names the file it
   holds open, and closing one never checkpoints.** `GraphDbClientPool#acquire` —
   the daemon's per-op path through `CodegraphDaemonServer#handle` — and

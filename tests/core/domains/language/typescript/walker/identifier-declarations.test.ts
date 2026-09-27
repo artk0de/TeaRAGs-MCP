@@ -413,6 +413,26 @@ describe("TypeScript walker — identifier type multiplicity", () => {
     expect(unwrapped).toEqual({ doc: true, pending: undefined, forced: undefined, n: undefined });
   });
 
+  // bd tea-rags-mcp-6ea2k — the grammar parses `await f<T>(x)` as a call whose
+  // callee is `await f`, so the awaited generic call must read as awaited too.
+  it("marks an awaited GENERIC call as awaited, bound to its callee", () => {
+    const code = [
+      "async function run(id: string) {",
+      "  const doc = await fetchDocument<Doc>(id);",
+      "  const pending = fetchDocument<Doc>(id);",
+      "}",
+    ].join("\n");
+    const declarations = declarationsOf(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+    const locals = (declarations ?? []).filter((d) => d.kind === "local");
+    expect(Object.fromEntries(locals.map((d) => [d.name, d.boundCallUnwrapped]))).toEqual({
+      doc: true,
+      pending: undefined,
+    });
+    expect(locals.find((d) => d.name === "doc")?.boundCallee).toEqual(
+      locals.find((d) => d.name === "pending")?.boundCallee,
+    );
+  });
+
   it("keeps `many` through an async function's awaited Promise<T[]>", () => {
     const src = "async function pick(): Promise<Doc[]> {}";
     expect(multiplicityOf(src)).toEqual([["return", "pick", "Doc", "many"]]);

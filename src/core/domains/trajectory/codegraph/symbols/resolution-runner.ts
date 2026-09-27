@@ -21,6 +21,7 @@ import {
   type FileExtraction,
   type GlobalSymbolTable,
   type GraphEdges,
+  type HierarchyView,
   type RelPath,
   type SymbolDefinitionKind,
 } from "../../../../contracts/types/codegraph.js";
@@ -30,6 +31,7 @@ import type {
   LanguageSymbolResolver,
 } from "../../../../contracts/types/language.js";
 import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
+import { descendantNamesOf, HierarchyDependencyRecorder } from "./hierarchy-dependencies.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { buildPass1Aggregates } from "./pass1-aggregates.js";
 import { classifyReceiverKind, type ReceiverKind } from "./receiver-kind.js";
@@ -269,6 +271,35 @@ export class CallEdgeResolutionRunner {
   ) {}
 
   /**
+   * The hierarchy the file {@link resolve} is resolving reads — a recorder over
+   * the caller family's view, so the file's hierarchy dependencies are exactly
+   * what its call sites asked (bd tea-rags-mcp-7t2ee). Absent outside
+   * `resolve` (the harness entry {@link callSiteVerdicts}), where the plain
+   * view is threaded.
+   */
+  private activeHierarchy: { relPath: RelPath; recorder: HierarchyDependencyRecorder } | undefined;
+
+  /**
+   * Recorded descendant answers per sealed view. Keyed by the view object, which
+   * the barrier builds anew every run, so the memo cannot outlive its run.
+   */
+  private readonly descendantAnswers = new WeakMap<HierarchyView, Map<string, string[]>>();
+
+  private descendantAnswer(view: HierarchyView, typeName: string): string[] {
+    let perView = this.descendantAnswers.get(view);
+    if (perView === undefined) {
+      perView = new Map();
+      this.descendantAnswers.set(view, perView);
+    }
+    let names = perView.get(typeName);
+    if (names === undefined) {
+      names = descendantNamesOf(view, typeName);
+      perView.set(typeName, names);
+    }
+    return names;
+  }
+
+  /**
    * Tell every language whose files this pass will resolve how many of them
    * there are, before the first file is read (bd tea-rags-mcp-6aytq).
    *
@@ -401,10 +432,17 @@ export class CallEdgeResolutionRunner {
     if (!resolver) return { fileEdges: [], methodEdges };
 
     const inputs = this.buildResolverInputs(extraction);
-    // Call sites FIRST, file edges second (bd tea-rags-mcp-y99pg.38): a
-    // language whose imports name no file derives its file graph from where
-    // these calls land, so `resolveFileEdges` receives them.
-    this.resolveMethodEdges(extraction, symbolTable, resolver, inputs, methodEdges, ambiguousFanouts);
+    const view = this.runState.hierarchyViewFor(extraction.language);
+    const recorder = view === undefined ? undefined : new HierarchyDependencyRecorder(view);
+    this.activeHierarchy = recorder === undefined ? undefined : { relPath: extraction.relPath, recorder };
+    try {
+      // Call sites FIRST, file edges second (bd tea-rags-mcp-y99pg.38): a
+      // language whose imports name no file derives its file graph from where
+      // these calls land, so `resolveFileEdges` receives them.
+      this.resolveMethodEdges(extraction, symbolTable, resolver, inputs, methodEdges, ambiguousFanouts);
+    } finally {
+      this.activeHierarchy = undefined;
+    }
     const fileEdges = this.buildFileEdges(extraction, symbolTable, resolver, inputs, methodEdges);
     const typeOnlyFileEdges = this.buildTypeOnlyFileEdges(extraction, symbolTable, resolver, inputs, fileEdges);
 
@@ -419,6 +457,12 @@ export class CallEdgeResolutionRunner {
     if (typeOnlyFileEdges.length > 0) edges.typeOnlyFileEdges = typeOnlyFileEdges;
     if (inheritance.length > 0) edges.inheritance = inheritance;
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
+    // What the call sites read from the hierarchy (bd tea-rags-mcp-7t2ee), so a
+    // later run can re-resolve this file when one of those answers moves.
+    if (view !== undefined && recorder !== undefined) {
+      const dependencies = recorder.dependencies((typeName) => this.descendantAnswer(view, typeName));
+      if (dependencies.length > 0) edges.hierarchyDependencies = dependencies;
+    }
     // The pass-1 aggregate slice (bd tea-rags-mcp-znxg8), attached here so it
     // rides the per-file reconciliation the edges already have. Derived from the
     // SPILLED extraction rather than handed down from pass-1: pass-1 folds every
@@ -856,7 +900,12 @@ export class CallEdgeResolutionRunner {
       // devirtualization of a polymorphic typed receiver. Built at the
       // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops. The caller's
       // language family's view, never the all-family one (bd tea-rags-mcp-qea83).
-      hierarchy: this.runState.hierarchyViewFor(extraction.language),
+      // Inside `resolve` the file's recorder, which answers from the same view
+      // and remembers what was asked (bd tea-rags-mcp-7t2ee).
+      hierarchy:
+        this.activeHierarchy?.relPath === extraction.relPath
+          ? this.activeHierarchy.recorder
+          : this.runState.hierarchyViewFor(extraction.language),
       // bd DEFECT 2 — run-global self-dispatch template map narrows an entry
       // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
       // strategy CONTINUEs (no-op).
