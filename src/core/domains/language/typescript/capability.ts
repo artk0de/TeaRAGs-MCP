@@ -156,6 +156,9 @@ export const capability: LanguageCapability = {
   // (`lexicalCallee`) — a parameter callee emits no edge, a function-scoped
   // helper pins to its own row by walker scope, a local value takes only the
   // checker tier's answer.
+  // Same walker 12, bd tea-rags-mcp-vqdi6: a FULL index walked `.tsx` files on
+  // the chunker's `typescript`-grammar tree and lost ~72% of their call sites;
+  // the cross-pass extraction now walks the `tsx` grammar, as a recompute did.
   versions: { chunking: 2, walker: 12, codegraphSchema: 2 },
   // Google TypeScript Style Guide: classes, interfaces, types and enums
   // UpperCamelCase; functions, methods, parameters, locals and properties
