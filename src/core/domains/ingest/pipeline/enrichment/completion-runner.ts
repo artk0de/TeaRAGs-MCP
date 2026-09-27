@@ -488,13 +488,16 @@ export class CompletionRunner {
         contentHashes: filePhase.runContentHashes,
         ...(pass1Aggregates ? { pass1Aggregates } : {}),
       });
-      if (fileOverlays.size > 0) {
-        await filePhase.applyFinalize(
-          physicalCollectionName,
-          ctx,
-          fileOverlays,
-          chunkPhase.getDeferredChunkMap(ctx.key),
-        );
+      // Apply whenever there is something to settle, not only when the graph
+      // returned overlays: the apply is also what bare-stamps (and miss-tracks)
+      // a file the graph holds nothing for. An incremental run that touched only
+      // such files — two markdown files re-ingested by a recompute's sync leg —
+      // gets an EMPTY overlay map, and skipping on it left every point of those
+      // files with neither terminal marker (bd tea-rags-mcp-vnmj1). A provider
+      // that accumulates no chunk map (git) still skips on an empty map.
+      const chunkMap = chunkPhase.getDeferredChunkMap(ctx.key);
+      if (fileOverlays.size > 0 || chunkMap.size > 0) {
+        await filePhase.applyFinalize(physicalCollectionName, ctx, fileOverlays, chunkMap);
       }
     }
     await filePhase.drain();

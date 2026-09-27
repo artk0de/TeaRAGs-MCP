@@ -162,3 +162,30 @@ describe("CompletionRunner terminal scan visibility (vnmj1)", () => {
     expect(chunk).toMatchObject({ status: "completed", unenrichedChunks: 0 });
   });
 });
+
+// Why those 92 points had no codegraph file stamp BEFORE the recompute: the
+// sync leg re-ingested only the two markdown files, the graph held no row for
+// either, so finalize returned an EMPTY overlay map — and the file-finalize step
+// skipped the apply outright on `size === 0`. The apply is also what bare-stamps
+// a file the graph has nothing for, so the sync run ended with those points
+// carrying neither terminal marker (its own file marker `degraded / 92`, the
+// sync log's `missedFiles: 0`), owed until some later run.
+describe("CompletionRunner file finalize with an empty overlay map (vnmj1)", () => {
+  it("still settles the run's files the graph holds nothing for", async () => {
+    const qdrant = new MockQdrantManager();
+    await seed(qdrant);
+    const { run, marker } = buildRun(qdrant, new Map());
+
+    await run();
+
+    const points = await qdrant.scrollFiltered(COLL, {}, 100);
+    const fileStamps = Object.fromEntries(
+      points
+        .filter((p) => p.id !== INDEXING_METADATA_ID)
+        .map((p) => [p.id, (p.payload.codegraph as any)?.symbols?.file?.enrichedAt]),
+    );
+    expect(fileStamps).toEqual({ c1: "ts", d1: "ts" });
+    const { file } = await terminalMarkers(marker);
+    expect(file).toMatchObject({ status: "completed", unenrichedChunks: 0 });
+  });
+});
