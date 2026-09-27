@@ -589,6 +589,30 @@ Rejected, measured on the same copies:
   changes above it fixes one, `…PipelineBody`. `process`, `base` and `operation`
   are no connector-free suffix, so the other five stay. A suffix count cannot
   tell a kind from an entity noun that verb-object names also end in.
+- **Guard by the type's own supertypes.** Under this guard, a connector name
+  stays head-final when its last word, singular, is the head of one of its own
+  declared supertypes, followed transitively through project types
+  (`projectSupertypes`). It flips no name on `_v15`, `_v14` or the self-index,
+  so none of the six is fixed. `SendToOpensearchProcess`,
+  `DeleteExpiredMonthlyIndicesProcess`, `TemplateSelectWithHookParamsBase`,
+  `BulkAddClientsToPipelineBody` and `NewProposalDefaultClients` declare no
+  supertype at all. `RunBatchApplyToClientsAsyncOperation` extends
+  `KindOfService` and `KindOfServiceTask`, not `AsyncOperation`.
+  `AsyncOperation` itself carries no connector: it lost its suffix only in the
+  recount. `ObjectsForFirm` declares none, so it keeps `objects`.
+- **Guard by the file's own directory word.** Under this guard, the last word
+  stays the head when it equals the singular last word of the directory the file
+  sits in (`processes/send_to_opensearch_process.rb`). On `_v15` it flips 93
+  Ruby and 5 TS declarations. Most are false. The Ruby API contracts live in
+  `list_by_contact/request.rb`, a directory named after the type itself, so
+  `ListByContact`, `FindForEmail` and `ListByUser` are headed `contact`, `email`
+  and `user`. Verb services sit in a directory named for their object:
+  `MigrateBlobsToImages` in `inline_images/` and `AssignApToFirm` in `firms/`.
+  Of a 20-item hand check, 3 flips are right and 17 wrong. The right ones are
+  `SendToOpensearchProcess`, `UploadToS3Process` and
+  `DocumentsUploadedByConcern`. Across all 98 flips, about 8 are right,
+  including the three TS `…NotificationType` names in `types/`. The guard fixes
+  two of the six wrong changes, both Process names, at that cost.
 - **Positional distribution (above).** No valley on any corpus.
 
 Roles are computed at read time from `cg_type_declarations` (§1b) by one store
