@@ -124,6 +124,45 @@ which is already 2 100+ lines):
 Thresholds reuse the existing minima (`MIN_ROLE_MEMBERS = 2`, the 0.5 dominance
 share used by `supportedReturnVerb`); no new tuning constants.
 
+### D4a. The verb lexicon is derived from the corpus, not listed
+
+Amendment (bd tea-rags-mcp-tfhop, user decision 2026-09-28). The first cut of
+D4 reused `NAMING_VERB_PREFIXES` as "the verbs". That list is a closed class of
+accessor / factory verbs — words saying how a value is obtained, whose noun IS
+the return (`find_user : User`). Its roles in `VERB_TYPE`,
+`calleeDerivedWords` and `returnNounWords` stay. As a method vocabulary it is
+wrong: `update_user`, `send_email`, `can_resolve?` fell into the verbless
+branch and no tail dominance was ever computed for them.
+
+A head word `w` of multi-word method / function names is a verb of the
+project's language namespace when both hold:
+
+- `headTails(w) >= MIN_ROLE_MEMBERS` — `w` opens names with at least two
+  distinct noun tails (tail normalized across casings, `!` / `?` dropped);
+- `headHolders(w) > lastHolders(w)` — `w` opens names more often than it ends
+  them. `update` heads dozens of tails and rarely ends a name; `user` is the
+  reverse.
+
+No new constant: the minimum and the majority are the ones D4 already uses.
+Predicate heads (`is`, `has`, `can`) and converters (`to`) qualify on the same
+evidence, which is correct for a method vocabulary.
+
+Reads, all bounded:
+
+| Read | Shape | Rows back |
+| --- | --- | --- |
+| `readMethodHeadWords` (replaces `readMethodVerbs`) | head = leading lowercase run before `_` / an uppercase letter; `GROUP BY head HAVING count(DISTINCT tail) >= ?`; `lastHolders` computed in the same statement only for those candidate heads | candidate heads (hundreds) |
+| `readMethodNamesMatching` (tail / last-word slices, unchanged) | tail pattern no longer enumerates verbs: `^[a-z][a-z0-9]*(?:_tail|Tail)[!?]?$`; heads filtered by the lexicon in TS | names carrying the draft tails |
+| `readMethodTailVerbs` (ontology `verbs` section) | `(tail, head, holders)` for lexicon heads, only tails with `count(DISTINCT head) >= 2` | contested tails only |
+
+The lexicon is memoized per request like the vocabulary slice was. The
+judgement functions take it as a parameter (`methodVerbOf(name, lexicon)`);
+`method-vocabulary.ts` no longer imports `NAMING_VERB_PREFIXES`.
+
+The accessor class itself can be derived too (a `w_X` whose return type spells
+`X` in a majority) — separate slice, bd tea-rags-mcp-6tu7q, since it moves
+`verdicts.ts` behaviour.
+
 ### D5. `get_ontology_report` gains a `verbs` section
 
 D1–D3 rows reach the existing sections by themselves once they carry a type:
