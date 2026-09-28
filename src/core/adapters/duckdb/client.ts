@@ -71,6 +71,10 @@ import type {
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
+  MethodNamePatternQuery,
+  MethodNameRow,
+  MethodVerbQuery,
+  MethodVerbRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -368,6 +372,14 @@ export class DuckDbGraphClient implements GraphDbClient {
     languages?: readonly string[],
   ): Promise<string[]> {
     return this.identifiers.existingSymbolShortNames(names, excludePaths, languages);
+  }
+
+  async readMethodVerbs(q: MethodVerbQuery): Promise<MethodVerbRow[]> {
+    return this.identifiers.readMethodVerbs(q);
+  }
+
+  async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
+    return this.identifiers.readMethodNamesMatching(q);
   }
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {

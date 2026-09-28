@@ -39,6 +39,10 @@ import type {
   IdentifierTypeAggregateRow,
   IdentifierTypeScopeQuery,
   InheritanceEdge,
+  MethodNamePatternQuery,
+  MethodNameRow,
+  MethodVerbQuery,
+  MethodVerbRow,
   NonPublicMemberEdge,
   OntologyReportQuery,
   OntologyReportSectionRows,
@@ -935,6 +939,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
       excludePaths: excludePaths === undefined ? undefined : [...excludePaths],
       languages: languages === undefined ? undefined : [...languages],
     })) as string[];
+  }
+
+  async readMethodVerbs(q: MethodVerbQuery): Promise<MethodVerbRow[]> {
+    return (await this.call("readMethodVerbs", { query: q })) as MethodVerbRow[];
+  }
+
+  async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
+    return (await this.call("readMethodNamesMatching", { query: q })) as MethodNameRow[];
   }
 
   async countIdentifiers(q: IdentifierTypeScopeQuery): Promise<number> {

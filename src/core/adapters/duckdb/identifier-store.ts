@@ -40,10 +40,16 @@ import type {
   IdentifierTypeMultiplicity,
   IdentifierTypeScopeQuery,
   IdentifierTypeSource,
+  MethodNamePatternQuery,
+  MethodNameRow,
+  MethodNameScopeQuery,
+  MethodVerbQuery,
+  MethodVerbRow,
   RelPath,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
+import { compileNonProductionPathPredicate } from "./non-production-path-sql.js";
 import { escapeLikeLiteral, placeholders } from "./sql-binding.js";
 
 /** Column order of every `cg_identifiers` write and of the diff read. */
@@ -76,6 +82,29 @@ const IDENTIFIER_IN_LIST_CHUNK = 200;
  * filter on it, so they see the rows they saw before such rows existed.
  */
 export const DECLARED_IDENTIFIER_SQL = "NOT (kind = 'return' AND type_name IS NULL)";
+
+/** Constructor names across the supported languages — never a method name the lexicon judges. */
+const CONSTRUCTOR_NAMES = ["initialize", "constructor", "__init__"] as const;
+
+/** `value` as an RE2 literal: every metacharacter escaped. */
+function escapeRegexLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The `cg_symbols` rows a method-name read sees: `method` / `function`
+ * symbols, no constructor, in production files of the evidence scope.
+ */
+function methodNameScopePredicate(q: MethodNameScopeQuery): SqlPredicate {
+  const scope = evidenceScopePredicate(q.pathPrefixes, q.excludePaths, q.languages);
+  const nonProduction = compileNonProductionPathPredicate(q.nonProductionPaths);
+  return {
+    sql: `symbol_kind IN ('method', 'function')
+            AND short_name NOT IN (${placeholders(CONSTRUCTOR_NAMES)})
+            AND ${scope.sql} AND NOT ${nonProduction("rel_path")}`,
+    params: [...CONSTRUCTOR_NAMES, ...scope.params],
+  };
+}
 
 /** Fixed reservoir seed, so the same table state yields the same shape sample. */
 const SHAPE_SAMPLE_SEED = 42;
@@ -663,5 +692,53 @@ export class DuckDbIdentifierStore {
       for (const r of rows) out.push(r.short_name);
     }
     return out;
+  }
+
+  /** The verb is the name's head up to `_`, a capital, or its end — `load_user`, `loadUser`, `load` → `load`. */
+  async readMethodVerbs(q: MethodVerbQuery): Promise<MethodVerbRow[]> {
+    if (q.verbs.length === 0) return [];
+    const scope = methodNameScopePredicate(q);
+    const verbRegex = `^(${q.verbs.map(escapeRegexLiteral).join("|")})(?:_|[A-Z]|$)`;
+    const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const rows = await this.session.queryAll<{
+      verb: string;
+      holders: number | string | bigint;
+      file_language?: string | null;
+    }>(
+      `SELECT regexp_extract(short_name, ?, 1) AS verb, count(DISTINCT symbol_id) AS holders${lang.column}
+         FROM ${lang.from}
+        WHERE ${scope.sql} AND regexp_matches(short_name, ?)
+        GROUP BY verb${lang.column}
+        ORDER BY holders DESC, verb${lang.order}`,
+      [verbRegex, ...scope.params, verbRegex],
+    );
+    return rows.map((r) => ({
+      verb: r.verb,
+      holders: Number(r.holders),
+      ...languageField(q.groupByLanguage, r),
+    }));
+  }
+
+  async readMethodNamesMatching(q: MethodNamePatternQuery): Promise<MethodNameRow[]> {
+    if (q.patterns.length === 0) return [];
+    const scope = methodNameScopePredicate(q);
+    const lang = fileLanguageGrouping("cg_symbols", q.groupByLanguage);
+    const rows = await this.session.queryAll<{
+      short_name: string;
+      holders: number | string | bigint;
+      file_language?: string | null;
+    }>(
+      `SELECT short_name, count(DISTINCT symbol_id) AS holders${lang.column}
+         FROM ${lang.from}
+        WHERE ${scope.sql} AND (${q.patterns.map(() => "regexp_matches(short_name, ?)").join(" OR ")})
+        GROUP BY short_name${lang.column}
+        ORDER BY holders DESC, short_name${lang.order}`,
+      [...scope.params, ...q.patterns],
+    );
+    return rows.map((r) => ({
+      shortName: r.short_name,
+      holders: Number(r.holders),
+      ...languageField(q.groupByLanguage, r),
+    }));
   }
 }

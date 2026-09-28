@@ -374,6 +374,39 @@ export interface IdentifierShapeSampleRow extends IdentifierLanguageGroupedRow {
   n: number;
 }
 
+// ── Method-name reads over cg_symbols (naming coverage for untyped methods) ──
+
+/**
+ * A read over declared method / function names (`cg_symbols`, symbol_kind
+ * `method` | `function`), production files only. Constructors
+ * (`initialize`, `constructor`, `__init__`) are never read.
+ */
+export interface MethodNameScopeQuery extends IdentifierScopeQuery, IdentifierLanguageGroupingQuery {
+  nonProductionPaths: TypeNameQuery["nonProductionPaths"];
+}
+
+/** Holders per leading verb, for the verbs of `verbs` only (`find_x`, `findX` → `find`). Empty `verbs` reads nothing. */
+export interface MethodVerbQuery extends MethodNameScopeQuery {
+  verbs: readonly string[];
+}
+
+/** Names matching any of `patterns` (RE2, anchored by the caller). Empty `patterns` reads nothing. */
+export interface MethodNamePatternQuery extends MethodNameScopeQuery {
+  patterns: readonly string[];
+}
+
+/** One leading verb of {@link MethodVerbQuery}; `holders` = distinct method symbols. */
+export interface MethodVerbRow extends IdentifierLanguageGroupedRow {
+  verb: string;
+  holders: number;
+}
+
+/** One method name matched by {@link MethodNamePatternQuery}; `holders` = distinct method symbols. */
+export interface MethodNameRow extends IdentifierLanguageGroupedRow {
+  shortName: string;
+  holders: number;
+}
+
 // ── Ontology audit over cg_identifiers (bd tea-rags-mcp-4p3sb.20) ──
 
 /** A section of the project-wide naming ontology audit ({@link GraphDbClient.readOntologyReportSections}). */
@@ -1119,6 +1152,16 @@ export interface GraphDbClient {
     excludePaths?: readonly string[],
     languages?: readonly string[],
   ) => Promise<string[]>;
+
+  /**
+   * Production method / function holders per leading verb of `q.verbs`, one
+   * row per verb (per verb and file language under `groupByLanguage`), largest
+   * first. Aggregated in SQL — the method table never reaches the caller.
+   */
+  readMethodVerbs: (q: MethodVerbQuery) => Promise<MethodVerbRow[]>;
+
+  /** Production method / function names matching any of `q.patterns`, with their holders, largest first. */
+  readMethodNamesMatching: (q: MethodNamePatternQuery) => Promise<MethodNameRow[]>;
 
   /** Row count behind {@link aggregateIdentifiersByType} for the same scope — drives scope widening. */
   countIdentifiers: (q: IdentifierTypeScopeQuery) => Promise<number>;

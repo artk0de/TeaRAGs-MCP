@@ -367,6 +367,8 @@ type IdentifierReader = Pick<
   | "anchorIdentifierTypes"
   | "identifierNameTypes"
   | "existingSymbolShortNames"
+  | "readMethodVerbs"
+  | "readMethodNamesMatching"
   | "countIdentifiers"
   | "identifierLanguageCounts"
   | "sampleIdentifierShapes"
@@ -2291,8 +2293,8 @@ interface EvidenceReadScope {
  * The reader with the answer's evidence scope — `excludePaths` and its language
  * namespace — bound into every evidence read: one wrapper, so no stage can read
  * the changed files, or another language's rows, by forgetting to pass them.
- * `readTypeNameRows` keeps a caller's explicit `languages` (a type draft reads
- * its own path's namespace). `anchorIdentifierTypes` (the caller's own anchors)
+ * `readTypeNameRows` and the method-name reads keep a caller's explicit
+ * `languages` (a type draft reads its own path's namespace). `anchorIdentifierTypes` (the caller's own anchors)
  * and `hasData` read no evidence and pass through; so does the ontology summary's
  * language scope, which its query's language profiles carry. Nothing to bind →
  * the reader itself.
@@ -2303,6 +2305,10 @@ function scopedEvidence(reader: IdentifierReader, scope: EvidenceReadScope): Ide
   if (excludePaths.length === 0 && languages === undefined) return reader;
   const excluded = excludePaths.length > 0 ? { excludePaths } : {};
   const bound = { ...excluded, ...(languages ? { languages } : {}) };
+  const languagesOf = (explicit: readonly string[] | undefined) => {
+    const scoped = explicit ?? languages;
+    return scoped ? { languages: scoped } : {};
+  };
   return {
     aggregateIdentifiersByType: async (q) => reader.aggregateIdentifiersByType({ ...q, ...bound }),
     aggregateIdentifiersByCallee: async (q) => reader.aggregateIdentifiersByCallee({ ...q, ...bound }),
@@ -2316,6 +2322,10 @@ function scopedEvidence(reader: IdentifierReader, scope: EvidenceReadScope): Ide
       languages === undefined
         ? reader.existingSymbolShortNames(names, excludePaths)
         : reader.existingSymbolShortNames(names, excludePaths, languages),
+    // The caller's explicit `languages` wins, as in `readTypeNameRows`.
+    readMethodVerbs: async (q) => reader.readMethodVerbs({ ...q, ...excluded, ...languagesOf(q.languages) }),
+    readMethodNamesMatching: async (q) =>
+      reader.readMethodNamesMatching({ ...q, ...excluded, ...languagesOf(q.languages) }),
     countIdentifiers: async (q) => reader.countIdentifiers({ ...q, ...bound }),
     identifierLanguageCounts: async (q) => reader.identifierLanguageCounts({ ...q, ...bound }),
     sampleIdentifierShapes: async (q) => reader.sampleIdentifierShapes({ ...q, ...bound }),
