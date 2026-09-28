@@ -33,16 +33,19 @@
  * second candidate. A lookup of a TYPE name (an annotation, a CHA locator, an
  * `extends` target) passes none and sees every kind.
  *
- * The role is answered by the CALLING file's language — its capability's
- * `symbolKindRoles` — so a TypeScript caller applies the TypeScript row and a
- * JavaScript caller the JavaScript one, whichever family member the candidates
- * come from.
+ * The role is answered by the CALLING resolver's language — the
+ * `codegraph.symbolKindRoles` row its vertical attaches to the ctx at its
+ * resolver entry (0qaht.13) — so a TypeScript caller applies the TypeScript
+ * row and a JavaScript caller the JavaScript one, whichever family member the
+ * candidates come from. The rows differ (JavaScript's is the constructible
+ * subset), which is why the descriptor is injected rather than assumed: this
+ * module may reach no vertical, only the kernel below it. A ctx no vertical
+ * built (a harness driving one strategy directly) carries no row, and a role
+ * narrows nothing there.
  */
 
 import type { CallContext, SymbolDefinition, SymbolKindRoles } from "../../../contracts/types/codegraph.js";
-import { capability as javascriptCapability } from "../javascript/capability.js";
 import { symbolLookupOptionsFor, type CallRoleSymbolLookupOptions } from "../kernel/symbol-kind-roles.js";
-import { capability as typescriptCapability } from "../typescript/capability.js";
 
 export const ECMASCRIPT_SOURCE_EXTENSIONS: readonly string[] = [
   ".ts",
@@ -60,13 +63,23 @@ export function isEcmascriptSourcePath(relPath: string): boolean {
   return ECMASCRIPT_SOURCE_EXTENSIONS.some((ext) => relPath.endsWith(ext));
 }
 
-const TYPESCRIPT_SOURCE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts"];
+/**
+ * The ctx the resolving vertical hands down, carrying its own
+ * `codegraph.symbolKindRoles` row — the DI seam (0qaht.13) that lets this
+ * module answer a role without importing either vertical's capability. Each
+ * family resolver calls it once at its entry; the row is the CALLING
+ * language's, not the candidate's.
+ */
+export function withEcmascriptSymbolKindRoles(ctx: CallContext, roles: SymbolKindRoles): CallContext {
+  // Idempotent on the vertical's own row (the capability's stable Set), so a
+  // nested entry re-wrapping an already-wrapped ctx allocates nothing.
+  if (ctx.symbolKindRoles === roles) return ctx;
+  return { ...ctx, symbolKindRoles: roles };
+}
 
-/** The kind roles of the language `callerFile` is written in — TypeScript or JavaScript. */
-function ecmascriptKindRolesOf(callerFile: string): SymbolKindRoles {
-  return TYPESCRIPT_SOURCE_EXTENSIONS.some((ext) => callerFile.endsWith(ext))
-    ? typescriptCapability.codegraph.symbolKindRoles
-    : javascriptCapability.codegraph.symbolKindRoles;
+/** The kind roles the calling vertical injected — `undefined` off its entry paths. */
+function ecmascriptKindRolesOf(ctx: CallContext): SymbolKindRoles | undefined {
+  return ctx.symbolKindRoles;
 }
 
 /** `ctx.symbolTable.lookupByShortName`, restricted to the ECMAScript family. */
@@ -76,7 +89,7 @@ export function lookupEcmascriptSymbolsByShortName(
   options?: CallRoleSymbolLookupOptions,
 ): SymbolDefinition[] {
   return ctx.symbolTable
-    .lookupByShortName(name, symbolLookupOptionsFor(ecmascriptKindRolesOf(ctx.callerFile), options))
+    .lookupByShortName(name, symbolLookupOptionsFor(ecmascriptKindRolesOf(ctx), options))
     .filter((def) => isEcmascriptSourcePath(def.relPath));
 }
 
@@ -92,6 +105,6 @@ export function lookupEcmascriptSymbols(
   options?: Pick<CallRoleSymbolLookupOptions, "role">,
 ): SymbolDefinition[] {
   return ctx.symbolTable
-    .lookup(fqName, symbolLookupOptionsFor(ecmascriptKindRolesOf(ctx.callerFile), options))
+    .lookup(fqName, symbolLookupOptionsFor(ecmascriptKindRolesOf(ctx), options))
     .filter((def) => isEcmascriptSourcePath(def.relPath));
 }
