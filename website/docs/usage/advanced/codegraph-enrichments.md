@@ -233,14 +233,15 @@ line. A finding carries its verdict's fields: `suggestion` and `holder` (or
 `alternatives` on a `NEW_TERM`. A name judged generic is listed even when it
 conforms, with `genericName`. `checked = conforming + novel + findings`.
 
-`checked` counts only what was judged. A method's name is judged through its
-return type, so a new method whose return type is unknown — most of them in
-Ruby — never becomes a draft and is in neither `checked` nor `conforming`.
-`notJudgedBy` says what the review skipped, per kind and reason:
-`{ "method": { "unknownReturnType": 12 }, "file": { "nonProduction": 3 } }`.
-File reasons are `nonProduction`, `noCodegraphLanguage` and `unreadable`, and
-they add up to `notJudged`. `notJudgedNames` lists the first 50 of them with
-path, line and name, so a reviewer knows what still needs reading by hand. An
+`checked` counts only what was judged. A method whose return type is unknown —
+most of them in Ruby — still becomes a draft: it is judged against the
+project's method vocabulary instead of a type, so it counts in `checked` like
+any other name. Only files go unjudged. `notJudgedBy` says what the review
+skipped, per reason:
+`{ "file": { "nonProduction": 3, "noCodegraphLanguage": 1 } }`.
+Reasons are `nonProduction`, `noCodegraphLanguage` and `unreadable`, and they
+add up to `notJudged`. `notJudgedNames` lists the first 50 of them with path,
+line and name, so a reviewer knows what still needs reading by hand. An
 excerpt from a live run on this repository:
 
 ```json

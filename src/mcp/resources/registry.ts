@@ -256,7 +256,9 @@ search.
 Codegraph on only. Judges names against project's own vocabulary; never judge a
 name by grep or semantic_search on the draft. Evidence read within draft's language
 namespace (languages sharing a naming convention's typeNamespace, e.g. TS + JS);
-never another language's rows.
+never another language's rows. Ruby: \`@@x\`, \`x ||= v\`, and accessor macros
+(attr_*, cattr_*/mattr_*, catalogue accessors — one field per operand) all
+declare \`kind: "field"\` rows, same as \`@ivar =\`.
 
 - "What does the project call values of type T?" → types=["TaxAutomationDocument"], language="ruby"
 - "Is Helper or Concern this area's suffix?" → types=["Helper","Concern"], pathPattern="app/lib/**" —
@@ -279,9 +281,13 @@ never another language's rows.
   (changes.base) and worktree (path) exits + repo's other trees — never trust changedFiles: 0 alone.
   Answer → review { workTree, base, mergeBase, changedFiles, wholeFiles?, checked, conforming, novel, findings, notes?,
   notJudged, notJudgedBy?, notJudgedNames?, truncated? }; changedFiles = files differing from mergeBase
-  (with files: of the listed); notJudgedBy = kind (file | method | function) → reason → count —
-  a method is judged only by its return type, so unknownReturnType methods are in neither checked
-  nor conforming; notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
+  (with files: of the listed); notJudgedBy = kind (file) → reason → count — only files go unjudged;
+  a method with no known return type is never skipped — it is an untyped return draft, judged by
+  the project's method vocabulary: its noun tail's dominant project verb → MISFIT (verb-swapped
+  suggestion), even when the draft's own head sits outside the verb lexicon, unless that head is
+  itself a project noun (ends more names than it starts); a verb the project already uses for the
+  tail → CONFORMS; verbless → CONFORMS when declared elsewhere in scope, else NO_CONVENTION
+  (analogues); notJudgedNames = first 50 { relPath, line?, name?, kind, reason } — read them yourself;
   findings flat { relPath, line, name, kind, type?, verdict, … } — non-CONFORMS verdicts and
   CONFORMS with alternatives. notes = CONFORMS on a generic name (genericName; information, counted
   in conforming). novel = NO_CONVENTION, or NEW_TERM with nothing to compare (not listed). notJudged = files
@@ -324,6 +330,8 @@ word the name owes.
 ## get_ontology_report Examples
 
 - Project-wide naming audit → sections=["synonyms","homonyms","outliers","collisions"], pathPattern="src/**"
+- Method-naming audit (opt-in) → sections=["verbs"]: per noun tail, the verbs the project uses plus
+  the deviants D4 would call MISFIT — contested tails only.
 
 ## Pagination
 
