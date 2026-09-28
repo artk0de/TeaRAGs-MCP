@@ -5,6 +5,9 @@ sidebar_position: 99
 
 ## [1.45.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.45.0...v1.45.1) (2026-09-28)
 
+Maintenance release with no user-facing changes. It supersedes 1.46.0, which was
+published by mistake: install 1.45.1 or later.
+
 ## [1.45.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.2...v1.45.0) (2026-09-27)
 
 ### 🔎 Search & ranking
