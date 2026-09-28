@@ -78,6 +78,14 @@ export function methodTailPattern(tail: readonly string[]): string {
   return `^(?:${verbs})(?:${snake}|${camel})[!?]?$`;
 }
 
+/**
+ * An RE2 pattern for any name opening with a lexicon verb followed by more words,
+ * in snake (`load_user`) or camel (`loadUser`) casing: `^(?:find|…)(?:_|[A-Z])`.
+ */
+export function methodVerbHeadPattern(): string {
+  return `^(?:${NAMING_VERB_PREFIXES.map(escapePatternWord).join("|")})(?:_|[A-Z])`;
+}
+
 /** An RE2 pattern for a name whose last word is `word`, in snake or camel casing, or the bare word itself. */
 export function methodLastWordPattern(word: string): string {
   const escaped = escapePatternWord(word);

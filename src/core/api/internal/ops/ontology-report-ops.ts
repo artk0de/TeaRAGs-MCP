@@ -35,6 +35,8 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type {
+  MethodNamePatternQuery,
+  MethodNameRow,
   OntologyEvidenceCounts,
   OntologyGenericNameRow,
   OntologyLocationRow,
@@ -49,15 +51,18 @@ import type { PhysicalCollectionName } from "../../../contracts/types/collection
 import type { CaseSplitPathPatterns } from "../../../contracts/types/file-classification.js";
 import type { IdentifierCasing, IdentifierNamingConvention } from "../../../contracts/types/language.js";
 import {
+  buildMethodVerbGroups,
   classifyNamingShape,
   detectIdentifierCasing,
   isTypeFamilyRoleName,
   isWeakerNamingShape,
   judgeGenericNames,
+  methodVerbHeadPattern,
   singularizeIdentifierWord,
   spellsTypeName,
   splitIdentifierWords,
   type GenericNameThresholds,
+  type MethodVerbNamespace,
   type NamingShape,
 } from "../../../domains/explore/naming-lexicon/index.js";
 import { LANGUAGE_MAP } from "../../../domains/ingest/pipeline/chunker/config.js";
@@ -83,10 +88,10 @@ import type {
   OntologyLocation,
   OntologyNameCount,
   OntologyOutlier,
-  OntologyReportSectionName,
   OntologyReportSummary,
   OntologySynonym,
   OntologyValueKind,
+  OntologyVerbGroup,
 } from "../../public/dto/ontology.js";
 import { resolveCollection } from "../collection-resolver.js";
 
@@ -116,7 +121,8 @@ export const ONTOLOGY_REPORT_THRESHOLDS: Omit<OntologyReportThresholds, "groupPo
   namesPerItem: 6,
 };
 
-const ALL_SECTIONS: readonly OntologyReportSectionName[] = ["synonyms", "homonyms", "outliers", "collisions"];
+/** The store-read sections, the default set. `verbs` is opt-in and never reaches the store's section read. */
+const ALL_SECTIONS: readonly OntologyReportSection[] = ["synonyms", "homonyms", "outliers", "collisions"];
 
 /** One judged generic name of the summary. */
 type OntologyGenericName = OntologyReportSummary["genericNames"][number];
@@ -241,10 +247,34 @@ export interface OntologyReportOpsDeps {
   languages: readonly OntologyLanguageProfile[];
 }
 
-function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSectionName[] {
+function requestedSections(req: Pick<GetOntologyReportRequest, "sections">): OntologyReportSection[] {
   return req.sections && req.sections.length > 0
     ? ALL_SECTIONS.filter((s) => req.sections?.includes(s))
     : [...ALL_SECTIONS];
+}
+
+/** True when the caller named the opt-in `verbs` section. */
+function verbsRequested(req: Pick<GetOntologyReportRequest, "sections">): boolean {
+  return req.sections?.includes("verbs") ?? false;
+}
+
+/** The request's `limit`, defaulted and capped. */
+function reportLimit(req: Pick<GetOntologyReportRequest, "limit">): number {
+  return Math.min(MAX_ONTOLOGY_REPORT_LIMIT, Math.max(1, req.limit ?? DEFAULT_ONTOLOGY_REPORT_LIMIT));
+}
+
+/**
+ * The `verbs` grouping of each profiled language: its `typeNamespace` when it
+ * declares one (TypeScript and JavaScript read one vocabulary), else its own
+ * name; suggestions in the language's canonical method casing.
+ */
+function methodVerbNamespaces(languages: readonly OntologyLanguageProfile[]): Map<string, MethodVerbNamespace> {
+  return new Map(
+    languages.map((p) => [
+      p.language,
+      { key: p.naming.typeNamespace ?? p.language, casing: p.naming.casing.method[0] },
+    ]),
+  );
 }
 
 function confidence(n: number, support: number): number {
@@ -295,9 +325,12 @@ function topMergedName(names: readonly OntologyNameCountRow[]): { n: number; nam
 export class OntologyReportOps {
   /** The canonical casing of a row's kind in its file's language. */
   private readonly casingFor: OntologyRowCasing;
+  /** The `verbs` section's namespace per file language. */
+  private readonly verbNamespaces: Map<string, MethodVerbNamespace>;
 
   constructor(private readonly deps: OntologyReportOpsDeps) {
     this.casingFor = ontologyRowCasing(deps.languages);
+    this.verbNamespaces = methodVerbNamespaces(deps.languages);
   }
 
   async report(req: GetOntologyReportRequest): Promise<GetOntologyReportResponse> {
@@ -322,6 +355,7 @@ export class OntologyReportOps {
 
     let rows: OntologyReportRows;
     let genericNames: OntologyGenericName[];
+    let methodNames: MethodNameRow[] | undefined;
     try {
       // Two phases over one reader: judge the summary's generic candidates, then
       // read the sections with exactly the judged names excluded — the summary
@@ -333,6 +367,9 @@ export class OntologyReportOps {
         genericNames.map((g) => g.name),
       );
       rows = { ...summary, ...sections };
+      if (verbsRequested(req)) {
+        methodNames = await handle.graphDb.readMethodNamesMatching(this.verbQuery(req, language));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("cg_identifiers") && message.includes("does not exist")) {
@@ -342,7 +379,9 @@ export class OntologyReportOps {
     } finally {
       await handle.graphDb.close().catch(() => undefined);
     }
-    return this.shape(req, rows, genericNames);
+    const response = this.shape(req, rows, genericNames);
+    if (methodNames) response.verbs = this.verbs(methodNames, reportLimit(req));
+    return response;
   }
 
   /** The report for a collection with no readable codegraph: nothing read, requested sections empty. */
@@ -354,6 +393,7 @@ export class OntologyReportOps {
       summary: { evidenceRows: 0, genericNameCount: 0, genericNames: [] },
     };
     for (const section of requestedSections(req)) response[section] = [];
+    if (verbsRequested(req)) response.verbs = [];
     return response;
   }
 
@@ -380,6 +420,34 @@ export class OntologyReportOps {
       requestedSections(req),
       limit,
     );
+  }
+
+  /**
+   * The one `verbs` read: every production method name opening with a lexicon
+   * verb, per file language, scoped by the request's path prefix and language
+   * like the other sections.
+   */
+  private verbQuery(
+    req: GetOntologyReportRequest,
+    language: OntologyLanguageProfile | undefined,
+  ): MethodNamePatternQuery {
+    const prefix = pathPatternLiteralPrefix(req.pathPattern);
+    return {
+      patterns: [methodVerbHeadPattern()],
+      groupByLanguage: true,
+      ...(prefix ? { pathPrefixes: [prefix] } : {}),
+      ...(language ? { languages: [language.language] } : {}),
+      nonProductionPaths: ontologyNonProductionPaths(),
+    };
+  }
+
+  /** The `verbs` section: the naming lexicon's verb groups, capped per group like the other sections' items. */
+  private verbs(rows: readonly MethodNameRow[], limit: number): OntologyVerbGroup[] {
+    return buildMethodVerbGroups(rows, {
+      namespaceOf: (language) => this.verbNamespaces.get(language),
+      limit,
+      namesPerGroup: ONTOLOGY_REPORT_THRESHOLDS.namesPerItem,
+    });
   }
 
   private shape(

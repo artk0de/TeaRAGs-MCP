@@ -21,8 +21,11 @@ export {
   methodLastWordPattern,
   methodNounTail,
   methodTailPattern,
+  methodVerbHeadPattern,
   methodVerbOf,
 } from "./method-vocabulary.js";
+export { buildMethodVerbGroups } from "./method-verb-groups.js";
+export type { MethodVerbGroup, MethodVerbGroupOptions, MethodVerbNamespace } from "./method-verb-groups.js";
 export type { UntypedMethodEvidence, UntypedMethodVerdict } from "./method-vocabulary.js";
 export { CONNECTOR_WORDS, splitNameSlots, typeNameParts } from "./name-slots.js";
 export type { NameSlots, TypeNameParser, TypeNameParts } from "./name-slots.js";

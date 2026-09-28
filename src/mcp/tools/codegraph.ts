@@ -130,9 +130,9 @@ const GetOntologyReportInputShape = {
   pathPattern: z.string().optional().describe("Glob scope; its literal prefix filters files. Omit for whole project."),
   language: z.string().optional().describe("Only this language's files."),
   sections: z
-    .array(z.enum(["synonyms", "homonyms", "outliers", "collisions"]))
+    .array(z.enum(["synonyms", "homonyms", "outliers", "collisions", "verbs"]))
     .optional()
-    .describe("Sections to compute (default all)."),
+    .describe("Sections (default all but verbs: per noun tail, method verbs and deviants)."),
   limit: z.number().int().positive().max(100).optional().describe("Items per section (default 20)."),
 };
 
