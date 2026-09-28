@@ -1,18 +1,5 @@
 ## [1.45.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.45.0...v1.45.1) (2026-09-28)
 
-### Features
-
-- **scripts:** bold lead markers, monospace every project identifier in release
-  notes
-  ([d7ef438](https://github.com/artk0de/TeaRAGs-MCP/commit/d7ef43809d2d4e36cb08b7bb6e8bca9177cd8043))
-- **scripts:** release notes separate the agent plugin from documentation
-  ([cce4900](https://github.com/artk0de/TeaRAGs-MCP/commit/cce49007c8479ddfe37d7c0cbbd93f4f0f2bc315))
-
-### Bug Fixes
-
-- **release:** non-release scopes never bump the version
-  ([ede741d](https://github.com/artk0de/TeaRAGs-MCP/commit/ede741d193e416919b2a0df44b4a37b30fc03455))
-
 ## [1.45.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.44.2...v1.45.0) (2026-09-27)
 
 ### 🔎 Search & ranking
