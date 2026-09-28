@@ -756,12 +756,12 @@ export class ChunkPhase {
     root: string,
   ): Map<string, ChunkLookupEntry[]> {
     if (!ignoreFilter) return map;
-    const out = new Map<string, ChunkLookupEntry[]>();
+    const filtered = new Map<string, ChunkLookupEntry[]>();
     for (const [filePath, entries] of map) {
       const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
-      if (!ignoreFilter.ignores(rel)) out.set(filePath, entries);
+      if (!ignoreFilter.ignores(rel)) filtered.set(filePath, entries);
     }
-    return out;
+    return filtered;
   }
 
   /**
@@ -774,11 +774,13 @@ export class ChunkPhase {
     provider: ProviderContext["provider"],
     root: string,
   ): Map<string, ChunkLookupEntry[]> {
-    const out = new Map<string, ChunkLookupEntry[]>();
+    const filtered = new Map<string, ChunkLookupEntry[]>();
     for (const [filePath, entries] of map) {
       const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
-      if (enrichmentScope(provider, rel, { fileLines: fileLinesOf(entries) }) === "full") out.set(filePath, entries);
+      if (enrichmentScope(provider, rel, { fileLines: fileLinesOf(entries) }) === "full") {
+        filtered.set(filePath, entries);
+      }
     }
-    return out;
+    return filtered;
   }
 }

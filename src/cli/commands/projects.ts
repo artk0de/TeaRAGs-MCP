@@ -126,10 +126,10 @@ export async function runRegister(args: RegisterArgs): Promise<void> {
   const { ops } = newOps();
   try {
     const env = args.env && args.env.length > 0 ? parseEnvAssignments(args.env) : undefined;
-    const out = await ops.register({ path: args.path, name: args.name, ...(env ? { env } : {}) });
+    const result = await ops.register({ path: args.path, name: args.name, ...(env ? { env } : {}) });
     const c = createColorizer();
     process.stdout.write(
-      `${c.ok(`Registered '${args.name}'`)} -> ${out.collectionName}${out.alreadyIndexed ? c.dim(" (already indexed)") : ""}\n`,
+      `${c.ok(`Registered '${args.name}'`)} -> ${result.collectionName}${result.alreadyIndexed ? c.dim(" (already indexed)") : ""}\n`,
     );
   } catch (err) {
     process.stderr.write(`${stderrColorizer().alert(`projects register failed: ${(err as Error).message}`)}\n`);

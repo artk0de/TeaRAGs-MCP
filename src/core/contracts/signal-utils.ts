@@ -5,6 +5,8 @@
  * Provider-specific payload accessors live in trajectory/<provider>/rerank/derived-signals/helpers.ts.
  */
 
+import { codegraphSymbolsPayloadKey } from "./codegraph-payload.js";
+import type { FilterLevel } from "./types/provider.js";
 import type { SignalStatsRequest } from "./types/trajectory.js";
 
 // ---------------------------------------------------------------------------
@@ -96,7 +98,8 @@ const CODEGRAPH_PATH_RE = /^codegraph\.(file|chunk)\.(.+)$/;
  */
 export function toPhysicalPayloadKey(logicalKey: string): string {
   const m = CODEGRAPH_PATH_RE.exec(logicalKey);
-  return m ? `codegraph.symbols.${m[1]}.${m[2]}` : logicalKey;
+  // The capture is `(file|chunk)` by the regex above, so the cast is total.
+  return m ? codegraphSymbolsPayloadKey(m[1] as FilterLevel, m[2]) : logicalKey;
 }
 
 /** A key that already names its own `file` / `chunk` level segment. */

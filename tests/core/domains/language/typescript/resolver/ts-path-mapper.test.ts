@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   createProjectFileProbe,
   mapImportToFile,
+  TS_SOURCE_PATH_RULES,
 } from "../../../../../../src/core/domains/language/typescript/resolver/ts-path-mapper.js";
 
 describe("mapImportToFile", () => {
@@ -742,5 +743,157 @@ describe("createProjectFileProbe (bd tea-rags-mcp-f3zcy)", () => {
     expect(probe("src/scratch.ts")).toBe(true);
     rmSync(scratch);
     expect(probe("src/scratch.ts")).toBe(true);
+  });
+});
+
+/**
+ * The rule space as DATA: every case below is derived from
+ * `TS_SOURCE_PATH_RULES`, so a new rule row — or a changed candidate order —
+ * fails this matrix the moment it lands. A new edge case becomes a table row
+ * plus, at most, an expectation update, never a new hand-written test.
+ *
+ * The hand-written describes above stay untouched: each pins one historical
+ * bug by name. This block pins the CURRENT tables wholesale — including the
+ * rules' own heads, the cross-rule exclusivity of the candidate lists, and
+ * the shapes the registry deliberately has no candidates for.
+ */
+describe("mapImportToFile rule-registry matrix (TS_SOURCE_PATH_RULES)", () => {
+  const CALLER = "src/Page.tsx";
+  const suffixRules = TS_SOURCE_PATH_RULES.sourceExtensionCandidates;
+  const everyRuleExtension = [...new Set(suffixRules.flatMap((rule) => [...rule.extensions]))];
+
+  it.each(
+    suffixRules.flatMap((rule) =>
+      rule.extensions.map((extension) => ({
+        suffix: rule.suffix,
+        extension,
+        specifier: `./module${rule.suffix}`,
+        expected: `src/module${extension}`,
+      })),
+    ),
+  )("a $suffix specifier resolves to $expected when only that candidate exists", ({ specifier, expected }) => {
+    expect(mapImportToFile(specifier, CALLER, NO_ALIASES, (rel) => rel === expected)).toBe(expected);
+  });
+
+  it.each(suffixRules)("an unverified $suffix specifier keeps the rule's head candidate", (rule) => {
+    expect(mapImportToFile(`./module${rule.suffix}`, CALLER, NO_ALIASES, () => false)).toBe(
+      `src/module${rule.extensions[0]}`,
+    );
+  });
+
+  it.each(suffixRules)("a $suffix specifier never resolves through the directory index", (rule) => {
+    // NodeNext: a suffix-written specifier names a file. Only the directory's
+    // index module existing must leave the file answer unverified — switching
+    // to the directory form would invent a module the author never referenced.
+    const exists = (rel: string) => rel === `src/module/${TS_SOURCE_PATH_RULES.directoryModuleStem}.ts`;
+    expect(mapImportToFile(`./module${rule.suffix}`, CALLER, NO_ALIASES, exists)).toBe(
+      `src/module${rule.extensions[0]}`,
+    );
+  });
+
+  it.each(
+    suffixRules.flatMap((rule) => {
+      const own = new Set(rule.extensions);
+      return everyRuleExtension
+        .filter((extension) => !own.has(extension))
+        .map((extension) => ({
+          suffix: rule.suffix,
+          extension,
+          specifier: `./module${rule.suffix}`,
+          expected: `src/module${rule.extensions[0]}`,
+        }));
+    }),
+  )("a $suffix specifier never takes the $extension sibling of another rule", ({ specifier, extension, expected }) => {
+    expect(mapImportToFile(specifier, CALLER, NO_ALIASES, (rel) => rel === `src/module${extension}`)).toBe(expected);
+  });
+
+  describe("extensionless candidates", () => {
+    const candidates = TS_SOURCE_PATH_RULES.extensionlessCandidates;
+    const stem = TS_SOURCE_PATH_RULES.directoryModuleStem;
+
+    it.each(
+      candidates.map((extension) => ({
+        extension,
+        expected: `src/module${extension}`,
+      })),
+    )("an extensionless specifier takes the file form $expected", ({ expected }) => {
+      expect(mapImportToFile("./module", CALLER, NO_ALIASES, (rel) => rel === expected)).toBe(expected);
+    });
+
+    it.each(
+      candidates.map((extension) => ({
+        extension,
+        expected: `src/module/${stem}${extension}`,
+      })),
+    )("an extensionless specifier takes the directory form $expected", ({ expected }) => {
+      expect(mapImportToFile("./module", CALLER, NO_ALIASES, (rel) => rel === expected)).toBe(expected);
+    });
+
+    it("resolves the file form before the directory form", () => {
+      // The LAST file-form candidate outranks the FIRST directory-form one —
+      // candidate order is tsc's resolution order, file-before-directory
+      // included, not a discovery artefact.
+      const lastFileForm = `src/module${candidates[candidates.length - 1]}`;
+      const firstDirectoryForm = `src/module/${stem}${candidates[0]}`;
+      const exists = (rel: string) => rel === lastFileForm || rel === firstDirectoryForm;
+      expect(mapImportToFile("./module", CALLER, NO_ALIASES, exists)).toBe(lastFileForm);
+    });
+
+    it("keeps the file-form head when nothing on disk confirms any candidate", () => {
+      expect(mapImportToFile("./module", CALLER, NO_ALIASES, () => false)).toBe(`src/module${candidates[0]}`);
+    });
+  });
+
+  describe("as-written TypeScript extensions", () => {
+    it.each(TS_SOURCE_PATH_RULES.tsSourceAsWrittenExtensions.map((extension) => ({ extension })))(
+      "a $extension specifier is the file as written and consults no probe",
+      ({ extension }) => {
+        const exists = vi.fn(() => false);
+        expect(mapImportToFile(`./module${extension}`, CALLER, NO_ALIASES, exists)).toBe(`src/module${extension}`);
+        expect(exists).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe("JSON module extension", () => {
+    const json = TS_SOURCE_PATH_RULES.jsonModuleExtension;
+
+    it("a JSON module the probe cannot find keeps its as-written name", () => {
+      expect(mapImportToFile(`./module${json}`, CALLER, NO_ALIASES, () => false)).toBe(`src/module${json}`);
+      expect(mapImportToFile(`./module${json}`, CALLER, NO_ALIASES)).toBe(`src/module${json}`);
+    });
+
+    it("a JSON module the probe finds is an asset import — null, never a project file", () => {
+      expect(mapImportToFile(`./module${json}`, CALLER, NO_ALIASES, (rel) => rel === `src/module${json}`)).toBeNull();
+    });
+
+    it("a JSON specifier is never rewritten to a source extension", () => {
+      const exists = (rel: string) => rel === `src/module${json}.ts`;
+      expect(mapImportToFile(`./module${json}`, CALLER, NO_ALIASES, exists)).toBe(`src/module${json}`);
+    });
+  });
+
+  describe("directory module stem", () => {
+    const stem = TS_SOURCE_PATH_RULES.directoryModuleStem;
+
+    it.each(
+      TS_SOURCE_PATH_RULES.extensionlessCandidates.map((extension) => ({
+        extension,
+        expected: `src/widgets/${stem}${extension}`,
+      })),
+    )("a trailing-slash specifier resolves the directory's $expected", ({ expected }) => {
+      expect(mapImportToFile("./widgets/", CALLER, NO_ALIASES, (rel) => rel === expected)).toBe(expected);
+    });
+
+    it("a trailing-slash specifier never takes the same-named sibling file", () => {
+      const exists = (rel: string) => rel === "src/widgets.ts" || rel === `src/widgets/${stem}.ts`;
+      expect(mapImportToFile("./widgets/", CALLER, NO_ALIASES, exists)).toBe(`src/widgets/${stem}.ts`);
+    });
+
+    it("an unverified trailing-slash specifier answers the directory's head candidate", () => {
+      expect(mapImportToFile("./widgets/", CALLER, NO_ALIASES, () => false)).toBe(
+        `src/widgets/${stem}${TS_SOURCE_PATH_RULES.extensionlessCandidates[0]}`,
+      );
+    });
   });
 });

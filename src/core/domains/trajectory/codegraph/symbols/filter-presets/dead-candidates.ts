@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../../contracts/codegraph-payload.js";
 import type { FilterPresetDef } from "../../../../../contracts/types/filter-preset.js";
 
 export const deadCandidatesFilterPreset: FilterPresetDef = {
@@ -8,7 +9,7 @@ export const deadCandidatesFilterPreset: FilterPresetDef = {
     "dynamic dispatch and cross-language calls are not yet resolved, " +
     "and public API entry points are unreferenced by design. " +
     "Treat results as a lead list, not a verdict.",
-  requires: ["codegraph.symbols"],
+  requires: [CODEGRAPH_SYMBOLS_PROVIDER_KEY],
   conditions: [
     { signal: "codegraph.chunk.fanIn", op: "eq", value: 0 },
     { signal: "chunkType", op: "eq", value: "function" },

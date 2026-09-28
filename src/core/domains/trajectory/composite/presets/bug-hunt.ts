@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
@@ -31,7 +32,7 @@ export class BugHuntCompositePreset implements CompositeRerankPreset {
   readonly description =
     "Find potential bug hiding spots: burst activity, volatility, relative churn, bug fix history, and call-graph centrality";
   readonly tools = ["semantic_search", "hybrid_search", "search_code", "find_similar", "rank_chunks", "trace_path"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     burstActivity: 0.18,

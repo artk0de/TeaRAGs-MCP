@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
@@ -29,7 +30,7 @@ export class CriticalPathPreset implements CompositeRerankPreset {
   readonly signalLevel: SignalLevel = "chunk";
   readonly filter = { presets: "production" } as const;
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     pageRank: 0.3,

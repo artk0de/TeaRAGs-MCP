@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
@@ -27,7 +28,7 @@ export class DecompositionCompositePreset implements CompositeRerankPreset {
   readonly description = "Large, dense, over-connected methods — decomposition candidates ranked with call-graph load";
   readonly signalLevel: SignalLevel = "chunk";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
-  readonly requires = ["codegraph.symbols"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     chunkSize: 0.35,

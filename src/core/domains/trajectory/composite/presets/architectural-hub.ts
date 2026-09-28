@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
@@ -21,7 +22,7 @@ export class ArchitecturalHubPreset implements CompositeRerankPreset {
   readonly description = "Hub files at the centre of the dependency graph under active churn";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar", "trace_path"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     isHub: 0.35,
