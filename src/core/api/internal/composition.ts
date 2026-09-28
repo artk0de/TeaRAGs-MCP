@@ -50,12 +50,15 @@ import {
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { filterPayloadKeys } from "../../domains/trajectory/filter-payload-keys.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
-import { GIT_FILTER_PRESETS } from "../../domains/trajectory/git/filter-presets/index.js";
-import { gitFilters, gitPayloadSignalDescriptors } from "../../domains/trajectory/git/index.js";
+import {
+  GIT_FILTER_PRESETS,
+  gitDerivedSignals,
+  gitFilters,
+  gitPayloadSignalDescriptors,
+  gitStatsAccumulators,
+} from "../../domains/trajectory/git/index.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
-import { gitDerivedSignals } from "../../domains/trajectory/git/rerank/derived-signals/index.js";
-import { gitStatsAccumulators } from "../../domains/trajectory/git/stats/index.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS } from "../../domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";

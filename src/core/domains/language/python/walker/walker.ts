@@ -91,10 +91,83 @@ export function pythonLocalTypeTrackingEnabled(): boolean {
 export function extractFromPythonFile(input: PythonExtractInput): FileExtraction {
   const root = input.tree.rootNode;
   const trackTypes = pythonLocalTypeTrackingEnabled();
-  // bd tea-rags-mcp-1v12o.2.7 (E6.2) — every FLAT collector below reads the same
-  // pre-order over the same materialized tree, so they ride ONE descent instead
-  // of six. Each keeps its own body and its own accumulator; the driver only
-  // decides who is called, in list order, per node.
+  const flat = collectPythonFlatChannels(root, trackTypes);
+  // The class channels merge UNDERNEATH the flat pass's constructor-assignment
+  // field map, so `flat.classFieldTypes` is handed in and merged in place.
+  const classChannels = collectPythonClassChannels(
+    root,
+    input.relPath,
+    flat.imports,
+    input.declaredDependencies,
+    flat.classFieldTypes,
+  );
+  const perFile = collectPythonPerFileChannels(root, trackTypes, flat.calls, input.chunks);
+  const byChunk = collectPythonChunkExtractions(input.chunks, flat, perFile, trackTypes);
+  const out: FileExtraction = {
+    relPath: input.relPath,
+    language: input.language,
+    imports: flat.imports,
+    chunks: byChunk,
+    fileScope: [],
+  };
+  if (Object.keys(flat.classExtends).length > 0) out.classExtends = flat.classExtends;
+  if (Object.keys(flat.dispatchTables).length > 0) out.dispatchTables = flat.dispatchTables;
+  const callbackParams = pythonCallbackParamsBySymbol(flat.callbackParamSites, input.chunks);
+  if (Object.keys(callbackParams).length > 0) out.callbackParams = callbackParams;
+  if (Object.keys(classChannels.classAncestors).length > 0) out.classAncestors = classChannels.classAncestors;
+  if (Object.keys(flat.classFieldTypes).length > 0) out.classFieldTypes = flat.classFieldTypes;
+  if (Object.keys(classChannels.classFieldTypesByClassKey).length > 0) {
+    out.classFieldTypesByClassKey = classChannels.classFieldTypesByClassKey;
+  }
+  if (Object.keys(classChannels.classFieldCallResults).length > 0) {
+    out.classFieldCallResults = classChannels.classFieldCallResults;
+  }
+  // bd tea-rags-mcp-xpl83.3 — the names this file's `from` statements bind, so
+  // the import mapper can walk past a package that re-exports rather than
+  // declares. Absent when the file has none, like every other optional channel.
+  if (flat.reexports.length > 0) out.moduleReexports = flat.reexports;
+  // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
+  // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
+  // keeps only the FIRST base for `super()` resolution, this emits EVERY base
+  // (Python multiple inheritance) for the descendant-set the CHA cone needs.
+  // All bases are kind `super` — Python's C3 MRO has no include/extend/prepend
+  // distinction and the cone only needs the descendant set, not MRO order. The
+  // legacy `classExtends` stays (resolver-forward path).
+  const inheritanceEdges = collectPythonInheritanceEdges(root);
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
+  if (flat.typeDeclarations.length > 0) out.typeDeclarations = flat.typeDeclarations;
+  // bd tea-rags-mcp-39xca.14 — `typing.Protocol` classes, which the barrier
+  // matches against owners to add `structural` hierarchy rows.
+  const structuralContracts = collectPythonStructuralContracts(root, perFile.defSignatures);
+  if (structuralContracts.length > 0) out.structuralContracts = structuralContracts;
+  return out;
+}
+
+/**
+ * Channels the FLAT single descent fills (see `collectPythonFlatChannels`).
+ * "Flat" is this walker's own term for the collectors that read one whole-tree
+ * pre-order, as opposed to the class-scope and per-file channels beside it.
+ */
+interface PythonFlatChannels {
+  imports: ImportRef[];
+  reexports: ModuleReexport[];
+  calls: CallRef[];
+  classExtends: Record<string, string>;
+  classFieldTypes: Record<string, Record<string, string>>;
+  localBindingSites: PythonLocalBindingSite[];
+  dispatchTables: ReturnType<typeof collectPythonDispatchTables>;
+  callbackParamSites: Map<number, Set<number>>;
+  symbolKinds: Map<number, SymbolDefinitionKind>;
+  typeDeclarations: TypeDeclarationFact[];
+}
+
+/**
+ * bd tea-rags-mcp-1v12o.2.7 (E6.2) — every FLAT collector reads the same
+ * pre-order over the same materialized tree, so they ride ONE descent instead
+ * of six. Each keeps its own body and its own accumulator; the driver only
+ * decides who is called, in list order, per node.
+ */
+function collectPythonFlatChannels(root: AstNode, trackTypes: boolean): PythonFlatChannels {
   const scan: PythonImportScan = { imports: [], reexports: [] };
   const { imports, reexports } = scan;
   const calls: CallRef[] = [];
@@ -145,6 +218,41 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   if (trackTypes) flatVisitors.push(collectPythonLocalBindingSites(localBindingSites));
   walkOnce(root, flatVisitors);
   for (const dc of decoratorCalls) calls.push(dc);
+  return {
+    imports,
+    reexports,
+    calls,
+    classExtends,
+    classFieldTypes,
+    localBindingSites,
+    dispatchTables,
+    callbackParamSites,
+    symbolKinds,
+    typeDeclarations,
+  };
+}
+
+/** Class-scope channels of one file: the ancestor map and the two class-field maps. */
+interface PythonClassChannels {
+  classAncestors: Record<string, readonly string[]>;
+  classFieldTypesByClassKey: Record<string, Record<string, string>>;
+  classFieldCallResults: ReturnType<typeof finalizePythonClassFieldCallResults>;
+}
+
+/**
+ * The class-scope descent's three collectors, plus the class-body field scan
+ * whose facts merge UNDERNEATH both field channels. `classFieldTypes` is the
+ * FLAT pass's constructor-assignment channel and is merged in place: a
+ * constructor assignment for the same field is the narrower statement about an
+ * instance.
+ */
+function collectPythonClassChannels(
+  root: AstNode,
+  relPath: string,
+  imports: readonly ImportRef[],
+  declaredDependencies: ReadonlySet<string> | undefined,
+  classFieldTypes: Record<string, Record<string, string>>,
+): PythonClassChannels {
   // The three SCOPED collectors keep the same relationship to each other on one
   // scope-tracking descent — `collectPythonInheritanceEdges` stays on its own
   // because its scope advances through classes only (see `walkPythonClassScopes`).
@@ -164,9 +272,9 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // type collectors answered for is excluded on this file's final type map.
   const fieldCallResultScan: Record<string, Record<string, string | null>> = createIdentifierRecord();
   walkPythonClassScopes(root, [
-    collectPythonClassAncestors(classAncestors, input.relPath, imports),
-    collectPythonClassFieldTypesByClassKey(classFieldTypesByClassKey, input.relPath),
-    collectPythonClassFieldCallResults(fieldCallResultScan, input.relPath),
+    collectPythonClassAncestors(classAncestors, relPath, imports),
+    collectPythonClassFieldTypesByClassKey(classFieldTypesByClassKey, relPath),
+    collectPythonClassFieldCallResults(fieldCallResultScan, relPath),
   ]);
   // bd tea-rags-mcp-xpl83 — Django binds a model's manager in the CLASS BODY
   // (`objects = ObjectTypeManager()`), which no `self.<field>` collector can
@@ -180,9 +288,9 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // manifest anywhere the catalogue is FULL and both arms run as they did.
   const classBodyFields = collectPythonClassBodyFieldTypes(
     root,
-    input.relPath,
+    relPath,
     imports,
-    pythonVocabularyFor(input.declaredDependencies).hasFacet("classBodyManagerFactory"),
+    pythonVocabularyFor(declaredDependencies).hasFacet("classBodyManagerFactory"),
   );
   for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
     classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
@@ -193,6 +301,22 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // The filter runs AFTER the class-body merge above, so a field any of the
   // three type collectors answered for is excluded on this file's final map.
   const classFieldCallResults = finalizePythonClassFieldCallResults(fieldCallResultScan, classFieldTypesByClassKey);
+  return { classAncestors, classFieldTypesByClassKey, classFieldCallResults };
+}
+
+/** Channels collected once per FILE and joined to chunks by line. */
+interface PythonPerFileChannels {
+  callOwnership: ReturnType<typeof assignCallsToInnermostChunks>;
+  callResultBindings: Record<string, CallResultBinding[]>;
+  defSignatures: ReturnType<typeof collectPythonDefSignatures>;
+}
+
+function collectPythonPerFileChannels(
+  root: AstNode,
+  trackTypes: boolean,
+  calls: CallRef[],
+  chunks: PythonExtractInput["chunks"],
+): PythonPerFileChannels {
   // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
   // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
   // mirrors typescript tea-rags-mcp-otjs and ruby tea-rags-mcp-8fnu). A class
@@ -205,7 +329,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // MRO on the OUTER class and DROPped, a top-level class's copy tripped
   // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
   // fabricate 40 phantoms.
-  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const callOwnership = assignCallsToInnermostChunks(calls, chunks);
   // bd tea-rags-mcp-z68v9 — `NAME = <callee>(…)` sites, collected ONCE per file
   // and sliced per chunk below, because the scan needs whole-file scope nesting
   // to tell a function-body local from a module global.
@@ -221,64 +345,43 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // that is not a def — a class, a module — simply finds nothing, the same
   // absence Ruby leaves on a non-method.
   const defSignatures = collectPythonDefSignatures(root);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
+  return { callOwnership, callResultBindings, defSignatures };
+}
+
+/**
+ * Slice the channels onto each chunk: calls by innermost ownership, `symbolKind`
+ * and `def` signature by start line, local and call-result bindings by range.
+ */
+function collectPythonChunkExtractions(
+  chunks: PythonExtractInput["chunks"],
+  flat: PythonFlatChannels,
+  perFile: PythonPerFileChannels,
+  trackTypes: boolean,
+): ChunkExtraction[] {
+  return chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
       scope: c.scope,
       startLine: c.startLine,
       endLine: c.endLine,
-      calls: callOwnership.get(chunkIndex) ?? [],
+      calls: perFile.callOwnership.get(chunkIndex) ?? [],
     };
-    const symbolKind = symbolKinds.get(c.startLine);
+    const symbolKind = flat.symbolKinds.get(c.startLine);
     if (symbolKind !== undefined) base.symbolKind = symbolKind;
-    const signature = defSignatures.get(c.startLine);
+    const signature = perFile.defSignatures.get(c.startLine);
     if (signature !== undefined) {
       base.arity = signature.arity;
       if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
       if (signature.visibility !== undefined) base.visibility = signature.visibility;
     }
     if (trackTypes) {
-      const bindings = pythonLocalBindingsInRange(localBindingSites, c.startLine, c.endLine);
+      const bindings = pythonLocalBindingsInRange(flat.localBindingSites, c.startLine, c.endLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
-      const inRange = pythonCallResultBindingsInRange(callResultBindings, c.startLine, c.endLine);
+      const inRange = pythonCallResultBindingsInRange(perFile.callResultBindings, c.startLine, c.endLine);
       if (inRange !== undefined) base.callResultBindings = inRange;
     }
     return base;
   });
-  const out: FileExtraction = {
-    relPath: input.relPath,
-    language: input.language,
-    imports,
-    chunks: byChunk,
-    fileScope: [],
-  };
-  if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
-  if (Object.keys(dispatchTables).length > 0) out.dispatchTables = dispatchTables;
-  const callbackParams = pythonCallbackParamsBySymbol(callbackParamSites, input.chunks);
-  if (Object.keys(callbackParams).length > 0) out.callbackParams = callbackParams;
-  if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
-  if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
-  if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
-  if (Object.keys(classFieldCallResults).length > 0) out.classFieldCallResults = classFieldCallResults;
-  // bd tea-rags-mcp-xpl83.3 — the names this file's `from` statements bind, so
-  // the import mapper can walk past a package that re-exports rather than
-  // declares. Absent when the file has none, like every other optional channel.
-  if (reexports.length > 0) out.moduleReexports = reexports;
-  // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
-  // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
-  // keeps only the FIRST base for `super()` resolution, this emits EVERY base
-  // (Python multiple inheritance) for the descendant-set the CHA cone needs.
-  // All bases are kind `super` — Python's C3 MRO has no include/extend/prepend
-  // distinction and the cone only needs the descendant set, not MRO order. The
-  // legacy `classExtends` stays (resolver-forward path).
-  const inheritanceEdges = collectPythonInheritanceEdges(root);
-  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
-  if (typeDeclarations.length > 0) out.typeDeclarations = typeDeclarations;
-  // bd tea-rags-mcp-39xca.14 — `typing.Protocol` classes, which the barrier
-  // matches against owners to add `structural` hierarchy rows.
-  const structuralContracts = collectPythonStructuralContracts(root, defSignatures);
-  if (structuralContracts.length > 0) out.structuralContracts = structuralContracts;
-  return out;
 }
 
 /**

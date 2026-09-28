@@ -66,6 +66,11 @@ export function compactionStagingPath(dbPath: string): string {
   return `${dbPath}${COMPACTION_TMP_SUFFIX}`;
 }
 
+/** Where a clone publishing onto the database at `dbPath` stages its copy. */
+export function cloneStagingPath(dbPath: string): string {
+  return `${dbPath}${CLONE_TMP_SUFFIX}`;
+}
+
 /** Extension of a generation's cross-pass input spill under `.xpass`. */
 const INPUT_SPILL_EXTENSION = ".ndjson";
 
@@ -132,11 +137,11 @@ export interface CodegraphDbArtifactDescriptor {
  * require the on-disk set to equal exactly what this table predicts — no
  * orphans, no stragglers.
  *
- * The asymmetry the table records (and does not endorse): clone staging is
- * reclaimed by the NEXT `cloneDatabase` onto the same stem, never by
- * `removeFiles`, while compaction staging IS reclaimed by `removeFiles`. A
- * purge of a stem with interrupted-clone leftovers therefore leaves them on
- * disk until the name is cloned again.
+ * Both staging pairs — an interrupted clone's and an interrupted compaction's
+ * — are reclaimed by `removeFiles` (bd tea-rags-mcp-0qaht.26): a purge of a
+ * stem leaves no staging behind. The next `cloneDatabase` onto the same stem
+ * clears its own staging first as well, so a leftover is reclaimed by
+ * whichever of the two comes next, never left invisible to every listing.
  */
 export const CODEGRAPH_DB_ARTIFACT_TAXONOMY: readonly CodegraphDbArtifactDescriptor[] = [
   {
@@ -162,7 +167,7 @@ export const CODEGRAPH_DB_ARTIFACT_TAXONOMY: readonly CodegraphDbArtifactDescrip
     directory: ".",
     filenamePattern: `<stem>.duckdb${CLONE_TMP_SUFFIX}`,
     createdBy: ["clone-database"],
-    removedBy: ["clone-database"],
+    removedBy: ["clone-database", "remove-files"],
     keptAcrossClone: false,
     visibleToListings: [],
   },
@@ -171,7 +176,7 @@ export const CODEGRAPH_DB_ARTIFACT_TAXONOMY: readonly CodegraphDbArtifactDescrip
     directory: ".",
     filenamePattern: `<stem>.duckdb${CLONE_TMP_SUFFIX}.wal`,
     createdBy: ["clone-database"],
-    removedBy: ["clone-database"],
+    removedBy: ["clone-database", "remove-files"],
     keptAcrossClone: false,
     visibleToListings: [],
   },
@@ -377,7 +382,7 @@ export class CodegraphDbFiles {
     if (!existsSync(from)) return;
     const to = this.writablePathFor(targetPhysicalCollectionName);
     mkdirSync(dirname(to), { recursive: true });
-    const staging = `${to}${CLONE_TMP_SUFFIX}`;
+    const staging = cloneStagingPath(to);
     const stagingWal = `${staging}.wal`;
     const sourceHasWal = existsSync(`${from}.wal`);
     // Clear staging leftovers of an interrupted earlier clone onto this target
@@ -400,8 +405,9 @@ export class CodegraphDbFiles {
   }
 
   /**
-   * Unlink the collection's DuckDB file, its WAL sidecar and its cross-pass
-   * input spill. Idempotent —
+   * Unlink the collection's DuckDB file, its WAL sidecar, the clone and
+   * compaction staging pairs an interrupted operation may have left, and its
+   * cross-pass input spill. Idempotent —
    * ENOENT means "already gone". Other unlink errors are swallowed too: a stale
    * file on disk is preferable to aborting a best-effort teardown, and the next
    * open simply overwrites it.
@@ -418,6 +424,12 @@ export class CodegraphDbFiles {
     const staging = compactionStagingPath(dbPath);
     await unlink(staging).catch(() => undefined);
     await unlink(`${staging}.wal`).catch(() => undefined);
+    // An interrupted clone's staging pair belongs to this database just the
+    // same — invisible to every listing, so a purge must take it (bd
+    // tea-rags-mcp-0qaht.26), not leave it for the next clone to clear.
+    const cloneStaging = cloneStagingPath(dbPath);
+    await unlink(cloneStaging).catch(() => undefined);
+    await unlink(`${cloneStaging}.wal`).catch(() => undefined);
     // The generation's cross-pass input spill, left behind by a run that never
     // reached the drain. Its lifetime is one run, but its NAME is the
     // generation, so no later run truncates it once the alias moves on.

@@ -32,7 +32,7 @@ import type {
   SymbolDefinitionKind,
 } from "../../../../contracts/types/codegraph.js";
 import { constObjectNamespaceName } from "../../../../infra/symbolid/index.js";
-import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { symbolIdNames } from "../../kernel/index.js";
 
 /** A rest parameter accepts any number of arguments, so no implementation requires too many. */
 const UNBOUNDED_PARAMS = Number.MAX_SAFE_INTEGER;

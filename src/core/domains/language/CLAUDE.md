@@ -538,6 +538,27 @@
   calls only: every receiver-bearing edge it produced on this repo was
   fabricated (bd tea-rags-mcp-hwwtw). Why: converting the last un-migrated
   resolver for consistency reproduces a measured regression.
+- **Co-change under `domains/language` runs through CONTRACTS, not imports —
+  `get_architecture_report` silentCoupling pairs between vertical files are by
+  design, and the report's "missing" edge must not be added.** Two shapes, one
+  rule: no file in a vertical is wired to its neighbours by a static import.
+  Walker ↔ resolver: the walker runs inside a chunker worker process (vertical
+  loaded by injected module path — `.claude/rules/domains-language.md` §2), the
+  resolver runs in the codegraph enrichment pass, and they exchange the
+  persisted `FileExtraction` shape, so a per-language feature lands in both
+  files of one commit with no edge for the import graph to see —
+  `typescript/resolver/ts-resolver.ts` ↔ `typescript/walker/walker.ts` is the
+  archetype, both producers of the symbolId stream a chunk is keyed by. Siblings
+  of one contract — two walkers, two resolvers, adjacent chain strategies, two
+  `capability.ts` descriptors, two DSL catalogue entries — never import each
+  other either: a kernel contract change (`kernel/merge-extraction.ts` channel
+  rules, `kernel/receiver-type-propagation.ts` ports) fans out to each `<lang>`
+  copy in ONE commit, so the sibling pairs co-change strongly with no edge
+  wanted between them. A kernel fix landing in only one vertical is the defect
+  shape, not the import. Why: judging these pairs as hidden coupling sends an
+  agent to add imports across the worker-thread DI seam — the edge the report
+  asks for is the seam itself, and closing it re-couples verticals the injected
+  module path exists to keep apart.
 
 ## See also
 

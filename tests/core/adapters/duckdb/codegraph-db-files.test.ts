@@ -351,22 +351,20 @@ describe("CodegraphDbFiles", () => {
       },
     );
 
-    it("removeFiles reclaims compaction staging but leaves clone staging to the next clone — as the taxonomy records", async () => {
+    it("removeFiles reclaims the compaction staging pair and the clone staging pair alike", async () => {
       seed("code_a_v1");
       writeFileSync(compactionStagingPath(join(codegraphDir, "code_a_v1.duckdb")), "half");
       writeFileSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp"), "half");
+      writeFileSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp.wal"), "half");
 
       await files.removeCollection("code_a_v1");
 
-      // The taxonomy's asymmetry, pinned as it stands: the purge takes the
-      // compaction staging pair, but NOT the clone staging pair.
+      // A purge takes both staging pairs: an interrupted clone's leftovers are
+      // this database's files too, not something to leave for the next clone
+      // (bd tea-rags-mcp-0qaht.26).
       expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.compact-tmp"))).toBe(false);
-      expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp"))).toBe(true);
-
-      // The next clone onto the stem is what reclaims it.
-      seed("code_src");
-      await files.cloneDatabase("code_src", "code_a_v1");
       expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp"))).toBe(false);
+      expect(existsSync(join(codegraphDir, "code_a_v1.duckdb.clone-tmp.wal"))).toBe(false);
     });
 
     it("a shadow-refused clone leaves the disk untouched", async () => {

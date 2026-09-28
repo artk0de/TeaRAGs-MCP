@@ -227,7 +227,7 @@ export function mapImportToFile(
  */
 const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readonly string[] }[] = [
   { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts", ".js"] },
-  { suffix: ".jsx", extensions: [".tsx", ".ts", ".jsx"] },
+  { suffix: ".jsx", extensions: [".tsx", ".ts", ".d.ts", ".jsx"] },
   { suffix: ".mjs", extensions: [".mts", ".d.mts", ".mjs"] },
   { suffix: ".cjs", extensions: [".cts", ".d.cts", ".cjs"] },
 ];
