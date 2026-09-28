@@ -23,8 +23,7 @@
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { SymbolDefinitionKind } from "../../../../contracts/types/codegraph-symbols.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/index.js";
-import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { bashNameOf } from "./name-of.js";
 import { symbolKindOf } from "./symbol-kind.js";
 

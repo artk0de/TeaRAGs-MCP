@@ -149,8 +149,7 @@ import type {
   TypeDeclarationKind,
 } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
-import { assignCallsToInnermostChunks } from "../../kernel/index.js";
-import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { swiftTypeFieldKey } from "../type-field-address.js";
 import { swiftNameOf } from "./name-of.js";
 import { symbolKindOf } from "./symbol-kind.js";
