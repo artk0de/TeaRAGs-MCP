@@ -67,21 +67,37 @@ with no `type`. In diff mode it leaves `notJudged` (the `unknownReturnType`
 reason disappears for methods); in names mode the bare `NEW_TERM` fallback is
 replaced. Typed return drafts keep today's verb + type judgement untouched.
 
-Evidence — the declared method and function short names in the answer's scope
-and language namespace, production paths only:
+Evidence — declared method and function short names in the answer's scope and
+language namespace, production paths only. The judgement never needs the
+project's whole method list, so the aggregation is pushed into SQL and the
+answer size is bounded by the verb lexicon and the drafts, not by the project:
+
+| Slice | SQL shape | Rows back |
+| --- | --- | --- |
+| verbs of a noun tail (`…_user`, `…User`) | `regexp_matches(short_name, <pattern>)`, patterns built from the tail words in each namespace language's method casing; all drafts' tails in one batched read | names carrying those tails only |
+| the project's verb vocabulary | `GROUP BY` the first word (`split_part` for snake, `regexp_extract('^[a-z]+')` for camel) `WHERE` it is `IN (NAMING_VERB_PREFIXES)` | ≤ the verb lexicon (~100) |
+| verbless names sharing a last word (`total`) | `LIKE '%\_total'` / `'%Total'`, batched | matches only |
 
 ```ts
 // contracts: codegraph-storage.ts
-interface MethodNameQuery extends IdentifierScopeQuery { // pathPrefixes, excludePaths, languages
+interface MethodNameScope extends IdentifierScopeQuery { // pathPrefixes, excludePaths, languages
   nonProductionPaths: NonProductionPathPatterns;
 }
-interface MethodNameRow { shortName: string; holders: number } // distinct symbol ids
+interface MethodVerbRow { verb: string; holders: number }                 // vocabulary slice
+interface MethodNameRow { shortName: string; holders: number }            // tail / last-word slices
+readMethodVerbs(q: MethodNameScope & { verbs: readonly string[] }): Promise<MethodVerbRow[]>
+readMethodNamesMatching(q: MethodNameScope & { patterns: readonly MethodNamePattern[] }): Promise<MethodNameRow[]>
 ```
 
-read by a new store method `aggregateMethodNames` over `cg_symbols`
-(`symbol_kind IN ('method', 'function')`, grouped by `short_name`), carried
-through client, daemon protocol, op-commands and daemon client like every
-identifier read. Constructors and operator methods are excluded.
+`holders` = distinct symbol ids. Both reads live in `identifier-store.ts`
+beside `existingSymbolShortNames` (its other `cg_symbols` read), filter
+`symbol_kind IN ('method', 'function')`, exclude constructors and operator
+methods, and are carried through client, daemon protocol, op-commands and
+daemon client like every identifier read. The vocabulary slice is memoized per
+request (as `alignment.typeNameRows` is), since diff mode answers once per
+language; nothing is cached across requests — a reindex would make such a cache
+stale. Rejected: an index-time `cg_method_verbs` table — a new table, schema
+bump and write path for a cost the read-side pushdown already removes.
 
 Judgement — a pure function in a new module
 `domains/explore/naming-lexicon/method-vocabulary.ts` (not in the ops class,
@@ -118,7 +134,8 @@ concept.
 Methods get a new opt-in section `verbs`: per noun tail, the verbs the project
 uses with holder counts, and the deviants D4 would call MISFIT (`fetchUser`
 among `load*User`). It is computed by the same `method-vocabulary.ts` functions
-over the same `aggregateMethodNames` read, grouped per language namespace — no
+over the same `readMethodVerbs` / `readMethodNamesMatching` reads, grouped per
+language namespace — no
 second implementation. Sections enum, DTO (`api/public/dto/ontology.ts`) and the
 MCP schema list gain `"verbs"`; the tool description budget (300 chars / 1536
 bytes) is measured, never raised.
@@ -140,8 +157,9 @@ TDD per slice, red first:
 - Walker: `@@x = …`, `@x ||= …`, `@@x ||= {}`, `x += 1` (still skipped),
   `attr_reader :a, :b`, `attr_accessor "c"`, `cattr_reader :d` → exact rows
   (kind, name, owner); typed accessor through `fieldTypeOf`.
-- Store: `aggregateMethodNames` honours prefix, language, exclusion,
-  non-production and kind filters.
+- Store: `readMethodVerbs` / `readMethodNamesMatching` honour prefix, language,
+  exclusion, non-production and kind filters; snake and camel patterns match
+  `load_user?` / `loadUser`; the verb slice returns only lexicon verbs.
 - Judgement: every branch of D4 as a pure-function table test.
 - Ops: diff review of a Ruby file with an untyped `fetch_user` among
   `load_*_user` methods → MISFIT finding, no `unknownReturnType` entry; names
@@ -156,9 +174,10 @@ Walker 5 → 6 marks every Ruby index stale for codegraph. Baseline first, then
 lock, and compare: `cg_identifiers` field rows before/after, a `get_naming_lexicon
 changes/files` review on a Ruby file with accessors and memoization, and the
 `verbs` section. Corpus: a registered Ruby project (mastodon or taxdome), since
-the tea-rags self-index holds little Ruby. Wall-clock of the new
-`aggregateMethodNames` read recorded on the largest corpus — the read returns
-one row per distinct method name, and its cost is the main risk.
+the tea-rags self-index holds little Ruby. Wall-clock of `readMethodVerbs` and
+`readMethodNamesMatching` recorded on the largest corpus: both return bounded
+rows, but regex / suffix `LIKE` cannot use `idx_cg_symbols_short`, so the
+residual cost is one filtered scan of `cg_symbols` per read.
 
 ## Out of scope
 
