@@ -24,23 +24,26 @@ import { EmbeddingModelGuard } from "../core/adapters/qdrant/embedding-model-gua
 import { VcsAdapterFactory } from "../core/adapters/vcs/factory.js";
 import { reapGitChildProcesses } from "../core/adapters/vcs/git/git-cli/git-child-process-registry.js";
 import {
+  composeAppOps,
   createApp,
   createComposition,
+  createNamingReviewExtractor,
+  createPathCollectionResolver,
   ExploreFacade,
+  GraphFacade,
   IngestFacade,
+  NamingLexiconOps,
+  ontologyLanguageProfiles,
+  OntologyReportOps,
+  ProjectRegistryOps,
+  readPayloadFileCommitCounts,
+  readPayloadImportSpecifiers,
   SchemaBuilder,
+  TracePathOps,
+  WorktreeOps,
   type App,
+  type GraphFacadeDeps,
 } from "../core/api/index.js";
-import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
-import { GraphFacade, type GraphFacadeDeps } from "../core/api/internal/facades/graph-facade.js";
-import { readPayloadFileCommitCounts } from "../core/api/internal/infra/payload-file-commit-count-reader.js";
-import { readPayloadImportSpecifiers } from "../core/api/internal/infra/payload-import-specifier-reader.js";
-import { NamingLexiconOps } from "../core/api/internal/ops/naming-lexicon-ops.js";
-import { createNamingReviewExtractor } from "../core/api/internal/ops/naming-review-extraction.js";
-import { ontologyLanguageProfiles, OntologyReportOps } from "../core/api/internal/ops/ontology-report-ops.js";
-import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
-import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
-import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
 import type { SymbolChunkResolver, SymbolVisibilityResolver } from "../core/contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
@@ -1337,6 +1340,17 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
         embeddings: infra.embeddings,
       })
     : undefined;
+  // App-layer ops (bd tea-rags-mcp-0qaht.12): composed by the api composition
+  // root and injected as ready handlers — createApp's own fallback exists only
+  // for callers that hand bare AppDeps handles.
+  const appOps = composeAppOps({
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
+    quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
+    turboQuant: zodConfig.qdrantTune.turboQuant,
+    modelGuard: infra.modelGuard,
+    codegraphPool: codegraphContext?.pool,
+  });
   const app = createApp({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -1346,6 +1360,8 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     reranker: composition.reranker,
     driftReporter,
     projectRegistryOps,
+    collectionOps: appOps.collection,
+    documentOps: appOps.document,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     turboQuant: zodConfig.qdrantTune.turboQuant,
     modelGuard: infra.modelGuard,

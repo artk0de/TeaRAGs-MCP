@@ -33,8 +33,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
-import { assignCallsToInnermostChunks } from "../../kernel/index.js";
-import { symbolIdNames } from "../../kernel/symbol-id.js";
+import { assignCallsToInnermostChunks, symbolIdNames } from "../../kernel/index.js";
 import { isCapWordsType, isRustConstructorAssocFn } from "../associated-constructor.js";
 import { rustNameOf } from "./name-of.js";
 import { rustOwnerItemOf, symbolKindOf } from "./symbol-kind.js";

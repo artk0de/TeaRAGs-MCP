@@ -6,11 +6,16 @@
  * that knows which trajectories exist.
  */
 
+import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
+import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import {
   payloadFieldIndexSchema,
   SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
   type PayloadFieldIndexSchema,
 } from "../../adapters/qdrant/schema-manager.js";
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/index.js";
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type {
@@ -45,16 +50,26 @@ import {
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { filterPayloadKeys } from "../../domains/trajectory/filter-payload-keys.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
-import { GIT_FILTER_PRESETS } from "../../domains/trajectory/git/filter-presets/index.js";
-import { gitFilters, gitPayloadSignalDescriptors } from "../../domains/trajectory/git/index.js";
+import {
+  GIT_FILTER_PRESETS,
+  gitDerivedSignals,
+  gitFilters,
+  gitPayloadSignalDescriptors,
+  gitStatsAccumulators,
+} from "../../domains/trajectory/git/index.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
-import { gitDerivedSignals } from "../../domains/trajectory/git/rerank/derived-signals/index.js";
-import { gitStatsAccumulators } from "../../domains/trajectory/git/stats/index.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { STATIC_FILTER_PRESETS } from "../../domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
 import { staticStatsAccumulators } from "../../domains/trajectory/static/stats/index.js";
+import type { GetArchitectureReportRequest, GetArchitectureReportResponse } from "../public/dto/architecture.js";
+import type { GetOntologyReportRequest, GetOntologyReportResponse } from "../public/dto/ontology.js";
+import { ArchitectureReportOps } from "./ops/architecture-report-ops.js";
+import { CollectionOps } from "./ops/collection-ops.js";
+import { DocumentMetadataSchemaCompiler } from "./ops/document-metadata-schema.js";
+import { DocumentOps } from "./ops/document-ops.js";
+import { OntologyReportOps } from "./ops/ontology-report-ops.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;
@@ -147,7 +162,7 @@ export function assembleFilterPresets(registeredKeys: ReadonlySet<string>): Filt
   return [
     ...STATIC_FILTER_PRESETS,
     ...(registeredKeys.has("git") ? GIT_FILTER_PRESETS : []),
-    ...(registeredKeys.has("codegraph.symbols") ? CODEGRAPH_FILTER_PRESETS : []),
+    ...(registeredKeys.has(CODEGRAPH_SYMBOLS_PROVIDER_KEY) ? CODEGRAPH_FILTER_PRESETS : []),
     ...buildCompositeFilterPresets(registeredKeys),
   ];
 }
@@ -350,4 +365,77 @@ export function createComposition(options: CompositionOptions = {}): Composition
       ),
     ),
   };
+}
+
+// ---------------------------------------------------------------------------
+// App-layer ops composition (bd tea-rags-mcp-0qaht.12)
+// ---------------------------------------------------------------------------
+
+/**
+ * Infrastructure handles the App-layer ops wrap. A structural subset of
+ * `AppDeps`: `createApp` hands its whole deps object here on the fallback
+ * path, and bootstrap passes the same handles explicitly on the DI path.
+ */
+export interface AppOpsDeps {
+  qdrant: QdrantManager;
+  embeddings: EmbeddingProvider;
+  quantizationScalar: boolean;
+  turboQuant: boolean;
+  modelGuard?: EmbeddingModelGuard;
+  /**
+   * Per-collection DuckDB pool — present when codegraph is wired. CollectionOps
+   * uses it to delete the per-collection DuckDB file when the Qdrant collection
+   * is dropped; omitted → Qdrant-only cleanup.
+   */
+  codegraphPool?: GraphDbClientPool;
+}
+
+/** The App-layer ops pair `createApp` delegates collection/document endpoints to. */
+export interface AppOpsComposition {
+  collection: CollectionOps;
+  document: DocumentOps;
+}
+
+/**
+ * Compose the App-layer ops (CollectionOps + DocumentOps) over ONE shared
+ * `DocumentMetadataSchemaCompiler` — the schema `create_collection` compiles
+ * is the validator `add_documents` then finds cached. Construction lives in
+ * the composition root so `public/app.ts` receives ready handlers via DI
+ * instead of importing ops modules: bootstrap calls this explicitly, and
+ * `createApp` falls back to it for callers that hand raw `AppDeps` handles
+ * only (the bare-AppDeps test path).
+ */
+export function composeAppOps(deps: AppOpsDeps): AppOpsComposition {
+  const metadataSchemas = new DocumentMetadataSchemaCompiler();
+  return {
+    collection: new CollectionOps(
+      deps.qdrant,
+      deps.embeddings,
+      deps.quantizationScalar,
+      deps.turboQuant,
+      deps.modelGuard,
+      deps.codegraphPool,
+      metadataSchemas,
+    ),
+    document: new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard, metadataSchemas),
+  };
+}
+
+/**
+ * The architecture report for a collection with no codegraph database:
+ * nothing read, `edgeCount: 0` telling it apart from a judged clean graph —
+ * `ArchitectureReportOps.empty`, surfaced by the composition root so the
+ * App's codegraph-off fallback needs no deep ops import.
+ */
+export function emptyArchitectureReport(request: GetArchitectureReportRequest): GetArchitectureReportResponse {
+  return ArchitectureReportOps.empty(request);
+}
+
+/**
+ * The ontology report for a collection with no readable codegraph: nothing
+ * read, requested sections empty — `OntologyReportOps.empty`, surfaced by
+ * the composition root for the same reason as `emptyArchitectureReport`.
+ */
+export function emptyOntologyReport(request: GetOntologyReportRequest): GetOntologyReportResponse {
+  return OntologyReportOps.empty(request);
 }

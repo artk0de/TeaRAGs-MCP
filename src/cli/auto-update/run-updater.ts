@@ -35,7 +35,7 @@ export interface RunUpdaterDeps {
   registry: Pick<CollectionRegistry, "get" | "recordAutoUpdateRun">;
   freshness: Pick<IndexFreshnessCheck, "check">;
   clock: () => number;
-  log: (line: string) => void;
+  out: (line: string) => void;
 }
 
 /**
@@ -56,13 +56,13 @@ export async function runUpdater(collectionName: string, deps: RunUpdaterDeps): 
 
   const entry = deps.registry.get(collectionName);
   if (entry === null) {
-    deps.log(`[auto-update] ${collectionName}: registry entry vanished — skipped`);
+    deps.out(`[auto-update] ${collectionName}: registry entry vanished — skipped`);
     return AUTO_UPDATE_EXIT.skipped;
   }
 
   const verdict = deps.freshness.check(entry);
   if (verdict.kind !== "eligible") {
-    deps.log(`[auto-update] ${collectionName}: verdict ${verdict.kind} at run time — skipped`);
+    deps.out(`[auto-update] ${collectionName}: verdict ${verdict.kind} at run time — skipped`);
     record("skipped", 0);
     return AUTO_UPDATE_EXIT.skipped;
   }
@@ -70,18 +70,18 @@ export async function runUpdater(collectionName: string, deps: RunUpdaterDeps): 
   try {
     const status = await deps.app.getIndexStatus(entry.path);
     if (status.status === "indexing") {
-      deps.log(`[auto-update] ${collectionName}: another indexing run holds the marker — lock-held`);
+      deps.out(`[auto-update] ${collectionName}: another indexing run holds the marker — lock-held`);
       record("lock-held", 0);
       return AUTO_UPDATE_EXIT.lockHeld;
     }
 
-    deps.log(`[auto-update] ${collectionName}: reindexing ${entry.path}`);
+    deps.out(`[auto-update] ${collectionName}: reindexing ${entry.path}`);
     const stats = await deps.app.indexCodebase(entry.path);
     const filesChanged = countFilesChanged(stats);
     await deps.app.whenEnrichmentComplete();
 
     const outcome = filesChanged === 0 ? "no-op" : "ok";
-    deps.log(`[auto-update] ${collectionName}: ${outcome} — ${filesChanged} files in ${deps.clock() - startedAt}ms`);
+    deps.out(`[auto-update] ${collectionName}: ${outcome} — ${filesChanged} files in ${deps.clock() - startedAt}ms`);
     record(outcome, filesChanged);
     return AUTO_UPDATE_EXIT.ok;
   } catch (err) {
@@ -89,12 +89,12 @@ export async function runUpdater(collectionName: string, deps: RunUpdaterDeps): 
     // probe above cannot see every overlap (an incremental run's background
     // enrichment leaves no indexing marker). That is the lock doing its job.
     if (err instanceof IndexingAlreadyInProgressError) {
-      deps.log(`[auto-update] ${collectionName}: indexing already in progress — lock-held`);
+      deps.out(`[auto-update] ${collectionName}: indexing already in progress — lock-held`);
       record("lock-held", 0);
       return AUTO_UPDATE_EXIT.lockHeld;
     }
     const message = err instanceof Error ? err.message : String(err);
-    deps.log(`[auto-update] ${collectionName}: failed — ${message}`);
+    deps.out(`[auto-update] ${collectionName}: failed — ${message}`);
     record("failed", 0, message);
     return AUTO_UPDATE_EXIT.failed;
   }

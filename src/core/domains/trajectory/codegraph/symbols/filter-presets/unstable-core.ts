@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../../contracts/codegraph-payload.js";
 import type { FilterPresetDef } from "../../../../../contracts/types/filter-preset.js";
 
 export const unstableCoreFilterPreset: FilterPresetDef = {
@@ -6,7 +7,7 @@ export const unstableCoreFilterPreset: FilterPresetDef = {
     "Well-connected files with high Martin instability — many outgoing edges relative to incoming. " +
     "These files depend heavily on others but are not widely depended upon, making them volatile core. " +
     "Prime candidates for dependency inversion or abstraction.",
-  requires: ["codegraph.symbols"],
+  requires: [CODEGRAPH_SYMBOLS_PROVIDER_KEY],
   conditions: [
     { signal: "codegraph.file.instability", op: "gte", value: { percentile: "p90", fallback: 0.9 } },
     { signal: "codegraph.file.connectionCount", op: "gte", value: { percentile: "p50", fallback: 5 } },

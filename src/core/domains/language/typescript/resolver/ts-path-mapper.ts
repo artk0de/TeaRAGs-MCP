@@ -227,7 +227,7 @@ export function mapImportToFile(
  */
 const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readonly string[] }[] = [
   { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts", ".js"] },
-  { suffix: ".jsx", extensions: [".tsx", ".ts", ".jsx"] },
+  { suffix: ".jsx", extensions: [".tsx", ".ts", ".d.ts", ".jsx"] },
   { suffix: ".mjs", extensions: [".mts", ".d.mts", ".mjs"] },
   { suffix: ".cjs", extensions: [".cts", ".d.cts", ".cjs"] },
 ];
@@ -271,6 +271,27 @@ const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts", ".j
  * project it is the usual one (bd tea-rags-mcp-hzsxy).
  */
 const DIRECTORY_MODULE_STEM = "index";
+
+/**
+ * The rule space of {@link tsSourcePathCandidates} as one exported object:
+ * which specifier suffixes rewrite to which source extensions, which
+ * extensions a source may spell as written, the JSON module that has no
+ * source candidates at all, the candidates for a specifier that writes no
+ * suffix, and the stem of a directory's module file.
+ *
+ * The fields REFERENCE the tables above rather than copying them, so the
+ * registry and the mapper cannot disagree. Exported so the rule space is
+ * data to consumers: the matrix in `ts-path-mapper.test.ts` derives its
+ * cases from these rows, and a new edge case becomes a table row here
+ * rather than a new hand-written test.
+ */
+export const TS_SOURCE_PATH_RULES = {
+  sourceExtensionCandidates: SOURCE_EXTENSION_CANDIDATES,
+  tsSourceAsWrittenExtensions: TS_SOURCE_AS_WRITTEN_EXTENSIONS,
+  jsonModuleExtension: JSON_MODULE_EXTENSION,
+  extensionlessCandidates: EXTENSIONLESS_CANDIDATES,
+  directoryModuleStem: DIRECTORY_MODULE_STEM,
+} as const;
 
 /**
  * Rewrite a mapped path's suffix to the TypeScript source file it stands for,

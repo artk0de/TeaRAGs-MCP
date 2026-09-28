@@ -95,7 +95,11 @@ import type { SymbolResolutionStrategy } from "../../../../contracts/types/langu
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { importFileEdge } from "../../import-file-edges.js";
 import { resolveViaChain } from "../../resolver-chain.js";
-import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import {
+  lookupEcmascriptSymbolsByShortName,
+  withEcmascriptSymbolKindRoles,
+} from "../../shared/ecmascript-symbol-lookup.js";
+import { capability } from "../capability.js";
 import {
   collectImportedFiles,
   CONE_MAX_DEFAULT,
@@ -158,6 +162,16 @@ function resolveConeMax(raw: string | undefined): number {
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
 }
+
+/**
+ * This vertical's kind roles onto every ctx an entry method hands down
+ * (0qaht.13): the family lookup answers a `callee` / `receiver` role with the
+ * CALLING language's row — TypeScript's here — read off the ctx rather than
+ * off a capability import inside `shared/`. Idempotent, so the nested
+ * `this.resolve` inside `resolveDispatch` re-wraps for free.
+ */
+const withTsSymbolKindRoles = (ctx: CallContext): CallContext =>
+  withEcmascriptSymbolKindRoles(ctx, capability.codegraph.symbolKindRoles);
 
 /** Bytes per megabyte, for the one budget an operator states in MB. */
 const BYTES_PER_MB = 1024 * 1024;
@@ -507,7 +521,8 @@ export class TSCallResolver implements CallResolver {
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return this.resolveFunctionInvokerSite(call, ctx) ?? resolveViaChain(this.strategies, call, ctx);
+    const familyCtx = withTsSymbolKindRoles(ctx);
+    return this.resolveFunctionInvokerSite(call, familyCtx) ?? resolveViaChain(this.strategies, call, familyCtx);
   }
 
   /**
@@ -636,7 +651,7 @@ export class TSCallResolver implements CallResolver {
    * internal denominator and count as a resolver miss.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    return targetsExternalImport(call, ctx, this.tsOptions, this.programCache, this.fileExists);
+    return targetsExternalImport(call, withTsSymbolKindRoles(ctx), this.tsOptions, this.programCache, this.fileExists);
   }
 
   /**
@@ -647,7 +662,7 @@ export class TSCallResolver implements CallResolver {
    * charge the rate for a call the chain is right to leave unresolved.
    */
   hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
-    return lookupEcmascriptSymbolsByShortName(ctx, call.member, { role: "callee" }).length > 0;
+    return lookupEcmascriptSymbolsByShortName(withTsSymbolKindRoles(ctx), call.member, { role: "callee" }).length > 0;
   }
 
   /**
@@ -674,9 +689,10 @@ export class TSCallResolver implements CallResolver {
    * the existing dispatch-table behaviour is unchanged.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
+    const familyCtx = withTsSymbolKindRoles(ctx);
     const edges: DispatchEdge[] = [];
     if (call.dispatch) {
-      for (const target of this.expandCandidate(call.dispatch, ctx)) {
+      for (const target of this.expandCandidate(call.dispatch, familyCtx)) {
         edges.push({
           sourceSymbolId: null,
           targetRelPath: target.targetRelPath,
@@ -685,13 +701,13 @@ export class TSCallResolver implements CallResolver {
       }
     }
     if (call.dispatchArgs && call.dispatchArgs.length > 0) {
-      const callee = this.resolve(call, ctx);
+      const callee = this.resolve(call, familyCtx);
       const calleeSymbolId = callee?.targetSymbolId ?? null;
-      const invoked = calleeSymbolId ? identifierEntry(ctx.callbackParams, calleeSymbolId) : undefined;
+      const invoked = calleeSymbolId ? identifierEntry(familyCtx.callbackParams, calleeSymbolId) : undefined;
       if (calleeSymbolId && invoked && invoked.length > 0) {
         for (const arg of call.dispatchArgs) {
           if (!invoked.includes(arg.argIndex)) continue;
-          for (const target of this.expandCandidate(arg.candidate, ctx)) {
+          for (const target of this.expandCandidate(arg.candidate, familyCtx)) {
             edges.push({
               sourceSymbolId: calleeSymbolId,
               targetRelPath: target.targetRelPath,
@@ -706,16 +722,16 @@ export class TSCallResolver implements CallResolver {
     // possible types, whereas CHA only knows a base type's descendants — and a
     // union annotation yields no `localBinding` at all, so the cone has no base
     // type to expand and would return `[]` here regardless (bd tea-rags-mcp-3yj7d).
-    const union = this.unionReceiver?.resolveDispatch(call, ctx);
+    const union = this.unionReceiver?.resolveDispatch(call, familyCtx);
     if (union?.kind === "edges" && union.edges.length > 0) return union;
     // Neither table nor union matched — the cone outcome (bounded by design,
     // always kind "edges") is the answer, unless the cone had no base type to
     // expand: a receiver the walker left untyped but the checker types as a
     // project interface gets the cone re-asked with that interface (bd
     // tea-rags-mcp-hwwtw). Empty either way when neither has anything to add.
-    const cone = this.cone.resolveDispatch(call, ctx);
+    const cone = this.cone.resolveDispatch(call, familyCtx);
     if (cone.kind !== "edges" || cone.edges.length > 0) return cone;
-    return this.interfaceReceiver?.resolveDispatch(call, ctx) ?? cone;
+    return this.interfaceReceiver?.resolveDispatch(call, familyCtx) ?? cone;
   }
 
   /**

@@ -155,9 +155,9 @@ export function filterChunkEnrichMap<T>(
   fileLinesFor?: (value: T) => number | undefined,
 ): Map<string, T> {
   if (!provider.shouldEnrich) return map;
-  const out = new Map<string, T>();
+  const filtered = new Map<string, T>();
   for (const [rel, value] of map) {
-    if (enrichmentScope(provider, rel, { fileLines: fileLinesFor?.(value) }) === "full") out.set(rel, value);
+    if (enrichmentScope(provider, rel, { fileLines: fileLinesFor?.(value) }) === "full") filtered.set(rel, value);
   }
-  return out;
+  return filtered;
 }
