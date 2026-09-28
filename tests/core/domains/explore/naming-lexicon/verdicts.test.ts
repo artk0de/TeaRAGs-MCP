@@ -1951,3 +1951,51 @@ describe("withFamilyAnalogues", () => {
     expect(withFamilyAnalogues(verdict, [row("callerId", 2)])).toBe(verdict);
   });
 });
+
+/**
+ * Spec 2026-09-28 naming coverage §D4: a `return` draft with no type and no
+ * callee is judged by the project's METHOD vocabulary when the caller hands it
+ * the evidence; without it the bare fallback stands.
+ */
+describe("judgeDraftName — an untyped method judged by the method vocabulary", () => {
+  const vocabulary = {
+    verbs: [{ verb: "load", holders: 3 }],
+    tailNames: [{ shortName: "load_user", holders: 3 }],
+    lastWordNames: [{ shortName: "grand_total", holders: 2 }],
+    declared: false,
+  };
+
+  it("a verb the tail's dominant verb contradicts is a MISFIT", () => {
+    expect(judgeDraftName({ name: "fetch_user", kind: "return", casing: "snake", untypedMethod: vocabulary })).toEqual({
+      verdict: "MISFIT",
+      suggestion: "load_user",
+      holder: "load_user",
+    });
+  });
+
+  it("a verbless name declared nowhere else has no convention, only analogues", () => {
+    expect(judgeDraftName({ name: "total", kind: "return", casing: "snake", untypedMethod: vocabulary })).toEqual({
+      verdict: "NO_CONVENTION",
+      prefer: { analogous: ["grand_total"] },
+    });
+  });
+
+  it("a typed return keeps its type judgement: the method vocabulary is not read", () => {
+    expect(
+      judgeDraftName({
+        name: "loadRegistry",
+        kind: "return",
+        typeName: "SymbolId",
+        casing: "camel",
+        untypedMethod: { ...vocabulary, tailNames: [{ shortName: "fetchRegistry", holders: 9 }] },
+      }),
+    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+  });
+
+  it("without the evidence an untyped return keeps the bare NEW_TERM", () => {
+    expect(judgeDraftName({ name: "fetch_user", kind: "return", casing: "snake" })).toEqual({
+      verdict: "NEW_TERM",
+      topTerms: [],
+    });
+  });
+});

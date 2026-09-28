@@ -269,8 +269,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     );
     const result = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["src/git/novel.ts"] });
     expect(result.review?.findings).toEqual([]);
-    expect(result.review?.novel).toBe(1);
-    expect(result.review?.checked).toBe(1);
+    // Spec D4 (bd tea-rags-mcp-0qaht): the untyped function `g` is judged by method vocabulary too — novel.
+    expect(result.review?.novel).toBe(2);
+    expect(result.review?.checked).toBe(2);
   });
 
   // bd tea-rags-mcp-hn2vt: `thing` / `tmp` for a call the project names `entry` were silently conforming.
@@ -527,7 +528,8 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
   // bd tea-rags-mcp-y33ee: new methods with no known return type vanished from the counts, so
   // `conforming` read as if they had been reviewed.
   describe("what the review did not judge", () => {
-    it("a method with no known return type is listed by kind and reason; a constructor is not", async () => {
+    // Spec 2026-09-28 §D4: a method with no known return type is judged by the method vocabulary.
+    it("a method with no known return type is judged, not listed; a constructor is neither", async () => {
       mkdirSync(join(repo, "app/billing"), { recursive: true });
       writeFileSync(
         join(repo, "app/billing/ledger_sync.rb"),
@@ -538,22 +540,18 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
         path: repo,
         files: ["app/billing/ledger_sync.rb"],
       });
-      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 1 } });
-      expect(review?.notJudgedNames).toEqual([
-        {
-          relPath: "app/billing/ledger_sync.rb",
-          line: 6,
-          name: "perform",
-          kind: "method",
-          reason: "unknownReturnType",
-        },
-      ]);
+      expect(review?.notJudgedBy).toBeUndefined();
+      expect(review?.notJudgedNames).toBeUndefined();
+      // `perform` is verbless and declared nowhere else: novel, never a finding; `initialize` is no draft.
+      expect(review?.findings.map((f) => f.name)).not.toContain("perform");
+      expect(review?.findings.map((f) => f.name)).not.toContain("initialize");
+      expect(review?.novel).toBeGreaterThanOrEqual(1);
       // Declarations stay the only thing `notJudged` does not count: it counts files.
       expect(review?.notJudged).toBe(0);
     });
 
     // Live on taxdome: a `module_function` method is one declaration under two symbols (`M#x`, `M.x`).
-    it("a method declared once under two symbols is listed once", async () => {
+    it("a method declared once under two symbols is judged once", async () => {
       mkdirSync(join(repo, "app/billing"), { recursive: true });
       writeFileSync(
         join(repo, "app/billing/refusals.rb"),
@@ -564,10 +562,9 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
         path: repo,
         files: ["app/billing/refusals.rb"],
       });
-      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 1 } });
-      expect(review?.notJudgedNames).toEqual([
-        { relPath: "app/billing/refusals.rb", line: 4, name: "refuse!", kind: "method", reason: "unknownReturnType" },
-      ]);
+      expect(review?.notJudgedBy).toBeUndefined();
+      // The file's two value drafts and `refuse!` once, not once per symbol.
+      expect(review?.checked).toBe(3);
     });
 
     it("a file that was not judged is listed with why", async () => {
@@ -593,11 +590,11 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
 
     it("caps the listed names and keeps the counts whole", async () => {
-      mkdirSync(join(repo, "app/many"), { recursive: true });
-      const methods = Array.from({ length: 60 }, (_, i) => `  def step_${i}\n    1\n  end\n`).join("");
-      writeFileSync(join(repo, "app/many/runner.rb"), `class Runner\n${methods}end\n`);
-      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files: ["app/many/runner.rb"] });
-      expect(review?.notJudgedBy).toEqual({ method: { unknownReturnType: 60 } });
+      mkdirSync(join(repo, "src/many"), { recursive: true });
+      const files = Array.from({ length: 60 }, (_, i) => `src/many/step-${i}.test.ts`);
+      for (const relPath of files) writeFileSync(join(repo, relPath), "export const x = 1;\n");
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, files });
+      expect(review?.notJudgedBy).toEqual({ file: { nonProduction: 60 } });
       expect(review?.notJudgedNames).toHaveLength(50);
     });
   });

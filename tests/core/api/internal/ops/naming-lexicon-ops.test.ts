@@ -1443,10 +1443,10 @@ describe("NamingLexiconOps", () => {
       expect(blind.names[0]).toMatchObject({ evidence: { collision: true } });
 
       const own = await ops.getNamingLexicon({ collection: "c", language: "ruby", names: [{ ...draft, path: STORE }] });
+      // Spec D4 (bd tea-rags-mcp-0qaht): an untyped method is judged by method vocabulary; verbless → NO_CONVENTION.
       expect(own.names[0]).toMatchObject({
         name: "store_entity!",
-        verdict: "NEW_TERM",
-        topTerms: [],
+        verdict: "NO_CONVENTION",
         evidence: { n: 0, collision: false },
       });
     });

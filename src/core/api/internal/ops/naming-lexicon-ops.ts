@@ -91,6 +91,7 @@ import type {
   IdentifierLanguageCountRow,
   IdentifierTypeAggregateRow,
   IdentifierTypeMultiplicity,
+  MethodVerbRow,
   TypeNameRow,
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
@@ -164,6 +165,7 @@ import type {
   NamingReviewResult,
 } from "../../public/dto/naming-lexicon.js";
 import { resolveCollection } from "../collection-resolver.js";
+import { readUntypedMethodEvidence, type MethodVerbMemo } from "./naming-lexicon-method-evidence.js";
 import type {
   NamingReviewExtractor,
   NamingReviewFileDeclarations,
@@ -336,6 +338,8 @@ interface TypeAlignmentState {
    * namespace share the read.
    */
   typeNameRows?: Map<string, Promise<TypeNameRow[]>>;
+  /** The method verb vocabulary per evidence scope ({@link MethodVerbMemo}), read at most once per request. */
+  methodVerbRows?: MethodVerbMemo["reads"];
   /** The project's index metrics — its label thresholds — read at most once per request. */
   metrics?: Promise<IndexMetrics>;
 }
@@ -390,6 +394,11 @@ type NamingLexiconValueDraft = NamingLexiconDraftName & { kind?: IdentifierDecla
 
 function isTypeDraft(draft: NamingLexiconDraftName): boolean {
   return draft.kind === "type";
+}
+
+/** A `return` draft with no type and no callee: judged by the project's method vocabulary. */
+function isUntypedMethodDraft(draft: NamingLexiconValueDraft): boolean {
+  return draft.kind === "return" && draft.type === undefined && draft.callee === undefined;
 }
 
 /** One byType row after recovery: a store row or a `name-inferred` one. */
@@ -542,7 +551,6 @@ export class NamingLexiconOps {
         continue;
       }
       judged.push(file);
-      notJudged.push(...unjudgedCallables(file));
     }
     return {
       workTree: repoRoot,
@@ -783,6 +791,14 @@ export class NamingLexiconOps {
             conceptTerms,
             pathPrefixes,
             ontologyLanguages: namespaceProfiles(this.deps.ontologyLanguages, namespace),
+            methodVerbs: {
+              reads: (alignment.methodVerbRows ??= new Map<string, Promise<MethodVerbRow[]>>()),
+              key: JSON.stringify([
+                typeNamespaceKey(scopedLate ? namespace : declaredNamespace),
+                pathPrefixes ?? [],
+                excludePaths,
+              ]),
+            },
             collisionHolders: context.lookupCollisions
               ? async (name) => this.collisionHolders(req, name, excludePaths, namespace)
               : undefined,
@@ -1626,6 +1642,8 @@ interface DraftJudgementContext {
   ontologyLanguages?: readonly OntologyLanguageProfile[];
   /** The symbols a colliding name collides with; absent → not looked up. */
   collisionHolders?: (name: string) => Promise<string[]>;
+  /** The request's verb-vocabulary reads, keyed by the reader's evidence scope. */
+  methodVerbs?: MethodVerbMemo;
 }
 
 /**
@@ -1675,6 +1693,18 @@ async function judgeDrafts(
   if (ctx.collisionHolders) {
     for (const name of draftNames) if (taken.has(name)) holders.set(name, await ctx.collisionHolders(name));
   }
+  // Untyped methods are judged by the project's method vocabulary (spec 2026-09-28 naming coverage, §D4).
+  const untypedMethods = drafts.filter(isUntypedMethodDraft);
+  const untypedMethod =
+    untypedMethods.length === 0
+      ? undefined
+      : await readUntypedMethodEvidence(
+          graphDb,
+          untypedMethods,
+          { pathPrefixes: ctx.pathPrefixes, nonProductionPaths: ontologyNonProductionPaths() },
+          taken,
+          ctx.methodVerbs,
+        );
   const overridden = new Map<NamingLexiconValueDraft, string[]>();
   for (const draft of drafts) {
     if (draft.kind !== "return" || draft.owner === undefined) continue;
@@ -1701,6 +1731,7 @@ async function judgeDrafts(
       nameRows: sum(homonyms.filter((r) => r.name === draft.name)),
       nameIsGeneric: generic.has(draft.name),
       ...((overridden.get(draft) ?? []).length > 0 ? { overrides: overridden.get(draft)?.[0] } : {}),
+      ...(untypedMethod && isUntypedMethodDraft(draft) ? { untypedMethod: untypedMethod(draft.name) } : {}),
     });
   });
   const family = await typeFamilyRows(
@@ -2055,16 +2086,17 @@ function readDiffFile(
 }
 
 /**
- * The methods / functions on a file's added lines that no draft carries: a
- * callable's name is judged through its `return` row, which exists only when
- * its return type is known (bd tea-rags-mcp-y33ee).
+ * The methods / functions on a file's added lines that no `return` row
+ * carries — their return type is unknown (bd tea-rags-mcp-y33ee). Each becomes
+ * an untyped `return` draft, judged by the method vocabulary (spec 2026-09-28
+ * naming coverage, §D4); one per declaration, however many symbols it carries.
  */
-function unjudgedCallables(file: DiffFile): NamingReviewNotJudgedEntry[] {
-  const { relPath, ranges, declarations } = file;
+function untypedCallables(file: DiffFile): DiffFile["declarations"]["callables"] {
+  const { ranges, declarations } = file;
   const returned = new Set(declarations.values.filter((row) => row.kind === "return").map((row) => row.ownerSymbolId));
-  return declarations.callables
-    .filter((callable) => inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)))
-    .map(({ name, line, kind }) => ({ relPath, line, name, kind, reason: "unknownReturnType" as const }));
+  return declarations.callables.filter(
+    (callable) => inRanges(callable.line, ranges) && !callable.symbolIds.some((id) => returned.has(id)),
+  );
 }
 
 /** `notJudgedBy` counts and the first {@link NOT_JUDGED_NAME_CAP} entries in path / line order; `{}` when none. */
@@ -2150,6 +2182,16 @@ function reviewDrafts(file: DiffFile): ReviewDraft[] {
             }
           : {}),
       },
+    });
+  }
+  for (const callable of untypedCallables(file)) {
+    const owner = callable.symbolIds.map(memberOwner).find((id) => id !== undefined);
+    drafts.push({
+      relPath,
+      line: callable.line,
+      language,
+      kind: "return",
+      draft: { name: callable.name, kind: "return", ...(owner !== undefined ? { owner } : {}) },
     });
   }
   // The changed file is out of the evidence: only the review sees which declaration is its primary (friction F4).

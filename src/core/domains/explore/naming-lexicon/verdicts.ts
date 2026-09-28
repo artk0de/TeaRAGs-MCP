@@ -22,6 +22,7 @@ import {
   typeNameLastSegment,
   typeNameWords,
 } from "./casing.js";
+import { judgeUntypedMethodName, type UntypedMethodEvidence } from "./method-vocabulary.js";
 import {
   CONNECTOR_WORDS,
   isInteriorConnector,
@@ -234,6 +235,12 @@ export interface DraftNameJudgementInput {
    * supertype's — CONFORMS, whatever the rows say.
    */
   overrides?: string;
+  /**
+   * An untyped `return` draft (no type, no callee): the project's method
+   * vocabulary it is judged by ({@link judgeUntypedMethodName}). Absent → the
+   * bare fallback judges it.
+   */
+  untypedMethod?: UntypedMethodEvidence;
 }
 
 /** A draft's shape conforms when it holds at least this share of the observed rows. */
@@ -666,6 +673,10 @@ export function judgeDraftName(input: DraftNameJudgementInput): NamingVerdict {
   // An override's name is its supertype's: never novel, never a rename (bd tea-rags-mcp-bjfa0).
   if (input.kind === "return" && input.overrides !== undefined) {
     return { verdict: "CONFORMS", override: { declaredBy: input.overrides } };
+  }
+  // An untyped method is judged by the project's method vocabulary (spec 2026-09-28 naming coverage, §D4).
+  if (input.kind === "return" && input.typeName === undefined && input.callee === undefined && input.untypedMethod) {
+    return judgeUntypedMethodName({ name: input.name, casing: input.casing, evidence: input.untypedMethod });
   }
   const verdict = judgeDraftNameByEvidence(input);
   if (verdict.verdict === "MISFIT") return keepDraftQualification(input, verdict);
