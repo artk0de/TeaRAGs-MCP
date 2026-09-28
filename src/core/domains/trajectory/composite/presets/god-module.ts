@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
@@ -24,7 +25,7 @@ export class GodModuleCompositePreset implements CompositeRerankPreset {
   readonly description = "Files carrying too much interface mass, weighted by how deeply they are wired in";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
-  readonly requires = ["codegraph.symbols"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.15,
     symbolCount: 0.5,

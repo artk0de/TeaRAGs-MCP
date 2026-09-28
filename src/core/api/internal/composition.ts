@@ -15,6 +15,7 @@ import {
   SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
   type PayloadFieldIndexSchema,
 } from "../../adapters/qdrant/schema-manager.js";
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../contracts/index.js";
 import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type {
@@ -158,7 +159,7 @@ export function assembleFilterPresets(registeredKeys: ReadonlySet<string>): Filt
   return [
     ...STATIC_FILTER_PRESETS,
     ...(registeredKeys.has("git") ? GIT_FILTER_PRESETS : []),
-    ...(registeredKeys.has("codegraph.symbols") ? CODEGRAPH_FILTER_PRESETS : []),
+    ...(registeredKeys.has(CODEGRAPH_SYMBOLS_PROVIDER_KEY) ? CODEGRAPH_FILTER_PRESETS : []),
     ...buildCompositeFilterPresets(registeredKeys),
   ];
 }

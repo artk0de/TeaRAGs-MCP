@@ -1,3 +1,4 @@
+import { CODEGRAPH_SYMBOLS_PROVIDER_KEY } from "../../../../contracts/index.js";
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
 import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
@@ -12,7 +13,7 @@ export class DangerousCompositePreset implements CompositeRerankPreset {
   readonly filter = { presets: "production" } as const;
   readonly description = "High-risk code: bug-prone, volatile, single-owner, heavily depended on";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks", "trace_path"];
-  readonly requires = ["codegraph.symbols", "git"] as const;
+  readonly requires = [CODEGRAPH_SYMBOLS_PROVIDER_KEY, "git"] as const;
   readonly weights: ScoringWeights = {
     bugFix: 0.3,
     volatility: 0.2,

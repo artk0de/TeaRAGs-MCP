@@ -17,7 +17,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { PROJECT_NAME_RE, type App, type SchemaBuilder } from "../../core/api/public/index.js";
+import {
+  CODEGRAPH_SYMBOLS_PROVIDER_KEY,
+  PROJECT_NAME_RE,
+  type App,
+  type SchemaBuilder,
+} from "../../core/api/public/index.js";
 import { formatMcpText } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
@@ -244,7 +249,7 @@ export function registerCodegraphTools(
   // tools should appear in the MCP `list_tools` response. Silent no-op
   // (no error, no log) — the upstream gate at composition is what controls
   // the surface.
-  if (!app.hasProvider("codegraph.symbols")) return;
+  if (!app.hasProvider(CODEGRAPH_SYMBOLS_PROVIDER_KEY)) return;
 
   registerToolSafe(
     server,
