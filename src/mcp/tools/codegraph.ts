@@ -184,10 +184,10 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
  * ≤ 1.5 KB serialized.
  */
 const NAMING_LEXICON_DESCRIPTION =
-  "Codegraph naming. `types`/`anchors` → names/kind+shape; " +
-  "`names[]`(attr: field; method: return; class/const: type+path) → CONFORMS(vocabulary, not behaviour)|" +
-  "MISFIT{suggestion}|NEW_TERM{topTerms}|COLLISION,+alternatives,genericName; `concept`+`language` → terms; " +
-  "`changes{base=HEAD}`/`files` → review.";
+  "Codegraph naming. `types`/`anchors`→names/kind+shape; " +
+  "`names[]`(attr:field; method:return; class/const:type+path)→CONFORMS(vocabulary, not behaviour)|" +
+  "MISFIT{suggestion}|NEW_TERM{topTerms}|NO_CONVENTION{prefer}|COLLISION,+alternatives,genericName; " +
+  "`concept`+`language`→terms; `changes`/`files`→review.";
 
 function buildNamingLexiconInputSchema() {
   const draftName = z.object({

@@ -11,7 +11,9 @@ import {
   judgeTypeDraft,
   typeDraftMeaningPairs,
   typeDraftPopulation,
+  typeFamilyMembers,
   typeNameEvidence,
+  withFamilyAnalogues,
 } from "../../../../../src/core/domains/explore/naming-lexicon/verdicts.js";
 
 const TYPE = "TaxAutomationDocument";
@@ -171,13 +173,13 @@ describe("judgeDraftName — fallbacks need project support", () => {
   };
 
   it("no prior → no callee-derived suggestion", () => {
-    expect(judgeDraftName(untypedRow)).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    expect(judgeDraftName(untypedRow)).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
   });
 
   it("a FREE-dominant prior → no callee-derived suggestion", () => {
     expect(judgeDraftName({ ...untypedRow, projectShapePrior: { local: FREE_PRIOR } })).toEqual({
-      verdict: "NEW_TERM",
-      topTerms: [],
+      verdict: "NO_CONVENTION",
+      prefer: { analogous: [] },
     });
   });
 
@@ -187,13 +189,13 @@ describe("judgeDraftName — fallbacks need project support", () => {
         ...untypedRow,
         projectShapePrior: { local: shapePrior([{ shape: "CALLEE_DERIVED", share: 0.9 }], 10) },
       }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
   });
 
   it("a CALLEE_DERIVED prior for another kind does not support this kind", () => {
     expect(judgeDraftName({ ...untypedRow, projectShapePrior: { field: CALLEE_DERIVED_PRIOR } })).toEqual({
-      verdict: "NEW_TERM",
-      topTerms: [],
+      verdict: "NO_CONVENTION",
+      prefer: { analogous: [] },
     });
   });
 
@@ -611,14 +613,14 @@ describe("judgeDraftName — a value draft whose type has only return rows (the 
     ).toEqual({ verdict: "MISFIT", suggestion: "file_signals", holder: "R#compute_file_signals" });
   });
 
-  it("returns carrying no type tail give nothing comparable: NEW_TERM with no terms, never CONFORMS", () => {
+  it("returns carrying no type tail give nothing comparable: NO_CONVENTION, never CONFORMS", () => {
     expect(
       judgeDraftName({
         ...draft,
         name: "meta",
         byTypeRows: [ret("narrow", 2, "A#narrow"), ret("lookup", 1, "B#lookup")],
       }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "gitFileSignals", analogous: [] } });
   });
 
   it("with no comparable type row, bound-callee rows still judge before the NEW_TERM", () => {
@@ -712,10 +714,10 @@ describe("judgeDraftName — a collection draft (typeMultiplicity many) against 
 });
 
 describe("judgeDraftName — nothing to judge against", () => {
-  it("a typed draft whose type has no history and no concept is a NEW_TERM with no terms", () => {
+  it("a typed draft whose type has no history and no concept is NO_CONVENTION", () => {
     expect(judgeDraftName({ name: "envelope", typeName: "VendorEnvelope", casing: "snake", byTypeRows: [] })).toEqual({
-      verdict: "NEW_TERM",
-      topTerms: [],
+      verdict: "NO_CONVENTION",
+      prefer: { exact: "vendor_envelope", analogous: [] },
     });
   });
 
@@ -729,7 +731,7 @@ describe("judgeDraftName — nothing to judge against", () => {
         byTypeRows: [{ kind: "local", name: "name", n: 100, exampleOwner: OWNER }],
       }),
       // bd tea-rags-mcp-xsxkr: not judged by type, and no use of `label` given — novel, never a MISFIT.
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
   });
 
   it("a type the language does not list is judged by type (no global stop-list)", () => {
@@ -746,7 +748,10 @@ describe("judgeDraftName — nothing to judge against", () => {
 
   // bd tea-rags-mcp-xsxkr: CONFORMS needs evidence — with nothing to compare, the name's own use elsewhere.
   it("no type, callee or terms: CONFORMS only when other rows carry the name, else novel", () => {
-    expect(judgeDraftName({ name: "row", casing: "snake" })).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    expect(judgeDraftName({ name: "row", casing: "snake" })).toEqual({
+      verdict: "NO_CONVENTION",
+      prefer: { analogous: [] },
+    });
     expect(judgeDraftName({ name: "row", casing: "snake", nameRows: 12 })).toEqual({ verdict: "CONFORMS" });
   });
 });
@@ -1789,5 +1794,160 @@ describe("judgeTypeDraft — a kind not carried in names is never demanded", () 
 
   it("a draft that does spell the kind is not flagged either", () => {
     expect(judge("SendFailedPaymentService")).toEqual({ verdict: "CONFORMS", role: SERVICE_ROLE });
+  });
+});
+
+/**
+ * Lexicon friction F4: a directory's role is read off each file's PRIMARY type,
+ * so it holds only a draft that would be its file's primary. `ModelInfo`,
+ * `LanguageVersionStamper` beside `IndexingOps` in an `*-ops.ts` file were
+ * MISFIT → `…Ops`: helper declarations, never members of the `ops` family.
+ */
+describe("judgeTypeDraft — a directory's role holds its files' primaries only", () => {
+  const row = (shortName: string, relPath: string, symbolKind: TypeNameRow["symbolKind"] = "class"): TypeNameRow => ({
+    symbolId: shortName,
+    relPath,
+    shortName,
+    symbolKind,
+    ancestors: [],
+  });
+  const OPS = [
+    row("IndexingOps", "src/ops/indexing-ops.ts"),
+    row("SearchOps", "src/ops/search-ops.ts"),
+    row("CollectionOps", "src/ops/collection-ops.ts"),
+  ];
+  const judge = (draft: {
+    name: string;
+    path: string;
+    symbolKind?: TypeNameRow["symbolKind"];
+    filePrimary?: boolean;
+  }) =>
+    judgeTypeDraft({
+      ...draft,
+      symbolKind: draft.symbolKind ?? undefined,
+      casing: "pascal",
+      evidence: typeNameEvidence(OPS, "type"),
+      conceptNames: [],
+    });
+
+  it("an interface beside its file's primary class → no directory MISFIT, no role", () => {
+    const verdict = judge({ name: "LanguageVersionStamper", path: "src/ops/indexing-ops.ts", symbolKind: "interface" });
+    expect(verdict.verdict).not.toBe("MISFIT");
+    expect(verdict).not.toHaveProperty("role");
+  });
+
+  it("a helper class beside its file's primary → no directory MISFIT either", () => {
+    expect(judge({ name: "ModelInfo", path: "src/ops/indexing-ops.ts", symbolKind: "class" }).verdict).not.toBe(
+      "MISFIT",
+    );
+  });
+
+  it("the only declaration of a new file is its primary: the directory role still applies", () => {
+    expect(judge({ name: "IndexDriftResetter", path: "src/ops/index-drift.ts", symbolKind: "class" })).toMatchObject({
+      verdict: "MISFIT",
+      suggestion: "IndexDriftResetterOps",
+      role: { word: "ops", evidence: "directory" },
+    });
+  });
+
+  it("diff mode says whether the draft is its file's primary: a secondary is not held", () => {
+    const draft = { name: "IndexDriftResetter", path: "src/ops/index-drift.ts", symbolKind: "interface" as const };
+    expect(judge({ ...draft, filePrimary: false }).verdict).not.toBe("MISFIT");
+    expect(judge({ ...draft, filePrimary: true }).verdict).toBe("MISFIT");
+  });
+});
+
+/**
+ * Lexicon friction F3: a value draft whose type or call has too few owners to
+ * hold a convention (no name carried by ≥ 2 of them) is no bare NEW_TERM an
+ * agent re-justifies by hand — and no free choice either. It points at the
+ * type's own spelling and at names by analogy: its thin rows, then its family.
+ */
+describe("judgeDraftName — NO_CONVENTION", () => {
+  const registryField = { kind: "field" as const, name: "collectionRegistry", n: 1, exampleOwner: "Ops", holders: 1 };
+
+  it("a field whose type one owner names: the type's spelling, and the owner's name by analogy", () => {
+    expect(
+      judgeDraftName({
+        name: "projects",
+        kind: "field",
+        typeName: "CollectionRegistry",
+        casing: "camel",
+        byTypeRows: [registryField],
+      }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "collectionRegistry", analogous: ["collectionRegistry"] } });
+  });
+
+  it("a param of a type the project never binds: the type's spelling, nothing by analogy yet", () => {
+    expect(judgeDraftName({ name: "callerSymbolId", kind: "param", typeName: "SymbolId", casing: "camel" })).toEqual({
+      verdict: "NO_CONVENTION",
+      prefer: { exact: "symbolId", analogous: [] },
+    });
+  });
+
+  it("a collection draft is pointed at the plural spelling", () => {
+    expect(
+      judgeDraftName({ name: "ids", kind: "local", typeName: "SymbolId", typeMultiplicity: "many", casing: "snake" }),
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { exact: "symbol_ids", analogous: [] } });
+  });
+
+  it("a return keeps NEW_TERM: a method name is judged by the method vocabulary", () => {
+    expect(judgeDraftName({ name: "loadRegistry", kind: "return", typeName: "SymbolId", casing: "camel" })).toEqual({
+      verdict: "NEW_TERM",
+      topTerms: [],
+    });
+  });
+
+  it("a name two owners share is a convention: it is demanded", () => {
+    expect(
+      judgeDraftName({
+        name: "projects",
+        kind: "field",
+        typeName: "CollectionRegistry",
+        casing: "camel",
+        byTypeRows: [{ ...registryField, n: 2, holders: 2 }],
+      }),
+    ).toEqual({ verdict: "MISFIT", suggestion: "collectionRegistry", holder: "Ops" });
+  });
+});
+
+describe("typeFamilyMembers — the relatives a NO_CONVENTION draft is compared with", () => {
+  const DECLARED = ["SymbolId", "CallerSymbolId", "CalleeSymbolId", "ProjectRegistry", "LanguageRegistry", "Reranker"];
+
+  it("the types specializing it come first: `*SymbolId` for SymbolId", () => {
+    expect(typeFamilyMembers("SymbolId", DECLARED)).toEqual(["CalleeSymbolId", "CallerSymbolId"]);
+  });
+
+  it("with none, its siblings by head word: `*Registry` for CollectionRegistry", () => {
+    expect(typeFamilyMembers("CollectionRegistry", DECLARED)).toEqual(["LanguageRegistry", "ProjectRegistry"]);
+  });
+
+  it("a type with no relative has no family", () => {
+    expect(typeFamilyMembers("ChunkGrouper", DECLARED)).toEqual([]);
+  });
+});
+
+describe("withFamilyAnalogues", () => {
+  const row = (name: string, holders: number, kind: "param" | "return" = "param") => ({
+    kind,
+    name,
+    n: holders,
+    exampleOwner: "X",
+    holders,
+  });
+
+  it("appends the family's value names, most owners first, after the draft's own", () => {
+    const verdict = { verdict: "NO_CONVENTION" as const, prefer: { exact: "symbolId", analogous: ["sid"] } };
+    expect(
+      withFamilyAnalogues(verdict, [row("callerId", 2), row("calleeSymbolId", 5), row("resolveCaller", 9, "return")]),
+    ).toEqual({
+      verdict: "NO_CONVENTION",
+      prefer: { exact: "symbolId", analogous: ["sid", "calleeSymbolId", "callerId"] },
+    });
+  });
+
+  it("leaves any other verdict alone", () => {
+    const verdict = { verdict: "NEW_TERM" as const, topTerms: [] };
+    expect(withFamilyAnalogues(verdict, [row("callerId", 2)])).toBe(verdict);
   });
 });

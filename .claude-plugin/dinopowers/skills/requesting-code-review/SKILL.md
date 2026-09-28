@@ -115,7 +115,8 @@ sending (or list it under risk flags with the holder) — a type MISFIT with
 `role.evidence: "directory"` only when the type belongs to `role.examples`'
 family, else keep the name; `COLLISION` → rename, or justify against the
 `existing` declaration; `NEW_TERM` → one-line justification in the bundle, or
-take an offered alternative. Answer lives under `review` {base, mergeBase,
+take an offered alternative. Worktree branch → pass `project` + `path=<worktree>`
+(alias alone reads the main checkout). Answer lives under `review` {workTree, base, mergeBase,
 changedFiles, checked, conforming, novel, findings, notJudged, truncated?};
 findings flat `{relPath, line, name, kind, type?, verdict, …}`. Bundle line:
 findings grouped by verdict with `relPath:line`, plus conforming and novel

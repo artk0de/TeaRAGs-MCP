@@ -9,7 +9,7 @@
  * TypeScript walker, through the same in-memory extraction the tool uses.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -137,7 +137,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     ]);
   }
 
-  function build(embeddings?: NamingLexiconEmbeddings): NamingLexiconOps {
+  function build(embeddings?: NamingLexiconEmbeddings, collectionRegistry: unknown = {}): NamingLexiconOps {
     const graphDb = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "close") return async () => undefined;
@@ -147,7 +147,7 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
     });
     return new NamingLexiconOps({
       pool: { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) } as never,
-      collectionRegistry: {} as never,
+      collectionRegistry: collectionRegistry as never,
       resolveActiveCollection: async (name: string) => name as never,
       explore: { semanticSearch },
       namingConventions: NAMING,
@@ -631,5 +631,112 @@ describe("NamingLexiconOps — diff mode", { timeout: 60_000 }, () => {
 
   it("diff mode needs the project's working tree", async () => {
     await expect(ops.getNamingLexicon({ collection: "c", changes: {} })).rejects.toBeInstanceOf(InvalidParameterError);
+  });
+
+  // Lexicon friction F1: a project alias resolves to the MAIN checkout, so a change made in a
+  // linked worktree was reviewed as `changedFiles: 0` — success-shaped and blind.
+  describe("the working tree the review reads", () => {
+    /** `project` addresses the index, registered at the main checkout; `path` names the tree. */
+    const aliased = () =>
+      build(undefined, {
+        findByName: (name: string) => (name === "p" ? { name: "p", collectionName: "c", path: repo } : null),
+        list: () => [],
+      });
+
+    function addWorkTree(): string {
+      git(repo, "commit", "-q", "-am", "change");
+      const tree = join(dir, "wt");
+      git(repo, "worktree", "add", "-q", "-b", "feature", tree);
+      writeFileSync(
+        join(tree, "src/git/extra.ts"),
+        "export function more(): void {\n  const blob: GitFileSignals = read();\n  use(blob);\n}\n",
+      );
+      return realpathSync(tree);
+    }
+
+    it("names the tree it read", async () => {
+      const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(review?.workTree).toBe(repo);
+    });
+
+    it("an alias alone reads the main checkout the alias is registered at", async () => {
+      const { review } = await aliased().getNamingLexicon({ project: "p", changes: {} });
+      expect(review?.workTree).toBe(repo);
+    });
+
+    it("an alias with a path reviews that linked worktree against the project's evidence", async () => {
+      const tree = addWorkTree();
+      const { review } = await aliased().getNamingLexicon({ project: "p", path: tree, changes: {} });
+      expect(review?.workTree).toBe(tree);
+      expect(review?.changedFiles).toBe(1);
+      expect(review?.findings).toContainEqual(expect.objectContaining({ relPath: "src/git/extra.ts", name: "blob" }));
+    });
+
+    it("refuses a tree of another repository: its change is no diff of this project", async () => {
+      const other = join(dir, "other");
+      mkdirSync(other);
+      git(other, "init", "-q", "-b", "main");
+      await expect(aliased().getNamingLexicon({ project: "p", path: other, changes: {} })).rejects.toBeInstanceOf(
+        InvalidParameterError,
+      );
+    });
+
+    it("an empty diff says what it could not see — never a bare changedFiles: 0", async () => {
+      const tree = addWorkTree();
+      const result = await aliased().getNamingLexicon({ project: "p", changes: {} });
+      expect(result.review?.changedFiles).toBe(0);
+      const notice = (result.notices ?? []).find((n) => n.startsWith("no changes"));
+      expect(notice).toBeDefined();
+      expect(notice).toContain("changes.base");
+      expect(notice).toContain("path");
+      expect(notice).toContain(tree);
+    });
+  });
+
+  // Lexicon friction F4: the changed file is out of the evidence, so only the review knows a helper
+  // interface sits beside its file's primary class — and a helper is no member of the directory's role.
+  it("a helper declaration beside its file's primary is not held to the directory's role", async () => {
+    await db.replaceTypeDeclarationsBulk(
+      ["indexing", "search", "collection"].map((stem) => ({
+        relPath: `src/ops/${stem}-ops.ts`,
+        rows: [decl(`${stem[0].toUpperCase()}${stem.slice(1)}Ops`, "class")],
+      })),
+    );
+    mkdirSync(join(repo, "src/ops"), { recursive: true });
+    writeFileSync(
+      join(repo, "src/ops/billing-ops.ts"),
+      "export class BillingOps {}\nexport interface ModelInfo {\n  id: number;\n}\nexport class InvoiceMaker {}\n",
+    );
+    writeFileSync(join(repo, "src/ops/refund.ts"), "export class RefundMaker {}\n");
+    const { review } = await ops.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+    const misfits = review?.findings.filter((f) => f.verdict === "MISFIT").map((f) => f.name);
+    expect(misfits).not.toContain("ModelInfo");
+    expect(misfits).not.toContain("InvoiceMaker");
+    // The only declaration of its file is its primary: still held.
+    expect(misfits).toContain("RefundMaker");
+  });
+
+  // Lexicon friction F2: evidence read from an index built at another commit is marked, not silent.
+  describe("index lag", () => {
+    const registryAt = (indexedCommit: string) => ({ get: () => ({ git: { indexedCommit } }) });
+
+    it("marks the answer when the index was built at another commit than the tree's HEAD", async () => {
+      const lagging = build(undefined, registryAt("0".repeat(40)));
+      const result = await lagging.getNamingLexicon({ collection: "c", path: repo, changes: {} });
+      expect(result.indexLag).toEqual({
+        indexedCommit: "0".repeat(40),
+        treeCommit: git(repo, "rev-parse", "HEAD").trim(),
+      });
+    });
+
+    it("carries no mark when the index is at the tree's HEAD", async () => {
+      const fresh = build(undefined, registryAt(git(repo, "rev-parse", "HEAD").trim()));
+      const result = await fresh.getNamingLexicon({
+        collection: "c",
+        path: repo,
+        names: [{ name: "meta", type: "GitFileSignals" }],
+      });
+      expect(result.indexLag).toBeUndefined();
+    });
   });
 });

@@ -235,10 +235,10 @@ describe("judgeDraftName — an untyped value read off a constant receiver takes
         casing: "snake",
         callee: { member: "reason_for", receiver: "TaxPreparation::TaxAutomations::RefusalsHelper" },
       }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
     expect(
       judgeDraftName({ name: "thing", kind: "local", casing: "snake", callee: { member: "read", receiver: "buffer" } }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
   });
 });
 
@@ -257,10 +257,10 @@ describe("judgeDraftName — a name no second owner shares is no term to offer",
   const judge = (rows: ReturnType<typeof row>[]) =>
     judgeDraftName({ name: "entity_id", kind: "local", casing: "snake", callee: POOL, byCalleeRows: rows });
 
-  it("a callee whose bound names never repeat offers nothing: NEW_TERM with no terms", () => {
+  it("a callee whose bound names never repeat offers nothing: NO_CONVENTION", () => {
     expect(
       judge([row("ai_query_ids", 1, 1), row("claimed", 1, 1), row("payload", 1, 1), row("result_ai_query_id", 1, 1)]),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: ["ai_query_ids", "claimed", "payload", "result_ai_query_id"] } });
   });
 
   it("only the names several owners hold are offered", () => {
@@ -294,6 +294,6 @@ describe("judgeDraftName — an override's name is fixed by its supertype", () =
   it("only a method overrides: a local named like an ancestor's method is judged as before", () => {
     expect(
       judgeDraftName({ name: "same_firm?", kind: "local", casing: "snake", overrides: "AbstractPolicy#same_firm?" }),
-    ).toEqual({ verdict: "NEW_TERM", topTerms: [] });
+    ).toEqual({ verdict: "NO_CONVENTION", prefer: { analogous: [] } });
   });
 });

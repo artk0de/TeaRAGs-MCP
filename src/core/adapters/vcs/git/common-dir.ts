@@ -18,8 +18,8 @@
  * Anything unrecognised (not a repo, unreadable, exotic layout) falls back to
  * the path itself, which keeps callers at their old per-path behaviour.
  */
-import { readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 const GITDIR_PREFIX = "gitdir:";
 
@@ -40,5 +40,37 @@ export function resolveGitCommonDir(absolutePath: string): string {
     return realpathSync(resolve(absoluteAdminDir, commonDir));
   } catch {
     return absolutePath;
+  }
+}
+
+/**
+ * Every working tree of the repository behind `absolutePath`, realpath'd: the
+ * main checkout (when the shared dir is its `.git`) and each linked worktree
+ * git registered under `<common>/worktrees/<name>/gitdir`. Read from the
+ * filesystem for the reason {@link resolveGitCommonDir} is; an unreadable
+ * layout yields what could be read, never throws.
+ */
+export function listRepoWorkTrees(absolutePath: string): string[] {
+  const commonDir = resolveGitCommonDir(absolutePath);
+  const trees: string[] = [];
+  if (basename(commonDir) === ".git") trees.push(dirname(commonDir));
+  for (const admin of readWorkTreeAdminDirs(commonDir)) {
+    try {
+      const dotGit = readFileSync(join(commonDir, "worktrees", admin, "gitdir"), "utf8").trim();
+      const tree = dirname(dotGit);
+      if (existsSync(tree)) trees.push(realpathSync(tree));
+    } catch {
+      // A half-removed worktree has no gitdir: nothing to list.
+    }
+  }
+  return [...new Set(trees)].sort();
+}
+
+/** The linked worktrees' admin dir names under `<common>/worktrees`; none when the repo has no linked worktree. */
+function readWorkTreeAdminDirs(commonDir: string): string[] {
+  try {
+    return readdirSync(join(commonDir, "worktrees"));
+  } catch {
+    return [];
   }
 }

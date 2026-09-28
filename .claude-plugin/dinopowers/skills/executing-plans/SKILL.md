@@ -287,7 +287,8 @@ decides WHETHER to invoke.
 **Naming note (rename / extract, codegraph on):** the new name goes through
 `get_naming_lexicon(names=[{name, kind, type?}], pathPattern)` before the Edit —
 `MISFIT` → use `suggestion`; `NEW_TERM` → a `topTerms` word if it means the
-same. A plan-fixed name is checked too. Reading:
+same; `NO_CONVENTION` → `prefer.exact` or a name like `prefer.analogous`. A
+plan-fixed name is checked too. Reading:
 `tea-rags:data-driven-generation` Step 5 "Naming (lexicon)".
 
 Why MANDATORY for modification — DDG MODIFY mode owns what in-context edit

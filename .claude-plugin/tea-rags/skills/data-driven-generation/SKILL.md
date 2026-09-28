@@ -259,8 +259,10 @@ Reading the answer — the dominant shape per kind IS the convention:
   type belongs to `role.examples`' family, else keep the name, reconsider the
   location). `NEW_TERM` → adopt a `topTerms` term or an `alternatives` word if
   it denotes the same concept; otherwise the concept is new — keep the term,
-  justify it in Step 6. `COLLISION` → the short name is already a type elsewhere
-  (`existing`); pick a distinct name.
+  justify it in Step 6. `NO_CONVENTION` (value) → no demand, not free: take
+  `prefer.exact` (type spelled) or a name like `prefer.analogous` (family's);
+  justify only a name unlike both. `COLLISION` → the short name is already a
+  type elsewhere (`existing`); pick a distinct name.
 - `driftWarning` or empty `byType` → no history for the type; take names from
   the template's code and say so.
 

@@ -50,6 +50,12 @@ export interface NamingLexiconDraftName {
    * SCREAMING_SNAKE name is a constant, any other a type.
    */
   symbolKind?: SymbolDefinitionKind;
+  /**
+   * `kind: "type"`, diff mode only (not a tool field): whether the declaration
+   * is its file's primary — only a primary is held to its directory's role.
+   * Absent → decided against the file's indexed declarations.
+   */
+  filePrimary?: boolean;
 }
 
 /** A type or constant draft (`kind: "type"`), as the ops layer judges it once `path` is validated. */
@@ -68,7 +74,9 @@ export interface NamingLexiconEvidenceScope {
 /**
  * At least one of `types` / `anchors` / `concept` / `names` / `changes` /
  * `files`; `concept` requires `language`. `changes` and `files` (diff mode, bd
- * tea-rags-mcp-fdef2) need the project's working tree — a `project` or `path`.
+ * tea-rags-mcp-fdef2) need the project's working tree — a `project` or `path`. With `project`, a
+ * `path` names a checkout of the same repository — a linked git worktree —
+ * read against the project's index; `project` alone reads its main checkout.
  */
 export interface NamingLexiconRequest extends CollectionRef {
   /** Glob; its literal prefix (before the first `*?{[`) scopes the rows read. */
@@ -247,6 +255,8 @@ export interface NamingReviewNote {
 
 /** The naming review of a diff (`changes` / `files`, bd tea-rags-mcp-fdef2). */
 export interface NamingReviewResult {
+  /** The working tree the change was read from: `path` beside `project`, else the addressed tree. */
+  workTree: string;
   /** The ref the request named (`HEAD` when none). */
   base: string;
   /** The commit the change was read against: `base`'s merge-base with HEAD. */
@@ -334,6 +344,13 @@ export interface NamingLexiconResult {
   names: NamingLexiconNameVerdict[];
   /** e.g. `concept step skipped: …` when embeddings are unavailable, or an empty type-declaration table. */
   notices?: string[];
+  /**
+   * Set when the index was built at another commit than the answer's tree's
+   * HEAD (see `review.workTree`): every verdict rests on evidence
+   * read at `indexedCommit`, so what changed since is not in it. Absent: the
+   * index is at the tree's HEAD, or either commit is unknown.
+   */
+  indexLag?: { indexedCommit: string; treeCommit: string };
   /** Set when the index predates the identifier table — names the reindex. */
   driftWarning?: string;
   /** Diff mode's answer, when the request carried `changes` or `files`. */

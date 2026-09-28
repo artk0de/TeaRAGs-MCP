@@ -264,16 +264,34 @@ const PRIMARY_KIND_RANK: Partial<Record<NonNullable<TypeNameRow["symbolKind"]>, 
 };
 const OTHER_KIND_RANK = 3;
 
-interface PrimaryCandidate {
-  member: HeadedRow;
+/** What the primary pick reads of a declaration. */
+export interface FileDeclaration {
+  shortName: string;
+  relPath: string;
+  symbolKind?: TypeNameRow["symbolKind"];
+}
+
+interface PrimaryCandidate<T> {
+  member: T;
   overlap: number;
   /** The name's words that are not stem words. */
   extra: number;
   kindRank: number;
 }
 
+function primaryCandidate<T>(member: T, declaration: FileDeclaration): PrimaryCandidate<T> {
+  const { words, overlap } = fileStemOverlap(declaration.shortName, declaration.relPath);
+  const kind = declaration.symbolKind;
+  return {
+    member,
+    overlap,
+    extra: words.size - overlap,
+    kindRank: (kind === null || kind === undefined ? undefined : PRIMARY_KIND_RANK[kind]) ?? OTHER_KIND_RANK,
+  };
+}
+
 /** Whether `a` beats the incumbent `b` (declared earlier): more overlap, then — on overlap — fewer extra words, then the stronger kind. */
-function beatsPrimary(a: PrimaryCandidate, b: PrimaryCandidate): boolean {
+function beatsPrimary<T>(a: PrimaryCandidate<T>, b: PrimaryCandidate<T>): boolean {
   if (a.overlap !== b.overlap) return a.overlap > b.overlap;
   if (a.overlap === 0) return false;
   if (a.extra !== b.extra) return a.extra < b.extra;
@@ -295,21 +313,30 @@ function beatsPrimary(a: PrimaryCandidate, b: PrimaryCandidate): boolean {
  * `Request = Data.define(…)` is a constant leaves that file without a primary.
  */
 function primaryHeadedPerFile(headed: readonly HeadedRow[]): HeadedRow[] {
-  const best = new Map<string, PrimaryCandidate>();
+  const best = new Map<string, PrimaryCandidate<HeadedRow>>();
   for (const member of headed) {
     if (isNamespaceDeclaration(member.row)) continue;
-    const { words, overlap } = fileStemOverlap(member.row.shortName, member.row.relPath);
-    const kind = member.row.symbolKind;
-    const candidate: PrimaryCandidate = {
-      member,
-      overlap,
-      extra: words.size - overlap,
-      kindRank: (kind === null ? undefined : PRIMARY_KIND_RANK[kind]) ?? OTHER_KIND_RANK,
-    };
+    const candidate = primaryCandidate(member, member.row);
     const current = best.get(member.row.relPath);
     if (!current || beatsPrimary(candidate, current)) best.set(member.row.relPath, candidate);
   }
   return [...best.values()].map(({ member }) => member);
+}
+
+/**
+ * One file's PRIMARY among its declarations, in declaration order — the pick
+ * {@link primaryHeadedPerFile} makes for the rows a directory's role is read
+ * off (lexicon friction F4), so a draft is held to that role only when it would
+ * be picked. `undefined` when every declaration is a namespace.
+ */
+export function filePrimaryDeclaration<T extends FileDeclaration>(declarations: readonly T[]): T | undefined {
+  let best: PrimaryCandidate<T> | undefined;
+  for (const declaration of declarations) {
+    if (isNamespaceDeclaration(declaration)) continue;
+    const candidate = primaryCandidate(declaration, declaration);
+    if (!best || beatsPrimary(candidate, best)) best = candidate;
+  }
+  return best?.member;
 }
 
 /** A type name's singular words, and how many of them its file's stem shares. */
